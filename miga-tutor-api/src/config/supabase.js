@@ -1,8 +1,16 @@
 const { createClient } = require('@supabase/supabase-js');
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl) {
+  throw new Error("Missing environment variable: SUPABASE_URL");
+}
+
+if (!supabaseServiceRoleKey) {
+  throw new Error("Missing environment variable: SUPABASE_SERVICE_ROLE_KEY");
+}
+
+const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
 module.exports = supabase;
