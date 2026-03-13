@@ -1,5 +1,20 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
 
+export function speak(text: string, lang: string = 'en-IN') {
+  if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+    speechSynthesis.cancel()
+    const utterance = new SpeechSynthesisUtterance(text)
+    utterance.lang = lang
+    speechSynthesis.speak(utterance)
+  }
+}
+
+export function stopSpeaking() {
+  if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+    speechSynthesis.cancel()
+  }
+}
+
 async function apiCall(path: string, options: RequestInit = {}, token?: string) {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -34,6 +49,17 @@ export const api = {
     apiCall('/api/quiz/result', { method: 'POST', body: JSON.stringify(data) }, token),
   getQuizHistory: (token: string) => apiCall('/api/quiz/history', {}, token),
 
+  // Leaderboard
+  getLeaderboard: (token: string, period: string) =>
+    apiCall(`/api/admin/leaderboard?period=${period}`, {}, token),
+
+  // Subscription / Payment
+  getSubscription: (token: string) => apiCall('/api/payment/subscription', {}, token),
+  createPaymentOrder: (token: string, planId: string) =>
+    apiCall('/api/payment/order', { method: 'POST', body: JSON.stringify({ planId }) }, token),
+  verifyPayment: (token: string, data: any) =>
+    apiCall('/api/payment/verify', { method: 'POST', body: JSON.stringify(data) }, token),
+
   // Streaming chat
   chatStream: (token: string, message: string, sessionId: string | undefined, onChunk: (t: string) => void, onDone: (sid: string) => void) => {
     return fetch(`${API_URL}/api/chat/stream`, {
@@ -41,7 +67,8 @@ export const api = {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ message, sessionId }),
     }).then(async (res) => {
-      const reader = res.body!.getReader()
+      if (!res.body) throw new Error('No response body')
+      const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let sid = sessionId || ''
       while (true) {
