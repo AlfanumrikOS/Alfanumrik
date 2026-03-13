@@ -57,7 +57,7 @@ export const api = {
   getSubscription: (token: string) => apiCall('/api/payment/subscription', {}, token),
   createPaymentOrder: (token: string, planId: string) =>
     apiCall('/api/payment/order', { method: 'POST', body: JSON.stringify({ planId }) }, token),
-  verifyPayment: (token: string, data: any) =>
+  verifyPayment: (token: string, data: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) =>
     apiCall('/api/payment/verify', { method: 'POST', body: JSON.stringify(data) }, token),
 
   // Streaming chat
