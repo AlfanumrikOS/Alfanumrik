@@ -3,10 +3,16 @@ const crypto = require('crypto');
 const supabase = require('../config/supabase');
 const logger = require('../config/logger');
 
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID,
-  key_secret: process.env.RAZORPAY_KEY_SECRET,
-});
+let razorpay;
+function getRazorpay() {
+  if (!razorpay) {
+    razorpay = new Razorpay({
+      key_id: process.env.RAZORPAY_KEY_ID,
+      key_secret: process.env.RAZORPAY_KEY_SECRET,
+    });
+  }
+  return razorpay;
+}
 
 const PLANS = {
   monthly: { amount: 19900, currency: 'INR', period: 'monthly', days: 30, name: 'Alfanumrik Pro Monthly' },
@@ -18,7 +24,7 @@ async function createOrder(userId, planId) {
   const plan = PLANS[planId];
   if (!plan) throw Object.assign(new Error('Invalid plan'), { status: 400 });
 
-  const order = await razorpay.orders.create({
+  const order = await getRazorpay().orders.create({
     amount: plan.amount,
     currency: plan.currency,
     receipt: `order_${userId}_${Date.now()}`,

@@ -10,6 +10,9 @@ const authMiddleware = require('./middleware/auth');
 const chatRoutes = require('./routes/chat');
 const quizRoutes = require('./routes/quiz');
 const profileRoutes = require('./routes/profile');
+const adminRoutes = require('./routes/admin');
+const paymentRoutes = require('./routes/payment');
+const notificationRoutes = require('./routes/notification');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -63,6 +66,9 @@ app.get('/health', (req, res) => {
 app.use('/api/chat', authMiddleware, chatRoutes);
 app.use('/api/quiz', authMiddleware, quizRoutes);
 app.use('/api/profile', authMiddleware, profileRoutes);
+app.use('/api/admin', authMiddleware, adminRoutes);
+app.use('/api/payment', authMiddleware, paymentRoutes);
+app.use('/api/notification', authMiddleware, notificationRoutes);
 
 // 404 handler
 app.use((req, res) => {

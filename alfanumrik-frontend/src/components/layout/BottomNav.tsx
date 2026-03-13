@@ -18,7 +18,7 @@ export default function BottomNav({ active, onChange }: {
       <div className="flex items-end justify-around h-16">
         {tabs.map(tab => {
           const isActive = active === tab.id
-          if (tab.fab) {
+          if ('fab' in tab && tab.fab) {
             return (
               <button
                 key={tab.id}
