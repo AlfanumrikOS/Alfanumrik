@@ -1,150 +1,33 @@
-@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;500;600;700;800&family=Nunito:wght@400;500;600;700;800&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --font-display: 'Baloo 2', cursive;
-  --font-body: 'Nunito', sans-serif;
-  --saffron: #FF6B00;
-  --forest: #1A3A2A;
-  --cream: #FFF8EE;
-  --foxy: #E8522A;
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
-* { box-sizing: border-box; margin: 0; padding: 0; }
+html {
+  scroll-behavior: smooth;
+}
 
 body {
-  font-family: var(--font-body);
-  background: var(--cream);
-  color: var(--forest);
-  min-height: 100dvh;
-  max-width: 430px;
-  margin: 0 auto;
-  position: relative;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
 }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 4px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #FF6B0040; border-radius: 4px; }
-
-/* Safe area */
-.safe-top { padding-top: env(safe-area-inset-top); }
-.safe-bottom { padding-bottom: max(env(safe-area-inset-bottom), 16px); }
-
-/* ── Custom component classes ─────────────────────────── */
-@layer components {
-  .btn-primary {
-    @apply bg-saffron text-white font-bold py-4 px-6 rounded-2xl text-lg
-           active:scale-95 transition-all duration-150 shadow-lg;
-    box-shadow: 0 4px 20px rgba(255,107,0,0.35);
-  }
-  .btn-secondary {
-    @apply bg-white text-forest font-bold py-4 px-6 rounded-2xl text-lg
-           border-2 border-black/10 active:scale-95 transition-all duration-150;
-  }
-  .card {
-    @apply bg-white rounded-3xl p-5 shadow-sm border border-black/5;
-  }
-  .input-field {
-    @apply w-full bg-white border-2 border-black/10 rounded-2xl px-4 py-3.5
-           text-forest font-medium text-base outline-none transition-all
-           focus:border-saffron;
-    --tw-ring-color: rgba(255,107,0,0.12);
-  }
-  .input-field:focus { box-shadow: 0 0 0 4px rgba(255,107,0,0.12); }
-  .nav-tab {
-    @apply flex flex-col items-center gap-0.5 flex-1 py-2 relative transition-all duration-200;
-  }
-  .screen {
-    @apply min-h-dvh flex flex-col;
-    animation: fade-in 0.3s ease-out;
-  }
-  .badge-pill {
-    @apply inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-bold;
-  }
+::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
-/* ── Animations ───────────────────────────────────────── */
-@keyframes fade-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
+input::placeholder {
+  color: #A8A29E;
 }
 
-@keyframes slide-up {
-  from { transform: translateY(20px); opacity: 0; }
-  to   { transform: translateY(0);    opacity: 1; }
-}
-
-@keyframes pulse-soft {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0.5; }
-}
-
-@keyframes float {
-  0%, 100% { transform: translateY(0px); }
-  50%       { transform: translateY(-8px); }
-}
-
-@keyframes bounce-gentle {
-  0%, 100% { transform: translateY(0); }
-  50%       { transform: translateY(-4px); }
-}
-
-/* Foxy wiggle */
-@keyframes foxy-bounce {
-  0%, 100% { transform: rotate(-3deg) translateY(0); }
-  50%       { transform: rotate(3deg) translateY(-6px); }
-}
-.foxy-animate { animation: foxy-bounce 2s ease-in-out infinite; }
-
-/* Tailwind animation utilities (supplement tailwind.config.js) */
-.animate-fade-in   { animation: fade-in 0.3s ease-out; }
-.animate-slide-up  { animation: slide-up 0.35s ease-out; }
-.animate-pulse-soft { animation: pulse-soft 2s ease-in-out infinite; }
-.animate-float     { animation: float 3s ease-in-out infinite; }
-
-/* ── Typing dots ──────────────────────────────────────── */
-@keyframes typing-dot {
-  0%, 60%, 100% { transform: translateY(0);   opacity: 0.4; }
-  30%            { transform: translateY(-6px); opacity: 1;   }
-}
-.typing-dot { animation: typing-dot 1s ease-in-out infinite; }
-.typing-dot:nth-child(1) { animation-delay: 0s; }
-.typing-dot:nth-child(2) { animation-delay: 0.2s; }
-.typing-dot:nth-child(3) { animation-delay: 0.4s; }
-
-/* ── Progress bar ─────────────────────────────────────── */
-.progress-fill { transition: width 1s cubic-bezier(0.4, 0, 0.2, 1); }
-
-/* ── Shimmer skeleton ─────────────────────────────────── */
-@keyframes shimmer {
-  0%   { background-position: -200% 0; }
-  100% { background-position:  200% 0; }
-}
-.shimmer {
-  background: linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 50%, #f0f0f0 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
-  border-radius: 16px;
-}
-
-/* ── Chat bubble tails ────────────────────────────────── */
-.bubble-user::after {
-  content: '';
-  position: absolute;
-  bottom: -6px; right: 12px;
-  border: 8px solid transparent;
-  border-top-color: var(--saffron);
-  border-bottom: none;
-}
-.bubble-ai::after {
-  content: '';
-  position: absolute;
-  bottom: -6px; left: 12px;
-  border: 8px solid transparent;
-  border-top-color: white;
-  border-bottom: none;
+::selection {
+  background: #E8590C;
+  color: white;
 }
