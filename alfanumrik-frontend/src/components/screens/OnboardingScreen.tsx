@@ -1,18 +1,32 @@
 'use client'
 import { useState } from 'react'
-import { api } from '@/lib/api'
 
-const grades = ['Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grade 6','Grade 7','Grade 8','Grade 9','Grade 10','Grade 11','Grade 12']
+const SB = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dxipobqngyfpqbbznojz.supabase.co'
+const SK = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+
+const grades = ['Grade 6','Grade 7','Grade 8','Grade 9','Grade 10','Grade 11','Grade 12']
 const subjects = ['Mathematics','Science','English','Hindi','Social Studies','Physics','Chemistry','Biology','History','Geography','Economics','Computer Science']
-const languages = ['English','Hindi','Tamil','Telugu','Bengali','Marathi','Kannada','Malayalam','Gujarati','Punjabi']
+const languages = [
+  { label: 'English', code: 'en' },
+  { label: 'Hindi', code: 'hi' },
+  { label: 'Tamil', code: 'ta' },
+  { label: 'Telugu', code: 'te' },
+  { label: 'Bengali', code: 'bn' },
+  { label: 'Marathi', code: 'mr' },
+  { label: 'Kannada', code: 'kn' },
+  { label: 'Malayalam', code: 'ml' },
+  { label: 'Gujarati', code: 'gu' },
+  { label: 'Punjabi', code: 'pa' },
+]
 
 export default function OnboardingScreen({ token, onComplete }: { token: string; onComplete: (p: any) => void }) {
   const [step, setStep] = useState(0)
   const [name, setName] = useState('')
   const [grade, setGrade] = useState('')
   const [subject, setSubject] = useState('')
-  const [language, setLanguage] = useState('English')
+  const [language, setLanguage] = useState('en')
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
   const steps = [
     { title: "What's your name?", subtitle: "Let Foxy get to know you! 🦊" },
@@ -21,18 +35,61 @@ export default function OnboardingScreen({ token, onComplete }: { token: string;
     { title: "Preferred language?", subtitle: "Learn in your language" },
   ]
 
-  const canNext = [!!name.trim(), !!grade, !!subject, !!language][step]
+  const canNext = [!!name.trim(), !!grade, !!subject, true][step]
 
   const handleFinish = async () => {
     setLoading(true)
+    setError('')
+    
+    const profile = { name: name.trim(), grade, subject, language }
+    
     try {
-      const { profile } = await api.saveProfile(token, { name, grade, subject, language })
-      onComplete(profile)
+      // Try saving via Supabase REST directly
+      const res = await fetch(`${SB}/rest/v1/students`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SK,
+          'Authorization': `Bearer ${token}`,
+          'Prefer': 'return=representation',
+        },
+        body: JSON.stringify({
+          auth_user_id: undefined, // Will be set by RLS/trigger
+          name: name.trim(),
+          grade,
+          preferred_language: language,
+          onboarding_completed: true,
+        }),
+      })
+      
+      if (res.ok) {
+        const data = await res.json()
+        onComplete({ ...profile, studentId: data?.[0]?.id })
+        return
+      }
+
+      // If direct insert fails (maybe student already exists), try update
+      const updateRes = await fetch(`${SB}/rest/v1/students?auth_user_id=eq.${encodeURIComponent('current')}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SK,
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name: name.trim(),
+          grade,
+          preferred_language: language,
+          onboarding_completed: true,
+        }),
+      })
     } catch (e) {
-      console.error(e)
-    } finally {
-      setLoading(false)
+      console.error('Profile save error:', e)
     }
+    
+    // Always proceed — don't block the student
+    onComplete(profile)
+    setLoading(false)
   }
 
   return (
@@ -53,6 +110,12 @@ export default function OnboardingScreen({ token, onComplete }: { token: string;
         <h2 className="font-display text-3xl font-extrabold text-white text-center">{steps[step].title}</h2>
         <p className="text-cream/60 text-center mt-2 mb-8 font-medium">{steps[step].subtitle}</p>
 
+        {error && (
+          <div className="bg-red-500/20 border border-red-500/30 rounded-2xl p-3 mb-4 text-center">
+            <p className="text-red-300 text-sm">{error}</p>
+          </div>
+        )}
+
         {step === 0 && (
           <input
             className="input-field text-lg text-center"
@@ -60,6 +123,7 @@ export default function OnboardingScreen({ token, onComplete }: { token: string;
             placeholder="Enter your name..."
             value={name}
             onChange={e => setName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && name.trim() && setStep(1)}
             autoFocus
           />
         )}
@@ -71,7 +135,7 @@ export default function OnboardingScreen({ token, onComplete }: { token: string;
                 key={g}
                 onClick={() => setGrade(g)}
                 className={`py-3 px-2 rounded-2xl font-bold text-sm transition-all ${
-                  grade === g ? 'bg-saffron text-white scale-105 shadow-lg' : 'bg-white/10 text-white'
+                  grade === g ? 'bg-saffron text-white scale-105 shadow-lg' : 'bg-white/10 text-white hover:bg-white/20'
                 }`}
               >
                 {g}
@@ -87,7 +151,7 @@ export default function OnboardingScreen({ token, onComplete }: { token: string;
                 key={s}
                 onClick={() => setSubject(s)}
                 className={`py-3 px-3 rounded-2xl font-bold text-sm transition-all text-left ${
-                  subject === s ? 'bg-saffron text-white scale-[1.02] shadow-lg' : 'bg-white/10 text-white'
+                  subject === s ? 'bg-saffron text-white scale-[1.02] shadow-lg' : 'bg-white/10 text-white hover:bg-white/20'
                 }`}
               >
                 {s}
@@ -100,13 +164,13 @@ export default function OnboardingScreen({ token, onComplete }: { token: string;
           <div className="grid grid-cols-2 gap-2">
             {languages.map(l => (
               <button
-                key={l}
-                onClick={() => setLanguage(l)}
+                key={l.code}
+                onClick={() => setLanguage(l.code)}
                 className={`py-3 px-3 rounded-2xl font-bold text-sm transition-all ${
-                  language === l ? 'bg-saffron text-white scale-[1.02] shadow-lg' : 'bg-white/10 text-white'
+                  language === l.code ? 'bg-saffron text-white scale-[1.02] shadow-lg' : 'bg-white/10 text-white hover:bg-white/20'
                 }`}
               >
-                {l}
+                {l.label}
               </button>
             ))}
           </div>
