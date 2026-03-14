@@ -1,52 +1,30 @@
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dxipobqngyfpqbbznojz.supabase.co'
 const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 
-// In production, use Supabase Edge Functions. In dev, use local Express server.
-const API_BASE = typeof window !== 'undefined' && window.location.hostname === 'localhost'
-  ? 'http://localhost:3001'
-  : `${SB_URL}/functions/v1`
-
-async function request(path: string, token: string, options: any = {}) {
-  const headers: any = {
-    'Content-Type': 'application/json',
-    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-    ...(API_BASE.includes('supabase') ? { 'apikey': SB_KEY } : {}),
-  }
-
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: options.method || 'POST',
-    headers,
-    body: options.body ? JSON.stringify(options.body) : undefined,
-  })
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ message: 'Request failed' }))
-    throw new Error(err.message || err.error || 'Request failed')
-  }
-
-  return res.json()
-}
-
 export const api = {
-  // Chat with Foxy
+  // Chat with Foxy AI tutor
   async chat(token: string, messages: any[], profile: any) {
-    // Use the foxy-tutor edge function
-    const res = await fetch(`${SB_URL}/functions/v1/foxy-tutor`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messages,
-        student_name: profile?.name || 'Student',
-        grade: profile?.grade || 'Grade 6',
-        subject: profile?.subject || 'Mathematics',
-        language: profile?.language || 'en',
-      }),
-    })
-    const data = await res.json()
-    return { text: data.text || 'Sorry, Foxy had a hiccup! Try again.' }
+    try {
+      const res = await fetch(`${SB_URL}/functions/v1/foxy-tutor`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages,
+          student_name: profile?.name || 'Student',
+          grade: profile?.grade || 'Grade 6',
+          subject: profile?.subject || 'Mathematics',
+          language: profile?.language || 'en',
+        }),
+      })
+      const data = await res.json()
+      return { text: data.text || 'Sorry, Foxy had a hiccup! Try again.' }
+    } catch (e) {
+      console.error('Chat error:', e)
+      return { text: 'Sorry, Foxy had a hiccup! Try again.' }
+    }
   },
 
-  // Save student profile
+  // Save student profile during onboarding
   async saveProfile(token: string, profile: any) {
     try {
       const res = await fetch(`${SB_URL}/rest/v1/students`, {
@@ -71,7 +49,6 @@ export const api = {
     } catch (e) {
       console.error('Profile save error:', e)
     }
-    // Always return profile even if save fails
     return { profile }
   },
 
@@ -94,17 +71,21 @@ export const api = {
     return { profile: null }
   },
 
-  // Get progress
+  // Get student progress
   async getProgress(token: string) {
     return { progress: { xp: 0, streak: 0, quizzes: 0, mastered: 0 } }
   },
 
-  // Generate quiz
+  // Generate quiz from Supabase edge function
   async generateQuiz(token: string, subject: string, grade: string) {
     try {
       const res = await fetch(`${SB_URL}/functions/v1/quiz-engine`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`, 'apikey': SB_KEY },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+          'apikey': SB_KEY,
+        },
         body: JSON.stringify({ subject: subject?.toLowerCase(), grade, count: 5 }),
       })
       return res.json()
@@ -117,4 +98,13 @@ export const api = {
   async submitQuizResult(token: string, result: any) {
     return { success: true }
   },
+}
+
+// Text-to-speech stubs (voice features planned for future)
+export function speak(_text: string, _lang?: string) {
+  // Voice TTS disabled — future feature
+}
+
+export function stopSpeaking() {
+  // Voice TTS disabled — future feature
 }
