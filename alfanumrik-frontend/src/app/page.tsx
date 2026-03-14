@@ -44,12 +44,12 @@ const SUBJ = [
 const LANGS = [{ code:'en',label:'English' },{ code:'hi',label:'Hindi' },{ code:'ta',label:'Tamil' },{ code:'te',label:'Telugu' },{ code:'bn',label:'Bengali' },{ code:'mr',label:'Marathi' }]
 
 // ── Foxy API ─────────────────────────────────────────────────
-async function foxyChat(messages: any[], profile: Prof) {
+async function foxyChat(messages: any[], profile: Prof): Promise<{ text: string; analysis?: any }> {
   const fmt = typeof messages === 'string' ? [{ role: 'user', content: messages }] : Array.isArray(messages) ? messages : [{ role: 'user', content: String(messages) }]
   try {
-    const r = await fetch(`${SB_URL}/functions/v1/foxy-tutor`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: fmt, student_name: profile.name, grade: profile.grade, subject: profile.subject, language: profile.language }) })
-    const d = await r.json(); return d.text || 'Foxy had a hiccup! Try again.'
-  } catch { return 'Connection issue. Please try again.' }
+    const r = await fetch(`${SB_URL}/functions/v1/foxy-tutor`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: fmt, student_name: profile.name, grade: profile.grade, subject: profile.subject, language: profile.language, student_id: profile.studentId || null }) })
+    const d = await r.json(); return { text: d.text || 'Foxy had a hiccup! Try again.', analysis: d.analysis }
+  } catch { return { text: 'Connection issue. Please try again.' } }
 }
 
 // ── DB helpers ───────────────────────────────────────────────
@@ -206,22 +206,27 @@ function Home({ p, nav, stats, dailyTopics }: { p:Prof; nav:(s:Screen)=>void; st
 
 // ── FOXY CHAT ────────────────────────────────────────────────
 function Foxy({ p }: { p:Prof }) {
-  const [msgs,setMsgs]=useState([{id:1,text:`Hey ${p.name}! I'm Foxy, your ${p.subject} tutor for ${p.grade}. What shall we learn today?`,isUser:false}])
+  const [msgs,setMsgs]=useState([{id:1,text:`Hey ${p.name}! I'm Foxy, your ${p.subject} tutor for ${p.grade}. What shall we learn today?`,isUser:false,tag:''}])
   const [inp,setInp]=useState(''); const [ld,setLd]=useState(false); const [hist,setHist]=useState<any[]>([])
+  const [insights,setInsights]=useState<string[]>([])
   const end=useRef<HTMLDivElement>(null); const iRef=useRef<HTMLInputElement>(null)
   useEffect(()=>{end.current?.scrollIntoView({behavior:'smooth'})},[msgs])
   const send=async(t:string)=>{
     if(!t.trim()||ld)return; const m=t.trim(); playSound('send')
-    setMsgs(v=>[...v,{id:Date.now(),text:m,isUser:true}]); setInp(''); setLd(true)
-    const nh=[...hist,{role:'user',content:m}]; const reply=await foxyChat(nh,p)
+    setMsgs(v=>[...v,{id:Date.now(),text:m,isUser:true,tag:''}]); setInp(''); setLd(true)
+    const nh=[...hist,{role:'user',content:m}]; const result=await foxyChat(nh,p)
     playSound('receive')
-    setMsgs(v=>[...v,{id:Date.now()+1,text:reply,isUser:false}]); setHist([...nh,{role:'assistant',content:reply}]); setLd(false); iRef.current?.focus()
+    let tag=''
+    if(result.analysis?.strength){tag='\u2B50 Strength: '+result.analysis.strength;setInsights(v=>[...v,'Strong: '+result.analysis.strength]);playSound('badge')}
+    if(result.analysis?.weakness){tag='\u26A0 Needs practice: '+result.analysis.weakness;setInsights(v=>[...v,'Practice: '+result.analysis.weakness])}
+    if(result.analysis?.improving){tag='\uD83D\uDCC8 Improving: '+result.analysis.improving;setInsights(v=>[...v,'Improving: '+result.analysis.improving]);playSound('success')}
+    setMsgs(v=>[...v,{id:Date.now()+1,text:result.text,isUser:false,tag}]); setHist([...nh,{role:'assistant',content:result.text}]); setLd(false); iRef.current?.focus()
   }
   return(
     <div className="a-chat">
       <div className="a-chat-hdr"><div className="a-chat-av">&#x1F98A;</div><div><p style={{fontSize:15,fontWeight:700,color:'#1C1917'}}>Foxy &mdash; MIGA Tutor</p><p style={{fontSize:12,color:'#A8A29E'}}>{p.subject} &middot; {p.grade}</p></div></div>
       <div className="a-chat-body">
-        {msgs.map(m=>(<div key={m.id} className={`a-msg ${m.isUser?'u':'b'}`}>{!m.isUser&&<div className="a-msg-av">&#x1F98A;</div>}<div className={`a-bub ${m.isUser?'u':'b'}`}>{m.text}</div></div>))}
+        {msgs.map(m=>(<div key={m.id} className={`a-msg ${m.isUser?'u':'b'}`}>{!m.isUser&&<div className="a-msg-av">&#x1F98A;</div>}<div><div className={`a-bub ${m.isUser?'u':'b'}`}>{m.text}</div>{m.tag&&<div className="a-insight">{m.tag}</div>}</div></div>))}
         {ld&&<div className="a-msg b"><div className="a-msg-av">&#x1F98A;</div><div className="a-typing"><span/><span/><span/></div></div>}
         <div ref={end}/>
       </div>
@@ -521,6 +526,7 @@ body{font-family:'DM Sans',sans-serif;background:#FAFAF8;color:#1C1917;-webkit-f
 .a-chips{padding:0 24px 12px;display:flex;gap:8px;flex-wrap:wrap}
 .a-chip{padding:8px 14px;border-radius:20px;background:#F5F4F0;border:1px solid #E7E5E4;font-size:13px;font-weight:600;color:#57534E;cursor:pointer;font-family:inherit;transition:all .15s}
 .a-chip:hover{background:#E7E5E4}
+.a-insight{margin-top:4px;padding:4px 10px;border-radius:8px;font-size:11px;font-weight:700;background:#FFF7ED;color:#C2410C;border:1px solid #FDBA74;display:inline-block}
 .a-chat-bar{padding:12px 24px 24px;display:flex;gap:8px;align-items:center;background:#fff;border-top:1px solid #F5F4F0}
 .a-chat-inp{flex:1;padding:14px 16px;border-radius:14px;border:1.5px solid #E7E5E4;background:#FAFAF8;font-size:14px;outline:none;font-family:inherit;color:#1C1917}
 .a-chat-inp:focus{border-color:#E8590C}
