@@ -96,7 +96,7 @@ export const api = {
 
   // Get progress
   async getProgress(token: string) {
-    return { xp: 0, streak: 0, quizzes: 0, mastered: 0 }
+    return { progress: { xp: 0, streak: 0, quizzes: 0, mastered: 0 } }
   },
 
   // Generate quiz
