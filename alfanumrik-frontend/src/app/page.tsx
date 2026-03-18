@@ -836,7 +836,16 @@ export default function App(){
       const savedProfile=localStorage.getItem('alfanumrik_profile')
       const savedToken=localStorage.getItem('sb-dxipobqngyfpqbbznojz-auth-token')
       if(savedProfile&&savedToken){try{const p=JSON.parse(savedProfile) as Prof;const token=JSON.parse(savedToken);if(token.access_token&&p.name){
-        // Show loading while we resolve studentId
+        // Check if token is obviously expired (more than 1 hour old)
+        const tokenExpiry=token.expires_at?token.expires_at*1000:0;
+        const isTokenExpired=tokenExpiry>0&&tokenExpiry<Date.now()-3600000;
+        if(isTokenExpired){
+          // Token is definitely expired — go straight to auth
+          localStorage.removeItem('alfanumrik_profile');
+          localStorage.removeItem('sb-dxipobqngyfpqbbznojz-auth-token');
+          setSc('auth');return;
+        }
+        // Show loading while we resolve session + studentId
         setSc('loading');
         sb.auth.getSession().then(async({data:{session}})=>{
           if(session?.user){
@@ -853,8 +862,10 @@ export default function App(){
             setProf(null);setSc('auth');
           }
         }).catch(()=>{
-          // Offline fallback — use cached profile as-is
-          setProf(p);setSc('home');loadAll(p).catch(()=>{});
+          // Session check failed — likely expired. Go to auth.
+          localStorage.removeItem('alfanumrik_profile');
+          localStorage.removeItem('sb-dxipobqngyfpqbbznojz-auth-token');
+          setSc('auth');
         });
         const{data:{subscription}}=sb.auth.onAuthStateChange(async(ev,s)=>{if(!s?.user&&ev==='SIGNED_OUT'){setUser(null);setProf(null);setSc('auth');localStorage.removeItem('alfanumrik_profile')}else if(s?.user)setUser(s.user)});return()=>subscription.unsubscribe()}}catch{}}
       setSc('auth')
