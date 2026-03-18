@@ -102,84 +102,179 @@ return(<div style={{padding:'24px 28px 120px',maxWidth:900,animation:'alfFadeIn 
 <p>Every question you answer builds your understanding. Keep going!</p>
 </div>
 </div>)}
-// LEARNING JOURNEY — Chapter-based adventure map with RAG + quiz integration
-function SkillTree({p}:{p:Prof}){const[chapters,setChapters]=useState<any[]>([]);const[loading,setLoading]=useState(true);const[sel,setSel]=useState<any>(null);const[stats,setStats]=useState<any>({});
+// LEARNING JOURNEY — Fully NCERT-aligned chapter journey with Foxy + Quiz integration
+function SkillTree({p,nav}:{p:Prof;nav:(s:Screen)=>void}){const[chapters,setChapters]=useState<any[]>([]);const[loading,setLoading]=useState(true);const[sel,setSel]=useState<any>(null);const[stats,setStats]=useState<any>({});const[topicPreviews,setTopicPreviews]=useState<Record<number,string[]>>({});
 useEffect(()=>{loadJourney()},[p.studentId,p.subject,p.grade]);
 const loadJourney=async()=>{setLoading(true);try{
-// Load curriculum chapters
-const sc=SM[p.subject]||'math';const{data:subj}=await sb.from('subjects').select('id').eq('code',sc).maybeSingle();
+const sc=SM[p.subject]||'math';
+// 1. Load curriculum chapters
+const{data:subj}=await sb.from('subjects').select('id').eq('code',sc).maybeSingle();
 let chs:any[]=[];
 if(subj){const{data:topics}=await sb.from('curriculum_topics').select('chapter_number,title').eq('subject_id',subj.id).eq('grade',p.grade).eq('is_active',true).order('chapter_number');chs=topics||[]}
-// Load RAG content counts per chapter
-const{data:ragCounts}=await sb.from('rag_content_chunks').select('chapter_number').eq('grade',p.grade).eq('subject',p.subject).eq('is_active',true);
-const ragMap:Record<number,number>={};(ragCounts||[]).forEach((r:any)=>{ragMap[r.chapter_number]=(ragMap[r.chapter_number]||0)+1});
-// Load student quiz mastery per chapter
-let masteryMap:Record<number,{correct:number;total:number;mastery:number}>={};
-if(p.studentId){try{const{data:qResults}=await sb.from('quiz_responses').select('is_correct,topic_tag').eq('student_id',p.studentId);
-(qResults||[]).forEach((q:any)=>{const chMatch=q.topic_tag?.match(/ch(\d+)/i);const ch=chMatch?parseInt(chMatch[1]):0;if(ch>0){if(!masteryMap[ch])masteryMap[ch]={correct:0,total:0,mastery:0};masteryMap[ch].total++;if(q.is_correct)masteryMap[ch].correct++;masteryMap[ch].mastery=Math.round(masteryMap[ch].correct/masteryMap[ch].total*100)}})}catch{}}
-// Merge everything
-const merged=chs.map((ch:any,i:number)=>{const rag=ragMap[ch.chapter_number]||0;const m=masteryMap[ch.chapter_number];const mastery=m?.mastery||0;const attempted=m?.total||0;const correct=m?.correct||0;
-let status:'ready'|'in_progress'|'mastered'|'needs_work'|'upcoming'='upcoming';
-if(mastery>=80)status='mastered';else if(mastery>=40)status='in_progress';else if(attempted>0)status='needs_work';else if(rag>0)status='ready';
-return{...ch,rag_chunks:rag,mastery,attempted,correct,status,index:i}});
+// 2. Load RAG content counts + key topics per chapter
+const{data:ragData}=await sb.from('rag_content_chunks').select('chapter_number,chunk_type,chunk_text').eq('grade',p.grade).eq('subject',p.subject).eq('is_active',true);
+const ragMap:Record<number,{count:number;topics:string[]}>={};
+(ragData||[]).forEach((r:any)=>{
+  if(!ragMap[r.chapter_number])ragMap[r.chapter_number]={count:0,topics:[]};
+  ragMap[r.chapter_number].count++;
+  // Extract key topics from definition and key_point chunks
+  if((r.chunk_type==='definition'||r.chunk_type==='key_point'||r.chunk_type==='theorem')&&r.chunk_text){
+    const preview=r.chunk_text.replace(/^(Definition:|Key Point:|Formula:|Theorem:)\s*/i,'').substring(0,80);
+    if(ragMap[r.chapter_number].topics.length<3)ragMap[r.chapter_number].topics.push(preview);
+  }
+});
+// 3. Load quiz mastery per chapter from quiz_sessions
+let quizMap:Record<number,{sessions:number;bestScore:number;totalQs:number;totalCorrect:number}>={};
+if(p.studentId){try{
+  const{data:sessions}=await sb.from('quiz_sessions').select('chapter_number,score_percent,total_questions,correct_answers').eq('student_id',p.studentId).eq('subject',sc).eq('grade',p.grade);
+  (sessions||[]).forEach((s:any)=>{
+    const ch=s.chapter_number||0;if(ch<=0)return;
+    if(!quizMap[ch])quizMap[ch]={sessions:0,bestScore:0,totalQs:0,totalCorrect:0};
+    quizMap[ch].sessions++;
+    quizMap[ch].bestScore=Math.max(quizMap[ch].bestScore,s.score_percent||0);
+    quizMap[ch].totalQs+=(s.total_questions||0);
+    quizMap[ch].totalCorrect+=(s.correct_answers||0);
+  });
+}catch{}}
+// 4. Load question_bank counts per chapter
+const{data:qbCounts}=await sb.from('question_bank').select('chapter_number').eq('grade',p.grade).eq('subject',sc).eq('is_active',true);
+const qbMap:Record<number,number>={};
+(qbCounts||[]).forEach((q:any)=>{qbMap[q.chapter_number]=(qbMap[q.chapter_number]||0)+1});
+// 5. Merge everything into chapter objects
+const merged=chs.map((ch:any,i:number)=>{
+  const rag=ragMap[ch.chapter_number]||{count:0,topics:[]};
+  const quiz=quizMap[ch.chapter_number];
+  const qbCount=qbMap[ch.chapter_number]||0;
+  const mastery=quiz?Math.round(quiz.bestScore):0;
+  const hasContent=rag.count>0;
+  const hasQuiz=qbCount>0||hasContent; // Can generate quiz from RAG content even if no pre-made questions
+  let status:'mastered'|'proficient'|'learning'|'attempted'|'ready'|'upcoming'='upcoming';
+  if(mastery>=85)status='mastered';
+  else if(mastery>=60)status='proficient';
+  else if(mastery>=30)status='learning';
+  else if(quiz&&quiz.sessions>0)status='attempted';
+  else if(hasContent)status='ready';
+  return{
+    ...ch, index:i, rag_chunks:rag.count, key_topics:rag.topics,
+    quiz_sessions:quiz?.sessions||0, best_score:mastery, total_qs:quiz?.totalQs||0, total_correct:quiz?.totalCorrect||0,
+    qb_count:qbCount, has_content:hasContent, has_quiz:hasQuiz, status, mastery
+  };
+});
 setChapters(merged);
-const m=merged.filter(c=>c.status==='mastered').length;const ip=merged.filter(c=>c.status==='in_progress').length;const r=merged.filter(c=>c.status==='ready').length;
-setStats({total:merged.length,mastered:m,in_progress:ip,ready:r,upcoming:merged.length-m-ip-r,pct:merged.length?Math.round(m/merged.length*100):0});
+const tp={}as Record<number,string[]>;merged.forEach(c=>{if(c.key_topics.length>0)tp[c.chapter_number]=c.key_topics});setTopicPreviews(tp);
+const m=merged.filter(c=>c.status==='mastered').length;
+const pr=merged.filter(c=>c.status==='proficient').length;
+const lr=merged.filter(c=>c.status==='learning'||c.status==='attempted').length;
+const rd=merged.filter(c=>c.status==='ready').length;
+const overallPct=merged.length?Math.round((m*100+pr*75+lr*30)/(merged.length*100)*100):0;
+setStats({total:merged.length,mastered:m,proficient:pr,learning:lr,ready:rd,upcoming:merged.length-m-pr-lr-rd,pct:overallPct,totalRag:merged.reduce((s,c)=>s+c.rag_chunks,0)});
 }catch(e){console.error('Journey load error:',e)}setLoading(false)};
-const ST:Record<string,{emoji:string;color:string;bg:string;label:string}>={mastered:{emoji:'🏆',color:'#E8590C',bg:'linear-gradient(135deg,#FFF7ED,#FED7AA)',label:'Mastered'},in_progress:{emoji:'📖',color:'#3B82F6',bg:'linear-gradient(135deg,#EFF6FF,#BFDBFE)',label:'Learning'},needs_work:{emoji:'💪',color:'#F59E0B',bg:'linear-gradient(135deg,#FFFBEB,#FDE68A)',label:'Practice More'},ready:{emoji:'🚀',color:'#22C55E',bg:'linear-gradient(135deg,#F0FDF4,#BBF7D0)',label:'Ready to Start'},upcoming:{emoji:'🔒',color:'#A8A29E',bg:'#F5F4F0',label:'Coming Soon'}};
+// Navigate to Foxy with chapter context
+const learnWithFoxy=(ch:any)=>{
+  // Store chapter context in localStorage for Foxy to pick up
+  try{localStorage.setItem('alfanumrik_foxy_chapter',JSON.stringify({chapter:ch.chapter_number,title:ch.title,subject:p.subject,grade:p.grade}));}catch{}
+  nav('foxy' as Screen);
+  // The Foxy component will detect this and auto-send a learning prompt
+};
+// Navigate to Quiz with chapter pre-selected
+const takeQuiz=(ch:any)=>{
+  try{localStorage.setItem('alfanumrik_quiz_chapter',JSON.stringify({chapter:ch.chapter_number,title:ch.title,subject:p.subject,grade:p.grade}));}catch{}
+  nav('quiz' as Screen);
+};
+const ST:Record<string,{emoji:string;color:string;bg:string;label:string;border:string}>={
+  mastered:{emoji:'🏆',color:'#E8590C',bg:'linear-gradient(135deg,#FFF7ED,#FFEDD5)',label:'Mastered',border:'#E8590C'},
+  proficient:{emoji:'✅',color:'#16A34A',bg:'linear-gradient(135deg,#F0FDF4,#DCFCE7)',label:'Proficient',border:'#16A34A'},
+  learning:{emoji:'📖',color:'#3B82F6',bg:'linear-gradient(135deg,#EFF6FF,#DBEAFE)',label:'Learning',border:'#3B82F6'},
+  attempted:{emoji:'💪',color:'#F59E0B',bg:'linear-gradient(135deg,#FFFBEB,#FEF3C7)',label:'Keep Going',border:'#F59E0B'},
+  ready:{emoji:'🚀',color:'#22C55E',bg:'linear-gradient(135deg,#F0FDF4,#BBF7D0)',label:'Start Learning',border:'#22C55E'},
+  upcoming:{emoji:'📋',color:'#A8A29E',bg:'#F5F4F0',label:'Coming Soon',border:'#E7E5E4'}
+};
 if(loading)return<div style={{padding:'80px 20px',textAlign:'center'}}><div style={{fontSize:48,animation:'alfPulse 1.5s infinite'}}>🗺️</div><p style={{color:'#A8A29E',marginTop:12}}>Loading your learning journey...</p></div>;
 return(<div style={{padding:'20px 24px 120px',maxWidth:900,animation:'alfFadeIn .4s'}}>
-{/* Header with overall progress */}
-<div style={{marginBottom:20}}><h1 style={{fontSize:24,fontWeight:900}}>🗺️ Learning Journey</h1><p style={{fontSize:13,color:'#78716C',marginTop:4}}>{p.subject} · {p.grade} · {chapters.length} chapters</p></div>
-{/* Overall progress card */}
+{/* Header */}
+<div style={{marginBottom:16}}><h1 style={{fontSize:24,fontWeight:900}}>🗺️ Learning Journey</h1><p style={{fontSize:13,color:'#78716C',marginTop:4}}>{p.subject} · {p.grade} · {chapters.length} chapters · {stats.totalRag||0} NCERT study materials</p></div>
+{/* Progress hero card */}
 <div style={{background:'linear-gradient(135deg,#1C1917,#292524)',borderRadius:20,padding:20,marginBottom:20,color:'#fff'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
-<div><p style={{fontSize:13,fontWeight:700,color:'#E8590C'}}>YOUR PROGRESS</p><p style={{fontSize:36,fontWeight:900,lineHeight:1}}>{stats.pct}%</p></div>
-<div style={{display:'flex',gap:16}}>{[{v:stats.mastered,l:'Mastered',e:'🏆'},{v:stats.in_progress,l:'Learning',e:'📖'},{v:stats.ready,l:'Ready',e:'🚀'}].map(x=><div key={x.l} style={{textAlign:'center'}}><p style={{fontSize:20,fontWeight:900}}>{x.e} {x.v}</p><p style={{fontSize:10,color:'#A8A29E'}}>{x.l}</p></div>)}</div>
+<div><p style={{fontSize:12,fontWeight:700,color:'#E8590C',letterSpacing:'.05em'}}>SYLLABUS PROGRESS</p><p style={{fontSize:42,fontWeight:900,lineHeight:1}}>{stats.pct}<span style={{fontSize:18,color:'#A8A29E'}}>%</span></p></div>
+<div style={{display:'flex',gap:12,textAlign:'center'}}>{[{v:stats.mastered,l:'Mastered',e:'🏆',c:'#E8590C'},{v:stats.proficient||0,l:'Proficient',e:'✅',c:'#16A34A'},{v:stats.learning,l:'Learning',e:'📖',c:'#3B82F6'},{v:stats.ready,l:'Ready',e:'🚀',c:'#22C55E'}].map(x=><div key={x.l}><p style={{fontSize:20,fontWeight:900}}>{x.v}</p><p style={{fontSize:9,color:x.c,fontWeight:700}}>{x.l}</p></div>)}</div>
 </div>
-<div style={{height:8,borderRadius:4,background:'rgba(255,255,255,.1)'}}><div style={{height:'100%',borderRadius:4,background:'linear-gradient(90deg,#E8590C,#F59E0B)',width:`${stats.pct}%`,transition:'width .6s'}}/></div>
+<div style={{height:8,borderRadius:4,background:'rgba(255,255,255,.08)',overflow:'hidden',display:'flex'}}>
+{[{w:stats.mastered,c:'#E8590C'},{w:stats.proficient||0,c:'#16A34A'},{w:stats.learning,c:'#3B82F6'},{w:stats.ready,c:'#22C55E30'}].map((seg,i)=><div key={i} style={{width:`${(seg.w/(stats.total||1))*100}%`,background:seg.c,transition:'width .6s'}}/>)}
 </div>
-{/* Chapter journey — vertical timeline */}
-<div style={{position:'relative',paddingLeft:40}}>
-{/* Vertical line */}
-<div style={{position:'absolute',left:16,top:0,bottom:0,width:3,background:'linear-gradient(to bottom,#E8590C,#3B82F6,#A8A29E)',borderRadius:2}}/>
-{chapters.map((ch,i)=>{const st=ST[ch.status];const isActive=ch.status!=='upcoming';
-return<div key={ch.chapter_number} style={{marginBottom:16,position:'relative',animation:`alfSlideUp .4s ease ${Math.min(i*.06,.8)}s both`}}>
-{/* Timeline dot */}
-<div style={{position:'absolute',left:-32,top:16,width:28,height:28,borderRadius:'50%',background:isActive?st.color:'#E7E5E4',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,border:'3px solid #fff',boxShadow:isActive?`0 0 12px ${st.color}30`:'none',zIndex:2}}>{ch.status==='mastered'?'✓':ch.chapter_number}</div>
-{/* Chapter card */}
-<button onClick={()=>{snd('click');setSel(sel?.chapter_number===ch.chapter_number?null:ch)}} style={{width:'100%',padding:16,borderRadius:16,border:'none',background:st.bg,cursor:'pointer',fontFamily:'inherit',textAlign:'left',opacity:isActive?1:.5,transition:'all .2s',boxShadow:sel?.chapter_number===ch.chapter_number?`0 4px 20px ${st.color}25`:'none',transform:sel?.chapter_number===ch.chapter_number?'scale(1.01)':'scale(1)'}}>
-<div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
-<div style={{flex:1}}>
-<div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+</div>
+{/* Chapter cards */}
+<div style={{display:'flex',flexDirection:'column',gap:12}}>
+{chapters.map((ch,i)=>{const st=ST[ch.status]||ST.upcoming;const isOpen=sel?.chapter_number===ch.chapter_number;const hasActivity=ch.has_content||ch.quiz_sessions>0;
+return<div key={ch.chapter_number} style={{animation:`alfSlideUp .4s ease ${Math.min(i*.04,.6)}s both`}}>
+<button onClick={()=>{snd('click');setSel(isOpen?null:ch)}} style={{width:'100%',padding:'16px 18px',borderRadius:16,border:`1.5px solid ${isOpen?st.border:st.border+'40'}`,background:st.bg,cursor:'pointer',fontFamily:'inherit',textAlign:'left',transition:'all .2s',boxShadow:isOpen?`0 4px 20px ${st.color}15`:'none'}}>
+{/* Top row: chapter number + title + mastery */}
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:12}}>
+<div style={{flex:1,minWidth:0}}>
+<div style={{display:'flex',alignItems:'center',gap:8,marginBottom:5,flexWrap:'wrap'}}>
+<span style={{fontSize:13,fontWeight:800,color:st.color,whiteSpace:'nowrap'}}>Ch {ch.chapter_number}</span>
 <span style={{fontSize:16}}>{st.emoji}</span>
-<span style={{fontSize:14,fontWeight:800,color:st.color}}>Chapter {ch.chapter_number}</span>
-{ch.rag_chunks>0&&<span style={{fontSize:9,fontWeight:700,padding:'2px 6px',borderRadius:6,background:`${st.color}15`,color:st.color}}>📚 NCERT</span>}
+{ch.has_content&&<span style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:6,background:'#E8590C15',color:'#E8590C',whiteSpace:'nowrap'}}>📚 NCERT</span>}
+{ch.quiz_sessions>0&&<span style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:6,background:'#3B82F615',color:'#3B82F6',whiteSpace:'nowrap'}}>🎯 {ch.quiz_sessions} quiz{ch.quiz_sessions>1?'zes':''}</span>}
 </div>
-<p style={{fontSize:15,fontWeight:700,color:'#1C1917',lineHeight:1.3}}>{ch.title}</p>
+<p style={{fontSize:15,fontWeight:700,color:'#1C1917',lineHeight:1.35}}>{ch.title}</p>
+{/* Key topics preview */}
+{ch.key_topics.length>0&&!isOpen&&<p style={{fontSize:11,color:'#78716C',marginTop:4,lineHeight:1.4,overflow:'hidden',textOverflow:'ellipsis',display:'-webkit-box',WebkitLineClamp:1,WebkitBoxOrient:'vertical' as any}}>{ch.key_topics[0]}</p>}
 </div>
-{ch.mastery>0&&<div style={{textAlign:'right',flexShrink:0}}><p style={{fontSize:24,fontWeight:900,color:st.color,lineHeight:1}}>{ch.mastery}%</p><p style={{fontSize:10,color:'#78716C'}}>{ch.correct}/{ch.attempted}</p></div>}
+{/* Mastery score */}
+{ch.mastery>0&&<div style={{textAlign:'right',flexShrink:0,paddingLeft:8}}>
+<p style={{fontSize:28,fontWeight:900,color:st.color,lineHeight:1}}>{ch.mastery}%</p>
+<p style={{fontSize:10,color:'#78716C',fontWeight:600}}>{ch.total_correct}/{ch.total_qs} correct</p>
+</div>}
+{!ch.mastery&&ch.has_content&&<div style={{textAlign:'right',flexShrink:0,paddingLeft:8}}>
+<p style={{fontSize:12,fontWeight:700,color:st.color}}>{st.label}</p>
+<p style={{fontSize:10,color:'#78716C'}}>{ch.rag_chunks} materials</p>
+</div>}
 </div>
 {/* Progress bar */}
-{isActive&&<div style={{height:5,borderRadius:3,background:`${st.color}15`,marginTop:10}}><div style={{height:'100%',borderRadius:3,background:st.color,width:`${ch.mastery||2}%`,transition:'width .5s',minWidth:ch.rag_chunks>0?'8px':'0'}}/></div>}
-{/* Expanded detail */}
-{sel?.chapter_number===ch.chapter_number&&<div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${st.color}20`}}>
-<div style={{display:'flex',gap:8,marginBottom:10}}>
-{ch.rag_chunks>0&&<span style={{fontSize:11,padding:'4px 10px',borderRadius:8,background:'#fff',border:'1px solid #E7E5E4',fontWeight:600}}>📚 {ch.rag_chunks} study materials</span>}
-{ch.attempted>0&&<span style={{fontSize:11,padding:'4px 10px',borderRadius:8,background:'#fff',border:'1px solid #E7E5E4',fontWeight:600}}>🎯 {ch.attempted} questions attempted</span>}
+<div style={{height:5,borderRadius:3,background:`${st.color}12`,marginTop:10}}>
+<div style={{height:'100%',borderRadius:3,background:st.color,width:`${Math.max(ch.mastery,ch.has_content?3:0)}%`,transition:'width .5s'}}/>
 </div>
-<div style={{display:'flex',gap:8}}>
-{ch.rag_chunks>0&&<button onClick={(e)=>{e.stopPropagation();snd('ok')}} style={{flex:1,padding:12,borderRadius:12,border:'none',background:st.color,color:'#fff',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit',minHeight:44}}>📖 Learn with Foxy</button>}
-<button onClick={(e)=>{e.stopPropagation();snd('ok')}} style={{flex:1,padding:12,borderRadius:12,border:`1.5px solid ${st.color}`,background:'#fff',color:st.color,fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit',minHeight:44}}>🎯 Take Quiz</button>
+</button>
+{/* Expanded detail panel */}
+{isOpen&&<div style={{padding:'16px 18px',marginTop:-4,borderRadius:'0 0 16px 16px',border:`1.5px solid ${st.border}40`,borderTop:'none',background:'#fff',animation:'alfFadeIn .3s'}}>
+{/* Key topics from NCERT */}
+{ch.key_topics.length>0&&<div style={{marginBottom:14}}>
+<p style={{fontSize:11,fontWeight:700,color:'#78716C',marginBottom:6,letterSpacing:'.05em'}}>KEY TOPICS FROM NCERT</p>
+<div style={{display:'flex',flexDirection:'column',gap:4}}>
+{ch.key_topics.map((t:string,j:number)=><div key={j} style={{padding:'8px 12px',borderRadius:10,background:'#FAFAF8',border:'1px solid #E7E5E4',fontSize:12,color:'#44403C',lineHeight:1.4}}>
+<span style={{color:'#E8590C',fontWeight:700,marginRight:6}}>•</span>{t}
+</div>)}
 </div>
 </div>}
-</button></div>})}
+{/* Stats row */}
+<div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}>
+{ch.rag_chunks>0&&<div style={{padding:'8px 14px',borderRadius:10,background:'#FFF7ED',border:'1px solid #FFEDD5',flex:'1 1 auto',textAlign:'center'}}>
+<p style={{fontSize:18,fontWeight:900,color:'#E8590C'}}>{ch.rag_chunks}</p><p style={{fontSize:10,color:'#78716C',fontWeight:600}}>Study Materials</p>
+</div>}
+{ch.quiz_sessions>0&&<div style={{padding:'8px 14px',borderRadius:10,background:'#EFF6FF',border:'1px solid #DBEAFE',flex:'1 1 auto',textAlign:'center'}}>
+<p style={{fontSize:18,fontWeight:900,color:'#3B82F6'}}>{ch.best_score}%</p><p style={{fontSize:10,color:'#78716C',fontWeight:600}}>Best Score</p>
+</div>}
+{ch.quiz_sessions>0&&<div style={{padding:'8px 14px',borderRadius:10,background:'#F0FDF4',border:'1px solid #DCFCE7',flex:'1 1 auto',textAlign:'center'}}>
+<p style={{fontSize:18,fontWeight:900,color:'#16A34A'}}>{ch.total_correct}/{ch.total_qs}</p><p style={{fontSize:10,color:'#78716C',fontWeight:600}}>Questions</p>
+</div>}
 </div>
-{/* Empty state encouragement */}
-{stats.mastered===0&&stats.in_progress===0&&<div style={{background:'linear-gradient(135deg,#FFF7ED,#FED7AA)',borderRadius:20,padding:24,marginTop:8,textAlign:'center'}}>
+{/* Action buttons */}
+<div style={{display:'flex',gap:8}}>
+{ch.has_content&&<button onClick={(e)=>{e.stopPropagation();snd('ok');learnWithFoxy(ch)}} style={{flex:1,padding:'13px 16px',borderRadius:14,border:'none',background:`linear-gradient(135deg,${st.color},${st.color}CC)`,color:'#fff',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit',minHeight:48,display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>🦊 Learn with Foxy</button>}
+<button onClick={(e)=>{e.stopPropagation();snd('ok');takeQuiz(ch)}} style={{flex:1,padding:'13px 16px',borderRadius:14,border:`2px solid ${st.color}`,background:'#fff',color:st.color,fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit',minHeight:48,display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>🎯 Take Quiz</button>
+</div>
+{/* Mastery breakdown for attempted chapters */}
+{ch.quiz_sessions>0&&ch.mastery<85&&<p style={{fontSize:11,color:'#78716C',marginTop:10,textAlign:'center'}}>{ch.mastery>=60?'Almost there! One more quiz to master this chapter.':ch.mastery>=30?'Good progress! Keep practicing to improve your score.':'Take a few more quizzes to build mastery.'}</p>}
+{ch.status==='mastered'&&<p style={{fontSize:11,color:'#E8590C',fontWeight:700,marginTop:10,textAlign:'center'}}>🏆 You have mastered this chapter! Try the next one.</p>}
+</div>}
+</div>})}
+</div>
+{/* Empty state */}
+{stats.mastered===0&&stats.learning===0&&stats.proficient===0&&<div style={{background:'linear-gradient(135deg,#FFF7ED,#FED7AA)',borderRadius:20,padding:24,marginTop:16,textAlign:'center'}}>
 <FoxyAvatar state="encouraging" size={64} color="#E8590C"/>
 <p style={{fontSize:16,fontWeight:800,marginTop:12,color:'#1C1917'}}>Your adventure begins here!</p>
-<p style={{fontSize:13,color:'#78716C',marginTop:4,lineHeight:1.5}}>Take your first quiz or chat with Foxy to start building mastery. Each chapter you complete lights up your journey map!</p>
+<p style={{fontSize:13,color:'#78716C',marginTop:6,lineHeight:1.5}}>Tap any chapter with 📚 NCERT badge to start learning with Foxy, or take a quiz to test what you already know. Each chapter you complete lights up your journey!</p>
 </div>}
 </div>)}
 // ANIMATED AVATAR SVG — Phase 2
@@ -223,7 +318,10 @@ const stopVoice=()=>{if(recognRef.current){recognRef.current.stop();setListening
 // Browser-only speech (no ElevenLabs) — used only when student taps the speaker button
 const speakText=(text:string,msgId?:number)=>{if(!('speechSynthesis' in window)){alert('Speech not supported');return}if(ttsPlaying){speechSynthesis.cancel();setTtsPlaying(false);setAvatarSt('idle');setSpk(null);return}const clean=text.replace(/<svg[\s\S]*?<\/svg>/gi,'').replace(/[*#`]/g,'').substring(0,800);if(!clean.trim())return;if(msgId)setSpk(msgId);setTtsPlaying(true);setAvatarSt('talking');const u=new SpeechSynthesisUtterance(clean);u.lang=p.language==='hi'?'hi-IN':'en-IN';u.rate=0.95;u.pitch=1.0;const voices=speechSynthesis.getVoices();const indianVoice=voices.find(v=>v.lang.includes('en-IN'))||voices.find(v=>v.lang.includes('en'));if(indianVoice)u.voice=indianVoice;u.onend=()=>{setTtsPlaying(false);setAvatarSt('idle');setSpk(null)};u.onerror=()=>{setTtsPlaying(false);setAvatarSt('idle');setSpk(null)};speechSynthesis.speak(u)};
 const triggerCelebration=(type:string)=>{setCelebration(type);snd(type==='correct'?'correct':type==='streak'?'streak':'badge');setTimeout(()=>setCelebration(null),2500)};
-useEffect(()=>{(async()=>{if(!p.studentId){setMsgs([{id:1,text:`Hey ${p.name}! I'm Foxy, your ${p.subject} tutor for ${p.grade}. Ask me anything!`,isUser:false,ts:Date.now()}]);setInitLd(false);return}try{const r=await api('chat-history',{action:'get_or_create',student_id:p.studentId,subject:subCode,grade:p.grade});if(r.session){setSesId(r.session.id);const savedMsgs=r.session.messages||[];if(savedMsgs.length>0){setMsgs(savedMsgs);const h=savedMsgs.filter((m:any)=>!m.isSystem).map((m:any)=>({role:m.isUser?'user':'assistant',content:m.text}));setHist(h)}else{setMsgs([{id:1,text:`Hey ${p.name}! I'm Foxy, your ${p.subject} tutor for ${p.grade}. Ask me anything!`,isUser:false,ts:Date.now()}])}}else{setMsgs([{id:1,text:`Hey ${p.name}! I'm Foxy, your ${p.subject} tutor for ${p.grade}. Ask me anything!`,isUser:false,ts:Date.now()}])}}catch(e){console.error('Foxy init error:',e);setMsgs([{id:1,text:`Hey ${p.name}! I'm Foxy, your ${p.subject} tutor for ${p.grade}. Ask me anything!`,isUser:false,ts:Date.now()}])}setInitLd(false)})()},[p.studentId,p.subject]);
+useEffect(()=>{(async()=>{if(!p.studentId){setMsgs([{id:1,text:`Hey ${p.name}! I'm Foxy, your ${p.subject} tutor for ${p.grade}. Ask me anything!`,isUser:false,ts:Date.now()}]);setInitLd(false);return}try{const r=await api('chat-history',{action:'get_or_create',student_id:p.studentId,subject:subCode,grade:p.grade});if(r.session){setSesId(r.session.id);const savedMsgs=r.session.messages||[];if(savedMsgs.length>0){setMsgs(savedMsgs);const h=savedMsgs.filter((m:any)=>!m.isSystem).map((m:any)=>({role:m.isUser?'user':'assistant',content:m.text}));setHist(h)}else{setMsgs([{id:1,text:`Hey ${p.name}! I'm Foxy, your ${p.subject} tutor for ${p.grade}. Ask me anything!`,isUser:false,ts:Date.now()}])}}else{setMsgs([{id:1,text:`Hey ${p.name}! I'm Foxy, your ${p.subject} tutor for ${p.grade}. Ask me anything!`,isUser:false,ts:Date.now()}])}}catch(e){console.error('Foxy init error:',e);setMsgs([{id:1,text:`Hey ${p.name}! I'm Foxy, your ${p.subject} tutor for ${p.grade}. Ask me anything!`,isUser:false,ts:Date.now()}])}setInitLd(false);
+// Check if coming from Learning Journey with chapter context
+try{const chCtx=localStorage.getItem('alfanumrik_foxy_chapter');if(chCtx){localStorage.removeItem('alfanumrik_foxy_chapter');const ch=JSON.parse(chCtx);if(ch.title&&ch.chapter){setTimeout(()=>{send(`Teach me Chapter ${ch.chapter}: ${ch.title}. Start from the basics and explain the key concepts step by step.`)},500)}}}catch{}
+})()},[p.studentId,p.subject]);
 useEffect(()=>{end.current?.scrollIntoView({behavior:'smooth'})},[msgs]);
 const saveToDb=useCallback(async(newMsgs:any[],sid:string|null)=>{if(!p.studentId||!sid||newMsgs.length<=1)return;await api('chat-history',{action:'save_messages',student_id:p.studentId,session_id:sid,messages:newMsgs,title:newMsgs.find((m:any)=>m.isUser)?.text?.substring(0,40)||'Chat'})},[p.studentId]);
 const speak=async(id:number,t:string)=>{speakText(t,id)};
@@ -248,7 +346,10 @@ return(<div className="a-chat" style={{position:'relative'}}>{/* Celebration ove
 ...(!['Mathematics','Physics','Chemistry','Science','Biology','English','Hindi','Social Studies'].includes(p.subject)?[{l:'1.',v:'\n1. '},{l:'\u2022',v:'\n\u2022 '},{l:'Ans:',v:'Ans: '}]:[])
 ].map(b=><button key={b.l} onClick={()=>{setInp(v=>v+b.v);iR.current?.focus()}} style={{padding:'4px 10px',borderRadius:8,border:'1px solid #E7E5E4',background:'#fff',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',color:'#57534E',minHeight:32}}>{b.l}</button>)}</div>}<div className="a-chat-bar"><button onClick={listening?stopVoice:startVoice} style={{width:48,height:48,borderRadius:'50%',border:listening?'2px solid #EF4444':'1px solid #E7E5E4',background:listening?'#FEE2E2':'#fff',fontSize:20,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,animation:listening?'alfPulse 1s infinite':'none'}}>{listening?'\uD83D\uDD34':'\uD83C\uDF99\uFE0F'}</button><textarea ref={iR} value={inp} onChange={e=>{setInp(e.target.value);const t=e.target;t.style.height='auto';t.style.height=Math.min(t.scrollHeight,160)+'px'}} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send(inp)}}} placeholder={listening?'Listening... speak now':'Ask Foxy anything...'} className="a-chat-inp" rows={1} style={{minHeight:48,maxHeight:160,resize:'none',lineHeight:1.5}}/><button onClick={()=>send(inp)} disabled={!inp.trim()||ld} className="a-chat-go" style={{width:48,height:48,alignSelf:'flex-end'}}>{'\u2191'}</button></div></div>)}
 // QUIZ — with bigger option buttons
-function Quiz({p,onDone}:{p:Prof;onDone:()=>void}){const[phase,setPhase]=useState<'setup'|'play'|'done'>('setup');const[qs,setQs]=useState<any[]>([]);const[ci,setCi]=useState(0);const[sel,setSel]=useState<number|null>(null);const[score,setScore]=useState(0);const[rev,setRev]=useState(false);const[sesId,setSesId]=useState<string|null>(null);const[resps,setResps]=useState<any[]>([]);const[result,setResult]=useState<any>(null);const[qStart,setQStart]=useState(Date.now());const[qzStart,setQzStart]=useState(Date.now());const[ld,setLd]=useState(false);const[chs,setChs]=useState<any[]>([]);const[selCh,setSelCh]=useState<number|null>(null);const[selN,setSelN]=useState(10);useEffect(()=>{(async()=>{const d=await api('quiz-engine',{subject:p.subject,grade:p.grade,count:0,student_id:p.studentId});setChs(d.chapters||[])})()},[p.grade,p.subject]);const start=async()=>{setLd(true);const d=await api('quiz-engine',{subject:p.subject,grade:p.grade,count:selN,student_id:p.studentId,chapter_number:selCh||undefined});setQs(d.questions||[]);setSesId(d.session_id||null);setLd(false);if(d.questions?.length){setPhase('play');setQStart(Date.now());setQzStart(Date.now())}};const pick=(i:number)=>{if(rev)return;setSel(i);setRev(true);const q=qs[ci];const ok=i===q.correct_answer_index;if(ok){setScore(s=>s+1);snd('correct')}else snd('wrong');setResps(v=>[...v,{question_number:ci+1,question_text:q.question_text,question_type:'mcq',options:q.options,correct_answer_index:q.correct_answer_index,correct_answer_text:q.options?.[q.correct_answer_index]||'',student_answer_index:i,student_answer_text:q.options?.[i]||'',is_correct:ok,time_taken_seconds:Math.round((Date.now()-qStart)/1000),marks:1,explanation:q.explanation||'',topic_tag:q.topic_tag||'general',bloom_level:q.bloom_level||'understand',difficulty:q.difficulty||2,subject:p.subject,grade:p.grade}])};const next=async()=>{if(ci<qs.length-1){setCi(v=>v+1);setSel(null);setRev(false);snd('click');setQStart(Date.now())}else{setPhase('done');snd('badge');if(p.studentId){const r=await api('quiz-submit',{session_id:sesId,student_id:p.studentId,responses:resps,total_time_seconds:Math.round((Date.now()-qzStart)/1000)});setResult(r);if(r.success)onDone()}}};const reset=()=>{setPhase('setup');setCi(0);setSel(null);setRev(false);setScore(0);setResps([]);setResult(null);setQs([])};
+function Quiz({p,onDone}:{p:Prof;onDone:()=>void}){const[phase,setPhase]=useState<'setup'|'play'|'done'>('setup');const[qs,setQs]=useState<any[]>([]);const[ci,setCi]=useState(0);const[sel,setSel]=useState<number|null>(null);const[score,setScore]=useState(0);const[rev,setRev]=useState(false);const[sesId,setSesId]=useState<string|null>(null);const[resps,setResps]=useState<any[]>([]);const[result,setResult]=useState<any>(null);const[qStart,setQStart]=useState(Date.now());const[qzStart,setQzStart]=useState(Date.now());const[ld,setLd]=useState(false);const[chs,setChs]=useState<any[]>([]);const[selCh,setSelCh]=useState<number|null>(null);const[selN,setSelN]=useState(10);useEffect(()=>{(async()=>{const d=await api('quiz-engine',{subject:p.subject,grade:p.grade,count:0,student_id:p.studentId});setChs(d.chapters||[]);
+// Check if coming from Learning Journey with chapter pre-selected
+try{const chCtx=localStorage.getItem('alfanumrik_quiz_chapter');if(chCtx){localStorage.removeItem('alfanumrik_quiz_chapter');const ch=JSON.parse(chCtx);if(ch.chapter)setSelCh(ch.chapter)}}catch{}
+})()},[p.grade,p.subject]);const start=async()=>{setLd(true);const d=await api('quiz-engine',{subject:p.subject,grade:p.grade,count:selN,student_id:p.studentId,chapter_number:selCh||undefined});setQs(d.questions||[]);setSesId(d.session_id||null);setLd(false);if(d.questions?.length){setPhase('play');setQStart(Date.now());setQzStart(Date.now())}};const pick=(i:number)=>{if(rev)return;setSel(i);setRev(true);const q=qs[ci];const ok=i===q.correct_answer_index;if(ok){setScore(s=>s+1);snd('correct')}else snd('wrong');setResps(v=>[...v,{question_number:ci+1,question_text:q.question_text,question_type:'mcq',options:q.options,correct_answer_index:q.correct_answer_index,correct_answer_text:q.options?.[q.correct_answer_index]||'',student_answer_index:i,student_answer_text:q.options?.[i]||'',is_correct:ok,time_taken_seconds:Math.round((Date.now()-qStart)/1000),marks:1,explanation:q.explanation||'',topic_tag:q.topic_tag||'general',bloom_level:q.bloom_level||'understand',difficulty:q.difficulty||2,subject:p.subject,grade:p.grade}])};const next=async()=>{if(ci<qs.length-1){setCi(v=>v+1);setSel(null);setRev(false);snd('click');setQStart(Date.now())}else{setPhase('done');snd('badge');if(p.studentId){const r=await api('quiz-submit',{session_id:sesId,student_id:p.studentId,responses:resps,total_time_seconds:Math.round((Date.now()-qzStart)/1000)});setResult(r);if(r.success)onDone()}}};const reset=()=>{setPhase('setup');setCi(0);setSel(null);setRev(false);setScore(0);setResps([]);setResult(null);setQs([])};
 if(phase==='setup')return(<div className="a-page"><div className="a-hdr"><div><h1 className="a-title">Custom Quiz</h1><p className="a-greet">{p.subject} &middot; {p.grade}</p></div></div><div className="a-card" style={{maxWidth:600}}><h3 className="a-section-title">CONFIGURE YOUR QUIZ</h3><label className="a-label">Chapter</label><div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:16}}><button onClick={()=>setSelCh(null)} className={`a-pill${!selCh?' on':''}`} style={{minHeight:40}}>All</button>{chs.map(c=><button key={c.chapter} onClick={()=>{setSelCh(c.chapter);snd('click')}} className={`a-pill${selCh===c.chapter?' on':''}`} style={{minHeight:40}}>Ch{c.chapter}: {c.title?.substring(0,18)}</button>)}</div><label className="a-label">Questions</label><div style={{display:'flex',gap:8,marginBottom:16}}>{[5,10,15,20,25].map(n=><button key={n} onClick={()=>{setSelN(n);snd('click')}} className={`a-pill-n${selN===n?' on':''}`} style={{minHeight:44,minWidth:48}}>{n}</button>)}</div><button onClick={start} disabled={ld} className="a-btn-primary" style={{width:'100%',minHeight:52}}>{ld?'Generating...':'Start Quiz \uD83C\uDFAF'}</button></div></div>);
 if(phase==='done'){const pct=qs.length?Math.round((score/qs.length)*100):0;return<div className="a-page" style={{textAlign:'center',paddingTop:40}}><div style={{fontSize:64,marginBottom:12,animation:'alfBounce 1s'}}>{pct>=80?'\uD83C\uDF89':pct>=50?'\uD83D\uDC4D':'\uD83D\uDCAA'}</div><h2 style={{fontSize:28,fontWeight:900}}>Quiz Complete!</h2><p style={{color:'#A8A29E',margin:'8px 0 20px'}}>{score}/{qs.length} ({pct}%){result?.xp_earned?' \u2022 +'+result.xp_earned+' XP':''}</p>{result?.topic_mastery?.length>0&&<div className="a-card" style={{maxWidth:400,margin:'0 auto 20px',textAlign:'left'}}><h3 className="a-section-title">MASTERY UPDATE</h3>{result.topic_mastery.map((t:any,i:number)=><div key={i} style={{marginBottom:8}}><div style={{display:'flex',justifyContent:'space-between'}}><span style={{fontSize:13,fontWeight:600}}>{t.topic?.replace(/_/g,' ')}</span><span style={{fontSize:12,fontWeight:700,color:t.mastery>=70?'#16A34A':'#D97706'}}>{t.mastery}%</span></div><div style={{height:5,borderRadius:3,background:'#F5F4F0'}}><div style={{height:'100%',borderRadius:3,width:`${t.mastery}%`,background:t.mastery>=70?'#16A34A':t.mastery>=40?'#D97706':'#DC2626'}}/></div></div>)}</div>}<button onClick={reset} className="a-btn-primary" style={{maxWidth:300,margin:'0 auto',display:'block',minHeight:52}}>Another Quiz</button></div>}
 const q=qs[ci];if(!q)return<div className="a-page" style={{textAlign:'center',paddingTop:80}}><p style={{fontSize:48}}>&#x1F614;</p><button onClick={reset} className="a-btn-primary" style={{maxWidth:200,margin:'20px auto',minHeight:48}}>Back</button></div>;
@@ -569,7 +670,7 @@ export default function App(){
     if(sc==='confirm')return<><CSS/><ConfirmScreen onBack={()=>setSc('auth')}/></>
     if(sc==='reset')return<><CSS/><ResetScreen/></>
     if(sc==='onboard')return<><CSS/><Onboard user={user} done={onStudentOnboard}/></>
-    return<><CSS/><div className="a-shell">{prof&&<Nav active={sc} nav={setSc} p={prof}/>}<main className="a-main">{sc==='home'&&prof&&<Home p={prof} nav={setSc} stats={stats} history={history}/>}{sc==='foxy'&&prof&&<Foxy p={prof}/>}{sc==='quiz'&&prof&&<Quiz p={prof} onDone={refreshStats}/>}{sc==='skills'&&prof&&<SkillTree p={prof}/>}{sc==='notes'&&prof&&<Notes p={prof}/>}{sc==='progress'&&prof&&<Progress p={prof} stats={stats}/>}{sc==='profile'&&prof&&<ProfileScr p={prof} onUp={onProfUp} out={studentLogout} stats={stats}/>}</main></div></>
+    return<><CSS/><div className="a-shell">{prof&&<Nav active={sc} nav={setSc} p={prof}/>}<main className="a-main">{sc==='home'&&prof&&<Home p={prof} nav={setSc} stats={stats} history={history}/>}{sc==='foxy'&&prof&&<Foxy p={prof}/>}{sc==='quiz'&&prof&&<Quiz p={prof} onDone={refreshStats}/>}{sc==='skills'&&prof&&<SkillTree p={prof} nav={setSc}/>}{sc==='notes'&&prof&&<Notes p={prof}/>}{sc==='progress'&&prof&&<Progress p={prof} stats={stats}/>}{sc==='profile'&&prof&&<ProfileScr p={prof} onUp={onProfUp} out={studentLogout} stats={stats}/>}</main></div></>
   }
 
   // PARENT PORTAL
