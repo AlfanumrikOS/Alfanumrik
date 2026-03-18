@@ -197,6 +197,37 @@ export default function App(){
   const[sc,setSc]=useState<Screen>('loading');const[user,setUser]=useState<any>(null);const[prof,setProf]=useState<Prof|null>(null);const[stats,setStats]=useState<Stats>({xp:0,streak:0,sessions:0,correct:0,asked:0,minutes:0});const[history,setHistory]=useState<any>(null)
   const loadAll=useCallback(async(p:Prof)=>{if(!p.studentId)return;try{const[s,h]=await Promise.all([getStats(p.studentId),api('chat-history',{action:'get_history',student_id:p.studentId})]);setStats(s);setHistory(h)}catch(e){console.error('loadAll failed:',e)}},[])
   useEffect(()=>{if(typeof window!=='undefined'){const params=new URLSearchParams(window.location.search);if(params.get('reset')==='true'||window.location.hash.includes('type=recovery')){setSc('reset');return}}
+  // FAST PATH: Check localStorage FIRST — show home instantly if profile exists
+  const savedProfile=localStorage.getItem('alfanumrik_profile');
+  const savedToken=localStorage.getItem('sb-dxipobqngyfpqbbznojz-auth-token');
+  if(savedProfile&&savedToken){
+    try{
+      const p=JSON.parse(savedProfile)as Prof;
+      const token=JSON.parse(savedToken);
+      // If token exists and not grossly expired (check exp), show home IMMEDIATELY
+      if(token.access_token&&p.name){
+        setProf(p);setSc('home');
+        // Load stats in background (non-blocking)
+        loadAll(p).catch(()=>{});
+        // Validate session in background — if invalid, redirect to auth
+        sb.auth.getSession().then(async({data:{session}})=>{
+          if(session?.user){
+            setUser(session.user);
+            // Refresh studentId if missing
+            if(!p.studentId){const sid=await ensureStudent(session.user.id,p);if(sid){const wp={...p,studentId:sid};setProf(wp);localStorage.setItem('alfanumrik_profile',JSON.stringify(wp));loadAll(wp).catch(()=>{})}}
+          }else{
+            // Token was invalid — clear and go to auth
+            localStorage.removeItem('alfanumrik_profile');localStorage.removeItem('sb-dxipobqngyfpqbbznojz-auth-token');
+            setProf(null);setSc('auth');
+          }
+        }).catch(()=>{/* Token refresh failed but we're already showing home — let user continue until next action fails */});
+        // Subscribe to auth changes for logout detection
+        const{data:{subscription}}=sb.auth.onAuthStateChange(async(ev,s)=>{if(!s?.user&&ev==='SIGNED_OUT'){setUser(null);setProf(null);setSc('auth');localStorage.removeItem('alfanumrik_profile')}else if(s?.user)setUser(s.user)});
+        return()=>subscription.unsubscribe();
+      }
+    }catch(e){/* corrupted localStorage — fall through to slow path */}
+  }
+  // SLOW PATH: No cached profile — must wait for getSession
   const initProfile=async(u:any)=>{try{
     const saved=localStorage.getItem('alfanumrik_profile');
     if(saved){const p=JSON.parse(saved)as Prof;const sid=await ensureStudent(u.id,p);const wp={...p,studentId:sid||undefined};setProf(wp);localStorage.setItem('alfanumrik_profile',JSON.stringify(wp));await loadAll(wp);setSc('home');return}
