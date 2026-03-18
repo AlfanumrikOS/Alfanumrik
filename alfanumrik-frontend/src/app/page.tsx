@@ -592,8 +592,20 @@ return(<div className="a-center-dark" style={{maxWidth:440,padding:'40px 24px'}}
 
 function ParentDash({guardian,onLogout}:{guardian:any;onLogout:()=>void}){
 const[children,setChildren]=useState<any[]>([]);const[selChild,setSelChild]=useState<any>(null);const[report,setReport]=useState<any>(null);const[tips,setTips]=useState<any[]>([]);const[weeklyReport,setWeeklyReport]=useState<any>(null);const[tab,setTab]=useState<'overview'|'report'|'tips'>('overview');const[ld,setLd]=useState(true);
-useEffect(()=>{loadChildren()},[]);
-const loadChildren=async()=>{setLd(true);const d=await api('parent-portal',{action:'get_children',guardian_id:guardian.id});setChildren(d.children||[]);if(d.children?.length>0&&!selChild){setSelChild(d.children[0]);loadReport(d.children[0].id);loadWeekly(d.children[0].id)}setLd(false);const t=await api('parent-portal',{action:'get_tips',grade:d.children?.[0]?.grade});setTips(t.tips||[])};
+useEffect(()=>{loadData()},[]);
+const loadData=async()=>{setLd(true);
+// First try loading children from DB link
+const d=await api('parent-portal',{action:'get_children',guardian_id:guardian.id});
+let kids=d.children||[];
+// If no children from DB but we have linkedStudent from login, use that
+if(kids.length===0&&guardian.linkedStudent){
+  kids=[{...guardian.linkedStudent,xp:0,sessions:0,asked:0,correct:0,accuracy:0,streak:0,minutes:0,preferred_subject:guardian.linkedStudent.subject}];
+}
+setChildren(kids);
+if(kids.length>0){setSelChild(kids[0]);loadReport(kids[0].id);loadWeekly(kids[0].id)}
+setLd(false);
+const t=await api('parent-portal',{action:'get_tips',grade:kids?.[0]?.grade});setTips(t.tips||[]);
+};
 const loadReport=async(sid:string)=>{const d=await api('parent-portal',{action:'get_child_report',student_id:sid});setReport(d)};
 const loadWeekly=async(sid:string)=>{const d=await api('parent-portal',{action:'get_weekly_report',student_id:sid});setWeeklyReport(d.week)};
 const selectChild=(c:any)=>{setSelChild(c);loadReport(c.id);loadWeekly(c.id);setTab('overview')};
@@ -655,7 +667,7 @@ return(<div className="a-page">
 <h3 style={{fontSize:13,fontWeight:800,color:'#78716C',letterSpacing:'.05em',marginBottom:14}}>📚 CHAPTER MASTERY — {child.preferred_subject}</h3>
 <div style={{display:'flex',flexDirection:'column',gap:8}}>
 {dash.chapters.map((ch:any)=>{
-const colors:Record<string,{bg:string;bar:string;text:string}>={mastered:{bg:'#F0FDF4',bar:'#16A34A',text:'Mastered'},learning:{bg:'#EFF6FF',bar:'#3B82F6',text:'Learning'},needs_work:{bg:'#FEF2F2',bar:'#EF4444',text:'Needs Practice'},not_started:{bg:'#F5F4F0',bar:'#D4D0C8',text:'Not Started'},no_content:{bg:'#FAFAF8',bar:'#E7E5E4',text:'No Content'}};
+const colors:Record<string,{bg:string;bar:string;text:string}>={mastered:{bg:'#F0FDF4',bar:'#16A34A',text:'Mastered'},proficient:{bg:'#ECFDF5',bar:'#059669',text:'Proficient'},learning:{bg:'#EFF6FF',bar:'#3B82F6',text:'Learning'},needs_work:{bg:'#FEF2F2',bar:'#EF4444',text:'Needs Practice'},not_started:{bg:'#F5F4F0',bar:'#D4D0C8',text:'Not Started'}};
 const c=colors[ch.status]||colors.no_content;
 return<div key={ch.chapter_number} style={{padding:'10px 14px',borderRadius:12,background:c.bg}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
