@@ -77,9 +77,9 @@ function Nav({active,nav,p}:{active:Screen;nav:(s:Screen)=>void;p:Prof}){const t
 // MAIN APP — loads history on startup, persists everything
 export default function App(){
   const[sc,setSc]=useState<Screen>('loading');const[user,setUser]=useState<any>(null);const[prof,setProf]=useState<Prof|null>(null);const[stats,setStats]=useState<Stats>({xp:0,streak:0,sessions:0,correct:0,asked:0,minutes:0});const[history,setHistory]=useState<any>(null)
-  const loadAll=useCallback(async(p:Prof)=>{if(!p.studentId)return;const[s,h]=await Promise.all([getStats(p.studentId),api('chat-history',{action:'get_history',student_id:p.studentId})]);setStats(s);setHistory(h)},[])
+  const loadAll=useCallback(async(p:Prof)=>{if(!p.studentId)return;try{const[s,h]=await Promise.all([getStats(p.studentId),api('chat-history',{action:'get_history',student_id:p.studentId})]);setStats(s);setHistory(h)}catch(e){console.error('loadAll failed:',e)}},[])
   useEffect(()=>{if(typeof window!=='undefined'){const params=new URLSearchParams(window.location.search);if(params.get('reset')==='true'||window.location.hash.includes('type=recovery')){setSc('reset');return}}
-  const initProfile=async(u:any)=>{
+  const initProfile=async(u:any)=>{try{
     // Try localStorage first (fast path)
     const saved=localStorage.getItem('alfanumrik_profile');
     if(saved){const p=JSON.parse(saved)as Prof;const sid=await ensureStudent(u.id,p);const wp={...p,studentId:sid||undefined};setProf(wp);localStorage.setItem('alfanumrik_profile',JSON.stringify(wp));await loadAll(wp);setSc('home');return}
@@ -88,14 +88,15 @@ export default function App(){
     if(dbProf){setProf(dbProf);localStorage.setItem('alfanumrik_profile',JSON.stringify(dbProf));await loadAll(dbProf);setSc('home');return}
     // Neither localStorage nor DB — truly new user, show onboarding
     setSc('onboard')
-  };
-  sb.auth.getSession().then(async({data:{session}})=>{if(session?.user){setUser(session.user);await initProfile(session.user)}else setSc('auth')});
+  }catch(e){console.error('initProfile failed:',e);setSc('auth')}};
+  sb.auth.getSession().then(async({data:{session}})=>{if(session?.user){setUser(session.user);await initProfile(session.user)}else setSc('auth')}).catch(()=>{console.error('Auth session failed');setSc('auth')});
   const{data:{subscription}}=sb.auth.onAuthStateChange(async(ev,s)=>{if(s?.user){setUser(s.user);await initProfile(s.user)}else if(sc!=='reset'&&sc!=='confirm'){setUser(null);setSc('auth')}});return()=>subscription.unsubscribe()},[loadAll])
-  const onAuth=async(u:any)=>{setUser(u);const saved=localStorage.getItem('alfanumrik_profile');if(saved){const p=JSON.parse(saved)as Prof;const sid=await ensureStudent(u.id,p);const wp={...p,studentId:sid||undefined};setProf(wp);localStorage.setItem('alfanumrik_profile',JSON.stringify(wp));await loadAll(wp);setSc('home');return}const dbProf=await loadProfileFromDB(u.id);if(dbProf){setProf(dbProf);localStorage.setItem('alfanumrik_profile',JSON.stringify(dbProf));await loadAll(dbProf);setSc('home');return}setSc('onboard')}
+  const onAuth=async(u:any)=>{try{setUser(u);const saved=localStorage.getItem('alfanumrik_profile');if(saved){const p=JSON.parse(saved)as Prof;const sid=await ensureStudent(u.id,p);const wp={...p,studentId:sid||undefined};setProf(wp);localStorage.setItem('alfanumrik_profile',JSON.stringify(wp));await loadAll(wp);setSc('home');return}const dbProf=await loadProfileFromDB(u.id);if(dbProf){setProf(dbProf);localStorage.setItem('alfanumrik_profile',JSON.stringify(dbProf));await loadAll(dbProf);setSc('home');return}setSc('onboard')}catch(e){console.error('onAuth failed:',e);setSc('auth')}}
   const onOb=async(p:Prof)=>{if(user){const sid=await ensureStudent(user.id,p);const wp={...p,studentId:sid||undefined};setProf(wp);localStorage.setItem('alfanumrik_profile',JSON.stringify(wp));await loadAll(wp);setSc('home')}}
   const onProfUp=async(p:Prof)=>{setProf(p);localStorage.setItem('alfanumrik_profile',JSON.stringify(p));if(p.studentId){await sb.from('students').update({name:p.name,grade:p.grade,preferred_language:p.language,preferred_subject:p.subject}).eq('id',p.studentId);await loadAll(p)}}
   const refreshStats=async()=>{if(prof?.studentId){const s=await getStats(prof.studentId);setStats(s);const h=await api('chat-history',{action:'get_history',student_id:prof.studentId});setHistory(h)}}
   const logout=async()=>{await sb.auth.signOut();localStorage.removeItem('alfanumrik_profile');setUser(null);setProf(null);setSc('auth')}
+  useEffect(()=>{if(sc==='loading'){const t=setTimeout(()=>{console.warn('Loading timeout - redirecting to auth');setSc('auth')},8000);return()=>clearTimeout(t)}},[sc]);
   if(sc==='loading')return<><CSS/><div className="a-center"><div style={{fontSize:48,animation:'pulse 1.5s infinite'}}>&#x1F98A;</div><p style={{color:'#A8A29E',marginTop:8}}>Loading...</p></div></>
   if(sc==='auth')return<><CSS/><Auth onAuth={onAuth} onConfirm={()=>setSc('confirm')}/></>
   if(sc==='confirm')return<><CSS/><ConfirmScreen onBack={()=>setSc('auth')}/></>
