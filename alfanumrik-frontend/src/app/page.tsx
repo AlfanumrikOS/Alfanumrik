@@ -102,55 +102,85 @@ return(<div style={{padding:'24px 28px 120px',maxWidth:900,animation:'alfFadeIn 
 <p>Every question you answer builds your understanding. Keep going!</p>
 </div>
 </div>)}
-// SKILL TREE — Visual mastery map with animated nodes, 3-layer dots, detail panel
-function SkillTree({p}:{p:Prof}){const[tree,setTree]=useState<any[]>([]);const[summary,setSummary]=useState<any>({});const[loading,setLoading]=useState(true);const[sel,setSel]=useState<any>(null);
-useEffect(()=>{if(!p.studentId)return;api('student-experience',{action:'skill_tree',student_id:p.studentId,subject:SM[p.subject]||'math',grade:p.grade}).then(d=>{setTree((d.tree||[]).filter((n:any)=>n.type!=='chapter'));setSummary(d.summary||{});setLoading(false)})},[p.studentId,p.subject,p.grade]);
-const SL:Record<string,{i:string;c:string;bg:string;glow:string}>={mastered:{i:'\u2B50',c:'#E8590C',bg:'#FFF7ED',glow:'0 0 16px rgba(232,89,12,.25)'},proficient:{i:'\u2705',c:'#22C55E',bg:'#F0FDF4',glow:'0 0 12px rgba(34,197,94,.2)'},developing:{i:'\uD83D\uDCD6',c:'#0EA5E9',bg:'#F0F9FF',glow:'none'},struggling:{i:'\uD83D\uDD36',c:'#F59E0B',bg:'#FFFBEB',glow:'none'},error:{i:'\u26A0\uFE0F',c:'#EF4444',bg:'#FEF2F2',glow:'0 0 16px rgba(239,68,68,.2)'},locked:{i:'\uD83D\uDD12',c:'#D4D0C8',bg:'#F5F4F0',glow:'none'}};
-if(loading)return<div style={{padding:'80px 20px',textAlign:'center',animation:'alfPulse 1.5s infinite'}}><span style={{fontSize:48}}>{'\u2B50'}</span><p style={{color:'#A8A29E',marginTop:12}}>Loading skill map...</p></div>;
-const tot=Math.max(1,(summary.mastered||0)+(summary.proficient||0)+(summary.developing||0)+(summary.struggling||0)+(summary.error||0));
-return(<div style={{padding:'24px 28px 120px',maxWidth:900,animation:'alfFadeIn .4s'}}>
-<div style={{marginBottom:24}}><h1 style={{fontSize:26,fontWeight:900}}>{'\u2B50'} Skill Tree</h1><p style={{fontSize:13,color:'#78716C',marginTop:4}}>{p.subject} &middot; {p.grade} &middot; {tree.length} concepts</p></div>
-{/* Distribution bar */}
-<div className="a-card" style={{marginBottom:20}}>
-<div style={{display:'flex',height:10,borderRadius:6,overflow:'hidden',background:'#F0EDE8',marginBottom:12}}>
-{[{n:summary.mastered||0,c:'#E8590C'},{n:summary.proficient||0,c:'#22C55E'},{n:summary.developing||0,c:'#0EA5E9'},{n:summary.struggling||0,c:'#F59E0B'},{n:summary.error||0,c:'#EF4444'}].map((seg,i)=><div key={i} style={{width:`${seg.n/tot*100}%`,background:seg.c,transition:'width .6s'}}/>)}
+// LEARNING JOURNEY — Chapter-based adventure map with RAG + quiz integration
+function SkillTree({p}:{p:Prof}){const[chapters,setChapters]=useState<any[]>([]);const[loading,setLoading]=useState(true);const[sel,setSel]=useState<any>(null);const[stats,setStats]=useState<any>({});
+useEffect(()=>{loadJourney()},[p.studentId,p.subject,p.grade]);
+const loadJourney=async()=>{setLoading(true);try{
+// Load curriculum chapters
+const sc=SM[p.subject]||'math';const{data:subj}=await sb.from('subjects').select('id').eq('code',sc).maybeSingle();
+let chs:any[]=[];
+if(subj){const{data:topics}=await sb.from('curriculum_topics').select('chapter_number,title').eq('subject_id',subj.id).eq('grade',p.grade).eq('is_active',true).order('chapter_number');chs=topics||[]}
+// Load RAG content counts per chapter
+const{data:ragCounts}=await sb.from('rag_content_chunks').select('chapter_number').eq('grade',p.grade).eq('subject',p.subject).eq('is_active',true);
+const ragMap:Record<number,number>={};(ragCounts||[]).forEach((r:any)=>{ragMap[r.chapter_number]=(ragMap[r.chapter_number]||0)+1});
+// Load student quiz mastery per chapter
+let masteryMap:Record<number,{correct:number;total:number;mastery:number}>={};
+if(p.studentId){try{const{data:qResults}=await sb.from('quiz_responses').select('is_correct,topic_tag').eq('student_id',p.studentId);
+(qResults||[]).forEach((q:any)=>{const chMatch=q.topic_tag?.match(/ch(\d+)/i);const ch=chMatch?parseInt(chMatch[1]):0;if(ch>0){if(!masteryMap[ch])masteryMap[ch]={correct:0,total:0,mastery:0};masteryMap[ch].total++;if(q.is_correct)masteryMap[ch].correct++;masteryMap[ch].mastery=Math.round(masteryMap[ch].correct/masteryMap[ch].total*100)}})}catch{}}
+// Merge everything
+const merged=chs.map((ch:any,i:number)=>{const rag=ragMap[ch.chapter_number]||0;const m=masteryMap[ch.chapter_number];const mastery=m?.mastery||0;const attempted=m?.total||0;const correct=m?.correct||0;
+let status:'ready'|'in_progress'|'mastered'|'needs_work'|'upcoming'='upcoming';
+if(mastery>=80)status='mastered';else if(mastery>=40)status='in_progress';else if(attempted>0)status='needs_work';else if(rag>0)status='ready';
+return{...ch,rag_chunks:rag,mastery,attempted,correct,status,index:i}});
+setChapters(merged);
+const m=merged.filter(c=>c.status==='mastered').length;const ip=merged.filter(c=>c.status==='in_progress').length;const r=merged.filter(c=>c.status==='ready').length;
+setStats({total:merged.length,mastered:m,in_progress:ip,ready:r,upcoming:merged.length-m-ip-r,pct:merged.length?Math.round(m/merged.length*100):0});
+}catch(e){console.error('Journey load error:',e)}setLoading(false)};
+const ST:Record<string,{emoji:string;color:string;bg:string;label:string}>={mastered:{emoji:'🏆',color:'#E8590C',bg:'linear-gradient(135deg,#FFF7ED,#FED7AA)',label:'Mastered'},in_progress:{emoji:'📖',color:'#3B82F6',bg:'linear-gradient(135deg,#EFF6FF,#BFDBFE)',label:'Learning'},needs_work:{emoji:'💪',color:'#F59E0B',bg:'linear-gradient(135deg,#FFFBEB,#FDE68A)',label:'Practice More'},ready:{emoji:'🚀',color:'#22C55E',bg:'linear-gradient(135deg,#F0FDF4,#BBF7D0)',label:'Ready to Start'},upcoming:{emoji:'🔒',color:'#A8A29E',bg:'#F5F4F0',label:'Coming Soon'}};
+if(loading)return<div style={{padding:'80px 20px',textAlign:'center'}}><div style={{fontSize:48,animation:'alfPulse 1.5s infinite'}}>🗺️</div><p style={{color:'#A8A29E',marginTop:12}}>Loading your learning journey...</p></div>;
+return(<div style={{padding:'20px 24px 120px',maxWidth:900,animation:'alfFadeIn .4s'}}>
+{/* Header with overall progress */}
+<div style={{marginBottom:20}}><h1 style={{fontSize:24,fontWeight:900}}>🗺️ Learning Journey</h1><p style={{fontSize:13,color:'#78716C',marginTop:4}}>{p.subject} · {p.grade} · {chapters.length} chapters</p></div>
+{/* Overall progress card */}
+<div style={{background:'linear-gradient(135deg,#1C1917,#292524)',borderRadius:20,padding:20,marginBottom:20,color:'#fff'}}>
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+<div><p style={{fontSize:13,fontWeight:700,color:'#E8590C'}}>YOUR PROGRESS</p><p style={{fontSize:36,fontWeight:900,lineHeight:1}}>{stats.pct}%</p></div>
+<div style={{display:'flex',gap:16}}>{[{v:stats.mastered,l:'Mastered',e:'🏆'},{v:stats.in_progress,l:'Learning',e:'📖'},{v:stats.ready,l:'Ready',e:'🚀'}].map(x=><div key={x.l} style={{textAlign:'center'}}><p style={{fontSize:20,fontWeight:900}}>{x.e} {x.v}</p><p style={{fontSize:10,color:'#A8A29E'}}>{x.l}</p></div>)}</div>
 </div>
-<div style={{display:'flex',gap:14,flexWrap:'wrap'}}>
-{[{l:'Mastered',c:'#E8590C',n:summary.mastered||0},{l:'Proficient',c:'#22C55E',n:summary.proficient||0},{l:'Developing',c:'#0EA5E9',n:summary.developing||0},{l:'Struggling',c:'#F59E0B',n:summary.struggling||0},{l:'Errors',c:'#EF4444',n:summary.error||0},{l:'Locked',c:'#D4D0C8',n:summary.locked||0}].map(item=>
-<div key={item.l} style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:10,height:10,borderRadius:'50%',background:item.c}}/><span style={{fontSize:12,color:'#78716C',fontWeight:600}}>{item.n} {item.l}</span></div>)}
-</div></div>
-{/* Concept grid */}
-<div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(175px,1fr))',gap:10}}>
-{tree.map((c:any,i:number)=>{const look=SL[c.visual_state]||SL.locked;const isLocked=c.visual_state==='locked';return(
-<button key={c.code} onClick={()=>{snd(isLocked?'click':'think');setSel(sel?.code===c.code?null:c)}} style={{padding:'18px 16px',borderRadius:20,border:`2px solid ${look.c}30`,background:look.bg,cursor:'pointer',fontFamily:'inherit',textAlign:'left',position:'relative',overflow:'hidden',opacity:isLocked?.4:1,boxShadow:look.glow,transition:'all .25s',animation:c.visual_state==='error'?'alfPulseBorder 2.5s infinite':`alfSlideUp .4s ease ${Math.min(i*.03,.6)}s both`,minHeight:130}}>
-{c.streak>=3&&<span style={{position:'absolute',top:10,right:12,fontSize:11,fontWeight:900,color:'#F59E0B'}}>{'\uD83D\uDD25'}{c.streak}</span>}
-<div style={{position:'absolute',bottom:0,left:0,right:0,height:4,background:`${look.c}15`}}><div style={{height:'100%',width:`${c.mastery}%`,background:look.c,borderRadius:'0 2px 2px 0',transition:'width .5s'}}/></div>
-<div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}><span style={{fontSize:18}}>{look.i}</span><span style={{fontSize:12,fontWeight:700,lineHeight:1.3,overflow:'hidden',textOverflow:'ellipsis',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical' as any}}>{c.title||c.code?.split('.').pop()?.replace(/_/g,' ')}</span></div>
-<p style={{fontSize:28,fontWeight:900,color:look.c,lineHeight:1}}>{c.mastery}%</p>
-<p style={{fontSize:11,color:'#78716C',fontWeight:600,marginTop:3}}>{c.status_text}</p>
-<div style={{display:'flex',gap:4,marginTop:12}}>
-<div style={{flex:1,height:6,borderRadius:3,background:c.l1>=70?'#E8590C':c.l1>0?'#E8590C30':'#E7E5E4'}}/>
-<div style={{flex:1,height:6,borderRadius:3,background:c.l2>=85?'#3B82F6':c.l2_unlocked?'#3B82F630':'#E7E5E4'}}/>
-<div style={{flex:1,height:6,borderRadius:3,background:c.l3>=95?'#8B5CF6':c.l3_unlocked?'#8B5CF630':'#E7E5E4'}}/>
+<div style={{height:8,borderRadius:4,background:'rgba(255,255,255,.1)'}}><div style={{height:'100%',borderRadius:4,background:'linear-gradient(90deg,#E8590C,#F59E0B)',width:`${stats.pct}%`,transition:'width .6s'}}/></div>
 </div>
-</button>)})}
+{/* Chapter journey — vertical timeline */}
+<div style={{position:'relative',paddingLeft:40}}>
+{/* Vertical line */}
+<div style={{position:'absolute',left:16,top:0,bottom:0,width:3,background:'linear-gradient(to bottom,#E8590C,#3B82F6,#A8A29E)',borderRadius:2}}/>
+{chapters.map((ch,i)=>{const st=ST[ch.status];const isActive=ch.status!=='upcoming';
+return<div key={ch.chapter_number} style={{marginBottom:16,position:'relative',animation:`alfSlideUp .4s ease ${Math.min(i*.06,.8)}s both`}}>
+{/* Timeline dot */}
+<div style={{position:'absolute',left:-32,top:16,width:28,height:28,borderRadius:'50%',background:isActive?st.color:'#E7E5E4',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,border:'3px solid #fff',boxShadow:isActive?`0 0 12px ${st.color}30`:'none',zIndex:2}}>{ch.status==='mastered'?'✓':ch.chapter_number}</div>
+{/* Chapter card */}
+<button onClick={()=>{snd('click');setSel(sel?.chapter_number===ch.chapter_number?null:ch)}} style={{width:'100%',padding:16,borderRadius:16,border:'none',background:st.bg,cursor:'pointer',fontFamily:'inherit',textAlign:'left',opacity:isActive?1:.5,transition:'all .2s',boxShadow:sel?.chapter_number===ch.chapter_number?`0 4px 20px ${st.color}25`:'none',transform:sel?.chapter_number===ch.chapter_number?'scale(1.01)':'scale(1)'}}>
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+<div style={{flex:1}}>
+<div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+<span style={{fontSize:16}}>{st.emoji}</span>
+<span style={{fontSize:14,fontWeight:800,color:st.color}}>Chapter {ch.chapter_number}</span>
+{ch.rag_chunks>0&&<span style={{fontSize:9,fontWeight:700,padding:'2px 6px',borderRadius:6,background:`${st.color}15`,color:st.color}}>📚 NCERT</span>}
 </div>
-{/* Detail panel */}
-{sel&&<><div onClick={()=>setSel(null)} style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,.3)',zIndex:99}}/>
-<div style={{position:'fixed',bottom:0,left:0,right:0,background:'#fff',borderRadius:'24px 24px 0 0',boxShadow:'0 -8px 40px rgba(0,0,0,.12)',padding:24,zIndex:100,maxHeight:'50vh',overflowY:'auto',animation:'alfSlideUp .3s'}}>
-<div style={{display:'flex',justifyContent:'space-between',marginBottom:16}}><div><h3 style={{fontSize:18,fontWeight:800}}>{sel.title||sel.code}</h3><p style={{fontSize:13,color:'#78716C',marginTop:2}}>{sel.status_text}</p></div>
-<button onClick={()=>setSel(null)} style={{width:36,height:36,borderRadius:12,border:'none',background:'#F5F4F0',cursor:'pointer',fontSize:16,fontFamily:'inherit'}}>{'\u2715'}</button></div>
-<div style={{display:'flex',gap:12,marginBottom:16}}>
-{[{label:'L1 CBSE',m:sel.l1,c:'#E8590C',th:70},{label:'L2 Apply',m:sel.l2,c:'#3B82F6',th:85,lk:!sel.l2_unlocked},{label:'L3 Advanced',m:sel.l3,c:'#8B5CF6',th:95,lk:!sel.l3_unlocked}].map(layer=>
-<div key={layer.label} style={{flex:1,padding:14,borderRadius:14,background:layer.lk?'#F5F4F0':`${layer.c}08`,border:`1px solid ${layer.lk?'#E7E5E4':layer.c}20`,opacity:layer.lk?.5:1}}>
-<p style={{fontSize:10,fontWeight:700,color:layer.c,marginBottom:4}}>{layer.label}</p>
-<p style={{fontSize:22,fontWeight:900,color:layer.c}}>{layer.m}%</p>
-<div style={{height:4,borderRadius:2,background:`${layer.c}20`,marginTop:6}}><div style={{height:'100%',borderRadius:2,background:layer.c,width:`${layer.m}%`,transition:'width .5s'}}/></div>
-</div>)}
+<p style={{fontSize:15,fontWeight:700,color:'#1C1917',lineHeight:1.3}}>{ch.title}</p>
 </div>
-<button onClick={()=>snd('ok')} style={{width:'100%',padding:16,borderRadius:16,border:'none',background:sel.visual_state==='error'?'linear-gradient(135deg,#EF4444,#DC2626)':'linear-gradient(135deg,#E8590C,#EC4899)',color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer',fontFamily:'inherit',minHeight:56}}>
-{sel.visual_state==='error'?'\uD83D\uDD27 Fix Misconception':sel.visual_state==='locked'?'\uD83D\uDD12 Complete Prerequisites':'\uD83D\uDCD6 Continue Learning'}
-</button></div></>}
+{ch.mastery>0&&<div style={{textAlign:'right',flexShrink:0}}><p style={{fontSize:24,fontWeight:900,color:st.color,lineHeight:1}}>{ch.mastery}%</p><p style={{fontSize:10,color:'#78716C'}}>{ch.correct}/{ch.attempted}</p></div>}
+</div>
+{/* Progress bar */}
+{isActive&&<div style={{height:5,borderRadius:3,background:`${st.color}15`,marginTop:10}}><div style={{height:'100%',borderRadius:3,background:st.color,width:`${ch.mastery||2}%`,transition:'width .5s',minWidth:ch.rag_chunks>0?'8px':'0'}}/></div>}
+{/* Expanded detail */}
+{sel?.chapter_number===ch.chapter_number&&<div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${st.color}20`}}>
+<div style={{display:'flex',gap:8,marginBottom:10}}>
+{ch.rag_chunks>0&&<span style={{fontSize:11,padding:'4px 10px',borderRadius:8,background:'#fff',border:'1px solid #E7E5E4',fontWeight:600}}>📚 {ch.rag_chunks} study materials</span>}
+{ch.attempted>0&&<span style={{fontSize:11,padding:'4px 10px',borderRadius:8,background:'#fff',border:'1px solid #E7E5E4',fontWeight:600}}>🎯 {ch.attempted} questions attempted</span>}
+</div>
+<div style={{display:'flex',gap:8}}>
+{ch.rag_chunks>0&&<button onClick={(e)=>{e.stopPropagation();snd('ok')}} style={{flex:1,padding:12,borderRadius:12,border:'none',background:st.color,color:'#fff',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit',minHeight:44}}>📖 Learn with Foxy</button>}
+<button onClick={(e)=>{e.stopPropagation();snd('ok')}} style={{flex:1,padding:12,borderRadius:12,border:`1.5px solid ${st.color}`,background:'#fff',color:st.color,fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit',minHeight:44}}>🎯 Take Quiz</button>
+</div>
+</div>}
+</button></div>})}
+</div>
+{/* Empty state encouragement */}
+{stats.mastered===0&&stats.in_progress===0&&<div style={{background:'linear-gradient(135deg,#FFF7ED,#FED7AA)',borderRadius:20,padding:24,marginTop:8,textAlign:'center'}}>
+<FoxyAvatar state="encouraging" size={64} color="#E8590C"/>
+<p style={{fontSize:16,fontWeight:800,marginTop:12,color:'#1C1917'}}>Your adventure begins here!</p>
+<p style={{fontSize:13,color:'#78716C',marginTop:4,lineHeight:1.5}}>Take your first quiz or chat with Foxy to start building mastery. Each chapter you complete lights up your journey map!</p>
+</div>}
 </div>)}
 // ANIMATED AVATAR SVG — Phase 2
 function FoxyAvatar({state,size=80,color='#E8590C'}:{state:string;size?:number;color?:string}){
