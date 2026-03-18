@@ -449,57 +449,107 @@ return(<div className="a-shell"><nav className="a-side" style={{borderColor:'#8B
 </div>)}
 
 function ParentOverview({child,weekly}:{child:any;weekly:any}){
-if(!child)return<div className="a-page" style={{textAlign:'center',paddingTop:80}}><p style={{fontSize:48}}>{'\uD83D\uDD17'}</p><h3 style={{marginTop:12}}>No child linked yet</h3><p style={{color:'#A8A29E',fontSize:14,marginTop:4}}>Go to "Link Child" to connect your child's account</p></div>;
-const acc=child.asked>0?Math.round((child.correct/child.asked)*100):0;
+if(!child)return<div className="a-page" style={{textAlign:'center',paddingTop:80}}><p style={{fontSize:48}}>🔗</p><h3 style={{marginTop:12}}>No child linked yet</h3><p style={{color:'#A8A29E',fontSize:14,marginTop:4}}>Go to "Link Child" to connect your child's account</p></div>;
+const[dash,setDash]=useState<any>(null);const[dLd,setDLd]=useState(true);
+useEffect(()=>{if(child?.id){setDLd(true);api('parent-portal',{action:'get_child_dashboard',student_id:child.id}).then(d=>{setDash(d);setDLd(false)}).catch(()=>setDLd(false))}},[child?.id]);
+if(dLd)return<div style={{padding:60,textAlign:'center'}}><div style={{fontSize:36,animation:'alfPulse 1.5s infinite'}}>📊</div><p style={{color:'#A8A29E',marginTop:8}}>Loading {child.name}'s dashboard...</p></div>;
+const st=dash?.stats||{};const acc=st.asked>0?Math.round(st.correct/st.asked*100):0;
 return(<div className="a-page">
-<div style={{background:'linear-gradient(135deg,#8B5CF6,#EC4899)',borderRadius:24,padding:'28px 24px',color:'#fff',marginBottom:20,position:'relative',overflow:'hidden'}}>
+{/* Hero Card */}
+<div style={{background:'linear-gradient(135deg,#8B5CF6,#EC4899)',borderRadius:24,padding:'24px 20px',color:'#fff',marginBottom:16,position:'relative',overflow:'hidden'}}>
 <div style={{position:'absolute',top:-30,right:-30,width:120,height:120,borderRadius:'50%',background:'rgba(255,255,255,.1)'}}/>
-<p style={{fontSize:14,opacity:.8,fontWeight:500}}>{child.grade} · {child.preferred_subject}</p>
-<h1 style={{fontSize:28,fontWeight:900,margin:'4px 0 16px'}}>{child.name}'s Progress</h1>
-<div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
-{[{v:String(child.xp),l:'XP',i:'\u26A1'},{v:String(child.streak||0),l:'Streak',i:'\uD83D\uDD25'},{v:`${acc}%`,l:'Accuracy',i:'\uD83C\uDFAF'},{v:String(child.sessions),l:'Quizzes',i:'\uD83D\uDCDA'},{v:`${child.minutes||0}m`,l:'Study Time',i:'\u23F1'}].map(s=>(
-<div key={s.l} style={{background:'rgba(255,255,255,.15)',borderRadius:14,padding:'10px 16px',display:'flex',alignItems:'center',gap:8}}>
-<span style={{fontSize:18}}>{s.i}</span><div><p style={{fontSize:18,fontWeight:900,lineHeight:1}}>{s.v}</p><p style={{fontSize:10,opacity:.7,fontWeight:600}}>{s.l}</p></div></div>))}
+<p style={{fontSize:13,opacity:.8}}>{child.grade} · {child.preferred_subject}</p>
+<h1 style={{fontSize:24,fontWeight:900,margin:'4px 0 14px'}}>{child.name}'s Dashboard</h1>
+<div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+{[{v:String(st.xp||0),l:'XP',i:'⚡'},{v:String(st.streak||0),l:'Streak',i:'🔥'},{v:`${acc}%`,l:'Accuracy',i:'🎯'},{v:String(st.sessions||0),l:'Quizzes',i:'📚'},{v:`${Math.round((st.minutes||0)/60)}h`,l:'Study',i:'⏱'}].map(x=>(
+<div key={x.l} style={{background:'rgba(255,255,255,.15)',borderRadius:12,padding:'8px 12px',display:'flex',alignItems:'center',gap:6}}>
+<span style={{fontSize:16}}>{x.i}</span><div><p style={{fontSize:16,fontWeight:900,lineHeight:1}}>{x.v}</p><p style={{fontSize:9,opacity:.7,fontWeight:600}}>{x.l}</p></div></div>))}
 </div></div>
-{weekly&&<div className="a-card"><h3 className="a-section-title">{'\uD83D\uDCCA'} THIS WEEK</h3>
-<div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:10}}>
-<div style={{padding:16,borderRadius:14,background:'#F0FDF4',textAlign:'center'}}><p style={{fontSize:24,fontWeight:900,color:'#22C55E'}}>{weekly.totalQuizzes}</p><p style={{fontSize:11,color:'#57534E',fontWeight:600}}>Quizzes Taken</p></div>
-<div style={{padding:16,borderRadius:14,background:'#EFF6FF',textAlign:'center'}}><p style={{fontSize:24,fontWeight:900,color:'#3B82F6'}}>{weekly.avgScore}%</p><p style={{fontSize:11,color:'#57534E',fontWeight:600}}>Avg Score</p></div>
-<div style={{padding:16,borderRadius:14,background:'#FAF5FF',textAlign:'center'}}><p style={{fontSize:24,fontWeight:900,color:'#8B5CF6'}}>{weekly.foxyChats}</p><p style={{fontSize:11,color:'#57534E',fontWeight:600}}>Foxy Sessions</p></div>
-<div style={{padding:16,borderRadius:14,background:'#FFF7ED',textAlign:'center'}}><p style={{fontSize:24,fontWeight:900,color:'#E8590C'}}>{weekly.engagement}%</p><p style={{fontSize:11,color:'#57534E',fontWeight:600}}>Engagement</p></div>
+
+{/* AI Insights */}
+{dash?.insights?.length>0&&<div style={{marginBottom:16}}>
+{dash.insights.map((insight:string,i:number)=><div key={i} style={{padding:'12px 16px',borderRadius:14,background:insight.startsWith('⚠')?'#FEF2F2':insight.startsWith('🏆')?'#F0FDF4':insight.startsWith('🔥')?'#FFF7ED':'#EFF6FF',border:`1px solid ${insight.startsWith('⚠')?'#FECACA':insight.startsWith('🏆')?'#BBF7D0':insight.startsWith('🔥')?'#FED7AA':'#BFDBFE'}`,marginBottom:8,fontSize:13,color:'#1C1917',lineHeight:1.5,fontWeight:500}}>{insight}</div>)}
+</div>}
+
+{/* Weekly Activity Chart */}
+{dash?.dailyActivity&&<div className="a-card" style={{marginBottom:16}}>
+<h3 style={{fontSize:13,fontWeight:800,color:'#78716C',letterSpacing:'.05em',marginBottom:14}}>📊 THIS WEEK'S ACTIVITY</h3>
+<div style={{display:'flex',gap:6,alignItems:'flex-end',height:100,marginBottom:8}}>
+{dash.dailyActivity.map((d:any)=>{const h=Math.max(d.quizzes*25+d.chats*15,d.active?10:4);return<div key={d.date} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:4}}>
+<div style={{width:'100%',height:h,maxHeight:90,borderRadius:6,background:d.active?'linear-gradient(to top,#8B5CF6,#C4B5FD)':'#F0EDE8',transition:'height .3s'}}/>
+<span style={{fontSize:9,color:'#A8A29E',fontWeight:600}}>{d.label}</span>
+</div>})}
+</div>
+<div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#78716C'}}>
+<span>📝 {dash.weekSummary?.quizzes||0} quizzes · Avg {dash.weekSummary?.avgScore||0}%</span>
+<span>🦊 {dash.weekSummary?.chats||0} Foxy chats</span>
+</div>
+</div>}
+
+{/* Chapter Mastery Grid */}
+{dash?.chapters?.length>0&&<div className="a-card" style={{marginBottom:16}}>
+<h3 style={{fontSize:13,fontWeight:800,color:'#78716C',letterSpacing:'.05em',marginBottom:14}}>📚 CHAPTER MASTERY — {child.preferred_subject}</h3>
+<div style={{display:'flex',flexDirection:'column',gap:8}}>
+{dash.chapters.map((ch:any)=>{
+const colors:Record<string,{bg:string;bar:string;text:string}>={mastered:{bg:'#F0FDF4',bar:'#16A34A',text:'Mastered'},learning:{bg:'#EFF6FF',bar:'#3B82F6',text:'Learning'},needs_work:{bg:'#FEF2F2',bar:'#EF4444',text:'Needs Practice'},not_started:{bg:'#F5F4F0',bar:'#D4D0C8',text:'Not Started'},no_content:{bg:'#FAFAF8',bar:'#E7E5E4',text:'No Content'}};
+const c=colors[ch.status]||colors.no_content;
+return<div key={ch.chapter_number} style={{padding:'10px 14px',borderRadius:12,background:c.bg}}>
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+<span style={{fontSize:12,fontWeight:700}}>Ch {ch.chapter_number}: {ch.title}</span>
+{ch.best_score>0&&<span style={{fontSize:12,fontWeight:900,color:c.bar}}>{ch.best_score}%</span>}
+{ch.best_score===0&&<span style={{fontSize:10,fontWeight:600,color:'#A8A29E'}}>{c.text}</span>}
+</div>
+<div style={{height:4,borderRadius:2,background:`${c.bar}20`}}><div style={{height:'100%',borderRadius:2,background:c.bar,width:`${Math.max(ch.best_score,ch.rag_content>0?3:0)}%`,transition:'width .5s'}}/></div>
+{ch.quiz_sessions>0&&<p style={{fontSize:10,color:'#78716C',marginTop:3}}>{ch.quiz_sessions} quiz{ch.quiz_sessions>1?'zes':''} · {ch.correct_questions}/{ch.total_questions} correct</p>}
+</div>})}
 </div></div>}
-<div style={{background:'linear-gradient(135deg,#1C1917,#292524)',borderRadius:20,padding:24,color:'#D6D3D1',lineHeight:1.7,fontSize:14}}>
-<p style={{fontSize:12,fontWeight:800,color:'#8B5CF6',letterSpacing:'.08em',marginBottom:10}}>{'\uD83D\uDCA1'} PARENT TIP</p>
-<p>Focus on celebrating effort, not just results. When your child maintains a streak or tries a difficult topic, that's worth acknowledging!</p>
+
+{/* Recent Activity Timeline */}
+{dash?.activityLog?.length>0&&<div className="a-card" style={{marginBottom:16}}>
+<h3 style={{fontSize:13,fontWeight:800,color:'#78716C',letterSpacing:'.05em',marginBottom:14}}>🕐 RECENT ACTIVITY</h3>
+{dash.activityLog.slice(0,10).map((a:any,i:number)=><div key={i} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:i<9?'1px solid #F5F4F0':'none'}}>
+<span style={{fontSize:18,width:28,textAlign:'center'}}>{a.type==='quiz'?'🎯':a.type==='chat'?'🦊':'📝'}</span>
+<div style={{flex:1}}>
+<p style={{fontSize:13,fontWeight:600}}>{a.type==='quiz'?`Quiz: ${a.subject} Ch${a.chapter||'?'} — ${a.score}% (${a.correct}/${a.questions})`:a.type==='chat'?`Foxy Chat: ${a.title||a.subject}`:a.title||'Note'}</p>
+<p style={{fontSize:10,color:'#A8A29E'}}>{new Date(a.date).toLocaleDateString('en-IN',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</p>
+</div>
+{a.type==='quiz'&&<div style={{padding:'4px 10px',borderRadius:8,fontSize:13,fontWeight:900,background:a.score>=70?'#F0FDF4':a.score>=40?'#FFFBEB':'#FEF2F2',color:a.score>=70?'#16A34A':a.score>=40?'#D97706':'#DC2626'}}>{a.score}%</div>}
+</div>)}
+</div>}
+
+{/* Encouragement */}
+<div style={{background:'linear-gradient(135deg,#1C1917,#292524)',borderRadius:20,padding:20,color:'#D6D3D1',lineHeight:1.7,fontSize:13}}>
+<p style={{fontSize:11,fontWeight:800,color:'#8B5CF6',letterSpacing:'.08em',marginBottom:8}}>💡 PARENT TIP</p>
+<p>Focus on celebrating effort, not just results. When {child.name} maintains a streak or tries a difficult topic, that's worth acknowledging!</p>
 </div></div>)}
 
 function ParentReport({report,child}:{report:any;child:any}){
-if(!report||!child)return<div className="a-page" style={{textAlign:'center',paddingTop:80}}><p style={{fontSize:48}}>{'\uD83D\uDCCA'}</p><p style={{color:'#A8A29E',marginTop:8}}>Select a child to view report</p></div>;
-return(<div className="a-page"><h1 className="a-title">{'\uD83D\uDCCA'} Detailed Analysis — {child.name}</h1><p className="a-greet" style={{marginBottom:20}}>{child.grade} · {child.preferred_subject}</p>
-{report.weakTopics?.length>0&&<div className="a-card" style={{borderLeft:'4px solid #EF4444'}}><h3 className="a-section-title">{'\u26A0\uFE0F'} NEEDS ATTENTION ({report.weakTopics.length} topics)</h3>
+if(!report||!child)return<div className="a-page" style={{textAlign:'center',paddingTop:80}}><p style={{fontSize:48}}>📊</p><p style={{color:'#A8A29E',marginTop:8}}>Select a child to view report</p></div>;
+return(<div className="a-page"><h1 className="a-title">📊 Detailed Analysis — {child.name}</h1><p className="a-greet" style={{marginBottom:20}}>{child.grade} · {child.preferred_subject}</p>
+{report.weakTopics?.length>0&&<div className="a-card" style={{borderLeft:'4px solid #EF4444'}}><h3 className="a-section-title">⚠️ NEEDS ATTENTION ({report.weakTopics.length} topics)</h3>
 {report.weakTopics.slice(0,8).map((t:any,i:number)=><div key={i} style={{marginBottom:10}}><div style={{display:'flex',justifyContent:'space-between'}}><span style={{fontSize:13,fontWeight:600}}>{t.topic_tag?.replace(/_/g,' ')}</span><span style={{fontSize:12,fontWeight:700,color:'#DC2626'}}>{t.mastery_percent}%</span></div><div style={{height:5,borderRadius:3,background:'#FEE2E2'}}><div style={{height:'100%',borderRadius:3,width:`${t.mastery_percent}%`,background:'#EF4444'}}/></div></div>)}</div>}
-{report.strongTopics?.length>0&&<div className="a-card" style={{borderLeft:'4px solid #22C55E'}}><h3 className="a-section-title">{'\u2B50'} STRONG AREAS ({report.strongTopics.length} topics)</h3>
+{report.strongTopics?.length>0&&<div className="a-card" style={{borderLeft:'4px solid #22C55E'}}><h3 className="a-section-title">⭐ STRONG AREAS ({report.strongTopics.length} topics)</h3>
 {report.strongTopics.slice(0,6).map((t:any,i:number)=><div key={i} style={{marginBottom:10}}><div style={{display:'flex',justifyContent:'space-between'}}><span style={{fontSize:13,fontWeight:600}}>{t.topic_tag?.replace(/_/g,' ')}</span><span style={{fontSize:12,fontWeight:700,color:'#16A34A'}}>{t.mastery_percent}%</span></div><div style={{height:5,borderRadius:3,background:'#DCFCE7'}}><div style={{height:'100%',borderRadius:3,width:`${t.mastery_percent}%`,background:'#22C55E'}}/></div></div>)}</div>}
-{report.quizzes?.length>0&&<div className="a-card"><h3 className="a-section-title">{'\uD83C\uDFAF'} RECENT QUIZZES</h3>
+{report.quizzes?.length>0&&<div className="a-card"><h3 className="a-section-title">🎯 RECENT QUIZZES</h3>
 {report.quizzes.slice(0,10).map((q:any)=><div key={q.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 0',borderBottom:'1px solid #F5F4F0'}}>
-<div><p style={{fontSize:13,fontWeight:600}}>{q.subject} · {q.grade}</p><p style={{fontSize:11,color:'#A8A29E'}}>{new Date(q.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</p></div>
+<div><p style={{fontSize:13,fontWeight:600}}>{q.subject}{q.chapter_number?` · Ch${q.chapter_number}`:''}</p><p style={{fontSize:11,color:'#A8A29E'}}>{new Date(q.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</p></div>
 <div style={{fontSize:15,fontWeight:900,padding:'4px 12px',borderRadius:10,background:q.score_percent>=70?'#F0FDF4':q.score_percent>=40?'#FFFBEB':'#FEF2F2',color:q.score_percent>=70?'#16A34A':q.score_percent>=40?'#D97706':'#DC2626'}}>{q.score_percent}%</div>
 </div>)}</div>}
-{report.moments?.length>0&&<div className="a-card"><h3 className="a-section-title">{'\u2728'} ACHIEVEMENTS</h3>
-{report.moments.slice(0,6).map((m:any,i:number)=><div key={i} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:'1px solid #F5F4F0'}}><span style={{fontSize:20}}>{m.moment_type==='concept_mastered'?'\u2B50':m.moment_type==='streak_milestone'?'\uD83D\uDD25':'\uD83C\uDF89'}</span><div><p style={{fontSize:13,fontWeight:600}}>{m.title}</p><p style={{fontSize:11,color:'#A8A29E'}}>{m.description?.substring(0,60)}</p></div><span style={{marginLeft:'auto',fontSize:12,fontWeight:800,color:'#E8590C'}}>+{m.xp_awarded} XP</span></div>)}</div>}
+{report.moments?.length>0&&<div className="a-card"><h3 className="a-section-title">✨ ACHIEVEMENTS</h3>
+{report.moments.slice(0,6).map((m:any,i:number)=><div key={i} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:'1px solid #F5F4F0'}}><span style={{fontSize:20}}>{m.moment_type==='concept_mastered'?'⭐':m.moment_type==='streak_milestone'?'🔥':'🎉'}</span><div><p style={{fontSize:13,fontWeight:600}}>{m.title}</p><p style={{fontSize:11,color:'#A8A29E'}}>{m.description?.substring(0,60)}</p></div><span style={{marginLeft:'auto',fontSize:12,fontWeight:800,color:'#E8590C'}}>+{m.xp_awarded} XP</span></div>)}</div>}
 </div>)}
 
 function ParentTips({tips,child}:{tips:any[];child:any}){
-const cats=[{id:'all',l:'All'},{id:'academic',l:'\uD83D\uDCDA Academic'},{id:'motivational',l:'\uD83D\uDCAA Motivational'},{id:'behavioral',l:'\uD83E\uDDE0 Behavioral'},{id:'exam_prep',l:'\uD83D\uDCDD Exam Prep'},{id:'health',l:'\u2764\uFE0F Health'}];
+const cats=[{id:'all',l:'All'},{id:'academic',l:'📚 Academic'},{id:'motivational',l:'💪 Motivational'},{id:'behavioral',l:'🧠 Behavioral'},{id:'exam_prep',l:'📝 Exam Prep'},{id:'health',l:'❤️ Health'}];
 const[cat,setCat]=useState('all');
 const filtered=cat==='all'?tips:tips.filter(t=>t.category===cat);
-return(<div className="a-page"><h1 className="a-title">{'\uD83D\uDCA1'} Guidelines & Tips</h1><p className="a-greet" style={{marginBottom:16}}>Expert advice for supporting your child's learning</p>
+return(<div className="a-page"><h1 className="a-title">💡 Guidelines & Tips</h1><p className="a-greet" style={{marginBottom:16}}>Expert advice for supporting {child?.name||'your child'}'s learning</p>
 <div style={{display:'flex',gap:6,overflowX:'auto',marginBottom:20,paddingBottom:4}}>{cats.map(c=><button key={c.id} onClick={()=>setCat(c.id)} className={`a-pill${cat===c.id?' on':''}`} style={{whiteSpace:'nowrap'}}>{c.l}</button>)}</div>
 {filtered.length>0?filtered.map((t:any)=><div key={t.id} className="a-card" style={{borderLeft:`4px solid ${t.category==='academic'?'#3B82F6':t.category==='motivational'?'#22C55E':t.category==='exam_prep'?'#F59E0B':t.category==='health'?'#EC4899':'#8B5CF6'}`}}>
 <h3 style={{fontSize:15,fontWeight:800,marginBottom:6}}>{t.title}</h3>
 <p style={{fontSize:14,color:'#57534E',lineHeight:1.7}}>{t.content}</p>
 <p style={{fontSize:11,color:'#A8A29E',marginTop:8,fontWeight:600}}>{t.category?.toUpperCase()}</p>
-</div>):<div style={{textAlign:'center',padding:40,color:'#A8A29E'}}><p style={{fontSize:32}}>{'\uD83D\uDCA1'}</p><p>No tips in this category yet</p></div>}
+</div>):<div style={{textAlign:'center',padding:40,color:'#A8A29E'}}><p style={{fontSize:32}}>💡</p><p>No tips in this category yet</p></div>}
 </div>)}
 // ═══════════════════════════════════════════════════════
 // ADMIN PORTAL
