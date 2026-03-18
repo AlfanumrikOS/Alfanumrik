@@ -7,7 +7,6 @@ const SK = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR
 const sb = createClient(SB, SK)
 const SITE = typeof window!=='undefined'?window.location.origin:'https://alfanumrik-eight.vercel.app'
 const EF = `${SB}/functions/v1`
-
 // ── Sound Engine — Socratic + Holistic (12 types) ──
 let audioCtx:AudioContext|null=null
 function getAC(){if(!audioCtx&&typeof window!=='undefined')audioCtx=new(window.AudioContext||(window as any).webkitAudioContext)();return audioCtx}
@@ -198,68 +197,283 @@ function Progress({p,stats}:{p:Prof;stats:Stats}){const[mastery,setMastery]=useS
 function ProfileScr({p,onUp,out,stats}:{p:Prof;onUp:(p:Prof)=>void;out:()=>void;stats:Stats}){const[ed,setEd]=useState<string|null>(null);const[nm,setNm]=useState(p.name);const[gr,setGr]=useState(p.grade);const[su,setSu]=useState(p.subject);const[la,setLa]=useState(p.language);const save=()=>{snd('ok');onUp({...p,name:nm,grade:gr,subject:su,language:la});setEd(null)};const acc=stats.asked>0?Math.round((stats.correct/stats.asked)*100):0;return(<div className="a-page"><div style={{textAlign:'center',padding:'16px 0 20px'}}><div style={{width:80,height:80,borderRadius:'50%',margin:'0 auto 10px',background:'linear-gradient(135deg,#E8590C,#EC4899)',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:32,fontWeight:900}}>{nm.charAt(0).toUpperCase()}</div><h1 style={{fontSize:24,fontWeight:900}}>{nm}</h1><p style={{fontSize:13,color:'#A8A29E',marginTop:4}}>{gr} &middot; {su}</p><div style={{display:'flex',justifyContent:'center',gap:24,marginTop:16}}>{[{v:String(stats.xp),l:'XP'},{v:String(stats.sessions),l:'Quizzes'},{v:`${acc}%`,l:'Accuracy'}].map(x=>(<div key={x.l}><p style={{fontSize:20,fontWeight:900}}>{x.v}</p><p style={{fontSize:10,color:'#A8A29E',fontWeight:600}}>{x.l}</p></div>))}</div></div><div style={{maxWidth:520,margin:'0 auto'}}>{[{k:'name',l:'Name',v:nm},{k:'grade',l:'Grade',v:gr},{k:'subject',l:'Subject',v:su},{k:'lang',l:'Language',v:LANGS.find(l=>l.code===la)?.label||la}].map(f=><div key={f.k} className="a-card" style={{padding:0,overflow:'hidden',marginBottom:10}}><div className="a-pr" onClick={()=>{setEd(ed===f.k?null:f.k);snd('click')}} style={{minHeight:52}}><span className="a-pr-l">{f.l}</span><span className="a-pr-v">{ed===f.k?'':f.v}</span><span style={{color:'#A8A29E'}}>{ed===f.k?'\u2715':'\u270E'}</span></div>{ed===f.k&&<div className="a-ed">{f.k==='name'&&<><input value={nm} onChange={e=>setNm(e.target.value)} className="a-ed-inp" autoFocus/><button onClick={save} disabled={!nm.trim()} className="a-btn-primary" style={{fontSize:13,padding:'8px 20px',minHeight:40}}>Save</button></>}{f.k==='grade'&&<><div style={{display:'flex',gap:6,flexWrap:'wrap'}}>{GRADES.map(g=><button key={g} onClick={()=>{setGr(g);snd('click')}} className={`a-pill-n${gr===g?' on':''}`} style={{minHeight:40}}>{g}</button>)}</div><button onClick={save} className="a-btn-primary" style={{marginTop:8,fontSize:13,padding:'8px 20px',minHeight:40}}>Save</button></>}{f.k==='subject'&&<><div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:6}}>{SUBJ.filter(x=>{const g=parseInt(gr.replace(/\D/g,'')||'6');return g>=11?['Mathematics','Physics','Chemistry','Biology','English','Computer Science','Accountancy','Economics'].includes(x.id):['Mathematics','Science','English','Hindi','Social Studies'].includes(x.id)}).map(x=><button key={x.id} onClick={()=>{setSu(x.id);snd('click')}} style={{padding:'10px 12px',borderRadius:12,border:su===x.id?'none':'1px solid #E7E5E4',background:su===x.id?x.c:'#fff',color:su===x.id?'#fff':'#1C1917',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',minHeight:44}}><span>{x.icon}</span> {x.id}</button>)}</div><button onClick={save} className="a-btn-primary" style={{marginTop:8,fontSize:13,padding:'8px 20px',minHeight:40}}>Save</button></>}{f.k==='lang'&&<><div style={{display:'flex',gap:6,flexWrap:'wrap'}}>{LANGS.map(l=><button key={l.code} onClick={()=>{setLa(l.code);snd('click')}} className={`a-pill-n${la===l.code?' on':''}`} style={{minHeight:40}}>{l.label}</button>)}</div><button onClick={save} className="a-btn-primary" style={{marginTop:8,fontSize:13,padding:'8px 20px',minHeight:40}}>Save</button></>}</div>}</div>)}<button onClick={()=>{snd('click');out()}} style={{width:'100%',marginTop:8,padding:14,borderRadius:14,border:'none',background:'#FEE2E2',color:'#DC2626',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit',minHeight:52}}>Sign Out</button><p style={{textAlign:'center',fontSize:10,color:'#D4D0C8',marginTop:20}}>Alfanumrik&reg; v5.0 &middot; CusioSense Learning India Private Limited</p></div></div>)}
 // NAV — colorful with bigger mobile touch targets
 function Nav({active,nav,p}:{active:Screen;nav:(s:Screen)=>void;p:Prof}){const tabs=[{sc:'home' as Screen,l:'Home',i:'\uD83C\uDFE0',ac:'#E8590C'},{sc:'foxy' as Screen,l:'Foxy',i:'\uD83E\uDD8A',ac:'#E8590C'},{sc:'quiz' as Screen,l:'Quiz',i:'\uD83C\uDFAF',ac:'#8B5CF6'},{sc:'skills' as Screen,l:'Skills',i:'\u2B50',ac:'#0EA5E9'},{sc:'notes' as Screen,l:'Notes',i:'\uD83D\uDCDD',ac:'#F59E0B'},{sc:'profile' as Screen,l:'Me',i:'\uD83D\uDC64',ac:'#EC4899'}];return(<><nav className="a-side"><div className="a-side-brand"><span style={{fontSize:28}}>{'\uD83E\uDD8A'}</span><div><span style={{fontSize:17,fontWeight:900,color:'#E8590C'}}>Alfanumrik</span><p style={{fontSize:10,color:'#A8A29E',fontWeight:600,marginTop:1}}>{p.grade} &middot; {p.subject}</p></div></div><div className="a-side-nav">{tabs.map(t=>{const on=active===t.sc;return<button key={t.sc} onClick={()=>{snd('nav');nav(t.sc)}} style={{display:'flex',alignItems:'center',gap:12,padding:'14px 16px',borderRadius:14,border:'none',background:on?`${t.ac}10`:'transparent',cursor:'pointer',fontFamily:'inherit',fontSize:14,fontWeight:600,color:on?t.ac:'#78716C',width:'100%',textAlign:'left',transition:'all .15s'}}><span style={{fontSize:20,width:28,textAlign:'center'}}>{t.i}</span><span>{t.l}</span>{on&&<div style={{marginLeft:'auto',width:6,height:6,borderRadius:'50%',background:t.ac}}/>}</button>})}</div><div className="a-side-user"><div className="a-side-av">{p.name.charAt(0)}</div><div><p style={{fontSize:13,fontWeight:700}}>{p.name}</p><p style={{fontSize:11,color:'#A8A29E'}}>{p.grade}</p></div></div></nav><nav className="a-bot">{tabs.map(t=>{const on=active===t.sc;return<button key={t.sc} onClick={()=>{snd('nav');nav(t.sc)}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,padding:'8px 12px',minWidth:52,minHeight:48,border:'none',background:on?`${t.ac}10`:'none',cursor:'pointer',fontFamily:'inherit',borderRadius:12,transition:'all .2s'}}><span style={{fontSize:22,filter:on?'none':'grayscale(.6) opacity(.5)',transition:'all .2s',transform:on?'scale(1.15)':'scale(1)'}}>{t.i}</span><span style={{fontSize:10,fontWeight:700,color:on?t.ac:'#A8A29E'}}>{t.l}</span></button>})}</nav></>)}
-// MAIN APP
+// ═══════════════════════════════════════════════════════
+// LANDING PAGE — Role Selection
+// ═══════════════════════════════════════════════════════
+function Landing({onRole}:{onRole:(r:'student'|'parent'|'admin')=>void}){
+return(<div className="a-landing">
+<div className="a-landing-bg"/>
+<div className="a-landing-content">
+<div style={{fontSize:64,marginBottom:8,animation:'alfBounce 2s infinite'}}>{'\uD83E\uDD8A'}</div>
+<h1 style={{fontSize:42,fontWeight:900,color:'#fff',letterSpacing:'-.03em'}}>Alfanumrik</h1>
+<p style={{fontSize:16,color:'rgba(255,255,255,.5)',marginTop:8,marginBottom:40}}>AI-powered adaptive learning by CusioSense Learning India Pvt. Ltd.</p>
+<div style={{display:'flex',flexDirection:'column',gap:14,maxWidth:360,width:'100%'}}>
+<button onClick={()=>{snd('click');onRole('student')}} className="a-role-btn" style={{background:'linear-gradient(135deg,#E8590C,#DC2626)'}}>
+<span style={{fontSize:32}}>{'\uD83C\uDF93'}</span><div><strong style={{fontSize:18}}>I am a Student</strong><p style={{fontSize:12,opacity:.7,marginTop:2}}>Learn with Foxy AI Tutor</p></div><span style={{marginLeft:'auto',fontSize:20}}>{'\u2192'}</span>
+</button>
+<button onClick={()=>{snd('click');onRole('parent')}} className="a-role-btn" style={{background:'linear-gradient(135deg,#8B5CF6,#6D28D9)'}}>
+<span style={{fontSize:32}}>{'\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67'}</span><div><strong style={{fontSize:18}}>I am a Parent</strong><p style={{fontSize:12,opacity:.7,marginTop:2}}>Track your child's progress</p></div><span style={{marginLeft:'auto',fontSize:20}}>{'\u2192'}</span>
+</button>
+<button onClick={()=>{snd('click');onRole('admin')}} className="a-role-btn" style={{background:'linear-gradient(135deg,#1C1917,#44403C)',border:'1px solid rgba(255,255,255,.1)'}}>
+<span style={{fontSize:32}}>{'\u2699\uFE0F'}</span><div><strong style={{fontSize:18}}>Admin</strong><p style={{fontSize:12,opacity:.7,marginTop:2}}>Platform management</p></div><span style={{marginLeft:'auto',fontSize:20}}>{'\u2192'}</span>
+</button>
+</div>
+<p style={{fontSize:11,color:'rgba(255,255,255,.25)',marginTop:32}}>{'\u00A9'} 2026 CusioSense Learning India Private Limited</p>
+</div>
+</div>)}
+// ═══════════════════════════════════════════════════════
+// PARENT PORTAL
+// ═══════════════════════════════════════════════════════
+function ParentOnboard({user,done}:{user:any;done:(g:any)=>void}){const[nm,setNm]=useState(user?.user_metadata?.full_name||'');const[ph,setPh]=useState('');const[rel,setRel]=useState('parent');const[ld,setLd]=useState(false);
+const go=async()=>{if(!nm.trim())return;setLd(true);const d=await api('parent-portal',{action:'register_parent',auth_user_id:user.id,name:nm.trim(),email:user.email,phone:ph,relationship:rel,language:'en'});setLd(false);if(d.guardian_id){done({id:d.guardian_id,name:nm.trim(),relationship:rel})}};
+return(<div className="a-center-dark" style={{maxWidth:440,padding:'40px 24px'}}><div style={{fontSize:56,marginBottom:16}}>{'\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67'}</div>
+<h2 style={{fontSize:26,fontWeight:800,color:'#fff',marginBottom:8}}>Parent Registration</h2>
+<p style={{fontSize:14,color:'rgba(255,255,255,.5)',marginBottom:28}}>Set up your parent account to track your child's learning</p>
+<input value={nm} onChange={e=>setNm(e.target.value)} placeholder="Your name" className="a-ob-inp" style={{marginBottom:12}} autoFocus/>
+<input value={ph} onChange={e=>setPh(e.target.value)} placeholder="Phone (optional)" className="a-ob-inp" style={{marginBottom:12}}/>
+<div style={{display:'flex',gap:8,marginBottom:20}}>{['parent','mother','father','guardian'].map(r=><button key={r} onClick={()=>setRel(r)} style={{flex:1,padding:'10px 8px',borderRadius:12,border:rel===r?'2px solid #8B5CF6':'1px solid rgba(255,255,255,.1)',background:rel===r?'#8B5CF620':'rgba(255,255,255,.05)',color:rel===r?'#C4B5FD':'rgba(255,255,255,.5)',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',textTransform:'capitalize'}}>{r}</button>)}</div>
+<button onClick={go} disabled={!nm.trim()||ld} className="a-ob-next" style={{width:'100%',background:'linear-gradient(135deg,#8B5CF6,#6D28D9)',minHeight:52}}>{ld?'Setting up...':'Continue'}</button>
+</div>)}
+
+function ParentLinkChild({guardian,onLinked}:{guardian:any;onLinked:()=>void}){const[code,setCode]=useState('');const[ld,setLd]=useState(false);const[err,setErr]=useState('');const[ok,setOk]=useState('');
+const link=async()=>{if(code.length<4)return;setLd(true);setErr('');const d=await api('parent-portal',{action:'link_child',guardian_id:guardian.id,link_code:code});setLd(false);if(d.error){setErr(d.error)}else if(d.success){setOk(`Linked to ${d.student.name} (${d.student.grade})!`);setTimeout(onLinked,1500)}};
+return(<div className="a-center-dark" style={{maxWidth:440,padding:'40px 24px'}}><div style={{fontSize:56,marginBottom:16}}>{'\uD83D\uDD17'}</div>
+<h2 style={{fontSize:24,fontWeight:800,color:'#fff',marginBottom:8}}>Link Your Child</h2>
+<p style={{fontSize:14,color:'rgba(255,255,255,.5)',marginBottom:24}}>Ask your child to check their Profile for the 6-character Link Code</p>
+{err&&<div className="a-err">{err}</div>}{ok&&<div className="a-ok-msg">{ok}</div>}
+<input value={code} onChange={e=>setCode(e.target.value.toUpperCase())} placeholder="Enter 6-character code" maxLength={6} className="a-ob-inp" style={{textAlign:'center',letterSpacing:8,fontSize:24}} onKeyDown={e=>e.key==='Enter'&&link()}/>
+<button onClick={link} disabled={code.length<4||ld} className="a-ob-next" style={{width:'100%',marginTop:16,background:'linear-gradient(135deg,#8B5CF6,#6D28D9)',minHeight:52}}>{ld?'Linking...':'Link Child'}</button>
+<button onClick={onLinked} style={{width:'100%',marginTop:8,padding:12,background:'none',border:'none',color:'rgba(255,255,255,.4)',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>Skip for now</button>
+</div>)}
+
+function ParentDash({guardian,onLogout}:{guardian:any;onLogout:()=>void}){
+const[children,setChildren]=useState<any[]>([]);const[selChild,setSelChild]=useState<any>(null);const[report,setReport]=useState<any>(null);const[tips,setTips]=useState<any[]>([]);const[weeklyReport,setWeeklyReport]=useState<any>(null);const[tab,setTab]=useState<'overview'|'report'|'tips'|'link'>('overview');const[ld,setLd]=useState(true);
+useEffect(()=>{loadChildren()},[]);
+const loadChildren=async()=>{setLd(true);const d=await api('parent-portal',{action:'get_children',guardian_id:guardian.id});setChildren(d.children||[]);if(d.children?.length>0&&!selChild){setSelChild(d.children[0]);loadReport(d.children[0].id);loadWeekly(d.children[0].id)}setLd(false);const t=await api('parent-portal',{action:'get_tips',grade:d.children?.[0]?.grade});setTips(t.tips||[])};
+const loadReport=async(sid:string)=>{const d=await api('parent-portal',{action:'get_child_report',student_id:sid});setReport(d)};
+const loadWeekly=async(sid:string)=>{const d=await api('parent-portal',{action:'get_weekly_report',student_id:sid});setWeeklyReport(d.week)};
+const selectChild=(c:any)=>{setSelChild(c);loadReport(c.id);loadWeekly(c.id);setTab('overview')};
+const ptabs=[{id:'overview' as const,i:'\uD83C\uDFE0',l:'Overview'},{id:'report' as const,i:'\uD83D\uDCCA',l:'Analysis'},{id:'tips' as const,i:'\uD83D\uDCA1',l:'Tips'},{id:'link' as const,i:'\uD83D\uDD17',l:'Link Child'}];
+if(ld)return<div className="a-center" style={{background:'#FAFAF8'}}><div style={{fontSize:48,animation:'alfPulse 1.5s infinite'}}>{'\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67'}</div><p style={{color:'#A8A29E',marginTop:8}}>Loading...</p></div>;
+return(<div className="a-shell"><nav className="a-side" style={{borderColor:'#8B5CF615'}}><div className="a-side-brand"><span style={{fontSize:28}}>{'\uD83E\uDD8A'}</span><div><span style={{fontSize:17,fontWeight:900,color:'#8B5CF6'}}>Parent Portal</span><p style={{fontSize:10,color:'#A8A29E',fontWeight:600,marginTop:1}}>{guardian.name}</p></div></div>
+{children.length>0&&<div style={{padding:'12px 12px 0'}}><p style={{fontSize:10,fontWeight:800,color:'#A8A29E',letterSpacing:'.06em',padding:'0 4px',marginBottom:6}}>YOUR CHILDREN</p>
+{children.map(c=><button key={c.id} onClick={()=>selectChild(c)} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',borderRadius:12,border:'none',background:selChild?.id===c.id?'#8B5CF610':'transparent',cursor:'pointer',fontFamily:'inherit',width:'100%',textAlign:'left',marginBottom:2}}>
+<div style={{width:32,height:32,borderRadius:'50%',background:'linear-gradient(135deg,#8B5CF6,#EC4899)',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:800,flexShrink:0}}>{c.name?.charAt(0)}</div>
+<div><p style={{fontSize:13,fontWeight:700,color:selChild?.id===c.id?'#8B5CF6':'#1C1917'}}>{c.name}</p><p style={{fontSize:10,color:'#A8A29E'}}>{c.grade}</p></div>
+</button>)}</div>}
+<div className="a-side-nav" style={{marginTop:8}}>{ptabs.map(t=><button key={t.id} onClick={()=>setTab(t.id)} className={`nav-btn ${tab===t.id?'active':''}`} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 14px',borderRadius:10,border:'none',background:tab===t.id?'#8B5CF610':'transparent',color:tab===t.id?'#8B5CF6':'#78716C',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',width:'100%',textAlign:'left'}}><span style={{fontSize:18}}>{t.i}</span>{t.l}</button>)}</div>
+<div className="a-side-user"><button onClick={onLogout} style={{width:'100%',padding:10,borderRadius:10,border:'1px solid #E7E5E4',background:'#fff',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',color:'#57534E'}}>Sign Out</button></div>
+</nav>
+<nav className="a-bot">{ptabs.map(t=><button key={t.id} onClick={()=>setTab(t.id)} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,padding:'8px 12px',minWidth:52,minHeight:48,border:'none',background:tab===t.id?'#8B5CF610':'none',cursor:'pointer',fontFamily:'inherit',borderRadius:12}}><span style={{fontSize:22,filter:tab===t.id?'none':'grayscale(.6) opacity(.5)'}}>{t.i}</span><span style={{fontSize:10,fontWeight:700,color:tab===t.id?'#8B5CF6':'#A8A29E'}}>{t.l}</span></button>)}</nav>
+<main className="a-main">{tab==='overview'&&<ParentOverview child={selChild} weekly={weeklyReport}/>}{tab==='report'&&<ParentReport report={report} child={selChild}/>}{tab==='tips'&&<ParentTips tips={tips} child={selChild}/>}{tab==='link'&&<div className="a-page"><ParentLinkChild guardian={guardian} onLinked={loadChildren}/></div>}</main>
+</div>)}
+
+function ParentOverview({child,weekly}:{child:any;weekly:any}){
+if(!child)return<div className="a-page" style={{textAlign:'center',paddingTop:80}}><p style={{fontSize:48}}>{'\uD83D\uDD17'}</p><h3 style={{marginTop:12}}>No child linked yet</h3><p style={{color:'#A8A29E',fontSize:14,marginTop:4}}>Go to "Link Child" to connect your child's account</p></div>;
+const acc=child.asked>0?Math.round((child.correct/child.asked)*100):0;
+return(<div className="a-page">
+<div style={{background:'linear-gradient(135deg,#8B5CF6,#EC4899)',borderRadius:24,padding:'28px 24px',color:'#fff',marginBottom:20,position:'relative',overflow:'hidden'}}>
+<div style={{position:'absolute',top:-30,right:-30,width:120,height:120,borderRadius:'50%',background:'rgba(255,255,255,.1)'}}/>
+<p style={{fontSize:14,opacity:.8,fontWeight:500}}>{child.grade} · {child.preferred_subject}</p>
+<h1 style={{fontSize:28,fontWeight:900,margin:'4px 0 16px'}}>{child.name}'s Progress</h1>
+<div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
+{[{v:String(child.xp),l:'XP',i:'\u26A1'},{v:String(child.streak||0),l:'Streak',i:'\uD83D\uDD25'},{v:`${acc}%`,l:'Accuracy',i:'\uD83C\uDFAF'},{v:String(child.sessions),l:'Quizzes',i:'\uD83D\uDCDA'},{v:`${child.minutes||0}m`,l:'Study Time',i:'\u23F1'}].map(s=>(
+<div key={s.l} style={{background:'rgba(255,255,255,.15)',borderRadius:14,padding:'10px 16px',display:'flex',alignItems:'center',gap:8}}>
+<span style={{fontSize:18}}>{s.i}</span><div><p style={{fontSize:18,fontWeight:900,lineHeight:1}}>{s.v}</p><p style={{fontSize:10,opacity:.7,fontWeight:600}}>{s.l}</p></div></div>))}
+</div></div>
+{weekly&&<div className="a-card"><h3 className="a-section-title">{'\uD83D\uDCCA'} THIS WEEK</h3>
+<div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:10}}>
+<div style={{padding:16,borderRadius:14,background:'#F0FDF4',textAlign:'center'}}><p style={{fontSize:24,fontWeight:900,color:'#22C55E'}}>{weekly.totalQuizzes}</p><p style={{fontSize:11,color:'#57534E',fontWeight:600}}>Quizzes Taken</p></div>
+<div style={{padding:16,borderRadius:14,background:'#EFF6FF',textAlign:'center'}}><p style={{fontSize:24,fontWeight:900,color:'#3B82F6'}}>{weekly.avgScore}%</p><p style={{fontSize:11,color:'#57534E',fontWeight:600}}>Avg Score</p></div>
+<div style={{padding:16,borderRadius:14,background:'#FAF5FF',textAlign:'center'}}><p style={{fontSize:24,fontWeight:900,color:'#8B5CF6'}}>{weekly.foxyChats}</p><p style={{fontSize:11,color:'#57534E',fontWeight:600}}>Foxy Sessions</p></div>
+<div style={{padding:16,borderRadius:14,background:'#FFF7ED',textAlign:'center'}}><p style={{fontSize:24,fontWeight:900,color:'#E8590C'}}>{weekly.engagement}%</p><p style={{fontSize:11,color:'#57534E',fontWeight:600}}>Engagement</p></div>
+</div></div>}
+<div style={{background:'linear-gradient(135deg,#1C1917,#292524)',borderRadius:20,padding:24,color:'#D6D3D1',lineHeight:1.7,fontSize:14}}>
+<p style={{fontSize:12,fontWeight:800,color:'#8B5CF6',letterSpacing:'.08em',marginBottom:10}}>{'\uD83D\uDCA1'} PARENT TIP</p>
+<p>Focus on celebrating effort, not just results. When your child maintains a streak or tries a difficult topic, that's worth acknowledging!</p>
+</div></div>)}
+
+function ParentReport({report,child}:{report:any;child:any}){
+if(!report||!child)return<div className="a-page" style={{textAlign:'center',paddingTop:80}}><p style={{fontSize:48}}>{'\uD83D\uDCCA'}</p><p style={{color:'#A8A29E',marginTop:8}}>Select a child to view report</p></div>;
+return(<div className="a-page"><h1 className="a-title">{'\uD83D\uDCCA'} Detailed Analysis — {child.name}</h1><p className="a-greet" style={{marginBottom:20}}>{child.grade} · {child.preferred_subject}</p>
+{report.weakTopics?.length>0&&<div className="a-card" style={{borderLeft:'4px solid #EF4444'}}><h3 className="a-section-title">{'\u26A0\uFE0F'} NEEDS ATTENTION ({report.weakTopics.length} topics)</h3>
+{report.weakTopics.slice(0,8).map((t:any,i:number)=><div key={i} style={{marginBottom:10}}><div style={{display:'flex',justifyContent:'space-between'}}><span style={{fontSize:13,fontWeight:600}}>{t.topic_tag?.replace(/_/g,' ')}</span><span style={{fontSize:12,fontWeight:700,color:'#DC2626'}}>{t.mastery_percent}%</span></div><div style={{height:5,borderRadius:3,background:'#FEE2E2'}}><div style={{height:'100%',borderRadius:3,width:`${t.mastery_percent}%`,background:'#EF4444'}}/></div></div>)}</div>}
+{report.strongTopics?.length>0&&<div className="a-card" style={{borderLeft:'4px solid #22C55E'}}><h3 className="a-section-title">{'\u2B50'} STRONG AREAS ({report.strongTopics.length} topics)</h3>
+{report.strongTopics.slice(0,6).map((t:any,i:number)=><div key={i} style={{marginBottom:10}}><div style={{display:'flex',justifyContent:'space-between'}}><span style={{fontSize:13,fontWeight:600}}>{t.topic_tag?.replace(/_/g,' ')}</span><span style={{fontSize:12,fontWeight:700,color:'#16A34A'}}>{t.mastery_percent}%</span></div><div style={{height:5,borderRadius:3,background:'#DCFCE7'}}><div style={{height:'100%',borderRadius:3,width:`${t.mastery_percent}%`,background:'#22C55E'}}/></div></div>)}</div>}
+{report.quizzes?.length>0&&<div className="a-card"><h3 className="a-section-title">{'\uD83C\uDFAF'} RECENT QUIZZES</h3>
+{report.quizzes.slice(0,10).map((q:any)=><div key={q.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 0',borderBottom:'1px solid #F5F4F0'}}>
+<div><p style={{fontSize:13,fontWeight:600}}>{q.subject} · {q.grade}</p><p style={{fontSize:11,color:'#A8A29E'}}>{new Date(q.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</p></div>
+<div style={{fontSize:15,fontWeight:900,padding:'4px 12px',borderRadius:10,background:q.score_percent>=70?'#F0FDF4':q.score_percent>=40?'#FFFBEB':'#FEF2F2',color:q.score_percent>=70?'#16A34A':q.score_percent>=40?'#D97706':'#DC2626'}}>{q.score_percent}%</div>
+</div>)}</div>}
+{report.moments?.length>0&&<div className="a-card"><h3 className="a-section-title">{'\u2728'} ACHIEVEMENTS</h3>
+{report.moments.slice(0,6).map((m:any,i:number)=><div key={i} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:'1px solid #F5F4F0'}}><span style={{fontSize:20}}>{m.moment_type==='concept_mastered'?'\u2B50':m.moment_type==='streak_milestone'?'\uD83D\uDD25':'\uD83C\uDF89'}</span><div><p style={{fontSize:13,fontWeight:600}}>{m.title}</p><p style={{fontSize:11,color:'#A8A29E'}}>{m.description?.substring(0,60)}</p></div><span style={{marginLeft:'auto',fontSize:12,fontWeight:800,color:'#E8590C'}}>+{m.xp_awarded} XP</span></div>)}</div>}
+</div>)}
+
+function ParentTips({tips,child}:{tips:any[];child:any}){
+const cats=[{id:'all',l:'All'},{id:'academic',l:'\uD83D\uDCDA Academic'},{id:'motivational',l:'\uD83D\uDCAA Motivational'},{id:'behavioral',l:'\uD83E\uDDE0 Behavioral'},{id:'exam_prep',l:'\uD83D\uDCDD Exam Prep'},{id:'health',l:'\u2764\uFE0F Health'}];
+const[cat,setCat]=useState('all');
+const filtered=cat==='all'?tips:tips.filter(t=>t.category===cat);
+return(<div className="a-page"><h1 className="a-title">{'\uD83D\uDCA1'} Guidelines & Tips</h1><p className="a-greet" style={{marginBottom:16}}>Expert advice for supporting your child's learning</p>
+<div style={{display:'flex',gap:6,overflowX:'auto',marginBottom:20,paddingBottom:4}}>{cats.map(c=><button key={c.id} onClick={()=>setCat(c.id)} className={`a-pill${cat===c.id?' on':''}`} style={{whiteSpace:'nowrap'}}>{c.l}</button>)}</div>
+{filtered.length>0?filtered.map((t:any)=><div key={t.id} className="a-card" style={{borderLeft:`4px solid ${t.category==='academic'?'#3B82F6':t.category==='motivational'?'#22C55E':t.category==='exam_prep'?'#F59E0B':t.category==='health'?'#EC4899':'#8B5CF6'}`}}>
+<h3 style={{fontSize:15,fontWeight:800,marginBottom:6}}>{t.title}</h3>
+<p style={{fontSize:14,color:'#57534E',lineHeight:1.7}}>{t.content}</p>
+<p style={{fontSize:11,color:'#A8A29E',marginTop:8,fontWeight:600}}>{t.category?.toUpperCase()}</p>
+</div>):<div style={{textAlign:'center',padding:40,color:'#A8A29E'}}><p style={{fontSize:32}}>{'\uD83D\uDCA1'}</p><p>No tips in this category yet</p></div>}
+</div>)}
+// ═══════════════════════════════════════════════════════
+// ADMIN PORTAL
+// ═══════════════════════════════════════════════════════
+function AdminPanel({user,onLogout}:{user:any;onLogout:()=>void}){
+const[admin,setAdmin]=useState<any>(null);const[tab,setTab]=useState('dashboard');const[data,setData]=useState<any>({});const[ld,setLd]=useState(true);const[modal,setModal]=useState<any>(null);
+const adminAPI=async(action:string,extra:any={})=>{const d=await api('super-admin',{action,auth_user_id:user.id,...extra});return d};
+useEffect(()=>{(async()=>{const d=await adminAPI('get_dashboard');if(d?.admin){setAdmin(d.admin);setData(v=>({...v,dashboard:d}))}else{alert('Not an admin account')}setLd(false)})()},[]);
+const loadTab=async(t:string)=>{setTab(t);switch(t){case'dashboard':{const d=await adminAPI('get_dashboard');setData((v:any)=>({...v,dashboard:d}));break}case'students':{const d=await adminAPI('list_students');setData((v:any)=>({...v,students:d.students}));break}case'questions':{const d=await adminAPI('list_questions',{limit:100});setData((v:any)=>({...v,questions:d.questions}));break}case'ai_logs':{const d=await adminAPI('list_ai_logs',{limit:50});setData((v:any)=>({...v,aiLogs:d}));break}case'system':{const d=await adminAPI('system_health');setData((v:any)=>({...v,system:d}));break}case'audit':{const d=await adminAPI('get_audit_log',{limit:50});setData((v:any)=>({...v,audit:d.audit}));break}}};
+if(ld)return<div className="a-center" style={{background:'#0F0F12'}}><div style={{fontSize:48,animation:'alfPulse 1.5s infinite'}}>{'\u2699\uFE0F'}</div><p style={{color:'#71717A',marginTop:8}}>Loading admin...</p></div>;
+if(!admin)return<div className="a-center" style={{background:'#0F0F12'}}><p style={{color:'#EF4444',fontSize:16,fontWeight:700}}>Access denied. Not an admin.</p><button onClick={onLogout} className="a-btn-primary" style={{marginTop:16}}>Back</button></div>;
+const tabs=[{id:'dashboard',i:'\uD83D\uDCCA',l:'Dashboard'},{id:'students',i:'\uD83D\uDC65',l:'Students'},{id:'questions',i:'\u2753',l:'Questions'},{id:'ai_logs',i:'\uD83E\uDD16',l:'AI Logs'},{id:'system',i:'\u2699\uFE0F',l:'System'},{id:'audit',i:'\uD83D\uDCCB',l:'Audit'}];
+const st=data.dashboard?.stats;
+return(<div className="a-shell" style={{background:'#0F0F12'}}><nav className="a-side" style={{background:'#18181B',borderColor:'#27272A'}}>
+<div className="a-side-brand"><span style={{fontSize:28}}>{'\uD83E\uDD8A'}</span><div><span style={{fontSize:17,fontWeight:900,color:'#E8590C'}}>Super Admin</span><p style={{fontSize:10,color:'#71717A',fontWeight:600,marginTop:1}}>{admin.name}</p></div></div>
+<div className="a-side-nav">{tabs.map(t=><button key={t.id} onClick={()=>loadTab(t.id)} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 14px',borderRadius:10,border:'none',background:tab===t.id?'#E8590C15':'transparent',color:tab===t.id?'#E8590C':'#A1A1AA',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',width:'100%',textAlign:'left'}}><span style={{fontSize:18}}>{t.i}</span>{t.l}</button>)}</div>
+<div className="a-side-user"><button onClick={onLogout} style={{width:'100%',padding:10,borderRadius:10,border:'1px solid #27272A',background:'#18181B',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',color:'#A1A1AA'}}>Logout</button></div>
+</nav>
+<nav className="a-bot" style={{background:'rgba(15,15,18,.97)',borderColor:'#27272A'}}>{tabs.map(t=><button key={t.id} onClick={()=>loadTab(t.id)} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,padding:'8px 10px',minWidth:48,minHeight:48,border:'none',background:tab===t.id?'#E8590C15':'none',cursor:'pointer',fontFamily:'inherit',borderRadius:12}}><span style={{fontSize:20,filter:tab===t.id?'none':'grayscale(.6) opacity(.5)'}}>{t.i}</span><span style={{fontSize:9,fontWeight:700,color:tab===t.id?'#E8590C':'#71717A'}}>{t.l}</span></button>)}</nav>
+<main className="a-main" style={{color:'#E4E4E7'}}>
+{tab==='dashboard'&&st&&<div className="a-page"><h1 style={{fontSize:24,fontWeight:900,color:'#fff',marginBottom:20}}>{'\uD83D\uDCCA'} Dashboard</h1>
+<div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))',gap:10,marginBottom:20}}>
+{[{v:st.total_students,l:'Students',i:'\uD83D\uDC65'},{v:st.total_quizzes,l:'Quizzes',i:'\uD83C\uDFAF'},{v:st.total_ai_calls,l:'AI Calls',i:'\uD83E\uDD16'},{v:st.active_questions,l:'Questions',i:'\u2753'},{v:st.active_topics,l:'Topics',i:'\uD83D\uDCDA'},{v:st.graph_nodes,l:'Graph Nodes',i:'\uD83C\uDF1F'},{v:st.cached_responses,l:'Cached',i:'\uD83D\uDCBE'},{v:st.total_xp_earned,l:'Total XP',i:'\u2B50'}].map(c=><div key={c.l} style={{background:'#18181B',border:'1px solid #27272A',borderRadius:14,padding:16}}><span style={{fontSize:18}}>{c.i}</span><p style={{fontSize:24,fontWeight:900,color:'#fff',margin:'6px 0 2px'}}>{c.v}</p><p style={{fontSize:11,color:'#71717A',fontWeight:600}}>{c.l}</p></div>)}
+</div></div>}
+{tab==='students'&&<div className="a-page"><h1 style={{fontSize:24,fontWeight:900,color:'#fff',marginBottom:20}}>{'\uD83D\uDC65'} Students ({data.students?.length||0})</h1>
+{(data.students||[]).map((s:any)=><div key={s.id} style={{background:'#18181B',border:'1px solid #27272A',borderRadius:14,padding:16,marginBottom:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+<div><p style={{fontWeight:700,color:'#fff'}}>{s.name}</p><p style={{fontSize:12,color:'#71717A'}}>{s.grade} · {s.preferred_subject} · {s.total_xp||0} XP · {s.accuracy||0}% acc</p></div>
+<span style={{fontSize:12,fontWeight:700,color:s.accuracy>=70?'#22C55E':s.accuracy>=40?'#F59E0B':'#EF4444',padding:'4px 10px',borderRadius:8,background:s.accuracy>=70?'#22C55E15':s.accuracy>=40?'#F59E0B15':'#EF444415'}}>{s.total_sessions||0} quizzes</span>
+</div>)}</div>}
+{tab==='questions'&&<div className="a-page"><h1 style={{fontSize:24,fontWeight:900,color:'#fff',marginBottom:20}}>{'\u2753'} Questions ({data.questions?.length||0})</h1>
+{(data.questions||[]).slice(0,40).map((q:any)=><div key={q.id} style={{background:'#18181B',border:'1px solid #27272A',borderRadius:14,padding:14,marginBottom:6}}>
+<p style={{fontSize:13,fontWeight:600,color:'#E4E4E7'}}>{q.question_text?.substring(0,100)}</p>
+<p style={{fontSize:11,color:'#71717A',marginTop:4}}>{q.subject} · {q.grade} · L{q.difficulty} · {q.is_active?'\u2705 Active':'\u274C Disabled'}</p>
+<p style={{fontSize:12,color:'#22C55E',marginTop:4}}>Answer: {q.correct_answer_text?.substring(0,60)}</p>
+</div>)}</div>}
+{tab==='ai_logs'&&<div className="a-page"><h1 style={{fontSize:24,fontWeight:900,color:'#fff',marginBottom:8}}>{'\uD83E\uDD16'} AI Logs</h1>
+<button onClick={async()=>{if(confirm('Clear all cached responses?')){const d=await adminAPI('clear_cache');if(d)alert('Cleared '+d.cleared+' cached responses')}}} style={{padding:'8px 16px',borderRadius:10,border:'1px solid #EF444430',background:'#EF444415',color:'#EF4444',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',marginBottom:16}}>{'\uD83D\uDDD1\uFE0F'} Clear Cache</button>
+{(data.aiLogs?.logs||[]).slice(0,30).map((l:any,i:number)=><div key={i} style={{background:'#18181B',border:'1px solid #27272A',borderRadius:10,padding:12,marginBottom:4,fontSize:12}}>
+<span style={{color:'#3B82F6',fontWeight:700}}>{l.interaction_type||'tutor'}</span> · <span style={{color:'#71717A'}}>{l.model}</span> · <span>{l.latency_ms}ms</span>
+<p style={{color:'#A1A1AA',marginTop:4,fontSize:11}}>{l.user_message?.substring(0,80)}</p>
+</div>)}</div>}
+{tab==='system'&&<div className="a-page"><h1 style={{fontSize:24,fontWeight:900,color:'#fff',marginBottom:20}}>{'\u2699\uFE0F'} System Health</h1>
+{data.system?.functions&&<div style={{background:'#18181B',border:'1px solid #27272A',borderRadius:14,padding:16,marginBottom:16}}><p style={{fontSize:12,fontWeight:800,color:'#71717A',letterSpacing:'.06em',marginBottom:12}}>EDGE FUNCTIONS ({data.system.functions.length})</p>
+<div style={{display:'flex',flexWrap:'wrap',gap:6}}>{data.system.functions.map((f:string)=><span key={f} style={{padding:'6px 12px',borderRadius:8,background:'#22C55E15',color:'#22C55E',fontSize:11,fontWeight:700}}>{'\u2705'} {f}</span>)}</div></div>}
+{data.system?.tableCounts&&<div style={{background:'#18181B',border:'1px solid #27272A',borderRadius:14,padding:16}}><p style={{fontSize:12,fontWeight:800,color:'#71717A',letterSpacing:'.06em',marginBottom:12}}>DATABASE TABLES ({data.system.totalTables})</p>
+{Object.entries(data.system.tableCounts).sort((a:any,b:any)=>Number(b[1])-Number(a[1])).map(([t,c]:any)=><div key={t} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid #27272A20',fontSize:12}}><span style={{fontFamily:'monospace',color:'#A1A1AA'}}>{t}</span><strong style={{color:'#fff'}}>{c}</strong></div>)}</div>}
+</div>}
+{tab==='audit'&&<div className="a-page"><h1 style={{fontSize:24,fontWeight:900,color:'#fff',marginBottom:20}}>{'\uD83D\uDCCB'} Audit Log</h1>
+{(data.audit||[]).map((a:any,i:number)=><div key={i} style={{background:'#18181B',border:'1px solid #27272A',borderRadius:10,padding:12,marginBottom:4,fontSize:12}}>
+<span style={{color:'#8B5CF6',fontWeight:700}}>{a.action}</span> · <span style={{color:'#71717A'}}>{a.entity_type}</span>
+<p style={{color:'#52525B',fontSize:11,marginTop:2}}>{new Date(a.created_at).toLocaleString('en-IN')}</p>
+</div>)}</div>}
+</main></div>)}
+// ═══════════════════════════════════════════════════════
+// MAIN APP — 3-Portal Router
+// ═══════════════════════════════════════════════════════
 export default function App(){
-  const[sc,setSc]=useState<Screen>('loading');const[user,setUser]=useState<any>(null);const[prof,setProf]=useState<Prof|null>(null);const[stats,setStats]=useState<Stats>({xp:0,streak:0,sessions:0,correct:0,asked:0,minutes:0});const[history,setHistory]=useState<any>(null)
+  const[portal,setPortal]=useState<'landing'|'student'|'parent'|'admin'>('landing')
+  const[sc,setSc]=useState<Screen>('loading')
+  const[user,setUser]=useState<any>(null)
+  const[prof,setProf]=useState<Prof|null>(null)
+  const[stats,setStats]=useState<Stats>({xp:0,streak:0,sessions:0,correct:0,asked:0,minutes:0})
+  const[history,setHistory]=useState<any>(null)
+  const[guardian,setGuardian]=useState<any>(null)
+  const[parentStep,setParentStep]=useState<'auth'|'onboard'|'link'|'dash'>('auth')
   const loadAll=useCallback(async(p:Prof)=>{if(!p.studentId)return;try{const[s,h]=await Promise.all([getStats(p.studentId),api('chat-history',{action:'get_history',student_id:p.studentId})]);setStats(s);setHistory(h)}catch(e){console.error('loadAll failed:',e)}},[])
-  useEffect(()=>{if(typeof window!=='undefined'){const params=new URLSearchParams(window.location.search);if(params.get('reset')==='true'||window.location.hash.includes('type=recovery')){setSc('reset');return}}
-  // FAST PATH: Check localStorage FIRST — show home instantly if profile exists
-  const savedProfile=localStorage.getItem('alfanumrik_profile');
-  const savedToken=localStorage.getItem('sb-dxipobqngyfpqbbznojz-auth-token');
-  if(savedProfile&&savedToken){
-    try{
-      const p=JSON.parse(savedProfile)as Prof;
-      const token=JSON.parse(savedToken);
-      // If token exists and not grossly expired (check exp), show home IMMEDIATELY
-      if(token.access_token&&p.name){
-        setProf(p);setSc('home');
-        // Load stats in background (non-blocking)
-        loadAll(p).catch(()=>{});
-        // Validate session in background — if invalid, redirect to auth
-        sb.auth.getSession().then(async({data:{session}})=>{
-          if(session?.user){
-            setUser(session.user);
-            // Refresh studentId if missing
-            if(!p.studentId){const sid=await ensureStudent(session.user.id,p);if(sid){const wp={...p,studentId:sid};setProf(wp);localStorage.setItem('alfanumrik_profile',JSON.stringify(wp));loadAll(wp).catch(()=>{})}}
-          }else{
-            // Token was invalid — clear and go to auth
-            localStorage.removeItem('alfanumrik_profile');localStorage.removeItem('sb-dxipobqngyfpqbbznojz-auth-token');
-            setProf(null);setSc('auth');
-          }
-        }).catch(()=>{/* Token refresh failed but we're already showing home — let user continue until next action fails */});
-        // Subscribe to auth changes for logout detection
-        const{data:{subscription}}=sb.auth.onAuthStateChange(async(ev,s)=>{if(!s?.user&&ev==='SIGNED_OUT'){setUser(null);setProf(null);setSc('auth');localStorage.removeItem('alfanumrik_profile')}else if(s?.user)setUser(s.user)});
-        return()=>subscription.unsubscribe();
-      }
-    }catch(e){/* corrupted localStorage — fall through to slow path */}
-  }
-  // SLOW PATH: No cached profile — must wait for getSession
-  const initProfile=async(u:any)=>{try{
-    const saved=localStorage.getItem('alfanumrik_profile');
-    if(saved){const p=JSON.parse(saved)as Prof;const sid=await ensureStudent(u.id,p);const wp={...p,studentId:sid||undefined};setProf(wp);localStorage.setItem('alfanumrik_profile',JSON.stringify(wp));await loadAll(wp);setSc('home');return}
-    const dbProf=await loadProfileFromDB(u.id);
-    if(dbProf){setProf(dbProf);localStorage.setItem('alfanumrik_profile',JSON.stringify(dbProf));await loadAll(dbProf);setSc('home');return}
-    setSc('onboard')
-  }catch(e){console.error('initProfile failed:',e);setSc('auth')}};
-  sb.auth.getSession().then(async({data:{session}})=>{if(session?.user){setUser(session.user);await initProfile(session.user)}else setSc('auth')}).catch(()=>{console.error('Auth session failed');setSc('auth')});
-  const{data:{subscription}}=sb.auth.onAuthStateChange(async(ev,s)=>{if(s?.user){setUser(s.user);await initProfile(s.user)}else if(sc!=='reset'&&sc!=='confirm'){setUser(null);setSc('auth')}});return()=>subscription.unsubscribe()},[loadAll])
-  const onAuth=async(u:any)=>{try{setUser(u);const saved=localStorage.getItem('alfanumrik_profile');if(saved){const p=JSON.parse(saved)as Prof;const sid=await ensureStudent(u.id,p);const wp={...p,studentId:sid||undefined};setProf(wp);localStorage.setItem('alfanumrik_profile',JSON.stringify(wp));await loadAll(wp);setSc('home');return}const dbProf=await loadProfileFromDB(u.id);if(dbProf){setProf(dbProf);localStorage.setItem('alfanumrik_profile',JSON.stringify(dbProf));await loadAll(dbProf);setSc('home');return}setSc('onboard')}catch(e){console.error('onAuth failed:',e);setSc('auth')}}
-  const onOb=async(p:Prof)=>{if(user){const sid=await ensureStudent(user.id,p);const wp={...p,studentId:sid||undefined};setProf(wp);localStorage.setItem('alfanumrik_profile',JSON.stringify(wp));await loadAll(wp);setSc('home')}}
+
+  // Check saved portal choice
+  useEffect(()=>{
+    if(typeof window==='undefined')return
+    const params=new URLSearchParams(window.location.search)
+    if(params.get('reset')==='true'||window.location.hash.includes('type=recovery')){setPortal('student');setSc('reset');return}
+    const savedPortal=localStorage.getItem('alfn_portal') as any
+    if(savedPortal==='student'||savedPortal==='parent'||savedPortal==='admin'){setPortal(savedPortal)}
+    // FAST PATH for students
+    if(savedPortal==='student'){
+      const savedProfile=localStorage.getItem('alfanumrik_profile')
+      const savedToken=localStorage.getItem('sb-dxipobqngyfpqbbznojz-auth-token')
+      if(savedProfile&&savedToken){try{const p=JSON.parse(savedProfile) as Prof;const token=JSON.parse(savedToken);if(token.access_token&&p.name){setProf(p);setSc('home');loadAll(p).catch(()=>{});sb.auth.getSession().then(async({data:{session}})=>{if(session?.user){setUser(session.user);if(!p.studentId){const sid=await ensureStudent(session.user.id,p);if(sid){const wp={...p,studentId:sid};setProf(wp);localStorage.setItem('alfanumrik_profile',JSON.stringify(wp));loadAll(wp).catch(()=>{})}}}else{localStorage.removeItem('alfanumrik_profile');setProf(null);setSc('auth')}}).catch(()=>{});const{data:{subscription}}=sb.auth.onAuthStateChange(async(ev,s)=>{if(!s?.user&&ev==='SIGNED_OUT'){setUser(null);setProf(null);setSc('auth');localStorage.removeItem('alfanumrik_profile')}else if(s?.user)setUser(s.user)});return()=>subscription.unsubscribe()}}catch{}}
+      setSc('auth')
+    }
+    // FAST PATH for parents
+    if(savedPortal==='parent'){
+      const savedGuardian=localStorage.getItem('alfn_guardian')
+      if(savedGuardian){try{setGuardian(JSON.parse(savedGuardian));setParentStep('dash')}catch{setParentStep('auth')}}else{setParentStep('auth')}
+      sb.auth.getSession().then(({data:{session}})=>{if(session?.user)setUser(session.user)}).catch(()=>{})
+    }
+    // Admin — just need auth
+    if(savedPortal==='admin'){
+      sb.auth.getSession().then(({data:{session}})=>{if(session?.user)setUser(session.user);else setSc('auth')}).catch(()=>setSc('auth'))
+    }
+  },[loadAll])
+
+  const selectRole=(role:'student'|'parent'|'admin')=>{setPortal(role);localStorage.setItem('alfn_portal',role);if(role==='student')setSc('auth');if(role==='parent')setParentStep('auth');if(role==='admin')setSc('auth')}
+  const goLanding=()=>{setPortal('landing');localStorage.removeItem('alfn_portal')}
+
+  // STUDENT AUTH
+  const onStudentAuth=async(u:any)=>{try{setUser(u);const saved=localStorage.getItem('alfanumrik_profile');if(saved){const p=JSON.parse(saved) as Prof;const sid=await ensureStudent(u.id,p);const wp={...p,studentId:sid||undefined};setProf(wp);localStorage.setItem('alfanumrik_profile',JSON.stringify(wp));await loadAll(wp);setSc('home');return}const dbProf=await loadProfileFromDB(u.id);if(dbProf){setProf(dbProf);localStorage.setItem('alfanumrik_profile',JSON.stringify(dbProf));await loadAll(dbProf);setSc('home');return}setSc('onboard')}catch(e){console.error('onAuth failed:',e);setSc('auth')}}
+  const onStudentOnboard=async(p:Prof)=>{if(user){const sid=await ensureStudent(user.id,p);const wp={...p,studentId:sid||undefined};setProf(wp);localStorage.setItem('alfanumrik_profile',JSON.stringify(wp));await loadAll(wp);setSc('home')}}
   const onProfUp=async(p:Prof)=>{setProf(p);localStorage.setItem('alfanumrik_profile',JSON.stringify(p));if(p.studentId){await sb.from('students').update({name:p.name,grade:p.grade,preferred_language:p.language,preferred_subject:p.subject}).eq('id',p.studentId);await loadAll(p)}}
   const refreshStats=async()=>{if(prof?.studentId){const s=await getStats(prof.studentId);setStats(s);const h=await api('chat-history',{action:'get_history',student_id:prof.studentId});setHistory(h)}}
-  const logout=async()=>{await sb.auth.signOut();localStorage.removeItem('alfanumrik_profile');setUser(null);setProf(null);setSc('auth')}
-  useEffect(()=>{if(sc==='loading'){const t=setTimeout(()=>{console.warn('Loading timeout');setSc('auth')},8000);return()=>clearTimeout(t)}},[sc]);
-  if(sc==='loading')return<><CSS/><div className="a-center"><div style={{fontSize:56,animation:'alfBounce 1.5s infinite'}}>{'\uD83E\uDD8A'}</div><p style={{color:'#A8A29E',marginTop:8,fontWeight:600}}>Loading...</p></div></>
-  if(sc==='auth')return<><CSS/><Auth onAuth={onAuth} onConfirm={()=>setSc('confirm')}/></>
-  if(sc==='confirm')return<><CSS/><ConfirmScreen onBack={()=>setSc('auth')}/></>
-  if(sc==='reset')return<><CSS/><ResetScreen/></>
-  if(sc==='onboard')return<><CSS/><Onboard user={user} done={onOb}/></>
-  return(<><CSS/><div className="a-shell">{prof&&<Nav active={sc} nav={setSc} p={prof}/>}<main className="a-main">{sc==='home'&&prof&&<Home p={prof} nav={setSc} stats={stats} history={history}/>}{sc==='foxy'&&prof&&<Foxy p={prof}/>}{sc==='quiz'&&prof&&<Quiz p={prof} onDone={refreshStats}/>}{sc==='skills'&&prof&&<SkillTree p={prof}/>}{sc==='notes'&&prof&&<Notes p={prof}/>}{sc==='progress'&&prof&&<Progress p={prof} stats={stats}/>}{sc==='profile'&&prof&&<ProfileScr p={prof} onUp={onProfUp} out={logout} stats={stats}/>}</main></div></>)
+  const studentLogout=async()=>{await sb.auth.signOut();localStorage.removeItem('alfanumrik_profile');setUser(null);setProf(null);setSc('auth')}
+
+  // PARENT AUTH
+  const onParentAuth=async(u:any)=>{setUser(u);const{data:g}=await sb.from('guardians').select('id,name,relationship,onboarding_completed').eq('auth_user_id',u.id).maybeSingle();if(g?.onboarding_completed){setGuardian(g);localStorage.setItem('alfn_guardian',JSON.stringify(g));setParentStep('dash')}else{setParentStep('onboard')}}
+  const onParentOnboard=(g:any)=>{setGuardian(g);localStorage.setItem('alfn_guardian',JSON.stringify(g));setParentStep('link')}
+  const parentLogout=async()=>{await sb.auth.signOut();localStorage.removeItem('alfn_guardian');setUser(null);setGuardian(null);setParentStep('auth')}
+
+  // ADMIN AUTH
+  const onAdminAuth=async(u:any)=>{setUser(u);setSc('home')}
+  const adminLogout=async()=>{await sb.auth.signOut();setUser(null);setSc('auth')}
+
+  // Loading timeout
+  useEffect(()=>{if(portal==='student'&&sc==='loading'){const t=setTimeout(()=>{setSc('auth')},8000);return()=>clearTimeout(t)}},[sc,portal])
+
+  // ─── RENDER ───
+  // LANDING
+  if(portal==='landing')return<><CSS/><Landing onRole={selectRole}/></>
+
+  // STUDENT PORTAL
+  if(portal==='student'){
+    if(sc==='loading')return<><CSS/><div className="a-center"><div style={{fontSize:56,animation:'alfBounce 1.5s infinite'}}>{'\uD83E\uDD8A'}</div><p style={{color:'#A8A29E',marginTop:8,fontWeight:600}}>Loading...</p></div></>
+    if(sc==='auth')return<><CSS/><Auth onAuth={onStudentAuth} onConfirm={()=>setSc('confirm')}/><div style={{position:'fixed',top:16,left:16}}><button onClick={goLanding} style={{padding:'8px 16px',borderRadius:10,background:'rgba(255,255,255,.08)',border:'none',color:'rgba(255,255,255,.5)',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>{'\u2190'} Back</button></div></>
+    if(sc==='confirm')return<><CSS/><ConfirmScreen onBack={()=>setSc('auth')}/></>
+    if(sc==='reset')return<><CSS/><ResetScreen/></>
+    if(sc==='onboard')return<><CSS/><Onboard user={user} done={onStudentOnboard}/></>
+    return<><CSS/><div className="a-shell">{prof&&<Nav active={sc} nav={setSc} p={prof}/>}<main className="a-main">{sc==='home'&&prof&&<Home p={prof} nav={setSc} stats={stats} history={history}/>}{sc==='foxy'&&prof&&<Foxy p={prof}/>}{sc==='quiz'&&prof&&<Quiz p={prof} onDone={refreshStats}/>}{sc==='skills'&&prof&&<SkillTree p={prof}/>}{sc==='notes'&&prof&&<Notes p={prof}/>}{sc==='progress'&&prof&&<Progress p={prof} stats={stats}/>}{sc==='profile'&&prof&&<ProfileScr p={prof} onUp={onProfUp} out={studentLogout} stats={stats}/>}</main></div></>
+  }
+
+  // PARENT PORTAL
+  if(portal==='parent'){
+    if(parentStep==='auth')return<><CSS/><Auth onAuth={onParentAuth} onConfirm={()=>setParentStep('auth')}/><div style={{position:'fixed',top:16,left:16}}><button onClick={goLanding} style={{padding:'8px 16px',borderRadius:10,background:'rgba(255,255,255,.08)',border:'none',color:'rgba(255,255,255,.5)',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>{'\u2190'} Back</button></div></>
+    if(parentStep==='onboard')return<><CSS/><ParentOnboard user={user} done={onParentOnboard}/></>
+    if(parentStep==='link'&&guardian)return<><CSS/><ParentLinkChild guardian={guardian} onLinked={()=>setParentStep('dash')}/></>
+    if(parentStep==='dash'&&guardian)return<><CSS/><ParentDash guardian={guardian} onLogout={parentLogout}/></>
+    return<><CSS/><div className="a-center"><p style={{color:'#A8A29E'}}>Loading parent portal...</p></div></>
+  }
+
+  // ADMIN PORTAL
+  if(portal==='admin'){
+    if(!user||sc==='auth')return<><CSS/><Auth onAuth={onAdminAuth} onConfirm={()=>setSc('auth')}/><div style={{position:'fixed',top:16,left:16}}><button onClick={goLanding} style={{padding:'8px 16px',borderRadius:10,background:'rgba(255,255,255,.08)',border:'none',color:'rgba(255,255,255,.5)',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>{'\u2190'} Back</button></div></>
+    return<><CSS/><AdminPanel user={user} onLogout={adminLogout}/></>
+  }
+
+  return<><CSS/><Landing onRole={selectRole}/></>
 }
 function CSS(){return<style>{`
 @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&display=swap');
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}body{font-family:'Nunito',sans-serif;background:#FAFAF8;color:#1C1917;-webkit-font-smoothing:antialiased;overflow-x:hidden}::selection{background:#E8590C;color:#fff}::-webkit-scrollbar{width:6px}::-webkit-scrollbar-thumb{background:#E7E5E4;border-radius:3px}
 @keyframes alfFadeIn{from{opacity:0}to{opacity:1}}@keyframes alfSlideUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}@keyframes alfPulse{0%,100%{opacity:1}50%{opacity:.3}}@keyframes alfBounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}@keyframes alfPulseBorder{0%,100%{border-color:#EF444450}50%{border-color:#EF4444}}
+.a-landing{min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#0F0F12 0%,#1C1917 40%,#292524 100%);position:relative;overflow:hidden}
+.a-landing-bg{position:absolute;top:-50%;right:-30%;width:800px;height:800px;border-radius:50%;background:radial-gradient(circle,#E8590C08 0%,transparent 70%);pointer-events:none}
+.a-landing-content{position:relative;z-index:1;text-align:center;padding:24px;animation:alfFadeIn .6s}
+.a-role-btn{display:flex;align-items:center;gap:16px;padding:20px 24px;border-radius:18px;border:none;color:#fff;font-family:inherit;cursor:pointer;transition:all .2s;text-align:left;width:100%;min-height:72px}.a-role-btn:hover{transform:translateY(-2px);box-shadow:0 8px 32px rgba(0,0,0,.3)}
 .a-center{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}.a-center-dark{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(135deg,#1C1917,#292524);padding:24px;text-align:center}
 .a-auth{min-height:100vh;display:flex}.a-auth-l{flex:1;background:linear-gradient(135deg,#1C1917 0%,#292524 50%,#E8590C 200%);padding:60px;display:flex;flex-direction:column;justify-content:center;color:#fff}.a-auth-r{flex:1;display:flex;align-items:center;justify-content:center;padding:40px}
 .a-tabs{display:flex;gap:4px;background:#F3F2EE;border-radius:14px;padding:4px;margin-bottom:20px}.a-tab{flex:1;padding:12px;border-radius:12px;border:none;font-size:14px;font-weight:700;cursor:pointer;background:transparent;color:#A8A29E;font-family:inherit;min-height:44px}.a-tab.on{background:#fff;color:#1C1917;box-shadow:0 1px 4px rgba(0,0,0,.08)}
