@@ -565,36 +565,39 @@ return(<div className="a-landing">
 // ═══════════════════════════════════════════════════════
 // PARENT PORTAL
 // ═══════════════════════════════════════════════════════
-function ParentOnboard({user,done}:{user:any;done:(g:any)=>void}){const[nm,setNm]=useState(user?.user_metadata?.full_name||'');const[ph,setPh]=useState('');const[rel,setRel]=useState('parent');const[ld,setLd]=useState(false);
-const go=async()=>{if(!nm.trim())return;setLd(true);const d=await api('parent-portal',{action:'register_parent',auth_user_id:user.id,name:nm.trim(),email:user.email,phone:ph,relationship:rel,language:'en'});setLd(false);if(d.guardian_id){done({id:d.guardian_id,name:nm.trim(),relationship:rel})}};
-return(<div className="a-center-dark" style={{maxWidth:440,padding:'40px 24px'}}><div style={{fontSize:56,marginBottom:16}}>{'\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67'}</div>
-<h2 style={{fontSize:26,fontWeight:800,color:'#fff',marginBottom:8}}>Parent Registration</h2>
-<p style={{fontSize:14,color:'rgba(255,255,255,.5)',marginBottom:28}}>Set up your parent account to track your child's learning</p>
-<input value={nm} onChange={e=>setNm(e.target.value)} placeholder="Your name" className="a-ob-inp" style={{marginBottom:12}} autoFocus/>
-<input value={ph} onChange={e=>setPh(e.target.value)} placeholder="Phone (optional)" className="a-ob-inp" style={{marginBottom:12}}/>
-<div style={{display:'flex',gap:8,marginBottom:20}}>{['parent','mother','father','guardian'].map(r=><button key={r} onClick={()=>setRel(r)} style={{flex:1,padding:'10px 8px',borderRadius:12,border:rel===r?'2px solid #8B5CF6':'1px solid rgba(255,255,255,.1)',background:rel===r?'#8B5CF620':'rgba(255,255,255,.05)',color:rel===r?'#C4B5FD':'rgba(255,255,255,.5)',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',textTransform:'capitalize'}}>{r}</button>)}</div>
-<button onClick={go} disabled={!nm.trim()||ld} className="a-ob-next" style={{width:'100%',background:'linear-gradient(135deg,#8B5CF6,#6D28D9)',minHeight:52}}>{ld?'Setting up...':'Continue'}</button>
-</div>)}
-
-function ParentLinkChild({guardian,onLinked}:{guardian:any;onLinked:()=>void}){const[code,setCode]=useState('');const[ld,setLd]=useState(false);const[err,setErr]=useState('');const[ok,setOk]=useState('');
-const link=async()=>{if(code.length<4)return;setLd(true);setErr('');const d=await api('parent-portal',{action:'link_child',guardian_id:guardian.id,link_code:code});setLd(false);if(d.error){setErr(d.error)}else if(d.success){setOk(`Linked to ${d.student.name} (${d.student.grade})!`);setTimeout(onLinked,1500)}};
-return(<div className="a-center-dark" style={{maxWidth:440,padding:'40px 24px'}}><div style={{fontSize:56,marginBottom:16}}>{'\uD83D\uDD17'}</div>
-<h2 style={{fontSize:24,fontWeight:800,color:'#fff',marginBottom:8}}>Link Your Child</h2>
-<p style={{fontSize:14,color:'rgba(255,255,255,.5)',marginBottom:24}}>Ask your child to check their Profile for the 6-character Link Code</p>
-{err&&<div className="a-err">{err}</div>}{ok&&<div className="a-ok-msg">{ok}</div>}
-<input value={code} onChange={e=>setCode(e.target.value.toUpperCase())} placeholder="Enter 6-character code" maxLength={6} className="a-ob-inp" style={{textAlign:'center',letterSpacing:8,fontSize:24}} onKeyDown={e=>e.key==='Enter'&&link()}/>
-<button onClick={link} disabled={code.length<4||ld} className="a-ob-next" style={{width:'100%',marginTop:16,background:'linear-gradient(135deg,#8B5CF6,#6D28D9)',minHeight:52}}>{ld?'Linking...':'Link Child'}</button>
-<button onClick={onLinked} style={{width:'100%',marginTop:8,padding:12,background:'none',border:'none',color:'rgba(255,255,255,.4)',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>Skip for now</button>
+// PARENT LOGIN — Link code only, no Supabase auth needed
+function ParentCodeLogin({onLogin,onBack}:{onLogin:(data:any)=>void;onBack:()=>void}){const[code,setCode]=useState('');const[name,setName]=useState('');const[ld,setLd]=useState(false);const[err,setErr]=useState('');const[step,setStep]=useState<'code'|'name'>('code');const[studentInfo,setStudentInfo]=useState<any>(null);
+const checkCode=async()=>{if(code.length<4)return;setLd(true);setErr('');const d=await api('parent-portal',{action:'parent_login',link_code:code,parent_name:'Parent'});setLd(false);if(d.error){setErr(d.error)}else if(d.success){setStudentInfo(d.student);setStep('name');setErr('')}};
+const finish=async()=>{if(!name.trim()){onLogin({guardian:studentInfo?._g,student:studentInfo});return}setLd(true);const d=await api('parent-portal',{action:'parent_login',link_code:code,parent_name:name.trim()});setLd(false);if(d.success){onLogin({guardian:d.guardian,student:d.student})}};
+return(<div className="a-center-dark" style={{maxWidth:440,padding:'40px 24px'}}>
+<div style={{fontSize:56,marginBottom:16,animation:'alfBounce 2s infinite'}}>{step==='code'?'\uD83D\uDD17':'\uD83D\uDC4B'}</div>
+{step==='code'?<>
+<h2 style={{fontSize:26,fontWeight:800,color:'#fff',marginBottom:8}}>Parent Access</h2>
+<p style={{fontSize:14,color:'rgba(255,255,255,.5)',marginBottom:24}}>Enter your child's link code to view their progress</p>
+{err&&<div className="a-err">{err}</div>}
+<input value={code} onChange={e=>setCode(e.target.value.toUpperCase())} placeholder="Enter link code" maxLength={8} className="a-ob-inp" style={{textAlign:'center',letterSpacing:8,fontSize:24}} onKeyDown={e=>e.key==='Enter'&&checkCode()} autoFocus/>
+<p style={{fontSize:11,color:'rgba(255,255,255,.3)',marginTop:8,textAlign:'center'}}>Ask your child: Profile → Link Code</p>
+<button onClick={checkCode} disabled={code.length<4||ld} className="a-ob-next" style={{width:'100%',marginTop:20,background:'linear-gradient(135deg,#8B5CF6,#6D28D9)',minHeight:52}}>{ld?'Verifying...':'Continue'}</button>
+</>:<>
+<h2 style={{fontSize:22,fontWeight:800,color:'#fff',marginBottom:8}}>Welcome! You're viewing</h2>
+<div style={{padding:16,borderRadius:16,background:'rgba(255,255,255,.08)',marginBottom:20,textAlign:'center'}}>
+<p style={{fontSize:20,fontWeight:900,color:'#C4B5FD'}}>{studentInfo?.name}</p>
+<p style={{fontSize:13,color:'rgba(255,255,255,.5)'}}>{studentInfo?.grade} · {studentInfo?.subject}</p>
+</div>
+<input value={name} onChange={e=>setName(e.target.value)} placeholder="Your name (optional)" className="a-ob-inp" style={{marginBottom:12}} autoFocus onKeyDown={e=>e.key==='Enter'&&finish()}/>
+<button onClick={finish} disabled={ld} className="a-ob-next" style={{width:'100%',background:'linear-gradient(135deg,#8B5CF6,#6D28D9)',minHeight:52}}>{ld?'Opening...':'View Dashboard \u2192'}</button>
+</>}
+<button onClick={onBack} style={{width:'100%',marginTop:12,padding:12,background:'none',border:'none',color:'rgba(255,255,255,.4)',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>{'\u2190'} Back</button>
 </div>)}
 
 function ParentDash({guardian,onLogout}:{guardian:any;onLogout:()=>void}){
-const[children,setChildren]=useState<any[]>([]);const[selChild,setSelChild]=useState<any>(null);const[report,setReport]=useState<any>(null);const[tips,setTips]=useState<any[]>([]);const[weeklyReport,setWeeklyReport]=useState<any>(null);const[tab,setTab]=useState<'overview'|'report'|'tips'|'link'>('overview');const[ld,setLd]=useState(true);
+const[children,setChildren]=useState<any[]>([]);const[selChild,setSelChild]=useState<any>(null);const[report,setReport]=useState<any>(null);const[tips,setTips]=useState<any[]>([]);const[weeklyReport,setWeeklyReport]=useState<any>(null);const[tab,setTab]=useState<'overview'|'report'|'tips'>('overview');const[ld,setLd]=useState(true);
 useEffect(()=>{loadChildren()},[]);
 const loadChildren=async()=>{setLd(true);const d=await api('parent-portal',{action:'get_children',guardian_id:guardian.id});setChildren(d.children||[]);if(d.children?.length>0&&!selChild){setSelChild(d.children[0]);loadReport(d.children[0].id);loadWeekly(d.children[0].id)}setLd(false);const t=await api('parent-portal',{action:'get_tips',grade:d.children?.[0]?.grade});setTips(t.tips||[])};
 const loadReport=async(sid:string)=>{const d=await api('parent-portal',{action:'get_child_report',student_id:sid});setReport(d)};
 const loadWeekly=async(sid:string)=>{const d=await api('parent-portal',{action:'get_weekly_report',student_id:sid});setWeeklyReport(d.week)};
 const selectChild=(c:any)=>{setSelChild(c);loadReport(c.id);loadWeekly(c.id);setTab('overview')};
-const ptabs=[{id:'overview' as const,i:'\uD83C\uDFE0',l:'Overview'},{id:'report' as const,i:'\uD83D\uDCCA',l:'Analysis'},{id:'tips' as const,i:'\uD83D\uDCA1',l:'Tips'},{id:'link' as const,i:'\uD83D\uDD17',l:'Link Child'}];
+const ptabs=[{id:'overview' as const,i:'\uD83C\uDFE0',l:'Overview'},{id:'report' as const,i:'\uD83D\uDCCA',l:'Analysis'},{id:'tips' as const,i:'\uD83D\uDCA1',l:'Tips'}];
 if(ld)return<div className="a-center" style={{background:'#FAFAF8'}}><div style={{fontSize:48,animation:'alfPulse 1.5s infinite'}}>{'\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67'}</div><p style={{color:'#A8A29E',marginTop:8}}>Loading...</p></div>;
 return(<div className="a-shell"><nav className="a-side" style={{borderColor:'#8B5CF615'}}><div className="a-side-brand"><span style={{fontSize:28}}>{'\uD83E\uDD8A'}</span><div><span style={{fontSize:17,fontWeight:900,color:'#8B5CF6'}}>Parent Portal</span><p style={{fontSize:10,color:'#A8A29E',fontWeight:600,marginTop:1}}>{guardian.name}</p></div></div>
 {children.length>0&&<div style={{padding:'12px 12px 0'}}><p style={{fontSize:10,fontWeight:800,color:'#A8A29E',letterSpacing:'.06em',padding:'0 4px',marginBottom:6}}>YOUR CHILDREN</p>
@@ -606,11 +609,11 @@ return(<div className="a-shell"><nav className="a-side" style={{borderColor:'#8B
 <div className="a-side-user"><button onClick={onLogout} style={{width:'100%',padding:10,borderRadius:10,border:'1px solid #E7E5E4',background:'#fff',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',color:'#57534E'}}>Sign Out</button></div>
 </nav>
 <nav className="a-bot">{ptabs.map(t=><button key={t.id} onClick={()=>setTab(t.id)} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,padding:'8px 12px',minWidth:52,minHeight:48,border:'none',background:tab===t.id?'#8B5CF610':'none',cursor:'pointer',fontFamily:'inherit',borderRadius:12}}><span style={{fontSize:22,filter:tab===t.id?'none':'grayscale(.6) opacity(.5)'}}>{t.i}</span><span style={{fontSize:10,fontWeight:700,color:tab===t.id?'#8B5CF6':'#A8A29E'}}>{t.l}</span></button>)}</nav>
-<main className="a-main">{tab==='overview'&&<ParentOverview child={selChild} weekly={weeklyReport}/>}{tab==='report'&&<ParentReport report={report} child={selChild}/>}{tab==='tips'&&<ParentTips tips={tips} child={selChild}/>}{tab==='link'&&<div className="a-page"><ParentLinkChild guardian={guardian} onLinked={loadChildren}/></div>}</main>
+<main className="a-main">{tab==='overview'&&<ParentOverview child={selChild} weekly={weeklyReport}/>}{tab==='report'&&<ParentReport report={report} child={selChild}/>}{tab==='tips'&&<ParentTips tips={tips} child={selChild}/>}</main>
 </div>)}
 
 function ParentOverview({child,weekly}:{child:any;weekly:any}){
-if(!child)return<div className="a-page" style={{textAlign:'center',paddingTop:80}}><p style={{fontSize:48}}>🔗</p><h3 style={{marginTop:12}}>No child linked yet</h3><p style={{color:'#A8A29E',fontSize:14,marginTop:4}}>Go to "Link Child" to connect your child's account</p></div>;
+if(!child)return<div className="a-page" style={{textAlign:'center',paddingTop:80}}><p style={{fontSize:48}}>🔗</p><h3 style={{marginTop:12}}>No data yet</h3><p style={{color:'#A8A29E',fontSize:14,marginTop:4}}>Your child hasn't started any activities yet. Check back soon!</p></div>;
 const[dash,setDash]=useState<any>(null);const[dLd,setDLd]=useState(true);
 useEffect(()=>{if(child?.id){setDLd(true);api('parent-portal',{action:'get_child_dashboard',student_id:child.id}).then(d=>{setDash(d);setDLd(false)}).catch(()=>setDLd(false))}},[child?.id]);
 if(dLd)return<div style={{padding:60,textAlign:'center'}}><div style={{fontSize:36,animation:'alfPulse 1.5s infinite'}}>📊</div><p style={{color:'#A8A29E',marginTop:8}}>Loading {child.name}'s dashboard...</p></div>;
@@ -821,7 +824,7 @@ export default function App(){
   const[stats,setStats]=useState<Stats>({xp:0,streak:0,sessions:0,correct:0,asked:0,minutes:0})
   const[history,setHistory]=useState<any>(null)
   const[guardian,setGuardian]=useState<any>(null)
-  const[parentStep,setParentStep]=useState<'auth'|'onboard'|'link'|'dash'>('auth')
+  const[parentStep,setParentStep]=useState<'code'|'dash'>('code')
   const loadAll=useCallback(async(p:Prof)=>{if(!p.studentId)return;try{const[s,h]=await Promise.all([getStats(p.studentId),api('chat-history',{action:'get_history',student_id:p.studentId})]);setStats(s);setHistory(h)}catch(e){console.error('loadAll failed:',e)}},[])
 
   // Check saved portal choice
@@ -870,11 +873,11 @@ export default function App(){
         const{data:{subscription}}=sb.auth.onAuthStateChange(async(ev,s)=>{if(!s?.user&&ev==='SIGNED_OUT'){setUser(null);setProf(null);setSc('auth');localStorage.removeItem('alfanumrik_profile')}else if(s?.user)setUser(s.user)});return()=>subscription.unsubscribe()}}catch{}}
       setSc('auth')
     }
-    // FAST PATH for parents
+    // FAST PATH for parents — no auth, just check saved guardian+student
     if(savedPortal==='parent'){
       const savedGuardian=localStorage.getItem('alfn_guardian')
-      if(savedGuardian){try{setGuardian(JSON.parse(savedGuardian));setParentStep('dash')}catch{setParentStep('auth')}}else{setParentStep('auth')}
-      sb.auth.getSession().then(({data:{session}})=>{if(session?.user)setUser(session.user)}).catch(()=>{})
+      const savedStudent=localStorage.getItem('alfn_parent_student')
+      if(savedGuardian&&savedStudent){try{setGuardian(JSON.parse(savedGuardian));setParentStep('dash')}catch{setParentStep('code')}}else{setParentStep('code')}
     }
     // Admin — just need auth
     if(savedPortal==='admin'){
@@ -882,7 +885,7 @@ export default function App(){
     }
   },[loadAll])
 
-  const selectRole=(role:'student'|'parent'|'admin')=>{setPortal(role);localStorage.setItem('alfn_portal',role);if(role==='student')setSc('auth');if(role==='parent')setParentStep('auth');if(role==='admin')setSc('auth')}
+  const selectRole=(role:'student'|'parent'|'admin')=>{setPortal(role);localStorage.setItem('alfn_portal',role);if(role==='student')setSc('auth');if(role==='parent')setParentStep('code');if(role==='admin')setSc('auth')}
   const goLanding=()=>{setPortal('landing');localStorage.removeItem('alfn_portal')}
 
   // STUDENT AUTH
@@ -892,10 +895,9 @@ export default function App(){
   const refreshStats=async()=>{if(prof?.studentId){const s=await getStats(prof.studentId);setStats(s);const h=await api('chat-history',{action:'get_history',student_id:prof.studentId});setHistory(h)}}
   const studentLogout=async()=>{await sb.auth.signOut();localStorage.removeItem('alfanumrik_profile');setUser(null);setProf(null);setSc('auth')}
 
-  // PARENT AUTH
-  const onParentAuth=async(u:any)=>{setUser(u);const{data:g}=await sb.from('guardians').select('id,name,relationship,onboarding_completed').eq('auth_user_id',u.id).maybeSingle();if(g?.onboarding_completed){setGuardian(g);localStorage.setItem('alfn_guardian',JSON.stringify(g));setParentStep('dash')}else{setParentStep('onboard')}}
-  const onParentOnboard=(g:any)=>{setGuardian(g);localStorage.setItem('alfn_guardian',JSON.stringify(g));setParentStep('link')}
-  const parentLogout=async()=>{await sb.auth.signOut();localStorage.removeItem('alfn_guardian');setUser(null);setGuardian(null);setParentStep('auth')}
+  // PARENT LOGIN — link code only, no Supabase auth
+  const onParentLogin=(data:any)=>{const g=data.guardian;const st=data.student;setGuardian({...g,linkedStudent:st});localStorage.setItem('alfn_guardian',JSON.stringify({...g,linkedStudent:st}));localStorage.setItem('alfn_parent_student',JSON.stringify(st));setParentStep('dash')}
+  const parentLogout=()=>{localStorage.removeItem('alfn_guardian');localStorage.removeItem('alfn_parent_student');setGuardian(null);setParentStep('code')}
 
   // ADMIN AUTH
   const onAdminAuth=async(u:any)=>{setUser(u);setSc('home')}
@@ -918,13 +920,11 @@ export default function App(){
     return<><CSS/><div className="a-shell">{prof&&<Nav active={sc} nav={setSc} p={prof}/>}<main className="a-main">{sc==='home'&&prof&&<Home p={prof} nav={setSc} stats={stats} history={history}/>}{sc==='foxy'&&prof&&<Foxy p={prof}/>}{sc==='quiz'&&prof&&<Quiz p={prof} onDone={refreshStats}/>}{sc==='skills'&&prof&&<SkillTree p={prof} nav={setSc}/>}{sc==='plan'&&prof&&<StudyPlan p={prof} nav={setSc}/>}{sc==='notes'&&prof&&<Notes p={prof}/>}{sc==='progress'&&prof&&<Progress p={prof} stats={stats}/>}{sc==='profile'&&prof&&<ProfileScr p={prof} onUp={onProfUp} out={studentLogout} stats={stats}/>}</main></div></>
   }
 
-  // PARENT PORTAL
+  // PARENT PORTAL — link code only
   if(portal==='parent'){
-    if(parentStep==='auth')return<><CSS/><Auth onAuth={onParentAuth} onConfirm={()=>setParentStep('auth')}/><div style={{position:'fixed',top:16,left:16}}><button onClick={goLanding} style={{padding:'8px 16px',borderRadius:10,background:'rgba(255,255,255,.08)',border:'none',color:'rgba(255,255,255,.5)',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>{'\u2190'} Back</button></div></>
-    if(parentStep==='onboard')return<><CSS/><ParentOnboard user={user} done={onParentOnboard}/></>
-    if(parentStep==='link'&&guardian)return<><CSS/><ParentLinkChild guardian={guardian} onLinked={()=>setParentStep('dash')}/></>
+    if(parentStep==='code')return<><CSS/><ParentCodeLogin onLogin={onParentLogin} onBack={goLanding}/></>
     if(parentStep==='dash'&&guardian)return<><CSS/><ParentDash guardian={guardian} onLogout={parentLogout}/></>
-    return<><CSS/><div className="a-center"><p style={{color:'#A8A29E'}}>Loading parent portal...</p></div></>
+    return<><CSS/><ParentCodeLogin onLogin={onParentLogin} onBack={goLanding}/></>
   }
 
   // ADMIN PORTAL
