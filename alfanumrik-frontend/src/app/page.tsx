@@ -26,7 +26,7 @@ case'unlock':o.type='sine';o.frequency.setValueAtTime(698,t);o.frequency.setValu
 default:o.type='sine';o.frequency.setValueAtTime(523,t);o.frequency.setValueAtTime(784,t+.12);g.gain.setValueAtTime(.08,t);g.gain.linearRampToValueAtTime(0,t+.2)
 };o.start(t);o.stop(t+.6)}
 
-type Screen='loading'|'auth'|'confirm'|'reset'|'onboard'|'home'|'foxy'|'quiz'|'notes'|'progress'|'skills'|'profile'
+type Screen='loading'|'auth'|'confirm'|'reset'|'onboard'|'home'|'foxy'|'quiz'|'notes'|'progress'|'skills'|'profile'|'plan'
 type Prof={name:string;grade:string;subject:string;language:string;studentId?:string}
 type Stats={xp:number;streak:number;sessions:number;correct:number;asked:number;minutes:number}
 type Note={id:string;title:string;content:string;note_type:string;color:string;chapter_number?:number;chapter_title?:string;is_pinned:boolean;is_starred:boolean;word_count:number;updated_at:string}
@@ -375,8 +375,149 @@ return(<div className="a-page"><div className="a-hdr"><div><h1 className="a-titl
 function Progress({p,stats}:{p:Prof;stats:Stats}){const[mastery,setMastery]=useState<any[]>([]);useEffect(()=>{if(p.studentId)getTopicMastery(p.studentId,SM[p.subject]||'math').then(setMastery)},[p.studentId,p.subject]);const acc=stats.asked>0?Math.round((stats.correct/stats.asked)*100):0;return(<div className="a-page"><div className="a-hdr"><div><h1 className="a-title">Progress</h1><p className="a-greet">{p.subject} &middot; {p.grade}</p></div></div><div className="a-stats" style={{marginBottom:20}}>{[{v:String(stats.xp),l:'XP',i:'\u26A1'},{v:String(stats.streak),l:'Streak',i:'\uD83D\uDD25'},{v:String(stats.sessions),l:'Quizzes',i:'\uD83D\uDCDA'},{v:`${acc}%`,l:'Accuracy',i:'\uD83C\uDFAF'},{v:String(stats.minutes),l:'Minutes',i:'\u23F1'},{v:String(stats.asked),l:'Questions',i:'\u2753'}].map(x=>(<div key={x.l} className="a-stat"><span style={{fontSize:18}}>{x.i}</span><p className="a-stat-v">{x.v}</p><p className="a-stat-l">{x.l}</p></div>))}</div>{mastery.length>0?<div className="a-card"><h3 className="a-section-title">SKILL MASTERY</h3>{mastery.map((t:any,i:number)=><div key={i} style={{marginBottom:12}}><div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}><span style={{fontSize:13,fontWeight:600}}>{t.topic_tag?.replace(/_/g,' ')}</span><span style={{fontSize:12,fontWeight:700,color:t.mastery_percent>=70?'#16A34A':t.mastery_percent>=40?'#D97706':'#DC2626'}}>{t.mastery_percent}% {t.mastery_level}</span></div><div style={{height:6,borderRadius:3,background:'#F5F4F0'}}><div style={{height:'100%',borderRadius:3,width:`${t.mastery_percent}%`,background:t.mastery_percent>=70?'#16A34A':t.mastery_percent>=40?'#D97706':'#DC2626'}}/></div></div>)}</div>:<div className="a-card" style={{textAlign:'center',padding:40}}><p style={{fontSize:40}}>&#x1F4CA;</p><p style={{fontWeight:700,marginTop:8}}>No mastery data yet</p><p style={{color:'#A8A29E',fontSize:13}}>Complete a quiz to see progress!</p></div>}</div>)}
 // PROFILE
 function ProfileScr({p,onUp,out,stats}:{p:Prof;onUp:(p:Prof)=>void;out:()=>void;stats:Stats}){const[ed,setEd]=useState<string|null>(null);const[nm,setNm]=useState(p.name);const[gr,setGr]=useState(p.grade);const[su,setSu]=useState(p.subject);const[la,setLa]=useState(p.language);const save=()=>{snd('ok');onUp({...p,name:nm,grade:gr,subject:su,language:la});setEd(null)};const acc=stats.asked>0?Math.round((stats.correct/stats.asked)*100):0;return(<div className="a-page"><div style={{textAlign:'center',padding:'16px 0 20px'}}><div style={{width:80,height:80,borderRadius:'50%',margin:'0 auto 10px',background:'linear-gradient(135deg,#E8590C,#EC4899)',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:32,fontWeight:900}}>{nm.charAt(0).toUpperCase()}</div><h1 style={{fontSize:24,fontWeight:900}}>{nm}</h1><p style={{fontSize:13,color:'#A8A29E',marginTop:4}}>{gr} &middot; {su}</p><div style={{display:'flex',justifyContent:'center',gap:24,marginTop:16}}>{[{v:String(stats.xp),l:'XP'},{v:String(stats.sessions),l:'Quizzes'},{v:`${acc}%`,l:'Accuracy'}].map(x=>(<div key={x.l}><p style={{fontSize:20,fontWeight:900}}>{x.v}</p><p style={{fontSize:10,color:'#A8A29E',fontWeight:600}}>{x.l}</p></div>))}</div></div><div style={{maxWidth:520,margin:'0 auto'}}>{[{k:'name',l:'Name',v:nm},{k:'grade',l:'Grade',v:gr},{k:'subject',l:'Subject',v:su},{k:'lang',l:'Language',v:LANGS.find(l=>l.code===la)?.label||la}].map(f=><div key={f.k} className="a-card" style={{padding:0,overflow:'hidden',marginBottom:10}}><div className="a-pr" onClick={()=>{setEd(ed===f.k?null:f.k);snd('click')}} style={{minHeight:52}}><span className="a-pr-l">{f.l}</span><span className="a-pr-v">{ed===f.k?'':f.v}</span><span style={{color:'#A8A29E'}}>{ed===f.k?'\u2715':'\u270E'}</span></div>{ed===f.k&&<div className="a-ed">{f.k==='name'&&<><input value={nm} onChange={e=>setNm(e.target.value)} className="a-ed-inp" autoFocus/><button onClick={save} disabled={!nm.trim()} className="a-btn-primary" style={{fontSize:13,padding:'8px 20px',minHeight:40}}>Save</button></>}{f.k==='grade'&&<><div style={{display:'flex',gap:6,flexWrap:'wrap'}}>{GRADES.map(g=><button key={g} onClick={()=>{setGr(g);snd('click')}} className={`a-pill-n${gr===g?' on':''}`} style={{minHeight:40}}>{g}</button>)}</div><button onClick={save} className="a-btn-primary" style={{marginTop:8,fontSize:13,padding:'8px 20px',minHeight:40}}>Save</button></>}{f.k==='subject'&&<><div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:6}}>{SUBJ.filter(x=>{const g=parseInt(gr.replace(/\D/g,'')||'6');return g>=11?['Mathematics','Physics','Chemistry','Biology','English','Computer Science','Accountancy','Economics'].includes(x.id):['Mathematics','Science','English','Hindi','Social Studies'].includes(x.id)}).map(x=><button key={x.id} onClick={()=>{setSu(x.id);snd('click')}} style={{padding:'10px 12px',borderRadius:12,border:su===x.id?'none':'1px solid #E7E5E4',background:su===x.id?x.c:'#fff',color:su===x.id?'#fff':'#1C1917',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',minHeight:44}}><span>{x.icon}</span> {x.id}</button>)}</div><button onClick={save} className="a-btn-primary" style={{marginTop:8,fontSize:13,padding:'8px 20px',minHeight:40}}>Save</button></>}{f.k==='lang'&&<><div style={{display:'flex',gap:6,flexWrap:'wrap'}}>{LANGS.map(l=><button key={l.code} onClick={()=>{setLa(l.code);snd('click')}} className={`a-pill-n${la===l.code?' on':''}`} style={{minHeight:40}}>{l.label}</button>)}</div><button onClick={save} className="a-btn-primary" style={{marginTop:8,fontSize:13,padding:'8px 20px',minHeight:40}}>Save</button></>}</div>}</div>)}<button onClick={()=>{snd('click');out()}} style={{width:'100%',marginTop:8,padding:14,borderRadius:14,border:'none',background:'#FEE2E2',color:'#DC2626',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit',minHeight:52}}>Sign Out</button><p style={{textAlign:'center',fontSize:10,color:'#D4D0C8',marginTop:20}}>Alfanumrik&reg; v5.0 &middot; CusioSense Learning India Private Limited</p></div></div>)}
+// ═══════════════════════════════════════════════════════
+// STUDY PLAN + SPACED REPETITION — Phase 3B
+// ═══════════════════════════════════════════════════════
+function StudyPlan({p,nav}:{p:Prof;nav:(s:Screen)=>void}){
+const subCode=SM[p.subject]||'math';
+const[plan,setPlan]=useState<any>(null);const[tasks,setTasks]=useState<any[]>([]);const[todayTasks,setTodayTasks]=useState<any[]>([]);const[dueCards,setDueCards]=useState<any[]>([]);const[goal,setGoal]=useState<any>({});const[loading,setLoading]=useState(true);const[generating,setGenerating]=useState(false);const[tab,setTab]=useState<'today'|'plan'|'review'>('today');const[reviewCard,setReviewCard]=useState<any>(null);const[showAnswer,setShowAnswer]=useState(false);const[reviewIdx,setReviewIdx]=useState(0);
+useEffect(()=>{loadData()},[p.studentId,p.subject]);
+const loadData=async()=>{setLoading(true);
+const[planRes,todayRes]=await Promise.all([
+  api('study-plan',{action:'get_plan',student_id:p.studentId,subject:p.subject}),
+  api('study-plan',{action:'get_today',student_id:p.studentId})
+]);
+if(planRes.plan){setPlan(planRes.plan);setTasks(planRes.tasks||[])}
+setTodayTasks(todayRes.tasks||[]);setDueCards(todayRes.due_cards||[]);setGoal(todayRes.goal||{});
+setLoading(false)};
+const generatePlan=async(type:string)=>{setGenerating(true);
+const d=await api('study-plan',{action:'generate_plan',student_id:p.studentId,subject:p.subject,grade:p.grade,plan_type:type,days:type==='daily'?1:7});
+setGenerating(false);if(d.success){await loadData();setTab('plan')}};
+const completeTask=async(taskId:string)=>{snd('correct');
+await api('study-plan',{action:'complete_task',task_id:taskId,student_id:p.studentId,time_spent_minutes:15});
+await loadData()};
+const handleTaskAction=(task:any)=>{
+  if(task.task_type==='learn'){try{localStorage.setItem('alfanumrik_foxy_chapter',JSON.stringify({chapter:task.chapter_number,title:task.chapter_title,subject:p.subject,grade:p.grade}))}catch{};nav('foxy' as Screen)}
+  else if(task.task_type==='quiz'){try{localStorage.setItem('alfanumrik_quiz_chapter',JSON.stringify({chapter:task.chapter_number,title:task.chapter_title,subject:p.subject,grade:p.grade}))}catch{};nav('quiz' as Screen)}
+  else if(task.task_type==='review'){setTab('review')}
+  else{completeTask(task.id)}
+};
+const reviewAnswer=(quality:number)=>{if(!reviewCard)return;
+api('study-plan',{action:'review_card',card_id:reviewCard.id,student_id:p.studentId,quality}).then(()=>{
+  const next=reviewIdx+1;if(next<dueCards.length){setReviewIdx(next);setReviewCard(dueCards[next]);setShowAnswer(false)}else{setReviewCard(null);setReviewIdx(0);snd('badge');loadData()}
+})};
+const TI:Record<string,{emoji:string;color:string;bg:string}>={learn:{emoji:'📖',color:'#3B82F6',bg:'#EFF6FF'},quiz:{emoji:'🎯',color:'#8B5CF6',bg:'#FAF5FF'},review:{emoji:'🔄',color:'#22C55E',bg:'#F0FDF4'},practice:{emoji:'💪',color:'#F59E0B',bg:'#FFFBEB'},revision:{emoji:'📝',color:'#E8590C',bg:'#FFF7ED'},foxy_chat:{emoji:'🦊',color:'#E8590C',bg:'#FFF7ED'},challenge:{emoji:'⚡',color:'#EF4444',bg:'#FEF2F2'},notes:{emoji:'📝',color:'#F59E0B',bg:'#FFFBEB'}};
+if(loading)return<div style={{padding:60,textAlign:'center'}}><div style={{fontSize:36,animation:'alfPulse 1.5s infinite'}}>📋</div><p style={{color:'#A8A29E',marginTop:8}}>Loading your study plan...</p></div>;
+// Group tasks by day
+const dayMap:Record<number,any[]>={};tasks.forEach(t=>{if(!dayMap[t.day_number])dayMap[t.day_number]=[];dayMap[t.day_number].push(t)});
+const completedToday=todayTasks.filter(t=>t.status==='completed').length;
+const goalPct=goal.tasks_target>0?Math.min(100,Math.round(completedToday/goal.tasks_target*100)):0;
+return(<div style={{padding:'20px 24px 120px',maxWidth:900,animation:'alfFadeIn .4s'}}>
+{/* Header */}
+<div style={{marginBottom:16}}><h1 style={{fontSize:24,fontWeight:900}}>📋 Study Plan</h1><p style={{fontSize:13,color:'#78716C',marginTop:4}}>{p.subject} · {p.grade}</p></div>
+{/* Tabs */}
+<div style={{display:'flex',gap:6,marginBottom:16}}>
+{[{id:'today' as const,l:`Today (${todayTasks.length})`,i:'📅'},{id:'plan' as const,l:'Full Plan',i:'📋'},{id:'review' as const,l:`Review (${dueCards.length})`,i:'🔄'}].map(t=><button key={t.id} onClick={()=>{setTab(t.id);snd('click')}} style={{flex:1,padding:'10px 12px',borderRadius:12,border:tab===t.id?'2px solid #22C55E':'1px solid #E7E5E4',background:tab===t.id?'#22C55E10':'#fff',color:tab===t.id?'#22C55E':'#78716C',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',minHeight:44}}>{t.i} {t.l}</button>)}
+</div>
+{/* Daily Goal Progress */}
+<div style={{background:'linear-gradient(135deg,#1C1917,#292524)',borderRadius:16,padding:16,marginBottom:16,color:'#fff',display:'flex',alignItems:'center',gap:16}}>
+<div style={{width:56,height:56,borderRadius:'50%',border:'3px solid #22C55E40',display:'flex',alignItems:'center',justifyContent:'center',position:'relative',flexShrink:0}}>
+<svg viewBox="0 0 36 36" width={56} height={56} style={{position:'absolute'}}><path d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#22C55E" strokeWidth="3" strokeDasharray={`${goalPct}, 100`} strokeLinecap="round"/></svg>
+<span style={{fontSize:14,fontWeight:900}}>{goalPct}%</span>
+</div>
+<div style={{flex:1}}><p style={{fontSize:13,fontWeight:700,color:'#22C55E'}}>TODAY'S GOAL</p><p style={{fontSize:11,color:'#A8A29E',marginTop:2}}>{completedToday}/{todayTasks.length} tasks done{dueCards.length>0?` · ${dueCards.length} cards to review`:''}</p></div>
+{dueCards.length>0&&<button onClick={()=>{setReviewCard(dueCards[0]);setReviewIdx(0);setShowAnswer(false);setTab('review')}} style={{padding:'8px 14px',borderRadius:10,border:'none',background:'#22C55E',color:'#fff',fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit',minHeight:36}}>Review</button>}
+</div>
+{/* TODAY TAB */}
+{tab==='today'&&<div>
+{todayTasks.length===0&&!plan&&<div style={{textAlign:'center',padding:40}}>
+<FoxyAvatar state="encouraging" size={64} color="#22C55E"/>
+<p style={{fontSize:16,fontWeight:800,marginTop:12}}>No study plan yet!</p>
+<p style={{fontSize:13,color:'#78716C',marginTop:6,lineHeight:1.5}}>Generate an AI-powered study plan tailored to your strengths and weaknesses.</p>
+<div style={{display:'flex',gap:8,marginTop:16,justifyContent:'center',flexWrap:'wrap'}}>
+{[{t:'weekly',l:'📅 Weekly Plan',c:'#22C55E'},{t:'exam_prep',l:'📝 Exam Prep',c:'#8B5CF6'},{t:'revision',l:'🔄 Revision',c:'#E8590C'}].map(x=><button key={x.t} onClick={()=>generatePlan(x.t)} disabled={generating} style={{padding:'12px 20px',borderRadius:14,border:'none',background:x.c,color:'#fff',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit',minHeight:44,opacity:generating?.5:1}}>{generating?'Generating...':x.l}</button>)}
+</div></div>}
+{todayTasks.length===0&&plan&&<div style={{textAlign:'center',padding:30,color:'#78716C'}}><p style={{fontSize:32}}>✅</p><p style={{fontWeight:700,marginTop:8}}>No tasks scheduled for today</p><p style={{fontSize:13,marginTop:4}}>Check the Full Plan tab to see upcoming tasks.</p></div>}
+{todayTasks.map((task,i)=>{const ti=TI[task.task_type]||TI.learn;const done=task.status==='completed';
+return<div key={task.id} style={{padding:14,borderRadius:14,border:`1.5px solid ${done?'#22C55E30':ti.color+'30'}`,background:done?'#F0FDF410':ti.bg,marginBottom:10,opacity:done?.6:1,animation:`alfSlideUp .3s ease ${i*.05}s both`}}>
+<div style={{display:'flex',alignItems:'center',gap:10}}>
+<div style={{width:36,height:36,borderRadius:10,background:done?'#22C55E':ti.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0,color:'#fff'}}>{done?'✓':ti.emoji}</div>
+<div style={{flex:1}}>
+<p style={{fontSize:14,fontWeight:700,textDecoration:done?'line-through':'none'}}>{task.title}</p>
+<p style={{fontSize:11,color:'#78716C'}}>{task.description} · {task.duration_minutes}min · +{task.xp_reward}XP</p>
+</div>
+{!done&&<button onClick={()=>handleTaskAction(task)} style={{padding:'8px 14px',borderRadius:10,border:'none',background:ti.color,color:'#fff',fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit',minHeight:36,whiteSpace:'nowrap'}}>
+{task.task_type==='learn'?'Learn':task.task_type==='quiz'?'Quiz':task.task_type==='review'?'Review':'Start'}
+</button>}
+</div></div>})}
+</div>}
+{/* PLAN TAB */}
+{tab==='plan'&&<div>
+{plan&&<div style={{padding:14,borderRadius:14,background:'#F0FDF4',border:'1px solid #DCFCE7',marginBottom:16}}>
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+<div><p style={{fontSize:15,fontWeight:800}}>{plan.title}</p><p style={{fontSize:12,color:'#78716C',marginTop:2}}>{plan.description}</p></div>
+<div style={{textAlign:'right'}}><p style={{fontSize:22,fontWeight:900,color:'#22C55E'}}>{plan.progress_percent||0}%</p><p style={{fontSize:10,color:'#78716C'}}>{plan.completed_tasks}/{plan.total_tasks} done</p></div>
+</div>
+<div style={{height:6,borderRadius:3,background:'#22C55E20',marginTop:10}}><div style={{height:'100%',borderRadius:3,background:'#22C55E',width:`${plan.progress_percent||0}%`,transition:'width .5s'}}/></div>
+</div>}
+{Object.entries(dayMap).map(([day,dayTasks])=>{const d=parseInt(day);const date=dayTasks[0]?.scheduled_date;const isToday=date===new Date().toISOString().split('T')[0];const allDone=(dayTasks as any[]).every((t:any)=>t.status==='completed');
+return<div key={day} style={{marginBottom:12}}>
+<div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+<div style={{width:28,height:28,borderRadius:'50%',background:allDone?'#22C55E':isToday?'#E8590C':'#E7E5E4',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,fontWeight:900}}>{allDone?'✓':d}</div>
+<span style={{fontSize:13,fontWeight:700,color:isToday?'#E8590C':'#44403C'}}>Day {d}{isToday?' (Today)':''}</span>
+{date&&<span style={{fontSize:11,color:'#A8A29E'}}>{new Date(date+'T00:00:00').toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'})}</span>}
+</div>
+{(dayTasks as any[]).map((task:any)=>{const ti=TI[task.task_type]||TI.learn;const done=task.status==='completed';
+return<div key={task.id} style={{padding:10,borderRadius:10,background:done?'#F0FDF408':ti.bg,marginBottom:6,marginLeft:36,borderLeft:`3px solid ${done?'#22C55E':ti.color}`,display:'flex',alignItems:'center',gap:8}}>
+<span style={{fontSize:14}}>{done?'✅':ti.emoji}</span>
+<div style={{flex:1}}><p style={{fontSize:12,fontWeight:600,textDecoration:done?'line-through':'none'}}>{task.title}</p><p style={{fontSize:10,color:'#A8A29E'}}>{task.duration_minutes}min · +{task.xp_reward}XP</p></div>
+{!done&&isToday&&<button onClick={()=>handleTaskAction(task)} style={{padding:'4px 10px',borderRadius:8,border:'none',background:ti.color,color:'#fff',fontSize:10,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Go</button>}
+{done&&task.score_percent!==null&&<span style={{fontSize:11,fontWeight:800,color:'#22C55E'}}>{task.score_percent}%</span>}
+</div>})}
+</div>})}
+{!plan&&<div style={{textAlign:'center',padding:40}}>
+<p style={{fontSize:13,color:'#78716C'}}>No active plan. Generate one from the Today tab!</p>
+</div>}
+</div>}
+{/* REVIEW TAB — Spaced Repetition */}
+{tab==='review'&&<div>
+{reviewCard?<div style={{maxWidth:440,margin:'0 auto'}}>
+<p style={{fontSize:12,color:'#78716C',textAlign:'center',marginBottom:12}}>Card {reviewIdx+1} of {dueCards.length}</p>
+<div style={{borderRadius:20,overflow:'hidden',border:'2px solid #22C55E30',background:'#fff',minHeight:280}}>
+{/* Front */}
+<div style={{padding:24,background:'linear-gradient(135deg,#F0FDF4,#DCFCE7)',minHeight:140}}>
+<p style={{fontSize:10,fontWeight:700,color:'#22C55E',letterSpacing:'.05em',marginBottom:8}}>QUESTION</p>
+<p style={{fontSize:16,fontWeight:600,color:'#1C1917',lineHeight:1.5}}>{reviewCard.front_text}</p>
+{reviewCard.hint&&!showAnswer&&<p style={{fontSize:12,color:'#78716C',marginTop:8,fontStyle:'italic'}}>💡 Hint: {reviewCard.hint}</p>}
+</div>
+{/* Back */}
+{showAnswer&&<div style={{padding:24,borderTop:'1px solid #E7E5E4'}}>
+<p style={{fontSize:10,fontWeight:700,color:'#3B82F6',letterSpacing:'.05em',marginBottom:8}}>ANSWER</p>
+<p style={{fontSize:14,color:'#1C1917',lineHeight:1.6}}>{reviewCard.back_text}</p>
+</div>}
+</div>
+{!showAnswer?<button onClick={()=>{setShowAnswer(true);snd('click')}} style={{width:'100%',padding:16,borderRadius:14,border:'none',background:'#22C55E',color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer',fontFamily:'inherit',marginTop:12,minHeight:52}}>Show Answer</button>
+:<div style={{display:'flex',gap:8,marginTop:12}}>
+{[{q:1,l:'😫 Again',c:'#EF4444'},{q:3,l:'🤔 Hard',c:'#F59E0B'},{q:4,l:'😊 Good',c:'#3B82F6'},{q:5,l:'🎯 Easy',c:'#22C55E'}].map(x=>
+<button key={x.q} onClick={()=>{snd(x.q>=3?'correct':'wrong');reviewAnswer(x.q)}} style={{flex:1,padding:'12px 8px',borderRadius:12,border:'none',background:x.c,color:'#fff',fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit',minHeight:48}}>{x.l}</button>)}
+</div>}
+<p style={{fontSize:11,color:'#A8A29E',textAlign:'center',marginTop:8}}>Streak: {reviewCard.streak} · Reviews: {reviewCard.total_reviews}</p>
+</div>
+:dueCards.length>0?<div style={{textAlign:'center',padding:30}}>
+<p style={{fontSize:48}}>🎉</p><p style={{fontSize:18,fontWeight:800,marginTop:8}}>All cards reviewed!</p><p style={{fontSize:13,color:'#78716C',marginTop:4}}>Great job! Come back tomorrow for more.</p>
+</div>
+:<div style={{textAlign:'center',padding:40}}>
+<p style={{fontSize:48}}>📚</p><p style={{fontSize:16,fontWeight:700,marginTop:8}}>No cards to review today</p>
+<p style={{fontSize:13,color:'#78716C',marginTop:6,lineHeight:1.5}}>Review cards are created automatically from quiz mistakes and chapter key points. Take a quiz to start building your review deck!</p>
+</div>}
+</div>}
+{/* Generate new plan button */}
+{plan&&tab!=='review'&&<div style={{marginTop:16,textAlign:'center'}}>
+<button onClick={()=>generatePlan('weekly')} disabled={generating} style={{padding:'10px 20px',borderRadius:12,border:'1px solid #E7E5E4',background:'#fff',color:'#78716C',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',minHeight:40}}>{generating?'Generating...':'🔄 Generate New Plan'}</button>
+</div>}
+</div>)}
 // NAV — colorful with bigger mobile touch targets
-function Nav({active,nav,p}:{active:Screen;nav:(s:Screen)=>void;p:Prof}){const tabs=[{sc:'home' as Screen,l:'Home',i:'\uD83C\uDFE0',ac:'#E8590C'},{sc:'foxy' as Screen,l:'Foxy',i:'\uD83E\uDD8A',ac:'#E8590C'},{sc:'quiz' as Screen,l:'Quiz',i:'\uD83C\uDFAF',ac:'#8B5CF6'},{sc:'skills' as Screen,l:'Skills',i:'\u2B50',ac:'#0EA5E9'},{sc:'notes' as Screen,l:'Notes',i:'\uD83D\uDCDD',ac:'#F59E0B'},{sc:'profile' as Screen,l:'Me',i:'\uD83D\uDC64',ac:'#EC4899'}];return(<><nav className="a-side"><div className="a-side-brand"><span style={{fontSize:28}}>{'\uD83E\uDD8A'}</span><div><span style={{fontSize:17,fontWeight:900,color:'#E8590C'}}>Alfanumrik</span><p style={{fontSize:10,color:'#A8A29E',fontWeight:600,marginTop:1}}>{p.grade} &middot; {p.subject}</p></div></div><div className="a-side-nav">{tabs.map(t=>{const on=active===t.sc;return<button key={t.sc} onClick={()=>{snd('nav');nav(t.sc)}} style={{display:'flex',alignItems:'center',gap:12,padding:'14px 16px',borderRadius:14,border:'none',background:on?`${t.ac}10`:'transparent',cursor:'pointer',fontFamily:'inherit',fontSize:14,fontWeight:600,color:on?t.ac:'#78716C',width:'100%',textAlign:'left',transition:'all .15s'}}><span style={{fontSize:20,width:28,textAlign:'center'}}>{t.i}</span><span>{t.l}</span>{on&&<div style={{marginLeft:'auto',width:6,height:6,borderRadius:'50%',background:t.ac}}/>}</button>})}</div><div className="a-side-user"><div className="a-side-av">{p.name.charAt(0)}</div><div><p style={{fontSize:13,fontWeight:700}}>{p.name}</p><p style={{fontSize:11,color:'#A8A29E'}}>{p.grade}</p></div></div></nav><nav className="a-bot">{tabs.map(t=>{const on=active===t.sc;return<button key={t.sc} onClick={()=>{snd('nav');nav(t.sc)}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,padding:'8px 12px',minWidth:52,minHeight:48,border:'none',background:on?`${t.ac}10`:'none',cursor:'pointer',fontFamily:'inherit',borderRadius:12,transition:'all .2s'}}><span style={{fontSize:22,filter:on?'none':'grayscale(.6) opacity(.5)',transition:'all .2s',transform:on?'scale(1.15)':'scale(1)'}}>{t.i}</span><span style={{fontSize:10,fontWeight:700,color:on?t.ac:'#A8A29E'}}>{t.l}</span></button>})}</nav></>)}
+function Nav({active,nav,p}:{active:Screen;nav:(s:Screen)=>void;p:Prof}){const tabs=[{sc:'home' as Screen,l:'Home',i:'\uD83C\uDFE0',ac:'#E8590C'},{sc:'foxy' as Screen,l:'Foxy',i:'\uD83E\uDD8A',ac:'#E8590C'},{sc:'quiz' as Screen,l:'Quiz',i:'\uD83C\uDFAF',ac:'#8B5CF6'},{sc:'skills' as Screen,l:'Skills',i:'\u2B50',ac:'#0EA5E9'},{sc:'plan' as Screen,l:'Plan',i:'\uD83D\uDCCB',ac:'#22C55E'},{sc:'notes' as Screen,l:'Notes',i:'\uD83D\uDCDD',ac:'#F59E0B'},{sc:'profile' as Screen,l:'Me',i:'\uD83D\uDC64',ac:'#EC4899'}];const botTabs=tabs.filter(t=>['home','foxy','quiz','plan','skills','profile'].includes(t.sc));return(<><nav className="a-side"><div className="a-side-brand"><span style={{fontSize:28}}>{'\uD83E\uDD8A'}</span><div><span style={{fontSize:17,fontWeight:900,color:'#E8590C'}}>Alfanumrik</span><p style={{fontSize:10,color:'#A8A29E',fontWeight:600,marginTop:1}}>{p.grade} &middot; {p.subject}</p></div></div><div className="a-side-nav">{tabs.map(t=>{const on=active===t.sc;return<button key={t.sc} onClick={()=>{snd('nav');nav(t.sc)}} style={{display:'flex',alignItems:'center',gap:12,padding:'14px 16px',borderRadius:14,border:'none',background:on?`${t.ac}10`:'transparent',cursor:'pointer',fontFamily:'inherit',fontSize:14,fontWeight:600,color:on?t.ac:'#78716C',width:'100%',textAlign:'left',transition:'all .15s'}}><span style={{fontSize:20,width:28,textAlign:'center'}}>{t.i}</span><span>{t.l}</span>{on&&<div style={{marginLeft:'auto',width:6,height:6,borderRadius:'50%',background:t.ac}}/>}</button>})}</div><div className="a-side-user"><div className="a-side-av">{p.name.charAt(0)}</div><div><p style={{fontSize:13,fontWeight:700}}>{p.name}</p><p style={{fontSize:11,color:'#A8A29E'}}>{p.grade}</p></div></div></nav><nav className="a-bot">{botTabs.map(t=>{const on=active===t.sc;return<button key={t.sc} onClick={()=>{snd('nav');nav(t.sc)}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,padding:'8px 12px',minWidth:52,minHeight:48,border:'none',background:on?`${t.ac}10`:'none',cursor:'pointer',fontFamily:'inherit',borderRadius:12,transition:'all .2s'}}><span style={{fontSize:22,filter:on?'none':'grayscale(.6) opacity(.5)',transition:'all .2s',transform:on?'scale(1.15)':'scale(1)'}}>{t.i}</span><span style={{fontSize:10,fontWeight:700,color:on?t.ac:'#A8A29E'}}>{t.l}</span></button>})}</nav></>)}
 // ═══════════════════════════════════════════════════════
 // LANDING PAGE — Role Selection
 // ═══════════════════════════════════════════════════════
@@ -722,7 +863,7 @@ export default function App(){
     if(sc==='confirm')return<><CSS/><ConfirmScreen onBack={()=>setSc('auth')}/></>
     if(sc==='reset')return<><CSS/><ResetScreen/></>
     if(sc==='onboard')return<><CSS/><Onboard user={user} done={onStudentOnboard}/></>
-    return<><CSS/><div className="a-shell">{prof&&<Nav active={sc} nav={setSc} p={prof}/>}<main className="a-main">{sc==='home'&&prof&&<Home p={prof} nav={setSc} stats={stats} history={history}/>}{sc==='foxy'&&prof&&<Foxy p={prof}/>}{sc==='quiz'&&prof&&<Quiz p={prof} onDone={refreshStats}/>}{sc==='skills'&&prof&&<SkillTree p={prof} nav={setSc}/>}{sc==='notes'&&prof&&<Notes p={prof}/>}{sc==='progress'&&prof&&<Progress p={prof} stats={stats}/>}{sc==='profile'&&prof&&<ProfileScr p={prof} onUp={onProfUp} out={studentLogout} stats={stats}/>}</main></div></>
+    return<><CSS/><div className="a-shell">{prof&&<Nav active={sc} nav={setSc} p={prof}/>}<main className="a-main">{sc==='home'&&prof&&<Home p={prof} nav={setSc} stats={stats} history={history}/>}{sc==='foxy'&&prof&&<Foxy p={prof}/>}{sc==='quiz'&&prof&&<Quiz p={prof} onDone={refreshStats}/>}{sc==='skills'&&prof&&<SkillTree p={prof} nav={setSc}/>}{sc==='plan'&&prof&&<StudyPlan p={prof} nav={setSc}/>}{sc==='notes'&&prof&&<Notes p={prof}/>}{sc==='progress'&&prof&&<Progress p={prof} stats={stats}/>}{sc==='profile'&&prof&&<ProfileScr p={prof} onUp={onProfUp} out={studentLogout} stats={stats}/>}</main></div></>
   }
 
   // PARENT PORTAL
