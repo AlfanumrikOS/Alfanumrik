@@ -711,21 +711,80 @@ function Pricing({studentId,onBack,onSelect}:{studentId?:string;onBack:()=>void;
 const[plans,setPlans]=useState<any[]>([]);const[ld,setLd]=useState(true);const[billing,setBilling]=useState<'monthly'|'yearly'>('monthly');const[coupon,setCoupon]=useState('');const[couponResult,setCouponResult]=useState<any>(null);
 useEffect(()=>{api('payments',{action:'get_plans'}).then(d=>{setPlans(d.plans||[]);setLd(false)})},[]);
 const applyCoupon=async(code:string,planCode:string,amount:number)=>{if(!code.trim())return;const r=await api('payments',{action:'apply_coupon',code,plan_code:planCode,amount:amount*100});if(r.valid)setCouponResult(r);else{setCouponResult(null);alert(r.error||'Invalid coupon')}}
+const[payStatus,setPayStatus]=useState<string|null>(null);
 const startPayment=async(plan:any)=>{
   if(plan.plan_code==='free'){onSelect('free');return}
   if(!studentId){alert('Please sign in first');return}
+  setPayStatus('Creating order...');
   const r=await api('payments',{action:'create_order',student_id:studentId,plan_code:plan.plan_code,billing_cycle:billing,coupon_code:coupon||undefined});
-  if(r.error){alert(r.error);return}
-  // Load Razorpay
-  const script=document.createElement('script');script.src='https://checkout.razorpay.com/v1/checkout.js';document.body.appendChild(script);
-  script.onload=()=>{
-    const opts={key:r.key,amount:r.amount,currency:'INR',name:'Alfanumrik',description:`${plan.name} Plan — ${billing}`,order_id:r.order_id,
-      prefill:r.prefill,theme:{color:'#E8590C'},
-      handler:async(resp:any)=>{const v=await api('payments',{action:'verify_payment',razorpay_order_id:resp.razorpay_order_id,razorpay_payment_id:resp.razorpay_payment_id,razorpay_signature:resp.razorpay_signature,student_id:studentId,plan_code:plan.plan_code,billing_cycle:billing,amount:r.amount});
-        if(v.success){snd('eureka');onSelect(plan.plan_code)}else{alert('Payment verification failed')}},
-      modal:{ondismiss:()=>{}}};
-    new (window as any).Razorpay(opts).open()
-  }
+  if(r.error){setPayStatus(null);alert(r.error);return}
+  setPayStatus(null);
+  // Load Razorpay SDK
+  const loadRz=():Promise<void>=>new Promise((resolve,reject)=>{
+    if((window as any).Razorpay){resolve();return}
+    const script=document.createElement('script');script.src='https://checkout.razorpay.com/v1/checkout.js';
+    script.onload=()=>resolve();script.onerror=()=>reject(new Error('Failed to load Razorpay'));
+    document.body.appendChild(script);
+  });
+  try{await loadRz()}catch{alert('Could not load payment gateway. Please check your internet.');return}
+  
+  const orderId=r.order_id;
+  const opts={
+    key:r.key,
+    amount:r.amount_paise,
+    currency:'INR',
+    name:'Alfanumrik',
+    description:`${plan.name} Plan \u2014 ${billing==='yearly'?'Yearly':'Monthly'} (\u20B9${r.amount_rupees})`,
+    order_id:orderId,
+    prefill:r.prefill,
+    theme:{color:'#E8590C'},
+    handler:async(resp:any)=>{
+      // Razorpay SDK callback \u2014 verify signature server-side
+      setPayStatus('Verifying payment...');
+      try{
+        const v=await api('payments',{action:'verify_payment',razorpay_order_id:resp.razorpay_order_id,razorpay_payment_id:resp.razorpay_payment_id,razorpay_signature:resp.razorpay_signature,student_id:studentId,plan_code:plan.plan_code,billing_cycle:billing});
+        if(v.success){
+          snd('eureka');setPayStatus(null);
+          alert('\u2705 Payment successful! '+plan.name+' plan activated. Entitlements: '+(v.entitlements?.foxy_chats_per_day===-1?'Unlimited':''+v.entitlements?.foxy_chats_per_day)+' Foxy chats/day, '+(v.entitlements?.quizzes_per_day===-1?'Unlimited':''+v.entitlements?.quizzes_per_day)+' quizzes/day.');
+          onSelect(plan.plan_code);
+        }else{
+          setPayStatus(null);alert('Payment verification issue: '+(v.error||'Unknown error')+'. If money was debited, it will be reconciled automatically.');
+        }
+      }catch(e){
+        setPayStatus(null);alert('Verification error. Your payment is safe \u2014 we will reconcile it.');
+      }
+    },
+    modal:{
+      ondismiss:async()=>{
+        // Razorpay modal closed \u2014 poll to check if UPI payment completed in background
+        setPayStatus('Checking payment status...');
+        // Wait 3 seconds for Razorpay to process
+        await new Promise(r=>setTimeout(r,3000));
+        try{
+          const rec=await api('payments',{action:'reconcile_payment',order_id:orderId});
+          if(rec.success){
+            snd('eureka');setPayStatus(null);
+            alert('\u2705 Payment confirmed! '+plan.name+' plan activated.');
+            onSelect(plan.plan_code);
+          }else if(rec.status==='failed'){
+            setPayStatus(null);
+            alert('\u274C Payment failed: '+(rec.error||'Unknown error')+'. If money was debited from your account, it will auto-refund in 5-7 business days.');
+          }else{
+            setPayStatus(null);
+            // Payment might still be processing (UPI can take time)
+            // Offer to check again
+            const retry=confirm('Payment status: '+(rec.status||'pending')+'. Would you like to check again?');
+            if(retry){
+              const rec2=await api('payments',{action:'reconcile_payment',order_id:orderId});
+              if(rec2.success){snd('eureka');alert('\u2705 Payment confirmed! Plan activated.');onSelect(plan.plan_code)}
+              else{alert('Still processing. Please check back in a few minutes from your Profile page.')}
+            }
+          }
+        }catch{setPayStatus(null)}
+      }
+    }
+  };
+  new (window as any).Razorpay(opts).open();
 }
 if(ld)return<div className="a-center-dark"><div style={{fontSize:48,animation:'alfPulse 1.5s infinite'}}>{'\uD83E\uDD8A'}</div><p style={{color:'rgba(255,255,255,.5)',marginTop:8}}>Loading plans...</p></div>;
 const isLaunch=plans.some(p=>p.launch_expires_at&&new Date(p.launch_expires_at)>new Date());
@@ -778,6 +837,8 @@ return(<div style={{minHeight:'100vh',background:'linear-gradient(180deg,#0F0F12
     <button onClick={()=>startPayment(plan)} style={{width:'100%',padding:'14px 0',borderRadius:14,border:'none',background:isPopular?'#E8590C':plan.plan_code==='free'?'rgba(255,255,255,.08)':'rgba(255,255,255,.06)',color:isPopular?'#fff':'rgba(255,255,255,.6)',fontSize:14,fontWeight:800,cursor:'pointer',fontFamily:'inherit',transition:'all .15s'}}>{plan.plan_code==='free'?'Start Free':isPopular?'\uD83D\uDE80 Get '+plan.name+' Now':'Choose '+plan.name}</button>
   </div>})}
 </div>
+{/* Payment Status Overlay */}
+{payStatus&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.7)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center'}}><div style={{background:'#1C1917',border:'2px solid #E8590C',borderRadius:24,padding:'40px 32px',textAlign:'center',maxWidth:360}}><div style={{fontSize:48,animation:'alfPulse 1.5s infinite',marginBottom:16}}>{'\uD83E\uDD8A'}</div><p style={{color:'#fff',fontSize:16,fontWeight:700}}>{payStatus}</p><p style={{color:'rgba(255,255,255,.4)',fontSize:12,marginTop:8}}>Please do not close this page</p></div></div>}
 {/* Coupon */}
 <div style={{marginTop:24,display:'flex',justifyContent:'center',gap:8}}>
 <input value={coupon} onChange={e=>setCoupon(e.target.value.toUpperCase())} placeholder="Have a coupon code?" style={{padding:'10px 16px',borderRadius:10,border:'1px solid rgba(255,255,255,.1)',background:'rgba(255,255,255,.04)',color:'#fff',fontSize:13,fontFamily:'inherit',width:200,textAlign:'center',letterSpacing:'.1em'}}/>
