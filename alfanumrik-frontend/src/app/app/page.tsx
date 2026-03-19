@@ -26,7 +26,7 @@ case'unlock':o.type='sine';o.frequency.setValueAtTime(698,t);o.frequency.setValu
 default:o.type='sine';o.frequency.setValueAtTime(523,t);o.frequency.setValueAtTime(784,t+.12);g.gain.setValueAtTime(.08,t);g.gain.linearRampToValueAtTime(0,t+.2)
 };o.start(t);o.stop(t+.6)}
 
-type Screen='loading'|'auth'|'confirm'|'reset'|'register'|'onboard'|'onboard_pricing'|'home'|'foxy'|'quiz'|'notes'|'progress'|'skills'|'profile'|'plan'|'pricing'
+type Screen='loading'|'auth'|'confirm'|'reset'|'register'|'onboard'|'onboard_pricing'|'credentials'|'home'|'foxy'|'quiz'|'notes'|'progress'|'skills'|'profile'|'plan'|'pricing'
 type Prof={name:string;grade:string;subject:string;language:string;studentId?:string}
 type Stats={xp:number;streak:number;sessions:number;correct:number;asked:number;minutes:number}
 type Note={id:string;title:string;content:string;note_type:string;color:string;chapter_number?:number;chapter_title?:string;is_pinned:boolean;is_starred:boolean;word_count:number;updated_at:string}
@@ -60,13 +60,62 @@ async function getTopicMastery(sid:string,sub:string){try{const{data}=await sb.f
 function Auth({onAuth,onConfirm,onSignup}:{onAuth:(u:any)=>void;onConfirm:()=>void;onSignup:()=>void}){const[mode,setMode]=useState<'login'|'forgot'>('login');const[email,setEmail]=useState('');const[pw,setPw]=useState('');const[ld,setLd]=useState(false);const[err,setErr]=useState('');const[msg,setMsg]=useState('');const go=async()=>{setErr('');setMsg('');setLd(true);try{if(mode==='forgot'){const{error}=await sb.auth.resetPasswordForEmail(email,{redirectTo:`${SITE}?reset=true`});if(error)throw error;setMsg('Reset link sent!');setLd(false);return}if(pw.length<6)throw new Error('6+ chars');const{data,error}=await sb.auth.signInWithPassword({email,password:pw});if(error)throw error;snd('ok');onAuth(data.user)}catch(e:any){snd('click');setErr(e.message?.includes('Invalid')?'Wrong email or password':e.message||'Error')};setLd(false)};return(<div className="a-auth"><div className="a-auth-l"><div style={{fontSize:56}}>&#x1F98A;</div><h1 style={{fontSize:42,fontWeight:900,marginTop:16}}>Alfanumrik</h1><p style={{fontSize:16,color:'rgba(255,255,255,.5)',marginTop:8}}>AI-powered adaptive learning by CusioSense Learning India Private Limited</p><div style={{marginTop:32}}><CertBadges size="sm" theme="dark"/></div></div><div className="a-auth-r"><div style={{width:'100%',maxWidth:400}}><h2 style={{fontSize:28,fontWeight:800,marginBottom:24,textAlign:'center'}}>{mode==='forgot'?'Reset password':'Welcome back'}</h2>{err&&<div className="a-err">{err}</div>}{msg&&<div className="a-ok-msg">{msg}</div>}<input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email" className="a-inp"/>{mode!=='forgot'&&<input type="password" value={pw} onChange={e=>setPw(e.target.value)} placeholder="Password" className="a-inp" onKeyDown={e=>e.key==='Enter'&&go()}/>}<button onClick={go} disabled={ld} className="a-btn-primary" style={{width:'100%',minHeight:52}}>{ld?'Please wait...':{login:'Log In',forgot:'Send Reset Link'}[mode]}</button>{mode==='login'&&<button onClick={()=>setMode('forgot')} className="a-link">Forgot password?</button>}{mode==='forgot'&&<button onClick={()=>setMode('login')} className="a-link">Back to login</button>}{mode!=='forgot'&&<><div className="a-divider"><span>new here?</span></div><button onClick={onSignup} className="a-ggl" style={{minHeight:48,borderColor:'#E8590C40',color:'#E8590C',fontWeight:800}}>&#x1F393; Register Your Child &rarr;</button></>}</div></div></div>)}
 function ConfirmScreen({onBack}:{onBack:()=>void}){return(<div className="a-center-dark"><div style={{fontSize:64,marginBottom:16}}>&#x2709;&#xFE0F;</div><h2 style={{fontSize:24,fontWeight:800,color:'#fff',marginBottom:8}}>Check your email!</h2><p style={{fontSize:15,color:'rgba(255,255,255,.6)',marginBottom:24}}>Click the verification link to activate your account.</p><button onClick={onBack} className="a-btn-primary" style={{maxWidth:200,minHeight:48}}>Back to Login</button></div>)}
 function ResetScreen(){const[pw,setPw]=useState('');const[pw2,setPw2]=useState('');const[ld,setLd]=useState(false);const[msg,setMsg]=useState('');const[err,setErr]=useState('');const go=async()=>{if(pw.length<6||pw!==pw2){setErr("Passwords don't match or too short");return}setLd(true);const{error}=await sb.auth.updateUser({password:pw});if(error)setErr(error.message);else{setMsg('Updated! Redirecting...');setTimeout(()=>window.location.href=SITE,2000)}setLd(false)};return(<div className="a-center-dark"><div style={{fontSize:48}}>&#x1F510;</div><h2 style={{fontSize:22,fontWeight:800,color:'#fff',margin:'12px 0 24px'}}>Set new password</h2>{err&&<div className="a-err">{err}</div>}{msg&&<div className="a-ok-msg">{msg}</div>}<input type="password" value={pw} onChange={e=>setPw(e.target.value)} placeholder="New password" className="a-inp" style={{background:'rgba(255,255,255,.06)',color:'#fff',borderColor:'rgba(255,255,255,.1)'}}/><input type="password" value={pw2} onChange={e=>setPw2(e.target.value)} placeholder="Confirm" className="a-inp" style={{background:'rgba(255,255,255,.06)',color:'#fff',borderColor:'rgba(255,255,255,.1)'}} onKeyDown={e=>e.key==='Enter'&&go()}/><button onClick={go} disabled={ld} className="a-btn-primary" style={{minHeight:48}}>{ld?'Updating...':'Update Password'}</button></div>)}
+// ═══════════════════════════════════════════════════════
+// CREDENTIALS CARD — shown after registration to share login details
+// ═══════════════════════════════════════════════════════
+function CredentialsCard({studentName,parentName,parentPhone,loginEmail,onContinue}:{studentName:string;parentName:string;parentPhone:string;loginEmail:string;onContinue:()=>void}){
+const[copied,setCopied]=useState(false);
+const[emailSent,setEmailSent]=useState(false);
+const loginUrl='https://alfanumrik-learning-os.vercel.app/app';
+const credText=`Alfanumrik Learning OS\n\nStudent: ${studentName}\nLogin URL: ${loginUrl}\nLogin Email: ${loginEmail}\nPassword: (the password you set during registration)\n\nDownload the app & start learning with Foxy AI Tutor!`;
+const copy=()=>{navigator.clipboard.writeText(credText).then(()=>{setCopied(true);snd('ok');setTimeout(()=>setCopied(false),3000)}).catch(()=>{})};
+const shareWhatsApp=()=>{const msg=encodeURIComponent(`*Alfanumrik Learning OS* \u{1F98A}\n\nHi! ${studentName}'s learning account is ready!\n\n\u{1F517} *Login:* ${loginUrl}\n\u{1F4E7} *Email:* ${loginEmail}\n\u{1F511} *Password:* (set during registration)\n\nStart learning with Foxy AI Tutor! \u{1F680}`);window.open(`https://wa.me/${parentPhone.length===10?'91':''}${parentPhone}?text=${msg}`,'_blank')};
+const sendWelcomeEmail=async()=>{try{const r=await fetch(`${EF}/welcome-email`,{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${(await sb.auth.getSession()).data.session?.access_token}`},body:JSON.stringify({student_name:studentName,parent_name:parentName,parent_email:loginEmail,login_url:loginUrl})});if(r.ok){setEmailSent(true);snd('ok')}else{snd('click')}}catch(e){console.error('Email send failed:',e)}};
+useEffect(()=>{sendWelcomeEmail()},[]);
+return(<div className="a-center-dark" style={{padding:'32px 24px',minHeight:'100vh'}}>
+<div style={{maxWidth:440,width:'100%',textAlign:'center'}}>
+<div style={{fontSize:64,marginBottom:8,animation:'alfBounce 2s infinite'}}>{'\u{1F389}'}</div>
+<h2 style={{fontSize:26,fontWeight:900,color:'#fff',marginBottom:6}}>Account Created!</h2>
+<p style={{fontSize:14,color:'rgba(255,255,255,.5)',marginBottom:24}}>Save these login details for {studentName}</p>
+<div style={{background:'rgba(255,255,255,.06)',borderRadius:20,padding:24,marginBottom:20,border:'1px solid rgba(255,255,255,.08)'}}>
+<div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
+<div style={{width:48,height:48,borderRadius:'50%',background:'linear-gradient(135deg,#E8590C,#EC4899)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,flexShrink:0}}>{studentName.charAt(0).toUpperCase()}</div>
+<div style={{textAlign:'left'}}>
+<p style={{fontSize:16,fontWeight:800,color:'#fff'}}>{studentName}</p>
+<p style={{fontSize:12,color:'rgba(255,255,255,.4)'}}>Student Account</p>
+</div>
+</div>
+<div style={{background:'rgba(0,0,0,.2)',borderRadius:12,padding:16,textAlign:'left'}}>
+<div style={{marginBottom:12}}>
+<p style={{fontSize:10,color:'rgba(255,255,255,.3)',fontWeight:700,letterSpacing:'.1em',marginBottom:4}}>LOGIN URL</p>
+<p style={{fontSize:13,color:'#E8590C',fontWeight:600,wordBreak:'break-all'}}>{loginUrl}</p>
+</div>
+<div style={{marginBottom:12}}>
+<p style={{fontSize:10,color:'rgba(255,255,255,.3)',fontWeight:700,letterSpacing:'.1em',marginBottom:4}}>EMAIL</p>
+<p style={{fontSize:15,color:'#fff',fontWeight:700}}>{loginEmail}</p>
+</div>
+<div>
+<p style={{fontSize:10,color:'rgba(255,255,255,.3)',fontWeight:700,letterSpacing:'.1em',marginBottom:4}}>PASSWORD</p>
+<p style={{fontSize:13,color:'rgba(255,255,255,.5)'}}>The password you set during registration</p>
+</div>
+</div>
+</div>
+{emailSent&&<p style={{fontSize:12,color:'#22C55E',marginBottom:12,fontWeight:600}}>{'\u2705'} Welcome email sent to {loginEmail}</p>}
+<div style={{display:'flex',gap:10,marginBottom:16}}>
+<button onClick={copy} style={{flex:1,padding:'14px 16px',borderRadius:14,border:'1px solid rgba(255,255,255,.1)',background:copied?'rgba(34,197,94,.15)':'rgba(255,255,255,.06)',color:copied?'#22C55E':'#fff',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit',transition:'all .2s'}}>{copied?'\u2705 Copied!':'\u{1F4CB} Copy Details'}</button>
+<button onClick={shareWhatsApp} style={{flex:1,padding:'14px 16px',borderRadius:14,border:'none',background:'#25D366',color:'#fff',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}><svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.625.846 5.059 2.284 7.034L.789 23.492l4.624-1.467A11.95 11.95 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818c-2.168 0-4.183-.69-5.83-1.862l-.418-.311-2.73.867.866-2.655-.342-.433A9.775 9.775 0 012.182 12c0-5.423 4.395-9.818 9.818-9.818 5.423 0 9.818 4.395 9.818 9.818 0 5.423-4.395 9.818-9.818 9.818z"/></svg>WhatsApp</button>
+</div>
+<button onClick={()=>{snd('click');onContinue()}} className="a-btn-primary" style={{width:'100%',minHeight:52,fontSize:16}}>{'\u{1F680}'} Continue to Choose Plan</button>
+<p style={{fontSize:11,color:'rgba(255,255,255,.25)',marginTop:16,lineHeight:1.5}}>You can always use &ldquo;Forgot Password&rdquo; on the login screen to reset your password via email.</p>
+</div>
+</div>)}
 const BOARDS=['CBSE','ICSE','State Board','IB','Other']
 const TARGETS=['Board Exams','JEE','NEET','Olympiad','None']
 const STATES=['Delhi','Maharashtra','Karnataka','Tamil Nadu','Uttar Pradesh','Rajasthan','Gujarat','West Bengal','Telangana','Kerala','Madhya Pradesh','Bihar','Haryana','Punjab','Andhra Pradesh','Other']
 // ═══════════════════════════════════════════════════════
 // REGISTRATION — Parent fills combined form (Parent KYC + Student details) → Account creation
 // ═══════════════════════════════════════════════════════
-function Registration({onComplete,onBack}:{onComplete:(u:any,p:Prof)=>void;onBack:()=>void}){
+function Registration({onComplete,onBack}:{onComplete:(u:any,p:Prof,reg:{studentName:string;parentName:string;parentPhone:string;loginEmail:string})=>void;onBack:()=>void}){
 const[s,setS]=useState(0);
 // Parent KYC
 const[parentName,setParentName]=useState('');const[parentPhone,setParentPhone]=useState('');const[parentEmail,setParentEmail]=useState('');const[parentRelation,setParentRelation]=useState('');const[parentCity,setParentCity]=useState('');const[parentState,setParentState]=useState('');
@@ -112,7 +161,7 @@ const createAccount=async()=>{setErr('');setLd(true);try{
     }).eq('id',sid);
     prof.studentId=sid;
   }
-  snd('eureka');onComplete(data.user,prof);
+  snd('eureka');onComplete(data.user,prof,{studentName:studentName.trim(),parentName:parentName.trim(),parentPhone:parentPhone.trim(),loginEmail:parentEmail.trim()});
 }catch(e:any){setErr(e.message||'Something went wrong');setLd(false)}};
 return(<div className="a-center-dark" style={{maxWidth:'100%',padding:'32px 24px',minHeight:'100vh',justifyContent:'flex-start',paddingTop:50,alignItems:'center'}}>
 <div style={{maxWidth:480,width:'100%',display:'flex',flexDirection:'column',alignItems:'center'}}>
@@ -1095,6 +1144,7 @@ export default function App(){
     return()=>{window.removeEventListener('offline',onOff);window.removeEventListener('online',onOn);window.removeEventListener('error',onErr);window.removeEventListener('unhandledrejection',onRej)}
   },[])
   const[parentStep,setParentStep]=useState<'code'|'dash'>('code')
+  const[regData,setRegData]=useState<{studentName:string;parentName:string;parentPhone:string;loginEmail:string}|null>(null)
   const loadAll=useCallback(async(p:Prof)=>{if(!p.studentId)return;try{const[s,h]=await Promise.all([getStats(p.studentId),api('chat-history',{action:'get_history',student_id:p.studentId})]);setStats(s);setHistory(h)}catch(e){console.error('loadAll failed:',e)}},[])
 
   // Check saved portal choice
@@ -1158,8 +1208,9 @@ export default function App(){
   const onStudentAuth=async(u:any)=>{try{setUser(u);const saved=localStorage.getItem('alfanumrik_profile');if(saved){const p=JSON.parse(saved) as Prof;const sid=await ensureStudent(u.id,p);if(!sid){console.error('Failed to resolve studentId');localStorage.removeItem('alfanumrik_profile');setSc('onboard');return}const wp={...p,studentId:sid};setProf(wp);localStorage.setItem('alfanumrik_profile',JSON.stringify(wp));await loadAll(wp);setSc('home');return}const dbProf=await loadProfileFromDB(u.id);if(dbProf&&dbProf.studentId){setProf(dbProf);localStorage.setItem('alfanumrik_profile',JSON.stringify(dbProf));await loadAll(dbProf);setSc('home');return}setSc('onboard')}catch(e){console.error('onAuth failed:',e);setSc('auth')}}
   const onStudentOnboard=async(p:Prof)=>{if(user){const sid=await ensureStudent(user.id,p);if(!sid){alert('Could not create your account. Please try again.');return}const wp={...p,studentId:sid};setProf(wp);localStorage.setItem('alfanumrik_profile',JSON.stringify(wp));await loadAll(wp);setSc('onboard_pricing')}}
   // Registration complete — parent created account with all details, now show pricing
-  const onRegistrationComplete=async(u:any,p:Prof)=>{
+  const onRegistrationComplete=async(u:any,p:Prof,reg:{studentName:string;parentName:string;parentPhone:string;loginEmail:string})=>{
     setUser(u);
+    setRegData(reg);
     // If studentId wasn't resolved during registration (RLS), try again with the authenticated session
     if(!p.studentId&&u?.id){
       // Wait a moment for the auth session to settle
@@ -1169,7 +1220,7 @@ export default function App(){
     }
     setProf(p);localStorage.setItem('alfanumrik_profile',JSON.stringify(p));
     if(p.studentId)await loadAll(p);
-    setSc('onboard_pricing');
+    setSc('credentials');
   }
   // Handle plan selection from pricing — resolve studentId if needed before going home
   const onPlanSelected=async(plan:string)=>{
@@ -1209,6 +1260,7 @@ export default function App(){
     if(sc==='confirm')return<><CSS/><ConfirmScreen onBack={()=>setSc('auth')}/></>
     if(sc==='reset')return<><CSS/><ResetScreen/></>
     if(sc==='register')return<><CSS/><Registration onComplete={onRegistrationComplete} onBack={()=>setSc('auth')}/></>
+    if(sc==='credentials'&&regData)return<><CSS/><CredentialsCard studentName={regData.studentName} parentName={regData.parentName} parentPhone={regData.parentPhone} loginEmail={regData.loginEmail} onContinue={()=>setSc('onboard_pricing')}/></>
     if(sc==='onboard')return<><CSS/><Onboard user={user} done={onStudentOnboard}/></>
     if(sc==='onboard_pricing')return<><CSS/><Pricing studentId={prof?.studentId} onBack={()=>{onPlanSelected('free')}} onSelect={onPlanSelected}/></>
     if(sc==='pricing')return<><CSS/><Pricing studentId={prof?.studentId} onBack={()=>setSc('home')} onSelect={(plan)=>{snd('eureka');setSc('home')}}/></>
