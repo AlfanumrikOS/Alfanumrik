@@ -1,5 +1,4 @@
 {
-  "framework": null,
-  "buildCommand": "cd alfanumrik-frontend && npm install && npm run build",
-  "outputDirectory": "alfanumrik-frontend/out"
+  "outputDirectory": "out",
+  "rewrites": [{ "source": "/(.*)", "destination": "/" }]
 }
