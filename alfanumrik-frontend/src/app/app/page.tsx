@@ -5,7 +5,7 @@ import { createClient } from '@supabase/supabase-js'
 const SB = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dxipobqngyfpqbbznojz.supabase.co'
 const SK = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR4aXBvYnFuZ3lmcHFiYnpub2p6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4NjcxMzgsImV4cCI6MjA4ODQ0MzEzOH0.l-6_9kOkH1mXCGvNM0WzC8naEACGMCFaneEA7XxIhKc'
 const sb = createClient(SB, SK)
-const SITE = typeof window!=='undefined'?window.location.origin:'https://alfanumrik-eight.vercel.app'
+const SITE = typeof window!=='undefined'?window.location.origin+'/app':'https://alfanumrik-learning-os.vercel.app/app'
 const EF = `${SB}/functions/v1`
 // ── Sound Engine — Socratic + Holistic (12 types) ──
 let audioCtx:AudioContext|null=null
