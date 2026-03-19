@@ -26,7 +26,7 @@ case'unlock':o.type='sine';o.frequency.setValueAtTime(698,t);o.frequency.setValu
 default:o.type='sine';o.frequency.setValueAtTime(523,t);o.frequency.setValueAtTime(784,t+.12);g.gain.setValueAtTime(.08,t);g.gain.linearRampToValueAtTime(0,t+.2)
 };o.start(t);o.stop(t+.6)}
 
-type Screen='loading'|'auth'|'confirm'|'reset'|'register'|'onboard'|'onboard_pricing'|'credentials'|'home'|'foxy'|'quiz'|'notes'|'progress'|'skills'|'profile'|'plan'|'pricing'
+type Screen='loading'|'auth'|'confirm'|'reset'|'register'|'onboard'|'onboard_pricing'|'credentials'|'home'|'foxy'|'quiz'|'notes'|'progress'|'skills'|'profile'|'plan'|'pricing'|'lesson'
 type Prof={name:string;grade:string;subject:string;language:string;studentId?:string}
 type Stats={xp:number;streak:number;sessions:number;correct:number;asked:number;minutes:number}
 type Note={id:string;title:string;content:string;note_type:string;color:string;chapter_number?:number;chapter_title?:string;is_pinned:boolean;is_starred:boolean;word_count:number;updated_at:string}
@@ -390,12 +390,10 @@ const rd=merged.filter(c=>c.status==='ready').length;
 const overallPct=merged.length?Math.round((m*100+pr*75+lr*30)/(merged.length*100)*100):0;
 setStats({total:merged.length,mastered:m,proficient:pr,learning:lr,ready:rd,upcoming:merged.length-m-pr-lr-rd,pct:overallPct,totalRag:merged.reduce((s,c)=>s+c.rag_chunks,0)});
 }catch(e){console.error('Journey load error:',e)}setLoading(false)};
-// Navigate to Foxy with chapter context
+// Navigate to Interactive Lesson (Nearpod-style)
 const learnWithFoxy=(ch:any)=>{
-  // Store chapter context in localStorage for Foxy to pick up
-  try{localStorage.setItem('alfanumrik_foxy_chapter',JSON.stringify({chapter:ch.chapter_number,title:ch.title,subject:p.subject,grade:p.grade}));}catch{}
-  nav('foxy' as Screen);
-  // The Foxy component will detect this and auto-send a learning prompt
+  try{localStorage.setItem('alfanumrik_lesson_chapter',JSON.stringify({chapter:ch.chapter_number,title:ch.title,subject:p.subject,grade:p.grade}));}catch{}
+  nav('lesson' as Screen);
 };
 // Navigate to Quiz with chapter pre-selected
 const takeQuiz=(ch:any)=>{
@@ -799,6 +797,149 @@ return<div key={task.id} style={{padding:10,borderRadius:10,background:done?'#F0
 {plan&&tab!=='review'&&<div style={{marginTop:16,textAlign:'center'}}>
 <button onClick={()=>generatePlan('weekly')} disabled={generating} style={{padding:'10px 20px',borderRadius:12,border:'1px solid #E7E5E4',background:'#fff',color:'#78716C',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',minHeight:40}}>{generating?'Generating...':'🔄 Generate New Plan'}</button>
 </div>}
+</div>)}
+// ═══════════════════════════════════════════════════════
+// INTERACTIVE LESSON — Nearpod/Kahoot-style slide-based learning
+// ═══════════════════════════════════════════════════════
+function InteractiveLesson({p,onBack}:{p:Prof;onBack:()=>void}){
+const[slides,setSlides]=useState<any[]>([]);const[ci,setCi]=useState(0);const[ld,setLd]=useState(true);
+const[score,setScore]=useState(0);const[streak,setStreak]=useState(0);const[totalQs,setTotalQs]=useState(0);
+const[sel,setSel]=useState<number|null>(null);const[revealed,setRevealed]=useState(false);
+const[xp,setXp]=useState(0);const[celebration,setCelebration]=useState<string|null>(null);
+const[chInfo,setChInfo]=useState<{chapter:number;title:string;subject:string;grade:string}|null>(null);
+const[err,setErr]=useState('');
+// Load lesson
+useEffect(()=>{(async()=>{
+  try{const raw=localStorage.getItem('alfanumrik_lesson_chapter');
+  if(!raw){setErr('No chapter selected');setLd(false);return}
+  localStorage.removeItem('alfanumrik_lesson_chapter');
+  const ch=JSON.parse(raw);setChInfo(ch);
+  const r=await api('lesson-engine',{action:'generate_lesson',student_id:p.studentId,grade:ch.grade,subject:ch.subject,chapter_number:ch.chapter});
+  if(r.slides?.length){setSlides(r.slides);setTotalQs(r.quiz_slides||0)}else{setErr('Could not load lesson content')}
+  }catch(e:any){setErr(e.message||'Error loading lesson')}
+  setLd(false);
+})()},[]);
+const cur=slides[ci]||null;
+const progress=slides.length?Math.round((ci/(slides.length-1))*100):0;
+const goNext=()=>{if(ci<slides.length-1){setCi(ci+1);setSel(null);setRevealed(false);snd('nav')}};
+const goPrev=()=>{if(ci>0){setCi(ci-1);setSel(null);setRevealed(false);snd('click')}};
+const pickAnswer=(idx:number)=>{if(revealed||!cur)return;setSel(idx);setRevealed(true);
+  const correct=idx===cur.correctIndex;
+  if(correct){setScore(s=>s+1);setStreak(s=>s+1);setXp(x=>x+(cur.difficulty||1)*10);snd('correct');
+    setCelebration(streak>=2?'streak':'correct');setTimeout(()=>setCelebration(null),1500);
+  }else{setStreak(0);snd('wrong')}
+};
+// Render slide content with HTML support
+const renderContent=(text:string)=>{if(!text)return null;
+  let html=text
+    .replace(/\*\*(.*?)\*\*/g,'<b>$1</b>')
+    .replace(/^#{1,4}\s+(.+)$/gm,'<div style="font-size:18px;font-weight:800;color:#1C1917;margin:16px 0 8px;padding-bottom:6px;border-bottom:2px solid #FED7AA">$1</div>')
+    .replace(/^\$\$(.*?)\$\$/gm,'<div style="background:#FFF7ED;padding:12px 16px;border-radius:10px;margin:8px 0;font-family:monospace;font-size:15px;border-left:4px solid #E8590C">$1</div>')
+    .replace(/\$([^$]+)\$/g,'<span style="font-family:monospace;background:#FFF7ED;padding:2px 6px;border-radius:4px;font-weight:600">$1</span>')
+    .replace(/\|([^|]+)\|/g,'<span style="display:inline-block;padding:4px 8px;background:#F5F4F0;border-radius:4px;margin:2px;font-size:13px">$1</span>')
+    .replace(/\[📷 Diagram\]/g,'<div style="background:linear-gradient(135deg,#FFF7ED,#FEF3C7);padding:20px;border-radius:12px;text-align:center;margin:10px 0;border:2px dashed #FDE68A"><span style="font-size:32px">📊</span><br/><span style="font-size:12px;color:#92400E;font-weight:600">Visual diagram from textbook</span></div>')
+    .replace(/^[-•]\s+(.+)$/gm,'<div style="display:flex;gap:8px;margin:4px 0;align-items:flex-start"><span style="color:#E8590C;font-weight:800;flex-shrink:0">▸</span><span>$1</span></div>')
+    .replace(/^(\d+)\.\s+(.+)$/gm,'<div style="display:flex;gap:8px;margin:6px 0;align-items:flex-start"><span style="background:#E8590C;color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">$1</span><span style="padding-top:2px">$2</span></div>')
+    .replace(/\n\n/g,'<div style="height:12px"></div>')
+    .replace(/\n/g,'<br/>');
+  return <div style={{fontSize:15,lineHeight:1.7,color:'#1C1917'}} dangerouslySetInnerHTML={{__html:html}}/>;
+};
+if(ld)return<div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',minHeight:'100vh',background:'linear-gradient(135deg,#1C1917,#292524)',gap:16}}><div style={{fontSize:64,animation:'alfBounce 1.5s infinite'}}>🦊</div><p style={{color:'#A8A29E',fontWeight:600}}>Preparing your interactive lesson...</p></div>;
+if(err)return<div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',minHeight:'100vh',background:'#FAFAF8',gap:16}}><p style={{fontSize:48}}>😔</p><p style={{fontWeight:700}}>{err}</p><button onClick={onBack} className="a-btn-primary" style={{maxWidth:200}}>Go Back</button></div>;
+if(!cur)return null;
+return(<div style={{minHeight:'100vh',background:'#FAFAF8',display:'flex',flexDirection:'column'}}>
+{/* Top bar — progress + score */}
+<div style={{position:'sticky',top:0,zIndex:20,background:'#fff',borderBottom:'1px solid #E7E5E4',padding:'8px 16px'}}>
+<div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
+  <button onClick={onBack} style={{background:'none',border:'none',fontSize:13,color:'#78716C',cursor:'pointer',fontFamily:'inherit',fontWeight:600}}>← Back</button>
+  <div style={{display:'flex',gap:12,alignItems:'center'}}>
+    <span style={{fontSize:12,fontWeight:700,color:'#E8590C'}}>⚡{xp} XP</span>
+    {streak>=2&&<span style={{fontSize:12,fontWeight:700,color:'#F59E0B'}}>🔥{streak} streak</span>}
+    <span style={{fontSize:12,color:'#78716C',fontWeight:600}}>{ci+1}/{slides.length}</span>
+  </div>
+</div>
+{/* Progress bar */}
+<div style={{height:6,borderRadius:3,background:'#E7E5E4',overflow:'hidden'}}>
+  <div style={{height:'100%',borderRadius:3,background:'linear-gradient(90deg,#E8590C,#EC4899)',width:`${progress}%`,transition:'width .4s ease'}}/>
+</div>
+{chInfo&&<p style={{fontSize:10,color:'#A8A29E',marginTop:4,fontWeight:600}}>Chapter {chInfo.chapter}: {chInfo.title}</p>}
+</div>
+{/* Celebration overlay */}
+{celebration&&<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:50,pointerEvents:'none',display:'flex',alignItems:'center',justifyContent:'center'}}><div style={{fontSize:80,animation:'alfBounce .5s'}}>{celebration==='streak'?'🔥':'🎉'}</div></div>}
+{/* Slide content */}
+<div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'20px 16px',maxWidth:700,width:'100%',margin:'0 auto'}}>
+{/* TITLE SLIDE */}
+{cur.type==='title'&&<div style={{textAlign:'center',animation:'alfSlideUp .4s'}}>
+  <div style={{fontSize:72,marginBottom:16}}>{cur.emoji||'📚'}</div>
+  <p style={{fontSize:14,fontWeight:700,color:'#E8590C',letterSpacing:'.1em',marginBottom:8}}>CHAPTER {cur.title?.replace('Chapter ','')}</p>
+  <h1 style={{fontSize:32,fontWeight:900,color:'#1C1917',marginBottom:12,lineHeight:1.2}}>{cur.subtitle}</h1>
+  <p style={{fontSize:14,color:'#78716C'}}>{cur.grade} · {cur.subject}</p>
+  <div style={{marginTop:32}}><button onClick={goNext} style={{padding:'16px 48px',borderRadius:16,border:'none',background:'linear-gradient(135deg,#E8590C,#DC2626)',color:'#fff',fontSize:18,fontWeight:800,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 4px 20px rgba(232,89,12,.3)'}}>Start Learning 🚀</button></div>
+</div>}
+{/* CONCEPT/FORMULA/TABLE/ACTIVITY SLIDE */}
+{['concept','formula','table','intro','activity'].includes(cur.type)&&<div style={{width:'100%',animation:'alfSlideUp .3s'}}>
+  <div style={{background:'#fff',borderRadius:20,padding:'28px 24px',boxShadow:'0 2px 12px rgba(0,0,0,.06)',border:'1px solid #F0EDE8',marginBottom:16}}>
+    {cur.type==='formula'&&<span style={{background:'#FFF7ED',color:'#E8590C',padding:'4px 12px',borderRadius:8,fontSize:11,fontWeight:700,letterSpacing:'.05em'}}>📐 FORMULA</span>}
+    {cur.type==='table'&&<span style={{background:'#EFF6FF',color:'#2563EB',padding:'4px 12px',borderRadius:8,fontSize:11,fontWeight:700,letterSpacing:'.05em'}}>📊 DATA TABLE</span>}
+    {cur.type==='activity'&&<span style={{background:'#ECFDF5',color:'#059669',padding:'4px 12px',borderRadius:8,fontSize:11,fontWeight:700,letterSpacing:'.05em'}}>🧪 ACTIVITY</span>}
+    {cur.title&&<h2 style={{fontSize:20,fontWeight:800,color:'#1C1917',margin:'12px 0 16px',lineHeight:1.3}}>{cur.title}</h2>}
+    <div style={{maxHeight:400,overflowY:'auto'}}>{renderContent(cur.content)}</div>
+  </div>
+  {/* Navigation */}
+  <div style={{display:'flex',gap:10,justifyContent:'space-between'}}>
+    {ci>0?<button onClick={goPrev} style={{padding:'14px 24px',borderRadius:14,border:'1px solid #E7E5E4',background:'#fff',color:'#78716C',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit',flex:1,maxWidth:140}}>← Back</button>:<div/>}
+    <button onClick={goNext} style={{padding:'14px 32px',borderRadius:14,border:'none',background:'linear-gradient(135deg,#E8590C,#DC2626)',color:'#fff',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit',flex:1,maxWidth:200,boxShadow:'0 2px 10px rgba(232,89,12,.2)'}}>Continue →</button>
+  </div>
+</div>}
+{/* QUIZ SLIDE */}
+{cur.type==='quiz'&&<div style={{width:'100%',animation:'alfSlideUp .3s'}}>
+  <div style={{background:'linear-gradient(135deg,#1C1917,#292524)',borderRadius:20,padding:'28px 24px',marginBottom:16}}>
+    <div style={{display:'flex',justifyContent:'space-between',marginBottom:16}}>
+      <span style={{background:'rgba(232,89,12,.2)',color:'#E8590C',padding:'4px 12px',borderRadius:8,fontSize:11,fontWeight:700}}>🎯 QUICK CHECK</span>
+      <span style={{color:'rgba(255,255,255,.4)',fontSize:12,fontWeight:600}}>Score: {score}/{totalQs}</span>
+    </div>
+    <h3 style={{fontSize:18,fontWeight:700,color:'#fff',lineHeight:1.5,marginBottom:20}}>{cur.question}</h3>
+    <div style={{display:'flex',flexDirection:'column',gap:10}}>
+      {(cur.options||[]).map((opt:string,idx:number)=>{
+        let bg='rgba(255,255,255,.06)';let bd='1px solid rgba(255,255,255,.1)';let cl='#fff';
+        if(revealed&&idx===cur.correctIndex){bg='rgba(34,197,94,.15)';bd='2px solid #22C55E';cl='#22C55E'}
+        else if(revealed&&idx===sel&&idx!==cur.correctIndex){bg='rgba(239,68,68,.15)';bd='2px solid #EF4444';cl='#EF4444'}
+        else if(idx===sel&&!revealed){bg='rgba(232,89,12,.15)';bd='2px solid #E8590C';cl='#E8590C'}
+        return<button key={idx} onClick={()=>pickAnswer(idx)} disabled={revealed} style={{padding:'14px 16px',borderRadius:14,background:bg,border:bd,color:cl,fontSize:15,fontWeight:600,textAlign:'left',cursor:revealed?'default':'pointer',fontFamily:'inherit',minHeight:52,transition:'all .15s',display:'flex',alignItems:'center',gap:10}}>
+          <span style={{width:28,height:28,borderRadius:8,background:revealed&&idx===cur.correctIndex?'#22C55E':revealed&&idx===sel?'#EF4444':'rgba(255,255,255,.1)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:800,flexShrink:0,color:revealed?'#fff':'rgba(255,255,255,.5)'}}>{String.fromCharCode(65+idx)}</span>
+          <span>{opt}</span>
+        </button>})}
+    </div>
+    {revealed&&<div style={{marginTop:16,padding:14,borderRadius:14,background:sel===cur.correctIndex?'rgba(34,197,94,.1)':'rgba(239,68,68,.1)'}}>
+      <p style={{fontSize:14,fontWeight:700,color:sel===cur.correctIndex?'#22C55E':'#EF4444',marginBottom:4}}>{sel===cur.correctIndex?'✅ Correct! +'+((cur.difficulty||1)*10)+' XP':'❌ Not quite'}</p>
+      {cur.explanation&&<p style={{fontSize:13,color:'rgba(255,255,255,.6)',lineHeight:1.5}}>{cur.explanation}</p>}
+    </div>}
+  </div>
+  {revealed&&<button onClick={goNext} style={{width:'100%',padding:'16px',borderRadius:14,border:'none',background:'linear-gradient(135deg,#E8590C,#DC2626)',color:'#fff',fontSize:16,fontWeight:700,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 2px 10px rgba(232,89,12,.2)'}}>Next →</button>}
+</div>}
+{/* QUIZ INTRO SLIDE */}
+{cur.type==='quiz_intro'&&<div style={{textAlign:'center',animation:'alfSlideUp .4s'}}>
+  <div style={{fontSize:72,marginBottom:16,animation:'alfBounce 1s infinite'}}>{cur.emoji||'🎯'}</div>
+  <h2 style={{fontSize:28,fontWeight:900,color:'#1C1917',marginBottom:8}}>{cur.title}</h2>
+  <p style={{fontSize:16,color:'#78716C',marginBottom:32}}>{cur.subtitle}</p>
+  <button onClick={goNext} style={{padding:'16px 48px',borderRadius:16,border:'none',background:'linear-gradient(135deg,#8B5CF6,#EC4899)',color:'#fff',fontSize:18,fontWeight:800,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 4px 20px rgba(139,92,246,.3)'}}>Let's Go! 🚀</button>
+</div>}
+{/* SUMMARY SLIDE */}
+{cur.type==='summary'&&<div style={{textAlign:'center',animation:'alfSlideUp .4s'}}>
+  <div style={{fontSize:72,marginBottom:16}}>🎉</div>
+  <h2 style={{fontSize:28,fontWeight:900,color:'#1C1917',marginBottom:8}}>{cur.title}</h2>
+  <p style={{fontSize:14,color:'#78716C',marginBottom:24}}>{cur.subtitle}</p>
+  <div style={{display:'flex',gap:16,justifyContent:'center',marginBottom:32,flexWrap:'wrap'}}>
+    <div style={{background:'#FFF7ED',borderRadius:16,padding:'16px 24px',textAlign:'center'}}><p style={{fontSize:28,fontWeight:900,color:'#E8590C'}}>{xp}</p><p style={{fontSize:12,color:'#78716C',fontWeight:600}}>XP Earned</p></div>
+    <div style={{background:'#F0FDF4',borderRadius:16,padding:'16px 24px',textAlign:'center'}}><p style={{fontSize:28,fontWeight:900,color:'#16A34A'}}>{score}/{totalQs}</p><p style={{fontSize:12,color:'#78716C',fontWeight:600}}>Quiz Score</p></div>
+    <div style={{background:'#EFF6FF',borderRadius:16,padding:'16px 24px',textAlign:'center'}}><p style={{fontSize:28,fontWeight:900,color:'#2563EB'}}>{totalQs>0?Math.round(score/totalQs*100):0}%</p><p style={{fontSize:12,color:'#78716C',fontWeight:600}}>Accuracy</p></div>
+  </div>
+  <div style={{display:'flex',gap:10,justifyContent:'center',flexWrap:'wrap'}}>
+    <button onClick={onBack} style={{padding:'14px 32px',borderRadius:14,border:'1px solid #E7E5E4',background:'#fff',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>← Back to Skills</button>
+    <button onClick={()=>{try{localStorage.setItem('alfanumrik_quiz_chapter',JSON.stringify({chapter:chInfo?.chapter,title:chInfo?.title,subject:chInfo?.subject,grade:chInfo?.grade}))}catch{};onBack()}} style={{padding:'14px 32px',borderRadius:14,border:'none',background:'linear-gradient(135deg,#8B5CF6,#EC4899)',color:'#fff',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Take Full Quiz 🎯</button>
+  </div>
+</div>}
+</div>
 </div>)}
 // NAV — colorful with bigger mobile touch targets
 function Nav({active,nav,p}:{active:Screen;nav:(s:Screen)=>void;p:Prof}){const tabs=[{sc:'home' as Screen,l:'Home',i:'\uD83C\uDFE0',ac:'#E8590C'},{sc:'foxy' as Screen,l:'Foxy',i:'\uD83E\uDD8A',ac:'#E8590C'},{sc:'quiz' as Screen,l:'Quiz',i:'\uD83C\uDFAF',ac:'#8B5CF6'},{sc:'skills' as Screen,l:'Skills',i:'\u2B50',ac:'#0EA5E9'},{sc:'plan' as Screen,l:'Plan',i:'\uD83D\uDCCB',ac:'#22C55E'},{sc:'notes' as Screen,l:'Notes',i:'\uD83D\uDCDD',ac:'#F59E0B'},{sc:'profile' as Screen,l:'Me',i:'\uD83D\uDC64',ac:'#EC4899'}];const botTabs=tabs.filter(t=>['home','foxy','quiz','skills','profile'].includes(t.sc));return(<><nav className="a-side"><div className="a-side-brand"><span style={{fontSize:28}}>{'\uD83E\uDD8A'}</span><div><span style={{fontSize:17,fontWeight:900,color:'#E8590C'}}>Alfanumrik</span><p style={{fontSize:10,color:'#A8A29E',fontWeight:600,marginTop:1}}>{p.grade} &middot; {p.subject}</p></div></div><div className="a-side-nav">{tabs.map(t=>{const on=active===t.sc;return<button key={t.sc} onClick={()=>{snd('nav');nav(t.sc)}} style={{display:'flex',alignItems:'center',gap:12,padding:'14px 16px',borderRadius:14,border:'none',background:on?`${t.ac}10`:'transparent',cursor:'pointer',fontFamily:'inherit',fontSize:14,fontWeight:600,color:on?t.ac:'#78716C',width:'100%',textAlign:'left',transition:'all .15s'}}><span style={{fontSize:20,width:28,textAlign:'center'}}>{t.i}</span><span>{t.l}</span>{on&&<div style={{marginLeft:'auto',width:6,height:6,borderRadius:'50%',background:t.ac}}/>}</button>})}</div><div className="a-side-user"><div className="a-side-av">{p.name.charAt(0)}</div><div><p style={{fontSize:13,fontWeight:700}}>{p.name}</p><p style={{fontSize:11,color:'#A8A29E'}}>{p.grade}</p></div></div></nav><nav className="a-bot">{botTabs.map(t=>{const on=active===t.sc;return<button key={t.sc} onClick={()=>{snd('nav');nav(t.sc)}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,padding:'8px 12px',minWidth:52,minHeight:48,border:'none',background:on?`${t.ac}10`:'none',cursor:'pointer',fontFamily:'inherit',borderRadius:12,transition:'all .2s'}}><span style={{fontSize:22,filter:on?'none':'grayscale(.6) opacity(.5)',transition:'all .2s',transform:on?'scale(1.15)':'scale(1)'}}>{t.i}</span><span style={{fontSize:10,fontWeight:700,color:on?t.ac:'#A8A29E'}}>{t.l}</span></button>})}</nav></>)}
@@ -1311,6 +1452,7 @@ export default function App(){
     if(sc==='onboard')return<><CSS/><Onboard user={user} done={onStudentOnboard}/></>
     if(sc==='onboard_pricing')return<><CSS/><Pricing studentId={prof?.studentId} onBack={()=>{onPlanSelected('free')}} onSelect={onPlanSelected}/></>
     if(sc==='pricing')return<><CSS/><Pricing studentId={prof?.studentId} onBack={()=>setSc('home')} onSelect={(plan)=>{snd('eureka');setSc('home')}}/></>
+    if(sc==='lesson'&&prof)return<><CSS/><InteractiveLesson p={prof} onBack={()=>setSc('skills')}/></>
     if(prof&&!prof.studentId){
       // CRITICAL: Profile loaded but studentId missing — auto-recover
       return<><CSS/><div className="a-center"><div style={{textAlign:'center'}}><div style={{fontSize:56,marginBottom:16}}>{'\uD83E\uDD8A'}</div><h2 style={{color:'#1C1917',fontSize:20,fontWeight:800,marginBottom:8}}>Setting up your account...</h2><p style={{color:'#78716C',fontSize:14,marginBottom:20}}>Please wait while Foxy prepares everything.</p><button onClick={async()=>{if(user){const sid=await ensureStudent(user.id,prof);if(sid){const wp={...prof,studentId:sid};setProf(wp);localStorage.setItem('alfanumrik_profile',JSON.stringify(wp));await loadAll(wp);setSc('home')}else{localStorage.removeItem('alfanumrik_profile');setSc('onboard')}}else{setSc('auth')}}} style={{padding:'12px 32px',borderRadius:12,border:'none',background:'#E8590C',color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Retry</button></div></div></>
