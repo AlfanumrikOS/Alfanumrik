@@ -2,7 +2,7 @@
   "name": "alfanumrik-monorepo",
   "private": true,
   "scripts": {
-    "dev": "cd alfanumrik-frontend && npm run dev",
-    "build": "cd alfanumrik-frontend && npm run build"
+    "dev": "cd alfanumrik-frontend && npm install && npm run dev",
+    "build": "cd alfanumrik-frontend && npm install && npm run build"
   }
 }
