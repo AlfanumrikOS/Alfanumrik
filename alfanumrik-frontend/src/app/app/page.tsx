@@ -549,7 +549,31 @@ useEffect(()=>{if(pendingChapter&&!ld&&!initLd&&msgs.length>0){const msg=pending
 useEffect(()=>{end.current?.scrollIntoView({behavior:'smooth'})},[msgs]);
 const saveToDb=useCallback(async(newMsgs:any[],sid:string|null)=>{if(!p.studentId||!sid||newMsgs.length<=1)return;await api('chat-history',{action:'save_messages',student_id:p.studentId,session_id:sid,messages:newMsgs,title:newMsgs.find((m:any)=>m.isUser)?.text?.substring(0,40)||'Chat'})},[p.studentId]);
 const speak=async(id:number,t:string)=>{speakText(t,id)};
-const renderMsg=(t:string)=>{if(!t?.includes('<svg'))return t||'';const parts=t.split(/(<svg[\s\S]*?<\/svg>)/gi);return <>{parts.map((pt,i)=>pt.startsWith('<svg')?<div key={i} style={{margin:'8px 0',maxWidth:400}} dangerouslySetInnerHTML={{__html:pt}}/>:<span key={i}>{pt}</span>)}</>};
+const renderMsg=(t:string)=>{if(!t)return'';
+// Check if message contains any HTML-like content (SVG, tables, etc.)
+if(/<(svg|table|div|br|sup|sub|b |strong|em|u |hr|ol|ul|li|span|img|math)[>\s/]/i.test(t)){
+  // Split on SVG blocks (keep them separate for max-width), render rest as HTML
+  const parts=t.split(/(<svg[\s\S]*?<\/svg>)/gi);
+  return <>{parts.map((pt,i)=>pt.startsWith('<svg')||pt.startsWith('<SVG')?
+    <div key={i} style={{margin:'8px 0',maxWidth:400}} dangerouslySetInnerHTML={{__html:pt}}/>:
+    <span key={i} dangerouslySetInnerHTML={{__html:pt}}/>)}</>;
+}
+// For plain text: convert basic formatting patterns to styled spans
+let html=t
+  // Convert **bold** or CAPS words to bold
+  .replace(/\*\*(.*?)\*\*/g,'<b>$1</b>')
+  // Convert formulas with = signs on their own lines to styled blocks
+  .replace(/^(\s*[A-Za-z][A-Za-z₀-₉²³]*\s*=\s*.+)$/gm,'<div style="background:#FFF7ED;padding:8px 12px;border-radius:8px;margin:6px 0;font-family:monospace;border-left:3px solid #E8590C">$1</div>')
+  // Convert numbered lists (1. 2. 3.) to proper formatting
+  .replace(/^(\d+)\.\s+/gm,'<b style="color:#E8590C">$1.</b> ')
+  // Convert bullet points
+  .replace(/^[•●▸]\s+/gm,'<span style="color:#E8590C;margin-right:4px">▸</span>')
+  // Convert section headers (ALL CAPS lines)
+  .replace(/^([A-Z][A-Z\s]{5,}[A-Z])$/gm,'<div style="font-weight:800;color:#1C1917;margin:10px 0 4px;font-size:14px;border-bottom:1px solid #E7E5E4;padding-bottom:4px">$1</div>')
+  // Line breaks
+  .replace(/\n/g,'<br/>');
+return <span dangerouslySetInnerHTML={{__html:html}}/>;
+};
 const saveNote=async(text:string)=>{if(!p.studentId)return;await api('student-notes',{action:'create',student_id:p.studentId,subject:subCode,grade:p.grade,title:'Foxy: '+text.substring(0,40)+'...',content:text.replace(/<svg[\s\S]*?<\/svg>/gi,''),note_type:'summary',source:'foxy_chat',color:'#E8590C'});snd('ok')};
 const newChat=async()=>{if(!p.studentId)return;setChapterCtx(null);const r=await api('chat-history',{action:'new_chat',student_id:p.studentId,subject:subCode,grade:p.grade});if(r.session){setSesId(r.session.id);setMsgs([{id:Date.now(),text:`Fresh start! What would you like to learn, ${p.name}?`,isUser:false,ts:Date.now()}]);setHist([]);snd('ok')}};
 const[chapterProgress,setChapterProgress]=useState<{current_section:number;total_sections:number;sections_completed:number;current_title:string;status:string}|null>(null);
@@ -1311,7 +1335,9 @@ function CSS(){return<style>{`
 .a-pill-n{padding:10px 18px;border-radius:12px;border:1px solid #E7E5E4;background:#fff;color:#57534E;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s}.a-pill-n.on{border:2px solid #E8590C;background:#E8590C;color:#fff}
 .a-chat{display:flex;flex-direction:column;height:100vh;animation:alfFadeIn .3s}.a-chat-hdr{padding:16px 24px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #F0EDE8;background:#fff}.a-chat-av{width:40px;height:40px;border-radius:14px;background:linear-gradient(135deg,#E8590C,#EC4899);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}.a-chat-body{flex:1;overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:12px}
 .a-msg{display:flex;max-width:720px}.a-msg.u{justify-content:flex-end;align-self:flex-end;margin-left:auto}.a-msg-av{width:32px;height:32px;border-radius:12px;background:linear-gradient(135deg,#E8590C,#EC4899);display:flex;align-items:center;justify-content:center;font-size:16px;margin-right:8px;margin-top:4px;flex-shrink:0}
-.a-bub{padding:14px 18px;border-radius:18px;font-size:15px;line-height:1.6;white-space:pre-wrap;max-width:600px}.a-bub.u{background:linear-gradient(135deg,#1C1917,#292524);color:#fff;border-bottom-right-radius:4px}.a-bub.b{background:#fff;color:#1C1917;border:1px solid #F0EDE8;border-bottom-left-radius:4px}
+.a-bub{padding:14px 18px;border-radius:18px;font-size:15px;line-height:1.6;white-space:pre-wrap;max-width:600px;overflow-x:auto}.a-bub.u{background:linear-gradient(135deg,#1C1917,#292524);color:#fff;border-bottom-right-radius:4px}.a-bub.b{background:#fff;color:#1C1917;border:1px solid #F0EDE8;border-bottom-left-radius:4px}
+.a-bub table{border-collapse:collapse;margin:10px 0;font-size:13px;width:100%;white-space:normal}.a-bub th,.a-bub td{border:1px solid #E7E5E4;padding:8px 10px;text-align:left}.a-bub th{background:#FFF7ED;font-weight:700;color:#E8590C;font-size:12px;text-transform:uppercase;letter-spacing:.03em}.a-bub td{background:#FAFAF8}.a-bub tr:hover td{background:#FFF7ED}
+.a-bub b,.a-bub strong{font-weight:700;color:#1C1917}.a-bub em{font-style:italic;color:#57534E}
 .a-typing{display:flex;gap:5px;padding:10px 14px}.a-typing span{width:8px;height:8px;border-radius:50%;background:#E8590C;animation:alfPulse 1s infinite}.a-typing span:nth-child(2){animation-delay:.2s}.a-typing span:nth-child(3){animation-delay:.4s}
 .a-chips{padding:0 24px 12px;display:flex;gap:8px;flex-wrap:wrap}.a-chip{padding:10px 16px;border-radius:20px;background:#F5F4F0;border:1px solid #E7E5E4;font-size:14px;font-weight:600;color:#57534E;cursor:pointer;font-family:inherit;transition:all .15s}.a-chip:hover{background:#E7E5E4;transform:translateY(-1px)}
 .a-speak-btn{padding:4px 10px;border-radius:10px;border:1px solid #E7E5E4;background:#fff;font-size:15px;cursor:pointer;line-height:1;transition:all .15s}.a-speak-btn:hover{background:#FFF7ED;border-color:#FDBA74}
