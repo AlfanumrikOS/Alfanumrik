@@ -3,14 +3,18 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useStudent } from '@/components/StudentProvider';
 import { calculateXP, getBloomLabel, getBloomLabelHi, getBloomColor } from '@/lib/engine';
-import { ALL_QUESTIONS } from '@/data/curriculum';
+import { getAllQuestions } from '@/data/curriculum';
+import { saveQuizSession } from '@/lib/supabase';
 import type { Question } from '@/lib/types';
 import { ArrowLeft, Clock, Zap, Flame, CheckCircle2, XCircle, Lightbulb, ChevronRight, Star } from 'lucide-react';
 
 export default function QuizPage() {
   const { student, isHi, addXP, isLoggedIn } = useStudent();
   const router = useRouter();
-  const [questions] = useState<Question[]>(() => [...ALL_QUESTIONS].sort(() => Math.random()-0.5).slice(0,5));
+  const [questions] = useState<Question[]>(() => {
+    const all = getAllQuestions();
+    return [...all].sort(() => Math.random()-0.5).slice(0,5);
+  });
   const [idx, setIdx] = useState(0);
   const [selected, setSelected] = useState<string|null>(null);
   const [showResult, setShowResult] = useState(false);
@@ -38,9 +42,24 @@ export default function QuizPage() {
   },[selected,q,streak,qStart,showHint]);
 
   const handleNext = useCallback(() => {
-    if(idx>=questions.length-1){addXP(totalXP);setFinished(true);return;}
+    if(idx>=questions.length-1){
+      addXP(totalXP);
+      // Save session to Supabase
+      if(student) {
+        saveQuizSession({
+          studentId: student.id,
+          subject: 'mixed',
+          questionsAttempted: questions.length,
+          questionsCorrect: score,
+          xpEarned: totalXP,
+          durationSeconds: timer,
+        });
+      }
+      setFinished(true);
+      return;
+    }
     setIdx(i=>i+1);setSelected(null);setShowResult(false);setShowHint(false);setQStart(Date.now());
-  },[idx,questions.length,totalXP,addXP]);
+  },[idx,questions.length,totalXP,addXP,student,score,timer]);
 
   if(!isLoggedIn){router.push('/');return null;}
 
