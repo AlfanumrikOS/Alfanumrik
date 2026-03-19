@@ -714,7 +714,6 @@ const applyCoupon=async(code:string,planCode:string,amount:number)=>{if(!code.tr
 const startPayment=async(plan:any)=>{
   if(plan.plan_code==='free'){onSelect('free');return}
   if(!studentId){alert('Please sign in first');return}
-  const price=plan.launch_price&&new Date(plan.launch_expires_at)>new Date()?plan.launch_price:billing==='yearly'?plan.price_yearly:plan.price_monthly;
   const r=await api('payments',{action:'create_order',student_id:studentId,plan_code:plan.plan_code,billing_cycle:billing,coupon_code:coupon||undefined});
   if(r.error){alert(r.error);return}
   // Load Razorpay
@@ -742,18 +741,28 @@ return(<div style={{minHeight:'100vh',background:'linear-gradient(180deg,#0F0F12
 <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:14,textAlign:'left'}}>
 {plans.filter(p=>p.is_active).map(plan=>{
   const isPopular=plan.badge==='MOST POPULAR';const hasLaunch=plan.launch_price&&plan.launch_expires_at&&new Date(plan.launch_expires_at)>new Date();
-  const price=hasLaunch?plan.launch_price:billing==='yearly'?Math.round(plan.price_yearly/12):plan.price_monthly;
-  const orig=hasLaunch?plan.price_monthly:plan.original_price;
+  // Price calculation: launch price respects billing toggle (yearly = launch × 10, saving 2 months)
+  let price:number;let orig:number;let perLabel:string;
+  if(hasLaunch){
+    if(billing==='yearly'){price=plan.launch_price*10;orig=plan.price_monthly*12;perLabel='/yr'}
+    else{price=plan.launch_price;orig=plan.price_monthly;perLabel='/mo'}
+  }else{
+    if(billing==='yearly'){price=plan.price_yearly;orig=plan.price_monthly*12;perLabel='/yr'}
+    else{price=plan.price_monthly;orig=plan.original_price||0;perLabel='/mo'}
+  }
+  const perMonthEquiv=billing==='yearly'&&price>0?Math.round(price/12):0;
   return<div key={plan.id} style={{background:isPopular?'linear-gradient(135deg,#E8590C08,#EC489908)':'rgba(255,255,255,.03)',border:isPopular?'2px solid #E8590C40':'1px solid rgba(255,255,255,.08)',borderRadius:20,padding:'24px 20px',position:'relative',transition:'all .2s'}}>
     {plan.badge&&<div style={{position:'absolute',top:-10,right:16,padding:'4px 12px',borderRadius:8,background:isPopular?'#E8590C':plan.badge==='BEST VALUE'?'#8B5CF6':'#3B82F6',color:'#fff',fontSize:10,fontWeight:800,letterSpacing:'.06em'}}>{plan.badge}</div>}
     <h3 style={{fontSize:20,fontWeight:900,color:'#fff',marginBottom:4}}>{plan.name}</h3>
     <p style={{fontSize:12,color:'rgba(255,255,255,.4)',marginBottom:16}}>{plan.tagline}</p>
-    <div style={{marginBottom:16}}>
+    <div style={{marginBottom:4}}>
       {orig>0&&price!==orig&&<span style={{fontSize:14,color:'rgba(255,255,255,.3)',textDecoration:'line-through',marginRight:8}}>{'\u20B9'}{orig}</span>}
       <span style={{fontSize:36,fontWeight:900,color:'#fff'}}>{price===0?'Free':`\u20B9${price}`}</span>
-      {price>0&&<span style={{fontSize:13,color:'rgba(255,255,255,.4)'}}>/mo</span>}
+      {price>0&&<span style={{fontSize:13,color:'rgba(255,255,255,.4)'}}>{perLabel}</span>}
     </div>
-    {hasLaunch&&<p style={{fontSize:11,color:'#E8590C',fontWeight:700,marginBottom:12}}>{plan.launch_tagline}</p>}
+    {perMonthEquiv>0&&<p style={{fontSize:12,color:'rgba(255,255,255,.35)',marginBottom:12}}>That&apos;s just {'\u20B9'}{perMonthEquiv}/month</p>}
+    {billing==='yearly'&&price>0&&!perMonthEquiv&&<div style={{height:12}}/>}
+    {hasLaunch&&<p style={{fontSize:11,color:'#E8590C',fontWeight:700,marginBottom:12}}>{plan.launch_tagline}{billing==='yearly'?' + 2 months FREE!':''}</p>}
     {plan.seats_remaining&&plan.seats_remaining<500&&<p style={{fontSize:11,color:'#F59E0B',fontWeight:700,marginBottom:12}}>Only {plan.seats_remaining} spots left at this price!</p>}
     <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:20}}>
       {[
