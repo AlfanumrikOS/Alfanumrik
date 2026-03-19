@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useStudent } from '@/components/StudentProvider';
-import { FOXY_TUTOR_URL } from '@/lib/supabase';
+import { foxyChat } from '@/lib/supabase';
 import type { FoxyMessage, SessionMode } from '@/lib/types';
 import { ArrowLeft, Send, Globe, BookOpen, Brain, Gamepad2, RefreshCw } from 'lucide-react';
 
@@ -13,8 +13,8 @@ const MODES: {id:SessionMode;label:string;hi:string;icon:React.ElementType;color
   {id:'review',label:'Review',hi:'दोहराओ',icon:RefreshCw,color:'#9B4DAE'},
 ];
 
-const PROMPTS_EN = ["Explain Newton's Laws with examples 🍎","Help me solve quadratic equations 📐","Teach me photosynthesis 🌱","Quiz me on fractions 🎯","What is Ohm's Law? ⚡"];
-const PROMPTS_HI = ["न्यूटन के नियम उदाहरण से समझाओ 🍎","द्विघात समीकरण सिखाओ 📐","प्रकाश संश्लेषण बताओ 🌱","भिन्नों पर क्विज़ करो 🎯","ओम का नियम क्या है? ⚡"];
+const PROMPTS_EN = ["Explain Newton's Laws with examples 🍎","Help me solve quadratic equations 📐","Teach me photosynthesis 🌱","What is Ohm's Law? ⚡","Quiz me on fractions 🎯"];
+const PROMPTS_HI = ["न्यूटन के नियम उदाहरण से समझाओ 🍎","द्विघात समीकरण सिखाओ 📐","प्रकाश संश्लेषण बताओ 🌱","ओम का नियम क्या है? ⚡","भिन्नों पर क्विज़ करो 🎯"];
 
 export default function FoxyPage() {
   const { student, isHi, setLang, isLoggedIn } = useStudent();
@@ -23,14 +23,14 @@ export default function FoxyPage() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<SessionMode>('learn');
+  const [sessionId] = useState<string|undefined>(undefined);
   const endRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { endRef.current?.scrollIntoView({behavior:'smooth'}); }, [messages]);
 
   useEffect(() => {
     if(messages.length===0 && student) {
-      setMessages([{id:crypto.randomUUID(),role:'foxy',content:isHi?`🦊 नमस्ते ${student.name}! मैं फॉक्सी हूँ — तुम्हारी पढ़ाई की साथी!\n\nआज क्या सीखना है? नीचे कोई विषय चुनो! 😊`:`🦊 Hey ${student.name}! I'm Foxy — your learning buddy!\n\nWhat shall we explore today? Pick a topic below! 😊`,timestamp:new Date().toISOString()}]);
+      setMessages([{id:crypto.randomUUID(),role:'foxy',content:isHi?`🦊 नमस्ते ${student.name}! मैं फॉक्सी हूँ — तुम्हारी पढ़ाई की साथी!\n\nआज क्या सीखना है? नीचे कोई विषय चुनो, या कुछ भी पूछो! 😊`:`🦊 Hey ${student.name}! I'm Foxy — your learning buddy!\n\nWhat shall we explore today? Pick a topic below, or ask me anything! 😊`,timestamp:new Date().toISOString()}]);
     }
   }, [student, isHi, messages.length]);
 
@@ -42,20 +42,14 @@ export default function FoxyPage() {
     setLoading(true);
     setMessages(p=>[...p,{id:'typing',role:'foxy',content:'',timestamp:new Date().toISOString(),isTyping:true}]);
 
-    let response: string;
-    try {
-      if(FOXY_TUTOR_URL) {
-        const history = messages.filter(m=>!m.isTyping).map(m=>({role:m.role==='foxy'?'assistant':'user',content:m.content}));
-        history.push({role:'user',content:text.trim()});
-        const res = await fetch(FOXY_TUTOR_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:history,studentName:student.name,grade:student.grade,language:isHi?'hi':'en',sessionMode:mode})});
-        if(res.ok){const d=await res.json();response=d.response||d.content||fallback(text,student.name,isHi);}
-        else response=fallback(text,student.name,isHi);
-      } else response=fallback(text,student.name,isHi);
-    } catch { response=fallback(text,student.name,isHi); }
-    finally { setLoading(false); }
+    const history = messages.filter(m=>!m.isTyping).map(m=>({role:m.role,content:m.content}));
+    history.push({role:'user',content:text.trim()});
 
+    const response = await foxyChat(history, student.name, student.grade, isHi?'hi':'en', mode, sessionId);
+
+    setLoading(false);
     setMessages(p=>p.filter(m=>m.id!=='typing').concat({id:crypto.randomUUID(),role:'foxy',content:response,timestamp:new Date().toISOString()}));
-  },[loading,student,messages,mode,isHi]);
+  },[loading,student,messages,mode,isHi,sessionId]);
 
   if(!isLoggedIn){router.push('/');return null;}
   const prompts = isHi?PROMPTS_HI:PROMPTS_EN;
@@ -86,8 +80,9 @@ export default function FoxyPage() {
         {messages.map(msg=>(
           <div key={msg.id} className={`flex ${msg.role==='user'?'justify-end':'justify-start'} animate-slide-up`}>
             <div className={`max-w-[85%] rounded-2xl px-4 py-3 ${msg.role==='user'?'rounded-br-md':'rounded-bl-md'}`} style={{background:msg.role==='user'?'linear-gradient(135deg,#FF6B35,#FFB800)':'rgba(30,27,46,0.7)',border:msg.role==='foxy'?'1px solid rgba(123,45,142,0.2)':'none'}}>
-              {msg.isTyping?<div className="flex gap-1.5 py-2 px-1">{[0,1,2].map(i=><div key={i} className="w-2 h-2 rounded-full typing-dot" style={{background:'#9B4DAE'}} />)}</div>
-              :<div className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</div>}
+              {msg.isTyping
+                ? <div className="flex gap-1.5 py-2 px-1">{[0,1,2].map(i=><div key={i} className="w-2 h-2 rounded-full typing-dot" style={{background:'#9B4DAE'}} />)}</div>
+                : <div className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</div>}
             </div>
           </div>
         ))}
@@ -102,22 +97,10 @@ export default function FoxyPage() {
 
       <div className="sticky bottom-0 glass border-t border-white/5 p-4">
         <div className="max-w-2xl mx-auto flex items-center gap-2">
-          <input ref={inputRef} type="text" value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&send(input)} placeholder={isHi?'फॉक्सी से कुछ पूछो...':'Ask Foxy anything...'} className="flex-1 px-4 py-3 rounded-xl bg-surface-800/50 border border-white/10 text-white placeholder-white/20 focus:border-brand-orange focus:outline-none focus:ring-2 focus:ring-brand-orange/20 transition-all text-sm" disabled={loading} />
+          <input type="text" value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&send(input)} placeholder={isHi?'फॉक्सी से कुछ पूछो...':'Ask Foxy anything...'} className="flex-1 px-4 py-3 rounded-xl bg-surface-800/50 border border-white/10 text-white placeholder-white/20 focus:border-brand-orange focus:outline-none focus:ring-2 focus:ring-brand-orange/20 transition-all text-sm" disabled={loading} />
           <button onClick={()=>send(input)} disabled={!input.trim()||loading} className="w-11 h-11 rounded-xl flex items-center justify-center transition-all disabled:opacity-30" style={{background:input.trim()?'linear-gradient(135deg,#FF6B35,#FFB800)':'rgba(255,255,255,0.05)'}}><Send className="w-5 h-5 text-white" /></button>
         </div>
       </div>
     </div>
   );
-}
-
-function fallback(text:string, name:string, isHi:boolean): string {
-  const t = text.toLowerCase();
-  if(t.includes('newton')||t.includes('न्यूटन')||t.includes('force')||t.includes('बल'))
-    return isHi?`🦊 बढ़िया सवाल, ${name}! चलो न्यूटन के नियम समझते हैं:\n\n🏏 **पहला नियम (जड़त्व):** क्रिकेट की गेंद मैदान में रुकी है — जब तक कोई मारे नहीं, हिलेगी नहीं!\n\n**दूसरा नियम (F=ma):** जितनी ज़ोर से मारोगे, गेंद उतनी तेज़ जाएगी।\n\n**तीसरा नियम:** दीवार को धक्का मारो, दीवार भी उतना ही धक्का मारती है!\n\n🤔 बताओ — साइकिल ब्रेक लगाने पर आगे क्यों झुकते हो?`
-    :`🦊 Great question, ${name}! Let's explore Newton's Laws:\n\n🏏 **First Law:** A cricket ball on the pitch won't move until hit!\n\n**Second Law (F=ma):** Harder hit = faster ball.\n\n**Third Law:** Push a wall, it pushes you back equally!\n\n🤔 When you brake your bicycle, why do you lean forward? Which law?`;
-  if(t.includes('quadratic')||t.includes('द्विघात')||t.includes('equation')||t.includes('समीकरण'))
-    return isHi?`🦊 चलो ${name}, step-by-step सीखते हैं!\n\n📐 **द्विघात समीकरण:** ax² + bx + c = 0\n\nउदाहरण: x² - 5x + 6 = 0\n\n**Step 1:** गुणनफल=6, योग=-5 → -2 और -3\n**Step 2:** (x-2)(x-3) = 0\n**Step 3:** x = 2 या x = 3 ✅\n\nअब तुम try करो: x² - 7x + 12 = 0 का हल?`
-    :`🦊 Let's break it down, ${name}!\n\n📐 **Quadratic:** ax² + bx + c = 0\n\nSolve: x² - 5x + 6 = 0\n\n**Step 1:** Find numbers: product=6, sum=-5 → -2,-3\n**Step 2:** (x-2)(x-3)=0\n**Step 3:** x=2 or x=3 ✅\n\nNow you try: x² - 7x + 12 = 0?`;
-  return isHi?`🦊 अच्छा सवाल, ${name}! 🤔\n\nमुझे बताओ — इसमें सबसे ज़्यादा क्या confuse करता है? Step by step चलते हैं!\n\n*टिप: जितना specific पूछोगे, उतना अच्छा समझा पाऊँगी* 😊`
-    :`🦊 Great question, ${name}! 🤔\n\nTell me — what part confuses you most? Let's go step by step!\n\n*Tip: The more specific, the better I can help* 😊`;
 }
