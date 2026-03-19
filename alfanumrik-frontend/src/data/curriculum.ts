@@ -1,4 +1,5 @@
-import type { ConceptNode, Question, Subject, Simulation, Badge } from '@/lib/types';
+import { EXTENDED_QUESTIONS } from './questions';
+
 
 // === MATH CONCEPTS (Class 6-10 NCERT) ===
 export const MATH_CONCEPTS: ConceptNode[] = [
@@ -78,7 +79,9 @@ export const BADGES: Badge[] = [
 
 // === HELPERS ===
 export function getConceptsBySubject(subject: Subject) { return ALL_CONCEPTS.filter(c => c.subject === subject); }
-export function getQuestionsForConcept(id: string) { return ALL_QUESTIONS.filter(q => q.conceptId === id); }
+const MERGED_QUESTIONS = [...ALL_QUESTIONS, ...EXTENDED_QUESTIONS];
+export function getQuestionsForConcept(id: string) { return MERGED_QUESTIONS.filter(q => q.conceptId === id); }
+export function getAllQuestions() { return MERGED_QUESTIONS; }
 export function getSubjectIcon(s: Subject) { return {math:'🧮',science:'🔬',english:'📚',hindi:'📝',social_science:'🌍'}[s]; }
 export function getSubjectColor(s: Subject) { return {math:'#FF6B35',science:'#00B4D8',english:'#FFB800',hindi:'#2DC653',social_science:'#9B4DAE'}[s]; }
 export function getSubjectLabel(s: Subject) { return {math:'Mathematics',science:'Science',english:'English',hindi:'Hindi',social_science:'Social Science'}[s]; }
