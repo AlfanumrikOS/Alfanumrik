@@ -1,12 +1,3 @@
-===================================================
-PATH: alfanumrik-frontend/src/lib/supabase.ts
-ACTION: UPDATE (replace entire file)
-STEP: 1+3 Combined — Foxy API + Supabase persistence
-NOTE: Column names match YOUR existing DB:
-  students.xp_total, students.streak_days, students.last_active,
-  students.preferred_language, students.grade (text)
-===================================================
-
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
