@@ -35,7 +35,7 @@ const SUBJ=[{id:'Mathematics',icon:'\u2211',c:'#E8590C'},{id:'Science',icon:'\u2
 const LANGS=[{code:'en',label:'English'},{code:'hi',label:'Hindi'},{code:'ta',label:'Tamil'},{code:'te',label:'Telugu'},{code:'bn',label:'Bengali'},{code:'mr',label:'Marathi'}]
 const NC=['#E8590C','#3B82F6','#8B5CF6','#F59E0B','#10B981','#EF4444','#14B8A6','#EC4899']
 const SM:Record<string,string>={Mathematics:'math',Science:'science',English:'english',Hindi:'hindi','Social Studies':'social_studies',Physics:'physics',Chemistry:'chemistry',Biology:'biology','Computer Science':'computer_science'}
-async function api(fn:string,body:any){try{const r=await fetch(`${EF}/${fn}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});return await r.json()}catch{return{error:'API failed'}}}
+async function api(fn:string,body:any,retries=2):Promise<any>{for(let i=0;i<=retries;i++){try{const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),30000);const r=await fetch(`${EF}/${fn}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:ctrl.signal});clearTimeout(timer);if(r.ok)return await r.json();if(r.status>=500&&i<retries){await new Promise(r=>setTimeout(r,1000*(i+1)));continue}return await r.json().catch(()=>({error:`HTTP ${r.status}`}))}catch(e:any){if(i<retries&&e.name!=='AbortError'){await new Promise(r=>setTimeout(r,1000*(i+1)));continue}return{error:e.name==='AbortError'?'Request timeout':'Network error'}}}return{error:'Failed after retries'}}
 async function ensureStudent(uid:string,p:Prof):Promise<string|null>{try{const{data:ex}=await sb.from('students').select('id').eq('auth_user_id',uid).maybeSingle();if(ex){await sb.from('students').update({name:p.name,grade:p.grade,preferred_language:p.language,preferred_subject:p.subject,onboarding_completed:true}).eq('id',ex.id);return ex.id};const{data:cr}=await sb.from('students').insert({auth_user_id:uid,name:p.name,grade:p.grade,preferred_language:p.language,preferred_subject:p.subject,onboarding_completed:true}).select('id').single();return cr?.id||null}catch(e){console.error(e);return null}}
 const RS:Record<string,string>={math:'Mathematics',science:'Science',english:'English',hindi:'Hindi',social_studies:'Social Studies',physics:'Physics',chemistry:'Chemistry',biology:'Biology',computer_science:'Computer Science'}
 async function loadProfileFromDB(uid:string):Promise<Prof|null>{try{const{data}=await sb.from('students').select('id,name,grade,preferred_language,preferred_subject,onboarding_completed').eq('auth_user_id',uid).maybeSingle();if(!data||!data.onboarding_completed)return null;const sub=RS[data.preferred_subject]||data.preferred_subject||'Mathematics';return{name:data.name||'Student',grade:data.grade||'Grade 6',subject:sub,language:data.preferred_language||'en',studentId:data.id}}catch{return null}}
@@ -725,9 +725,6 @@ return(<div className="a-page"><h1 className="a-title">💡 Guidelines & Tips</h
 </div>):<div style={{textAlign:'center',padding:40,color:'#A8A29E'}}><p style={{fontSize:32}}>💡</p><p>No tips in this category yet</p></div>}
 </div>)}
 // ═══════════════════════════════════════════════════════
-// ADMIN PORTAL
-// ═══════════════════════════════════════════════════════
-// ═══════════════════════════════════════════════════════
 // MAIN APP — 2-Portal Router (Student + Parent)
 // ═══════════════════════════════════════════════════════
 export default function App(){
@@ -738,6 +735,18 @@ export default function App(){
   const[stats,setStats]=useState<Stats>({xp:0,streak:0,sessions:0,correct:0,asked:0,minutes:0})
   const[history,setHistory]=useState<any>(null)
   const[guardian,setGuardian]=useState<any>(null)
+  const[offline,setOffline]=useState(false)
+  const[appError,setAppError]=useState<string|null>(null)
+
+  // Global error + offline handling
+  useEffect(()=>{
+    const onOff=()=>setOffline(true);const onOn=()=>setOffline(false);
+    const onErr=(e:ErrorEvent)=>{console.error('Global error:',e.message);if(e.message.includes('ChunkLoadError')||e.message.includes('Loading chunk'))setAppError('update')};
+    const onRej=(e:PromiseRejectionEvent)=>{console.error('Unhandled rejection:',e.reason)};
+    window.addEventListener('offline',onOff);window.addEventListener('online',onOn);window.addEventListener('error',onErr);window.addEventListener('unhandledrejection',onRej);
+    setOffline(!navigator.onLine);
+    return()=>{window.removeEventListener('offline',onOff);window.removeEventListener('online',onOn);window.removeEventListener('error',onErr);window.removeEventListener('unhandledrejection',onRej)}
+  },[])
   const[parentStep,setParentStep]=useState<'code'|'dash'>('code')
   const loadAll=useCallback(async(p:Prof)=>{if(!p.studentId)return;try{const[s,h]=await Promise.all([getStats(p.studentId),api('chat-history',{action:'get_history',student_id:p.studentId})]);setStats(s);setHistory(h)}catch(e){console.error('loadAll failed:',e)}},[])
 
@@ -813,8 +822,14 @@ export default function App(){
   useEffect(()=>{if(portal==='student'&&sc==='loading'){const t=setTimeout(()=>{setSc('auth')},8000);return()=>clearTimeout(t)}},[sc,portal])
 
   // ─── RENDER ───
+  // App error recovery
+  if(appError==='update')return<><CSS/><div className="a-center"><div style={{textAlign:'center'}}><div style={{fontSize:56,marginBottom:16}}>{'\uD83D\uDD04'}</div><h2 style={{color:'#1C1917',fontSize:20,fontWeight:800,marginBottom:8}}>App Updated</h2><p style={{color:'#78716C',fontSize:14,marginBottom:20}}>A new version is available. Refresh to continue.</p><button onClick={()=>window.location.reload()} style={{padding:'12px 32px',borderRadius:12,border:'none',background:'#E8590C',color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Refresh Now</button></div></div></>
+
+  // Offline banner (shown as overlay, doesn't block UI)
+  const offlineBanner=offline?<div style={{position:'fixed',top:0,left:0,right:0,zIndex:9999,background:'#DC2626',color:'#fff',textAlign:'center',padding:'8px 16px',fontSize:13,fontWeight:700,animation:'alfSlideUp .3s'}}>{'\u26A0\uFE0F'} You're offline. Some features may not work.</div>:null;
+
   // LANDING
-  if(portal==='landing')return<><CSS/><Landing onRole={selectRole}/></>
+  if(portal==='landing')return<><CSS/>{offlineBanner}<Landing onRole={selectRole}/></>
 
   // STUDENT PORTAL
   if(portal==='student'){
@@ -823,7 +838,7 @@ export default function App(){
     if(sc==='confirm')return<><CSS/><ConfirmScreen onBack={()=>setSc('auth')}/></>
     if(sc==='reset')return<><CSS/><ResetScreen/></>
     if(sc==='onboard')return<><CSS/><Onboard user={user} done={onStudentOnboard}/></>
-    return<><CSS/><div className="a-shell">{prof&&<Nav active={sc} nav={setSc} p={prof}/>}<main className="a-main">{sc==='home'&&prof&&<Home p={prof} nav={setSc} stats={stats} history={history}/>}{sc==='foxy'&&prof&&<Foxy p={prof}/>}{sc==='quiz'&&prof&&<Quiz p={prof} onDone={refreshStats}/>}{sc==='skills'&&prof&&<SkillTree p={prof} nav={setSc}/>}{sc==='plan'&&prof&&<StudyPlan p={prof} nav={setSc}/>}{sc==='notes'&&prof&&<Notes p={prof}/>}{sc==='progress'&&prof&&<Progress p={prof} stats={stats}/>}{sc==='profile'&&prof&&<ProfileScr p={prof} onUp={onProfUp} out={studentLogout} stats={stats}/>}</main></div></>
+    return<><CSS/>{offlineBanner}<div className="a-shell">{prof&&<Nav active={sc} nav={setSc} p={prof}/>}<main className="a-main">{sc==='home'&&prof&&<Home p={prof} nav={setSc} stats={stats} history={history}/>}{sc==='foxy'&&prof&&<Foxy p={prof}/>}{sc==='quiz'&&prof&&<Quiz p={prof} onDone={refreshStats}/>}{sc==='skills'&&prof&&<SkillTree p={prof} nav={setSc}/>}{sc==='plan'&&prof&&<StudyPlan p={prof} nav={setSc}/>}{sc==='notes'&&prof&&<Notes p={prof}/>}{sc==='progress'&&prof&&<Progress p={prof} stats={stats}/>}{sc==='profile'&&prof&&<ProfileScr p={prof} onUp={onProfUp} out={studentLogout} stats={stats}/>}</main></div></>
   }
 
   // PARENT PORTAL — link code only
