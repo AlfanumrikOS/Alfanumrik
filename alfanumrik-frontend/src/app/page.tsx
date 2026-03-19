@@ -37,14 +37,19 @@ const NC=['#E8590C','#3B82F6','#8B5CF6','#F59E0B','#10B981','#EF4444','#14B8A6',
 const SM:Record<string,string>={Mathematics:'math',Science:'science',English:'english',Hindi:'hindi','Social Studies':'social_studies',Physics:'physics',Chemistry:'chemistry',Biology:'biology','Computer Science':'computer_science'}
 async function api(fn:string,body:any,retries=2):Promise<any>{for(let i=0;i<=retries;i++){try{const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),30000);const r=await fetch(`${EF}/${fn}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:ctrl.signal});clearTimeout(timer);if(r.ok)return await r.json();if(r.status>=500&&i<retries){await new Promise(r=>setTimeout(r,1000*(i+1)));continue}return await r.json().catch(()=>({error:`HTTP ${r.status}`}))}catch(e:any){if(i<retries&&e.name!=='AbortError'){await new Promise(r=>setTimeout(r,1000*(i+1)));continue}return{error:e.name==='AbortError'?'Request timeout':'Network error'}}}return{error:'Failed after retries'}}
 async function ensureStudent(uid:string,p:Prof):Promise<string|null>{
-  // Attempt 1: Direct lookup
+  // Attempt 1: Direct lookup (works if user has active session)
   try{const{data:ex}=await sb.from('students').select('id').eq('auth_user_id',uid).eq('is_active',true).maybeSingle();
-  if(ex?.id){await sb.from('students').update({name:p.name,grade:p.grade,preferred_language:p.language,preferred_subject:p.subject,onboarding_completed:true}).eq('id',ex.id);return ex.id}}catch(e){console.warn('ensureStudent lookup:',e)}
-  // Attempt 2: Create new
+  if(ex?.id){await sb.from('students').update({name:p.name,grade:p.grade,preferred_language:p.language,preferred_subject:p.subject,onboarding_completed:true}).eq('id',ex.id).catch(()=>{});return ex.id}}catch(e){console.warn('ensureStudent lookup:',e)}
+  // Attempt 2: Create new (works if user has active session matching RLS)
   try{const{data:cr,error}=await sb.from('students').insert({auth_user_id:uid,name:p.name,grade:p.grade,preferred_language:p.language,preferred_subject:p.subject,onboarding_completed:true,is_active:true}).select('id').single();
   if(cr?.id)return cr.id;if(error)console.warn('ensureStudent insert:',error.message)}catch(e){console.warn('ensureStudent create:',e)}
   // Attempt 3: Race condition — another insert happened, re-lookup
   try{const{data:retry}=await sb.from('students').select('id').eq('auth_user_id',uid).eq('is_active',true).maybeSingle();if(retry?.id)return retry.id}catch{}
+  // Attempt 4: Use edge function (bypasses RLS — works for unconfirmed email users)
+  try{
+    const r=await api('foxy-tutor',{action:'ensure_student',auth_user_id:uid,name:p.name,grade:p.grade,subject:p.subject,language:p.language});
+    if(r?.student_id)return r.student_id;
+  }catch(e){console.warn('ensureStudent API:',e)}
   console.error('CRITICAL: Could not ensure student for auth_user_id:',uid);return null
 }
 const RS:Record<string,string>={math:'Mathematics',science:'Science',english:'English',hindi:'Hindi',social_studies:'Social Studies',physics:'Physics',chemistry:'Chemistry',biology:'Biology',computer_science:'Computer Science'}
@@ -1047,7 +1052,29 @@ export default function App(){
   const onStudentAuth=async(u:any)=>{try{setUser(u);const saved=localStorage.getItem('alfanumrik_profile');if(saved){const p=JSON.parse(saved) as Prof;const sid=await ensureStudent(u.id,p);if(!sid){console.error('Failed to resolve studentId');localStorage.removeItem('alfanumrik_profile');setSc('onboard');return}const wp={...p,studentId:sid};setProf(wp);localStorage.setItem('alfanumrik_profile',JSON.stringify(wp));await loadAll(wp);setSc('home');return}const dbProf=await loadProfileFromDB(u.id);if(dbProf&&dbProf.studentId){setProf(dbProf);localStorage.setItem('alfanumrik_profile',JSON.stringify(dbProf));await loadAll(dbProf);setSc('home');return}setSc('onboard')}catch(e){console.error('onAuth failed:',e);setSc('auth')}}
   const onStudentOnboard=async(p:Prof)=>{if(user){const sid=await ensureStudent(user.id,p);if(!sid){alert('Could not create your account. Please try again.');return}const wp={...p,studentId:sid};setProf(wp);localStorage.setItem('alfanumrik_profile',JSON.stringify(wp));await loadAll(wp);setSc('onboard_pricing')}}
   // Registration complete — parent created account with all details, now show pricing
-  const onRegistrationComplete=async(u:any,p:Prof)=>{setUser(u);setProf(p);localStorage.setItem('alfanumrik_profile',JSON.stringify(p));if(p.studentId)await loadAll(p);setSc('onboard_pricing')}
+  const onRegistrationComplete=async(u:any,p:Prof)=>{
+    setUser(u);
+    // If studentId wasn't resolved during registration (RLS), try again with the authenticated session
+    if(!p.studentId&&u?.id){
+      // Wait a moment for the auth session to settle
+      await new Promise(r=>setTimeout(r,500));
+      const sid=await ensureStudent(u.id,p);
+      if(sid)p={...p,studentId:sid};
+    }
+    setProf(p);localStorage.setItem('alfanumrik_profile',JSON.stringify(p));
+    if(p.studentId)await loadAll(p);
+    setSc('onboard_pricing');
+  }
+  // Handle plan selection from pricing — resolve studentId if needed before going home
+  const onPlanSelected=async(plan:string)=>{
+    snd('eureka');
+    // If studentId still missing, try to resolve it one more time
+    if(prof&&!prof.studentId&&user?.id){
+      const sid=await ensureStudent(user.id,prof);
+      if(sid){const wp={...prof,studentId:sid};setProf(wp);localStorage.setItem('alfanumrik_profile',JSON.stringify(wp));await loadAll(wp)}
+    }
+    setSc('home');
+  }
   const onProfUp=async(p:Prof)=>{setProf(p);localStorage.setItem('alfanumrik_profile',JSON.stringify(p));if(p.studentId){await sb.from('students').update({name:p.name,grade:p.grade,preferred_language:p.language,preferred_subject:p.subject}).eq('id',p.studentId);await loadAll(p)}}
   const refreshStats=async()=>{if(prof?.studentId){const s=await getStats(prof.studentId);setStats(s);const h=await api('chat-history',{action:'get_history',student_id:prof.studentId});setHistory(h)}}
   const studentLogout=async()=>{await sb.auth.signOut();localStorage.removeItem('alfanumrik_profile');setUser(null);setProf(null);setSc('auth')}
@@ -1077,11 +1104,11 @@ export default function App(){
     if(sc==='reset')return<><CSS/><ResetScreen/></>
     if(sc==='register')return<><CSS/><Registration onComplete={onRegistrationComplete} onBack={()=>setSc('auth')}/></>
     if(sc==='onboard')return<><CSS/><Onboard user={user} done={onStudentOnboard}/></>
-    if(sc==='onboard_pricing')return<><CSS/><Pricing studentId={prof?.studentId} onBack={()=>{setSc('home')}} onSelect={(plan)=>{snd('eureka');setSc('home')}}/></>
+    if(sc==='onboard_pricing')return<><CSS/><Pricing studentId={prof?.studentId} onBack={()=>{onPlanSelected('free')}} onSelect={onPlanSelected}/></>
     if(sc==='pricing')return<><CSS/><Pricing studentId={prof?.studentId} onBack={()=>setSc('home')} onSelect={(plan)=>{snd('eureka');setSc('home')}}/></>
     if(prof&&!prof.studentId){
-      // CRITICAL: Profile loaded but studentId missing — attempt recovery
-      return<><CSS/><div className="a-center"><div style={{textAlign:'center'}}><div style={{fontSize:56,marginBottom:16}}>{'\uD83E\uDD8A'}</div><h2 style={{color:'#1C1917',fontSize:20,fontWeight:800,marginBottom:8}}>Setting up your account...</h2><p style={{color:'#78716C',fontSize:14,marginBottom:20}}>Please wait while Foxy prepares everything.</p><button onClick={async()=>{if(user){const sid=await ensureStudent(user.id,prof);if(sid){const wp={...prof,studentId:sid};setProf(wp);localStorage.setItem('alfanumrik_profile',JSON.stringify(wp));await loadAll(wp)}else{localStorage.removeItem('alfanumrik_profile');setSc('onboard')}}}} style={{padding:'12px 32px',borderRadius:12,border:'none',background:'#E8590C',color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Retry</button></div></div></>
+      // CRITICAL: Profile loaded but studentId missing — auto-recover
+      return<><CSS/><div className="a-center"><div style={{textAlign:'center'}}><div style={{fontSize:56,marginBottom:16}}>{'\uD83E\uDD8A'}</div><h2 style={{color:'#1C1917',fontSize:20,fontWeight:800,marginBottom:8}}>Setting up your account...</h2><p style={{color:'#78716C',fontSize:14,marginBottom:20}}>Please wait while Foxy prepares everything.</p><button onClick={async()=>{if(user){const sid=await ensureStudent(user.id,prof);if(sid){const wp={...prof,studentId:sid};setProf(wp);localStorage.setItem('alfanumrik_profile',JSON.stringify(wp));await loadAll(wp);setSc('home')}else{localStorage.removeItem('alfanumrik_profile');setSc('onboard')}}else{setSc('auth')}}} style={{padding:'12px 32px',borderRadius:12,border:'none',background:'#E8590C',color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Retry</button></div></div></>
     }
     return<><CSS/>{offlineBanner}<div className="a-shell">{prof&&<Nav active={sc} nav={setSc} p={prof}/>}<main className="a-main">{sc==='home'&&prof&&<Home p={prof} nav={setSc} stats={stats} history={history}/>}{sc==='foxy'&&prof&&<Foxy p={prof}/>}{sc==='quiz'&&prof&&<Quiz p={prof} onDone={refreshStats}/>}{sc==='skills'&&prof&&<SkillTree p={prof} nav={setSc}/>}{sc==='plan'&&prof&&<StudyPlan p={prof} nav={setSc}/>}{sc==='notes'&&prof&&<Notes p={prof}/>}{sc==='progress'&&prof&&<Progress p={prof} stats={stats}/>}{sc==='profile'&&prof&&<ProfileScr p={prof} onUp={onProfUp} out={studentLogout} stats={stats}/>}</main></div></>
   }
