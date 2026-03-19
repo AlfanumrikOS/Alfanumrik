@@ -2,6 +2,7 @@
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  output: 'export',
   typescript: {
     ignoreBuildErrors: true,
   },
