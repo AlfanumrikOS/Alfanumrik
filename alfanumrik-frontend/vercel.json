@@ -1,5 +1,5 @@
 {
   "framework": "nextjs",
-  "buildCommand": "next build",
-  "outputDirectory": ".next"
+  "buildCommand": "cd alfanumrik-frontend && npm install && npm run build",
+  "outputDirectory": "alfanumrik-frontend/.next"
 }
