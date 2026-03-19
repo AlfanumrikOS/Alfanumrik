@@ -541,7 +541,7 @@ function Nav({active,nav,p}:{active:Screen;nav:(s:Screen)=>void;p:Prof}){const t
 // ═══════════════════════════════════════════════════════
 // LANDING PAGE — Role Selection
 // ═══════════════════════════════════════════════════════
-function Landing({onRole}:{onRole:(r:'student'|'parent'|'admin')=>void}){
+function Landing({onRole}:{onRole:(r:'student'|'parent')=>void}){
 return(<div className="a-landing">
 <div className="a-landing-bg"/>
 <div className="a-landing-content">
@@ -554,9 +554,6 @@ return(<div className="a-landing">
 </button>
 <button onClick={()=>{snd('click');onRole('parent')}} className="a-role-btn" style={{background:'linear-gradient(135deg,#8B5CF6,#6D28D9)'}}>
 <span style={{fontSize:32}}>{'\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67'}</span><div><strong style={{fontSize:18}}>I am a Parent</strong><p style={{fontSize:12,opacity:.7,marginTop:2}}>Track your child's progress</p></div><span style={{marginLeft:'auto',fontSize:20}}>{'\u2192'}</span>
-</button>
-<button onClick={()=>{snd('click');onRole('admin')}} className="a-role-btn" style={{background:'linear-gradient(135deg,#1C1917,#44403C)',border:'1px solid rgba(255,255,255,.1)'}}>
-<span style={{fontSize:32}}>{'\u2699\uFE0F'}</span><div><strong style={{fontSize:18}}>Admin</strong><p style={{fontSize:12,opacity:.7,marginTop:2}}>Platform management</p></div><span style={{marginLeft:'auto',fontSize:20}}>{'\u2192'}</span>
 </button>
 </div>
 <p style={{fontSize:11,color:'rgba(255,255,255,.25)',marginTop:32}}>{'\u00A9'} 2026 CusioSense Learning India Private Limited</p>
@@ -730,106 +727,11 @@ return(<div className="a-page"><h1 className="a-title">💡 Guidelines & Tips</h
 // ═══════════════════════════════════════════════════════
 // ADMIN PORTAL
 // ═══════════════════════════════════════════════════════
-function AdminPanel({user,onLogout}:{user:any;onLogout:()=>void}){
-const[admin,setAdmin]=useState<any>(null);const[tab,setTab]=useState('dashboard');const[data,setData]=useState<any>({});const[ld,setLd]=useState(true);const[modal,setModal]=useState<any>(null);
-const adminAPI=async(action:string,extra:any={})=>{const d=await api('super-admin',{action,auth_user_id:user.id,...extra});return d};
-useEffect(()=>{(async()=>{const d=await adminAPI('get_dashboard');if(d?.admin){setAdmin(d.admin);setData(v=>({...v,dashboard:d}))}else{alert('Not an admin account')}setLd(false)})()},[]);
-const loadTab=async(t:string)=>{setTab(t);switch(t){case'dashboard':{const d=await adminAPI('get_dashboard');setData((v:any)=>({...v,dashboard:d}));break}case'rag':{const[stats,syl]=await Promise.all([api('pdf-processor',{mode:'rag_stats'}),api('pdf-processor',{mode:'syllabus_status'})]);setData((v:any)=>({...v,ragStats:stats,ragSyllabus:syl?.syllabus||[]}));break}case'students':{const d=await adminAPI('list_students');setData((v:any)=>({...v,students:d.students}));break}case'questions':{const d=await adminAPI('list_questions',{limit:100});setData((v:any)=>({...v,questions:d.questions}));break}case'ai_logs':{const d=await adminAPI('list_ai_logs',{limit:50});setData((v:any)=>({...v,aiLogs:d}));break}case'system':{const d=await adminAPI('system_health');setData((v:any)=>({...v,system:d}));break}case'audit':{const d=await adminAPI('get_audit_log',{limit:50});setData((v:any)=>({...v,audit:d.audit}));break}}};
-if(ld)return<div className="a-center" style={{background:'#0F0F12'}}><div style={{fontSize:48,animation:'alfPulse 1.5s infinite'}}>{'\u2699\uFE0F'}</div><p style={{color:'#71717A',marginTop:8}}>Loading admin...</p></div>;
-if(!admin)return<div className="a-center" style={{background:'#0F0F12'}}><p style={{color:'#EF4444',fontSize:16,fontWeight:700}}>Access denied. Not an admin.</p><button onClick={onLogout} className="a-btn-primary" style={{marginTop:16}}>Back</button></div>;
-const tabs=[{id:'dashboard',i:'\uD83D\uDCCA',l:'Dashboard'},{id:'rag',i:'\uD83E\uDDE0',l:'RAG'},{id:'students',i:'\uD83D\uDC65',l:'Students'},{id:'questions',i:'\u2753',l:'Questions'},{id:'ai_logs',i:'\uD83E\uDD16',l:'AI Logs'},{id:'system',i:'\u2699\uFE0F',l:'System'},{id:'audit',i:'\uD83D\uDCCB',l:'Audit'}];
-const st=data.dashboard?.stats;
-return(<div className="a-shell" style={{background:'#0F0F12'}}><nav className="a-side" style={{background:'#18181B',borderColor:'#27272A'}}>
-<div className="a-side-brand"><span style={{fontSize:28}}>{'\uD83E\uDD8A'}</span><div><span style={{fontSize:17,fontWeight:900,color:'#E8590C'}}>Super Admin</span><p style={{fontSize:10,color:'#71717A',fontWeight:600,marginTop:1}}>{admin.name}</p></div></div>
-<div className="a-side-nav">{tabs.map(t=><button key={t.id} onClick={()=>loadTab(t.id)} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 14px',borderRadius:10,border:'none',background:tab===t.id?'#E8590C15':'transparent',color:tab===t.id?'#E8590C':'#A1A1AA',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',width:'100%',textAlign:'left'}}><span style={{fontSize:18}}>{t.i}</span>{t.l}</button>)}</div>
-<div className="a-side-user"><button onClick={onLogout} style={{width:'100%',padding:10,borderRadius:10,border:'1px solid #27272A',background:'#18181B',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',color:'#A1A1AA'}}>Logout</button></div>
-</nav>
-<nav className="a-bot" style={{background:'rgba(15,15,18,.97)',borderColor:'#27272A'}}>{tabs.map(t=><button key={t.id} onClick={()=>loadTab(t.id)} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,padding:'8px 10px',minWidth:48,minHeight:48,border:'none',background:tab===t.id?'#E8590C15':'none',cursor:'pointer',fontFamily:'inherit',borderRadius:12}}><span style={{fontSize:20,filter:tab===t.id?'none':'grayscale(.6) opacity(.5)'}}>{t.i}</span><span style={{fontSize:9,fontWeight:700,color:tab===t.id?'#E8590C':'#71717A'}}>{t.l}</span></button>)}</nav>
-<main className="a-main" style={{color:'#E4E4E7'}}>
-{tab==='dashboard'&&st&&<div className="a-page"><h1 style={{fontSize:24,fontWeight:900,color:'#fff',marginBottom:20}}>{'\uD83D\uDCCA'} Dashboard</h1>
-<div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))',gap:10,marginBottom:20}}>
-{[{v:st.total_students,l:'Students',i:'\uD83D\uDC65'},{v:st.total_quizzes,l:'Quizzes',i:'\uD83C\uDFAF'},{v:st.total_ai_calls,l:'AI Calls',i:'\uD83E\uDD16'},{v:st.active_questions,l:'Questions',i:'\u2753'},{v:st.active_topics,l:'Topics',i:'\uD83D\uDCDA'},{v:st.graph_nodes,l:'Graph Nodes',i:'\uD83C\uDF1F'},{v:st.cached_responses,l:'Cached',i:'\uD83D\uDCBE'},{v:st.total_xp_earned,l:'Total XP',i:'\u2B50'}].map(c=><div key={c.l} style={{background:'#18181B',border:'1px solid #27272A',borderRadius:14,padding:16}}><span style={{fontSize:18}}>{c.i}</span><p style={{fontSize:24,fontWeight:900,color:'#fff',margin:'6px 0 2px'}}>{c.v}</p><p style={{fontSize:11,color:'#71717A',fontWeight:600}}>{c.l}</p></div>)}
-</div></div>}
-{tab==='students'&&<div className="a-page"><h1 style={{fontSize:24,fontWeight:900,color:'#fff',marginBottom:20}}>{'\uD83D\uDC65'} Students ({data.students?.length||0})</h1>
-{(data.students||[]).map((s:any)=><div key={s.id} style={{background:'#18181B',border:'1px solid #27272A',borderRadius:14,padding:16,marginBottom:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-<div><p style={{fontWeight:700,color:'#fff'}}>{s.name}</p><p style={{fontSize:12,color:'#71717A'}}>{s.grade} · {s.preferred_subject} · {s.total_xp||0} XP · {s.accuracy||0}% acc</p></div>
-<span style={{fontSize:12,fontWeight:700,color:s.accuracy>=70?'#22C55E':s.accuracy>=40?'#F59E0B':'#EF4444',padding:'4px 10px',borderRadius:8,background:s.accuracy>=70?'#22C55E15':s.accuracy>=40?'#F59E0B15':'#EF444415'}}>{s.total_sessions||0} quizzes</span>
-</div>)}</div>}
-{tab==='questions'&&<div className="a-page"><h1 style={{fontSize:24,fontWeight:900,color:'#fff',marginBottom:20}}>{'\u2753'} Questions ({data.questions?.length||0})</h1>
-{(data.questions||[]).slice(0,40).map((q:any)=><div key={q.id} style={{background:'#18181B',border:'1px solid #27272A',borderRadius:14,padding:14,marginBottom:6}}>
-<p style={{fontSize:13,fontWeight:600,color:'#E4E4E7'}}>{q.question_text?.substring(0,100)}</p>
-<p style={{fontSize:11,color:'#71717A',marginTop:4}}>{q.subject} · {q.grade} · L{q.difficulty} · {q.is_active?'\u2705 Active':'\u274C Disabled'}</p>
-<p style={{fontSize:12,color:'#22C55E',marginTop:4}}>Answer: {q.correct_answer_text?.substring(0,60)}</p>
-</div>)}</div>}
-{tab==='ai_logs'&&<div className="a-page"><h1 style={{fontSize:24,fontWeight:900,color:'#fff',marginBottom:8}}>{'\uD83E\uDD16'} AI Logs</h1>
-<button onClick={async()=>{if(confirm('Clear all cached responses?')){const d=await adminAPI('clear_cache');if(d)alert('Cleared '+d.cleared+' cached responses')}}} style={{padding:'8px 16px',borderRadius:10,border:'1px solid #EF444430',background:'#EF444415',color:'#EF4444',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',marginBottom:16}}>{'\uD83D\uDDD1\uFE0F'} Clear Cache</button>
-{(data.aiLogs?.logs||[]).slice(0,30).map((l:any,i:number)=><div key={i} style={{background:'#18181B',border:'1px solid #27272A',borderRadius:10,padding:12,marginBottom:4,fontSize:12}}>
-<span style={{color:'#3B82F6',fontWeight:700}}>{l.interaction_type||'tutor'}</span> · <span style={{color:'#71717A'}}>{l.model}</span> · <span>{l.latency_ms}ms</span>
-<p style={{color:'#A1A1AA',marginTop:4,fontSize:11}}>{l.user_message?.substring(0,80)}</p>
-</div>)}</div>}
-{tab==='system'&&<div className="a-page"><h1 style={{fontSize:24,fontWeight:900,color:'#fff',marginBottom:20}}>{'\u2699\uFE0F'} System Health</h1>
-{data.system?.functions&&<div style={{background:'#18181B',border:'1px solid #27272A',borderRadius:14,padding:16,marginBottom:16}}><p style={{fontSize:12,fontWeight:800,color:'#71717A',letterSpacing:'.06em',marginBottom:12}}>EDGE FUNCTIONS ({data.system.functions.length})</p>
-<div style={{display:'flex',flexWrap:'wrap',gap:6}}>{data.system.functions.map((f:string)=><span key={f} style={{padding:'6px 12px',borderRadius:8,background:'#22C55E15',color:'#22C55E',fontSize:11,fontWeight:700}}>{'\u2705'} {f}</span>)}</div></div>}
-{data.system?.tableCounts&&<div style={{background:'#18181B',border:'1px solid #27272A',borderRadius:14,padding:16}}><p style={{fontSize:12,fontWeight:800,color:'#71717A',letterSpacing:'.06em',marginBottom:12}}>DATABASE TABLES ({data.system.totalTables})</p>
-{Object.entries(data.system.tableCounts).sort((a:any,b:any)=>Number(b[1])-Number(a[1])).map(([t,c]:any)=><div key={t} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid #27272A20',fontSize:12}}><span style={{fontFamily:'monospace',color:'#A1A1AA'}}>{t}</span><strong style={{color:'#fff'}}>{c}</strong></div>)}</div>}
-</div>}
-{tab==='rag'&&<div className="a-page"><h1 style={{fontSize:24,fontWeight:900,color:'#fff',marginBottom:20}}>{'\uD83E\uDDE0'} RAG Knowledge Base</h1>
-{data.ragStats&&<div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:10,marginBottom:20}}>
-{[{v:data.ragStats.total_chunks,l:'Total Chunks',i:'\uD83D\uDCE6'},{v:data.ragStats.embedded_chunks,l:'Embedded',i:'\uD83E\uDDF2'},{v:data.ragStats.embedding_coverage,l:'Coverage',i:'\uD83D\uDCCA'},{v:data.ragStats.source_count,l:'Sources',i:'\uD83D\uDCDA'},{v:data.ragStats.total_queries,l:'Queries',i:'\uD83D\uDD0D'},{v:data.ragStats.grounding_rate,l:'Grounding',i:'\u2705'},{v:data.ragStats.syllabus_chapters,l:'Chapters',i:'\uD83D\uDCD6'},{v:data.ragStats.syllabus_coverage,l:'Syllabus %',i:'\uD83C\uDFAF'}].map(c=><div key={c.l} style={{background:'#18181B',border:'1px solid #27272A',borderRadius:14,padding:14}}><span style={{fontSize:16}}>{c.i}</span><p style={{fontSize:20,fontWeight:900,color:'#fff',margin:'4px 0 2px'}}>{c.v??'--'}</p><p style={{fontSize:10,color:'#71717A',fontWeight:600}}>{c.l}</p></div>)}
-</div>}
-<div style={{background:'#18181B',border:'1px solid #27272A',borderRadius:14,padding:16,marginBottom:16}}>
-<p style={{fontSize:13,fontWeight:800,color:'#71717A',letterSpacing:'.06em',marginBottom:12}}>INGEST CONTENT</p>
-<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:12}}>
-<select id="rag_grade" style={{padding:10,borderRadius:8,border:'1px solid #27272A',background:'#0F0F12',color:'#E4E4E7',fontSize:13}}>
-{['Grade 6','Grade 7','Grade 8','Grade 9','Grade 10','Grade 11','Grade 12'].map(g=><option key={g} value={g}>{g}</option>)}
-</select>
-<select id="rag_subject" style={{padding:10,borderRadius:8,border:'1px solid #27272A',background:'#0F0F12',color:'#E4E4E7',fontSize:13}}>
-{['Mathematics','Science','Physics','Chemistry','Biology','English','Hindi','Social Studies'].map(s=><option key={s} value={s}>{s}</option>)}
-</select>
-</div>
-<div style={{display:'grid',gridTemplateColumns:'80px 1fr',gap:8,marginBottom:12}}>
-<input id="rag_ch_num" type="number" placeholder="Ch#" style={{padding:10,borderRadius:8,border:'1px solid #27272A',background:'#0F0F12',color:'#E4E4E7',fontSize:13}}/>
-<input id="rag_ch_title" type="text" placeholder="Chapter Title" style={{padding:10,borderRadius:8,border:'1px solid #27272A',background:'#0F0F12',color:'#E4E4E7',fontSize:13}}/>
-</div>
-<textarea id="rag_content" placeholder="Paste chapter content here... (from NCERT textbook or approved source)" rows={6} style={{width:'100%',padding:10,borderRadius:8,border:'1px solid #27272A',background:'#0F0F12',color:'#E4E4E7',fontSize:13,fontFamily:'inherit',resize:'vertical',boxSizing:'border-box'}}/>
-<div style={{display:'flex',gap:8,marginTop:10}}>
-<button onClick={async()=>{const g=(document.getElementById('rag_grade') as HTMLSelectElement).value;const sub=(document.getElementById('rag_subject') as HTMLSelectElement).value;const ch=parseInt((document.getElementById('rag_ch_num') as HTMLInputElement).value)||undefined;const title=(document.getElementById('rag_ch_title') as HTMLInputElement).value;const content=(document.getElementById('rag_content') as HTMLTextAreaElement).value;if(!content||content.length<50){alert('Content too short. Paste at least 50 characters.');return}const r=await api('pdf-processor',{mode:'rag_ingest_text',grade:g,subject:sub,chapter_number:ch,chapter_title:title||undefined,content,topic:title||undefined});if(r.success){alert(`Ingested! ${r.chunks_created} chunks created and embedded.`);(document.getElementById('rag_content') as HTMLTextAreaElement).value='';loadTab('rag')}else{alert('Error: '+(r.error||'Unknown'))}}} style={{flex:1,padding:12,borderRadius:10,border:'none',background:'#E8590C',color:'#fff',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>{'\uD83D\uDE80'} Ingest Content</button>
-<button onClick={async()=>{const r=await api('rag-engine',{action:'reindex',batch_size:20});alert(`Re-embedded ${r.reindexed||0} chunks`)}} style={{padding:12,borderRadius:10,border:'1px solid #27272A',background:'#18181B',color:'#A1A1AA',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>{'\uD83D\uDD04'} Re-embed</button>
-</div>
-</div>
-<div style={{background:'#18181B',border:'1px solid #27272A',borderRadius:14,padding:16,marginBottom:16}}>
-<p style={{fontSize:13,fontWeight:800,color:'#71717A',letterSpacing:'.06em',marginBottom:12}}>SYLLABUS COVERAGE ({data.ragSyllabus?.length||0} chapters)</p>
-<div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:12}}>
-{['All',...new Set((data.ragSyllabus||[]).map((s:any)=>s.grade))].map((g:string)=><button key={g} onClick={()=>{setData((v:any)=>({...v,ragFilter:g==='All'?null:g}))}} style={{padding:'5px 12px',borderRadius:8,border:'1px solid #27272A',background:data.ragFilter===g||(g==='All'&&!data.ragFilter)?'#E8590C20':'#0F0F12',color:data.ragFilter===g||(g==='All'&&!data.ragFilter)?'#E8590C':'#71717A',fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>{g}</button>)}
-</div>
-{(data.ragSyllabus||[]).filter((s:any)=>!data.ragFilter||s.grade===data.ragFilter).map((s:any)=><div key={s.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:'1px solid #27272A15',fontSize:12}}>
-<span style={{width:20,textAlign:'center',fontSize:14}}>{s.chunk_count>0?'\u2705':'\u26AA'}</span>
-<span style={{color:'#71717A',minWidth:60}}>{s.grade}</span>
-<span style={{color:'#A1A1AA',minWidth:80}}>{s.subject}</span>
-<span style={{color:'#fff',fontWeight:600,flex:1}}>Ch{s.chapter_number}: {s.chapter_title}</span>
-<span style={{color:s.chunk_count>0?'#22C55E':'#52525B',fontWeight:700,fontSize:11}}>{s.chunk_count>0?`${s.chunk_count} chunks`:'No content'}</span>
-{s.is_nep_updated&&<span style={{padding:'2px 6px',borderRadius:4,background:'#3B82F620',color:'#3B82F6',fontSize:9,fontWeight:800}}>NEP</span>}
-</div>)}
-</div>
-{data.ragStats?.sources?.length>0&&<div style={{background:'#18181B',border:'1px solid #27272A',borderRadius:14,padding:16}}>
-<p style={{fontSize:13,fontWeight:800,color:'#71717A',letterSpacing:'.06em',marginBottom:12}}>CONTENT SOURCES ({data.ragStats.sources.length})</p>
-{data.ragStats.sources.map((s:any)=><div key={s.id} style={{display:'flex',justifyContent:'space-between',padding:'8px 0',borderBottom:'1px solid #27272A15',fontSize:12}}>
-<span style={{color:'#E4E4E7',fontWeight:600}}>{s.name}</span>
-<span style={{color:s.approval_status==='approved'?'#22C55E':'#F59E0B',fontWeight:700}}>{s.approval_status}</span>
-</div>)}
-</div>}
-</div>}
-{tab==='audit'&&<div className="a-page"><h1 style={{fontSize:24,fontWeight:900,color:'#fff',marginBottom:20}}>{'\uD83D\uDCCB'} Audit Log</h1>
-{(data.audit||[]).map((a:any,i:number)=><div key={i} style={{background:'#18181B',border:'1px solid #27272A',borderRadius:10,padding:12,marginBottom:4,fontSize:12}}>
-<span style={{color:'#8B5CF6',fontWeight:700}}>{a.action}</span> · <span style={{color:'#71717A'}}>{a.entity_type}</span>
-<p style={{color:'#52525B',fontSize:11,marginTop:2}}>{new Date(a.created_at).toLocaleString('en-IN')}</p>
-</div>)}</div>}
-</main></div>)}
 // ═══════════════════════════════════════════════════════
-// MAIN APP — 3-Portal Router
+// MAIN APP — 2-Portal Router (Student + Parent)
 // ═══════════════════════════════════════════════════════
 export default function App(){
-  const[portal,setPortal]=useState<'landing'|'student'|'parent'|'admin'>('landing')
+  const[portal,setPortal]=useState<'landing'|'student'|'parent'>('landing')
   const[sc,setSc]=useState<Screen>('loading')
   const[user,setUser]=useState<any>(null)
   const[prof,setProf]=useState<Prof|null>(null)
@@ -845,7 +747,7 @@ export default function App(){
     const params=new URLSearchParams(window.location.search)
     if(params.get('reset')==='true'||window.location.hash.includes('type=recovery')){setPortal('student');setSc('reset');return}
     const savedPortal=localStorage.getItem('alfn_portal') as any
-    if(savedPortal==='student'||savedPortal==='parent'||savedPortal==='admin'){setPortal(savedPortal)}
+    if(savedPortal==='student'||savedPortal==='parent'){setPortal(savedPortal)}
     // FAST PATH for students
     if(savedPortal==='student'){
       const savedProfile=localStorage.getItem('alfanumrik_profile')
@@ -891,13 +793,9 @@ export default function App(){
       const savedStudent=localStorage.getItem('alfn_parent_student')
       if(savedGuardian&&savedStudent){try{setGuardian(JSON.parse(savedGuardian));setParentStep('dash')}catch{setParentStep('code')}}else{setParentStep('code')}
     }
-    // Admin — just need auth
-    if(savedPortal==='admin'){
-      sb.auth.getSession().then(({data:{session}})=>{if(session?.user)setUser(session.user);else setSc('auth')}).catch(()=>setSc('auth'))
-    }
   },[loadAll])
 
-  const selectRole=(role:'student'|'parent'|'admin')=>{setPortal(role);localStorage.setItem('alfn_portal',role);if(role==='student')setSc('auth');if(role==='parent')setParentStep('code');if(role==='admin')setSc('auth')}
+  const selectRole=(role:'student'|'parent')=>{setPortal(role);localStorage.setItem('alfn_portal',role);if(role==='student')setSc('auth');if(role==='parent')setParentStep('code')}
   const goLanding=()=>{setPortal('landing');localStorage.removeItem('alfn_portal')}
 
   // STUDENT AUTH
@@ -910,10 +808,6 @@ export default function App(){
   // PARENT LOGIN — link code only, no Supabase auth
   const onParentLogin=(data:any)=>{const g=data.guardian;const st=data.student;setGuardian({...g,linkedStudent:st});localStorage.setItem('alfn_guardian',JSON.stringify({...g,linkedStudent:st}));localStorage.setItem('alfn_parent_student',JSON.stringify(st));setParentStep('dash')}
   const parentLogout=()=>{localStorage.removeItem('alfn_guardian');localStorage.removeItem('alfn_parent_student');setGuardian(null);setParentStep('code')}
-
-  // ADMIN AUTH
-  const onAdminAuth=async(u:any)=>{setUser(u);setSc('home')}
-  const adminLogout=async()=>{await sb.auth.signOut();setUser(null);setSc('auth')}
 
   // Loading timeout
   useEffect(()=>{if(portal==='student'&&sc==='loading'){const t=setTimeout(()=>{setSc('auth')},8000);return()=>clearTimeout(t)}},[sc,portal])
@@ -937,12 +831,6 @@ export default function App(){
     if(parentStep==='code')return<><CSS/><ParentCodeLogin onLogin={onParentLogin} onBack={goLanding}/></>
     if(parentStep==='dash'&&guardian)return<><CSS/><ParentDash guardian={guardian} onLogout={parentLogout}/></>
     return<><CSS/><ParentCodeLogin onLogin={onParentLogin} onBack={goLanding}/></>
-  }
-
-  // ADMIN PORTAL
-  if(portal==='admin'){
-    if(!user||sc==='auth')return<><CSS/><Auth onAuth={onAdminAuth} onConfirm={()=>setSc('auth')}/><div style={{position:'fixed',top:16,left:16}}><button onClick={goLanding} style={{padding:'8px 16px',borderRadius:10,background:'rgba(255,255,255,.08)',border:'none',color:'rgba(255,255,255,.5)',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>{'\u2190'} Back</button></div></>
-    return<><CSS/><AdminPanel user={user} onLogout={adminLogout}/></>
   }
 
   return<><CSS/><Landing onRole={selectRole}/></>
