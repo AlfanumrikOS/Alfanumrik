@@ -26,7 +26,7 @@ case'unlock':o.type='sine';o.frequency.setValueAtTime(698,t);o.frequency.setValu
 default:o.type='sine';o.frequency.setValueAtTime(523,t);o.frequency.setValueAtTime(784,t+.12);g.gain.setValueAtTime(.08,t);g.gain.linearRampToValueAtTime(0,t+.2)
 };o.start(t);o.stop(t+.6)}
 
-type Screen='loading'|'auth'|'confirm'|'reset'|'onboard'|'home'|'foxy'|'quiz'|'notes'|'progress'|'skills'|'profile'|'plan'|'pricing'
+type Screen='loading'|'auth'|'confirm'|'reset'|'register'|'onboard'|'onboard_pricing'|'home'|'foxy'|'quiz'|'notes'|'progress'|'skills'|'profile'|'plan'|'pricing'
 type Prof={name:string;grade:string;subject:string;language:string;studentId?:string}
 type Stats={xp:number;streak:number;sessions:number;correct:number;asked:number;minutes:number}
 type Note={id:string;title:string;content:string;note_type:string;color:string;chapter_number?:number;chapter_title?:string;is_pinned:boolean;is_starred:boolean;word_count:number;updated_at:string}
@@ -51,34 +51,165 @@ const RS:Record<string,string>={math:'Mathematics',science:'Science',english:'En
 async function loadProfileFromDB(uid:string):Promise<Prof|null>{try{const{data}=await sb.from('students').select('id,name,grade,preferred_language,preferred_subject,onboarding_completed').eq('auth_user_id',uid).eq('is_active',true).maybeSingle();if(!data||!data.onboarding_completed)return null;const sub=RS[data.preferred_subject]||data.preferred_subject||'Mathematics';return{name:data.name||'Student',grade:data.grade||'Grade 6',subject:sub,language:data.preferred_language||'en',studentId:data.id}}catch{return null}}
 async function getStats(sid:string):Promise<Stats>{const z:Stats={xp:0,streak:0,sessions:0,correct:0,asked:0,minutes:0};if(!sid)return z;try{const{data}=await sb.from('student_overall_stats').select('total_xp,streak_days,total_sessions,total_questions_asked,total_questions_answered_correctly,total_time_minutes').eq('student_id',sid).maybeSingle();if(!data)return z;return{xp:data.total_xp||0,streak:data.streak_days||0,sessions:data.total_sessions||0,correct:data.total_questions_answered_correctly||0,asked:data.total_questions_asked||0,minutes:data.total_time_minutes||0}}catch{return z}}
 async function getTopicMastery(sid:string,sub:string){try{const{data}=await sb.from('topic_mastery').select('topic_tag,mastery_percent,mastery_level,total_attempts,correct_attempts').eq('student_id',sid).eq('subject',sub).order('mastery_percent',{ascending:false}).limit(20);return data||[]}catch{return[]}}
-// AUTH — with bigger mobile buttons
-function Auth({onAuth,onConfirm}:{onAuth:(u:any)=>void;onConfirm:()=>void}){const[mode,setMode]=useState<'login'|'signup'|'forgot'>('login');const[email,setEmail]=useState('');const[pw,setPw]=useState('');const[nm,setNm]=useState('');const[ld,setLd]=useState(false);const[err,setErr]=useState('');const[msg,setMsg]=useState('');const ggl=async()=>{const{error}=await sb.auth.signInWithOAuth({provider:'google',options:{redirectTo:SITE}});if(error)setErr(error.message)};const go=async()=>{setErr('');setMsg('');setLd(true);try{if(mode==='forgot'){const{error}=await sb.auth.resetPasswordForEmail(email,{redirectTo:`${SITE}?reset=true`});if(error)throw error;setMsg('Reset link sent!');setLd(false);return}if(pw.length<6)throw new Error('6+ chars');if(mode==='signup'){if(!nm.trim())throw new Error('Name required');const{data,error}=await sb.auth.signUp({email,password:pw,options:{data:{full_name:nm},emailRedirectTo:SITE}});if(error)throw error;if(!data.session){snd('ok');onConfirm();setLd(false);return}snd('ok');onAuth(data.user)}else{const{data,error}=await sb.auth.signInWithPassword({email,password:pw});if(error)throw error;snd('ok');onAuth(data.user)}}catch(e:any){snd('click');setErr(e.message?.includes('Invalid')?'Wrong email or password':e.message||'Error')};setLd(false)};return(<div className="a-auth"><div className="a-auth-l"><div style={{fontSize:56}}>&#x1F98A;</div><h1 style={{fontSize:42,fontWeight:900,marginTop:16}}>Alfanumrik</h1><p style={{fontSize:16,color:'rgba(255,255,255,.5)',marginTop:8}}>AI-powered adaptive learning by CusioSense Learning India Private Limited</p></div><div className="a-auth-r"><div style={{width:'100%',maxWidth:400}}><h2 style={{fontSize:28,fontWeight:800,marginBottom:24}}>{mode==='forgot'?'Reset password':mode==='signup'?'Create account':'Welcome back'}</h2>{mode!=='forgot'&&<div className="a-tabs">{(['login','signup']as const).map(m=><button key={m} onClick={()=>{setMode(m);setErr('');setMsg('')}} className={`a-tab${mode===m?' on':''}`}>{m==='login'?'Log In':'Sign Up'}</button>)}</div>}{err&&<div className="a-err">{err}</div>}{msg&&<div className="a-ok-msg">{msg}</div>}{mode==='signup'&&<input value={nm} onChange={e=>setNm(e.target.value)} placeholder="Full name" className="a-inp"/>}<input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email" className="a-inp"/>{mode!=='forgot'&&<input type="password" value={pw} onChange={e=>setPw(e.target.value)} placeholder="Password" className="a-inp" onKeyDown={e=>e.key==='Enter'&&go()}/>}<button onClick={go} disabled={ld} className="a-btn-primary" style={{width:'100%',minHeight:52}}>{ld?'Please wait...':{login:'Log In',signup:'Create Account',forgot:'Send Reset Link'}[mode]}</button>{mode==='login'&&<button onClick={()=>setMode('forgot')} className="a-link">Forgot password?</button>}{mode==='forgot'&&<button onClick={()=>setMode('login')} className="a-link">Back to login</button>}{mode!=='forgot'&&<><div className="a-divider"><span>or</span></div><button onClick={ggl} className="a-ggl" style={{minHeight:48}}><svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59A14.5 14.5 0 019.5 24c0-1.59.28-3.14.77-4.59l-7.98-6.19A23.9 23.9 0 000 24c0 3.87.93 7.52 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>Continue with Google</button></>}</div></div></div>)}
+// AUTH — Login screen (for returning users)
+function Auth({onAuth,onConfirm,onSignup}:{onAuth:(u:any)=>void;onConfirm:()=>void;onSignup:()=>void}){const[mode,setMode]=useState<'login'|'forgot'>('login');const[email,setEmail]=useState('');const[pw,setPw]=useState('');const[ld,setLd]=useState(false);const[err,setErr]=useState('');const[msg,setMsg]=useState('');const ggl=async()=>{const{error}=await sb.auth.signInWithOAuth({provider:'google',options:{redirectTo:SITE}});if(error)setErr(error.message)};const go=async()=>{setErr('');setMsg('');setLd(true);try{if(mode==='forgot'){const{error}=await sb.auth.resetPasswordForEmail(email,{redirectTo:`${SITE}?reset=true`});if(error)throw error;setMsg('Reset link sent!');setLd(false);return}if(pw.length<6)throw new Error('6+ chars');const{data,error}=await sb.auth.signInWithPassword({email,password:pw});if(error)throw error;snd('ok');onAuth(data.user)}catch(e:any){snd('click');setErr(e.message?.includes('Invalid')?'Wrong email or password':e.message||'Error')};setLd(false)};return(<div className="a-auth"><div className="a-auth-l"><div style={{fontSize:56}}>&#x1F98A;</div><h1 style={{fontSize:42,fontWeight:900,marginTop:16}}>Alfanumrik</h1><p style={{fontSize:16,color:'rgba(255,255,255,.5)',marginTop:8}}>AI-powered adaptive learning by CusioSense Learning India Private Limited</p></div><div className="a-auth-r"><div style={{width:'100%',maxWidth:400}}><h2 style={{fontSize:28,fontWeight:800,marginBottom:24}}>{mode==='forgot'?'Reset password':'Welcome back'}</h2>{err&&<div className="a-err">{err}</div>}{msg&&<div className="a-ok-msg">{msg}</div>}<input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email" className="a-inp"/>{mode!=='forgot'&&<input type="password" value={pw} onChange={e=>setPw(e.target.value)} placeholder="Password" className="a-inp" onKeyDown={e=>e.key==='Enter'&&go()}/>}<button onClick={go} disabled={ld} className="a-btn-primary" style={{width:'100%',minHeight:52}}>{ld?'Please wait...':{login:'Log In',forgot:'Send Reset Link'}[mode]}</button>{mode==='login'&&<button onClick={()=>setMode('forgot')} className="a-link">Forgot password?</button>}{mode==='forgot'&&<button onClick={()=>setMode('login')} className="a-link">Back to login</button>}{mode!=='forgot'&&<><div className="a-divider"><span>or</span></div><button onClick={ggl} className="a-ggl" style={{minHeight:48}}><svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59A14.5 14.5 0 019.5 24c0-1.59.28-3.14.77-4.59l-7.98-6.19A23.9 23.9 0 000 24c0 3.87.93 7.52 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>Continue with Google</button><div className="a-divider"><span>new here?</span></div><button onClick={onSignup} className="a-ggl" style={{minHeight:48,borderColor:'#E8590C40',color:'#E8590C',fontWeight:800}}>&#x1F393; Register Your Child &rarr;</button></>}</div></div></div>)}
 function ConfirmScreen({onBack}:{onBack:()=>void}){return(<div className="a-center-dark"><div style={{fontSize:64,marginBottom:16}}>&#x2709;&#xFE0F;</div><h2 style={{fontSize:24,fontWeight:800,color:'#fff',marginBottom:8}}>Check your email!</h2><p style={{fontSize:15,color:'rgba(255,255,255,.6)',marginBottom:24}}>Click the verification link to activate your account.</p><button onClick={onBack} className="a-btn-primary" style={{maxWidth:200,minHeight:48}}>Back to Login</button></div>)}
 function ResetScreen(){const[pw,setPw]=useState('');const[pw2,setPw2]=useState('');const[ld,setLd]=useState(false);const[msg,setMsg]=useState('');const[err,setErr]=useState('');const go=async()=>{if(pw.length<6||pw!==pw2){setErr("Passwords don't match or too short");return}setLd(true);const{error}=await sb.auth.updateUser({password:pw});if(error)setErr(error.message);else{setMsg('Updated! Redirecting...');setTimeout(()=>window.location.href=SITE,2000)}setLd(false)};return(<div className="a-center-dark"><div style={{fontSize:48}}>&#x1F510;</div><h2 style={{fontSize:22,fontWeight:800,color:'#fff',margin:'12px 0 24px'}}>Set new password</h2>{err&&<div className="a-err">{err}</div>}{msg&&<div className="a-ok-msg">{msg}</div>}<input type="password" value={pw} onChange={e=>setPw(e.target.value)} placeholder="New password" className="a-inp" style={{background:'rgba(255,255,255,.06)',color:'#fff',borderColor:'rgba(255,255,255,.1)'}}/><input type="password" value={pw2} onChange={e=>setPw2(e.target.value)} placeholder="Confirm" className="a-inp" style={{background:'rgba(255,255,255,.06)',color:'#fff',borderColor:'rgba(255,255,255,.1)'}} onKeyDown={e=>e.key==='Enter'&&go()}/><button onClick={go} disabled={ld} className="a-btn-primary" style={{minHeight:48}}>{ld?'Updating...':'Update Password'}</button></div>)}
 const BOARDS=['CBSE','ICSE','State Board','IB','Other']
 const TARGETS=['Board Exams','JEE','NEET','Olympiad','None']
 const STATES=['Delhi','Maharashtra','Karnataka','Tamil Nadu','Uttar Pradesh','Rajasthan','Gujarat','West Bengal','Telangana','Kerala','Madhya Pradesh','Bihar','Haryana','Punjab','Andhra Pradesh','Other']
+// ═══════════════════════════════════════════════════════
+// REGISTRATION — Parent fills combined form (Parent KYC + Student details) → Account creation
+// ═══════════════════════════════════════════════════════
+function Registration({onComplete,onBack}:{onComplete:(u:any,p:Prof)=>void;onBack:()=>void}){
+const[s,setS]=useState(0);
+// Parent KYC
+const[parentName,setParentName]=useState('');const[parentPhone,setParentPhone]=useState('');const[parentEmail,setParentEmail]=useState('');const[parentRelation,setParentRelation]=useState('');const[parentCity,setParentCity]=useState('');const[parentState,setParentState]=useState('');
+// Student details
+const[studentName,setStudentName]=useState('');const[studentDob,setStudentDob]=useState('');const[gr,setGr]=useState('');const[su,setSu]=useState('');const[school,setSchool]=useState('');const[board,setBoard]=useState('CBSE');const[target,setTarget]=useState('');const[la,setLa]=useState('en');
+// Account creation
+const[pw,setPw]=useState('');const[pw2,setPw2]=useState('');const[referral,setReferral]=useState('');
+const[ld,setLd]=useState(false);const[err,setErr]=useState('');
+const RELATIONS=['Father','Mother','Guardian','Other'];
+const steps=[
+  {title:'Parent / Guardian Details',sub:'We need your details for your child\'s account security and progress reports',icon:'\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67'},
+  {title:'Student Details',sub:'Tell us about your child so Foxy can personalise their learning',icon:'\uD83C\uDF93'},
+  {title:'Academic Preferences',sub:'Help us tailor the right curriculum for your child',icon:'\uD83D\uDCDA'},
+  {title:'School & Board',sub:'We align content with your child\'s education board',icon:'\uD83C\uDFEB'},
+  {title:'Learning Language',sub:'Foxy can teach in your child\'s preferred language',icon:'\uD83C\uDF0D'},
+  {title:'Create Account',sub:'Secure your child\'s learning journey with a password',icon:'\uD83D\uDD10'}
+];
+const ok=[
+  !!parentName.trim()&&!!parentPhone.trim()&&parentPhone.length>=10&&!!parentEmail.trim()&&parentEmail.includes('@')&&!!parentRelation,
+  !!studentName.trim()&&!!gr,
+  !!su,
+  !!board,
+  true,
+  pw.length>=6&&pw===pw2
+][s];
+const nx=()=>{setErr('');snd('click');setS(v=>v+1)};
+const createAccount=async()=>{setErr('');setLd(true);try{
+  const{data,error}=await sb.auth.signUp({email:parentEmail.trim(),password:pw,options:{data:{full_name:parentName.trim(),parent_name:parentName.trim(),student_name:studentName.trim(),relation:parentRelation},emailRedirectTo:SITE}});
+  if(error)throw error;
+  if(!data.user)throw new Error('Account creation failed. Please try again.');
+  // Save all registration data to student record
+  const prof:Prof={name:studentName.trim(),grade:gr,subject:su,language:la};
+  const sid=await ensureStudent(data.user.id,prof);
+  if(sid){
+    await sb.from('students').update({
+      parent_name:parentName.trim(),parent_phone:parentPhone.trim(),
+      phone:parentPhone.trim(),email:parentEmail.trim(),
+      school_name:school||null,city:parentCity||null,state:parentState||null,
+      board:board||'CBSE',target_exam:target||null,referral_code:referral||null,
+      date_of_birth:studentDob||null,
+      father_name:parentRelation==='Father'?parentName.trim():null,
+      mother_name:parentRelation==='Mother'?parentName.trim():null
+    }).eq('id',sid);
+    prof.studentId=sid;
+  }
+  snd('eureka');onComplete(data.user,prof);
+}catch(e:any){setErr(e.message||'Something went wrong');setLd(false)}};
+return(<div className="a-center-dark" style={{maxWidth:520,padding:'32px 24px',minHeight:'100vh',justifyContent:'flex-start',paddingTop:40}}>
+<button onClick={onBack} style={{position:'fixed',top:16,left:16,padding:'8px 16px',borderRadius:10,background:'rgba(255,255,255,.08)',border:'none',color:'rgba(255,255,255,.5)',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',zIndex:50}}>{'\u2190'} Back</button>
+{/* Progress bar */}
+<div style={{display:'flex',gap:4,justifyContent:'center',marginBottom:24,width:'100%'}}>
+{steps.map((_,i)=><div key={i} style={{height:6,borderRadius:3,flex:1,background:i<=s?'linear-gradient(135deg,#E8590C,#EC4899)':'rgba(255,255,255,.08)',transition:'all .3s',maxWidth:60}}/>)}
+</div>
+<div style={{fontSize:44,marginBottom:8,animation:'alfBounce 2s infinite'}}>{steps[s].icon}</div>
+<p style={{fontSize:11,color:'rgba(255,255,255,.3)',fontWeight:700,letterSpacing:'.1em',marginBottom:4}}>STEP {s+1} OF {steps.length}</p>
+<h2 style={{fontSize:22,fontWeight:800,color:'#fff',marginBottom:6,textAlign:'center'}}>{steps[s].title}</h2>
+<p style={{fontSize:13,color:'rgba(255,255,255,.4)',marginBottom:24,textAlign:'center',lineHeight:1.5,maxWidth:360}}>{steps[s].sub}</p>
+{err&&<div className="a-err" style={{marginBottom:16,width:'100%'}}>{err}</div>}
+<div key={s} style={{animation:'alfSlideUp .3s',width:'100%'}}>
+{/* STEP 0: Parent KYC */}
+{s===0&&<>
+<p style={{fontSize:11,color:'#E8590C',fontWeight:700,letterSpacing:'.05em',marginBottom:10}}>YOUR RELATIONSHIP TO THE STUDENT</p>
+<div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>{RELATIONS.map(r=><button key={r} onClick={()=>{setParentRelation(r);snd('click')}} className={`a-ob-ch${parentRelation===r?' on':''}`} style={{minHeight:40,padding:'8px 16px',fontSize:13,flex:'1 1 auto'}}>{r}</button>)}</div>
+<input value={parentName} onChange={e=>setParentName(e.target.value)} placeholder="Your full name *" autoFocus className="a-ob-inp" style={{fontSize:16,textAlign:'left',padding:'14px 18px'}}/>
+<input value={parentPhone} onChange={e=>setParentPhone(e.target.value.replace(/\D/g,'').slice(0,10))} placeholder="Your mobile number *" className="a-ob-inp" style={{marginTop:10,fontSize:16,textAlign:'left',padding:'14px 18px'}} inputMode="numeric"/>
+<input type="email" value={parentEmail} onChange={e=>setParentEmail(e.target.value)} placeholder="Your email address *" className="a-ob-inp" style={{marginTop:10,fontSize:16,textAlign:'left',padding:'14px 18px'}}/>
+<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:10}}>
+<input value={parentCity} onChange={e=>setParentCity(e.target.value)} placeholder="City" className="a-ob-inp" style={{fontSize:14,textAlign:'left',padding:'12px 14px'}}/>
+<select value={parentState} onChange={e=>{setParentState(e.target.value);snd('click')}} className="a-ob-inp" style={{appearance:'auto',fontSize:14,textAlign:'left',padding:'12px 14px'}}><option value="">State</option>{STATES.map(st=><option key={st} value={st}>{st}</option>)}</select>
+</div>
+<p style={{fontSize:11,color:'rgba(255,255,255,.25)',marginTop:10,lineHeight:1.5}}>* Required fields. Your email will be used for account login and progress reports.</p>
+</>}
+{/* STEP 1: Student Details */}
+{s===1&&<>
+<input value={studentName} onChange={e=>setStudentName(e.target.value)} placeholder="Student's full name *" autoFocus className="a-ob-inp" style={{fontSize:16,textAlign:'left',padding:'14px 18px'}}/>
+<input type="date" value={studentDob} onChange={e=>setStudentDob(e.target.value)} className="a-ob-inp" style={{marginTop:10,fontSize:14,textAlign:'left',padding:'14px 18px',color:studentDob?'#fff':'rgba(255,255,255,.4)'}}/>
+<p style={{fontSize:11,color:'rgba(255,255,255,.3)',marginTop:4,marginBottom:16}}>Date of birth (optional)</p>
+<p style={{fontSize:12,color:'#E8590C',fontWeight:700,letterSpacing:'.05em',marginBottom:10}}>STUDENT&apos;S GRADE *</p>
+<div className="a-ob-g3">{GRADES.map(g=><button key={g} onClick={()=>{setGr(g);snd('click')}} className={`a-ob-ch${gr===g?' on':''}`} style={{minHeight:44}}>{g}</button>)}</div>
+</>}
+{/* STEP 2: Subject */}
+{s===2&&<div className="a-ob-g2">{SUBJ.filter(x=>{const g=parseInt(gr.replace(/\D/g,'')||'6');return g>=11?['Mathematics','Physics','Chemistry','Biology','English','Computer Science','Accountancy','Economics'].includes(x.id):['Mathematics','Science','English','Hindi','Social Studies'].includes(x.id)}).map(x=><button key={x.id} onClick={()=>{setSu(x.id);snd('click')}} className={`a-ob-ch${su===x.id?' on':''}`} style={{minHeight:52,...(su===x.id?{background:x.c}:{})}}><span style={{fontSize:18}}>{x.icon}</span>{x.id}</button>)}</div>}
+{/* STEP 3: School & Board */}
+{s===3&&<>
+<input value={school} onChange={e=>setSchool(e.target.value)} placeholder="School name (optional)" className="a-ob-inp" style={{fontSize:14,textAlign:'left',padding:'14px 18px'}}/>
+<p style={{fontSize:12,color:'#E8590C',fontWeight:700,letterSpacing:'.05em',marginTop:16,marginBottom:10}}>EDUCATION BOARD *</p>
+<div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{BOARDS.map(b=><button key={b} onClick={()=>{setBoard(b);snd('click')}} className={`a-ob-ch${board===b?' on':''}`} style={{minHeight:40,padding:'8px 16px',fontSize:13}}>{b}</button>)}</div>
+<p style={{fontSize:12,color:'rgba(255,255,255,.4)',marginTop:16,marginBottom:8}}>Target Exam (optional)</p>
+<div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{TARGETS.map(t=><button key={t} onClick={()=>{setTarget(t);snd('click')}} className={`a-ob-ch${target===t?' on':''}`} style={{minHeight:36,padding:'6px 14px',fontSize:12}}>{t}</button>)}</div>
+</>}
+{/* STEP 4: Language */}
+{s===4&&<div className="a-ob-g2">{LANGS.map(l=><button key={l.code} onClick={()=>{setLa(l.code);snd('click')}} className={`a-ob-ch${la===l.code?' on':''}`} style={{minHeight:52,fontSize:16}}>{l.label}</button>)}</div>}
+{/* STEP 5: Account creation */}
+{s===5&&<>
+<div style={{padding:16,borderRadius:16,background:'rgba(255,255,255,.06)',marginBottom:20,textAlign:'center'}}>
+<p style={{fontSize:11,color:'rgba(255,255,255,.3)',fontWeight:700,letterSpacing:'.05em',marginBottom:6}}>REGISTERING</p>
+<p style={{fontSize:20,fontWeight:900,color:'#E8590C'}}>{studentName||'Student'}</p>
+<p style={{fontSize:13,color:'rgba(255,255,255,.5)'}}>{gr} &middot; {su} &middot; {board}</p>
+<p style={{fontSize:12,color:'rgba(255,255,255,.35)',marginTop:4}}>Parent: {parentName} ({parentRelation})</p>
+</div>
+<p style={{fontSize:12,color:'rgba(255,255,255,.4)',marginBottom:8}}>Login email: <strong style={{color:'#fff'}}>{parentEmail}</strong></p>
+<input type="password" value={pw} onChange={e=>setPw(e.target.value)} placeholder="Create password (6+ characters)" className="a-ob-inp" style={{fontSize:14,textAlign:'left',padding:'14px 18px'}}/>
+<input type="password" value={pw2} onChange={e=>setPw2(e.target.value)} placeholder="Confirm password" className="a-ob-inp" style={{marginTop:10,fontSize:14,textAlign:'left',padding:'14px 18px'}} onKeyDown={e=>e.key==='Enter'&&ok&&createAccount()}/>
+{pw.length>0&&pw.length<6&&<p style={{fontSize:11,color:'#F59E0B',marginTop:6}}>Password must be at least 6 characters</p>}
+{pw2.length>0&&pw!==pw2&&<p style={{fontSize:11,color:'#EF4444',marginTop:6}}>Passwords don&apos;t match</p>}
+<input value={referral} onChange={e=>setReferral(e.target.value.toUpperCase())} placeholder="Referral code (optional)" className="a-ob-inp" style={{marginTop:12,fontSize:13,textAlign:'center',letterSpacing:'.15em',padding:'10px 14px'}}/>
+</>}
+</div>
+<div style={{display:'flex',gap:10,marginTop:24,width:'100%'}}>
+{s>0&&<button onClick={()=>{setErr('');setS(v=>v-1)}} className="a-ob-back" style={{minHeight:48}}>Back</button>}
+<button onClick={s<5?nx:createAccount} disabled={!ok||ld} className="a-ob-next" style={{minHeight:48}}>{ld?'Creating Account...':s<5?'Continue':'\uD83D\uDE80 Create Account & Start Learning!'}</button>
+</div>
+<p style={{fontSize:10,color:'rgba(255,255,255,.2)',marginTop:16,textAlign:'center',lineHeight:1.5}}>By creating an account, you agree to Alfanumrik&apos;s Terms of Service and Privacy Policy. &copy; 2026 CusioSense Learning India Pvt. Ltd.</p>
+</div>)}
+// ONBOARDING — for Google OAuth users who already have auth but no profile
 function Onboard({user,done}:{user:any;done:(p:Prof)=>void}){
 const[s,setS]=useState(0);const[nm,setNm]=useState(user?.user_metadata?.full_name||'');const[gr,setGr]=useState('');const[su,setSu]=useState('');const[la,setLa]=useState('en');
-const[phone,setPhone]=useState('');const[parentName,setParentName]=useState('');const[parentPhone,setParentPhone]=useState('');const[school,setSchool]=useState('');const[city,setCity]=useState('');const[state,setState]=useState('');const[board,setBoard]=useState('CBSE');const[target,setTarget]=useState('');const[referral,setReferral]=useState('');
-const steps=['What should Foxy call you?','Which grade are you in?','Pick your main subject','Your school details','Parent / Guardian info','Choose your language','Welcome to Alfanumrik!']
-const ok=[!!nm.trim(),!!gr,!!su,!!board,true,true,true][s]
+const[phone,setPhone]=useState('');const[parentName,setParentName]=useState('');const[parentPhone,setParentPhone]=useState('');const[parentRelation,setParentRelation]=useState('');const[school,setSchool]=useState('');const[city,setCity]=useState('');const[state,setState]=useState('');const[board,setBoard]=useState('CBSE');const[target,setTarget]=useState('');const[referral,setReferral]=useState('');
+const RELATIONS=['Father','Mother','Guardian','Other'];
+const steps=['Parent / Guardian Details','Student\'s Name & Grade','Pick main subject','School & Board','Choose language','Welcome to Alfanumrik!']
+const ok=[!!parentName.trim()&&!!parentPhone.trim()&&parentPhone.length>=10&&!!parentRelation,!!nm.trim()&&!!gr,!!su,!!board,true,true][s]
 const nx=()=>{snd('click');setS(v=>v+1)}
-const saveToDB=async()=>{if(!user?.id)return;try{const{data:st}=await sb.from('students').select('id').eq('auth_user_id',user.id).maybeSingle();if(st){await sb.from('students').update({phone:phone||null,parent_name:parentName||null,parent_phone:parentPhone||null,school_name:school||null,city:city||null,state:state||null,board:board||'CBSE',target_exam:target||null,referral_code:referral||null}).eq('id',st.id)}}catch(e){console.error('Save extra:',e)}}
-return(<div className="a-center-dark" style={{maxWidth:500,padding:'40px 24px'}}><div style={{display:'flex',gap:5,justifyContent:'center',marginBottom:28}}>{steps.map((_,i)=><div key={i} style={{height:6,borderRadius:3,background:i<=s?'#E8590C':'rgba(255,255,255,.12)',width:i<=s?20:6,transition:'all .3s'}}/>)}</div>
+const saveToDB=async()=>{if(!user?.id)return;try{const{data:st}=await sb.from('students').select('id').eq('auth_user_id',user.id).maybeSingle();if(st){await sb.from('students').update({phone:phone||null,parent_name:parentName||null,parent_phone:parentPhone||null,school_name:school||null,city:city||null,state:state||null,board:board||'CBSE',target_exam:target||null,referral_code:referral||null,father_name:parentRelation==='Father'?parentName:null,mother_name:parentRelation==='Mother'?parentName:null}).eq('id',st.id)}}catch(e){console.error('Save extra:',e)}}
+return(<div className="a-center-dark" style={{maxWidth:520,padding:'32px 24px',minHeight:'100vh',justifyContent:'flex-start',paddingTop:50}}>
+<div style={{display:'flex',gap:4,justifyContent:'center',marginBottom:24,width:'100%'}}>{steps.map((_,i)=><div key={i} style={{height:6,borderRadius:3,flex:1,background:i<=s?'linear-gradient(135deg,#E8590C,#EC4899)':'rgba(255,255,255,.08)',transition:'all .3s',maxWidth:60}}/>)}</div>
 <div style={{fontSize:48,marginBottom:12,animation:'alfBounce 2s infinite'}}>{'\uD83E\uDD8A'}</div>
 <p style={{fontSize:11,color:'rgba(255,255,255,.3)',fontWeight:700,letterSpacing:'.1em',marginBottom:6}}>STEP {s+1} OF {steps.length}</p>
-<h2 style={{fontSize:24,fontWeight:800,color:'#fff',marginBottom:24}}>{steps[s]}</h2>
-<div key={s} style={{animation:'alfSlideUp .3s',minHeight:140}}>
-{s===0&&<><input value={nm} onChange={e=>setNm(e.target.value)} placeholder="Your full name" autoFocus className="a-ob-inp" onKeyDown={e=>e.key==='Enter'&&nm.trim()&&nx()}/><input value={phone} onChange={e=>setPhone(e.target.value.replace(/\D/g,'').slice(0,10))} placeholder="Phone number (optional)" className="a-ob-inp" style={{marginTop:10}} inputMode="numeric"/></>}
-{s===1&&<div className="a-ob-g3">{GRADES.map(g=><button key={g} onClick={()=>{setGr(g);snd('click')}} className={`a-ob-ch${gr===g?' on':''}`} style={{minHeight:48}}>{g}</button>)}</div>}
-{s===2&&<div className="a-ob-g2">{SUBJ.filter(x=>{const g=parseInt(gr.replace(/\D/g,'')||'6');return g>=11?['Mathematics','Physics','Chemistry','Biology','English','Computer Science','Accountancy','Economics'].includes(x.id):['Mathematics','Science','English','Hindi','Social Studies'].includes(x.id)}).map(x=><button key={x.id} onClick={()=>{setSu(x.id);snd('click')}} className={`a-ob-ch${su===x.id?' on':''}`} style={{minHeight:52,...(su===x.id?{background:x.c}:{})}}><span style={{fontSize:18}}>{x.icon}</span>{x.id}</button>)}</div>}
-{s===3&&<><input value={school} onChange={e=>setSchool(e.target.value)} placeholder="School name" className="a-ob-inp"/><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:10}}><input value={city} onChange={e=>setCity(e.target.value)} placeholder="City" className="a-ob-inp"/><select value={state} onChange={e=>{setState(e.target.value);snd('click')}} className="a-ob-inp" style={{appearance:'auto'}}><option value="">State</option>{STATES.map(st=><option key={st} value={st}>{st}</option>)}</select></div><p style={{fontSize:11,color:'rgba(255,255,255,.4)',marginTop:12,marginBottom:8}}>Education Board</p><div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{BOARDS.map(b=><button key={b} onClick={()=>{setBoard(b);snd('click')}} className={`a-ob-ch${board===b?' on':''}`} style={{minHeight:40,padding:'8px 16px',fontSize:13}}>{b}</button>)}</div><p style={{fontSize:11,color:'rgba(255,255,255,.4)',marginTop:12,marginBottom:8}}>Target Exam (optional)</p><div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{TARGETS.map(t=><button key={t} onClick={()=>{setTarget(t);snd('click')}} className={`a-ob-ch${target===t?' on':''}`} style={{minHeight:36,padding:'6px 14px',fontSize:12}}>{t}</button>)}</div></>}
-{s===4&&<><input value={parentName} onChange={e=>setParentName(e.target.value)} placeholder="Parent / Guardian name" className="a-ob-inp"/><input value={parentPhone} onChange={e=>setParentPhone(e.target.value.replace(/\D/g,'').slice(0,10))} placeholder="Parent phone number" className="a-ob-inp" style={{marginTop:10}} inputMode="numeric"/><p style={{fontSize:11,color:'rgba(255,255,255,.35)',marginTop:10,lineHeight:1.6}}>Parent details help us share your child's progress report and keep them involved in the learning journey.</p></>}
-{s===5&&<div className="a-ob-g2">{LANGS.map(l=><button key={l.code} onClick={()=>{setLa(l.code);snd('click')}} className={`a-ob-ch${la===l.code?' on':''}`} style={{minHeight:48}}>{l.label}</button>)}</div>}
-{s===6&&<div style={{textAlign:'center',color:'rgba(255,255,255,.7)',lineHeight:1.8,fontSize:14}}><p style={{marginBottom:16}}>Hey {nm}! Here's what Foxy can do for you:</p><div style={{display:'flex',flexDirection:'column',gap:10,textAlign:'left'}}>{[{e:'\uD83E\uDD8A',t:'AI Tutor (Foxy)',d:'Ask anything about your NCERT chapters'},{e:'\uD83C\uDFAF',t:'Adaptive Quizzes',d:'2,142 MCQs with smart difficulty adjustment'},{e:'\uD83D\uDDFA\uFE0F',t:'Learning Journey',d:'See every chapter and track your mastery'},{e:'\uD83D\uDCCB',t:'AI Study Plan',d:'Personalized daily plan based on your gaps'}].map(tip=><div key={tip.t} style={{display:'flex',gap:12,alignItems:'center',padding:'10px 14px',borderRadius:12,background:'rgba(255,255,255,.06)'}}><span style={{fontSize:22}}>{tip.e}</span><div><p style={{fontWeight:700,color:'#fff',fontSize:13}}>{tip.t}</p><p style={{fontSize:11,opacity:.5}}>{tip.d}</p></div></div>)}</div><input value={referral} onChange={e=>setReferral(e.target.value.toUpperCase())} placeholder="Referral code (optional)" className="a-ob-inp" style={{marginTop:16,textAlign:'center',letterSpacing:'.15em'}}/></div>}
+<h2 style={{fontSize:22,fontWeight:800,color:'#fff',marginBottom:24}}>{steps[s]}</h2>
+<div key={s} style={{animation:'alfSlideUp .3s',width:'100%'}}>
+{s===0&&<>
+<p style={{fontSize:11,color:'#E8590C',fontWeight:700,letterSpacing:'.05em',marginBottom:10}}>YOUR RELATIONSHIP TO THE STUDENT</p>
+<div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>{RELATIONS.map(r=><button key={r} onClick={()=>{setParentRelation(r);snd('click')}} className={`a-ob-ch${parentRelation===r?' on':''}`} style={{minHeight:40,padding:'8px 16px',fontSize:13,flex:'1 1 auto'}}>{r}</button>)}</div>
+<input value={parentName} onChange={e=>setParentName(e.target.value)} placeholder="Your full name (Parent/Guardian) *" autoFocus className="a-ob-inp" style={{fontSize:16,textAlign:'left',padding:'14px 18px'}}/>
+<input value={parentPhone} onChange={e=>setParentPhone(e.target.value.replace(/\D/g,'').slice(0,10))} placeholder="Your mobile number *" className="a-ob-inp" style={{marginTop:10,fontSize:16,textAlign:'left',padding:'14px 18px'}} inputMode="numeric"/>
+<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:10}}>
+<input value={city} onChange={e=>setCity(e.target.value)} placeholder="City" className="a-ob-inp" style={{fontSize:14,textAlign:'left',padding:'12px 14px'}}/>
+<select value={state} onChange={e=>{setState(e.target.value);snd('click')}} className="a-ob-inp" style={{appearance:'auto',fontSize:14,textAlign:'left',padding:'12px 14px'}}><option value="">State</option>{STATES.map(st=><option key={st} value={st}>{st}</option>)}</select>
 </div>
-<div style={{display:'flex',gap:10,marginTop:24}}>{s>0&&<button onClick={()=>setS(v=>v-1)} className="a-ob-back" style={{minHeight:48}}>Back</button>}<button onClick={s<6?nx:async()=>{snd('eureka');await saveToDB();done({name:nm.trim(),grade:gr,subject:su,language:la})}} disabled={!ok} className="a-ob-next" style={{minHeight:48}}>{s<5?'Continue':s===5?'Next':'\uD83D\uDE80 Start Learning!'}</button></div>
+</>}
+{s===1&&<><input value={nm} onChange={e=>setNm(e.target.value)} placeholder="Student's full name *" autoFocus className="a-ob-inp" style={{fontSize:16,textAlign:'left',padding:'14px 18px'}} onKeyDown={e=>e.key==='Enter'&&nm.trim()&&gr&&nx()}/>
+<p style={{fontSize:12,color:'#E8590C',fontWeight:700,letterSpacing:'.05em',marginTop:16,marginBottom:10}}>STUDENT&apos;S GRADE *</p>
+<div className="a-ob-g3">{GRADES.map(g=><button key={g} onClick={()=>{setGr(g);snd('click')}} className={`a-ob-ch${gr===g?' on':''}`} style={{minHeight:44}}>{g}</button>)}</div></>}
+{s===2&&<div className="a-ob-g2">{SUBJ.filter(x=>{const g=parseInt(gr.replace(/\D/g,'')||'6');return g>=11?['Mathematics','Physics','Chemistry','Biology','English','Computer Science','Accountancy','Economics'].includes(x.id):['Mathematics','Science','English','Hindi','Social Studies'].includes(x.id)}).map(x=><button key={x.id} onClick={()=>{setSu(x.id);snd('click')}} className={`a-ob-ch${su===x.id?' on':''}`} style={{minHeight:52,...(su===x.id?{background:x.c}:{})}}><span style={{fontSize:18}}>{x.icon}</span>{x.id}</button>)}</div>}
+{s===3&&<><input value={school} onChange={e=>setSchool(e.target.value)} placeholder="School name (optional)" className="a-ob-inp" style={{fontSize:14,textAlign:'left',padding:'14px 18px'}}/><p style={{fontSize:12,color:'#E8590C',fontWeight:700,letterSpacing:'.05em',marginTop:16,marginBottom:10}}>EDUCATION BOARD *</p><div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{BOARDS.map(b=><button key={b} onClick={()=>{setBoard(b);snd('click')}} className={`a-ob-ch${board===b?' on':''}`} style={{minHeight:40,padding:'8px 16px',fontSize:13}}>{b}</button>)}</div><p style={{fontSize:12,color:'rgba(255,255,255,.4)',marginTop:16,marginBottom:8}}>Target Exam (optional)</p><div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{TARGETS.map(t=><button key={t} onClick={()=>{setTarget(t);snd('click')}} className={`a-ob-ch${target===t?' on':''}`} style={{minHeight:36,padding:'6px 14px',fontSize:12}}>{t}</button>)}</div></>}
+{s===4&&<div className="a-ob-g2">{LANGS.map(l=><button key={l.code} onClick={()=>{setLa(l.code);snd('click')}} className={`a-ob-ch${la===l.code?' on':''}`} style={{minHeight:52,fontSize:16}}>{l.label}</button>)}</div>}
+{s===5&&<div style={{textAlign:'center',color:'rgba(255,255,255,.7)',lineHeight:1.8,fontSize:14}}><p style={{marginBottom:16}}>Hey {nm}! Here&apos;s what Foxy can do for you:</p><div style={{display:'flex',flexDirection:'column',gap:10,textAlign:'left'}}>{[{e:'\uD83E\uDD8A',t:'AI Tutor (Foxy)',d:'Ask anything about your NCERT chapters'},{e:'\uD83C\uDFAF',t:'Adaptive Quizzes',d:'2,142 MCQs with smart difficulty adjustment'},{e:'\uD83D\uDDFA\uFE0F',t:'Learning Journey',d:'See every chapter and track your mastery'},{e:'\uD83D\uDCCB',t:'AI Study Plan',d:'Personalized daily plan based on your gaps'}].map(tip=><div key={tip.t} style={{display:'flex',gap:12,alignItems:'center',padding:'10px 14px',borderRadius:12,background:'rgba(255,255,255,.06)'}}><span style={{fontSize:22}}>{tip.e}</span><div><p style={{fontWeight:700,color:'#fff',fontSize:13}}>{tip.t}</p><p style={{fontSize:11,opacity:.5}}>{tip.d}</p></div></div>)}</div><input value={referral} onChange={e=>setReferral(e.target.value.toUpperCase())} placeholder="Referral code (optional)" className="a-ob-inp" style={{marginTop:16,textAlign:'center',letterSpacing:'.15em'}}/></div>}
+</div>
+<div style={{display:'flex',gap:10,marginTop:24,width:'100%'}}>{s>0&&<button onClick={()=>setS(v=>v-1)} className="a-ob-back" style={{minHeight:48}}>Back</button>}<button onClick={s<5?nx:async()=>{snd('eureka');await saveToDB();done({name:nm.trim(),grade:gr,subject:su,language:la})}} disabled={!ok} className="a-ob-next" style={{minHeight:48}}>{s<5?'Continue':'\uD83D\uDE80 Start Learning!'}</button></div>
 </div>)}
 // HOME — Playful colorful Duolingo-Indian with gradient hero, moments carousel, big action cards
 function Home({p,nav,stats,history}:{p:Prof;nav:(s:Screen)=>void;stats:Stats;history:any}){const h=new Date().getHours();const greeting=h<12?'Good morning':h<17?'Good afternoon':'Good evening';const[inst,setInst]=useState(false);const[moments,setMoments]=useState<any[]>([]);const acc=stats.asked>0?Math.round((stats.correct/stats.asked)*100):0;
@@ -914,7 +1045,9 @@ export default function App(){
 
   // STUDENT AUTH
   const onStudentAuth=async(u:any)=>{try{setUser(u);const saved=localStorage.getItem('alfanumrik_profile');if(saved){const p=JSON.parse(saved) as Prof;const sid=await ensureStudent(u.id,p);if(!sid){console.error('Failed to resolve studentId');localStorage.removeItem('alfanumrik_profile');setSc('onboard');return}const wp={...p,studentId:sid};setProf(wp);localStorage.setItem('alfanumrik_profile',JSON.stringify(wp));await loadAll(wp);setSc('home');return}const dbProf=await loadProfileFromDB(u.id);if(dbProf&&dbProf.studentId){setProf(dbProf);localStorage.setItem('alfanumrik_profile',JSON.stringify(dbProf));await loadAll(dbProf);setSc('home');return}setSc('onboard')}catch(e){console.error('onAuth failed:',e);setSc('auth')}}
-  const onStudentOnboard=async(p:Prof)=>{if(user){const sid=await ensureStudent(user.id,p);if(!sid){alert('Could not create your account. Please try again.');return}const wp={...p,studentId:sid};setProf(wp);localStorage.setItem('alfanumrik_profile',JSON.stringify(wp));await loadAll(wp);setSc('home')}}
+  const onStudentOnboard=async(p:Prof)=>{if(user){const sid=await ensureStudent(user.id,p);if(!sid){alert('Could not create your account. Please try again.');return}const wp={...p,studentId:sid};setProf(wp);localStorage.setItem('alfanumrik_profile',JSON.stringify(wp));await loadAll(wp);setSc('onboard_pricing')}}
+  // Registration complete — parent created account with all details, now show pricing
+  const onRegistrationComplete=async(u:any,p:Prof)=>{setUser(u);setProf(p);localStorage.setItem('alfanumrik_profile',JSON.stringify(p));if(p.studentId)await loadAll(p);setSc('onboard_pricing')}
   const onProfUp=async(p:Prof)=>{setProf(p);localStorage.setItem('alfanumrik_profile',JSON.stringify(p));if(p.studentId){await sb.from('students').update({name:p.name,grade:p.grade,preferred_language:p.language,preferred_subject:p.subject}).eq('id',p.studentId);await loadAll(p)}}
   const refreshStats=async()=>{if(prof?.studentId){const s=await getStats(prof.studentId);setStats(s);const h=await api('chat-history',{action:'get_history',student_id:prof.studentId});setHistory(h)}}
   const studentLogout=async()=>{await sb.auth.signOut();localStorage.removeItem('alfanumrik_profile');setUser(null);setProf(null);setSc('auth')}
@@ -939,10 +1072,12 @@ export default function App(){
   // STUDENT PORTAL
   if(portal==='student'){
     if(sc==='loading')return<><CSS/><div className="a-center"><div style={{fontSize:56,animation:'alfBounce 1.5s infinite'}}>{'\uD83E\uDD8A'}</div><p style={{color:'#A8A29E',marginTop:8,fontWeight:600}}>Loading...</p></div></>
-    if(sc==='auth')return<><CSS/><Auth onAuth={onStudentAuth} onConfirm={()=>setSc('confirm')}/><div style={{position:'fixed',top:16,left:16}}><button onClick={goLanding} style={{padding:'8px 16px',borderRadius:10,background:'rgba(255,255,255,.08)',border:'none',color:'rgba(255,255,255,.5)',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>{'\u2190'} Back</button></div></>
+    if(sc==='auth')return<><CSS/><Auth onAuth={onStudentAuth} onConfirm={()=>setSc('confirm')} onSignup={()=>setSc('register')}/><div style={{position:'fixed',top:16,left:16}}><button onClick={goLanding} style={{padding:'8px 16px',borderRadius:10,background:'rgba(255,255,255,.08)',border:'none',color:'rgba(255,255,255,.5)',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>{'\u2190'} Back</button></div></>
     if(sc==='confirm')return<><CSS/><ConfirmScreen onBack={()=>setSc('auth')}/></>
     if(sc==='reset')return<><CSS/><ResetScreen/></>
+    if(sc==='register')return<><CSS/><Registration onComplete={onRegistrationComplete} onBack={()=>setSc('auth')}/></>
     if(sc==='onboard')return<><CSS/><Onboard user={user} done={onStudentOnboard}/></>
+    if(sc==='onboard_pricing')return<><CSS/><Pricing studentId={prof?.studentId} onBack={()=>{setSc('home')}} onSelect={(plan)=>{snd('eureka');setSc('home')}}/></>
     if(sc==='pricing')return<><CSS/><Pricing studentId={prof?.studentId} onBack={()=>setSc('home')} onSelect={(plan)=>{snd('eureka');setSc('home')}}/></>
     if(prof&&!prof.studentId){
       // CRITICAL: Profile loaded but studentId missing — attempt recovery
