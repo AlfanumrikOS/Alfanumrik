@@ -1,12 +1,31 @@
-/* Alfanumrik v6.0 — Production CSS */
-html { 
-  font-family: 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-body { margin: 0; padding: 0; overscroll-behavior: none; }
-html, body { overscroll-behavior-y: none; }
-body { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
-button, nav { -webkit-user-select: none; user-select: none; }
-* { scroll-behavior: smooth; -webkit-tap-highlight-color: transparent; }
-button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid #E8590C; outline-offset: 2px; }
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { --brand-orange:#FF6B35; --brand-purple:#7B2D8E; --brand-gold:#FFB800; --brand-teal:#00B4D8; --brand-green:#2DC653; }
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'Nunito',sans-serif; background:#0D0B15; color:#F5F3FF; -webkit-font-smoothing:antialiased; overflow-x:hidden; }
+::-webkit-scrollbar { width:6px; }
+::-webkit-scrollbar-track { background:#1E1B2E; }
+::-webkit-scrollbar-thumb { background:#7B2D8E; border-radius:3px; }
+
+.glass { background:rgba(30,27,46,0.7); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); border:1px solid rgba(123,45,142,0.2); }
+.gradient-text { background:linear-gradient(135deg,#FF6B35,#FFB800); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.card-interactive { transition:all 0.3s cubic-bezier(0.4,0,0.2,1); }
+.card-interactive:hover { transform:translateY(-4px); box-shadow:0 20px 40px rgba(123,45,142,0.3); }
+.xp-fill { transition:width 1s cubic-bezier(0.4,0,0.2,1); }
+.streak-glow { text-shadow:0 0 10px rgba(255,107,53,0.5),0 0 20px rgba(255,107,53,0.3); }
+
+.typing-dot { animation:typingDot 1.4s infinite ease-in-out; }
+.typing-dot:nth-child(2) { animation-delay:0.2s; }
+.typing-dot:nth-child(3) { animation-delay:0.4s; }
+@keyframes typingDot { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-8px)} }
+
+.quiz-option { transition:all 0.2s ease; }
+.quiz-option:hover { transform:scale(1.02); }
+.quiz-option.correct { border-color:#2DC653; background:rgba(45,198,83,0.15); }
+.quiz-option.incorrect { border-color:#FF4757; background:rgba(255,71,87,0.15); animation:shake 0.4s ease-out; }
+@keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-5px)} 75%{transform:translateX(5px)} }
+
+.sim-canvas { border-radius:12px; border:2px solid rgba(123,45,142,0.3); background:rgba(13,11,21,0.8); }
