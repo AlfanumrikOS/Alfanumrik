@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { StudentProvider } from '@/components/StudentProvider';
 
@@ -6,7 +6,13 @@ export const metadata: Metadata = {
   title: 'Alfanumrik Learning OS',
   description: 'Adaptive AI-powered learning for Indian schools — Classes 6-12',
   manifest: '/manifest.json',
+};
+
+export const viewport: Viewport = {
   themeColor: '#0D0B15',
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
