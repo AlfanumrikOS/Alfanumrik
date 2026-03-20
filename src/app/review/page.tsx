@@ -116,14 +116,14 @@ export default function ReviewPage() {
     <div className="mesh-bg min-h-dvh pb-nav flex flex-col">
       {/* Header */}
       <header
-        className="sticky top-0 z-40 border-b"
+        className="page-header"
         style={{
           background: 'rgba(251,248,244,0.88)',
           backdropFilter: 'blur(20px)',
           borderColor: 'var(--border)',
         }}
       >
-        <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
+        <div className="app-container py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)]">
               ←
