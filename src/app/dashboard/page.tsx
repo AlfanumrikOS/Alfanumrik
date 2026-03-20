@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { supabase, getStudentProfiles, getSubjects, getFeatureFlags, getNextTopics } from '@/lib/supabase';
+import { supabase, getStudentProfiles, getSubjects, getFeatureFlags, getNextTopics, getStudentNotifications, generateNotifications } from '@/lib/supabase';
 import { Card, StatCard, ProgressBar, SectionHeader, ActionTile, SubjectChip, Avatar, LoadingFoxy, BottomNav } from '@/components/ui';
 
 const QUICK_ACTIONS = [
@@ -24,6 +24,7 @@ export default function Dashboard() {
   const [dueCount, setDueCount] = useState(0);
   const [flags, setFlags] = useState<any>({});
   const [greeting, setGreeting] = useState('');
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/');
@@ -55,6 +56,13 @@ export default function Dashboard() {
       .eq('student_id', student.id)
       .lte('next_review_at', new Date().toISOString());
     setDueCount(count ?? 0);
+
+    // Generate contextual notifications + get unread count
+    try {
+      await generateNotifications(student.id);
+      const notifData = await getStudentNotifications(student.id);
+      setUnreadCount(notifData?.unread_count ?? 0);
+    } catch {}
   }, [student]);
 
   useEffect(() => {
@@ -90,6 +98,20 @@ export default function Dashboard() {
               style={{ borderColor: 'var(--border-mid)', color: 'var(--text-3)' }}
             >
               {language === 'hi' ? '🌐 EN' : '🇮🇳 हिं'}
+            </button>
+            <button
+              onClick={() => router.push('/notifications')}
+              className="relative p-1.5"
+            >
+              <span className="text-lg">🔔</span>
+              {unreadCount > 0 && (
+                <span
+                  className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-white"
+                  style={{ background: '#DC2626', fontSize: 10, lineHeight: 1 }}
+                >
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
             </button>
             <button onClick={() => router.push('/profile')}>
               <Avatar name={student.name} />
