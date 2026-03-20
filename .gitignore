@@ -5,3 +5,6 @@ build/
 .env
 .env.local
 *.tsbuildinfo
+alfanumrik-frontend/out/
+alfanumrik-frontend/.next/
+alfanumrik-frontend/tsconfig.tsbuildinfo
