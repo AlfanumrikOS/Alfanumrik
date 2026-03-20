@@ -57,10 +57,17 @@ export default function Home() {
   useEffect(() => { if (!isLoading && isLoggedIn) router.replace('/dashboard'); }, [isLoading, isLoggedIn, router]);
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (ev, sess) => {
-      if (ev === 'SIGNED_IN' && sess?.user) {
+      if ((ev === 'SIGNED_IN' || ev === 'TOKEN_REFRESHED') && sess?.user) {
         await refreshStudent();
-        const { data } = await supabase.from('students').select('onboarding_completed').eq('auth_user_id', sess.user.id).single();
-        data?.onboarding_completed ? router.replace('/dashboard') : setStep('profile');
+        // Check if user has completed onboarding in any role
+        const { data: stu } = await supabase.from('students').select('onboarding_completed').eq('auth_user_id', sess.user.id).single();
+        if (stu?.onboarding_completed) { router.replace('/dashboard'); return; }
+        const { data: tch } = await supabase.from('teachers').select('onboarding_completed').eq('auth_user_id', sess.user.id).single();
+        if (tch?.onboarding_completed) { router.replace('/dashboard'); return; }
+        const { data: gdn } = await supabase.from('guardians').select('onboarding_completed').eq('auth_user_id', sess.user.id).single();
+        if (gdn?.onboarding_completed) { router.replace('/dashboard'); return; }
+        // No onboarding completed — go to profile setup
+        setStep('profile');
       }
     });
     return () => subscription.unsubscribe();
@@ -87,16 +94,30 @@ export default function Home() {
     if (password.length < 6) { setError('Password must be at least 6 characters'); return; }
     if (password !== confirmPassword) { setError('Passwords do not match'); return; }
     setLoading(true); setError('');
-    const { error: e } = await supabase.auth.signUp({ email: email.trim(), password });
-    if (e) setError(e.message);
-    else { setOtpSent(true); setError(''); }
+    const { data, error: e } = await supabase.auth.signUp({ email: email.trim(), password });
+    if (e) {
+      setError(e.message);
+    } else if (data.session) {
+      // Email confirmation disabled — user auto-signed-in, onAuthStateChange handles routing
+    } else if (data.user && !data.session) {
+      // Email confirmation required — show "check your email" screen
+      setOtpSent(true);
+    } else {
+      // User may already exist (Supabase returns fake success to prevent enumeration)
+      setError('An account with this email may already exist. Try Log In instead.');
+    }
     setLoading(false);
   };
   const signInWithPassword = async () => {
     if (!email.trim() || !password) return;
     setLoading(true); setError('');
-    const { error: e } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    if (e) setError(e.message === 'Invalid login credentials' ? 'Wrong email or password. Try again or use Forgot Password.' : e.message);
+    const { data, error: e } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    if (e) {
+      if (e.message === 'Invalid login credentials') setError('Wrong email or password. Try again or use Forgot Password.');
+      else if (e.message === 'Email not confirmed') setError('Please confirm your email first. Check your inbox for the confirmation link.');
+      else setError(e.message);
+    }
+    // If success, onAuthStateChange handles routing to profile or dashboard
     setLoading(false);
   };
   const sendResetEmail = async () => {
@@ -517,7 +538,7 @@ export default function Home() {
               </div>
               <Input type={showPassword?'text':'password'} placeholder="Confirm password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} onKeyDown={e=>e.key==='Enter'&&signUpWithPassword()}/>
               {error&&<p style={{ color:'var(--red)', fontSize:13 }}>{error}</p>}
-              <Button fullWidth onClick={signUpWithPassword} disabled={loading||!email.trim()||!password||!confirmPassword}>{loading?'Creating account...':'Create Account &rarr;'}</Button>
+              <Button fullWidth onClick={signUpWithPassword} disabled={loading||!email.trim()||!password||!confirmPassword}>{loading?'Creating account...':'Create Account →'}</Button>
               <p style={{ fontSize:12, color:'var(--text-3)', textAlign:'center' }}>Already have an account? <button onClick={()=>{setAuthMode('login');setError('');}} style={{ color:'var(--orange)', fontWeight:700, background:'none', border:'none', cursor:'pointer' }}>Log In</button></p>
             </div>
           </>)}
@@ -529,7 +550,7 @@ export default function Home() {
               <h3 style={{ fontFamily:'var(--font-display)', fontWeight:700, fontSize:18, marginBottom:8 }}>Check Your Email!</h3>
               <p style={{ fontSize:13, color:'var(--text-2)', lineHeight:1.6, marginBottom:16 }}>We sent a confirmation link to <strong>{email}</strong>. Click it to activate your account.</p>
               <p style={{ fontSize:12, color:'var(--text-3)', lineHeight:1.6 }}>After confirming, come back here and Log In with your password.</p>
-              <Button variant="ghost" fullWidth onClick={()=>{setAuthMode('login');setOtpSent(false);setError('');}} className="mt-4">Go to Log In &rarr;</Button>
+              <Button variant="ghost" fullWidth onClick={()=>{setAuthMode('login');setOtpSent(false);setError('');}} className="mt-4">Go to Log In →</Button>
             </div>
           </>)}
 
@@ -542,7 +563,7 @@ export default function Home() {
                 <button onClick={()=>setShowPassword(!showPassword)} style={{ position:'absolute', right:12, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', fontSize:16, color:'var(--text-3)' }}>{showPassword?'🙈':'👁️'}</button>
               </div>
               {error&&<p style={{ color:'var(--red)', fontSize:13 }}>{error}</p>}
-              <Button fullWidth onClick={signInWithPassword} disabled={loading||!email.trim()||!password}>{loading?'Signing in...':'Log In &rarr;'}</Button>
+              <Button fullWidth onClick={signInWithPassword} disabled={loading||!email.trim()||!password}>{loading?'Signing in...':'Log In →'}</Button>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
                 <button onClick={()=>{setAuthMode('forgot');setError('');setResetSent(false);}} style={{ fontSize:12, color:'var(--orange)', fontWeight:600, background:'none', border:'none', cursor:'pointer' }}>Forgot Password?</button>
                 <button onClick={()=>{setAuthMode('signup');setError('');}} style={{ fontSize:12, color:'var(--text-3)', background:'none', border:'none', cursor:'pointer' }}>Create Account</button>
@@ -555,7 +576,7 @@ export default function Home() {
             <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
               <Input type="email" placeholder="Email address" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==='Enter'&&sendResetEmail()}/>
               {error&&<p style={{ color:'var(--red)', fontSize:13 }}>{error}</p>}
-              <Button fullWidth onClick={sendResetEmail} disabled={loading||!email.trim()}>{loading?'Sending...':'Send Reset Link &rarr;'}</Button>
+              <Button fullWidth onClick={sendResetEmail} disabled={loading||!email.trim()}>{loading?'Sending...':'Send Reset Link →'}</Button>
               <button onClick={()=>{setAuthMode('login');setError('');}} style={{ fontSize:12, color:'var(--text-3)', background:'none', border:'none', cursor:'pointer', textAlign:'center', width:'100%' }}>&larr; Back to Log In</button>
             </div>
           </>)}
@@ -575,13 +596,13 @@ export default function Home() {
               <Input className="text-center" type="text" placeholder="000000" maxLength={6} value={otp} onChange={e=>setOtp(e.target.value.replace(/\D/g,''))} onKeyDown={e=>e.key==='Enter'&&verifyOtp()}/>
               {error&&<p style={{ color:'var(--red)', fontSize:13, marginTop:8 }}>{error}</p>}
               <div style={{ marginTop:12, display:'flex', flexDirection:'column', gap:8 }}>
-                <Button fullWidth onClick={verifyOtp} disabled={loading||otp.length<6}>{loading?'Verifying...':'Verify OTP &rarr;'}</Button>
+                <Button fullWidth onClick={verifyOtp} disabled={loading||otp.length<6}>{loading?'Verifying...':'Verify OTP →'}</Button>
                 <Button variant="ghost" fullWidth onClick={()=>{setOtpSent(false);setOtp('');setError('');}}>Change email</Button>
               </div>
             </>):(<>
               <Input type="email" placeholder="Email address" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==='Enter'&&sendOtp()}/>
               {error&&<p style={{ color:'var(--red)', fontSize:13, marginTop:8 }}>{error}</p>}
-              <Button fullWidth onClick={sendOtp} disabled={loading||!email.trim()} className="mt-3">{loading?'Sending...':'Send OTP &rarr;'}</Button>
+              <Button fullWidth onClick={sendOtp} disabled={loading||!email.trim()} className="mt-3">{loading?'Sending...':'Send OTP →'}</Button>
             </>)}
           </>)}
         </Card>
