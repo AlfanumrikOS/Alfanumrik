@@ -1,161 +1,85 @@
+═══════════════════════════════════════════════════════════
+ SAVE AS: supabase.ts
+ PATH:    src/lib/supabase.ts
+ ACTION:  CREATE new file (create folder src/lib/ if needed)
+═══════════════════════════════════════════════════════════
+
 import { createClient } from '@supabase/supabase-js';
-import type {
-  Student,
-  Subject,
-  StudentLearningProfile,
-  CurriculumTopic,
-  FeatureFlag,
-  StudentSnapshot,
-} from './types';
 
-/* ─── Supabase Client ─────────────────────────────────────── */
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-export const supabase = createClient(url, key);
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-/* ─── Typed API Layer ─────────────────────────────────────── */
-/* Inspired by Khan Academy's genqlient — every DB call is     */
-/* wrapped with proper types, error handling, and caching.     */
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-/** Get all learning profiles for a student */
-export async function getStudentProfiles(studentId: string): Promise<StudentLearningProfile[]> {
-  const { data, error } = await supabase
-    .from('student_learning_profiles')
-    .select('*')
-    .eq('student_id', studentId)
-    .order('xp', { ascending: false });
-  if (error) console.error('[API] getStudentProfiles:', error.message);
-  return (data as StudentLearningProfile[]) ?? [];
+/* ── RPC helpers ── */
+
+export async function getDashboardData(studentId: string) {
+  const { data, error } = await supabase.rpc('get_dashboard_data', { p_student_id: studentId });
+  if (error) throw error;
+  return data;
 }
 
-/** Get active subjects */
-export async function getSubjects(): Promise<Subject[]> {
-  const { data, error } = await supabase
-    .from('subjects')
-    .select('*')
-    .eq('is_active', true)
-    .order('display_order');
-  if (error) console.error('[API] getSubjects:', error.message);
-  return (data as Subject[]) ?? [];
+export async function getQuizQuestions(subject: string, grade: string, count = 10) {
+  const { data, error } = await supabase.rpc('get_quiz_questions', {
+    p_subject: subject,
+    p_grade: grade,
+    p_count: count,
+  });
+  if (error) throw error;
+  return data;
 }
 
-/** Get feature flags as a keyed object */
-export async function getFeatureFlags(): Promise<Record<string, boolean>> {
-  const { data, error } = await supabase
-    .from('feature_flags')
-    .select('flag_name, is_enabled');
-  if (error) console.error('[API] getFeatureFlags:', error.message);
-  const flags: Record<string, boolean> = {};
-  (data ?? []).forEach((f: any) => { flags[f.flag_name] = f.is_enabled; });
-  return flags;
-}
-
-/** Get next recommended topics for a student */
-export async function getNextTopics(
+export async function submitQuizResults(
   studentId: string,
-  subject: string | null,
+  subject: string,
   grade: string,
-  limit = 5
-): Promise<CurriculumTopic[]> {
-  if (!subject) return [];
-  const { data: subjectRow } = await supabase
-    .from('subjects')
-    .select('id')
-    .eq('code', subject)
-    .single();
-  if (!subjectRow) return [];
-
-  const { data, error } = await supabase
-    .from('curriculum_topics')
-    .select('*')
-    .eq('subject_id', subjectRow.id)
-    .eq('grade', grade)
-    .eq('is_active', true)
-    .order('display_order')
-    .limit(limit);
-  if (error) console.error('[API] getNextTopics:', error.message);
-  return (data as CurriculumTopic[]) ?? [];
-}
-
-/** Get due review items */
-export async function getDueReviews(studentId: string, limit = 20) {
-  const { data, error } = await supabase
-    .from('concept_mastery')
-    .select('*')
-    .eq('student_id', studentId)
-    .lte('next_review_at', new Date().toISOString())
-    .limit(limit);
-  if (error) console.error('[API] getDueReviews:', error.message);
-  return data ?? [];
-}
-
-/** Get student snapshot (aggregated stats) */
-export async function getStudentSnapshot(studentId: string): Promise<StudentSnapshot | null> {
-  // Aggregate from profiles
-  const profiles = await getStudentProfiles(studentId);
-  if (!profiles.length) return null;
-
-  const totalXp = profiles.reduce((a, p) => a + (p.xp ?? 0), 0);
-  const streak = Math.max(...profiles.map((p) => p.streak_days ?? 0), 0);
-
-  // Count mastery
-  const { count: mastered } = await supabase
-    .from('topic_mastery')
-    .select('*', { count: 'exact', head: true })
-    .eq('student_id', studentId)
-    .gte('mastery_score', 80);
-
-  const { count: inProgress } = await supabase
-    .from('topic_mastery')
-    .select('*', { count: 'exact', head: true })
-    .eq('student_id', studentId)
-    .lt('mastery_score', 80);
-
-  const { count: quizzes } = await supabase
-    .from('quiz_sessions')
-    .select('*', { count: 'exact', head: true })
-    .eq('student_id', studentId);
-
-  return {
-    total_xp: totalXp,
-    current_streak: streak,
-    topics_mastered: mastered ?? 0,
-    topics_in_progress: inProgress ?? 0,
-    quizzes_taken: quizzes ?? 0,
-    avg_score: 0,
-  };
-}
-
-/** Send message to Foxy tutor edge function */
-export async function chatWithFoxy(payload: {
-  message: string;
-  student_id: string;
-  session_id?: string;
-  subject?: string;
-  grade?: string;
-  language?: string;
-  mode?: string;
-}): Promise<{ reply: string; session_id: string }> {
-  const { data, error } = await supabase.functions.invoke('foxy-tutor', {
-    body: payload,
+  topic: string,
+  chapter: number,
+  responses: any[],
+  time: number,
+) {
+  const { data, error } = await supabase.rpc('submit_quiz_results', {
+    p_student_id: studentId,
+    p_subject: subject,
+    p_grade: grade,
+    p_topic: topic,
+    p_chapter: chapter,
+    p_responses: responses,
+    p_time: time,
   });
-  if (error) {
-    console.error('[API] chatWithFoxy:', error.message);
-    return { reply: 'Sorry, Foxy is having trouble right now. Try again!', session_id: payload.session_id ?? '' };
-  }
+  if (error) throw error;
   return data;
 }
 
-/** Submit a quiz via edge function */
-export async function submitQuiz(payload: {
-  student_id: string;
-  subject: string;
-  topic_id?: string;
-  responses: Array<{ question_id: string; answer: string; correct: boolean }>;
-}) {
-  const { data, error } = await supabase.functions.invoke('quiz-submit', {
-    body: payload,
-  });
-  if (error) console.error('[API] submitQuiz:', error.message);
+export async function getLeaderboard(period = 'weekly', limit = 20) {
+  const { data, error } = await supabase.rpc('get_leaderboard', { p_period: period, p_limit: limit });
+  if (error) throw error;
   return data;
+}
+
+export async function getStudyPlan(studentId: string) {
+  const { data, error } = await supabase.rpc('get_study_plan', { p_student_id: studentId });
+  if (error) throw error;
+  return data;
+}
+
+export async function getReviewCards(studentId: string, limit = 10) {
+  const { data, error } = await supabase.rpc('get_review_cards', { p_student_id: studentId, p_limit: limit });
+  if (error) throw error;
+  return data;
+}
+
+/* ── Foxy tutor edge function ── */
+
+export async function sendToFoxy(messages: any[], studentContext: any) {
+  const res = await fetch(`${supabaseUrl}/functions/v1/foxy-tutor`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${supabaseAnonKey}`,
+    },
+    body: JSON.stringify({ messages, studentContext }),
+  });
+  if (!res.ok) throw new Error(`Foxy error: ${res.status}`);
+  return res.json();
 }
