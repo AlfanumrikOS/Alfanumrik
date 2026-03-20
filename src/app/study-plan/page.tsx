@@ -238,13 +238,13 @@ export default function StudyPlanPage() {
                         const s = STATUS_STYLES[task.status] || STATUS_STYLES.pending;
                         const icon = TASK_ICONS[task.task_type] || TASK_ICONS.default;
                         return (
-                          <Card
+                          <div
                             key={task.id}
-                            className="!p-3.5"
+                            className="rounded-2xl p-3.5 relative overflow-hidden"
                             style={{
                               background: s.bg,
-                              borderColor: s.border,
-                            } as any}
+                              border: `1px solid ${s.border}`,
+                            }}
                           >
                             <div className="flex items-start gap-3">
                               <span className="text-xl mt-0.5">{icon}</span>
@@ -346,7 +346,7 @@ export default function StudyPlanPage() {
                                 )}
                               </div>
                             </div>
-                          </Card>
+                          </div>
                         );
                       })}
                     </div>
