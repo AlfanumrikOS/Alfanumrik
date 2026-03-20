@@ -214,9 +214,10 @@ export default function Dashboard() {
                   color={s.color}
                   active={student.preferred_subject === s.code}
                   size="sm"
-                  onClick={() => {
-                    supabase.from('students').update({ preferred_subject: s.code }).eq('id', student.id);
-                    router.push(`/learn/${s.code}`);
+                  onClick={async () => {
+                    await supabase.from('students').update({ preferred_subject: s.code }).eq('id', student.id);
+                    if (typeof window !== 'undefined') localStorage.setItem('alfanumrik_subject', s.code);
+                    router.push('/foxy');
                   }}
                 />
               ))}
