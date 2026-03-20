@@ -1,14 +1,6 @@
-import LearnPageClient from './LearnPageClient';
+export const dynamic = 'force-dynamic';
 
-export function generateStaticParams() {
-  return [
-    { subject: 'math' },
-    { subject: 'science' },
-    { subject: 'english' },
-    { subject: 'hindi' },
-    { subject: 'social_science' },
-  ];
-}
+import LearnPageClient from './LearnPageClient';
 
 export default function LearnPage() {
   return <LearnPageClient />;
