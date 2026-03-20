@@ -1,52 +1,39 @@
-// ============================================================
-// Alfanumrik — Unified Types (matched to dxipobqngyfpqbbznojz schema)
-// ============================================================
-
-export type Language = 'en' | 'hi' | 'hinglish' | 'ta' | 'te' | 'bn';
-export type Board = 'CBSE' | 'ICSE' | 'State Board' | 'IB' | 'Cambridge' | 'IGCSE' | 'Other';
-export type MasteryLevel = 'not_started' | 'developing' | 'familiar' | 'proficient' | 'mastered';
-export type SessionMode = 'learn' | 'practice' | 'doubt' | 'quiz' | 'review';
-export type PersonaId = 'friendly_primary' | 'concept_master' | 'exam_coach' | 'jee_neet_coach' | 'olympiad_mentor';
+/* ─── Alfanumrik Type Definitions ─────────────────────────── */
+/* Equivalent to Khan Academy's genqlient type-safe schema     */
 
 export interface Student {
   id: string;
   auth_user_id: string | null;
   name: string;
   email: string | null;
+  phone: string | null;
+  avatar_url: string | null;
   grade: string;
-  board: string;
-  preferred_language: Language;
-  preferred_subject: string;
+  board: string | null;
+  preferred_language: string;
+  preferred_subject: string | null;
+  onboarding_completed: boolean | null;
+  is_active: boolean | null;
   school_name: string | null;
   city: string | null;
-  onboarding_completed: boolean;
-  created_at: string;
-}
-
-export interface LearningProfile {
-  id: string;
-  student_id: string;
-  subject: string;
-  xp: number;
-  level: number;
-  streak_days: number;
-  longest_streak: number;
-  total_sessions: number;
-  total_time_minutes: number;
-  last_session_at: string | null;
-}
-
-export interface LearningSnapshot {
-  total_xp: number;
-  total_sessions: number;
-  total_questions_asked: number;
-  topics_mastered: number;
-  topics_in_progress: number;
-  current_streak: number;
-  active_misconceptions: number;
-  pending_reviews: number;
-  quizzes_taken: number;
-  avg_quiz_score: number;
+  state: string | null;
+  xp_total: number | null;
+  streak_days: number | null;
+  last_active: string | null;
+  subscription_plan: string | null;
+  subscription_expiry: string | null;
+  learning_style: string | null;
+  academic_goal: string | null;
+  interests: string[] | null;
+  weak_subjects: string[] | null;
+  strong_subjects: string[] | null;
+  daily_study_hours: number | null;
+  account_status: string;
+  parent_name: string | null;
+  parent_phone: string | null;
+  target_exam: string | null;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 export interface Subject {
@@ -56,128 +43,90 @@ export interface Subject {
   icon: string;
   color: string;
   is_active: boolean;
+  display_order: number;
 }
 
-export interface ChatMessage {
+export interface StudentLearningProfile {
   id: string;
-  role: 'student' | 'foxy' | 'system';
-  content: string;
-  timestamp: number;
+  student_id: string;
+  subject: string;
+  current_level: string | null;
+  xp: number;
+  level: number;
+  streak_days: number;
+  longest_streak: number;
+  total_sessions: number;
+  total_questions_asked: number;
+  total_questions_answered_correctly: number;
+  total_time_minutes: number;
+  last_session_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
-export interface TutorPersona {
-  persona_id: PersonaId;
-  display_name: string;
-  description: string;
-}
-
-export interface QuizQuestion {
+export interface CurriculumTopic {
   id: string;
-  question_text: string;
-  question_text_vernacular?: string;
-  question_type: 'mcq' | 'short' | 'long';
-  options?: Array<{ id: string; text: string; text_vernacular?: string }>;
-  correct_answer: string;
-  explanation?: string;
-  bloom_level?: string;
-  difficulty?: number;
-  topic_id?: string;
+  subject_id: string;
+  title: string;
+  title_hi: string | null;
+  description: string | null;
+  grade: string;
+  board: string | null;
+  chapter_number: number | null;
+  difficulty_level: number;
+  estimated_minutes: number | null;
+  tags: string[] | null;
+  is_active: boolean;
+  display_order: number;
+  learning_objectives: string[] | null;
+  bloom_focus: string | null;
+  ncert_page_range: string | null;
+  topic_type: string | null;
+}
+
+export interface FeatureFlag {
+  id: string;
+  flag_name: string;
+  is_enabled: boolean;
+  rollout_percentage: number;
+  target_grades: string[] | null;
+  description: string | null;
 }
 
 export interface Achievement {
   id: string;
-  code: string;
   title: string;
-  title_vernacular?: string;
   description: string;
   icon: string;
-  xp_reward: number;
   category: string;
-}
-
-export interface StudyPlanTask {
-  id: string;
-  plan_id: string;
-  student_id: string;
-  day_number: number;
-  scheduled_date: string;
-  task_order: number;
-  task_type: string;
-  subject: string;
-  title: string;
-  description: string;
-  estimated_minutes: number;
-  is_completed: boolean;
   xp_reward: number;
+  condition_type: string;
+  condition_value: number;
 }
 
-export interface ConceptNode {
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp?: string;
+}
+
+export interface StudentSnapshot {
+  total_xp: number;
+  current_streak: number;
+  topics_mastered: number;
+  topics_in_progress: number;
+  quizzes_taken: number;
+  avg_score: number;
+}
+
+export interface QuizSession {
   id: string;
+  student_id: string;
   subject: string;
-  grade: string;
-  chapter: string;
-  topic: string;
-  title: string;
-  titleHi?: string;
-  bloomLevel: string;
-  prerequisites: string[];
-  difficulty: number;
-  discrimination: number;
-  cbseCompetency?: string;
+  topic_id: string | null;
+  total_questions: number;
+  correct_answers: number;
+  score_percent: number;
+  xp_earned: number;
+  completed_at: string | null;
 }
-
-export interface Question {
-  id: string;
-  conceptId: string;
-  type: 'mcq' | 'short' | 'long';
-  bloomLevel: string;
-  difficulty: number;
-  questionText: string;
-  questionTextHi?: string;
-  options?: Array<{ id: string; text: string; isCorrect: boolean }>;
-  correctAnswer: string;
-  explanation?: string;
-  explanationHi?: string;
-  hint?: string;
-  misconceptionTag?: string;
-}
-
-export interface Simulation {
-  id: string;
-  subject: string;
-  grade: string;
-  title: string;
-  titleHi: string;
-  description: string;
-  url: string;
-}
-
-export interface Badge {
-  id: string;
-  title: string;
-  titleHi: string;
-  description: string;
-  icon: string;
-  xpReward: number;
-}
-
-export interface SubscriptionPlan {
-  id: string;
-  plan_code: string;
-  name: string;
-  tagline: string;
-  price_monthly: number;
-  price_yearly: number;
-}
-
-export const GRADES = ['6','7','8','9','10','11','12'];
-export const BOARDS: Board[] = ['CBSE','ICSE','State Board','IB','Cambridge','IGCSE','Other'];
-export const LANGUAGES: Array<{ code: Language; label: string; labelNative: string }> = [
-  { code: 'en',       label: 'English',   labelNative: 'English' },
-  { code: 'hi',       label: 'Hindi',     labelNative: 'हिन्दी' },
-  { code: 'hinglish', label: 'Hinglish',  labelNative: 'Hinglish' },
-  { code: 'ta',       label: 'Tamil',     labelNative: 'தமிழ்' },
-  { code: 'te',       label: 'Telugu',    labelNative: 'తెలుగు' },
-  { code: 'bn',       label: 'Bengali',   labelNative: 'বাংলা' },
-];
-export type BloomLevel = 'remember' | 'understand' | 'apply' | 'analyze' | 'evaluate' | 'create';
