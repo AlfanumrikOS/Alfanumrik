@@ -45,6 +45,7 @@ export default function Home() {
   const [name, setName] = useState(''); const [grade, setGrade] = useState('9');
   const [board, setBoard] = useState('CBSE'); const [lang, setLang] = useState('en');
   const [subject, setSubject] = useState('math'); const [saving, setSaving] = useState(false);
+  const [selectedSubs, setSelectedSubs] = useState<string[]>(['math']);
   const [schoolName, setSchoolName] = useState('');
   const [subjectsTaught, setSubjectsTaught] = useState<string[]>(['math']);
   const [gradesTaught, setGradesTaught] = useState<string[]>(['9']);
@@ -183,7 +184,7 @@ export default function Home() {
     setSaving(true);
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setSaving(false); return; }
-    await supabase.from('students').update({ preferred_subject: subject, onboarding_completed: true }).eq('auth_user_id', user.id);
+    const subs = selectedSubs.length > 0 ? selectedSubs : [subject]; await supabase.from('students').update({ preferred_subject: subs[0], selected_subjects: subs, onboarding_completed: true }).eq('auth_user_id', user.id);
     await refreshStudent(); router.replace('/dashboard'); setSaving(false);
   };
   const tog = (a: string[], i: string, s: (v: string[]) => void) => s(a.includes(i)?a.filter(x=>x!==i):[...a,i]);
@@ -695,16 +696,16 @@ export default function Home() {
         <Card className="w-full max-w-md animate-slide-up !p-8">
           <div style={{ textAlign:'center', marginBottom:20 }}>
             <div style={{ fontSize:40, marginBottom:6 }}>📚</div>
-            <h2 style={{ fontFamily:'var(--font-display)', fontWeight:800, fontSize:22 }}>Pick your main subject</h2>
-            <p style={{ fontSize:13, color:'var(--text-3)', marginTop:4 }}>You can study all — this is your home base</p>
+            <h2 style={{ fontFamily:'var(--font-display)', fontWeight:800, fontSize:22 }}>Pick your subjects</h2>
+            <p style={{ fontSize:13, color:'var(--text-3)', marginTop:4 }}>Select all the subjects you want to study</p>
           </div>
           <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:8, marginBottom:20 }}>
-            {av.map(s=><button key={s.code} onClick={()=>setSubject(s.code)} style={{ padding:16, borderRadius:14, textAlign:'left', cursor:'pointer', background:subject===s.code?`${s.color}12`:'var(--surface-2)', border:`1.5px solid ${subject===s.code?s.color:'var(--border)'}` }}>
+            {av.map(s=><button key={s.code} onClick={()=>setSelectedSubs(p=>p.includes(s.code)?p.filter(x=>x!==s.code):[...p,s.code])} style={{ padding:16, borderRadius:14, textAlign:'left', cursor:'pointer', background:selectedSubs.includes(s.code)?`${s.color}12`:'var(--surface-2)', border:`1.5px solid ${selectedSubs.includes(s.code)?s.color:'var(--border)'}` }}>
               <div style={{ fontSize:24, marginBottom:4 }}>{s.icon}</div>
               <div style={{ fontSize:13, fontWeight:700, color:subject===s.code?s.color:'var(--text-1)' }}>{s.name}</div>
             </button>)}
           </div>
-          <Button fullWidth onClick={saveSubject} disabled={saving}>{saving?'Setting up…':'Start Learning 🚀'}</Button>
+          <Button fullWidth onClick={saveSubject} disabled={saving||selectedSubs.length===0}>{saving?'Setting up…':'Start Learning 🚀'}</Button>
         </Card>
       </div>
     );
