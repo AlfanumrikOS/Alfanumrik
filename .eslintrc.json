@@ -1,0 +1,13 @@
+═══════════════════════════════════════════════════════════
+ SAVE AS: .eslintrc.json
+ PATH:    (root of your Alfanumrik repo)
+ ACTION:  REPLACE existing file
+═══════════════════════════════════════════════════════════
+
+{
+  "extends": "next/core-web-vitals",
+  "rules": {
+    "@next/next/no-img-element": "off",
+    "react/no-unescaped-entities": "off"
+  }
+}
