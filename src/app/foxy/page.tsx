@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/AuthContext";
+import { BottomNav } from "@/components/ui";
 
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://dxipobqngyfpqbbznojz.supabase.co";
 const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR4aXBvYnFuZ3lmcHFiYnpub2p6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDE1ODQ1MDcsImV4cCI6MjA1NzE2MDUwN30.CZJH4VPQa6MHmYkXXxnEFPkfGhJnBPqMlG3MwjUe3tE";
@@ -16,42 +17,42 @@ const SUBJECTS: Record<string, {name:string;icon:string;color:string;symbols:str
   biology:{name:"Biology",icon:"\u2695",color:"#22C55E",symbols:["\u2642","\u2640","\u00D7","\u2192","\u21D2","ATP","DNA","RNA","mRNA","CO2","O2","H2O"],tools:["Cell Diagram","Taxonomy Tree","Body Systems","Genetics Calc"]}
 };
 
-const LANGS = [{code:"en",label:"English"},{code:"hi",label:"Hindi"},{code:"hinglish",label:"Hinglish"},{code:"ta",label:"Tamil"},{code:"te",label:"Telugu"},{code:"bn",label:"Bangla"}];
-const MODES = [{id:"learn",label:"Learn",color:"#3B82F6"},{id:"practice",label:"Practice",color:"#10B981"},{id:"quiz",label:"Quiz",color:"#F59E0B"},{id:"doubt",label:"Doubt",color:"#8B5CF6"},{id:"revision",label:"Revise",color:"#EF4444"},{id:"notes",label:"Notes",color:"#06B6D4"}];
+const LANGS = [{code:"en",label:"EN"},{code:"hi",label:"HI"},{code:"hinglish",label:"Hing"}];
+const MODES = [{id:"learn",label:"Learn",em:"📖"},{id:"practice",label:"Practice",em:"✏️"},{id:"quiz",label:"Quiz",em:"⚡"},{id:"doubt",label:"Doubt",em:"❓"},{id:"revision",label:"Revise",em:"🔄"},{id:"notes",label:"Notes",em:"📝"}];
 
 async function sbGet(path:string){try{const r=await fetch(SB_URL+"/rest/v1/"+path,{headers:{apikey:SB_KEY,Authorization:"Bearer "+SB_KEY,"Content-Type":"application/json"}});if(!r.ok)return null;return r.json();}catch{return null;}}
 async function foxyCall(p:object){try{const r=await fetch(SB_URL+"/functions/v1/foxy-tutor",{method:"POST",headers:{Authorization:"Bearer "+SB_KEY,"Content-Type":"application/json"},body:JSON.stringify(p)});if(!r.ok)return{reply:"Foxy is resting. Try again!"};return r.json();}catch{return{reply:"Connection issue. Retry!"};}}
 
+/* ── Rich text renderer (preserving all existing logic) ── */
 function cleanMd(t:string):string{return t.replace(/\*\*([^*]+)\*\*/g,"[KEY: $1]").replace(/__([^_]+)__/g,"[KEY: $1]").replace(/\*([^*]+)\*/g,"$1").replace(/_([^_]+)_/g,"$1").replace(/`([^`]+)`/g,"[FORMULA: $1]").replace(/^#{1,4}\s+/gm,"");}
-function renderInline(text:string,c:{color:string;icon:string}){const clean=cleanMd(text);const parts:JSX.Element[]=[];const re=/\[(KEY|ANS|FORMULA|DIAGRAM|TIP|MARKS):\s*([^\]]+)\]/g;let m;let last=0;let ki=0;while((m=re.exec(clean))!==null){if(m.index>last)parts.push(<span key={ki++}>{clean.substring(last,m.index)}</span>);const tag=m[1],val=m[2];if(tag==="KEY")parts.push(<span key={ki++} style={{color:c.color,fontWeight:700,borderBottom:"2px solid "+c.color+"40",paddingBottom:1}}>{val}</span>);else if(tag==="ANS")parts.push(<span key={ki++} style={{display:"inline-block",padding:"4px 14px",margin:"4px 2px",border:"2px solid "+c.color,borderRadius:8,fontWeight:800,color:c.color,background:c.color+"08",fontSize:15}}>{val}</span>);else if(tag==="FORMULA")parts.push(<span key={ki++} style={{display:"inline-block",padding:"6px 14px",margin:"4px 0",background:"#1a1a2e08",border:"1px solid #1a1a2e15",borderRadius:8,fontFamily:"monospace",fontSize:13,fontWeight:600,color:"#1a1a2e"}}>{val}</span>);else if(tag==="DIAGRAM")parts.push(<div key={ki++} style={{margin:"10px 0",padding:"16px",background:"linear-gradient(135deg,#f0fdf4,#ecfdf5)",border:"1px dashed #22c55e60",borderRadius:12,textAlign:"center"}}><div style={{fontSize:20,marginBottom:6}}>{"\u270F\uFE0F"}</div><div style={{fontSize:12,fontWeight:700,color:"#16a34a"}}>DIAGRAM: {val}</div><div style={{fontSize:10,color:"#6b7280",marginTop:4}}>Draw with pencil, label with pen</div></div>);else if(tag==="TIP")parts.push(<div key={ki++} style={{margin:"8px 0",padding:"10px 14px",background:"linear-gradient(135deg,#fffbeb,#fef3c7)",border:"1px solid #f59e0b30",borderRadius:10,fontSize:12,color:"#92400e"}}><span style={{fontWeight:800}}>Exam Tip: </span>{val}</div>);else if(tag==="MARKS")parts.push(<span key={ki++} style={{display:"inline-block",padding:"2px 8px",borderRadius:10,background:"#7c3aed15",color:"#7c3aed",fontSize:11,fontWeight:700,marginLeft:4}}>({val} marks)</span>);last=m.index+m[0].length;}if(last<clean.length)parts.push(<span key={ki++}>{clean.substring(last)}</span>);return parts.length>0?<>{parts}</>:<span>{clean}</span>;}
+function renderInline(text:string,c:{color:string;icon:string}){const clean=cleanMd(text);const parts:JSX.Element[]=[];const re=/\[(KEY|ANS|FORMULA|DIAGRAM|TIP|MARKS):\s*([^\]]+)\]/g;let m;let last=0;let ki=0;while((m=re.exec(clean))!==null){if(m.index>last)parts.push(<span key={ki++}>{clean.substring(last,m.index)}</span>);const tag=m[1],val=m[2];if(tag==="KEY")parts.push(<span key={ki++} className="font-bold" style={{color:c.color,borderBottom:"2px solid "+c.color+"40",paddingBottom:1}}>{val}</span>);else if(tag==="ANS")parts.push(<span key={ki++} className="inline-block px-3 py-1 my-1 rounded-lg font-extrabold text-sm" style={{border:"2px solid "+c.color,color:c.color,background:c.color+"08"}}>{val}</span>);else if(tag==="FORMULA")parts.push(<span key={ki++} className="inline-block px-3 py-1.5 my-1 rounded-lg font-semibold text-xs" style={{background:"var(--surface-2)",border:"1px solid var(--border)",fontFamily:"monospace"}}>{val}</span>);else if(tag==="TIP")parts.push(<div key={ki++} className="my-2 px-3 py-2.5 rounded-xl text-xs" style={{background:"#fffbeb",border:"1px solid #f59e0b30",color:"#92400e"}}><span className="font-extrabold">Exam Tip: </span>{val}</div>);else if(tag==="MARKS")parts.push(<span key={ki++} className="inline-block px-2 py-0.5 rounded-lg text-[11px] font-bold ml-1" style={{background:"#7c3aed15",color:"#7c3aed"}}>({val} marks)</span>);last=m.index+m[0].length;}if(last<clean.length)parts.push(<span key={ki++}>{clean.substring(last)}</span>);return parts.length>0?<>{parts}</>:<span>{clean}</span>;}
 function Rich({content,subject}:{content:string;subject:string}){const c=SUBJECTS[subject]||SUBJECTS.science;if(!content)return null;const text=cleanMd(content);const lines=text.split("\n");const el:JSX.Element[]=[];let li:string[]=[];let lk:string|null=null;
-function fl(){if(li.length>0){el.push(<div key={"l"+el.length} style={{margin:"12px 0",padding:"12px 16px",background:c.color+"08",borderLeft:"3px solid "+c.color,borderRadius:"0 12px 12px 0"}}>{li.map((item,i)=><div key={i} style={{display:"flex",gap:10,padding:"6px 0",alignItems:"flex-start",borderBottom:i<li.length-1?"1px solid #f0f0f0":"none"}}><span style={{minWidth:24,height:24,borderRadius:"50%",background:c.color+"20",color:c.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,flexShrink:0}}>{lk==="num"?i+1:"\u2022"}</span><span style={{lineHeight:1.6}}>{renderInline(item,c)}</span></div>)}</div>);li=[];lk=null;}}
-lines.forEach((line,idx)=>{const t=line.trim();if(t.startsWith("###")){fl();el.push(<h4 key={idx} style={{fontSize:14,fontWeight:700,color:c.color,margin:"16px 0 8px",textTransform:"uppercase",letterSpacing:1}}>{c.icon+" "+t.replace(/^###\s*/,"")}</h4>);}else if(t.startsWith("##")){fl();el.push(<h3 key={idx} style={{fontSize:16,fontWeight:700,color:"#1a1a2e",margin:"18px 0 10px",paddingBottom:8,borderBottom:"2px solid "+c.color+"30"}}>{t.replace(/^##\s*/,"")}</h3>);}else if(t.startsWith(">")){fl();el.push(<div key={idx} style={{margin:"12px 0",padding:"14px 16px",background:c.color+"08",border:"1px solid "+c.color+"25",borderRadius:12,fontSize:14,lineHeight:1.7}}>{renderInline(t.replace(/^>\s*/,""),c)}</div>);}else if(/^\d+[.)]\s/.test(t)){if(lk!=="num"){fl();lk="num";}li.push(t.replace(/^\d+[.)]\s*/,""));}else if(/^[-\u2022*]\s/.test(t)){if(lk!=="bul"){fl();lk="bul";}li.push(t.replace(/^[-\u2022*]\s*/,""));}else if(!t){fl();el.push(<div key={idx} style={{height:8}}/>);}else{fl();el.push(<p key={idx} style={{margin:"6px 0",lineHeight:1.75,color:"#374151"}}>{renderInline(t,c)}</p>);}});fl();return <div>{el}</div>;}
-function Input({onSubmit,subject}:{onSubmit:(t:string)=>void;subject:string}){
-  const[points,setPoints]=useState([""]);const[mode,setMode]=useState("free");const c=SUBJECTS[subject]||SUBJECTS.science;const[showSym,setShowSym]=useState(false);const[showTools,setShowTools]=useState(false);const taRef=useRef<HTMLTextAreaElement>(null);const[aPt,setAPt]=useState(0);
-  function ins(s:string){if(mode==="points"){const u=[...points];u[aPt]=(u[aPt]||"")+s;setPoints(u);}else if(taRef.current){const ta=taRef.current;const st=ta.selectionStart;ta.value=ta.value.substring(0,st)+s+ta.value.substring(ta.selectionEnd);ta.selectionStart=ta.selectionEnd=st+s.length;ta.focus();}}
-  function go(){if(mode==="points"){const f=points.filter(p=>p.trim());if(!f.length)return;onSubmit(f.map((p,i)=>(i+1)+". "+p).join("\n"));setPoints([""]);}else{const v=taRef.current?.value?.trim();if(!v)return;onSubmit(v);if(taRef.current)taRef.current.value="";}}
-  function kd(e:React.KeyboardEvent){if(e.key==="Enter"&&!e.shiftKey&&mode==="free"){e.preventDefault();go();}if(e.key==="Enter"&&mode==="points"){e.preventDefault();setPoints([...points,""]);}}
-  return(<div style={{padding:"16px 20px",background:"#fff",borderTop:"1px solid #e5e7eb"}}>
-    <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>
-      <span style={{fontSize:11,color:"#9ca3af",fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>Answer:</span>
-      {[{id:"free",l:"Free Text"},{id:"points",l:"Point-wise"}].map(m=><button key={m.id} onClick={()=>setMode(m.id)} style={{padding:"4px 12px",borderRadius:20,border:mode===m.id?"2px solid "+c.color:"1px solid #e5e7eb",background:mode===m.id?c.color+"10":"#fff",color:mode===m.id?c.color:"#6b7280",fontSize:12,fontWeight:600,cursor:"pointer"}}>{m.l}</button>)}
-      <button onClick={()=>setShowSym(!showSym)} style={{marginLeft:"auto",padding:"4px 12px",borderRadius:20,border:showSym?"2px solid "+c.color:"1px solid #e5e7eb",background:showSym?c.color+"10":"#fff",color:showSym?c.color:"#6b7280",fontSize:12,fontWeight:600,cursor:"pointer"}}>{c.icon} Symbols</button>
-      <button onClick={()=>setShowTools(!showTools)} style={{padding:"4px 12px",borderRadius:20,border:showTools?"2px solid "+c.color:"1px solid #e5e7eb",background:showTools?c.color+"10":"#fff",color:showTools?c.color:"#6b7280",fontSize:12,fontWeight:600,cursor:"pointer"}}>Tools</button>
+function fl(){if(li.length>0){el.push(<div key={"l"+el.length} className="my-3 px-4 py-3 rounded-r-xl" style={{background:c.color+"08",borderLeft:"3px solid "+c.color}}>{li.map((item,i)=><div key={i} className="flex gap-2.5 py-1.5 items-start" style={{borderBottom:i<li.length-1?"1px solid #f0f0f0":"none"}}><span className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{background:c.color+"20",color:c.color}}>{lk==="num"?i+1:"\u2022"}</span><span className="leading-relaxed">{renderInline(item,c)}</span></div>)}</div>);li=[];lk=null;}}
+lines.forEach((line,idx)=>{const t=line.trim();if(t.startsWith("###")){fl();el.push(<h4 key={idx} className="text-sm font-bold mt-4 mb-2 uppercase tracking-wide" style={{color:c.color}}>{c.icon+" "+t.replace(/^###\s*/,"")}</h4>);}else if(t.startsWith("##")){fl();el.push(<h3 key={idx} className="text-base font-bold mt-4 mb-2 pb-2" style={{borderBottom:"2px solid "+c.color+"30"}}>{t.replace(/^##\s*/,"")}</h3>);}else if(t.startsWith(">")){fl();el.push(<div key={idx} className="my-3 px-4 py-3 rounded-xl text-sm leading-relaxed" style={{background:c.color+"08",border:"1px solid "+c.color+"25"}}>{renderInline(t.replace(/^>\s*/,""),c)}</div>);}else if(/^\d+[.)]\s/.test(t)){if(lk!=="num"){fl();lk="num";}li.push(t.replace(/^\d+[.)]\s*/,""));}else if(/^[-\u2022*]\s/.test(t)){if(lk!=="bul"){fl();lk="bul";}li.push(t.replace(/^[-\u2022*]\s*/,""));}else if(!t){fl();el.push(<div key={idx} className="h-2"/>);}else{fl();el.push(<p key={idx} className="my-1.5 leading-[1.75] text-[var(--text-2)]">{renderInline(t,c)}</p>);}});fl();return <div>{el}</div>;}
+
+/* ── Chat Input (mobile-optimized) ── */
+function ChatInput({onSubmit,subject,disabled}:{onSubmit:(t:string)=>void;subject:string;disabled:boolean}){
+  const[text,setText]=useState("");const taRef=useRef<HTMLTextAreaElement>(null);
+  const c=SUBJECTS[subject]||SUBJECTS.science;
+  const send=()=>{if(!text.trim()||disabled)return;onSubmit(text.trim());setText("");if(taRef.current){taRef.current.style.height="auto";}};
+  const handleKey=(e:React.KeyboardEvent)=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}};
+  const autoGrow=(e:React.ChangeEvent<HTMLTextAreaElement>)=>{setText(e.target.value);e.target.style.height="auto";e.target.style.height=Math.min(e.target.scrollHeight,120)+"px";};
+  return(
+    <div className="border-t px-3 py-2.5 flex items-end gap-2" style={{background:"var(--surface-1)",borderColor:"var(--border)",paddingBottom:"max(env(safe-area-inset-bottom, 8px), 8px)"}}>
+      <textarea ref={taRef} value={text} onChange={autoGrow} onKeyDown={handleKey} placeholder="Ask Foxy anything..." rows={1}
+        className="flex-1 text-sm rounded-2xl px-4 py-2.5 resize-none outline-none leading-relaxed"
+        style={{background:"var(--surface-2)",border:"1.5px solid var(--border)",fontFamily:"var(--font-body)",maxHeight:120,minHeight:40}}/>
+      <button onClick={send} disabled={disabled||!text.trim()}
+        className="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-white text-lg font-bold transition-all active:scale-90 disabled:opacity-40"
+        style={{background:text.trim()?`linear-gradient(135deg,${c.color},${c.color}dd)`:"var(--surface-2)",color:text.trim()?"#fff":"var(--text-3)"}}>
+        {disabled?"...":"\u2191"}
+      </button>
     </div>
-    {showSym&&<div style={{display:"flex",flexWrap:"wrap",gap:4,padding:"10px 12px",background:c.color+"05",borderRadius:12,marginBottom:10,border:"1px solid "+c.color+"20",maxHeight:120,overflowY:"auto"}}>{c.symbols.map((s,i)=><button key={i} onClick={()=>ins(s)} style={{width:36,height:36,borderRadius:8,border:"1px solid #e5e7eb",background:"#fff",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"monospace"}}>{s}</button>)}</div>}
-    {showTools&&<div style={{display:"flex",gap:8,padding:"10px 0",marginBottom:10,flexWrap:"wrap"}}>{c.tools.map((t,i)=><button key={i} onClick={()=>onSubmit("/tool "+t)} style={{padding:"8px 16px",borderRadius:12,border:"1px solid #e5e7eb",background:"#fff",cursor:"pointer",fontSize:13,fontWeight:600,color:"#374151"}}>{t}</button>)}</div>}
-    {mode==="points"?<div style={{marginBottom:10}}>{points.map((pt,idx)=><div key={idx} style={{display:"flex",gap:8,alignItems:"center",marginBottom:6}}><span style={{minWidth:28,height:28,borderRadius:"50%",background:pt.trim()?c.color+"20":"#f3f4f6",color:pt.trim()?c.color:"#9ca3af",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700}}>{idx+1}</span><input value={pt} onChange={e=>{const u=[...points];u[idx]=e.target.value;setPoints(u);}} onFocus={()=>setAPt(idx)} onKeyDown={kd} placeholder={"Point "+(idx+1)+"..."} style={{flex:1,padding:"10px 14px",borderRadius:10,border:"1px solid #e5e7eb",fontSize:14,outline:"none",fontFamily:"Nunito,sans-serif"}}/>{points.length>1&&<button onClick={()=>setPoints(points.filter((_,i)=>i!==idx))} style={{width:28,height:28,borderRadius:"50%",border:"1px solid #fecaca",background:"#fef2f2",color:"#ef4444",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button>}</div>)}<button onClick={()=>setPoints([...points,""])} style={{padding:"6px 14px",borderRadius:8,border:"1px dashed "+c.color+"40",background:"transparent",color:c.color,fontSize:12,fontWeight:600,cursor:"pointer"}}>+ Add Point</button></div>:<textarea ref={taRef} onKeyDown={kd} placeholder="Type your answer or ask Foxy..." rows={2} style={{width:"100%",padding:"12px 16px",borderRadius:12,border:"1px solid #e5e7eb",fontSize:14,outline:"none",resize:"vertical",fontFamily:"Nunito,sans-serif",lineHeight:1.6,marginBottom:10,boxSizing:"border-box"}}/>}
-    <div style={{display:"flex",justifyContent:"flex-end"}}><button onClick={go} style={{padding:"10px 24px",borderRadius:12,border:"none",background:"linear-gradient(135deg,"+c.color+","+c.color+"dd)",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 12px "+c.color+"30"}}>Send to Foxy</button></div>
-  </div>);
+  );
 }
 
-function Ring({value,size=60,color,label}:{value:number;size?:number;color:string;label?:string}){const r=(size-8)/2;const ci=2*Math.PI*r;const o=ci-(value/100)*ci;return<div style={{textAlign:"center"}}><svg width={size} height={size} style={{transform:"rotate(-90deg)"}}><circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#f3f4f6" strokeWidth={4}/><circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={4} strokeDasharray={ci} strokeDashoffset={o} strokeLinecap="round" style={{transition:"stroke-dashoffset 1s ease"}}/></svg><div style={{marginTop:-size/2-8,fontSize:size>50?14:11,fontWeight:800,color,height:size,display:"flex",alignItems:"center",justifyContent:"center"}}>{Math.round(value)}%</div>{label&&<div style={{fontSize:10,color:"#9ca3af",marginTop:2,fontWeight:600}}>{label}</div>}</div>;}
-
-function TopicCard({topic,onClick,mastery,subject}:{topic:any;onClick:()=>void;mastery:any;subject:string}){const c=SUBJECTS[subject]||SUBJECTS.science;const pct=mastery?.mastery_percent||0;const lvl=mastery?.mastery_level||"not_started";const lc:Record<string,string>={not_started:"#9ca3af",beginner:"#F59E0B",developing:"#3B82F6",proficient:"#8B5CF6",mastered:"#10B981"};return<button onClick={onClick} style={{padding:"14px 16px",borderRadius:16,border:"1px solid "+(lc[lvl]||"#9ca3af")+"25",background:"#fff",cursor:"pointer",textAlign:"left",width:"100%",display:"flex",alignItems:"center",gap:14,transition:"all 0.3s",boxShadow:"0 2px 8px rgba(0,0,0,0.04)",fontFamily:"Nunito,sans-serif"}}><Ring value={pct} size={48} color={lc[lvl]||"#9ca3af"}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:700,color:"#1a1a2e",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>Ch {topic.chapter_number}: {topic.title}</div><div style={{fontSize:11,color:"#6b7280",marginTop:2,display:"flex",alignItems:"center",gap:6}}><span style={{padding:"1px 8px",borderRadius:10,background:(lc[lvl]||"#9ca3af")+"15",color:lc[lvl]||"#9ca3af",fontSize:10,fontWeight:700,textTransform:"capitalize"}}>{(lvl as string).replace("_"," ")}</span>{topic.estimated_minutes&&<span style={{fontSize:10,color:"#9ca3af"}}>{topic.estimated_minutes}m</span>}</div></div></button>;}
-
 export default function FoxyPage(){
-  const { student: authStudent, isLoggedIn, isLoading: authLoading, isHi, language: authLang } = useAuth();
+  const { student: authStudent, isLoggedIn, isLoading: authLoading } = useAuth();
   const routerNav = useRouter();
   const[student,setStudent]=useState<any>(null);
   const[activeSubject,setActiveSubject]=useState("science");
@@ -63,35 +64,23 @@ export default function FoxyPage(){
   const[language,setLanguage]=useState("en");
   const[activeTopic,setActiveTopic]=useState<any>(null);
   const[foxyState,setFoxyState]=useState("idle");
-  const[sidePanel,setSidePanel]=useState("topics");
   const[chatSessionId,setChatSessionId]=useState<string|null>(null);
   const[xpGained,setXpGained]=useState(0);
   const[streakDays,setStreakDays]=useState(0);
   const[totalXP,setTotalXP]=useState(0);
-  const[dailyActivity,setDailyActivity]=useState<any>(null);
-  const[recentNotes,setRecentNotes]=useState<any[]>([]);
   const[studentGrade,setStudentGrade]=useState("9");
+  const[showTopics,setShowTopics]=useState(false);
   const endRef=useRef<HTMLDivElement>(null);
 
-  // Auth guard: redirect to login if not authenticated
   useEffect(()=>{if(!authLoading&&!isLoggedIn)routerNav.replace("/");},[authLoading,isLoggedIn,routerNav]);
 
-  // Use authenticated student from AuthContext — no demo fallback
   useEffect(()=>{(async()=>{
     if(!authStudent)return;
-    setStudent(authStudent);
-    setTotalXP(authStudent.xp_total||0);
-    setStreakDays(authStudent.streak_days||0);
-    const grade=(authStudent.grade||"9").replace("Grade ","");
-    setStudentGrade(grade);
+    setStudent(authStudent);setTotalXP(authStudent.xp_total||0);setStreakDays(authStudent.streak_days||0);
+    const grade=(authStudent.grade||"9").replace("Grade ","");setStudentGrade(grade);
     setLanguage(authStudent.preferred_language||"en");
     const subj=typeof window!=="undefined"?(localStorage.getItem("alfanumrik_subject")||authStudent.preferred_subject||"science"):(authStudent.preferred_subject||"science");
     setActiveSubject(subj);
-    const td=new Date().toISOString().split("T")[0];
-    const act=await sbGet("daily_activity?student_id=eq."+authStudent.id+"&activity_date=eq."+td+"&limit=1");
-    if(act&&act[0])setDailyActivity(act[0]);
-    const notes=await sbGet("student_notes?student_id=eq."+authStudent.id+"&order=created_at.desc&limit=5");
-    if(notes)setRecentNotes(notes);
   })();// eslint-disable-next-line react-hooks/exhaustive-deps
   },[authStudent]);
 
@@ -107,7 +96,7 @@ export default function FoxyPage(){
   const sendMessage=useCallback(async(text:string)=>{
     if(!text.trim())return;
     setMessages(p=>[...p,{id:Date.now(),role:"student",content:text,timestamp:new Date().toISOString()}]);
-    setLoading(true);setFoxyState("thinking");
+    setLoading(true);setFoxyState("thinking");setShowTopics(false);
     try{
       const resp=await foxyCall({message:text,student_id:student?.id||"",student_name:student?.name||"Student",grade:studentGrade,subject:activeSubject,language,mode:sessionMode,topic_id:activeTopic?.id||null,topic_title:activeTopic?.title||null,session_id:chatSessionId});
       const reply=resp.reply||resp.response||resp.message||"Let me think...";const xp=resp.xp_earned||0;
@@ -122,42 +111,154 @@ export default function FoxyPage(){
   const cfg=SUBJECTS[activeSubject]||SUBJECTS.science;
   const FOXY:Record<string,string>={idle:"\uD83E\uDD8A",thinking:"\uD83E\uDD14",happy:"\uD83D\uDE04"};
 
+  if(authLoading||!student) return(
+    <div className="mesh-bg min-h-dvh flex items-center justify-center">
+      <div className="text-center"><div className="text-5xl animate-float mb-3">{FOXY.idle}</div><p className="text-sm text-[var(--text-3)]">Loading Foxy...</p></div>
+    </div>
+  );
+
   return(
-    <div style={{fontFamily:"Nunito,Segoe UI,sans-serif",height:"100vh",display:"flex",flexDirection:"column",background:"#f8fafc",color:"#1a1a2e"}}>
-      <style dangerouslySetInnerHTML={{__html:"@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');@keyframes fadeInUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}*{box-sizing:border-box;scrollbar-width:thin}"}}/>
+    <div className="min-h-dvh flex flex-col pb-nav" style={{background:"var(--surface-2)"}}>
+      {/* ── HEADER: Foxy avatar + info + lang (mobile-optimized) ── */}
+      <header className="sticky top-0 z-30 px-3 py-2.5 flex items-center gap-3" style={{background:"linear-gradient(135deg,#1a1a2e,#0f3460)",color:"#fff"}}>
+        <button onClick={()=>routerNav.push("/dashboard")} className="text-white/60 text-sm">&larr;</button>
+        <div className="w-10 h-10 rounded-full flex items-center justify-center text-xl shrink-0" style={{background:"linear-gradient(135deg,#E8590C,#F59E0B)",animation:foxyState==="thinking"?"pulse 1s infinite":"none"}}>
+          {FOXY[foxyState]||FOXY.idle}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-bold truncate">Foxy <span className="text-[10px] font-semibold opacity-60">AI Tutor</span></div>
+          <div className="text-[10px] opacity-50 flex gap-2"><span>{totalXP+xpGained} XP</span><span>{streakDays}d streak</span><span>Gr {studentGrade}</span></div>
+        </div>
+        <div className="flex items-center gap-1.5">
+          {LANGS.map(l=><button key={l.code} onClick={()=>setLanguage(l.code)} className="text-[10px] font-bold px-2 py-1 rounded-lg transition-all" style={{background:language===l.code?"rgba(255,255,255,0.2)":"transparent",color:language===l.code?"#fff":"rgba(255,255,255,0.4)"}}>{l.label}</button>)}
+        </div>
+      </header>
 
-      <div style={{padding:"10px 20px",background:"linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%)",color:"#fff",display:"flex",alignItems:"center",gap:16,boxShadow:"0 4px 20px rgba(0,0,0,0.3)",zIndex:10}}>
-        <div style={{width:44,height:44,borderRadius:"50%",background:"linear-gradient(135deg,#E8590C,#F59E0B)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,animation:foxyState==="thinking"?"pulse 1s infinite":"none",boxShadow:"0 0 20px rgba(232,89,12,0.4)"}}>{FOXY[foxyState]||FOXY.idle}</div>
-        <div style={{flex:1}}><div style={{fontSize:16,fontWeight:800}}>Foxy <span style={{fontSize:11,fontWeight:600,opacity:0.7}}>Your Intelligent Guide</span></div><div style={{fontSize:11,opacity:0.6,display:"flex",gap:12,marginTop:2}}><span>{student?.name||"Student"}</span><span>Grade {studentGrade}</span><span>{streakDays}d streak</span><span>{totalXP+xpGained} XP</span></div></div>
-        <select value={language} onChange={e=>setLanguage(e.target.value)} style={{padding:"6px 12px",borderRadius:10,border:"1px solid rgba(255,255,255,0.2)",background:"rgba(255,255,255,0.1)",color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer",outline:"none"}}>{LANGS.map(l=><option key={l.code} value={l.code} style={{color:"#000"}}>{l.label}</option>)}</select>
+      {/* ── SUBJECT + MODE CHIPS (horizontal scroll) ── */}
+      <div className="flex gap-1.5 px-3 py-2 overflow-x-auto" style={{background:"var(--surface-1)",borderBottom:"1px solid var(--border)",scrollbarWidth:"none"}}>
+        {Object.entries(SUBJECTS).map(([key,sub])=><button key={key} onClick={()=>{setActiveSubject(key);setActiveTopic(null);}} className="shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold flex items-center gap-1 transition-all" style={{border:activeSubject===key?`2px solid ${sub.color}`:"1.5px solid var(--border)",background:activeSubject===key?sub.color+"10":"transparent",color:activeSubject===key?sub.color:"var(--text-3)"}}><span className="text-sm">{sub.icon}</span><span className="hidden sm:inline">{sub.name}</span></button>)}
+        <div className="shrink-0 w-px mx-1" style={{background:"var(--border)"}}/>
+        {MODES.map(m=><button key={m.id} onClick={()=>setSessionMode(m.id)} className="shrink-0 px-2.5 py-1.5 rounded-full text-[10px] font-bold transition-all" style={{background:sessionMode===m.id?cfg.color+"15":"transparent",color:sessionMode===m.id?cfg.color:"var(--text-3)"}}>{m.em} {m.label}</button>)}
       </div>
 
-      <div style={{padding:"8px 20px",background:"#fff",borderBottom:"1px solid #e5e7eb",display:"flex",gap:8,alignItems:"center",overflowX:"auto"}}>
-        {Object.entries(SUBJECTS).map(([key,sub])=><button key={key} onClick={()=>{setActiveSubject(key);setActiveTopic(null);}} style={{padding:"6px 14px",borderRadius:20,border:activeSubject===key?"2px solid "+sub.color:"1px solid #e5e7eb",background:activeSubject===key?sub.color+"10":"transparent",color:activeSubject===key?sub.color:"#6b7280",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:4,whiteSpace:"nowrap",flexShrink:0}}><span style={{fontSize:14}}>{sub.icon}</span>{sub.name}</button>)}
-        <div style={{flex:1}}/>
-        {MODES.map(m=><button key={m.id} onClick={()=>setSessionMode(m.id)} style={{padding:"5px 10px",borderRadius:16,border:sessionMode===m.id?"2px solid "+m.color:"1px solid transparent",background:sessionMode===m.id?m.color+"10":"transparent",color:sessionMode===m.id?m.color:"#9ca3af",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0}}>{m.label}</button>)}
-      </div>
-
-      <div style={{flex:1,display:"flex",overflow:"hidden"}}>
-        <div style={{width:300,borderRight:"1px solid #e5e7eb",background:"#fff",display:"flex",flexDirection:"column",flexShrink:0}}>
-          <div style={{display:"flex",borderBottom:"1px solid #e5e7eb"}}>{["topics","stats","notes"].map(tab=><button key={tab} onClick={()=>setSidePanel(tab)} style={{flex:1,padding:"10px 0",border:"none",borderBottom:sidePanel===tab?"3px solid "+cfg.color:"3px solid transparent",background:sidePanel===tab?cfg.color+"05":"transparent",color:sidePanel===tab?cfg.color:"#9ca3af",fontSize:12,fontWeight:700,cursor:"pointer",textTransform:"capitalize"}}>{tab}</button>)}</div>
-          <div style={{flex:1,overflowY:"auto",padding:12}}>
-            {sidePanel==="topics"&&<div style={{display:"flex",flexDirection:"column",gap:8}}><div style={{padding:"10px 14px",background:cfg.color+"10",borderRadius:12,fontSize:12,color:cfg.color,fontWeight:700}}>{cfg.icon} {cfg.name} - Grade {studentGrade} ({topics.length})</div>{topics.map(topic=>{const mastery=masteryData.find((m:any)=>m.topic_tag===topic.title||m.chapter_number===topic.chapter_number);return<TopicCard key={topic.id} topic={topic} mastery={mastery} subject={activeSubject} onClick={()=>{setActiveTopic(topic);sendMessage("Teach me about: "+topic.title+" (Chapter "+topic.chapter_number+")");}}/>;})}</div>}
-            {sidePanel==="stats"&&<div style={{display:"flex",flexDirection:"column",gap:16}}><div style={{padding:20,background:"linear-gradient(135deg,#1a1a2e,#16213e)",borderRadius:16,color:"#fff",display:"flex",justifyContent:"space-around",textAlign:"center"}}><div><div style={{fontSize:28,fontWeight:900,color:"#F59E0B"}}>{totalXP+xpGained}</div><div style={{fontSize:10,opacity:0.7}}>Total XP</div></div><div><div style={{fontSize:28,fontWeight:900,color:"#EF4444"}}>{streakDays}</div><div style={{fontSize:10,opacity:0.7}}>Streak</div></div></div><div style={{padding:"14px 16px",background:"#f9fafb",borderRadius:12,border:"1px solid #e5e7eb"}}><div style={{fontSize:12,fontWeight:700,marginBottom:10}}>Today</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>{[{l:"Sessions",v:dailyActivity?.sessions_count||0},{l:"Questions",v:dailyActivity?.questions_asked||0},{l:"Correct",v:dailyActivity?.questions_correct||0},{l:"XP",v:(dailyActivity?.xp_earned||0)+xpGained}].map((s,i)=><div key={i} style={{padding:10,background:"#fff",borderRadius:10,textAlign:"center",border:"1px solid #f3f4f6"}}><div style={{fontSize:18,fontWeight:800}}>{s.v}</div><div style={{fontSize:10,color:"#9ca3af"}}>{s.l}</div></div>)}</div></div></div>}
-            {sidePanel==="notes"&&<div style={{display:"flex",flexDirection:"column",gap:8}}><button onClick={()=>sendMessage("/notes create")} style={{padding:12,borderRadius:12,border:"2px dashed "+cfg.color+"40",background:"transparent",color:cfg.color,fontSize:13,fontWeight:700,cursor:"pointer"}}>+ Ask Foxy for notes</button>{recentNotes.map((n:any,i:number)=><div key={i} style={{padding:"12px 14px",borderRadius:12,border:"1px solid #e5e7eb",background:"#fff",borderLeft:"4px solid "+(n.color||"#E8590C")}}><div style={{fontSize:13,fontWeight:700}}>{n.title}</div><div style={{fontSize:11,color:"#6b7280",marginTop:4}}>{n.content?.substring(0,120)}...</div></div>)}{recentNotes.length===0&&<div style={{padding:20,textAlign:"center",color:"#9ca3af",fontSize:13}}>No notes yet</div>}</div>}
+      {/* ── MAIN CHAT AREA ── */}
+      <div className="flex-1 flex overflow-hidden relative">
+        {/* Desktop sidebar (hidden on mobile) */}
+        <div className="hidden lg:flex flex-col w-[280px] shrink-0 border-r overflow-hidden" style={{background:"var(--surface-1)",borderColor:"var(--border)"}}>
+          <div className="p-3 text-xs font-bold" style={{color:cfg.color,borderBottom:"1px solid var(--border)"}}>{cfg.icon} {cfg.name} - Grade {studentGrade} ({topics.length} chapters)</div>
+          <div className="flex-1 overflow-y-auto p-2.5 space-y-2">
+            {topics.map(topic=>{
+              const mastery=masteryData.find((m:any)=>m.topic_tag===topic.title||m.chapter_number===topic.chapter_number);
+              const pct=mastery?.mastery_percent||0;
+              const lvl=mastery?.mastery_level||"not_started";
+              const lc:Record<string,string>={not_started:"#9ca3af",beginner:"#F59E0B",developing:"#3B82F6",proficient:"#8B5CF6",mastered:"#10B981"};
+              return(
+                <button key={topic.id} onClick={()=>{setActiveTopic(topic);sendMessage("Teach me about: "+topic.title+" (Chapter "+topic.chapter_number+")");}} className="w-full text-left p-3 rounded-xl transition-all active:scale-[0.98]" style={{border:`1px solid ${(lc[lvl]||"#9ca3af")}25`,background:"var(--surface-1)"}}>
+                  <div className="text-xs font-bold truncate" style={{color:"var(--text-1)"}}>Ch {topic.chapter_number}: {topic.title}</div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <div className="w-16 h-1.5 rounded-full" style={{background:"var(--surface-2)"}}><div className="h-full rounded-full transition-all" style={{width:`${pct}%`,background:lc[lvl]||"#9ca3af"}}/></div>
+                    <span className="text-[10px] font-bold capitalize" style={{color:lc[lvl]||"#9ca3af"}}>{(lvl).replace("_"," ")}</span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        <div style={{flex:1,display:"flex",flexDirection:"column",background:"linear-gradient(180deg,#f8fafc,#f1f5f9)"}}>
-          <div style={{flex:1,overflowY:"auto",padding:20}}>
-            {messages.length===0&&<div style={{textAlign:"center",padding:"60px 40px",animation:"fadeInUp 0.5s ease"}}><div style={{fontSize:80,marginBottom:16,animation:"float 3s ease-in-out infinite"}}>{FOXY.idle}</div><h2 style={{fontSize:24,fontWeight:900,background:"linear-gradient(135deg,#E8590C,"+cfg.color+")",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",marginBottom:8}}>Hi! I am Foxy</h2><p style={{color:"#6b7280",fontSize:14,lineHeight:1.8,maxWidth:500,margin:"0 auto"}}>Your Intelligent Guide. Pick any chapter from the left, or type below!</p><div style={{display:"flex",flexWrap:"wrap",gap:8,justifyContent:"center",marginTop:24}}>{["What should I study today?","Start a quick quiz","Show my weak areas","Create smart notes","Give me formula sheet"].map((text,i)=><button key={i} onClick={()=>sendMessage(text)} style={{padding:"10px 18px",borderRadius:14,border:"1px solid #e5e7eb",background:"#fff",cursor:"pointer",fontSize:13,fontWeight:600,color:"#374151",boxShadow:"0 2px 8px rgba(0,0,0,0.04)"}}>{text}</button>)}</div></div>}
-            {messages.map((msg:any)=><div key={msg.id} style={{display:"flex",justifyContent:msg.role==="student"?"flex-end":"flex-start",marginBottom:16,animation:"fadeInUp 0.3s ease",gap:10,alignItems:"flex-start"}}>{msg.role==="tutor"&&<div style={{width:36,height:36,borderRadius:"50%",background:"linear-gradient(135deg,#E8590C,#F59E0B)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{FOXY.idle}</div>}<div style={{maxWidth:"75%",padding:"14px 18px",borderRadius:msg.role==="student"?"18px 18px 4px 18px":"18px 18px 18px 4px",background:msg.role==="student"?"linear-gradient(135deg,"+cfg.color+","+cfg.color+"dd)":"#fff",color:msg.role==="student"?"#fff":"#1a1a2e",fontSize:14,lineHeight:1.7,boxShadow:msg.role==="student"?"0 4px 12px "+cfg.color+"25":"0 2px 12px rgba(0,0,0,0.06)",border:msg.role==="tutor"?"1px solid #f3f4f6":"none",position:"relative"}}>{msg.role==="tutor"?<Rich content={msg.content} subject={activeSubject}/>:<div style={{whiteSpace:"pre-wrap"}}>{msg.content}</div>}{msg.xp>0&&<div style={{position:"absolute",top:-8,right:-8,background:"linear-gradient(135deg,#F59E0B,#EF4444)",color:"#fff",padding:"2px 8px",borderRadius:10,fontSize:10,fontWeight:800}}>+{msg.xp} XP</div>}<div style={{fontSize:10,opacity:0.5,marginTop:6,textAlign:"right"}}>{new Date(msg.timestamp).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}</div></div>{msg.role==="student"&&<div style={{width:36,height:36,borderRadius:"50%",background:"linear-gradient(135deg,"+cfg.color+","+cfg.color+"bb)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,color:"#fff",fontWeight:800,flexShrink:0}}>{student?.name?student.name[0].toUpperCase():"S"}</div>}</div>)}
-            {loading&&<div style={{display:"flex",gap:10,alignItems:"center",marginBottom:16}}><div style={{width:36,height:36,borderRadius:"50%",background:"linear-gradient(135deg,#E8590C,#F59E0B)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,animation:"pulse 1s infinite"}}>{FOXY.thinking}</div><div style={{padding:"12px 20px",borderRadius:"18px 18px 18px 4px",background:"#fff",border:"1px solid #f3f4f6",display:"flex",gap:6}}>{[0,1,2].map(i=><div key={i} style={{width:8,height:8,borderRadius:"50%",background:cfg.color,animation:"pulse 1s infinite "+(i*0.2)+"s",opacity:0.6}}/>)}<span style={{fontSize:12,color:"#9ca3af",marginLeft:6}}>Foxy is thinking...</span></div></div>}
+        {/* Chat column */}
+        <div className="flex-1 flex flex-col min-w-0">
+          <div className="flex-1 overflow-y-auto px-3 md:px-5 py-4">
+            {/* Empty state */}
+            {messages.length===0&&(
+              <div className="text-center py-12 md:py-20 animate-slide-up">
+                <div className="text-6xl md:text-7xl mb-4 animate-float">{FOXY.idle}</div>
+                <h2 className="text-xl md:text-2xl font-extrabold mb-2" style={{fontFamily:"var(--font-display)",background:`linear-gradient(135deg,#E8590C,${cfg.color})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>Hi! I am Foxy</h2>
+                <p className="text-sm text-[var(--text-3)] max-w-sm mx-auto mb-6 leading-relaxed">Your AI tutor. Pick a topic or type anything below!</p>
+                {/* Quick prompts */}
+                <div className="flex flex-wrap gap-2 justify-center max-w-md mx-auto">
+                  {["What should I study today?","Quick quiz","Explain last topic","Formula sheet","Weak areas"].map((text,i)=>(
+                    <button key={i} onClick={()=>sendMessage(text)} className="px-3.5 py-2 rounded-xl text-xs font-semibold transition-all active:scale-95" style={{background:"var(--surface-1)",border:"1px solid var(--border)",color:"var(--text-2)"}}>{text}</button>
+                  ))}
+                </div>
+                {/* Mobile: Topics button */}
+                <button onClick={()=>setShowTopics(true)} className="mt-6 px-5 py-2.5 rounded-xl text-sm font-bold lg:hidden" style={{background:cfg.color+"10",color:cfg.color,border:`1.5px solid ${cfg.color}30`}}>
+                  {cfg.icon} Browse {topics.length} Chapters
+                </button>
+              </div>
+            )}
+
+            {/* Messages */}
+            {messages.map((msg:any)=>(
+              <div key={msg.id} className={`flex mb-4 gap-2.5 items-start ${msg.role==="student"?"justify-end":"justify-start"}`} style={{animation:"fadeInUp 0.3s ease"}}>
+                {msg.role==="tutor"&&<div className="w-8 h-8 md:w-9 md:h-9 rounded-full flex items-center justify-center text-base shrink-0" style={{background:"linear-gradient(135deg,#E8590C,#F59E0B)"}}>{FOXY.idle}</div>}
+                <div className="relative" style={{maxWidth:"min(85%, 520px)"}}>
+                  <div className={`px-4 py-3 text-sm leading-relaxed ${msg.role==="student"?"rounded-2xl rounded-br-sm":"rounded-2xl rounded-bl-sm"}`}
+                    style={{background:msg.role==="student"?`linear-gradient(135deg,${cfg.color},${cfg.color}dd)`:"var(--surface-1)",color:msg.role==="student"?"#fff":"var(--text-1)",border:msg.role==="tutor"?"1px solid var(--border)":"none",boxShadow:msg.role==="student"?`0 2px 12px ${cfg.color}20`:"0 1px 6px rgba(0,0,0,0.04)"}}>
+                    {msg.role==="tutor"?<Rich content={msg.content} subject={activeSubject}/>:<div className="whitespace-pre-wrap">{msg.content}</div>}
+                    <div className="text-[10px] opacity-40 mt-1.5 text-right">{new Date(msg.timestamp).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}</div>
+                  </div>
+                  {msg.xp>0&&<div className="absolute -top-2 -right-2 px-2 py-0.5 rounded-lg text-[10px] font-extrabold text-white" style={{background:"linear-gradient(135deg,#F59E0B,#EF4444)"}}>+{msg.xp} XP</div>}
+                </div>
+                {msg.role==="student"&&<div className="w-8 h-8 rounded-full flex items-center justify-center text-xs text-white font-bold shrink-0" style={{background:`linear-gradient(135deg,${cfg.color},${cfg.color}bb)`}}>{student?.name?student.name[0].toUpperCase():"S"}</div>}
+              </div>
+            ))}
+
+            {/* Thinking indicator */}
+            {loading&&(
+              <div className="flex gap-2.5 items-center mb-4">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center text-base shrink-0" style={{background:"linear-gradient(135deg,#E8590C,#F59E0B)",animation:"pulse 1s infinite"}}>{FOXY.thinking}</div>
+                <div className="px-4 py-3 rounded-2xl rounded-bl-sm flex items-center gap-1.5" style={{background:"var(--surface-1)",border:"1px solid var(--border)"}}>
+                  {[0,1,2].map(i=><div key={i} className="w-2 h-2 rounded-full" style={{background:cfg.color,animation:`pulse 1s infinite ${i*0.2}s`,opacity:0.5}}/>)}
+                  <span className="text-xs text-[var(--text-3)] ml-1.5">Foxy is thinking...</span>
+                </div>
+              </div>
+            )}
             <div ref={endRef}/>
           </div>
-          <Input onSubmit={sendMessage} subject={activeSubject}/>
+
+          {/* Chat input */}
+          <ChatInput onSubmit={sendMessage} subject={activeSubject} disabled={loading}/>
         </div>
       </div>
+
+      {/* ── MOBILE TOPICS BOTTOM SHEET ── */}
+      {showTopics&&(
+        <>
+          <div className="fixed inset-0 z-40 lg:hidden" style={{background:"rgba(0,0,0,0.3)"}} onClick={()=>setShowTopics(false)}/>
+          <div className="fixed bottom-0 left-0 right-0 z-50 rounded-t-3xl max-h-[75vh] flex flex-col lg:hidden" style={{background:"var(--surface-1)",boxShadow:"0 -8px 40px rgba(0,0,0,0.1)"}}>
+            <div className="flex justify-center pt-3 pb-1"><div className="w-10 h-1 rounded-full" style={{background:"var(--border)"}}/></div>
+            <div className="px-4 pb-2 flex items-center justify-between">
+              <span className="text-sm font-bold" style={{color:cfg.color}}>{cfg.icon} {cfg.name} - Grade {studentGrade}</span>
+              <button onClick={()=>setShowTopics(false)} className="text-xs text-[var(--text-3)] font-semibold">Close</button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-2">
+              {topics.map(topic=>{
+                const mastery=masteryData.find((m:any)=>m.topic_tag===topic.title||m.chapter_number===topic.chapter_number);
+                const pct=mastery?.mastery_percent||0;
+                const lvl=mastery?.mastery_level||"not_started";
+                const lc:Record<string,string>={not_started:"#9ca3af",beginner:"#F59E0B",developing:"#3B82F6",proficient:"#8B5CF6",mastered:"#10B981"};
+                return(
+                  <button key={topic.id} onClick={()=>{setActiveTopic(topic);setShowTopics(false);sendMessage("Teach me about: "+topic.title+" (Chapter "+topic.chapter_number+")");}} className="w-full text-left p-3.5 rounded-xl flex items-center gap-3 active:scale-[0.98] transition-all" style={{background:"var(--surface-2)",border:`1px solid ${(lc[lvl]||"#9ca3af")}20`}}>
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0" style={{background:(lc[lvl]||"#9ca3af")+"15"}}>{cfg.icon}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-bold truncate" style={{color:"var(--text-1)"}}>Ch {topic.chapter_number}: {topic.title}</div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <div className="flex-1 h-1.5 rounded-full" style={{background:"var(--border)"}}><div className="h-full rounded-full" style={{width:`${pct}%`,background:lc[lvl]||"#9ca3af"}}/></div>
+                        <span className="text-[10px] font-bold capitalize shrink-0" style={{color:lc[lvl]||"#9ca3af"}}>{pct}%</span>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
+
+      <BottomNav/>
+
+      {/* Animations */}
+      <style dangerouslySetInnerHTML={{__html:"@keyframes fadeInUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}"}}/>
     </div>
   );
 }
