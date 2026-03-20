@@ -72,7 +72,8 @@ export default function FoxyPage(){
   useEffect(()=>{(async()=>{
     const grade=typeof window!=="undefined"?(localStorage.getItem("alfanumrik_grade")||"9"):"9";
     const lang=typeof window!=="undefined"?(localStorage.getItem("alfanumrik_language")||"en"):"en";
-    setStudentGrade(grade);setLanguage(lang);
+    const subj=typeof window!=="undefined"?(localStorage.getItem("alfanumrik_subject")||"science"):"science";
+    setStudentGrade(grade);setLanguage(lang);setActiveSubject(subj);
     const stu=await sbGet("students?limit=1&order=created_at.desc");
     if(stu&&stu[0]){setStudent(stu[0]);setTotalXP(stu[0].xp_total||0);setStreakDays(stu[0].streak_days||0);setStudentGrade((stu[0].grade||"Grade 9").replace("Grade ",""));const td=new Date().toISOString().split("T")[0];const act=await sbGet("daily_activity?student_id=eq."+stu[0].id+"&activity_date=eq."+td+"&limit=1");if(act&&act[0])setDailyActivity(act[0]);const notes=await sbGet("student_notes?student_id=eq."+stu[0].id+"&order=created_at.desc&limit=5");if(notes)setRecentNotes(notes);}
     else{setStudent({id:"demo",name:"Demo Student",grade:"Grade "+grade});}
