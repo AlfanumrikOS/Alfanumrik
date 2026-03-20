@@ -124,14 +124,14 @@ export default function StudyPlanPage() {
     <div className="mesh-bg min-h-dvh pb-nav">
       {/* Header */}
       <header
-        className="sticky top-0 z-40 border-b"
+        className="page-header"
         style={{
           background: 'rgba(251,248,244,0.88)',
           backdropFilter: 'blur(20px)',
           borderColor: 'var(--border)',
         }}
       >
-        <div className="max-w-lg mx-auto px-4 py-3 flex items-center gap-3">
+        <div className="app-container py-3 flex items-center gap-3">
           <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)]">
             ←
           </button>
@@ -141,7 +141,7 @@ export default function StudyPlanPage() {
         </div>
       </header>
 
-      <main className="max-w-lg mx-auto px-4 py-6 space-y-4">
+      <main className="app-container py-6 space-y-4">
         {loading ? (
           <div className="text-center py-12">
             <div className="text-4xl animate-float mb-3">📅</div>
