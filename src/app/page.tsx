@@ -34,7 +34,7 @@ export default function Home() {
   const [activeSpotlight, setActiveSpotlight] = useState(0);
   /* Auth */
   const [email, setEmail] = useState(''); const [phone, setPhone] = useState('');
-  const [authMethod, setAuthMethod] = useState<'email'|'phone'>('phone');
+  const [authMethod, setAuthMethod] = useState<'email'|'phone'>('email');
   const [otpSent, setOtpSent] = useState(false); const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false); const [error, setError] = useState('');
   /* Profile */
@@ -462,12 +462,10 @@ export default function Home() {
           <div style={{ textAlign:'center', marginBottom:24 }}>
             <div style={{ fontSize:40, marginBottom:8 }}>🦊</div>
             <h2 style={{ fontFamily:'var(--font-display)', fontWeight:800, fontSize:22 }}>Sign Up as {rl}</h2>
-            <p style={{ fontSize:13, color:'var(--text-3)', marginTop:4 }}>We&apos;ll send a one-time code to verify</p>
+            <p style={{ fontSize:13, color:'var(--text-3)', marginTop:4 }}>Enter your email to get started</p>
           </div>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:4, background:'var(--surface-2)', borderRadius:12, padding:3, marginBottom:16 }}>
-            {(['phone','email'] as const).map(m => (
-              <button key={m} onClick={()=>{setAuthMethod(m);setOtpSent(false);setError('');}} style={{ padding:'8px 0', borderRadius:10, border:'none', cursor:'pointer', fontWeight:600, fontSize:13, background:authMethod===m?'var(--surface-1)':'transparent', color:authMethod===m?'var(--text-1)':'var(--text-3)', boxShadow:authMethod===m?'0 1px 4px rgba(0,0,0,0.08)':'none' }}>{m==='email'?'✉️ Email':'📱 Phone'}</button>
-            ))}
+          <div style={{ display:'flex', justifyContent:'center', marginBottom:16 }}>
+            <span style={{ fontSize:13, color:'var(--text-3)', fontWeight:600 }}>We will send a 6-digit OTP to your email</span>
           </div>
           {otpSent?(<>
             <p style={{ fontSize:13, color:'var(--text-2)', textAlign:'center', marginBottom:12 }}>OTP sent to <strong>{authMethod==='email'?email:phone}</strong></p>
