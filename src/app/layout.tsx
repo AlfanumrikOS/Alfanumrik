@@ -4,7 +4,8 @@ import { AuthProvider } from '@/lib/AuthContext';
 
 export const metadata: Metadata = {
   title: 'Alfanumrik — AI Learning OS',
-  description: 'Personalised AI tutoring for Indian school students. CBSE/NCERT aligned. Hindi, English & 8 more languages.',
+  description:
+    'Personalised AI tutoring for Indian school students. CBSE/NCERT aligned. Hindi, English & 8 more languages.',
   authors: [{ name: 'Alfanumrik' }],
   manifest: '/manifest.json',
   keywords: 'CBSE,NCERT,AI tutor,adaptive learning,Foxy,Hindi medium',
@@ -40,7 +41,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <div className="main-page">{children}</div>
+        </AuthProvider>
       </body>
     </html>
   );
