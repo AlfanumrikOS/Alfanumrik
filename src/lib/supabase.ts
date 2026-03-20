@@ -211,3 +211,28 @@ export async function generateStudyPlan(studentId: string, subject?: string, dai
   if (error) throw error;
   return data;
 }
+
+/* ── Competitions & Olympiads ── */
+export async function getCompetitions(studentId: string, status?: string) {
+  const { data, error } = await supabase.rpc('get_competitions', { p_student_id: studentId, p_status: status || null });
+  if (error) console.error('getCompetitions:', error.message);
+  return data ?? [];
+}
+
+export async function joinCompetition(studentId: string, competitionId: string) {
+  const { data, error } = await supabase.rpc('join_competition', { p_student_id: studentId, p_competition_id: competitionId });
+  if (error) throw error;
+  return data;
+}
+
+export async function getCompetitionLeaderboard(competitionId: string, limit = 50) {
+  const { data, error } = await supabase.rpc('get_competition_leaderboard', { p_competition_id: competitionId, p_limit: limit });
+  if (error) console.error('getCompetitionLeaderboard:', error.message);
+  return data ?? [];
+}
+
+export async function getHallOfFame(limit = 30) {
+  const { data, error } = await supabase.rpc('get_hall_of_fame', { p_limit: limit });
+  if (error) console.error('getHallOfFame:', error.message);
+  return data ?? [];
+}
