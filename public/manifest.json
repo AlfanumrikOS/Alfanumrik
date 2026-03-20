@@ -1,0 +1,20 @@
+═══════════════════════════════════════════════════════════
+ SAVE AS: manifest.json
+ PATH:    public/manifest.json
+ ACTION:  REPLACE existing file
+═══════════════════════════════════════════════════════════
+
+{
+  "name": "Alfanumrik — AI Learning OS",
+  "short_name": "Alfanumrik",
+  "description": "Your AI tutor Foxy helps you master CBSE subjects in your language",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#FBF8F4",
+  "theme_color": "#F97316",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
