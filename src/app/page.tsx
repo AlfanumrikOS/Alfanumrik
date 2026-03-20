@@ -430,7 +430,7 @@ export default function Home() {
     const roleLabel = role === 'student' ? '🎓 Student' : role === 'teacher' ? '👩‍🏫 Teacher' : '👨‍👩‍👧 Parent';
     return (
       <div className="mesh-bg min-h-dvh flex items-center justify-center p-5">
-        <Card className="w-full max-w-sm animate-slide-up" style={{ padding: 32 }}>
+        <Card className="w-full max-w-sm animate-slide-up !p-8">
           <button onClick={() => setStep('role')} style={{ color: 'var(--text-3)', fontSize: 13, background: 'none', border: 'none', cursor: 'pointer', marginBottom: 20 }}>
             ← Change role
           </button>
@@ -517,7 +517,7 @@ export default function Home() {
   if (step === 'profile') {
     return (
       <div className="mesh-bg min-h-dvh flex items-center justify-center p-5">
-        <Card className="w-full animate-slide-up" style={{ padding: 32, maxWidth: role === 'teacher' ? 480 : 400 }}>
+        <Card className={`w-full animate-slide-up !p-8 ${role === 'teacher' ? 'max-w-lg' : 'max-w-sm'}`}>
           <div style={{ textAlign: 'center', marginBottom: 20 }}>
             <div style={{ fontSize: 40, marginBottom: 6 }}>
               {role === 'student' ? '✏️' : role === 'teacher' ? '👩‍🏫' : '👨‍👩‍👧'}
@@ -662,7 +662,7 @@ export default function Home() {
 
     return (
       <div className="mesh-bg min-h-dvh flex items-center justify-center p-5">
-        <Card className="w-full max-w-md animate-slide-up" style={{ padding: 32 }}>
+        <Card className="w-full max-w-md animate-slide-up !p-8">
           <div style={{ textAlign: 'center', marginBottom: 20 }}>
             <div style={{ fontSize: 40, marginBottom: 6 }}>📚</div>
             <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 22 }}>
