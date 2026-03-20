@@ -12,12 +12,17 @@ export default function ProgressPage() {
   const [profiles, setProfiles] = useState<any[]>([]);
   const [subjects, setSubjects] = useState<any[]>([]);
 
-  useEffect(() => { if (!isLoading && !isLoggedIn) router.replace('/'); }, [isLoading, isLoggedIn, router]);
+  useEffect(() => {
+    if (!isLoading && !isLoggedIn) router.replace('/');
+  }, [isLoading, isLoggedIn, router]);
 
   useEffect(() => {
     if (!student) return;
     refreshSnapshot();
-    Promise.all([getStudentProfiles(student.id), getSubjects()]).then(([p, s]) => { setProfiles(p); setSubjects(s); });
+    Promise.all([getStudentProfiles(student.id), getSubjects()]).then(([p, s]) => {
+      setProfiles(p);
+      setSubjects(s);
+    });
   }, [student?.id]);
 
   if (isLoading || !student) return <LoadingFoxy />;
@@ -31,35 +36,39 @@ export default function ProgressPage() {
 
   return (
     <div className="mesh-bg min-h-dvh pb-nav">
-      <header className="sticky top-0 z-40 border-b" style={{ background: 'rgba(251,248,244,0.88)', backdropFilter: 'blur(20px)', borderColor: 'var(--border)' }}>
-        <div className="max-w-lg mx-auto px-4 py-3 flex items-center gap-3">
+      <header className="page-header">
+        <div className="page-header-inner flex items-center gap-3">
           <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)]">←</button>
-          <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>📈 {isHi ? 'प्रगति' : 'My Progress'}</h1>
+          <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+            📈 {isHi ? 'प्रगति' : 'My Progress'}
+          </h1>
         </div>
       </header>
-      <main className="max-w-lg mx-auto px-4 py-6 space-y-4">
-        {/* Overview Stats */}
-        <div className="grid grid-cols-2 gap-3">
+      <main className="app-container py-6 space-y-4">
+        <div className="grid-stats">
           <StatCard icon="⭐" value={totalXp.toLocaleString()} label="Total XP" color="var(--orange)" />
           <StatCard icon="🎯" value={`${accuracy}%`} label={isHi ? 'सटीकता' : 'Accuracy'} color="var(--green)" />
           <StatCard icon="⏱" value={`${totalMinutes}m`} label={isHi ? 'कुल समय' : 'Study Time'} color="var(--teal)" />
           <StatCard icon="📝" value={totalSessions} label={isHi ? 'सत्र' : 'Sessions'} color="var(--purple)" />
         </div>
 
-        {/* Subject-wise Progress */}
         <div>
           <SectionHeader icon="📚">{isHi ? 'विषयवार प्रगति' : 'Subject Progress'}</SectionHeader>
           <div className="space-y-3">
             {profiles.map((p) => {
               const meta = subjects.find((s) => s.code === p.subject);
-              const correctPct = p.total_questions_asked > 0 ? Math.round((p.total_questions_answered_correctly / p.total_questions_asked) * 100) : 0;
+              const correctPct = p.total_questions_asked > 0
+                ? Math.round((p.total_questions_answered_correctly / p.total_questions_asked) * 100)
+                : 0;
               return (
                 <Card key={p.id} className="!p-4">
                   <div className="flex items-center gap-3 mb-3">
                     <span className="text-2xl">{meta?.icon ?? '📚'}</span>
                     <div className="flex-1">
-                      <div className="font-semibold text-sm">{meta?.name ?? p.subject}</div>
-                      <div className="text-xs text-[var(--text-3)]">Level {p.level} · {p.xp} XP · {p.streak_days}🔥</div>
+                      <div className="font-semibold text-sm md:text-base">{meta?.name ?? p.subject}</div>
+                      <div className="text-xs text-[var(--text-3)]">
+                        Level {p.level} · {p.xp} XP · {p.streak_days}🔥
+                      </div>
                     </div>
                   </div>
                   <ProgressBar value={correctPct} color={meta?.color} label={isHi ? 'सटीकता' : 'Accuracy'} showPercent height={6} />
