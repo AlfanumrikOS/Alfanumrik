@@ -46,8 +46,8 @@ export default function LeaderboardPage() {
 
   return (
     <div className="mesh-bg min-h-dvh pb-nav">
-      <header className="sticky top-0 z-40 border-b" style={{ background: 'rgba(251,248,244,0.88)', backdropFilter: 'blur(20px)', borderColor: 'var(--border)' }}>
-        <div className="max-w-lg mx-auto px-4 py-3">
+      <header className="page-header" >
+        <div className="app-container py-3">
           <div className="flex items-center gap-3">
             <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)]">←</button>
             <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>🏆 {isHi ? 'लीडरबोर्ड' : 'Leaderboard'}</h1>
@@ -62,7 +62,7 @@ export default function LeaderboardPage() {
         </div>
       </header>
 
-      <main className="max-w-lg mx-auto px-4 py-4 space-y-3">
+      <main className="app-container py-4 space-y-3">
         {myRank >= 0 && (
           <Card accent="var(--orange)" className="!p-4">
             <div className="flex items-center gap-3">
