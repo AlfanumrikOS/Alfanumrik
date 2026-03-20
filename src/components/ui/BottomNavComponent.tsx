@@ -1,70 +1,207 @@
 'use client';
 
+import { useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
+import { useAuth } from '@/lib/AuthContext';
 
-const NAV = [
-  { href: '/dashboard', icon: '⬡', label: 'Home', labelHi: 'होम' },
-  { href: '/foxy', icon: '🦊', label: 'Foxy', labelHi: 'फॉक्सी' },
-  { href: '/quiz', icon: '⚡', label: 'Quiz', labelHi: 'क्विज़' },
-  { href: '/progress', icon: '📈', label: 'Progress', labelHi: 'प्रगति' },
-  { href: '/leaderboard', icon: '🏆', label: 'Ranks', labelHi: 'रैंक' },
-  { href: '/review', icon: '🔄', label: 'Review', labelHi: 'रिव्यू' },
-  { href: '/study-plan', icon: '📅', label: 'Plan', labelHi: 'योजना' },
-  { href: '/profile', icon: '👤', label: 'Profile', labelHi: 'प्रोफ़ाइल' },
+/* ═══ NAVIGATION ARCHITECTURE ═══
+ * Research-backed: Duolingo 5-tab model (the gold standard for EdTech)
+ * - 5 bottom tabs max on mobile (thumb-zone optimized)
+ * - Center position = primary action (Foxy AI tutor)
+ * - "More" sheet for secondary features (no hidden features)
+ * - Desktop sidebar groups by function with section headers
+ * - Every page reachable in ≤ 2 taps
+ */
+
+const CORE_TABS = [
+  { href: '/dashboard', icon: '🏠', activeIcon: '🏠', label: 'Home', labelHi: 'होम' },
+  { href: '/study-plan', icon: '📚', activeIcon: '📚', label: 'Learn', labelHi: 'सीखो' },
+  { href: '/foxy', icon: '🦊', activeIcon: '🦊', label: 'Foxy', labelHi: 'फॉक्सी', isFab: true },
+  { href: '/quiz', icon: '⚡', activeIcon: '⚡', label: 'Quiz', labelHi: 'क्विज़' },
+  { href: '/profile', icon: '👤', activeIcon: '👤', label: 'Me', labelHi: 'मैं' },
 ];
 
-/* Mobile: show first 5 items. Desktop sidebar: show all */
-const MOBILE_NAV = NAV.slice(0, 5);
+const MORE_ITEMS = [
+  { href: '/leaderboard', icon: '🏆', label: 'Rankings & Compete', labelHi: 'रैंकिंग और प्रतियोगिता' },
+  { href: '/progress', icon: '📈', label: 'My Progress', labelHi: 'मेरी प्रगति' },
+  { href: '/review', icon: '🔄', label: 'Flashcard Review', labelHi: 'फ्लैशकार्ड रिव्यू' },
+  { href: '/notifications', icon: '🔔', label: 'Notifications', labelHi: 'सूचनाएँ' },
+];
+
+const SIDEBAR_SECTIONS = [
+  {
+    title: 'Main', titleHi: 'मुख्य',
+    items: [
+      { href: '/dashboard', icon: '🏠', label: 'Home', labelHi: 'होम' },
+      { href: '/foxy', icon: '🦊', label: 'Foxy AI Tutor', labelHi: 'फॉक्सी AI ट्यूटर' },
+    ],
+  },
+  {
+    title: 'Study', titleHi: 'पढ़ाई',
+    items: [
+      { href: '/study-plan', icon: '📚', label: 'Study Plan', labelHi: 'अध्ययन योजना' },
+      { href: '/quiz', icon: '⚡', label: 'Quick Quiz', labelHi: 'क्विज़' },
+      { href: '/review', icon: '🔄', label: 'Flashcard Review', labelHi: 'फ्लैशकार्ड रिव्यू' },
+    ],
+  },
+  {
+    title: 'Track', titleHi: 'ट्रैक',
+    items: [
+      { href: '/progress', icon: '📈', label: 'My Progress', labelHi: 'मेरी प्रगति' },
+      { href: '/leaderboard', icon: '🏆', label: 'Rankings', labelHi: 'रैंकिंग' },
+      { href: '/notifications', icon: '🔔', label: 'Notifications', labelHi: 'सूचनाएँ' },
+    ],
+  },
+  {
+    title: 'Account', titleHi: 'खाता',
+    items: [
+      { href: '/profile', icon: '👤', label: 'Profile', labelHi: 'प्रोफ़ाइल' },
+    ],
+  },
+];
 
 export default function BottomNavComponent() {
   const pathname = usePathname();
   const router = useRouter();
+  const auth = useAuth();
+  const isHi = auth?.isHi ?? false;
+  const [showMore, setShowMore] = useState(false);
+
+  const isActive = (href: string) => pathname === href || (href !== '/' && pathname.startsWith(href));
+  const isMoreActive = MORE_ITEMS.some(m => isActive(m.href));
 
   return (
     <>
-      {/* ─── Mobile Bottom Nav (< 1024px) ──────────────── */}
+      {/* ─── MORE SHEET (mobile overlay) ──────────────── */}
+      {showMore && (
+        <>
+          <div
+            className="fixed inset-0 z-[60]"
+            style={{ background: 'rgba(0,0,0,0.3)' }}
+            onClick={() => setShowMore(false)}
+          />
+          <div
+            className="fixed bottom-0 left-0 right-0 z-[70] rounded-t-3xl"
+            style={{
+              background: 'var(--surface-1)',
+              paddingBottom: 'env(safe-area-inset-bottom, 16px)',
+              boxShadow: '0 -8px 40px rgba(0,0,0,0.12)',
+            }}
+          >
+            <div className="flex justify-center pt-3 pb-2">
+              <div className="w-10 h-1 rounded-full" style={{ background: 'var(--border-mid, #ccc)' }} />
+            </div>
+            <div className="px-5 pb-4 space-y-1">
+              {MORE_ITEMS.map(item => {
+                const active = isActive(item.href);
+                return (
+                  <button
+                    key={item.href}
+                    onClick={() => { setShowMore(false); router.push(item.href); }}
+                    className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl text-left transition-all active:scale-[0.98]"
+                    style={{
+                      background: active ? 'rgba(232,88,28,0.08)' : 'transparent',
+                      color: active ? 'var(--orange)' : 'var(--text-2)',
+                    }}
+                  >
+                    <span className="text-xl w-7 text-center">{item.icon}</span>
+                    <span className="text-sm font-semibold">{isHi ? item.labelHi : item.label}</span>
+                    {active && <span className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: 'var(--orange)' }} />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ─── Mobile Bottom Nav ──────────────── */}
       <nav
         className="bottom-nav-mobile fixed bottom-0 left-0 right-0 z-50 border-t"
         style={{
-          background: 'rgba(251, 248, 244, 0.92)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
+          background: 'rgba(251, 248, 244, 0.95)',
+          backdropFilter: 'blur(24px)',
+          WebkitBackdropFilter: 'blur(24px)',
           borderColor: 'var(--border)',
-          paddingBottom: 'env(safe-area-inset-bottom, 8px)',
+          paddingBottom: 'env(safe-area-inset-bottom, 6px)',
         }}
       >
-        <div className="flex items-center justify-around px-2 pt-2 pb-1">
-          {MOBILE_NAV.map((item) => {
-            const active = pathname.startsWith(item.href);
+        <div className="flex items-end justify-around px-1 pt-1.5 pb-0.5">
+          {CORE_TABS.map((item) => {
+            const active = isActive(item.href);
+
+            /* ── Foxy FAB (center) ── */
+            if (item.isFab) {
+              return (
+                <button
+                  key={item.href}
+                  onClick={() => router.push(item.href)}
+                  className="flex flex-col items-center -mt-5 transition-transform active:scale-90"
+                >
+                  <div
+                    className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl shadow-lg"
+                    style={{
+                      background: active
+                        ? 'linear-gradient(135deg, #E8581C, #F5A623)'
+                        : 'linear-gradient(135deg, #E8581C, #D84315)',
+                      boxShadow: '0 4px 16px rgba(232,88,28,0.35)',
+                    }}
+                  >
+                    {item.icon}
+                  </div>
+                  <span
+                    className="text-[10px] font-bold mt-0.5"
+                    style={{ color: active ? 'var(--orange)' : 'var(--text-2)' }}
+                  >
+                    {isHi ? item.labelHi : item.label}
+                  </span>
+                </button>
+              );
+            }
+
+            /* ── Regular tabs ── */
             return (
               <button
                 key={item.href}
                 onClick={() => router.push(item.href)}
-                className="flex flex-col items-center gap-0.5 min-w-[52px] py-1 transition-all"
+                className="flex flex-col items-center gap-0.5 min-w-[56px] py-1.5 transition-all"
                 style={{ color: active ? 'var(--orange)' : 'var(--text-3)' }}
               >
                 <span
-                  className="text-xl leading-none"
+                  className="text-[22px] leading-none transition-transform"
                   style={{
-                    filter: active ? 'drop-shadow(0 0 6px rgba(232, 88, 28, 0.4))' : 'none',
+                    transform: active ? 'scale(1.15)' : 'scale(1)',
+                    filter: active ? 'drop-shadow(0 0 6px rgba(232, 88, 28, 0.35))' : 'none',
                   }}
                 >
-                  {item.icon}
+                  {active ? item.activeIcon : item.icon}
                 </span>
-                <span className="text-[10px] font-semibold tracking-wide">{item.label}</span>
+                <span className="text-[10px] font-semibold tracking-wide">
+                  {isHi ? item.labelHi : item.label}
+                </span>
                 {active && (
-                  <span
-                    className="w-1 h-1 rounded-full mt-0.5"
-                    style={{ background: 'var(--orange)' }}
-                  />
+                  <span className="w-1 h-1 rounded-full" style={{ background: 'var(--orange)' }} />
                 )}
               </button>
             );
           })}
+
+          {/* ── More button (replaces hidden items) ── */}
+          <button
+            onClick={() => setShowMore(!showMore)}
+            className="flex flex-col items-center gap-0.5 min-w-[56px] py-1.5 transition-all"
+            style={{ color: isMoreActive ? 'var(--orange)' : 'var(--text-3)' }}
+          >
+            <span className="text-[22px] leading-none">☰</span>
+            <span className="text-[10px] font-semibold tracking-wide">{isHi ? 'और' : 'More'}</span>
+            {isMoreActive && (
+              <span className="w-1 h-1 rounded-full" style={{ background: 'var(--orange)' }} />
+            )}
+          </button>
         </div>
       </nav>
 
-      {/* ─── Desktop Sidebar (>= 1024px) ──────────────── */}
+      {/* ─── Desktop Sidebar ──────────────── */}
       <aside
         className="sidebar-nav flex-col border-r"
         style={{
@@ -76,13 +213,17 @@ export default function BottomNavComponent() {
           top: 0,
           left: 0,
           zIndex: 50,
-          padding: '24px 12px',
+          padding: '20px 12px',
           justifyContent: 'space-between',
+          overflowY: 'auto',
         }}
       >
         {/* Brand */}
         <div>
-          <div className="flex items-center gap-2.5 px-3 mb-8">
+          <button
+            onClick={() => router.push('/dashboard')}
+            className="flex items-center gap-2.5 px-3 mb-6 transition-opacity hover:opacity-80"
+          >
             <span className="text-2xl">🦊</span>
             <div>
               <div className="text-base font-bold gradient-text" style={{ fontFamily: 'var(--font-display)' }}>
@@ -90,40 +231,49 @@ export default function BottomNavComponent() {
               </div>
               <div className="text-[10px] text-[var(--text-3)] -mt-0.5">AI Learning OS</div>
             </div>
-          </div>
+          </button>
 
-          {/* Nav Items */}
-          <div className="space-y-1">
-            {NAV.map((item) => {
-              const active = pathname.startsWith(item.href);
-              return (
-                <button
-                  key={item.href}
-                  onClick={() => router.push(item.href)}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all"
-                  style={{
-                    background: active ? 'rgba(232, 88, 28, 0.08)' : 'transparent',
-                    color: active ? 'var(--orange)' : 'var(--text-2)',
-                    fontWeight: active ? 600 : 500,
-                    fontSize: '14px',
-                  }}
-                >
-                  <span className="text-lg w-6 text-center">{item.icon}</span>
-                  <span>{item.label}</span>
-                  {active && (
-                    <span
-                      className="ml-auto w-1.5 h-1.5 rounded-full"
-                      style={{ background: 'var(--orange)' }}
-                    />
-                  )}
-                </button>
-              );
-            })}
+          {/* Grouped Nav Sections */}
+          <div className="space-y-5">
+            {SIDEBAR_SECTIONS.map(section => (
+              <div key={section.title}>
+                <div className="text-[10px] font-bold text-[var(--text-3)] uppercase tracking-widest px-3 mb-1.5">
+                  {isHi ? section.titleHi : section.title}
+                </div>
+                <div className="space-y-0.5">
+                  {section.items.map(item => {
+                    const active = isActive(item.href);
+                    const isFoxy = item.href === '/foxy';
+                    return (
+                      <button
+                        key={item.href}
+                        onClick={() => router.push(item.href)}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all"
+                        style={{
+                          background: active
+                            ? isFoxy ? 'rgba(232,88,28,0.12)' : 'rgba(232,88,28,0.06)'
+                            : 'transparent',
+                          color: active ? 'var(--orange)' : 'var(--text-2)',
+                          fontWeight: active ? 600 : 500,
+                          fontSize: '14px',
+                        }}
+                      >
+                        <span className="text-lg w-6 text-center">{item.icon}</span>
+                        <span>{isHi ? item.labelHi : item.label}</span>
+                        {active && (
+                          <span className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: 'var(--orange)' }} />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
         {/* Footer */}
-        <div className="px-3 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
+        <div className="px-3 pt-4 mt-4 border-t" style={{ borderColor: 'var(--border)' }}>
           <div className="text-[11px] text-[var(--text-3)] leading-relaxed">
             <div>Alfanumrik Learning OS v2.0</div>
             <div className="mt-0.5">Built with ❤️ in India</div>
