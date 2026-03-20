@@ -1,5 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/lib/AuthContext";
 
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://dxipobqngyfpqbbznojz.supabase.co";
 const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR4aXBvYnFuZ3lmcHFiYnpub2p6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDE1ODQ1MDcsImV4cCI6MjA1NzE2MDUwN30.CZJH4VPQa6MHmYkXXxnEFPkfGhJnBPqMlG3MwjUe3tE";
@@ -49,6 +51,8 @@ function Ring({value,size=60,color,label}:{value:number;size?:number;color:strin
 function TopicCard({topic,onClick,mastery,subject}:{topic:any;onClick:()=>void;mastery:any;subject:string}){const c=SUBJECTS[subject]||SUBJECTS.science;const pct=mastery?.mastery_percent||0;const lvl=mastery?.mastery_level||"not_started";const lc:Record<string,string>={not_started:"#9ca3af",beginner:"#F59E0B",developing:"#3B82F6",proficient:"#8B5CF6",mastered:"#10B981"};return<button onClick={onClick} style={{padding:"14px 16px",borderRadius:16,border:"1px solid "+(lc[lvl]||"#9ca3af")+"25",background:"#fff",cursor:"pointer",textAlign:"left",width:"100%",display:"flex",alignItems:"center",gap:14,transition:"all 0.3s",boxShadow:"0 2px 8px rgba(0,0,0,0.04)",fontFamily:"Nunito,sans-serif"}}><Ring value={pct} size={48} color={lc[lvl]||"#9ca3af"}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:700,color:"#1a1a2e",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>Ch {topic.chapter_number}: {topic.title}</div><div style={{fontSize:11,color:"#6b7280",marginTop:2,display:"flex",alignItems:"center",gap:6}}><span style={{padding:"1px 8px",borderRadius:10,background:(lc[lvl]||"#9ca3af")+"15",color:lc[lvl]||"#9ca3af",fontSize:10,fontWeight:700,textTransform:"capitalize"}}>{(lvl as string).replace("_"," ")}</span>{topic.estimated_minutes&&<span style={{fontSize:10,color:"#9ca3af"}}>{topic.estimated_minutes}m</span>}</div></div></button>;}
 
 export default function FoxyPage(){
+  const { student: authStudent, isLoggedIn, isLoading: authLoading, isHi, language: authLang } = useAuth();
+  const routerNav = useRouter();
   const[student,setStudent]=useState<any>(null);
   const[activeSubject,setActiveSubject]=useState("science");
   const[topics,setTopics]=useState<any[]>([]);
@@ -69,21 +73,32 @@ export default function FoxyPage(){
   const[studentGrade,setStudentGrade]=useState("9");
   const endRef=useRef<HTMLDivElement>(null);
 
+  // Auth guard: redirect to login if not authenticated
+  useEffect(()=>{if(!authLoading&&!isLoggedIn)routerNav.replace("/");},[authLoading,isLoggedIn,routerNav]);
+
+  // Use authenticated student from AuthContext — no demo fallback
   useEffect(()=>{(async()=>{
-    const grade=typeof window!=="undefined"?(localStorage.getItem("alfanumrik_grade")||"9"):"9";
-    const lang=typeof window!=="undefined"?(localStorage.getItem("alfanumrik_language")||"en"):"en";
-    const subj=typeof window!=="undefined"?(localStorage.getItem("alfanumrik_subject")||"science"):"science";
-    setStudentGrade(grade);setLanguage(lang);setActiveSubject(subj);
-    const stu=await sbGet("students?limit=1&order=created_at.desc");
-    if(stu&&stu[0]){setStudent(stu[0]);setTotalXP(stu[0].xp_total||0);setStreakDays(stu[0].streak_days||0);setStudentGrade((stu[0].grade||"Grade 9").replace("Grade ",""));const td=new Date().toISOString().split("T")[0];const act=await sbGet("daily_activity?student_id=eq."+stu[0].id+"&activity_date=eq."+td+"&limit=1");if(act&&act[0])setDailyActivity(act[0]);const notes=await sbGet("student_notes?student_id=eq."+stu[0].id+"&order=created_at.desc&limit=5");if(notes)setRecentNotes(notes);}
-    else{setStudent({id:"demo",name:"Demo Student",grade:"Grade "+grade});}
+    if(!authStudent)return;
+    setStudent(authStudent);
+    setTotalXP(authStudent.xp_total||0);
+    setStreakDays(authStudent.streak_days||0);
+    const grade=(authStudent.grade||"9").replace("Grade ","");
+    setStudentGrade(grade);
+    setLanguage(authStudent.preferred_language||"en");
+    const subj=typeof window!=="undefined"?(localStorage.getItem("alfanumrik_subject")||authStudent.preferred_subject||"science"):(authStudent.preferred_subject||"science");
+    setActiveSubject(subj);
+    const td=new Date().toISOString().split("T")[0];
+    const act=await sbGet("daily_activity?student_id=eq."+authStudent.id+"&activity_date=eq."+td+"&limit=1");
+    if(act&&act[0])setDailyActivity(act[0]);
+    const notes=await sbGet("student_notes?student_id=eq."+authStudent.id+"&order=created_at.desc&limit=5");
+    if(notes)setRecentNotes(notes);
   })();// eslint-disable-next-line react-hooks/exhaustive-deps
-  },[]);
+  },[authStudent]);
 
   useEffect(()=>{(async()=>{
     const d=await sbGet("curriculum_topics?grade=eq."+encodeURIComponent("Grade "+studentGrade)+"&parent_topic_id=is.null&is_active=eq.true&order=chapter_number,display_order&limit=50");
     if(d)setTopics(d);
-    if(student?.id&&student.id!=="demo"){const m=await sbGet("topic_mastery?student_id=eq."+student.id+"&subject=eq."+activeSubject+"&order=updated_at.desc");if(m)setMasteryData(m);}
+    if(student?.id){const m=await sbGet("topic_mastery?student_id=eq."+student.id+"&subject=eq."+activeSubject+"&order=updated_at.desc");if(m)setMasteryData(m);}
   })();// eslint-disable-next-line react-hooks/exhaustive-deps
   },[activeSubject,studentGrade,student]);
 
@@ -94,7 +109,7 @@ export default function FoxyPage(){
     setMessages(p=>[...p,{id:Date.now(),role:"student",content:text,timestamp:new Date().toISOString()}]);
     setLoading(true);setFoxyState("thinking");
     try{
-      const resp=await foxyCall({message:text,student_id:student?.id||"demo",student_name:student?.name||"Student",grade:studentGrade,subject:activeSubject,language,mode:sessionMode,topic_id:activeTopic?.id||null,topic_title:activeTopic?.title||null,session_id:chatSessionId});
+      const resp=await foxyCall({message:text,student_id:student?.id||"",student_name:student?.name||"Student",grade:studentGrade,subject:activeSubject,language,mode:sessionMode,topic_id:activeTopic?.id||null,topic_title:activeTopic?.title||null,session_id:chatSessionId});
       const reply=resp.reply||resp.response||resp.message||"Let me think...";const xp=resp.xp_earned||0;
       setMessages(p=>[...p,{id:Date.now()+1,role:"tutor",content:reply,timestamp:new Date().toISOString(),xp}]);
       if(xp>0)setXpGained(p=>p+xp);if(resp.session_id)setChatSessionId(resp.session_id);
