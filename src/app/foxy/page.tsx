@@ -1,191 +1,223 @@
-'use client';
+"use client";
+import { useState, useEffect, useRef, useCallback } from "react";
 
-import { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
-import { useAuth } from '@/lib/AuthContext';
-import { chatWithFoxy } from '@/lib/supabase';
-import { FOXY_MODES } from '@/lib/constants';
-import { Card, LoadingFoxy, BottomNav } from '@/components/ui';
-import type { ChatMessage } from '@/lib/types';
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://dxipobqngyfpqbbznojz.supabase.co";
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR4aXBvYnFuZ3lmcHFiYnpub2p6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDE1ODQ1MDcsImV4cCI6MjA1NzE2MDUwN30.CZJH4VPQa6MHmYkXXxnEFPkfGhJnBPqMlG3MwjUe3tE";
 
-export default function FoxyChat() {
-  const { student, isLoggedIn, isLoading, isHi, language } = useAuth();
-  const router = useRouter();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState('');
-  const [sending, setSending] = useState(false);
-  const [sessionId, setSessionId] = useState('');
-  const [mode, setMode] = useState('learn');
-  const scrollRef = useRef<HTMLDivElement>(null);
+const SUBJECT_CONFIG = {
+  math: { name: "Mathematics", icon: "\u2211", color: "#3B82F6", symbols: ["\u222B","\u2202","\u221A","\u03C0","\u221E","\u2248","\u2260","\u2264","\u2265","\u0394","\u03B8","\u03B1","\u03B2","\u2208","\u2205","\u222A","\u2229","\u2282","\u2192","\u21D2","\u00B1","\u00F7","\u00D7","\u00B2","\u00B3","\u2081","\u2082"], quickTools: ["Calculator","Graph Plotter","Formula Sheet","Geometry Kit"] },
+  science: { name: "Science", icon: "\u269B", color: "#10B981", symbols: ["\u2697","\u26A1","\u2103","\u03A9","\u03BC","\u03BB","\u212B","\u2192","\u21CC","\u2191","\u2193","\u0394","\u221D","\u2261","mol","pH","atm","Pa","Hz","eV","nm","kg","N","J","W","V","A"], quickTools: ["Periodic Table","Unit Converter","Lab Simulator","Diagram Tool"] },
+  english: { name: "English", icon: "Aa", color: "#8B5CF6", symbols: ["\u2014","\u2013","\u2026","\u00A9","\u00AE","\u2122","\u00B6","\u00A7","\u2020","\u2021","\u2022","\u00B7","\u00AB","\u00BB","\u2039","\u203A","\u00B9","\u00B2","\u00B3"], quickTools: ["Dictionary","Grammar Check","Essay Outline","Reading Log"] },
+  hindi: { name: "Hindi", icon: "\u0905", color: "#F59E0B", symbols: ["\u0964","\u0965","\u0901","\u0902","\u0903","\u093D","\u094D","\u0950","\u20B9","\u0970"], quickTools: ["Shabdkosh","Vyakaran","Nibandh","Kavita"] },
+  physics: { name: "Physics", icon: "\u26A1", color: "#EF4444", symbols: ["F","m","a","v","t","s","\u03C9","\u03C4","\u03C1","\u03C3","\u03B5","\u03BC","\u03BB","\u03BD","\u03A6","\u03A8","\u2207","\u2202","\u222B","\u03A3","\u0394","\u2192","\u22A5","\u2225","\u221D","\u210F","eV"], quickTools: ["Formula Reference","Vector Visualizer","Circuit Builder","Motion Graphs"] },
+  chemistry: { name: "Chemistry", icon: "\u2697", color: "#06B6D4", symbols: ["\u2192","\u21CC","\u2191","\u2193","\u0394","\u00B0","\u207A","\u207B","\u00B7","\u2261","\u2295","\u2296","mol","aq","(s)","(l)","(g)","pH"], quickTools: ["Periodic Table","Equation Balancer","Molarity Calc","VSEPR Shapes"] },
+  biology: { name: "Biology", icon: "\u2695", color: "#22C55E", symbols: ["\u2642","\u2640","\u00D7","\u2192","\u21D2","\u2248","ATP","DNA","RNA","mRNA","CO2","O2","H2O"], quickTools: ["Cell Diagram","Taxonomy Tree","Body Systems","Genetics Calc"] }
+};
 
-  useEffect(() => {
-    if (!isLoading && !isLoggedIn) router.replace('/');
-  }, [isLoading, isLoggedIn, router]);
+const LANGUAGES = [
+  { code: "en", label: "English", flag: "EN" },
+  { code: "hi", label: "Hindi", flag: "HI" },
+  { code: "hinglish", label: "Hinglish", flag: "HN" },
+  { code: "ta", label: "Tamil", flag: "TA" },
+  { code: "te", label: "Telugu", flag: "TE" },
+  { code: "bn", label: "Bangla", flag: "BN" },
+];
 
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-  }, [messages]);
+const SESSION_MODES = [
+  { id: "learn", label: "Learn", color: "#3B82F6" },
+  { id: "practice", label: "Practice", color: "#10B981" },
+  { id: "quiz", label: "Quiz", color: "#F59E0B" },
+  { id: "doubt", label: "Doubt", color: "#8B5CF6" },
+  { id: "revision", label: "Revise", color: "#EF4444" },
+  { id: "notes", label: "Notes", color: "#06B6D4" },
+];
 
-  const send = async (text?: string) => {
-    const msg = text ?? input.trim();
-    if (!msg || !student || sending) return;
-    setInput('');
-    const userMsg: ChatMessage = { role: 'user', content: msg, timestamp: new Date().toISOString() };
-    setMessages((prev) => [...prev, userMsg]);
-    setSending(true);
+async function supaFetch(path) {
+  try {
+    var r = await fetch(SUPABASE_URL + "/rest/v1/" + path, { headers: { apikey: SUPABASE_ANON_KEY, Authorization: "Bearer " + SUPABASE_ANON_KEY, "Content-Type": "application/json" } });
+    if (!r.ok) return null;
+    return r.json();
+  } catch (e) { return null; }
+}
 
-    const response = await chatWithFoxy({
-      message: msg,
-      student_id: student.id,
-      session_id: sessionId || undefined,
-      subject: student.preferred_subject ?? undefined,
-      grade: student.grade,
-      language,
-      mode,
-    });
-    if (response.session_id) setSessionId(response.session_id);
-    const botMsg: ChatMessage = { role: 'assistant', content: response.reply, timestamp: new Date().toISOString() };
-    setMessages((prev) => [...prev, botMsg]);
-    setSending(false);
-  };
+async function callFoxyTutor(payload) {
+  try {
+    var r = await fetch(SUPABASE_URL + "/functions/v1/foxy-tutor", { method: "POST", headers: { Authorization: "Bearer " + SUPABASE_ANON_KEY, "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    if (!r.ok) return { reply: "Foxy is taking a short break. Try again!" };
+    return r.json();
+  } catch (e) { return { reply: "Connection issue. Please retry!" }; }
+}
 
-  if (isLoading || !student) return <LoadingFoxy />;
+function RichContent({ content, subject }) {
+  var cfg = SUBJECT_CONFIG[subject] || SUBJECT_CONFIG.science;
+  if (!content) return null;
+  var lines = content.split("\n");
+  var elems = [];
+  var listItems = [];
+  var listKind = null;
+  function flush() {
+    if (listItems.length > 0) {
+      elems.push(<div key={"l" + elems.length} style={{ margin: "12px 0", padding: "12px 16px", background: cfg.color + "08", borderLeft: "3px solid " + cfg.color, borderRadius: "0 12px 12px 0" }}>{listItems.map(function(item, i) { return <div key={i} style={{ display: "flex", gap: 10, padding: "6px 0", alignItems: "flex-start", borderBottom: i < listItems.length - 1 ? "1px solid #f0f0f0" : "none" }}><span style={{ minWidth: 24, height: 24, borderRadius: "50%", background: cfg.color + "20", color: cfg.color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{listKind === "num" ? i + 1 : "\u2022"}</span><span style={{ lineHeight: 1.6 }}>{item}</span></div>; })}</div>);
+      listItems = []; listKind = null;
+    }
+  }
+  lines.forEach(function(line, idx) {
+    var t = line.trim();
+    if (t.startsWith("###")) { flush(); elems.push(<h4 key={idx} style={{ fontSize: 14, fontWeight: 700, color: cfg.color, margin: "16px 0 8px", textTransform: "uppercase", letterSpacing: 1 }}>{cfg.icon + " " + t.replace(/^###\s*/, "")}</h4>); }
+    else if (t.startsWith("##")) { flush(); elems.push(<h3 key={idx} style={{ fontSize: 16, fontWeight: 700, color: "#1a1a2e", margin: "18px 0 10px", paddingBottom: 8, borderBottom: "2px solid " + cfg.color + "30" }}>{t.replace(/^##\s*/, "")}</h3>); }
+    else if (t.startsWith(">")) { flush(); elems.push(<div key={idx} style={{ margin: "12px 0", padding: "14px 16px", background: cfg.color + "08", border: "1px solid " + cfg.color + "25", borderRadius: 12, fontSize: 14, lineHeight: 1.7 }}>{t.replace(/^>\s*/, "")}</div>); }
+    else if (/^\d+[\.\)]\s/.test(t)) { if (listKind !== "num") { flush(); listKind = "num"; } listItems.push(t.replace(/^\d+[\.\)]\s*/, "")); }
+    else if (/^[-\u2022*]\s/.test(t)) { if (listKind !== "bul") { flush(); listKind = "bul"; } listItems.push(t.replace(/^[-\u2022*]\s*/, "")); }
+    else if (!t) { flush(); elems.push(<div key={idx} style={{ height: 8 }} />); }
+    else { flush(); elems.push(<p key={idx} style={{ margin: "6px 0", lineHeight: 1.75, color: "#374151" }}>{t}</p>); }
+  });
+  flush();
+  return <div>{elems}</div>;
+}
 
-  const quickPrompts = isHi
-    ? ['मुझे आज का टॉपिक समझाओ', 'एक quiz लो', 'कल का revision करो', 'ये doubt clear करो']
-    : ["Teach me today's topic", 'Give me a quiz', "Revise yesterday's topic", 'Clear my doubt'];
+function AnswerInput({ onSubmit, subject }) {
+  var pts = useState([""]); var points = pts[0]; var setPoints = pts[1];
+  var md = useState("free"); var mode = md[0]; var setMode = md[1];
+  var cfg = SUBJECT_CONFIG[subject] || SUBJECT_CONFIG.science;
+  var ss = useState(false); var showSym = ss[0]; var setShowSym = ss[1];
+  var st = useState(false); var showTools = st[0]; var setShowTools = st[1];
+  var taRef = useRef(null);
+  var ap = useState(0); var aPtIdx = ap[0]; var setAPtIdx = ap[1];
+
+  function insertSym(s) { if (mode === "points") { var u = points.slice(); u[aPtIdx] = (u[aPtIdx] || "") + s; setPoints(u); } else if (taRef.current) { var ta = taRef.current; var st2 = ta.selectionStart; ta.value = ta.value.substring(0, st2) + s + ta.value.substring(ta.selectionEnd); ta.selectionStart = ta.selectionEnd = st2 + s.length; ta.focus(); } }
+  function submit() { if (mode === "points") { var f = points.filter(function(p){return p.trim();}); if (!f.length) return; onSubmit(f.map(function(p,i){return (i+1)+". "+p;}).join("\n")); setPoints([""]); } else { var v = taRef.current && taRef.current.value && taRef.current.value.trim(); if (!v) return; onSubmit(v); taRef.current.value = ""; } }
+  function kd(e) { if (e.key === "Enter" && !e.shiftKey && mode === "free") { e.preventDefault(); submit(); } if (e.key === "Enter" && mode === "points") { e.preventDefault(); setPoints(points.concat([""])); } }
 
   return (
-    <div className="mesh-bg min-h-dvh flex flex-col pb-nav lg:pb-0">
-      {/* Header */}
-      <header className="page-header">
-        <div className="page-header-inner">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)] hover:text-[var(--text-1)]">←</button>
-              <div className="text-2xl">🦊</div>
-              <div>
-                <h1 className="text-base font-bold" style={{ fontFamily: 'var(--font-display)' }}>Foxy</h1>
-                <p className="text-[10px] text-[var(--text-3)]">{isHi ? 'तुम्हारा AI ट्यूटर' : 'Your AI Tutor'}</p>
-              </div>
-            </div>
-            <button
-              onClick={() => { setMessages([]); setSessionId(''); }}
-              className="text-xs px-3 py-1.5 rounded-xl border"
-              style={{ borderColor: 'var(--border-mid)', color: 'var(--text-3)' }}
-            >
-              {isHi ? 'नई चैट' : 'New Chat'}
-            </button>
-          </div>
-          {/* Mode Selector */}
-          <div className="flex gap-1.5 mt-3 overflow-x-auto">
-            {FOXY_MODES.map((m) => (
-              <button
-                key={m.id}
-                onClick={() => setMode(m.id)}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all"
-                style={{
-                  background: mode === m.id ? 'rgba(232,88,28,0.1)' : 'var(--surface-2)',
-                  border: mode === m.id ? '1.5px solid var(--orange)' : '1.5px solid transparent',
-                  color: mode === m.id ? 'var(--orange)' : 'var(--text-3)',
-                }}
-              >
-                {m.icon} {isHi ? m.labelHi : m.label}
-              </button>
-            ))}
-          </div>
+    <div style={{ padding: "16px 20px", background: "#fff", borderTop: "1px solid #e5e7eb" }}>
+      <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <span style={{ fontSize: 11, color: "#9ca3af", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Answer:</span>
+        {[{id:"free",l:"Free Text"},{id:"points",l:"Point-wise"}].map(function(m){return <button key={m.id} onClick={function(){setMode(m.id);}} style={{ padding: "4px 12px", borderRadius: 20, border: mode===m.id?"2px solid "+cfg.color:"1px solid #e5e7eb", background: mode===m.id?cfg.color+"10":"#fff", color: mode===m.id?cfg.color:"#6b7280", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{m.l}</button>;})}
+        <button onClick={function(){setShowSym(!showSym);}} style={{ marginLeft: "auto", padding: "4px 12px", borderRadius: 20, border: showSym?"2px solid "+cfg.color:"1px solid #e5e7eb", background: showSym?cfg.color+"10":"#fff", color: showSym?cfg.color:"#6b7280", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{cfg.icon} Symbols</button>
+        <button onClick={function(){setShowTools(!showTools);}} style={{ padding: "4px 12px", borderRadius: 20, border: showTools?"2px solid "+cfg.color:"1px solid #e5e7eb", background: showTools?cfg.color+"10":"#fff", color: showTools?cfg.color:"#6b7280", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Tools</button>
+      </div>
+      {showSym && <div style={{ display: "flex", flexWrap: "wrap", gap: 4, padding: "10px 12px", background: cfg.color+"05", borderRadius: 12, marginBottom: 10, border: "1px solid "+cfg.color+"20", maxHeight: 120, overflowY: "auto" }}>{cfg.symbols.map(function(s,i){return <button key={i} onClick={function(){insertSym(s);}} style={{ width: 36, height: 36, borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "monospace" }}>{s}</button>;})}</div>}
+      {showTools && <div style={{ display: "flex", gap: 8, padding: "10px 0", marginBottom: 10, flexWrap: "wrap" }}>{cfg.quickTools.map(function(tool,i){return <button key={i} onClick={function(){onSubmit("/tool "+tool);}} style={{ padding: "8px 16px", borderRadius: 12, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 600, color: "#374151" }}>{tool}</button>;})}</div>}
+      {mode === "points" ? (
+        <div style={{ marginBottom: 10 }}>
+          {points.map(function(pt,idx){return <div key={idx} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}><span style={{ minWidth: 28, height: 28, borderRadius: "50%", background: pt.trim()?cfg.color+"20":"#f3f4f6", color: pt.trim()?cfg.color:"#9ca3af", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700 }}>{idx+1}</span><input value={pt} onChange={function(e){var u=points.slice();u[idx]=e.target.value;setPoints(u);}} onFocus={function(){setAPtIdx(idx);}} onKeyDown={kd} placeholder={"Point "+(idx+1)+"..."} style={{ flex: 1, padding: "10px 14px", borderRadius: 10, border: "1px solid #e5e7eb", fontSize: 14, outline: "none", fontFamily: "Nunito,sans-serif" }} />{points.length>1&&<button onClick={function(){setPoints(points.filter(function(_,i){return i!==idx;}));}} style={{ width: 28, height: 28, borderRadius: "50%", border: "1px solid #fecaca", background: "#fef2f2", color: "#ef4444", cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>x</button>}</div>;})}
+          <button onClick={function(){setPoints(points.concat([""]));}} style={{ padding: "6px 14px", borderRadius: 8, border: "1px dashed "+cfg.color+"40", background: "transparent", color: cfg.color, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>+ Add Point</button>
         </div>
-      </header>
+      ) : <textarea ref={taRef} onKeyDown={kd} placeholder="Type your answer or ask Foxy... (Shift+Enter for new line)" rows={2} style={{ width: "100%", padding: "12px 16px", borderRadius: 12, border: "1px solid #e5e7eb", fontSize: 14, outline: "none", resize: "vertical", fontFamily: "Nunito,sans-serif", lineHeight: 1.6, marginBottom: 10, boxSizing: "border-box" }} />}
+      <div style={{ display: "flex", justifyContent: "flex-end" }}><button onClick={submit} style={{ padding: "10px 24px", borderRadius: 12, border: "none", background: "linear-gradient(135deg,"+cfg.color+","+cfg.color+"dd)", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", boxShadow: "0 4px 12px "+cfg.color+"30" }}>Send to Foxy</button></div>
+    </div>
+  );
+}
 
-      {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
-        <div className="chat-container">
-          {messages.length === 0 ? (
-            <div className="text-center pt-8 pb-4">
-              <div className="text-5xl mb-4 animate-float">🦊</div>
-              <h2 className="text-xl md:text-2xl font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
-                {isHi ? 'नमस्ते! मैं Foxy हूँ' : "Hey! I'm Foxy"}
-              </h2>
-              <p className="text-sm text-[var(--text-3)] mb-6 max-w-xs mx-auto">
-                {isHi ? 'कुछ भी पूछो — पढ़ाई, doubt, quiz सब!' : 'Ask me anything — lessons, doubts, quizzes!'}
-              </p>
-              <div className="grid grid-cols-2 gap-2 max-w-md mx-auto">
-                {quickPrompts.map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => send(p)}
-                    className="p-3 md:p-4 rounded-xl text-xs md:text-sm text-left font-medium transition-all card-hover"
-                    style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', color: 'var(--text-2)' }}
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {messages.map((msg, i) => (
-                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} gap-2`}>
-                  {msg.role === 'assistant' && <div className="text-xl flex-shrink-0 mt-1">🦊</div>}
-                  <div
-                    className={`max-w-[82%] md:max-w-[70%] rounded-2xl p-3.5 text-sm md:text-base leading-relaxed ${
-                      msg.role === 'user' ? 'rounded-br-sm' : 'rounded-bl-sm'
-                    }`}
-                    style={{
-                      background: msg.role === 'user' ? 'linear-gradient(135deg, var(--orange), var(--orange-light))' : 'var(--surface-1)',
-                      color: msg.role === 'user' ? '#fff' : 'var(--text-1)',
-                      border: msg.role === 'assistant' ? '1px solid var(--border)' : 'none',
-                      boxShadow: msg.role === 'assistant' ? '0 2px 8px rgba(0,0,0,0.03)' : 'none',
-                      whiteSpace: 'pre-wrap',
-                    }}
-                  >
-                    {msg.content}
-                  </div>
-                </div>
-              ))}
-              {sending && (
-                <div className="flex items-start gap-2">
-                  <div className="text-xl">🦊</div>
-                  <div className="rounded-2xl rounded-bl-sm p-3.5" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
-                    <div className="flex gap-1.5">
-                      <span className="w-2 h-2 rounded-full typing-dot" style={{ background: 'var(--orange)' }} />
-                      <span className="w-2 h-2 rounded-full typing-dot" style={{ background: 'var(--orange)' }} />
-                      <span className="w-2 h-2 rounded-full typing-dot" style={{ background: 'var(--orange)' }} />
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+function MasteryRing({ value, size, color, label }) {
+  size = size || 60; var r = (size-8)/2; var c = 2*Math.PI*r; var o = c-(value/100)*c;
+  return <div style={{ textAlign: "center" }}><svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}><circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#f3f4f6" strokeWidth={4}/><circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={4} strokeDasharray={c} strokeDashoffset={o} strokeLinecap="round" style={{ transition: "stroke-dashoffset 1s ease" }}/></svg><div style={{ marginTop: -size/2-8, fontSize: size>50?14:11, fontWeight: 800, color: color, height: size, display: "flex", alignItems: "center", justifyContent: "center" }}>{Math.round(value)}%</div>{label&&<div style={{ fontSize: 10, color: "#9ca3af", marginTop: 2, fontWeight: 600 }}>{label}</div>}</div>;
+}
+
+function TopicCard({ topic, onClick, mastery, subject }) {
+  var cfg = SUBJECT_CONFIG[subject] || SUBJECT_CONFIG.science;
+  var pct = mastery?(mastery.mastery_percent||0):0;
+  var lvl = mastery?(mastery.mastery_level||"not_started"):"not_started";
+  var lc = { not_started: "#9ca3af", beginner: "#F59E0B", developing: "#3B82F6", proficient: "#8B5CF6", mastered: "#10B981" };
+  return <button onClick={onClick} style={{ padding: "14px 16px", borderRadius: 16, border: "1px solid "+(lc[lvl]||"#9ca3af")+"25", background: "#fff", cursor: "pointer", textAlign: "left", width: "100%", display: "flex", alignItems: "center", gap: 14, transition: "all 0.3s", boxShadow: "0 2px 8px rgba(0,0,0,0.04)", fontFamily: "Nunito,sans-serif" }}><MasteryRing value={pct} size={48} color={lc[lvl]||"#9ca3af"}/><div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13, fontWeight: 700, color: "#1a1a2e", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Ch {topic.chapter_number}: {topic.title}</div><div style={{ fontSize: 11, color: "#6b7280", marginTop: 2, display: "flex", alignItems: "center", gap: 6 }}><span style={{ padding: "1px 8px", borderRadius: 10, background: (lc[lvl]||"#9ca3af")+"15", color: lc[lvl]||"#9ca3af", fontSize: 10, fontWeight: 700, textTransform: "capitalize" }}>{lvl.replace("_"," ")}</span>{topic.estimated_minutes&&<span style={{ fontSize: 10, color: "#9ca3af" }}>{topic.estimated_minutes}m</span>}</div></div></button>;
+}
+
+export default function FoxyPage() {
+  var _s = function(init) { return useState(init); };
+  var s1 = _s(null); var student = s1[0]; var setStudent = s1[1];
+  var s2 = _s("science"); var activeSubject = s2[0]; var setActiveSubject = s2[1];
+  var s3 = _s([]); var topics = s3[0]; var setTopics = s3[1];
+  var s4 = _s([]); var masteryData = s4[0]; var setMasteryData = s4[1];
+  var s5 = _s([]); var messages = s5[0]; var setMessages = s5[1];
+  var s6 = _s(false); var loading = s6[0]; var setLoading = s6[1];
+  var s7 = _s("learn"); var sessionMode = s7[0]; var setSessionMode = s7[1];
+  var s8 = _s("en"); var language = s8[0]; var setLanguage = s8[1];
+  var s9 = _s(null); var activeTopic = s9[0]; var setActiveTopic = s9[1];
+  var s10 = _s("idle"); var foxyState = s10[0]; var setFoxyState = s10[1];
+  var s11 = _s("topics"); var sidePanel = s11[0]; var setSidePanel = s11[1];
+  var s12 = _s(null); var chatSessionId = s12[0]; var setChatSessionId = s12[1];
+  var s13 = _s(0); var xpGained = s13[0]; var setXpGained = s13[1];
+  var s14 = _s(0); var streakDays = s14[0]; var setStreakDays = s14[1];
+  var s15 = _s(0); var totalXP = s15[0]; var setTotalXP = s15[1];
+  var s16 = _s(null); var dailyActivity = s16[0]; var setDailyActivity = s16[1];
+  var s17 = _s([]); var recentNotes = s17[0]; var setRecentNotes = s17[1];
+  var s18 = _s("9"); var studentGrade = s18[0]; var setStudentGrade = s18[1];
+  var endRef = useRef(null);
+
+  useEffect(function() { (async function() {
+    var grade = typeof window !== "undefined" ? (localStorage.getItem("alfanumrik_grade")||"9") : "9";
+    var lang = typeof window !== "undefined" ? (localStorage.getItem("alfanumrik_language")||"en") : "en";
+    setStudentGrade(grade); setLanguage(lang);
+    var stu = await supaFetch("students?limit=1&order=created_at.desc");
+    if (stu && stu[0]) { setStudent(stu[0]); setTotalXP(stu[0].xp_total||0); setStreakDays(stu[0].streak_days||0); setStudentGrade((stu[0].grade||"Grade 9").replace("Grade ","")); var td = new Date().toISOString().split("T")[0]; var act = await supaFetch("daily_activity?student_id=eq."+stu[0].id+"&activity_date=eq."+td+"&limit=1"); if (act&&act[0]) setDailyActivity(act[0]); var notes = await supaFetch("student_notes?student_id=eq."+stu[0].id+"&order=created_at.desc&limit=5"); if (notes) setRecentNotes(notes); }
+    else { setStudent({ id: "demo", name: "Demo Student", grade: "Grade "+grade }); }
+  })(); }, []);
+
+  useEffect(function() { (async function() {
+    var d = await supaFetch("curriculum_topics?grade=eq."+encodeURIComponent("Grade "+studentGrade)+"&parent_topic_id=is.null&is_active=eq.true&order=chapter_number,display_order&limit=50");
+    if (d) setTopics(d);
+    if (student&&student.id&&student.id!=="demo") { var m = await supaFetch("topic_mastery?student_id=eq."+student.id+"&subject=eq."+activeSubject+"&order=updated_at.desc"); if (m) setMasteryData(m); }
+  })(); }, [activeSubject, studentGrade, student]);
+
+  useEffect(function() { if (endRef.current) endRef.current.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+
+  var sendMessage = useCallback(async function(text) {
+    if (!text.trim()) return;
+    setMessages(function(p){return p.concat([{id:Date.now(),role:"student",content:text,timestamp:new Date().toISOString()}]);});
+    setLoading(true); setFoxyState("thinking");
+    try {
+      var resp = await callFoxyTutor({ message: text, student_id: student?student.id:"demo", student_name: student?student.name:"Student", grade: studentGrade, subject: activeSubject, language: language, mode: sessionMode, topic_id: activeTopic?activeTopic.id:null, topic_title: activeTopic?activeTopic.title:null, session_id: chatSessionId });
+      var reply = resp.reply||resp.response||resp.message||"Let me think about that...";
+      var xp = resp.xp_earned||0;
+      setMessages(function(p){return p.concat([{id:Date.now()+1,role:"tutor",content:reply,timestamp:new Date().toISOString(),xp:xp}]);});
+      if (xp>0) setXpGained(function(p){return p+xp;});
+      if (resp.session_id) setChatSessionId(resp.session_id);
+      setFoxyState("happy"); setTimeout(function(){setFoxyState("idle");},2000);
+    } catch(e) { setMessages(function(p){return p.concat([{id:Date.now()+1,role:"tutor",content:"Oops! Please resend.",timestamp:new Date().toISOString()}]);}); setFoxyState("idle"); }
+    setLoading(false);
+  }, [student, studentGrade, activeSubject, language, sessionMode, activeTopic, chatSessionId]);
+
+  var cfg = SUBJECT_CONFIG[activeSubject] || SUBJECT_CONFIG.science;
+  var FOXY = { idle: "\uD83E\uDD8A", thinking: "\uD83E\uDD14", happy: "\uD83D\uDE04" };
+
+  return (
+    <div style={{ fontFamily: "Nunito,Segoe UI,sans-serif", height: "100vh", display: "flex", flexDirection: "column", background: "#f8fafc", color: "#1a1a2e" }}>
+      <style dangerouslySetInnerHTML={{ __html: "@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');@keyframes fadeInUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}*{box-sizing:border-box;scrollbar-width:thin}" }} />
+
+      <div style={{ padding: "10px 20px", background: "linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%)", color: "#fff", display: "flex", alignItems: "center", gap: 16, boxShadow: "0 4px 20px rgba(0,0,0,0.3)", zIndex: 10 }}>
+        <div style={{ width: 44, height: 44, borderRadius: "50%", background: "linear-gradient(135deg,#E8590C,#F59E0B)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, animation: foxyState==="thinking"?"pulse 1s infinite":"none", boxShadow: "0 0 20px rgba(232,89,12,0.4)" }}>{FOXY[foxyState]||FOXY.idle}</div>
+        <div style={{ flex: 1 }}><div style={{ fontSize: 16, fontWeight: 800 }}>Foxy <span style={{ fontSize: 11, fontWeight: 600, opacity: 0.7 }}>Your Intelligent Guide</span></div><div style={{ fontSize: 11, opacity: 0.6, display: "flex", gap: 12, marginTop: 2 }}><span>{student?student.name:"Student"}</span><span>Grade {studentGrade}</span><span>{streakDays}d streak</span><span>{totalXP+xpGained} XP</span></div></div>
+        <select value={language} onChange={function(e){setLanguage(e.target.value);}} style={{ padding: "6px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.1)", color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer", outline: "none" }}>{LANGUAGES.map(function(l){return <option key={l.code} value={l.code} style={{color:"#000"}}>{l.flag} {l.label}</option>;})}</select>
       </div>
 
-      {/* Input Bar */}
-      <div
-        className="sticky bottom-[4.5rem] lg:bottom-0 z-30 border-t px-4 py-3"
-        style={{ background: 'rgba(251,248,244,0.92)', backdropFilter: 'blur(16px)', borderColor: 'var(--border)' }}
-      >
-        <div className="chat-container flex gap-2">
-          <input
-            className="input-base flex-1 !py-3"
-            placeholder={isHi ? 'Foxy से पूछो...' : 'Ask Foxy anything...'}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && send()}
-            disabled={sending}
-          />
-          <button
-            onClick={() => send()}
-            disabled={sending || !input.trim()}
-            className="w-11 h-11 md:w-12 md:h-12 rounded-xl flex items-center justify-center text-white transition-all disabled:opacity-30"
-            style={{ background: 'linear-gradient(135deg, var(--orange), var(--orange-light))' }}
-          >
-            ↑
-          </button>
-        </div>
+      <div style={{ padding: "8px 20px", background: "#fff", borderBottom: "1px solid #e5e7eb", display: "flex", gap: 8, alignItems: "center", overflowX: "auto" }}>
+        {Object.keys(SUBJECT_CONFIG).map(function(key){var sub=SUBJECT_CONFIG[key]; return <button key={key} onClick={function(){setActiveSubject(key);setActiveTopic(null);}} style={{ padding: "6px 14px", borderRadius: 20, border: activeSubject===key?"2px solid "+sub.color:"1px solid #e5e7eb", background: activeSubject===key?sub.color+"10":"transparent", color: activeSubject===key?sub.color:"#6b7280", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap", flexShrink: 0 }}><span style={{fontSize:14}}>{sub.icon}</span>{sub.name}</button>;})}
+        <div style={{ flex: 1 }} />
+        {SESSION_MODES.map(function(m){return <button key={m.id} onClick={function(){setSessionMode(m.id);}} style={{ padding: "5px 10px", borderRadius: 16, border: sessionMode===m.id?"2px solid "+m.color:"1px solid transparent", background: sessionMode===m.id?m.color+"10":"transparent", color: sessionMode===m.id?m.color:"#9ca3af", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{m.label}</button>;})}
       </div>
 
-      <BottomNav />
+      <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+        <div style={{ width: 300, borderRight: "1px solid #e5e7eb", background: "#fff", display: "flex", flexDirection: "column", flexShrink: 0 }}>
+          <div style={{ display: "flex", borderBottom: "1px solid #e5e7eb" }}>{["topics","stats","notes"].map(function(tab){return <button key={tab} onClick={function(){setSidePanel(tab);}} style={{ flex: 1, padding: "10px 0", border: "none", borderBottom: sidePanel===tab?"3px solid "+cfg.color:"3px solid transparent", background: sidePanel===tab?cfg.color+"05":"transparent", color: sidePanel===tab?cfg.color:"#9ca3af", fontSize: 12, fontWeight: 700, cursor: "pointer", textTransform: "capitalize" }}>{tab}</button>;})}</div>
+          <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
+            {sidePanel==="topics"&&<div style={{ display: "flex", flexDirection: "column", gap: 8 }}><div style={{ padding: "10px 14px", background: cfg.color+"10", borderRadius: 12, fontSize: 12, color: cfg.color, fontWeight: 700 }}>{cfg.icon} {cfg.name} - Grade {studentGrade} ({topics.length})</div>{topics.map(function(topic){var mastery=masteryData.find(function(m){return m.topic_tag===topic.title||m.chapter_number===topic.chapter_number;}); return <TopicCard key={topic.id} topic={topic} mastery={mastery} subject={activeSubject} onClick={function(){setActiveTopic(topic);sendMessage("Teach me about: "+topic.title+" (Chapter "+topic.chapter_number+")");}} />;})}</div>}
+            {sidePanel==="stats"&&<div style={{ display: "flex", flexDirection: "column", gap: 16 }}><div style={{ padding: 20, background: "linear-gradient(135deg,#1a1a2e,#16213e)", borderRadius: 16, color: "#fff", display: "flex", justifyContent: "space-around", textAlign: "center" }}><div><div style={{ fontSize: 28, fontWeight: 900, color: "#F59E0B" }}>{totalXP+xpGained}</div><div style={{ fontSize: 10, opacity: 0.7 }}>Total XP</div></div><div><div style={{ fontSize: 28, fontWeight: 900, color: "#EF4444" }}>{streakDays}</div><div style={{ fontSize: 10, opacity: 0.7 }}>Streak</div></div></div><div style={{ padding: "14px 16px", background: "#f9fafb", borderRadius: 12, border: "1px solid #e5e7eb" }}><div style={{ fontSize: 12, fontWeight: 700, marginBottom: 10 }}>Today</div><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>{[{l:"Sessions",v:dailyActivity?dailyActivity.sessions_count:0},{l:"Questions",v:dailyActivity?dailyActivity.questions_asked:0},{l:"Correct",v:dailyActivity?dailyActivity.questions_correct:0},{l:"XP",v:(dailyActivity?dailyActivity.xp_earned:0)+xpGained}].map(function(s,i){return <div key={i} style={{ padding: 10, background: "#fff", borderRadius: 10, textAlign: "center", border: "1px solid #f3f4f6" }}><div style={{ fontSize: 18, fontWeight: 800 }}>{s.v}</div><div style={{ fontSize: 10, color: "#9ca3af" }}>{s.l}</div></div>;})}</div></div></div>}
+            {sidePanel==="notes"&&<div style={{ display: "flex", flexDirection: "column", gap: 8 }}><button onClick={function(){sendMessage("/notes create");}} style={{ padding: 12, borderRadius: 12, border: "2px dashed "+cfg.color+"40", background: "transparent", color: cfg.color, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>+ Ask Foxy for notes</button>{recentNotes.map(function(n,i){return <div key={i} style={{ padding: "12px 14px", borderRadius: 12, border: "1px solid #e5e7eb", background: "#fff", borderLeft: "4px solid "+(n.color||"#E8590C") }}><div style={{ fontSize: 13, fontWeight: 700 }}>{n.title}</div><div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>{n.content?n.content.substring(0,120)+"...":""}</div></div>;})}{recentNotes.length===0&&<div style={{ padding: 20, textAlign: "center", color: "#9ca3af", fontSize: 13 }}>No notes yet</div>}</div>}
+          </div>
+        </div>
+
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "linear-gradient(180deg,#f8fafc,#f1f5f9)" }}>
+          <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+            {messages.length===0&&<div style={{ textAlign: "center", padding: "60px 40px", animation: "fadeInUp 0.5s ease" }}><div style={{ fontSize: 80, marginBottom: 16, animation: "float 3s ease-in-out infinite" }}>{FOXY.idle}</div><h2 style={{ fontSize: 24, fontWeight: 900, background: "linear-gradient(135deg,#E8590C,"+cfg.color+")", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", marginBottom: 8 }}>Hi! I am Foxy</h2><p style={{ color: "#6b7280", fontSize: 14, lineHeight: 1.8, maxWidth: 500, margin: "0 auto" }}>Your Intelligent Guide. Pick any chapter from the left, or type below!</p><div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginTop: 24 }}>{["What should I study today?","Start a quick quiz","Show my weak areas","Create smart notes","Give me formula sheet"].map(function(text,i){return <button key={i} onClick={function(){sendMessage(text);}} style={{ padding: "10px 18px", borderRadius: 14, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 600, color: "#374151", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>{text}</button>;})}</div></div>}
+
+            {messages.map(function(msg){return <div key={msg.id} style={{ display: "flex", justifyContent: msg.role==="student"?"flex-end":"flex-start", marginBottom: 16, animation: "fadeInUp 0.3s ease", gap: 10, alignItems: "flex-start" }}>{msg.role==="tutor"&&<div style={{ width: 36, height: 36, borderRadius: "50%", background: "linear-gradient(135deg,#E8590C,#F59E0B)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>{FOXY.idle}</div>}<div style={{ maxWidth: "75%", padding: "14px 18px", borderRadius: msg.role==="student"?"18px 18px 4px 18px":"18px 18px 18px 4px", background: msg.role==="student"?"linear-gradient(135deg,"+cfg.color+","+cfg.color+"dd)":"#fff", color: msg.role==="student"?"#fff":"#1a1a2e", fontSize: 14, lineHeight: 1.7, boxShadow: msg.role==="student"?"0 4px 12px "+cfg.color+"25":"0 2px 12px rgba(0,0,0,0.06)", border: msg.role==="tutor"?"1px solid #f3f4f6":"none", position: "relative" }}>{msg.role==="tutor"?<RichContent content={msg.content} subject={activeSubject}/>:<div style={{ whiteSpace: "pre-wrap" }}>{msg.content}</div>}{msg.xp>0&&<div style={{ position: "absolute", top: -8, right: -8, background: "linear-gradient(135deg,#F59E0B,#EF4444)", color: "#fff", padding: "2px 8px", borderRadius: 10, fontSize: 10, fontWeight: 800 }}>+{msg.xp} XP</div>}<div style={{ fontSize: 10, opacity: 0.5, marginTop: 6, textAlign: "right" }}>{new Date(msg.timestamp).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}</div></div>{msg.role==="student"&&<div style={{ width: 36, height: 36, borderRadius: "50%", background: "linear-gradient(135deg,"+cfg.color+","+cfg.color+"bb)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, color: "#fff", fontWeight: 800, flexShrink: 0 }}>{student?student.name[0].toUpperCase():"S"}</div>}</div>;})}
+
+            {loading&&<div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 16 }}><div style={{ width: 36, height: 36, borderRadius: "50%", background: "linear-gradient(135deg,#E8590C,#F59E0B)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, animation: "pulse 1s infinite" }}>{FOXY.thinking}</div><div style={{ padding: "12px 20px", borderRadius: "18px 18px 18px 4px", background: "#fff", border: "1px solid #f3f4f6", display: "flex", gap: 6 }}>{[0,1,2].map(function(i){return <div key={i} style={{ width: 8, height: 8, borderRadius: "50%", background: cfg.color, animation: "pulse 1s infinite "+(i*0.2)+"s", opacity: 0.6 }} />;})}<span style={{ fontSize: 12, color: "#9ca3af", marginLeft: 6 }}>Foxy is thinking...</span></div></div>}
+            <div ref={endRef} />
+          </div>
+          <AnswerInput onSubmit={sendMessage} subject={activeSubject} />
+        </div>
+      </div>
     </div>
   );
 }
