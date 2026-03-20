@@ -199,3 +199,15 @@ export async function recordLearningEvent(studentId: string, topicId: string, is
   if (error) console.error('recordLearningEvent:', error.message);
   return data;
 }
+
+/* ── Generate Study Plan (AI weekly plan) ── */
+export async function generateStudyPlan(studentId: string, subject?: string, dailyMinutes = 60, days = 7) {
+  const { data, error } = await supabase.rpc('generate_weekly_study_plan', {
+    p_student_id: studentId,
+    p_subject: subject || null,
+    p_daily_minutes: dailyMinutes,
+    p_days: days,
+  });
+  if (error) throw error;
+  return data;
+}
