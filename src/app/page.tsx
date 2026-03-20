@@ -34,7 +34,7 @@ export default function Home() {
   const [activeSpotlight, setActiveSpotlight] = useState(0);
   /* Auth */
   const [email, setEmail] = useState(''); const [phone, setPhone] = useState('');
-  const [authMethod, setAuthMethod] = useState<'email'|'phone'>('email');
+  const [authMethod, setAuthMethod] = useState<'email'|'phone'>('phone');
   const [otpSent, setOtpSent] = useState(false); const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false); const [error, setError] = useState('');
   /* Profile */
@@ -46,6 +46,9 @@ export default function Home() {
   const [gradesTaught, setGradesTaught] = useState<string[]>(['9']);
   const [qualification, setQualification] = useState('');
   const [relationship, setRelationship] = useState('parent');
+  const [parentPhone, setParentPhone] = useState('');
+  const [childInviteCode, setChildInviteCode] = useState('');
+  const [linkResult, setLinkResult] = useState<string | null>(null);
 
   useEffect(() => { if (!isLoading && isLoggedIn) router.replace('/dashboard'); }, [isLoading, isLoggedIn, router]);
   useEffect(() => {
@@ -81,7 +84,7 @@ export default function Home() {
     if (!user) { setSaving(false); return; }
     if (role === 'student') {
       const { data: ex } = await supabase.from('students').select('id').eq('auth_user_id', user.id).single();
-      const p = { name, grade, board, preferred_language: lang, email: user.email, onboarding_completed: false };
+      const p = { name, grade, board, preferred_language: lang, email: user.email, phone: phone || undefined, parent_phone: parentPhone || undefined, onboarding_completed: false };
       ex ? await supabase.from('students').update(p).eq('id', ex.id) : await supabase.from('students').insert({ ...p, auth_user_id: user.id });
       setStep('subject');
     } else if (role === 'teacher') {
@@ -97,6 +100,13 @@ export default function Home() {
       ex ? await supabase.from('guardians').update(p).eq('id', ex.id) : await supabase.from('guardians').insert({ ...p, auth_user_id: user.id });
       const { data: stu } = await supabase.from('students').select('id').eq('auth_user_id', user.id).single();
       if (!stu) await supabase.from('students').insert({ auth_user_id: user.id, name, grade:'9', board:'CBSE', preferred_language: lang, email: user.email, onboarding_completed: true });
+      // Auto-link child if invite code provided
+      if (childInviteCode.trim()) {
+        const { data: gd } = await supabase.from('guardians').select('id').eq('auth_user_id', user.id).single();
+        if (gd) {
+          await supabase.rpc('link_guardian_to_student_via_code', { p_guardian_id: gd.id, p_invite_code: childInviteCode.trim() });
+        }
+      }
       await refreshStudent(); router.replace('/parent');
     }
     setSaving(false);
@@ -455,7 +465,7 @@ export default function Home() {
             <p style={{ fontSize:13, color:'var(--text-3)', marginTop:4 }}>We&apos;ll send a one-time code to verify</p>
           </div>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:4, background:'var(--surface-2)', borderRadius:12, padding:3, marginBottom:16 }}>
-            {(['email','phone'] as const).map(m => (
+            {(['phone','email'] as const).map(m => (
               <button key={m} onClick={()=>{setAuthMethod(m);setOtpSent(false);setError('');}} style={{ padding:'8px 0', borderRadius:10, border:'none', cursor:'pointer', fontWeight:600, fontSize:13, background:authMethod===m?'var(--surface-1)':'transparent', color:authMethod===m?'var(--text-1)':'var(--text-3)', boxShadow:authMethod===m?'0 1px 4px rgba(0,0,0,0.08)':'none' }}>{m==='email'?'✉️ Email':'📱 Phone'}</button>
             ))}
           </div>
@@ -468,7 +478,7 @@ export default function Home() {
               <Button variant="ghost" fullWidth onClick={()=>{setOtpSent(false);setOtp('');setError('');}}>Change {authMethod}</Button>
             </div>
           </>):(<>
-            {authMethod==='email'?<Input type="email" placeholder="you@email.com" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==='Enter'&&sendOtp()}/>:<Input type="tel" placeholder="+91 98765 43210" value={phone} onChange={e=>setPhone(e.target.value)} onKeyDown={e=>e.key==='Enter'&&sendOtp()}/>}
+            {authMethod==='email'?<Input type="email" placeholder="you@email.com" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==='Enter'&&sendOtp()}/>:<Input type="tel" placeholder="+919876543210" value={phone} onChange={e=>setPhone(e.target.value)} onKeyDown={e=>e.key==='Enter'&&sendOtp()}/>}
             {error&&<p style={{ color:'var(--red)', fontSize:13, marginTop:8 }}>{error}</p>}
             <Button fullWidth onClick={sendOtp} disabled={loading||!(authMethod==='email'?email.trim():phone.trim())} className="mt-3">{loading?'Sending…':'Send OTP →'}</Button>
           </>)}
@@ -495,6 +505,7 @@ export default function Home() {
               <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:6 }}>
                 {LANGUAGES.slice(0,6).map(l=><button key={l.code} onClick={()=>setLang(l.code)} style={{ padding:'8px 4px', borderRadius:10, fontSize:12, fontWeight:600, cursor:'pointer', background:lang===l.code?`${P.rose}15`:'var(--surface-2)', border:`1.5px solid ${lang===l.code?P.rose:'var(--border)'}`, color:lang===l.code?P.rose:'var(--text-2)' }}>{l.labelNative}</button>)}
               </div></div>
+            <Input placeholder="Parent/Guardian phone (optional)" type="tel" value={parentPhone} onChange={e=>setParentPhone(e.target.value)}/>
           </>)}
           {role==='teacher'&&(<>
             <Input placeholder="School name" value={schoolName} onChange={e=>setSchoolName(e.target.value)}/>
@@ -515,8 +526,9 @@ export default function Home() {
               <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:6 }}>
                 {LANGUAGES.slice(0,3).map(l=><button key={l.code} onClick={()=>setLang(l.code)} style={{ padding:'8px 4px', borderRadius:10, fontSize:12, fontWeight:600, cursor:'pointer', background:lang===l.code?`${P.green}15`:'var(--surface-2)', border:`1.5px solid ${lang===l.code?P.green:'var(--border)'}`, color:lang===l.code?P.green:'var(--text-2)' }}>{l.labelNative}</button>)}
               </div></div>
-            <div style={{ padding:16, borderRadius:12, background:`${P.green}08`, border:`1px solid ${P.green}20` }}>
-              <p style={{ fontSize:12, color:'var(--text-2)', lineHeight:1.6 }}><strong>Link your child&apos;s account</strong> after signing up from your Parent Dashboard.</p>
+            <div style={{ padding:16, borderRadius:12, background:'${P.green}08', border:'1px solid ${P.green}20' }}>
+              <p style={{ fontSize:12, color:'var(--text-2)', lineHeight:1.6, marginBottom:10 }}><strong>Link your child&apos;s account</strong> — enter their invite code (found in child&apos;s Profile page)</p>
+              <Input placeholder="Child's Invite Code (e.g. A1B2C3D4)" value={childInviteCode} onChange={e=>setChildInviteCode(e.target.value.toUpperCase())}/>
             </div>
           </>)}
           <Button fullWidth onClick={saveProfile} disabled={saving||!name.trim()} className="mt-1">{saving?'Saving…':role==='student'?'Continue →':'Complete Setup →'}</Button>
