@@ -25,6 +25,8 @@ export default function Dashboard() {
   const [flags, setFlags] = useState<any>({});
   const [greeting, setGreeting] = useState('');
   const [unreadCount, setUnreadCount] = useState(0);
+  const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
+  const [showSubjectPicker, setShowSubjectPicker] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/');
@@ -56,6 +58,9 @@ export default function Dashboard() {
       .eq('student_id', student.id)
       .lte('next_review_at', new Date().toISOString());
     setDueCount(count ?? 0);
+
+    // Load student's selected subjects
+    setSelectedSubjects(student.selected_subjects || [student.preferred_subject].filter(Boolean));
 
     // Generate contextual notifications + get unread count
     try {
@@ -223,12 +228,17 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* All Subjects */}
+        {/* My Subjects (only student's chosen subjects) */}
         {subjects.length > 0 && (
           <div>
-            <SectionHeader icon="📚">{isHi ? 'सभी विषय' : 'All Subjects'}</SectionHeader>
+            <div className="flex items-center justify-between mb-2">
+              <SectionHeader icon="📚">{isHi ? 'मेरे विषय' : 'My Subjects'}</SectionHeader>
+              <button onClick={() => setShowSubjectPicker(true)} className="text-xs font-semibold px-3 py-1 rounded-lg" style={{ color: 'var(--orange)', background: 'rgba(232,88,28,0.08)' }}>
+                {isHi ? '+ बदलो' : '+ Edit'}
+              </button>
+            </div>
             <div className="grid-subjects">
-              {subjects.slice(0, 8).map((s) => (
+              {subjects.filter(s => selectedSubjects.includes(s.code)).map((s) => (
                 <SubjectChip
                   key={s.code}
                   icon={s.icon}
@@ -247,12 +257,54 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* XP by Subject */}
-        {profiles.length > 1 && (
+        {/* Subject Picker Modal */}
+        {showSubjectPicker && (
+          <>
+            <div className="fixed inset-0 z-50" style={{ background: 'rgba(0,0,0,0.3)' }} onClick={() => setShowSubjectPicker(false)} />
+            <div className="fixed bottom-0 left-0 right-0 z-[60] rounded-t-3xl max-h-[80vh] flex flex-col" style={{ background: 'var(--surface-1)', boxShadow: '0 -8px 40px rgba(0,0,0,0.1)' }}>
+              <div className="flex justify-center pt-3 pb-1"><div className="w-10 h-1 rounded-full" style={{ background: 'var(--border)' }} /></div>
+              <div className="px-4 pb-2">
+                <h3 className="text-base font-bold" style={{ fontFamily: 'var(--font-display)' }}>{isHi ? 'विषय चुनो' : 'Choose Your Subjects'}</h3>
+                <p className="text-xs text-[var(--text-3)]">{isHi ? 'जो विषय पढ़ना है वो चुनो' : 'Select the subjects you want to study'}</p>
+              </div>
+              <div className="flex-1 overflow-y-auto px-4 pb-4">
+                <div className="grid grid-cols-2 gap-2">
+                  {subjects.map((s) => {
+                    const sel = selectedSubjects.includes(s.code);
+                    return (
+                      <button key={s.code} onClick={() => {
+                        setSelectedSubjects(prev => sel ? prev.filter(x => x !== s.code) : [...prev, s.code]);
+                      }} className="p-3 rounded-xl text-left transition-all active:scale-[0.97] flex items-center gap-2"
+                        style={{ background: sel ? `${s.color}12` : 'var(--surface-2)', border: `1.5px solid ${sel ? s.color : 'var(--border)'}` }}>
+                        <span className="text-lg">{s.icon}</span>
+                        <span className="text-sm font-semibold" style={{ color: sel ? s.color : 'var(--text-2)' }}>{s.name}</span>
+                        {sel && <span className="ml-auto text-xs" style={{ color: s.color }}>&#10003;</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="px-4 pb-4 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+                <button onClick={async () => {
+                  const subs = selectedSubjects.length > 0 ? selectedSubjects : [student.preferred_subject];
+                  await supabase.from('students').update({ selected_subjects: subs, preferred_subject: subs[0] }).eq('id', student.id);
+                  setShowSubjectPicker(false);
+                  loadData();
+                }} disabled={selectedSubjects.length === 0} className="w-full py-3 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-40"
+                  style={{ background: 'var(--orange)' }}>
+                  {isHi ? `${selectedSubjects.length} विषय सेव करो` : `Save ${selectedSubjects.length} Subject${selectedSubjects.length !== 1 ? 's' : ''}`}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* XP by Subject (only selected subjects) */}
+        {profiles.filter(p => selectedSubjects.includes(p.subject)).length > 0 && (
           <div>
             <SectionHeader icon="🏅">{isHi ? 'विषयवार XP' : 'XP by Subject'}</SectionHeader>
             <div className="space-y-2">
-              {profiles.slice(0, 5).map((p) => {
+              {profiles.filter(p => selectedSubjects.includes(p.subject)).map((p) => {
                 const sm = subjects.find((s) => s.code === p.subject);
                 return (
                   <Card key={p.id} className="!p-3 flex items-center gap-3">
