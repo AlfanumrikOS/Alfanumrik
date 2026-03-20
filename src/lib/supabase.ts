@@ -236,3 +236,21 @@ export async function getHallOfFame(limit = 30) {
   if (error) console.error('getHallOfFame:', error.message);
   return data ?? [];
 }
+
+/* ── Notifications (Duolingo-style) ── */
+export async function getStudentNotifications(studentId: string, limit = 30) {
+  const { data, error } = await supabase.rpc('get_student_notifications', { p_student_id: studentId, p_limit: limit });
+  if (error) console.error('getStudentNotifications:', error.message);
+  return data;
+}
+
+export async function generateNotifications(studentId: string) {
+  const { data, error } = await supabase.rpc('generate_student_notifications', { p_student_id: studentId });
+  if (error) console.error('generateNotifications:', error.message);
+  return data;
+}
+
+export async function markAllNotificationsRead(studentId: string) {
+  const { error } = await supabase.rpc('mark_all_notifications_read', { p_student_id: studentId });
+  if (error) console.error('markAllNotificationsRead:', error.message);
+}
