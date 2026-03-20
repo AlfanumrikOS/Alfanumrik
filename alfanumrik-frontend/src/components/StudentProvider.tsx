@@ -1,77 +1,179 @@
 'use client';
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
-import type { Student } from '@/lib/types';
-import { getLevelFromXP } from '@/lib/engine';
 
-interface StudentCtx {
-  student: Student | null;
-  lang: 'en' | 'hi';
-  isHi: boolean;
-  setLang: (l: 'en' | 'hi') => void;
-  addXP: (n: number) => void;
-  incrementStreak: () => void;
-  login: (name: string, grade: number, board: string, language: string) => void;
-  logout: () => void;
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { createStudent, getStudent, getStudentSnapshot, type DBStudent, type StudentSnapshot } from '@/lib/supabase';
+import type { StudentContext, Language, Subject, Difficulty } from '@/lib/types';
+
+interface StudentContextValue {
+  student: StudentContext | null;
+  snapshot: StudentSnapshot | null;
   isLoggedIn: boolean;
+  isLoading: boolean;
+  isHi: boolean;
+  login: (name: string, grade: number, board: string, language: string, difficulty?: string) => Promise<void>;
+  logout: () => void;
+  refreshSnapshot: () => Promise<void>;
+  setLanguage: (lang: Language) => void;
+  setSubject: (subject: Subject) => void;
 }
 
-const Ctx = createContext<StudentCtx | null>(null);
+const Ctx = createContext<StudentContextValue>({
+  student: null,
+  snapshot: null,
+  isLoggedIn: false,
+  isLoading: true,
+  isHi: false,
+  login: async () => {},
+  logout: () => {},
+  refreshSnapshot: async () => {},
+  setLanguage: () => {},
+  setSubject: () => {},
+});
+
+export const useStudent = () => useContext(Ctx);
+
+const STORAGE_KEY = 'alfanumrik_v2_student';
 
 export function StudentProvider({ children }: { children: ReactNode }) {
-  const [student, setStudent] = useState<Student | null>(() => {
-    if (typeof window === 'undefined') return null;
-    const s = localStorage.getItem('alf_student');
-    return s ? JSON.parse(s) : null;
-  });
-  const [lang, setLangState] = useState<'en' | 'hi'>(() => {
-    if (typeof window === 'undefined') return 'en';
-    return (localStorage.getItem('alf_lang') as 'en' | 'hi') || 'en';
-  });
+  const [student, setStudent] = useState<StudentContext | null>(null);
+  const [snapshot, setSnapshot] = useState<StudentSnapshot | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const save = (s: Student) => { localStorage.setItem('alf_student', JSON.stringify(s)); setStudent(s); };
-
-  const setLang = (l: 'en' | 'hi') => { localStorage.setItem('alf_lang', l); setLangState(l); };
-
-  const addXP = useCallback((n: number) => {
-    setStudent(prev => {
-      if (!prev) return prev;
-      const updated = { ...prev, xp: prev.xp + n, level: getLevelFromXP(prev.xp + n) };
-      localStorage.setItem('alf_student', JSON.stringify(updated));
-      return updated;
-    });
+  // Load student from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored) as StudentContext;
+        setStudent(parsed);
+        // Fetch fresh data from DB
+        if (parsed.id) {
+          getStudent(parsed.id).then(dbStudent => {
+            if (dbStudent) {
+              const updated: StudentContext = {
+                ...parsed,
+                xpTotal: dbStudent.xp_total,
+                xpWeekly: dbStudent.xp_weekly,
+                streakDays: dbStudent.streak_days,
+                streakBest: dbStudent.streak_best,
+              };
+              setStudent(updated);
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+            }
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to load student:', e);
+    }
+    setIsLoading(false);
   }, []);
 
-  const incrementStreak = useCallback(() => {
-    setStudent(prev => {
-      if (!prev) return prev;
-      const ns = prev.streak + 1;
-      const updated = { ...prev, streak: ns, longestStreak: Math.max(ns, prev.longestStreak), lastActiveAt: new Date().toISOString() };
-      localStorage.setItem('alf_student', JSON.stringify(updated));
-      return updated;
-    });
+  // Login — creates student in Supabase
+  const login = useCallback(async (name: string, grade: number, board: string, language: string, difficulty?: string) => {
+    setIsLoading(true);
+    try {
+      // Create in Supabase
+      const dbStudent = await createStudent({
+        name,
+        grade,
+        board,
+        language,
+        difficulty: difficulty || 'normal',
+      });
+
+      const ctx: StudentContext = {
+        id: dbStudent?.id || crypto.randomUUID(),
+        name,
+        grade,
+        board,
+        language: language as Language,
+        subject: 'math' as Subject,
+        difficulty: (difficulty || 'normal') as Difficulty,
+        xpTotal: 0,
+        xpWeekly: 0,
+        streakDays: 0,
+        streakBest: 0,
+        isLoggedIn: true,
+      };
+
+      setStudent(ctx);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(ctx));
+    } catch (err) {
+      console.error('Login failed:', err);
+      // Create offline-only student
+      const ctx: StudentContext = {
+        id: crypto.randomUUID(),
+        name,
+        grade,
+        board,
+        language: language as Language,
+        subject: 'math' as Subject,
+        difficulty: (difficulty || 'normal') as Difficulty,
+        xpTotal: 0,
+        xpWeekly: 0,
+        streakDays: 0,
+        streakBest: 0,
+        isLoggedIn: true,
+      };
+      setStudent(ctx);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(ctx));
+    }
+    setIsLoading(false);
   }, []);
 
-  const login = useCallback((name: string, grade: number, board: string, language: string) => {
-    const s: Student = {
-      id: crypto.randomUUID(), name, grade, board: board as Student['board'],
-      language: language as Student['language'], xp: 0, level: 1, streak: 0,
-      longestStreak: 0, lastActiveAt: new Date().toISOString(),
-    };
-    save(s);
-    setLang(language === 'hi' ? 'hi' : 'en');
+  const logout = useCallback(() => {
+    setStudent(null);
+    setSnapshot(null);
+    localStorage.removeItem(STORAGE_KEY);
   }, []);
 
-  const logout = useCallback(() => { localStorage.removeItem('alf_student'); setStudent(null); }, []);
+  const refreshSnapshot = useCallback(async () => {
+    if (!student?.id) return;
+    const snap = await getStudentSnapshot(student.id);
+    if (snap) {
+      setSnapshot(snap);
+      // Sync XP/streak from snapshot
+      const updated = {
+        ...student,
+        xpTotal: snap.student.xp_total,
+        xpWeekly: snap.student.xp_weekly,
+        streakDays: snap.student.streak_days,
+        streakBest: snap.student.streak_best,
+      };
+      setStudent(updated);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+    }
+  }, [student]);
+
+  const setLanguage = useCallback((lang: Language) => {
+    if (!student) return;
+    const updated = { ...student, language: lang };
+    setStudent(updated);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  }, [student]);
+
+  const setSubject = useCallback((subject: Subject) => {
+    if (!student) return;
+    const updated = { ...student, subject };
+    setStudent(updated);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  }, [student]);
 
   return (
-    <Ctx.Provider value={{ student, lang, isHi: lang === 'hi', setLang, addXP, incrementStreak, login, logout, isLoggedIn: !!student }}>
+    <Ctx.Provider value={{
+      student,
+      snapshot,
+      isLoggedIn: !!student?.isLoggedIn,
+      isLoading,
+      isHi: student?.language === 'hi',
+      login,
+      logout,
+      refreshSnapshot,
+      setLanguage,
+      setSubject,
+    }}>
       {children}
     </Ctx.Provider>
   );
-}
-
-export function useStudent() {
-  const ctx = useContext(Ctx);
-  if (!ctx) throw new Error('useStudent must be inside StudentProvider');
-  return ctx;
 }
