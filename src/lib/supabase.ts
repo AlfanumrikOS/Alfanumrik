@@ -254,3 +254,13 @@ export async function markAllNotificationsRead(studentId: string) {
   const { error } = await supabase.rpc('mark_all_notifications_read', { p_student_id: studentId });
   if (error) console.error('markAllNotificationsRead:', error.message);
 }
+
+/* ── RBAC: Guardian-Student linking ── */
+export async function linkGuardianToStudent(guardianId: string, inviteCode: string) {
+  const { data, error } = await supabase.rpc('link_guardian_to_student_via_code', {
+    p_guardian_id: guardianId,
+    p_invite_code: inviteCode,
+  });
+  if (error) throw error;
+  return data;
+}
