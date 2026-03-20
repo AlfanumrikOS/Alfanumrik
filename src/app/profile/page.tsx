@@ -518,12 +518,6 @@ export default function ProfilePage() {
                   <span className="text-[var(--text-3)]">{isHi ? 'स्थिति' : 'Status'}</span>
                   <span className="font-medium" style={{ color: 'var(--green)' }}>{student.account_status ?? 'Active'}</span>
                 </div>
-                {student.invite_code && (
-                  <div className="flex justify-between">
-                    <span className="text-[var(--text-3)]">{isHi ? 'इनवाइट कोड' : 'Invite Code'}</span>
-                    <span className="font-bold tracking-wider" style={{ color: 'var(--orange)' }}>{student.invite_code}</span>
-                  </div>
-                )}
               </div>
             </Card>
           </div>
