@@ -3,59 +3,81 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { getStudyPlan, supabase } from '@/lib/supabase';
+import { getStudyPlan, generateStudyPlan, supabase } from '@/lib/supabase';
 import { Card, Button, ProgressBar, SectionHeader, LoadingFoxy, BottomNav } from '@/components/ui';
+import { SUBJECT_META } from '@/lib/constants';
 
 interface Task {
   id: string;
   day_number: number;
   scheduled_date: string;
+  task_order: number;
   task_type: string;
   title: string;
   description: string;
   subject: string;
-  chapter_title: string;
+  chapter_number: number | null;
+  chapter_title: string | null;
+  topic: string | null;
   duration_minutes: number;
+  question_count: number | null;
+  difficulty: number;
   status: string;
   xp_reward: number;
+  xp_earned: number;
+  score_percent: number | null;
 }
 
 interface Plan {
   id: string;
   subject: string;
   title: string;
+  description: string;
+  plan_type: string;
   start_date: string;
   end_date: string;
   total_tasks: number;
   completed_tasks: number;
   progress_percent: number;
+  ai_reasoning: string;
 }
 
 const TASK_ICONS: Record<string, string> = {
-  learn: '📖',
-  quiz: '⚡',
-  review: '🔄',
-  practice: '✏️',
-  read: '📚',
-  watch: '🎬',
-  default: '📋',
+  learn: '📖', quiz: '⚡', review: '🔄', practice: '✏️',
+  revision: '🧠', notes: '📝', foxy_chat: '🦊', challenge: '🎯',
+};
+
+const TASK_COLORS: Record<string, string> = {
+  learn: '#E8581C', quiz: '#F5A623', review: '#0891B2', practice: '#7C3AED',
+  revision: '#6366F1', notes: '#16A34A', foxy_chat: '#E8581C', challenge: '#DB2777',
 };
 
 const STATUS_STYLES: Record<string, { bg: string; border: string; color: string; label: string; labelHi: string }> = {
-  completed: { bg: 'rgba(22,163,74,0.08)', border: 'rgba(22,163,74,0.2)', color: '#16A34A', label: '✓ Done', labelHi: '✓ पूरा' },
-  in_progress: { bg: 'rgba(232,88,28,0.08)', border: 'rgba(232,88,28,0.2)', color: '#E8581C', label: '▶ In Progress', labelHi: '▶ जारी' },
-  skipped: { bg: 'rgba(156,163,175,0.08)', border: 'rgba(156,163,175,0.2)', color: '#9CA3AF', label: '⏭ Skipped', labelHi: '⏭ छोड़ा' },
+  completed: { bg: 'rgba(22,163,74,0.08)', border: 'rgba(22,163,74,0.25)', color: '#16A34A', label: '✓ Done', labelHi: '✓ पूरा' },
+  in_progress: { bg: 'rgba(232,88,28,0.08)', border: 'rgba(232,88,28,0.25)', color: '#E8581C', label: '▶ In Progress', labelHi: '▶ जारी' },
+  skipped: { bg: 'rgba(156,163,175,0.06)', border: 'rgba(156,163,175,0.2)', color: '#9CA3AF', label: '⏭ Skipped', labelHi: '⏭ छोड़ा' },
   pending: { bg: 'var(--surface-1)', border: 'var(--border)', color: 'var(--text-3)', label: '○ Pending', labelHi: '○ बाकी' },
 };
 
+const DAILY_OPTIONS = [30, 45, 60, 90];
+const DAY_OPTIONS = [5, 7];
+
 export default function StudyPlanPage() {
-  const { student, isLoggedIn, isLoading, isHi } = useAuth();
+  const { student, isLoggedIn, isLoading, isHi, refreshSnapshot } = useAuth();
   const router = useRouter();
+
   const [plan, setPlan] = useState<Plan | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [hasPlan, setHasPlan] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
   const [expandedDay, setExpandedDay] = useState<number | null>(null);
+
+  // Generate form
+  const [showGenerate, setShowGenerate] = useState(false);
+  const [genSubject, setGenSubject] = useState<string | null>(null);
+  const [genMinutes, setGenMinutes] = useState(60);
+  const [genDays, setGenDays] = useState(7);
+  const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/');
@@ -70,7 +92,6 @@ export default function StudyPlanPage() {
         setPlan(data.plan);
         setTasks(Array.isArray(data.tasks) ? data.tasks : []);
         setHasPlan(true);
-        // Auto-expand today's tasks
         const today = new Date().toISOString().split('T')[0];
         const todayTask = (data.tasks || []).find((t: Task) => t.scheduled_date === today);
         if (todayTask) setExpandedDay(todayTask.day_number);
@@ -86,108 +107,228 @@ export default function StudyPlanPage() {
 
   useEffect(() => {
     if (student) load();
-  }, [student?.id, load]);
+  }, [student, load]);
+
+  const handleGenerate = async () => {
+    if (!student) return;
+    setGenerating(true);
+    try {
+      const result = await generateStudyPlan(
+        student.id,
+        genSubject || student.preferred_subject || undefined,
+        genMinutes,
+        genDays
+      );
+      if (result?.success) {
+        setShowGenerate(false);
+        await load();
+        refreshSnapshot();
+      } else {
+        alert(isHi ? 'प्लान बनाने में त्रुटि' : 'Error generating plan');
+      }
+    } catch (e) {
+      console.error('Generate error:', e);
+      alert(isHi ? 'प्लान बनाने में त्रुटि' : 'Error generating plan');
+    }
+    setGenerating(false);
+  };
 
   const markTask = async (taskId: string, status: string) => {
     try {
-      await supabase.from('study_plan_tasks').update({ status }).eq('id', taskId);
-      setTasks((prev) =>
-        prev.map((t) => (t.id === taskId ? { ...t, status } : t))
-      );
-      // Update plan progress
+      const updates: Record<string, any> = { status };
+      if (status === 'completed') updates.completed_at = new Date().toISOString();
+
+      await supabase.from('study_plan_tasks').update(updates).eq('id', taskId);
+      setTasks(prev => prev.map(t => (t.id === taskId ? { ...t, status } : t)));
+
       if (plan) {
-        const completed = tasks.filter(
-          (t) => (t.id === taskId ? status : t.status) === 'completed'
-        ).length;
+        const completed = tasks.filter(t => (t.id === taskId ? status : t.status) === 'completed').length;
         const pct = Math.round((completed / plan.total_tasks) * 100);
-        setPlan((p) => p ? { ...p, completed_tasks: completed, progress_percent: pct } : p);
+        setPlan(p => p ? { ...p, completed_tasks: completed, progress_percent: pct } : p);
+        await supabase.from('study_plans').update({ completed_tasks: completed, progress_percent: pct }).eq('id', plan.id);
       }
+
+      if (status === 'completed') refreshSnapshot();
     } catch (e) {
       console.error('markTask error:', e);
     }
   };
 
+  const handleReset = async () => {
+    if (!student || !confirm(isHi ? 'नया प्लान बनाएँ? पुराना हट जाएगा।' : 'Generate a new plan? This replaces the current one.')) return;
+    setHasPlan(false);
+    setShowGenerate(true);
+  };
+
   if (isLoading || !student) return <LoadingFoxy />;
 
-  // Group tasks by day
   const dayGroups = tasks.reduce<Record<number, Task[]>>((acc, t) => {
     (acc[t.day_number] = acc[t.day_number] || []).push(t);
     return acc;
   }, {});
-  const days = Object.keys(dayGroups)
-    .map(Number)
-    .sort((a, b) => a - b);
-
+  const days = Object.keys(dayGroups).map(Number).sort((a, b) => a - b);
   const today = new Date().toISOString().split('T')[0];
+  const totalXp = tasks.reduce((a, t) => a + t.xp_reward, 0);
+  const earnedXp = tasks.filter(t => t.status === 'completed').reduce((a, t) => a + t.xp_reward, 0);
 
-  return (
-    <div className="mesh-bg min-h-dvh pb-nav">
-      {/* Header */}
-      <header
-        className="page-header"
-        style={{
-          background: 'rgba(251,248,244,0.88)',
-          backdropFilter: 'blur(20px)',
-          borderColor: 'var(--border)',
-        }}
-      >
-        <div className="app-container py-3 flex items-center gap-3">
-          <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)]">
-            ←
-          </button>
+  // ═══ HEADER (shared) ═══
+  const header = (
+    <header className="page-header" style={{ background: 'rgba(251,248,244,0.88)', backdropFilter: 'blur(20px)', borderColor: 'var(--border)' }}>
+      <div className="app-container py-3 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)]">&larr;</button>
           <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
             📅 {isHi ? 'अध्ययन योजना' : 'Study Plan'}
           </h1>
         </div>
-      </header>
+        {hasPlan && (
+          <button onClick={handleReset} className="text-xs px-3 py-1.5 rounded-lg" style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }}>
+            {isHi ? '🔄 नया' : '🔄 New Plan'}
+          </button>
+        )}
+      </div>
+    </header>
+  );
 
-      <main className="app-container py-6 space-y-4">
+  return (
+    <div className="mesh-bg min-h-dvh pb-nav">
+      {header}
+
+      <main className="app-container py-5 space-y-4">
         {loading ? (
-          <div className="text-center py-12">
+          <div className="text-center py-16">
             <div className="text-4xl animate-float mb-3">📅</div>
-            <p className="text-sm text-[var(--text-3)]">
-              {isHi ? 'योजना लोड हो रही है...' : 'Loading your plan...'}
-            </p>
+            <p className="text-sm text-[var(--text-3)]">{isHi ? 'योजना लोड हो रही है...' : 'Loading your plan...'}</p>
           </div>
-        ) : !hasPlan ? (
-          /* No Plan */
-          <div className="text-center py-12">
-            <div className="text-5xl mb-4">📋</div>
-            <h3 className="text-xl font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
-              {isHi ? 'कोई अध्ययन योजना नहीं' : 'No Study Plan Yet'}
-            </h3>
-            <p className="text-sm text-[var(--text-3)] max-w-xs mx-auto mb-6">
-              {isHi
-                ? 'Foxy से कहो "मेरा study plan बनाओ" — वो तुम्हारे लिए personalized plan बनाएगा!'
-                : 'Ask Foxy "Create my study plan" — Foxy will generate a personalized weekly plan!'}
-            </p>
-            <div className="flex gap-2 justify-center">
-              <Button onClick={() => router.push('/foxy')}>
-                🦊 {isHi ? 'Foxy से पूछो' : 'Ask Foxy'}
-              </Button>
-              <Button variant="ghost" onClick={() => router.push('/dashboard')}>
-                {isHi ? 'होम' : 'Home'}
-              </Button>
+
+        ) : (!hasPlan || showGenerate) ? (
+          /* ═══ GENERATE PLAN SCREEN ═══ */
+          <div className="space-y-5">
+            <div className="text-center py-6">
+              <div className="text-5xl mb-3">🧠</div>
+              <h3 className="text-xl font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
+                {isHi ? 'तुम्हारा AI Study Plan' : 'Your AI Study Plan'}
+              </h3>
+              <p className="text-sm text-[var(--text-3)] max-w-sm mx-auto">
+                {isHi
+                  ? 'सिद्ध विज्ञान पर आधारित: Retrieval Practice + Spaced Repetition + Interleaving'
+                  : 'Powered by proven science: Retrieval Practice + Spaced Repetition + Interleaved Practice'}
+              </p>
             </div>
+
+            {/* Subject */}
+            <div>
+              <p className="text-sm text-[var(--text-3)] mb-2 font-medium">
+                {isHi ? '1. विषय चुनो' : '1. Choose subject'}
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                {SUBJECT_META.slice(0, 9).map(s => (
+                  <button
+                    key={s.code}
+                    onClick={() => setGenSubject(s.code)}
+                    className="rounded-xl p-3 text-center transition-all"
+                    style={{
+                      background: (genSubject || student.preferred_subject) === s.code ? `${s.color}12` : 'var(--surface-1)',
+                      border: (genSubject || student.preferred_subject) === s.code ? `2px solid ${s.color}` : '1.5px solid var(--border)',
+                    }}
+                  >
+                    <div className="text-xl mb-1">{s.icon}</div>
+                    <div className="text-[10px] font-semibold" style={{ color: (genSubject || student.preferred_subject) === s.code ? s.color : 'var(--text-3)' }}>
+                      {s.name}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Daily Minutes */}
+            <div>
+              <p className="text-sm text-[var(--text-3)] mb-2 font-medium">
+                {isHi ? '2. रोज़ कितने मिनट?' : '2. Daily study time'}
+              </p>
+              <div className="flex gap-2">
+                {DAILY_OPTIONS.map(m => (
+                  <button
+                    key={m}
+                    onClick={() => setGenMinutes(m)}
+                    className="flex-1 rounded-xl py-3 text-center transition-all"
+                    style={{
+                      background: genMinutes === m ? 'var(--orange)' : 'var(--surface-2)',
+                      color: genMinutes === m ? '#fff' : 'var(--text-2)',
+                      fontWeight: 700, fontSize: 13,
+                    }}
+                  >
+                    {m} {isHi ? 'मि' : 'min'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Days */}
+            <div>
+              <p className="text-sm text-[var(--text-3)] mb-2 font-medium">
+                {isHi ? '3. कितने दिन?' : '3. Plan duration'}
+              </p>
+              <div className="flex gap-2">
+                {DAY_OPTIONS.map(d => (
+                  <button
+                    key={d}
+                    onClick={() => setGenDays(d)}
+                    className="flex-1 rounded-xl py-3 text-center transition-all"
+                    style={{
+                      background: genDays === d ? 'var(--orange)' : 'var(--surface-2)',
+                      color: genDays === d ? '#fff' : 'var(--text-2)',
+                      fontWeight: 700, fontSize: 13,
+                    }}
+                  >
+                    {d} {isHi ? 'दिन' : 'days'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* How it works */}
+            <Card className="!p-4">
+              <p className="text-xs font-bold text-[var(--text-2)] mb-2">{isHi ? 'हर दिन का चक्र:' : 'Daily learning cycle:'}</p>
+              <div className="space-y-1.5">
+                {[
+                  { icon: '🧠', en: 'Quick Recall — retrieval practice from yesterday', hi: 'Quick Recall — कल का revision' },
+                  { icon: '🔄', en: 'Flashcard Review — spaced repetition (d=0.54)', hi: 'Flashcard Review — spaced repetition' },
+                  { icon: '📖', en: 'New Topic — learn 1 chapter with Foxy AI', hi: 'New Topic — Foxy से 1 chapter सीखो' },
+                  { icon: '✏️', en: 'Mixed Practice — interleaved problems (d=1.05)', hi: 'Mixed Practice — mixed problems' },
+                  { icon: '⚡', en: 'Quiz — wrong answers become flashcards', hi: 'Quiz — गलत जवाब flashcard बनते हैं' },
+                ].map((item, i) => (
+                  <div key={i} className="flex items-center gap-2 text-xs text-[var(--text-3)]">
+                    <span>{item.icon}</span>
+                    <span>{isHi ? item.hi : item.en}</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            <Button fullWidth onClick={handleGenerate} color="var(--orange)">
+              {generating
+                ? (isHi ? '🧠 प्लान बन रहा है...' : '🧠 Generating plan...')
+                : (isHi ? '🚀 मेरा Study Plan बनाओ' : '🚀 Generate My Study Plan')}
+            </Button>
           </div>
+
         ) : (
-          /* Plan exists */
+          /* ═══ PLAN VIEW ═══ */
           <>
-            {/* Plan Overview */}
+            {/* Plan Overview Card */}
             <Card accent="var(--purple, #7C3AED)">
               <div className="flex items-center justify-between mb-3">
-                <div>
-                  <h2 className="text-base font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+                <div className="flex-1 min-w-0">
+                  <h2 className="text-base font-bold truncate" style={{ fontFamily: 'var(--font-display)' }}>
                     {plan?.title || (isHi ? 'अध्ययन योजना' : 'Study Plan')}
                   </h2>
-                  <p className="text-xs text-[var(--text-3)] mt-0.5">
-                    {plan?.subject} · {plan?.start_date} → {plan?.end_date}
+                  <p className="text-xs text-[var(--text-3)] mt-0.5 truncate">
+                    {plan?.description}
                   </p>
                 </div>
-                <div className="text-right">
-                  <div className="text-2xl font-bold gradient-text">
-                    {plan?.progress_percent ?? 0}%
-                  </div>
+                <div className="text-right ml-3 flex-shrink-0">
+                  <div className="text-2xl font-bold gradient-text">{plan?.progress_percent ?? 0}%</div>
                 </div>
               </div>
               <ProgressBar
@@ -196,58 +337,74 @@ export default function StudyPlanPage() {
                 label={`${plan?.completed_tasks ?? 0}/${plan?.total_tasks ?? 0} ${isHi ? 'पूरे' : 'done'}`}
                 showPercent
               />
+              <div className="flex items-center gap-4 mt-3 text-xs text-[var(--text-3)]">
+                <span>📅 {plan?.start_date} → {plan?.end_date}</span>
+                <span>⭐ {earnedXp}/{totalXp} XP</span>
+              </div>
             </Card>
 
             {/* Day-by-day Tasks */}
-            {days.map((dayNum) => {
+            {days.map(dayNum => {
               const dayTasks = dayGroups[dayNum];
               const isExpanded = expandedDay === dayNum;
-              const completedInDay = dayTasks.filter((t) => t.status === 'completed').length;
+              const completedInDay = dayTasks.filter(t => t.status === 'completed').length;
               const dayDate = dayTasks[0]?.scheduled_date;
               const isToday = dayDate === today;
+              const isPast = dayDate < today;
+              const dayPct = dayTasks.length > 0 ? Math.round((completedInDay / dayTasks.length) * 100) : 0;
 
               return (
                 <div key={dayNum}>
                   <button
                     onClick={() => setExpandedDay(isExpanded ? null : dayNum)}
-                    className="w-full flex items-center justify-between py-2"
+                    className="w-full flex items-center justify-between py-2.5 px-1"
                   >
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold" style={{ color: isToday ? 'var(--orange)' : 'var(--text-2)' }}>
-                        {isHi ? `दिन ${dayNum}` : `Day ${dayNum}`}
-                        {isToday && (
-                          <span className="text-xs ml-1 font-normal text-[var(--orange)]">
-                            ({isHi ? 'आज' : 'Today'})
-                          </span>
-                        )}
+                      <span
+                        className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
+                        style={{
+                          background: dayPct === 100 ? '#16A34A' : isToday ? 'var(--orange)' : 'var(--surface-2)',
+                          color: dayPct === 100 || isToday ? '#fff' : 'var(--text-2)',
+                        }}
+                      >
+                        {dayPct === 100 ? '✓' : dayNum}
                       </span>
+                      <div className="text-left">
+                        <span className="text-sm font-bold" style={{ color: isToday ? 'var(--orange)' : 'var(--text-2)' }}>
+                          {isHi ? `दिन ${dayNum}` : `Day ${dayNum}`}
+                          {isToday && <span className="text-xs ml-1 font-normal">({isHi ? 'आज' : 'Today'})</span>}
+                        </span>
+                        {dayTasks[0]?.topic && (
+                          <div className="text-[10px] text-[var(--text-3)] truncate max-w-[200px]">
+                            {dayTasks.find(t => t.task_type === 'learn')?.title || ''}
+                          </div>
+                        )}
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-[var(--text-3)]">
-                        {completedInDay}/{dayTasks.length}
-                      </span>
-                      <span className="text-[var(--text-3)] text-xs">
-                        {isExpanded ? '▲' : '▼'}
-                      </span>
+                      <span className="text-xs text-[var(--text-3)]">{completedInDay}/{dayTasks.length}</span>
+                      <span className="text-[var(--text-3)] text-xs">{isExpanded ? '▲' : '▼'}</span>
                     </div>
                   </button>
 
                   {isExpanded && (
-                    <div className="space-y-2 pb-2">
-                      {dayTasks.map((task) => {
+                    <div className="space-y-2 pb-3">
+                      {dayTasks.map(task => {
                         const s = STATUS_STYLES[task.status] || STATUS_STYLES.pending;
-                        const icon = TASK_ICONS[task.task_type] || TASK_ICONS.default;
+                        const icon = TASK_ICONS[task.task_type] || '📋';
+                        const accentColor = TASK_COLORS[task.task_type] || 'var(--orange)';
+
                         return (
                           <div
                             key={task.id}
                             className="rounded-2xl p-3.5 relative overflow-hidden"
-                            style={{
-                              background: s.bg,
-                              border: `1px solid ${s.border}`,
-                            }}
+                            style={{ background: s.bg, border: `1px solid ${s.border}` }}
                           >
-                            <div className="flex items-start gap-3">
-                              <span className="text-xl mt-0.5">{icon}</span>
+                            {/* Accent bar */}
+                            <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-2xl" style={{ background: accentColor }} />
+
+                            <div className="flex items-start gap-3 pl-2">
+                              <span className="text-xl mt-0.5 flex-shrink-0">{icon}</span>
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center justify-between">
                                   <span
@@ -263,82 +420,70 @@ export default function StudyPlanPage() {
                                     {isHi ? s.labelHi : s.label}
                                   </span>
                                 </div>
+
                                 {task.description && (
-                                  <p className="text-xs text-[var(--text-3)] mt-0.5 line-clamp-2">
+                                  <p className="text-xs text-[var(--text-3)] mt-1 leading-relaxed line-clamp-2">
                                     {task.description}
                                   </p>
                                 )}
-                                <div className="flex items-center gap-3 mt-2">
-                                  {task.duration_minutes > 0 && (
-                                    <span className="text-[10px] text-[var(--text-3)]">
-                                      ⏱ {task.duration_minutes}m
-                                    </span>
-                                  )}
-                                  {task.xp_reward > 0 && (
-                                    <span className="text-[10px] text-[var(--text-3)]">
-                                      ⭐ {task.xp_reward} XP
-                                    </span>
-                                  )}
-                                  {task.chapter_title && (
-                                    <span className="text-[10px] text-[var(--text-3)] truncate">
-                                      📚 {task.chapter_title}
-                                    </span>
-                                  )}
+
+                                <div className="flex items-center gap-3 mt-2 flex-wrap">
+                                  <span className="text-[10px] text-[var(--text-3)]">⏱ {task.duration_minutes}m</span>
+                                  {task.xp_reward > 0 && <span className="text-[10px] text-[var(--text-3)]">⭐ {task.xp_reward} XP</span>}
+                                  {task.question_count && <span className="text-[10px] text-[var(--text-3)]">📝 {task.question_count} Qs</span>}
+                                  {task.chapter_title && <span className="text-[10px] text-[var(--text-3)] truncate">📚 {task.chapter_title}</span>}
                                 </div>
 
-                                {/* Action buttons for pending/in_progress tasks */}
+                                {/* Action buttons */}
                                 {task.status !== 'completed' && task.status !== 'skipped' && (
-                                  <div className="flex gap-2 mt-2.5">
+                                  <div className="flex gap-2 mt-2.5 flex-wrap">
                                     <button
                                       onClick={() => markTask(task.id, 'completed')}
                                       className="text-xs px-3 py-1.5 rounded-lg font-semibold"
-                                      style={{
-                                        background: 'rgba(22,163,74,0.1)',
-                                        border: '1px solid rgba(22,163,74,0.2)',
-                                        color: '#16A34A',
-                                      }}
+                                      style={{ background: 'rgba(22,163,74,0.1)', border: '1px solid rgba(22,163,74,0.2)', color: '#16A34A' }}
                                     >
                                       ✓ {isHi ? 'पूरा' : 'Done'}
                                     </button>
                                     {task.task_type === 'learn' && (
                                       <button
-                                        onClick={() => {
-                                          markTask(task.id, 'in_progress');
-                                          router.push('/foxy');
-                                        }}
+                                        onClick={() => { markTask(task.id, 'in_progress'); router.push('/foxy'); }}
                                         className="text-xs px-3 py-1.5 rounded-lg font-semibold"
-                                        style={{
-                                          background: 'rgba(232,88,28,0.1)',
-                                          border: '1px solid rgba(232,88,28,0.2)',
-                                          color: 'var(--orange)',
-                                        }}
+                                        style={{ background: 'rgba(232,88,28,0.1)', border: '1px solid rgba(232,88,28,0.2)', color: 'var(--orange)' }}
                                       >
                                         🦊 {isHi ? 'Foxy से सीखो' : 'Learn with Foxy'}
                                       </button>
                                     )}
                                     {task.task_type === 'quiz' && (
                                       <button
-                                        onClick={() => {
-                                          markTask(task.id, 'in_progress');
-                                          router.push('/quiz');
-                                        }}
+                                        onClick={() => { markTask(task.id, 'in_progress'); router.push('/quiz'); }}
                                         className="text-xs px-3 py-1.5 rounded-lg font-semibold"
-                                        style={{
-                                          background: 'rgba(245,166,35,0.1)',
-                                          border: '1px solid rgba(245,166,35,0.2)',
-                                          color: '#D97706',
-                                        }}
+                                        style={{ background: 'rgba(245,166,35,0.1)', border: '1px solid rgba(245,166,35,0.2)', color: '#D97706' }}
                                       >
                                         ⚡ {isHi ? 'क्विज़ खेलो' : 'Take Quiz'}
+                                      </button>
+                                    )}
+                                    {(task.task_type === 'review' || task.task_type === 'revision') && (
+                                      <button
+                                        onClick={() => { markTask(task.id, 'in_progress'); router.push('/review'); }}
+                                        className="text-xs px-3 py-1.5 rounded-lg font-semibold"
+                                        style={{ background: 'rgba(8,145,178,0.1)', border: '1px solid rgba(8,145,178,0.2)', color: '#0891B2' }}
+                                      >
+                                        🔄 {isHi ? 'रिव्यू करो' : 'Review'}
+                                      </button>
+                                    )}
+                                    {task.task_type === 'practice' && (
+                                      <button
+                                        onClick={() => { markTask(task.id, 'in_progress'); router.push('/quiz'); }}
+                                        className="text-xs px-3 py-1.5 rounded-lg font-semibold"
+                                        style={{ background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.2)', color: '#7C3AED' }}
+                                      >
+                                        ✏️ {isHi ? 'अभ्यास करो' : 'Practice'}
                                       </button>
                                     )}
                                     <button
                                       onClick={() => markTask(task.id, 'skipped')}
                                       className="text-xs px-3 py-1.5 rounded-lg font-semibold"
-                                      style={{
-                                        background: 'var(--surface-2)',
-                                        color: 'var(--text-3)',
-                                      }}
+                                      style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }}
                                     >
                                       {isHi ? 'छोड़ो' : 'Skip'}
                                     </button>
@@ -354,6 +499,19 @@ export default function StudyPlanPage() {
                 </div>
               );
             })}
+
+            {/* Science behind the plan */}
+            {plan?.ai_reasoning && (
+              <Card className="!p-4">
+                <div className="flex items-start gap-2">
+                  <span className="text-lg">🧪</span>
+                  <div>
+                    <p className="text-xs font-bold text-[var(--text-2)] mb-1">{isHi ? 'विज्ञान आधारित' : 'Science-backed'}</p>
+                    <p className="text-xs text-[var(--text-3)] leading-relaxed">{plan.ai_reasoning}</p>
+                  </div>
+                </div>
+              </Card>
+            )}
           </>
         )}
       </main>
