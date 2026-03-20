@@ -1,49 +1,28 @@
 'use client';
-
-import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useStudent } from '@/components/StudentProvider';
-import { getBadges, getStudentBadges, type DBBadge } from '@/lib/supabase';
-import { ArrowLeft, Award } from 'lucide-react';
+import { useAuth } from '@/components/AuthProvider';
+import BottomNav from '@/components/BottomNav';
+import { useEffect } from 'react';
 
-export default function BadgesPage() {
-  const { student, isLoggedIn, isLoading, isHi } = useStudent();
+export default function Page() {
+  const { isLoggedIn, isLoading, isHi } = useAuth();
   const router = useRouter();
-  const [badges, setBadges] = useState<DBBadge[]>([]);
-  const [earned, setEarned] = useState<string[]>([]);
-
-  useEffect(() => {
-    if (!isLoggedIn && !isLoading) { router.push('/'); return; }
-    getBadges().then(setBadges);
-    if (student?.id) getStudentBadges(student.id).then(setEarned);
-  }, [isLoggedIn, isLoading, student?.id]);
-
-  if (isLoading || !student) return <div className="min-h-screen flex items-center justify-center"><div className="text-2xl animate-pulse">🦊</div></div>;
-
+  useEffect(() => { if (!isLoading && !isLoggedIn) router.replace('/'); }, [isLoading, isLoggedIn, router]);
   return (
-    <div className="min-h-screen pb-24">
-      <div className="sticky top-0 z-50 glass border-b border-white/5">
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
-          <button onClick={() => router.push('/dashboard')}><ArrowLeft className="w-5 h-5 text-white/40" /></button>
-          <Award className="w-5 h-5 text-yellow-400" />
-          <span className="font-bold">{isHi ? 'बैज' : 'Badges'}</span>
-          <span className="text-xs text-white/30 ml-auto">{earned.length}/{badges.length}</span>
+    <div className="mesh-bg min-h-dvh pb-nav">
+      <header className="glass border-b border-[var(--border)]">
+        <div className="max-w-lg mx-auto px-4 py-3 flex items-center gap-3">
+          <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)]">←</button>
+          <h1 className="font-bold text-lg capitalize" style={{ fontFamily: 'var(--font-display)' }}>badges</h1>
         </div>
+      </header>
+      <div className="max-w-lg mx-auto px-4 py-12 text-center">
+        <div className="text-5xl mb-4 animate-float">🦊</div>
+        <h2 className="font-bold text-xl mb-2" style={{ fontFamily: 'var(--font-display)' }}>{isHi ? 'जल्द आ रहा है!' : 'Coming Soon!'}</h2>
+        <p className="text-sm text-[var(--text-3)]">{isHi ? 'यह फीचर जल्दी आएगा।' : 'This feature is on the way.'}</p>
+        <button className="btn-primary mt-6" onClick={() => router.push('/foxy')}>{isHi ? 'फॉक्सी से पूछो' : 'Ask Foxy Instead'}</button>
       </div>
-      <div className="max-w-2xl mx-auto px-4 pt-6 grid grid-cols-2 gap-3">
-        {badges.map(badge => {
-          const isEarned = earned.includes(badge.id);
-          return (
-            <div key={badge.id} className="glass rounded-xl p-4 text-center transition-all" style={{opacity: isEarned ? 1 : 0.4}}>
-              <div className="text-3xl mb-2">{badge.icon}</div>
-              <div className="font-bold text-sm">{isHi && badge.name_hi ? badge.name_hi : badge.name_en}</div>
-              <div className="text-xs text-white/30 mt-1">{isHi && badge.description_hi ? badge.description_hi : badge.description_en}</div>
-              {badge.xp_reward > 0 && <div className="text-xs mt-2" style={{color:'#FFB800'}}>+{badge.xp_reward} XP</div>}
-              {isEarned && <div className="text-xs text-green-400 mt-1">✓ {isHi ? 'प्राप्त' : 'Earned'}</div>}
-            </div>
-          );
-        })}
-      </div>
+      <BottomNav />
     </div>
   );
 }

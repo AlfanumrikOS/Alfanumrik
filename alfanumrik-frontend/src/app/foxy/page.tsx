@@ -1,210 +1,262 @@
 'use client';
-
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { useStudent } from '@/components/StudentProvider';
-import { foxyChat, saveChatSession } from '@/lib/supabase';
-import { SUBJECT_CONFIG, type Subject, type ChatMessage } from '@/lib/types';
-import { ArrowLeft, Send, Sparkles, BookOpen, HelpCircle, Brain, RotateCcw } from 'lucide-react';
+import { useAuth } from '@/components/AuthProvider';
+import BottomNav from '@/components/BottomNav';
+import { foxyChat, saveChatSession, getTutorPersonas, getSubjects } from '@/lib/supabase';
+import type { ChatMessage, TutorPersona, Subject, SessionMode, PersonaId } from '@/lib/types';
+import ReactMarkdown from 'react-markdown';
 
-type SessionMode = 'learn' | 'practice' | 'doubt' | 'quiz';
+const SESSION_MODES: Array<{ id: SessionMode; icon: string; en: string; hi: string }> = [
+  { id:'learn',    icon:'📖', en:'Learn',    hi:'सीखो'   },
+  { id:'practice', icon:'✏️', en:'Practice', hi:'अभ्यास' },
+  { id:'doubt',    icon:'💭', en:'Doubt',    hi:'संदेह'  },
+  { id:'quiz',     icon:'⚡', en:'Quiz',     hi:'क्विज़'  },
+];
 
-const SESSION_MODES: Array<{ id: SessionMode; icon: React.ReactNode; labelEn: string; labelHi: string }> = [
-  { id: 'learn', icon: <BookOpen className="w-4 h-4" />, labelEn: 'Learn', labelHi: 'सीखो' },
-  { id: 'practice', icon: <Brain className="w-4 h-4" />, labelEn: 'Practice', labelHi: 'अभ्यास' },
-  { id: 'doubt', icon: <HelpCircle className="w-4 h-4" />, labelEn: 'Ask Doubt', labelHi: 'सवाल पूछो' },
-  { id: 'quiz', icon: <Sparkles className="w-4 h-4" />, labelEn: 'Quick Quiz', labelHi: 'क्विज़' },
+const QUICK_PROMPTS_EN = [
+  "Explain Newton's Laws with examples",
+  "What is photosynthesis?",
+  "Solve: x² - 5x + 6 = 0",
+  "Teach me Ohm's Law",
+];
+const QUICK_PROMPTS_HI = [
+  "न्यूटन के नियम उदाहरण के साथ समझाओ",
+  "प्रकाश संश्लेषण क्या है?",
+  "हल करो: x² - 5x + 6 = 0",
+  "ओम का नियम सिखाओ",
 ];
 
 export default function FoxyPage() {
-  const { student, isLoggedIn, isLoading, isHi } = useStudent();
+  const { student, isLoggedIn, isLoading, isHi, language } = useAuth();
   const router = useRouter();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
+  const [typing, setTyping] = useState(false);
   const [sessionMode, setSessionMode] = useState<SessionMode>('learn');
+  const [personas, setPersonas] = useState<TutorPersona[]>([]);
+  const [selectedPersona, setSelectedPersona] = useState<PersonaId>('friendly_primary');
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [selectedSubject, setSelectedSubject] = useState('');
+  const [showPersonaSheet, setShowPersonaSheet] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!isLoggedIn && !isLoading) router.push('/');
-  }, [isLoggedIn, isLoading]);
+    if (!isLoading && !isLoggedIn) router.replace('/');
+  }, [isLoading, isLoggedIn, router]);
+
+  useEffect(() => {
+    if (!student) return;
+    setSelectedSubject(student.preferred_subject);
+    Promise.all([getTutorPersonas(), getSubjects()]).then(([p, s]) => {
+      setPersonas(p as TutorPersona[]);
+      setSubjects(s as Subject[]);
+    });
+  }, [student?.id]); // eslint-disable-line
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isTyping]);
+  }, [messages, typing]);
 
-  if (isLoading || !student) return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="text-2xl animate-pulse">🦊</div>
-    </div>
-  );
+  const currentSubject = subjects.find(s => s.code === selectedSubject);
 
-  const subjectCfg = SUBJECT_CONFIG[(student.subject as Subject) || 'math'];
-
-  const sendMessage = async (text: string) => {
-    if (!text.trim() || isTyping) return;
-
-    const userMsg: ChatMessage = {
-      id: crypto.randomUUID(),
-      role: 'student',
-      content: text.trim(),
-      timestamp: Date.now(),
-    };
+  const sendMessage = useCallback(async (text: string) => {
+    if (!text.trim() || typing || !student) return;
+    const userMsg: ChatMessage = { id: crypto.randomUUID(), role: 'student', content: text.trim(), timestamp: Date.now() };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
-    setIsTyping(true);
+    setTyping(true);
 
     try {
-      const history = [...messages, userMsg].map(m => ({ role: m.role, content: m.content }));
+      const history = messages.slice(-12).map(m => ({ role: m.role, content: m.content }));
       const result = await foxyChat({
         message: text.trim(),
+        studentId: student.id,
         studentName: student.name,
         grade: student.grade,
-        language: student.language,
-        subject: student.subject,
+        language,
+        subject: selectedSubject,
         sessionMode,
+        personaId: selectedPersona,
         history,
-      });
-
-      const foxyMsg: ChatMessage = {
-        id: crypto.randomUUID(),
-        role: 'foxy',
-        content: result.response,
-        timestamp: Date.now(),
-      };
-      setMessages(prev => [...prev, foxyMsg]);
-    } catch (err) {
-      const errorMsg: ChatMessage = {
-        id: crypto.randomUUID(),
-        role: 'foxy',
-        content: isHi ? '🦊 ओह! कुछ गड़बड़ हुई। दोबारा पूछो!' : '🦊 Oops! Something went wrong. Please try again!',
-        timestamp: Date.now(),
-      };
-      setMessages(prev => [...prev, errorMsg]);
+      }) as { response: string; model: string };
+      setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'foxy', content: result.response, timestamp: Date.now() }]);
+    } catch {
+      setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'foxy', content: isHi ? '🦊 कुछ गड़बड़ हुई। दोबारा पूछो!' : '🦊 Something went wrong! Please try again.', timestamp: Date.now() }]);
     }
-    setIsTyping(false);
-  };
+    setTyping(false);
+    setTimeout(() => inputRef.current?.focus(), 100);
+  }, [typing, student, messages, language, selectedSubject, sessionMode, selectedPersona, isHi]);
 
-  const handleNewChat = async () => {
-    // Save current session before starting new
-    if (messages.length > 0 && student.id) {
-      await saveChatSession({
-        studentId: student.id,
-        subjectId: student.subject,
-        sessionMode,
-        messages: messages.map(m => ({ role: m.role, content: m.content })),
-      });
+  const newChat = async () => {
+    if (messages.length > 0 && student) {
+      await saveChatSession({ studentId: student.id, subject: selectedSubject, grade: student.grade, title: messages[1]?.content?.slice(0,60) ?? 'Chat', messages: messages.map(m => ({ role: m.role, content: m.content })) });
     }
     setMessages([]);
   };
 
-  const quickPrompts = isHi
-    ? ['न्यूटन के नियम समझाओ', 'द्विघात समीकरण क्या है?', 'प्रकाश संश्लेषण बताओ', 'ओम का नियम समझाओ']
-    : ['Explain Newton\'s Laws', 'What are quadratic equations?', 'Teach me photosynthesis', 'How does Ohm\'s Law work?'];
+  if (isLoading || !student) return <div className="mesh-bg min-h-dvh flex items-center justify-center"><div className="text-5xl animate-float">🦊</div></div>;
+
+  const quickPrompts = isHi ? QUICK_PROMPTS_HI : QUICK_PROMPTS_EN;
+  const persona = personas.find(p => p.persona_id === selectedPersona);
 
   return (
-    <div className="min-h-screen flex flex-col">
-      {/* Header */}
-      <div className="sticky top-0 z-50 glass border-b border-white/5">
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <button onClick={() => router.push('/dashboard')}><ArrowLeft className="w-5 h-5 text-white/40" /></button>
-            <div className="flex items-center gap-2">
-              <span className="text-xl">🦊</span>
-              <div>
-                <div className="font-bold text-sm">Foxy</div>
-                <div className="text-[10px] text-white/25">{isHi ? 'AI ट्यूटर' : 'AI Tutor'} • {subjectCfg.icon} {isHi ? subjectCfg.nameHi : subjectCfg.nameEn}</div>
+    <div className="mesh-bg min-h-dvh flex flex-col pb-nav">
+      {/* ── Header ── */}
+      <header className="glass border-b border-[var(--border)] sticky top-0 z-40">
+        <div className="max-w-lg mx-auto px-4 py-2.5 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)] hover:text-[var(--text-1)] p-1">←</button>
+            <div className="w-9 h-9 rounded-full flex items-center justify-center text-xl"
+              style={{ background: 'linear-gradient(135deg, rgba(255,107,53,0.3), rgba(255,184,0,0.2))', border: '1px solid rgba(255,107,53,0.3)' }}>
+              🦊
+            </div>
+            <div>
+              <div className="text-sm font-bold">Foxy</div>
+              <div className="text-[10px] text-[var(--text-3)]">
+                {persona?.display_name ?? 'AI Tutor'} · {currentSubject?.name ?? selectedSubject}
               </div>
             </div>
           </div>
-          <button onClick={handleNewChat} className="p-2 rounded-lg hover:bg-white/5 transition-colors" title="New chat">
-            <RotateCcw className="w-4 h-4 text-white/30" />
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button onClick={() => setShowPersonaSheet(true)} className="text-xs px-2.5 py-1.5 rounded-xl border border-[var(--border)] text-[var(--text-3)] hover:text-[var(--text-1)]">
+              ✨ {isHi ? 'पर्सोना' : 'Persona'}
+            </button>
+            <button onClick={newChat} className="text-xs px-2.5 py-1.5 rounded-xl border border-[var(--border)] text-[var(--text-3)] hover:text-[var(--text-1)]">
+              🗑 {isHi ? 'नया' : 'New'}
+            </button>
+          </div>
         </div>
-        {/* Session mode tabs */}
-        <div className="max-w-2xl mx-auto px-4 pb-2 flex gap-2">
-          {SESSION_MODES.map(mode => (
-            <button key={mode.id} onClick={() => setSessionMode(mode.id)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all" style={{
-              background: sessionMode === mode.id ? `${subjectCfg.color}20` : 'transparent',
-              color: sessionMode === mode.id ? subjectCfg.color : 'rgba(255,255,255,0.3)',
-              border: sessionMode === mode.id ? `1px solid ${subjectCfg.color}40` : '1px solid transparent',
-            }}>
-              {mode.icon}
-              {isHi ? mode.labelHi : mode.labelEn}
+
+        {/* Mode + Subject bar */}
+        <div className="max-w-lg mx-auto px-4 pb-2 flex items-center gap-2 overflow-x-auto scrollbar-hide">
+          {SESSION_MODES.map(m => (
+            <button key={m.id} onClick={() => setSessionMode(m.id)}
+              className="flex-shrink-0 flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all"
+              style={{ background: sessionMode === m.id ? `${currentSubject?.color ?? 'var(--orange)'}20` : 'transparent',
+                border: sessionMode === m.id ? `1px solid ${currentSubject?.color ?? 'var(--orange)'}` : '1px solid transparent',
+                color: sessionMode === m.id ? (currentSubject?.color ?? 'var(--orange)') : 'var(--text-3)' }}>
+              {m.icon} {isHi ? m.hi : m.en}
+            </button>
+          ))}
+          <div className="w-px h-4 bg-[var(--border)] flex-shrink-0" />
+          {subjects.slice(0,4).map(s => (
+            <button key={s.code} onClick={() => setSelectedSubject(s.code)}
+              className="flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-all"
+              style={{ background: selectedSubject === s.code ? `${s.color}20` : 'transparent',
+                border: selectedSubject === s.code ? `1px solid ${s.color}` : '1px solid transparent',
+                color: selectedSubject === s.code ? s.color : 'var(--text-3)' }}>
+              {s.icon} {s.name.split(' ')[0]}
             </button>
           ))}
         </div>
+      </header>
+
+      {/* ── Messages ── */}
+      <div className="flex-1 overflow-y-auto px-4 py-4 max-w-lg mx-auto w-full">
+        {messages.length === 0 ? (
+          <div className="flex flex-col items-center pt-8 pb-4 animate-fade-in">
+            <div className="text-6xl mb-4 animate-float" style={{ filter: 'drop-shadow(0 0 20px rgba(255,107,53,0.5))' }}>🦊</div>
+            <h2 className="text-xl font-bold mb-1" style={{ fontFamily: 'var(--font-display)' }}>
+              {isHi ? `नमस्ते, ${student.name}!` : `Hey, ${student.name}!`}
+            </h2>
+            <p className="text-sm text-[var(--text-3)] mb-6 text-center max-w-xs">
+              {isHi ? 'कुछ भी पूछो — मैं यहाँ हूँ!' : 'Ask me anything — I\'m here to help!'}
+            </p>
+            <div className="grid grid-cols-2 gap-2 w-full max-w-sm">
+              {quickPrompts.map((p, i) => (
+                <button key={i} onClick={() => sendMessage(p)}
+                  className="glass-mid rounded-xl p-3 text-left text-xs text-[var(--text-2)] hover:text-[var(--text-1)] hover:border-[var(--border-mid)] transition-all">
+                  {p}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {messages.map(msg => (
+              <div key={msg.id} className={`flex ${msg.role === 'student' ? 'justify-end' : 'justify-start'} animate-fade-in`}>
+                {msg.role === 'foxy' && <div className="w-7 h-7 rounded-full flex items-center justify-center text-base flex-shrink-0 mr-2 mt-1 self-start"
+                  style={{ background: 'rgba(255,107,53,0.15)', border: '1px solid rgba(255,107,53,0.2)' }}>🦊</div>}
+                <div className={`max-w-[82%] rounded-2xl px-4 py-3 text-sm ${msg.role === 'student' ? 'rounded-br-sm' : 'rounded-bl-sm'}`}
+                  style={{ background: msg.role === 'student' ? 'linear-gradient(135deg, var(--orange), var(--gold))' : 'rgba(23,18,40,0.9)',
+                    border: msg.role === 'foxy' ? '1px solid var(--border)' : 'none',
+                    color: msg.role === 'student' ? '#fff' : 'var(--text-1)' }}>
+                  {msg.role === 'foxy' ? (
+                    <div className="prose prose-invert prose-sm max-w-none leading-relaxed">
+                      <ReactMarkdown>{msg.content}</ReactMarkdown>
+                    </div>
+                  ) : (
+                    <p className="leading-relaxed">{msg.content}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+            {typing && (
+              <div className="flex justify-start animate-fade-in">
+                <div className="w-7 h-7 rounded-full flex items-center justify-center text-base flex-shrink-0 mr-2"
+                  style={{ background: 'rgba(255,107,53,0.15)' }}>🦊</div>
+                <div className="glass-mid rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-1.5">
+                  <div className="w-2 h-2 rounded-full typing-dot" style={{ background: 'var(--orange)' }} />
+                  <div className="w-2 h-2 rounded-full typing-dot" style={{ background: 'var(--gold)' }} />
+                  <div className="w-2 h-2 rounded-full typing-dot" style={{ background: 'var(--teal)' }} />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        <div ref={scrollRef} />
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-2xl mx-auto px-4 py-4 space-y-4">
-          {messages.length === 0 ? (
-            <div className="pt-8 text-center">
-              <div className="text-5xl mb-4">🦊</div>
-              <h2 className="text-xl font-bold mb-2">{isHi ? `नमस्ते, ${student.name}!` : `Hey, ${student.name}!`}</h2>
-              <p className="text-sm text-white/40 mb-6">{isHi ? 'मुझसे कुछ भी पूछो — मैं तुम्हारी मदद के लिए हूँ!' : 'Ask me anything — I\'m here to help you learn!'}</p>
-              <div className="grid grid-cols-2 gap-2">
-                {quickPrompts.map((prompt, i) => (
-                  <button key={i} onClick={() => sendMessage(prompt)} className="p-3 rounded-xl text-left text-sm transition-all border border-white/5 hover:border-white/15" style={{background:'rgba(30,27,46,0.5)'}}>
-                    {prompt}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : (
-            messages.map(msg => (
-              <div key={msg.id} className={`flex ${msg.role === 'student' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[85%] p-4 rounded-2xl ${
-                  msg.role === 'student' 
-                    ? 'rounded-br-md' 
-                    : 'rounded-bl-md'
-                }`} style={{
-                  background: msg.role === 'student' 
-                    ? 'linear-gradient(135deg,#FF6B35,#FFB800)' 
-                    : 'rgba(30,27,46,0.8)',
-                  border: msg.role === 'foxy' ? '1px solid rgba(255,255,255,0.05)' : 'none',
-                }}>
-                  {msg.role === 'foxy' && <div className="text-xs text-white/30 mb-1">🦊 Foxy</div>}
-                  <div className="text-sm whitespace-pre-wrap leading-relaxed">{msg.content}</div>
-                </div>
-              </div>
-            ))
-          )}
-          {isTyping && (
-            <div className="flex justify-start">
-              <div className="p-4 rounded-2xl rounded-bl-md" style={{background:'rgba(30,27,46,0.8)', border:'1px solid rgba(255,255,255,0.05)'}}>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2 h-2 rounded-full animate-bounce" style={{background:'#FF6B35', animationDelay:'0ms'}} />
-                  <div className="w-2 h-2 rounded-full animate-bounce" style={{background:'#FFB800', animationDelay:'150ms'}} />
-                  <div className="w-2 h-2 rounded-full animate-bounce" style={{background:'#00B4D8', animationDelay:'300ms'}} />
-                </div>
-              </div>
-            </div>
-          )}
-          <div ref={scrollRef} />
+      {/* ── Input ── */}
+      <div className="glass border-t border-[var(--border)] sticky bottom-[4.5rem] z-30">
+        <div className="max-w-lg mx-auto px-4 py-3 flex items-center gap-2">
+          <input ref={inputRef} type="text" value={input} onChange={e => setInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage(input)}
+            placeholder={isHi ? 'अपना सवाल पूछो…' : 'Ask your question…'}
+            disabled={typing}
+            className="flex-1 bg-[var(--surface-2)] rounded-2xl px-4 py-3 text-sm text-[var(--text-1)] placeholder:text-[var(--text-3)] border border-[var(--border)] focus:outline-none focus:border-[rgba(255,107,53,0.5)] transition-colors" />
+          <button onClick={() => sendMessage(input)} disabled={!input.trim() || typing}
+            className="w-11 h-11 rounded-2xl flex items-center justify-center transition-all disabled:opacity-30 flex-shrink-0"
+            style={{ background: input.trim() ? 'linear-gradient(135deg, var(--orange), var(--gold))' : 'var(--surface-2)',
+              border: input.trim() ? 'none' : '1px solid var(--border)' }}>
+            <span className="text-lg">↑</span>
+          </button>
         </div>
       </div>
 
-      {/* Input */}
-      <div className="sticky bottom-0 glass border-t border-white/5">
-        <div className="max-w-2xl mx-auto px-4 py-3">
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage(input)}
-              placeholder={isHi ? 'अपना सवाल पूछो...' : 'Ask your question...'}
-              className="flex-1 px-4 py-3 rounded-xl bg-surface-800/50 border border-white/10 text-white placeholder-white/30 focus:border-brand-orange focus:outline-none focus:ring-2 focus:ring-brand-orange/20 transition-all text-sm"
-              disabled={isTyping}
-            />
-            <button onClick={() => sendMessage(input)} disabled={!input.trim() || isTyping} className="w-11 h-11 rounded-xl flex items-center justify-center transition-all disabled:opacity-30" style={{background: input.trim() ? 'linear-gradient(135deg,#FF6B35,#FFB800)' : '#333'}}>
-              <Send className="w-4 h-4 text-white" />
-            </button>
+      {/* ── Persona Bottom Sheet ── */}
+      {showPersonaSheet && (
+        <div className="fixed inset-0 z-50 flex items-end" onClick={() => setShowPersonaSheet(false)}>
+          <div className="w-full max-w-lg mx-auto glass-mid rounded-t-3xl p-6 animate-slide-up border-t border-[var(--border-mid)]" onClick={e => e.stopPropagation()}>
+            <div className="w-10 h-1 rounded-full bg-[var(--border-mid)] mx-auto mb-4" />
+            <h3 className="font-bold mb-4" style={{ fontFamily: 'var(--font-display)' }}>
+              {isHi ? 'ट्यूटर चुनो' : 'Choose your tutor'}
+            </h3>
+            <div className="space-y-2">
+              {personas.map(p => (
+                <button key={p.persona_id} onClick={() => { setSelectedPersona(p.persona_id as PersonaId); setShowPersonaSheet(false); }}
+                  className="w-full rounded-xl p-3 text-left transition-all flex items-start gap-3"
+                  style={{ background: selectedPersona === p.persona_id ? 'rgba(255,107,53,0.12)' : 'var(--surface-2)',
+                    border: selectedPersona === p.persona_id ? '1px solid rgba(255,107,53,0.4)' : '1px solid var(--border)' }}>
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center text-lg flex-shrink-0"
+                    style={{ background: selectedPersona === p.persona_id ? 'rgba(255,107,53,0.2)' : 'rgba(255,255,255,0.05)' }}>
+                    🦊
+                  </div>
+                  <div>
+                    <div className="font-semibold text-sm">{p.display_name}</div>
+                    <div className="text-xs text-[var(--text-3)] mt-0.5">{p.description}</div>
+                  </div>
+                  {selectedPersona === p.persona_id && <span className="ml-auto text-[var(--orange)]">✓</span>}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-      </div>
+      )}
+
+      <BottomNav />
     </div>
   );
 }

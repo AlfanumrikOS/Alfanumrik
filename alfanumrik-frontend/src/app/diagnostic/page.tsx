@@ -1,39 +1,28 @@
 'use client';
-
 import { useRouter } from 'next/navigation';
-import { useStudent } from '@/components/StudentProvider';
-import { SUBJECT_CONFIG, type Subject } from '@/lib/types';
-import { ArrowLeft, Activity, Brain } from 'lucide-react';
+import { useAuth } from '@/components/AuthProvider';
+import BottomNav from '@/components/BottomNav';
+import { useEffect } from 'react';
 
-export default function DiagnosticPage() {
-  const { student, isLoggedIn, isLoading, isHi } = useStudent();
+export default function Page() {
+  const { isLoggedIn, isLoading, isHi } = useAuth();
   const router = useRouter();
-
-  if (isLoading) return <div className="min-h-screen flex items-center justify-center"><div className="text-2xl animate-pulse">🦊</div></div>;
-  if (!isLoggedIn || !student) { router.push('/'); return null; }
-
-  const subjectCfg = SUBJECT_CONFIG[(student.subject as Subject) || 'math'];
-
+  useEffect(() => { if (!isLoading && !isLoggedIn) router.replace('/'); }, [isLoading, isLoggedIn, router]);
   return (
-    <div className="min-h-screen pb-24">
-      <div className="sticky top-0 z-50 glass border-b border-white/5">
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
-          <button onClick={() => router.push('/dashboard')}><ArrowLeft className="w-5 h-5 text-white/40" /></button>
-          <Activity className="w-5 h-5" style={{color: subjectCfg.color}} />
-          <span className="font-bold">{isHi ? 'डायग्नोस्टिक टेस्ट' : 'Diagnostic Test'}</span>
+    <div className="mesh-bg min-h-dvh pb-nav">
+      <header className="glass border-b border-[var(--border)]">
+        <div className="max-w-lg mx-auto px-4 py-3 flex items-center gap-3">
+          <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)]">←</button>
+          <h1 className="font-bold text-lg capitalize" style={{ fontFamily: 'var(--font-display)' }}>diagnostic</h1>
         </div>
+      </header>
+      <div className="max-w-lg mx-auto px-4 py-12 text-center">
+        <div className="text-5xl mb-4 animate-float">🦊</div>
+        <h2 className="font-bold text-xl mb-2" style={{ fontFamily: 'var(--font-display)' }}>{isHi ? 'जल्द आ रहा है!' : 'Coming Soon!'}</h2>
+        <p className="text-sm text-[var(--text-3)]">{isHi ? 'यह फीचर जल्दी आएगा।' : 'This feature is on the way.'}</p>
+        <button className="btn-primary mt-6" onClick={() => router.push('/foxy')}>{isHi ? 'फॉक्सी से पूछो' : 'Ask Foxy Instead'}</button>
       </div>
-      <div className="max-w-2xl mx-auto px-4 pt-8">
-        <div className="glass rounded-2xl p-8 text-center">
-          <Brain className="w-16 h-16 mx-auto mb-4 text-white/20" />
-          <h2 className="text-xl font-bold mb-2">{isHi ? 'डायग्नोस्टिक टेस्ट' : 'Diagnostic Assessment'}</h2>
-          <p className="text-sm text-white/40 mb-6">{isHi ? 'यह फीचर जल्द आ रहा है! अभी क्विज़ खेलो या फॉक्सी से बात करो।' : 'Coming soon! For now, try the Quiz or chat with Foxy to test your knowledge.'}</p>
-          <div className="flex gap-3 justify-center">
-            <button onClick={() => router.push('/quiz')} className="px-6 py-3 rounded-xl font-bold text-white" style={{background:'linear-gradient(135deg,#FF6B35,#FFB800)'}}>{isHi ? 'क्विज़ खेलो' : 'Play Quiz'}</button>
-            <button onClick={() => router.push('/foxy')} className="px-6 py-3 rounded-xl font-bold border border-white/10 text-white/60">{isHi ? 'फॉक्सी से पूछो' : 'Ask Foxy'}</button>
-          </div>
-        </div>
-      </div>
+      <BottomNav />
     </div>
   );
 }

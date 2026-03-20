@@ -1,94 +1,62 @@
 'use client';
-
 import { useParams, useRouter } from 'next/navigation';
-import { useStudent } from '@/components/StudentProvider';
-import { getConceptsBySubject, getSubjectLabel, getSubjectLabelHi, getSubjectIcon, getSubjectColor } from '@/data/curriculum';
-import { getBloomLabel, getBloomColor } from '@/lib/engine';
-import type { Subject, ConceptNode } from '@/lib/types';
-import { ArrowLeft, Lock, Circle, ChevronRight, BookOpen, Brain, Gamepad2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { useAuth } from '@/components/AuthProvider';
+import BottomNav from '@/components/BottomNav';
+import { supabase } from '@/lib/supabase';
 
 export default function LearnPageClient() {
   const params = useParams();
   const subject = params?.subject as string;
-  const { student, isHi, isLoggedIn } = useStudent();
+  const { student, isLoggedIn, isLoading, isHi } = useAuth();
   const router = useRouter();
-  if(!isLoggedIn||!student||!subject){router.push('/dashboard');return null;}
-  const subj = subject as Subject;
-  const concepts = getConceptsBySubject(subj);
-  const color = getSubjectColor(subj);
-  const byGrade = new Map<number, ConceptNode[]>();
-  concepts.forEach(c=>{const l=byGrade.get(c.grade)||[];l.push(c);byGrade.set(c.grade,l);});
-  const grades = Array.from(byGrade.keys()).sort();
+  const [topics, setTopics] = useState<any[]>([]);
+  const [subjectData, setSubjectData] = useState<any>(null);
 
-  return(
-    <div className="min-h-screen pb-8">
-      <div className="sticky top-0 z-50 glass border-b border-white/5">
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
-          <button onClick={()=>router.push('/dashboard')}><ArrowLeft className="w-5 h-5 text-white/40" /></button>
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">{getSubjectIcon(subj)}</span>
-            <div>
-              <div className="font-bold">{isHi?getSubjectLabelHi(subj):getSubjectLabel(subj)}</div>
-              <div className="text-xs text-white/25">{concepts.length} {isHi?'अवधारणाएँ':'concepts'}</div>
-            </div>
-          </div>
+  useEffect(() => { if (!isLoading && !isLoggedIn) router.replace('/'); }, [isLoading, isLoggedIn, router]);
+  useEffect(() => {
+    if (!subject) return;
+    supabase.from('subjects').select('*').eq('code', subject).single().then(({ data }) => setSubjectData(data));
+    if (student) {
+      supabase.from('curriculum_topics').select('*').eq('is_active', true)
+        .order('display_order').limit(30)
+        .then(({ data }) => setTopics(data ?? []));
+    }
+    if (student) supabase.from('students').update({ preferred_subject: subject }).eq('id', student.id);
+  }, [subject, student?.id]); // eslint-disable-line
+
+  if (isLoading || !student) return <div className="mesh-bg min-h-dvh flex items-center justify-center"><div className="text-5xl animate-float">🦊</div></div>;
+
+  return (
+    <div className="mesh-bg min-h-dvh pb-nav">
+      <header className="glass border-b border-[var(--border)]">
+        <div className="max-w-lg mx-auto px-4 py-3 flex items-center gap-3">
+          <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)]">←</button>
+          <span className="text-xl">{subjectData?.icon ?? '📚'}</span>
+          <h1 className="font-bold text-lg" style={{ fontFamily: 'var(--font-display)' }}>{subjectData?.name ?? subject}</h1>
         </div>
+      </header>
+      <div className="max-w-lg mx-auto px-4 py-4">
+        <div className="flex gap-3 mb-4">
+          <button className="btn-primary flex-1" onClick={() => router.push('/foxy')}>🦊 {isHi ? 'फॉक्सी से सीखो' : 'Learn with Foxy'}</button>
+          <button className="btn-ghost flex-1" onClick={() => router.push('/quiz')}>⚡ {isHi ? 'क्विज़' : 'Quiz'}</button>
+        </div>
+        {topics.length > 0 && (
+          <div className="glass rounded-2xl p-4 space-y-2">
+            <h2 className="font-bold mb-3">{isHi ? 'विषय सूची' : 'Topics'}</h2>
+            {topics.slice(0,10).map((t, i) => (
+              <button key={t.id} onClick={() => router.push('/foxy')}
+                className="w-full glass-mid rounded-xl p-3 text-left flex items-center gap-3 card-hover">
+                <span className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0"
+                  style={{ background: `${subjectData?.color ?? 'var(--orange)'}20`, color: subjectData?.color ?? 'var(--orange)' }}>{i+1}</span>
+                <span className="text-sm font-medium">{(isHi && t.title_hi) ? t.title_hi : t.title}</span>
+                <span className="ml-auto text-[var(--text-3)]">→</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
-
-      <div className="max-w-2xl mx-auto px-4 pt-6 space-y-6">
-        <div className="glass rounded-xl p-5">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-bold">{isHi?'समग्र प्रगति':'Overall Progress'}</span>
-            <span className="text-xs" style={{color}}>0/{concepts.length}</span>
-          </div>
-          <div className="w-full bg-surface-800/50 rounded-full h-3">
-            <div className="h-3 rounded-full" style={{width:'0%',background:color}} />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-3 gap-3">
-          <button onClick={()=>router.push('/foxy')} className="glass rounded-xl p-3 text-center card-interactive">
-            <BookOpen className="w-5 h-5 mx-auto mb-1" style={{color}} />
-            <div className="text-xs font-bold">{isHi?'सीखो':'Learn'}</div>
-          </button>
-          <button onClick={()=>router.push('/quiz')} className="glass rounded-xl p-3 text-center card-interactive">
-            <Gamepad2 className="w-5 h-5 mx-auto mb-1" style={{color}} />
-            <div className="text-xs font-bold">{isHi?'अभ्यास':'Practice'}</div>
-          </button>
-          <button onClick={()=>router.push('/quiz')} className="glass rounded-xl p-3 text-center card-interactive">
-            <Brain className="w-5 h-5 mx-auto mb-1" style={{color}} />
-            <div className="text-xs font-bold">{isHi?'क्विज़':'Quiz'}</div>
-          </button>
-        </div>
-
-        {grades.map(grade=>(
-          <div key={grade} className="animate-slide-up">
-            <h3 className="text-sm font-bold text-white/40 mb-3 flex items-center gap-2">
-              <span className="w-6 h-6 rounded-md flex items-center justify-center text-xs font-bold" style={{background:`${color}20`,color}}>{grade}</span>
-              {isHi?`कक्षा ${grade}`:`Class ${grade}`}
-            </h3>
-            <div className="space-y-2 ml-3 border-l-2 pl-4" style={{borderColor:`${color}20`}}>
-              {(byGrade.get(grade)||[]).map(concept=>{
-                const isLocked = concept.prerequisites.length > 0;
-                return(
-                  <button key={concept.id} onClick={()=>!isLocked&&router.push('/foxy')} disabled={isLocked} className="w-full p-4 rounded-xl text-left flex items-center gap-3 transition-all border" style={{background:'rgba(30,27,46,0.3)',borderColor:'rgba(255,255,255,0.05)',opacity:isLocked?0.4:1}}>
-                    <div className="flex-shrink-0">{isLocked?<Lock className="w-5 h-5 text-white/15" />:<Circle className="w-5 h-5 text-white/15" />}</div>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-bold text-sm truncate">{isHi&&concept.titleHi?concept.titleHi:concept.title}</div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-[10px] px-1.5 py-0.5 rounded" style={{background:`${getBloomColor(concept.bloomLevel)}15`,color:getBloomColor(concept.bloomLevel)}}>{getBloomLabel(concept.bloomLevel)}</span>
-                        <span className="text-[10px] text-white/20">{concept.chapter}</span>
-                      </div>
-                      {concept.cbseCompetency&&<div className="text-[10px] text-white/15 mt-1 truncate">📋 {concept.cbseCompetency}</div>}
-                    </div>
-                    {!isLocked&&<ChevronRight className="w-4 h-4 text-white/15 flex-shrink-0" />}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ))}
-      </div>
+      <BottomNav />
     </div>
   );
 }

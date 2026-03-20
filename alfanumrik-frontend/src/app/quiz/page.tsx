@@ -1,165 +1,184 @@
 'use client';
-
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { useStudent } from '@/components/StudentProvider';
-import { getQuizQuestions, saveQuizSession, type DBQuestion } from '@/lib/supabase';
-import { SUBJECT_CONFIG, BLOOM_CONFIG, type Subject, type BloomLevel } from '@/lib/types';
-import { ArrowLeft, Clock, CheckCircle2, XCircle, Lightbulb, ChevronRight, Trophy, Flame } from 'lucide-react';
+import { useAuth } from '@/components/AuthProvider';
+import BottomNav from '@/components/BottomNav';
+import { getQuizQuestions, submitQuiz, getSubjects, awardXP, updateStreak } from '@/lib/supabase';
+import type { Subject } from '@/lib/types';
 
-interface QuizResponse {
-  questionId: string;
-  conceptId: string;
-  selectedAnswer: string;
-  isCorrect: boolean;
-  timeTakenSeconds: number;
+interface Question {
+  id: string;
+  question_text: string;
+  question_text_vernacular?: string | null;
+  options?: Array<{ id: string; text: string; text_vernacular?: string }> | null;
+  correct_answer: string;
+  explanation?: string | null;
+  topic_id?: string | null;
+  bloom_level?: string | null;
+  difficulty?: number | null;
 }
 
 export default function QuizPage() {
-  const { student, isLoggedIn, isLoading, isHi, refreshSnapshot } = useStudent();
+  const { student, isLoggedIn, isLoading, isHi, refreshSnapshot } = useAuth();
   const router = useRouter();
-
-  const [questions, setQuestions] = useState<DBQuestion[]>([]);
-  const [currentIdx, setCurrentIdx] = useState(0);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [selectedSubject, setSelectedSubject] = useState('');
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [idx, setIdx] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
-  const [showResult, setShowResult] = useState(false);
-  const [showHint, setShowHint] = useState(false);
-  const [responses, setResponses] = useState<QuizResponse[]>([]);
-  const [quizComplete, setQuizComplete] = useState(false);
-  const [xpEarned, setXpEarned] = useState(0);
-  const [loadingQuestions, setLoadingQuestions] = useState(true);
+  const [revealed, setRevealed] = useState(false);
+  const [responses, setResponses] = useState<Array<{ questionId: string; conceptId: string; selectedAnswer: string; isCorrect: boolean; timeTakenSeconds: number }>>([]);
   const [streak, setStreak] = useState(0);
-  const questionStartTime = useRef(Date.now());
-  const quizStartTime = useRef(Date.now());
+  const [xpEarned, setXpEarned] = useState(0);
+  const [phase, setPhase] = useState<'setup' | 'loading' | 'playing' | 'complete'>('setup');
+  const questionStart = useRef(Date.now());
+  const quizStart = useRef(Date.now());
 
-  // Load questions from Supabase
   useEffect(() => {
-    if (!isLoggedIn && !isLoading) { router.push('/'); return; }
+    if (!isLoading && !isLoggedIn) router.replace('/');
+  }, [isLoading, isLoggedIn, router]);
+
+  useEffect(() => {
+    if (student) {
+      setSelectedSubject(student.preferred_subject);
+      getSubjects().then(s => setSubjects(s as Subject[]));
+    }
+  }, [student?.id]); // eslint-disable-line
+
+  const startQuiz = useCallback(async () => {
     if (!student) return;
+    setPhase('loading');
+    const qs = await getQuizQuestions({ studentId: student.id, subject: selectedSubject, grade: student.grade, limit: 10 });
+    if (qs.length === 0) { setPhase('setup'); return; }
+    setQuestions(qs.sort(() => Math.random() - 0.5));
+    setIdx(0); setSelected(null); setRevealed(false); setResponses([]); setStreak(0); setXpEarned(0);
+    quizStart.current = Date.now();
+    questionStart.current = Date.now();
+    setPhase('playing');
+  }, [student, selectedSubject]);
 
-    setLoadingQuestions(true);
-    getQuizQuestions({
-      subjectId: student.subject || 'math',
-      grade: student.grade,
-      limit: 10,
-    }).then(qs => {
-      if (qs.length > 0) {
-        // Shuffle questions
-        const shuffled = [...qs].sort(() => Math.random() - 0.5);
-        setQuestions(shuffled);
-      }
-      setLoadingQuestions(false);
-    });
-
-    quizStartTime.current = Date.now();
-  }, [isLoggedIn, isLoading, student?.id]);
-
-  if (isLoading || !student) return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="text-2xl animate-pulse">🦊</div>
-    </div>
-  );
-
-  if (loadingQuestions) return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="text-center">
-        <div className="text-4xl mb-3 animate-bounce">🧮</div>
-        <div className="text-white/40">{isHi ? 'सवाल लोड हो रहे हैं...' : 'Loading questions...'}</div>
-      </div>
-    </div>
-  );
-
-  if (questions.length === 0) return (
-    <div className="min-h-screen flex items-center justify-center p-4">
-      <div className="text-center glass rounded-2xl p-8 max-w-sm">
-        <div className="text-4xl mb-3">📝</div>
-        <h2 className="font-bold text-lg mb-2">{isHi ? 'अभी सवाल उपलब्ध नहीं' : 'No questions available'}</h2>
-        <p className="text-sm text-white/40 mb-4">{isHi ? 'इस विषय के लिए जल्दी ही सवाल जोड़े जाएंगे' : 'Questions for this subject will be added soon'}</p>
-        <button onClick={() => router.push('/dashboard')} className="px-6 py-2 rounded-xl font-bold text-white" style={{background:'linear-gradient(135deg,#FF6B35,#FFB800)'}}>
-          {isHi ? 'डैशबोर्ड पर जाओ' : 'Go to Dashboard'}
-        </button>
-      </div>
-    </div>
-  );
-
-  const q = questions[currentIdx];
-  const totalQ = questions.length;
-  const subjectCfg = SUBJECT_CONFIG[(student.subject as Subject) || 'math'];
-  const bloomCfg = BLOOM_CONFIG[(q?.bloom_level as BloomLevel) || 'apply'];
-
-  const handleSelect = (optionId: string) => {
-    if (showResult) return;
-    setSelected(optionId);
+  const handleSelect = (optId: string) => {
+    if (revealed) return;
+    setSelected(optId);
   };
 
   const handleSubmit = () => {
-    if (!selected || !q) return;
+    if (!selected || !questions[idx]) return;
+    const q = questions[idx];
     const isCorrect = selected === q.correct_answer;
-    const timeTaken = (Date.now() - questionStartTime.current) / 1000;
-
-    const response: QuizResponse = {
-      questionId: q.id,
-      conceptId: q.concept_id,
-      selectedAnswer: selected,
-      isCorrect,
-      timeTakenSeconds: Math.round(timeTaken),
-    };
-
-    setResponses(prev => [...prev, response]);
-    setShowResult(true);
+    const timeTaken = Math.round((Date.now() - questionStart.current) / 1000);
+    setResponses(prev => [...prev, { questionId: q.id, conceptId: q.topic_id ?? q.id, selectedAnswer: selected, isCorrect, timeTakenSeconds: timeTaken }]);
     setStreak(isCorrect ? streak + 1 : 0);
+    setRevealed(true);
   };
 
   const handleNext = async () => {
-    if (currentIdx + 1 >= totalQ) {
-      // Quiz complete — save to Supabase
-      setQuizComplete(true);
-      const allResponses = [...responses];
-      const durationSec = Math.round((Date.now() - quizStartTime.current) / 1000);
-
-      const result = await saveQuizSession({
-        studentId: student.id,
-        subjectId: student.subject || 'math',
-        quizType: 'practice',
-        grade: student.grade,
-        responses: allResponses,
-        durationSeconds: durationSec,
-      });
-
-      if (result) setXpEarned(result.xpEarned);
+    if (idx + 1 >= questions.length) {
+      setPhase('complete');
+      if (!student) return;
+      const durationSec = Math.round((Date.now() - quizStart.current) / 1000);
+      const correct = [...responses, { questionId: questions[idx].id, conceptId: questions[idx].topic_id ?? '', selectedAnswer: selected ?? '', isCorrect: selected === questions[idx].correct_answer, timeTakenSeconds: Math.round((Date.now() - questionStart.current) / 1000) }].filter(r => r.isCorrect).length;
+      const xp = correct * 10 + (correct === questions.length ? 30 : 0);
+      setXpEarned(xp);
+      await Promise.all([
+        submitQuiz({ studentId: student.id, subject: selectedSubject, grade: student.grade, questions, responses, timeTakenSeconds: durationSec }),
+        awardXP(student.id, selectedSubject, xp),
+        updateStreak(student.id, selectedSubject),
+      ]);
       await refreshSnapshot();
     } else {
-      setCurrentIdx(currentIdx + 1);
-      setSelected(null);
-      setShowResult(false);
-      setShowHint(false);
-      questionStartTime.current = Date.now();
+      setIdx(idx + 1); setSelected(null); setRevealed(false);
+      questionStart.current = Date.now();
     }
   };
 
-  // Quiz Complete Screen
-  if (quizComplete) {
-    const correct = responses.filter(r => r.isCorrect).length;
-    const pct = Math.round((correct / totalQ) * 100);
+  if (isLoading || !student) return <div className="mesh-bg min-h-dvh flex items-center justify-center"><div className="text-5xl animate-float">🦊</div></div>;
+
+  const q = questions[idx];
+  const currentSubject = subjects.find(s => s.code === selectedSubject);
+
+  // ── SETUP ──
+  if (phase === 'setup') return (
+    <div className="mesh-bg min-h-dvh pb-nav">
+      <header className="glass border-b border-[var(--border)]">
+        <div className="max-w-lg mx-auto px-4 py-3 flex items-center gap-3">
+          <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)]">←</button>
+          <h1 className="font-bold text-lg" style={{ fontFamily: 'var(--font-display)' }}>
+            ⚡ {isHi ? 'क्विज़ शुरू करो' : 'Start Quiz'}
+          </h1>
+        </div>
+      </header>
+      <div className="max-w-lg mx-auto px-4 py-6 space-y-4">
+        <div className="glass rounded-2xl p-5">
+          <p className="text-sm text-[var(--text-3)] mb-3">{isHi ? 'विषय चुनो' : 'Choose subject'}</p>
+          <div className="grid grid-cols-4 gap-2">
+            {subjects.slice(0,8).map(s => (
+              <button key={s.code} onClick={() => setSelectedSubject(s.code)}
+                className="rounded-xl p-2 text-center transition-all"
+                style={{ background: selectedSubject === s.code ? `${s.color}20` : 'var(--surface-2)',
+                  border: selectedSubject === s.code ? `1.5px solid ${s.color}` : '1px solid var(--border)' }}>
+                <div className="text-xl">{s.icon}</div>
+                <div className="text-[9px] mt-0.5 font-semibold truncate" style={{ color: selectedSubject === s.code ? s.color : 'var(--text-3)' }}>
+                  {s.name.split(' ')[0]}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-5 space-y-3">
+          <div className="flex gap-3">
+            <span className="text-3xl">⚡</span>
+            <div>
+              <div className="font-bold">{isHi ? '10 सवाल' : '10 Questions'}</div>
+              <div className="text-sm text-[var(--text-3)]">{isHi ? 'AI द्वारा चुने गए' : 'AI-selected for your level'}</div>
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <span className="text-3xl">🏆</span>
+            <div>
+              <div className="font-bold">{isHi ? 'XP कमाओ' : 'Earn XP'}</div>
+              <div className="text-sm text-[var(--text-3)]">{isHi ? 'हर सही जवाब पर 10 XP + 30 परफेक्ट बोनस' : '10 XP per correct + 30 perfect bonus'}</div>
+            </div>
+          </div>
+        </div>
+        <button className="btn-primary w-full text-lg py-4" onClick={startQuiz}>
+          {isHi ? 'क्विज़ शुरू करो ⚡' : 'Start Quiz ⚡'}
+        </button>
+      </div>
+      <BottomNav />
+    </div>
+  );
+
+  // ── LOADING ──
+  if (phase === 'loading') return (
+    <div className="mesh-bg min-h-dvh flex flex-col items-center justify-center gap-4">
+      <div className="text-5xl animate-float">⚡</div>
+      <p className="text-[var(--text-3)]">{isHi ? 'सवाल तैयार हो रहे हैं…' : 'Loading questions…'}</p>
+    </div>
+  );
+
+  // ── COMPLETE ──
+  if (phase === 'complete') {
+    const correctCount = responses.filter(r => r.isCorrect).length;
+    const pct = Math.round((correctCount / questions.length) * 100);
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="glass rounded-2xl p-8 max-w-sm w-full text-center animate-slide-up">
-          <div className="text-5xl mb-4">{pct >= 80 ? '🏆' : pct >= 50 ? '⭐' : '💪'}</div>
-          <h1 className="text-2xl font-bold mb-2">
+      <div className="mesh-bg min-h-dvh flex items-center justify-center p-4">
+        <div className="glass rounded-3xl p-8 max-w-sm w-full text-center animate-slide-up">
+          <div className="text-6xl mb-4">{pct >= 80 ? '🏆' : pct >= 50 ? '⭐' : '💪'}</div>
+          <h1 className="text-2xl font-bold mb-1" style={{ fontFamily: 'var(--font-display)' }}>
             {pct >= 80 ? (isHi ? 'शानदार!' : 'Outstanding!') : pct >= 50 ? (isHi ? 'बहुत अच्छा!' : 'Well Done!') : (isHi ? 'अच्छा प्रयास!' : 'Good Effort!')}
           </h1>
-          <div className="text-5xl font-bold my-4" style={{color: pct >= 80 ? '#FFD700' : pct >= 50 ? '#4CAF50' : '#FF9800'}}>{pct}%</div>
-          <div className="text-white/40 mb-4">{correct}/{totalQ} {isHi ? 'सही' : 'correct'}</div>
+          <div className="text-5xl font-bold my-4 gradient-text" style={{ fontFamily: 'var(--font-display)' }}>{pct}%</div>
+          <p className="text-[var(--text-3)] mb-3">{correctCount}/{questions.length} {isHi ? 'सही' : 'correct'}</p>
           {xpEarned > 0 && (
-            <div className="flex items-center justify-center gap-2 mb-6 text-lg font-bold" style={{color:'#FFB800'}}>
-              <Flame className="w-5 h-5" /> +{xpEarned} XP
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full mb-6 font-bold"
+              style={{ background: 'rgba(255,184,0,0.15)', color: 'var(--gold)' }}>
+              🔥 +{xpEarned} XP {isHi ? 'मिले!' : 'earned!'}
             </div>
           )}
           <div className="flex gap-3">
-            <button onClick={() => router.push('/dashboard')} className="flex-1 py-3 rounded-xl font-bold border border-white/10 text-white/50">
-              {isHi ? 'डैशबोर्ड' : 'Dashboard'}
-            </button>
-            <button onClick={() => { setQuizComplete(false); setCurrentIdx(0); setResponses([]); setSelected(null); setShowResult(false); setStreak(0); quizStartTime.current = Date.now(); questionStartTime.current = Date.now(); }} className="flex-1 py-3 rounded-xl font-bold text-white" style={{background:'linear-gradient(135deg,#FF6B35,#FFB800)'}}>
+            <button className="btn-ghost flex-1" onClick={() => router.push('/dashboard')}>{isHi ? 'डैशबोर्ड' : 'Dashboard'}</button>
+            <button className="btn-primary flex-1" onClick={() => { setPhase('setup'); setQuestions([]); }}>
               {isHi ? 'फिर से' : 'Play Again'}
             </button>
           </div>
@@ -168,124 +187,97 @@ export default function QuizPage() {
     );
   }
 
+  // ── PLAYING ──
   if (!q) return null;
-
-  const options = q.options as Array<{ id: string; text_en: string; text_hi: string; is_correct: boolean }>;
+  const options = (q.options as Array<{ id: string; text: string; text_vernacular?: string }>) ?? [];
 
   return (
-    <div className="min-h-screen pb-8">
+    <div className="mesh-bg min-h-dvh pb-nav flex flex-col">
       {/* Header */}
-      <div className="sticky top-0 z-50 glass border-b border-white/5">
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
-          <button onClick={() => router.push('/dashboard')}><ArrowLeft className="w-5 h-5 text-white/40" /></button>
-          <div className="flex items-center gap-2">
-            <span className="text-sm">{subjectCfg.icon}</span>
-            <span className="text-sm font-bold">{currentIdx + 1}/{totalQ}</span>
+      <header className="glass border-b border-[var(--border)] sticky top-0 z-40">
+        <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
+          <button onClick={() => setPhase('setup')} className="text-[var(--text-3)] hover:text-[var(--text-1)]">✕</button>
+          <div className="flex items-center gap-2 text-sm">
+            <span className="font-semibold">{idx + 1}<span className="text-[var(--text-3)]">/{questions.length}</span></span>
+            {streak >= 3 && <span className="text-orange-400 font-bold streak-flame">🔥{streak}</span>}
           </div>
-          <div className="flex items-center gap-1">
-            {streak >= 3 && <Flame className="w-4 h-4" style={{color:'#FF6B35'}} />}
-            <span className="text-xs px-2 py-0.5 rounded" style={{background:`${bloomCfg.color}20`, color: bloomCfg.color}}>
-              {bloomCfg.label}
-            </span>
+          <div className="text-xs px-2 py-1 rounded-full" style={{ background: `${currentSubject?.color ?? 'var(--orange)'}20`, color: currentSubject?.color ?? 'var(--orange)' }}>
+            {q.bloom_level ?? 'apply'}
           </div>
         </div>
         {/* Progress bar */}
-        <div className="h-1 w-full" style={{background:'rgba(255,255,255,0.05)'}}>
-          <div className="h-full transition-all duration-300" style={{width:`${((currentIdx + 1) / totalQ) * 100}%`, background: subjectCfg.color}} />
+        <div className="h-1 w-full" style={{ background: 'rgba(255,255,255,0.05)' }}>
+          <div className="h-full transition-all duration-500" style={{ width: `${((idx) / questions.length) * 100}%`, background: currentSubject?.color ?? 'var(--orange)' }} />
         </div>
-      </div>
+      </header>
 
-      <div className="max-w-2xl mx-auto px-4 pt-6 space-y-6">
-        {/* Streak indicator */}
-        {streak >= 3 && (
-          <div className="text-center animate-slide-up">
-            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold" style={{background:'rgba(255,107,53,0.15)', color:'#FF6B35'}}>
-              <Flame className="w-3 h-3" /> {streak} {isHi ? 'स्ट्रीक!' : 'streak!'}
-            </span>
-          </div>
-        )}
-
+      <div className="flex-1 overflow-y-auto max-w-lg mx-auto w-full px-4 py-5 flex flex-col gap-4">
         {/* Question */}
-        <div className="glass rounded-2xl p-6">
-          <p className="text-lg font-bold leading-relaxed">
-            {isHi && q.question_text_hi ? q.question_text_hi : q.question_text_en}
+        <div className="glass rounded-2xl p-5">
+          <p className="text-base font-semibold leading-relaxed">
+            {(isHi && q.question_text_vernacular) ? q.question_text_vernacular : q.question_text}
           </p>
+          {q.difficulty !== null && q.difficulty !== undefined && (
+            <div className="flex gap-1 mt-3">
+              {[1,2,3,4,5].map(d => (
+                <div key={d} className="w-4 h-1 rounded-full" style={{ background: d <= Math.round((q.difficulty ?? 0) * 5) ? (currentSubject?.color ?? 'var(--orange)') : 'rgba(255,255,255,0.1)' }} />
+              ))}
+              <span className="text-[10px] text-[var(--text-3)] ml-1">{isHi ? 'कठिनाई' : 'Difficulty'}</span>
+            </div>
+          )}
         </div>
-
-        {/* Hint button */}
-        {!showResult && (q.hint_en || q.hint_hi) && (
-          <button onClick={() => setShowHint(!showHint)} className="flex items-center gap-2 text-sm text-white/30 hover:text-white/60 transition-colors">
-            <Lightbulb className="w-4 h-4" />
-            {isHi ? 'संकेत दिखाओ' : 'Show hint'}
-          </button>
-        )}
-        {showHint && (
-          <div className="glass rounded-xl p-4 text-sm text-white/50 border-l-2" style={{borderColor:'#FFB800'}}>
-            💡 {isHi && q.hint_hi ? q.hint_hi : q.hint_en}
-          </div>
-        )}
 
         {/* Options */}
-        <div className="space-y-3">
-          {options.map((opt) => {
-            let bg = 'rgba(30,27,46,0.5)';
-            let borderColor = 'rgba(255,255,255,0.08)';
-            let icon = null;
-
-            if (showResult) {
-              if (opt.is_correct) {
-                bg = 'rgba(76,175,80,0.15)';
-                borderColor = '#4CAF50';
-                icon = <CheckCircle2 className="w-5 h-5 flex-shrink-0" style={{color:'#4CAF50'}} />;
-              } else if (selected === opt.id && !opt.is_correct) {
-                bg = 'rgba(244,67,54,0.15)';
-                borderColor = '#F44336';
-                icon = <XCircle className="w-5 h-5 flex-shrink-0" style={{color:'#F44336'}} />;
-              }
-            } else if (selected === opt.id) {
-              bg = `${subjectCfg.color}15`;
-              borderColor = subjectCfg.color;
+        <div className="space-y-2">
+          {options.map(opt => {
+            const isSelected = selected === opt.id;
+            const isCorrect = opt.id === q.correct_answer;
+            let style: React.CSSProperties = { background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-1)' };
+            if (revealed) {
+              if (isCorrect) style = { background: 'rgba(45,198,83,0.15)', border: '1.5px solid var(--green)', color: 'var(--green)' };
+              else if (isSelected && !isCorrect) style = { background: 'rgba(255,71,87,0.15)', border: '1.5px solid var(--red)', color: 'var(--red)' };
+            } else if (isSelected) {
+              style = { background: `${currentSubject?.color ?? 'var(--orange)'}15`, border: `1.5px solid ${currentSubject?.color ?? 'var(--orange)'}`, color: 'var(--text-1)' };
             }
-
             return (
-              <button
-                key={opt.id}
-                onClick={() => handleSelect(opt.id)}
-                disabled={showResult}
-                className="w-full p-4 rounded-xl text-left transition-all border flex items-center gap-3"
-                style={{ background: bg, borderColor }}
-              >
-                <span className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold flex-shrink-0" style={{background:'rgba(255,255,255,0.05)'}}>
+              <button key={opt.id} onClick={() => handleSelect(opt.id)} disabled={revealed}
+                className={`w-full rounded-xl p-4 text-left flex items-center gap-3 transition-all ${revealed && isCorrect ? 'quiz-correct' : ''} ${revealed && isSelected && !isCorrect ? 'quiz-wrong' : ''}`}
+                style={style}>
+                <span className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold flex-shrink-0"
+                  style={{ background: 'rgba(255,255,255,0.07)' }}>
                   {opt.id.toUpperCase()}
                 </span>
-                <span className="flex-1">{isHi && opt.text_hi ? opt.text_hi : opt.text_en}</span>
-                {icon}
+                <span className="flex-1 text-sm">{(isHi && opt.text_vernacular) ? opt.text_vernacular : opt.text}</span>
+                {revealed && isCorrect && <span className="text-[var(--green)]">✓</span>}
+                {revealed && isSelected && !isCorrect && <span className="text-[var(--red)]">✗</span>}
               </button>
             );
           })}
         </div>
 
-        {/* Explanation (shown after answer) */}
-        {showResult && (q.explanation_en || q.explanation_hi) && (
-          <div className="glass rounded-xl p-4 animate-slide-up">
-            <div className="text-xs font-bold text-white/30 mb-2">{isHi ? 'समझाओ' : 'Explanation'}</div>
-            <p className="text-sm text-white/70">
-              {isHi && q.explanation_hi ? q.explanation_hi : q.explanation_en}
-            </p>
+        {/* Explanation */}
+        {revealed && q.explanation && (
+          <div className="glass rounded-xl p-4 animate-fade-in" style={{ borderColor: 'rgba(255,184,0,0.2)' }}>
+            <p className="text-xs font-bold text-[var(--gold)] mb-1">{isHi ? '💡 समझाओ' : '💡 Explanation'}</p>
+            <p className="text-sm text-[var(--text-2)]">{q.explanation}</p>
           </div>
         )}
+      </div>
 
-        {/* Action button */}
-        {!showResult ? (
-          <button onClick={handleSubmit} disabled={!selected} className="w-full py-4 rounded-xl font-bold text-white text-lg transition-all disabled:opacity-30" style={{background: selected ? 'linear-gradient(135deg,#FF6B35,#FFB800)' : '#333'}}>
+      {/* Action button */}
+      <div className="glass border-t border-[var(--border)] px-4 py-3 sticky bottom-[4.5rem] max-w-lg mx-auto w-full">
+        {!revealed ? (
+          <button className="btn-primary w-full" onClick={handleSubmit} disabled={!selected}>
             {isHi ? 'जवाब दो' : 'Submit Answer'}
           </button>
         ) : (
-          <button onClick={handleNext} className="w-full py-4 rounded-xl font-bold text-white text-lg flex items-center justify-center gap-2" style={{background:'linear-gradient(135deg,#FF6B35,#FFB800)'}}>
-            {currentIdx + 1 >= totalQ ? (isHi ? 'परिणाम देखो' : 'See Results') : (isHi ? 'अगला सवाल' : 'Next Question')} <ChevronRight className="w-5 h-5" />
+          <button className="btn-primary w-full" onClick={handleNext}>
+            {idx + 1 >= questions.length ? (isHi ? 'नतीजे देखो 🏆' : 'See Results 🏆') : (isHi ? 'अगला →' : 'Next →')}
           </button>
         )}
       </div>
+
+      <BottomNav />
     </div>
   );
 }

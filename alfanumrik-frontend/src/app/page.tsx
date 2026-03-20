@@ -1,136 +1,261 @@
 'use client';
-
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useStudent } from '@/components/StudentProvider';
-import { Sparkles, GraduationCap, Globe, BookOpen, Zap } from 'lucide-react';
+import { useAuth } from '@/components/AuthProvider';
+import { supabase } from '@/lib/supabase';
+import { GRADES, BOARDS, LANGUAGES, type Language } from '@/lib/types';
 
-const GRADES = [6, 7, 8, 9, 10, 11, 12];
-const BOARDS = [
-  { id: 'CBSE', label: 'CBSE', hi: 'सीबीएसई' },
-  { id: 'ICSE', label: 'ICSE', hi: 'आईसीएसई' },
-  { id: 'STATE', label: 'State Board', hi: 'राज्य बोर्ड' },
-];
-const LANGUAGES = [
-  { id: 'en', label: 'English', emoji: '🇬🇧' },
-  { id: 'hi', label: 'हिन्दी', emoji: '🇮🇳' },
-  { id: 'hinglish', label: 'Hinglish', emoji: '🔀' },
-];
-const DIFFICULTIES = [
-  { id: 'gentle', label: 'Gentle Warm-up', labelHi: 'आसान शुरुआत', emoji: '🐣' },
-  { id: 'normal', label: 'Normal Foxy Mode', labelHi: 'सामान्य फॉक्सी', emoji: '🦊' },
-  { id: 'challenge', label: 'Challenge Mode', labelHi: 'चुनौती मोड', emoji: '🔥' },
+type OnboardStep = 'welcome' | 'auth' | 'profile' | 'subject';
+
+const SUBJECTS_PREVIEW = [
+  { code: 'math',     name: 'Mathematics', icon: '∑', color: '#6C5CE7' },
+  { code: 'science',  name: 'Science',     icon: '⚛', color: '#00B894' },
+  { code: 'physics',  name: 'Physics',     icon: '⚡', color: '#2563EB' },
+  { code: 'chemistry',name: 'Chemistry',   icon: '🧪', color: '#DC2626' },
+  { code: 'biology',  name: 'Biology',     icon: '🧬', color: '#16A34A' },
+  { code: 'english',  name: 'English',     icon: 'Aa', color: '#E17055' },
+  { code: 'hindi',    name: 'Hindi',       icon: 'अ', color: '#E84393' },
+  { code: 'economics',name: 'Economics',   icon: '📈', color: '#D97706' },
 ];
 
-export default function OnboardingPage() {
-  const [step, setStep] = useState(0);
-  const [name, setName] = useState('');
-  const [grade, setGrade] = useState(9);
-  const [board, setBoard] = useState('CBSE');
-  const [lang, setLang] = useState('en');
-  const [difficulty, setDifficulty] = useState('normal');
-  const { login, isLoggedIn } = useStudent();
+export default function LandingPage() {
+  const { isLoggedIn, isLoading, student, refreshStudent } = useAuth();
   const router = useRouter();
+  const [step, setStep] = useState<OnboardStep>('welcome');
+  const [email, setEmail] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [otp, setOtp] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState('');
+  const [name, setName] = useState('');
+  const [grade, setGrade] = useState('9');
+  const [board, setBoard] = useState('CBSE');
+  const [language, setLanguage] = useState<Language>('en');
+  const [selectedSubject, setSelectedSubject] = useState('math');
+  const [saving, setSaving] = useState(false);
 
-  if (isLoggedIn) { router.push('/dashboard'); return null; }
+  useEffect(() => {
+    if (!isLoading && isLoggedIn) router.replace('/dashboard');
+  }, [isLoading, isLoggedIn, router]);
 
-  const isHi = lang === 'hi';
+  // listen for auth state — if user just verified OTP, move to profile
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session?.user) {
+        await refreshStudent();
+        const { data } = await supabase.from('students').select('onboarding_completed').eq('auth_user_id', session.user.id).single();
+        if (data?.onboarding_completed) router.replace('/dashboard');
+        else setStep('profile');
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, [router, refreshStudent]);
 
-  const handleComplete = async () => {
-    await login(name, grade, board, lang, difficulty);
-    router.push('/dashboard');
+  const sendOTP = async () => {
+    if (!email.trim()) return;
+    setAuthLoading(true); setAuthError('');
+    const { error } = await supabase.auth.signInWithOtp({ email: email.trim(), options: { shouldCreateUser: true } });
+    if (error) setAuthError(error.message);
+    else setOtpSent(true);
+    setAuthLoading(false);
   };
 
-  return (
-    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
-      <div className="absolute inset-0" style={{ background: 'radial-gradient(ellipse at 20% 50%,rgba(123,45,142,0.15) 0%,transparent 50%),radial-gradient(ellipse at 80% 50%,rgba(255,107,53,0.1) 0%,transparent 50%),#0D0B15' }} />
-      {[...Array(6)].map((_, i) => (
-        <div key={i} className="absolute rounded-full opacity-20 animate-float" style={{ width: `${8 + i * 4}px`, height: `${8 + i * 4}px`, background: i % 2 === 0 ? '#FF6B35' : '#7B2D8E', left: `${10 + i * 15}%`, top: `${20 + (i % 3) * 25}%`, animationDelay: `${i * 0.5}s` }} />
-      ))}
-      <div className="relative z-10 w-full max-w-lg">
-        <div className="text-center mb-8 animate-slide-up">
-          <div className="text-6xl mb-3">🦊</div>
-          <h1 className="text-3xl font-extrabold gradient-text">Alfanumrik</h1>
-          <p className="text-white/30 text-sm mt-1 font-medium tracking-wide">ADAPTIVE LEARNING OS</p>
+  const verifyOTP = async () => {
+    if (!otp.trim()) return;
+    setAuthLoading(true); setAuthError('');
+    const { error } = await supabase.auth.verifyOtp({ email: email.trim(), token: otp.trim(), type: 'email' });
+    if (error) setAuthError(error.message);
+    setAuthLoading(false);
+  };
+
+  const saveProfile = async () => {
+    setSaving(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setSaving(false); return; }
+    // check if student row exists
+    const { data: existing } = await supabase.from('students').select('id').eq('auth_user_id', user.id).single();
+    if (existing) {
+      await supabase.from('students').update({ name, grade, board, preferred_language: language, onboarding_completed: false }).eq('id', existing.id);
+    } else {
+      await supabase.from('students').insert({ auth_user_id: user.id, name, grade, board, preferred_language: language, email: user.email });
+    }
+    setStep('subject');
+    setSaving(false);
+  };
+
+  const finishOnboarding = async () => {
+    setSaving(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setSaving(false); return; }
+    await supabase.from('students').update({ preferred_subject: selectedSubject, onboarding_completed: true }).eq('auth_user_id', user.id);
+    await refreshStudent();
+    router.replace('/dashboard');
+    setSaving(false);
+  };
+
+  if (isLoading) return (
+    <div className="mesh-bg min-h-dvh flex items-center justify-center">
+      <div className="text-5xl animate-float">🦊</div>
+    </div>
+  );
+
+  // ── Welcome ────────────────────────────────────────────────────
+  if (step === 'welcome') return (
+    <div className="mesh-bg min-h-dvh flex flex-col">
+      {/* hero */}
+      <div className="flex-1 flex flex-col items-center justify-center px-6 pt-16 pb-8 text-center">
+        <div className="text-7xl mb-6 animate-float" style={{ filter: 'drop-shadow(0 0 24px rgba(255,107,53,0.5))' }}>🦊</div>
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full mb-6 text-xs font-semibold tracking-wider uppercase"
+          style={{ background: 'rgba(255,107,53,0.12)', border: '1px solid rgba(255,107,53,0.25)', color: 'var(--orange)' }}>
+          AI-Powered Learning OS
         </div>
-        <div className="glass rounded-2xl p-8 animate-slide-up" style={{ animationDelay: '0.15s' }}>
-          {step === 0 && (
-            <div className="space-y-6">
-              <div className="flex items-center gap-3 mb-2"><Sparkles className="w-5 h-5 text-brand-orange" /><h2 className="text-xl font-bold">Welcome! What&apos;s your name?</h2></div>
-              <p className="text-white/40 text-sm">Foxy is excited to meet you! 🐾</p>
-              <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Enter your name..." className="w-full px-4 py-3 rounded-xl bg-surface-800/50 border border-white/10 text-white placeholder-white/30 focus:border-brand-orange focus:outline-none focus:ring-2 focus:ring-brand-orange/20 transition-all text-lg" autoFocus />
-              <button onClick={() => name.trim() && setStep(1)} disabled={!name.trim()} className="w-full py-3 rounded-xl font-bold text-white transition-all disabled:opacity-30" style={{ background: name.trim() ? 'linear-gradient(135deg,#FF6B35,#FFB800)' : '#333' }}>Next →</button>
-            </div>
-          )}
-          {step === 1 && (
-            <div className="space-y-6">
-              <div className="flex items-center gap-3 mb-2"><GraduationCap className="w-5 h-5 text-brand-purple" /><h2 className="text-xl font-bold">Hi {name}! Which class?</h2></div>
-              <div className="grid grid-cols-4 gap-3">
-                {GRADES.map(g => (
-                  <button key={g} onClick={() => setGrade(g)} className="py-3 rounded-xl font-bold text-center transition-all border" style={{ background: grade === g ? 'linear-gradient(135deg,#7B2D8E,#9B4DAE)' : 'rgba(30,27,46,0.5)', borderColor: grade === g ? '#9B4DAE' : 'rgba(255,255,255,0.1)', color: grade === g ? '#fff' : 'rgba(255,255,255,0.6)', transform: grade === g ? 'scale(1.05)' : 'scale(1)' }}>{g}</button>
-                ))}
-              </div>
-              <div className="flex gap-3">
-                <button onClick={() => setStep(0)} className="flex-1 py-3 rounded-xl font-bold text-white/40 border border-white/10">← Back</button>
-                <button onClick={() => setStep(2)} className="flex-1 py-3 rounded-xl font-bold text-white" style={{ background: 'linear-gradient(135deg,#FF6B35,#FFB800)' }}>Next →</button>
-              </div>
-            </div>
-          )}
-          {step === 2 && (
-            <div className="space-y-6">
-              <div className="flex items-center gap-3 mb-2"><BookOpen className="w-5 h-5 text-brand-teal" /><h2 className="text-xl font-bold">{isHi ? 'कौन सा बोर्ड?' : 'Which board?'}</h2></div>
-              <div className="space-y-3">
-                {BOARDS.map(b => (
-                  <button key={b.id} onClick={() => setBoard(b.id)} className="w-full py-4 px-5 rounded-xl font-bold text-left transition-all border flex items-center justify-between" style={{ background: board === b.id ? 'linear-gradient(135deg,rgba(0,180,216,0.2),rgba(0,180,216,0.05))' : 'rgba(30,27,46,0.5)', borderColor: board === b.id ? '#00B4D8' : 'rgba(255,255,255,0.1)' }}>
-                    <span>{b.label}</span>{board === b.id && <span className="text-brand-teal">✓</span>}
-                  </button>
-                ))}
-              </div>
-              <div className="flex gap-3">
-                <button onClick={() => setStep(1)} className="flex-1 py-3 rounded-xl font-bold text-white/40 border border-white/10">← Back</button>
-                <button onClick={() => setStep(3)} className="flex-1 py-3 rounded-xl font-bold text-white" style={{ background: 'linear-gradient(135deg,#FF6B35,#FFB800)' }}>Next →</button>
-              </div>
-            </div>
-          )}
-          {step === 3 && (
-            <div className="space-y-6">
-              <div className="flex items-center gap-3 mb-2"><Globe className="w-5 h-5 text-brand-gold" /><h2 className="text-xl font-bold">{isHi ? 'भाषा चुनो' : 'Preferred language?'}</h2></div>
-              <div className="space-y-3">
-                {LANGUAGES.map(l => (
-                  <button key={l.id} onClick={() => setLang(l.id)} className="w-full py-4 px-5 rounded-xl font-bold text-left transition-all border flex items-center gap-4" style={{ background: lang === l.id ? 'linear-gradient(135deg,rgba(255,184,0,0.2),rgba(255,184,0,0.05))' : 'rgba(30,27,46,0.5)', borderColor: lang === l.id ? '#FFB800' : 'rgba(255,255,255,0.1)' }}>
-                    <span className="text-2xl">{l.emoji}</span><span>{l.label}</span>{lang === l.id && <span className="ml-auto text-brand-gold">✓</span>}
-                  </button>
-                ))}
-              </div>
-              <div className="flex gap-3">
-                <button onClick={() => setStep(2)} className="flex-1 py-3 rounded-xl font-bold text-white/40 border border-white/10">← Back</button>
-                <button onClick={() => setStep(4)} className="flex-1 py-3 rounded-xl font-bold text-white" style={{ background: 'linear-gradient(135deg,#FF6B35,#FFB800)' }}>Next →</button>
-              </div>
-            </div>
-          )}
-          {step === 4 && (
-            <div className="space-y-6">
-              <div className="flex items-center gap-3 mb-2"><Zap className="w-5 h-5 text-brand-orange" /><h2 className="text-xl font-bold">{isHi ? 'आज कैसा मूड है?' : 'How do you want today?'}</h2></div>
-              <div className="space-y-3">
-                {DIFFICULTIES.map(d => (
-                  <button key={d.id} onClick={() => setDifficulty(d.id)} className="w-full py-4 px-5 rounded-xl font-bold text-left transition-all border flex items-center gap-4" style={{ background: difficulty === d.id ? 'linear-gradient(135deg,rgba(255,107,53,0.2),rgba(255,107,53,0.05))' : 'rgba(30,27,46,0.5)', borderColor: difficulty === d.id ? '#FF6B35' : 'rgba(255,255,255,0.1)' }}>
-                    <span className="text-2xl">{d.emoji}</span><span>{isHi ? d.labelHi : d.label}</span>{difficulty === d.id && <span className="ml-auto text-brand-orange">✓</span>}
-                  </button>
-                ))}
-              </div>
-              <div className="flex gap-3">
-                <button onClick={() => setStep(3)} className="flex-1 py-3 rounded-xl font-bold text-white/40 border border-white/10">← Back</button>
-                <button onClick={handleComplete} className="flex-1 py-3 rounded-xl font-bold text-white animate-pulse-glow" style={{ background: 'linear-gradient(135deg,#FF6B35,#FFB800)' }}>🦊 {isHi ? 'शुरू करो!' : 'Start Learning!'}</button>
-              </div>
-            </div>
-          )}
-          <div className="flex justify-center gap-2 mt-6">
-            {[0, 1, 2, 3, 4].map(i => (
-              <div key={i} className="h-2 rounded-full transition-all" style={{ background: i === step ? '#FF6B35' : i < step ? '#7B2D8E' : 'rgba(255,255,255,0.15)', width: i === step ? '24px' : '8px' }} />
-            ))}
-          </div>
+        <h1 className="text-5xl md:text-6xl font-bold mb-4 leading-[1.1]" style={{ fontFamily: 'var(--font-display)' }}>
+          Meet <span className="gradient-text">Foxy</span>,<br />your AI tutor
+        </h1>
+        <p className="text-lg text-[var(--text-2)] mb-10 max-w-sm leading-relaxed">
+          Personalised CBSE/NCERT lessons in Hindi, English & 6 more languages. Grades 6–12.
+        </p>
+
+        {/* subject pills */}
+        <div className="flex flex-wrap gap-2 justify-center mb-10 max-w-sm">
+          {SUBJECTS_PREVIEW.map(s => (
+            <span key={s.code} className="flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium"
+              style={{ background: `${s.color}18`, border: `1px solid ${s.color}30`, color: s.color }}>
+              <span>{s.icon}</span>{s.name}
+            </span>
+          ))}
+        </div>
+
+        <button className="btn-primary w-full max-w-xs text-lg py-4" onClick={() => setStep('auth')}>
+          Start Learning Free →
+        </button>
+        <p className="text-xs text-[var(--text-3)] mt-3">No credit card. No app download.</p>
+      </div>
+
+      {/* stats strip */}
+      <div className="glass border-t border-[var(--border)] px-6 py-5">
+        <div className="grid grid-cols-3 gap-4 max-w-sm mx-auto text-center">
+          {[['2,157+','Questions'],['3,574+','RAG Chunks'],['16','Subjects']].map(([v,l]) => (
+            <div key={l}><div className="text-xl font-bold gradient-text">{v}</div><div className="text-xs text-[var(--text-3)] mt-0.5">{l}</div></div>
+          ))}
         </div>
       </div>
     </div>
   );
+
+  // ── Auth ───────────────────────────────────────────────────────
+  if (step === 'auth') return (
+    <div className="mesh-bg min-h-dvh flex items-center justify-center p-6">
+      <div className="glass rounded-3xl p-8 w-full max-w-sm animate-slide-up">
+        <button onClick={() => setStep('welcome')} className="text-[var(--text-3)] text-sm mb-6 flex items-center gap-1 hover:text-[var(--text-2)]">
+          ← Back
+        </button>
+        <div className="text-4xl mb-4 text-center">🦊</div>
+        <h2 className="text-2xl font-bold text-center mb-1" style={{ fontFamily: 'var(--font-display)' }}>Sign In / Sign Up</h2>
+        <p className="text-sm text-[var(--text-3)] text-center mb-6">We'll send a magic link to your email</p>
+
+        {!otpSent ? (
+          <>
+            <input className="input-base mb-3" type="email" placeholder="your@email.com"
+              value={email} onChange={e => setEmail(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && sendOTP()} />
+            {authError && <p className="text-red-400 text-sm mb-3">{authError}</p>}
+            <button className="btn-primary w-full" onClick={sendOTP} disabled={authLoading || !email.trim()}>
+              {authLoading ? 'Sending…' : 'Send OTP →'}
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-[var(--text-2)] mb-3 text-center">OTP sent to <strong>{email}</strong></p>
+            <input className="input-base mb-3 text-center text-2xl tracking-[0.3em]" type="text" placeholder="000000"
+              maxLength={6} value={otp} onChange={e => setOtp(e.target.value.replace(/\D/g,''))}
+              onKeyDown={e => e.key === 'Enter' && verifyOTP()} />
+            {authError && <p className="text-red-400 text-sm mb-3">{authError}</p>}
+            <button className="btn-primary w-full mb-3" onClick={verifyOTP} disabled={authLoading || otp.length < 6}>
+              {authLoading ? 'Verifying…' : 'Verify OTP →'}
+            </button>
+            <button className="btn-ghost w-full text-sm" onClick={() => { setOtpSent(false); setOtp(''); setAuthError(''); }}>
+              Change email
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+
+  // ── Profile ────────────────────────────────────────────────────
+  if (step === 'profile') return (
+    <div className="mesh-bg min-h-dvh flex items-center justify-center p-6">
+      <div className="glass rounded-3xl p-8 w-full max-w-sm animate-slide-up">
+        <div className="text-4xl mb-4 text-center">✏️</div>
+        <h2 className="text-2xl font-bold text-center mb-1" style={{ fontFamily: 'var(--font-display)' }}>Tell us about you</h2>
+        <p className="text-sm text-[var(--text-3)] text-center mb-6">This helps Foxy personalise your lessons</p>
+
+        <div className="space-y-3">
+          <input className="input-base" placeholder="Your full name" value={name} onChange={e => setName(e.target.value)} />
+
+          <select className="input-base" value={grade} onChange={e => setGrade(e.target.value)}>
+            {GRADES.map(g => <option key={g} value={g}>Grade {g}</option>)}
+          </select>
+
+          <select className="input-base" value={board} onChange={e => setBoard(e.target.value)}>
+            {BOARDS.map(b => <option key={b} value={b}>{b}</option>)}
+          </select>
+
+          <div>
+            <p className="text-xs text-[var(--text-3)] mb-2 ml-1">Preferred language</p>
+            <div className="grid grid-cols-3 gap-2">
+              {LANGUAGES.slice(0,6).map(l => (
+                <button key={l.code} onClick={() => setLanguage(l.code)}
+                  className="py-2 px-2 rounded-xl text-xs font-semibold transition-all"
+                  style={{ background: language === l.code ? 'rgba(255,107,53,0.2)' : 'var(--surface-2)',
+                    border: language === l.code ? '1px solid rgba(255,107,53,0.5)' : '1px solid var(--border)',
+                    color: language === l.code ? 'var(--orange)' : 'var(--text-2)' }}>
+                  {l.labelNative}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <button className="btn-primary w-full mt-2" onClick={saveProfile}
+            disabled={saving || !name.trim()}>
+            {saving ? 'Saving…' : 'Continue →'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── Subject ────────────────────────────────────────────────────
+  if (step === 'subject') return (
+    <div className="mesh-bg min-h-dvh flex items-center justify-center p-6">
+      <div className="glass rounded-3xl p-8 w-full max-w-sm animate-slide-up">
+        <div className="text-4xl mb-4 text-center">📚</div>
+        <h2 className="text-2xl font-bold text-center mb-1" style={{ fontFamily: 'var(--font-display)' }}>
+          Pick your main subject
+        </h2>
+        <p className="text-sm text-[var(--text-3)] text-center mb-6">You can study all subjects — this is just your home base</p>
+
+        <div className="grid grid-cols-2 gap-2 mb-6">
+          {SUBJECTS_PREVIEW.map(s => (
+            <button key={s.code} onClick={() => setSelectedSubject(s.code)}
+              className="p-4 rounded-2xl text-left transition-all"
+              style={{ background: selectedSubject === s.code ? `${s.color}20` : 'var(--surface-2)',
+                border: selectedSubject === s.code ? `1.5px solid ${s.color}` : '1px solid var(--border)' }}>
+              <div className="text-2xl mb-1">{s.icon}</div>
+              <div className="text-sm font-semibold" style={{ color: selectedSubject === s.code ? s.color : 'var(--text-1)' }}>
+                {s.name}
+              </div>
+            </button>
+          ))}
+        </div>
+
+        <button className="btn-primary w-full" onClick={finishOnboarding} disabled={saving}>
+          {saving ? 'Setting up…' : 'Start Learning 🚀'}
+        </button>
+      </div>
+    </div>
+  );
+
+  return null;
 }

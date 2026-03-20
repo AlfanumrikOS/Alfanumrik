@@ -1,40 +1,28 @@
 'use client';
-
 import { useRouter } from 'next/navigation';
-import { useStudent } from '@/components/StudentProvider';
-import { ArrowLeft, FlaskConical } from 'lucide-react';
+import { useAuth } from '@/components/AuthProvider';
+import BottomNav from '@/components/BottomNav';
+import { useEffect } from 'react';
 
-const SIMS = [
-  { id: 'ohm', title: "Ohm's Law Circuit", titleHi: 'ओम का नियम', icon: '⚡', color: '#00B4D8' },
-  { id: 'projectile', title: 'Projectile Motion', titleHi: 'प्रक्षेप्य गति', icon: '🚀', color: '#FF6B35' },
-  { id: 'lens', title: 'Lens Ray Diagram', titleHi: 'लेंस किरण आरेख', icon: '🔍', color: '#9B4DAE' },
-];
-
-export default function SimulationsPage() {
-  const { student, isLoggedIn, isLoading, isHi } = useStudent();
+export default function Page() {
+  const { isLoggedIn, isLoading, isHi } = useAuth();
   const router = useRouter();
-
-  if (isLoading) return <div className="min-h-screen flex items-center justify-center"><div className="text-2xl animate-pulse">🦊</div></div>;
-  if (!isLoggedIn || !student) { router.push('/'); return null; }
-
+  useEffect(() => { if (!isLoading && !isLoggedIn) router.replace('/'); }, [isLoading, isLoggedIn, router]);
   return (
-    <div className="min-h-screen pb-24">
-      <div className="sticky top-0 z-50 glass border-b border-white/5">
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
-          <button onClick={() => router.push('/dashboard')}><ArrowLeft className="w-5 h-5 text-white/40" /></button>
-          <FlaskConical className="w-5 h-5" style={{color:'#00B4D8'}} />
-          <span className="font-bold">{isHi ? 'सिमुलेशन लैब' : 'Simulation Lab'}</span>
+    <div className="mesh-bg min-h-dvh pb-nav">
+      <header className="glass border-b border-[var(--border)]">
+        <div className="max-w-lg mx-auto px-4 py-3 flex items-center gap-3">
+          <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)]">←</button>
+          <h1 className="font-bold text-lg capitalize" style={{ fontFamily: 'var(--font-display)' }}>simulations</h1>
         </div>
+      </header>
+      <div className="max-w-lg mx-auto px-4 py-12 text-center">
+        <div className="text-5xl mb-4 animate-float">🦊</div>
+        <h2 className="font-bold text-xl mb-2" style={{ fontFamily: 'var(--font-display)' }}>{isHi ? 'जल्द आ रहा है!' : 'Coming Soon!'}</h2>
+        <p className="text-sm text-[var(--text-3)]">{isHi ? 'यह फीचर जल्दी आएगा।' : 'This feature is on the way.'}</p>
+        <button className="btn-primary mt-6" onClick={() => router.push('/foxy')}>{isHi ? 'फॉक्सी से पूछो' : 'Ask Foxy Instead'}</button>
       </div>
-      <div className="max-w-2xl mx-auto px-4 pt-6 space-y-3">
-        <p className="text-sm text-white/40 mb-4">{isHi ? 'इंटरैक्टिव प्रयोग — जल्द आ रहे हैं!' : 'Interactive experiments — coming soon!'}</p>
-        {SIMS.map(sim => (
-          <div key={sim.id} className="glass rounded-xl p-5 flex items-center gap-4" style={{opacity: 0.5}}>
-            <span className="text-3xl">{sim.icon}</span>
-            <div><div className="font-bold">{isHi ? sim.titleHi : sim.title}</div><div className="text-xs text-white/25">{isHi ? 'जल्द आ रहा है' : 'Coming soon'}</div></div>
-          </div>
-        ))}
-      </div>
+      <BottomNav />
     </div>
   );
 }

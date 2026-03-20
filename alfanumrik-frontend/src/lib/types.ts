@@ -1,120 +1,128 @@
 // ============================================================
-// Alfanumrik v2 — TypeScript Types
-// Maps exactly to the v2 Supabase schema
+// Alfanumrik — Unified Types (matched to dxipobqngyfpqbbznojz schema)
 // ============================================================
 
-export type Subject = 'math' | 'science' | 'english' | 'hindi' | 'social_science';
-export type BloomLevel = 'remember' | 'understand' | 'apply' | 'analyze' | 'evaluate' | 'create';
-export type MasteryLevel = 'not_started' | 'attempted' | 'familiar' | 'proficient' | 'mastered';
-export type Language = 'en' | 'hi' | 'hinglish';
+export type Language = 'en' | 'hi' | 'hinglish' | 'ta' | 'te' | 'bn';
+export type Board = 'CBSE' | 'ICSE' | 'State Board' | 'IB' | 'Cambridge' | 'IGCSE' | 'Other';
+export type MasteryLevel = 'not_started' | 'developing' | 'familiar' | 'proficient' | 'mastered';
 export type SessionMode = 'learn' | 'practice' | 'doubt' | 'quiz' | 'review';
-export type Difficulty = 'gentle' | 'normal' | 'challenge';
+export type PersonaId = 'friendly_primary' | 'concept_master' | 'exam_coach' | 'jee_neet_coach' | 'olympiad_mentor';
 
-// Student context stored in localStorage + synced to Supabase
-export interface StudentContext {
+export interface Student {
   id: string;
+  auth_user_id: string | null;
   name: string;
-  grade: number;
+  email: string | null;
+  grade: string;
   board: string;
-  language: Language;
-  subject: Subject;
-  difficulty: Difficulty;
-  xpTotal: number;
-  xpWeekly: number;
-  streakDays: number;
-  streakBest: number;
-  isLoggedIn: boolean;
+  preferred_language: Language;
+  preferred_subject: string;
+  school_name: string | null;
+  city: string | null;
+  onboarding_completed: boolean;
+  created_at: string;
 }
 
-// Chat message
+export interface LearningProfile {
+  id: string;
+  student_id: string;
+  subject: string;
+  xp: number;
+  level: number;
+  streak_days: number;
+  longest_streak: number;
+  total_sessions: number;
+  total_time_minutes: number;
+  last_session_at: string | null;
+}
+
+export interface LearningSnapshot {
+  total_xp: number;
+  total_sessions: number;
+  total_questions_asked: number;
+  topics_mastered: number;
+  topics_in_progress: number;
+  current_streak: number;
+  active_misconceptions: number;
+  pending_reviews: number;
+  quizzes_taken: number;
+  avg_quiz_score: number;
+}
+
+export interface Subject {
+  id: string;
+  code: string;
+  name: string;
+  icon: string;
+  color: string;
+  is_active: boolean;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'student' | 'foxy' | 'system';
   content: string;
   timestamp: number;
-  questionId?: string;
-  isCorrect?: boolean;
 }
 
-// Quiz state
-export interface QuizState {
-  questions: QuizQuestion[];
-  currentIndex: number;
-  responses: QuizResponse[];
-  startedAt: number;
-  isComplete: boolean;
+export interface TutorPersona {
+  persona_id: PersonaId;
+  display_name: string;
+  description: string;
 }
 
 export interface QuizQuestion {
   id: string;
-  conceptId: string;
-  questionTextEn: string;
-  questionTextHi: string | null;
-  options: Array<{ id: string; textEn: string; textHi: string; isCorrect: boolean }>;
-  correctAnswer: string;
-  explanationEn: string | null;
-  explanationHi: string | null;
-  hintEn: string | null;
-  hintHi: string | null;
-  bloomLevel: BloomLevel;
-  difficulty: number;
+  question_text: string;
+  question_text_vernacular?: string;
+  question_type: 'mcq' | 'short' | 'long';
+  options?: Array<{ id: string; text: string; text_vernacular?: string }>;
+  correct_answer: string;
+  explanation?: string;
+  bloom_level?: string;
+  difficulty?: number;
+  topic_id?: string;
 }
 
-export interface QuizResponse {
-  questionId: string;
-  conceptId: string;
-  selectedAnswer: string;
-  isCorrect: boolean;
-  timeTakenSeconds: number;
-}
-
-// Subject display helpers
-export const SUBJECT_CONFIG: Record<Subject, {
-  nameEn: string;
-  nameHi: string;
+export interface Achievement {
+  id: string;
+  code: string;
+  title: string;
+  title_vernacular?: string;
+  description: string;
   icon: string;
-  color: string;
-}> = {
-  math: { nameEn: 'Mathematics', nameHi: 'गणित', icon: '🧮', color: '#FF6B35' },
-  science: { nameEn: 'Science', nameHi: 'विज्ञान', icon: '🔬', color: '#00B4D8' },
-  english: { nameEn: 'English', nameHi: 'अंग्रेज़ी', icon: '📚', color: '#FFB800' },
-  hindi: { nameEn: 'Hindi', nameHi: 'हिन्दी', icon: '📝', color: '#2DC653' },
-  social_science: { nameEn: 'Social Science', nameHi: 'सामाजिक विज्ञान', icon: '🌍', color: '#9B4DAE' },
-};
+  xp_reward: number;
+  category: string;
+}
 
-export const BLOOM_CONFIG: Record<BloomLevel, { label: string; color: string; order: number }> = {
-  remember: { label: 'Remember', color: '#4CAF50', order: 1 },
-  understand: { label: 'Understand', color: '#2196F3', order: 2 },
-  apply: { label: 'Apply', color: '#FF9800', order: 3 },
-  analyze: { label: 'Analyze', color: '#9C27B0', order: 4 },
-  evaluate: { label: 'Evaluate', color: '#F44336', order: 5 },
-  create: { label: 'Create', color: '#E91E63', order: 6 },
-};
-
-export const MASTERY_CONFIG: Record<MasteryLevel, { label: string; labelHi: string; color: string; order: number }> = {
-  not_started: { label: 'Not Started', labelHi: 'शुरू नहीं', color: '#666', order: 0 },
-  attempted: { label: 'Attempted', labelHi: 'प्रयास किया', color: '#FF9800', order: 1 },
-  familiar: { label: 'Familiar', labelHi: 'परिचित', color: '#2196F3', order: 2 },
-  proficient: { label: 'Proficient', labelHi: 'दक्ष', color: '#4CAF50', order: 3 },
-  mastered: { label: 'Mastered', labelHi: 'महारत', color: '#FFD700', order: 4 },
-};
-
-// ============================================================
-// Legacy / Curriculum types (used by curriculum.ts, questions.ts, engine.ts)
-// ============================================================
+export interface StudyPlanTask {
+  id: string;
+  plan_id: string;
+  student_id: string;
+  day_number: number;
+  scheduled_date: string;
+  task_order: number;
+  task_type: string;
+  subject: string;
+  title: string;
+  description: string;
+  estimated_minutes: number;
+  is_completed: boolean;
+  xp_reward: number;
+}
 
 export interface ConceptNode {
   id: string;
-  subject: Subject;
-  grade: number;
+  subject: string;
+  grade: string;
   chapter: string;
   topic: string;
   title: string;
-  titleHi: string;
-  bloomLevel: BloomLevel;
+  titleHi?: string;
+  bloomLevel: string;
   prerequisites: string[];
-  difficulty: number;       // 0–1
-  discrimination: number;   // IRT param
+  difficulty: number;
+  discrimination: number;
   cbseCompetency?: string;
 }
 
@@ -122,7 +130,7 @@ export interface Question {
   id: string;
   conceptId: string;
   type: 'mcq' | 'short' | 'long';
-  bloomLevel: BloomLevel;
+  bloomLevel: string;
   difficulty: number;
   questionText: string;
   questionTextHi?: string;
@@ -131,19 +139,17 @@ export interface Question {
   explanation?: string;
   explanationHi?: string;
   hint?: string;
-  hintHi?: string;
   misconceptionTag?: string;
 }
 
 export interface Simulation {
   id: string;
-  subject: Subject;
-  grade: number;
+  subject: string;
+  grade: string;
   title: string;
   titleHi: string;
   description: string;
   url: string;
-  thumbnail?: string;
 }
 
 export interface Badge {
@@ -152,6 +158,26 @@ export interface Badge {
   titleHi: string;
   description: string;
   icon: string;
-  condition: string;
   xpReward: number;
 }
+
+export interface SubscriptionPlan {
+  id: string;
+  plan_code: string;
+  name: string;
+  tagline: string;
+  price_monthly: number;
+  price_yearly: number;
+}
+
+export const GRADES = ['6','7','8','9','10','11','12'];
+export const BOARDS: Board[] = ['CBSE','ICSE','State Board','IB','Cambridge','IGCSE','Other'];
+export const LANGUAGES: Array<{ code: Language; label: string; labelNative: string }> = [
+  { code: 'en',       label: 'English',   labelNative: 'English' },
+  { code: 'hi',       label: 'Hindi',     labelNative: 'हिन्दी' },
+  { code: 'hinglish', label: 'Hinglish',  labelNative: 'Hinglish' },
+  { code: 'ta',       label: 'Tamil',     labelNative: 'தமிழ்' },
+  { code: 'te',       label: 'Telugu',    labelNative: 'తెలుగు' },
+  { code: 'bn',       label: 'Bengali',   labelNative: 'বাংলা' },
+];
+export type BloomLevel = 'remember' | 'understand' | 'apply' | 'analyze' | 'evaluate' | 'create';

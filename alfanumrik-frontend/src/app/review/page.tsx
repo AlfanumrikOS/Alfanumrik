@@ -1,52 +1,65 @@
 'use client';
-
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useStudent } from '@/components/StudentProvider';
+import { useAuth } from '@/components/AuthProvider';
+import BottomNav from '@/components/BottomNav';
 import { getDueReviews } from '@/lib/supabase';
-import { ArrowLeft, RotateCcw, CheckCircle2 } from 'lucide-react';
 
 export default function ReviewPage() {
-  const { student, isLoggedIn, isLoading, isHi } = useStudent();
+  const { student, isLoggedIn, isLoading, isHi } = useAuth();
   const router = useRouter();
-  const [dueCount, setDueCount] = useState(0);
-  const [cards, setCards] = useState<Array<{card_id:string;concept_id:string;title_en:string;title_hi:string}>>([]);
+  const [cards, setCards] = useState<Array<{ topic_id: string; title: string; title_hi: string; mastery_probability: number }>>([]);
+  const [loaded, setLoaded] = useState(false);
 
+  useEffect(() => { if (!isLoading && !isLoggedIn) router.replace('/'); }, [isLoading, isLoggedIn, router]);
   useEffect(() => {
-    if (!isLoggedIn && !isLoading) { router.push('/'); return; }
-    if (student?.id) getDueReviews(student.id, 20).then(r => { if (r) { setDueCount(r.due_count); setCards(r.cards); } });
-  }, [isLoggedIn, isLoading, student?.id]);
+    if (!student) return;
+    getDueReviews(student.id, undefined, 20).then(r => { setCards(r as any); setLoaded(true); });
+  }, [student?.id]); // eslint-disable-line
 
-  if (isLoading || !student) return <div className="min-h-screen flex items-center justify-center"><div className="text-2xl animate-pulse">🦊</div></div>;
+  if (isLoading || !student) return <div className="mesh-bg min-h-dvh flex items-center justify-center"><div className="text-5xl animate-float">🦊</div></div>;
 
   return (
-    <div className="min-h-screen pb-24">
-      <div className="sticky top-0 z-50 glass border-b border-white/5">
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
-          <button onClick={() => router.push('/dashboard')}><ArrowLeft className="w-5 h-5 text-white/40" /></button>
-          <RotateCcw className="w-5 h-5" style={{color:'#FFB800'}} />
-          <span className="font-bold">{isHi ? 'रिव्यू' : 'Spaced Review'}</span>
-          <span className="text-xs text-white/30 ml-auto">{dueCount} {isHi ? 'बाकी' : 'due'}</span>
+    <div className="mesh-bg min-h-dvh pb-nav">
+      <header className="glass border-b border-[var(--border)]">
+        <div className="max-w-lg mx-auto px-4 py-3 flex items-center gap-3">
+          <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)]">←</button>
+          <h1 className="font-bold text-lg" style={{ fontFamily: 'var(--font-display)' }}>
+            🔄 {isHi ? 'स्पेस्ड रिव्यू' : 'Spaced Review'}
+          </h1>
+          {cards.length > 0 && <span className="ml-auto text-xs px-2 py-1 rounded-full" style={{ background: 'rgba(255,107,53,0.15)', color: 'var(--orange)' }}>{cards.length} {isHi ? 'बाकी' : 'due'}</span>}
         </div>
-      </div>
-      <div className="max-w-2xl mx-auto px-4 pt-6">
-        {dueCount === 0 ? (
-          <div className="glass rounded-2xl p-8 text-center">
-            <CheckCircle2 className="w-16 h-16 mx-auto mb-4 text-green-400" />
-            <h2 className="text-xl font-bold mb-2">{isHi ? 'सब पूरा!' : 'All Caught Up!'}</h2>
-            <p className="text-sm text-white/40">{isHi ? 'कोई रिव्यू बाकी नहीं। बाद में वापस आओ!' : 'No reviews due. Come back later!'}</p>
+      </header>
+      <div className="max-w-lg mx-auto px-4 py-6">
+        {!loaded ? (
+          <div className="flex justify-center pt-12"><div className="text-4xl animate-float">🔄</div></div>
+        ) : cards.length === 0 ? (
+          <div className="glass rounded-3xl p-10 text-center">
+            <div className="text-6xl mb-4">✅</div>
+            <h2 className="text-xl font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>{isHi ? 'सब पूरा!' : 'All Caught Up!'}</h2>
+            <p className="text-sm text-[var(--text-3)]">{isHi ? 'कोई रिव्यू बाकी नहीं। कल वापस आओ!' : 'No reviews due. Come back tomorrow!'}</p>
           </div>
         ) : (
-          <div className="space-y-3">
-            {cards.map(card => (
-              <button key={card.card_id} onClick={() => router.push('/quiz')} className="w-full glass rounded-xl p-4 text-left flex items-center gap-3 transition-all hover:scale-[1.01]">
-                <RotateCcw className="w-5 h-5 flex-shrink-0" style={{color:'#FFB800'}} />
-                <div><div className="font-bold text-sm">{isHi && card.title_hi ? card.title_hi : card.title_en}</div><div className="text-xs text-white/25">{isHi ? 'रिव्यू करो' : 'Review now'}</div></div>
+          <div className="space-y-2">
+            <p className="text-sm text-[var(--text-3)] mb-3">{isHi ? 'इन विषयों को दोहराओ:' : 'Review these topics to strengthen memory:'}</p>
+            {cards.map(c => (
+              <button key={c.topic_id} onClick={() => router.push('/foxy')}
+                className="glass-mid w-full rounded-xl p-4 flex items-center gap-3 card-hover">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
+                  style={{ background: `rgba(255,184,0,${0.1 + (1 - (c.mastery_probability ?? 0.5)) * 0.2})` }}>🔄</div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-sm truncate">{(isHi && c.title_hi) ? c.title_hi : c.title}</div>
+                  <div className="text-xs text-[var(--text-3)]">
+                    {isHi ? 'महारत:' : 'Mastery:'} {Math.round((c.mastery_probability ?? 0) * 100)}%
+                  </div>
+                </div>
+                <span className="text-[var(--text-3)]">→</span>
               </button>
             ))}
           </div>
         )}
       </div>
+      <BottomNav />
     </div>
   );
 }
