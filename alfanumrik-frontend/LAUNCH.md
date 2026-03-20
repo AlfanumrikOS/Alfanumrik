@@ -173,3 +173,6 @@ Anthropic Claude  Supabase (PostgreSQL + Auth)
 ## Support
 
 File issues on GitHub or email your admin address.
+
+
+<!-- v2.0 deployed with Supabase + Foxy AI integration -->
