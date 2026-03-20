@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "dev": "cd alfanumrik-frontend && npm install && npm run dev",
-    "build": "cd alfanumrik-frontend && npm install && npm run build"
+    "build": "cd alfanumrik-frontend && npm install && npm run build",
+    "start": "cd alfanumrik-frontend && npm run start"
   }
 }

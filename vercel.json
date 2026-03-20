@@ -1,3 +1,6 @@
 {
-  "framework": "nextjs"
+  "buildCommand": "cd alfanumrik-frontend && npm install && npm run build",
+  "outputDirectory": "alfanumrik-frontend/.next",
+  "framework": "nextjs",
+  "installCommand": "echo skip"
 }
