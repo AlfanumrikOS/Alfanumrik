@@ -1,5 +1,5 @@
 {
-  "name": "alfanumrik-monorepo",
+  "name": "alfanumrik",
   "private": true,
   "scripts": {
     "dev": "cd alfanumrik-frontend && npm install && npm run dev",

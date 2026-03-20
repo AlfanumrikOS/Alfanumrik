@@ -98,3 +98,60 @@ export const MASTERY_CONFIG: Record<MasteryLevel, { label: string; labelHi: stri
   proficient: { label: 'Proficient', labelHi: 'दक्ष', color: '#4CAF50', order: 3 },
   mastered: { label: 'Mastered', labelHi: 'महारत', color: '#FFD700', order: 4 },
 };
+
+// ============================================================
+// Legacy / Curriculum types (used by curriculum.ts, questions.ts, engine.ts)
+// ============================================================
+
+export interface ConceptNode {
+  id: string;
+  subject: Subject;
+  grade: number;
+  chapter: string;
+  topic: string;
+  title: string;
+  titleHi: string;
+  bloomLevel: BloomLevel;
+  prerequisites: string[];
+  difficulty: number;       // 0–1
+  discrimination: number;   // IRT param
+  cbseCompetency?: string;
+}
+
+export interface Question {
+  id: string;
+  conceptId: string;
+  type: 'mcq' | 'short' | 'long';
+  bloomLevel: BloomLevel;
+  difficulty: number;
+  questionText: string;
+  questionTextHi?: string;
+  options?: Array<{ id: string; text: string; isCorrect: boolean }>;
+  correctAnswer: string;
+  explanation?: string;
+  explanationHi?: string;
+  hint?: string;
+  hintHi?: string;
+  misconceptionTag?: string;
+}
+
+export interface Simulation {
+  id: string;
+  subject: Subject;
+  grade: number;
+  title: string;
+  titleHi: string;
+  description: string;
+  url: string;
+  thumbnail?: string;
+}
+
+export interface Badge {
+  id: string;
+  title: string;
+  titleHi: string;
+  description: string;
+  icon: string;
+  condition: string;
+  xpReward: number;
+}

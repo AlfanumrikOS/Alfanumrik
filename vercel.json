@@ -1,5 +1,6 @@
 {
   "buildCommand": "cd alfanumrik-frontend && npm install && npm run build",
   "outputDirectory": "alfanumrik-frontend/out",
-  "cleanUrls": true
+  "cleanUrls": true,
+  "rewrites": [{ "source": "/(.*)", "destination": "/" }]
 }
