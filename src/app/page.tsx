@@ -54,7 +54,23 @@ export default function Home() {
   const [childInviteCode, setChildInviteCode] = useState('');
   const [linkResult, setLinkResult] = useState<string | null>(null);
 
-  useEffect(() => { if (!isLoading && isLoggedIn) router.replace('/dashboard'); }, [isLoading, isLoggedIn, router]);
+  // Handle logged-in users: check onboarding status
+  useEffect(() => {
+    if (isLoading) return;
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return; // Not authenticated at all
+      // Check if any role has completed onboarding
+      const { data: stu } = await supabase.from('students').select('onboarding_completed').eq('auth_user_id', user.id).single();
+      if (stu?.onboarding_completed) { router.replace('/dashboard'); return; }
+      const { data: tch } = await supabase.from('teachers').select('onboarding_completed').eq('auth_user_id', user.id).single();
+      if (tch?.onboarding_completed) { router.replace('/dashboard'); return; }
+      const { data: gdn } = await supabase.from('guardians').select('onboarding_completed').eq('auth_user_id', user.id).single();
+      if (gdn?.onboarding_completed) { router.replace('/dashboard'); return; }
+      // User has auth session but hasn't completed onboarding — show profile form
+      setStep('profile');
+    })();
+  }, [isLoading, router]);
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (ev, sess) => {
       if ((ev === 'SIGNED_IN' || ev === 'TOKEN_REFRESHED') && sess?.user) {
@@ -614,10 +630,21 @@ export default function Home() {
   if (step === 'profile') return (
     <div className="mesh-bg min-h-dvh flex items-center justify-center p-5">
       <Card className={`w-full animate-slide-up !p-8 ${role==='teacher'?'max-w-lg':'max-w-sm'}`}>
-        <div style={{ textAlign:'center', marginBottom:20 }}>
-          <div style={{ fontSize:40, marginBottom:6 }}>{role==='student'?'✏️':role==='teacher'?'👩‍🏫':'👨‍👩‍👧'}</div>
-          <h2 style={{ fontFamily:'var(--font-display)', fontWeight:800, fontSize:22 }}>{role==='student'?'Tell us about you':role==='teacher'?'Teacher Profile':'Parent Profile'}</h2>
-          <p style={{ fontSize:13, color:'var(--text-3)', marginTop:4 }}>{role==='student'?'Helps Foxy personalise lessons':role==='teacher'?'Set up your teaching profile':'Connect with your child'}</p>
+        {/* Role picker header */}
+        <div style={{ textAlign:'center', marginBottom:16 }}>
+          <div style={{ fontSize:40, marginBottom:6 }}>{role==='student'?'🎓':role==='teacher'?'👩‍🏫':'👨‍👩‍👧'}</div>
+          <h2 style={{ fontFamily:'var(--font-display)', fontWeight:800, fontSize:22 }}>
+            {role==='student'?'Student Profile':role==='teacher'?'Teacher Profile':'Parent Profile'}
+          </h2>
+          <p style={{ fontSize:13, color:'var(--text-3)', marginTop:4 }}>
+            {role==='student'?'Tell us about yourself so Foxy can personalise your learning':role==='teacher'?'Set up your teaching profile':'Connect with your child\'s learning'}
+          </p>
+        </div>
+        {/* Quick role switch */}
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:4, marginBottom:16, background:'var(--surface-2)', borderRadius:12, padding:3 }}>
+          {([['student','🎓 Student'],['teacher','👩‍🏫 Teacher'],['guardian','👨‍👩‍👧 Parent']] as [Role, string][]).map(([r,l])=>(
+            <button key={r} onClick={()=>setRole(r)} style={{ padding:'8px 0', borderRadius:10, border:'none', cursor:'pointer', fontWeight:600, fontSize:11, background:role===r?'var(--surface-1)':'transparent', color:role===r?'var(--text-1)':'var(--text-3)', boxShadow:role===r?'0 1px 4px rgba(0,0,0,0.08)':'none' }}>{l}</button>
+          ))}
         </div>
         <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
           <Input placeholder="Full name" value={name} onChange={e=>setName(e.target.value)}/>
@@ -649,7 +676,7 @@ export default function Home() {
               <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:6 }}>
                 {LANGUAGES.slice(0,3).map(l=><button key={l.code} onClick={()=>setLang(l.code)} style={{ padding:'8px 4px', borderRadius:10, fontSize:12, fontWeight:600, cursor:'pointer', background:lang===l.code?`${P.green}15`:'var(--surface-2)', border:`1.5px solid ${lang===l.code?P.green:'var(--border)'}`, color:lang===l.code?P.green:'var(--text-2)' }}>{l.labelNative}</button>)}
               </div></div>
-            <div style={{ padding:16, borderRadius:12, background:'${P.green}08', border:'1px solid ${P.green}20' }}>
+            <div style={{ padding:16, borderRadius:12, background:`${P.green}08`, border:`1px solid ${P.green}20` }}>
               <p style={{ fontSize:12, color:'var(--text-2)', lineHeight:1.6, marginBottom:10 }}><strong>Link your child&apos;s account</strong> — enter their invite code (found in child&apos;s Profile page)</p>
               <Input placeholder="Child's Invite Code (e.g. A1B2C3D4)" value={childInviteCode} onChange={e=>setChildInviteCode(e.target.value.toUpperCase())}/>
             </div>
