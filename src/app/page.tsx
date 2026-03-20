@@ -36,6 +36,10 @@ export default function Home() {
   const [email, setEmail] = useState(''); const [phone, setPhone] = useState('');
   const [authMethod, setAuthMethod] = useState<'email'|'phone'>('email');
   const [otpSent, setOtpSent] = useState(false); const [otp, setOtp] = useState('');
+  const [password, setPassword] = useState(''); const [confirmPassword, setConfirmPassword] = useState('');
+  const [authMode, setAuthMode] = useState<'signup'|'login'|'otp'|'forgot'>('signup');
+  const [showPassword, setShowPassword] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
   const [loading, setLoading] = useState(false); const [error, setError] = useState('');
   /* Profile */
   const [name, setName] = useState(''); const [grade, setGrade] = useState('9');
@@ -77,6 +81,33 @@ export default function Home() {
       ? await supabase.auth.verifyOtp({ email: id, token: otp.trim(), type: 'email' })
       : await supabase.auth.verifyOtp({ phone: id, token: otp.trim(), type: 'sms' });
     if (e) setError(e.message); setLoading(false);
+  };
+  const signUpWithPassword = async () => {
+    if (!email.trim() || !password) return;
+    if (password.length < 6) { setError('Password must be at least 6 characters'); return; }
+    if (password !== confirmPassword) { setError('Passwords do not match'); return; }
+    setLoading(true); setError('');
+    const { error: e } = await supabase.auth.signUp({ email: email.trim(), password });
+    if (e) setError(e.message);
+    else { setOtpSent(true); setError(''); }
+    setLoading(false);
+  };
+  const signInWithPassword = async () => {
+    if (!email.trim() || !password) return;
+    setLoading(true); setError('');
+    const { error: e } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    if (e) setError(e.message === 'Invalid login credentials' ? 'Wrong email or password. Try again or use Forgot Password.' : e.message);
+    setLoading(false);
+  };
+  const sendResetEmail = async () => {
+    if (!email.trim()) { setError('Enter your email address first'); return; }
+    setLoading(true); setError('');
+    const { error: e } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: window.location.origin + '/auth/reset',
+    });
+    if (e) setError(e.message);
+    else setResetSent(true);
+    setLoading(false);
   };
   const saveProfile = async () => {
     setSaving(true);
@@ -160,7 +191,7 @@ export default function Home() {
               <span style={{ fontSize: 14, fontWeight: 600, color: P.text2, cursor: 'pointer' }} onClick={() => document.getElementById('solutions')?.scrollIntoView({ behavior: 'smooth' })}>Solutions</span>
               <span style={{ fontSize: 14, fontWeight: 600, color: P.text2, cursor: 'pointer' }} onClick={() => document.getElementById('rbac-section')?.scrollIntoView({ behavior: 'smooth' })}>RBAC</span>
               <span style={{ fontSize: 14, fontWeight: 600, color: P.text2, cursor: 'pointer' }} onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })}>Features</span>
-              <button onClick={() => setStep('auth')} style={{ padding: '8px 20px', borderRadius: 6, border: `1.5px solid ${P.navy}`, background: 'transparent', color: P.navy, fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-display)' }}>Log In</button>
+              <button onClick={() => {setAuthMode('login');setStep('auth');}} style={{ padding: '8px 20px', borderRadius: 6, border: `1.5px solid ${P.navy}`, background: 'transparent', color: P.navy, fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-display)' }}>Log In</button>
               <button onClick={() => setStep('role')} style={{ padding: '10px 24px', borderRadius: 6, border: 'none', background: P.rose, color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-display)' }}>Get Started Free</button>
             </div>
           </div>
@@ -458,27 +489,100 @@ export default function Home() {
     return (
       <div className="mesh-bg min-h-dvh flex items-center justify-center p-5">
         <Card className="w-full max-w-sm animate-slide-up !p-8">
-          <button onClick={() => setStep('role')} style={{ color:'var(--text-3)', fontSize:13, background:'none', border:'none', cursor:'pointer', marginBottom:20 }}>← Change role</button>
-          <div style={{ textAlign:'center', marginBottom:24 }}>
+          <button onClick={() => setStep('role')} style={{ color:'var(--text-3)', fontSize:13, background:'none', border:'none', cursor:'pointer', marginBottom:20 }}>&larr; Change role</button>
+          <div style={{ textAlign:'center', marginBottom:20 }}>
             <div style={{ fontSize:40, marginBottom:8 }}>🦊</div>
-            <h2 style={{ fontFamily:'var(--font-display)', fontWeight:800, fontSize:22 }}>Sign Up as {rl}</h2>
-            <p style={{ fontSize:13, color:'var(--text-3)', marginTop:4 }}>Enter your email to get started</p>
+            <h2 style={{ fontFamily:'var(--font-display)', fontWeight:800, fontSize:22 }}>
+              {authMode==='signup'?`Sign Up as ${rl}`:authMode==='login'?'Welcome Back!':authMode==='forgot'?'Reset Password':'Quick Login'}
+            </h2>
+            <p style={{ fontSize:13, color:'var(--text-3)', marginTop:4 }}>
+              {authMode==='signup'?'Create your account to start learning':authMode==='login'?'Sign in with your email & password':authMode==='forgot'?'We will send a reset link to your email':'Get a 6-digit code on your email'}
+            </p>
           </div>
-          <div style={{ display:'flex', justifyContent:'center', marginBottom:16 }}>
-            <span style={{ fontSize:13, color:'var(--text-3)', fontWeight:600 }}>We will send a 6-digit OTP to your email</span>
+
+          {/* Auth mode tabs */}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:3, background:'var(--surface-2)', borderRadius:12, padding:3, marginBottom:16 }}>
+            {([['signup','Sign Up'],['login','Log In'],['otp','OTP']] as const).map(([m,l])=>(
+              <button key={m} onClick={()=>{setAuthMode(m);setError('');setOtpSent(false);setResetSent(false);}} style={{ padding:'8px 0', borderRadius:10, border:'none', cursor:'pointer', fontWeight:600, fontSize:12, background:authMode===m||authMode==='forgot'&&m==='login'?'var(--surface-1)':'transparent', color:authMode===m||authMode==='forgot'&&m==='login'?'var(--text-1)':'var(--text-3)', boxShadow:authMode===m?'0 1px 4px rgba(0,0,0,0.08)':'none' }}>{l}</button>
+            ))}
           </div>
-          {otpSent?(<>
-            <p style={{ fontSize:13, color:'var(--text-2)', textAlign:'center', marginBottom:12 }}>OTP sent to <strong>{authMethod==='email'?email:phone}</strong></p>
-            <Input className="text-center" type="text" placeholder="000000" maxLength={6} value={otp} onChange={e=>setOtp(e.target.value.replace(/\D/g,''))} onKeyDown={e=>e.key==='Enter'&&verifyOtp()}/>
-            {error&&<p style={{ color:'var(--red)', fontSize:13, marginTop:8 }}>{error}</p>}
-            <div style={{ marginTop:12, display:'flex', flexDirection:'column', gap:8 }}>
-              <Button fullWidth onClick={verifyOtp} disabled={loading||otp.length<6}>{loading?'Verifying…':'Verify OTP →'}</Button>
-              <Button variant="ghost" fullWidth onClick={()=>{setOtpSent(false);setOtp('');setError('');}}>Change {authMethod}</Button>
+
+          {/* ─── SIGN UP WITH PASSWORD ─── */}
+          {authMode==='signup'&&!otpSent&&(<>
+            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+              <Input type="email" placeholder="Email address" value={email} onChange={e=>setEmail(e.target.value)}/>
+              <div style={{ position:'relative' }}>
+                <Input type={showPassword?'text':'password'} placeholder="Create password (min 6 chars)" value={password} onChange={e=>setPassword(e.target.value)}/>
+                <button onClick={()=>setShowPassword(!showPassword)} style={{ position:'absolute', right:12, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', fontSize:16, color:'var(--text-3)' }}>{showPassword?'🙈':'👁️'}</button>
+              </div>
+              <Input type={showPassword?'text':'password'} placeholder="Confirm password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} onKeyDown={e=>e.key==='Enter'&&signUpWithPassword()}/>
+              {error&&<p style={{ color:'var(--red)', fontSize:13 }}>{error}</p>}
+              <Button fullWidth onClick={signUpWithPassword} disabled={loading||!email.trim()||!password||!confirmPassword}>{loading?'Creating account...':'Create Account &rarr;'}</Button>
+              <p style={{ fontSize:12, color:'var(--text-3)', textAlign:'center' }}>Already have an account? <button onClick={()=>{setAuthMode('login');setError('');}} style={{ color:'var(--orange)', fontWeight:700, background:'none', border:'none', cursor:'pointer' }}>Log In</button></p>
             </div>
-          </>):(<>
-            {authMethod==='email'?<Input type="email" placeholder="you@email.com" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==='Enter'&&sendOtp()}/>:<Input type="tel" placeholder="+919876543210" value={phone} onChange={e=>setPhone(e.target.value)} onKeyDown={e=>e.key==='Enter'&&sendOtp()}/>}
-            {error&&<p style={{ color:'var(--red)', fontSize:13, marginTop:8 }}>{error}</p>}
-            <Button fullWidth onClick={sendOtp} disabled={loading||!(authMethod==='email'?email.trim():phone.trim())} className="mt-3">{loading?'Sending…':'Send OTP →'}</Button>
+          </>)}
+
+          {/* Sign up confirmation message */}
+          {authMode==='signup'&&otpSent&&(<>
+            <div style={{ textAlign:'center', padding:'20px 0' }}>
+              <div style={{ fontSize:48, marginBottom:12 }}>📧</div>
+              <h3 style={{ fontFamily:'var(--font-display)', fontWeight:700, fontSize:18, marginBottom:8 }}>Check Your Email!</h3>
+              <p style={{ fontSize:13, color:'var(--text-2)', lineHeight:1.6, marginBottom:16 }}>We sent a confirmation link to <strong>{email}</strong>. Click it to activate your account.</p>
+              <p style={{ fontSize:12, color:'var(--text-3)', lineHeight:1.6 }}>After confirming, come back here and Log In with your password.</p>
+              <Button variant="ghost" fullWidth onClick={()=>{setAuthMode('login');setOtpSent(false);setError('');}} className="mt-4">Go to Log In &rarr;</Button>
+            </div>
+          </>)}
+
+          {/* ─── LOG IN WITH PASSWORD ─── */}
+          {authMode==='login'&&(<>
+            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+              <Input type="email" placeholder="Email address" value={email} onChange={e=>setEmail(e.target.value)}/>
+              <div style={{ position:'relative' }}>
+                <Input type={showPassword?'text':'password'} placeholder="Password" value={password} onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key==='Enter'&&signInWithPassword()}/>
+                <button onClick={()=>setShowPassword(!showPassword)} style={{ position:'absolute', right:12, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', fontSize:16, color:'var(--text-3)' }}>{showPassword?'🙈':'👁️'}</button>
+              </div>
+              {error&&<p style={{ color:'var(--red)', fontSize:13 }}>{error}</p>}
+              <Button fullWidth onClick={signInWithPassword} disabled={loading||!email.trim()||!password}>{loading?'Signing in...':'Log In &rarr;'}</Button>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                <button onClick={()=>{setAuthMode('forgot');setError('');setResetSent(false);}} style={{ fontSize:12, color:'var(--orange)', fontWeight:600, background:'none', border:'none', cursor:'pointer' }}>Forgot Password?</button>
+                <button onClick={()=>{setAuthMode('signup');setError('');}} style={{ fontSize:12, color:'var(--text-3)', background:'none', border:'none', cursor:'pointer' }}>Create Account</button>
+              </div>
+            </div>
+          </>)}
+
+          {/* ─── FORGOT PASSWORD ─── */}
+          {authMode==='forgot'&&!resetSent&&(<>
+            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+              <Input type="email" placeholder="Email address" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==='Enter'&&sendResetEmail()}/>
+              {error&&<p style={{ color:'var(--red)', fontSize:13 }}>{error}</p>}
+              <Button fullWidth onClick={sendResetEmail} disabled={loading||!email.trim()}>{loading?'Sending...':'Send Reset Link &rarr;'}</Button>
+              <button onClick={()=>{setAuthMode('login');setError('');}} style={{ fontSize:12, color:'var(--text-3)', background:'none', border:'none', cursor:'pointer', textAlign:'center', width:'100%' }}>&larr; Back to Log In</button>
+            </div>
+          </>)}
+          {authMode==='forgot'&&resetSent&&(<>
+            <div style={{ textAlign:'center', padding:'20px 0' }}>
+              <div style={{ fontSize:48, marginBottom:12 }}>📧</div>
+              <h3 style={{ fontFamily:'var(--font-display)', fontWeight:700, fontSize:18, marginBottom:8 }}>Reset Link Sent!</h3>
+              <p style={{ fontSize:13, color:'var(--text-2)', lineHeight:1.6, marginBottom:16 }}>Check <strong>{email}</strong> for a password reset link. Click it to set a new password.</p>
+              <Button variant="ghost" fullWidth onClick={()=>{setAuthMode('login');setResetSent(false);setError('');}} className="mt-2">Back to Log In</Button>
+            </div>
+          </>)}
+
+          {/* ─── OTP (PASSWORDLESS) ─── */}
+          {authMode==='otp'&&(<>
+            {otpSent?(<>
+              <p style={{ fontSize:13, color:'var(--text-2)', textAlign:'center', marginBottom:12 }}>OTP sent to <strong>{email}</strong></p>
+              <Input className="text-center" type="text" placeholder="000000" maxLength={6} value={otp} onChange={e=>setOtp(e.target.value.replace(/\D/g,''))} onKeyDown={e=>e.key==='Enter'&&verifyOtp()}/>
+              {error&&<p style={{ color:'var(--red)', fontSize:13, marginTop:8 }}>{error}</p>}
+              <div style={{ marginTop:12, display:'flex', flexDirection:'column', gap:8 }}>
+                <Button fullWidth onClick={verifyOtp} disabled={loading||otp.length<6}>{loading?'Verifying...':'Verify OTP &rarr;'}</Button>
+                <Button variant="ghost" fullWidth onClick={()=>{setOtpSent(false);setOtp('');setError('');}}>Change email</Button>
+              </div>
+            </>):(<>
+              <Input type="email" placeholder="Email address" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==='Enter'&&sendOtp()}/>
+              {error&&<p style={{ color:'var(--red)', fontSize:13, marginTop:8 }}>{error}</p>}
+              <Button fullWidth onClick={sendOtp} disabled={loading||!email.trim()} className="mt-3">{loading?'Sending...':'Send OTP &rarr;'}</Button>
+            </>)}
           </>)}
         </Card>
       </div>
