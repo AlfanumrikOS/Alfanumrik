@@ -1,9 +1,3 @@
-═══════════════════════════════════════════════════════════
- SAVE AS: tailwind.config.js
- PATH:    (root of your Alfanumrik repo)
- ACTION:  REPLACE existing file
-═══════════════════════════════════════════════════════════
-
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   content: ['./src/**/*.{js,ts,jsx,tsx}'],
