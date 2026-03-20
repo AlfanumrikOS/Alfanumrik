@@ -1,9 +1,3 @@
-═══════════════════════════════════════════════════════════
- SAVE AS: .eslintrc.json
- PATH:    (root of your Alfanumrik repo)
- ACTION:  REPLACE existing file
-═══════════════════════════════════════════════════════════
-
 {
   "extends": "next/core-web-vitals",
   "rules": {
