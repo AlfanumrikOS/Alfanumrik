@@ -1,6 +1,11 @@
+═══════════════════════════════════════════════════════════
+ SAVE AS: tsconfig.json
+ PATH:    (root of your Alfanumrik repo)
+ ACTION:  REPLACE existing file
+═══════════════════════════════════════════════════════════
+
 {
   "compilerOptions": {
-    "target": "es2015",
     "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "skipLibCheck": true,
