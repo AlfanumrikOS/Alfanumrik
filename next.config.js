@@ -1,14 +1,11 @@
-═══════════════════════════════════════════════════════════
- SAVE AS: next.config.js
- PATH:    (root of your Alfanumrik repo)
- ACTION:  REPLACE existing file
-═══════════════════════════════════════════════════════════
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
   images: {
-    domains: ['lh3.googleusercontent.com', 'dxipobqngyfpqbbznojz.supabase.co'],
+    domains: [
+      'lh3.googleusercontent.com',
+      'dxipobqngyfpqbbznojz.supabase.co',
+    ],
   },
   async headers() {
     return [
