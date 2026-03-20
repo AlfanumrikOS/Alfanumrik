@@ -59,13 +59,12 @@ export async function foxyChat(
 
 // ==========================================
 // STEP 3: SUPABASE PERSISTENCE
-// Matches existing students table columns
 // ==========================================
 
 export interface DBStudent {
   id: string;
   name: string;
-  grade: string; // text in your DB
+  grade: string;
   board: string;
   preferred_language: string;
   xp_total: number;
@@ -74,7 +73,6 @@ export interface DBStudent {
   onboarding_completed: boolean;
 }
 
-// Save/update student in Supabase
 export async function upsertStudent(student: {
   id: string; name: string; grade: number; board: string; language: string; xp: number; streak: number;
 }): Promise<DBStudent | null> {
@@ -103,20 +101,19 @@ export async function upsertStudent(student: {
   }
 }
 
-// Add XP to student in Supabase
 export async function addXPToStudent(studentId: string, xpEarned: number): Promise<void> {
   if (!supabase) return;
   try {
-    await supabase.rpc('increment_xp', { p_student_id: studentId, p_xp: xpEarned }).catch(() => {
+    const { error } = await supabase.rpc('increment_xp', { p_student_id: studentId, p_xp: xpEarned });
+    if (error) {
       // Fallback if RPC doesn't exist — direct update
-      supabase!.from('students').update({ xp_total: xpEarned }).eq('id', studentId);
-    });
+      await supabase.from('students').update({ xp_total: xpEarned }).eq('id', studentId);
+    }
   } catch (err) {
     console.warn('Add XP failed:', err);
   }
 }
 
-// Save quiz session
 export async function saveQuizSession(session: {
   studentId: string; subject: string; questionsAttempted: number;
   questionsCorrect: number; xpEarned: number; durationSeconds: number;
@@ -128,16 +125,15 @@ export async function saveQuizSession(session: {
       subject: session.subject,
       total_questions: session.questionsAttempted,
       correct_answers: session.questionsCorrect,
-      xp_earned: session.xpEarned,
-      duration_seconds: session.durationSeconds,
+      time_taken_seconds: session.durationSeconds,
       completed_at: new Date().toISOString(),
+      is_completed: true,
     });
   } catch (err) {
     console.warn('Save quiz session failed:', err);
   }
 }
 
-// Get leaderboard
 export async function getLeaderboard(limit = 20): Promise<DBStudent[]> {
   if (!supabase) return [];
   try {
@@ -147,11 +143,13 @@ export async function getLeaderboard(limit = 20): Promise<DBStudent[]> {
       .order('xp_total', { ascending: false })
       .limit(limit);
     return (data || []) as DBStudent[];
-  } catch { return []; }
+  } catch {
+    return [];
+  }
 }
 
 // ==========================================
-// FALLBACK RESPONSES (when API is offline)
+// FALLBACK RESPONSES
 // ==========================================
 
 function fallbackResponse(text: string, name: string, isHi: boolean): string {
