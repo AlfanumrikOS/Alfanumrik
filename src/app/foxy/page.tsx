@@ -70,6 +70,10 @@ export default function FoxyPage(){
   const[totalXP,setTotalXP]=useState(0);
   const[studentGrade,setStudentGrade]=useState("9");
   const[showTopics,setShowTopics]=useState(false);
+  const[showSubjectDD,setShowSubjectDD]=useState(false);
+  const[showChapterDD,setShowChapterDD]=useState(false);
+  const[selectedChapters,setSelectedChapters]=useState<string[]>([]);
+  const[studentSelectedSubjects,setStudentSelectedSubjects]=useState<string[]>([]);
   const endRef=useRef<HTMLDivElement>(null);
 
   useEffect(()=>{if(!authLoading&&!isLoggedIn)routerNav.replace("/");},[authLoading,isLoggedIn,routerNav]);
@@ -81,6 +85,7 @@ export default function FoxyPage(){
     setLanguage(authStudent.preferred_language||"en");
     const subj=typeof window!=="undefined"?(localStorage.getItem("alfanumrik_subject")||authStudent.preferred_subject||"science"):(authStudent.preferred_subject||"science");
     setActiveSubject(subj);
+    setStudentSelectedSubjects((authStudent.selected_subjects || [authStudent.preferred_subject].filter(Boolean)) as string[]);
   })();// eslint-disable-next-line react-hooks/exhaustive-deps
   },[authStudent]);
 
@@ -98,7 +103,8 @@ export default function FoxyPage(){
     setMessages(p=>[...p,{id:Date.now(),role:"student",content:text,timestamp:new Date().toISOString()}]);
     setLoading(true);setFoxyState("thinking");setShowTopics(false);
     try{
-      const resp=await foxyCall({message:text,student_id:student?.id||"",student_name:student?.name||"Student",grade:studentGrade,subject:activeSubject,language,mode:sessionMode,topic_id:activeTopic?.id||null,topic_title:activeTopic?.title||null,session_id:chatSessionId});
+      const chapContext=selectedChapters.length>0?topics.filter(t=>selectedChapters.includes(t.id)).map(t=>"Ch "+t.chapter_number+": "+t.title).join(", "):null;
+      const resp=await foxyCall({message:text,student_id:student?.id||"",student_name:student?.name||"Student",grade:studentGrade,subject:activeSubject,language,mode:sessionMode,topic_id:activeTopic?.id||null,topic_title:activeTopic?.title||null,session_id:chatSessionId,selected_chapters:chapContext});
       const reply=resp.reply||resp.response||resp.message||"Let me think...";const xp=resp.xp_earned||0;
       setMessages(p=>[...p,{id:Date.now()+1,role:"tutor",content:reply,timestamp:new Date().toISOString(),xp}]);
       if(xp>0)setXpGained(p=>p+xp);if(resp.session_id)setChatSessionId(resp.session_id);
@@ -134,12 +140,84 @@ export default function FoxyPage(){
         </div>
       </header>
 
-      {/* ── SUBJECT + MODE CHIPS (horizontal scroll) ── */}
-      <div className="flex gap-1.5 px-3 py-2 overflow-x-auto" style={{background:"var(--surface-1)",borderBottom:"1px solid var(--border)",scrollbarWidth:"none"}}>
-        {Object.entries(SUBJECTS).map(([key,sub])=><button key={key} onClick={()=>{setActiveSubject(key);setActiveTopic(null);}} className="shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold flex items-center gap-1 transition-all" style={{border:activeSubject===key?`2px solid ${sub.color}`:"1.5px solid var(--border)",background:activeSubject===key?sub.color+"10":"transparent",color:activeSubject===key?sub.color:"var(--text-3)"}}><span className="text-sm">{sub.icon}</span><span className="hidden sm:inline">{sub.name}</span></button>)}
-        <div className="shrink-0 w-px mx-1" style={{background:"var(--border)"}}/>
-        {MODES.map(m=><button key={m.id} onClick={()=>setSessionMode(m.id)} className="shrink-0 px-2.5 py-1.5 rounded-full text-[10px] font-bold transition-all" style={{background:sessionMode===m.id?cfg.color+"15":"transparent",color:sessionMode===m.id?cfg.color:"var(--text-3)"}}>{m.em} {m.label}</button>)}
+      {/* ── SUBJECT & CHAPTER DROPDOWNS + MODE SELECTOR ── */}
+      <div className="px-3 py-2 flex flex-wrap items-center gap-2" style={{background:"var(--surface-1)",borderBottom:"1px solid var(--border)"}}>
+        {/* Subject Dropdown */}
+        <div className="relative">
+          <button onClick={()=>{setShowSubjectDD(!showSubjectDD);setShowChapterDD(false);}} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-[0.97]" style={{background:cfg.color+"10",border:`1.5px solid ${cfg.color}30`,color:cfg.color}}>
+            <span className="text-sm">{cfg.icon}</span>
+            <span>{cfg.name}</span>
+            <span className="text-[10px] ml-0.5 opacity-60">{showSubjectDD?'\u25B2':'\u25BC'}</span>
+          </button>
+          {showSubjectDD&&(
+            <div className="absolute top-full left-0 mt-1 z-50 w-56 rounded-2xl overflow-hidden shadow-lg" style={{background:"var(--surface-1)",border:"1px solid var(--border)"}}>
+              <div className="p-2 text-[10px] font-bold uppercase tracking-wider text-[var(--text-3)] px-3">My Subjects</div>
+              {(studentSelectedSubjects.length>0?studentSelectedSubjects:Object.keys(SUBJECTS)).map(key=>{
+                const sub=SUBJECTS[key]; if(!sub) return null;
+                return(
+                  <button key={key} onClick={()=>{setActiveSubject(key);setActiveTopic(null);setSelectedChapters([]);setShowSubjectDD(false);}} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-all" style={{background:activeSubject===key?`${sub.color}08`:"transparent",borderLeft:activeSubject===key?`3px solid ${sub.color}`:"3px solid transparent"}}>
+                    <span className="text-base">{sub.icon}</span>
+                    <span className="text-sm font-semibold" style={{color:activeSubject===key?sub.color:"var(--text-1)"}}>{sub.name}</span>
+                    {activeSubject===key&&<span className="ml-auto text-xs" style={{color:sub.color}}>\u2713</span>}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Chapter Dropdown (multi-select) */}
+        <div className="relative">
+          <button onClick={()=>{setShowChapterDD(!showChapterDD);setShowSubjectDD(false);}} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-[0.97]" style={{background:"var(--surface-2)",border:"1.5px solid var(--border)",color:"var(--text-2)"}}>
+            <span className="text-sm">📖</span>
+            <span>{selectedChapters.length>0?`${selectedChapters.length} Chapter${selectedChapters.length>1?'s':''}`:`All ${topics.length} Chapters`}</span>
+            <span className="text-[10px] ml-0.5 opacity-60">{showChapterDD?'\u25B2':'\u25BC'}</span>
+          </button>
+          {showChapterDD&&(
+            <div className="absolute top-full left-0 mt-1 z-50 w-72 max-h-[50vh] rounded-2xl overflow-hidden shadow-lg flex flex-col" style={{background:"var(--surface-1)",border:"1px solid var(--border)"}}>
+              <div className="p-2 px-3 flex items-center justify-between" style={{borderBottom:"1px solid var(--border)"}}>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-3)]">{cfg.icon} {cfg.name} Chapters</span>
+                <button onClick={()=>{setSelectedChapters([]);}} className="text-[10px] font-semibold" style={{color:"var(--orange)"}}>Clear All</button>
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                {topics.map(topic=>{
+                  const sel=selectedChapters.includes(topic.id);
+                  const mastery=masteryData.find((m:any)=>m.topic_tag===topic.title||m.chapter_number===topic.chapter_number);
+                  const lvl=mastery?.mastery_level||"not_started";
+                  const lc:Record<string,string>={not_started:"#9ca3af",beginner:"#F59E0B",developing:"#3B82F6",proficient:"#8B5CF6",mastered:"#10B981"};
+                  return(
+                    <button key={topic.id} onClick={()=>setSelectedChapters(prev=>sel?prev.filter(x=>x!==topic.id):[...prev,topic.id])} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-all" style={{background:sel?`${cfg.color}06`:"transparent",borderBottom:"1px solid var(--border)"}}>
+                      <div className="w-5 h-5 rounded flex items-center justify-center shrink-0 text-[10px]" style={{background:sel?cfg.color:"var(--surface-2)",color:sel?"#fff":"var(--text-3)",border:sel?"none":"1.5px solid var(--border)"}}>{sel?'\u2713':''}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-semibold truncate" style={{color:"var(--text-1)"}}>Ch {topic.chapter_number}: {topic.title}</div>
+                      </div>
+                      <span className="text-[9px] font-bold capitalize px-1.5 py-0.5 rounded" style={{background:(lc[lvl]||"#9ca3af")+"15",color:lc[lvl]||"#9ca3af"}}>{(lvl).replace("_"," ")}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {selectedChapters.length>0&&(
+                <div className="p-2 px-3" style={{borderTop:"1px solid var(--border)"}}>
+                  <button onClick={()=>{
+                    const ch=topics.find(t=>selectedChapters.includes(t.id));
+                    if(ch){setActiveTopic(ch);sendMessage("Teach me about: "+ch.title+" (Chapter "+ch.chapter_number+")");setShowChapterDD(false);}
+                  }} className="w-full py-2 rounded-xl text-xs font-bold text-white" style={{background:cfg.color}}>
+                    Start with Selected Chapter{selectedChapters.length>1?'s':''}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Mode pills */}
+        <div className="flex gap-1 ml-auto overflow-x-auto" style={{scrollbarWidth:"none"}}>
+          {MODES.map(m=><button key={m.id} onClick={()=>setSessionMode(m.id)} className="shrink-0 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all" style={{background:sessionMode===m.id?cfg.color+"15":"transparent",color:sessionMode===m.id?cfg.color:"var(--text-3)"}}>{m.em}</button>)}
+        </div>
       </div>
+
+      {/* Close dropdowns when clicking outside */}
+      {(showSubjectDD||showChapterDD)&&<div className="fixed inset-0 z-40" onClick={()=>{setShowSubjectDD(false);setShowChapterDD(false);}}/>}
 
       {/* ── MAIN CHAT AREA ── */}
       <div className="flex-1 flex overflow-hidden relative">
@@ -181,7 +259,7 @@ export default function FoxyPage(){
                   ))}
                 </div>
                 {/* Mobile: Topics button */}
-                <button onClick={()=>setShowTopics(true)} className="mt-6 px-5 py-2.5 rounded-xl text-sm font-bold lg:hidden" style={{background:cfg.color+"10",color:cfg.color,border:`1.5px solid ${cfg.color}30`}}>
+                <button onClick={()=>setShowChapterDD(true)} className="mt-6 px-5 py-2.5 rounded-xl text-sm font-bold" style={{background:cfg.color+"10",color:cfg.color,border:`1.5px solid ${cfg.color}30`}}>
                   {cfg.icon} Browse {topics.length} Chapters
                 </button>
               </div>
