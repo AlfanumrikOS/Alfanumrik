@@ -20,6 +20,7 @@ interface Simulation {
   board_exam_relevance: number;
   concept_tags: string[];
   foxy_intro_prompt: string;
+  foxy_followup_prompts: string[];
   widget_code?: string;
   widget_type?: string;
   subject_code?: string;
@@ -43,7 +44,6 @@ async function fetchSimulations(subject: string, grade: string): Promise<Simulat
   params.append('order', 'board_exam_relevance.desc,chapter_number.asc');
   if (subject !== 'all') params.append('subject_code', `eq.${subject}`);
   if (grade !== 'all') params.append('grade', `eq.${grade}`);
-  // Only fetch sims that have real widget code (not placeholders)
   params.append('widget_code', 'neq.PLACEHOLDER');
   params.append('limit', '50');
 
@@ -110,7 +110,6 @@ export default function SimulationsPage() {
 
       {/* Filters */}
       <div style={{ padding: '16px 20px', background: '#fff', borderBottom: '1px solid #f0f0f0', position: 'sticky', top: 0, zIndex: 10 }}>
-        {/* Subject pills */}
         <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '10px' }}>
           {subjects.map(s => (
             <button
@@ -133,7 +132,6 @@ export default function SimulationsPage() {
             </button>
           ))}
         </div>
-        {/* Grade pills */}
         <div style={{ display: 'flex', gap: '6px', overflowX: 'auto' }}>
           {grades.map(g => (
             <button
@@ -232,7 +230,7 @@ export default function SimulationsPage() {
         <div style={{ padding: '16px 20px' }}>
           {loading ? (
             <div style={{ textAlign: 'center', padding: '40px 0' }}>
-              <div style={{ fontSize: '36px', marginBottom: '12px', animation: 'bounce 1s infinite' }}>🔬</div>
+              <div style={{ fontSize: '36px', marginBottom: '12px' }}>🔬</div>
               <div style={{ color: '#888', fontSize: '13px' }}>Loading simulations...</div>
             </div>
           ) : simulations.length === 0 ? (
