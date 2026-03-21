@@ -10,15 +10,15 @@ import { Button, Input, Select, Card, LoadingFoxy } from '@/components/ui';
 type Role = 'student' | 'teacher' | 'guardian';
 type Step = 'landing' | 'role' | 'auth' | 'profile' | 'subject';
 
-/* ═══ PowerSchool-mapped color tokens ═══ */
+/* ═══ Brand color tokens ═══ */
 const P = {
-  navy: '#1A365D',      // PS #00427C → Alfanumrik deep navy
-  rose: '#E8581C',      // PS #DE4278 → Alfanumrik orange (brand)
+  navy: '#1A365D',      // Brand deep navy
+  rose: '#E8581C',      // Brand orange
   teal: '#0891B2',
   green: '#16A34A',
   purple: '#7C3AED',
   gold: '#F5A623',
-  lightBg: '#F5F0EA',   // PS #EBF2F5 → warm cream
+  lightBg: '#F5F0EA',   // Warm cream
   cardBg: '#FFFFFF',
   text1: '#1A1207',
   text2: '#5C4F3A',
@@ -197,221 +197,133 @@ export default function Home() {
   if (isLoading) return <LoadingFoxy />;
 
   /* ════════════════════════════════════════════════════════
-     LANDING — PowerSchool clone layout
+     LANDING PAGE
   ════════════════════════════════════════════════════════ */
   if (step === 'landing') {
-    const spotlights = [
-      { name: 'Priya Sharma', title: 'Science Teacher, Delhi Public School', quote: 'Foxy AI has changed how my students approach revision. The spaced repetition means they actually remember what they learned last month. My weakest students improved the most.', cta: 'Read Priya\'s Story' },
-      { name: 'Rajesh Kumar', title: 'Parent of Grade 8 Student, Jaipur', quote: 'I finally know exactly what my son is learning and where he struggles. The daily digest is a game-changer — I don\'t need to ask him anymore.', cta: 'See Parent Experience' },
-      { name: 'Ananya Reddy', title: 'Grade 10 Student, Hyderabad', quote: 'Foxy explains things the way my brain works. When I don\'t understand something, I just ask in Hindi and it breaks it down step by step. My board exam prep is way better now.', cta: 'Watch Ananya\'s Story' },
-    ];
-    const solutions = [
-      { icon: '🧠', label: 'Adaptive Mastery Tracking', color: P.rose },
-      { icon: '🦊', label: 'AI Tutor (Foxy)', color: P.teal },
-      { icon: '📊', label: 'Teacher Dashboard', color: P.navy },
-      { icon: '👨‍👩‍👧', label: 'Parent Reports', color: P.green },
-      { icon: '🔄', label: 'Spaced Repetition', color: P.purple },
-      { icon: '🏆', label: 'Gamified Learning', color: P.gold },
-      { icon: '🔐', label: 'Role-Based Access', color: '#DC2626' },
-    ];
-    const rbac = [
-      { icon: '👑', role: 'Super Admin', color: P.rose, can: ['All schools & users', 'Edit & delete anything', 'Assign roles', 'Billing & plans', 'Feature flags'], deny: ['No restrictions'] },
-      { icon: '👩‍🏫', role: 'Teacher', color: P.teal, can: ['Create classes', 'Assign content', 'View class mastery', 'Grade work', 'Curriculum tools'], deny: ['Other schools', 'Billing', 'Role mgmt'] },
-      { icon: '👨‍👩‍👧', role: 'Parent', color: P.green, can: ['Child progress', 'Activity reports', 'Score alerts', 'Foxy settings', 'Daily digests'], deny: ['Academic edits', 'Other children', 'Teacher tools'] },
-      { icon: '🎓', role: 'Student', color: P.purple, can: ['Foxy AI tutor', 'Quizzes', 'Own progress', 'Leaderboard', 'Reviews', 'Join classes'], deny: ['Admin panel', 'Other students', 'Class settings'] },
-    ];
+    const [mobileMenu, setMobileMenu] = useState(false);
 
     return (
       <div style={{ background: '#fff', fontFamily: 'var(--font-body)' }}>
-        {/* ════ NAV — PowerSchool white sticky ════ */}
-        <nav style={{ position: 'sticky', top: 0, zIndex: 100, background: '#fff', borderBottom: '1px solid rgba(0,0,0,0.06)', height: 72 }}>
-          <div style={{ maxWidth: 1240, margin: '0 auto', padding: '0 30px', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        {/* ════ NAV ════ */}
+        <nav style={{ position: 'sticky', top: 0, zIndex: 100, background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(0,0,0,0.05)', height: 64 }}>
+          <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 20px', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 30 }}>🦊</span>
-              <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 20, color: P.navy }}>Alfanumrik</span>
+              <span style={{ fontSize: 28 }}>🦊</span>
+              <div>
+                <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 17, color: P.navy }}>Alfanumrik</span>
+                <span style={{ fontSize: 9, fontWeight: 600, color: P.text3, display: 'block', marginTop: -2, letterSpacing: 0.5 }}>Adaptive Learning OS</span>
+              </div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-              <span style={{ fontSize: 14, fontWeight: 600, color: P.text2, cursor: 'pointer' }} onClick={() => document.getElementById('solutions')?.scrollIntoView({ behavior: 'smooth' })}>Solutions</span>
-              <span style={{ fontSize: 14, fontWeight: 600, color: P.text2, cursor: 'pointer' }} onClick={() => document.getElementById('rbac-section')?.scrollIntoView({ behavior: 'smooth' })}>RBAC</span>
-              <span style={{ fontSize: 14, fontWeight: 600, color: P.text2, cursor: 'pointer' }} onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })}>Features</span>
-              <button onClick={() => {setAuthMode('login');setStep('auth');}} style={{ padding: '8px 20px', borderRadius: 6, border: `1.5px solid ${P.navy}`, background: 'transparent', color: P.navy, fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-display)' }}>Log In</button>
-              <button onClick={() => setStep('role')} style={{ padding: '10px 24px', borderRadius: 6, border: 'none', background: P.rose, color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-display)' }}>Get Started Free</button>
+            {/* Desktop nav */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 20 }} className="hidden md:flex">
+              <span style={{ fontSize: 13, fontWeight: 600, color: P.text2, cursor: 'pointer' }} onClick={() => document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' })}>How It Works</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: P.text2, cursor: 'pointer' }} onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })}>Features</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: P.text2, cursor: 'pointer' }} onClick={() => document.getElementById('for-whom')?.scrollIntoView({ behavior: 'smooth' })}>For Whom</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: P.text2, cursor: 'pointer' }} onClick={() => document.getElementById('trust')?.scrollIntoView({ behavior: 'smooth' })}>Trust & Security</span>
+              <button onClick={() => {setAuthMode('login');setStep('auth');}} style={{ padding: '7px 18px', borderRadius: 8, border: `1.5px solid ${P.navy}`, background: 'transparent', color: P.navy, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Log In</button>
+              <button onClick={() => setStep('role')} style={{ padding: '9px 22px', borderRadius: 8, border: 'none', background: P.rose, color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Get Started Free</button>
             </div>
+            {/* Mobile hamburger */}
+            <button onClick={() => setMobileMenu(!mobileMenu)} className="md:hidden" style={{ fontSize: 24, background: 'none', border: 'none', cursor: 'pointer', color: P.navy }}>{mobileMenu ? '\u2715' : '\u2630'}</button>
           </div>
+          {/* Mobile menu */}
+          {mobileMenu && (
+            <div className="md:hidden" style={{ position: 'absolute', top: 64, left: 0, right: 0, background: '#fff', borderBottom: '1px solid rgba(0,0,0,0.08)', padding: '16px 20px', zIndex: 100 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: P.text1, cursor: 'pointer', padding: '8px 0' }} onClick={() => {document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' });setMobileMenu(false);}}>How It Works</span>
+                <span style={{ fontSize: 14, fontWeight: 600, color: P.text1, cursor: 'pointer', padding: '8px 0' }} onClick={() => {document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' });setMobileMenu(false);}}>Features</span>
+                <span style={{ fontSize: 14, fontWeight: 600, color: P.text1, cursor: 'pointer', padding: '8px 0' }} onClick={() => {document.getElementById('for-whom')?.scrollIntoView({ behavior: 'smooth' });setMobileMenu(false);}}>For Whom</span>
+                <span style={{ fontSize: 14, fontWeight: 600, color: P.text1, cursor: 'pointer', padding: '8px 0' }} onClick={() => {document.getElementById('trust')?.scrollIntoView({ behavior: 'smooth' });setMobileMenu(false);}}>Trust & Security</span>
+                <div style={{ display: 'flex', gap: 10, paddingTop: 8, borderTop: '1px solid rgba(0,0,0,0.06)' }}>
+                  <button onClick={() => {setAuthMode('login');setStep('auth');}} style={{ flex: 1, padding: '10px', borderRadius: 8, border: `1.5px solid ${P.navy}`, background: 'transparent', color: P.navy, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Log In</button>
+                  <button onClick={() => setStep('role')} style={{ flex: 1, padding: '10px', borderRadius: 8, border: 'none', background: P.rose, color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Get Started</button>
+                </div>
+              </div>
+            </div>
+          )}
         </nav>
 
-        {/* ════ HERO — Full-bleed dark with gradient ════ */}
-        <section style={{ background: `linear-gradient(135deg, ${P.navy} 0%, #0F2942 60%, #1A365D 100%)`, padding: 'clamp(60px, 10vw, 120px) 30px 100px', textAlign: 'center', position: 'relative', overflow: 'hidden' }}>
+        {/* ════ HERO ════ */}
+        <section style={{ background: `linear-gradient(135deg, ${P.navy} 0%, #0F2942 60%, #1A365D 100%)`, padding: 'clamp(60px, 10vw, 110px) 20px 90px', textAlign: 'center', position: 'relative', overflow: 'hidden' }}>
           <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 80% 60% at 50% 40%, rgba(232,88,28,0.08) 0%, transparent 60%)', pointerEvents: 'none' }} />
-          <div style={{ maxWidth: 800, margin: '0 auto', position: 'relative', zIndex: 1 }}>
-            <h1 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(32px, 5.5vw, 56px)', lineHeight: 1.15, color: '#fff', marginBottom: 20 }}>
-              Power What&apos;s Possible<br />in Indian Education
+          <div style={{ maxWidth: 760, margin: '0 auto', position: 'relative', zIndex: 1 }}>
+            <div style={{ display: 'inline-block', padding: '6px 16px', borderRadius: 20, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)', marginBottom: 20 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.7)' }}>🇮🇳 Startup India Recognized | ISO 27001 Certified</span>
+            </div>
+            <h1 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(28px, 5.5vw, 52px)', lineHeight: 1.15, color: '#fff', marginBottom: 18 }}>
+              India&apos;s Smartest AI Tutor<br/>for CBSE &amp; NCERT Students
             </h1>
-            <p style={{ fontSize: 'clamp(16px, 2vw, 20px)', color: 'rgba(255,255,255,0.7)', lineHeight: 1.65, maxWidth: 600, margin: '0 auto 36px' }}>
-              Transforming how schools advance learning through adaptive AI, 
-              Bayesian mastery tracking, and connected technology for every stakeholder.
+            <p style={{ fontSize: 'clamp(15px, 2vw, 19px)', color: 'rgba(255,255,255,0.65)', lineHeight: 1.7, maxWidth: 580, margin: '0 auto 32px' }}>
+              Foxy, your personal AI tutor, teaches at YOUR level — not your grade level.
+              Adaptive learning powered by Bayesian mastery tracking. Hindi, English &amp; 8 more languages.
             </p>
             <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 12 }}>
-              <button onClick={() => setStep('role')} style={{ padding: '14px 36px', borderRadius: 6, border: 'none', background: P.rose, color: '#fff', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, cursor: 'pointer', transition: 'all 0.2s' }}>
-                Explore Our Solutions
+              <button onClick={() => setStep('role')} style={{ padding: '14px 32px', borderRadius: 10, border: 'none', background: P.rose, color: '#fff', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>
+                Start Learning Free
               </button>
-              <button onClick={() => document.getElementById('rbac-section')?.scrollIntoView({ behavior: 'smooth' })} style={{ padding: '14px 36px', borderRadius: 6, border: '1.5px solid rgba(255,255,255,0.3)', background: 'transparent', color: '#fff', fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}>
-                How It Works
+              <button onClick={() => document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' })} style={{ padding: '14px 32px', borderRadius: 10, border: '1.5px solid rgba(255,255,255,0.25)', background: 'transparent', color: '#fff', fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}>
+                See How It Works
               </button>
             </div>
           </div>
         </section>
 
-        {/* ════ FEATURED CARDS — Floating overlap (PS pattern) ════ */}
-        <section style={{ maxWidth: 1000, margin: '-60px auto 0', padding: '0 30px', position: 'relative', zIndex: 10 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
-            {[
-              { tag: 'CBSE ALIGNED', title: 'Khan Academy India NCERT Chapters', desc: '726 chapters across 16 subjects, grades 6-12. Mapped to competency frameworks.', cta: 'Explore Curriculum' },
-              { tag: 'AI POWERED', title: 'Meet Foxy, Your AI Tutor', desc: 'Socratic tutoring in Hindi & English. Adaptive difficulty. 4 learning modes.', cta: 'Try Foxy Free' },
-              { tag: 'FOR SCHOOLS', title: 'Teacher & Parent Dashboards', desc: 'Role-based access. Class management. Mastery reports. Daily parent digests.', cta: 'See Dashboards' },
-            ].map((c, i) => (
-              <div key={i} onClick={() => setStep('role')} style={{ background: '#fff', borderRadius: 12, padding: '28px 24px', boxShadow: '0 8px 32px rgba(0,0,0,0.08)', cursor: 'pointer', transition: 'all 0.3s', border: '1px solid rgba(0,0,0,0.04)' }}>
-                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: P.rose, marginBottom: 8 }}>{c.tag}</div>
-                <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 18, color: P.navy, marginBottom: 8, lineHeight: 1.3 }}>{c.title}</h3>
-                <p style={{ fontSize: 13, color: P.text2, lineHeight: 1.6, marginBottom: 16 }}>{c.desc}</p>
-                <span style={{ fontSize: 13, fontWeight: 700, color: P.rose }}>{c.cta} →</span>
+        {/* ════ STATS BAR ════ */}
+        <section style={{ maxWidth: 900, margin: '-40px auto 0', padding: '0 20px', position: 'relative', zIndex: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 0, background: '#fff', borderRadius: 16, boxShadow: '0 8px 32px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+            {[['2,100+','Practice Questions'],['726','NCERT Chapters'],['16','Subjects Covered'],['6+','Indian Languages']].map(([v, l], i) => (
+              <div key={l} style={{ padding: 'clamp(16px, 3vw, 28px) 12px', textAlign: 'center', borderRight: i < 3 ? '1px solid rgba(0,0,0,0.06)' : 'none' }}>
+                <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(20px, 3vw, 32px)', color: P.rose }}>{v}</div>
+                <div style={{ fontSize: 'clamp(9px, 1.2vw, 12px)', color: P.text3, marginTop: 2, fontWeight: 600 }}>{l}</div>
               </div>
             ))}
           </div>
         </section>
 
-        {/* ════ TRUST — "Making an Impact" ════ */}
-        <section style={{ padding: '80px 30px 40px', textAlign: 'center' }}>
-          <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(24px, 3.5vw, 36px)', color: P.navy, marginBottom: 40 }}>
-            Making an Impact in Indian Schools
-          </h2>
-          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 20, maxWidth: 900, margin: '0 auto' }}>
-            {SUBJECT_META.slice(0, 8).map(s => (
-              <div key={s.code} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 8, background: P.lightBg, fontSize: 13, fontWeight: 600, color: P.text2 }}>
-                <span>{s.icon}</span> {s.name}
-              </div>
-            ))}
-            <div style={{ padding: '8px 16px', borderRadius: 8, background: P.lightBg, fontSize: 13, fontWeight: 600, color: P.text3 }}>+8 more subjects</div>
-          </div>
-        </section>
-
-        {/* ════ TESTIMONIAL CAROUSEL (PS Spotlights) ════ */}
-        <section style={{ background: P.lightBg, padding: '64px 30px' }}>
-          <div style={{ maxWidth: 1240, margin: '0 auto' }}>
-            <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 14, textTransform: 'uppercase', letterSpacing: 2, color: P.text3, marginBottom: 24, textAlign: 'center' }}>Educator Spotlights</h2>
-            <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginBottom: 32 }}>
-              {spotlights.map((_, i) => (
-                <button key={i} onClick={() => setActiveSpotlight(i)} style={{ padding: '6px 16px', borderRadius: 6, border: `1px solid ${i === activeSpotlight ? P.rose : P.border}`, background: i === activeSpotlight ? `${P.rose}0D` : '#fff', fontSize: 12, fontWeight: 600, color: i === activeSpotlight ? P.rose : P.text2, cursor: 'pointer' }}>
-                  {spotlights[i].name.split(' ')[0]}
-                </button>
-              ))}
-            </div>
-            <div style={{ maxWidth: 700, margin: '0 auto', background: '#fff', borderRadius: 16, padding: 'clamp(24px, 4vw, 48px)', boxShadow: '0 4px 24px rgba(0,0,0,0.04)', borderLeft: `4px solid ${P.rose}` }}>
-              <p style={{ fontSize: 'clamp(15px, 2vw, 18px)', color: P.text1, lineHeight: 1.7, fontStyle: 'italic', marginBottom: 20 }}>
-                &ldquo;{spotlights[activeSpotlight].quote}&rdquo;
-              </p>
-              <div>
-                <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, color: P.navy }}>{spotlights[activeSpotlight].name}</div>
-                <div style={{ fontSize: 13, color: P.text3 }}>{spotlights[activeSpotlight].title}</div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* ════ SOLUTIONS PILLS (PS "Which Solution...") ════ */}
-        <section id="solutions" style={{ padding: '80px 30px', textAlign: 'center' }}>
-          <div style={{ maxWidth: 1240, margin: '0 auto' }}>
-            <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(24px, 3.5vw, 36px)', color: P.navy, marginBottom: 12 }}>
-              Which Alfanumrik Solution Supports Your Priorities?
-            </h2>
-            <p style={{ fontSize: 15, color: P.text2, lineHeight: 1.65, maxWidth: 540, margin: '0 auto 40px' }}>
-              One platform with adaptive AI, mastery tracking, and role-based access for every stakeholder.
+        {/* ════ HOW IT WORKS ════ */}
+        <section id="how-it-works" style={{ padding: '80px 20px', textAlign: 'center' }}>
+          <div style={{ maxWidth: 1000, margin: '0 auto' }}>
+            <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(22px, 3.5vw, 34px)', color: P.navy, marginBottom: 10 }}>How Alfanumrik Works</h2>
+            <p style={{ fontSize: 14, color: P.text2, lineHeight: 1.7, maxWidth: 500, margin: '0 auto 40px' }}>
+              Three steps to transform learning outcomes. No complex setup required.
             </p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 12 }}>
-              {solutions.map(s => (
-                <button key={s.label} onClick={() => setStep('role')} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 24px', borderRadius: 10, border: `1.5px solid ${s.color}20`, background: `${s.color}08`, fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 14, color: s.color, cursor: 'pointer', transition: 'all 0.2s' }}>
-                  <span style={{ fontSize: 18 }}>{s.icon}</span> {s.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* ════ RBAC SECTION ════ */}
-        <section id="rbac-section" style={{ background: P.navy, padding: '80px 30px' }}>
-          <div style={{ maxWidth: 1240, margin: '0 auto' }}>
-            <div style={{ textAlign: 'center', marginBottom: 48 }}>
-              <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(24px, 3.5vw, 36px)', color: '#fff', marginBottom: 12 }}>
-                Role-Based Access Control
-              </h2>
-              <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.6)', maxWidth: 500, margin: '0 auto', lineHeight: 1.65 }}>
-                Same system. Different access. Every user sees exactly what they need — enforced at the database layer by Supabase RLS.
-              </p>
-            </div>
-
-            {/* Hierarchy */}
-            <div style={{ textAlign: 'center', marginBottom: 36 }}>
-              <svg viewBox="0 0 680 120" width="100%" style={{ maxWidth: 600, display: 'block', margin: '0 auto' }}>
-                <rect x="260" y="4" width="160" height="36" rx="6" fill="none" stroke={P.rose} strokeWidth="1.5"/>
-                <text x="340" y="27" textAnchor="middle" fontFamily="Sora,sans-serif" fontSize="12" fontWeight="700" fill={P.rose}>👑 Super Admin</text>
-                <line x1="300" y1="40" x2="120" y2="76" stroke="rgba(255,255,255,0.15)" strokeWidth="1" strokeDasharray="4 3"/>
-                <line x1="340" y1="40" x2="340" y2="76" stroke="rgba(255,255,255,0.15)" strokeWidth="1" strokeDasharray="4 3"/>
-                <line x1="380" y1="40" x2="560" y2="76" stroke="rgba(255,255,255,0.15)" strokeWidth="1" strokeDasharray="4 3"/>
-                <rect x="40" y="78" width="160" height="36" rx="6" fill="none" stroke={P.teal} strokeWidth="1.5"/>
-                <text x="120" y="101" textAnchor="middle" fontFamily="Sora,sans-serif" fontSize="12" fontWeight="700" fill={P.teal}>👩‍🏫 Teacher</text>
-                <rect x="260" y="78" width="160" height="36" rx="6" fill="none" stroke={P.green} strokeWidth="1.5"/>
-                <text x="340" y="101" textAnchor="middle" fontFamily="Sora,sans-serif" fontSize="12" fontWeight="700" fill={P.green}>👨‍👩‍👧 Parent</text>
-                <rect x="480" y="78" width="160" height="36" rx="6" fill="none" stroke={P.purple} strokeWidth="1.5"/>
-                <text x="560" y="101" textAnchor="middle" fontFamily="Sora,sans-serif" fontSize="12" fontWeight="700" fill={P.purple}>🎓 Student</text>
-              </svg>
-            </div>
-
-            {/* Permission cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
-              {rbac.map(r => (
-                <div key={r.role} style={{ background: 'rgba(255,255,255,0.05)', borderRadius: 12, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.08)' }}>
-                  <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: r.color, boxShadow: `0 0 8px ${r.color}60` }} />
-                    <span style={{ fontSize: 20 }}>{r.icon}</span>
-                    <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14, color: r.color }}>{r.role}</span>
-                  </div>
-                  <div style={{ padding: '14px 20px' }}>
-                    {r.can.map(c => (
-                      <div key={c} style={{ padding: '3px 0', fontSize: 12, color: 'rgba(255,255,255,0.6)', display: 'flex', gap: 8, alignItems: 'flex-start', lineHeight: 1.4 }}>
-                        <span style={{ width: 16, height: 16, borderRadius: 4, fontSize: 9, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, background: `${r.color}20`, color: r.color }}>✓</span>{c}
-                      </div>
-                    ))}
-                    <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 8, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.12)' }}>
-                      <div style={{ fontSize: 10, fontWeight: 700, color: '#DC2626', letterSpacing: 1, marginBottom: 2 }}>CANNOT ACCESS</div>
-                      {r.deny.map(d => (<div key={d} style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>✕ {d}</div>))}
-                    </div>
-                  </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20 }}>
+              {[
+                { step: '1', icon: '📝', title: 'Sign Up & Choose Subjects', desc: 'Create your free account in 60 seconds. Pick your grade, board, and subjects. Foxy assesses your current level automatically.' },
+                { step: '2', icon: '🦊', title: 'Learn with Foxy AI Tutor', desc: 'Ask questions in Hindi or English. Foxy teaches concepts, gives practice problems, creates quizzes, and tracks exactly what you know.' },
+                { step: '3', icon: '📈', title: 'Track Progress & Master Topics', desc: 'Spaced repetition ensures you never forget. Parents get daily reports. Teachers see class mastery heatmaps.' },
+              ].map(s => (
+                <div key={s.step} style={{ padding: '32px 24px', borderRadius: 16, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', position: 'relative' }}>
+                  <div style={{ position: 'absolute', top: -14, left: 24, width: 28, height: 28, borderRadius: '50%', background: P.rose, color: '#fff', fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{s.step}</div>
+                  <div style={{ fontSize: 36, marginBottom: 12 }}>{s.icon}</div>
+                  <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 16, color: P.navy, marginBottom: 8 }}>{s.title}</h3>
+                  <p style={{ fontSize: 13, color: P.text2, lineHeight: 1.65 }}>{s.desc}</p>
                 </div>
               ))}
             </div>
           </div>
         </section>
 
-        {/* ════ FEATURES (PS "Which Solution" grid) ════ */}
-        <section id="features" style={{ padding: '80px 30px' }}>
-          <div style={{ maxWidth: 1240, margin: '0 auto' }}>
-            <h2 style={{ textAlign: 'center', fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(24px, 3.5vw, 36px)', color: P.navy, marginBottom: 12 }}>
-              Features That Level Up Your School
+        {/* ════ FEATURES ════ */}
+        <section id="features" style={{ background: P.lightBg, padding: '80px 20px' }}>
+          <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+            <h2 style={{ textAlign: 'center', fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(22px, 3.5vw, 34px)', color: P.navy, marginBottom: 10 }}>
+              Why Students Love Alfanumrik
             </h2>
-            <p style={{ textAlign: 'center', fontSize: 15, color: P.text2, lineHeight: 1.65, maxWidth: 500, margin: '0 auto 48px' }}>
-              Evidence-backed learning science meets production-grade AI. One platform, one login.
+            <p style={{ textAlign: 'center', fontSize: 14, color: P.text2, lineHeight: 1.7, maxWidth: 500, margin: '0 auto 40px' }}>
+              Evidence-backed learning science meets AI. Built specifically for Indian school students.
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
               {[
-                { icon: '🧠', t: 'Bayesian Knowledge Tracing', d: 'AI tracks what each student knows. Practice targets gaps — zero time wasted.', bg: `${P.rose}0A` },
-                { icon: '🔄', t: 'Spaced Repetition (SM-2)', d: 'Reviews at the optimal moment. Proven 0.54 SD effect size across studies.', bg: `${P.teal}0A` },
-                { icon: '🦊', t: 'Foxy AI Tutor', d: 'Socratic tutoring in Hindi/English. NCERT-aligned, adaptive, 4 learning modes.', bg: `${P.gold}15` },
-                { icon: '📊', t: 'Teacher Dashboard', d: 'Create classes, assign work, view mastery heatmaps, grade submissions.', bg: `${P.navy}0A` },
-                { icon: '👨‍👩‍👧', t: 'Parent Monitoring', d: 'Daily digests, activity tracking, assignment scores, streak alerts.', bg: `${P.green}0A` },
-                { icon: '🏆', t: 'Gamified Learning', d: 'XP, streaks, leaderboards, 14 badges. Strategic bursts backed by evidence.', bg: `${P.purple}0A` },
+                { icon: '🦊', t: 'Foxy AI Tutor', d: 'Ask any question in Hindi or English. Foxy explains like a teacher, step by step. Works in 6+ Indian languages.', bg: `${P.gold}15` },
+                { icon: '🧠', t: 'Adaptive Learning Engine', d: 'AI tracks what you know using Bayesian mastery tracking. Every session targets your exact gaps.', bg: `${P.rose}0A` },
+                { icon: '🔄', t: 'Spaced Repetition', d: 'Never forget what you learned. The app reminds you to revise at the scientifically optimal time.', bg: `${P.teal}0A` },
+                { icon: '⚡', t: 'CBSE & NCERT Aligned', d: '726 chapters across 16 subjects. Every question mapped to NCERT textbooks and board exam patterns.', bg: `${P.navy}0A` },
+                { icon: '🎤', t: 'Voice Conversations', d: 'Talk to Foxy like a real teacher. Indian English and Hindi voice support for hands-free learning.', bg: `${P.purple}0A` },
+                { icon: '🏆', t: 'Gamified & Fun', d: 'XP, streaks, leaderboards, and badges. Stay motivated with friendly competition and daily goals.', bg: `${P.green}0A` },
               ].map(f => (
-                <div key={f.t} style={{ padding: '28px 24px', borderRadius: 12, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', transition: 'all 0.3s' }}>
-                  <div style={{ width: 44, height: 44, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, marginBottom: 14, background: f.bg }}>{f.icon}</div>
+                <div key={f.t} style={{ padding: '28px 24px', borderRadius: 14, background: '#fff', border: '1px solid rgba(0,0,0,0.05)', transition: 'all 0.3s' }}>
+                  <div style={{ width: 44, height: 44, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, marginBottom: 14, background: f.bg }}>{f.icon}</div>
                   <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 16, color: P.navy, marginBottom: 6 }}>{f.t}</h3>
                   <p style={{ fontSize: 13, color: P.text2, lineHeight: 1.65 }}>{f.d}</p>
                 </div>
@@ -420,81 +332,111 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ════ SECURITY & TRUST (PS pattern) ════ */}
-        <section style={{ background: P.lightBg, padding: '64px 30px' }}>
-          <div style={{ maxWidth: 900, margin: '0 auto', textAlign: 'center' }}>
-            <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(22px, 3vw, 30px)', color: P.navy, marginBottom: 12 }}>
-              Our Commitment to Security
+        {/* ════ FOR WHOM ════ */}
+        <section id="for-whom" style={{ padding: '80px 20px' }}>
+          <div style={{ maxWidth: 1000, margin: '0 auto', textAlign: 'center' }}>
+            <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(22px, 3.5vw, 34px)', color: P.navy, marginBottom: 10 }}>
+              Built for Every Stakeholder
             </h2>
-            <p style={{ fontSize: 14, color: P.text2, lineHeight: 1.65, maxWidth: 500, margin: '0 auto 32px' }}>
-              Student, family, and educator data is protected by enterprise-grade security at every layer.
+            <p style={{ fontSize: 14, color: P.text2, lineHeight: 1.7, maxWidth: 500, margin: '0 auto 40px' }}>
+              One platform. Different experiences. Students learn, teachers monitor, parents stay informed.
             </p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 24 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
               {[
-                { badge: '🔐', label: 'Supabase RLS' },
-                { badge: '🛡️', label: 'Row-Level Policies' },
-                { badge: '🇮🇳', label: 'CBSE Compliant' },
-                { badge: '📋', label: 'NEP 2020 Aligned' },
-              ].map(b => (
-                <div key={b.label} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-                  <div style={{ width: 56, height: 56, borderRadius: 12, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24 }}>{b.badge}</div>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: P.text2 }}>{b.label}</span>
+                { icon: '🎓', role: 'Students', color: P.purple, items: ['AI tutor that speaks your language', 'Practice with instant feedback', 'Spaced repetition to never forget', 'XP, streaks & leaderboards', 'Board exam preparation'] },
+                { icon: '👩\u200D🏫', role: 'Teachers', color: P.teal, items: ['Create classes with a shareable code', 'View student mastery at a glance', 'Assign quizzes and track completion', 'Identify weak topics class-wide', 'NEP 2020 compliant reports'] },
+                { icon: '👨\u200D👩\u200D👧', role: 'Parents', color: P.green, items: ['Daily activity summary of your child', 'Quiz scores and streak tracking', 'Weekly progress reports', 'Link multiple children', 'Zero setup required'] },
+              ].map(r => (
+                <div key={r.role} style={{ padding: '32px 24px', borderRadius: 16, background: '#fff', border: `1.5px solid ${r.color}20`, textAlign: 'left' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                    <span style={{ fontSize: 28 }}>{r.icon}</span>
+                    <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 18, color: r.color }}>{r.role}</span>
+                  </div>
+                  {r.items.map(item => (
+                    <div key={item} style={{ display: 'flex', gap: 10, padding: '6px 0', fontSize: 13, color: P.text2, lineHeight: 1.5 }}>
+                      <span style={{ color: r.color, fontWeight: 700, fontSize: 14, flexShrink: 0 }}>{'\u2713'}</span> {item}
+                    </div>
+                  ))}
+                  <button onClick={() => { setRole(r.role === 'Teachers' ? 'teacher' as Role : r.role === 'Parents' ? 'guardian' as Role : 'student' as Role); setStep('role'); }} style={{ marginTop: 16, width: '100%', padding: '10px', borderRadius: 10, border: `1.5px solid ${r.color}30`, background: `${r.color}08`, color: r.color, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                    Get Started as {r.role.replace(/s$/, '')}
+                  </button>
                 </div>
               ))}
             </div>
           </div>
         </section>
 
-        {/* ════ STATS (PS "Connecting..." counters) ════ */}
-        <section style={{ background: P.navy, padding: '64px 30px', textAlign: 'center' }}>
-          <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 'clamp(18px, 2.5vw, 24px)', color: 'rgba(255,255,255,0.8)', marginBottom: 40 }}>
-            Connecting the Classroom to the Home — Across India
-          </h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 20, maxWidth: 800, margin: '0 auto' }}>
-            {[['726','NCERT Chapters'],['16','Subjects'],['7','Grades (6–12)'],['6+','Languages']].map(([v, l]) => (
-              <div key={l}>
-                <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(28px, 4vw, 44px)', color: P.rose }}>{v}</div>
-                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginTop: 4 }}>{l}</div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* ════ CTA (PS bottom bar) ════ */}
-        <section style={{ padding: '80px 30px', textAlign: 'center' }}>
-          <div style={{ maxWidth: 600, margin: '0 auto' }}>
-            <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(24px, 4vw, 40px)', color: P.navy, marginBottom: 12 }}>
-              Let&apos;s Connect!
+        {/* ════ TRUST & SECURITY ════ */}
+        <section id="trust" style={{ background: P.navy, padding: '64px 20px' }}>
+          <div style={{ maxWidth: 900, margin: '0 auto', textAlign: 'center' }}>
+            <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(22px, 3vw, 30px)', color: '#fff', marginBottom: 10 }}>
+              Trusted, Certified & Compliant
             </h2>
-            <p style={{ fontSize: 15, color: P.text2, lineHeight: 1.65, marginBottom: 32 }}>
-              Whether you&apos;re a student, teacher, or parent — start your free trial in 60 seconds.
+            <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.55)', lineHeight: 1.7, maxWidth: 500, margin: '0 auto 36px' }}>
+              Built by Curiosense Learning India Private Limited. Your data is protected by enterprise-grade security.
             </p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, maxWidth: 520, margin: '0 auto' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 16, marginBottom: 32 }}>
               {[
-                { icon: '🎓', label: 'I\'m a Student', r: 'student' as Role },
-                { icon: '👩‍🏫', label: 'I\'m a Teacher', r: 'teacher' as Role },
-                { icon: '👨‍👩‍👧', label: 'I\'m a Parent', r: 'guardian' as Role },
-              ].map(c => (
-                <button key={c.label} onClick={() => { setRole(c.r); setStep('role'); }} style={{ padding: '20px 16px', borderRadius: 12, border: '1.5px solid rgba(0,0,0,0.08)', background: '#fff', cursor: 'pointer', transition: 'all 0.2s', textAlign: 'center' }}>
-                  <div style={{ fontSize: 28, marginBottom: 8 }}>{c.icon}</div>
-                  <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14, color: P.navy }}>{c.label}</div>
-                </button>
+                { badge: '🇮🇳', label: 'Startup India\nRecognized' },
+                { badge: '🛡️', label: 'ISO 27001\nInformation Security' },
+                { badge: '🤖', label: 'ISO 42001\nAI Management' },
+                { badge: '📋', label: 'ISO 42005\nAI Governance' },
+                { badge: '💳', label: 'PCI-DSS\nData Protection' },
+                { badge: '📖', label: 'NEP 2020\nAligned' },
+                { badge: '📝', label: 'CBSE\nCompliant' },
+              ].map(b => (
+                <div key={b.label} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, minWidth: 80 }}>
+                  <div style={{ width: 52, height: 52, borderRadius: 12, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>{b.badge}</div>
+                  <span style={{ fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.5)', textAlign: 'center', whiteSpace: 'pre-line', lineHeight: 1.3 }}>{b.label}</span>
+                </div>
               ))}
             </div>
           </div>
         </section>
 
+        {/* ════ CTA ════ */}
+        <section style={{ padding: '80px 20px', textAlign: 'center' }}>
+          <div style={{ maxWidth: 560, margin: '0 auto' }}>
+            <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(22px, 4vw, 36px)', color: P.navy, marginBottom: 10 }}>
+              Ready to Learn Smarter?
+            </h2>
+            <p style={{ fontSize: 14, color: P.text2, lineHeight: 1.7, marginBottom: 28 }}>
+              Join thousands of students, teachers, and parents across India. Free to start, no credit card needed.
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 12 }}>
+              <button onClick={() => setStep('role')} style={{ padding: '14px 36px', borderRadius: 10, border: 'none', background: P.rose, color: '#fff', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>
+                Get Started Free
+              </button>
+              <button onClick={() => {setAuthMode('login');setStep('auth');}} style={{ padding: '14px 36px', borderRadius: 10, border: `1.5px solid ${P.navy}`, background: 'transparent', color: P.navy, fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}>
+                Log In
+              </button>
+            </div>
+          </div>
+        </section>
+
         {/* ════ FOOTER ════ */}
-        <footer style={{ background: P.navy, padding: '24px 30px', textAlign: 'center' }}>
-          <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>
-            Alfanumrik Learning OS v2.0 · Built with ❤️ in India · © 2026 Alfanumrik
-          </p>
+        <footer style={{ background: P.navy, padding: '32px 20px', textAlign: 'center' }}>
+          <div style={{ maxWidth: 800, margin: '0 auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 12 }}>
+              <span style={{ fontSize: 20 }}>🦊</span>
+              <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, color: '#fff' }}>Alfanumrik</span>
+              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>Adaptive Learning OS</span>
+            </div>
+            <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', lineHeight: 1.6, marginBottom: 8 }}>
+              A product of Curiosense Learning India Private Limited
+            </p>
+            <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', lineHeight: 1.5 }}>
+              Startup India Recognized | ISO 27001, 42001, 42005 & PCI-DSS Certified
+              <br/>Alfanumrik and Alfanumrik Adaptive Learning OS are registered trademarks of Curiosense Learning India Private Limited.
+              <br/>{'\u00A9'} {new Date().getFullYear()} Curiosense Learning India Private Limited. All rights reserved.
+            </p>
+          </div>
         </footer>
       </div>
     );
   }
 
-  /* ════ STEP 2: ROLE SELECTION ════ */
+    /* ════ STEP 2: ROLE SELECTION ════ */
   if (step === 'role') {
     const roles: Array<{id:Role;icon:string;title:string;hi:string;desc:string;color:string}> = [
       { id:'student', icon:'🎓', title:'Student', hi:'छात्र', desc:'Learn with Foxy AI, take quizzes, track your mastery.', color:P.rose },
