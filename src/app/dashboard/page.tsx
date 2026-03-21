@@ -60,7 +60,7 @@ export default function Dashboard() {
     setDueCount(count ?? 0);
 
     // Load student's selected subjects
-    setSelectedSubjects(student.selected_subjects || [student.preferred_subject].filter(Boolean));
+    setSelectedSubjects((student.selected_subjects || [student.preferred_subject].filter(Boolean)) as string[]);
 
     // Generate contextual notifications + get unread count
     try {
