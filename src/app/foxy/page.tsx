@@ -31,26 +31,138 @@ function fl(){if(li.length>0){el.push(<div key={"l"+el.length} className="my-3 p
 lines.forEach((line,idx)=>{const t=line.trim();if(t.startsWith("###")){fl();el.push(<h4 key={idx} className="text-sm font-bold mt-4 mb-2 uppercase tracking-wide" style={{color:c.color}}>{c.icon+" "+t.replace(/^###\s*/,"")}</h4>);}else if(t.startsWith("##")){fl();el.push(<h3 key={idx} className="text-base font-bold mt-4 mb-2 pb-2" style={{borderBottom:"2px solid "+c.color+"30"}}>{t.replace(/^##\s*/,"")}</h3>);}else if(t.startsWith(">")){fl();el.push(<div key={idx} className="my-3 px-4 py-3 rounded-xl text-sm leading-relaxed" style={{background:c.color+"08",border:"1px solid "+c.color+"25"}}>{renderInline(t.replace(/^>\s*/,""),c)}</div>);}else if(/^\d+[.)]\s/.test(t)){if(lk!=="num"){fl();lk="num";}li.push(t.replace(/^\d+[.)]\s*/,""));}else if(/^[-\u2022*]\s/.test(t)){if(lk!=="bul"){fl();lk="bul";}li.push(t.replace(/^[-\u2022*]\s*/,""));}else if(!t){fl();el.push(<div key={idx} className="h-2"/>);}else{fl();el.push(<p key={idx} className="my-1.5 leading-[1.75] text-[var(--text-2)]">{renderInline(t,c)}</p>);}});fl();return <div>{el}</div>;}
 
 /* ── Chat Input (mobile-optimized) ── */
+/* ── Math symbols by subject category ── */
+const MATH_SYMS:Record<string,string[]> = {
+  basic:['\u00B1','\u00D7','\u00F7','\u2260','\u2248','\u221A','\u00B2','\u00B3','\u221E','\u03C0'],
+  algebra:['\u2264','\u2265','<','>','\u2208','\u2209','\u222A','\u2229','\u2205','\u2286'],
+  calculus:['\u222B','\u2202','\u2211','\u220F','\u0394','\u2207','dx','dy','lim','\u221E'],
+  greek:['\u03B1','\u03B2','\u03B3','\u03B4','\u03B5','\u03B8','\u03BB','\u03BC','\u03C3','\u03C9'],
+  arrows:['\u2192','\u2190','\u21D2','\u21D4','\u2191','\u2193','\u21CC','\u221D'],
+  science:['\u2103','\u00B0','\u03A9','\u212B','mol','pH','atm','eV','Pa','Hz'],
+  fractions:['\u00BD','\u2153','\u00BC','\u00BE','\u2155','\u215B'],
+  geometry:['\u2220','\u22A5','\u2225','\u25B3','\u25CB','\u00B0','\u03C0','r\u00B2'],
+  superscript:['\u2070','\u00B9','\u00B2','\u00B3','\u2074','\u2075','\u2076','\u2077','\u2078','\u2079'],
+  subscript:['\u2080','\u2081','\u2082','\u2083','\u2084','\u2085','\u2086','\u2087','\u2088','\u2089'],
+};
+const SYM_TABS:{id:string;label:string;em:string}[] = [
+  {id:'basic',label:'Basic',em:'\u00B1'},{id:'algebra',label:'Algebra',em:'\u2208'},
+  {id:'greek',label:'Greek',em:'\u03B1'},{id:'calculus',label:'Calculus',em:'\u222B'},
+  {id:'arrows',label:'Arrows',em:'\u2192'},{id:'science',label:'Science',em:'\u269B'},
+  {id:'geometry',label:'Geometry',em:'\u2220'},{id:'fractions',label:'Frac',em:'\u00BD'},
+  {id:'superscript',label:'Sup',em:'x\u00B2'},{id:'subscript',label:'Sub',em:'x\u2082'},
+];
+
 function ChatInput({onSubmit,subject,disabled,onMicTap,isListening}:{onSubmit:(t:string)=>void;subject:string;disabled:boolean;onMicTap?:()=>void;isListening?:boolean}){
   const[text,setText]=useState("");const taRef=useRef<HTMLTextAreaElement>(null);
+  const[showSymbols,setShowSymbols]=useState(false);
+  const[symTab,setSymTab]=useState("basic");
+  const[pointMode,setPointMode]=useState(false);
+  const[pointCount,setPointCount]=useState(1);
   const c=SUBJECTS[subject]||SUBJECTS.science;
-  const send=()=>{if(!text.trim()||disabled)return;onSubmit(text.trim());setText("");if(taRef.current){taRef.current.style.height="auto";}};
-  const handleKey=(e:React.KeyboardEvent)=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}};
-  const autoGrow=(e:React.ChangeEvent<HTMLTextAreaElement>)=>{setText(e.target.value);e.target.style.height="auto";e.target.style.height=Math.min(e.target.scrollHeight,120)+"px";};
+
+  const insertAtCursor=(s:string)=>{
+    const ta=taRef.current;if(!ta)return;
+    const start=ta.selectionStart;const end=ta.selectionEnd;
+    const newText=text.substring(0,start)+s+text.substring(end);
+    setText(newText);
+    setTimeout(()=>{ta.focus();ta.selectionStart=ta.selectionEnd=start+s.length;},0);
+  };
+
+  const send=()=>{
+    if(!text.trim()||disabled)return;
+    onSubmit(text.trim());
+    setText("");setPointCount(1);setPointMode(false);
+    if(taRef.current){taRef.current.style.height="auto";}
+  };
+
+  const handleKey=(e:React.KeyboardEvent)=>{
+    if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();return;}
+    if(e.key==="Enter"&&e.shiftKey){
+      if(pointMode){
+        e.preventDefault();
+        const next=pointCount+1;
+        insertAtCursor("\n"+next+". ");
+        setPointCount(next);
+      }
+      // else: default Shift+Enter = normal newline in textarea (no preventDefault)
+    }
+  };
+
+  const togglePointMode=()=>{
+    if(!pointMode){
+      if(!text.trim()){setText("1. ");setPointCount(1);}
+      else if(!text.startsWith("1.")){setText("1. "+text);setPointCount(1);}
+      setPointMode(true);
+      setTimeout(()=>{const ta=taRef.current;if(ta){ta.focus();ta.selectionStart=ta.selectionEnd=ta.value.length;}},0);
+    } else {
+      setPointMode(false);
+    }
+  };
+
+  const autoGrow=(e:React.ChangeEvent<HTMLTextAreaElement>)=>{
+    setText(e.target.value);
+    e.target.style.height="auto";
+    e.target.style.height=Math.min(e.target.scrollHeight,200)+"px";
+  };
+
+  const syms=MATH_SYMS[symTab]||MATH_SYMS.basic;
+
   return(
-    <div className="border-t px-3 py-2.5 flex items-end gap-2" style={{background:"var(--surface-1)",borderColor:"var(--border)",paddingBottom:"max(env(safe-area-inset-bottom, 8px), 8px)"}}>
-      <textarea ref={taRef} value={text} onChange={autoGrow} onKeyDown={handleKey} placeholder="Ask Foxy anything..." rows={1}
-        className="flex-1 text-sm rounded-2xl px-4 py-2.5 resize-none outline-none leading-relaxed"
-        style={{background:"var(--surface-2)",border:"1.5px solid var(--border)",fontFamily:"var(--font-body)",maxHeight:120,minHeight:40}}/>
-      {onMicTap&&<button onClick={onMicTap} className="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-lg transition-all active:scale-90"
-        style={{background:isListening?"#EF444420":"var(--surface-2)",border:isListening?"2px solid #EF4444":"1.5px solid var(--border)"}}>
-        {isListening?"🔴":"🎤"}
-      </button>}
-      <button onClick={send} disabled={disabled||!text.trim()}
-        className="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-white text-lg font-bold transition-all active:scale-90 disabled:opacity-40"
-        style={{background:text.trim()?`linear-gradient(135deg,${c.color},${c.color}dd)`:"var(--surface-2)",color:text.trim()?"#fff":"var(--text-3)"}}>
-        {disabled?"...":"\u2191"}
-      </button>
+    <div className="border-t" style={{background:"var(--surface-1)",borderColor:"var(--border)"}}>
+      {/* Math symbol palette */}
+      {showSymbols&&(
+        <div className="px-3 pt-2 pb-1">
+          <div className="flex gap-1 overflow-x-auto mb-2" style={{scrollbarWidth:"none"}}>
+            {SYM_TABS.map(t=>(
+              <button key={t.id} onClick={()=>setSymTab(t.id)} className="shrink-0 px-2 py-1 rounded-lg text-[10px] font-bold transition-all"
+                style={{background:symTab===t.id?c.color+"15":"transparent",color:symTab===t.id?c.color:"var(--text-3)",border:symTab===t.id?`1px solid ${c.color}30`:"1px solid transparent"}}>
+                <span className="text-sm mr-0.5">{t.em}</span> {t.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {syms.map((s:string,i:number)=>(
+              <button key={i} onClick={()=>insertAtCursor(s)}
+                className="w-9 h-9 rounded-lg flex items-center justify-center text-sm font-semibold transition-all active:scale-90 hover:bg-[var(--surface-2)]"
+                style={{background:"var(--surface-2)",border:"1px solid var(--border)",fontFamily:"monospace"}}>
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Toolbar: math toggle + point mode + hint */}
+      <div className="flex items-center gap-1.5 px-3 pt-2 pb-1">
+        <button onClick={()=>setShowSymbols(!showSymbols)} className="px-2 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95"
+          style={{background:showSymbols?c.color+"15":"var(--surface-2)",color:showSymbols?c.color:"var(--text-3)",border:`1px solid ${showSymbols?c.color+"30":"var(--border)"}`}}>
+          {showSymbols?"\u00D7 Close":"fx Math"}
+        </button>
+        <button onClick={togglePointMode} className="px-2 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95"
+          style={{background:pointMode?c.color+"15":"var(--surface-2)",color:pointMode?c.color:"var(--text-3)",border:`1px solid ${pointMode?c.color+"30":"var(--border)"}`}}>
+          {pointMode?"1. ON":"1. Points"}
+        </button>
+        <span className="flex-1"/>
+        <span className="text-[9px] text-[var(--text-3)] hidden sm:inline">Enter = send | Shift+Enter = new line</span>
+      </div>
+
+      {/* Input row */}
+      <div className="px-3 py-2 flex items-end gap-2" style={{paddingBottom:"max(env(safe-area-inset-bottom, 8px), 8px)"}}>
+        <textarea ref={taRef} value={text} onChange={autoGrow} onKeyDown={handleKey}
+          placeholder={pointMode?"1. Write your answer point by point...\n(Shift+Enter for next point)":"Ask Foxy anything... (Shift+Enter for new line)"}
+          rows={pointMode?3:1}
+          className="flex-1 text-sm rounded-2xl px-4 py-2.5 resize-none outline-none leading-relaxed"
+          style={{background:"var(--surface-2)",border:`1.5px solid ${pointMode?c.color+"40":"var(--border)"}`,fontFamily:"var(--font-body)",maxHeight:200,minHeight:pointMode?80:40}}/>
+        {onMicTap&&<button onClick={onMicTap} className="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-lg transition-all active:scale-90"
+          style={{background:isListening?"#EF444420":"var(--surface-2)",border:isListening?"2px solid #EF4444":"1.5px solid var(--border)"}}>
+          {isListening?"\uD83D\uDD34":"\uD83C\uDFA4"}
+        </button>}
+        <button onClick={send} disabled={disabled||!text.trim()}
+          className="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-white text-lg font-bold transition-all active:scale-90 disabled:opacity-40"
+          style={{background:text.trim()?`linear-gradient(135deg,${c.color},${c.color}dd)`:"var(--surface-2)",color:text.trim()?"#fff":"var(--text-3)"}}>
+          {disabled?"...":"\u2191"}
+        </button>
+      </div>
     </div>
   );
 }
