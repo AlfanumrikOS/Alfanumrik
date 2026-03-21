@@ -1,226 +1,291 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { useAuth } from '@/lib/AuthContext';
-import { supabase } from '@/lib/supabase';
-import { Card, Button, Input, LoadingFoxy, BottomNav } from '@/components/ui';
 
-interface ChildData {
-  student_id: string; name: string; grade: string; board: string;
-  school: string; xp_total: number; streak_days: number;
-  last_active: string; preferred_subject: string; invite_code: string;
+const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
+async function api(action: string, params: Record<string, unknown> = {}) {
+  const res = await fetch(`${SB_URL}/functions/v1/parent-portal`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: SB_KEY },
+    body: JSON.stringify({ action, ...params }),
+  });
+  return res.json();
 }
 
-export default function ParentDashboard() {
-  const { guardian, isLoggedIn, isLoading } = useAuth();
-  const router = useRouter();
-  const [children, setChildren] = useState<ChildData[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [linkCode, setLinkCode] = useState('');
-  const [linkError, setLinkError] = useState('');
-  const [linkSuccess, setLinkSuccess] = useState('');
-  const [linking, setLinking] = useState(false);
-  const [activeChild, setActiveChild] = useState<string | null>(null);
-  const [childActivity, setChildActivity] = useState<any>(null);
-  const [childQuizzes, setChildQuizzes] = useState<any[]>([]);
+// ============================================================
+// PARENT LOGIN SCREEN
+// ============================================================
+function LoginScreen({ onLogin }: { onLogin: (g: any, s: any) => void }) {
+  const [code, setCode] = useState('');
+  const [name, setName] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  useEffect(() => { if (!isLoading && !isLoggedIn) router.replace('/'); }, [isLoading, isLoggedIn, router]);
-
-  const loadChildren = useCallback(async () => {
-    if (!guardian) return;
-    setLoading(true);
-    const { data } = await supabase.rpc('get_guardian_dashboard', { p_guardian_id: guardian.id });
-    if (data?.children) {
-      setChildren(data.children);
-      if (data.children.length > 0 && !activeChild) setActiveChild(data.children[0].student_id);
-    }
+  const submit = async () => {
+    if (!code.trim()) { setError('Please enter link code'); return; }
+    setLoading(true); setError('');
+    const res = await api('parent_login', { link_code: code, parent_name: name || 'Parent' });
     setLoading(false);
-  }, [guardian, activeChild]);
-
-  useEffect(() => { if (guardian) loadChildren(); }, [guardian, loadChildren]);
-
-  // Load active child's recent activity
-  useEffect(() => {
-    if (!activeChild) return;
-    (async () => {
-      const today = new Date().toISOString().split('T')[0];
-      const { data: act } = await supabase.from('daily_activity').select('*').eq('student_id', activeChild).order('activity_date', { ascending: false }).limit(7);
-      setChildActivity(act || []);
-      const { data: quizzes } = await supabase.from('quiz_sessions').select('*').eq('student_id', activeChild).order('created_at', { ascending: false }).limit(5);
-      setChildQuizzes(quizzes || []);
-    })();
-  }, [activeChild]);
-
-  const linkChild = async () => {
-    if (!linkCode.trim() || !guardian) return;
-    setLinking(true); setLinkError(''); setLinkSuccess('');
-    const { data, error } = await supabase.rpc('link_guardian_to_student_via_code', {
-      p_guardian_id: guardian.id, p_invite_code: linkCode.trim(),
-    });
-    if (error) { setLinkError(error.message); }
-    else if (data?.error) { setLinkError(data.error); }
-    else { setLinkSuccess(data?.message || 'Linked successfully!'); setLinkCode(''); loadChildren(); }
-    setLinking(false);
+    if (res.error) { setError(res.error); return; }
+    localStorage.setItem('alfanumrik_guardian', JSON.stringify(res.guardian));
+    localStorage.setItem('alfanumrik_parent_student', JSON.stringify(res.student));
+    onLogin(res.guardian, res.student);
   };
 
-  if (isLoading) return <LoadingFoxy />;
-  const child = children.find(c => c.student_id === activeChild);
-  const todayAct = childActivity?.[0];
-
   return (
-    <div className="mesh-bg min-h-dvh pb-nav">
-      <header className="page-header" style={{ background: 'rgba(251,248,244,0.88)', backdropFilter: 'blur(20px)' }}>
-        <div className="app-container py-3 flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
-              👨‍👩‍👧 Parent Dashboard
-            </h1>
-            <p className="text-[11px] text-[var(--text-3)]">{guardian?.name || 'Parent'}</p>
-          </div>
-          <button onClick={() => router.push('/profile')} className="text-sm px-3 py-1.5 rounded-xl" style={{ background: 'var(--surface-2)', color: 'var(--text-2)' }}>Profile</button>
-        </div>
-      </header>
-
-      <main className="app-container py-4 space-y-4">
-        {/* Children tabs */}
-        {children.length > 1 && (
-          <div className="flex gap-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
-            {children.map(c => (
-              <button key={c.student_id} onClick={() => setActiveChild(c.student_id)}
-                className="shrink-0 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
-                style={{ background: activeChild === c.student_id ? 'var(--orange)' : 'var(--surface-1)', color: activeChild === c.student_id ? '#fff' : 'var(--text-2)', border: '1px solid var(--border)' }}>
-                {c.name}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {loading ? (
-          <div className="text-center py-16"><div className="text-4xl animate-float mb-3">👨‍👩‍👧</div><p className="text-sm text-[var(--text-3)]">Loading...</p></div>
-        ) : children.length === 0 ? (
-          /* No children linked — show link form */
-          <Card>
-            <div className="text-center py-8">
-              <div className="text-5xl mb-4">🔗</div>
-              <h2 className="text-lg font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>Link Your Child</h2>
-              <p className="text-sm text-[var(--text-3)] mb-6 max-w-xs mx-auto">Ask your child to open their Profile and share the Invite Code with you</p>
-              <div className="max-w-xs mx-auto space-y-3">
-                <Input placeholder="Enter Invite Code (e.g. A1B2C3D4)" value={linkCode} onChange={e => setLinkCode(e.target.value.toUpperCase())} className="text-center text-lg font-bold tracking-widest" />
-                {linkError && <p className="text-xs text-red-500">{linkError}</p>}
-                {linkSuccess && <p className="text-xs text-green-600 font-semibold">{linkSuccess}</p>}
-                <Button fullWidth onClick={linkChild} disabled={linking || !linkCode.trim()}>{linking ? 'Linking...' : 'Link Child'}</Button>
-              </div>
-            </div>
-          </Card>
-        ) : child ? (
-          <>
-            {/* Child Summary Card */}
-            <Card accent={child.preferred_subject === 'math' ? '#3B82F6' : child.preferred_subject === 'science' ? '#10B981' : '#E8581C'}>
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-xl font-bold text-white" style={{ background: 'linear-gradient(135deg, var(--orange), #F5A623)' }}>
-                  {child.name[0]}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-base font-bold truncate">{child.name}</div>
-                  <div className="text-[11px] text-[var(--text-3)]">Grade {child.grade} | {child.board} {child.school ? `| ${child.school}` : ''}</div>
-                </div>
-              </div>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="text-center p-2.5 rounded-xl" style={{ background: 'var(--surface-2)' }}>
-                  <div className="text-lg font-extrabold" style={{ color: 'var(--orange)' }}>{child.xp_total || 0}</div>
-                  <div className="text-[10px] text-[var(--text-3)] font-semibold">Total XP</div>
-                </div>
-                <div className="text-center p-2.5 rounded-xl" style={{ background: 'var(--surface-2)' }}>
-                  <div className="text-lg font-extrabold" style={{ color: '#EF4444' }}>{child.streak_days || 0}</div>
-                  <div className="text-[10px] text-[var(--text-3)] font-semibold">Day Streak</div>
-                </div>
-                <div className="text-center p-2.5 rounded-xl" style={{ background: 'var(--surface-2)' }}>
-                  <div className="text-lg font-extrabold" style={{ color: '#16A34A' }}>{todayAct?.xp_earned || 0}</div>
-                  <div className="text-[10px] text-[var(--text-3)] font-semibold">Today XP</div>
-                </div>
-              </div>
-            </Card>
-
-            {/* Today's Activity */}
-            <Card>
-              <h3 className="text-sm font-bold mb-3" style={{ fontFamily: 'var(--font-display)' }}>Today&apos;s Activity</h3>
-              {todayAct ? (
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { label: 'Sessions', value: todayAct.sessions_count || 0, color: '#3B82F6' },
-                    { label: 'Questions', value: todayAct.questions_asked || 0, color: '#8B5CF6' },
-                    { label: 'Correct', value: todayAct.questions_correct || 0, color: '#16A34A' },
-                    { label: 'Minutes', value: todayAct.minutes_spent || 0, color: '#F59E0B' },
-                  ].map(s => (
-                    <div key={s.label} className="p-3 rounded-xl text-center" style={{ background: `${s.color}08`, border: `1px solid ${s.color}15` }}>
-                      <div className="text-xl font-extrabold" style={{ color: s.color }}>{s.value}</div>
-                      <div className="text-[10px] text-[var(--text-3)] font-semibold mt-0.5">{s.label}</div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-6">
-                  <div className="text-3xl mb-2">😴</div>
-                  <p className="text-sm text-[var(--text-3)]">{child.name} hasn&apos;t studied today yet</p>
-                </div>
-              )}
-            </Card>
-
-            {/* 7-Day Activity */}
-            <Card>
-              <h3 className="text-sm font-bold mb-3" style={{ fontFamily: 'var(--font-display)' }}>Last 7 Days</h3>
-              <div className="flex items-end gap-1.5 h-20">
-                {(childActivity || []).slice(0, 7).reverse().map((day: any, i: number) => {
-                  const maxXp = Math.max(...(childActivity || []).map((d: any) => d.xp_earned || 0), 1);
-                  const pct = ((day.xp_earned || 0) / maxXp) * 100;
-                  return (
-                    <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                      <div className="w-full rounded-t-lg transition-all" style={{ height: `${Math.max(pct, 8)}%`, background: day.xp_earned > 0 ? 'var(--orange)' : 'var(--surface-2)', minHeight: 4 }} />
-                      <span className="text-[9px] text-[var(--text-3)]">{new Date(day.activity_date).toLocaleDateString('en-IN', { weekday: 'narrow' })}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </Card>
-
-            {/* Recent Quizzes */}
-            <Card>
-              <h3 className="text-sm font-bold mb-3" style={{ fontFamily: 'var(--font-display)' }}>Recent Quizzes</h3>
-              {childQuizzes.length > 0 ? (
-                <div className="space-y-2">
-                  {childQuizzes.map((q: any) => (
-                    <div key={q.id} className="flex items-center gap-3 p-3 rounded-xl" style={{ background: 'var(--surface-2)' }}>
-                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-extrabold" style={{ background: q.score_percent >= 80 ? '#16A34A20' : q.score_percent >= 50 ? '#F59E0B20' : '#EF444420', color: q.score_percent >= 80 ? '#16A34A' : q.score_percent >= 50 ? '#F59E0B' : '#EF4444' }}>
-                        {q.score_percent || 0}%
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-semibold capitalize truncate">{q.subject}</div>
-                        <div className="text-[10px] text-[var(--text-3)]">{new Date(q.created_at).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })} | {q.total_questions || 0} questions</div>
-                      </div>
-                      <div className="text-xs font-bold" style={{ color: 'var(--orange)' }}>+{q.xp_earned || 0} XP</div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-center text-sm text-[var(--text-3)] py-4">No quizzes taken yet</p>
-              )}
-            </Card>
-
-            {/* Link another child */}
-            <Card>
-              <h3 className="text-sm font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>Link Another Child</h3>
-              <div className="flex gap-2">
-                <Input placeholder="Invite Code" value={linkCode} onChange={e => setLinkCode(e.target.value.toUpperCase())} className="flex-1 text-center font-bold tracking-wider" />
-                <Button onClick={linkChild} disabled={linking || !linkCode.trim()}>{linking ? '...' : 'Link'}</Button>
-              </div>
-              {linkError && <p className="text-xs text-red-500 mt-1">{linkError}</p>}
-              {linkSuccess && <p className="text-xs text-green-600 font-semibold mt-1">{linkSuccess}</p>}
-            </Card>
-          </>
-        ) : null}
-      </main>
-      <BottomNav />
+    <div style={{ ...pageStyle, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ maxWidth: 380, width: '100%', textAlign: 'center' }}>
+        <div style={{ fontSize: 48, marginBottom: 12 }}>&#x1F9D1;&#x200D;&#x1F393;</div>
+        <h1 style={{ fontSize: 22, fontWeight: 700, color: '#F8FAFC', margin: '0 0 4px' }}>Parent Dashboard</h1>
+        <p style={{ fontSize: 14, color: '#64748B', margin: '0 0 24px' }}>Enter your child&apos;s link code to view their progress</p>
+        <input style={inputStyle} placeholder="Your name" value={name} onChange={e => setName(e.target.value)} />
+        <input style={{ ...inputStyle, fontSize: 20, letterSpacing: 4, textAlign: 'center', textTransform: 'uppercase' }} placeholder="LINK CODE" value={code} onChange={e => setCode(e.target.value.toUpperCase())} maxLength={8} onKeyDown={e => e.key === 'Enter' && submit()} />
+        {error && <p style={{ color: '#EF4444', fontSize: 13, margin: '8px 0' }}>{error}</p>}
+        <button onClick={submit} disabled={loading} style={{ ...btnStyle, width: '100%', marginTop: 8, opacity: loading ? 0.5 : 1 }}>
+          {loading ? 'Connecting...' : 'View Dashboard'}
+        </button>
+        <p style={{ fontSize: 12, color: '#475569', marginTop: 16 }}>
+          Ask your child for the link code from their Alfanumrik profile.
+        </p>
+      </div>
     </div>
   );
 }
+
+// ============================================================
+// STAT CARD
+// ============================================================
+function Stat({ label, value, color, icon }: { label: string; value: string | number; color: string; icon: string }) {
+  return (
+    <div style={{ backgroundColor: '#0F172A', borderRadius: 12, padding: '12px 14px', border: '1px solid #1E293B' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+        <span style={{ fontSize: 14 }}>{icon}</span>
+        <span style={{ color: '#64748B', fontSize: 11, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>{label}</span>
+      </div>
+      <span style={{ color, fontSize: 22, fontWeight: 700 }}>{value}</span>
+    </div>
+  );
+}
+
+// ============================================================
+// WEEKLY ACTIVITY CHART
+// ============================================================
+function WeeklyChart({ data }: { data: any[] }) {
+  const maxQ = Math.max(...data.map(d => d.quizzes), 1);
+  return (
+    <div style={cardStyle}>
+      <h3 style={cardTitle}>This week</h3>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 100, marginTop: 12 }}>
+        {data.map((d, i) => (
+          <div key={i} style={{ flex: 1, textAlign: 'center' }}>
+            <div style={{ height: Math.max(4, (d.quizzes / maxQ) * 80), backgroundColor: d.active ? '#6366F1' : '#1E293B', borderRadius: 4, marginBottom: 6, transition: 'height 0.3s' }} />
+            <span style={{ fontSize: 10, color: d.active ? '#E2E8F0' : '#475569' }}>{d.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// BKT MASTERY RING
+// ============================================================
+function MasteryRing({ levels, total }: { levels: Record<string, number>; total: number }) {
+  if (total === 0) return <p style={{ color: '#475569', fontSize: 13, fontStyle: 'italic' }}>No adaptive data yet.</p>;
+  const data = [
+    { label: 'Mastered', count: levels.mastered || 0, color: '#059669' },
+    { label: 'Proficient', count: levels.proficient || 0, color: '#7C3AED' },
+    { label: 'Familiar', count: levels.familiar || 0, color: '#2563EB' },
+    { label: 'Attempted', count: levels.attempted || 0, color: '#D97706' },
+  ].filter(d => d.count > 0);
+  return (
+    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+      {data.map(d => (
+        <div key={d.label} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', backgroundColor: '#1E293B', borderRadius: 8, borderLeft: `3px solid ${d.color}` }}>
+          <span style={{ fontSize: 18, fontWeight: 700, color: d.color }}>{d.count}</span>
+          <span style={{ fontSize: 12, color: '#94A3B8' }}>{d.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ============================================================
+// MAIN DASHBOARD
+// ============================================================
+function Dashboard({ guardian, student }: { guardian: any; student: any }) {
+  const [dash, setDash] = useState<any>(null);
+  const [tips, setTips] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showTips, setShowTips] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const [d, t] = await Promise.all([
+      api('get_child_dashboard', { student_id: student.id, guardian_id: guardian.id }),
+      api('get_tips'),
+    ]);
+    setDash(d); setTips(t.tips || []);
+    setLoading(false);
+  }, [student.id, guardian.id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const logout = () => { localStorage.removeItem('alfanumrik_guardian'); localStorage.removeItem('alfanumrik_parent_student'); window.location.reload(); };
+
+  if (loading) return (
+    <div style={pageStyle}>
+      <div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}>
+        <div style={{ width: 40, height: 40, border: '3px solid #1E293B', borderTopColor: '#6366F1', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />
+        Loading {student.name}&apos;s progress...
+      </div>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </div>
+  );
+
+  if (!dash || dash.error) return <div style={pageStyle}><div style={{ textAlign: 'center', padding: 60, color: '#EF4444' }}>{dash?.error || 'Failed to load dashboard'}</div></div>;
+
+  const s = dash.stats;
+
+  return (
+    <div style={pageStyle}>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid #1E293B' }}>
+        <div>
+          <p style={{ fontSize: 11, color: '#6366F1', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: 1, margin: '0 0 4px' }}>Parent Dashboard</p>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#F8FAFC', margin: 0 }}>{dash.student?.name || student.name}</h1>
+          <p style={{ fontSize: 14, color: '#64748B', margin: '4px 0 0' }}>Grade {dash.student?.grade || student.grade} | {dash.subject || 'Science'}</p>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={load} style={{ padding: '6px 12px', background: 'transparent', color: '#6366F1', border: '1px solid #334155', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>Refresh</button>
+          <button onClick={logout} style={{ padding: '6px 12px', background: 'transparent', color: '#94A3B8', border: '1px solid #334155', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>Logout</button>
+        </div>
+      </div>
+
+      {/* Stats Grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }}>
+        <Stat icon="&#x2B50;" label="XP" value={s.xp || 0} color="#F59E0B" />
+        <Stat icon="&#x1F525;" label="Streak" value={`${s.streak || 0}d`} color="#EF4444" />
+        <Stat icon="&#x1F3AF;" label="Accuracy" value={`${s.accuracy || 0}%`} color="#059669" />
+        <Stat icon="&#x1F4DA;" label="Quizzes" value={s.totalQuizzes || 0} color="#6366F1" />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 16 }}>
+        <Stat icon="&#x23F1;" label="Study time" value={`${s.minutes || 0}m`} color="#8B5CF6" />
+        <Stat icon="&#x1F4AC;" label="Foxy chats" value={s.totalChats || 0} color="#EC4899" />
+        <Stat icon="&#x1F4CA;" label="Avg score" value={`${s.avgScore || 0}%`} color="#2563EB" />
+      </div>
+
+      {/* Weekly Activity */}
+      {dash.dailyActivity && <WeeklyChart data={dash.dailyActivity} />}
+
+      {/* Week Summary */}
+      {dash.weekSummary && (
+        <div style={{ ...cardStyle, display: 'flex', justifyContent: 'space-around', padding: '14px 20px', textAlign: 'center' }}>
+          <div><span style={{ fontSize: 20, fontWeight: 700, color: '#6366F1' }}>{dash.weekSummary.quizzes}</span><br /><span style={{ fontSize: 11, color: '#64748B' }}>quizzes this week</span></div>
+          <div style={{ width: 1, backgroundColor: '#1E293B' }} />
+          <div><span style={{ fontSize: 20, fontWeight: 700, color: '#059669' }}>{dash.weekSummary.avgScore}%</span><br /><span style={{ fontSize: 11, color: '#64748B' }}>avg score</span></div>
+          <div style={{ width: 1, backgroundColor: '#1E293B' }} />
+          <div><span style={{ fontSize: 20, fontWeight: 700, color: '#D97706' }}>{dash.weekSummary.activeDays}/7</span><br /><span style={{ fontSize: 11, color: '#64748B' }}>active days</span></div>
+        </div>
+      )}
+
+      {/* BKT Adaptive Mastery */}
+      {dash.bktMastery && dash.bktMastery.total > 0 && (
+        <div style={cardStyle}>
+          <h3 style={cardTitle}>Adaptive mastery (BKT engine)</h3>
+          <MasteryRing levels={dash.bktMastery.levels} total={dash.bktMastery.total} />
+          <p style={{ fontSize: 12, color: '#475569', margin: '10px 0 0' }}>{dash.bktMastery.total} concepts tracked by the Bayesian Knowledge Tracing engine</p>
+        </div>
+      )}
+
+      {/* Active Bursts / Adventures */}
+      {dash.activeBursts && dash.activeBursts.length > 0 && (
+        <div style={cardStyle}>
+          <h3 style={cardTitle}>Active learning adventures</h3>
+          {dash.activeBursts.map((b: any, i: number) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', borderBottom: i < dash.activeBursts.length - 1 ? '1px solid #1E293B' : 'none' }}>
+              <span style={{ fontSize: 20 }}>{b.type === 'boss_battle' ? '\u2694\uFE0F' : b.type === 'mystery_solve' ? '\uD83D\uDD0D' : '\uD83C\uDFF0'}</span>
+              <div style={{ flex: 1 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#E2E8F0' }}>{b.title}</span>
+                <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+                  <div style={{ flex: 1, height: 6, backgroundColor: '#1E293B', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${Math.round((b.progress / b.goal) * 100)}%`, backgroundColor: '#6366F1', borderRadius: 3 }} />
+                  </div>
+                  <span style={{ fontSize: 11, color: '#94A3B8', minWidth: 40 }}>{b.progress}/{b.goal}</span>
+                </div>
+              </div>
+              <span style={{ fontSize: 12, color: '#F59E0B', fontWeight: 600 }}>+{b.xp} XP</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Insights */}
+      {dash.insights && dash.insights.length > 0 && (
+        <div style={cardStyle}>
+          <h3 style={cardTitle}>Insights for you</h3>
+          {dash.insights.map((insight: string, i: number) => (
+            <p key={i} style={{ fontSize: 13, color: '#CBD5E1', margin: '6px 0', padding: '8px 12px', backgroundColor: '#1E293B', borderRadius: 8, lineHeight: 1.5 }}>{insight}</p>
+          ))}
+        </div>
+      )}
+
+      {/* Tips toggle */}
+      <button onClick={() => setShowTips(!showTips)} style={{ width: '100%', padding: '10px 16px', backgroundColor: '#0F172A', color: '#6366F1', border: '1px solid #1E293B', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', marginBottom: 14 }}>
+        {showTips ? 'Hide' : 'Show'} parenting tips
+      </button>
+      {showTips && tips.length > 0 && (
+        <div style={cardStyle}>
+          {tips.map((tip: any) => (
+            <div key={tip.id} style={{ padding: '10px 0', borderBottom: '1px solid #1E293B' }}>
+              <span style={{ fontSize: 14, fontWeight: 600, color: '#F1F5F9' }}>{tip.title}</span>
+              <p style={{ fontSize: 13, color: '#94A3B8', margin: '4px 0 0' }}>{tip.description}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <p style={{ textAlign: 'center', fontSize: 11, color: '#475569', margin: '20px 0' }}>
+        Alfanumrik Learning OS | Parent Portal | Logged in as {guardian.name}
+      </p>
+    </div>
+  );
+}
+
+// ============================================================
+// MAIN PAGE COMPONENT
+// ============================================================
+export default function ParentPage() {
+  const [guardian, setGuardian] = useState<any>(null);
+  const [student, setStudent] = useState<any>(null);
+  const [checking, setChecking] = useState(true);
+
+  useEffect(() => {
+    const g = localStorage.getItem('alfanumrik_guardian');
+    const s = localStorage.getItem('alfanumrik_parent_student');
+    if (g && s) { setGuardian(JSON.parse(g)); setStudent(JSON.parse(s)); }
+    setChecking(false);
+  }, []);
+
+  if (checking) return <div style={pageStyle}><div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}>Loading...</div></div>;
+
+  if (!guardian || !student) {
+    return <LoginScreen onLogin={(g, s) => { setGuardian(g); setStudent(s); }} />;
+  }
+
+  return <Dashboard guardian={guardian} student={student} />;
+}
+
+// ============================================================
+// STYLES
+// ============================================================
+const pageStyle: React.CSSProperties = { maxWidth: 600, margin: '0 auto', padding: '20px 16px', fontFamily: "'Plus Jakarta Sans', 'Sora', system-ui, sans-serif", color: '#E2E8F0', backgroundColor: '#0B1120', minHeight: '100vh' };
+const cardStyle: React.CSSProperties = { backgroundColor: '#0F172A', borderRadius: 14, padding: '16px 18px', border: '1px solid #1E293B', marginBottom: 14 };
+const cardTitle: React.CSSProperties = { fontSize: 15, fontWeight: 600, color: '#F1F5F9', margin: '0 0 12px' };
+const inputStyle: React.CSSProperties = { width: '100%', padding: '12px 14px', backgroundColor: '#1E293B', border: '1px solid #334155', borderRadius: 10, color: '#E2E8F0', fontSize: 15, outline: 'none', marginBottom: 10, boxSizing: 'border-box' };
+const btnStyle: React.CSSProperties = { padding: '12px 20px', backgroundColor: '#6366F1', color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 600, cursor: 'pointer' };
