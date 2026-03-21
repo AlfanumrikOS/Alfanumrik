@@ -74,6 +74,7 @@ export default function FoxyPage(){
   const[totalXP,setTotalXP]=useState(0);
   const[studentGrade,setStudentGrade]=useState("9");
   const[showTopics,setShowTopics]=useState(false);
+  const[sidebarOpen,setSidebarOpen]=useState(true);
   const[showSubjectDD,setShowSubjectDD]=useState(false);
   const[showChapterDD,setShowChapterDD]=useState(false);
   const[selectedChapters,setSelectedChapters]=useState<string[]>([]);
@@ -327,27 +328,37 @@ export default function FoxyPage(){
 
       {/* ── MAIN CHAT AREA ── */}
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Desktop sidebar (hidden on mobile) */}
-        <div className="hidden lg:flex flex-col w-[280px] shrink-0 border-r overflow-hidden" style={{background:"var(--surface-1)",borderColor:"var(--border)"}}>
-          <div className="p-3 text-xs font-bold" style={{color:cfg.color,borderBottom:"1px solid var(--border)"}}>{cfg.icon} {cfg.name} - Grade {studentGrade} ({topics.length} chapters)</div>
-          <div className="flex-1 overflow-y-auto p-2.5 space-y-2">
-            {topics.map(topic=>{
-              const mastery=masteryData.find((m:any)=>m.topic_tag===topic.title||m.chapter_number===topic.chapter_number);
-              const pct=mastery?.mastery_percent||0;
-              const lvl=mastery?.mastery_level||"not_started";
-              const lc:Record<string,string>={not_started:"#9ca3af",beginner:"#F59E0B",developing:"#3B82F6",proficient:"#8B5CF6",mastered:"#10B981"};
-              return(
-                <button key={topic.id} onClick={()=>{setActiveTopic(topic);sendMessage("Teach me about: "+topic.title+" (Chapter "+topic.chapter_number+")");}} className="w-full text-left p-3 rounded-xl transition-all active:scale-[0.98]" style={{border:`1px solid ${(lc[lvl]||"#9ca3af")}25`,background:"var(--surface-1)"}}>
-                  <div className="text-xs font-bold truncate" style={{color:"var(--text-1)"}}>Ch {topic.chapter_number}: {topic.title}</div>
-                  <div className="flex items-center gap-2 mt-1">
-                    <div className="w-16 h-1.5 rounded-full" style={{background:"var(--surface-2)"}}><div className="h-full rounded-full transition-all" style={{width:`${pct}%`,background:lc[lvl]||"#9ca3af"}}/></div>
-                    <span className="text-[10px] font-bold capitalize" style={{color:lc[lvl]||"#9ca3af"}}>{(lvl).replace("_"," ")}</span>
-                  </div>
-                </button>
-              );
-            })}
+        {/* Desktop collapsible sidebar */}
+        <div className="hidden lg:flex shrink-0 relative" style={{width:sidebarOpen?280:0,transition:"width 0.3s ease"}}>
+          <div className="flex flex-col overflow-hidden border-r" style={{background:"var(--surface-1)",borderColor:"var(--border)",width:280,position:"absolute",top:0,bottom:0,left:0,transform:sidebarOpen?"translateX(0)":"translateX(-100%)",transition:"transform 0.3s ease"}}>
+            <div className="p-3 text-xs font-bold flex items-center justify-between" style={{color:cfg.color,borderBottom:"1px solid var(--border)"}}>
+              <span>{cfg.icon} {cfg.name} - Gr {studentGrade} ({topics.length})</span>
+              <button onClick={()=>setSidebarOpen(false)} className="w-6 h-6 rounded-lg flex items-center justify-center text-[10px] transition-all hover:opacity-70" style={{background:"var(--surface-2)",color:"var(--text-3)"}} title="Collapse sidebar">&laquo;</button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-2.5 space-y-2">
+              {topics.map(topic=>{
+                const mastery=masteryData.find((m:any)=>m.topic_tag===topic.title||m.chapter_number===topic.chapter_number);
+                const pct=mastery?.mastery_percent||0;
+                const lvl=mastery?.mastery_level||"not_started";
+                const lc:Record<string,string>={not_started:"#9ca3af",beginner:"#F59E0B",developing:"#3B82F6",proficient:"#8B5CF6",mastered:"#10B981"};
+                return(
+                  <button key={topic.id} onClick={()=>{setActiveTopic(topic);sendMessage("Teach me about: "+topic.title+" (Chapter "+topic.chapter_number+")");}} className="w-full text-left p-3 rounded-xl transition-all active:scale-[0.98]" style={{border:`1px solid ${(lc[lvl]||"#9ca3af")}25`,background:"var(--surface-1)"}}>
+                    <div className="text-xs font-bold truncate" style={{color:"var(--text-1)"}}>Ch {topic.chapter_number}: {topic.title}</div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <div className="w-16 h-1.5 rounded-full" style={{background:"var(--surface-2)"}}><div className="h-full rounded-full transition-all" style={{width:`${pct}%`,background:lc[lvl]||"#9ca3af"}}/></div>
+                      <span className="text-[10px] font-bold capitalize" style={{color:lc[lvl]||"#9ca3af"}}>{(lvl).replace("_"," ")}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
+
+        {/* Sidebar expand button (visible when collapsed, desktop only) */}
+        {!sidebarOpen&&<button onClick={()=>setSidebarOpen(true)} className="hidden lg:flex shrink-0 w-8 items-center justify-center border-r cursor-pointer transition-all hover:bg-[var(--surface-2)]" style={{background:"var(--surface-1)",borderColor:"var(--border)"}} title="Show chapters">
+          <span className="text-[10px]" style={{color:"var(--text-3)"}}>&raquo;</span>
+        </button>}
 
         {/* Chat column */}
         <div className="flex-1 flex flex-col min-w-0">
