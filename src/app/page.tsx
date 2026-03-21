@@ -251,11 +251,11 @@ export default function Home() {
               <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.7)' }}>🇮🇳 Startup India Recognized | ISO 27001 Certified</span>
             </div>
             <h1 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(28px, 5.5vw, 52px)', lineHeight: 1.15, color: '#fff', marginBottom: 18 }}>
-              India&apos;s Smartest AI Tutor<br/>for CBSE &amp; NCERT Students
+              India&apos;s Smartest AI Tutor<br/>for CBSE Students
             </h1>
             <p style={{ fontSize: 'clamp(15px, 2vw, 19px)', color: 'rgba(255,255,255,0.65)', lineHeight: 1.7, maxWidth: 580, margin: '0 auto 32px' }}>
               Foxy, your personal AI tutor, teaches at YOUR level — not your grade level.
-              Adaptive learning powered by Bayesian mastery tracking. Hindi, English &amp; 8 more languages.
+              Powered by Bayesian mastery tracking, spaced repetition &amp; adaptive learning. Hindi, English &amp; 8 more languages.
             </p>
             <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 12 }}>
               <button onClick={() => setStep('role')} style={{ padding: '14px 32px', borderRadius: 10, border: 'none', background: P.rose, color: '#fff', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>
@@ -271,7 +271,7 @@ export default function Home() {
         {/* ════ STATS BAR ════ */}
         <section style={{ maxWidth: 900, margin: '-40px auto 0', padding: '0 20px', position: 'relative', zIndex: 10 }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 0, background: '#fff', borderRadius: 16, boxShadow: '0 8px 32px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
-            {[['2,100+','Practice Questions'],['726','NCERT Chapters'],['16','Subjects Covered'],['6+','Indian Languages']].map(([v, l], i) => (
+            {[['2,100+','Practice Questions'],['726','CBSE Chapters'],['16','Subjects Covered'],['6+','Indian Languages']].map(([v, l], i) => (
               <div key={l} style={{ padding: 'clamp(16px, 3vw, 28px) 12px', textAlign: 'center', borderRight: i < 3 ? '1px solid rgba(0,0,0,0.06)' : 'none' }}>
                 <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(20px, 3vw, 32px)', color: P.rose }}>{v}</div>
                 <div style={{ fontSize: 'clamp(9px, 1.2vw, 12px)', color: P.text3, marginTop: 2, fontWeight: 600 }}>{l}</div>
@@ -290,7 +290,7 @@ export default function Home() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20 }}>
               {[
                 { step: '1', icon: '📝', title: 'Sign Up & Choose Subjects', desc: 'Create your free account in 60 seconds. Pick your grade, board, and subjects. Foxy assesses your current level automatically.' },
-                { step: '2', icon: '🦊', title: 'Learn with Foxy AI Tutor', desc: 'Ask questions in Hindi or English. Foxy teaches concepts, gives practice problems, creates quizzes, and tracks exactly what you know.' },
+                { step: '2', icon: '🦊', title: 'Learn with Foxy AI Tutor', desc: 'Ask questions in Hindi or English. Foxy teaches step by step, gives practice problems, creates quizzes, and tracks your mastery with spaced repetition.' },
                 { step: '3', icon: '📈', title: 'Track Progress & Master Topics', desc: 'Spaced repetition ensures you never forget. Parents get daily reports. Teachers see class mastery heatmaps.' },
               ].map(s => (
                 <div key={s.step} style={{ padding: '32px 24px', borderRadius: 16, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', position: 'relative' }}>
@@ -315,10 +315,10 @@ export default function Home() {
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
               {[
-                { icon: '🦊', t: 'Foxy AI Tutor', d: 'Ask any question in Hindi or English. Foxy explains like a teacher, step by step. Works in 6+ Indian languages.', bg: `${P.gold}15` },
+                { icon: '🦊', t: 'Foxy AI Tutor', d: 'Ask any question in Hindi or English. Foxy explains step by step with voice support. Math symbols, diagrams, and exam tips built in.', bg: `${P.gold}15` },
                 { icon: '🧠', t: 'Adaptive Learning Engine', d: 'AI tracks what you know using Bayesian mastery tracking. Every session targets your exact gaps.', bg: `${P.rose}0A` },
                 { icon: '🔄', t: 'Spaced Repetition', d: 'Never forget what you learned. The app reminds you to revise at the scientifically optimal time.', bg: `${P.teal}0A` },
-                { icon: '⚡', t: 'CBSE & NCERT Aligned', d: '726 chapters across 16 subjects. Every question mapped to NCERT textbooks and board exam patterns.', bg: `${P.navy}0A` },
+                { icon: '⚡', t: 'CBSE Aligned', d: '726 chapters across 16 subjects. Every question mapped to CBSE textbooks, competency frameworks, and board exam patterns.', bg: `${P.navy}0A` },
                 { icon: '🎤', t: 'Voice Conversations', d: 'Talk to Foxy like a real teacher. Indian English and Hindi voice support for hands-free learning.', bg: `${P.purple}0A` },
                 { icon: '🏆', t: 'Gamified & Fun', d: 'XP, streaks, leaderboards, and badges. Stay motivated with friendly competition and daily goals.', bg: `${P.green}0A` },
               ].map(f => (
@@ -343,7 +343,7 @@ export default function Home() {
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
               {[
-                { icon: '🎓', role: 'Students', color: P.purple, items: ['AI tutor that speaks your language', 'Practice with instant feedback', 'Spaced repetition to never forget', 'XP, streaks & leaderboards', 'Board exam preparation'] },
+                { icon: '🎓', role: 'Students', color: P.purple, items: ['AI tutor with voice & math symbols', 'Adaptive quizzes with instant feedback', 'Spaced repetition to never forget', 'XP, streaks & leaderboards', 'CBSE board exam preparation'] },
                 { icon: '👩\u200D🏫', role: 'Teachers', color: P.teal, items: ['Create classes with a shareable code', 'View student mastery at a glance', 'Assign quizzes and track completion', 'Identify weak topics class-wide', 'NEP 2020 compliant reports'] },
                 { icon: '👨\u200D👩\u200D👧', role: 'Parents', color: P.green, items: ['Daily activity summary of your child', 'Quiz scores and streak tracking', 'Weekly progress reports', 'Link multiple children', 'Zero setup required'] },
               ].map(r => (
@@ -373,7 +373,7 @@ export default function Home() {
               Trusted, Certified & Compliant
             </h2>
             <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.55)', lineHeight: 1.7, maxWidth: 500, margin: '0 auto 36px' }}>
-              Built by Curiosense Learning India Private Limited. Your data is protected by enterprise-grade security.
+              Built by Cusiosense Learning India Private Limited. Your data is protected by enterprise-grade security.
             </p>
             <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 16, marginBottom: 32 }}>
               {[
@@ -423,12 +423,12 @@ export default function Home() {
               <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>Adaptive Learning OS</span>
             </div>
             <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', lineHeight: 1.6, marginBottom: 8 }}>
-              A product of Curiosense Learning India Private Limited
+              A product of Cusiosense Learning India Private Limited
             </p>
             <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', lineHeight: 1.5 }}>
               Startup India Recognized | ISO 27001, 42001, 42005 & PCI-DSS Certified
-              <br/>Alfanumrik and Alfanumrik Adaptive Learning OS are registered trademarks of Curiosense Learning India Private Limited.
-              <br/>{'\u00A9'} {new Date().getFullYear()} Curiosense Learning India Private Limited. All rights reserved.
+              <br/>Alfanumrik and Alfanumrik Adaptive Learning OS are registered trademarks of Cusiosense Learning India Private Limited.
+              <br/>{'\u00A9'} {new Date().getFullYear()} Cusiosense Learning India Private Limited. All rights reserved.
             </p>
           </div>
         </footer>
