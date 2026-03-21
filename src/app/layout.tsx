@@ -3,24 +3,37 @@ import type { Metadata, Viewport } from 'next';
 import { AuthProvider } from '@/lib/AuthContext';
 
 export const metadata: Metadata = {
-  title: 'Alfanumrik — AI Learning OS',
+  title: 'Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE & NCERT Students',
   description:
-    'Personalised AI tutoring for Indian school students. CBSE/NCERT aligned. Hindi, English & 8 more languages.',
-  authors: [{ name: 'Alfanumrik' }],
+    'Alfanumrik is India\'s smartest AI-powered adaptive learning platform for CBSE and NCERT students. Foxy AI Tutor teaches in Hindi and English with Bayesian mastery tracking, spaced repetition, and gamified learning. Grades 6-12. Free to start.',
+  authors: [{ name: 'Curiosense Learning India Private Limited' }],
   manifest: '/manifest.json',
-  keywords: 'CBSE,NCERT,AI tutor,adaptive learning,Foxy,Hindi medium',
+  keywords: 'CBSE AI tutor, NCERT learning app, adaptive learning India, AI tutor Hindi, board exam preparation, Foxy AI tutor, spaced repetition CBSE, personalized learning India, class 9 science, class 10 math, online tutor India, NCERT solutions AI, Hindi medium tutor, Alfanumrik, Curiosense Learning',
   openGraph: {
-    title: 'Alfanumrik — AI Learning OS',
+    title: 'Alfanumrik - AI Tutor for CBSE & NCERT Students | Learn Smarter',
     description:
-      'Your AI tutor Foxy helps you master CBSE subjects in your own language.',
+      'Meet Foxy, your personal AI tutor that teaches at YOUR level. 726 NCERT chapters, 16 subjects, Hindi & English. Adaptive learning powered by Bayesian mastery tracking. Free for students.',
     locale: 'en_IN',
     type: 'website',
+    siteName: 'Alfanumrik Adaptive Learning OS',
   },
   twitter: {
-    card: 'summary',
-    title: 'Alfanumrik — AI Learning OS',
+    card: 'summary_large_image',
+    title: 'Alfanumrik - India\'s Smartest AI Tutor for CBSE Students',
     description:
-      'Your AI tutor Foxy helps you master CBSE subjects in your own language.',
+      'Foxy AI Tutor teaches CBSE & NCERT in Hindi and English. Adaptive learning, spaced repetition, gamified practice. Free to start.',
+    creator: '@alfanumrik',
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: { index: true, follow: true, 'max-snippet': -1, 'max-image-preview': 'large' as const },
+  },
+  alternates: {
+    canonical: 'https://alfanumrik.com',
+  },
+  other: {
+    'google-site-verification': '',
   },
 };
 
