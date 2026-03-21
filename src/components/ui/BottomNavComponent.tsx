@@ -285,7 +285,7 @@ export default function BottomNavComponent() {
         <div className="px-3 pt-4 mt-4 border-t" style={{ borderColor: 'var(--border)' }}>
           {collapsed ? <div className="text-center text-lg">🦊</div> : <div className="text-[11px] text-[var(--text-3)] leading-relaxed">
             <div>Alfanumrik Adaptive Learning OS</div>
-            <div className="mt-0.5">Curiosense Learning India Pvt Ltd</div>
+            <div className="mt-0.5">Cusiosense Learning India Pvt Ltd</div>
           </div>}
         </div>
       </aside>
