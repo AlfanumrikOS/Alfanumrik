@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react';
 
-const SUPABASE_URL = 'https://dxipobqngyfpqbbznojz.supabase.co';
-const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR4aXBvYnFuZ3lmcHFiYnpub2p6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4NjcxMzgsImV4cCI6MjA4ODQ0MzEzOH0.l-6_9kOkH1mXCGvNM0WzC8naEACGMCFaneEA7XxIhKc';
+// Rule 9: NEVER hardcode API keys — use environment variables
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 async function api(action: string, params: Record<string, unknown> = {}) {
   const res = await fetch(`${SUPABASE_URL}/functions/v1/teacher-dashboard`, {
@@ -62,16 +63,9 @@ function HeatmapTab({ data }: { data: any }) {
           </tbody>
         </table>
       </div>
-      <div style={{ display: 'flex', gap: 14, marginTop: 14, flexWrap: 'wrap' }}>
-        {[['#059669','Mastered 95%+'],['#7C3AED','Proficient 80-95%'],['#2563EB','Familiar 60-80%'],['#D97706','Attempted <60%'],['#1E293B','Not started']].map(([c,l])=>(
-          <span key={l} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#94A3B8' }}>
-            <span style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: c }} />{l}
-          </span>
-        ))}
-      </div>
       {selected && (
         <div style={{ marginTop: 12, padding: 12, backgroundColor: '#1E293B', borderRadius: 8, fontSize: 13, color: '#E2E8F0' }}>
-          <strong>{selected.student}</strong> on <strong>{selected.concept}</strong>: P(know) = {Math.round(selected.p_know * 100)}%, level = {selected.level}, {selected.attempts} attempts, streak = {selected.streak}
+          <strong>{selected.student}</strong> on <strong>{selected.concept}</strong>: P(know) = {Math.round(selected.p_know * 100)}%, level = {selected.level}, {selected.attempts} attempts
           <button onClick={() => setSelected(null)} style={{ marginLeft: 12, fontSize: 11, color: '#94A3B8', background: 'none', border: 'none', cursor: 'pointer' }}>✕</button>
         </div>
       )}
@@ -141,6 +135,7 @@ export default function TeacherPage() {
   const [tab, setTab] = useState('heatmap');
   const [loading, setLoading] = useState(true);
 
+  // TODO(production): Get teacher_id from auth session, not hardcoded
   const teacherId = '0f22d489-4f16-4893-ac40-053bb20ca318';
   const classId = 'c2dd070a-e7de-460d-b09c-309fc9503c30';
 
