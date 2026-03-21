@@ -1,5 +1,3 @@
-'use client';
-
 import { useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
@@ -66,6 +64,7 @@ export default function BottomNavComponent() {
   const auth = useAuth();
   const isHi = auth?.isHi ?? false;
   const [showMore, setShowMore] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
   const isActive = (href: string) => pathname === href || (href !== '/' && pathname.startsWith(href));
   const isMoreActive = MORE_ITEMS.some(m => isActive(m.href));
@@ -203,19 +202,21 @@ export default function BottomNavComponent() {
 
       {/* ─── Desktop Sidebar ──────────────── */}
       <aside
-        className="sidebar-nav flex-col border-r"
+        className={`sidebar-nav flex-col border-r ${collapsed ? 'sidebar-collapsed' : ''}`}
         style={{
           background: 'var(--surface-1)',
           borderColor: 'var(--border)',
-          width: 'var(--sidebar-width)',
+          width: collapsed ? '56px' : 'var(--sidebar-width)',
           height: '100dvh',
           position: 'fixed',
           top: 0,
           left: 0,
           zIndex: 50,
-          padding: '20px 12px',
+          padding: collapsed ? '20px 6px' : '20px 12px',
           justifyContent: 'space-between',
           overflowY: 'auto',
+          overflowX: 'hidden',
+          transition: 'width 0.25s ease, padding 0.25s ease',
         }}
       >
         {/* Brand */}
@@ -225,21 +226,29 @@ export default function BottomNavComponent() {
             className="flex items-center gap-2.5 px-3 mb-6 transition-opacity hover:opacity-80"
           >
             <span className="text-2xl">🦊</span>
-            <div>
+            {!collapsed && <div>
               <div className="text-base font-bold gradient-text" style={{ fontFamily: 'var(--font-display)' }}>
                 Alfanumrik
               </div>
               <div className="text-[10px] text-[var(--text-3)] -mt-0.5">AI Learning OS</div>
-            </div>
+            </div>}
+          </button>
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            className="w-full flex items-center justify-center py-2 mb-2 rounded-lg transition-all hover:bg-[var(--surface-2)]"
+            style={{ color: 'var(--text-3)' }}
+            title={collapsed ? 'Expand menu' : 'Collapse menu'}
+          >
+            <span style={{ fontSize: 12 }}>{collapsed ? '\u00BB' : '\u00AB'}</span>
           </button>
 
           {/* Grouped Nav Sections */}
           <div className="space-y-5">
             {SIDEBAR_SECTIONS.map(section => (
               <div key={section.title}>
-                <div className="text-[10px] font-bold text-[var(--text-3)] uppercase tracking-widest px-3 mb-1.5">
+                {!collapsed && <div className="text-[10px] font-bold text-[var(--text-3)] uppercase tracking-widest px-3 mb-1.5">
                   {isHi ? section.titleHi : section.title}
-                </div>
+                </div>}
                 <div className="space-y-0.5">
                   {section.items.map(item => {
                     const active = isActive(item.href);
@@ -259,8 +268,8 @@ export default function BottomNavComponent() {
                         }}
                       >
                         <span className="text-lg w-6 text-center">{item.icon}</span>
-                        <span>{isHi ? item.labelHi : item.label}</span>
-                        {active && (
+                        {!collapsed && <span>{isHi ? item.labelHi : item.label}</span>}
+                        {active && !collapsed && (
                           <span className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: 'var(--orange)' }} />
                         )}
                       </button>
@@ -274,10 +283,10 @@ export default function BottomNavComponent() {
 
         {/* Footer */}
         <div className="px-3 pt-4 mt-4 border-t" style={{ borderColor: 'var(--border)' }}>
-          <div className="text-[11px] text-[var(--text-3)] leading-relaxed">
+          {collapsed ? <div className="text-center text-lg">🦊</div> : <div className="text-[11px] text-[var(--text-3)] leading-relaxed">
             <div>Alfanumrik Learning OS v2.0</div>
             <div className="mt-0.5">Built with ❤️ in India</div>
-          </div>
+          </div>}
         </div>
       </aside>
     </>
