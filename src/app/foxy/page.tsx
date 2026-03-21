@@ -85,27 +85,69 @@ export default function FoxyPage(){
   const recognitionRef=useRef<any>(null);
 
   // ── Voice TTS: Find best Indian voice ──
+  // ── Preload voices (they load async in Chrome) ──
+  const voicesRef=useRef<SpeechSynthesisVoice[]>([]);
+  useEffect(()=>{
+    if(typeof window==='undefined'||!window.speechSynthesis)return;
+    const loadVoices=()=>{voicesRef.current=window.speechSynthesis.getVoices();};
+    loadVoices();
+    window.speechSynthesis.onvoiceschanged=loadVoices;
+    return()=>{window.speechSynthesis.onvoiceschanged=null;};
+  },[]);
+
   const speakText=useCallback((text:string)=>{
     if(!voiceEnabled||typeof window==='undefined'||!window.speechSynthesis)return;
     window.speechSynthesis.cancel();
-    // Clean text: remove formatting tokens for speech
-    const clean=text.replace(/\[KEY:\s*([^\]]+)\]/g,'$1').replace(/\[ANS:\s*([^\]]+)\]/g,'The answer is $1.').replace(/\[FORMULA:\s*([^\]]+)\]/g,'The formula is $1.').replace(/\[TIP:\s*([^\]]+)\]/g,'Exam tip: $1.').replace(/\[MARKS:\s*([^\]]+)\]/g,'This is a $1 marks question.').replace(/\[DIAGRAM:\s*([^\]]+)\]/g,'You should draw a diagram of $1.').replace(/<!--[\s\S]*?-->/g,'');
-    // Split into sentences for natural pausing
-    const sentences=clean.split(/(?<=[.!?])\s+/).filter(s=>s.trim().length>2);
-    const voices=window.speechSynthesis.getVoices();
-    // Prefer Indian English > Hindi > any English voice
-    const indianVoice=voices.find(v=>v.lang==='en-IN')||voices.find(v=>v.lang==='hi-IN'&&language==='hi')||voices.find(v=>v.name.toLowerCase().includes('india'))||voices.find(v=>v.lang.startsWith('en')&&v.name.toLowerCase().includes('female'))||voices.find(v=>v.lang.startsWith('en'));
-    setIsSpeaking(true);
-    sentences.forEach((sentence,i)=>{
-      const utter=new SpeechSynthesisUtterance(sentence);
-      if(indianVoice)utter.voice=indianVoice;
-      utter.rate=0.92; // Slightly slower for teaching clarity
-      utter.pitch=1.05; // Warm, slightly higher pitch
-      utter.volume=1;
-      utter.lang=language==='hi'?'hi-IN':'en-IN';
-      if(i===sentences.length-1)utter.onend=()=>setIsSpeaking(false);
-    window.speechSynthesis.speak(utter);
-    });
+    // Clean formatting tokens for natural speech
+    let clean=text;
+    clean=clean.replace(/\[KEY:\s*([^\]]+)\]/g,'$1');
+    clean=clean.replace(/\[ANS:\s*([^\]]+)\]/g,'The answer is $1.');
+    clean=clean.replace(/\[FORMULA:\s*([^\]]+)\]/g,'The formula is $1.');
+    clean=clean.replace(/\[TIP:\s*([^\]]+)\]/g,'Exam tip: $1.');
+    clean=clean.replace(/\[MARKS:\s*([^\]]+)\]/g,'This is a $1 marks question.');
+    clean=clean.replace(/\[DIAGRAM:\s*([^\]]+)\]/g,'You should draw a diagram of $1.');
+    clean=clean.replace(/<!--[\s\S]*?-->/g,'');
+    clean=clean.replace(/\n+/g,'. ').replace(/\s+/g,' ').trim();
+    if(!clean)return;
+
+    // Pick best Indian voice from preloaded list
+    const voices=voicesRef.current.length>0?voicesRef.current:window.speechSynthesis.getVoices();
+    const pickVoice=()=>{
+      if(language==='hi'){
+        return voices.find(v=>v.lang==='hi-IN')||voices.find(v=>v.lang.startsWith('hi'));
+      }
+      return voices.find(v=>v.lang==='en-IN')||voices.find(v=>v.name.toLowerCase().includes('india'))||voices.find(v=>v.name.toLowerCase().includes('rishi'))||voices.find(v=>v.lang.startsWith('en')&&v.name.toLowerCase().includes('female'))||voices.find(v=>v.lang.startsWith('en'))||null;
+    };
+    const voice=pickVoice();
+
+    // Speak as one utterance (more reliable across browsers than splitting)
+    const utter=new SpeechSynthesisUtterance(clean);
+    if(voice)utter.voice=voice;
+    utter.rate=0.9;
+    utter.pitch=1.05;
+    utter.volume=1;
+    utter.lang=language==='hi'?'hi-IN':'en-IN';
+    utter.onstart=()=>setIsSpeaking(true);
+    utter.onend=()=>setIsSpeaking(false);
+    utter.onerror=()=>setIsSpeaking(false);
+
+    // Chrome bug workaround: long utterances stop after ~15s. Chunk if needed.
+    if(clean.length>300){
+      // Split on sentence boundaries without lookbehind (mobile safe)
+      const chunks=clean.match(/[^.!?]+[.!?]+/g)||[clean];
+      setIsSpeaking(true);
+      chunks.forEach((chunk,i)=>{
+        const u=new SpeechSynthesisUtterance(chunk.trim());
+        if(voice)u.voice=voice;
+        u.rate=0.9;u.pitch=1.05;u.volume=1;
+        u.lang=language==='hi'?'hi-IN':'en-IN';
+        if(i===chunks.length-1)u.onend=()=>setIsSpeaking(false);
+        u.onerror=()=>setIsSpeaking(false);
+        window.speechSynthesis.speak(u);
+      });
+    } else {
+      window.speechSynthesis.speak(utter);
+    }
   },[voiceEnabled,language]);
 
   const stopSpeaking=useCallback(()=>{
