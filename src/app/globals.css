@@ -458,3 +458,15 @@ select.input-base option { background: var(--surface-1); color: var(--text-1); }
   .bottom-nav-mobile { display: block; }
   .app-shell { margin-left: 0; width: 100%; }
 }
+
+/* Collapsible sidebar */
+@media (min-width: 1024px) {
+  body:has(.sidebar-nav.sidebar-collapsed) .app-shell {
+    margin-left: 56px;
+    width: calc(100% - 56px);
+    transition: margin-left 0.25s ease, width 0.25s ease;
+  }
+  body:has(.sidebar-nav:not(.sidebar-collapsed)) .app-shell {
+    transition: margin-left 0.25s ease, width 0.25s ease;
+  }
+}
