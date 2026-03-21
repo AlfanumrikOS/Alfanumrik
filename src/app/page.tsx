@@ -55,35 +55,40 @@ export default function Home() {
   const [childInviteCode, setChildInviteCode] = useState('');
   const [linkResult, setLinkResult] = useState<string | null>(null);
 
-  // Handle logged-in users: check onboarding status
+  // Handle logged-in users: check onboarding status using RPC (works on any device)
   useEffect(() => {
     if (isLoading) return;
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return; // Not authenticated at all
-      // Check if any role has completed onboarding
-      const { data: stu } = await supabase.from('students').select('onboarding_completed').eq('auth_user_id', user.id).single();
-      if (stu?.onboarding_completed) { router.replace('/dashboard'); return; }
-      const { data: tch } = await supabase.from('teachers').select('onboarding_completed').eq('auth_user_id', user.id).single();
-      if (tch?.onboarding_completed) { router.replace('/dashboard'); return; }
-      const { data: gdn } = await supabase.from('guardians').select('onboarding_completed').eq('auth_user_id', user.id).single();
-      if (gdn?.onboarding_completed) { router.replace('/dashboard'); return; }
-      // User has auth session but hasn't completed onboarding — show profile form
-      setStep('profile');
+      if (!user) return;
+      // Single RPC checks all roles + onboarding status
+      const { data: roleData } = await supabase.rpc('get_user_role', { p_auth_user_id: user.id });
+      if (roleData) {
+        const rd = roleData as any;
+        // Route to correct dashboard if any role completed onboarding
+        if (rd.student?.onboarding_completed) { router.replace('/dashboard'); return; }
+        if (rd.teacher?.onboarding_completed) { router.replace('/teacher'); return; }
+        if (rd.guardian?.onboarding_completed) { router.replace('/parent'); return; }
+        // User exists but onboarding not done — show profile form
+        if (rd.roles?.length > 0) { setStep('profile'); return; }
+      }
+      // No role record at all — fresh user, stay on landing
     })();
   }, [isLoading, router]);
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (ev, sess) => {
       if ((ev === 'SIGNED_IN' || ev === 'TOKEN_REFRESHED') && sess?.user) {
         await refreshStudent();
-        // Check if user has completed onboarding in any role
-        const { data: stu } = await supabase.from('students').select('onboarding_completed').eq('auth_user_id', sess.user.id).single();
-        if (stu?.onboarding_completed) { router.replace('/dashboard'); return; }
-        const { data: tch } = await supabase.from('teachers').select('onboarding_completed').eq('auth_user_id', sess.user.id).single();
-        if (tch?.onboarding_completed) { router.replace('/dashboard'); return; }
-        const { data: gdn } = await supabase.from('guardians').select('onboarding_completed').eq('auth_user_id', sess.user.id).single();
-        if (gdn?.onboarding_completed) { router.replace('/dashboard'); return; }
-        // No onboarding completed — go to profile setup
+        // Single RPC checks all roles + onboarding status
+        const { data: roleData } = await supabase.rpc('get_user_role', { p_auth_user_id: sess.user.id });
+        if (roleData) {
+          const rd = roleData as any;
+          if (rd.student?.onboarding_completed) { router.replace('/dashboard'); return; }
+          if (rd.teacher?.onboarding_completed) { router.replace('/teacher'); return; }
+          if (rd.guardian?.onboarding_completed) { router.replace('/parent'); return; }
+          if (rd.roles?.length > 0) { setStep('profile'); return; }
+        }
+        // New user — show profile setup
         setStep('profile');
       }
     });
