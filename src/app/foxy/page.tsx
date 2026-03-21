@@ -14,11 +14,21 @@ const SUBJECTS: Record<string, {name:string;icon:string;color:string;symbols:str
   hindi:{name:"Hindi",icon:"\u0905",color:"#F59E0B",symbols:["\u0964","\u0965","\u0901","\u0902","\u0903","\u093D","\u094D","\u0950","\u20B9"],tools:["Shabdkosh","Vyakaran","Nibandh","Kavita"]},
   physics:{name:"Physics",icon:"\u26A1",color:"#EF4444",symbols:["F","m","a","v","t","s","\u03C9","\u03C4","\u03C1","\u03C3","\u03B5","\u03BC","\u03BB","\u03BD","\u0394","\u2192","\u22A5","\u2225","\u221D","\u210F","eV"],tools:["Formula Reference","Vector Visualizer","Circuit Builder","Motion Graphs"]},
   chemistry:{name:"Chemistry",icon:"\u2697",color:"#06B6D4",symbols:["\u2192","\u21CC","\u2191","\u2193","\u0394","\u00B0","\u207A","\u207B","\u00B7","\u2261","mol","aq","(s)","(l)","(g)","pH"],tools:["Periodic Table","Equation Balancer","Molarity Calc","VSEPR Shapes"]},
-  biology:{name:"Biology",icon:"\u2695",color:"#22C55E",symbols:["\u2642","\u2640","\u00D7","\u2192","\u21D2","ATP","DNA","RNA","mRNA","CO2","O2","H2O"],tools:["Cell Diagram","Taxonomy Tree","Body Systems","Genetics Calc"]}
+  biology:{name:"Biology",icon:"\u2695",color:"#22C55E",symbols:["\u2642","\u2640","\u00D7","\u2192","\u21D2","ATP","DNA","RNA","mRNA","CO2","O2","H2O"],tools:["Cell Diagram","Taxonomy Tree","Body Systems","Genetics Calc"]},
+  social_studies:{name:"Social Studies",icon:"\uD83C\uDF0D",color:"#D97706",symbols:["\u2192","\u2194","\u00B0","N","S","E","W","\u20B9","%"],tools:["Map Explorer","Timeline","Constitution","Current Affairs"]},
+  coding:{name:"Coding",icon:"\uD83D\uDCBB",color:"#6366F1",symbols:["{","}","(",")","=",">","<","&&","||","//","=>","[]"],tools:["Code Editor","Debug","Run","Docs"]}
 };
 
 const LANGS = [{code:"en",label:"EN"},{code:"hi",label:"HI"},{code:"hinglish",label:"Hing"}];
 const MODES = [{id:"learn",label:"Learn",em:"📖"},{id:"practice",label:"Practice",em:"✏️"},{id:"quiz",label:"Quiz",em:"⚡"},{id:"doubt",label:"Doubt",em:"❓"},{id:"revision",label:"Revise",em:"🔄"},{id:"notes",label:"Notes",em:"📝"}];
+
+// Grade-appropriate subjects (CBSE structure)
+function getGradeSubjects(grade:string):string[]{
+  const g=parseInt(grade)||9;
+  if(g<=10) return ["math","science","english","hindi","social_studies"];
+  if(g===11||g===12) return ["physics","chemistry","biology","math","english"];
+  return ["math","science","english","hindi","social_studies"];
+}
 
 async function sbGet(path:string){try{const r=await fetch(SB_URL+"/rest/v1/"+path,{headers:{apikey:SB_KEY,Authorization:"Bearer "+SB_KEY,"Content-Type":"application/json"}});if(!r.ok)return null;return r.json();}catch{return null;}}
 async function foxyCall(p:object){try{const r=await fetch(SB_URL+"/functions/v1/foxy-tutor",{method:"POST",headers:{Authorization:"Bearer "+SB_KEY,"Content-Type":"application/json"},body:JSON.stringify(p)});const data=await r.json();return data;}catch{return{reply:"Connection issue. Check your network and retry!"};}}
@@ -284,13 +294,23 @@ export default function FoxyPage(){
       setChatSessionId(hist[0].id);
       setMessages(hist[0].messages.map((m:any,i:number)=>({id:Date.now()+i,role:m.role==="assistant"?"tutor":m.role,content:m.content,timestamp:m.ts||new Date().toISOString(),xp:m.meta?.xp||0})));
     }
-    setStudentSelectedSubjects((authStudent.selected_subjects || [authStudent.preferred_subject].filter(Boolean)) as string[]);
+    // Set subjects for dropdown: use student's selected_subjects, or grade-appropriate defaults
+    const selSubs = (authStudent.selected_subjects && authStudent.selected_subjects.length > 1) 
+      ? authStudent.selected_subjects as string[]
+      : getGradeSubjects(grade);
+    setStudentSelectedSubjects(selSubs);
   })();// eslint-disable-next-line react-hooks/exhaustive-deps
   },[authStudent]);
 
   useEffect(()=>{(async()=>{
-    const d=await sbGet("curriculum_topics?grade=eq."+encodeURIComponent("Grade "+studentGrade)+"&parent_topic_id=is.null&is_active=eq.true&order=chapter_number,display_order&limit=50");
-    if(d)setTopics(d);
+    // Look up subject_id for the active subject to filter chapters correctly
+    const subj=await sbGet("subjects?code=eq."+activeSubject+"&is_active=eq.true&limit=1");
+    const subjId=subj&&subj[0]?subj[0].id:null;
+    // Fetch topics filtered by subject AND grade (handle both "7" and "Grade 7" formats)
+    const gradeFilter=encodeURIComponent("Grade "+studentGrade);
+    const baseQ="curriculum_topics?parent_topic_id=is.null&is_active=eq.true&order=chapter_number,display_order&limit=80&or=(grade.eq."+gradeFilter+",grade.eq."+studentGrade+")";
+    const d=await sbGet(subjId?baseQ+"&subject_id=eq."+subjId:baseQ);
+    if(d)setTopics(d); else setTopics([]);
     if(student?.id){const m=await sbGet("topic_mastery?student_id=eq."+student.id+"&subject=eq."+activeSubject+"&order=updated_at.desc");if(m)setMasteryData(m);}
   })();// eslint-disable-next-line react-hooks/exhaustive-deps
   },[activeSubject,studentGrade,student]);
