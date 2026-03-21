@@ -27,6 +27,7 @@ export interface Student {
   interests: string[] | null;
   weak_subjects: string[] | null;
   strong_subjects: string[] | null;
+  selected_subjects: string[] | null;
   daily_study_hours: number | null;
   account_status: string;
   parent_name: string | null;
