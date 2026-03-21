@@ -31,7 +31,7 @@ function fl(){if(li.length>0){el.push(<div key={"l"+el.length} className="my-3 p
 lines.forEach((line,idx)=>{const t=line.trim();if(t.startsWith("###")){fl();el.push(<h4 key={idx} className="text-sm font-bold mt-4 mb-2 uppercase tracking-wide" style={{color:c.color}}>{c.icon+" "+t.replace(/^###\s*/,"")}</h4>);}else if(t.startsWith("##")){fl();el.push(<h3 key={idx} className="text-base font-bold mt-4 mb-2 pb-2" style={{borderBottom:"2px solid "+c.color+"30"}}>{t.replace(/^##\s*/,"")}</h3>);}else if(t.startsWith(">")){fl();el.push(<div key={idx} className="my-3 px-4 py-3 rounded-xl text-sm leading-relaxed" style={{background:c.color+"08",border:"1px solid "+c.color+"25"}}>{renderInline(t.replace(/^>\s*/,""),c)}</div>);}else if(/^\d+[.)]\s/.test(t)){if(lk!=="num"){fl();lk="num";}li.push(t.replace(/^\d+[.)]\s*/,""));}else if(/^[-\u2022*]\s/.test(t)){if(lk!=="bul"){fl();lk="bul";}li.push(t.replace(/^[-\u2022*]\s*/,""));}else if(!t){fl();el.push(<div key={idx} className="h-2"/>);}else{fl();el.push(<p key={idx} className="my-1.5 leading-[1.75] text-[var(--text-2)]">{renderInline(t,c)}</p>);}});fl();return <div>{el}</div>;}
 
 /* ── Chat Input (mobile-optimized) ── */
-function ChatInput({onSubmit,subject,disabled}:{onSubmit:(t:string)=>void;subject:string;disabled:boolean}){
+function ChatInput({onSubmit,subject,disabled,onMicTap,isListening}:{onSubmit:(t:string)=>void;subject:string;disabled:boolean;onMicTap?:()=>void;isListening?:boolean}){
   const[text,setText]=useState("");const taRef=useRef<HTMLTextAreaElement>(null);
   const c=SUBJECTS[subject]||SUBJECTS.science;
   const send=()=>{if(!text.trim()||disabled)return;onSubmit(text.trim());setText("");if(taRef.current){taRef.current.style.height="auto";}};
@@ -42,6 +42,10 @@ function ChatInput({onSubmit,subject,disabled}:{onSubmit:(t:string)=>void;subjec
       <textarea ref={taRef} value={text} onChange={autoGrow} onKeyDown={handleKey} placeholder="Ask Foxy anything..." rows={1}
         className="flex-1 text-sm rounded-2xl px-4 py-2.5 resize-none outline-none leading-relaxed"
         style={{background:"var(--surface-2)",border:"1.5px solid var(--border)",fontFamily:"var(--font-body)",maxHeight:120,minHeight:40}}/>
+      {onMicTap&&<button onClick={onMicTap} className="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-lg transition-all active:scale-90"
+        style={{background:isListening?"#EF444420":"var(--surface-2)",border:isListening?"2px solid #EF4444":"1.5px solid var(--border)"}}>
+        {isListening?"🔴":"🎤"}
+      </button>}
       <button onClick={send} disabled={disabled||!text.trim()}
         className="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-white text-lg font-bold transition-all active:scale-90 disabled:opacity-40"
         style={{background:text.trim()?`linear-gradient(135deg,${c.color},${c.color}dd)`:"var(--surface-2)",color:text.trim()?"#fff":"var(--text-3)"}}>
@@ -75,6 +79,40 @@ export default function FoxyPage(){
   const[selectedChapters,setSelectedChapters]=useState<string[]>([]);
   const[studentSelectedSubjects,setStudentSelectedSubjects]=useState<string[]>([]);
   const endRef=useRef<HTMLDivElement>(null);
+  const[voiceEnabled,setVoiceEnabled]=useState(false);
+  const[isSpeaking,setIsSpeaking]=useState(false);
+  const[isListening,setIsListening]=useState(false);
+  const recognitionRef=useRef<any>(null);
+
+  // ── Voice TTS: Find best Indian voice ──
+  const speakText=useCallback((text:string)=>{
+    if(!voiceEnabled||typeof window==='undefined'||!window.speechSynthesis)return;
+    window.speechSynthesis.cancel();
+    // Clean text: remove formatting tokens for speech
+    const clean=text.replace(/\[KEY:\s*([^\]]+)\]/g,'$1').replace(/\[ANS:\s*([^\]]+)\]/g,'The answer is $1.').replace(/\[FORMULA:\s*([^\]]+)\]/g,'The formula is $1.').replace(/\[TIP:\s*([^\]]+)\]/g,'Exam tip: $1.').replace(/\[MARKS:\s*([^\]]+)\]/g,'This is a $1 marks question.').replace(/\[DIAGRAM:\s*([^\]]+)\]/g,'You should draw a diagram of $1.').replace(/<!--[\s\S]*?-->/g,'');
+    // Split into sentences for natural pausing
+    const sentences=clean.split(/(?<=[.!?])\s+/).filter(s=>s.trim().length>2);
+    const voices=window.speechSynthesis.getVoices();
+    // Prefer Indian English > Hindi > any English voice
+    const indianVoice=voices.find(v=>v.lang==='en-IN')||voices.find(v=>v.lang==='hi-IN'&&language==='hi')||voices.find(v=>v.name.toLowerCase().includes('india'))||voices.find(v=>v.lang.startsWith('en')&&v.name.toLowerCase().includes('female'))||voices.find(v=>v.lang.startsWith('en'));
+    setIsSpeaking(true);
+    sentences.forEach((sentence,i)=>{
+      const utter=new SpeechSynthesisUtterance(sentence);
+      if(indianVoice)utter.voice=indianVoice;
+      utter.rate=0.92; // Slightly slower for teaching clarity
+      utter.pitch=1.05; // Warm, slightly higher pitch
+      utter.volume=1;
+      utter.lang=language==='hi'?'hi-IN':'en-IN';
+      if(i===sentences.length-1)utter.onend=()=>setIsSpeaking(false);
+    window.speechSynthesis.speak(utter);
+    });
+  },[voiceEnabled,language]);
+
+  const stopSpeaking=useCallback(()=>{
+    if(typeof window!=='undefined'&&window.speechSynthesis){window.speechSynthesis.cancel();setIsSpeaking(false);}
+  },[]);
+
+
 
   useEffect(()=>{if(!authLoading&&!isLoggedIn)routerNav.replace("/");},[authLoading,isLoggedIn,routerNav]);
 
@@ -107,12 +145,34 @@ export default function FoxyPage(){
       const resp=await foxyCall({message:text,student_id:student?.id||"",student_name:student?.name||"Student",grade:studentGrade,subject:activeSubject,language,mode:sessionMode,topic_id:activeTopic?.id||null,topic_title:activeTopic?.title||null,session_id:chatSessionId,selected_chapters:chapContext});
       const reply=resp.reply||resp.response||resp.message||"Let me think...";const xp=resp.xp_earned||0;
       setMessages(p=>[...p,{id:Date.now()+1,role:"tutor",content:reply,timestamp:new Date().toISOString(),xp}]);
+      if(voiceEnabled)setTimeout(()=>speakText(reply),300);
       if(xp>0)setXpGained(p=>p+xp);if(resp.session_id)setChatSessionId(resp.session_id);
       setFoxyState("happy");setTimeout(()=>setFoxyState("idle"),2000);
     }catch{setMessages(p=>[...p,{id:Date.now()+1,role:"tutor",content:"Oops! Please resend.",timestamp:new Date().toISOString()}]);setFoxyState("idle");}
     setLoading(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[student,studentGrade,activeSubject,language,sessionMode,activeTopic,chatSessionId]);
+
+  // ── Speech-to-Text: Mic input for conversational mode ──
+  const startListening=useCallback(()=>{
+    if(typeof window==='undefined')return;
+    const SpeechRecognition=(window as any).SpeechRecognition||(window as any).webkitSpeechRecognition;
+    if(!SpeechRecognition){alert('Speech recognition not supported in this browser. Try Chrome.');return;}
+    const recognition=new SpeechRecognition();
+    recognition.continuous=false;
+    recognition.interimResults=false;
+    recognition.lang=language==='hi'?'hi-IN':'en-IN';
+    recognition.onstart=()=>setIsListening(true);
+    recognition.onresult=(event:any)=>{const transcript=event.results[0][0].transcript;if(transcript.trim())sendMessage(transcript.trim());};
+    recognition.onerror=()=>setIsListening(false);
+    recognition.onend=()=>setIsListening(false);
+    recognitionRef.current=recognition;
+    recognition.start();
+  },[language,sendMessage]);
+
+  const stopListening=useCallback(()=>{
+    if(recognitionRef.current){recognitionRef.current.stop();setIsListening(false);}
+  },[]);
 
   const cfg=SUBJECTS[activeSubject]||SUBJECTS.science;
   const FOXY:Record<string,string>={idle:"\uD83E\uDD8A",thinking:"\uD83E\uDD14",happy:"\uD83D\uDE04"};
@@ -137,6 +197,10 @@ export default function FoxyPage(){
         </div>
         <div className="flex items-center gap-1.5">
           {LANGS.map(l=><button key={l.code} onClick={()=>setLanguage(l.code)} className="text-[10px] font-bold px-2 py-1 rounded-lg transition-all" style={{background:language===l.code?"rgba(255,255,255,0.2)":"transparent",color:language===l.code?"#fff":"rgba(255,255,255,0.4)"}}>{l.label}</button>)}
+          {/* Voice toggle */}
+          <button onClick={()=>{if(voiceEnabled){stopSpeaking();setVoiceEnabled(false);}else{setVoiceEnabled(true);}}} className="ml-1 px-2 py-1 rounded-lg text-sm transition-all" style={{background:voiceEnabled?"rgba(245,166,35,0.3)":"rgba(255,255,255,0.1)"}} title={voiceEnabled?"Voice ON - Foxy will speak":"Enable Foxy voice"}>
+            {voiceEnabled?(isSpeaking?"🔊":"🔈"):"🔇"}
+          </button>
         </div>
       </header>
 
@@ -251,7 +315,7 @@ export default function FoxyPage(){
               <div className="text-center py-12 md:py-20 animate-slide-up">
                 <div className="text-6xl md:text-7xl mb-4 animate-float">{FOXY.idle}</div>
                 <h2 className="text-xl md:text-2xl font-extrabold mb-2" style={{fontFamily:"var(--font-display)",background:`linear-gradient(135deg,#E8590C,${cfg.color})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>Hi! I am Foxy</h2>
-                <p className="text-sm text-[var(--text-3)] max-w-sm mx-auto mb-6 leading-relaxed">Your AI tutor. Pick a topic or type anything below!</p>
+                <p className="text-sm text-[var(--text-3)] max-w-sm mx-auto mb-6 leading-relaxed">Your AI tutor. Pick a topic, type below, or tap 🎤 to talk!</p>
                 {/* Quick prompts */}
                 <div className="flex flex-wrap gap-2 justify-center max-w-md mx-auto">
                   {["What should I study today?","Quick quiz","Explain last topic","Formula sheet","Weak areas"].map((text,i)=>(
@@ -295,7 +359,7 @@ export default function FoxyPage(){
           </div>
 
           {/* Chat input */}
-          <ChatInput onSubmit={sendMessage} subject={activeSubject} disabled={loading}/>
+          <ChatInput onSubmit={sendMessage} subject={activeSubject} disabled={loading} onMicTap={isListening?stopListening:startListening} isListening={isListening}/>
         </div>
       </div>
 
@@ -332,6 +396,11 @@ export default function FoxyPage(){
           </div>
         </>
       )}
+
+      {/* Stop speaking floating button */}
+      {isSpeaking&&<button onClick={stopSpeaking} className="fixed bottom-20 right-4 z-50 w-12 h-12 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-all" style={{background:"#EF4444",color:"#fff",fontSize:18,boxShadow:"0 4px 20px rgba(239,68,68,0.4)"}}>
+        <span style={{fontSize:20}}>&#x25A0;</span>
+      </button>}
 
       <BottomNav/>
 
