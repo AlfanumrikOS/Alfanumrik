@@ -21,7 +21,7 @@ const LANGS = [{code:"en",label:"EN"},{code:"hi",label:"HI"},{code:"hinglish",la
 const MODES = [{id:"learn",label:"Learn",em:"📖"},{id:"practice",label:"Practice",em:"✏️"},{id:"quiz",label:"Quiz",em:"⚡"},{id:"doubt",label:"Doubt",em:"❓"},{id:"revision",label:"Revise",em:"🔄"},{id:"notes",label:"Notes",em:"📝"}];
 
 async function sbGet(path:string){try{const r=await fetch(SB_URL+"/rest/v1/"+path,{headers:{apikey:SB_KEY,Authorization:"Bearer "+SB_KEY,"Content-Type":"application/json"}});if(!r.ok)return null;return r.json();}catch{return null;}}
-async function foxyCall(p:object){try{const r=await fetch(SB_URL+"/functions/v1/foxy-tutor",{method:"POST",headers:{Authorization:"Bearer "+SB_KEY,"Content-Type":"application/json"},body:JSON.stringify(p)});if(!r.ok)return{reply:"Foxy is resting. Try again!"};return r.json();}catch{return{reply:"Connection issue. Retry!"};}}
+async function foxyCall(p:object){try{const r=await fetch(SB_URL+"/functions/v1/foxy-tutor",{method:"POST",headers:{Authorization:"Bearer "+SB_KEY,"Content-Type":"application/json"},body:JSON.stringify(p)});const data=await r.json();return data;}catch{return{reply:"Connection issue. Check your network and retry!"};}}
 
 /* ── Rich text renderer (preserving all existing logic) ── */
 function cleanMd(t:string):string{return t.replace(/\*\*([^*]+)\*\*/g,"[KEY: $1]").replace(/__([^_]+)__/g,"[KEY: $1]").replace(/\*([^*]+)\*/g,"$1").replace(/_([^_]+)_/g,"$1").replace(/`([^`]+)`/g,"[FORMULA: $1]").replace(/^#{1,4}\s+/gm,"");}
@@ -380,7 +380,7 @@ export default function FoxyPage(){
               {(studentSelectedSubjects.length>0?studentSelectedSubjects:Object.keys(SUBJECTS)).map(key=>{
                 const sub=SUBJECTS[key]; if(!sub) return null;
                 return(
-                  <button key={key} onClick={()=>{setActiveSubject(key);setActiveTopic(null);setSelectedChapters([]);setShowSubjectDD(false);}} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-all" style={{background:activeSubject===key?`${sub.color}08`:"transparent",borderLeft:activeSubject===key?`3px solid ${sub.color}`:"3px solid transparent"}}>
+                  <button key={key} onClick={()=>{setActiveSubject(key);setActiveTopic(null);setSelectedChapters([]);setShowSubjectDD(false);setMessages([]);setChatSessionId(null);localStorage.setItem('alfanumrik_subject',key);}} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-all" style={{background:activeSubject===key?`${sub.color}08`:"transparent",borderLeft:activeSubject===key?`3px solid ${sub.color}`:"3px solid transparent"}}>
                     <span className="text-base">{sub.icon}</span>
                     <span className="text-sm font-semibold" style={{color:activeSubject===key?sub.color:"var(--text-1)"}}>{sub.name}</span>
                     {activeSubject===key&&<span className="ml-auto text-xs" style={{color:sub.color}}>\u2713</span>}
