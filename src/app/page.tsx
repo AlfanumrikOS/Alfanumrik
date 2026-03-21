@@ -32,6 +32,7 @@ export default function Home() {
   const [step, setStep] = useState<Step>('landing');
   const [role, setRole] = useState<Role>('student');
   const [activeSpotlight, setActiveSpotlight] = useState(0);
+  const [mobileMenu, setMobileMenu] = useState(false);
   /* Auth */
   const [email, setEmail] = useState(''); const [phone, setPhone] = useState('');
   const [authMethod, setAuthMethod] = useState<'email'|'phone'>('email');
@@ -200,7 +201,6 @@ export default function Home() {
      LANDING PAGE
   ════════════════════════════════════════════════════════ */
   if (step === 'landing') {
-    const [mobileMenu, setMobileMenu] = useState(false);
 
     return (
       <div style={{ background: '#fff', fontFamily: 'var(--font-body)' }}>
