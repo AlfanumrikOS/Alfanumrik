@@ -278,6 +278,12 @@ export default function FoxyPage(){
     setLanguage(authStudent.preferred_language||"en");
     const subj=typeof window!=="undefined"?(localStorage.getItem("alfanumrik_subject")||authStudent.preferred_subject||"science"):(authStudent.preferred_subject||"science");
     setActiveSubject(subj);
+    // Load most recent chat session for this student
+    const hist=await sbGet("chat_sessions?student_id=eq."+authStudent.id+"&order=updated_at.desc&limit=1");
+    if(hist&&hist[0]&&hist[0].messages&&hist[0].messages.length>0){
+      setChatSessionId(hist[0].id);
+      setMessages(hist[0].messages.map((m:any,i:number)=>({id:Date.now()+i,role:m.role==="assistant"?"tutor":m.role,content:m.content,timestamp:m.ts||new Date().toISOString(),xp:m.meta?.xp||0})));
+    }
     setStudentSelectedSubjects((authStudent.selected_subjects || [authStudent.preferred_subject].filter(Boolean)) as string[]);
   })();// eslint-disable-next-line react-hooks/exhaustive-deps
   },[authStudent]);
@@ -496,17 +502,19 @@ export default function FoxyPage(){
 
             {/* Messages */}
             {messages.map((msg:any)=>(
-              <div key={msg.id} className={`flex mb-4 gap-2.5 items-start ${msg.role==="student"?"justify-end":"justify-start"}`} style={{animation:"fadeInUp 0.3s ease"}}>
-                {msg.role==="tutor"&&<div className="w-8 h-8 md:w-9 md:h-9 rounded-full flex items-center justify-center text-base shrink-0" style={{background:"linear-gradient(135deg,#E8590C,#F59E0B)"}}>{FOXY.idle}</div>}
-                <div className="relative" style={{maxWidth:"min(85%, 520px)"}}>
-                  <div className={`px-4 py-3 text-sm leading-relaxed ${msg.role==="student"?"rounded-2xl rounded-br-sm":"rounded-2xl rounded-bl-sm"}`}
-                    style={{background:msg.role==="student"?`linear-gradient(135deg,${cfg.color},${cfg.color}dd)`:"var(--surface-1)",color:msg.role==="student"?"#fff":"var(--text-1)",border:msg.role==="tutor"?"1px solid var(--border)":"none",boxShadow:msg.role==="student"?`0 2px 12px ${cfg.color}20`:"0 1px 6px rgba(0,0,0,0.04)"}}>
-                    {msg.role==="tutor"?<Rich content={msg.content} subject={activeSubject}/>:<div className="whitespace-pre-wrap">{msg.content}</div>}
-                    <div className="text-[10px] opacity-40 mt-1.5 text-right">{new Date(msg.timestamp).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}</div>
-                  </div>
-                  {msg.xp>0&&<div className="absolute -top-2 -right-2 px-2 py-0.5 rounded-lg text-[10px] font-extrabold text-white" style={{background:"linear-gradient(135deg,#F59E0B,#EF4444)"}}>+{msg.xp} XP</div>}
+              <div key={msg.id} className="mb-4 w-full" style={{animation:"fadeInUp 0.3s ease"}}>
+                {/* Label row: avatar + name + time */}
+                <div className="flex items-center gap-2 mb-1.5">
+                  {msg.role==="tutor"?<div className="w-6 h-6 rounded-full flex items-center justify-center text-xs shrink-0" style={{background:"linear-gradient(135deg,#E8590C,#F59E0B)"}}>{FOXY.idle}</div>:<div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] text-white font-bold shrink-0" style={{background:`linear-gradient(135deg,${cfg.color},${cfg.color}bb)`}}>{student?.name?student.name[0].toUpperCase():"S"}</div>}
+                  <span className="text-xs font-bold" style={{color:msg.role==="tutor"?"var(--orange)":cfg.color}}>{msg.role==="tutor"?"Foxy":(student?.name||"You")}</span>
+                  <span className="text-[10px] text-[var(--text-3)]">{new Date(msg.timestamp).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}</span>
+                  {msg.xp>0&&<span className="ml-auto px-2 py-0.5 rounded-lg text-[10px] font-extrabold text-white" style={{background:"linear-gradient(135deg,#F59E0B,#EF4444)"}}>+{msg.xp} XP</span>}
                 </div>
-                {msg.role==="student"&&<div className="w-8 h-8 rounded-full flex items-center justify-center text-xs text-white font-bold shrink-0" style={{background:`linear-gradient(135deg,${cfg.color},${cfg.color}bb)`}}>{student?.name?student.name[0].toUpperCase():"S"}</div>}
+                {/* Content: full width */}
+                <div className="w-full rounded-2xl px-4 py-3 text-sm leading-relaxed"
+                  style={{background:msg.role==="student"?`${cfg.color}08`:"var(--surface-1)",color:"var(--text-1)",border:msg.role==="student"?`1.5px solid ${cfg.color}20`:"1px solid var(--border)"}}>
+                  {msg.role==="tutor"?<Rich content={msg.content} subject={activeSubject}/>:<div className="whitespace-pre-wrap">{msg.content}</div>}
+                </div>
               </div>
             ))}
 
