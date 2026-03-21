@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react';
 
-const SUPABASE_URL = 'https://dxipobqngyfpqbbznojz.supabase.co';
-const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR4aXBvYnFuZ3lmcHFiYnpub2p6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4NjcxMzgsImV4cCI6MjA4ODQ0MzEzOH0.l-6_9kOkH1mXCGvNM0WzC8naEACGMCFaneEA7XxIhKc';
+// Rule 9: NEVER hardcode API keys — use environment variables
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 async function nepApi(action: string, params: Record<string, unknown> = {}) {
   const res = await fetch(`${SUPABASE_URL}/functions/v1/nep-compliance`, {
@@ -46,6 +47,7 @@ export default function HPCPage() {
   const [hpc, setHpc] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
+  // TODO(production): Get student_id from auth session, not hardcoded
   const studentId = 'c64920ff-ca82-47e3-9991-26051ca8a6cd';
 
   useEffect(() => {
