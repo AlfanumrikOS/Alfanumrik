@@ -1,221 +1,269 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { useAuth } from '@/lib/AuthContext';
-import { supabase } from '@/lib/supabase';
-import { Card, Button, Input, LoadingFoxy, BottomNav } from '@/components/ui';
+import { useAuth } from '@/lib/supabase';
 
-export default function TeacherDashboard() {
-  const { teacher, isLoggedIn, isLoading } = useAuth();
-  const router = useRouter();
-  const [classes, setClasses] = useState<any[]>([]);
-  const [students, setStudents] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'overview' | 'classes' | 'create'>('overview');
-  const [className, setClassName] = useState('');
-  const [classGrade, setClassGrade] = useState('9');
-  const [classSection, setClassSection] = useState('A');
-  const [creating, setCreating] = useState(false);
-  const [activeClass, setActiveClass] = useState<string | null>(null);
-  const [copyMsg, setCopyMsg] = useState('');
+const SUPABASE_URL = 'https://dxipobqngyfpqbbznojz.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR4aXBvYnFuZ3lmcHFiYnpub2p6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4NjcxMzgsImV4cCI6MjA4ODQ0MzEzOH0.l-6_9kOkH1mXCGvNM0WzC8naEACGMCFaneEA7XxIhKc';
 
-  useEffect(() => { if (!isLoading && !isLoggedIn) router.replace('/'); }, [isLoading, isLoggedIn, router]);
+async function api(action: string, params: Record<string, unknown> = {}) {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/teacher-dashboard`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON },
+    body: JSON.stringify({ action, ...params }),
+  });
+  return res.json();
+}
 
-  const loadData = useCallback(async () => {
-    if (!teacher) return;
-    setLoading(true);
-    const { data: cls } = await supabase.from('classes').select('*').eq('created_by', teacher.id).eq('is_active', true).order('created_at', { ascending: false });
-    setClasses(cls || []);
-    if (cls && cls.length > 0 && !activeClass) setActiveClass(cls[0].id);
+function heatColor(p: number) {
+  if (p >= 0.95) return '#059669';
+  if (p >= 0.80) return '#7C3AED';
+  if (p >= 0.60) return '#2563EB';
+  if (p >= 0.30) return '#D97706';
+  if (p > 0.1) return '#F59E0B';
+  return '#1E293B';
+}
 
-    // Get total student count across all classes
-    if (cls && cls.length > 0) {
-      const classIds = cls.map((c: any) => c.id);
-      const { data: stu } = await supabase.from('class_students').select('*, students(id, name, grade, xp_total, streak_days, last_active, preferred_subject)').in('class_id', classIds);
-      setStudents(stu || []);
-    }
-    setLoading(false);
-  }, [teacher, activeClass]);
+const SEV: Record<string, { bg: string; border: string }> = {
+  critical: { bg: '#DC2626', border: '#EF4444' },
+  high: { bg: '#EA580C', border: '#F97316' },
+  medium: { bg: '#D97706', border: '#F59E0B' },
+  low: { bg: '#2563EB', border: '#3B82F6' },
+};
 
-  useEffect(() => { if (teacher) loadData(); }, [teacher, loadData]);
-
-  const createClass = async () => {
-    if (!teacher || !className.trim()) return;
-    setCreating(true);
-    const code = (className.trim().substring(0, 3) + classGrade + classSection + Math.random().toString(36).substring(2, 5)).toUpperCase();
-    const { error } = await supabase.from('classes').insert({
-      name: className.trim(), grade: classGrade, section: classSection,
-      class_code: code, created_by: teacher.id, school_id: null, is_active: true,
-    });
-    if (!error) { setClassName(''); setTab('classes'); loadData(); }
-    setCreating(false);
-  };
-
-  const copyCode = (code: string) => {
-    navigator.clipboard.writeText(code);
-    setCopyMsg(code);
-    setTimeout(() => setCopyMsg(''), 2000);
-  };
-
-  if (isLoading) return <LoadingFoxy />;
-
-  const classStudents = students.filter(s => s.class_id === activeClass);
-  const activeClassData = classes.find(c => c.id === activeClass);
-
+function HeatmapTab({ data }: { data: any }) {
+  const [selected, setSelected] = useState<any>(null);
+  if (!data?.matrix?.length) return <div style={{ padding: 40, textAlign: 'center', color: '#475569', fontStyle: 'italic' }}>No mastery data yet — students need to start practicing.</div>;
+  const concepts = (data.concepts || []).slice(0, 12);
   return (
-    <div className="mesh-bg min-h-dvh pb-nav">
-      <header className="page-header" style={{ background: 'rgba(251,248,244,0.88)', backdropFilter: 'blur(20px)' }}>
-        <div className="app-container py-3 flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>👩‍🏫 Teacher Dashboard</h1>
-            <p className="text-[11px] text-[var(--text-3)]">{teacher?.name || 'Teacher'} | {teacher?.school_name || 'School'}</p>
-          </div>
-          <button onClick={() => router.push('/profile')} className="text-sm px-3 py-1.5 rounded-xl" style={{ background: 'var(--surface-2)', color: 'var(--text-2)' }}>Profile</button>
-        </div>
-      </header>
-
-      {/* Tab bar */}
-      <div className="app-container pt-3 pb-1">
-        <div className="flex gap-1 p-1 rounded-xl" style={{ background: 'var(--surface-2)' }}>
-          {([['overview', 'Overview'], ['classes', 'My Classes'], ['create', '+ Create']] as const).map(([t, l]) => (
-            <button key={t} onClick={() => setTab(t)} className="flex-1 py-2 rounded-lg text-xs font-bold transition-all"
-              style={{ background: tab === t ? 'var(--surface-1)' : 'transparent', color: tab === t ? 'var(--text-1)' : 'var(--text-3)', boxShadow: tab === t ? '0 1px 4px rgba(0,0,0,0.06)' : 'none' }}>{l}</button>
-          ))}
-        </div>
+    <div className="td-card">
+      <div className="td-card-head"><h3>Mastery heatmap</h3><span className="td-badge">{data.student_count} students × {data.concept_count} concepts</span></div>
+      <div style={{ overflowX: 'auto', marginTop: 14 }}>
+        <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12 }}>
+          <thead><tr>
+            <th style={{ padding: '6px 8px', color: '#64748B', fontWeight: 500, fontSize: 10, textAlign: 'left', borderBottom: '1px solid #1E293B', minWidth: 110 }}>Student</th>
+            <th style={{ padding: '6px 4px', color: '#64748B', fontWeight: 500, fontSize: 10, textAlign: 'center', borderBottom: '1px solid #1E293B' }}>Avg</th>
+            {concepts.map((c: any, i: number) => <th key={i} style={{ padding: '6px 4px', color: '#64748B', fontWeight: 500, fontSize: 10, textAlign: 'center', borderBottom: '1px solid #1E293B' }} title={c.title}><div style={{ fontSize: 10 }}>Ch{c.chapter}</div></th>)}
+          </tr></thead>
+          <tbody>
+            {data.matrix.map((row: any, ri: number) => (
+              <tr key={ri}>
+                <td style={{ padding: '6px 8px', color: '#E2E8F0', fontWeight: 500, fontSize: 13, whiteSpace: 'nowrap' }}>{row.student_name}</td>
+                <td style={{ padding: '6px 4px', textAlign: 'center', fontWeight: 600, color: '#E2E8F0', fontSize: 13 }}>{row.avg_mastery}%</td>
+                {(row.cells || []).slice(0, 12).map((cell: any, ci: number) => (
+                  <td key={ci} style={{ padding: '5px 3px', textAlign: 'center', cursor: 'pointer' }}
+                    onClick={() => setSelected({ student: row.student_name, concept: concepts[ci]?.title, ...cell })}>
+                    <span style={{ display: 'inline-block', minWidth: 32, padding: '4px 2px', borderRadius: 4, fontSize: 10, fontWeight: 500, backgroundColor: heatColor(cell.p_know), color: '#fff', opacity: cell.attempts > 0 ? 1 : 0.3 }}>
+                      {cell.attempts > 0 ? Math.round(cell.p_know * 100) : '—'}
+                    </span>
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
-
-      <main className="app-container py-4 space-y-4">
-        {loading ? (
-          <div className="text-center py-16"><div className="text-4xl animate-float mb-3">👩‍🏫</div><p className="text-sm text-[var(--text-3)]">Loading...</p></div>
-        ) : tab === 'overview' ? (
-          <>
-            {/* Stats overview */}
-            <div className="grid grid-cols-3 gap-3">
-              <Card><div className="text-center"><div className="text-2xl font-extrabold" style={{ color: '#0891B2' }}>{classes.length}</div><div className="text-[10px] text-[var(--text-3)] font-semibold mt-1">Classes</div></div></Card>
-              <Card><div className="text-center"><div className="text-2xl font-extrabold" style={{ color: 'var(--orange)' }}>{students.length}</div><div className="text-[10px] text-[var(--text-3)] font-semibold mt-1">Students</div></div></Card>
-              <Card><div className="text-center"><div className="text-2xl font-extrabold" style={{ color: '#16A34A' }}>{teacher?.subjects_taught?.length || 0}</div><div className="text-[10px] text-[var(--text-3)] font-semibold mt-1">Subjects</div></div></Card>
-            </div>
-
-            {/* Recent activity from students */}
-            <Card>
-              <h3 className="text-sm font-bold mb-3" style={{ fontFamily: 'var(--font-display)' }}>Your Students</h3>
-              {students.length > 0 ? (
-                <div className="space-y-2">
-                  {students.slice(0, 10).map((s: any) => (
-                    <div key={s.id} className="flex items-center gap-3 p-2.5 rounded-xl" style={{ background: 'var(--surface-2)' }}>
-                      <div className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold text-white" style={{ background: 'linear-gradient(135deg, #0891B2, #06B6D4)' }}>
-                        {s.students?.name?.[0] || '?'}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-semibold truncate">{s.students?.name || 'Student'}</div>
-                        <div className="text-[10px] text-[var(--text-3)]">Grade {s.students?.grade} | {s.students?.xp_total || 0} XP | {s.students?.streak_days || 0}d streak</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-8">
-                  <div className="text-4xl mb-3">📚</div>
-                  <p className="text-sm text-[var(--text-3)] mb-3">No students yet. Create a class and share the code!</p>
-                  <Button onClick={() => setTab('create')}>Create First Class</Button>
-                </div>
-              )}
-            </Card>
-          </>
-        ) : tab === 'classes' ? (
-          <>
-            {classes.length === 0 ? (
-              <Card>
-                <div className="text-center py-8">
-                  <div className="text-4xl mb-3">📋</div>
-                  <p className="text-sm text-[var(--text-3)] mb-3">No classes yet</p>
-                  <Button onClick={() => setTab('create')}>Create First Class</Button>
-                </div>
-              </Card>
-            ) : (
-              <>
-                {/* Class tabs */}
-                <div className="flex gap-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
-                  {classes.map(c => (
-                    <button key={c.id} onClick={() => setActiveClass(c.id)} className="shrink-0 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
-                      style={{ background: activeClass === c.id ? '#0891B2' : 'var(--surface-1)', color: activeClass === c.id ? '#fff' : 'var(--text-2)', border: '1px solid var(--border)' }}>
-                      {c.name}
-                    </button>
-                  ))}
-                </div>
-
-                {activeClassData && (
-                  <Card>
-                    <div className="flex items-center justify-between mb-3">
-                      <div>
-                        <h3 className="text-base font-bold" style={{ fontFamily: 'var(--font-display)' }}>{activeClassData.name}</h3>
-                        <p className="text-[11px] text-[var(--text-3)]">Grade {activeClassData.grade} | Section {activeClassData.section}</p>
-                      </div>
-                      <button onClick={() => copyCode(activeClassData.class_code)} className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all active:scale-95"
-                        style={{ background: copyMsg === activeClassData.class_code ? '#16A34A15' : '#0891B215', color: copyMsg === activeClassData.class_code ? '#16A34A' : '#0891B2', border: '1px solid ' + (copyMsg === activeClassData.class_code ? '#16A34A30' : '#0891B230') }}>
-                        {copyMsg === activeClassData.class_code ? 'Copied!' : `Code: ${activeClassData.class_code}`}
-                      </button>
-                    </div>
-                    <p className="text-xs text-[var(--text-3)] mb-3">Share this code with students so they can join your class</p>
-
-                    {/* Students in this class */}
-                    {classStudents.length > 0 ? (
-                      <div className="space-y-2">
-                        {classStudents.map((s: any) => (
-                          <div key={s.id} className="flex items-center gap-3 p-2.5 rounded-xl" style={{ background: 'var(--surface-2)' }}>
-                            <div className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold text-white" style={{ background: 'linear-gradient(135deg, #0891B2, #06B6D4)' }}>
-                              {s.students?.name?.[0] || '?'}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="text-sm font-semibold truncate">{s.students?.name || 'Student'}</div>
-                              <div className="text-[10px] text-[var(--text-3)]">{s.students?.xp_total || 0} XP | {s.students?.streak_days || 0}d streak</div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-center text-sm text-[var(--text-3)] py-4">No students in this class yet. Share the class code!</p>
-                    )}
-                  </Card>
-                )}
-              </>
-            )}
-          </>
-        ) : (
-          /* Create Class */
-          <Card>
-            <div className="text-center mb-4">
-              <div className="text-4xl mb-2">📋</div>
-              <h2 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>Create a New Class</h2>
-              <p className="text-xs text-[var(--text-3)] mt-1">Students will join using the class code</p>
-            </div>
-            <div className="space-y-3">
-              <Input placeholder="Class name (e.g. 9-A Science)" value={className} onChange={e => setClassName(e.target.value)} />
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] text-[var(--text-3)] font-bold uppercase tracking-wide mb-1 block">Grade</label>
-                  <select value={classGrade} onChange={e => setClassGrade(e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-xl text-sm font-semibold" style={{ background: 'var(--surface-2)', border: '1.5px solid var(--border)', color: 'var(--text-1)' }}>
-                    {['6', '7', '8', '9', '10', '11', '12'].map(g => <option key={g} value={g}>Grade {g}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[10px] text-[var(--text-3)] font-bold uppercase tracking-wide mb-1 block">Section</label>
-                  <select value={classSection} onChange={e => setClassSection(e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-xl text-sm font-semibold" style={{ background: 'var(--surface-2)', border: '1.5px solid var(--border)', color: 'var(--text-1)' }}>
-                    {['A', 'B', 'C', 'D', 'E'].map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </div>
-              </div>
-              <Button fullWidth onClick={createClass} disabled={creating || !className.trim()}>
-                {creating ? 'Creating...' : 'Create Class'}
-              </Button>
-            </div>
-          </Card>
-        )}
-      </main>
-      <BottomNav />
+      <div style={{ display: 'flex', gap: 14, marginTop: 14, flexWrap: 'wrap' }}>
+        {[['#059669', 'Mastered 95%+'], ['#7C3AED', 'Proficient 80-95%'], ['#2563EB', 'Familiar 60-80%'], ['#D97706', 'Attempted <60%'], ['#1E293B', 'Not started']].map(([c, l]) => (
+          <span key={l} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#94A3B8' }}>
+            <span style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: c }} />{l}
+          </span>
+        ))}
+      </div>
+      {selected && (
+        <div style={{ marginTop: 12, padding: 12, backgroundColor: '#1E293B', borderRadius: 8, fontSize: 13, color: '#E2E8F0' }}>
+          <strong>{selected.student}</strong> on <strong>{selected.concept}</strong>: P(know) = {Math.round(selected.p_know * 100)}%, level = {selected.level}, {selected.attempts} attempts, streak = {selected.streak}
+          <button onClick={() => setSelected(null)} style={{ marginLeft: 12, fontSize: 11, color: '#94A3B8', background: 'none', border: 'none', cursor: 'pointer' }}>✕</button>
+        </div>
+      )}
     </div>
   );
 }
+
+function AlertsTab({ alerts, onResolve }: { alerts: any[]; onResolve: (id: string) => void }) {
+  if (!alerts?.length) return <div className="td-card"><div className="td-card-head"><h3>At-risk alerts</h3></div><div style={{ padding: 30, textAlign: 'center', color: '#475569', fontStyle: 'italic' }}>No at-risk students detected.</div></div>;
+  return (
+    <div className="td-card">
+      <div className="td-card-head"><h3>At-risk alerts</h3><span className="td-badge" style={{ backgroundColor: '#DC2626' }}>{alerts.length}</span></div>
+      <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {alerts.map((a: any) => {
+          const s = SEV[a.severity] || SEV.medium;
+          return (
+            <div key={a.id} style={{ backgroundColor: '#1E293B', borderRadius: 8, padding: 12, borderLeft: `3px solid ${s.border}` }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4, backgroundColor: s.bg, color: '#fff', textTransform: 'uppercase' as const }}>{a.severity}</span>
+                  <span style={{ marginLeft: 8, fontWeight: 600, color: '#F1F5F9', fontSize: 14 }}>{a.title}</span>
+                </div>
+                <button onClick={() => onResolve(a.id)} style={{ padding: '4px 10px', background: 'transparent', color: '#94A3B8', border: '1px solid #334155', borderRadius: 6, fontSize: 11, cursor: 'pointer' }}>Resolve</button>
+              </div>
+              <p style={{ color: '#94A3B8', fontSize: 13, margin: '6px 0' }}>{a.description}</p>
+              {a.recommended_action && <p style={{ color: '#6366F1', fontSize: 12, margin: 0, fontStyle: 'italic' }}>Action: {a.recommended_action}</p>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function PollTab({ classId, teacherId }: { classId: string; teacherId: string }) {
+  const [q, setQ] = useState('');
+  const [opts, setOpts] = useState(['', '', '', '']);
+  const [correctIdx, setCorrectIdx] = useState(0);
+  const [poll, setPoll] = useState<any>(null);
+  const [results, setResults] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+
+  const launch = async () => {
+    if (!q.trim()) return;
+    setLoading(true);
+    const data = await api('launch_poll', { teacher_id: teacherId, class_id: classId, question_text: q, options: opts.filter(o => o.trim()), correct_index: correctIdx, question_type: 'mcq', time_limit: 60 });
+    setPoll(data); setResults(null); setLoading(false);
+  };
+  const close = async () => {
+    if (!poll?.poll_id) return;
+    const data = await api('close_poll', { teacher_id: teacherId, poll_id: poll.poll_id });
+    setResults(data); setPoll(null);
+  };
+
+  return (
+    <div className="td-card">
+      <div className="td-card-head"><h3>Classroom response</h3>{poll && <span className="td-badge" style={{ backgroundColor: '#059669' }}>LIVE</span>}</div>
+      {!poll && !results && (
+        <div style={{ marginTop: 14 }}>
+          <input className="td-input" placeholder="Type your question..." value={q} onChange={e => setQ(e.target.value)} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, margin: '10px 0' }}>
+            {opts.map((o, i) => (
+              <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input type="radio" name="c" checked={correctIdx === i} onChange={() => setCorrectIdx(i)} style={{ accentColor: '#6366F1' }} />
+                <input className="td-input" style={{ margin: 0, flex: 1 }} placeholder={`Option ${String.fromCharCode(65 + i)}`} value={o} onChange={e => { const n = [...opts]; n[i] = e.target.value; setOpts(n); }} />
+              </div>
+            ))}
+          </div>
+          <button className="td-btn-primary" onClick={launch} disabled={loading}>{loading ? 'Launching...' : 'Launch to class'}</button>
+        </div>
+      )}
+      {poll && !results && (
+        <div style={{ marginTop: 14, backgroundColor: '#1E293B', borderRadius: 8, padding: 14 }}>
+          <p style={{ color: '#F1F5F9', fontSize: 15, fontWeight: 600, margin: '0 0 8px' }}>{poll.question_text || q}</p>
+          <p style={{ color: '#6366F1', fontSize: 24, fontWeight: 700, margin: '8px 0' }}>{poll.response_count ?? 0} responded</p>
+          <button className="td-btn-primary" style={{ backgroundColor: '#DC2626', marginTop: 10 }} onClick={close}>Close poll</button>
+        </div>
+      )}
+      {results && (
+        <div style={{ marginTop: 14, backgroundColor: '#1E293B', borderRadius: 8, padding: 14 }}>
+          <span style={{ color: '#059669', fontWeight: 700, fontSize: 18 }}>{results.accuracy_pct}% correct</span>
+          <button onClick={() => { setResults(null); setQ(''); setOpts(['', '', '', '']); }} style={{ marginLeft: 12, padding: '4px 10px', background: 'transparent', color: '#6366F1', border: '1px solid #6366F1', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>New question</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function TeacherPage() {
+  const { teacher, isLoading: authLoading } = useAuth();
+  const [dash, setDash] = useState<any>(null);
+  const [heatmap, setHeatmap] = useState<any>(null);
+  const [alerts, setAlerts] = useState<any[]>([]);
+  const [tab, setTab] = useState('heatmap');
+  const [loading, setLoading] = useState(true);
+
+  const teacherId = teacher?.id || '0f22d489-4f16-4893-ac40-053bb20ca318';
+  const classId = 'c2dd070a-e7de-460d-b09c-309fc9503c30';
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const [d, h, a] = await Promise.all([
+      api('get_dashboard', { teacher_id: teacherId }),
+      api('get_heatmap', { teacher_id: teacherId, class_id: classId, subject: 'math' }),
+      api('get_alerts', { teacher_id: teacherId, class_id: classId }),
+    ]);
+    setDash(d); setHeatmap(h); setAlerts(a.alerts || []);
+    setLoading(false);
+  }, [teacherId]);
+
+  useEffect(() => { if (!authLoading) load(); }, [authLoading, load]);
+
+  const resolveAlert = async (id: string) => {
+    await api('resolve_alert', { teacher_id: teacherId, alert_id: id });
+    setAlerts(a => a.filter(x => x.id !== id));
+  };
+
+  if (loading || authLoading) return (
+    <div style={pageStyle}>
+      <div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}>
+        <div style={{ width: 40, height: 40, border: '3px solid #1E293B', borderTopColor: '#6366F1', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />
+        Loading teacher dashboard...
+      </div>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </div>
+  );
+
+  const cls = dash?.classes?.[0];
+  const tabs = [
+    { id: 'heatmap', label: 'Mastery heatmap' },
+    { id: 'alerts', label: `Alerts${alerts.length ? ` (${alerts.length})` : ''}` },
+    { id: 'poll', label: 'Classroom response' },
+  ];
+
+  return (
+    <div style={pageStyle}>
+      <style>{`
+        @keyframes spin{to{transform:rotate(360deg)}}
+        .td-card{background:#0F172A;border-radius:14px;padding:18px 20px;border:1px solid #1E293B}
+        .td-card-head{display:flex;justify-content:space-between;align-items:center}
+        .td-card-head h3{font-size:16px;font-weight:600;color:#F1F5F9;margin:0}
+        .td-badge{font-size:11px;font-weight:600;padding:3px 10px;border-radius:99px;background:#1E293B;color:#94A3B8}
+        .td-input{width:100%;padding:10px 12px;background:#1E293B;border:1px solid #334155;border-radius:8px;color:#E2E8F0;font-size:14px;outline:none;box-sizing:border-box;margin-bottom:8px}
+        .td-btn-primary{padding:10px 20px;background:#6366F1;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;width:100%}
+        .td-btn-primary:disabled{opacity:0.5;cursor:default}
+      `}</style>
+
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid #1E293B' }}>
+        <div>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: '#F8FAFC', margin: 0 }}>{dash?.teacher?.name || teacher?.name || 'Teacher Dashboard'}</h1>
+          <p style={{ fontSize: 14, color: '#64748B', margin: '4px 0 0' }}>
+            {cls?.name || 'Class 9-A'} ({cls?.student_count || 0} students)
+            {cls?.avg_mastery != null && <span style={{ color: '#6366F1', marginLeft: 8 }}>Avg mastery: {cls.avg_mastery}%</span>}
+          </p>
+        </div>
+        <button onClick={load} style={{ padding: '8px 16px', background: 'transparent', color: '#6366F1', border: '1px solid #6366F1', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Refresh</button>
+      </header>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
+        {[
+          { label: 'Students', val: dash?.stats?.total_students || 0, color: '#6366F1' },
+          { label: 'Alerts', val: dash?.stats?.active_alerts || 0, color: (dash?.stats?.critical_alerts || 0) > 0 ? '#DC2626' : '#D97706' },
+          { label: 'Assignments', val: dash?.stats?.active_assignments || 0, color: '#059669' },
+        ].map((s, i) => (
+          <div key={i} style={{ backgroundColor: '#0F172A', borderRadius: 12, padding: '14px 16px', border: '1px solid #1E293B' }}>
+            <p style={{ color: '#64748B', fontSize: 11, margin: 0, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>{s.label}</p>
+            <p style={{ color: s.color, fontSize: 26, fontWeight: 700, margin: '4px 0 0' }}>{s.val}</p>
+          </div>
+        ))}
+      </div>
+
+      <nav style={{ display: 'flex', gap: 4, padding: 4, backgroundColor: '#0F172A', borderRadius: 10, border: '1px solid #1E293B', marginBottom: 16 }}>
+        {tabs.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)} style={{
+            padding: '8px 16px', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer',
+            fontWeight: tab === t.id ? 600 : 500,
+            backgroundColor: tab === t.id ? '#6366F1' : 'transparent',
+            color: tab === t.id ? '#fff' : '#64748B',
+          }}>{t.label}</button>
+        ))}
+      </nav>
+
+      {tab === 'heatmap' && <HeatmapTab data={heatmap} />}
+      {tab === 'alerts' && <AlertsTab alerts={alerts} onResolve={resolveAlert} />}
+      {tab === 'poll' && <PollTab classId={classId} teacherId={teacherId} />}
+    </div>
+  );
+}
+
+const pageStyle: React.CSSProperties = {
+  maxWidth: 960, margin: '0 auto', padding: '20px 16px',
+  fontFamily: "'Plus Jakarta Sans', 'Sora', system-ui, sans-serif",
+  color: '#E2E8F0', backgroundColor: '#0B1120', minHeight: '100vh',
+};
