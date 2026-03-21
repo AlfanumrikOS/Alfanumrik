@@ -104,7 +104,7 @@ export default function SimulationsPage() {
           Interactive Lab
         </h1>
         <p style={{ fontSize: '13px', opacity: 0.8, marginTop: '6px', maxWidth: '400px', margin: '6px auto 0' }}>
-          Explore NCERT concepts with interactive simulations. Drag sliders, click buttons, and learn by doing!
+          Explore CBSE concepts with interactive simulations. Drag sliders, click buttons, and learn by doing!
         </p>
       </div>
 
