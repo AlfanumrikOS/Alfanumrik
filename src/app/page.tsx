@@ -204,9 +204,52 @@ export default function Home() {
 
     return (
       <div style={{ background: '#fff', fontFamily: 'var(--font-body)' }}>
+        {/* ═══ INLINE RESPONSIVE STYLES ═══ */}
+        <style dangerouslySetInnerHTML={{ __html: `
+          .lp-stats { display: grid; grid-template-columns: repeat(2, 1fr); }
+          .lp-steps { display: grid; grid-template-columns: 1fr; gap: 16px; }
+          .lp-features { display: grid; grid-template-columns: 1fr; gap: 12px; }
+          .lp-roles { display: grid; grid-template-columns: 1fr; gap: 12px; }
+          .lp-badges { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+          .lp-hero { padding: 48px 16px 72px; text-align: center; position: relative; overflow: hidden; }
+          .lp-section { padding: 40px 16px; }
+          .lp-cta { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+          .lp-nav-inner { max-width: 1200px; margin: 0 auto; padding: 0 16px; height: 100%; display: flex; align-items: center; justify-content: space-between; }
+          .lp-stats-wrap { max-width: 900px; margin: -28px auto 0; padding: 0 16px; position: relative; z-index: 10; }
+          .lp-container { max-width: 1100px; margin: 0 auto; width: 100%; }
+
+          @media (min-width: 400px) {
+            .lp-cta { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 12px; }
+          }
+          @media (min-width: 480px) {
+            .lp-features { grid-template-columns: repeat(2, 1fr); gap: 14px; }
+          }
+          @media (min-width: 640px) {
+            .lp-stats { grid-template-columns: repeat(4, 1fr); }
+            .lp-steps { grid-template-columns: repeat(3, 1fr); gap: 20px; }
+            .lp-roles { grid-template-columns: repeat(2, 1fr); gap: 14px; }
+            .lp-hero { padding: 72px 20px 88px; }
+            .lp-section { padding: 64px 20px; }
+            .lp-nav-inner { padding: 0 20px; }
+            .lp-stats-wrap { margin-top: -40px; padding: 0 20px; }
+            .lp-badges { gap: 16px; }
+          }
+          @media (min-width: 900px) {
+            .lp-features { grid-template-columns: repeat(3, 1fr); gap: 16px; }
+            .lp-roles { grid-template-columns: repeat(3, 1fr); gap: 16px; }
+          }
+          @media (min-width: 1024px) {
+            .lp-hero { padding: 100px 20px 100px; }
+            .lp-section { padding: 80px 20px; }
+          }
+          @media (max-width: 374px) {
+            .lp-hero h1 { font-size: clamp(22px, 7vw, 28px) !important; }
+            .lp-section h2 { font-size: clamp(18px, 5vw, 24px) !important; }
+          }
+        ` }} />
         {/* ════ NAV ════ */}
         <nav style={{ position: 'sticky', top: 0, zIndex: 100, background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(0,0,0,0.05)', height: 64 }}>
-          <div className="landing-nav-inner">
+          <div className="lp-nav-inner">
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ fontSize: 28 }}>🦊</span>
               <div>
@@ -244,7 +287,7 @@ export default function Home() {
         </nav>
 
         {/* ════ HERO ════ */}
-        <section className="landing-hero" style={{ background: `linear-gradient(135deg, ${P.navy} 0%, #0F2942 60%, #1A365D 100%)` }}>
+        <section className="lp-hero" style={{ background: `linear-gradient(135deg, ${P.navy} 0%, #0F2942 60%, #1A365D 100%)` }}>
           <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 80% 60% at 50% 40%, rgba(232,88,28,0.08) 0%, transparent 60%)', pointerEvents: 'none' }} />
           <div style={{ maxWidth: 760, margin: '0 auto', position: 'relative', zIndex: 1 }}>
             <div style={{ display: 'inline-block', padding: '6px 16px', borderRadius: 20, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)', marginBottom: 20 }}>
@@ -257,7 +300,7 @@ export default function Home() {
               Foxy, your personal AI tutor, teaches at YOUR level — not your grade level.
               Powered by Bayesian mastery tracking, spaced repetition &amp; adaptive learning. Hindi, English &amp; 8 more languages.
             </p>
-            <div className="hero-cta">
+            <div className="lp-cta">
               <button onClick={() => setStep('role')} style={{ padding: '14px 32px', borderRadius: 10, border: 'none', background: P.rose, color: '#fff', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, cursor: 'pointer', width: '100%', maxWidth: 240 }}>
                 Start Learning Free
               </button>
@@ -269,8 +312,8 @@ export default function Home() {
         </section>
 
         {/* ════ STATS BAR ════ */}
-        <section className="landing-stats-wrapper">
-          <div className="landing-stats-grid" style={{ background: '#fff', borderRadius: 16, boxShadow: '0 8px 32px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+        <section className="lp-stats-wrap">
+          <div className="lp-stats" style={{ background: '#fff', borderRadius: 16, boxShadow: '0 8px 32px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
             {[['2,100+','Practice Questions'],['726','CBSE Chapters'],['16','Subjects Covered'],['6+','Indian Languages']].map(([v, l]) => (
               <div key={l} style={{ padding: 'clamp(14px, 3vw, 28px) 8px', textAlign: 'center', borderBottom: '1px solid rgba(0,0,0,0.04)', borderRight: '1px solid rgba(0,0,0,0.04)' }}>
                 <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(18px, 3vw, 32px)', color: P.rose }}>{v}</div>
@@ -281,13 +324,13 @@ export default function Home() {
         </section>
 
         {/* ════ HOW IT WORKS ════ */}
-        <section id="how-it-works" className="landing-section" style={{ textAlign: 'center' }}>
-          <div className="landing-container" style={{ margin: '0 auto' }}>
+        <section id="how-it-works" className="lp-section" style={{ textAlign: 'center' }}>
+          <div className="lp-container" style={{ margin: '0 auto' }}>
             <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(22px, 3.5vw, 34px)', color: P.navy, marginBottom: 10 }}>How Alfanumrik Works</h2>
             <p style={{ fontSize: 14, color: P.text2, lineHeight: 1.7, maxWidth: 500, margin: '0 auto 40px' }}>
               Three steps to transform learning outcomes. No complex setup required.
             </p>
-            <div className="landing-steps-grid">
+            <div className="lp-steps">
               {[
                 { step: '1', icon: '📝', title: 'Sign Up & Choose Subjects', desc: 'Create your free account in 60 seconds. Pick your grade, board, and subjects. Foxy assesses your current level automatically.' },
                 { step: '2', icon: '🦊', title: 'Learn with Foxy AI Tutor', desc: 'Ask questions in Hindi or English. Foxy teaches step by step, gives practice problems, creates quizzes, and tracks your mastery with spaced repetition.' },
@@ -305,15 +348,15 @@ export default function Home() {
         </section>
 
         {/* ════ FEATURES ════ */}
-        <section id="features" className="landing-section" style={{ background: P.lightBg }}>
-          <div className="landing-container" style={{ margin: '0 auto' }}>
+        <section id="features" className="lp-section" style={{ background: P.lightBg }}>
+          <div className="lp-container" style={{ margin: '0 auto' }}>
             <h2 style={{ textAlign: 'center', fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(22px, 3.5vw, 34px)', color: P.navy, marginBottom: 10 }}>
               Why Students Love Alfanumrik
             </h2>
             <p style={{ textAlign: 'center', fontSize: 14, color: P.text2, lineHeight: 1.7, maxWidth: 500, margin: '0 auto 40px' }}>
               Evidence-backed learning science meets AI. Built specifically for Indian school students.
             </p>
-            <div className="landing-features-grid">
+            <div className="lp-features">
               {[
                 { icon: '🦊', t: 'Foxy AI Tutor', d: 'Ask any question in Hindi or English. Foxy explains step by step with voice support. Math symbols, diagrams, and exam tips built in.', bg: `${P.gold}15` },
                 { icon: '🧠', t: 'Adaptive Learning Engine', d: 'AI tracks what you know using Bayesian mastery tracking. Every session targets your exact gaps.', bg: `${P.rose}0A` },
@@ -333,15 +376,15 @@ export default function Home() {
         </section>
 
         {/* ════ FOR WHOM ════ */}
-        <section id="for-whom" className="landing-section">
-          <div className="landing-container" style={{ margin: '0 auto', textAlign: 'center' }}>
+        <section id="for-whom" className="lp-section">
+          <div className="lp-container" style={{ margin: '0 auto', textAlign: 'center' }}>
             <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(22px, 3.5vw, 34px)', color: P.navy, marginBottom: 10 }}>
               Built for Every Stakeholder
             </h2>
             <p style={{ fontSize: 14, color: P.text2, lineHeight: 1.7, maxWidth: 500, margin: '0 auto 40px' }}>
               One platform. Different experiences. Students learn, teachers monitor, parents stay informed.
             </p>
-            <div className="landing-roles-grid">
+            <div className="lp-roles">
               {[
                 { icon: '🎓', role: 'Students', color: P.purple, items: ['AI tutor with voice & math symbols', 'Adaptive quizzes with instant feedback', 'Spaced repetition to never forget', 'XP, streaks & leaderboards', 'CBSE board exam preparation'] },
                 { icon: '👩\u200D🏫', role: 'Teachers', color: P.teal, items: ['Create classes with a shareable code', 'View student mastery at a glance', 'Assign quizzes and track completion', 'Identify weak topics class-wide', 'NEP 2020 compliant reports'] },
@@ -375,7 +418,7 @@ export default function Home() {
             <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.55)', lineHeight: 1.7, maxWidth: 500, margin: '0 auto 36px' }}>
               Built by Cusiosense Learning India Private Limited. Your data is protected by enterprise-grade security.
             </p>
-            <div className="landing-badges" style={{ marginBottom: 32 }}>
+            <div className="lp-badges" style={{ marginBottom: 32 }}>
               {[
                 { badge: '🇮🇳', label: 'Startup India\nRecognized' },
                 { badge: '🛡️', label: 'ISO 27001\nInformation Security' },
@@ -395,7 +438,7 @@ export default function Home() {
         </section>
 
         {/* ════ CTA ════ */}
-        <section className="landing-section" style={{ textAlign: 'center' }}>
+        <section className="lp-section" style={{ textAlign: 'center' }}>
           <div style={{ maxWidth: 560, margin: '0 auto' }}>
             <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(22px, 4vw, 36px)', color: P.navy, marginBottom: 10 }}>
               Ready to Learn Smarter?
@@ -403,7 +446,7 @@ export default function Home() {
             <p style={{ fontSize: 14, color: P.text2, lineHeight: 1.7, marginBottom: 28 }}>
               Join thousands of students, teachers, and parents across India. Free to start, no credit card needed.
             </p>
-            <div className="hero-cta">
+            <div className="lp-cta">
               <button onClick={() => setStep('role')} style={{ padding: '14px 36px', borderRadius: 10, border: 'none', background: P.rose, color: '#fff', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>
                 Get Started Free
               </button>
