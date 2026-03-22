@@ -411,28 +411,180 @@ export default function Home() {
 
         {/* ════ TRUST & SECURITY ════ */}
         <section id="trust" style={{ background: P.navy, padding: 'clamp(40px, 6vw, 64px) 16px' }}>
-          <div style={{ maxWidth: 900, margin: '0 auto', textAlign: 'center' }}>
+          <div style={{ maxWidth: 980, margin: '0 auto', textAlign: 'center' }}>
             <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(22px, 3vw, 30px)', color: '#fff', marginBottom: 10 }}>
               Trusted, Certified & Compliant
             </h2>
             <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.55)', lineHeight: 1.7, maxWidth: 500, margin: '0 auto 36px' }}>
               Built by Cusiosense Learning India Private Limited. Your data is protected by enterprise-grade security.
             </p>
-            <div className="lp-badges" style={{ marginBottom: 32 }}>
-              {[
-                { badge: '🇮🇳', label: 'Startup India\nRecognized' },
-                { badge: '🛡️', label: 'ISO 27001\nInformation Security' },
-                { badge: '🤖', label: 'ISO 42001\nAI Management' },
-                { badge: '📋', label: 'ISO 42005\nAI Governance' },
-                { badge: '💳', label: 'PCI-DSS\nData Protection' },
-                { badge: '📖', label: 'NEP 2020\nAligned' },
-                { badge: '📝', label: 'CBSE\nCompliant' },
-              ].map(b => (
-                <div key={b.label} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, minWidth: 80 }}>
-                  <div style={{ width: 52, height: 52, borderRadius: 12, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>{b.badge}</div>
-                  <span style={{ fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.5)', textAlign: 'center', whiteSpace: 'pre-line', lineHeight: 1.3 }}>{b.label}</span>
+            <div className="lp-badges" style={{ marginBottom: 32, gap: 28, alignItems: 'flex-start' }}>
+
+              {/* ── Startup India — Tricolor circular emblem ── */}
+              <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:8, width: 110 }}>
+                <svg width="90" height="100" viewBox="0 0 90 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="45" cy="42" r="36" fill="url(#si-bg)" stroke="#FF9933" strokeWidth="2.5"/>
+                  <circle cx="45" cy="42" r="30" fill="none" stroke="#FF9933" strokeWidth="0.8" strokeOpacity="0.4"/>
+                  <rect x="28" y="26" width="34" height="9" rx="1.5" fill="#FF9933"/>
+                  <rect x="28" y="35" width="34" height="9" fill="#FFFFFF" fillOpacity="0.95"/>
+                  <rect x="28" y="44" width="34" height="9" rx="1.5" fill="#138808"/>
+                  <circle cx="45" cy="39.5" r="4" fill="none" stroke="#000080" strokeWidth="1" strokeOpacity="0.7"/>
+                  <circle cx="45" cy="39.5" r="1" fill="#000080" fillOpacity="0.7"/>
+                  {[...Array(24)].map((_,i) => <line key={i} x1="45" y1="39.5" x2={45+3.5*Math.cos(i*Math.PI/12)} y2={39.5+3.5*Math.sin(i*Math.PI/12)} stroke="#000080" strokeWidth="0.3" strokeOpacity="0.5"/>)}
+                  <path d="M20 80 L30 72 L45 78 L60 72 L70 80 L60 76 L45 82 L30 76 Z" fill="#FF9933" fillOpacity="0.9"/>
+                  <path d="M24 84 L32 76 L45 81 L58 76 L66 84 L58 80 L45 85 L32 80 Z" fill="#138808" fillOpacity="0.8"/>
+                  <defs><radialGradient id="si-bg" cx="0.5" cy="0.4"><stop offset="0%" stopColor="#fff" stopOpacity="0.12"/><stop offset="100%" stopColor="#fff" stopOpacity="0.03"/></radialGradient></defs>
+                </svg>
+                <div style={{ textAlign:'center' }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: '#FF9933', letterSpacing: 0.5 }}>STARTUP INDIA</div>
+                  <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.4)', marginTop: 1 }}>DPIIT Recognized</div>
                 </div>
-              ))}
+              </div>
+
+              {/* ── ISO 27001 — Gold medal with red ribbons ── */}
+              <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:8, width: 110 }}>
+                <svg width="90" height="100" viewBox="0 0 90 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M30 60 L20 95 L35 82 L45 95 L45 62" fill="#C0392B" fillOpacity="0.85"/>
+                  <path d="M60 60 L70 95 L55 82 L45 95 L45 62" fill="#E74C3C" fillOpacity="0.8"/>
+                  <line x1="22" y1="90" x2="33" y2="78" stroke="#D4AC0D" strokeWidth="1" strokeOpacity="0.5"/>
+                  <line x1="68" y1="90" x2="57" y2="78" stroke="#D4AC0D" strokeWidth="1" strokeOpacity="0.5"/>
+                  <circle cx="45" cy="38" r="34" fill="url(#g27-outer)" stroke="#B8860B" strokeWidth="2"/>
+                  <circle cx="45" cy="38" r="28" fill="url(#g27-inner)" stroke="#DAA520" strokeWidth="1.5"/>
+                  <circle cx="45" cy="38" r="24" fill="none" stroke="#B8860B" strokeWidth="0.5" strokeOpacity="0.4"/>
+                  <text x="45" y="26" textAnchor="middle" fill="#5D4E37" fontSize="7" fontWeight="800" fontFamily="system-ui" letterSpacing="2">CERTIFIED</text>
+                  <text x="45" y="38" textAnchor="middle" fill="#3E2723" fontSize="12" fontWeight="900" fontFamily="system-ui" letterSpacing="1">ISO</text>
+                  <text x="45" y="50" textAnchor="middle" fill="#3E2723" fontSize="11" fontWeight="900" fontFamily="system-ui" letterSpacing="0.5">27001</text>
+                  <text x="45" y="60" textAnchor="middle" fill="#5D4E37" fontSize="6" fontWeight="700" fontFamily="system-ui" letterSpacing="2">CERTIFIED</text>
+                  <defs>
+                    <radialGradient id="g27-outer" cx="0.4" cy="0.35"><stop offset="0%" stopColor="#F9E076"/><stop offset="50%" stopColor="#DAA520"/><stop offset="100%" stopColor="#B8860B"/></radialGradient>
+                    <radialGradient id="g27-inner" cx="0.45" cy="0.4"><stop offset="0%" stopColor="#FFF8DC"/><stop offset="40%" stopColor="#F5DEB3"/><stop offset="100%" stopColor="#DAA520"/></radialGradient>
+                  </defs>
+                </svg>
+                <div style={{ textAlign:'center' }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: '#DAA520', letterSpacing: 0.5 }}>ISO 27001</div>
+                  <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.4)', marginTop: 1 }}>Information Security</div>
+                </div>
+              </div>
+
+              {/* ── ISO 42001 — Orange shield badge (AI Management) ── */}
+              <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:8, width: 110 }}>
+                <svg width="90" height="100" viewBox="0 0 90 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M45 4 L78 18 L78 52 C78 72 62 86 45 94 C28 86 12 72 12 52 L12 18 Z" fill="url(#g42-shield)" stroke="#E67E22" strokeWidth="2"/>
+                  <path d="M45 12 L70 24 L70 50 C70 66 58 78 45 84 C32 78 20 66 20 50 L20 24 Z" fill="#E67E22" fillOpacity="0.15" stroke="#F39C12" strokeWidth="0.8" strokeOpacity="0.5"/>
+                  <circle cx="45" cy="16" r="6" fill="none" stroke="#fff" strokeWidth="1" strokeOpacity="0.6"/>
+                  <path d="M42.5 16 L44 17.5 L48 14" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" strokeOpacity="0.8"/>
+                  <text x="45" y="37" textAnchor="middle" fill="#fff" fontSize="6" fontWeight="700" fontFamily="system-ui" letterSpacing="1.5" fillOpacity="0.7">AI MANAGEMENT</text>
+                  <circle cx="45" cy="54" r="12" fill="none" stroke="#fff" strokeWidth="1.5" strokeOpacity="0.8"/>
+                  <path d="M35 54 C35 48 39 44 45 44 C51 44 55 48 55 54" stroke="#fff" strokeWidth="1.2" strokeOpacity="0.6" fill="none"/>
+                  <path d="M37 48 C40 52 45 54 50 50" stroke="#fff" strokeWidth="0.8" strokeOpacity="0.5" fill="none"/>
+                  <path d="M38 58 C41 54 45 56 52 56" stroke="#fff" strokeWidth="0.8" strokeOpacity="0.5" fill="none"/>
+                  <line x1="45" y1="42" x2="45" y2="66" stroke="#fff" strokeWidth="0.5" strokeOpacity="0.3"/>
+                  <line x1="33" y1="54" x2="57" y2="54" stroke="#fff" strokeWidth="0.5" strokeOpacity="0.3"/>
+                  <text x="45" y="73" textAnchor="middle" fill="#fff" fontSize="9" fontWeight="900" fontFamily="system-ui" letterSpacing="1" fillOpacity="0.95">ISO</text>
+                  <text x="45" y="83" textAnchor="middle" fill="#fff" fontSize="10" fontWeight="900" fontFamily="system-ui" letterSpacing="0.5" fillOpacity="0.95">42001</text>
+                  <defs>
+                    <linearGradient id="g42-shield" x1="0.3" y1="0" x2="0.7" y2="1"><stop offset="0%" stopColor="#F5A623"/><stop offset="50%" stopColor="#E67E22"/><stop offset="100%" stopColor="#D35400"/></linearGradient>
+                  </defs>
+                </svg>
+                <div style={{ textAlign:'center' }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: '#F5A623', letterSpacing: 0.5 }}>ISO 42001</div>
+                  <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.4)', marginTop: 1 }}>AI Management</div>
+                </div>
+              </div>
+
+              {/* ── ISO 42005 — Teal shield badge (AI Governance) ── */}
+              <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:8, width: 110 }}>
+                <svg width="90" height="100" viewBox="0 0 90 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M45 4 L78 18 L78 52 C78 72 62 86 45 94 C28 86 12 72 12 52 L12 18 Z" fill="url(#g45-shield)" stroke="#0E6655" strokeWidth="2"/>
+                  <path d="M45 12 L70 24 L70 50 C70 66 58 78 45 84 C32 78 20 66 20 50 L20 24 Z" fill="#0E6655" fillOpacity="0.15" stroke="#1ABC9C" strokeWidth="0.8" strokeOpacity="0.5"/>
+                  <circle cx="45" cy="16" r="6" fill="none" stroke="#fff" strokeWidth="1" strokeOpacity="0.6"/>
+                  <path d="M42.5 16 L44 17.5 L48 14" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" strokeOpacity="0.8"/>
+                  <text x="45" y="37" textAnchor="middle" fill="#fff" fontSize="6" fontWeight="700" fontFamily="system-ui" letterSpacing="1.5" fillOpacity="0.7">AI GOVERNANCE</text>
+                  <rect x="32" y="42" width="26" height="30" rx="2.5" fill="none" stroke="#fff" strokeWidth="1.2" strokeOpacity="0.7"/>
+                  <line x1="36" y1="50" x2="54" y2="50" stroke="#fff" strokeWidth="0.7" strokeOpacity="0.5"/>
+                  <line x1="36" y1="54" x2="50" y2="54" stroke="#fff" strokeWidth="0.7" strokeOpacity="0.5"/>
+                  <line x1="36" y1="58" x2="54" y2="58" stroke="#fff" strokeWidth="0.7" strokeOpacity="0.5"/>
+                  <line x1="36" y1="62" x2="48" y2="62" stroke="#fff" strokeWidth="0.7" strokeOpacity="0.5"/>
+                  <circle cx="52" cy="66" r="5" fill="#1ABC9C" fillOpacity="0.4" stroke="#fff" strokeWidth="1.2"/>
+                  <path d="M49.5 66 L51 67.5 L55 64" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  <text x="45" y="82" textAnchor="middle" fill="#fff" fontSize="9" fontWeight="900" fontFamily="system-ui" letterSpacing="1" fillOpacity="0.95">ISO</text>
+                  <text x="45" y="91" textAnchor="middle" fill="#fff" fontSize="10" fontWeight="900" fontFamily="system-ui" letterSpacing="0.5" fillOpacity="0.95">42005</text>
+                  <defs>
+                    <linearGradient id="g45-shield" x1="0.3" y1="0" x2="0.7" y2="1"><stop offset="0%" stopColor="#1ABC9C"/><stop offset="50%" stopColor="#16A085"/><stop offset="100%" stopColor="#0E6655"/></linearGradient>
+                  </defs>
+                </svg>
+                <div style={{ textAlign:'center' }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: '#1ABC9C', letterSpacing: 0.5 }}>ISO 42005</div>
+                  <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.4)', marginTop: 1 }}>AI Governance</div>
+                </div>
+              </div>
+
+              {/* ── PCI DSS — Tilted card + green checkmark (matching official style) ── */}
+              <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:8, width: 110 }}>
+                <svg width="100" height="100" viewBox="0 0 100 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <rect x="6" y="12" width="48" height="38" rx="4" fill="#1A5C50" transform="rotate(-10 30 30)"/>
+                  <rect x="8" y="14" width="44" height="34" rx="3" fill="none" stroke="#fff" strokeWidth="0.5" strokeOpacity="0.15" transform="rotate(-10 30 30)"/>
+                  <text transform="rotate(-10 30 30)"><tspan x="14" y="40" fill="#fff" fontSize="20" fontWeight="900" fontFamily="system-ui" letterSpacing="2">PCI</tspan></text>
+                  <circle cx="38" cy="22" r="4" fill="none" stroke="#fff" strokeWidth="1" strokeOpacity="0.4" transform="rotate(-10 30 30)"/>
+                  <path d="M48 58 L56 66 L76 40" stroke="#27AE60" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M48 58 L56 66 L76 40" stroke="#2ECC71" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
+                  <text x="72" y="24" fill="#fff" fontSize="16" fontWeight="900" fontFamily="system-ui" letterSpacing="1" fillOpacity="0.95">DSS</text>
+                  <text x="70" y="36" fill="#fff" fontSize="7.5" fontWeight="700" fontFamily="system-ui" letterSpacing="1.5" fillOpacity="0.55">COMPLIANT</text>
+                </svg>
+                <div style={{ textAlign:'center' }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: '#2ECC71', letterSpacing: 0.5 }}>PCI DSS</div>
+                  <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.4)', marginTop: 1 }}>Payment Security</div>
+                </div>
+              </div>
+
+              {/* ── NEP 2020 — Gold medal with Ashoka-inspired elements ── */}
+              <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:8, width: 110 }}>
+                <svg width="90" height="100" viewBox="0 0 90 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M30 60 L22 92 L36 80 L45 92 L45 62" fill="#B7950B" fillOpacity="0.6"/>
+                  <path d="M60 60 L68 92 L54 80 L45 92 L45 62" fill="#D4AC0D" fillOpacity="0.5"/>
+                  <circle cx="45" cy="38" r="34" fill="url(#gnep-outer)" stroke="#B8860B" strokeWidth="2"/>
+                  <circle cx="45" cy="38" r="28" fill="url(#gnep-inner)" stroke="#DAA520" strokeWidth="1.5"/>
+                  <circle cx="45" cy="38" r="24" fill="none" stroke="#B8860B" strokeWidth="0.5" strokeOpacity="0.4"/>
+                  {/* Book icon */}
+                  <path d="M33 32 C33 30 38 28 45 30 C52 28 57 30 57 32 L57 48 C57 46 52 44 45 46 C38 44 33 46 33 48 Z" fill="#8B6914" fillOpacity="0.25" stroke="#6D4C00" strokeWidth="0.8"/>
+                  <line x1="45" y1="30" x2="45" y2="46" stroke="#6D4C00" strokeWidth="0.6"/>
+                  <text x="45" y="26" textAnchor="middle" fill="#5D4E37" fontSize="6" fontWeight="800" fontFamily="system-ui" letterSpacing="2">NEP</text>
+                  <text x="45" y="58" textAnchor="middle" fill="#3E2723" fontSize="10" fontWeight="900" fontFamily="system-ui" letterSpacing="1">2020</text>
+                  <text x="45" y="66" textAnchor="middle" fill="#5D4E37" fontSize="5.5" fontWeight="700" fontFamily="system-ui" letterSpacing="2">ALIGNED</text>
+                  <defs>
+                    <radialGradient id="gnep-outer" cx="0.4" cy="0.35"><stop offset="0%" stopColor="#F9E076"/><stop offset="50%" stopColor="#DAA520"/><stop offset="100%" stopColor="#B8860B"/></radialGradient>
+                    <radialGradient id="gnep-inner" cx="0.45" cy="0.4"><stop offset="0%" stopColor="#FFF8DC"/><stop offset="40%" stopColor="#F5DEB3"/><stop offset="100%" stopColor="#DAA520"/></radialGradient>
+                  </defs>
+                </svg>
+                <div style={{ textAlign:'center' }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: '#DAA520', letterSpacing: 0.5 }}>NEP 2020</div>
+                  <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.4)', marginTop: 1 }}>Policy Aligned</div>
+                </div>
+              </div>
+
+              {/* ── CBSE — Red/maroon shield crest ── */}
+              <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:8, width: 110 }}>
+                <svg width="90" height="100" viewBox="0 0 90 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M45 4 L76 18 L76 52 C76 70 62 84 45 92 C28 84 14 70 14 52 L14 18 Z" fill="url(#gcbse)" stroke="#922B21" strokeWidth="2"/>
+                  <path d="M45 12 L68 24 L68 50 C68 64 56 76 45 82 C34 76 22 64 22 50 L22 24 Z" fill="#7B241C" fillOpacity="0.2" stroke="#C0392B" strokeWidth="0.8" strokeOpacity="0.4"/>
+                  {/* Graduation cap */}
+                  <path d="M30 42 L45 34 L60 42 L45 50 Z" fill="#fff" fillOpacity="0.2" stroke="#fff" strokeWidth="1.2" strokeOpacity="0.8"/>
+                  <line x1="45" y1="50" x2="45" y2="62" stroke="#fff" strokeWidth="0.8" strokeOpacity="0.6"/>
+                  <path d="M35 44 L35 54 C35 57 39 60 45 60 C51 60 55 57 55 54 L55 44" stroke="#fff" strokeWidth="1" fill="none" strokeOpacity="0.7"/>
+                  <line x1="60" y1="42" x2="62" y2="52" stroke="#fff" strokeWidth="0.8" strokeOpacity="0.6"/>
+                  <circle cx="62" cy="53" r="2" fill="#fff" fillOpacity="0.4"/>
+                  <text x="45" y="24" textAnchor="middle" fill="#fff" fontSize="10" fontWeight="900" fontFamily="system-ui" letterSpacing="1.5" fillOpacity="0.95">CBSE</text>
+                  <text x="45" y="74" textAnchor="middle" fill="#fff" fontSize="6" fontWeight="700" fontFamily="system-ui" letterSpacing="2" fillOpacity="0.6">COMPLIANT</text>
+                  <defs>
+                    <linearGradient id="gcbse" x1="0.3" y1="0" x2="0.7" y2="1"><stop offset="0%" stopColor="#E74C3C"/><stop offset="50%" stopColor="#C0392B"/><stop offset="100%" stopColor="#922B21"/></linearGradient>
+                  </defs>
+                </svg>
+                <div style={{ textAlign:'center' }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: '#E74C3C', letterSpacing: 0.5 }}>CBSE</div>
+                  <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.4)', marginTop: 1 }}>Curriculum Compliant</div>
+                </div>
+              </div>
+
             </div>
           </div>
         </section>
