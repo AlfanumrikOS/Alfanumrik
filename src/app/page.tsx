@@ -206,7 +206,7 @@ export default function Home() {
       <div style={{ background: '#fff', fontFamily: 'var(--font-body)' }}>
         {/* ════ NAV ════ */}
         <nav style={{ position: 'sticky', top: 0, zIndex: 100, background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(0,0,0,0.05)', height: 64 }}>
-          <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 20px', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div className="landing-nav-inner">
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ fontSize: 28 }}>🦊</span>
               <div>
@@ -228,7 +228,7 @@ export default function Home() {
           </div>
           {/* Mobile menu */}
           {mobileMenu && (
-            <div className="md:hidden" style={{ position: 'absolute', top: 64, left: 0, right: 0, background: '#fff', borderBottom: '1px solid rgba(0,0,0,0.08)', padding: '16px 20px', zIndex: 100 }}>
+            <div className="md:hidden" style={{ position: 'absolute', top: 64, left: 0, right: 0, background: '#fff', borderBottom: '1px solid rgba(0,0,0,0.08)', padding: '16px', zIndex: 100 }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <span style={{ fontSize: 14, fontWeight: 600, color: P.text1, cursor: 'pointer', padding: '8px 0' }} onClick={() => {document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' });setMobileMenu(false);}}>How It Works</span>
                 <span style={{ fontSize: 14, fontWeight: 600, color: P.text1, cursor: 'pointer', padding: '8px 0' }} onClick={() => {document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' });setMobileMenu(false);}}>Features</span>
@@ -244,7 +244,7 @@ export default function Home() {
         </nav>
 
         {/* ════ HERO ════ */}
-        <section style={{ background: `linear-gradient(135deg, ${P.navy} 0%, #0F2942 60%, #1A365D 100%)`, padding: 'clamp(60px, 10vw, 110px) 20px 90px', textAlign: 'center', position: 'relative', overflow: 'hidden' }}>
+        <section className="landing-hero" style={{ background: `linear-gradient(135deg, ${P.navy} 0%, #0F2942 60%, #1A365D 100%)` }}>
           <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 80% 60% at 50% 40%, rgba(232,88,28,0.08) 0%, transparent 60%)', pointerEvents: 'none' }} />
           <div style={{ maxWidth: 760, margin: '0 auto', position: 'relative', zIndex: 1 }}>
             <div style={{ display: 'inline-block', padding: '6px 16px', borderRadius: 20, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)', marginBottom: 20 }}>
@@ -257,11 +257,11 @@ export default function Home() {
               Foxy, your personal AI tutor, teaches at YOUR level — not your grade level.
               Powered by Bayesian mastery tracking, spaced repetition &amp; adaptive learning. Hindi, English &amp; 8 more languages.
             </p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 12 }}>
-              <button onClick={() => setStep('role')} style={{ padding: '14px 32px', borderRadius: 10, border: 'none', background: P.rose, color: '#fff', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>
+            <div className="hero-cta">
+              <button onClick={() => setStep('role')} style={{ padding: '14px 32px', borderRadius: 10, border: 'none', background: P.rose, color: '#fff', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, cursor: 'pointer', width: '100%', maxWidth: 240 }}>
                 Start Learning Free
               </button>
-              <button onClick={() => document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' })} style={{ padding: '14px 32px', borderRadius: 10, border: '1.5px solid rgba(255,255,255,0.25)', background: 'transparent', color: '#fff', fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}>
+              <button onClick={() => document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' })} style={{ padding: '14px 32px', borderRadius: 10, border: '1.5px solid rgba(255,255,255,0.25)', background: 'transparent', color: '#fff', fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15, cursor: 'pointer', width: '100%', maxWidth: 240 }}>
                 See How It Works
               </button>
             </div>
@@ -269,25 +269,25 @@ export default function Home() {
         </section>
 
         {/* ════ STATS BAR ════ */}
-        <section style={{ maxWidth: 900, margin: '-40px auto 0', padding: '0 20px', position: 'relative', zIndex: 10 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 0, background: '#fff', borderRadius: 16, boxShadow: '0 8px 32px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
-            {[['2,100+','Practice Questions'],['726','CBSE Chapters'],['16','Subjects Covered'],['6+','Indian Languages']].map(([v, l], i) => (
-              <div key={l} style={{ padding: 'clamp(16px, 3vw, 28px) 12px', textAlign: 'center', borderRight: i < 3 ? '1px solid rgba(0,0,0,0.06)' : 'none' }}>
-                <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(20px, 3vw, 32px)', color: P.rose }}>{v}</div>
-                <div style={{ fontSize: 'clamp(9px, 1.2vw, 12px)', color: P.text3, marginTop: 2, fontWeight: 600 }}>{l}</div>
+        <section className="landing-stats-wrapper">
+          <div className="landing-stats-grid" style={{ background: '#fff', borderRadius: 16, boxShadow: '0 8px 32px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+            {[['2,100+','Practice Questions'],['726','CBSE Chapters'],['16','Subjects Covered'],['6+','Indian Languages']].map(([v, l]) => (
+              <div key={l} style={{ padding: 'clamp(14px, 3vw, 28px) 8px', textAlign: 'center', borderBottom: '1px solid rgba(0,0,0,0.04)', borderRight: '1px solid rgba(0,0,0,0.04)' }}>
+                <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(18px, 3vw, 32px)', color: P.rose }}>{v}</div>
+                <div style={{ fontSize: 'clamp(9px, 1.4vw, 12px)', color: P.text3, marginTop: 2, fontWeight: 600 }}>{l}</div>
               </div>
             ))}
           </div>
         </section>
 
         {/* ════ HOW IT WORKS ════ */}
-        <section id="how-it-works" style={{ padding: '80px 20px', textAlign: 'center' }}>
-          <div style={{ maxWidth: 1000, margin: '0 auto' }}>
+        <section id="how-it-works" className="landing-section" style={{ textAlign: 'center' }}>
+          <div className="landing-container" style={{ margin: '0 auto' }}>
             <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(22px, 3.5vw, 34px)', color: P.navy, marginBottom: 10 }}>How Alfanumrik Works</h2>
             <p style={{ fontSize: 14, color: P.text2, lineHeight: 1.7, maxWidth: 500, margin: '0 auto 40px' }}>
               Three steps to transform learning outcomes. No complex setup required.
             </p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20 }}>
+            <div className="landing-steps-grid">
               {[
                 { step: '1', icon: '📝', title: 'Sign Up & Choose Subjects', desc: 'Create your free account in 60 seconds. Pick your grade, board, and subjects. Foxy assesses your current level automatically.' },
                 { step: '2', icon: '🦊', title: 'Learn with Foxy AI Tutor', desc: 'Ask questions in Hindi or English. Foxy teaches step by step, gives practice problems, creates quizzes, and tracks your mastery with spaced repetition.' },
@@ -305,15 +305,15 @@ export default function Home() {
         </section>
 
         {/* ════ FEATURES ════ */}
-        <section id="features" style={{ background: P.lightBg, padding: '80px 20px' }}>
-          <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+        <section id="features" className="landing-section" style={{ background: P.lightBg }}>
+          <div className="landing-container" style={{ margin: '0 auto' }}>
             <h2 style={{ textAlign: 'center', fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(22px, 3.5vw, 34px)', color: P.navy, marginBottom: 10 }}>
               Why Students Love Alfanumrik
             </h2>
             <p style={{ textAlign: 'center', fontSize: 14, color: P.text2, lineHeight: 1.7, maxWidth: 500, margin: '0 auto 40px' }}>
               Evidence-backed learning science meets AI. Built specifically for Indian school students.
             </p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+            <div className="landing-features-grid">
               {[
                 { icon: '🦊', t: 'Foxy AI Tutor', d: 'Ask any question in Hindi or English. Foxy explains step by step with voice support. Math symbols, diagrams, and exam tips built in.', bg: `${P.gold}15` },
                 { icon: '🧠', t: 'Adaptive Learning Engine', d: 'AI tracks what you know using Bayesian mastery tracking. Every session targets your exact gaps.', bg: `${P.rose}0A` },
@@ -333,15 +333,15 @@ export default function Home() {
         </section>
 
         {/* ════ FOR WHOM ════ */}
-        <section id="for-whom" style={{ padding: '80px 20px' }}>
-          <div style={{ maxWidth: 1000, margin: '0 auto', textAlign: 'center' }}>
+        <section id="for-whom" className="landing-section">
+          <div className="landing-container" style={{ margin: '0 auto', textAlign: 'center' }}>
             <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(22px, 3.5vw, 34px)', color: P.navy, marginBottom: 10 }}>
               Built for Every Stakeholder
             </h2>
             <p style={{ fontSize: 14, color: P.text2, lineHeight: 1.7, maxWidth: 500, margin: '0 auto 40px' }}>
               One platform. Different experiences. Students learn, teachers monitor, parents stay informed.
             </p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+            <div className="landing-roles-grid">
               {[
                 { icon: '🎓', role: 'Students', color: P.purple, items: ['AI tutor with voice & math symbols', 'Adaptive quizzes with instant feedback', 'Spaced repetition to never forget', 'XP, streaks & leaderboards', 'CBSE board exam preparation'] },
                 { icon: '👩\u200D🏫', role: 'Teachers', color: P.teal, items: ['Create classes with a shareable code', 'View student mastery at a glance', 'Assign quizzes and track completion', 'Identify weak topics class-wide', 'NEP 2020 compliant reports'] },
@@ -367,7 +367,7 @@ export default function Home() {
         </section>
 
         {/* ════ TRUST & SECURITY ════ */}
-        <section id="trust" style={{ background: P.navy, padding: '64px 20px' }}>
+        <section id="trust" style={{ background: P.navy, padding: 'clamp(40px, 6vw, 64px) 16px' }}>
           <div style={{ maxWidth: 900, margin: '0 auto', textAlign: 'center' }}>
             <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(22px, 3vw, 30px)', color: '#fff', marginBottom: 10 }}>
               Trusted, Certified & Compliant
@@ -375,7 +375,7 @@ export default function Home() {
             <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.55)', lineHeight: 1.7, maxWidth: 500, margin: '0 auto 36px' }}>
               Built by Cusiosense Learning India Private Limited. Your data is protected by enterprise-grade security.
             </p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 16, marginBottom: 32 }}>
+            <div className="landing-badges" style={{ marginBottom: 32 }}>
               {[
                 { badge: '🇮🇳', label: 'Startup India\nRecognized' },
                 { badge: '🛡️', label: 'ISO 27001\nInformation Security' },
@@ -395,7 +395,7 @@ export default function Home() {
         </section>
 
         {/* ════ CTA ════ */}
-        <section style={{ padding: '80px 20px', textAlign: 'center' }}>
+        <section className="landing-section" style={{ textAlign: 'center' }}>
           <div style={{ maxWidth: 560, margin: '0 auto' }}>
             <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(22px, 4vw, 36px)', color: P.navy, marginBottom: 10 }}>
               Ready to Learn Smarter?
@@ -403,7 +403,7 @@ export default function Home() {
             <p style={{ fontSize: 14, color: P.text2, lineHeight: 1.7, marginBottom: 28 }}>
               Join thousands of students, teachers, and parents across India. Free to start, no credit card needed.
             </p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 12 }}>
+            <div className="hero-cta">
               <button onClick={() => setStep('role')} style={{ padding: '14px 36px', borderRadius: 10, border: 'none', background: P.rose, color: '#fff', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>
                 Get Started Free
               </button>
@@ -415,7 +415,7 @@ export default function Home() {
         </section>
 
         {/* ════ FOOTER ════ */}
-        <footer style={{ background: P.navy, padding: '32px 20px', textAlign: 'center' }}>
+        <footer style={{ background: P.navy, padding: 'clamp(24px, 4vw, 32px) 16px', textAlign: 'center' }}>
           <div style={{ maxWidth: 800, margin: '0 auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 12 }}>
               <span style={{ fontSize: 20 }}>🦊</span>
