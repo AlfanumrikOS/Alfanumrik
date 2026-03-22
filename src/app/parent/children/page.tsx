@@ -1,0 +1,685 @@
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '@/lib/AuthContext';
+import { supabase } from '@/lib/supabase';
+
+const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
+async function api(action: string, params: Record<string, unknown> = {}) {
+  const res = await fetch(`${SB_URL}/functions/v1/parent-portal`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: SB_KEY },
+    body: JSON.stringify({ action, ...params }),
+  });
+  if (!res.ok) {
+    const errorText = await res.text().catch(() => 'Unknown error');
+    throw new Error(`API error ${res.status}: ${errorText}`);
+  }
+  return res.json();
+}
+
+// ============================================================
+// TYPES
+// ============================================================
+interface ChildStats {
+  xp: number;
+  streak: number;
+  mastery: number;
+  accuracy: number;
+  totalQuizzes: number;
+  minutes: number;
+}
+
+interface RecentAchievement {
+  title: string;
+  icon: string;
+  date: string;
+}
+
+interface ChildData {
+  id: string;
+  name: string;
+  grade: string;
+  stats: ChildStats;
+  todayQuizzes: number;
+  todayMinutes: number;
+  lastActive: string | null;
+  activeToday: boolean;
+  subjects: string[];
+  subjectProgress: { name: string; percent: number }[];
+  recentAchievements: RecentAchievement[];
+  weekSummary: string;
+}
+
+// ============================================================
+// AVATAR
+// ============================================================
+const avatarGradients = [
+  ['#F59E0B', '#D97706'],
+  ['#EC4899', '#DB2777'],
+  ['#8B5CF6', '#7C3AED'],
+  ['#06B6D4', '#0891B2'],
+  ['#F97316', '#EA580C'],
+  ['#10B981', '#059669'],
+];
+
+function ChildAvatar({ name, size = 52 }: { name: string; size?: number }) {
+  const idx = name.charCodeAt(0) % avatarGradients.length;
+  const [from, to] = avatarGradients[idx];
+  return (
+    <div
+      style={{
+        width: size,
+        height: size,
+        borderRadius: '50%',
+        background: `linear-gradient(135deg, ${from}, ${to})`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: size * 0.42,
+        fontWeight: 700,
+        color: '#fff',
+        flexShrink: 0,
+        boxShadow: `0 2px 8px ${from}33`,
+      }}
+    >
+      {name.charAt(0).toUpperCase()}
+    </div>
+  );
+}
+
+// ============================================================
+// STAT PILL
+// ============================================================
+function StatPill({ icon, label, value, color }: { icon: string; label: string; value: string | number; color: string }) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 4,
+      padding: '5px 10px', backgroundColor: `${color}12`,
+      borderRadius: 8, border: `1px solid ${color}22`,
+    }}>
+      <span style={{ fontSize: 12 }}>{icon}</span>
+      <span style={{ fontSize: 11, color: '#94A3B8' }}>{label}</span>
+      <span style={{ fontSize: 13, fontWeight: 700, color, marginLeft: 2 }}>{value}</span>
+    </div>
+  );
+}
+
+// ============================================================
+// MINI PROGRESS BAR
+// ============================================================
+function MiniProgressBar({ label, percent, color }: { label: string; percent: number; color: string }) {
+  return (
+    <div style={{ marginBottom: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+        <span style={{ fontSize: 12, color: '#CBD5E1' }}>{label}</span>
+        <span style={{ fontSize: 11, color: '#94A3B8' }}>{percent}%</span>
+      </div>
+      <div style={{ height: 6, backgroundColor: '#1E293B', borderRadius: 3, overflow: 'hidden' }}>
+        <div style={{
+          height: '100%', width: `${Math.min(percent, 100)}%`,
+          backgroundColor: color, borderRadius: 3,
+          transition: 'width 0.5s ease',
+        }} />
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// CHILD CARD
+// ============================================================
+function ChildCard({
+  child, expanded, onToggle, onViewReport,
+}: {
+  child: ChildData;
+  expanded: boolean;
+  onToggle: () => void;
+  onViewReport: () => void;
+}) {
+  const subjectColors = ['#16A34A', '#2563EB', '#D97706', '#8B5CF6', '#EC4899', '#06B6D4'];
+
+  return (
+    <div style={{
+      backgroundColor: '#0F172A',
+      borderRadius: 16,
+      border: '1px solid #16A34A33',
+      marginBottom: 14,
+      overflow: 'hidden',
+      transition: 'box-shadow 0.3s ease',
+      boxShadow: expanded ? '0 4px 20px #16A34A15' : 'none',
+    }}>
+      {/* Main card area */}
+      <div
+        onClick={onToggle}
+        style={{
+          padding: '16px 18px',
+          cursor: 'pointer',
+        }}
+      >
+        {/* Top row: avatar + name + status */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
+          <ChildAvatar name={child.name} />
+          <div style={{ flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <h3 style={{ fontSize: 17, fontWeight: 700, color: '#F1F5F9', margin: 0 }}>
+                {child.name}
+              </h3>
+              {/* Status dot */}
+              <div style={{
+                width: 8, height: 8, borderRadius: '50%',
+                backgroundColor: child.activeToday ? '#22C55E' : '#64748B',
+                flexShrink: 0,
+              }} />
+            </div>
+            <p style={{ fontSize: 13, color: '#94A3B8', margin: '2px 0 0' }}>
+              Grade {child.grade}
+            </p>
+            <p style={{ fontSize: 11, color: child.activeToday ? '#22C55E' : '#64748B', margin: '2px 0 0' }}>
+              {child.activeToday
+                ? 'Active today'
+                : child.lastActive
+                  ? `Last active: ${new Date(child.lastActive).toLocaleDateString()}`
+                  : 'No recent activity'}
+            </p>
+          </div>
+          {/* Expand arrow */}
+          <span style={{
+            fontSize: 18, color: '#64748B',
+            transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
+            transition: 'transform 0.3s ease',
+          }}>
+            &#9660;
+          </span>
+        </div>
+
+        {/* Quick stats */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          <StatPill icon="&#x2B50;" label="XP" value={child.stats.xp} color="#F59E0B" />
+          <StatPill icon="&#x1F525;" label="Streak" value={`${child.stats.streak}d`} color="#EF4444" />
+          <StatPill icon="&#x1F4CA;" label="Mastery" value={`${child.stats.mastery}%`} color="#16A34A" />
+          <StatPill icon="&#x1F3AF;" label="Accuracy" value={`${child.stats.accuracy}%`} color="#2563EB" />
+        </div>
+      </div>
+
+      {/* Today's activity bar */}
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        padding: '10px 18px',
+        backgroundColor: '#0B1120',
+        borderTop: '1px solid #1E293B',
+      }}>
+        <div style={{ display: 'flex', gap: 16 }}>
+          <span style={{ fontSize: 12, color: '#94A3B8' }}>
+            Today: <strong style={{ color: '#E2E8F0' }}>{child.todayQuizzes}</strong> quizzes
+          </span>
+          <span style={{ fontSize: 12, color: '#94A3B8' }}>
+            <strong style={{ color: '#E2E8F0' }}>{child.todayMinutes}m</strong> spent
+          </span>
+        </div>
+        <button
+          onClick={(e) => { e.stopPropagation(); onViewReport(); }}
+          style={{
+            padding: '6px 14px',
+            backgroundColor: '#16A34A',
+            color: '#fff',
+            border: 'none',
+            borderRadius: 8,
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: 'pointer',
+          }}
+        >
+          View Full Report
+        </button>
+      </div>
+
+      {/* Subject chips */}
+      {child.subjects.length > 0 && (
+        <div style={{
+          display: 'flex', flexWrap: 'wrap', gap: 6,
+          padding: '10px 18px 12px',
+          borderTop: '1px solid #1E293B',
+        }}>
+          {child.subjects.map((subj, i) => (
+            <span key={subj} style={{
+              padding: '3px 10px',
+              backgroundColor: `${subjectColors[i % subjectColors.length]}18`,
+              color: subjectColors[i % subjectColors.length],
+              borderRadius: 12,
+              fontSize: 11,
+              fontWeight: 600,
+              border: `1px solid ${subjectColors[i % subjectColors.length]}30`,
+            }}>
+              {subj}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Expanded detail */}
+      <div style={{
+        maxHeight: expanded ? 500 : 0,
+        overflow: 'hidden',
+        transition: 'max-height 0.4s ease',
+      }}>
+        <div style={{ padding: '0 18px 18px', borderTop: '1px solid #1E293B' }}>
+          {/* Subject progress bars */}
+          {child.subjectProgress.length > 0 && (
+            <div style={{ marginTop: 14 }}>
+              <h4 style={{ fontSize: 13, fontWeight: 600, color: '#F1F5F9', margin: '0 0 10px' }}>
+                Subject Progress
+              </h4>
+              {child.subjectProgress.map((sp, i) => (
+                <MiniProgressBar
+                  key={sp.name}
+                  label={sp.name}
+                  percent={sp.percent}
+                  color={subjectColors[i % subjectColors.length]}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Study streak */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '10px 14px', marginTop: 10,
+            backgroundColor: '#1E293B', borderRadius: 10,
+          }}>
+            <span style={{ fontSize: 22 }}>&#x1F525;</span>
+            <div>
+              <span style={{ fontSize: 14, fontWeight: 700, color: '#F59E0B' }}>
+                {child.stats.streak} day streak
+              </span>
+              <p style={{ fontSize: 11, color: '#94A3B8', margin: '2px 0 0' }}>
+                Keep it going!
+              </p>
+            </div>
+          </div>
+
+          {/* Recent achievements */}
+          {child.recentAchievements.length > 0 && (
+            <div style={{ marginTop: 14 }}>
+              <h4 style={{ fontSize: 13, fontWeight: 600, color: '#F1F5F9', margin: '0 0 8px' }}>
+                Recent Achievements
+              </h4>
+              {child.recentAchievements.slice(0, 3).map((ach, i) => (
+                <div key={i} style={{
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '8px 0',
+                  borderBottom: i < Math.min(child.recentAchievements.length, 3) - 1 ? '1px solid #1E293B' : 'none',
+                }}>
+                  <span style={{ fontSize: 18 }}>{ach.icon}</span>
+                  <div style={{ flex: 1 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#E2E8F0' }}>{ach.title}</span>
+                    <p style={{ fontSize: 11, color: '#64748B', margin: '1px 0 0' }}>{ach.date}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Learning this week */}
+          {child.weekSummary && (
+            <div style={{
+              marginTop: 12, padding: '10px 14px',
+              backgroundColor: '#16A34A12', borderRadius: 10,
+              border: '1px solid #16A34A25',
+            }}>
+              <h4 style={{ fontSize: 12, fontWeight: 600, color: '#16A34A', margin: '0 0 4px' }}>
+                Learning this week
+              </h4>
+              <p style={{ fontSize: 13, color: '#CBD5E1', margin: 0, lineHeight: 1.5 }}>
+                {child.weekSummary}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// LINK CHILD SECTION
+// ============================================================
+function LinkChildSection({
+  guardianId,
+  onLinked,
+  compact,
+}: {
+  guardianId: string;
+  onLinked: () => void;
+  compact?: boolean;
+}) {
+  const [code, setCode] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const handleLink = async () => {
+    if (!code.trim()) {
+      setMessage({ type: 'error', text: 'Please enter a link code.' });
+      return;
+    }
+    setLoading(true);
+    setMessage(null);
+    try {
+      const { data, error } = await supabase.rpc('link_guardian_to_student_via_code', {
+        p_guardian_id: guardianId,
+        p_invite_code: code.trim().toUpperCase(),
+      });
+      if (error) throw error;
+      if (data && typeof data === 'object' && 'error' in data) {
+        setMessage({ type: 'error', text: (data as { error: string }).error });
+      } else {
+        setMessage({ type: 'success', text: 'Child linked successfully!' });
+        setCode('');
+        setTimeout(() => {
+          setMessage(null);
+          onLinked();
+        }, 1500);
+      }
+    } catch {
+      setMessage({ type: 'error', text: 'Invalid code or already linked. Please check and try again.' });
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div style={{
+      backgroundColor: '#0F172A',
+      borderRadius: 16,
+      border: '1px solid #16A34A33',
+      padding: compact ? '16px 18px' : '24px 22px',
+      marginBottom: 14,
+    }}>
+      {!compact && (
+        <h3 style={{ fontSize: 16, fontWeight: 700, color: '#F1F5F9', margin: '0 0 4px' }}>
+          Link a New Child
+        </h3>
+      )}
+      <p style={{
+        fontSize: 13, color: '#94A3B8', margin: compact ? '0 0 12px' : '0 0 16px',
+        lineHeight: 1.5,
+      }}>
+        {compact
+          ? 'Enter your child\'s link code to connect and start tracking their progress.'
+          : 'Ask your child\'s teacher for the link code, or find it in your child\'s profile page under Settings.'}
+      </p>
+
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input
+          type="text"
+          placeholder="Enter your child's link code"
+          value={code}
+          onChange={(e) => setCode(e.target.value.toUpperCase())}
+          onKeyDown={(e) => e.key === 'Enter' && handleLink()}
+          maxLength={12}
+          style={{
+            flex: 1,
+            padding: '12px 14px',
+            backgroundColor: '#1E293B',
+            border: '1px solid #334155',
+            borderRadius: 10,
+            color: '#E2E8F0',
+            fontSize: 15,
+            letterSpacing: 2,
+            textTransform: 'uppercase' as const,
+            outline: 'none',
+            boxSizing: 'border-box' as const,
+          }}
+        />
+        <button
+          onClick={handleLink}
+          disabled={loading}
+          style={{
+            padding: '12px 20px',
+            backgroundColor: '#16A34A',
+            color: '#fff',
+            border: 'none',
+            borderRadius: 10,
+            fontSize: 15,
+            fontWeight: 600,
+            cursor: loading ? 'default' : 'pointer',
+            opacity: loading ? 0.6 : 1,
+            whiteSpace: 'nowrap' as const,
+            minWidth: 100,
+          }}
+        >
+          {loading ? 'Linking...' : 'Link Child'}
+        </button>
+      </div>
+
+      {message && (
+        <p style={{
+          fontSize: 13, margin: '10px 0 0',
+          color: message.type === 'success' ? '#22C55E' : '#EF4444',
+          fontWeight: 500,
+        }}>
+          {message.text}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// NO CHILDREN STATE
+// ============================================================
+function NoChildrenState({ guardianId, onLinked }: { guardianId: string; onLinked: () => void }) {
+  return (
+    <div style={{ textAlign: 'center', padding: '40px 0' }}>
+      <div style={{ fontSize: 64, marginBottom: 16 }}>&#x1F468;&#x200D;&#x1F469;&#x200D;&#x1F467;</div>
+      <h2 style={{ fontSize: 20, fontWeight: 700, color: '#F1F5F9', margin: '0 0 8px' }}>
+        No children linked yet
+      </h2>
+      <p style={{ fontSize: 14, color: '#94A3B8', margin: '0 0 24px', lineHeight: 1.5 }}>
+        Enter your child&apos;s link code to connect<br />and start tracking their progress.
+      </p>
+      <LinkChildSection guardianId={guardianId} onLinked={onLinked} compact />
+    </div>
+  );
+}
+
+// ============================================================
+// MAIN PAGE
+// ============================================================
+export default function ParentChildrenPage() {
+  const { guardian, isLoading: authLoading, isLoggedIn } = useAuth();
+
+  const [children, setChildren] = useState<ChildData[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expandedChild, setExpandedChild] = useState<string | null>(null);
+
+  const fetchChildren = useCallback(async () => {
+    if (!guardian) return;
+    setLoading(true);
+    try {
+      const res = await api('get_child_dashboard', { guardian_id: guardian.id });
+
+      // The API may return a single child or a list — normalize to array
+      let childrenList: ChildData[] = [];
+
+      if (Array.isArray(res)) {
+        childrenList = res.map(normalizeChild);
+      } else if (res && res.students && Array.isArray(res.students)) {
+        childrenList = res.students.map(normalizeChild);
+      } else if (res && res.student) {
+        childrenList = [normalizeChild(res)];
+      } else if (res && !res.error) {
+        childrenList = [normalizeChild(res)];
+      }
+
+      setChildren(childrenList);
+    } catch (err) {
+      console.error('Failed to fetch children:', err);
+      setChildren([]);
+    }
+    setLoading(false);
+  }, [guardian]);
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (!isLoggedIn || !guardian) {
+      if (typeof window !== 'undefined' && !authLoading) {
+        window.location.href = '/';
+      }
+      return;
+    }
+    fetchChildren();
+  }, [authLoading, isLoggedIn, guardian, fetchChildren]);
+
+  const handleViewReport = () => {
+    if (typeof window !== 'undefined') {
+      window.location.href = '/parent/reports';
+    }
+  };
+
+  // Loading state
+  if (authLoading || loading) {
+    return (
+      <div style={pageStyle}>
+        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+        <div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}>
+          <div style={{
+            width: 40, height: 40,
+            border: '3px solid #1E293B', borderTopColor: '#16A34A',
+            borderRadius: '50%', margin: '0 auto 16px',
+            animation: 'spin 0.8s linear infinite',
+          }} />
+          Loading children...
+        </div>
+      </div>
+    );
+  }
+
+  // Auth guard
+  if (!guardian) {
+    return null;
+  }
+
+  return (
+    <div style={pageStyle}>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+
+      {/* Header */}
+      <div style={{
+        background: 'linear-gradient(135deg, #16A34A, #15803D)',
+        borderRadius: 16,
+        padding: '24px 22px',
+        marginBottom: 20,
+      }}>
+        <h1 style={{ fontSize: 24, fontWeight: 700, color: '#fff', margin: '0 0 4px' }}>
+          &#x1F467; My Children
+        </h1>
+        <p style={{ fontSize: 14, color: '#BBF7D0', margin: 0 }}>
+          Monitor your children&apos;s learning journey
+        </p>
+      </div>
+
+      {/* Children list or empty state */}
+      {children.length === 0 ? (
+        <NoChildrenState guardianId={guardian.id} onLinked={fetchChildren} />
+      ) : (
+        <>
+          {children.map((child) => (
+            <ChildCard
+              key={child.id}
+              child={child}
+              expanded={expandedChild === child.id}
+              onToggle={() =>
+                setExpandedChild(expandedChild === child.id ? null : child.id)
+              }
+              onViewReport={handleViewReport}
+            />
+          ))}
+
+          {/* Link new child section */}
+          <div style={{ marginTop: 8 }}>
+            <LinkChildSection guardianId={guardian.id} onLinked={fetchChildren} />
+          </div>
+        </>
+      )}
+
+      {/* Footer */}
+      <p style={{ textAlign: 'center', fontSize: 11, color: '#475569', margin: '24px 0 12px' }}>
+        Alfanumrik Learning OS | Parent Portal
+      </p>
+    </div>
+  );
+}
+
+// ============================================================
+// NORMALIZE API RESPONSE TO ChildData
+// ============================================================
+function normalizeChild(raw: any): ChildData {
+  const student = raw.student || raw;
+  const stats = raw.stats || {};
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Determine if active today
+  const lastActiveRaw = raw.lastActive || raw.last_active || student.last_active || null;
+  const activeToday = lastActiveRaw
+    ? new Date(lastActiveRaw).toISOString().slice(0, 10) === today
+    : (stats.todayQuizzes || stats.today_quizzes || 0) > 0;
+
+  // Extract subjects
+  const subjects: string[] = raw.subjects
+    || (raw.subjectProgress || raw.subject_progress || []).map((s: any) => s.name || s.subject)
+    || [];
+
+  // Extract subject progress
+  const subjectProgress: { name: string; percent: number }[] =
+    (raw.subjectProgress || raw.subject_progress || []).map((s: any) => ({
+      name: s.name || s.subject || 'Unknown',
+      percent: s.percent || s.mastery || s.progress || 0,
+    }));
+
+  // Extract recent achievements
+  const recentAchievements: RecentAchievement[] =
+    (raw.recentAchievements || raw.recent_achievements || raw.achievements || [])
+      .slice(0, 3)
+      .map((a: any) => ({
+        title: a.title || a.name || 'Achievement',
+        icon: a.icon || '\uD83C\uDFC6',
+        date: a.date || a.earned_at || '',
+      }));
+
+  return {
+    id: student.id || raw.id || String(Math.random()),
+    name: student.name || raw.name || 'Child',
+    grade: student.grade || raw.grade || '?',
+    stats: {
+      xp: stats.xp || 0,
+      streak: stats.streak || stats.current_streak || 0,
+      mastery: stats.mastery || stats.mastery_percent || 0,
+      accuracy: stats.accuracy || stats.avg_score || 0,
+      totalQuizzes: stats.totalQuizzes || stats.total_quizzes || 0,
+      minutes: stats.minutes || stats.study_minutes || 0,
+    },
+    todayQuizzes: stats.todayQuizzes || stats.today_quizzes || 0,
+    todayMinutes: stats.todayMinutes || stats.today_minutes || 0,
+    lastActive: lastActiveRaw,
+    activeToday,
+    subjects: subjects.filter(Boolean),
+    subjectProgress,
+    recentAchievements,
+    weekSummary: raw.weekSummary || raw.week_summary || '',
+  };
+}
+
+// ============================================================
+// STYLES
+// ============================================================
+const pageStyle: React.CSSProperties = {
+  maxWidth: 600,
+  margin: '0 auto',
+  padding: '20px 16px',
+  fontFamily: "'Plus Jakarta Sans', 'Sora', system-ui, sans-serif",
+  color: '#E2E8F0',
+  backgroundColor: '#0B1120',
+  minHeight: '100vh',
+};
