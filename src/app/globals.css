@@ -470,3 +470,277 @@ select.input-base option { background: var(--surface-1); color: var(--text-1); }
     transition: margin-left 0.25s ease, width 0.25s ease;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   LANDING PAGE — Responsive Overrides
+   These classes control the public landing page across all
+   breakpoints: 320px (small phone) → 768px (tablet) → 1024px+
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Stats bar: 2x2 on phones, 4-col on tablet+ */
+.landing-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0;
+}
+@media (min-width: 640px) {
+  .landing-stats-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* Features grid: 1 col on phones, 2 on sm tablets, 3 on desktop */
+.landing-features-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+@media (min-width: 480px) {
+  .landing-features-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+  }
+}
+@media (min-width: 900px) {
+  .landing-features-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+}
+
+/* How it works: 1-col on phones, 3-col on tablet+ */
+.landing-steps-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+@media (min-width: 640px) {
+  .landing-steps-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+  }
+}
+
+/* For Whom / Stakeholders: 1 col on phones, 3 on tablet+ */
+.landing-roles-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+@media (min-width: 640px) {
+  .landing-roles-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+  }
+}
+@media (min-width: 900px) {
+  .landing-roles-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+}
+
+/* Trust badges: wrap on phones, inline on tablet+ */
+.landing-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+}
+@media (min-width: 480px) {
+  .landing-badges { gap: 16px; }
+}
+
+/* Landing section padding: tighter on mobile */
+.landing-section {
+  padding: 48px 16px;
+}
+@media (min-width: 640px) {
+  .landing-section { padding: 64px 20px; }
+}
+@media (min-width: 1024px) {
+  .landing-section { padding: 80px 20px; }
+}
+
+/* Landing nav container */
+.landing-nav-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 16px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+@media (min-width: 640px) {
+  .landing-nav-inner { padding: 0 20px; }
+}
+
+/* Landing section container (constrains width) */
+.landing-container {
+  max-width: 1100px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* Hero section responsive padding */
+.landing-hero {
+  padding: 48px 16px 72px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+@media (min-width: 640px) {
+  .landing-hero { padding: 72px 20px 88px; }
+}
+@media (min-width: 1024px) {
+  .landing-hero { padding: 100px 20px 100px; }
+}
+
+/* Hero CTA buttons stack on small phones, inline on larger */
+.hero-cta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+@media (min-width: 400px) {
+  .hero-cta {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
+  }
+}
+
+/* Stats bar overlap */
+.landing-stats-wrapper {
+  max-width: 900px;
+  margin: -32px auto 0;
+  padding: 0 16px;
+  position: relative;
+  z-index: 10;
+}
+@media (min-width: 640px) {
+  .landing-stats-wrapper { margin-top: -40px; padding: 0 20px; }
+}
+
+/* ─── App Page Responsive Helpers ─────────────────────────────
+   For quiz, leaderboard, study-plan, etc.
+   ───────────────────────────────────────────────────────────── */
+
+/* Horizontal scroll container (mode pills, tags, etc.) */
+.scroll-row {
+  display: flex;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  gap: 6px;
+}
+.scroll-row::-webkit-scrollbar { display: none; }
+
+/* Responsive form card (auth, profile, onboarding) */
+.form-card-wrap {
+  width: 100%;
+  padding: 0 12px;
+}
+@media (min-width: 640px) {
+  .form-card-wrap { padding: 0 20px; }
+}
+
+/* Foxy mode bar: always scroll horizontally, never wrap & overflow */
+.foxy-mode-bar {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  flex-shrink: 0;
+}
+.foxy-mode-bar::-webkit-scrollbar { display: none; }
+
+/* Foxy toolbar row: wrap on very small screens */
+.foxy-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+}
+@media (min-width: 640px) {
+  .foxy-toolbar { flex-wrap: nowrap; gap: 8px; padding: 8px 12px; }
+}
+
+/* Ensure images/iframes never overflow */
+img, video, iframe, canvas, svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Touch target minimum size (accessibility) */
+@media (pointer: coarse) {
+  button, a, [role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  /* Exception: tiny inline pill buttons */
+  .pill-btn {
+    min-height: 32px;
+    min-width: auto;
+  }
+}
+
+/* ─── Safe Area (notched phones) ─────────────────────────── */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* ─── Text Overflow Protection ───────────────────────────── */
+.text-break {
+  overflow-wrap: break-word;
+  word-break: break-word;
+  hyphens: auto;
+}
+
+/* Prevent horizontal scroll on any stacked layout */
+.app-shell, main, section, article {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+/* ─── Responsive Font Scaling ────────────────────────────── */
+@media (max-width: 374px) {
+  /* Small phones (iPhone SE, old Androids): tighten everything */
+  body { font-size: 14px; }
+  .input-base { font-size: 14px; padding: 12px 14px; }
+  .btn-primary { padding: 12px 20px; font-size: 14px; }
+  .btn-ghost { padding: 10px 18px; font-size: 13px; }
+  h1 { font-size: clamp(20px, 6vw, 28px) !important; }
+  h2 { font-size: clamp(18px, 5vw, 24px) !important; }
+}
+
+/* ─── Tablet Layout Improvements (iPad, etc.) ────────────── */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .app-container {
+    max-width: 680px;
+    padding: 0 24px;
+  }
+  /* Center auth/profile cards nicely on tablet */
+  .mesh-bg > .w-full {
+    max-width: 480px;
+  }
+}
+
+/* ─── Desktop Wide (1200px+) ─────────────────────────────── */
+@media (min-width: 1200px) {
+  .landing-container {
+    max-width: 1200px;
+  }
+}
+
+/* ─── Print Safety ───────────────────────────────────────── */
+@media print {
+  .bottom-nav-mobile, .sidebar-nav { display: none !important; }
+  .pb-nav { padding-bottom: 0 !important; }
+  body { background: #fff; }
+}
