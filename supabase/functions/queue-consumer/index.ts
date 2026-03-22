@@ -185,7 +185,7 @@ async function processQuizTask(supabase: SupabaseClient, payload: QuizPayload): 
   if (xp_earned > 0) {
     const { data: profile } = await supabase
       .from('student_learning_profiles')
-      .select('id, xp, total_questions_asked, total_questions_answered_correctly')
+      .select('id, xp_total, total_questions_asked, total_questions_answered_correctly')
       .eq('student_id', student_id)
       .eq('subject', subject)
       .maybeSingle()
@@ -194,12 +194,13 @@ async function processQuizTask(supabase: SupabaseClient, payload: QuizPayload): 
       await supabase
         .from('student_learning_profiles')
         .update({
-          xp: ((profile.xp as number) ?? 0) + xp_earned,
+          xp_total: ((profile.xp_total as number) ?? 0) + xp_earned,
           total_questions_asked:
             ((profile.total_questions_asked as number) ?? 0) + responses.length,
           total_questions_answered_correctly:
             ((profile.total_questions_answered_correctly as number) ?? 0) +
             responses.filter((r) => r.is_correct).length,
+          last_activity_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })
         .eq('id', profile.id)
@@ -209,10 +210,11 @@ async function processQuizTask(supabase: SupabaseClient, payload: QuizPayload): 
         student_id,
         subject,
         grade,
-        xp: xp_earned,
+        xp_total: xp_earned,
         total_questions_asked: responses.length,
         total_questions_answered_correctly: responses.filter((r) => r.is_correct).length,
         streak_days: 0,
+        last_activity_at: new Date().toISOString(),
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
