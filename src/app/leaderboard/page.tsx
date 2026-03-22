@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { getLeaderboard, getCompetitions, joinCompetition, getCompetitionLeaderboard, getHallOfFame, supabase } from '@/lib/supabase';
+import { useRealtimeSubscription } from '@/hooks/useRealtimeSubscription';
 import { Card, Button, SectionHeader, LoadingFoxy, BottomNav, Avatar } from '@/components/ui';
 
 type Tab = 'ranks' | 'compete' | 'fame' | 'titles';
@@ -48,6 +49,7 @@ export default function LeaderboardPage() {
   const [joining, setJoining] = useState<string | null>(null);
   const [selectedComp, setSelectedComp] = useState<any>(null);
   const [compLeaderboard, setCompLeaderboard] = useState<any[]>([]);
+  const [highlightedStudents, setHighlightedStudents] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/');
@@ -105,6 +107,47 @@ export default function LeaderboardPage() {
 
   useEffect(() => { if (student && tab === 'ranks') loadRanks(); }, [period]);
 
+  // Realtime subscription for XP updates on leaderboard
+  useRealtimeSubscription(
+    'student_learning_profiles',
+    null,
+    undefined,
+    (payload) => {
+      // On UPDATE: re-sort leaderboard if XP changed
+      if (payload.new && tab === 'ranks') {
+        const updatedProfile = payload.new;
+        setEntries(prevEntries => {
+          const newEntries = prevEntries.map(entry => {
+            if (entry.student_id === updatedProfile.student_id) {
+              return { ...entry, total_xp: (entry.total_xp ?? 0) + (updatedProfile.xp - (payload.old?.xp ?? 0)) };
+            }
+            return entry;
+          });
+          // Re-sort by XP
+          newEntries.sort((a, b) => (b.total_xp ?? 0) - (a.total_xp ?? 0));
+
+          // Highlight students with rank changes
+          const changedStudents = new Set<string>();
+          newEntries.forEach((entry, idx) => {
+            const oldIdx = prevEntries.findIndex(e => e.student_id === entry.student_id);
+            if (oldIdx !== idx && oldIdx >= 0) {
+              changedStudents.add(entry.student_id);
+            }
+          });
+
+          if (changedStudents.size > 0) {
+            setHighlightedStudents(changedStudents);
+            setTimeout(() => setHighlightedStudents(new Set()), 2000);
+          }
+
+          return newEntries;
+        });
+      }
+    },
+    undefined,
+    tab === 'ranks'
+  );
+
   const handleJoin = async (compId: string) => {
     if (!student) return;
     setJoining(compId);
@@ -142,6 +185,24 @@ export default function LeaderboardPage() {
 
   return (
     <div className="mesh-bg min-h-dvh pb-nav">
+      <style>{`
+        @keyframes rankChange {
+          0% {
+            background: rgba(232, 88, 28, 0.15);
+            transform: scale(1.02);
+          }
+          50% {
+            background: rgba(232, 88, 28, 0.25);
+          }
+          100% {
+            background: transparent;
+            transform: scale(1);
+          }
+        }
+        .rank-changed {
+          animation: rankChange 0.8s ease-out;
+        }
+      `}</style>
       {/* Header */}
       <header className="page-header" style={{ background: 'rgba(251,248,244,0.88)', backdropFilter: 'blur(20px)' }}>
         <div className="app-container py-3">
@@ -266,9 +327,10 @@ export default function LeaderboardPage() {
                 <div className="space-y-2">
                   {entries.map((entry, idx) => {
                     const isMe = entry.student_id === student.id;
+                    const isHighlighted = highlightedStudents.has(entry.student_id);
                     return (
                       <Card key={entry.student_id}
-                        className={`!p-3 flex items-center gap-3 ${isMe ? 'ring-2 ring-[var(--orange)]' : ''}`}>
+                        className={`!p-3 flex items-center gap-3 ${isMe ? 'ring-2 ring-[var(--orange)]' : ''} ${isHighlighted ? 'rank-changed' : ''}`}>
                         <div className="w-8 text-center flex-shrink-0">
                           {idx < 3 ? <span className="text-xl">{MEDALS[idx]}</span>
                             : <span className="text-sm font-bold text-[var(--text-3)]">#{idx + 1}</span>}
