@@ -121,7 +121,7 @@ function PollTab({ classId, teacherId }: { classId: string; teacherId: string })
       if (payload.new) {
         setResponseCount(c => c + 1);
         // Update poll's response_count too
-        setPoll(prev => prev ? { ...prev, response_count: (prev.response_count ?? 0) + 1 } : null);
+        setPoll((prev: any) => prev ? { ...prev, response_count: (prev.response_count ?? 0) + 1 } : null);
       }
     },
     undefined,
