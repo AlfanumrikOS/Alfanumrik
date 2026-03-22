@@ -108,6 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const fetchUser = useCallback(async () => {
+    let hasUser = false;
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
@@ -120,60 +121,69 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsLoading(false);
         return;
       }
+      hasUser = true;
       setAuthUserId(user.id);
 
       // Detect all roles using RPC
-      const { data: roleData } = await supabase.rpc('get_user_role', {
-        p_auth_user_id: user.id,
-      });
+      let rolesResolved = false;
+      try {
+        const { data: roleData } = await supabase.rpc('get_user_role', {
+          p_auth_user_id: user.id,
+        });
 
-      if (roleData) {
-        const rd = roleData as RoleData;
-        setRoles(rd.roles || []);
+        if (roleData) {
+          const rd = roleData as RoleData;
+          setRoles(rd.roles || []);
+          rolesResolved = (rd.roles || []).length > 0;
 
-        // Restore saved role or use primary
-        const savedRole = typeof window !== 'undefined'
-          ? localStorage.getItem('alfanumrik_active_role') as UserRole | null
-          : null;
-        const effectiveRole = savedRole && rd.roles.includes(savedRole)
-          ? savedRole
-          : rd.primary_role || 'none';
-        setActiveRoleState(effectiveRole);
+          // Restore saved role or use primary
+          const savedRole = typeof window !== 'undefined'
+            ? localStorage.getItem('alfanumrik_active_role') as UserRole | null
+            : null;
+          const effectiveRole = savedRole && rd.roles.includes(savedRole)
+            ? savedRole
+            : rd.primary_role || 'student';
+          setActiveRoleState(effectiveRole);
 
-        // Load student profile if role exists
-        if (rd.student) {
-          const { data: studentData } = await supabase
-            .from('students')
-            .select('*')
-            .eq('id', rd.student.id)
-            .single();
-          if (studentData) {
-            setStudent(studentData as Student);
-            setLanguageState(studentData.preferred_language ?? 'en');
+          // Load student profile if role exists
+          if (rd.student) {
+            const { data: studentData } = await supabase
+              .from('students')
+              .select('*')
+              .eq('id', rd.student.id)
+              .single();
+            if (studentData) {
+              setStudent(studentData as Student);
+              setLanguageState(studentData.preferred_language ?? 'en');
+            }
+          }
+
+          // Load teacher profile if role exists
+          if (rd.teacher) {
+            const { data: teacherData } = await supabase
+              .from('teachers')
+              .select('id, name, school_name, subjects_taught, grades_taught, email, phone')
+              .eq('id', rd.teacher.id)
+              .single();
+            if (teacherData) setTeacher(teacherData as TeacherProfile);
+          }
+
+          // Load guardian profile if role exists
+          if (rd.guardian) {
+            const { data: guardianData } = await supabase
+              .from('guardians')
+              .select('id, name, email, phone')
+              .eq('id', rd.guardian.id)
+              .single();
+            if (guardianData) setGuardian(guardianData as GuardianProfile);
           }
         }
+      } catch (rpcErr) {
+        console.warn('get_user_role RPC failed, using fallback:', rpcErr);
+      }
 
-        // Load teacher profile if role exists
-        if (rd.teacher) {
-          const { data: teacherData } = await supabase
-            .from('teachers')
-            .select('id, name, school_name, subjects_taught, grades_taught, email, phone')
-            .eq('id', rd.teacher.id)
-            .single();
-          if (teacherData) setTeacher(teacherData as TeacherProfile);
-        }
-
-        // Load guardian profile if role exists
-        if (rd.guardian) {
-          const { data: guardianData } = await supabase
-            .from('guardians')
-            .select('id, name, email, phone')
-            .eq('id', rd.guardian.id)
-            .single();
-          if (guardianData) setGuardian(guardianData as GuardianProfile);
-        }
-      } else {
-        // Fallback: try student table directly (backward compat)
+      // Fallback: try student table directly
+      if (!rolesResolved) {
         const { data: studentData } = await supabase
           .from('students')
           .select('*')
@@ -184,10 +194,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setRoles(['student']);
           setActiveRoleState('student');
           setLanguageState(studentData.preferred_language ?? 'en');
+        } else {
+          // User is authenticated but has no profile yet (new signup).
+          // Set minimum viable state so isLoggedIn becomes true.
+          setRoles(['student']);
+          setActiveRoleState('student');
         }
       }
     } catch (err) {
       console.error('Auth fetch error:', err);
+      // If user was authenticated, ensure they're not stuck as "logged out"
+      if (hasUser) {
+        setRoles(['student']);
+        setActiveRoleState('student');
+      }
     }
     setIsLoading(false);
   }, []);
@@ -235,7 +255,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         roles,
         activeRole,
         setActiveRole,
-        isLoggedIn: roles.length > 0,
+        isLoggedIn: roles.length > 0 || !!authUserId,
         isLoading,
         isHi: language === 'hi',
         language,
