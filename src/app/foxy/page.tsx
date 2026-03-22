@@ -439,7 +439,7 @@ export default function FoxyPage() {
       </header>
 
       {/* ═══ SUBJECT + CHAPTER + MODE BAR ═══ */}
-      <div className="px-3 py-2 flex flex-wrap items-center gap-2" style={{ background: 'var(--surface-1)', borderBottom: '1px solid var(--border)' }}>
+      <div className="foxy-toolbar" style={{ background: 'var(--surface-1)', borderBottom: '1px solid var(--border)' }}>
         {/* Subject dropdown */}
         <div className="relative">
           <button onClick={() => { setShowSubjectDD(!showSubjectDD); setShowChapterDD(false); }} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-[0.97]" style={{ background: `${cfg.color}10`, border: `1.5px solid ${cfg.color}30`, color: cfg.color }}>
@@ -500,7 +500,7 @@ export default function FoxyPage() {
         </div>
 
         {/* Mode pills */}
-        <div className="flex gap-1 ml-auto overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+        <div className="foxy-mode-bar ml-auto">
           {MODES.map(m => <button key={m.id} onClick={() => setSessionMode(m.id)} className="shrink-0 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all" style={{ background: sessionMode === m.id ? `${cfg.color}15` : 'transparent', color: sessionMode === m.id ? cfg.color : 'var(--text-3)' }}>{m.emoji}</button>)}
         </div>
       </div>
