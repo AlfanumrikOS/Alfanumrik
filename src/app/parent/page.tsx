@@ -1,156 +1,291 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
-// Rule 9: NEVER hardcode API keys — use environment variables
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
-async function nepApi(action: string, params: Record<string, unknown> = {}) {
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/nep-compliance`, {
+async function api(action: string, params: Record<string, unknown> = {}) {
+  const res = await fetch(`${SB_URL}/functions/v1/parent-portal`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON },
+    headers: { 'Content-Type': 'application/json', apikey: SB_KEY },
     body: JSON.stringify({ action, ...params }),
   });
   return res.json();
 }
 
-const BLOOM_COLORS: Record<string, string> = { remember: '#3B82F6', understand: '#6366F1', apply: '#8B5CF6', analyze: '#D97706', evaluate: '#EA580C', create: '#DC2626' };
+// ============================================================
+// PARENT LOGIN SCREEN
+// ============================================================
+function LoginScreen({ onLogin }: { onLogin: (g: any, s: any) => void }) {
+  const [code, setCode] = useState('');
+  const [name, setName] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-function BloomBar({ dist }: { dist: any }) {
-  const total = (dist?.total || 1);
-  return (<div>
-    <div style={{ display: 'flex', height: 24, borderRadius: 6, overflow: 'hidden', marginBottom: 8 }}>
-      {['remember','understand','apply','analyze','evaluate','create'].map(l => { const pct = total > 0 ? ((dist?.[l]||0)/total)*100 : 0; if (pct===0) return null; return <div key={l} style={{ width: `${pct}%`, backgroundColor: BLOOM_COLORS[l], minWidth: 2 }} title={`${l}: ${dist?.[l]||0}`} />; })}
+  const submit = async () => {
+    if (!code.trim()) { setError('Please enter link code'); return; }
+    setLoading(true); setError('');
+    const res = await api('parent_login', { link_code: code, parent_name: name || 'Parent' });
+    setLoading(false);
+    if (res.error) { setError(res.error); return; }
+    localStorage.setItem('alfanumrik_guardian', JSON.stringify(res.guardian));
+    localStorage.setItem('alfanumrik_parent_student', JSON.stringify(res.student));
+    onLogin(res.guardian, res.student);
+  };
+
+  return (
+    <div style={{ ...pageStyle, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ maxWidth: 380, width: '100%', textAlign: 'center' }}>
+        <div style={{ fontSize: 48, marginBottom: 12 }}>&#x1F9D1;&#x200D;&#x1F393;</div>
+        <h1 style={{ fontSize: 22, fontWeight: 700, color: '#F8FAFC', margin: '0 0 4px' }}>Parent Dashboard</h1>
+        <p style={{ fontSize: 14, color: '#64748B', margin: '0 0 24px' }}>Enter your child&apos;s link code to view their progress</p>
+        <input style={inputStyle} placeholder="Your name" value={name} onChange={e => setName(e.target.value)} />
+        <input style={{ ...inputStyle, fontSize: 20, letterSpacing: 4, textAlign: 'center', textTransform: 'uppercase' }} placeholder="LINK CODE" value={code} onChange={e => setCode(e.target.value.toUpperCase())} maxLength={8} onKeyDown={e => e.key === 'Enter' && submit()} />
+        {error && <p style={{ color: '#EF4444', fontSize: 13, margin: '8px 0' }}>{error}</p>}
+        <button onClick={submit} disabled={loading} style={{ ...btnStyle, width: '100%', marginTop: 8, opacity: loading ? 0.5 : 1 }}>
+          {loading ? 'Connecting...' : 'View Dashboard'}
+        </button>
+        <p style={{ fontSize: 12, color: '#475569', marginTop: 16 }}>
+          Ask your child for the link code from their Alfanumrik profile.
+        </p>
+      </div>
     </div>
+  );
+}
+
+// ============================================================
+// STAT CARD
+// ============================================================
+function Stat({ label, value, color, icon }: { label: string; value: string | number; color: string; icon: string }) {
+  return (
+    <div style={{ backgroundColor: '#0F172A', borderRadius: 12, padding: '12px 14px', border: '1px solid #1E293B' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+        <span style={{ fontSize: 14 }}>{icon}</span>
+        <span style={{ color: '#64748B', fontSize: 11, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>{label}</span>
+      </div>
+      <span style={{ color, fontSize: 22, fontWeight: 700 }}>{value}</span>
+    </div>
+  );
+}
+
+// ============================================================
+// WEEKLY ACTIVITY CHART
+// ============================================================
+function WeeklyChart({ data }: { data: any[] }) {
+  const maxQ = Math.max(...data.map(d => d.quizzes), 1);
+  return (
+    <div style={cardStyle}>
+      <h3 style={cardTitle}>This week</h3>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 100, marginTop: 12 }}>
+        {data.map((d, i) => (
+          <div key={i} style={{ flex: 1, textAlign: 'center' }}>
+            <div style={{ height: Math.max(4, (d.quizzes / maxQ) * 80), backgroundColor: d.active ? '#6366F1' : '#1E293B', borderRadius: 4, marginBottom: 6, transition: 'height 0.3s' }} />
+            <span style={{ fontSize: 10, color: d.active ? '#E2E8F0' : '#475569' }}>{d.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// BKT MASTERY RING
+// ============================================================
+function MasteryRing({ levels, total }: { levels: Record<string, number>; total: number }) {
+  if (total === 0) return <p style={{ color: '#475569', fontSize: 13, fontStyle: 'italic' }}>No adaptive data yet.</p>;
+  const data = [
+    { label: 'Mastered', count: levels.mastered || 0, color: '#059669' },
+    { label: 'Proficient', count: levels.proficient || 0, color: '#7C3AED' },
+    { label: 'Familiar', count: levels.familiar || 0, color: '#2563EB' },
+    { label: 'Attempted', count: levels.attempted || 0, color: '#D97706' },
+  ].filter(d => d.count > 0);
+  return (
     <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-      {['remember','understand','apply','analyze','evaluate','create'].map(l => (<span key={l} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#94A3B8' }}><span style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: BLOOM_COLORS[l] }} />{l}: {dist?.[l]||0}</span>))}
+      {data.map(d => (
+        <div key={d.label} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', backgroundColor: '#1E293B', borderRadius: 8, borderLeft: `3px solid ${d.color}` }}>
+          <span style={{ fontSize: 18, fontWeight: 700, color: d.color }}>{d.count}</span>
+          <span style={{ fontSize: 12, color: '#94A3B8' }}>{d.label}</span>
+        </div>
+      ))}
     </div>
-  </div>);
+  );
 }
 
-function CompetencyBadge({ level }: { level: string }) {
-  const c: Record<string,{bg:string;text:string}> = { advanced:{bg:'#059669',text:'#D1FAE5'}, proficient:{bg:'#7C3AED',text:'#EDE9FE'}, developing:{bg:'#D97706',text:'#FEF3C7'}, beginning:{bg:'#DC2626',text:'#FEE2E2'} };
-  const s = c[level]||c.beginning;
-  return <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 10px', borderRadius: 99, backgroundColor: s.bg, color: s.text, textTransform: 'uppercase' as const }}>{level}</span>;
-}
-
-function BehaviorRating({ value, label }: { value: number|null; label: string }) {
-  return (<div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
-    <span style={{ fontSize: 13, color: '#94A3B8', minWidth: 120 }}>{label}</span>
-    <div style={{ display: 'flex', gap: 3 }}>{[1,2,3,4,5].map(i => (<div key={i} style={{ width: 16, height: 16, borderRadius: 3, backgroundColor: value && i <= value ? '#6366F1' : '#1E293B', border: '1px solid #334155' }} />))}</div>
-    <span style={{ fontSize: 12, color: '#E2E8F0', marginLeft: 4 }}>{value||'—'}/5</span>
-  </div>);
-}
-
-export default function HPCPage() {
-  const [hpc, setHpc] = useState<any>(null);
+// ============================================================
+// MAIN DASHBOARD
+// ============================================================
+function Dashboard({ guardian, student }: { guardian: any; student: any }) {
+  const [dash, setDash] = useState<any>(null);
+  const [tips, setTips] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showTips, setShowTips] = useState(false);
 
-  // TODO(production): Get student_id from auth session, not hardcoded
-  const studentId = 'c64920ff-ca82-47e3-9991-26051ca8a6cd';
+  const load = useCallback(async () => {
+    setLoading(true);
+    const [d, t] = await Promise.all([
+      api('get_child_dashboard', { student_id: student.id, guardian_id: guardian.id }),
+      api('get_tips'),
+    ]);
+    setDash(d); setTips(t.tips || []);
+    setLoading(false);
+  }, [student.id, guardian.id]);
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      await nepApi('generate_hpc', { student_id: studentId });
-      const data = await nepApi('get_hpc', { student_id: studentId });
-      setHpc(data);
-      setLoading(false);
-    })();
-  }, []);
+  useEffect(() => { load(); }, [load]);
 
-  if (loading) return (<div style={pageStyle}><div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}><div style={{ width: 40, height: 40, border: '3px solid #1E293B', borderTopColor: '#6366F1', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />Generating Holistic Progress Card...</div><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div>);
-  if (!hpc || hpc.error) return <div style={pageStyle}><div style={{ textAlign: 'center', padding: 60, color: '#EF4444' }}>{hpc?.error || 'Failed to load HPC'}</div></div>;
+  const logout = () => { localStorage.removeItem('alfanumrik_guardian'); localStorage.removeItem('alfanumrik_parent_student'); window.location.reload(); };
 
-  const stu = hpc.student;
-  const comp = hpc.competency_levels || {};
-  const subPerf = hpc.subject_performance || {};
-  const behaviors = hpc.learning_behaviors || {};
-  const holistic = hpc.holistic_indicators || {};
-  const cbse = hpc.cbse_readiness || {};
-  const portfolio = hpc.portfolio_highlights || [];
+  if (loading) return (
+    <div style={pageStyle}>
+      <div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}>
+        <div style={{ width: 40, height: 40, border: '3px solid #1E293B', borderTopColor: '#6366F1', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />
+        Loading {student.name}&apos;s progress...
+      </div>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </div>
+  );
+
+  if (!dash || dash.error) return <div style={pageStyle}><div style={{ textAlign: 'center', padding: 60, color: '#EF4444' }}>{dash?.error || 'Failed to load dashboard'}</div></div>;
+
+  const s = dash.stats;
 
   return (
     <div style={pageStyle}>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}} .hpc-card{background:#0F172A;border-radius:14px;padding:18px 20px;border:1px solid #1E293B;margin-bottom:14px} .hpc-title{font-size:15px;font-weight:600;color:#F1F5F9;margin:0 0 12px} .hpc-label{font-size:12px;color:#64748B;font-weight:500;margin:0 0 4px;text-transform:uppercase;letter-spacing:0.5px}`}</style>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
 
+      {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid #1E293B' }}>
         <div>
-          <p style={{ fontSize: 11, color: '#6366F1', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: 1, margin: '0 0 4px' }}>NEP 2020 Holistic Progress Card</p>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: '#F8FAFC', margin: 0 }}>{stu?.name || 'Student'}</h1>
-          <p style={{ fontSize: 14, color: '#64748B', margin: '4px 0 0' }}>Grade {stu?.grade} | {stu?.board || 'CBSE'} | {hpc.academic_year} {hpc.term}</p>
+          <p style={{ fontSize: 11, color: '#6366F1', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: 1, margin: '0 0 4px' }}>Parent Dashboard</p>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#F8FAFC', margin: 0 }}>{dash.student?.name || student.name}</h1>
+          <p style={{ fontSize: 14, color: '#64748B', margin: '4px 0 0' }}>Grade {dash.student?.grade || student.grade} | {dash.subject || 'Science'}</p>
         </div>
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: 36, fontWeight: 700, color: '#6366F1' }}>P{hpc.class_percentile || 50}</div>
-          <div style={{ fontSize: 11, color: '#64748B' }}>Class percentile</div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={load} style={{ padding: '6px 12px', background: 'transparent', color: '#6366F1', border: '1px solid #334155', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>Refresh</button>
+          <button onClick={logout} style={{ padding: '6px 12px', background: 'transparent', color: '#94A3B8', border: '1px solid #334155', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>Logout</button>
         </div>
       </div>
 
-      <div className="hpc-card"><h3 className="hpc-title">Bloom&apos;s taxonomy distribution</h3><BloomBar dist={hpc.bloom_distribution} /></div>
+      {/* Stats Grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginBottom: 16 }}>
+        <Stat icon="&#x2B50;" label="XP" value={s.xp || 0} color="#F59E0B" />
+        <Stat icon="&#x1F525;" label="Streak" value={`${s.streak || 0}d`} color="#EF4444" />
+        <Stat icon="&#x1F3AF;" label="Accuracy" value={`${s.accuracy || 0}%`} color="#059669" />
+        <Stat icon="&#x1F4DA;" label="Quizzes" value={s.totalQuizzes || 0} color="#6366F1" />
+      </div>
 
-      {Object.entries(subPerf).filter(([,v]: any) => v.concepts_attempted > 0).map(([subject, perf]: any) => (
-        <div key={subject} className="hpc-card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <h3 className="hpc-title" style={{ margin: 0, textTransform: 'capitalize' as const }}>{subject}</h3>
-            {comp[subject] && <CompetencyBadge level={comp[subject].overall_level} />}
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: 10 }}>
-            <div><p className="hpc-label">Mastery</p><p style={{ fontSize: 20, fontWeight: 700, color: '#E2E8F0', margin: 0 }}>{perf.avg_mastery_pct || 0}%</p></div>
-            <div><p className="hpc-label">Concepts</p><p style={{ fontSize: 20, fontWeight: 700, color: '#E2E8F0', margin: 0 }}>{perf.concepts_attempted}/{perf.concepts_total}</p></div>
-            <div><p className="hpc-label">Chapters</p><p style={{ fontSize: 20, fontWeight: 700, color: '#E2E8F0', margin: 0 }}>{perf.chapters_covered}/{perf.chapters_total}</p></div>
-          </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: 10, marginBottom: 16 }}>
+        <Stat icon="&#x23F1;" label="Study time" value={`${s.minutes || 0}m`} color="#8B5CF6" />
+        <Stat icon="&#x1F4AC;" label="Foxy chats" value={s.totalChats || 0} color="#EC4899" />
+        <Stat icon="&#x1F4CA;" label="Avg score" value={`${s.avgScore || 0}%`} color="#2563EB" />
+      </div>
+
+      {/* Weekly Activity */}
+      {dash.dailyActivity && <WeeklyChart data={dash.dailyActivity} />}
+
+      {/* Week Summary */}
+      {dash.weekSummary && (
+        <div style={{ ...cardStyle, display: 'flex', justifyContent: 'space-around', padding: '14px 20px', textAlign: 'center' }}>
+          <div><span style={{ fontSize: 20, fontWeight: 700, color: '#6366F1' }}>{dash.weekSummary.quizzes}</span><br /><span style={{ fontSize: 11, color: '#64748B' }}>quizzes this week</span></div>
+          <div style={{ width: 1, backgroundColor: '#1E293B' }} />
+          <div><span style={{ fontSize: 20, fontWeight: 700, color: '#059669' }}>{dash.weekSummary.avgScore}%</span><br /><span style={{ fontSize: 11, color: '#64748B' }}>avg score</span></div>
+          <div style={{ width: 1, backgroundColor: '#1E293B' }} />
+          <div><span style={{ fontSize: 20, fontWeight: 700, color: '#D97706' }}>{dash.weekSummary.activeDays}/7</span><br /><span style={{ fontSize: 11, color: '#64748B' }}>active days</span></div>
         </div>
-      ))}
+      )}
 
-      {Object.entries(cbse).filter(([,sections]: any) => Object.values(sections).some((s: any) => s.readiness_pct != null)).map(([subject, sections]: any) => (
-        <div key={subject} className="hpc-card">
-          <h3 className="hpc-title" style={{ textTransform: 'capitalize' as const }}>CBSE board exam readiness — {subject}</h3>
-          {Object.entries(sections).map(([,s]: any) => (
-            <div key={s.section} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0' }}>
-              <span style={{ fontSize: 12, color: '#94A3B8', minWidth: 160, whiteSpace: 'nowrap' }}>{s.section} ({s.marks}m)</span>
-              <div style={{ flex: 1, height: 8, backgroundColor: '#1E293B', borderRadius: 4, overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${s.readiness_pct || 0}%`, backgroundColor: (s.readiness_pct||0) >= 70 ? '#059669' : (s.readiness_pct||0) >= 40 ? '#D97706' : '#DC2626', borderRadius: 4 }} />
+      {/* BKT Adaptive Mastery */}
+      {dash.bktMastery && dash.bktMastery.total > 0 && (
+        <div style={cardStyle}>
+          <h3 style={cardTitle}>Adaptive mastery (BKT engine)</h3>
+          <MasteryRing levels={dash.bktMastery.levels} total={dash.bktMastery.total} />
+          <p style={{ fontSize: 12, color: '#475569', margin: '10px 0 0' }}>{dash.bktMastery.total} concepts tracked by the Bayesian Knowledge Tracing engine</p>
+        </div>
+      )}
+
+      {/* Active Bursts / Adventures */}
+      {dash.activeBursts && dash.activeBursts.length > 0 && (
+        <div style={cardStyle}>
+          <h3 style={cardTitle}>Active learning adventures</h3>
+          {dash.activeBursts.map((b: any, i: number) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', borderBottom: i < dash.activeBursts.length - 1 ? '1px solid #1E293B' : 'none' }}>
+              <span style={{ fontSize: 20 }}>{b.type === 'boss_battle' ? '\u2694\uFE0F' : b.type === 'mystery_solve' ? '\uD83D\uDD0D' : '\uD83C\uDFF0'}</span>
+              <div style={{ flex: 1 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#E2E8F0' }}>{b.title}</span>
+                <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+                  <div style={{ flex: 1, height: 6, backgroundColor: '#1E293B', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${Math.round((b.progress / b.goal) * 100)}%`, backgroundColor: '#6366F1', borderRadius: 3 }} />
+                  </div>
+                  <span style={{ fontSize: 11, color: '#94A3B8', minWidth: 40 }}>{b.progress}/{b.goal}</span>
+                </div>
               </div>
-              <span style={{ fontSize: 13, fontWeight: 600, color: '#E2E8F0', minWidth: 40, textAlign: 'right' }}>{s.readiness_pct ?? '—'}%</span>
+              <span style={{ fontSize: 12, color: '#F59E0B', fontWeight: 600 }}>+{b.xp} XP</span>
             </div>
           ))}
         </div>
-      ))}
+      )}
 
-      <div className="hpc-card">
-        <h3 className="hpc-title">Learning behaviors (NCF 2023)</h3>
-        <BehaviorRating label="Consistency" value={behaviors.consistency} />
-        <BehaviorRating label="Curiosity" value={behaviors.curiosity} />
-        <BehaviorRating label="Self-regulation" value={behaviors.self_regulation} />
-        <BehaviorRating label="Collaboration" value={behaviors.collaboration} />
-      </div>
-
-      <div className="hpc-card">
-        <h3 className="hpc-title">Holistic indicators</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: 10 }}>
-          {[{label:'Sessions',val:holistic.total_sessions||0},{label:'Active days',val:holistic.active_days||0},{label:'Best streak',val:`${holistic.streak_best||0}d`},{label:'Notes',val:holistic.notes_created||0},{label:'Total XP',val:holistic.xp_total||0},{label:'Regularity',val:`${holistic.study_regularity_pct||0}%`}].map((s,i) => (
-            <div key={i}><p className="hpc-label">{s.label}</p><p style={{ fontSize: 18, fontWeight: 600, color: '#E2E8F0', margin: 0 }}>{s.val}</p></div>
+      {/* Insights */}
+      {dash.insights && dash.insights.length > 0 && (
+        <div style={cardStyle}>
+          <h3 style={cardTitle}>Insights for you</h3>
+          {dash.insights.map((insight: string, i: number) => (
+            <p key={i} style={{ fontSize: 13, color: '#CBD5E1', margin: '6px 0', padding: '8px 12px', backgroundColor: '#1E293B', borderRadius: 8, lineHeight: 1.5 }}>{insight}</p>
           ))}
         </div>
-      </div>
+      )}
 
-      {portfolio.length > 0 && (<div className="hpc-card">
-        <h3 className="hpc-title">Portfolio highlights</h3>
-        {portfolio.map((p: any, i: number) => (
-          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderBottom: i < portfolio.length-1 ? '1px solid #1E293B' : 'none' }}>
-            <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: p.type === 'mastery' ? '#059669' : '#6366F1', flexShrink: 0 }} />
-            <span style={{ fontSize: 13, color: '#E2E8F0', flex: 1 }}>{p.description}</span>
-            <span style={{ fontSize: 11, color: '#64748B' }}>{p.date}</span>
-          </div>
-        ))}
-      </div>)}
+      {/* Tips toggle */}
+      <button onClick={() => setShowTips(!showTips)} style={{ width: '100%', padding: '10px 16px', backgroundColor: '#0F172A', color: '#6366F1', border: '1px solid #1E293B', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', marginBottom: 14 }}>
+        {showTips ? 'Hide' : 'Show'} parenting tips
+      </button>
+      {showTips && tips.length > 0 && (
+        <div style={cardStyle}>
+          {tips.map((tip: any) => (
+            <div key={tip.id} style={{ padding: '10px 0', borderBottom: '1px solid #1E293B' }}>
+              <span style={{ fontSize: 14, fontWeight: 600, color: '#F1F5F9' }}>{tip.title}</span>
+              <p style={{ fontSize: 13, color: '#94A3B8', margin: '4px 0 0' }}>{tip.description}</p>
+            </div>
+          ))}
+        </div>
+      )}
 
       <p style={{ textAlign: 'center', fontSize: 11, color: '#475569', margin: '20px 0' }}>
-        Generated {new Date(hpc.generated_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })} | Alfanumrik Learning OS | NEP 2020 Compliant
+        Alfanumrik Learning OS | Parent Portal | Logged in as {guardian.name}
       </p>
     </div>
   );
 }
 
-const pageStyle: React.CSSProperties = { maxWidth: 700, margin: '0 auto', padding: '20px 16px', fontFamily: "'Plus Jakarta Sans', 'Sora', system-ui, sans-serif", color: '#E2E8F0', backgroundColor: '#0B1120', minHeight: '100vh' };
+// ============================================================
+// MAIN PAGE COMPONENT
+// ============================================================
+export default function ParentPage() {
+  const [guardian, setGuardian] = useState<any>(null);
+  const [student, setStudent] = useState<any>(null);
+  const [checking, setChecking] = useState(true);
+
+  useEffect(() => {
+    const g = localStorage.getItem('alfanumrik_guardian');
+    const s = localStorage.getItem('alfanumrik_parent_student');
+    if (g && s) { setGuardian(JSON.parse(g)); setStudent(JSON.parse(s)); }
+    setChecking(false);
+  }, []);
+
+  if (checking) return <div style={pageStyle}><div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}>Loading...</div></div>;
+
+  if (!guardian || !student) {
+    return <LoginScreen onLogin={(g, s) => { setGuardian(g); setStudent(s); }} />;
+  }
+
+  return <Dashboard guardian={guardian} student={student} />;
+}
+
+// ============================================================
+// STYLES
+// ============================================================
+const pageStyle: React.CSSProperties = { maxWidth: 600, margin: '0 auto', padding: '20px 16px', fontFamily: "'Plus Jakarta Sans', 'Sora', system-ui, sans-serif", color: '#E2E8F0', backgroundColor: '#0B1120', minHeight: '100vh' };
+const cardStyle: React.CSSProperties = { backgroundColor: '#0F172A', borderRadius: 14, padding: '16px 18px', border: '1px solid #1E293B', marginBottom: 14 };
+const cardTitle: React.CSSProperties = { fontSize: 15, fontWeight: 600, color: '#F1F5F9', margin: '0 0 12px' };
+const inputStyle: React.CSSProperties = { width: '100%', padding: '12px 14px', backgroundColor: '#1E293B', border: '1px solid #334155', borderRadius: 10, color: '#E2E8F0', fontSize: 15, outline: 'none', marginBottom: 10, boxSizing: 'border-box' };
+const btnStyle: React.CSSProperties = { padding: '12px 20px', backgroundColor: '#6366F1', color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 600, cursor: 'pointer' };
