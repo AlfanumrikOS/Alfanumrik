@@ -1,281 +1,291 @@
 'use client';
+
 import { useState, useEffect, useCallback } from 'react';
-import SimulationViewer from '../../components/SimulationViewer';
-import SimulationCard from '../../components/SimulationCard';
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
-interface Simulation {
-  id: string;
-  title: string;
-  description: string;
-  sim_type: string;
-  topic_title: string;
-  chapter_number: number;
-  difficulty: number;
-  bloom_level: string;
-  thumbnail_emoji: string;
-  estimated_time_minutes: number;
-  board_exam_relevance: number;
-  concept_tags: string[];
-  foxy_intro_prompt: string;
-  foxy_followup_prompts: string[];
-  widget_code?: string;
-  widget_type?: string;
-  subject_code?: string;
-  grade?: string;
-}
-
-const subjects = [
-  { code: 'all', label: 'All Subjects', emoji: '📚' },
-  { code: 'science', label: 'Science', emoji: '🔬' },
-  { code: 'math', label: 'Mathematics', emoji: '📐' },
-  { code: 'physics', label: 'Physics', emoji: '⚡' },
-  { code: 'chemistry', label: 'Chemistry', emoji: '🧪' },
-  { code: 'biology', label: 'Biology', emoji: '🧬' },
-];
-
-const grades = ['all', '6', '7', '8', '9', '10', '11', '12'];
-
-async function fetchSimulations(subject: string, grade: string): Promise<Simulation[]> {
-  const params = new URLSearchParams();
-  params.append('is_active', 'eq.true');
-  params.append('order', 'board_exam_relevance.desc,chapter_number.asc');
-  if (subject !== 'all') params.append('subject_code', `eq.${subject}`);
-  if (grade !== 'all') params.append('grade', `eq.${grade}`);
-  params.append('widget_code', 'neq.PLACEHOLDER');
-  params.append('limit', '50');
-
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/interactive_simulations?${params}`, {
-    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+async function api(action: string, params: Record<string, unknown> = {}) {
+  const res = await fetch(`${SB_URL}/functions/v1/parent-portal`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: SB_KEY },
+    body: JSON.stringify({ action, ...params }),
   });
-  if (!res.ok) return [];
   return res.json();
 }
 
-async function fetchFullSimulation(id: string): Promise<Simulation | null> {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/interactive_simulations?id=eq.${id}&limit=1`, {
-    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
-  });
-  if (!res.ok) return null;
-  const data = await res.json();
-  return data[0] || null;
-}
+// ============================================================
+// PARENT LOGIN SCREEN
+// ============================================================
+function LoginScreen({ onLogin }: { onLogin: (g: any, s: any) => void }) {
+  const [code, setCode] = useState('');
+  const [name, setName] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-export default function SimulationsPage() {
-  const [selectedSubject, setSelectedSubject] = useState('all');
-  const [selectedGrade, setSelectedGrade] = useState('10');
-  const [simulations, setSimulations] = useState<Simulation[]>([]);
-  const [activeSim, setActiveSim] = useState<Simulation | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [interactions, setInteractions] = useState(0);
-
-  const loadSims = useCallback(async () => {
-    setLoading(true);
-    const data = await fetchSimulations(selectedSubject, selectedGrade);
-    setSimulations(data);
+  const submit = async () => {
+    if (!code.trim()) { setError('Please enter link code'); return; }
+    setLoading(true); setError('');
+    const res = await api('parent_login', { link_code: code, parent_name: name || 'Parent' });
     setLoading(false);
-  }, [selectedSubject, selectedGrade]);
-
-  useEffect(() => { loadSims(); }, [loadSims]);
-
-  const openSim = async (id: string) => {
-    const full = await fetchFullSimulation(id);
-    if (full) {
-      setActiveSim(full);
-      setInteractions(0);
-    }
+    if (res.error) { setError(res.error); return; }
+    localStorage.setItem('alfanumrik_guardian', JSON.stringify(res.guardian));
+    localStorage.setItem('alfanumrik_parent_student', JSON.stringify(res.student));
+    onLogin(res.guardian, res.student);
   };
 
-  const closeSim = () => setActiveSim(null);
-
   return (
-    <div style={{ minHeight: '100vh', background: '#FBF8F4', padding: '0 0 40px' }}>
-      {/* Header */}
-      <div style={{
-        background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 50%, #a855f7 100%)',
-        padding: '32px 20px 28px',
-        color: '#fff',
-        textAlign: 'center'
-      }}>
-        <div style={{ fontSize: '32px', marginBottom: '8px' }}>🔬</div>
-        <h1 style={{ fontSize: '24px', fontWeight: 700, margin: 0, fontFamily: 'Sora, sans-serif' }}>
-          Interactive Lab
-        </h1>
-        <p style={{ fontSize: '13px', opacity: 0.8, marginTop: '6px', maxWidth: '400px', margin: '6px auto 0' }}>
-          Explore CBSE concepts with interactive simulations. Drag sliders, click buttons, and learn by doing!
+    <div style={{ ...pageStyle, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ maxWidth: 380, width: '100%', textAlign: 'center' }}>
+        <div style={{ fontSize: 48, marginBottom: 12 }}>&#x1F9D1;&#x200D;&#x1F393;</div>
+        <h1 style={{ fontSize: 22, fontWeight: 700, color: '#F8FAFC', margin: '0 0 4px' }}>Parent Dashboard</h1>
+        <p style={{ fontSize: 14, color: '#64748B', margin: '0 0 24px' }}>Enter your child&apos;s link code to view their progress</p>
+        <input style={inputStyle} placeholder="Your name" value={name} onChange={e => setName(e.target.value)} />
+        <input style={{ ...inputStyle, fontSize: 20, letterSpacing: 4, textAlign: 'center', textTransform: 'uppercase' }} placeholder="LINK CODE" value={code} onChange={e => setCode(e.target.value.toUpperCase())} maxLength={8} onKeyDown={e => e.key === 'Enter' && submit()} />
+        {error && <p style={{ color: '#EF4444', fontSize: 13, margin: '8px 0' }}>{error}</p>}
+        <button onClick={submit} disabled={loading} style={{ ...btnStyle, width: '100%', marginTop: 8, opacity: loading ? 0.5 : 1 }}>
+          {loading ? 'Connecting...' : 'View Dashboard'}
+        </button>
+        <p style={{ fontSize: 12, color: '#475569', marginTop: 16 }}>
+          Ask your child for the link code from their Alfanumrik profile.
         </p>
       </div>
-
-      {/* Filters */}
-      <div style={{ padding: '16px 20px', background: '#fff', borderBottom: '1px solid #f0f0f0', position: 'sticky', top: 0, zIndex: 10 }}>
-        <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '10px' }}>
-          {subjects.map(s => (
-            <button
-              key={s.code}
-              onClick={() => setSelectedSubject(s.code)}
-              style={{
-                padding: '6px 14px',
-                borderRadius: '20px',
-                border: 'none',
-                fontSize: '12px',
-                fontWeight: selectedSubject === s.code ? 600 : 400,
-                background: selectedSubject === s.code ? '#6366F1' : '#f5f3ff',
-                color: selectedSubject === s.code ? '#fff' : '#6366F1',
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-                transition: 'all 0.15s'
-              }}
-            >
-              {s.emoji} {s.label}
-            </button>
-          ))}
-        </div>
-        <div style={{ display: 'flex', gap: '6px', overflowX: 'auto' }}>
-          {grades.map(g => (
-            <button
-              key={g}
-              onClick={() => setSelectedGrade(g)}
-              style={{
-                padding: '4px 12px',
-                borderRadius: '14px',
-                border: '1px solid',
-                borderColor: selectedGrade === g ? '#6366F1' : '#e5e5e5',
-                fontSize: '11px',
-                fontWeight: selectedGrade === g ? 600 : 400,
-                background: selectedGrade === g ? '#6366F115' : '#fff',
-                color: selectedGrade === g ? '#6366F1' : '#888',
-                cursor: 'pointer',
-                transition: 'all 0.15s'
-              }}
-            >
-              {g === 'all' ? 'All grades' : `Class ${g}`}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Active Simulation Viewer */}
-      {activeSim && activeSim.widget_code && (
-        <div style={{ padding: '16px 20px' }}>
-          <button onClick={closeSim} style={{
-            marginBottom: '12px', padding: '6px 16px', borderRadius: '8px',
-            border: '1px solid #ddd', background: '#fff', fontSize: '12px', cursor: 'pointer'
-          }}>
-            ← Back to all simulations
-          </button>
-
-          <SimulationViewer
-            widgetCode={activeSim.widget_code}
-            title={activeSim.title}
-            description={activeSim.description}
-            simType={activeSim.sim_type}
-            onInteraction={() => setInteractions(prev => prev + 1)}
-          />
-
-          {/* Foxy integration */}
-          {activeSim.foxy_intro_prompt && (
-            <div style={{
-              marginTop: '16px',
-              background: '#fff',
-              borderRadius: '14px',
-              padding: '16px',
-              border: '1px solid rgba(99,102,241,0.1)',
-              display: 'flex',
-              gap: '12px',
-              alignItems: 'flex-start'
-            }}>
-              <span style={{ fontSize: '24px' }}>🦊</span>
-              <div>
-                <div style={{ fontSize: '13px', color: '#1a1a1a', lineHeight: 1.5 }}>
-                  {activeSim.foxy_intro_prompt}
-                </div>
-                <div style={{ marginTop: '8px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                  {(activeSim.foxy_followup_prompts || []).slice(0, 3).map((prompt: string, i: number) => (
-                    <a
-                      key={i}
-                      href={`/foxy?q=${encodeURIComponent(prompt)}`}
-                      style={{
-                        fontSize: '11px',
-                        padding: '4px 10px',
-                        borderRadius: '8px',
-                        background: '#f5f3ff',
-                        color: '#6366F1',
-                        textDecoration: 'none',
-                        border: '1px solid rgba(99,102,241,0.15)'
-                      }}
-                    >
-                      {prompt.length > 50 ? prompt.substring(0, 50) + '...' : prompt}
-                    </a>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {interactions > 0 && (
-            <div style={{
-              marginTop: '12px', textAlign: 'center',
-              fontSize: '12px', color: '#22c55e', fontWeight: 500
-            }}>
-              ✨ {interactions} interaction{interactions > 1 ? 's' : ''} — great exploring!
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Simulations Grid */}
-      {!activeSim && (
-        <div style={{ padding: '16px 20px' }}>
-          {loading ? (
-            <div style={{ textAlign: 'center', padding: '40px 0' }}>
-              <div style={{ fontSize: '36px', marginBottom: '12px' }}>🔬</div>
-              <div style={{ color: '#888', fontSize: '13px' }}>Loading simulations...</div>
-            </div>
-          ) : simulations.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '40px 0' }}>
-              <div style={{ fontSize: '36px', marginBottom: '12px' }}>🚧</div>
-              <div style={{ color: '#888', fontSize: '14px', fontWeight: 500 }}>
-                No simulations available yet for this selection
-              </div>
-              <div style={{ color: '#aaa', fontSize: '12px', marginTop: '4px' }}>
-                We&apos;re building more every day! Try Science Class 10 for the most options.
-              </div>
-            </div>
-          ) : (
-            <>
-              <div style={{ fontSize: '13px', color: '#888', marginBottom: '12px' }}>
-                {simulations.length} simulation{simulations.length !== 1 ? 's' : ''} available
-              </div>
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-                gap: '14px'
-              }}>
-                {simulations.map(sim => (
-                  <SimulationCard
-                    key={sim.id}
-                    id={sim.id}
-                    title={sim.title}
-                    description={sim.description || ''}
-                    simType={sim.sim_type}
-                    topicTitle={sim.topic_title}
-                    chapterNumber={sim.chapter_number}
-                    difficulty={sim.difficulty}
-                    bloomLevel={sim.bloom_level}
-                    thumbnailEmoji={sim.thumbnail_emoji}
-                    estimatedTimeMinutes={sim.estimated_time_minutes}
-                    boardExamRelevance={sim.board_exam_relevance}
-                    conceptTags={sim.concept_tags || []}
-                    onClick={openSim}
-                  />
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-      )}
     </div>
   );
 }
+
+// ============================================================
+// STAT CARD
+// ============================================================
+function Stat({ label, value, color, icon }: { label: string; value: string | number; color: string; icon: string }) {
+  return (
+    <div style={{ backgroundColor: '#0F172A', borderRadius: 12, padding: '12px 14px', border: '1px solid #1E293B' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+        <span style={{ fontSize: 14 }}>{icon}</span>
+        <span style={{ color: '#64748B', fontSize: 11, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>{label}</span>
+      </div>
+      <span style={{ color, fontSize: 22, fontWeight: 700 }}>{value}</span>
+    </div>
+  );
+}
+
+// ============================================================
+// WEEKLY ACTIVITY CHART
+// ============================================================
+function WeeklyChart({ data }: { data: any[] }) {
+  const maxQ = Math.max(...data.map(d => d.quizzes), 1);
+  return (
+    <div style={cardStyle}>
+      <h3 style={cardTitle}>This week</h3>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 100, marginTop: 12 }}>
+        {data.map((d, i) => (
+          <div key={i} style={{ flex: 1, textAlign: 'center' }}>
+            <div style={{ height: Math.max(4, (d.quizzes / maxQ) * 80), backgroundColor: d.active ? '#6366F1' : '#1E293B', borderRadius: 4, marginBottom: 6, transition: 'height 0.3s' }} />
+            <span style={{ fontSize: 10, color: d.active ? '#E2E8F0' : '#475569' }}>{d.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// BKT MASTERY RING
+// ============================================================
+function MasteryRing({ levels, total }: { levels: Record<string, number>; total: number }) {
+  if (total === 0) return <p style={{ color: '#475569', fontSize: 13, fontStyle: 'italic' }}>No adaptive data yet.</p>;
+  const data = [
+    { label: 'Mastered', count: levels.mastered || 0, color: '#059669' },
+    { label: 'Proficient', count: levels.proficient || 0, color: '#7C3AED' },
+    { label: 'Familiar', count: levels.familiar || 0, color: '#2563EB' },
+    { label: 'Attempted', count: levels.attempted || 0, color: '#D97706' },
+  ].filter(d => d.count > 0);
+  return (
+    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+      {data.map(d => (
+        <div key={d.label} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', backgroundColor: '#1E293B', borderRadius: 8, borderLeft: `3px solid ${d.color}` }}>
+          <span style={{ fontSize: 18, fontWeight: 700, color: d.color }}>{d.count}</span>
+          <span style={{ fontSize: 12, color: '#94A3B8' }}>{d.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ============================================================
+// MAIN DASHBOARD
+// ============================================================
+function Dashboard({ guardian, student }: { guardian: any; student: any }) {
+  const [dash, setDash] = useState<any>(null);
+  const [tips, setTips] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showTips, setShowTips] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const [d, t] = await Promise.all([
+      api('get_child_dashboard', { student_id: student.id, guardian_id: guardian.id }),
+      api('get_tips'),
+    ]);
+    setDash(d); setTips(t.tips || []);
+    setLoading(false);
+  }, [student.id, guardian.id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const logout = () => { localStorage.removeItem('alfanumrik_guardian'); localStorage.removeItem('alfanumrik_parent_student'); window.location.reload(); };
+
+  if (loading) return (
+    <div style={pageStyle}>
+      <div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}>
+        <div style={{ width: 40, height: 40, border: '3px solid #1E293B', borderTopColor: '#6366F1', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />
+        Loading {student.name}&apos;s progress...
+      </div>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </div>
+  );
+
+  if (!dash || dash.error) return <div style={pageStyle}><div style={{ textAlign: 'center', padding: 60, color: '#EF4444' }}>{dash?.error || 'Failed to load dashboard'}</div></div>;
+
+  const s = dash.stats;
+
+  return (
+    <div style={pageStyle}>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid #1E293B' }}>
+        <div>
+          <p style={{ fontSize: 11, color: '#6366F1', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: 1, margin: '0 0 4px' }}>Parent Dashboard</p>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#F8FAFC', margin: 0 }}>{dash.student?.name || student.name}</h1>
+          <p style={{ fontSize: 14, color: '#64748B', margin: '4px 0 0' }}>Grade {dash.student?.grade || student.grade} | {dash.subject || 'Science'}</p>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={load} style={{ padding: '6px 12px', background: 'transparent', color: '#6366F1', border: '1px solid #334155', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>Refresh</button>
+          <button onClick={logout} style={{ padding: '6px 12px', background: 'transparent', color: '#94A3B8', border: '1px solid #334155', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>Logout</button>
+        </div>
+      </div>
+
+      {/* Stats Grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginBottom: 16 }}>
+        <Stat icon="&#x2B50;" label="XP" value={s.xp || 0} color="#F59E0B" />
+        <Stat icon="&#x1F525;" label="Streak" value={`${s.streak || 0}d`} color="#EF4444" />
+        <Stat icon="&#x1F3AF;" label="Accuracy" value={`${s.accuracy || 0}%`} color="#059669" />
+        <Stat icon="&#x1F4DA;" label="Quizzes" value={s.totalQuizzes || 0} color="#6366F1" />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: 10, marginBottom: 16 }}>
+        <Stat icon="&#x23F1;" label="Study time" value={`${s.minutes || 0}m`} color="#8B5CF6" />
+        <Stat icon="&#x1F4AC;" label="Foxy chats" value={s.totalChats || 0} color="#EC4899" />
+        <Stat icon="&#x1F4CA;" label="Avg score" value={`${s.avgScore || 0}%`} color="#2563EB" />
+      </div>
+
+      {/* Weekly Activity */}
+      {dash.dailyActivity && <WeeklyChart data={dash.dailyActivity} />}
+
+      {/* Week Summary */}
+      {dash.weekSummary && (
+        <div style={{ ...cardStyle, display: 'flex', justifyContent: 'space-around', padding: '14px 20px', textAlign: 'center' }}>
+          <div><span style={{ fontSize: 20, fontWeight: 700, color: '#6366F1' }}>{dash.weekSummary.quizzes}</span><br /><span style={{ fontSize: 11, color: '#64748B' }}>quizzes this week</span></div>
+          <div style={{ width: 1, backgroundColor: '#1E293B' }} />
+          <div><span style={{ fontSize: 20, fontWeight: 700, color: '#059669' }}>{dash.weekSummary.avgScore}%</span><br /><span style={{ fontSize: 11, color: '#64748B' }}>avg score</span></div>
+          <div style={{ width: 1, backgroundColor: '#1E293B' }} />
+          <div><span style={{ fontSize: 20, fontWeight: 700, color: '#D97706' }}>{dash.weekSummary.activeDays}/7</span><br /><span style={{ fontSize: 11, color: '#64748B' }}>active days</span></div>
+        </div>
+      )}
+
+      {/* BKT Adaptive Mastery */}
+      {dash.bktMastery && dash.bktMastery.total > 0 && (
+        <div style={cardStyle}>
+          <h3 style={cardTitle}>Adaptive mastery (BKT engine)</h3>
+          <MasteryRing levels={dash.bktMastery.levels} total={dash.bktMastery.total} />
+          <p style={{ fontSize: 12, color: '#475569', margin: '10px 0 0' }}>{dash.bktMastery.total} concepts tracked by the Bayesian Knowledge Tracing engine</p>
+        </div>
+      )}
+
+      {/* Active Bursts / Adventures */}
+      {dash.activeBursts && dash.activeBursts.length > 0 && (
+        <div style={cardStyle}>
+          <h3 style={cardTitle}>Active learning adventures</h3>
+          {dash.activeBursts.map((b: any, i: number) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', borderBottom: i < dash.activeBursts.length - 1 ? '1px solid #1E293B' : 'none' }}>
+              <span style={{ fontSize: 20 }}>{b.type === 'boss_battle' ? '\u2694\uFE0F' : b.type === 'mystery_solve' ? '\uD83D\uDD0D' : '\uD83C\uDFF0'}</span>
+              <div style={{ flex: 1 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#E2E8F0' }}>{b.title}</span>
+                <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+                  <div style={{ flex: 1, height: 6, backgroundColor: '#1E293B', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${Math.round((b.progress / b.goal) * 100)}%`, backgroundColor: '#6366F1', borderRadius: 3 }} />
+                  </div>
+                  <span style={{ fontSize: 11, color: '#94A3B8', minWidth: 40 }}>{b.progress}/{b.goal}</span>
+                </div>
+              </div>
+              <span style={{ fontSize: 12, color: '#F59E0B', fontWeight: 600 }}>+{b.xp} XP</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Insights */}
+      {dash.insights && dash.insights.length > 0 && (
+        <div style={cardStyle}>
+          <h3 style={cardTitle}>Insights for you</h3>
+          {dash.insights.map((insight: string, i: number) => (
+            <p key={i} style={{ fontSize: 13, color: '#CBD5E1', margin: '6px 0', padding: '8px 12px', backgroundColor: '#1E293B', borderRadius: 8, lineHeight: 1.5 }}>{insight}</p>
+          ))}
+        </div>
+      )}
+
+      {/* Tips toggle */}
+      <button onClick={() => setShowTips(!showTips)} style={{ width: '100%', padding: '10px 16px', backgroundColor: '#0F172A', color: '#6366F1', border: '1px solid #1E293B', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', marginBottom: 14 }}>
+        {showTips ? 'Hide' : 'Show'} parenting tips
+      </button>
+      {showTips && tips.length > 0 && (
+        <div style={cardStyle}>
+          {tips.map((tip: any) => (
+            <div key={tip.id} style={{ padding: '10px 0', borderBottom: '1px solid #1E293B' }}>
+              <span style={{ fontSize: 14, fontWeight: 600, color: '#F1F5F9' }}>{tip.title}</span>
+              <p style={{ fontSize: 13, color: '#94A3B8', margin: '4px 0 0' }}>{tip.description}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <p style={{ textAlign: 'center', fontSize: 11, color: '#475569', margin: '20px 0' }}>
+        Alfanumrik Learning OS | Parent Portal | Logged in as {guardian.name}
+      </p>
+    </div>
+  );
+}
+
+// ============================================================
+// MAIN PAGE COMPONENT
+// ============================================================
+export default function ParentPage() {
+  const [guardian, setGuardian] = useState<any>(null);
+  const [student, setStudent] = useState<any>(null);
+  const [checking, setChecking] = useState(true);
+
+  useEffect(() => {
+    const g = localStorage.getItem('alfanumrik_guardian');
+    const s = localStorage.getItem('alfanumrik_parent_student');
+    if (g && s) { setGuardian(JSON.parse(g)); setStudent(JSON.parse(s)); }
+    setChecking(false);
+  }, []);
+
+  if (checking) return <div style={pageStyle}><div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}>Loading...</div></div>;
+
+  if (!guardian || !student) {
+    return <LoginScreen onLogin={(g, s) => { setGuardian(g); setStudent(s); }} />;
+  }
+
+  return <Dashboard guardian={guardian} student={student} />;
+}
+
+// ============================================================
+// STYLES
+// ============================================================
+const pageStyle: React.CSSProperties = { maxWidth: 600, margin: '0 auto', padding: '20px 16px', fontFamily: "'Plus Jakarta Sans', 'Sora', system-ui, sans-serif", color: '#E2E8F0', backgroundColor: '#0B1120', minHeight: '100vh' };
+const cardStyle: React.CSSProperties = { backgroundColor: '#0F172A', borderRadius: 14, padding: '16px 18px', border: '1px solid #1E293B', marginBottom: 14 };
+const cardTitle: React.CSSProperties = { fontSize: 15, fontWeight: 600, color: '#F1F5F9', margin: '0 0 12px' };
+const inputStyle: React.CSSProperties = { width: '100%', padding: '12px 14px', backgroundColor: '#1E293B', border: '1px solid #334155', borderRadius: 10, color: '#E2E8F0', fontSize: 15, outline: 'none', marginBottom: 10, boxSizing: 'border-box' };
+const btnStyle: React.CSSProperties = { padding: '12px 20px', backgroundColor: '#6366F1', color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 600, cursor: 'pointer' };
