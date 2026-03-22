@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <!-- Background -->
+  <rect width="128" height="128" fill="#FBF8F4"/>
+
+  <!-- Rounded corner background -->
+  <rect width="128" height="128" rx="24" fill="#FBF8F4" stroke="#E8DDD0" stroke-width="1"/>
+
+  <!-- Book icon with A letter -->
+  <g transform="translate(32, 32)">
+    <!-- Book spine -->
+    <path d="M 8 0 L 8 64 M 16 0 L 16 64" stroke="#8B6F47" stroke-width="2" fill="none"/>
+
+    <!-- Left page -->
+    <rect x="0" y="0" width="8" height="64" fill="#D4C4B0" rx="1"/>
+
+    <!-- Right page -->
+    <rect x="16" y="0" width="32" height="64" fill="#FFFFFF" stroke="#8B6F47" stroke-width="1.5" rx="1"/>
+
+    <!-- Letter A -->
+    <g transform="translate(24, 18)">
+      <!-- Triangle top -->
+      <path d="M 12 0 L 24 32 L 0 32 Z" fill="none" stroke="#8B6F47" stroke-width="2" stroke-linejoin="round"/>
+      <!-- Horizontal bar -->
+      <line x1="4" y1="20" x2="20" y2="20" stroke="#8B6F47" stroke-width="2" stroke-linecap="round"/>
+    </g>
+  </g>
+
+  <!-- Accent circle at bottom right -->
+  <circle cx="102" cy="102" r="12" fill="#E8DDD0" opacity="0.6"/>
+</svg>
