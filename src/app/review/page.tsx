@@ -17,6 +17,9 @@ interface ReviewCard {
   ease_factor: number;
   interval_days: number;
   streak: number;
+  repetition_count: number;
+  total_reviews: number;
+  correct_reviews: number;
 }
 
 const QUALITY_BUTTONS = [
@@ -84,14 +87,14 @@ export default function ReviewPage() {
           ease_factor: newEase,
           interval_days: newInterval,
           streak: newStreak,
-          repetition_count: (card.streak || 0) + (quality >= 3 ? 1 : 0),
+          repetition_count: (card.repetition_count || 0) + 1,
           next_review_date: new Date(
             Date.now() + newInterval * 86400000
           ).toISOString().split('T')[0],
           last_review_date: new Date().toISOString().split('T')[0],
           last_quality: quality,
-          total_reviews: (card.streak || 0) + 1,
-          correct_reviews: (card.streak || 0) + (quality >= 3 ? 1 : 0),
+          total_reviews: (card.total_reviews || 0) + 1,
+          correct_reviews: (card.correct_reviews || 0) + (quality >= 3 ? 1 : 0),
           updated_at: new Date().toISOString(),
         })
         .eq('id', card.id);

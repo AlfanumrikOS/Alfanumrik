@@ -1,12 +1,7 @@
-═══════════════════════════════════════════════════════════
- SAVE AS: .gitignore
- PATH:    (root of your Alfanumrik repo)
- ACTION:  REPLACE existing file
-═══════════════════════════════════════════════════════════
-
 node_modules/
 .next/
 out/
+.env
 .env.local
 .env*.local
 .vercel

@@ -2,6 +2,7 @@ import './globals.css';
 import type { Metadata, Viewport } from 'next';
 import { AuthProvider } from '@/lib/AuthContext';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import RegisterSW from '@/lib/RegisterSW';
 
 export const metadata: Metadata = {
   title: 'Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students',
@@ -41,7 +42,6 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
   themeColor: '#FBF8F4',
 };
 
@@ -69,6 +69,7 @@ export default function RootLayout({
           <ErrorBoundary>
             <div className="app-shell">{children}</div>
           </ErrorBoundary>
+          <RegisterSW />
         </AuthProvider>
       </body>
     </html>

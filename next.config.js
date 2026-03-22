@@ -1,9 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  turbopack: {
-    root: '/home/user/Alfanumrik',
-  },
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: 'lh3.googleusercontent.com' },

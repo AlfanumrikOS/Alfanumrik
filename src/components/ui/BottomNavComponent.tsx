@@ -63,6 +63,74 @@ const SIDEBAR_SECTIONS = [
   },
 ];
 
+function getCoreTabs(role: UserRole) {
+  if (role === 'teacher') {
+    const nav = ROLE_CONFIG.teacher.nav;
+    return [
+      { href: nav[0].href, icon: nav[0].icon, activeIcon: nav[0].icon, label: nav[0].label, labelHi: nav[0].labelHi },
+      { href: nav[1].href, icon: nav[1].icon, activeIcon: nav[1].icon, label: nav[1].label, labelHi: nav[1].labelHi },
+      { href: nav[2].href, icon: nav[2].icon, activeIcon: nav[2].icon, label: nav[2].label, labelHi: nav[2].labelHi },
+      { href: nav[3].href, icon: nav[3].icon, activeIcon: nav[3].icon, label: nav[3].label, labelHi: nav[3].labelHi },
+    ];
+  }
+  if (role === 'guardian') {
+    const nav = ROLE_CONFIG.guardian.nav;
+    return [
+      { href: nav[0].href, icon: nav[0].icon, activeIcon: nav[0].icon, label: nav[0].label, labelHi: nav[0].labelHi },
+      { href: nav[1].href, icon: nav[1].icon, activeIcon: nav[1].icon, label: nav[1].label, labelHi: nav[1].labelHi },
+      { href: nav[2].href, icon: nav[2].icon, activeIcon: nav[2].icon, label: nav[2].label, labelHi: nav[2].labelHi },
+      { href: nav[3].href, icon: nav[3].icon, activeIcon: nav[3].icon, label: nav[3].label, labelHi: nav[3].labelHi },
+    ];
+  }
+  return CORE_TABS; // default student tabs
+}
+
+function getMoreItems(role: UserRole) {
+  if (role === 'teacher') {
+    const nav = ROLE_CONFIG.teacher.nav;
+    return nav.slice(4).map(item => ({
+      href: item.href, icon: item.icon, label: item.label, labelHi: item.labelHi,
+    }));
+  }
+  if (role === 'guardian') {
+    const nav = ROLE_CONFIG.guardian.nav;
+    return nav.slice(4).map(item => ({
+      href: item.href, icon: item.icon, label: item.label, labelHi: item.labelHi,
+    }));
+  }
+  return MORE_ITEMS; // default student items
+}
+
+function getSidebarSections(role: UserRole) {
+  if (role === 'teacher') {
+    const nav = ROLE_CONFIG.teacher.nav;
+    return [
+      {
+        title: 'Teaching', titleHi: 'शिक्षण',
+        items: nav.slice(0, 4).map(n => ({ href: n.href, icon: n.icon, label: n.label, labelHi: n.labelHi })),
+      },
+      {
+        title: 'Account', titleHi: 'खाता',
+        items: nav.slice(4).map(n => ({ href: n.href, icon: n.icon, label: n.label, labelHi: n.labelHi })),
+      },
+    ];
+  }
+  if (role === 'guardian') {
+    const nav = ROLE_CONFIG.guardian.nav;
+    return [
+      {
+        title: 'Family', titleHi: 'परिवार',
+        items: nav.slice(0, 4).map(n => ({ href: n.href, icon: n.icon, label: n.label, labelHi: n.labelHi })),
+      },
+      {
+        title: 'Account', titleHi: 'खाता',
+        items: nav.slice(4).map(n => ({ href: n.href, icon: n.icon, label: n.label, labelHi: n.labelHi })),
+      },
+    ];
+  }
+  return SIDEBAR_SECTIONS; // default student sections
+}
+
 export default function BottomNavComponent() {
   const pathname = usePathname();
   const router = useRouter();
@@ -72,8 +140,12 @@ export default function BottomNavComponent() {
   const [showMore, setShowMore] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
 
+  const tabs = getCoreTabs(activeRole);
+  const moreItems = getMoreItems(activeRole);
+  const sidebarSections = getSidebarSections(activeRole);
+
   const isActive = (href: string) => pathname === href || (href !== '/' && pathname.startsWith(href));
-  const isMoreActive = MORE_ITEMS.some(m => isActive(m.href));
+  const isMoreActive = moreItems.some(m => isActive(m.href));
   const hasMultipleRoles = roles.length > 1;
 
   const handleRoleSwitch = (role: UserRole) => {
@@ -107,7 +179,7 @@ export default function BottomNavComponent() {
               <div className="w-10 h-1 rounded-full" style={{ background: 'var(--border-mid, #ccc)' }} />
             </div>
             <div className="px-5 pb-4 space-y-1">
-              {MORE_ITEMS.map(item => {
+              {moreItems.map(item => {
                 const active = isActive(item.href);
                 return (
                   <button
@@ -169,11 +241,11 @@ export default function BottomNavComponent() {
         }}
       >
         <div className="flex items-end justify-around px-1 pt-1.5 pb-0.5">
-          {CORE_TABS.map((item) => {
+          {tabs.map((item) => {
             const active = isActive(item.href);
 
-            /* ── Foxy FAB (center) ── */
-            if (item.isFab) {
+            /* ── Foxy FAB (center) ── only for student role */
+            if (activeRole === 'student' && 'isFab' in item && item.isFab) {
               return (
                 <button
                   key={item.href}
@@ -287,7 +359,7 @@ export default function BottomNavComponent() {
 
           {/* Grouped Nav Sections */}
           <div className="space-y-5">
-            {SIDEBAR_SECTIONS.map(section => (
+            {sidebarSections.map(section => (
               <div key={section.title}>
                 {!collapsed && <div className="text-[10px] font-bold text-[var(--text-3)] uppercase tracking-widest px-3 mb-1.5">
                   {isHi ? section.titleHi : section.title}
