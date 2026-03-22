@@ -617,6 +617,11 @@ export default function Home() {
               <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, color: '#fff' }}>Alfanumrik</span>
               <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>Adaptive Learning OS</span>
             </div>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 16, marginBottom: 12 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.45)', cursor: 'pointer' }} onClick={() => setStep('role')}>Get Started</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.45)', cursor: 'pointer' }} onClick={() => router.push('/help')}>Help & Support</span>
+              <a href="mailto:support@alfanumrik.com" style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.45)', textDecoration: 'none' }}>Contact Us</a>
+            </div>
             <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', lineHeight: 1.6, marginBottom: 8 }}>
               A product of Cusiosense Learning India Private Limited
             </p>
