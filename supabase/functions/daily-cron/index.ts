@@ -20,7 +20,7 @@ interface StudentProfile {
   student_id: string
   subject: string
   grade: string
-  xp: number
+  xp_total: number
   streak_days: number
   last_activity_at: string | null
 }
@@ -91,19 +91,19 @@ async function recalculateLeaderboards(supabase: ReturnType<typeof createClient>
   // Aggregate total XP per student across all subjects
   const { data: profiles, error } = await supabase
     .from('student_learning_profiles')
-    .select('student_id, grade, xp')
+    .select('student_id, grade, xp_total')
 
   if (error) throw new Error(`recalculateLeaderboards fetch: ${error.message}`)
   if (!profiles || profiles.length === 0) return 0
 
   // Sum XP per student, keep grade
   const studentXp = new Map<string, { grade: string; totalXp: number }>()
-  for (const p of profiles as Pick<StudentProfile, 'student_id' | 'grade' | 'xp'>[]) {
+  for (const p of profiles as Pick<StudentProfile, 'student_id' | 'grade' | 'xp_total'>[]) {
     const existing = studentXp.get(p.student_id)
     if (existing) {
-      existing.totalXp += p.xp ?? 0
+      existing.totalXp += p.xp_total ?? 0
     } else {
-      studentXp.set(p.student_id, { grade: p.grade, totalXp: p.xp ?? 0 })
+      studentXp.set(p.student_id, { grade: p.grade, totalXp: p.xp_total ?? 0 })
     }
   }
 
@@ -144,10 +144,11 @@ async function recalculateLeaderboards(supabase: ReturnType<typeof createClient>
 // ─── Step 3: Parent digest notifications ──────────────────────────────────
 
 async function generateParentDigests(supabase: ReturnType<typeof createClient>): Promise<number> {
-  // Find guardian–student links
+  // Find guardian–student links (only approved/active links)
   const { data: links, error: linksError } = await supabase
     .from('guardian_student_links')
     .select('guardian_id, student_id')
+    .in('status', ['approved', 'active'])
 
   if (linksError) throw new Error(`generateParentDigests fetch: ${linksError.message}`)
   if (!links || links.length === 0) return 0

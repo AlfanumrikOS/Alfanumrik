@@ -71,10 +71,12 @@ async function assertTeacherOwnsClass(
   teacherId: string,
   classId: string,
 ): Promise<void> {
+  // Use class_teachers join table — classes.created_by is the creator but
+  // class_teachers tracks current teacher assignments.
   const { data, error } = await supabase
-    .from('classes')
-    .select('id')
-    .eq('id', classId)
+    .from('class_teachers')
+    .select('class_id')
+    .eq('class_id', classId)
     .eq('teacher_id', teacherId)
     .maybeSingle()
 
@@ -92,6 +94,7 @@ async function assertGuardianLinkedToStudent(
     .select('guardian_id')
     .eq('guardian_id', guardianId)
     .eq('student_id', studentId)
+    .in('status', ['approved', 'active'])
     .maybeSingle()
 
   if (error) throw new Error(`Permission check failed: ${error.message}`)
@@ -111,8 +114,8 @@ async function assertStudentOrGuardian(
   // Teachers can also view student HPC for their enrolled students
   if (callerRole.role === 'teacher') {
     const { data } = await supabase
-      .from('class_enrollments')
-      .select('id')
+      .from('class_students')
+      .select('student_id')
       .eq('student_id', studentId)
       .limit(1)
     if (data && data.length > 0) return
@@ -140,7 +143,7 @@ async function generateClassPerformanceReport(
 
   // Fetch enrollments
   const { data: enrollments, error: enrollError } = await supabase
-    .from('class_enrollments')
+    .from('class_students')
     .select('student_id, enrolled_at, students(name, email)')
     .eq('class_id', classId)
 
@@ -166,7 +169,7 @@ async function generateClassPerformanceReport(
   // Fetch learning profiles for these students
   const { data: profiles } = await supabase
     .from('student_learning_profiles')
-    .select('student_id, subject, xp, streak_days, total_questions_asked, total_questions_answered_correctly')
+    .select('student_id, subject, xp_total, streak_days, total_questions_asked, total_questions_answered_correctly')
     .in('student_id', studentIds)
 
   // Fetch recent quiz sessions (last 30 days)
@@ -213,7 +216,7 @@ async function generateClassPerformanceReport(
     const studentSessions = sessionMap.get(sid) ?? []
     const masteryLevels = masteryMap.get(sid) ?? []
 
-    const totalXp = studentProfiles.reduce((s, p) => s + ((p.xp as number) ?? 0), 0)
+    const totalXp = studentProfiles.reduce((s, p) => s + ((p.xp_total as number) ?? 0), 0)
     const maxStreak = Math.max(0, ...studentProfiles.map((p) => (p.streak_days as number) ?? 0))
     const totalAsked = studentProfiles.reduce((s, p) => s + ((p.total_questions_asked as number) ?? 0), 0)
     const totalCorrect = studentProfiles.reduce((s, p) => s + ((p.total_questions_answered_correctly as number) ?? 0), 0)
@@ -269,9 +272,9 @@ async function generateStudentHpcReport(
 
   const { data: profiles } = await supabase
     .from('student_learning_profiles')
-    .select('subject, xp, streak_days, total_questions_asked, total_questions_answered_correctly')
+    .select('subject, xp_total, streak_days, total_questions_asked, total_questions_answered_correctly')
     .eq('student_id', studentId)
-    .order('xp', { ascending: false })
+    .order('xp_total', { ascending: false })
 
   const { data: masteryRows } = await supabase
     .from('concept_mastery')
@@ -302,7 +305,7 @@ async function generateStudentHpcReport(
     grade: (student as Record<string, unknown>).grade,
     report_section: 'subject_profile',
     subject: p.subject,
-    xp: p.xp,
+    xp_total: p.xp_total,
     streak_days: p.streak_days,
     total_questions_asked: p.total_questions_asked,
     total_questions_correct: p.total_questions_answered_correctly,
