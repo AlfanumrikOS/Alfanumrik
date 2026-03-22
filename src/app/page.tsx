@@ -1,861 +1,831 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { GRADES, BOARDS, LANGUAGES, SUBJECT_META } from '@/lib/constants';
-import { Button, Input, Select, Card, LoadingFoxy } from '@/components/ui';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@/lib/constants';
+import { BottomNav } from '@/components/ui';
 
-type Role = 'student' | 'teacher' | 'guardian';
-type Step = 'landing' | 'role' | 'auth' | 'profile' | 'subject';
+/* ══════════════════════════════════════════════════════════════
+   SUBJECT CONFIGURATION
+   ══════════════════════════════════════════════════════════════ */
 
-/* ═══ Brand color tokens ═══ */
-const P = {
-  navy: '#1A365D',      // Brand deep navy
-  rose: '#E8581C',      // Brand orange
-  teal: '#0891B2',
-  green: '#16A34A',
-  purple: '#7C3AED',
-  gold: '#F5A623',
-  lightBg: '#F5F0EA',   // Warm cream
-  cardBg: '#FFFFFF',
-  text1: '#1A1207',
-  text2: '#5C4F3A',
-  text3: '#9C8E78',
-  border: 'rgba(0,0,0,0.08)',
+interface SubjectConfig {
+  name: string;
+  icon: string;
+  color: string;
+}
+
+const SUBJECTS: Record<string, SubjectConfig> = {
+  math: { name: 'Mathematics', icon: '∑', color: '#3B82F6' },
+  science: { name: 'Science', icon: '⚛', color: '#10B981' },
+  english: { name: 'English', icon: 'Aa', color: '#8B5CF6' },
+  hindi: { name: 'Hindi', icon: 'अ', color: '#F59E0B' },
+  physics: { name: 'Physics', icon: '⚡', color: '#EF4444' },
+  chemistry: { name: 'Chemistry', icon: '⚗', color: '#06B6D4' },
+  biology: { name: 'Biology', icon: '⚕', color: '#22C55E' },
+  social_studies: { name: 'Social Studies', icon: '🌍', color: '#D97706' },
+  coding: { name: 'Coding', icon: '💻', color: '#6366F1' },
 };
 
-export default function Home() {
-  const { isLoggedIn, isLoading, refreshStudent } = useAuth();
+const LANGS = [
+  { code: 'en', label: 'EN' },
+  { code: 'hi', label: 'HI' },
+  { code: 'hinglish', label: 'Hing' },
+];
+
+const MODES = [
+  { id: 'learn', emoji: '📖', label: 'Learn', labelHi: 'सीखो', autoPrompt: (topic: string) => topic ? `Teach me about: ${topic}` : 'Teach me the next concept step by step', autoPromptHi: (topic: string) => topic ? `मुझे सिखाओ: ${topic}` : 'मुझे अगला कॉन्सेप्ट सिखाओ' },
+  { id: 'practice', emoji: '✏️', label: 'Practice', labelHi: 'अभ्यास', autoPrompt: (topic: string) => topic ? `Give me 3 practice problems on: ${topic}` : 'Give me practice problems to solve', autoPromptHi: (topic: string) => topic ? `मुझे 3 अभ्यास प्रश्न दो: ${topic}` : 'मुझे अभ्यास प्रश्न दो' },
+  { id: 'quiz', emoji: '⚡', label: 'Quiz', labelHi: 'क्विज़', autoPrompt: (topic: string) => topic ? `Quiz me on: ${topic} (5 MCQ questions, board exam pattern)` : 'Quiz me with 5 MCQ questions on this chapter', autoPromptHi: (topic: string) => topic ? `मुझसे क्विज़ लो: ${topic} (5 MCQ प्रश्न, बोर्ड परीक्षा पैटर्न)` : 'मुझसे 5 MCQ प्रश्न पूछो' },
+  { id: 'doubt', emoji: '❓', label: 'Doubt', labelHi: 'डाउट', autoPrompt: () => '', autoPromptHi: () => '' },
+  { id: 'revision', emoji: '🔄', label: 'Revise', labelHi: 'रिवीज़', autoPrompt: (topic: string) => topic ? `Give me a quick revision summary of: ${topic}` : 'Summarize the key points for revision', autoPromptHi: (topic: string) => topic ? `${topic} का त्वरित पुनरावृत्ति सारांश दो` : 'रिवीज़न के लिए मुख्य बिंदु बताओ' },
+  { id: 'notes', emoji: '📝', label: 'Notes', labelHi: 'नोट्स', autoPrompt: (topic: string) => topic ? `Create concise exam notes for: ${topic}` : 'Create exam-ready notes for this chapter', autoPromptHi: (topic: string) => topic ? `${topic} के लिए परीक्षा नोट्स बनाओ` : 'इस अध्याय के परीक्षा नोट्स बनाओ' },
+];
+
+const MATH_SYMBOL_TABS = [
+  { id: 'basic', label: 'Basic', emoji: '±', symbols: ['±', '×', '÷', '≠', '≈', '√', '²', '³', '∞', 'π'] },
+  { id: 'algebra', label: 'Algebra', emoji: '∈', symbols: ['≤', '≥', '<', '>', '∈', '∉', '∪', '∩', '∅', '⊆'] },
+  { id: 'calculus', label: 'Calc', emoji: '∫', symbols: ['∫', '∂', '∑', '∏', 'Δ', '∇', 'dx', 'dy', 'lim', '∞'] },
+  { id: 'greek', label: 'Greek', emoji: 'α', symbols: ['α', 'β', 'γ', 'δ', 'ε', 'θ', 'λ', 'μ', 'σ', 'ω'] },
+  { id: 'arrows', label: 'Arrows', emoji: '→', symbols: ['→', '←', '⇒', '⇔', '↑', '↓', '⇌', '∝'] },
+  { id: 'science', label: 'Sci', emoji: '⚛', symbols: ['℃', '°', 'Ω', 'Å', 'mol', 'pH', 'atm', 'eV', 'Pa', 'Hz'] },
+  { id: 'geometry', label: 'Geo', emoji: '∠', symbols: ['∠', '⊥', '∥', '△', '○', '°', 'π', 'r²'] },
+  { id: 'super', label: 'Sup', emoji: 'x²', symbols: ['⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹'] },
+  { id: 'sub', label: 'Sub', emoji: 'x₂', symbols: ['₀', '₁', '₂', '₃', '₄', '₅', '₆', '₇', '₈', '₉'] },
+];
+
+const FOXY_FACES: Record<string, string> = { idle: '🦊', thinking: '🤔', happy: '😄' };
+
+const MASTERY_COLORS: Record<string, string> = {
+  not_started: '#9ca3af', beginner: '#F59E0B', developing: '#3B82F6', proficient: '#8B5CF6', mastered: '#10B981',
+};
+
+function getGradeSubjects(grade: string): string[] {
+  const g = parseInt(grade) || 9;
+  if (g <= 10) return ['math', 'science', 'english', 'hindi', 'social_studies'];
+  return ['physics', 'chemistry', 'biology', 'math', 'english'];
+}
+
+/* ══════════════════════════════════════════════════════════════
+   API HELPERS — uses shared Supabase client, no hardcoded creds
+   ══════════════════════════════════════════════════════════════ */
+
+async function fetchTopics(subjectCode: string, grade: string): Promise<any[]> {
+  const { data: subjectRow } = await supabase.from('subjects').select('id').eq('code', subjectCode).eq('is_active', true).single();
+  let query = supabase.from('curriculum_topics').select('*').is('parent_topic_id', null).eq('is_active', true).order('chapter_number').order('display_order').limit(80);
+  query = query.or(`grade.eq.Grade ${grade},grade.eq.${grade}`);
+  if (subjectRow?.id) query = query.eq('subject_id', subjectRow.id);
+  const { data } = await query;
+  return data ?? [];
+}
+
+async function fetchMastery(studentId: string, subject: string): Promise<any[]> {
+  const { data } = await supabase.from('topic_mastery').select('*').eq('student_id', studentId).eq('subject', subject).order('updated_at', { ascending: false });
+  return data ?? [];
+}
+
+async function fetchChatHistory(studentId: string) {
+  const { data } = await supabase.from('chat_sessions').select('id, messages').eq('student_id', studentId).order('updated_at', { ascending: false }).limit(1);
+  if (data && data[0]?.messages?.length > 0) return data[0];
+  return null;
+}
+
+async function callFoxyTutor(params: Record<string, any>) {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/foxy-tutor`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    const data = await res.json();
+    return { reply: data.reply || data.response || data.message || 'Let me think...', xp_earned: data.xp_earned || 0, session_id: data.session_id || null };
+  } catch {
+    return { reply: 'Connection issue. Check your network and try again!', xp_earned: 0, session_id: null };
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   RICH TEXT RENDERER
+   ══════════════════════════════════════════════════════════════ */
+
+function cleanMd(t: string): string {
+  return t.replace(/\*\*([^*]+)\*\*/g, '[KEY: $1]').replace(/__([^_]+)__/g, '[KEY: $1]').replace(/\*([^*]+)\*/g, '$1').replace(/_([^_]+)_/g, '$1').replace(/`([^`]+)`/g, '[FORMULA: $1]').replace(/^#{1,4}\s+/gm, '');
+}
+
+function renderInline(text: string, color: string): ReactNode {
+  const clean = cleanMd(text);
+  const parts: ReactNode[] = [];
+  const re = /\[(KEY|ANS|FORMULA|TIP|MARKS):\s*([^\]]+)\]/g;
+  let m: RegExpExecArray | null, last = 0, k = 0;
+
+  while ((m = re.exec(clean)) !== null) {
+    if (m.index > last) parts.push(<span key={k++}>{clean.substring(last, m.index)}</span>);
+    const [, tag, val] = m;
+    if (tag === 'KEY') parts.push(<span key={k++} className="font-bold" style={{ color, borderBottom: `2px solid ${color}40`, paddingBottom: 1 }}>{val}</span>);
+    else if (tag === 'ANS') parts.push(<span key={k++} className="inline-block px-3 py-1 my-1 rounded-lg font-extrabold text-sm" style={{ border: `2px solid ${color}`, color, background: `${color}08` }}>{val}</span>);
+    else if (tag === 'FORMULA') parts.push(<code key={k++} className="inline-block px-3 py-1.5 my-1 rounded-lg font-semibold text-xs" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', fontFamily: 'monospace' }}>{val}</code>);
+    else if (tag === 'TIP') parts.push(<div key={k++} className="my-2 px-3 py-2.5 rounded-xl text-xs" style={{ background: '#fffbeb', border: '1px solid #f59e0b30', color: '#92400e' }}><span className="font-extrabold">Exam Tip: </span>{val}</div>);
+    else if (tag === 'MARKS') parts.push(<span key={k++} className="inline-block px-2 py-0.5 rounded-lg text-[11px] font-bold ml-1" style={{ background: '#7c3aed15', color: '#7c3aed' }}>({val} marks)</span>);
+    last = m.index + m[0].length;
+  }
+  if (last < clean.length) parts.push(<span key={k++}>{clean.substring(last)}</span>);
+  return parts.length > 0 ? <>{parts}</> : <span>{clean}</span>;
+}
+
+function RichContent({ content, subjectKey }: { content: string; subjectKey: string }) {
+  const cfg = SUBJECTS[subjectKey] || SUBJECTS.science;
+  if (!content) return null;
+  const text = cleanMd(content);
+  const lines = text.split('\n');
+  const els: ReactNode[] = [];
+  let li: string[] = [], lk: 'num' | 'bul' | null = null;
+
+  function flush() {
+    if (li.length === 0) return;
+    els.push(
+      <div key={`l${els.length}`} className="my-3 px-4 py-3 rounded-r-xl" style={{ background: `${cfg.color}08`, borderLeft: `3px solid ${cfg.color}` }}>
+        {li.map((item, i) => (
+          <div key={i} className="flex gap-2.5 py-1.5 items-start" style={{ borderBottom: i < li.length - 1 ? '1px solid #f0f0f0' : 'none' }}>
+            <span className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{ background: `${cfg.color}20`, color: cfg.color }}>{lk === 'num' ? i + 1 : '•'}</span>
+            <span className="leading-relaxed">{renderInline(item, cfg.color)}</span>
+          </div>
+        ))}
+      </div>
+    );
+    li = []; lk = null;
+  }
+
+  lines.forEach((line, idx) => {
+    const t = line.trim();
+    if (t.startsWith('###')) { flush(); els.push(<h4 key={idx} className="text-sm font-bold mt-4 mb-2 uppercase tracking-wide" style={{ color: cfg.color }}>{cfg.icon} {t.replace(/^###\s*/, '')}</h4>); }
+    else if (t.startsWith('##')) { flush(); els.push(<h3 key={idx} className="text-base font-bold mt-4 mb-2 pb-2" style={{ borderBottom: `2px solid ${cfg.color}30` }}>{t.replace(/^##\s*/, '')}</h3>); }
+    else if (t.startsWith('>')) { flush(); els.push(<div key={idx} className="my-3 px-4 py-3 rounded-xl text-sm leading-relaxed" style={{ background: `${cfg.color}08`, border: `1px solid ${cfg.color}25` }}>{renderInline(t.replace(/^>\s*/, ''), cfg.color)}</div>); }
+    else if (/^\d+[.)]\s/.test(t)) { if (lk !== 'num') { flush(); lk = 'num'; } li.push(t.replace(/^\d+[.)]\s*/, '')); }
+    else if (/^[-•*]\s/.test(t)) { if (lk !== 'bul') { flush(); lk = 'bul'; } li.push(t.replace(/^[-•*]\s*/, '')); }
+    else if (!t) { flush(); els.push(<div key={idx} className="h-2" />); }
+    else { flush(); els.push(<p key={idx} className="my-1.5 leading-[1.75] text-[var(--text-2)]">{renderInline(t, cfg.color)}</p>); }
+  });
+  flush();
+  return <div>{els}</div>;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   CHAT INPUT COMPONENT
+   ══════════════════════════════════════════════════════════════ */
+
+function ChatInput({ onSubmit, subjectKey, disabled, onMicTap, isListening }: {
+  onSubmit: (t: string) => void; subjectKey: string; disabled: boolean; onMicTap?: () => void; isListening?: boolean;
+}) {
+  const [text, setText] = useState('');
+  const [showSymbols, setShowSymbols] = useState(false);
+  const [symTab, setSymTab] = useState('basic');
+  const [pointMode, setPointMode] = useState(false);
+  const [pointCount, setPointCount] = useState(1);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  const cfg = SUBJECTS[subjectKey] || SUBJECTS.science;
+
+  const insertAt = (s: string) => {
+    const ta = taRef.current; if (!ta) return;
+    const start = ta.selectionStart, end = ta.selectionEnd;
+    setText(text.substring(0, start) + s + text.substring(end));
+    setTimeout(() => { ta.focus(); ta.selectionStart = ta.selectionEnd = start + s.length; }, 0);
+  };
+
+  const send = () => {
+    if (!text.trim() || disabled) return;
+    onSubmit(text.trim()); setText(''); setPointCount(1); setPointMode(false);
+    if (taRef.current) taRef.current.style.height = 'auto';
+  };
+
+  const handleKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+    else if (e.key === 'Enter' && e.shiftKey && pointMode) { e.preventDefault(); const n = pointCount + 1; insertAt(`\n${n}. `); setPointCount(n); }
+  };
+
+  const togglePoints = () => {
+    if (!pointMode) {
+      if (!text.trim()) { setText('1. '); setPointCount(1); }
+      else if (!text.startsWith('1.')) { setText(`1. ${text}`); setPointCount(1); }
+      setPointMode(true);
+      setTimeout(() => { const ta = taRef.current; if (ta) { ta.focus(); ta.selectionStart = ta.selectionEnd = ta.value.length; } }, 0);
+    } else setPointMode(false);
+  };
+
+  const autoGrow = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setText(e.target.value); e.target.style.height = 'auto'; e.target.style.height = `${Math.min(e.target.scrollHeight, 200)}px`;
+  };
+
+  const syms = MATH_SYMBOL_TABS.find(t => t.id === symTab)?.symbols ?? MATH_SYMBOL_TABS[0].symbols;
+
+  return (
+    <div className="border-t" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)' }}>
+      {showSymbols && (
+        <div className="px-3 pt-2 pb-1">
+          <div className="flex gap-1 overflow-x-auto mb-2" style={{ scrollbarWidth: 'none' }}>
+            {MATH_SYMBOL_TABS.map(tab => (
+              <button key={tab.id} onClick={() => setSymTab(tab.id)} className="shrink-0 px-2 py-1 rounded-lg text-[10px] font-bold transition-all"
+                style={{ background: symTab === tab.id ? `${cfg.color}15` : 'transparent', color: symTab === tab.id ? cfg.color : 'var(--text-3)', border: symTab === tab.id ? `1px solid ${cfg.color}30` : '1px solid transparent' }}>
+                <span className="text-sm mr-0.5">{tab.emoji}</span> {tab.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {syms.map((s, i) => (
+              <button key={i} onClick={() => insertAt(s)} className="w-9 h-9 rounded-lg flex items-center justify-center text-sm font-semibold transition-all active:scale-90"
+                style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', fontFamily: 'monospace' }}>{s}</button>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="flex items-center gap-1.5 px-3 pt-2 pb-1">
+        <button onClick={() => setShowSymbols(!showSymbols)} className="px-2 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95"
+          style={{ background: showSymbols ? `${cfg.color}15` : 'var(--surface-2)', color: showSymbols ? cfg.color : 'var(--text-3)', border: `1px solid ${showSymbols ? `${cfg.color}30` : 'var(--border)'}` }}>
+          {showSymbols ? '× Close' : 'fx Math'}
+        </button>
+        <button onClick={togglePoints} className="px-2 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95"
+          style={{ background: pointMode ? `${cfg.color}15` : 'var(--surface-2)', color: pointMode ? cfg.color : 'var(--text-3)', border: `1px solid ${pointMode ? `${cfg.color}30` : 'var(--border)'}` }}>
+          {pointMode ? '1. ON' : '1. Points'}
+        </button>
+        <span className="flex-1" />
+        <span className="text-[9px] text-[var(--text-3)] hidden sm:inline">Enter = send · Shift+Enter = new line</span>
+      </div>
+      <div className="px-3 py-2 flex items-end gap-2" style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 8px), 8px)' }}>
+        <textarea ref={taRef} value={text} onChange={autoGrow} onKeyDown={handleKey}
+          placeholder={pointMode ? '1. Write your answer point by point...\n(Shift+Enter for next point)' : 'Ask Foxy anything... (Shift+Enter for new line)'}
+          rows={pointMode ? 3 : 1} className="flex-1 text-sm rounded-2xl px-4 py-2.5 resize-none outline-none leading-relaxed"
+          style={{ background: 'var(--surface-2)', border: `1.5px solid ${pointMode ? `${cfg.color}40` : 'var(--border)'}`, fontFamily: 'var(--font-body)', maxHeight: 200, minHeight: pointMode ? 80 : 40 }} />
+        {onMicTap && (
+          <button onClick={onMicTap} className="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-lg transition-all active:scale-90"
+            style={{ background: isListening ? '#EF444420' : 'var(--surface-2)', border: isListening ? '2px solid #EF4444' : '1.5px solid var(--border)' }}>
+            {isListening ? '🔴' : '🎤'}
+          </button>
+        )}
+        <button onClick={send} disabled={disabled || !text.trim()}
+          className="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-lg font-bold transition-all active:scale-90 disabled:opacity-40"
+          style={{ background: text.trim() ? `linear-gradient(135deg, ${cfg.color}, ${cfg.color}dd)` : 'var(--surface-2)', color: text.trim() ? '#fff' : 'var(--text-3)' }}>
+          {disabled ? '...' : '↑'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
+   MAIN FOXY PAGE
+   ══════════════════════════════════════════════════════════════ */
+
+interface ChatMessage { id: number; role: 'student' | 'tutor'; content: string; timestamp: string; xp?: number; feedback?: 'up' | 'down' | null; reported?: boolean; }
+
+const REPORT_REASONS = [
+  { value: 'wrong_answer', label: '❌ Wrong answer', labelHi: '❌ गलत उत्तर' },
+  { value: 'wrong_formula', label: '📐 Wrong formula', labelHi: '📐 गलत फॉर्मूला' },
+  { value: 'wrong_explanation', label: '📝 Wrong explanation', labelHi: '📝 गलत व्याख्या' },
+  { value: 'incomplete', label: '⚠️ Incomplete', labelHi: '⚠️ अधूरा' },
+  { value: 'irrelevant', label: '🔀 Off-topic', labelHi: '🔀 विषय से हटकर' },
+  { value: 'confusing', label: '😕 Confusing', labelHi: '😕 भ्रमित करने वाला' },
+  { value: 'other', label: '💬 Other', labelHi: '💬 अन्य' },
+];
+
+export default function FoxyPage() {
+  const { student: authStudent, isLoggedIn, isLoading: authLoading } = useAuth();
   const router = useRouter();
-  const [step, setStep] = useState<Step>('landing');
-  const [role, setRole] = useState<Role>('student');
-  const [activeSpotlight, setActiveSpotlight] = useState(0);
-  const [mobileMenu, setMobileMenu] = useState(false);
-  /* Auth */
-  const [email, setEmail] = useState(''); const [phone, setPhone] = useState('');
-  const [authMethod, setAuthMethod] = useState<'email'|'phone'>('email');
-  const [otpSent, setOtpSent] = useState(false); const [otp, setOtp] = useState('');
-  const [password, setPassword] = useState(''); const [confirmPassword, setConfirmPassword] = useState('');
-  const [authMode, setAuthMode] = useState<'signup'|'login'|'otp'|'forgot'>('signup');
-  const [showPassword, setShowPassword] = useState(false);
-  const [resetSent, setResetSent] = useState(false);
-  const [loading, setLoading] = useState(false); const [error, setError] = useState('');
-  /* Profile */
-  const [name, setName] = useState(''); const [grade, setGrade] = useState('9');
-  const [board, setBoard] = useState('CBSE'); const [lang, setLang] = useState('en');
-  const [subject, setSubject] = useState('math'); const [saving, setSaving] = useState(false);
-  const [selectedSubs, setSelectedSubs] = useState<string[]>(['math']);
-  const [schoolName, setSchoolName] = useState('');
-  const [subjectsTaught, setSubjectsTaught] = useState<string[]>(['math']);
-  const [gradesTaught, setGradesTaught] = useState<string[]>(['9']);
-  const [qualification, setQualification] = useState('');
-  const [relationship, setRelationship] = useState('parent');
-  const [parentPhone, setParentPhone] = useState('');
-  const [childInviteCode, setChildInviteCode] = useState('');
-  const [linkResult, setLinkResult] = useState<string | null>(null);
 
-  // Handle logged-in users: check onboarding status using RPC (works on any device)
+  // Core state
+  const [student, setStudent] = useState<any>(null);
+  const [activeSubject, setActiveSubject] = useState('science');
+  const [studentGrade, setStudentGrade] = useState('9');
+  const [topics, setTopics] = useState<any[]>([]);
+  const [masteryData, setMasteryData] = useState<any[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [sessionMode, setSessionMode] = useState('learn');
+  const [language, setLanguage] = useState('en');
+  const [activeTopic, setActiveTopic] = useState<any>(null);
+  const [foxyState, setFoxyState] = useState<'idle' | 'thinking' | 'happy'>('idle');
+  const [chatSessionId, setChatSessionId] = useState<string | null>(null);
+  const [xpGained, setXpGained] = useState(0);
+  const [totalXP, setTotalXP] = useState(0);
+  const [streakDays, setStreakDays] = useState(0);
+
+  // UI state
+  const [showSubjectDD, setShowSubjectDD] = useState(false);
+  const [showChapterDD, setShowChapterDD] = useState(false);
+  const [selectedChapters, setSelectedChapters] = useState<string[]>([]);
+  const [studentSubs, setStudentSubs] = useState<string[]>([]);
+  const [showTopicSheet, setShowTopicSheet] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // Error reporting
+  const [reportModal, setReportModal] = useState<{ msgId: number; studentMsg: string; foxyMsg: string } | null>(null);
+  const [reportReason, setReportReason] = useState('wrong_answer');
+  const [reportCorrection, setReportCorrection] = useState('');
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [reportSuccess, setReportSuccess] = useState(false);
+
+  // Voice
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const voicesRef = useRef<SpeechSynthesisVoice[]>([]);
+  const recognitionRef = useRef<any>(null);
+  const endRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { if (!authLoading && !isLoggedIn) router.replace('/'); }, [authLoading, isLoggedIn, router]);
+
+  // Preload voices
   useEffect(() => {
-    if (isLoading) return;
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    const load = () => { voicesRef.current = window.speechSynthesis.getVoices(); };
+    load(); window.speechSynthesis.onvoiceschanged = load;
+    return () => { window.speechSynthesis.onvoiceschanged = null; };
+  }, []);
+
+  // Init student data
+  useEffect(() => {
+    if (!authStudent) return;
+    setStudent(authStudent); setTotalXP(authStudent.xp_total || 0); setStreakDays(authStudent.streak_days || 0);
+    const grade = (authStudent.grade || '9').replace('Grade ', ''); setStudentGrade(grade);
+    setLanguage(authStudent.preferred_language || 'en');
+    const saved = typeof window !== 'undefined' ? localStorage.getItem('alfanumrik_subject') : null;
+    setActiveSubject(saved || authStudent.preferred_subject || 'science');
+    setStudentSubs((authStudent.selected_subjects && authStudent.selected_subjects.length > 1) ? (authStudent.selected_subjects as string[]) : getGradeSubjects(grade));
     (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      // Single RPC checks all roles + onboarding status
-      const { data: roleData } = await supabase.rpc('get_user_role', { p_auth_user_id: user.id });
-      if (roleData) {
-        const rd = roleData as any;
-        // Route to correct dashboard if any role completed onboarding
-        if (rd.student?.onboarding_completed) { router.replace('/dashboard'); return; }
-        if (rd.teacher?.onboarding_completed) { router.replace('/teacher'); return; }
-        if (rd.guardian?.onboarding_completed) { router.replace('/parent'); return; }
-        // User exists but onboarding not done — show profile form
-        if (rd.roles?.length > 0) { setStep('profile'); return; }
+      const hist = await fetchChatHistory(authStudent.id);
+      if (hist) {
+        setChatSessionId(hist.id);
+        setMessages(hist.messages.map((m: any, i: number) => ({ id: Date.now() + i, role: m.role === 'assistant' ? 'tutor' as const : m.role, content: m.content, timestamp: m.ts || new Date().toISOString(), xp: m.meta?.xp || 0 })));
       }
-      // No role record at all — fresh user, stay on landing
     })();
-  }, [isLoading, router]);
+  }, [authStudent]);
+
+  // Load topics on subject/grade change
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (ev, sess) => {
-      if ((ev === 'SIGNED_IN' || ev === 'TOKEN_REFRESHED') && sess?.user) {
-        await refreshStudent();
-        // Single RPC checks all roles + onboarding status
-        const { data: roleData } = await supabase.rpc('get_user_role', { p_auth_user_id: sess.user.id });
-        if (roleData) {
-          const rd = roleData as any;
-          if (rd.student?.onboarding_completed) { router.replace('/dashboard'); return; }
-          if (rd.teacher?.onboarding_completed) { router.replace('/teacher'); return; }
-          if (rd.guardian?.onboarding_completed) { router.replace('/parent'); return; }
-          if (rd.roles?.length > 0) { setStep('profile'); return; }
-        }
-        // New user — show profile setup
-        setStep('profile');
-      }
-    });
-    return () => subscription.unsubscribe();
-  }, [router, refreshStudent]);
+    (async () => {
+      setTopics(await fetchTopics(activeSubject, studentGrade));
+      if (student?.id) setMasteryData(await fetchMastery(student.id, activeSubject));
+    })();
+  }, [activeSubject, studentGrade, student?.id]);
 
-  const sendOtp = async () => {
-    const id = authMethod === 'email' ? email.trim() : phone.trim();
-    if (!id) return; setLoading(true); setError('');
-    const { error: e } = authMethod === 'email'
-      ? await supabase.auth.signInWithOtp({ email: id, options: { shouldCreateUser: true } })
-      : await supabase.auth.signInWithOtp({ phone: id });
-    e ? setError(e.message) : setOtpSent(true); setLoading(false);
-  };
-  const verifyOtp = async () => {
-    if (!otp.trim()) return; setLoading(true); setError('');
-    const id = authMethod === 'email' ? email.trim() : phone.trim();
-    const { error: e } = authMethod === 'email'
-      ? await supabase.auth.verifyOtp({ email: id, token: otp.trim(), type: 'email' })
-      : await supabase.auth.verifyOtp({ phone: id, token: otp.trim(), type: 'sms' });
-    if (e) setError(e.message); setLoading(false);
-  };
-  const signUpWithPassword = async () => {
-    if (!email.trim() || !password) return;
-    if (password.length < 6) { setError('Password must be at least 6 characters'); return; }
-    if (password !== confirmPassword) { setError('Passwords do not match'); return; }
-    setLoading(true); setError('');
-    const { data, error: e } = await supabase.auth.signUp({ email: email.trim(), password });
-    if (e) {
-      setError(e.message);
-    } else if (data.session) {
-      // Email confirmation disabled — user auto-signed-in, onAuthStateChange handles routing
-    } else if (data.user && !data.session) {
-      // Email confirmation required — show "check your email" screen
-      setOtpSent(true);
+  // Auto-scroll
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+
+  // TTS
+  const speakText = useCallback((text: string) => {
+    if (!voiceEnabled || typeof window === 'undefined' || !window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    let clean = text.replace(/\[KEY:\s*([^\]]+)\]/g, '$1').replace(/\[ANS:\s*([^\]]+)\]/g, 'The answer is $1.').replace(/\[FORMULA:\s*([^\]]+)\]/g, 'The formula is $1.').replace(/\[TIP:\s*([^\]]+)\]/g, 'Exam tip: $1.').replace(/\[MARKS:\s*([^\]]+)\]/g, 'This is a $1 marks question.').replace(/\[DIAGRAM:\s*([^\]]+)\]/g, 'You should draw a diagram of $1.').replace(/<!--[\s\S]*?-->/g, '').replace(/\n+/g, '. ').replace(/\s+/g, ' ').trim();
+    if (!clean) return;
+    const voices = voicesRef.current.length > 0 ? voicesRef.current : window.speechSynthesis.getVoices();
+    const voice = language === 'hi' ? (voices.find(v => v.lang === 'hi-IN') || voices.find(v => v.lang.startsWith('hi'))) : (voices.find(v => v.lang === 'en-IN') || voices.find(v => v.name.toLowerCase().includes('india')) || voices.find(v => v.lang.startsWith('en')) || null);
+    if (clean.length > 300) {
+      const chunks = clean.match(/[^.!?]+[.!?]+/g) || [clean];
+      setIsSpeaking(true);
+      chunks.forEach((chunk, i) => { const u = new SpeechSynthesisUtterance(chunk.trim()); if (voice) u.voice = voice; u.rate = 0.9; u.pitch = 1.05; u.lang = language === 'hi' ? 'hi-IN' : 'en-IN'; if (i === chunks.length - 1) u.onend = () => setIsSpeaking(false); u.onerror = () => setIsSpeaking(false); window.speechSynthesis.speak(u); });
     } else {
-      // User may already exist (Supabase returns fake success to prevent enumeration)
-      setError('An account with this email may already exist. Try Log In instead.');
+      const u = new SpeechSynthesisUtterance(clean); if (voice) u.voice = voice; u.rate = 0.9; u.pitch = 1.05; u.lang = language === 'hi' ? 'hi-IN' : 'en-IN'; u.onstart = () => setIsSpeaking(true); u.onend = () => setIsSpeaking(false); u.onerror = () => setIsSpeaking(false); window.speechSynthesis.speak(u);
+    }
+  }, [voiceEnabled, language]);
+
+  const stopSpeaking = useCallback(() => { if (typeof window !== 'undefined' && window.speechSynthesis) { window.speechSynthesis.cancel(); setIsSpeaking(false); } }, []);
+
+  // STT
+  const sendMessage = useCallback(async (text: string) => {
+    if (!text.trim()) return;
+    setMessages(p => [...p, { id: Date.now(), role: 'student', content: text, timestamp: new Date().toISOString() }]);
+    setLoading(true); setFoxyState('thinking'); setShowTopicSheet(false);
+    try {
+      const chapCtx = selectedChapters.length > 0 ? topics.filter(t => selectedChapters.includes(t.id)).map(t => `Ch ${t.chapter_number}: ${t.title}`).join(', ') : null;
+      const resp = await callFoxyTutor({ message: text, student_id: student?.id || '', student_name: student?.name || 'Student', grade: studentGrade, subject: activeSubject, language, mode: sessionMode, topic_id: activeTopic?.id || null, topic_title: activeTopic?.title || null, session_id: chatSessionId, selected_chapters: chapCtx });
+      setMessages(p => [...p, { id: Date.now() + 1, role: 'tutor', content: resp.reply, timestamp: new Date().toISOString(), xp: resp.xp_earned }]);
+      if (voiceEnabled) setTimeout(() => speakText(resp.reply), 300);
+      if (resp.xp_earned > 0) setXpGained(p => p + resp.xp_earned);
+      if (resp.session_id) setChatSessionId(resp.session_id);
+      setFoxyState('happy'); setTimeout(() => setFoxyState('idle'), 2000);
+    } catch {
+      setMessages(p => [...p, { id: Date.now() + 1, role: 'tutor', content: 'Oops! Please try again.', timestamp: new Date().toISOString() }]);
+      setFoxyState('idle');
     }
     setLoading(false);
+  }, [student, studentGrade, activeSubject, language, sessionMode, activeTopic, chatSessionId, selectedChapters, topics, voiceEnabled, speakText]);
+
+  // Feedback: thumbs up/down
+  const handleFeedback = useCallback(async (msgId: number, isUp: boolean) => {
+    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, feedback: isUp ? 'up' : 'down' } : m));
+    try { await supabase.rpc('track_ai_quality', { p_subject: activeSubject, p_is_thumbs_up: isUp }); } catch {}
+  }, [activeSubject]);
+
+  // Open report modal
+  const openReport = useCallback((msgId: number) => {
+    const foxyMsg = messages.find(m => m.id === msgId);
+    const idx = messages.findIndex(m => m.id === msgId);
+    const studentMsg = idx > 0 ? messages.slice(0, idx).reverse().find(m => m.role === 'student') : null;
+    if (!foxyMsg) return;
+    setReportModal({ msgId, studentMsg: studentMsg?.content || '', foxyMsg: foxyMsg.content });
+    setReportReason('wrong_answer'); setReportCorrection(''); setReportSuccess(false);
+  }, [messages]);
+
+  // Submit report
+  const submitReport = useCallback(async () => {
+    if (!reportModal) return;
+    setReportSubmitting(true);
+    try {
+      await supabase.from('ai_response_reports').insert({
+        student_id: student?.id || null,
+        student_name: student?.name || 'Anonymous',
+        session_id: chatSessionId,
+        student_message: reportModal.studentMsg,
+        foxy_response: reportModal.foxyMsg.substring(0, 4000),
+        report_reason: reportReason,
+        student_correction: reportCorrection || null,
+        subject: activeSubject,
+        grade: studentGrade,
+        topic_title: activeTopic?.title || null,
+        session_mode: sessionMode,
+        language,
+      });
+      await supabase.rpc('track_ai_quality', { p_subject: activeSubject, p_is_report: true });
+      setMessages(prev => prev.map(m => m.id === reportModal.msgId ? { ...m, reported: true, feedback: 'down' } : m));
+      setReportSuccess(true);
+    } catch {}
+    setReportSubmitting(false);
+  }, [reportModal, student, chatSessionId, reportReason, reportCorrection, activeSubject, studentGrade, activeTopic, sessionMode, language]);
+
+  const startListening = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) { alert('Speech recognition not supported. Try Chrome.'); return; }
+    const r = new SR(); r.continuous = false; r.interimResults = false; r.lang = language === 'hi' ? 'hi-IN' : 'en-IN';
+    r.onstart = () => setIsListening(true);
+    r.onresult = (e: any) => { const t = e.results[0][0].transcript; if (t.trim()) sendMessage(t.trim()); };
+    r.onerror = () => setIsListening(false); r.onend = () => setIsListening(false);
+    recognitionRef.current = r; r.start();
+  }, [language, sendMessage]);
+
+  const stopListening = useCallback(() => { if (recognitionRef.current) { recognitionRef.current.stop(); setIsListening(false); } }, []);
+
+  const switchSubject = (key: string) => {
+    setActiveSubject(key); setActiveTopic(null); setSelectedChapters([]); setShowSubjectDD(false); setMessages([]); setChatSessionId(null);
+    if (typeof window !== 'undefined') localStorage.setItem('alfanumrik_subject', key);
+    // Auto-set language for language subjects
+    if (key === 'hindi') setLanguage('hi');
+    else if (key === 'english') setLanguage('en');
   };
-  const signInWithPassword = async () => {
-    if (!email.trim() || !password) return;
-    setLoading(true); setError('');
-    const { data, error: e } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    if (e) {
-      if (e.message === 'Invalid login credentials') setError('Wrong email or password. Try again or use Forgot Password.');
-      else if (e.message === 'Email not confirmed') setError('Please confirm your email first. Check your inbox for the confirmation link.');
-      else setError(e.message);
-    }
-    // If success, onAuthStateChange handles routing to profile or dashboard
-    setLoading(false);
-  };
-  const sendResetEmail = async () => {
-    if (!email.trim()) { setError('Enter your email address first'); return; }
-    setLoading(true); setError('');
-    const { error: e } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: window.location.origin + '/auth/reset',
-    });
-    if (e) setError(e.message);
-    else setResetSent(true);
-    setLoading(false);
-  };
-  const saveProfile = async () => {
-    setSaving(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setSaving(false); return; }
-    if (role === 'student') {
-      const { data: ex } = await supabase.from('students').select('id').eq('auth_user_id', user.id).single();
-      const p = { name, grade, board, preferred_language: lang, email: user.email, phone: phone || undefined, parent_phone: parentPhone || undefined, onboarding_completed: false };
-      ex ? await supabase.from('students').update(p).eq('id', ex.id) : await supabase.from('students').insert({ ...p, auth_user_id: user.id });
-      setStep('subject');
-    } else if (role === 'teacher') {
-      const { data: ex } = await supabase.from('teachers').select('id').eq('auth_user_id', user.id).single();
-      const p = { name, school_name: schoolName, subjects_taught: subjectsTaught, grades_taught: gradesTaught, board, qualification, preferred_language: lang, email: user.email, is_active: true, onboarding_completed: true };
-      ex ? await supabase.from('teachers').update(p).eq('id', ex.id) : await supabase.from('teachers').insert({ ...p, auth_user_id: user.id });
-      const { data: stu } = await supabase.from('students').select('id').eq('auth_user_id', user.id).single();
-      if (!stu) await supabase.from('students').insert({ auth_user_id: user.id, name, grade: gradesTaught[0]||'9', board, preferred_language: lang, email: user.email, onboarding_completed: true });
-      await refreshStudent(); router.replace('/teacher');
-    } else {
-      const { data: ex } = await supabase.from('guardians').select('id').eq('auth_user_id', user.id).single();
-      const p = { name, relationship, preferred_language: lang, email: user.email, phone: phone||undefined, onboarding_completed: true };
-      ex ? await supabase.from('guardians').update(p).eq('id', ex.id) : await supabase.from('guardians').insert({ ...p, auth_user_id: user.id });
-      const { data: stu } = await supabase.from('students').select('id').eq('auth_user_id', user.id).single();
-      if (!stu) await supabase.from('students').insert({ auth_user_id: user.id, name, grade:'9', board:'CBSE', preferred_language: lang, email: user.email, onboarding_completed: true });
-      // Auto-link child if invite code provided
-      if (childInviteCode.trim()) {
-        const { data: gd } = await supabase.from('guardians').select('id').eq('auth_user_id', user.id).single();
-        if (gd) {
-          await supabase.rpc('link_guardian_to_student_via_code', { p_guardian_id: gd.id, p_invite_code: childInviteCode.trim() });
-        }
-      }
-      await refreshStudent(); router.replace('/parent');
-    }
-    setSaving(false);
-  };
-  const saveSubject = async () => {
-    setSaving(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setSaving(false); return; }
-    const subs = selectedSubs.length > 0 ? selectedSubs : [subject]; await supabase.from('students').update({ preferred_subject: subs[0], selected_subjects: subs, onboarding_completed: true }).eq('auth_user_id', user.id);
-    await refreshStudent(); router.replace('/dashboard'); setSaving(false);
-  };
-  const tog = (a: string[], i: string, s: (v: string[]) => void) => s(a.includes(i)?a.filter(x=>x!==i):[...a,i]);
 
-  if (isLoading) return <LoadingFoxy />;
+  // Language toggle lock for language subjects
+  const isLangLocked = activeSubject === 'hindi' || activeSubject === 'english';
 
-  /* ════════════════════════════════════════════════════════
-     LANDING PAGE
-  ════════════════════════════════════════════════════════ */
-  if (step === 'landing') {
+  // Mode switch with auto-prompt
+  const switchMode = useCallback((modeId: string) => {
+    setSessionMode(modeId);
+    const mode = MODES.find(m => m.id === modeId);
+    if (!mode) return;
+    // Doubt mode: let user type their own question
+    if (modeId === 'doubt') return;
+    // Auto-send a contextual prompt
+    const topicName = activeTopic?.title || '';
+    const prompt = language === 'hi' ? mode.autoPromptHi(topicName) : mode.autoPrompt(topicName);
+    if (prompt) sendMessage(prompt);
+  }, [activeTopic, language, sendMessage]);
 
-    return (
-      <div style={{ background: '#fff', fontFamily: 'var(--font-body)' }}>
-        {/* ═══ INLINE RESPONSIVE STYLES ═══ */}
-        <style dangerouslySetInnerHTML={{ __html: `
-          .lp-stats { display: grid; grid-template-columns: repeat(2, 1fr); }
-          .lp-steps { display: grid; grid-template-columns: 1fr; gap: 16px; }
-          .lp-features { display: grid; grid-template-columns: 1fr; gap: 12px; }
-          .lp-roles { display: grid; grid-template-columns: 1fr; gap: 12px; }
-          .lp-badges { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
-          .lp-hero { padding: 48px 16px 72px; text-align: center; position: relative; overflow: hidden; }
-          .lp-section { padding: 40px 16px; }
-          .lp-cta { display: flex; flex-direction: column; align-items: center; gap: 10px; }
-          .lp-nav-inner { max-width: 1200px; margin: 0 auto; padding: 0 16px; height: 100%; display: flex; align-items: center; justify-content: space-between; }
-          .lp-stats-wrap { max-width: 900px; margin: -28px auto 0; padding: 0 16px; position: relative; z-index: 10; }
-          .lp-container { max-width: 1100px; margin: 0 auto; width: 100%; }
+  const cfg = SUBJECTS[activeSubject] || SUBJECTS.science;
 
-          @media (min-width: 400px) {
-            .lp-cta { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 12px; }
-          }
-          @media (min-width: 480px) {
-            .lp-features { grid-template-columns: repeat(2, 1fr); gap: 14px; }
-          }
-          @media (min-width: 640px) {
-            .lp-stats { grid-template-columns: repeat(4, 1fr); }
-            .lp-steps { grid-template-columns: repeat(3, 1fr); gap: 20px; }
-            .lp-roles { grid-template-columns: repeat(2, 1fr); gap: 14px; }
-            .lp-hero { padding: 72px 20px 88px; }
-            .lp-section { padding: 64px 20px; }
-            .lp-nav-inner { padding: 0 20px; }
-            .lp-stats-wrap { margin-top: -40px; padding: 0 20px; }
-            .lp-badges { gap: 16px; }
-          }
-          @media (min-width: 900px) {
-            .lp-features { grid-template-columns: repeat(3, 1fr); gap: 16px; }
-            .lp-roles { grid-template-columns: repeat(3, 1fr); gap: 16px; }
-          }
-          @media (min-width: 1024px) {
-            .lp-hero { padding: 100px 20px 100px; }
-            .lp-section { padding: 80px 20px; }
-          }
-          @media (max-width: 374px) {
-            .lp-hero h1 { font-size: clamp(22px, 7vw, 28px) !important; }
-            .lp-section h2 { font-size: clamp(18px, 5vw, 24px) !important; }
-          }
-        ` }} />
-        {/* ════ NAV ════ */}
-        <nav style={{ position: 'sticky', top: 0, zIndex: 100, background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(0,0,0,0.05)', height: 64 }}>
-          <div className="lp-nav-inner">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 28 }}>🦊</span>
-              <div>
-                <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 17, color: P.navy }}>Alfanumrik</span>
-                <span style={{ fontSize: 9, fontWeight: 600, color: P.text3, display: 'block', marginTop: -2, letterSpacing: 0.5 }}>Adaptive Learning OS</span>
-              </div>
-            </div>
-            {/* Desktop nav */}
-            <div className="hidden md:flex items-center gap-5">
-              <span style={{ fontSize: 13, fontWeight: 600, color: P.text2, cursor: 'pointer' }} onClick={() => document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' })}>How It Works</span>
-              <span style={{ fontSize: 13, fontWeight: 600, color: P.text2, cursor: 'pointer' }} onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })}>Features</span>
-              <span style={{ fontSize: 13, fontWeight: 600, color: P.text2, cursor: 'pointer' }} onClick={() => document.getElementById('for-whom')?.scrollIntoView({ behavior: 'smooth' })}>For Whom</span>
-              <span style={{ fontSize: 13, fontWeight: 600, color: P.text2, cursor: 'pointer' }} onClick={() => document.getElementById('trust')?.scrollIntoView({ behavior: 'smooth' })}>Trust & Security</span>
-              <button onClick={() => {setAuthMode('login');setStep('auth');}} style={{ padding: '7px 18px', borderRadius: 8, border: `1.5px solid ${P.navy}`, background: 'transparent', color: P.navy, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Log In</button>
-              <button onClick={() => setStep('role')} style={{ padding: '9px 22px', borderRadius: 8, border: 'none', background: P.rose, color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Get Started Free</button>
-            </div>
-            {/* Mobile hamburger */}
-            <button onClick={() => setMobileMenu(!mobileMenu)} className="md:hidden" style={{ fontSize: 24, background: 'none', border: 'none', cursor: 'pointer', color: P.navy }}>{mobileMenu ? '\u2715' : '\u2630'}</button>
-          </div>
-          {/* Mobile menu */}
-          {mobileMenu && (
-            <div className="md:hidden" style={{ position: 'absolute', top: 64, left: 0, right: 0, background: '#fff', borderBottom: '1px solid rgba(0,0,0,0.08)', padding: '16px', zIndex: 100 }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <span style={{ fontSize: 14, fontWeight: 600, color: P.text1, cursor: 'pointer', padding: '8px 0' }} onClick={() => {document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' });setMobileMenu(false);}}>How It Works</span>
-                <span style={{ fontSize: 14, fontWeight: 600, color: P.text1, cursor: 'pointer', padding: '8px 0' }} onClick={() => {document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' });setMobileMenu(false);}}>Features</span>
-                <span style={{ fontSize: 14, fontWeight: 600, color: P.text1, cursor: 'pointer', padding: '8px 0' }} onClick={() => {document.getElementById('for-whom')?.scrollIntoView({ behavior: 'smooth' });setMobileMenu(false);}}>For Whom</span>
-                <span style={{ fontSize: 14, fontWeight: 600, color: P.text1, cursor: 'pointer', padding: '8px 0' }} onClick={() => {document.getElementById('trust')?.scrollIntoView({ behavior: 'smooth' });setMobileMenu(false);}}>Trust & Security</span>
-                <div style={{ display: 'flex', gap: 10, paddingTop: 8, borderTop: '1px solid rgba(0,0,0,0.06)' }}>
-                  <button onClick={() => {setAuthMode('login');setStep('auth');}} style={{ flex: 1, padding: '10px', borderRadius: 8, border: `1.5px solid ${P.navy}`, background: 'transparent', color: P.navy, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Log In</button>
-                  <button onClick={() => setStep('role')} style={{ flex: 1, padding: '10px', borderRadius: 8, border: 'none', background: P.rose, color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Get Started</button>
-                </div>
-              </div>
-            </div>
-          )}
-        </nav>
-
-        {/* ════ HERO ════ */}
-        <section className="lp-hero" style={{ background: `linear-gradient(135deg, ${P.navy} 0%, #0F2942 60%, #1A365D 100%)` }}>
-          <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 80% 60% at 50% 40%, rgba(232,88,28,0.08) 0%, transparent 60%)', pointerEvents: 'none' }} />
-          <div style={{ maxWidth: 760, margin: '0 auto', position: 'relative', zIndex: 1 }}>
-            <div style={{ display: 'inline-block', padding: '6px 16px', borderRadius: 20, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)', marginBottom: 20 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.7)' }}>🇮🇳 Startup India Recognized | ISO 27001 Certified</span>
-            </div>
-            <h1 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(28px, 5.5vw, 52px)', lineHeight: 1.15, color: '#fff', marginBottom: 18 }}>
-              India&apos;s Smartest AI Tutor<br/>for CBSE Students
-            </h1>
-            <p style={{ fontSize: 'clamp(15px, 2vw, 19px)', color: 'rgba(255,255,255,0.65)', lineHeight: 1.7, maxWidth: 580, margin: '0 auto 32px' }}>
-              Foxy, your personal AI tutor, teaches at YOUR level — not your grade level.
-              Powered by Bayesian mastery tracking, spaced repetition &amp; adaptive learning. Hindi, English &amp; 8 more languages.
-            </p>
-            <div className="lp-cta">
-              <button onClick={() => setStep('role')} style={{ padding: '14px 32px', borderRadius: 10, border: 'none', background: P.rose, color: '#fff', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, cursor: 'pointer', width: '100%', maxWidth: 240 }}>
-                Start Learning Free
-              </button>
-              <button onClick={() => document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' })} style={{ padding: '14px 32px', borderRadius: 10, border: '1.5px solid rgba(255,255,255,0.25)', background: 'transparent', color: '#fff', fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15, cursor: 'pointer', width: '100%', maxWidth: 240 }}>
-                See How It Works
-              </button>
-            </div>
-          </div>
-        </section>
-
-        {/* ════ STATS BAR ════ */}
-        <section className="lp-stats-wrap">
-          <div className="lp-stats" style={{ background: '#fff', borderRadius: 16, boxShadow: '0 8px 32px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
-            {[['2,100+','Practice Questions'],['726','CBSE Chapters'],['16','Subjects Covered'],['6+','Indian Languages']].map(([v, l]) => (
-              <div key={l} style={{ padding: 'clamp(14px, 3vw, 28px) 8px', textAlign: 'center', borderBottom: '1px solid rgba(0,0,0,0.04)', borderRight: '1px solid rgba(0,0,0,0.04)' }}>
-                <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(18px, 3vw, 32px)', color: P.rose }}>{v}</div>
-                <div style={{ fontSize: 'clamp(9px, 1.4vw, 12px)', color: P.text3, marginTop: 2, fontWeight: 600 }}>{l}</div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* ════ HOW IT WORKS ════ */}
-        <section id="how-it-works" className="lp-section" style={{ textAlign: 'center' }}>
-          <div className="lp-container" style={{ margin: '0 auto' }}>
-            <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(22px, 3.5vw, 34px)', color: P.navy, marginBottom: 10 }}>How Alfanumrik Works</h2>
-            <p style={{ fontSize: 14, color: P.text2, lineHeight: 1.7, maxWidth: 500, margin: '0 auto 40px' }}>
-              Three steps to transform learning outcomes. No complex setup required.
-            </p>
-            <div className="lp-steps">
-              {[
-                { step: '1', icon: '📝', title: 'Sign Up & Choose Subjects', desc: 'Create your free account in 60 seconds. Pick your grade, board, and subjects. Foxy assesses your current level automatically.' },
-                { step: '2', icon: '🦊', title: 'Learn with Foxy AI Tutor', desc: 'Ask questions in Hindi or English. Foxy teaches step by step, gives practice problems, creates quizzes, and tracks your mastery with spaced repetition.' },
-                { step: '3', icon: '📈', title: 'Track Progress & Master Topics', desc: 'Spaced repetition ensures you never forget. Parents get daily reports. Teachers see class mastery heatmaps.' },
-              ].map(s => (
-                <div key={s.step} style={{ padding: '32px 24px', borderRadius: 16, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', position: 'relative' }}>
-                  <div style={{ position: 'absolute', top: -14, left: 24, width: 28, height: 28, borderRadius: '50%', background: P.rose, color: '#fff', fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{s.step}</div>
-                  <div style={{ fontSize: 36, marginBottom: 12 }}>{s.icon}</div>
-                  <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 16, color: P.navy, marginBottom: 8 }}>{s.title}</h3>
-                  <p style={{ fontSize: 13, color: P.text2, lineHeight: 1.65 }}>{s.desc}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* ════ FEATURES ════ */}
-        <section id="features" className="lp-section" style={{ background: P.lightBg }}>
-          <div className="lp-container" style={{ margin: '0 auto' }}>
-            <h2 style={{ textAlign: 'center', fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(22px, 3.5vw, 34px)', color: P.navy, marginBottom: 10 }}>
-              Why Students Love Alfanumrik
-            </h2>
-            <p style={{ textAlign: 'center', fontSize: 14, color: P.text2, lineHeight: 1.7, maxWidth: 500, margin: '0 auto 40px' }}>
-              Evidence-backed learning science meets AI. Built specifically for Indian school students.
-            </p>
-            <div className="lp-features">
-              {[
-                { icon: '🦊', t: 'Foxy AI Tutor', d: 'Ask any question in Hindi or English. Foxy explains step by step with voice support. Math symbols, diagrams, and exam tips built in.', bg: `${P.gold}15` },
-                { icon: '🧠', t: 'Adaptive Learning Engine', d: 'AI tracks what you know using Bayesian mastery tracking. Every session targets your exact gaps.', bg: `${P.rose}0A` },
-                { icon: '🔄', t: 'Spaced Repetition', d: 'Never forget what you learned. The app reminds you to revise at the scientifically optimal time.', bg: `${P.teal}0A` },
-                { icon: '⚡', t: 'CBSE Aligned', d: '726 chapters across 16 subjects. Every question mapped to CBSE textbooks, competency frameworks, and board exam patterns.', bg: `${P.navy}0A` },
-                { icon: '🎤', t: 'Voice Conversations', d: 'Talk to Foxy like a real teacher. Indian English and Hindi voice support for hands-free learning.', bg: `${P.purple}0A` },
-                { icon: '🏆', t: 'Gamified & Fun', d: 'XP, streaks, leaderboards, and badges. Stay motivated with friendly competition and daily goals.', bg: `${P.green}0A` },
-              ].map(f => (
-                <div key={f.t} style={{ padding: '28px 24px', borderRadius: 14, background: '#fff', border: '1px solid rgba(0,0,0,0.05)', transition: 'all 0.3s' }}>
-                  <div style={{ width: 44, height: 44, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, marginBottom: 14, background: f.bg }}>{f.icon}</div>
-                  <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 16, color: P.navy, marginBottom: 6 }}>{f.t}</h3>
-                  <p style={{ fontSize: 13, color: P.text2, lineHeight: 1.65 }}>{f.d}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* ════ FOR WHOM ════ */}
-        <section id="for-whom" className="lp-section">
-          <div className="lp-container" style={{ margin: '0 auto', textAlign: 'center' }}>
-            <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(22px, 3.5vw, 34px)', color: P.navy, marginBottom: 10 }}>
-              Built for Every Stakeholder
-            </h2>
-            <p style={{ fontSize: 14, color: P.text2, lineHeight: 1.7, maxWidth: 500, margin: '0 auto 40px' }}>
-              One platform. Different experiences. Students learn, teachers monitor, parents stay informed.
-            </p>
-            <div className="lp-roles">
-              {[
-                { icon: '🎓', role: 'Students', color: P.purple, items: ['AI tutor with voice & math symbols', 'Adaptive quizzes with instant feedback', 'Spaced repetition to never forget', 'XP, streaks & leaderboards', 'CBSE board exam preparation'] },
-                { icon: '👩\u200D🏫', role: 'Teachers', color: P.teal, items: ['Create classes with a shareable code', 'View student mastery at a glance', 'Assign quizzes and track completion', 'Identify weak topics class-wide', 'NEP 2020 compliant reports'] },
-                { icon: '👨\u200D👩\u200D👧', role: 'Parents', color: P.green, items: ['Daily activity summary of your child', 'Quiz scores and streak tracking', 'Weekly progress reports', 'Link multiple children', 'Zero setup required'] },
-              ].map(r => (
-                <div key={r.role} style={{ padding: '32px 24px', borderRadius: 16, background: '#fff', border: `1.5px solid ${r.color}20`, textAlign: 'left' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-                    <span style={{ fontSize: 28 }}>{r.icon}</span>
-                    <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 18, color: r.color }}>{r.role}</span>
-                  </div>
-                  {r.items.map(item => (
-                    <div key={item} style={{ display: 'flex', gap: 10, padding: '6px 0', fontSize: 13, color: P.text2, lineHeight: 1.5 }}>
-                      <span style={{ color: r.color, fontWeight: 700, fontSize: 14, flexShrink: 0 }}>{'\u2713'}</span> {item}
-                    </div>
-                  ))}
-                  <button onClick={() => { setRole(r.role === 'Teachers' ? 'teacher' as Role : r.role === 'Parents' ? 'guardian' as Role : 'student' as Role); setStep('role'); }} style={{ marginTop: 16, width: '100%', padding: '10px', borderRadius: 10, border: `1.5px solid ${r.color}30`, background: `${r.color}08`, color: r.color, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
-                    Get Started as {r.role.replace(/s$/, '')}
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* ════ TRUST & SECURITY ════ */}
-        <section id="trust" style={{ background: P.navy, padding: 'clamp(40px, 6vw, 64px) 16px' }}>
-          <div style={{ maxWidth: 980, margin: '0 auto', textAlign: 'center' }}>
-            <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(22px, 3vw, 30px)', color: '#fff', marginBottom: 10 }}>
-              Trusted, Certified & Compliant
-            </h2>
-            <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.55)', lineHeight: 1.7, maxWidth: 500, margin: '0 auto 36px' }}>
-              Built by Cusiosense Learning India Private Limited. Your data is protected by enterprise-grade security.
-            </p>
-            <div className="lp-badges" style={{ marginBottom: 32, gap: 28, alignItems: 'flex-start' }}>
-
-              {/* ── Startup India — Tricolor circular emblem ── */}
-              <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:8, width: 110 }}>
-                <svg width="90" height="100" viewBox="0 0 90 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <circle cx="45" cy="42" r="36" fill="url(#si-bg)" stroke="#FF9933" strokeWidth="2.5"/>
-                  <circle cx="45" cy="42" r="30" fill="none" stroke="#FF9933" strokeWidth="0.8" strokeOpacity="0.4"/>
-                  <rect x="28" y="26" width="34" height="9" rx="1.5" fill="#FF9933"/>
-                  <rect x="28" y="35" width="34" height="9" fill="#FFFFFF" fillOpacity="0.95"/>
-                  <rect x="28" y="44" width="34" height="9" rx="1.5" fill="#138808"/>
-                  <circle cx="45" cy="39.5" r="4" fill="none" stroke="#000080" strokeWidth="1" strokeOpacity="0.7"/>
-                  <circle cx="45" cy="39.5" r="1" fill="#000080" fillOpacity="0.7"/>
-                  {[...Array(24)].map((_,i) => <line key={i} x1="45" y1="39.5" x2={45+3.5*Math.cos(i*Math.PI/12)} y2={39.5+3.5*Math.sin(i*Math.PI/12)} stroke="#000080" strokeWidth="0.3" strokeOpacity="0.5"/>)}
-                  <path d="M20 80 L30 72 L45 78 L60 72 L70 80 L60 76 L45 82 L30 76 Z" fill="#FF9933" fillOpacity="0.9"/>
-                  <path d="M24 84 L32 76 L45 81 L58 76 L66 84 L58 80 L45 85 L32 80 Z" fill="#138808" fillOpacity="0.8"/>
-                  <defs><radialGradient id="si-bg" cx="0.5" cy="0.4"><stop offset="0%" stopColor="#fff" stopOpacity="0.12"/><stop offset="100%" stopColor="#fff" stopOpacity="0.03"/></radialGradient></defs>
-                </svg>
-                <div style={{ textAlign:'center' }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: '#FF9933', letterSpacing: 0.5 }}>STARTUP INDIA</div>
-                  <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.4)', marginTop: 1 }}>DPIIT Recognized</div>
-                </div>
-              </div>
-
-              {/* ── ISO 27001 — Gold medal with red ribbons ── */}
-              <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:8, width: 110 }}>
-                <svg width="90" height="100" viewBox="0 0 90 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M30 60 L20 95 L35 82 L45 95 L45 62" fill="#C0392B" fillOpacity="0.85"/>
-                  <path d="M60 60 L70 95 L55 82 L45 95 L45 62" fill="#E74C3C" fillOpacity="0.8"/>
-                  <line x1="22" y1="90" x2="33" y2="78" stroke="#D4AC0D" strokeWidth="1" strokeOpacity="0.5"/>
-                  <line x1="68" y1="90" x2="57" y2="78" stroke="#D4AC0D" strokeWidth="1" strokeOpacity="0.5"/>
-                  <circle cx="45" cy="38" r="34" fill="url(#g27-outer)" stroke="#B8860B" strokeWidth="2"/>
-                  <circle cx="45" cy="38" r="28" fill="url(#g27-inner)" stroke="#DAA520" strokeWidth="1.5"/>
-                  <circle cx="45" cy="38" r="24" fill="none" stroke="#B8860B" strokeWidth="0.5" strokeOpacity="0.4"/>
-                  <text x="45" y="26" textAnchor="middle" fill="#5D4E37" fontSize="7" fontWeight="800" fontFamily="system-ui" letterSpacing="2">CERTIFIED</text>
-                  <text x="45" y="38" textAnchor="middle" fill="#3E2723" fontSize="12" fontWeight="900" fontFamily="system-ui" letterSpacing="1">ISO</text>
-                  <text x="45" y="50" textAnchor="middle" fill="#3E2723" fontSize="11" fontWeight="900" fontFamily="system-ui" letterSpacing="0.5">27001</text>
-                  <text x="45" y="60" textAnchor="middle" fill="#5D4E37" fontSize="6" fontWeight="700" fontFamily="system-ui" letterSpacing="2">CERTIFIED</text>
-                  <defs>
-                    <radialGradient id="g27-outer" cx="0.4" cy="0.35"><stop offset="0%" stopColor="#F9E076"/><stop offset="50%" stopColor="#DAA520"/><stop offset="100%" stopColor="#B8860B"/></radialGradient>
-                    <radialGradient id="g27-inner" cx="0.45" cy="0.4"><stop offset="0%" stopColor="#FFF8DC"/><stop offset="40%" stopColor="#F5DEB3"/><stop offset="100%" stopColor="#DAA520"/></radialGradient>
-                  </defs>
-                </svg>
-                <div style={{ textAlign:'center' }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: '#DAA520', letterSpacing: 0.5 }}>ISO 27001</div>
-                  <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.4)', marginTop: 1 }}>Information Security</div>
-                </div>
-              </div>
-
-              {/* ── ISO 42001 — Orange shield badge (AI Management) ── */}
-              <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:8, width: 110 }}>
-                <svg width="90" height="100" viewBox="0 0 90 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M45 4 L78 18 L78 52 C78 72 62 86 45 94 C28 86 12 72 12 52 L12 18 Z" fill="url(#g42-shield)" stroke="#E67E22" strokeWidth="2"/>
-                  <path d="M45 12 L70 24 L70 50 C70 66 58 78 45 84 C32 78 20 66 20 50 L20 24 Z" fill="#E67E22" fillOpacity="0.15" stroke="#F39C12" strokeWidth="0.8" strokeOpacity="0.5"/>
-                  <circle cx="45" cy="16" r="6" fill="none" stroke="#fff" strokeWidth="1" strokeOpacity="0.6"/>
-                  <path d="M42.5 16 L44 17.5 L48 14" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" strokeOpacity="0.8"/>
-                  <text x="45" y="37" textAnchor="middle" fill="#fff" fontSize="6" fontWeight="700" fontFamily="system-ui" letterSpacing="1.5" fillOpacity="0.7">AI MANAGEMENT</text>
-                  <circle cx="45" cy="54" r="12" fill="none" stroke="#fff" strokeWidth="1.5" strokeOpacity="0.8"/>
-                  <path d="M35 54 C35 48 39 44 45 44 C51 44 55 48 55 54" stroke="#fff" strokeWidth="1.2" strokeOpacity="0.6" fill="none"/>
-                  <path d="M37 48 C40 52 45 54 50 50" stroke="#fff" strokeWidth="0.8" strokeOpacity="0.5" fill="none"/>
-                  <path d="M38 58 C41 54 45 56 52 56" stroke="#fff" strokeWidth="0.8" strokeOpacity="0.5" fill="none"/>
-                  <line x1="45" y1="42" x2="45" y2="66" stroke="#fff" strokeWidth="0.5" strokeOpacity="0.3"/>
-                  <line x1="33" y1="54" x2="57" y2="54" stroke="#fff" strokeWidth="0.5" strokeOpacity="0.3"/>
-                  <text x="45" y="73" textAnchor="middle" fill="#fff" fontSize="9" fontWeight="900" fontFamily="system-ui" letterSpacing="1" fillOpacity="0.95">ISO</text>
-                  <text x="45" y="83" textAnchor="middle" fill="#fff" fontSize="10" fontWeight="900" fontFamily="system-ui" letterSpacing="0.5" fillOpacity="0.95">42001</text>
-                  <defs>
-                    <linearGradient id="g42-shield" x1="0.3" y1="0" x2="0.7" y2="1"><stop offset="0%" stopColor="#F5A623"/><stop offset="50%" stopColor="#E67E22"/><stop offset="100%" stopColor="#D35400"/></linearGradient>
-                  </defs>
-                </svg>
-                <div style={{ textAlign:'center' }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: '#F5A623', letterSpacing: 0.5 }}>ISO 42001</div>
-                  <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.4)', marginTop: 1 }}>AI Management</div>
-                </div>
-              </div>
-
-              {/* ── ISO 42005 — Teal shield badge (AI Governance) ── */}
-              <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:8, width: 110 }}>
-                <svg width="90" height="100" viewBox="0 0 90 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M45 4 L78 18 L78 52 C78 72 62 86 45 94 C28 86 12 72 12 52 L12 18 Z" fill="url(#g45-shield)" stroke="#0E6655" strokeWidth="2"/>
-                  <path d="M45 12 L70 24 L70 50 C70 66 58 78 45 84 C32 78 20 66 20 50 L20 24 Z" fill="#0E6655" fillOpacity="0.15" stroke="#1ABC9C" strokeWidth="0.8" strokeOpacity="0.5"/>
-                  <circle cx="45" cy="16" r="6" fill="none" stroke="#fff" strokeWidth="1" strokeOpacity="0.6"/>
-                  <path d="M42.5 16 L44 17.5 L48 14" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" strokeOpacity="0.8"/>
-                  <text x="45" y="37" textAnchor="middle" fill="#fff" fontSize="6" fontWeight="700" fontFamily="system-ui" letterSpacing="1.5" fillOpacity="0.7">AI GOVERNANCE</text>
-                  <rect x="32" y="42" width="26" height="30" rx="2.5" fill="none" stroke="#fff" strokeWidth="1.2" strokeOpacity="0.7"/>
-                  <line x1="36" y1="50" x2="54" y2="50" stroke="#fff" strokeWidth="0.7" strokeOpacity="0.5"/>
-                  <line x1="36" y1="54" x2="50" y2="54" stroke="#fff" strokeWidth="0.7" strokeOpacity="0.5"/>
-                  <line x1="36" y1="58" x2="54" y2="58" stroke="#fff" strokeWidth="0.7" strokeOpacity="0.5"/>
-                  <line x1="36" y1="62" x2="48" y2="62" stroke="#fff" strokeWidth="0.7" strokeOpacity="0.5"/>
-                  <circle cx="52" cy="66" r="5" fill="#1ABC9C" fillOpacity="0.4" stroke="#fff" strokeWidth="1.2"/>
-                  <path d="M49.5 66 L51 67.5 L55 64" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                  <text x="45" y="82" textAnchor="middle" fill="#fff" fontSize="9" fontWeight="900" fontFamily="system-ui" letterSpacing="1" fillOpacity="0.95">ISO</text>
-                  <text x="45" y="91" textAnchor="middle" fill="#fff" fontSize="10" fontWeight="900" fontFamily="system-ui" letterSpacing="0.5" fillOpacity="0.95">42005</text>
-                  <defs>
-                    <linearGradient id="g45-shield" x1="0.3" y1="0" x2="0.7" y2="1"><stop offset="0%" stopColor="#1ABC9C"/><stop offset="50%" stopColor="#16A085"/><stop offset="100%" stopColor="#0E6655"/></linearGradient>
-                  </defs>
-                </svg>
-                <div style={{ textAlign:'center' }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: '#1ABC9C', letterSpacing: 0.5 }}>ISO 42005</div>
-                  <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.4)', marginTop: 1 }}>AI Governance</div>
-                </div>
-              </div>
-
-              {/* ── PCI DSS — Tilted card + green checkmark (matching official style) ── */}
-              <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:8, width: 110 }}>
-                <svg width="100" height="100" viewBox="0 0 100 80" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <rect x="6" y="12" width="48" height="38" rx="4" fill="#1A5C50" transform="rotate(-10 30 30)"/>
-                  <rect x="8" y="14" width="44" height="34" rx="3" fill="none" stroke="#fff" strokeWidth="0.5" strokeOpacity="0.15" transform="rotate(-10 30 30)"/>
-                  <text transform="rotate(-10 30 30)"><tspan x="14" y="40" fill="#fff" fontSize="20" fontWeight="900" fontFamily="system-ui" letterSpacing="2">PCI</tspan></text>
-                  <circle cx="38" cy="22" r="4" fill="none" stroke="#fff" strokeWidth="1" strokeOpacity="0.4" transform="rotate(-10 30 30)"/>
-                  <path d="M48 58 L56 66 L76 40" stroke="#27AE60" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round"/>
-                  <path d="M48 58 L56 66 L76 40" stroke="#2ECC71" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
-                  <text x="72" y="24" fill="#fff" fontSize="16" fontWeight="900" fontFamily="system-ui" letterSpacing="1" fillOpacity="0.95">DSS</text>
-                  <text x="70" y="36" fill="#fff" fontSize="7.5" fontWeight="700" fontFamily="system-ui" letterSpacing="1.5" fillOpacity="0.55">COMPLIANT</text>
-                </svg>
-                <div style={{ textAlign:'center' }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: '#2ECC71', letterSpacing: 0.5 }}>PCI DSS</div>
-                  <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.4)', marginTop: 1 }}>Payment Security</div>
-                </div>
-              </div>
-
-              {/* ── NEP 2020 — Gold medal with Ashoka-inspired elements ── */}
-              <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:8, width: 110 }}>
-                <svg width="90" height="100" viewBox="0 0 90 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M30 60 L22 92 L36 80 L45 92 L45 62" fill="#B7950B" fillOpacity="0.6"/>
-                  <path d="M60 60 L68 92 L54 80 L45 92 L45 62" fill="#D4AC0D" fillOpacity="0.5"/>
-                  <circle cx="45" cy="38" r="34" fill="url(#gnep-outer)" stroke="#B8860B" strokeWidth="2"/>
-                  <circle cx="45" cy="38" r="28" fill="url(#gnep-inner)" stroke="#DAA520" strokeWidth="1.5"/>
-                  <circle cx="45" cy="38" r="24" fill="none" stroke="#B8860B" strokeWidth="0.5" strokeOpacity="0.4"/>
-                  {/* Book icon */}
-                  <path d="M33 32 C33 30 38 28 45 30 C52 28 57 30 57 32 L57 48 C57 46 52 44 45 46 C38 44 33 46 33 48 Z" fill="#8B6914" fillOpacity="0.25" stroke="#6D4C00" strokeWidth="0.8"/>
-                  <line x1="45" y1="30" x2="45" y2="46" stroke="#6D4C00" strokeWidth="0.6"/>
-                  <text x="45" y="26" textAnchor="middle" fill="#5D4E37" fontSize="6" fontWeight="800" fontFamily="system-ui" letterSpacing="2">NEP</text>
-                  <text x="45" y="58" textAnchor="middle" fill="#3E2723" fontSize="10" fontWeight="900" fontFamily="system-ui" letterSpacing="1">2020</text>
-                  <text x="45" y="66" textAnchor="middle" fill="#5D4E37" fontSize="5.5" fontWeight="700" fontFamily="system-ui" letterSpacing="2">ALIGNED</text>
-                  <defs>
-                    <radialGradient id="gnep-outer" cx="0.4" cy="0.35"><stop offset="0%" stopColor="#F9E076"/><stop offset="50%" stopColor="#DAA520"/><stop offset="100%" stopColor="#B8860B"/></radialGradient>
-                    <radialGradient id="gnep-inner" cx="0.45" cy="0.4"><stop offset="0%" stopColor="#FFF8DC"/><stop offset="40%" stopColor="#F5DEB3"/><stop offset="100%" stopColor="#DAA520"/></radialGradient>
-                  </defs>
-                </svg>
-                <div style={{ textAlign:'center' }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: '#DAA520', letterSpacing: 0.5 }}>NEP 2020</div>
-                  <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.4)', marginTop: 1 }}>Policy Aligned</div>
-                </div>
-              </div>
-
-              {/* ── CBSE — Red/maroon shield crest ── */}
-              <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:8, width: 110 }}>
-                <svg width="90" height="100" viewBox="0 0 90 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M45 4 L76 18 L76 52 C76 70 62 84 45 92 C28 84 14 70 14 52 L14 18 Z" fill="url(#gcbse)" stroke="#922B21" strokeWidth="2"/>
-                  <path d="M45 12 L68 24 L68 50 C68 64 56 76 45 82 C34 76 22 64 22 50 L22 24 Z" fill="#7B241C" fillOpacity="0.2" stroke="#C0392B" strokeWidth="0.8" strokeOpacity="0.4"/>
-                  {/* Graduation cap */}
-                  <path d="M30 42 L45 34 L60 42 L45 50 Z" fill="#fff" fillOpacity="0.2" stroke="#fff" strokeWidth="1.2" strokeOpacity="0.8"/>
-                  <line x1="45" y1="50" x2="45" y2="62" stroke="#fff" strokeWidth="0.8" strokeOpacity="0.6"/>
-                  <path d="M35 44 L35 54 C35 57 39 60 45 60 C51 60 55 57 55 54 L55 44" stroke="#fff" strokeWidth="1" fill="none" strokeOpacity="0.7"/>
-                  <line x1="60" y1="42" x2="62" y2="52" stroke="#fff" strokeWidth="0.8" strokeOpacity="0.6"/>
-                  <circle cx="62" cy="53" r="2" fill="#fff" fillOpacity="0.4"/>
-                  <text x="45" y="24" textAnchor="middle" fill="#fff" fontSize="10" fontWeight="900" fontFamily="system-ui" letterSpacing="1.5" fillOpacity="0.95">CBSE</text>
-                  <text x="45" y="74" textAnchor="middle" fill="#fff" fontSize="6" fontWeight="700" fontFamily="system-ui" letterSpacing="2" fillOpacity="0.6">COMPLIANT</text>
-                  <defs>
-                    <linearGradient id="gcbse" x1="0.3" y1="0" x2="0.7" y2="1"><stop offset="0%" stopColor="#E74C3C"/><stop offset="50%" stopColor="#C0392B"/><stop offset="100%" stopColor="#922B21"/></linearGradient>
-                  </defs>
-                </svg>
-                <div style={{ textAlign:'center' }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: '#E74C3C', letterSpacing: 0.5 }}>CBSE</div>
-                  <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.4)', marginTop: 1 }}>Curriculum Compliant</div>
-                </div>
-              </div>
-
-            </div>
-          </div>
-        </section>
-
-        {/* ════ CTA ════ */}
-        <section className="lp-section" style={{ textAlign: 'center' }}>
-          <div style={{ maxWidth: 560, margin: '0 auto' }}>
-            <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(22px, 4vw, 36px)', color: P.navy, marginBottom: 10 }}>
-              Ready to Learn Smarter?
-            </h2>
-            <p style={{ fontSize: 14, color: P.text2, lineHeight: 1.7, marginBottom: 28 }}>
-              Join thousands of students, teachers, and parents across India. Free to start, no credit card needed.
-            </p>
-            <div className="lp-cta">
-              <button onClick={() => setStep('role')} style={{ padding: '14px 36px', borderRadius: 10, border: 'none', background: P.rose, color: '#fff', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>
-                Get Started Free
-              </button>
-              <button onClick={() => {setAuthMode('login');setStep('auth');}} style={{ padding: '14px 36px', borderRadius: 10, border: `1.5px solid ${P.navy}`, background: 'transparent', color: P.navy, fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}>
-                Log In
-              </button>
-            </div>
-          </div>
-        </section>
-
-        {/* ════ FOOTER ════ */}
-        <footer style={{ background: P.navy, padding: 'clamp(24px, 4vw, 32px) 16px', textAlign: 'center' }}>
-          <div style={{ maxWidth: 800, margin: '0 auto' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 12 }}>
-              <span style={{ fontSize: 20 }}>🦊</span>
-              <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, color: '#fff' }}>Alfanumrik</span>
-              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>Adaptive Learning OS</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'center', gap: 16, marginBottom: 12 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.45)', cursor: 'pointer' }} onClick={() => setStep('role')}>Get Started</span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.45)', cursor: 'pointer' }} onClick={() => router.push('/help')}>Help & Support</span>
-              <a href="mailto:support@alfanumrik.com" style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.45)', textDecoration: 'none' }}>Contact Us</a>
-            </div>
-            <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', lineHeight: 1.6, marginBottom: 8 }}>
-              A product of Cusiosense Learning India Private Limited
-            </p>
-            <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', lineHeight: 1.5 }}>
-              Startup India Recognized | ISO 27001, 42001, 42005 & PCI-DSS Certified
-              <br/>Alfanumrik and Alfanumrik Adaptive Learning OS are registered trademarks of Cusiosense Learning India Private Limited.
-              <br/>{'\u00A9'} {new Date().getFullYear()} Cusiosense Learning India Private Limited. All rights reserved.
-            </p>
-          </div>
-        </footer>
-      </div>
-    );
-  }
-
-    /* ════ STEP 2: ROLE SELECTION ════ */
-  if (step === 'role') {
-    const roles: Array<{id:Role;icon:string;title:string;hi:string;desc:string;color:string}> = [
-      { id:'student', icon:'🎓', title:'Student', hi:'छात्र', desc:'Learn with Foxy AI, take quizzes, track your mastery.', color:P.rose },
-      { id:'teacher', icon:'👩‍🏫', title:'Teacher', hi:'शिक्षक', desc:'Create classes, assign work, view mastery reports.', color:P.teal },
-      { id:'guardian', icon:'👨‍👩‍👧', title:'Parent / Guardian', hi:'अभिभावक', desc:'Monitor progress, get daily learning updates.', color:P.green },
-    ];
-    return (
-      <div className="mesh-bg min-h-dvh flex items-center justify-center p-5">
-        <div style={{ maxWidth: 440, width: '100%' }} className="animate-slide-up">
-          <div style={{ textAlign: 'center', marginBottom: 32 }}>
-            <span style={{ fontSize: 48 }}>🦊</span>
-            <h1 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 26, color: P.navy, marginTop: 10 }}>Welcome to Alfanumrik</h1>
-            <p style={{ fontSize: 14, color: P.text3, marginTop: 6 }}>I am…</p>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {roles.map(r => (
-              <button key={r.id} onClick={() => { setRole(r.id); setStep('auth'); }} style={{ display:'flex', alignItems:'center', gap:14, padding:'20px 24px', borderRadius:14, cursor:'pointer', border:`1.5px solid ${role===r.id?r.color:'rgba(0,0,0,0.08)'}`, background:role===r.id?`${r.color}08`:'#fff', transition:'all 0.3s', textAlign:'left', width:'100%' }}>
-                <div style={{ width:52, height:52, borderRadius:14, display:'flex', alignItems:'center', justifyContent:'center', fontSize:26, background:`${r.color}10`, flexShrink:0 }}>{r.icon}</div>
-                <div>
-                  <div style={{ fontFamily:'var(--font-display)', fontWeight:700, fontSize:16, color:P.text1 }}>{r.title} <span style={{ fontSize:12, color:P.text3, fontWeight:400 }}>({r.hi})</span></div>
-                  <p style={{ fontSize:12, color:P.text2, lineHeight:1.5, marginTop:3 }}>{r.desc}</p>
-                </div>
-              </button>
-            ))}
-          </div>
-          <button onClick={() => setStep('landing')} style={{ display:'block', width:'100%', textAlign:'center', marginTop:20, fontSize:13, color:P.text3, background:'transparent', border:'none', cursor:'pointer' }}>← Back to home</button>
-        </div>
-      </div>
-    );
-  }
-
-  /* ════ STEP 3: AUTH ════ */
-  if (step === 'auth') {
-    const rl = role==='student'?'🎓 Student':role==='teacher'?'👩‍🏫 Teacher':'👨‍👩‍👧 Parent';
-    return (
-      <div className="mesh-bg min-h-dvh flex items-center justify-center p-5">
-        <Card className="w-full max-w-sm animate-slide-up !p-8">
-          <button onClick={() => setStep('role')} style={{ color:'var(--text-3)', fontSize:13, background:'none', border:'none', cursor:'pointer', marginBottom:20 }}>&larr; Change role</button>
-          <div style={{ textAlign:'center', marginBottom:20 }}>
-            <div style={{ fontSize:40, marginBottom:8 }}>🦊</div>
-            <h2 style={{ fontFamily:'var(--font-display)', fontWeight:800, fontSize:22 }}>
-              {authMode==='signup'?`Sign Up as ${rl}`:authMode==='login'?'Welcome Back!':authMode==='forgot'?'Reset Password':'Quick Login'}
-            </h2>
-            <p style={{ fontSize:13, color:'var(--text-3)', marginTop:4 }}>
-              {authMode==='signup'?'Create your account to start learning':authMode==='login'?'Sign in with your email & password':authMode==='forgot'?'We will send a reset link to your email':'Get a 6-digit code on your email'}
-            </p>
-          </div>
-
-          {/* Auth mode tabs */}
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:3, background:'var(--surface-2)', borderRadius:12, padding:3, marginBottom:16 }}>
-            {([['signup','Sign Up'],['login','Log In'],['otp','OTP']] as const).map(([m,l])=>(
-              <button key={m} onClick={()=>{setAuthMode(m);setError('');setOtpSent(false);setResetSent(false);}} style={{ padding:'8px 0', borderRadius:10, border:'none', cursor:'pointer', fontWeight:600, fontSize:12, background:authMode===m||authMode==='forgot'&&m==='login'?'var(--surface-1)':'transparent', color:authMode===m||authMode==='forgot'&&m==='login'?'var(--text-1)':'var(--text-3)', boxShadow:authMode===m?'0 1px 4px rgba(0,0,0,0.08)':'none' }}>{l}</button>
-            ))}
-          </div>
-
-          {/* ─── SIGN UP WITH PASSWORD ─── */}
-          {authMode==='signup'&&!otpSent&&(<>
-            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-              <Input type="email" placeholder="Email address" value={email} onChange={e=>setEmail(e.target.value)}/>
-              <div style={{ position:'relative' }}>
-                <Input type={showPassword?'text':'password'} placeholder="Create password (min 6 chars)" value={password} onChange={e=>setPassword(e.target.value)}/>
-                <button onClick={()=>setShowPassword(!showPassword)} style={{ position:'absolute', right:12, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', fontSize:16, color:'var(--text-3)' }}>{showPassword?'🙈':'👁️'}</button>
-              </div>
-              <Input type={showPassword?'text':'password'} placeholder="Confirm password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} onKeyDown={e=>e.key==='Enter'&&signUpWithPassword()}/>
-              {error&&<p style={{ color:'var(--red)', fontSize:13 }}>{error}</p>}
-              <Button fullWidth onClick={signUpWithPassword} disabled={loading||!email.trim()||!password||!confirmPassword}>{loading?'Creating account...':'Create Account →'}</Button>
-              <p style={{ fontSize:12, color:'var(--text-3)', textAlign:'center' }}>Already have an account? <button onClick={()=>{setAuthMode('login');setError('');}} style={{ color:'var(--orange)', fontWeight:700, background:'none', border:'none', cursor:'pointer' }}>Log In</button></p>
-            </div>
-          </>)}
-
-          {/* Sign up confirmation message */}
-          {authMode==='signup'&&otpSent&&(<>
-            <div style={{ textAlign:'center', padding:'20px 0' }}>
-              <div style={{ fontSize:48, marginBottom:12 }}>📧</div>
-              <h3 style={{ fontFamily:'var(--font-display)', fontWeight:700, fontSize:18, marginBottom:8 }}>Check Your Email!</h3>
-              <p style={{ fontSize:13, color:'var(--text-2)', lineHeight:1.6, marginBottom:16 }}>We sent a confirmation link to <strong>{email}</strong>. Click it to activate your account.</p>
-              <p style={{ fontSize:12, color:'var(--text-3)', lineHeight:1.6 }}>After confirming, come back here and Log In with your password.</p>
-              <Button variant="ghost" fullWidth onClick={()=>{setAuthMode('login');setOtpSent(false);setError('');}} className="mt-4">Go to Log In →</Button>
-            </div>
-          </>)}
-
-          {/* ─── LOG IN WITH PASSWORD ─── */}
-          {authMode==='login'&&(<>
-            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-              <Input type="email" placeholder="Email address" value={email} onChange={e=>setEmail(e.target.value)}/>
-              <div style={{ position:'relative' }}>
-                <Input type={showPassword?'text':'password'} placeholder="Password" value={password} onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key==='Enter'&&signInWithPassword()}/>
-                <button onClick={()=>setShowPassword(!showPassword)} style={{ position:'absolute', right:12, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', fontSize:16, color:'var(--text-3)' }}>{showPassword?'🙈':'👁️'}</button>
-              </div>
-              {error&&<p style={{ color:'var(--red)', fontSize:13 }}>{error}</p>}
-              <Button fullWidth onClick={signInWithPassword} disabled={loading||!email.trim()||!password}>{loading?'Signing in...':'Log In →'}</Button>
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                <button onClick={()=>{setAuthMode('forgot');setError('');setResetSent(false);}} style={{ fontSize:12, color:'var(--orange)', fontWeight:600, background:'none', border:'none', cursor:'pointer' }}>Forgot Password?</button>
-                <button onClick={()=>{setAuthMode('signup');setError('');}} style={{ fontSize:12, color:'var(--text-3)', background:'none', border:'none', cursor:'pointer' }}>Create Account</button>
-              </div>
-            </div>
-          </>)}
-
-          {/* ─── FORGOT PASSWORD ─── */}
-          {authMode==='forgot'&&!resetSent&&(<>
-            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-              <Input type="email" placeholder="Email address" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==='Enter'&&sendResetEmail()}/>
-              {error&&<p style={{ color:'var(--red)', fontSize:13 }}>{error}</p>}
-              <Button fullWidth onClick={sendResetEmail} disabled={loading||!email.trim()}>{loading?'Sending...':'Send Reset Link →'}</Button>
-              <button onClick={()=>{setAuthMode('login');setError('');}} style={{ fontSize:12, color:'var(--text-3)', background:'none', border:'none', cursor:'pointer', textAlign:'center', width:'100%' }}>&larr; Back to Log In</button>
-            </div>
-          </>)}
-          {authMode==='forgot'&&resetSent&&(<>
-            <div style={{ textAlign:'center', padding:'20px 0' }}>
-              <div style={{ fontSize:48, marginBottom:12 }}>📧</div>
-              <h3 style={{ fontFamily:'var(--font-display)', fontWeight:700, fontSize:18, marginBottom:8 }}>Reset Link Sent!</h3>
-              <p style={{ fontSize:13, color:'var(--text-2)', lineHeight:1.6, marginBottom:16 }}>Check <strong>{email}</strong> for a password reset link. Click it to set a new password.</p>
-              <Button variant="ghost" fullWidth onClick={()=>{setAuthMode('login');setResetSent(false);setError('');}} className="mt-2">Back to Log In</Button>
-            </div>
-          </>)}
-
-          {/* ─── OTP (PASSWORDLESS) ─── */}
-          {authMode==='otp'&&(<>
-            {otpSent?(<>
-              <p style={{ fontSize:13, color:'var(--text-2)', textAlign:'center', marginBottom:12 }}>OTP sent to <strong>{email}</strong></p>
-              <Input className="text-center" type="text" placeholder="000000" maxLength={6} value={otp} onChange={e=>setOtp(e.target.value.replace(/\D/g,''))} onKeyDown={e=>e.key==='Enter'&&verifyOtp()}/>
-              {error&&<p style={{ color:'var(--red)', fontSize:13, marginTop:8 }}>{error}</p>}
-              <div style={{ marginTop:12, display:'flex', flexDirection:'column', gap:8 }}>
-                <Button fullWidth onClick={verifyOtp} disabled={loading||otp.length<6}>{loading?'Verifying...':'Verify OTP →'}</Button>
-                <Button variant="ghost" fullWidth onClick={()=>{setOtpSent(false);setOtp('');setError('');}}>Change email</Button>
-              </div>
-            </>):(<>
-              <Input type="email" placeholder="Email address" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==='Enter'&&sendOtp()}/>
-              {error&&<p style={{ color:'var(--red)', fontSize:13, marginTop:8 }}>{error}</p>}
-              <Button fullWidth onClick={sendOtp} disabled={loading||!email.trim()} className="mt-3">{loading?'Sending...':'Send OTP →'}</Button>
-            </>)}
-          </>)}
-        </Card>
-      </div>
-    );
-  }
-
-  /* ════ STEP 4: PROFILE ════ */
-  if (step === 'profile') return (
-    <div className="mesh-bg min-h-dvh flex items-center justify-center p-5">
-      <Card className={`w-full animate-slide-up !p-8 ${role==='teacher'?'max-w-lg':'max-w-sm'}`}>
-        {/* Role picker header */}
-        <div style={{ textAlign:'center', marginBottom:16 }}>
-          <div style={{ fontSize:40, marginBottom:6 }}>{role==='student'?'🎓':role==='teacher'?'👩‍🏫':'👨‍👩‍👧'}</div>
-          <h2 style={{ fontFamily:'var(--font-display)', fontWeight:800, fontSize:22 }}>
-            {role==='student'?'Student Profile':role==='teacher'?'Teacher Profile':'Parent Profile'}
-          </h2>
-          <p style={{ fontSize:13, color:'var(--text-3)', marginTop:4 }}>
-            {role==='student'?'Tell us about yourself so Foxy can personalise your learning':role==='teacher'?'Set up your teaching profile':'Connect with your child\'s learning'}
-          </p>
-        </div>
-        {/* Quick role switch */}
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:4, marginBottom:16, background:'var(--surface-2)', borderRadius:12, padding:3 }}>
-          {([['student','🎓 Student'],['teacher','👩‍🏫 Teacher'],['guardian','👨‍👩‍👧 Parent']] as [Role, string][]).map(([r,l])=>(
-            <button key={r} onClick={()=>setRole(r)} style={{ padding:'8px 0', borderRadius:10, border:'none', cursor:'pointer', fontWeight:600, fontSize:11, background:role===r?'var(--surface-1)':'transparent', color:role===r?'var(--text-1)':'var(--text-3)', boxShadow:role===r?'0 1px 4px rgba(0,0,0,0.08)':'none' }}>{l}</button>
-          ))}
-        </div>
-        <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-          <Input placeholder="Full name" value={name} onChange={e=>setName(e.target.value)}/>
-          {role==='student'&&(<>
-            <Select value={grade} onChange={setGrade} options={GRADES.map(g=>({value:g,label:`Grade ${g}`}))}/>
-            <Select value={board} onChange={setBoard} options={BOARDS.map(b=>({value:b,label:b}))}/>
-            <div><p style={{ fontSize:11, color:'var(--text-3)', marginBottom:6, fontWeight:600 }}>Language</p>
-              <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:6 }}>
-                {LANGUAGES.slice(0,6).map(l=><button key={l.code} onClick={()=>setLang(l.code)} style={{ padding:'8px 4px', borderRadius:10, fontSize:12, fontWeight:600, cursor:'pointer', background:lang===l.code?`${P.rose}15`:'var(--surface-2)', border:`1.5px solid ${lang===l.code?P.rose:'var(--border)'}`, color:lang===l.code?P.rose:'var(--text-2)' }}>{l.labelNative}</button>)}
-              </div></div>
-            <Input placeholder="Parent/Guardian phone (optional)" type="tel" value={parentPhone} onChange={e=>setParentPhone(e.target.value)}/>
-          </>)}
-          {role==='teacher'&&(<>
-            <Input placeholder="School name" value={schoolName} onChange={e=>setSchoolName(e.target.value)}/>
-            <Input placeholder="Qualification (B.Ed, M.Sc)" value={qualification} onChange={e=>setQualification(e.target.value)}/>
-            <Select value={board} onChange={setBoard} options={BOARDS.map(b=>({value:b,label:b}))}/>
-            <div><p style={{ fontSize:11, color:'var(--text-3)', marginBottom:6, fontWeight:600 }}>Subjects</p>
-              <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
-                {SUBJECT_META.slice(0,8).map(s=><button key={s.code} onClick={()=>tog(subjectsTaught,s.code,setSubjectsTaught)} style={{ padding:'6px 12px', borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer', background:subjectsTaught.includes(s.code)?`${s.color}15`:'var(--surface-2)', border:`1.5px solid ${subjectsTaught.includes(s.code)?s.color:'var(--border)'}`, color:subjectsTaught.includes(s.code)?s.color:'var(--text-3)' }}>{s.icon} {s.name}</button>)}
-              </div></div>
-            <div><p style={{ fontSize:11, color:'var(--text-3)', marginBottom:6, fontWeight:600 }}>Grades</p>
-              <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
-                {GRADES.map(g=><button key={g} onClick={()=>tog(gradesTaught,g,setGradesTaught)} style={{ width:40, height:40, borderRadius:8, fontSize:13, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', background:gradesTaught.includes(g)?`${P.teal}15`:'var(--surface-2)', border:`1.5px solid ${gradesTaught.includes(g)?P.teal:'var(--border)'}`, color:gradesTaught.includes(g)?P.teal:'var(--text-3)' }}>{g}</button>)}
-              </div></div>
-          </>)}
-          {role==='guardian'&&(<>
-            <Select value={relationship} onChange={setRelationship} options={[{value:'parent',label:'Parent'},{value:'guardian',label:'Guardian'},{value:'sibling',label:'Older Sibling'},{value:'tutor',label:'Private Tutor'}]}/>
-            <div><p style={{ fontSize:11, color:'var(--text-3)', marginBottom:6, fontWeight:600 }}>Language</p>
-              <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:6 }}>
-                {LANGUAGES.slice(0,3).map(l=><button key={l.code} onClick={()=>setLang(l.code)} style={{ padding:'8px 4px', borderRadius:10, fontSize:12, fontWeight:600, cursor:'pointer', background:lang===l.code?`${P.green}15`:'var(--surface-2)', border:`1.5px solid ${lang===l.code?P.green:'var(--border)'}`, color:lang===l.code?P.green:'var(--text-2)' }}>{l.labelNative}</button>)}
-              </div></div>
-            <div style={{ padding:16, borderRadius:12, background:`${P.green}08`, border:`1px solid ${P.green}20` }}>
-              <p style={{ fontSize:12, color:'var(--text-2)', lineHeight:1.6, marginBottom:10 }}><strong>Link your child&apos;s account</strong> — enter their invite code (found in child&apos;s Profile page)</p>
-              <Input placeholder="Child's Invite Code (e.g. A1B2C3D4)" value={childInviteCode} onChange={e=>setChildInviteCode(e.target.value.toUpperCase())}/>
-            </div>
-          </>)}
-          <Button fullWidth onClick={saveProfile} disabled={saving||!name.trim()} className="mt-1">{saving?'Saving…':role==='student'?'Continue →':'Complete Setup →'}</Button>
-        </div>
-      </Card>
+  if (authLoading) return (
+    <div className="mesh-bg min-h-dvh flex items-center justify-center">
+      <div className="text-center"><div className="text-5xl animate-float mb-3">{FOXY_FACES.idle}</div><p className="text-sm text-[var(--text-3)]">Loading Foxy...</p></div>
     </div>
   );
 
-  /* ════ STEP 5: SUBJECT ════ */
-  if (step === 'subject') {
-    const av = SUBJECT_META.filter(s=>parseInt(grade)<=10?['math','science','english','hindi','social_studies','coding'].includes(s.code):true);
-    return (
-      <div className="mesh-bg min-h-dvh flex items-center justify-center p-5">
-        <Card className="w-full max-w-md animate-slide-up !p-8">
-          <div style={{ textAlign:'center', marginBottom:20 }}>
-            <div style={{ fontSize:40, marginBottom:6 }}>📚</div>
-            <h2 style={{ fontFamily:'var(--font-display)', fontWeight:800, fontSize:22 }}>Pick your subjects</h2>
-            <p style={{ fontSize:13, color:'var(--text-3)', marginTop:4 }}>Select all the subjects you want to study</p>
-          </div>
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:8, marginBottom:20 }}>
-            {av.map(s=><button key={s.code} onClick={()=>setSelectedSubs(p=>p.includes(s.code)?p.filter(x=>x!==s.code):[...p,s.code])} style={{ padding:16, borderRadius:14, textAlign:'left', cursor:'pointer', background:selectedSubs.includes(s.code)?`${s.color}12`:'var(--surface-2)', border:`1.5px solid ${selectedSubs.includes(s.code)?s.color:'var(--border)'}` }}>
-              <div style={{ fontSize:24, marginBottom:4 }}>{s.icon}</div>
-              <div style={{ fontSize:13, fontWeight:700, color:subject===s.code?s.color:'var(--text-1)' }}>{s.name}</div>
-            </button>)}
-          </div>
-          <Button fullWidth onClick={saveSubject} disabled={saving||selectedSubs.length===0}>{saving?'Setting up…':'Start Learning 🚀'}</Button>
-        </Card>
+  if (!student) return (
+    <div className="mesh-bg min-h-dvh flex items-center justify-center">
+      <div className="text-center">
+        <div className="text-5xl mb-3">{FOXY_FACES.idle}</div>
+        <p className="text-sm text-[var(--text-3)] mb-4">Please log in to access Foxy Tutor</p>
+        <button onClick={() => router.push('/')} className="px-6 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background: 'linear-gradient(135deg, #E8590C, #F59E0B)' }}>Log In</button>
       </div>
-    );
-  }
-  return null;
+    </div>
+  );
+
+  return (
+    <div className="min-h-dvh flex flex-col pb-nav" style={{ background: 'var(--surface-2)' }}>
+
+      {/* ═══ HEADER ═══ */}
+      <header className="sticky top-0 z-30 px-3 py-2.5 flex items-center gap-3" style={{ background: 'linear-gradient(135deg, #1a1a2e, #0f3460)', color: '#fff' }}>
+        <button onClick={() => router.push('/dashboard')} className="text-white/60 text-sm">←</button>
+        <div className="w-10 h-10 rounded-full flex items-center justify-center text-xl shrink-0" style={{ background: 'linear-gradient(135deg, #E8590C, #F59E0B)', animation: foxyState === 'thinking' ? 'pulse 1s infinite' : 'none' }}>
+          {FOXY_FACES[foxyState]}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-bold truncate">Foxy <span className="text-[10px] font-semibold opacity-60">AI Tutor</span></div>
+          <div className="text-[10px] opacity-50 flex gap-2"><span>{totalXP + xpGained} XP</span><span>{streakDays}d streak</span><span>Gr {studentGrade}</span></div>
+        </div>
+        <div className="flex items-center gap-1.5">
+          {LANGS.map(l => <button key={l.code} onClick={() => { if (!isLangLocked) setLanguage(l.code); }} className="text-[10px] font-bold px-2 py-1 rounded-lg transition-all" style={{ background: language === l.code ? 'rgba(255,255,255,0.2)' : 'transparent', color: language === l.code ? '#fff' : 'rgba(255,255,255,0.4)', opacity: isLangLocked && language !== l.code ? 0.2 : 1, cursor: isLangLocked ? 'default' : 'pointer' }}>{l.label}</button>)}
+          {isLangLocked && <span className="text-[8px] text-white/30">🔒</span>}
+          <button onClick={() => { if (voiceEnabled) { stopSpeaking(); setVoiceEnabled(false); } else setVoiceEnabled(true); }} className="ml-1 px-2 py-1 rounded-lg text-sm transition-all" style={{ background: voiceEnabled ? 'rgba(245,166,35,0.3)' : 'rgba(255,255,255,0.1)' }}>{voiceEnabled ? (isSpeaking ? '🔊' : '🔈') : '🔇'}</button>
+        </div>
+      </header>
+
+      {/* ═══ SUBJECT + CHAPTER + MODE BAR ═══ */}
+      <div className="foxy-toolbar" style={{ background: 'var(--surface-1)', borderBottom: '1px solid var(--border)' }}>
+        {/* Subject dropdown */}
+        <div className="relative">
+          <button onClick={() => { setShowSubjectDD(!showSubjectDD); setShowChapterDD(false); }} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-[0.97]" style={{ background: `${cfg.color}10`, border: `1.5px solid ${cfg.color}30`, color: cfg.color }}>
+            <span className="text-sm">{cfg.icon}</span><span>{cfg.name}</span><span className="text-[10px] ml-0.5 opacity-60">{showSubjectDD ? '▲' : '▼'}</span>
+          </button>
+          {showSubjectDD && (
+            <div className="absolute top-full left-0 mt-1 z-50 w-56 rounded-2xl overflow-hidden shadow-lg" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
+              <div className="p-2 text-[10px] font-bold uppercase tracking-wider text-[var(--text-3)] px-3">My Subjects</div>
+              {(studentSubs.length > 0 ? studentSubs : Object.keys(SUBJECTS)).map(key => {
+                const sub = SUBJECTS[key]; if (!sub) return null;
+                return (
+                  <button key={key} onClick={() => switchSubject(key)} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-all" style={{ background: activeSubject === key ? `${sub.color}08` : 'transparent', borderLeft: activeSubject === key ? `3px solid ${sub.color}` : '3px solid transparent' }}>
+                    <span className="text-base">{sub.icon}</span>
+                    <span className="text-sm font-semibold" style={{ color: activeSubject === key ? sub.color : 'var(--text-1)' }}>{sub.name}</span>
+                    {activeSubject === key && <span className="ml-auto text-xs" style={{ color: sub.color }}>✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Chapter dropdown */}
+        <div className="relative">
+          <button onClick={() => { setShowChapterDD(!showChapterDD); setShowSubjectDD(false); }} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-[0.97]" style={{ background: 'var(--surface-2)', border: '1.5px solid var(--border)', color: 'var(--text-2)' }}>
+            <span className="text-sm">📖</span><span>{selectedChapters.length > 0 ? `${selectedChapters.length} Ch` : `All ${topics.length} Ch`}</span><span className="text-[10px] ml-0.5 opacity-60">{showChapterDD ? '▲' : '▼'}</span>
+          </button>
+          {showChapterDD && (
+            <div className="absolute top-full left-0 mt-1 z-50 w-72 max-h-[50vh] rounded-2xl overflow-hidden shadow-lg flex flex-col" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
+              <div className="p-2 px-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-3)]">{cfg.icon} {cfg.name} Chapters</span>
+                <button onClick={() => setSelectedChapters([])} className="text-[10px] font-semibold" style={{ color: 'var(--orange)' }}>Clear All</button>
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                {topics.map(topic => {
+                  const sel = selectedChapters.includes(topic.id);
+                  const mastery = masteryData.find((m: any) => m.topic_tag === topic.title || m.chapter_number === topic.chapter_number);
+                  const lvl = mastery?.mastery_level || 'not_started';
+                  const lc = MASTERY_COLORS[lvl] || MASTERY_COLORS.not_started;
+                  return (
+                    <button key={topic.id} onClick={() => setSelectedChapters(p => sel ? p.filter(x => x !== topic.id) : [...p, topic.id])} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-all" style={{ background: sel ? `${cfg.color}06` : 'transparent', borderBottom: '1px solid var(--border)' }}>
+                      <div className="w-5 h-5 rounded flex items-center justify-center shrink-0 text-[10px]" style={{ background: sel ? cfg.color : 'var(--surface-2)', color: sel ? '#fff' : 'var(--text-3)', border: sel ? 'none' : '1.5px solid var(--border)' }}>{sel ? '✓' : ''}</div>
+                      <div className="flex-1 min-w-0"><div className="text-xs font-semibold truncate" style={{ color: 'var(--text-1)' }}>Ch {topic.chapter_number}: {topic.title}</div></div>
+                      <span className="text-[9px] font-bold capitalize px-1.5 py-0.5 rounded" style={{ background: `${lc}15`, color: lc }}>{lvl.replace('_', ' ')}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {selectedChapters.length > 0 && (
+                <div className="p-2 px-3" style={{ borderTop: '1px solid var(--border)' }}>
+                  <button onClick={() => { const ch = topics.find(t => selectedChapters.includes(t.id)); if (ch) { setActiveTopic(ch); sendMessage(`Teach me about: ${ch.title} (Chapter ${ch.chapter_number})`); setShowChapterDD(false); } }} className="w-full py-2 rounded-xl text-xs font-bold text-white" style={{ background: cfg.color }}>
+                    Start with Selected
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Mode pills — each triggers a mode-specific action */}
+        <div className="foxy-mode-bar ml-auto">
+          {MODES.map(m => (
+            <button key={m.id} onClick={() => switchMode(m.id)} className="shrink-0 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all active:scale-95 flex items-center gap-1" style={{ background: sessionMode === m.id ? `${cfg.color}15` : 'transparent', color: sessionMode === m.id ? cfg.color : 'var(--text-3)', border: sessionMode === m.id ? `1px solid ${cfg.color}30` : '1px solid transparent' }}>
+              <span>{m.emoji}</span>
+              <span className="hidden sm:inline">{language === 'hi' ? m.labelHi : m.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Close dropdowns */}
+      {(showSubjectDD || showChapterDD) && <div className="fixed inset-0 z-40" onClick={() => { setShowSubjectDD(false); setShowChapterDD(false); }} />}
+
+      {/* ═══ MAIN CHAT AREA ═══ */}
+      <div className="flex-1 flex overflow-hidden relative">
+        {/* Desktop sidebar */}
+        <div className="hidden lg:flex shrink-0 relative" style={{ width: sidebarOpen ? 280 : 0, transition: 'width 0.3s ease' }}>
+          <div className="flex flex-col overflow-hidden border-r" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)', width: 280, position: 'absolute', top: 0, bottom: 0, left: 0, transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)', transition: 'transform 0.3s ease' }}>
+            <div className="p-3 text-xs font-bold flex items-center justify-between" style={{ color: cfg.color, borderBottom: '1px solid var(--border)' }}>
+              <span>{cfg.icon} {cfg.name} · Gr {studentGrade} ({topics.length})</span>
+              <button onClick={() => setSidebarOpen(false)} className="w-6 h-6 rounded-lg flex items-center justify-center text-[10px] transition-all hover:opacity-70" style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }} title="Collapse">«</button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-2.5 space-y-2">
+              {topics.map(topic => {
+                const mastery = masteryData.find((m: any) => m.topic_tag === topic.title || m.chapter_number === topic.chapter_number);
+                const pct = mastery?.mastery_percent || 0;
+                const lvl = mastery?.mastery_level || 'not_started';
+                const lc = MASTERY_COLORS[lvl] || MASTERY_COLORS.not_started;
+                return (
+                  <button key={topic.id} onClick={() => { setActiveTopic(topic); sendMessage(`Teach me about: ${topic.title} (Chapter ${topic.chapter_number})`); }} className="w-full text-left p-3 rounded-xl transition-all active:scale-[0.98]" style={{ border: `1px solid ${lc}25`, background: 'var(--surface-1)' }}>
+                    <div className="text-xs font-bold truncate" style={{ color: 'var(--text-1)' }}>Ch {topic.chapter_number}: {topic.title}</div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <div className="w-16 h-1.5 rounded-full" style={{ background: 'var(--surface-2)' }}><div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: lc }} /></div>
+                      <span className="text-[10px] font-bold capitalize" style={{ color: lc }}>{lvl.replace('_', ' ')}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+        {!sidebarOpen && <button onClick={() => setSidebarOpen(true)} className="hidden lg:flex shrink-0 w-8 items-center justify-center border-r cursor-pointer transition-all hover:bg-[var(--surface-2)]" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)' }} title="Show chapters"><span className="text-[10px]" style={{ color: 'var(--text-3)' }}>»</span></button>}
+
+        {/* Chat column */}
+        <div className="flex-1 flex flex-col min-w-0">
+          <div className="flex-1 overflow-y-auto px-3 md:px-5 py-4">
+            {/* Empty state */}
+            {messages.length === 0 && (
+              <div className="text-center py-12 md:py-20 animate-slide-up">
+                <div className="text-6xl md:text-7xl mb-4 animate-float">{FOXY_FACES.idle}</div>
+                <h2 className="text-xl md:text-2xl font-extrabold mb-2" style={{ fontFamily: 'var(--font-display)', background: `linear-gradient(135deg, #E8590C, ${cfg.color})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Hi! I am Foxy</h2>
+                <p className="text-sm text-[var(--text-3)] max-w-sm mx-auto mb-6 leading-relaxed">Your AI tutor. Pick a topic, type below, or tap 🎤 to talk!</p>
+                <div className="flex flex-wrap gap-2 justify-center max-w-md mx-auto">
+                  {['What should I study today?', 'Quick quiz', 'Explain last topic', 'Formula sheet', 'Weak areas'].map(prompt => (
+                    <button key={prompt} onClick={() => sendMessage(prompt)} className="px-3.5 py-2 rounded-xl text-xs font-semibold transition-all active:scale-95" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', color: 'var(--text-2)' }}>{prompt}</button>
+                  ))}
+                </div>
+                <button onClick={() => setShowChapterDD(true)} className="mt-6 px-5 py-2.5 rounded-xl text-sm font-bold" style={{ background: `${cfg.color}10`, color: cfg.color, border: `1.5px solid ${cfg.color}30` }}>{cfg.icon} Browse {topics.length} Chapters</button>
+              </div>
+            )}
+
+            {/* Messages */}
+            {messages.map((msg, msgIdx) => (
+              <div key={msg.id} className="mb-4 w-full animate-fade-in">
+                <div className="flex items-center gap-2 mb-1.5">
+                  {msg.role === 'tutor'
+                    ? <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs shrink-0" style={{ background: 'linear-gradient(135deg, #E8590C, #F59E0B)' }}>{FOXY_FACES.idle}</div>
+                    : <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] text-white font-bold shrink-0" style={{ background: `linear-gradient(135deg, ${cfg.color}, ${cfg.color}bb)` }}>{student?.name?.[0]?.toUpperCase() || 'S'}</div>}
+                  <span className="text-xs font-bold" style={{ color: msg.role === 'tutor' ? 'var(--orange)' : cfg.color }}>{msg.role === 'tutor' ? 'Foxy' : (student?.name || 'You')}</span>
+                  <span className="text-[10px] text-[var(--text-3)]">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                  {msg.role === 'tutor' && <span className="ml-auto px-1.5 py-0.5 rounded text-[8px] font-semibold" style={{ background: 'var(--surface-2)', color: 'var(--text-3)', border: '1px solid var(--border)' }}>🤖 AI</span>}
+                  {(msg.xp ?? 0) > 0 && <span className="px-2 py-0.5 rounded-lg text-[10px] font-extrabold text-white" style={{ background: 'linear-gradient(135deg, #F59E0B, #EF4444)' }}>+{msg.xp} XP</span>}
+                </div>
+                <div className="w-full rounded-2xl px-4 py-3 text-sm leading-relaxed" style={{ background: msg.role === 'student' ? `${cfg.color}08` : 'var(--surface-1)', color: 'var(--text-1)', border: msg.role === 'student' ? `1.5px solid ${cfg.color}20` : msg.reported ? '1.5px solid #EF444440' : '1px solid var(--border)' }}>
+                  {msg.role === 'tutor' ? <RichContent content={msg.content} subjectKey={activeSubject} /> : <div className="whitespace-pre-wrap">{msg.content}</div>}
+                </div>
+
+                {/* ── Feedback bar for tutor messages ── */}
+                {msg.role === 'tutor' && msg.content !== 'Oops! Please try again.' && (
+                  <div className="flex items-center gap-1 mt-1.5 pl-1">
+                    {/* Thumbs up */}
+                    <button
+                      onClick={() => handleFeedback(msg.id, true)}
+                      className="px-2 py-1 rounded-lg text-[11px] transition-all active:scale-90"
+                      style={{ background: msg.feedback === 'up' ? '#16A34A18' : 'transparent', color: msg.feedback === 'up' ? '#16A34A' : 'var(--text-3)', border: msg.feedback === 'up' ? '1px solid #16A34A30' : '1px solid transparent' }}
+                    >{msg.feedback === 'up' ? '👍' : '👍'}</button>
+
+                    {/* Thumbs down */}
+                    <button
+                      onClick={() => { handleFeedback(msg.id, false); }}
+                      className="px-2 py-1 rounded-lg text-[11px] transition-all active:scale-90"
+                      style={{ background: msg.feedback === 'down' ? '#EF444418' : 'transparent', color: msg.feedback === 'down' ? '#EF4444' : 'var(--text-3)', border: msg.feedback === 'down' ? '1px solid #EF444430' : '1px solid transparent' }}
+                    >👎</button>
+
+                    {/* Report error */}
+                    {!msg.reported ? (
+                      <button
+                        onClick={() => openReport(msg.id)}
+                        className="px-2 py-1 rounded-lg text-[10px] font-semibold transition-all active:scale-95 ml-1"
+                        style={{ color: 'var(--text-3)' }}
+                      >⚠️ Report</button>
+                    ) : (
+                      <span className="px-2 py-1 text-[10px] font-semibold" style={{ color: '#EF4444' }}>✓ Reported</span>
+                    )}
+
+                    {/* AI disclaimer for math/science */}
+                    {['math', 'science', 'physics', 'chemistry'].includes(activeSubject) && (msg.content.includes('=') || msg.content.includes('formula') || msg.content.includes('²') || msg.content.includes('√')) && (
+                      <span className="ml-auto text-[9px] px-2 py-0.5 rounded" style={{ color: 'var(--text-3)', background: 'var(--surface-2)' }}>Verify with textbook</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {/* ── Report Error Modal ── */}
+            {reportModal && (
+              <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={(e) => { if (e.target === e.currentTarget) { setReportModal(null); } }}>
+                <div className="w-full max-w-md rounded-t-2xl sm:rounded-2xl p-5 max-h-[80vh] overflow-y-auto animate-slide-up" style={{ background: 'var(--surface-1)' }}>
+                  {!reportSuccess ? (<>
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-base font-bold" style={{ fontFamily: 'var(--font-display)' }}>⚠️ Report Incorrect Answer</h3>
+                      <button onClick={() => setReportModal(null)} className="text-lg" style={{ color: 'var(--text-3)' }}>✕</button>
+                    </div>
+
+                    {/* What Foxy said */}
+                    <div className="mb-4 p-3 rounded-xl text-xs" style={{ background: '#EF444408', border: '1px solid #EF444420' }}>
+                      <div className="font-bold text-[10px] uppercase tracking-wider mb-1" style={{ color: '#EF4444' }}>Foxy&apos;s response:</div>
+                      <div className="leading-relaxed" style={{ color: 'var(--text-2)', maxHeight: 100, overflow: 'hidden' }}>{reportModal.foxyMsg.substring(0, 300)}{reportModal.foxyMsg.length > 300 ? '...' : ''}</div>
+                    </div>
+
+                    {/* Reason */}
+                    <div className="mb-3">
+                      <label className="text-xs font-semibold mb-2 block" style={{ color: 'var(--text-3)' }}>What&apos;s wrong?</label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {REPORT_REASONS.map(r => (
+                          <button key={r.value} onClick={() => setReportReason(r.value)} className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all" style={{ background: reportReason === r.value ? '#EF444415' : 'var(--surface-2)', color: reportReason === r.value ? '#EF4444' : 'var(--text-3)', border: `1.5px solid ${reportReason === r.value ? '#EF444440' : 'var(--border)'}` }}>
+                            {language === 'hi' ? r.labelHi : r.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Student's correction */}
+                    <div className="mb-4">
+                      <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--text-3)' }}>What should the correct answer be? (optional)</label>
+                      <textarea
+                        value={reportCorrection}
+                        onChange={e => setReportCorrection(e.target.value)}
+                        placeholder={language === 'hi' ? 'सही उत्तर लिखें...' : 'Type the correct answer here...'}
+                        rows={3}
+                        className="w-full text-sm rounded-xl px-3 py-2 resize-none outline-none"
+                        style={{ background: 'var(--surface-2)', border: '1.5px solid var(--border)', fontFamily: 'var(--font-body)' }}
+                      />
+                    </div>
+
+                    {/* Submit */}
+                    <div className="flex gap-2">
+                      <button onClick={() => setReportModal(null)} className="flex-1 py-2.5 rounded-xl text-xs font-bold" style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }}>Cancel</button>
+                      <button onClick={submitReport} disabled={reportSubmitting} className="flex-1 py-2.5 rounded-xl text-xs font-bold text-white transition-all active:scale-95 disabled:opacity-50" style={{ background: '#EF4444' }}>
+                        {reportSubmitting ? 'Submitting...' : '⚠️ Submit Report'}
+                      </button>
+                    </div>
+                  </>) : (
+                    <div className="text-center py-6">
+                      <div className="text-4xl mb-3">✅</div>
+                      <h3 className="text-base font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>Thank you!</h3>
+                      <p className="text-xs mb-4" style={{ color: 'var(--text-3)' }}>
+                        {language === 'hi' ? 'आपकी रिपोर्ट दर्ज हो गई है। हम इसकी जाँच करेंगे और सुधार करेंगे।' : 'Your report has been recorded. Our team will review and fix this.'}
+                      </p>
+                      <button onClick={() => setReportModal(null)} className="px-6 py-2 rounded-xl text-xs font-bold text-white" style={{ background: 'var(--orange)' }}>OK</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Thinking */}
+            {loading && (
+              <div className="flex gap-2.5 items-center mb-4">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center text-base shrink-0" style={{ background: 'linear-gradient(135deg, #E8590C, #F59E0B)', animation: 'pulse 1s infinite' }}>{FOXY_FACES.thinking}</div>
+                <div className="px-4 py-3 rounded-2xl rounded-bl-sm flex items-center gap-1.5" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
+                  {[0, 1, 2].map(i => <div key={i} className="w-2 h-2 rounded-full" style={{ background: cfg.color, animation: `pulse 1s infinite ${i * 0.2}s`, opacity: 0.5 }} />)}
+                  <span className="text-xs text-[var(--text-3)] ml-1.5">Foxy is thinking...</span>
+                </div>
+              </div>
+            )}
+            <div ref={endRef} />
+          </div>
+
+          <ChatInput onSubmit={sendMessage} subjectKey={activeSubject} disabled={loading} onMicTap={isListening ? stopListening : startListening} isListening={isListening} />
+        </div>
+      </div>
+
+      {/* Mobile topics sheet */}
+      {showTopicSheet && (
+        <>
+          <div className="fixed inset-0 z-40 lg:hidden" style={{ background: 'rgba(0,0,0,0.3)' }} onClick={() => setShowTopicSheet(false)} />
+          <div className="fixed bottom-0 left-0 right-0 z-50 rounded-t-3xl max-h-[75vh] flex flex-col lg:hidden" style={{ background: 'var(--surface-1)', boxShadow: '0 -8px 40px rgba(0,0,0,0.1)' }}>
+            <div className="flex justify-center pt-3 pb-1"><div className="w-10 h-1 rounded-full" style={{ background: 'var(--border)' }} /></div>
+            <div className="px-4 pb-2 flex items-center justify-between">
+              <span className="text-sm font-bold" style={{ color: cfg.color }}>{cfg.icon} {cfg.name} · Gr {studentGrade}</span>
+              <button onClick={() => setShowTopicSheet(false)} className="text-xs text-[var(--text-3)] font-semibold">Close</button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-2">
+              {topics.map(topic => {
+                const mastery = masteryData.find((m: any) => m.topic_tag === topic.title || m.chapter_number === topic.chapter_number);
+                const pct = mastery?.mastery_percent || 0;
+                const lvl = mastery?.mastery_level || 'not_started';
+                const lc = MASTERY_COLORS[lvl] || MASTERY_COLORS.not_started;
+                return (
+                  <button key={topic.id} onClick={() => { setActiveTopic(topic); setShowTopicSheet(false); sendMessage(`Teach me about: ${topic.title} (Chapter ${topic.chapter_number})`); }} className="w-full text-left p-3.5 rounded-xl flex items-center gap-3 active:scale-[0.98] transition-all" style={{ background: 'var(--surface-2)', border: `1px solid ${lc}20` }}>
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0" style={{ background: `${lc}15` }}>{cfg.icon}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-bold truncate" style={{ color: 'var(--text-1)' }}>Ch {topic.chapter_number}: {topic.title}</div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <div className="flex-1 h-1.5 rounded-full" style={{ background: 'var(--border)' }}><div className="h-full rounded-full" style={{ width: `${pct}%`, background: lc }} /></div>
+                        <span className="text-[10px] font-bold capitalize shrink-0" style={{ color: lc }}>{pct}%</span>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
+
+      {isSpeaking && <button onClick={stopSpeaking} className="fixed bottom-20 right-4 z-50 w-12 h-12 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-all" style={{ background: '#EF4444', color: '#fff', fontSize: 18, boxShadow: '0 4px 20px rgba(239,68,68,0.4)' }}>■</button>}
+
+      <BottomNav />
+      <style dangerouslySetInnerHTML={{ __html: `
+        @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
+        .foxy-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 12px}
+        .foxy-mode-bar{display:flex;gap:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;flex-shrink:0}
+        .foxy-mode-bar::-webkit-scrollbar{display:none}
+        @media(min-width:640px){.foxy-toolbar{flex-wrap:nowrap;gap:8px;padding:8px 12px}}
+      ` }} />
+    </div>
+  );
 }
