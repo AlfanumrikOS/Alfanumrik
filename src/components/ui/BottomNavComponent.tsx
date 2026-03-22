@@ -24,6 +24,7 @@ const MORE_ITEMS = [
   { href: '/progress', icon: '📈', label: 'My Progress', labelHi: 'मेरी प्रगति' },
   { href: '/review', icon: '🔄', label: 'Flashcard Review', labelHi: 'फ्लैशकार्ड रिव्यू' },
   { href: '/notifications', icon: '🔔', label: 'Notifications', labelHi: 'सूचनाएँ' },
+  { href: '/help', icon: '❓', label: 'Help & Support', labelHi: 'सहायता और सपोर्ट' },
 ];
 
 const SIDEBAR_SECTIONS = [
@@ -54,6 +55,7 @@ const SIDEBAR_SECTIONS = [
     title: 'Account', titleHi: 'खाता',
     items: [
       { href: '/profile', icon: '👤', label: 'Profile', labelHi: 'प्रोफ़ाइल' },
+      { href: '/help', icon: '❓', label: 'Help & Support', labelHi: 'सहायता और सपोर्ट' },
     ],
   },
 ];
