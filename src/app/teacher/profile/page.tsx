@@ -26,11 +26,19 @@ export default function TeacherProfilePage() {
 
   const handleSave = async () => {
     if (!teacher?.id) return;
+    const trimmedName = name.trim();
+    const trimmedSchool = schoolName.trim();
+    if (!trimmedName || trimmedName.length < 2 || trimmedName.length > 100) {
+      setToast('Name must be 2–100 characters'); return;
+    }
+    if (trimmedSchool && trimmedSchool.length > 200) {
+      setToast('School name too long'); return;
+    }
     setSaving(true);
     try {
       await supabase.from('teachers').update({
-        name: name.trim(),
-        school_name: schoolName.trim(),
+        name: trimmedName,
+        school_name: trimmedSchool,
       }).eq('id', teacher.id);
       setToast('Profile updated!');
       setEditing(false);

@@ -237,11 +237,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    fetchUser();
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('alfanumrik_language');
-      if (saved) setLanguageState(saved);
-    }
+    let cancelled = false;
+
+    const init = async () => {
+      await fetchUser();
+      if (!cancelled && typeof window !== 'undefined') {
+        const saved = localStorage.getItem('alfanumrik_language');
+        if (saved) setLanguageState(saved);
+      }
+    };
+
+    init();
+
+    // Listen for auth state changes (token refresh, sign-out from another tab)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        setAuthUserId(null);
+        setStudent(null);
+        setSnapshot(null);
+        setTeacher(null);
+        setGuardian(null);
+        setRoles([]);
+        setActiveRoleState('none');
+      } else if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') {
+        fetchUser();
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
   }, [fetchUser]);
 
   return (

@@ -39,15 +39,18 @@ function toCSV(rows: Record<string, unknown>[]): string {
   const headers = Object.keys(rows[0])
   const escape = (v: unknown): string => {
     const s = v == null ? '' : String(v)
-    return s.includes(',') || s.includes('"') || s.includes('\n')
-      ? `"${s.replace(/"/g, '""')}"`
-      : s
+    // Always quote fields that contain special characters
+    if (s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r') || s.includes(';')) {
+      return `"${s.replace(/"/g, '""')}"`
+    }
+    return s
   }
+  const BOM = '\uFEFF' // UTF-8 BOM for Excel compatibility
   const lines = [
     headers.join(','),
     ...rows.map((r) => headers.map((h) => escape(r[h])).join(',')),
   ]
-  return lines.join('\r\n')
+  return BOM + lines.join('\r\n')
 }
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────

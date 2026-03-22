@@ -25,11 +25,19 @@ export default function ParentProfilePage() {
 
   const handleSave = async () => {
     if (!guardian?.id) return;
+    const trimmedName = name.trim();
+    const trimmedPhone = phone.trim();
+    if (!trimmedName || trimmedName.length < 2 || trimmedName.length > 100) {
+      setToast('Name must be 2–100 characters'); return;
+    }
+    if (trimmedPhone && !/^[+]?\d{7,15}$/.test(trimmedPhone.replace(/[\s\-()]/g, ''))) {
+      setToast('Please enter a valid phone number'); return;
+    }
     setSaving(true);
     try {
       await supabase.from('guardians').update({
-        name: name.trim(),
-        phone: phone.trim() || null,
+        name: trimmedName,
+        phone: trimmedPhone || null,
       }).eq('id', guardian.id);
       setToast('Profile updated!');
       setEditing(false);

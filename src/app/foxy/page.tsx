@@ -809,13 +809,7 @@ export default function FoxyPage() {
       {isSpeaking && <button onClick={stopSpeaking} className="fixed bottom-20 right-4 z-50 w-12 h-12 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-all" style={{ background: '#EF4444', color: '#fff', fontSize: 18, boxShadow: '0 4px 20px rgba(239,68,68,0.4)' }}>■</button>}
 
       <BottomNav />
-      <style dangerouslySetInnerHTML={{ __html: `
-        @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
-        .foxy-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 12px}
-        .foxy-mode-bar{display:flex;gap:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;flex-shrink:0}
-        .foxy-mode-bar::-webkit-scrollbar{display:none}
-        @media(min-width:640px){.foxy-toolbar{flex-wrap:nowrap;gap:8px;padding:8px 12px}}
-      ` }} />
+{/* Foxy styles in globals.css */}
     </div>
   );
 }

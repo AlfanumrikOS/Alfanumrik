@@ -550,7 +550,7 @@ export default function HelpPage() {
 
       {isLoggedIn && <BottomNav />}
 
-      <style dangerouslySetInnerHTML={{ __html: '@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}' }}/>
+{/* Foxy styles in globals.css */}
     </div>
   );
 }
