@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@/lib/constants';
+import { SUPABASE_URL, SUPABASE_ANON_KEY, SUBJECT_META } from '@/lib/constants';
 import { BottomNav } from '@/components/ui';
 
 /* ══════════════════════════════════════════════════════════════
@@ -281,6 +281,7 @@ const AUTH_BOARDS = ['CBSE', 'ICSE', 'State Board', 'IB', 'Other'];
 
 function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
   const [mode, setMode] = useState<'login' | 'signup' | 'forgot'>('login');
+  const [roleTab, setRoleTab] = useState<'student' | 'teacher' | 'parent'>('student');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
@@ -290,6 +291,35 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+
+  // Teacher fields
+  const [schoolName, setSchoolName] = useState('');
+  const [subjectsTaught, setSubjectsTaught] = useState<string[]>([]);
+  const [gradesTaught, setGradesTaught] = useState<string[]>([]);
+
+  // Parent fields
+  const [phone, setPhone] = useState('');
+  const [linkCode, setLinkCode] = useState('');
+
+  const TEACHER_SUBJECTS = SUBJECT_META.filter(s =>
+    ['math', 'science', 'physics', 'chemistry', 'biology', 'english', 'hindi'].includes(s.code)
+  );
+  const TEACHER_GRADES = ['6', '7', '8', '9', '10', '11', '12'];
+
+  const toggleSubject = (code: string) => {
+    setSubjectsTaught(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
+  };
+  const toggleGradeTaught = (g: string) => {
+    setGradesTaught(prev => prev.includes(g) ? prev.filter(c => c !== g) : [...prev, g]);
+  };
+
+  const ROLE_TABS = [
+    { key: 'student' as const, label: 'Student', emoji: '\uD83C\uDF93', color: '#E8590C' },
+    { key: 'teacher' as const, label: 'Teacher', emoji: '\uD83D\uDC69\u200D\uD83C\uDFEB', color: '#2563EB' },
+    { key: 'parent' as const, label: 'Parent', emoji: '\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67', color: '#16A34A' },
+  ];
+
+  const activeRoleColor = ROLE_TABS.find(r => r.key === roleTab)?.color ?? '#E8590C';
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -305,26 +335,60 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
     e.preventDefault();
     if (!name.trim()) { setError('Please enter your name'); return; }
     if (password.length < 6) { setError('Password must be at least 6 characters'); return; }
+
+    if (roleTab === 'teacher') {
+      if (!schoolName.trim()) { setError('Please enter your school name'); return; }
+      if (subjectsTaught.length === 0) { setError('Please select at least one subject'); return; }
+      if (gradesTaught.length === 0) { setError('Please select at least one grade'); return; }
+    }
+
     setError(''); setLoading(true);
     try {
+      const metaData: Record<string, string> = { name: name.trim() };
+      if (roleTab === 'student') { metaData.grade = grade; metaData.board = board; }
+
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: email.trim(),
         password,
-        options: { data: { name: name.trim(), grade, board } },
+        options: { data: metaData },
       });
       if (authError) { setError(authError.message); setLoading(false); return; }
       if (authData.user) {
-        // Create student record
-        await supabase.from('students').insert({
-          auth_user_id: authData.user.id,
-          name: name.trim(),
-          email: email.trim(),
-          grade: `Grade ${grade}`,
-          board,
-          preferred_language: 'en',
-          account_status: 'active',
-        });
-        // If email confirmation is disabled, user is already logged in
+        if (roleTab === 'student') {
+          await supabase.from('students').insert({
+            auth_user_id: authData.user.id,
+            name: name.trim(),
+            email: email.trim(),
+            grade: `Grade ${grade}`,
+            board,
+            preferred_language: 'en',
+            account_status: 'active',
+          });
+        } else if (roleTab === 'teacher') {
+          await supabase.from('teachers').insert({
+            auth_user_id: authData.user.id,
+            name: name.trim(),
+            email: email.trim(),
+            school_name: schoolName.trim(),
+            subjects_taught: subjectsTaught,
+            grades_taught: gradesTaught,
+          });
+        } else if (roleTab === 'parent') {
+          const { data: guardianData } = await supabase.from('guardians').insert({
+            auth_user_id: authData.user.id,
+            name: name.trim(),
+            email: email.trim(),
+            phone: phone.trim() || null,
+          }).select('id').single();
+
+          if (linkCode.trim() && guardianData) {
+            await supabase.rpc('link_guardian_to_student_via_code', {
+              p_guardian_id: guardianData.id,
+              p_invite_code: linkCode.trim(),
+            });
+          }
+        }
+
         if (authData.session) {
           onSuccess();
         } else {
@@ -357,22 +421,70 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
     color: 'var(--text-1)',
   };
 
+  const chipStyle = (selected: boolean, color: string): React.CSSProperties => ({
+    padding: '6px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+    border: `1.5px solid ${selected ? color : 'var(--border)'}`,
+    background: selected ? `${color}18` : 'var(--surface-2)',
+    color: selected ? color : 'var(--text-3)',
+    cursor: 'pointer', transition: 'all 0.15s ease',
+  });
+
+  const subtitle = roleTab === 'teacher'
+    ? 'Empower your classroom with AI'
+    : roleTab === 'parent'
+      ? 'Track your child\'s learning journey'
+      : 'AI Tutor for CBSE Students';
+
+  const signupTitle = roleTab === 'teacher'
+    ? 'Join as Teacher'
+    : roleTab === 'parent'
+      ? 'Join as Parent'
+      : 'Start Learning Free';
+
+  const buttonGradient = roleTab === 'teacher'
+    ? 'linear-gradient(135deg, #2563EB, #3B82F6)'
+    : roleTab === 'parent'
+      ? 'linear-gradient(135deg, #16A34A, #22C55E)'
+      : 'linear-gradient(135deg, #E8590C, #F59E0B)';
+
   return (
     <div className="mesh-bg min-h-dvh flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         {/* Logo */}
-        <div className="text-center mb-6">
-          <div className="text-6xl mb-2 animate-float">🦊</div>
+        <div className="text-center mb-4">
+          <div className="text-6xl mb-2 animate-float">{'\uD83E\uDD8A'}</div>
           <h1 className="text-2xl font-extrabold" style={{ fontFamily: 'var(--font-display)', background: 'linear-gradient(135deg, #E8590C, #F59E0B)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
             Alfanumrik
           </h1>
-          <p className="text-xs text-[var(--text-3)] mt-1">AI Tutor for CBSE Students</p>
+          <p className="text-xs text-[var(--text-3)] mt-1">{subtitle}</p>
+        </div>
+
+        {/* Role Tabs */}
+        <div className="flex gap-1 mb-4 p-1 rounded-2xl" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
+          {ROLE_TABS.map(tab => {
+            const isActive = roleTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => { setRoleTab(tab.key); setError(''); setSuccess(''); }}
+                className="flex-1 py-2.5 rounded-xl text-xs font-bold transition-all"
+                style={{
+                  background: isActive ? `${tab.color}15` : 'transparent',
+                  color: isActive ? tab.color : 'var(--text-3)',
+                  borderBottom: isActive ? `2.5px solid ${tab.color}` : '2.5px solid transparent',
+                }}
+              >
+                <span className="mr-1">{tab.emoji}</span>
+                {tab.label}
+              </button>
+            );
+          })}
         </div>
 
         {/* Form Card */}
         <div className="rounded-2xl p-6" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', boxShadow: '0 4px 24px rgba(0,0,0,0.06)' }}>
           <h2 className="text-lg font-bold mb-4 text-center" style={{ color: 'var(--text-1)' }}>
-            {mode === 'login' ? 'Welcome Back!' : mode === 'signup' ? 'Start Learning Free' : 'Reset Password'}
+            {mode === 'login' ? 'Welcome Back!' : mode === 'signup' ? signupTitle : 'Reset Password'}
           </h2>
 
           {error && (
@@ -397,12 +509,13 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
               <div className="relative">
                 <input type={showPassword ? 'text' : 'password'} placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} style={{ ...inputStyle, paddingRight: 44 }} required minLength={6} />
                 <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--text-3)' }}>
-                  {showPassword ? '🙈' : '👁'}
+                  {showPassword ? '\uD83D\uDE48' : '\uD83D\uDC41'}
                 </button>
               </div>
             )}
 
-            {mode === 'signup' && (
+            {/* Student signup fields */}
+            {mode === 'signup' && roleTab === 'student' && (
               <div className="flex gap-2">
                 <select value={grade} onChange={e => setGrade(e.target.value)} style={{ ...inputStyle, flex: 1, cursor: 'pointer' }}>
                   {AUTH_GRADES.map(g => <option key={g} value={g}>Grade {g}</option>)}
@@ -413,7 +526,60 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
               </div>
             )}
 
-            <button type="submit" disabled={loading} className="w-full py-3 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.98] disabled:opacity-50" style={{ background: 'linear-gradient(135deg, #E8590C, #F59E0B)' }}>
+            {/* Teacher signup fields */}
+            {mode === 'signup' && roleTab === 'teacher' && (
+              <>
+                <input type="text" placeholder="School Name" value={schoolName} onChange={e => setSchoolName(e.target.value)} style={inputStyle} required />
+
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-2)' }}>Subjects You Teach</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {TEACHER_SUBJECTS.map(s => (
+                      <button
+                        key={s.code}
+                        type="button"
+                        onClick={() => toggleSubject(s.code)}
+                        style={chipStyle(subjectsTaught.includes(s.code), '#2563EB')}
+                      >
+                        {s.icon} {s.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-2)' }}>Grades You Teach</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {TEACHER_GRADES.map(g => (
+                      <button
+                        key={g}
+                        type="button"
+                        onClick={() => toggleGradeTaught(g)}
+                        style={chipStyle(gradesTaught.includes(g), '#2563EB')}
+                      >
+                        {g}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Parent signup fields */}
+            {mode === 'signup' && roleTab === 'parent' && (
+              <>
+                <input type="tel" placeholder="Phone Number (optional)" value={phone} onChange={e => setPhone(e.target.value)} style={inputStyle} />
+
+                <div>
+                  <input type="text" placeholder="Child Link Code (optional)" value={linkCode} onChange={e => setLinkCode(e.target.value)} style={inputStyle} maxLength={8} />
+                  <p className="text-[10px] mt-1 px-1" style={{ color: 'var(--text-3)' }}>
+                    Have a link code from your child&apos;s school? Enter it to connect!
+                  </p>
+                </div>
+              </>
+            )}
+
+            <button type="submit" disabled={loading} className="w-full py-3 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.98] disabled:opacity-50" style={{ background: buttonGradient }}>
               {loading ? '...' : mode === 'login' ? 'Log In' : mode === 'signup' ? 'Create Account' : 'Send Reset Link'}
             </button>
           </form>
@@ -426,9 +592,9 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
 
           <div className="mt-4 pt-4 text-center text-xs" style={{ borderTop: '1px solid var(--border)' }}>
             {mode === 'login' ? (
-              <span style={{ color: 'var(--text-3)' }}>New here? <button onClick={() => { setMode('signup'); setError(''); setSuccess(''); }} className="font-bold" style={{ color: '#E8590C' }}>Sign Up Free</button></span>
+              <span style={{ color: 'var(--text-3)' }}>New here? <button onClick={() => { setMode('signup'); setError(''); setSuccess(''); }} className="font-bold" style={{ color: activeRoleColor }}>Sign Up Free</button></span>
             ) : (
-              <span style={{ color: 'var(--text-3)' }}>Already have an account? <button onClick={() => { setMode('login'); setError(''); setSuccess(''); }} className="font-bold" style={{ color: '#E8590C' }}>Log In</button></span>
+              <span style={{ color: 'var(--text-3)' }}>Already have an account? <button onClick={() => { setMode('login'); setError(''); setSuccess(''); }} className="font-bold" style={{ color: activeRoleColor }}>Log In</button></span>
             )}
           </div>
         </div>
