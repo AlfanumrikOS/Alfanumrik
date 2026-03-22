@@ -44,14 +44,12 @@ export type UserRole = 'student' | 'teacher' | 'guardian' | 'none';
 
 export const ROLE_CONFIG = {
   student: {
-    label: 'Student',
-    labelHi: 'छात्र',
-    icon: '🎓',
-    color: '#E8581C',
+    label: 'Student', labelHi: 'छात्र', icon: '🎓', color: '#E8581C',
     homePath: '/dashboard',
     nav: [
       { href: '/dashboard', icon: '⬡', label: 'Home', labelHi: 'होम' },
       { href: '/foxy', icon: '🦊', label: 'Foxy', labelHi: 'फॉक्सी' },
+      { href: '/simulations', icon: '🔬', label: 'Lab', labelHi: 'लैब' },
       { href: '/quiz', icon: '⚡', label: 'Quiz', labelHi: 'क्विज़' },
       { href: '/progress', icon: '📈', label: 'Progress', labelHi: 'प्रगति' },
       { href: '/leaderboard', icon: '🏆', label: 'Ranks', labelHi: 'रैंक' },
@@ -61,10 +59,7 @@ export const ROLE_CONFIG = {
     ],
   },
   teacher: {
-    label: 'Teacher',
-    labelHi: 'शिक्षक',
-    icon: '👩‍🏫',
-    color: '#2563EB',
+    label: 'Teacher', labelHi: 'शिक्षक', icon: '👩‍🏫', color: '#2563EB',
     homePath: '/teacher',
     nav: [
       { href: '/teacher', icon: '🏠', label: 'Dashboard', labelHi: 'डैशबोर्ड' },
@@ -76,10 +71,7 @@ export const ROLE_CONFIG = {
     ],
   },
   guardian: {
-    label: 'Parent',
-    labelHi: 'अभिभावक',
-    icon: '👨‍👩‍👧',
-    color: '#16A34A',
+    label: 'Parent', labelHi: 'अभिभावक', icon: '👨‍👩‍👧', color: '#16A34A',
     homePath: '/parent',
     nav: [
       { href: '/parent', icon: '🏠', label: 'Dashboard', labelHi: 'डैशबोर्ड' },
@@ -90,10 +82,7 @@ export const ROLE_CONFIG = {
     ],
   },
   none: {
-    label: 'Guest',
-    labelHi: 'अतिथि',
-    icon: '👤',
-    color: '#9C8E78',
+    label: 'Guest', labelHi: 'अतिथि', icon: '👤', color: '#9C8E78',
     homePath: '/',
     nav: [],
   },
