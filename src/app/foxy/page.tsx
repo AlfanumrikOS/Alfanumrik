@@ -36,12 +36,12 @@ const LANGS = [
 ];
 
 const MODES = [
-  { id: 'learn', emoji: '📖' },
-  { id: 'practice', emoji: '✏️' },
-  { id: 'quiz', emoji: '⚡' },
-  { id: 'doubt', emoji: '❓' },
-  { id: 'revision', emoji: '🔄' },
-  { id: 'notes', emoji: '📝' },
+  { id: 'learn', emoji: '📖', label: 'Learn', labelHi: 'सीखो', autoPrompt: (topic: string) => topic ? `Teach me about: ${topic}` : 'Teach me the next concept step by step', autoPromptHi: (topic: string) => topic ? `मुझे सिखाओ: ${topic}` : 'मुझे अगला कॉन्सेप्ट सिखाओ' },
+  { id: 'practice', emoji: '✏️', label: 'Practice', labelHi: 'अभ्यास', autoPrompt: (topic: string) => topic ? `Give me 3 practice problems on: ${topic}` : 'Give me practice problems to solve', autoPromptHi: (topic: string) => topic ? `मुझे 3 अभ्यास प्रश्न दो: ${topic}` : 'मुझे अभ्यास प्रश्न दो' },
+  { id: 'quiz', emoji: '⚡', label: 'Quiz', labelHi: 'क्विज़', autoPrompt: (topic: string) => topic ? `Quiz me on: ${topic} (5 MCQ questions, board exam pattern)` : 'Quiz me with 5 MCQ questions on this chapter', autoPromptHi: (topic: string) => topic ? `मुझसे क्विज़ लो: ${topic} (5 MCQ प्रश्न, बोर्ड परीक्षा पैटर्न)` : 'मुझसे 5 MCQ प्रश्न पूछो' },
+  { id: 'doubt', emoji: '❓', label: 'Doubt', labelHi: 'डाउट', autoPrompt: () => '', autoPromptHi: () => '' },
+  { id: 'revision', emoji: '🔄', label: 'Revise', labelHi: 'रिवीज़', autoPrompt: (topic: string) => topic ? `Give me a quick revision summary of: ${topic}` : 'Summarize the key points for revision', autoPromptHi: (topic: string) => topic ? `${topic} का त्वरित पुनरावृत्ति सारांश दो` : 'रिवीज़न के लिए मुख्य बिंदु बताओ' },
+  { id: 'notes', emoji: '📝', label: 'Notes', labelHi: 'नोट्स', autoPrompt: (topic: string) => topic ? `Create concise exam notes for: ${topic}` : 'Create exam-ready notes for this chapter', autoPromptHi: (topic: string) => topic ? `${topic} के लिए परीक्षा नोट्स बनाओ` : 'इस अध्याय के परीक्षा नोट्स बनाओ' },
 ];
 
 const MATH_SYMBOL_TABS = [
@@ -468,7 +468,26 @@ export default function FoxyPage() {
   const switchSubject = (key: string) => {
     setActiveSubject(key); setActiveTopic(null); setSelectedChapters([]); setShowSubjectDD(false); setMessages([]); setChatSessionId(null);
     if (typeof window !== 'undefined') localStorage.setItem('alfanumrik_subject', key);
+    // Auto-set language for language subjects
+    if (key === 'hindi') setLanguage('hi');
+    else if (key === 'english') setLanguage('en');
   };
+
+  // Language toggle lock for language subjects
+  const isLangLocked = activeSubject === 'hindi' || activeSubject === 'english';
+
+  // Mode switch with auto-prompt
+  const switchMode = useCallback((modeId: string) => {
+    setSessionMode(modeId);
+    const mode = MODES.find(m => m.id === modeId);
+    if (!mode) return;
+    // Doubt mode: let user type their own question
+    if (modeId === 'doubt') return;
+    // Auto-send a contextual prompt
+    const topicName = activeTopic?.title || '';
+    const prompt = language === 'hi' ? mode.autoPromptHi(topicName) : mode.autoPrompt(topicName);
+    if (prompt) sendMessage(prompt);
+  }, [activeTopic, language, sendMessage]);
 
   const cfg = SUBJECTS[activeSubject] || SUBJECTS.science;
 
@@ -492,7 +511,8 @@ export default function FoxyPage() {
           <div className="text-[10px] opacity-50 flex gap-2"><span>{totalXP + xpGained} XP</span><span>{streakDays}d streak</span><span>Gr {studentGrade}</span></div>
         </div>
         <div className="flex items-center gap-1.5">
-          {LANGS.map(l => <button key={l.code} onClick={() => setLanguage(l.code)} className="text-[10px] font-bold px-2 py-1 rounded-lg transition-all" style={{ background: language === l.code ? 'rgba(255,255,255,0.2)' : 'transparent', color: language === l.code ? '#fff' : 'rgba(255,255,255,0.4)' }}>{l.label}</button>)}
+          {LANGS.map(l => <button key={l.code} onClick={() => { if (!isLangLocked) setLanguage(l.code); }} className="text-[10px] font-bold px-2 py-1 rounded-lg transition-all" style={{ background: language === l.code ? 'rgba(255,255,255,0.2)' : 'transparent', color: language === l.code ? '#fff' : 'rgba(255,255,255,0.4)', opacity: isLangLocked && language !== l.code ? 0.2 : 1, cursor: isLangLocked ? 'default' : 'pointer' }}>{l.label}</button>)}
+          {isLangLocked && <span className="text-[8px] text-white/30">🔒</span>}
           <button onClick={() => { if (voiceEnabled) { stopSpeaking(); setVoiceEnabled(false); } else setVoiceEnabled(true); }} className="ml-1 px-2 py-1 rounded-lg text-sm transition-all" style={{ background: voiceEnabled ? 'rgba(245,166,35,0.3)' : 'rgba(255,255,255,0.1)' }}>{voiceEnabled ? (isSpeaking ? '🔊' : '🔈') : '🔇'}</button>
         </div>
       </header>
@@ -558,9 +578,14 @@ export default function FoxyPage() {
           )}
         </div>
 
-        {/* Mode pills */}
+        {/* Mode pills — each triggers a mode-specific action */}
         <div className="foxy-mode-bar ml-auto">
-          {MODES.map(m => <button key={m.id} onClick={() => setSessionMode(m.id)} className="shrink-0 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all" style={{ background: sessionMode === m.id ? `${cfg.color}15` : 'transparent', color: sessionMode === m.id ? cfg.color : 'var(--text-3)' }}>{m.emoji}</button>)}
+          {MODES.map(m => (
+            <button key={m.id} onClick={() => switchMode(m.id)} className="shrink-0 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all active:scale-95 flex items-center gap-1" style={{ background: sessionMode === m.id ? `${cfg.color}15` : 'transparent', color: sessionMode === m.id ? cfg.color : 'var(--text-3)', border: sessionMode === m.id ? `1px solid ${cfg.color}30` : '1px solid transparent' }}>
+              <span>{m.emoji}</span>
+              <span className="hidden sm:inline">{language === 'hi' ? m.labelHi : m.label}</span>
+            </button>
+          ))}
         </div>
       </div>
 
