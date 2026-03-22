@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { useAuth } from '@/lib/AuthContext';
+import { useAuth, type UserRole } from '@/lib/AuthContext';
+import { ROLE_CONFIG } from '@/lib/constants';
 
 /* ═══ NAVIGATION ARCHITECTURE ═══
  * Research-backed: Duolingo 5-tab model (the gold standard for EdTech)
@@ -67,11 +68,22 @@ export default function BottomNavComponent() {
   const router = useRouter();
   const auth = useAuth();
   const isHi = auth?.isHi ?? false;
+  const { roles, activeRole, setActiveRole } = auth;
   const [showMore, setShowMore] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
 
   const isActive = (href: string) => pathname === href || (href !== '/' && pathname.startsWith(href));
   const isMoreActive = MORE_ITEMS.some(m => isActive(m.href));
+  const hasMultipleRoles = roles.length > 1;
+
+  const handleRoleSwitch = (role: UserRole) => {
+    setActiveRole(role);
+    const config = ROLE_CONFIG[role];
+    if (config?.homePath) {
+      setShowMore(false);
+      router.push(config.homePath);
+    }
+  };
 
   return (
     <>
@@ -113,6 +125,33 @@ export default function BottomNavComponent() {
                   </button>
                 );
               })}
+              {/* Role Switcher for multi-role users */}
+              {hasMultipleRoles && (
+                <div className="pt-2 mt-2" style={{ borderTop: '1px solid var(--border)' }}>
+                  <p className="text-[10px] font-bold text-[var(--text-3)] uppercase tracking-widest px-4 mb-1.5">
+                    {isHi ? 'भूमिका बदलें' : 'Switch Role'}
+                  </p>
+                  {roles.filter(r => r !== 'none').map(role => {
+                    const cfg = ROLE_CONFIG[role];
+                    const isCurrent = role === activeRole;
+                    return (
+                      <button
+                        key={role}
+                        onClick={() => handleRoleSwitch(role)}
+                        className="w-full flex items-center gap-4 px-4 py-3 rounded-2xl text-left transition-all active:scale-[0.98]"
+                        style={{
+                          background: isCurrent ? `${cfg.color}12` : 'transparent',
+                          color: isCurrent ? cfg.color : 'var(--text-2)',
+                        }}
+                      >
+                        <span className="text-xl w-7 text-center">{cfg.icon}</span>
+                        <span className="text-sm font-semibold">{isHi ? cfg.labelHi : cfg.label}</span>
+                        {isCurrent && <span className="ml-auto text-xs px-2 py-0.5 rounded-full" style={{ background: `${cfg.color}20`, color: cfg.color }}>{isHi ? 'सक्रिय' : 'Active'}</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </>

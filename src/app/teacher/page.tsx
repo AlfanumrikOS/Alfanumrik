@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '@/lib/AuthContext';
+import { useRouter } from 'next/navigation';
 
 // Rule 9: NEVER hardcode API keys — use environment variables
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -129,26 +131,39 @@ function PollTab({ classId, teacherId }: { classId: string; teacherId: string })
 }
 
 export default function TeacherPage() {
+  const { teacher, isLoading: authLoading, isLoggedIn, activeRole } = useAuth();
+  const router = useRouter();
   const [dash, setDash] = useState<any>(null);
   const [heatmap, setHeatmap] = useState<any>(null);
   const [alerts, setAlerts] = useState<any[]>([]);
   const [tab, setTab] = useState('heatmap');
   const [loading, setLoading] = useState(true);
 
-  // TODO(production): Get teacher_id from auth session, not hardcoded
-  const teacherId = '0f22d489-4f16-4893-ac40-053bb20ca318';
-  const classId = 'c2dd070a-e7de-460d-b09c-309fc9503c30';
+  // Get teacher_id from auth session (no more hardcoded IDs)
+  const teacherId = teacher?.id || '';
+  const classId = dash?.classes?.[0]?.id || '';
+
+  useEffect(() => {
+    if (!authLoading && (!isLoggedIn || (activeRole !== 'teacher' && !teacher))) {
+      router.replace('/');
+    }
+  }, [authLoading, isLoggedIn, activeRole, teacher, router]);
 
   const load = useCallback(async () => {
+    if (!teacherId) return;
     setLoading(true);
-    const [d, h, a] = await Promise.all([
-      api('get_dashboard', { teacher_id: teacherId }),
-      api('get_heatmap', { teacher_id: teacherId, class_id: classId, subject: 'math' }),
-      api('get_alerts', { teacher_id: teacherId, class_id: classId }),
-    ]);
-    setDash(d); setHeatmap(h); setAlerts(a.alerts || []);
+    const d = await api('get_dashboard', { teacher_id: teacherId });
+    setDash(d);
+    const firstClassId = d?.classes?.[0]?.id;
+    if (firstClassId) {
+      const [h, a] = await Promise.all([
+        api('get_heatmap', { teacher_id: teacherId, class_id: firstClassId, subject: 'math' }),
+        api('get_alerts', { teacher_id: teacherId, class_id: firstClassId }),
+      ]);
+      setHeatmap(h); setAlerts(a.alerts || []);
+    }
     setLoading(false);
-  }, []);
+  }, [teacherId]);
 
   useEffect(() => { load(); }, [load]);
 
