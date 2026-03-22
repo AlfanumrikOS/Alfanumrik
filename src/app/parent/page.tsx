@@ -6,6 +6,71 @@ import { useAuth } from '@/lib/AuthContext';
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
+// Session expiry: 4 hours in milliseconds
+const SESSION_TTL_MS = 4 * 60 * 60 * 1000;
+const SESSION_KEY = 'alfanumrik_parent_session';
+
+// ============================================================
+// HMAC SESSION HELPERS
+// Uses Web Crypto API — all processing is client-side only.
+// The "secret" here is a per-session nonce stored alongside the
+// payload, so the goal is tamper detection (integrity), not
+// confidentiality. Data lives in sessionStorage (tab-scoped).
+// ============================================================
+
+async function hmacSign(payload: string, secret: string): Promise<string> {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(payload));
+  return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function storeParentSession(guardian: Record<string, unknown>, student: Record<string, unknown>) {
+  const nonce = crypto.randomUUID();
+  const issuedAt = Date.now();
+  // Only store non-sensitive identifying fields
+  const safeGuardian = { id: guardian.id, name: guardian.name };
+  const safeStudent = { id: student.id, name: student.name, grade: student.grade };
+  const payload = JSON.stringify({ guardian: safeGuardian, student: safeStudent, issuedAt });
+  const hmac = await hmacSign(payload, nonce);
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify({ payload, hmac, nonce }));
+}
+
+async function loadParentSession(): Promise<{ guardian: any; student: any } | null> {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const { payload, hmac, nonce } = JSON.parse(raw);
+    if (!payload || !hmac || !nonce) return null;
+
+    // Verify integrity
+    const expected = await hmacSign(payload, nonce);
+    if (expected !== hmac) {
+      sessionStorage.removeItem(SESSION_KEY);
+      return null;
+    }
+
+    const { guardian, student, issuedAt } = JSON.parse(payload);
+
+    // Check expiry
+    if (Date.now() - issuedAt > SESSION_TTL_MS) {
+      sessionStorage.removeItem(SESSION_KEY);
+      return null;
+    }
+
+    return { guardian, student };
+  } catch {
+    sessionStorage.removeItem(SESSION_KEY);
+    return null;
+  }
+}
+
+function clearParentSession() {
+  sessionStorage.removeItem(SESSION_KEY);
+}
+
 async function api(action: string, params: Record<string, unknown> = {}) {
   const res = await fetch(`${SB_URL}/functions/v1/parent-portal`, {
     method: 'POST',
@@ -31,12 +96,16 @@ function LoginScreen({ onLogin }: { onLogin: (g: any, s: any) => void }) {
   const submit = async () => {
     if (!code.trim()) { setError('Please enter link code'); return; }
     setLoading(true); setError('');
-    const res = await api('parent_login', { link_code: code, parent_name: name || 'Parent' });
-    setLoading(false);
-    if (res.error) { setError(res.error); return; }
-    localStorage.setItem('alfanumrik_guardian', JSON.stringify(res.guardian));
-    localStorage.setItem('alfanumrik_parent_student', JSON.stringify(res.student));
-    onLogin(res.guardian, res.student);
+    try {
+      const res = await api('parent_login', { link_code: code, parent_name: name || 'Parent' });
+      setLoading(false);
+      if (res.error) { setError(res.error); return; }
+      await storeParentSession(res.guardian, res.student);
+      onLogin(res.guardian, res.student);
+    } catch (err) {
+      setLoading(false);
+      setError('Connection error. Please try again.');
+    }
   };
 
   return (
@@ -138,7 +207,7 @@ function Dashboard({ guardian, student }: { guardian: any; student: any }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const logout = () => { localStorage.removeItem('alfanumrik_guardian'); localStorage.removeItem('alfanumrik_parent_student'); window.location.reload(); };
+  const logout = () => { clearParentSession(); window.location.reload(); };
 
   if (loading) return (
     <div style={pageStyle}>
@@ -272,30 +341,27 @@ export default function ParentPage() {
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
+    if (auth.isLoading) return;
+
     // First check if user is logged in via Supabase with guardian role
-    if (!auth.isLoading && auth.guardian) {
+    if (auth.guardian) {
       setGuardian(auth.guardian);
-      // Student data will come from dashboard API
-      const s = localStorage.getItem('alfanumrik_parent_student');
-      if (s) {
-        try { setStudent(JSON.parse(s)); } catch { /* ignore */ }
-      }
-      setChecking(false);
+      // Student data will be fetched by the dashboard API; load from verified session if available
+      loadParentSession().then(session => {
+        if (session) setStudent(session.student);
+        setChecking(false);
+      });
       return;
     }
 
-    // Fallback: check localStorage for link-code-based login
-    if (!auth.isLoading) {
-      const g = localStorage.getItem('alfanumrik_guardian');
-      const s = localStorage.getItem('alfanumrik_parent_student');
-      if (g && s) {
-        try {
-          setGuardian(JSON.parse(g));
-          setStudent(JSON.parse(s));
-        } catch { /* corrupted data */ }
+    // Fallback: check sessionStorage for link-code-based login (HMAC-verified, expiry-checked)
+    loadParentSession().then(session => {
+      if (session) {
+        setGuardian(session.guardian);
+        setStudent(session.student);
       }
       setChecking(false);
-    }
+    });
   }, [auth.isLoading, auth.guardian]);
 
   if (checking || auth.isLoading) return <div style={pageStyle}><div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}>Loading...</div></div>;

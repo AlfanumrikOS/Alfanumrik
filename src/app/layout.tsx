@@ -10,6 +10,9 @@ export const metadata: Metadata = {
     'Alfanumrik is India\'s smartest AI-powered adaptive learning platform for CBSE students. Foxy AI Tutor teaches in Hindi and English with Bayesian mastery tracking, spaced repetition, and gamified learning. Grades 6-12. Free to start.',
   authors: [{ name: 'Cusiosense Learning India Private Limited' }],
   manifest: '/manifest.json',
+  icons: {
+    icon: '/favicon.svg',
+  },
   keywords: 'CBSE AI tutor, adaptive learning India, AI tutor Hindi, board exam preparation, Foxy AI tutor, spaced repetition CBSE, personalized learning India, class 9 science, class 10 math, online tutor India, Hindi medium tutor, Alfanumrik, Cusiosense Learning',
   openGraph: {
     title: 'Alfanumrik - AI Tutor for CBSE Students | Learn Smarter',
