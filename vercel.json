@@ -1,1 +1,12 @@
-{}
+{
+  "framework": "nextjs",
+  "regions": ["bom1"],
+  "functions": {
+    "src/app/**/*.tsx": {
+      "maxDuration": 10
+    }
+  },
+  "crons": [],
+  "cleanUrls": true,
+  "trailingSlash": false
+}

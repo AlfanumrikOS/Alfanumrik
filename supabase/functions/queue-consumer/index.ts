@@ -11,7 +11,7 @@
  */
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { corsHeaders } from '../_shared/cors.ts'
+import { corsHeaders, getCorsHeaders } from '../_shared/cors.ts'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -182,42 +182,57 @@ async function processQuizTask(supabase: SupabaseClient, payload: QuizPayload): 
   }
 
   // 3. Credit XP to the student's learning profile for this subject
+  //    Use atomic RPC to prevent race conditions with concurrent quiz submissions
   if (xp_earned > 0) {
-    const { data: profile } = await supabase
-      .from('student_learning_profiles')
-      .select('id, xp_total, total_questions_asked, total_questions_answered_correctly')
-      .eq('student_id', student_id)
-      .eq('subject', subject)
-      .maybeSingle()
+    const correctCount = responses.filter((r) => r.is_correct).length
 
-    if (profile) {
-      await supabase
+    const { error: creditError } = await supabase.rpc('credit_quiz_xp', {
+      p_student_id: student_id,
+      p_subject: subject,
+      p_grade: grade,
+      p_xp: xp_earned,
+      p_questions_asked: responses.length,
+      p_questions_correct: correctCount,
+    })
+
+    // Fallback: if the RPC doesn't exist yet, use upsert with conflict handling
+    if (creditError) {
+      console.warn('credit_quiz_xp RPC unavailable, using upsert fallback:', creditError.message)
+      const now = new Date().toISOString()
+      const { data: profile } = await supabase
         .from('student_learning_profiles')
-        .update({
-          xp_total: ((profile.xp_total as number) ?? 0) + xp_earned,
-          total_questions_asked:
-            ((profile.total_questions_asked as number) ?? 0) + responses.length,
-          total_questions_answered_correctly:
-            ((profile.total_questions_answered_correctly as number) ?? 0) +
-            responses.filter((r) => r.is_correct).length,
-          last_activity_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+        .select('id, xp_total, total_questions_asked, total_questions_answered_correctly')
+        .eq('student_id', student_id)
+        .eq('subject', subject)
+        .maybeSingle()
+
+      if (profile) {
+        await supabase
+          .from('student_learning_profiles')
+          .update({
+            xp_total: ((profile.xp_total as number) ?? 0) + xp_earned,
+            total_questions_asked:
+              ((profile.total_questions_asked as number) ?? 0) + responses.length,
+            total_questions_answered_correctly:
+              ((profile.total_questions_answered_correctly as number) ?? 0) + correctCount,
+            last_activity_at: now,
+            updated_at: now,
+          })
+          .eq('id', profile.id)
+      } else {
+        await supabase.from('student_learning_profiles').insert({
+          student_id,
+          subject,
+          grade,
+          xp_total: xp_earned,
+          total_questions_asked: responses.length,
+          total_questions_answered_correctly: correctCount,
+          streak_days: 0,
+          last_activity_at: now,
+          created_at: now,
+          updated_at: now,
         })
-        .eq('id', profile.id)
-    } else {
-      // Create profile row for this subject if absent
-      await supabase.from('student_learning_profiles').insert({
-        student_id,
-        subject,
-        grade,
-        xp_total: xp_earned,
-        total_questions_asked: responses.length,
-        total_questions_answered_correctly: responses.filter((r) => r.is_correct).length,
-        streak_days: 0,
-        last_activity_at: new Date().toISOString(),
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
+      }
     }
   }
 }
@@ -483,12 +498,18 @@ Deno.serve(async (req) => {
         results.errors.push(`[${task.id}] ${message}`)
         results.failed++
 
+        const nextAttempt = task.attempts + 1
+        // Exponential backoff: delay reprocessing by 2^attempt minutes
+        const backoffMinutes = Math.pow(2, nextAttempt)
+        const retryAfter = new Date(Date.now() + backoffMinutes * 60_000).toISOString()
+
         await supabaseClient
           .from('task_queue')
           .update({
-            status: task.attempts + 1 >= 3 ? 'failed' : 'pending',
-            attempts: task.attempts + 1,
+            status: nextAttempt >= 3 ? 'failed' : 'pending',
+            attempts: nextAttempt,
             last_error: message,
+            retry_after: retryAfter,
             updated_at: new Date().toISOString(),
           })
           .eq('id', task.id)

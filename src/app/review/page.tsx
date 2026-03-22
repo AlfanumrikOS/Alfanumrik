@@ -49,7 +49,8 @@ export default function ReviewPage() {
     try {
       const data = await getReviewCards(student.id, 20);
       setCards(Array.isArray(data) ? data : []);
-    } catch {
+    } catch (e) {
+      console.error('Failed to load review cards:', e);
       setCards([]);
     }
     setLoading(false);

@@ -24,7 +24,32 @@
  */
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { corsHeaders } from '../_shared/cors.ts'
+import { corsHeaders, getCorsHeaders } from '../_shared/cors.ts'
+
+// ─── Simple in-memory rate limiter ──────────────────────────────────────────
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
+const RATE_LIMIT_WINDOW_MS = 60_000 // 1 minute
+const RATE_LIMIT_MAX = 20 // max 20 quiz generations per minute per student
+
+function checkRateLimit(studentId: string): boolean {
+  const now = Date.now()
+  const entry = rateLimitMap.get(studentId)
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(studentId, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS })
+    return true
+  }
+  if (entry.count >= RATE_LIMIT_MAX) return false
+  entry.count++
+  return true
+}
+
+// Periodically clean up stale rate limit entries
+setInterval(() => {
+  const now = Date.now()
+  for (const [key, val] of rateLimitMap) {
+    if (now > val.resetAt) rateLimitMap.delete(key)
+  }
+}, 120_000)
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -171,7 +196,7 @@ async function selectAdaptiveQuestions(
       .eq('topic_id', topic.topic_id)
       .eq('difficulty', targetDifficulty)
       .eq('is_active', true)
-      .not('id', 'in', `(${[...usedIds, 'placeholder'].join(',')})`)
+      .not('id', 'in', `(${usedIds.size > 0 ? [...usedIds].join(',') : '00000000-0000-0000-0000-000000000000'})`)
       .limit(need * 2) // fetch extras so we can shuffle and pick
 
     for (const q of shuffle((qs ?? []) as QuestionRow[]).slice(0, need)) {
@@ -251,6 +276,17 @@ Deno.serve(async (req) => {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
+    }
+
+    // Rate limit check
+    if (!checkRateLimit(student_id)) {
+      return new Response(
+        JSON.stringify({ error: 'Too many requests. Please wait before generating another quiz.' }),
+        {
+          status: 429,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': '60' },
+        },
+      )
     }
     if (!subject) {
       return new Response(JSON.stringify({ error: 'subject is required' }), {

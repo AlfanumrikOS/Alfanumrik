@@ -96,7 +96,16 @@ export default function TeacherClassesPage() {
   useEffect(() => { loadClasses(); }, [loadClasses]);
 
   const handleCreateClass = async () => {
-    if (!formName.trim()) return;
+    const name = formName.trim();
+    if (!name) return;
+    if (name.length < 2 || name.length > 100) {
+      showToast('Class name must be 2–100 characters');
+      return;
+    }
+    if (!/^[a-zA-Z0-9\s\-_().]+$/.test(name)) {
+      showToast('Class name contains invalid characters');
+      return;
+    }
     setCreating(true);
     try {
       await supabase.rpc('teacher_create_class', {

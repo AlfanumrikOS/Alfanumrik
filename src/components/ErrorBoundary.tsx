@@ -24,6 +24,21 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error('ErrorBoundary caught:', error, errorInfo);
+
+    // Production error reporting hook — replace with Sentry/LogRocket when available
+    if (process.env.NODE_ENV === 'production' && typeof window !== 'undefined') {
+      try {
+        const payload = {
+          message: error.message,
+          stack: error.stack?.slice(0, 1000),
+          componentStack: errorInfo.componentStack?.slice(0, 500),
+          url: window.location.href,
+          timestamp: new Date().toISOString(),
+        };
+        // Fire-and-forget to analytics endpoint
+        navigator.sendBeacon?.('/api/error-report', JSON.stringify(payload));
+      } catch { /* don't throw in error handler */ }
+    }
   }
 
   render() {

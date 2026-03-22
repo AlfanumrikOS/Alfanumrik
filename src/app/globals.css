@@ -738,6 +738,13 @@ img, video, iframe, canvas, svg {
   }
 }
 
+/* ─── Foxy component styles (moved from dangerouslySetInnerHTML) ─── */
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
+.foxy-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 12px}
+.foxy-mode-bar{display:flex;gap:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;flex-shrink:0}
+.foxy-mode-bar::-webkit-scrollbar{display:none}
+@media(min-width:640px){.foxy-toolbar{flex-wrap:nowrap;gap:8px;padding:8px 12px}}
+
 /* ─── Print Safety ───────────────────────────────────────── */
 @media print {
   .bottom-nav-mobile, .sidebar-nav { display: none !important; }
