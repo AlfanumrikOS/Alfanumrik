@@ -276,7 +276,17 @@ function ChatInput({ onSubmit, subjectKey, disabled, onMicTap, isListening }: {
    MAIN FOXY PAGE
    ══════════════════════════════════════════════════════════════ */
 
-interface ChatMessage { id: number; role: 'student' | 'tutor'; content: string; timestamp: string; xp?: number; }
+interface ChatMessage { id: number; role: 'student' | 'tutor'; content: string; timestamp: string; xp?: number; feedback?: 'up' | 'down' | null; reported?: boolean; }
+
+const REPORT_REASONS = [
+  { value: 'wrong_answer', label: '❌ Wrong answer', labelHi: '❌ गलत उत्तर' },
+  { value: 'wrong_formula', label: '📐 Wrong formula', labelHi: '📐 गलत फॉर्मूला' },
+  { value: 'wrong_explanation', label: '📝 Wrong explanation', labelHi: '📝 गलत व्याख्या' },
+  { value: 'incomplete', label: '⚠️ Incomplete', labelHi: '⚠️ अधूरा' },
+  { value: 'irrelevant', label: '🔀 Off-topic', labelHi: '🔀 विषय से हटकर' },
+  { value: 'confusing', label: '😕 Confusing', labelHi: '😕 भ्रमित करने वाला' },
+  { value: 'other', label: '💬 Other', labelHi: '💬 अन्य' },
+];
 
 export default function FoxyPage() {
   const { student: authStudent, isLoggedIn, isLoading: authLoading } = useAuth();
@@ -306,6 +316,13 @@ export default function FoxyPage() {
   const [studentSubs, setStudentSubs] = useState<string[]>([]);
   const [showTopicSheet, setShowTopicSheet] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // Error reporting
+  const [reportModal, setReportModal] = useState<{ msgId: number; studentMsg: string; foxyMsg: string } | null>(null);
+  const [reportReason, setReportReason] = useState('wrong_answer');
+  const [reportCorrection, setReportCorrection] = useState('');
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [reportSuccess, setReportSuccess] = useState(false);
 
   // Voice
   const [voiceEnabled, setVoiceEnabled] = useState(false);
@@ -392,6 +409,48 @@ export default function FoxyPage() {
     }
     setLoading(false);
   }, [student, studentGrade, activeSubject, language, sessionMode, activeTopic, chatSessionId, selectedChapters, topics, voiceEnabled, speakText]);
+
+  // Feedback: thumbs up/down
+  const handleFeedback = useCallback(async (msgId: number, isUp: boolean) => {
+    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, feedback: isUp ? 'up' : 'down' } : m));
+    try { await supabase.rpc('track_ai_quality', { p_subject: activeSubject, p_is_thumbs_up: isUp }); } catch {}
+  }, [activeSubject]);
+
+  // Open report modal
+  const openReport = useCallback((msgId: number) => {
+    const foxyMsg = messages.find(m => m.id === msgId);
+    const idx = messages.findIndex(m => m.id === msgId);
+    const studentMsg = idx > 0 ? messages.slice(0, idx).reverse().find(m => m.role === 'student') : null;
+    if (!foxyMsg) return;
+    setReportModal({ msgId, studentMsg: studentMsg?.content || '', foxyMsg: foxyMsg.content });
+    setReportReason('wrong_answer'); setReportCorrection(''); setReportSuccess(false);
+  }, [messages]);
+
+  // Submit report
+  const submitReport = useCallback(async () => {
+    if (!reportModal) return;
+    setReportSubmitting(true);
+    try {
+      await supabase.from('ai_response_reports').insert({
+        student_id: student?.id || null,
+        student_name: student?.name || 'Anonymous',
+        session_id: chatSessionId,
+        student_message: reportModal.studentMsg,
+        foxy_response: reportModal.foxyMsg.substring(0, 4000),
+        report_reason: reportReason,
+        student_correction: reportCorrection || null,
+        subject: activeSubject,
+        grade: studentGrade,
+        topic_title: activeTopic?.title || null,
+        session_mode: sessionMode,
+        language,
+      });
+      await supabase.rpc('track_ai_quality', { p_subject: activeSubject, p_is_report: true });
+      setMessages(prev => prev.map(m => m.id === reportModal.msgId ? { ...m, reported: true, feedback: 'down' } : m));
+      setReportSuccess(true);
+    } catch {}
+    setReportSubmitting(false);
+  }, [reportModal, student, chatSessionId, reportReason, reportCorrection, activeSubject, studentGrade, activeTopic, sessionMode, language]);
 
   const startListening = useCallback(() => {
     if (typeof window === 'undefined') return;
@@ -557,7 +616,7 @@ export default function FoxyPage() {
             )}
 
             {/* Messages */}
-            {messages.map(msg => (
+            {messages.map((msg, msgIdx) => (
               <div key={msg.id} className="mb-4 w-full animate-fade-in">
                 <div className="flex items-center gap-2 mb-1.5">
                   {msg.role === 'tutor'
@@ -565,13 +624,111 @@ export default function FoxyPage() {
                     : <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] text-white font-bold shrink-0" style={{ background: `linear-gradient(135deg, ${cfg.color}, ${cfg.color}bb)` }}>{student?.name?.[0]?.toUpperCase() || 'S'}</div>}
                   <span className="text-xs font-bold" style={{ color: msg.role === 'tutor' ? 'var(--orange)' : cfg.color }}>{msg.role === 'tutor' ? 'Foxy' : (student?.name || 'You')}</span>
                   <span className="text-[10px] text-[var(--text-3)]">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                  {(msg.xp ?? 0) > 0 && <span className="ml-auto px-2 py-0.5 rounded-lg text-[10px] font-extrabold text-white" style={{ background: 'linear-gradient(135deg, #F59E0B, #EF4444)' }}>+{msg.xp} XP</span>}
+                  {msg.role === 'tutor' && <span className="ml-auto px-1.5 py-0.5 rounded text-[8px] font-semibold" style={{ background: 'var(--surface-2)', color: 'var(--text-3)', border: '1px solid var(--border)' }}>🤖 AI</span>}
+                  {(msg.xp ?? 0) > 0 && <span className="px-2 py-0.5 rounded-lg text-[10px] font-extrabold text-white" style={{ background: 'linear-gradient(135deg, #F59E0B, #EF4444)' }}>+{msg.xp} XP</span>}
                 </div>
-                <div className="w-full rounded-2xl px-4 py-3 text-sm leading-relaxed" style={{ background: msg.role === 'student' ? `${cfg.color}08` : 'var(--surface-1)', color: 'var(--text-1)', border: msg.role === 'student' ? `1.5px solid ${cfg.color}20` : '1px solid var(--border)' }}>
+                <div className="w-full rounded-2xl px-4 py-3 text-sm leading-relaxed" style={{ background: msg.role === 'student' ? `${cfg.color}08` : 'var(--surface-1)', color: 'var(--text-1)', border: msg.role === 'student' ? `1.5px solid ${cfg.color}20` : msg.reported ? '1.5px solid #EF444440' : '1px solid var(--border)' }}>
                   {msg.role === 'tutor' ? <RichContent content={msg.content} subjectKey={activeSubject} /> : <div className="whitespace-pre-wrap">{msg.content}</div>}
                 </div>
+
+                {/* ── Feedback bar for tutor messages ── */}
+                {msg.role === 'tutor' && msg.content !== 'Oops! Please try again.' && (
+                  <div className="flex items-center gap-1 mt-1.5 pl-1">
+                    {/* Thumbs up */}
+                    <button
+                      onClick={() => handleFeedback(msg.id, true)}
+                      className="px-2 py-1 rounded-lg text-[11px] transition-all active:scale-90"
+                      style={{ background: msg.feedback === 'up' ? '#16A34A18' : 'transparent', color: msg.feedback === 'up' ? '#16A34A' : 'var(--text-3)', border: msg.feedback === 'up' ? '1px solid #16A34A30' : '1px solid transparent' }}
+                    >{msg.feedback === 'up' ? '👍' : '👍'}</button>
+
+                    {/* Thumbs down */}
+                    <button
+                      onClick={() => { handleFeedback(msg.id, false); }}
+                      className="px-2 py-1 rounded-lg text-[11px] transition-all active:scale-90"
+                      style={{ background: msg.feedback === 'down' ? '#EF444418' : 'transparent', color: msg.feedback === 'down' ? '#EF4444' : 'var(--text-3)', border: msg.feedback === 'down' ? '1px solid #EF444430' : '1px solid transparent' }}
+                    >👎</button>
+
+                    {/* Report error */}
+                    {!msg.reported ? (
+                      <button
+                        onClick={() => openReport(msg.id)}
+                        className="px-2 py-1 rounded-lg text-[10px] font-semibold transition-all active:scale-95 ml-1"
+                        style={{ color: 'var(--text-3)' }}
+                      >⚠️ Report</button>
+                    ) : (
+                      <span className="px-2 py-1 text-[10px] font-semibold" style={{ color: '#EF4444' }}>✓ Reported</span>
+                    )}
+
+                    {/* AI disclaimer for math/science */}
+                    {['math', 'science', 'physics', 'chemistry'].includes(activeSubject) && (msg.content.includes('=') || msg.content.includes('formula') || msg.content.includes('²') || msg.content.includes('√')) && (
+                      <span className="ml-auto text-[9px] px-2 py-0.5 rounded" style={{ color: 'var(--text-3)', background: 'var(--surface-2)' }}>Verify with textbook</span>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
+
+            {/* ── Report Error Modal ── */}
+            {reportModal && (
+              <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={(e) => { if (e.target === e.currentTarget) { setReportModal(null); } }}>
+                <div className="w-full max-w-md rounded-t-2xl sm:rounded-2xl p-5 max-h-[80vh] overflow-y-auto animate-slide-up" style={{ background: 'var(--surface-1)' }}>
+                  {!reportSuccess ? (<>
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-base font-bold" style={{ fontFamily: 'var(--font-display)' }}>⚠️ Report Incorrect Answer</h3>
+                      <button onClick={() => setReportModal(null)} className="text-lg" style={{ color: 'var(--text-3)' }}>✕</button>
+                    </div>
+
+                    {/* What Foxy said */}
+                    <div className="mb-4 p-3 rounded-xl text-xs" style={{ background: '#EF444408', border: '1px solid #EF444420' }}>
+                      <div className="font-bold text-[10px] uppercase tracking-wider mb-1" style={{ color: '#EF4444' }}>Foxy&apos;s response:</div>
+                      <div className="leading-relaxed" style={{ color: 'var(--text-2)', maxHeight: 100, overflow: 'hidden' }}>{reportModal.foxyMsg.substring(0, 300)}{reportModal.foxyMsg.length > 300 ? '...' : ''}</div>
+                    </div>
+
+                    {/* Reason */}
+                    <div className="mb-3">
+                      <label className="text-xs font-semibold mb-2 block" style={{ color: 'var(--text-3)' }}>What&apos;s wrong?</label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {REPORT_REASONS.map(r => (
+                          <button key={r.value} onClick={() => setReportReason(r.value)} className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all" style={{ background: reportReason === r.value ? '#EF444415' : 'var(--surface-2)', color: reportReason === r.value ? '#EF4444' : 'var(--text-3)', border: `1.5px solid ${reportReason === r.value ? '#EF444440' : 'var(--border)'}` }}>
+                            {language === 'hi' ? r.labelHi : r.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Student's correction */}
+                    <div className="mb-4">
+                      <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--text-3)' }}>What should the correct answer be? (optional)</label>
+                      <textarea
+                        value={reportCorrection}
+                        onChange={e => setReportCorrection(e.target.value)}
+                        placeholder={language === 'hi' ? 'सही उत्तर लिखें...' : 'Type the correct answer here...'}
+                        rows={3}
+                        className="w-full text-sm rounded-xl px-3 py-2 resize-none outline-none"
+                        style={{ background: 'var(--surface-2)', border: '1.5px solid var(--border)', fontFamily: 'var(--font-body)' }}
+                      />
+                    </div>
+
+                    {/* Submit */}
+                    <div className="flex gap-2">
+                      <button onClick={() => setReportModal(null)} className="flex-1 py-2.5 rounded-xl text-xs font-bold" style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }}>Cancel</button>
+                      <button onClick={submitReport} disabled={reportSubmitting} className="flex-1 py-2.5 rounded-xl text-xs font-bold text-white transition-all active:scale-95 disabled:opacity-50" style={{ background: '#EF4444' }}>
+                        {reportSubmitting ? 'Submitting...' : '⚠️ Submit Report'}
+                      </button>
+                    </div>
+                  </>) : (
+                    <div className="text-center py-6">
+                      <div className="text-4xl mb-3">✅</div>
+                      <h3 className="text-base font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>Thank you!</h3>
+                      <p className="text-xs mb-4" style={{ color: 'var(--text-3)' }}>
+                        {language === 'hi' ? 'आपकी रिपोर्ट दर्ज हो गई है। हम इसकी जाँच करेंगे और सुधार करेंगे।' : 'Your report has been recorded. Our team will review and fix this.'}
+                      </p>
+                      <button onClick={() => setReportModal(null)} className="px-6 py-2 rounded-xl text-xs font-bold text-white" style={{ background: 'var(--orange)' }}>OK</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Thinking */}
             {loading && (
