@@ -172,7 +172,7 @@ export default function TeacherPage() {
         </div>
         <button onClick={load} style={{ padding: '8px 16px', background: 'transparent', color: '#6366F1', border: '1px solid #6366F1', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Refresh</button>
       </header>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: 12, marginBottom: 20 }}>
         {[{ label: 'Students', val: dash?.stats?.total_students || 0, color: '#6366F1' }, { label: 'Alerts', val: dash?.stats?.active_alerts || 0, color: (dash?.stats?.critical_alerts || 0) > 0 ? '#DC2626' : '#D97706' }, { label: 'Assignments', val: dash?.stats?.active_assignments || 0, color: '#059669' }].map((s,i) => (
           <div key={i} style={{ backgroundColor: '#0F172A', borderRadius: 12, padding: '14px 16px', border: '1px solid #1E293B' }}>
             <p style={{ color: '#64748B', fontSize: 11, margin: 0, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>{s.label}</p>
