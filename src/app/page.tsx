@@ -273,6 +273,175 @@ function ChatInput({ onSubmit, subjectKey, disabled, onMicTap, isListening }: {
 }
 
 /* ══════════════════════════════════════════════════════════════
+   AUTH SCREEN — Login / Signup / Forgot Password
+   ══════════════════════════════════════════════════════════════ */
+
+const AUTH_GRADES = ['6', '7', '8', '9', '10', '11', '12'];
+const AUTH_BOARDS = ['CBSE', 'ICSE', 'State Board', 'IB', 'Other'];
+
+function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
+  const [mode, setMode] = useState<'login' | 'signup' | 'forgot'>('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [grade, setGrade] = useState('9');
+  const [board, setBoard] = useState('CBSE');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(''); setLoading(true);
+    try {
+      const { error: authError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      if (authError) { setError(authError.message); setLoading(false); return; }
+      onSuccess();
+    } catch { setError('Connection error. Please try again.'); setLoading(false); }
+  };
+
+  const handleSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) { setError('Please enter your name'); return; }
+    if (password.length < 6) { setError('Password must be at least 6 characters'); return; }
+    setError(''); setLoading(true);
+    try {
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+        options: { data: { name: name.trim(), grade, board } },
+      });
+      if (authError) { setError(authError.message); setLoading(false); return; }
+      if (authData.user) {
+        // Create student record
+        await supabase.from('students').insert({
+          auth_user_id: authData.user.id,
+          name: name.trim(),
+          email: email.trim(),
+          grade: `Grade ${grade}`,
+          board,
+          preferred_language: 'en',
+          account_status: 'active',
+        });
+        // If email confirmation is disabled, user is already logged in
+        if (authData.session) {
+          onSuccess();
+        } else {
+          setSuccess('Check your email for a confirmation link, then log in!');
+          setMode('login');
+          setLoading(false);
+        }
+      }
+    } catch { setError('Connection error. Please try again.'); setLoading(false); }
+  };
+
+  const handleForgot = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim()) { setError('Please enter your email'); return; }
+    setError(''); setLoading(true);
+    try {
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: `${window.location.origin}/auth/reset`,
+      });
+      if (resetError) { setError(resetError.message); setLoading(false); return; }
+      setSuccess('Password reset link sent to your email!');
+      setLoading(false);
+    } catch { setError('Connection error. Please try again.'); setLoading(false); }
+  };
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%', padding: '12px 16px', borderRadius: 12,
+    border: '1.5px solid var(--border)', background: 'var(--surface-2)',
+    fontSize: 14, outline: 'none', fontFamily: 'var(--font-body)',
+    color: 'var(--text-1)',
+  };
+
+  return (
+    <div className="mesh-bg min-h-dvh flex items-center justify-center px-4">
+      <div className="w-full max-w-sm">
+        {/* Logo */}
+        <div className="text-center mb-6">
+          <div className="text-6xl mb-2 animate-float">🦊</div>
+          <h1 className="text-2xl font-extrabold" style={{ fontFamily: 'var(--font-display)', background: 'linear-gradient(135deg, #E8590C, #F59E0B)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+            Alfanumrik
+          </h1>
+          <p className="text-xs text-[var(--text-3)] mt-1">AI Tutor for CBSE Students</p>
+        </div>
+
+        {/* Form Card */}
+        <div className="rounded-2xl p-6" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', boxShadow: '0 4px 24px rgba(0,0,0,0.06)' }}>
+          <h2 className="text-lg font-bold mb-4 text-center" style={{ color: 'var(--text-1)' }}>
+            {mode === 'login' ? 'Welcome Back!' : mode === 'signup' ? 'Start Learning Free' : 'Reset Password'}
+          </h2>
+
+          {error && (
+            <div className="mb-3 px-3 py-2 rounded-xl text-xs font-semibold" style={{ background: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA' }}>
+              {error}
+            </div>
+          )}
+          {success && (
+            <div className="mb-3 px-3 py-2 rounded-xl text-xs font-semibold" style={{ background: '#D1FAE5', color: '#059669', border: '1px solid #A7F3D0' }}>
+              {success}
+            </div>
+          )}
+
+          <form onSubmit={mode === 'login' ? handleLogin : mode === 'signup' ? handleSignup : handleForgot} className="space-y-3">
+            {mode === 'signup' && (
+              <input type="text" placeholder="Your Name" value={name} onChange={e => setName(e.target.value)} style={inputStyle} required />
+            )}
+
+            <input type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} style={inputStyle} required />
+
+            {mode !== 'forgot' && (
+              <div className="relative">
+                <input type={showPassword ? 'text' : 'password'} placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} style={{ ...inputStyle, paddingRight: 44 }} required minLength={6} />
+                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--text-3)' }}>
+                  {showPassword ? '🙈' : '👁'}
+                </button>
+              </div>
+            )}
+
+            {mode === 'signup' && (
+              <div className="flex gap-2">
+                <select value={grade} onChange={e => setGrade(e.target.value)} style={{ ...inputStyle, flex: 1, cursor: 'pointer' }}>
+                  {AUTH_GRADES.map(g => <option key={g} value={g}>Grade {g}</option>)}
+                </select>
+                <select value={board} onChange={e => setBoard(e.target.value)} style={{ ...inputStyle, flex: 1, cursor: 'pointer' }}>
+                  {AUTH_BOARDS.map(b => <option key={b} value={b}>{b}</option>)}
+                </select>
+              </div>
+            )}
+
+            <button type="submit" disabled={loading} className="w-full py-3 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.98] disabled:opacity-50" style={{ background: 'linear-gradient(135deg, #E8590C, #F59E0B)' }}>
+              {loading ? '...' : mode === 'login' ? 'Log In' : mode === 'signup' ? 'Create Account' : 'Send Reset Link'}
+            </button>
+          </form>
+
+          {mode === 'login' && (
+            <button onClick={() => { setMode('forgot'); setError(''); setSuccess(''); }} className="w-full text-center text-xs mt-3 font-semibold" style={{ color: 'var(--text-3)' }}>
+              Forgot password?
+            </button>
+          )}
+
+          <div className="mt-4 pt-4 text-center text-xs" style={{ borderTop: '1px solid var(--border)' }}>
+            {mode === 'login' ? (
+              <span style={{ color: 'var(--text-3)' }}>New here? <button onClick={() => { setMode('signup'); setError(''); setSuccess(''); }} className="font-bold" style={{ color: '#E8590C' }}>Sign Up Free</button></span>
+            ) : (
+              <span style={{ color: 'var(--text-3)' }}>Already have an account? <button onClick={() => { setMode('login'); setError(''); setSuccess(''); }} className="font-bold" style={{ color: '#E8590C' }}>Log In</button></span>
+            )}
+          </div>
+        </div>
+
+        <p className="text-center text-[10px] text-[var(--text-3)] mt-4">
+          By signing up, you agree to our Terms of Service
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
    MAIN FOXY PAGE
    ══════════════════════════════════════════════════════════════ */
 
@@ -332,7 +501,7 @@ export default function FoxyPage() {
   const recognitionRef = useRef<any>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { if (!authLoading && !isLoggedIn) router.replace('/'); }, [authLoading, isLoggedIn, router]);
+  // No redirect needed — landing page shows auth form when not logged in
 
   // Preload voices
   useEffect(() => {
@@ -497,12 +666,13 @@ export default function FoxyPage() {
     </div>
   );
 
+  if (!isLoggedIn && !authLoading) return <AuthScreen onSuccess={() => window.location.reload()} />;
+
   if (!student) return (
     <div className="mesh-bg min-h-dvh flex items-center justify-center">
       <div className="text-center">
-        <div className="text-5xl mb-3">{FOXY_FACES.idle}</div>
-        <p className="text-sm text-[var(--text-3)] mb-4">Please log in to access Foxy Tutor</p>
-        <button onClick={() => router.push('/')} className="px-6 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background: 'linear-gradient(135deg, #E8590C, #F59E0B)' }}>Log In</button>
+        <div className="text-5xl animate-float mb-3">{FOXY_FACES.idle}</div>
+        <p className="text-sm text-[var(--text-3)]">Loading your profile...</p>
       </div>
     </div>
   );
