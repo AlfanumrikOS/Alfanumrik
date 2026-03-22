@@ -3,9 +3,130 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { supabase, getStudentProfiles, getSubjects } from '@/lib/supabase';
+import { supabase, getStudentProfiles, getSubjects, studentJoinClass } from '@/lib/supabase';
 import { Card, Button, Input, Select, Avatar, SectionHeader, ProgressBar, StatCard, LoadingFoxy, BottomNav } from '@/components/ui';
 import { GRADES, BOARDS, LANGUAGES, SUBJECT_META } from '@/lib/constants';
+
+/* ═══ CONNECTIONS CARD: Parent Link Code + Class Join ═══ */
+function ConnectionsCard({ studentId, isHi }: { studentId: string; isHi: boolean }) {
+  const [linkCode, setLinkCode] = useState<string | null>(null);
+  const [loadingCode, setLoadingCode] = useState(false);
+  const [classCode, setClassCode] = useState('');
+  const [joinLoading, setJoinLoading] = useState(false);
+  const [joinResult, setJoinResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  // Fetch or generate parent link code
+  const fetchLinkCode = useCallback(async () => {
+    setLoadingCode(true);
+    try {
+      // Try to get existing link code
+      const { data: existing } = await supabase
+        .from('guardian_student_links')
+        .select('invite_code')
+        .eq('student_id', studentId)
+        .not('invite_code', 'is', null)
+        .limit(1)
+        .single();
+
+      if (existing?.invite_code) {
+        setLinkCode(existing.invite_code);
+      } else {
+        // Generate a new link code via RPC
+        const { data, error } = await supabase.rpc('generate_parent_link_code', {
+          p_student_id: studentId,
+        });
+        if (!error && data) setLinkCode(data);
+      }
+    } catch {
+      // Silently fail — feature may not be available
+    }
+    setLoadingCode(false);
+  }, [studentId]);
+
+  useEffect(() => { fetchLinkCode(); }, [fetchLinkCode]);
+
+  const copyCode = () => {
+    if (!linkCode) return;
+    navigator.clipboard.writeText(linkCode).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const handleJoinClass = async () => {
+    if (!classCode.trim()) return;
+    setJoinLoading(true);
+    setJoinResult(null);
+    try {
+      await studentJoinClass(studentId, classCode.trim().toUpperCase());
+      setJoinResult({ ok: true, msg: isHi ? 'कक्षा में शामिल हो गए!' : 'Joined class successfully!' });
+      setClassCode('');
+    } catch (e: any) {
+      setJoinResult({ ok: false, msg: e?.message || (isHi ? 'कोड अमान्य है' : 'Invalid class code') });
+    }
+    setJoinLoading(false);
+  };
+
+  return (
+    <Card>
+      <SectionHeader>{isHi ? 'कनेक्शन' : 'Connections'}</SectionHeader>
+
+      {/* Parent Link Code */}
+      <div className="mt-3 p-3 rounded-xl" style={{ background: 'var(--surface-2)' }}>
+        <p className="text-xs font-semibold text-[var(--text-2)] mb-2">
+          👨‍👩‍👧 {isHi ? 'पैरेंट लिंक कोड' : 'Parent Link Code'}
+        </p>
+        <p className="text-[10px] text-[var(--text-3)] mb-2">
+          {isHi ? 'यह कोड अपने माता-पिता को दें — वे इसे पैरेंट डैशबोर्ड में दर्ज करेंगे' : 'Share this code with your parents so they can monitor your progress'}
+        </p>
+        {loadingCode ? (
+          <p className="text-xs text-[var(--text-3)]">Loading...</p>
+        ) : linkCode ? (
+          <div className="flex items-center gap-2">
+            <span className="text-lg font-bold tracking-[4px] text-[var(--orange)]">{linkCode}</span>
+            <button onClick={copyCode} className="text-xs px-2 py-1 rounded-lg" style={{ background: 'var(--surface-1)', color: copied ? 'var(--green)' : 'var(--text-2)' }}>
+              {copied ? '✓' : isHi ? 'कॉपी' : 'Copy'}
+            </button>
+          </div>
+        ) : (
+          <p className="text-xs text-[var(--text-3)]">{isHi ? 'कोड उपलब्ध नहीं' : 'Code not available'}</p>
+        )}
+      </div>
+
+      {/* Join Class */}
+      <div className="mt-3 p-3 rounded-xl" style={{ background: 'var(--surface-2)' }}>
+        <p className="text-xs font-semibold text-[var(--text-2)] mb-2">
+          🏫 {isHi ? 'कक्षा में शामिल हों' : 'Join a Class'}
+        </p>
+        <div className="flex gap-2">
+          <input
+            className="flex-1 px-3 py-2 rounded-lg text-sm"
+            style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', color: 'var(--text-1)' }}
+            placeholder={isHi ? 'क्लास कोड दर्ज करें' : 'Enter class code'}
+            value={classCode}
+            onChange={e => setClassCode(e.target.value.toUpperCase())}
+            maxLength={10}
+            onKeyDown={e => e.key === 'Enter' && handleJoinClass()}
+          />
+          <button
+            onClick={handleJoinClass}
+            disabled={joinLoading || !classCode.trim()}
+            className="px-4 py-2 rounded-lg text-sm font-semibold text-white"
+            style={{ background: 'var(--orange)', opacity: joinLoading || !classCode.trim() ? 0.5 : 1 }}
+          >
+            {joinLoading ? '...' : isHi ? 'जुड़ें' : 'Join'}
+          </button>
+        </div>
+        {joinResult && (
+          <p className={`text-xs mt-2 ${joinResult.ok ? 'text-green-600' : 'text-red-500'}`}>
+            {joinResult.msg}
+          </p>
+        )}
+      </div>
+    </Card>
+  );
+}
 
 type Tab = 'overview' | 'edit' | 'achievements' | 'stats';
 
@@ -280,6 +401,9 @@ export default function ProfilePage() {
               <StatCard icon="🎯" value={mastered} label={isHi ? 'महारत' : 'Mastered'} color="var(--green)" />
               <StatCard icon="⚡" value={quizzesTaken} label={isHi ? 'क्विज़' : 'Quizzes'} color="var(--purple)" />
             </div>
+
+            {/* Connections: Parent Link Code & Class Join */}
+            <ConnectionsCard studentId={student.id} isHi={isHi} />
 
             <Button fullWidth variant="ghost" onClick={() => setTab('edit')}>
               ✏️ {isHi ? 'प्रोफ़ाइल संपादित करो' : 'Edit Profile'}

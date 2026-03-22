@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '@/lib/AuthContext';
 
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -261,18 +262,39 @@ function Dashboard({ guardian, student }: { guardian: any; student: any }) {
 // MAIN PAGE COMPONENT
 // ============================================================
 export default function ParentPage() {
+  const auth = useAuth();
   const [guardian, setGuardian] = useState<any>(null);
   const [student, setStudent] = useState<any>(null);
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    const g = localStorage.getItem('alfanumrik_guardian');
-    const s = localStorage.getItem('alfanumrik_parent_student');
-    if (g && s) { setGuardian(JSON.parse(g)); setStudent(JSON.parse(s)); }
-    setChecking(false);
-  }, []);
+    // First check if user is logged in via Supabase with guardian role
+    if (!auth.isLoading && auth.guardian) {
+      setGuardian(auth.guardian);
+      // Student data will come from dashboard API
+      const s = localStorage.getItem('alfanumrik_parent_student');
+      if (s) {
+        try { setStudent(JSON.parse(s)); } catch { /* ignore */ }
+      }
+      setChecking(false);
+      return;
+    }
 
-  if (checking) return <div style={pageStyle}><div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}>Loading...</div></div>;
+    // Fallback: check localStorage for link-code-based login
+    if (!auth.isLoading) {
+      const g = localStorage.getItem('alfanumrik_guardian');
+      const s = localStorage.getItem('alfanumrik_parent_student');
+      if (g && s) {
+        try {
+          setGuardian(JSON.parse(g));
+          setStudent(JSON.parse(s));
+        } catch { /* corrupted data */ }
+      }
+      setChecking(false);
+    }
+  }, [auth.isLoading, auth.guardian]);
+
+  if (checking || auth.isLoading) return <div style={pageStyle}><div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}>Loading...</div></div>;
 
   if (!guardian || !student) {
     return <LoginScreen onLogin={(g, s) => { setGuardian(g); setStudent(s); }} />;

@@ -1,6 +1,7 @@
 import './globals.css';
 import type { Metadata, Viewport } from 'next';
 import { AuthProvider } from '@/lib/AuthContext';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 export const metadata: Metadata = {
   title: 'Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students',
@@ -65,7 +66,9 @@ export default function RootLayout({
       </head>
       <body>
         <AuthProvider>
-          <div className="app-shell">{children}</div>
+          <ErrorBoundary>
+            <div className="app-shell">{children}</div>
+          </ErrorBoundary>
         </AuthProvider>
       </body>
     </html>

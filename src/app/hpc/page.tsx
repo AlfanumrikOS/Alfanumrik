@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useAuth } from '@/lib/AuthContext';
+import { useRouter } from 'next/navigation';
 
 // Rule 9: NEVER hardcode API keys — use environment variables
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -44,13 +46,22 @@ function BehaviorRating({ value, label }: { value: number|null; label: string })
 }
 
 export default function HPCPage() {
+  const { student, isLoading: authLoading, isLoggedIn } = useAuth();
+  const router = useRouter();
   const [hpc, setHpc] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  // TODO(production): Get student_id from auth session, not hardcoded
-  const studentId = 'c64920ff-ca82-47e3-9991-26051ca8a6cd';
+  // Get student_id from auth session (no more hardcoded IDs)
+  const studentId = student?.id || '';
 
   useEffect(() => {
+    if (!authLoading && !isLoggedIn) {
+      router.replace('/');
+    }
+  }, [authLoading, isLoggedIn, router]);
+
+  useEffect(() => {
+    if (!studentId) return;
     (async () => {
       setLoading(true);
       await nepApi('generate_hpc', { student_id: studentId });
@@ -58,7 +69,7 @@ export default function HPCPage() {
       setHpc(data);
       setLoading(false);
     })();
-  }, []);
+  }, [studentId]);
 
   if (loading) return (<div style={pageStyle}><div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}><div style={{ width: 40, height: 40, border: '3px solid #1E293B', borderTopColor: '#6366F1', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />Generating Holistic Progress Card...</div><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div>);
   if (!hpc || hpc.error) return <div style={pageStyle}><div style={{ textAlign: 'center', padding: 60, color: '#EF4444' }}>{hpc?.error || 'Failed to load HPC'}</div></div>;

@@ -33,6 +33,7 @@ interface RoleData {
 /* ─── Auth State ─── */
 interface AuthState {
   // Current user
+  authUserId: string | null;
   student: Student | null;
   snapshot: StudentSnapshot | null;
   teacher: TeacherProfile | null;
@@ -59,6 +60,7 @@ interface AuthState {
 }
 
 const AuthContext = createContext<AuthState>({
+  authUserId: null,
   student: null,
   snapshot: null,
   teacher: null,
@@ -81,6 +83,7 @@ export function useAuth() {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const [authUserId, setAuthUserId] = useState<string | null>(null);
   const [student, setStudent] = useState<Student | null>(null);
   const [snapshot, setSnapshot] = useState<StudentSnapshot | null>(null);
   const [teacher, setTeacher] = useState<TeacherProfile | null>(null);
@@ -108,6 +111,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
+        setAuthUserId(null);
         setStudent(null);
         setTeacher(null);
         setGuardian(null);
@@ -116,6 +120,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsLoading(false);
         return;
       }
+      setAuthUserId(user.id);
 
       // Detect all roles using RPC
       const { data: roleData } = await supabase.rpc('get_user_role', {
@@ -195,6 +200,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
+    setAuthUserId(null);
     setStudent(null);
     setSnapshot(null);
     setTeacher(null);
@@ -203,6 +209,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setActiveRoleState('none');
     if (typeof window !== 'undefined') {
       localStorage.removeItem('alfanumrik_active_role');
+      localStorage.removeItem('alfanumrik_guardian');
+      localStorage.removeItem('alfanumrik_parent_student');
+      localStorage.removeItem('alfanumrik_admin');
+      localStorage.removeItem('alfanumrik_subject');
     }
   }, []);
 
@@ -217,6 +227,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider
       value={{
+        authUserId,
         student,
         snapshot,
         teacher,
