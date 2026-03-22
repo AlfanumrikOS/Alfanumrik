@@ -126,7 +126,7 @@ export async function getQuizQuestions(subject: string, grade: string, count = 1
   return data;
 }
 
-export async function submitQuizResults(studentId: string, subject: string, grade: string, topic: string, chapter: number, responses: any[], time: number) {
+export async function submitQuizResults(studentId: string, subject: string, grade: string, topic: string, chapter: number, responses: import('./types').QuizResponse[], time: number) {
   const { data, error } = await supabase.rpc('submit_quiz_results', { p_student_id: studentId, p_subject: subject, p_grade: grade, p_topic: topic, p_chapter: chapter, p_responses: responses, p_time: time });
   if (error) throw error;
   return data;

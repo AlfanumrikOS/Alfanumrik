@@ -3,10 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
-
-// Rule 9: NEVER hardcode API keys — use environment variables
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+import { supabaseUrl as SUPABASE_URL, supabaseAnonKey as SUPABASE_ANON } from '@/lib/supabase';
+import type { HeatmapData, HeatmapCell, RiskAlert } from '@/lib/types';
 
 async function api(action: string, params: Record<string, unknown> = {}) {
   const res = await fetch(`${SUPABASE_URL}/functions/v1/teacher-dashboard`, {
@@ -37,8 +35,8 @@ const SEV: Record<string, { bg: string; border: string }> = {
   low: { bg: '#2563EB', border: '#3B82F6' },
 };
 
-function HeatmapTab({ data }: { data: any }) {
-  const [selected, setSelected] = useState<any>(null);
+function HeatmapTab({ data }: { data: HeatmapData }) {
+  const [selected, setSelected] = useState<(HeatmapCell & { student: string; concept: string }) | null>(null);
   if (!data?.matrix?.length) return <div style={{ padding: 40, textAlign: 'center', color: '#475569', fontStyle: 'italic' }}>No mastery data yet — students need to start practicing.</div>;
   const concepts = (data.concepts || []).slice(0, 12);
   return (
@@ -79,7 +77,7 @@ function HeatmapTab({ data }: { data: any }) {
   );
 }
 
-function AlertsTab({ alerts, onResolve }: { alerts: any[]; onResolve: (id: string) => void }) {
+function AlertsTab({ alerts, onResolve }: { alerts: RiskAlert[]; onResolve: (id: string) => void }) {
   if (!alerts?.length) return <div className="td-card"><div className="td-card-head"><h3>At-risk alerts</h3></div><div style={{ padding: 30, textAlign: 'center', color: '#475569', fontStyle: 'italic' }}>No at-risk students detected.</div></div>;
   return (
     <div className="td-card">
@@ -137,8 +135,9 @@ function PollTab({ classId, teacherId }: { classId: string; teacherId: string })
 export default function TeacherPage() {
   const { teacher, isLoading: authLoading, isLoggedIn, activeRole } = useAuth();
   const router = useRouter();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [dash, setDash] = useState<any>(null);
-  const [heatmap, setHeatmap] = useState<any>(null);
+  const [heatmap, setHeatmap] = useState<HeatmapData | null>(null);
   const [alerts, setAlerts] = useState<any[]>([]);
   const [tab, setTab] = useState('heatmap');
   const [loading, setLoading] = useState(true);
@@ -202,7 +201,7 @@ export default function TeacherPage() {
       <nav style={{ display: 'flex', gap: 4, padding: 4, backgroundColor: '#0F172A', borderRadius: 10, border: '1px solid #1E293B', marginBottom: 16 }}>
         {tabs.map(t => (<button key={t.id} onClick={() => setTab(t.id)} style={{ padding: '8px 16px', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer', fontWeight: tab === t.id ? 600 : 500, backgroundColor: tab === t.id ? '#6366F1' : 'transparent', color: tab === t.id ? '#fff' : '#64748B' }}>{t.label}</button>))}
       </nav>
-      {tab === 'heatmap' && <HeatmapTab data={heatmap} />}
+      {tab === 'heatmap' && heatmap && <HeatmapTab data={heatmap} />}
       {tab === 'alerts' && <AlertsTab alerts={alerts} onResolve={resolveAlert} />}
       {tab === 'poll' && <PollTab classId={classId} teacherId={teacherId} />}
     </div>

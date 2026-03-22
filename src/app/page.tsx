@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react';
+import { useState, useEffect, useRef, useCallback, memo, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -134,7 +134,7 @@ function renderInline(text: string, color: string): ReactNode {
   return parts.length > 0 ? <>{parts}</> : <span>{clean}</span>;
 }
 
-function RichContent({ content, subjectKey }: { content: string; subjectKey: string }) {
+const RichContent = memo(function RichContent({ content, subjectKey }: { content: string; subjectKey: string }) {
   const cfg = SUBJECTS[subjectKey] || SUBJECTS.science;
   if (!content) return null;
   const text = cleanMd(content);
@@ -169,7 +169,7 @@ function RichContent({ content, subjectKey }: { content: string; subjectKey: str
   });
   flush();
   return <div>{els}</div>;
-}
+});
 
 /* ══════════════════════════════════════════════════════════════
    CHAT INPUT COMPONENT

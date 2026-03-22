@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase, getStudentProfiles, getSubjects, getFeatureFlags, getNextTopics, getStudentNotifications, generateNotifications } from '@/lib/supabase';
 import { Card, StatCard, ProgressBar, SectionHeader, ActionTile, SubjectChip, Avatar, LoadingFoxy, BottomNav } from '@/components/ui';
+import type { StudentLearningProfile, Subject, CurriculumTopic } from '@/lib/types';
 
 const QUICK_ACTIONS = [
   { href: '/foxy', icon: '🦊', label: 'Ask Foxy', labelHi: 'फॉक्सी से पूछो', color: '#E8581C' },
@@ -18,11 +19,11 @@ const QUICK_ACTIONS = [
 export default function Dashboard() {
   const { student, snapshot, isLoggedIn, isLoading, isHi, language, setLanguage, refreshSnapshot } = useAuth();
   const router = useRouter();
-  const [profiles, setProfiles] = useState<any[]>([]);
-  const [subjects, setSubjects] = useState<any[]>([]);
-  const [nextTopics, setNextTopics] = useState<any[]>([]);
+  const [profiles, setProfiles] = useState<StudentLearningProfile[]>([]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [nextTopics, setNextTopics] = useState<CurriculumTopic[]>([]);
   const [dueCount, setDueCount] = useState(0);
-  const [flags, setFlags] = useState<any>({});
+  const [flags, setFlags] = useState<Record<string, boolean>>({});
   const [greeting, setGreeting] = useState('');
   const [unreadCount, setUnreadCount] = useState(0);
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
