@@ -258,7 +258,7 @@ export default function Home() {
               </div>
             </div>
             {/* Desktop nav */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 20 }} className="hidden md:flex">
+            <div className="hidden md:flex items-center gap-5">
               <span style={{ fontSize: 13, fontWeight: 600, color: P.text2, cursor: 'pointer' }} onClick={() => document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' })}>How It Works</span>
               <span style={{ fontSize: 13, fontWeight: 600, color: P.text2, cursor: 'pointer' }} onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })}>Features</span>
               <span style={{ fontSize: 13, fontWeight: 600, color: P.text2, cursor: 'pointer' }} onClick={() => document.getElementById('for-whom')?.scrollIntoView({ behavior: 'smooth' })}>For Whom</span>
