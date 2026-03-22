@@ -5,9 +5,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { BUILT_IN_SIMULATIONS, type BuiltInSimulation } from '@/components/simulations';
 import SimulationViewer from '../../components/SimulationViewer';
 import SimulationCard from '../../components/SimulationCard';
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+import { supabaseUrl as SUPABASE_URL, supabaseAnonKey as SUPABASE_ANON_KEY } from '@/lib/supabase';
 
 interface Simulation {
   id: string;

@@ -283,6 +283,70 @@ export default function ProfilePage() {
     router.replace('/');
   };
 
+  /* ── GDPR: Export personal data as JSON ── */
+  const [exporting, setExporting] = useState(false);
+  const handleExportData = async () => {
+    if (!student) return;
+    setExporting(true);
+    try {
+      const [
+        { data: profile },
+        { data: learning },
+        { data: quizzes },
+        { data: mastery },
+        { data: achv },
+      ] = await Promise.all([
+        supabase.from('students').select('*').eq('id', student.id).single(),
+        supabase.from('student_learning_profiles').select('*').eq('student_id', student.id),
+        supabase.from('quiz_sessions').select('*').eq('student_id', student.id).order('created_at', { ascending: false }).limit(100),
+        supabase.from('concept_mastery').select('*').eq('student_id', student.id),
+        supabase.from('student_achievements').select('*, achievements(*)').eq('student_id', student.id),
+      ]);
+
+      const exportData = {
+        exported_at: new Date().toISOString(),
+        profile,
+        learning_profiles: learning ?? [],
+        quiz_sessions: quizzes ?? [],
+        concept_mastery: mastery ?? [],
+        achievements: achv ?? [],
+      };
+
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `alfanumrik-data-${student.id.slice(0, 8)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('Export error:', e);
+      alert(isHi ? 'डेटा एक्सपोर्ट में त्रुटि' : 'Error exporting data');
+    }
+    setExporting(false);
+  };
+
+  /* ── GDPR: Delete account ── */
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const handleDeleteAccount = async () => {
+    if (!student) return;
+    setDeleting(true);
+    try {
+      // Delete student data via RPC (cascades to profiles, mastery, quiz sessions, etc.)
+      const { error } = await supabase.rpc('delete_student_account', { p_student_id: student.id });
+      if (error) throw error;
+      await signOut();
+      router.replace('/');
+    } catch (e) {
+      console.error('Delete error:', e);
+      alert(isHi ? 'खाता हटाने में त्रुटि। सपोर्ट से संपर्क करें।' : 'Error deleting account. Please contact support.');
+      setDeleting(false);
+    }
+  };
+
   if (isLoading || !student) return <LoadingFoxy />;
 
   const totalXp = snapshot?.total_xp ?? student.xp_total ?? 0;
@@ -410,10 +474,67 @@ export default function ProfilePage() {
             </Button>
 
             <div className="pt-2 space-y-2">
+              <Button fullWidth variant="ghost" onClick={handleExportData} disabled={exporting}>
+                📥 {exporting
+                  ? (isHi ? 'एक्सपोर्ट हो रहा है...' : 'Exporting...')
+                  : (isHi ? 'मेरा डेटा डाउनलोड करो' : 'Download My Data')}
+              </Button>
               <Button fullWidth variant="ghost" onClick={handleSignOut}>
                 {isHi ? 'लॉग आउट' : 'Sign Out'}
               </Button>
+              <Button
+                fullWidth
+                variant="ghost"
+                onClick={() => setShowDeleteConfirm(true)}
+                style={{ color: '#DC2626' }}
+              >
+                🗑️ {isHi ? 'खाता हटाओ' : 'Delete Account'}
+              </Button>
             </div>
+
+            {/* Delete Account Confirmation Modal */}
+            {showDeleteConfirm && (
+              <>
+                <div
+                  style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 100 }}
+                  onClick={() => setShowDeleteConfirm(false)}
+                />
+                <div
+                  style={{
+                    position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+                    zIndex: 101, background: 'var(--surface-1, #fff)', borderRadius: 16,
+                    padding: 24, maxWidth: 360, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+                  }}
+                >
+                  <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8, fontFamily: 'var(--font-display)' }}>
+                    {isHi ? '⚠️ खाता हटाना' : '⚠️ Delete Account'}
+                  </h3>
+                  <p style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.6, marginBottom: 16 }}>
+                    {isHi
+                      ? 'यह आपका सारा डेटा — XP, प्रगति, बैज, और क्विज़ इतिहास — स्थायी रूप से हटा देगा। यह कार्य वापस नहीं किया जा सकता।'
+                      : 'This will permanently delete all your data — XP, progress, badges, and quiz history. This action cannot be undone.'}
+                  </p>
+                  <p style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 16 }}>
+                    {isHi ? 'पहले "मेरा डेटा डाउनलोड करो" से बैकअप ले लो।' : 'We recommend downloading your data first using "Download My Data".'}
+                  </p>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <Button fullWidth variant="ghost" onClick={() => setShowDeleteConfirm(false)}>
+                      {isHi ? 'रद्द करो' : 'Cancel'}
+                    </Button>
+                    <Button
+                      fullWidth
+                      onClick={handleDeleteAccount}
+                      disabled={deleting}
+                      style={{ background: '#DC2626', color: '#fff' }}
+                    >
+                      {deleting
+                        ? (isHi ? 'हटा रहे हैं...' : 'Deleting...')
+                        : (isHi ? 'हाँ, हटाओ' : 'Yes, Delete')}
+                    </Button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         )}
 
