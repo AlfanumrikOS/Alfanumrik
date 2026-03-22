@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
-import { useRealtimeSubscription } from '@/hooks/useRealtimeSubscription';
 
 // Rule 9: NEVER hardcode API keys — use environment variables
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -107,39 +106,11 @@ function AlertsTab({ alerts, onResolve }: { alerts: any[]; onResolve: (id: strin
 function PollTab({ classId, teacherId }: { classId: string; teacherId: string }) {
   const [q, setQ] = useState(''); const [opts, setOpts] = useState(['','','','']); const [correctIdx, setCorrectIdx] = useState(0);
   const [poll, setPoll] = useState<any>(null); const [results, setResults] = useState<any>(null); const [loading, setLoading] = useState(false);
-  const [responseCount, setResponseCount] = useState(0);
-
-  const launch = async () => { if (!q.trim()) return; setLoading(true); const data = await api('launch_poll', { teacher_id: teacherId, class_id: classId, question_text: q, options: opts.filter(o => o.trim()), correct_index: correctIdx, question_type: 'mcq', time_limit: 60 }); setPoll(data); setResults(null); setResponseCount(data?.response_count ?? 0); setLoading(false); };
-  const close = async () => { if (!poll?.poll_id) return; const data = await api('close_poll', { teacher_id: teacherId, poll_id: poll.poll_id }); setResults(data); setPoll(null); setResponseCount(0); };
-
-  // Realtime subscription for poll responses
-  useRealtimeSubscription(
-    'poll_responses',
-    poll?.poll_id ? `poll_id=eq.${poll.poll_id}` : null,
-    (payload) => {
-      // On INSERT: increment response count
-      if (payload.new) {
-        setResponseCount(c => c + 1);
-        // Update poll's response_count too
-        setPoll((prev: any) => prev ? { ...prev, response_count: (prev.response_count ?? 0) + 1 } : null);
-      }
-    },
-    undefined,
-    undefined,
-    !!poll?.poll_id
-  );
+  const launch = async () => { if (!q.trim()) return; setLoading(true); const data = await api('launch_poll', { teacher_id: teacherId, class_id: classId, question_text: q, options: opts.filter(o => o.trim()), correct_index: correctIdx, question_type: 'mcq', time_limit: 60 }); setPoll(data); setResults(null); setLoading(false); };
+  const close = async () => { if (!poll?.poll_id) return; const data = await api('close_poll', { teacher_id: teacherId, poll_id: poll.poll_id }); setResults(data); setPoll(null); };
   return (
     <div className="td-card">
       <div className="td-card-head"><h3>Classroom response</h3>{poll && <span className="td-badge" style={{ backgroundColor: '#059669' }}>LIVE</span>}</div>
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.7; }
-        }
-        .response-counter {
-          animation: pulse 0.6s ease-in-out;
-        }
-      `}</style>
       {!poll && !results && (<div style={{ marginTop: 14 }}>
         <input className="td-input" placeholder="Type your question..." value={q} onChange={e => setQ(e.target.value)} />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, margin: '10px 0' }}>
@@ -152,7 +123,7 @@ function PollTab({ classId, teacherId }: { classId: string; teacherId: string })
       </div>)}
       {poll && !results && (<div style={{ marginTop: 14, backgroundColor: '#1E293B', borderRadius: 8, padding: 14 }}>
         <p style={{ color: '#F1F5F9', fontSize: 15, fontWeight: 600, margin: '0 0 8px' }}>{poll.question_text || q}</p>
-        <p style={{ color: '#6366F1', fontSize: 24, fontWeight: 700, margin: '8px 0' }} className="response-counter">{responseCount} responded</p>
+        <p style={{ color: '#6366F1', fontSize: 24, fontWeight: 700, margin: '8px 0' }}>{poll.response_count ?? 0} responded</p>
         <button className="td-btn-primary" style={{ backgroundColor: '#DC2626', marginTop: 10 }} onClick={close}>Close poll</button>
       </div>)}
       {results && (<div style={{ marginTop: 14, backgroundColor: '#1E293B', borderRadius: 8, padding: 14 }}>

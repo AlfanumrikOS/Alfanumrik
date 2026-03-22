@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { getStudentNotifications, supabase } from '@/lib/supabase';
-import { useRealtimeSubscription } from '@/hooks/useRealtimeSubscription';
 import { Card, Button, LoadingFoxy, BottomNav } from '@/components/ui';
 
 const TYPE_CONFIG: Record<string, { icon: string; color: string; label: string; labelHi: string }> = {
@@ -68,7 +67,6 @@ export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [newNotificationIds, setNewNotificationIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/');
@@ -86,45 +84,6 @@ export default function NotificationsPage() {
   }, [student]);
 
   useEffect(() => { if (student) load(); }, [student, load]);
-
-  // Realtime subscription for new notifications
-  useRealtimeSubscription(
-    'notifications',
-    student ? `recipient_id=eq.${student.id}` : null,
-    (payload) => {
-      // On INSERT: prepend new notification and update unread count
-      if (payload.new) {
-        const newNotif = payload.new as Notification;
-        setNotifications(prev => [newNotif, ...prev]);
-        if (!newNotif.is_read) {
-          setUnreadCount(c => c + 1);
-        }
-        // Mark as newly arrived for animation
-        setNewNotificationIds(prev => new Set(prev).add(newNotif.id));
-        // Clear highlight after 3 seconds
-        setTimeout(() => {
-          setNewNotificationIds(prev => {
-            const next = new Set(prev);
-            next.delete(newNotif.id);
-            return next;
-          });
-        }, 3000);
-      }
-    },
-    (payload) => {
-      // On UPDATE: sync read status
-      if (payload.new) {
-        const updated = payload.new as Notification;
-        setNotifications(prev => prev.map(n => n.id === updated.id ? updated : n));
-        // If notification was just marked as read
-        if (payload.old?.is_read === false && updated.is_read === true) {
-          setUnreadCount(c => Math.max(0, c - 1));
-        }
-      }
-    },
-    undefined,
-    !!student
-  );
 
   const markRead = async (id: string) => {
     try {
@@ -155,23 +114,6 @@ export default function NotificationsPage() {
 
   return (
     <div className="mesh-bg min-h-dvh pb-nav">
-      <style>{`
-        @keyframes slideInAndGlow {
-          0% {
-            opacity: 0;
-            transform: translateX(-20px);
-            box-shadow: 0 0 0 0 rgba(232, 88, 28, 0.4);
-          }
-          50% {
-            box-shadow: 0 0 12px 4px rgba(232, 88, 28, 0.2);
-          }
-          100% {
-            opacity: 1;
-            transform: translateX(0);
-            box-shadow: 0 0 0 0 rgba(232, 88, 28, 0);
-          }
-        }
-      `}</style>
       <header className="page-header" style={{ background: 'rgba(251,248,244,0.88)', backdropFilter: 'blur(20px)' }}>
         <div className="app-container py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -222,7 +164,6 @@ export default function NotificationsPage() {
                 {group.items.map(n => {
                   const cfg = TYPE_CONFIG[n.type] || { icon: '📌', color: 'var(--text-3)', label: 'Update', labelHi: 'अपडेट' };
                   const isShareable = n.data?.shareable;
-                  const isNewArrival = newNotificationIds.has(n.id);
 
                   return (
                     <button
@@ -232,7 +173,6 @@ export default function NotificationsPage() {
                       style={{
                         background: n.is_read ? 'var(--surface-1)' : `${cfg.color}06`,
                         border: `1px solid ${n.is_read ? 'var(--border)' : cfg.color + '25'}`,
-                        animation: isNewArrival ? 'slideInAndGlow 0.5s ease-out' : 'none',
                       }}
                     >
                       {/* Unread indicator */}
