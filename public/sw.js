@@ -1,5 +1,5 @@
-/* Alfanumrik Service Worker – v2 (production) */
-var CACHE_VERSION = 2;
+/* Alfanumrik Service Worker – v3 (production) */
+var CACHE_VERSION = 3;
 var STATIC = 'alfanumrik-static-v' + CACHE_VERSION;
 var API = 'alfanumrik-api-v' + CACHE_VERSION;
 var CACHE_NAMES = [STATIC, API];
@@ -8,7 +8,13 @@ var CACHE_NAMES = [STATIC, API];
 self.addEventListener('install', function(e) {
   e.waitUntil(
     caches.open(STATIC).then(function(c) {
-      return c.addAll(['/', '/manifest.json']);
+      return c.addAll([
+        '/',
+        '/manifest.json',
+        '/favicon.svg',
+        '/icon-192x192.svg',
+        '/icon-512x512.svg',
+      ]);
     }).then(function() {
       return self.skipWaiting();
     })
@@ -77,14 +83,19 @@ self.addEventListener('fetch', function(e) {
   /* API/page requests: network-first, cache fallback */
   e.respondWith(
     fetch(e.request).then(function(res) {
-      if (res.ok && !isSupabaseRequest(u)) {
+      if (res.ok && res.status === 200 && !isSupabaseRequest(u)) {
         var clone = res.clone();
         caches.open(API).then(function(c) { c.put(e.request, clone); });
       }
       return res;
     }).catch(function() {
       return caches.match(e.request).then(function(r) {
-        return r || new Response(
+        if (r) return r;
+        /* Offline fallback — return cached root for page navigations */
+        if (e.request.mode === 'navigate') {
+          return caches.match('/');
+        }
+        return new Response(
           JSON.stringify({ error: 'Offline' }),
           { status: 503, headers: { 'Content-Type': 'application/json' } }
         );

@@ -1,8 +1,6 @@
 'use client';
 import { useState, useCallback } from 'react';
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+import { supabaseUrl as SUPABASE_URL, supabaseAnonKey as SUPABASE_ANON_KEY } from '@/lib/supabase';
 
 export interface SimulationMeta {
   id: string;

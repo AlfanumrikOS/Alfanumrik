@@ -1,14 +1,16 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+export const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+export const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
-// Warn at runtime (not build time) if env vars are missing
-if (typeof window !== 'undefined' && (!supabaseUrl || !supabaseAnonKey)) {
-  console.error(
-    'Alfanumrik: Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY. ' +
-    'API calls will fail until these are configured.'
-  );
+// Warn if env vars are missing (don't throw during build/SSR to avoid blocking static generation)
+if (!supabaseUrl || !supabaseAnonKey) {
+  const msg = 'Alfanumrik: Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY. API calls will fail.';
+  if (typeof window !== 'undefined') {
+    console.error(msg);
+  } else {
+    console.warn(msg);
+  }
 }
 
 export const supabase = createClient(
@@ -22,6 +24,13 @@ export const supabase = createClient(
     },
   }
 );
+
+/* ── Timeout wrapper for fetch calls ── */
+function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 15000): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(id));
+}
 
 /* ── Student snapshot (used by AuthContext) ── */
 export async function getStudentSnapshot(studentId: string) {
@@ -85,17 +94,20 @@ export async function getNextTopics(studentId: string, subject: string | null | 
 /* ── Foxy AI tutor chat ── */
 export async function chatWithFoxy(params: { message: string; student_id: string; session_id?: string; subject?: string; grade: string; language: string; mode: string; }) {
   try {
-    const res = await fetch(`${supabaseUrl}/functions/v1/foxy-tutor`, {
+    const res = await fetchWithTimeout(`${supabaseUrl}/functions/v1/foxy-tutor`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${supabaseAnonKey}` },
       body: JSON.stringify({ messages: [{ role: 'user', content: params.message }], student_id: params.student_id, session_id: params.session_id, subject: params.subject, grade: params.grade, language: params.language, mode: params.mode }),
-    });
+    }, 30000); // 30s timeout for AI responses
     if (!res.ok) throw new Error(`Foxy error: ${res.status}`);
     const data = await res.json();
     return { reply: data.text ?? data.reply ?? 'Foxy had a hiccup! Try again.', session_id: data.session_id ?? params.session_id ?? '' };
   } catch (e) {
     console.error('chatWithFoxy:', e);
-    return { reply: 'Connection issue — please try again.', session_id: params.session_id ?? '' };
+    const msg = e instanceof DOMException && e.name === 'AbortError'
+      ? 'Request timed out — please try again.'
+      : 'Connection issue — please try again.';
+    return { reply: msg, session_id: params.session_id ?? '' };
   }
 }
 
