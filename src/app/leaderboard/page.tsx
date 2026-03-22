@@ -59,7 +59,7 @@ export default function LeaderboardPage() {
     try {
       const data = await getLeaderboard(period, 50);
       setEntries(Array.isArray(data) ? data : []);
-    } catch { setEntries([]); }
+    } catch (e) { console.error('Failed to load rankings:', e); setEntries([]); }
     setLoading(false);
   }, [period]);
 

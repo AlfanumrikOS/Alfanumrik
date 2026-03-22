@@ -166,6 +166,8 @@ export default function BottomNavComponent() {
             className="fixed inset-0 z-[60]"
             style={{ background: 'rgba(0,0,0,0.3)' }}
             onClick={() => setShowMore(false)}
+            role="presentation"
+            aria-hidden="true"
           />
           <div
             className="fixed bottom-0 left-0 right-0 z-[70] rounded-t-3xl"
@@ -232,6 +234,8 @@ export default function BottomNavComponent() {
       {/* ─── Mobile Bottom Nav ──────────────── */}
       <nav
         className="bottom-nav-mobile fixed bottom-0 left-0 right-0 z-50 border-t"
+        aria-label="Main navigation"
+        role="navigation"
         style={{
           background: 'rgba(251, 248, 244, 0.95)',
           backdropFilter: 'blur(24px)',
@@ -250,6 +254,8 @@ export default function BottomNavComponent() {
                 <button
                   key={item.href}
                   onClick={() => router.push(item.href)}
+                  aria-label={`${item.label} - AI Tutor`}
+                  aria-current={active ? 'page' : undefined}
                   className="flex flex-col items-center -mt-5 transition-transform active:scale-90"
                 >
                   <div
@@ -278,6 +284,8 @@ export default function BottomNavComponent() {
               <button
                 key={item.href}
                 onClick={() => router.push(item.href)}
+                aria-label={item.label}
+                aria-current={active ? 'page' : undefined}
                 className="flex flex-col items-center gap-0.5 min-w-[56px] py-1.5 transition-all"
                 style={{ color: active ? 'var(--orange)' : 'var(--text-3)' }}
               >
@@ -303,10 +311,12 @@ export default function BottomNavComponent() {
           {/* ── More button (replaces hidden items) ── */}
           <button
             onClick={() => setShowMore(!showMore)}
+            aria-label="More options"
+            aria-expanded={showMore}
             className="flex flex-col items-center gap-0.5 min-w-[56px] py-1.5 transition-all"
             style={{ color: isMoreActive ? 'var(--orange)' : 'var(--text-3)' }}
           >
-            <span className="text-[22px] leading-none">☰</span>
+            <span className="text-[22px] leading-none" aria-hidden="true">☰</span>
             <span className="text-[10px] font-semibold tracking-wide">{isHi ? 'और' : 'More'}</span>
             {isMoreActive && (
               <span className="w-1 h-1 rounded-full" style={{ background: 'var(--orange)' }} />

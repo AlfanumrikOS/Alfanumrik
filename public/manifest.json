@@ -1,7 +1,7 @@
 {
   "name": "Alfanumrik",
   "short_name": "Alfanumrik",
-  "description": "Alfanumrik is India's smartest AI-powered adaptive learning platform for CBSE students. Foxy AI Tutor teaches in Hindi and English with Bayesian mastery tracking, spaced repetition, and gamified learning. Grades 6-12. Free to start.",
+  "description": "India's smartest AI-powered adaptive learning platform for CBSE students. Foxy AI Tutor, Bayesian mastery, spaced repetition, gamified learning. Grades 6-12.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -9,26 +9,35 @@
   "theme_color": "#FBF8F4",
   "background_color": "#FFFFFF",
   "categories": ["education"],
+  "lang": "en-IN",
+  "dir": "ltr",
   "icons": [
     {
-      "src": "/icon-192x192.png",
-      "sizes": "192x192",
-      "type": "image/png",
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
       "purpose": "any"
     },
     {
-      "src": "/icon-512x512.png",
-      "sizes": "512x512",
-      "type": "image/png",
+      "src": "/icon-192x192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
       "purpose": "any"
+    },
+    {
+      "src": "/icon-512x512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
     }
   ],
   "screenshots": [
     {
-      "src": "/icon-192x192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "form_factor": "narrow"
+      "src": "/icon-512x512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "form_factor": "narrow",
+      "label": "Alfanumrik Learning Platform"
     }
   ]
 }

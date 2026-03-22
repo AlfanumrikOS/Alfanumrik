@@ -1,5 +1,7 @@
 'use client';
 
+import { memo } from 'react';
+
 interface SimCardProps {
   id: string;
   title: string;
@@ -23,7 +25,7 @@ const bloomColors: Record<string, string> = {
   analyze: '#f59e0b', evaluate: '#e24b4a', create: '#7c3aed'
 };
 
-export default function SimulationCard(props: SimCardProps) {
+function SimulationCard(props: SimCardProps) {
   const { id, title, description, topicTitle, chapterNumber, difficulty, bloomLevel, thumbnailEmoji, estimatedTimeMinutes, boardExamRelevance, conceptTags, onClick } = props;
 
   return (
@@ -156,3 +158,5 @@ export default function SimulationCard(props: SimCardProps) {
     </div>
   );
 }
+
+export default memo(SimulationCard);

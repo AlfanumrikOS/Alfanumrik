@@ -79,7 +79,7 @@ export default function NotificationsPage() {
       const data = await getStudentNotifications(student.id, 50);
       setNotifications(data?.notifications ?? []);
       setUnreadCount(data?.unread_count ?? 0);
-    } catch { setNotifications([]); }
+    } catch (e) { console.error('Failed to load notifications:', e); setNotifications([]); }
     setLoading(false);
   }, [student]);
 
@@ -90,7 +90,7 @@ export default function NotificationsPage() {
       await supabase.rpc('mark_notification_read', { p_notification_id: id });
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
       setUnreadCount(c => Math.max(0, c - 1));
-    } catch {}
+    } catch (e) { console.error('Failed to mark notification read:', e); }
   };
 
   const markAllRead = async () => {
