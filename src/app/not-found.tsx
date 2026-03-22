@@ -185,9 +185,6 @@ const globalStyles = `
   }
 `;
 
-// Inject styles into head
-if (typeof document !== 'undefined') {
-  const styleSheet = document.createElement('style');
-  styleSheet.textContent = globalStyles;
-  document.head.appendChild(styleSheet);
-}
+// Note: globalStyles are unused since we use inline CSSProperties.
+// They were injecting into document.head at module load time which
+// can break React hydration. Removed.
