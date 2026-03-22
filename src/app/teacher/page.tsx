@@ -14,6 +14,10 @@ async function api(action: string, params: Record<string, unknown> = {}) {
     headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON },
     body: JSON.stringify({ action, ...params }),
   });
+  if (!res.ok) {
+    const errorText = await res.text().catch(() => 'Unknown error');
+    throw new Error(`API error ${res.status}: ${errorText}`);
+  }
   return res.json();
 }
 

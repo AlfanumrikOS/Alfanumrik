@@ -108,7 +108,8 @@ export default function QuizPage() {
       const data = await getQuizQuestions(
         selectedSubject,
         student.grade,
-        questionCount
+        questionCount,
+        selectedDifficulty
       );
       const qs = Array.isArray(data) ? data : [];
       if (qs.length === 0) {
@@ -125,6 +126,7 @@ export default function QuizPage() {
       setScreen('quiz');
     } catch (e) {
       console.error('Quiz load error:', e);
+      alert(isHi ? 'क्विज़ लोड करने में समस्या हुई। कृपया फिर से कोशिश करें।' : 'Failed to load quiz. Please try again.');
     }
     setLoading(false);
   }, [selectedSubject, student, questionCount, isHi]);

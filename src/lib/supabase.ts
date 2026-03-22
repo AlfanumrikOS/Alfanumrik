@@ -1,9 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(
+  supabaseUrl || 'https://placeholder.supabase.co',
+  supabaseAnonKey || 'placeholder-key'
+);
 
 /* ── Student snapshot (used by AuthContext) ── */
 export async function getStudentSnapshot(studentId: string) {
@@ -88,8 +91,10 @@ export async function getDashboardData(studentId: string) {
   return data;
 }
 
-export async function getQuizQuestions(subject: string, grade: string, count = 10) {
-  const { data, error } = await supabase.rpc('get_quiz_questions', { p_subject: subject, p_grade: grade, p_count: count });
+export async function getQuizQuestions(subject: string, grade: string, count = 10, difficulty?: number | null) {
+  const params: Record<string, unknown> = { p_subject: subject, p_grade: grade, p_count: count };
+  if (difficulty != null) params.p_difficulty = difficulty;
+  const { data, error } = await supabase.rpc('get_quiz_questions', params);
   if (error) throw error;
   return data;
 }

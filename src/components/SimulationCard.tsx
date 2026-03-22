@@ -30,7 +30,7 @@ export default function SimulationCard(props: SimCardProps) {
     <div
       onClick={() => onClick(id)}
       style={{
-        background: '#fff',
+        background: 'var(--surface-1, #fff)',
         borderRadius: '14px',
         border: '1px solid rgba(99,102,241,0.1)',
         padding: '16px',
@@ -74,21 +74,21 @@ export default function SimulationCard(props: SimCardProps) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          background: '#f5f3ff',
+          background: 'var(--surface-2, #f5f3ff)',
           borderRadius: '10px',
           flexShrink: 0
         }}>
           {thumbnailEmoji}
         </span>
         <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: 600, fontSize: '14px', color: '#1a1a1a', lineHeight: 1.3 }}>{title}</div>
-          <div style={{ fontSize: '11px', color: '#888', marginTop: '3px' }}>
+          <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-1, #1a1a1a)', lineHeight: 1.3 }}>{title}</div>
+          <div style={{ fontSize: '11px', color: 'var(--text-3, #888)', marginTop: '3px' }}>
             Ch {chapterNumber}: {topicTitle}
           </div>
         </div>
       </div>
 
-      <div style={{ fontSize: '12px', color: '#666', lineHeight: 1.5, marginBottom: '10px' }}>
+      <div style={{ fontSize: '12px', color: 'var(--text-2, #666)', lineHeight: 1.5, marginBottom: '10px' }}>
         {description}
       </div>
 
@@ -118,8 +118,8 @@ export default function SimulationCard(props: SimCardProps) {
           fontSize: '10px',
           padding: '2px 8px',
           borderRadius: '6px',
-          background: '#f5f5f5',
-          color: '#888'
+          background: 'var(--surface-2, #f5f5f5)',
+          color: 'var(--text-3, #888)'
         }}>
           ~{estimatedTimeMinutes} min
         </span>
@@ -130,7 +130,7 @@ export default function SimulationCard(props: SimCardProps) {
         alignItems: 'center',
         justifyContent: 'space-between',
         paddingTop: '8px',
-        borderTop: '1px solid #f0f0f0'
+        borderTop: '1px solid var(--border, #f0f0f0)'
       }}>
         <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
           {conceptTags.slice(0, 3).map((tag, i) => (
@@ -138,7 +138,7 @@ export default function SimulationCard(props: SimCardProps) {
               fontSize: '9px',
               padding: '1px 6px',
               borderRadius: '4px',
-              background: '#f5f3ff',
+              background: 'var(--surface-2, #f5f3ff)',
               color: '#6366F1'
             }}>
               {tag}

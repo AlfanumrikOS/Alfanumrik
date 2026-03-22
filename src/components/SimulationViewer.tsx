@@ -127,7 +127,7 @@ ${widgetCode}
       borderRadius: '16px',
       overflow: 'hidden',
       border: '1px solid rgba(99,102,241,0.15)',
-      background: '#fff',
+      background: 'var(--surface-1, #fff)',
       boxShadow: '0 2px 12px rgba(99,102,241,0.08)',
       transition: 'all 0.3s',
       ...(isExpanded ? { position: 'fixed' as const, inset: '16px', zIndex: 1000, maxWidth: '100%' } : {})
@@ -172,12 +172,12 @@ ${widgetCode}
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            background: '#f8f7f4',
+            background: 'var(--surface-2, #f8f7f4)',
             zIndex: 1
           }}>
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: '32px', marginBottom: '8px' }}>🦊</div>
-              <div style={{ color: '#666', fontSize: '13px' }}>Loading simulation...</div>
+              <div style={{ color: 'var(--text-2, #666)', fontSize: '13px' }}>Loading simulation...</div>
             </div>
           </div>
         )}

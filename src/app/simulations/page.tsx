@@ -1,5 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/lib/AuthContext';
 import SimulationViewer from '../../components/SimulationViewer';
 import SimulationCard from '../../components/SimulationCard';
 
@@ -64,12 +66,18 @@ async function fetchFullSimulation(id: string): Promise<Simulation | null> {
 }
 
 export default function SimulationsPage() {
+  const { isLoggedIn, isLoading } = useAuth();
+  const router = useRouter();
   const [selectedSubject, setSelectedSubject] = useState('all');
   const [selectedGrade, setSelectedGrade] = useState('10');
   const [simulations, setSimulations] = useState<Simulation[]>([]);
   const [activeSim, setActiveSim] = useState<Simulation | null>(null);
   const [loading, setLoading] = useState(true);
   const [interactions, setInteractions] = useState(0);
+
+  useEffect(() => {
+    if (!isLoading && !isLoggedIn) router.replace('/');
+  }, [isLoading, isLoggedIn, router]);
 
   const loadSims = useCallback(async () => {
     setLoading(true);
