@@ -294,6 +294,7 @@ export default function BottomNavComponent() {
               >
                 <span
                   className="text-[22px] leading-none transition-transform"
+                  aria-hidden="true"
                   style={{
                     transform: active ? 'scale(1.15)' : 'scale(1)',
                     filter: active ? 'drop-shadow(0 0 6px rgba(232, 88, 28, 0.35))' : 'none',
@@ -319,7 +320,7 @@ export default function BottomNavComponent() {
             className="flex flex-col items-center gap-0.5 min-w-[56px] py-1.5 transition-all"
             style={{ color: isMoreActive ? 'var(--orange)' : 'var(--text-3)' }}
           >
-            <span className="text-[22px] leading-none" aria-hidden="true">☰</span>
+            <span className="text-[22px] leading-none" aria-hidden="true">&#x2630;</span>
             <span className="text-[10px] font-semibold tracking-wide">{isHi ? 'और' : 'More'}</span>
             {isMoreActive && (
               <span className="w-1 h-1 rounded-full" style={{ background: 'var(--orange)' }} />
