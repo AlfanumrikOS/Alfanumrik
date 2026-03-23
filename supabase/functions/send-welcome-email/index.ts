@@ -47,6 +47,8 @@ function errorResponse(message: string, status = 400, requestOrigin?: string | n
 // ─── Config ───────────────────────────────────────────────────────────────────
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? ''
 const FROM_EMAIL = 'Alfanumrik <welcome@alfanumrik.com>'
+// Resend provides this test address that works without domain verification
+const FALLBACK_FROM_EMAIL = 'Alfanumrik <onboarding@resend.dev>'
 const SITE_URL = 'https://alfanumrik.com'
 
 interface WelcomeRequest {
@@ -248,18 +250,29 @@ Deno.serve(async (req: Request) => {
 
     // Send via Resend API if configured
     if (RESEND_API_KEY) {
-      const res = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RESEND_API_KEY}` },
-        body: JSON.stringify({ from: FROM_EMAIL, to: [email], subject: emailContent.subject, html: emailContent.html }),
-      })
-      if (!res.ok) {
-        const err = await res.text()
-        console.error('[Welcome Email] Resend error:', err)
-        return jsonResponse({ sent: false, fallback: 'resend_error', error: err }, 200, {}, origin)
+      // Try custom domain first, fall back to Resend's test sender
+      for (const fromAddress of [FROM_EMAIL, FALLBACK_FROM_EMAIL]) {
+        try {
+          const res = await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RESEND_API_KEY}` },
+            body: JSON.stringify({ from: fromAddress, to: [email], subject: emailContent.subject, html: emailContent.html }),
+          })
+          if (res.ok) {
+            const result = await res.json()
+            console.log(`[Welcome Email] Sent to ${email} via ${fromAddress}`)
+            return jsonResponse({ sent: true, provider: 'resend', id: result.id }, 200, {}, origin)
+          }
+          const errText = await res.text()
+          console.error(`[Welcome Email] Resend error with ${fromAddress}:`, errText)
+          // If custom domain fails, try fallback
+          if (fromAddress === FROM_EMAIL) continue
+          return jsonResponse({ sent: false, fallback: 'resend_error', error: errText }, 200, {}, origin)
+        } catch (fetchErr) {
+          console.error(`[Welcome Email] Fetch error with ${fromAddress}:`, fetchErr)
+          if (fromAddress === FROM_EMAIL) continue
+        }
       }
-      const result = await res.json()
-      return jsonResponse({ sent: true, provider: 'resend', id: result.id }, 200, {}, origin)
     }
 
     // Fallback: store as notification
