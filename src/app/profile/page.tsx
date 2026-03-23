@@ -868,7 +868,7 @@ export default function ProfilePage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-[var(--text-3)]">{isHi ? 'योजना' : 'Plan'}</span>
-                  <span className="font-medium capitalize">{student.subscription_plan ?? 'Free'}</span>
+                  <span className="font-medium capitalize">{student.subscription_plan ?? 'Trial'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-[var(--text-3)]">{isHi ? 'स्थिति' : 'Status'}</span>

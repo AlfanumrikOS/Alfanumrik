@@ -14,7 +14,7 @@ export const metadata: Metadata = {
     template: '%s | Alfanumrik',
   },
   description:
-    'Alfanumrik is India\'s smartest AI-powered adaptive learning platform for CBSE students. Foxy AI Tutor teaches in Hindi and English with Bayesian mastery tracking, spaced repetition, and gamified learning. Grades 6-12. Free to start.',
+    'Alfanumrik is India\'s smartest AI-powered adaptive learning platform for CBSE students. Foxy AI Tutor teaches in Hindi and English with Bayesian mastery tracking, spaced repetition, and gamified learning. Grades 6-12.',
   authors: [{ name: 'Cusiosense Learning India Private Limited' }],
   manifest: '/manifest.json',
   icons: {
@@ -30,7 +30,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: 'Alfanumrik - AI Tutor for CBSE Students | Learn Smarter',
     description:
-      'Meet Foxy, your personal AI tutor that teaches at YOUR level. 16 subjects, Hindi & English. Adaptive learning powered by Bayesian mastery tracking. Free for students.',
+      'Meet Foxy, your personal AI tutor that teaches at YOUR level. 16 subjects, Hindi & English. Adaptive learning powered by Bayesian mastery tracking.',
     url: 'https://alfanumrik.com',
     locale: 'en_IN',
     type: 'website',
@@ -40,7 +40,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'Alfanumrik - India\'s Smartest AI Tutor for CBSE Students',
     description:
-      'Foxy AI Tutor teaches CBSE in Hindi and English. Adaptive learning, spaced repetition, gamified practice. Free to start.',
+      'Foxy AI Tutor teaches CBSE in Hindi and English. Adaptive learning, spaced repetition, gamified practice. Start now.',
     creator: '@alfanumrik',
   },
   robots: {

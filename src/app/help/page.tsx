@@ -20,7 +20,7 @@ const FAQ_CATEGORIES = [
   {
     id: 'account' as const, icon: '👤', label: 'Account & Login', labelHi: 'खाता और लॉगिन', color: '#3B82F6',
     items: [
-      { q: 'How do I create an account?', qHi: 'मैं अकाउंट कैसे बनाऊँ?', a: 'Tap "Start Learning Free" on the home page. Choose your role (Student, Teacher, or Parent), then sign up with email & password, or use OTP login. Fill in your profile details and select your subjects.', aHi: 'होम पेज पर "Start Learning Free" पर टैप करें। अपनी भूमिका चुनें, फिर ईमेल और पासवर्ड से साइन अप करें या OTP लॉगिन का उपयोग करें।' },
+      { q: 'How do I create an account?', qHi: 'मैं अकाउंट कैसे बनाऊँ?', a: 'Tap "Start Learning Now" on the home page. Choose your role (Student, Teacher, or Parent), then sign up with email & password, or use OTP login. Fill in your profile details and select your subjects.', aHi: 'होम पेज पर "Start Learning Now" पर टैप करें। अपनी भूमिका चुनें, फिर ईमेल और पासवर्ड से साइन अप करें या OTP लॉगिन का उपयोग करें।' },
       { q: 'I forgot my password', qHi: 'मैं अपना पासवर्ड भूल गया', a: 'On the login screen, tap "Forgot Password?" and enter your email. You\'ll receive a reset link. Click it to set a new password. The link expires in 24 hours.', aHi: 'लॉगिन स्क्रीन पर "Forgot Password?" टैप करें और अपना ईमेल दर्ज करें। आपको एक रीसेट लिंक मिलेगा।' },
       { q: 'How do I change my grade or board?', qHi: 'मैं अपनी कक्षा या बोर्ड कैसे बदलूँ?', a: 'Go to Profile (👤) → tap "Edit Profile" → change your Grade and Board → tap Save. Your curriculum topics will update automatically.', aHi: 'प्रोफ़ाइल (👤) पर जाएँ → "Edit Profile" टैप करें → अपनी कक्षा और बोर्ड बदलें → सेव करें।' },
       { q: 'How do I switch between Hindi and English?', qHi: 'हिंदी और अंग्रेज़ी के बीच कैसे बदलें?', a: 'Tap the language toggle (🇮🇳 हिं / 🌐 EN) in the top-right corner of the Dashboard or inside Foxy chat. Your preference is saved automatically.', aHi: 'डैशबोर्ड या फॉक्सी चैट के ऊपरी-दाएँ कोने में भाषा टॉगल (🇮🇳 हिं / 🌐 EN) टैप करें।' },
@@ -77,8 +77,8 @@ const FAQ_CATEGORIES = [
   {
     id: 'billing' as const, icon: '💳', label: 'Billing & Plans', labelHi: 'बिलिंग और योजना', color: '#D97706',
     items: [
-      { q: 'Is Alfanumrik free?', qHi: 'क्या अल्फान्यूमरिक मुफ़्त है?', a: 'Yes! Alfanumrik is currently free for all students, teachers, and parents. We\'re in early access mode. All features including Foxy AI, quizzes, spaced repetition, and leaderboards are available at no cost.', aHi: 'हाँ! अल्फान्यूमरिक वर्तमान में सभी के लिए मुफ़्त है। हम अर्ली एक्सेस मोड में हैं। सभी फीचर्स बिना किसी शुल्क के उपलब्ध हैं।' },
-      { q: 'Will there be paid plans?', qHi: 'क्या पेड प्लान होंगे?', a: 'In the future, we may introduce premium features. Free users will always have access to core learning features. Early adopters may receive special benefits. We\'ll notify you well in advance of any changes.', aHi: 'भविष्य में प्रीमियम फ़ीचर्स हो सकते हैं। मुफ़्त उपयोगकर्ताओं को हमेशा कोर लर्निंग फ़ीचर्स मिलेंगे।' },
+      { q: 'How much does Alfanumrik cost?', qHi: 'अल्फान्यूमरिक की कीमत कितनी है?', a: 'Alfanumrik offers a free trial so you can experience AI-powered learning. After the trial, affordable plans are available — designed to cost less than a single tuition class. Every rupee goes into better AI, more content, and better learning outcomes for students.', aHi: 'Alfanumrik एक फ्री ट्रायल देता है ताकि आप AI-powered learning अनुभव कर सकें। ट्रायल के बाद, किफ़ायती प्लान उपलब्ध हैं — एक ट्यूशन क्लास से भी कम कीमत में।' },
+      { q: 'What plans are available?', qHi: 'कौन से प्लान उपलब्ध हैं?', a: 'We offer plans designed for Indian families. All plans include Foxy AI tutor, adaptive quizzes, spaced repetition, and progress tracking. Visit the pricing section or contact us for current plan details.', aHi: 'हम भारतीय परिवारों के लिए डिज़ाइन किए गए प्लान पेश करते हैं। सभी प्लान में Foxy AI ट्यूटर, एडैप्टिव क्विज़, स्पेस्ड रिपिटिशन और प्रगति ट्रैकिंग शामिल है।' },
     ],
   },
   {
@@ -413,7 +413,7 @@ export default function HelpPage() {
                       isHi ? 'मेरा पासवर्ड रीसेट करें' : 'Reset my password',
                       isHi ? 'फॉक्सी काम नहीं कर रहा' : 'Foxy is not responding',
                       isHi ? 'XP कैसे कमाएँ?' : 'How to earn XP?',
-                      isHi ? 'क्या ऐप मुफ़्त है?' : 'Is the app free?',
+                      isHi ? 'प्लान और कीमत क्या है?' : 'What are the plans & pricing?',
                       isHi ? 'बच्चे का अकाउंट लिंक करें' : 'Link child account',
                       isHi ? 'क्विज़ सेव नहीं हो रहा' : 'Quiz not saving',
                     ].map(prompt => (

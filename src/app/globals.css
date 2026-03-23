@@ -782,6 +782,25 @@ img, video, iframe, canvas, svg {
 .foxy-mode-bar::-webkit-scrollbar{display:none}
 @media(min-width:640px){.foxy-toolbar{flex-wrap:nowrap;gap:8px;padding:8px 12px}}
 
+/* ─── Low-End Device Fallback ────────────────────────────── */
+/* Budget Indian phones (Snapdragon 400-series, 512MB-2GB RAM)
+   can't handle backdrop-filter:blur() or multi-layer radial gradients
+   without janking at 15fps. Detect via prefers-reduced-motion or
+   low deviceMemory and simplify. */
+@media (prefers-reduced-motion: reduce) {
+  .glass, .glass-mid, .page-header {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: var(--surface-1) !important;
+  }
+  .mesh-bg {
+    background: var(--bg) !important; /* Flat cream, no radial gradients */
+  }
+  .glow-orange, .glow-teal, .glow-gold {
+    box-shadow: none !important;
+  }
+}
+
 /* ─── Reduced Motion (Accessibility) ─────────────────────── */
 /* Some users get motion sickness or have vestibular disorders.
    This is also important for older Indian phones where animations

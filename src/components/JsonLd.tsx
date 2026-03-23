@@ -11,7 +11,8 @@ export default function JsonLd() {
       '@type': 'Offer',
       price: '0',
       priceCurrency: 'INR',
-      description: 'Free adaptive learning platform for CBSE students',
+      description: 'Adaptive learning platform for CBSE students — free trial available',
+      availability: 'https://schema.org/InStock',
     },
     author: {
       '@type': 'Organization',
@@ -22,7 +23,7 @@ export default function JsonLd() {
       'AI-powered adaptive learning platform for CBSE students. Foxy AI Tutor teaches in Hindi and English with Bayesian mastery tracking, spaced repetition, and gamified learning. Grades 6-12.',
     educationalLevel: ['Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'],
     inLanguage: ['en', 'hi'],
-    isAccessibleForFree: true,
+    isAccessibleForFree: false,
     audience: {
       '@type': 'EducationalAudience',
       educationalRole: 'student',
