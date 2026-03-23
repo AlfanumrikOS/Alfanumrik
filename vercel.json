@@ -2,8 +2,14 @@
   "framework": "nextjs",
   "regions": ["bom1"],
   "functions": {
+    "src/app/api/**/*.ts": {
+      "maxDuration": 30
+    },
+    "src/app/auth/**/*.ts": {
+      "maxDuration": 30
+    },
     "src/app/**/*.tsx": {
-      "maxDuration": 10
+      "maxDuration": 15
     }
   },
   "crons": [],

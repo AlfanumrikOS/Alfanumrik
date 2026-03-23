@@ -5,6 +5,64 @@
 -- Enable pg_net for async HTTP calls
 CREATE EXTENSION IF NOT EXISTS pg_net WITH SCHEMA extensions;
 
+-- Config table for storing non-secret settings (URL) and referencing vault for secrets
+CREATE TABLE IF NOT EXISTS public.app_config (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Populate Supabase URL from current_setting (set via Supabase dashboard > Database > Settings)
+-- After running this migration, set the values:
+--   INSERT INTO app_config (key, value) VALUES ('supabase_url', 'https://<your-ref>.supabase.co');
+-- Store the anon key in Supabase Vault (Dashboard > Settings > Vault):
+--   SELECT vault.create_secret('<your-anon-key>', 'supabase_anon_key');
+-- Or as a fallback, store it in app_config:
+--   INSERT INTO app_config (key, value) VALUES ('supabase_anon_key', '<your-anon-key>');
+--
+-- The trigger functions below read from app_config at runtime.
+
+ALTER TABLE public.app_config ENABLE ROW LEVEL SECURITY;
+
+-- Only service_role and postgres can read app_config
+CREATE POLICY app_config_select_policy ON public.app_config
+  FOR SELECT TO postgres, service_role USING (true);
+
+-- Helper function to read config, checking vault first for secrets, then app_config
+CREATE OR REPLACE FUNCTION public.get_app_config(p_key TEXT)
+RETURNS TEXT
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_value TEXT;
+BEGIN
+  -- Try Supabase Vault first (for secrets like anon key)
+  BEGIN
+    SELECT decrypted_secret INTO v_value
+    FROM vault.decrypted_secrets
+    WHERE name = p_key
+    LIMIT 1;
+  EXCEPTION WHEN OTHERS THEN
+    v_value := NULL;
+  END;
+
+  IF v_value IS NOT NULL THEN
+    RETURN v_value;
+  END IF;
+
+  -- Fall back to app_config table
+  SELECT value INTO v_value FROM public.app_config WHERE key = p_key LIMIT 1;
+
+  IF v_value IS NULL THEN
+    RAISE EXCEPTION 'Missing app config key: %. Set it in vault or app_config table.', p_key;
+  END IF;
+
+  RETURN v_value;
+END;
+$$;
+
 -- Trigger function: fires when existing user confirms their email (UPDATE flow)
 CREATE OR REPLACE FUNCTION public.send_welcome_email_on_confirm()
 RETURNS TRIGGER
@@ -20,9 +78,13 @@ DECLARE
   v_board TEXT := '';
   v_school TEXT := '';
   v_payload JSONB;
-  v_supabase_url TEXT := 'https://dxipobqngyfpqbbznojz.supabase.co';
-  v_anon_key TEXT := 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR4aXBvYnFuZ3lmcHFiYnpub2p6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4NjcxMzgsImV4cCI6MjA4ODQ0MzEzOH0.l-6_9kOkH1mXCGvNM0WzC8naEACGMCFaneEA7XxIhKc';
+  v_supabase_url TEXT;
+  v_anon_key TEXT;
 BEGIN
+  -- Read config at runtime instead of hardcoding secrets
+  v_supabase_url := public.get_app_config('supabase_url');
+  v_anon_key := public.get_app_config('supabase_anon_key');
+
   IF OLD.email_confirmed_at IS NOT NULL OR NEW.email_confirmed_at IS NULL THEN
     RETURN NEW;
   END IF;
@@ -85,9 +147,13 @@ DECLARE
   v_name TEXT;
   v_email TEXT;
   v_payload JSONB;
-  v_supabase_url TEXT := 'https://dxipobqngyfpqbbznojz.supabase.co';
-  v_anon_key TEXT := 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR4aXBvYnFuZ3lmcHFiYnpub2p6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4NjcxMzgsImV4cCI6MjA4ODQ0MzEzOH0.l-6_9kOkH1mXCGvNM0WzC8naEACGMCFaneEA7XxIhKc';
+  v_supabase_url TEXT;
+  v_anon_key TEXT;
 BEGIN
+  -- Read config at runtime instead of hardcoding secrets
+  v_supabase_url := public.get_app_config('supabase_url');
+  v_anon_key := public.get_app_config('supabase_anon_key');
+
   IF NEW.email_confirmed_at IS NULL THEN
     RETURN NEW;
   END IF;
@@ -127,5 +193,7 @@ CREATE TRIGGER trigger_send_welcome_email_insert
 
 -- Grant permissions to auth admin
 GRANT USAGE ON SCHEMA public TO supabase_auth_admin;
+GRANT EXECUTE ON FUNCTION public.get_app_config(TEXT) TO supabase_auth_admin;
 GRANT EXECUTE ON FUNCTION public.send_welcome_email_on_confirm() TO supabase_auth_admin;
 GRANT EXECUTE ON FUNCTION public.send_welcome_email_on_insert() TO supabase_auth_admin;
+GRANT SELECT ON public.app_config TO supabase_auth_admin;

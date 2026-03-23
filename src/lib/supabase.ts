@@ -1,21 +1,15 @@
 import { createClient } from '@supabase/supabase-js';
 
-export const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-export const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+export const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+export const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-// Warn if env vars are missing (don't throw during build/SSR to avoid blocking static generation)
 if (!supabaseUrl || !supabaseAnonKey) {
-  const msg = 'Alfanumrik: Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY. API calls will fail.';
-  if (typeof window !== 'undefined') {
-    console.error(msg);
-  } else {
-    console.warn(msg);
-  }
+  throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY');
 }
 
 export const supabase = createClient(
-  supabaseUrl || 'https://placeholder.supabase.co',
-  supabaseAnonKey || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder',
+  supabaseUrl,
+  supabaseAnonKey,
   {
     auth: {
       autoRefreshToken: true,

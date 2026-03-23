@@ -82,7 +82,7 @@ async function fetchTopics(subjectCode: string, grade: string): Promise<any[]> {
 }
 
 async function fetchMastery(studentId: string, subject: string): Promise<any[]> {
-  const { data } = await supabase.from('topic_mastery').select('*').eq('student_id', studentId).eq('subject', subject).order('updated_at', { ascending: false });
+  const { data } = await supabase.from('topic_mastery').select('*').eq('student_id', studentId).eq('subject', subject).order('updated_at', { ascending: false }).limit(50);
   return data ?? [];
 }
 

@@ -3,8 +3,7 @@ import type { Metadata, Viewport } from 'next';
 import { AuthProvider } from '@/lib/AuthContext';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import RegisterSW from '@/lib/RegisterSW';
-import { Analytics } from '@vercel/analytics/react';
-import { SpeedInsights } from '@vercel/speed-insights/next';
+import CookieConsent from '@/components/CookieConsent';
 import JsonLd from '@/components/JsonLd';
 import NetworkStatus from '@/components/NetworkStatus';
 
@@ -82,8 +81,7 @@ export default function RootLayout({
             <div className="app-shell">{children}</div>
           </ErrorBoundary>
           <RegisterSW />
-          <Analytics />
-          <SpeedInsights />
+          <CookieConsent />
         </AuthProvider>
       </body>
     </html>

@@ -48,7 +48,18 @@ export default function PrivacyPage() {
         </section>
 
         <section style={section}>
-          <h2 style={h2}>5. Your Rights</h2>
+          <h2 style={h2}>5. Data Retention</h2>
+          <ul style={ul}>
+            <li style={li}><strong>Active Accounts:</strong> Your data is retained for as long as your account remains active.</li>
+            <li style={li}><strong>Inactive Accounts:</strong> Data is retained for 2 years after your last login, after which it is anonymized.</li>
+            <li style={li}><strong>Deleted Accounts:</strong> Personal data is purged within 30 days of account deletion. Anonymized learning analytics may be retained for platform improvement.</li>
+            <li style={li}><strong>Backups:</strong> Backup copies are purged within 90 days of account deletion.</li>
+            <li style={li}><strong>Legal Obligations:</strong> Data may be retained beyond these periods if required by applicable law.</li>
+          </ul>
+        </section>
+
+        <section style={section}>
+          <h2 style={h2}>6. Your Rights</h2>
           <ul style={ul}>
             <li style={li}><strong>Access:</strong> View all your data in your profile.</li>
             <li style={li}><strong>Export:</strong> Download your data as JSON from Profile &rarr; Download My Data.</li>
@@ -58,7 +69,21 @@ export default function PrivacyPage() {
         </section>
 
         <section style={section}>
-          <h2 style={h2}>6. Children&apos;s Privacy</h2>
+          <h2 style={h2}>7. Your Rights Under Indian Law (DPDPA Compliance)</h2>
+          <p style={p}>
+            Under the Digital Personal Data Protection Act, 2023 (DPDPA), you are entitled to the following rights as a Data Principal:
+          </p>
+          <ul style={ul}>
+            <li style={li}><strong>Right to Access:</strong> You may request a summary of the personal data we process about you. Use Profile &rarr; Download My Data to export your data.</li>
+            <li style={li}><strong>Right to Correction:</strong> You may request correction of inaccurate or incomplete personal data. Update your information via Profile &rarr; Edit Profile.</li>
+            <li style={li}><strong>Right to Erasure:</strong> You may request deletion of your personal data. Use Profile &rarr; Delete Account to permanently remove your data.</li>
+            <li style={li}><strong>Right to Withdraw Consent:</strong> You may withdraw your consent for data processing at any time by contacting our Data Protection Officer at <a href="mailto:dpo@alfanumrik.com" style={link}>dpo@alfanumrik.com</a>.</li>
+            <li style={li}><strong>Right to Grievance Redressal:</strong> You may raise concerns about our data practices through the grievance process described below.</li>
+          </ul>
+        </section>
+
+        <section style={section}>
+          <h2 style={h2}>8. Children&apos;s Privacy</h2>
           <p style={p}>
             Alfanumrik is designed for students aged 10-18. Students under 13 should use the platform
             with parental consent. Parents can monitor their child&apos;s activity through the Parent Portal.
@@ -66,7 +91,7 @@ export default function PrivacyPage() {
         </section>
 
         <section style={section}>
-          <h2 style={h2}>7. Third-Party Services</h2>
+          <h2 style={h2}>9. Third-Party Services</h2>
           <ul style={ul}>
             <li style={li}><strong>Supabase:</strong> Database and authentication.</li>
             <li style={li}><strong>Google OAuth:</strong> Optional sign-in method.</li>
@@ -75,9 +100,34 @@ export default function PrivacyPage() {
         </section>
 
         <section style={section}>
-          <h2 style={h2}>8. Contact Us</h2>
+          <h2 style={h2}>10. Grievance Redressal</h2>
           <p style={p}>
-            For privacy questions or data requests, email us at{' '}
+            If you have concerns about how your data is handled, you may submit a grievance to our Grievance Officer at{' '}
+            <a href="mailto:grievance@alfanumrik.com" style={link}>grievance@alfanumrik.com</a>.
+            We will acknowledge your grievance and respond within 30 days.
+          </p>
+          <p style={p}>
+            If your grievance remains unresolved, you may escalate the matter to our Data Protection Officer at{' '}
+            <a href="mailto:dpo@alfanumrik.com" style={link}>dpo@alfanumrik.com</a>.
+          </p>
+        </section>
+
+        <section style={section}>
+          <h2 style={h2}>11. Data Protection Officer</h2>
+          <p style={p}>
+            <strong>Data Protection Officer, Cusiosense Learning India Pvt. Ltd.</strong><br />
+            Email: <a href="mailto:dpo@alfanumrik.com" style={link}>dpo@alfanumrik.com</a>
+          </p>
+          <p style={p}>
+            For any data protection concerns or DPDPA inquiries, contact our DPO. The DPO is responsible for
+            overseeing our data protection strategy and ensuring compliance with applicable privacy laws.
+          </p>
+        </section>
+
+        <section style={section}>
+          <h2 style={h2}>12. Contact Us</h2>
+          <p style={p}>
+            For general privacy questions or data requests, email us at{' '}
             <a href="mailto:privacy@alfanumrik.com" style={link}>privacy@alfanumrik.com</a>.
           </p>
         </section>
