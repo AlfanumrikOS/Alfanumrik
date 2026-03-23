@@ -36,8 +36,8 @@ const faqItems = [
     a: 'Alfanumrik covers all major CBSE subjects: Mathematics, Science, Physics, Chemistry, Biology, English, Hindi, Social Studies, Computer Science, Economics, Accountancy, and more \u2014 for Classes 6 through 12.',
   },
   {
-    q: 'Is Alfanumrik free?',
-    a: 'Alfanumrik offers a free tier with core features including Foxy AI tutoring, quizzes, and progress tracking. Premium features like advanced analytics and unlimited AI conversations may require a subscription in the future.',
+    q: 'How much does Alfanumrik cost?',
+    a: 'Alfanumrik offers a free trial so your child can experience AI-powered learning. After the trial, affordable plans start at a fraction of tuition costs. Every rupee goes into better AI, more content, and your child\'s learning outcomes — not ads or celebrities.',
   },
 ];
 

@@ -377,7 +377,7 @@ export default function LeaderboardPage() {
                             <button onClick={() => handleJoin(comp.id)}
                               className="text-xs px-4 py-2 rounded-xl font-bold text-white"
                               style={{ background: comp.accent_color }}>
-                              {joining === comp.id ? '...' : (isHi ? '🚀 अभी जुड़ो — Free' : '🚀 Join Now — Free')}
+                              {joining === comp.id ? '...' : (isHi ? '🚀 अभी जुड़ो' : '🚀 Join Now')}
                             </button>
                           )}
                           <span className="text-[10px] text-[var(--text-3)]">

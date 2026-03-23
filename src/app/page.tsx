@@ -439,7 +439,7 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
     ? 'Join as Teacher'
     : roleTab === 'parent'
       ? 'Join as Parent'
-      : 'Start Learning Free';
+      : 'Start Learning Now';
 
   const buttonGradient = roleTab === 'teacher'
     ? 'linear-gradient(135deg, #2563EB, #3B82F6)'
@@ -467,7 +467,7 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
               Hindi & English
             </span>
             <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full" style={{ background: 'rgba(124,58,237,0.08)', color: '#7C3AED' }}>
-              100% Free
+              AI-Powered Adaptive
             </span>
           </div>
         </div>
@@ -605,7 +605,7 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
 
           <div className="mt-4 pt-4 text-center text-xs" style={{ borderTop: '1px solid var(--border)' }}>
             {mode === 'login' ? (
-              <span style={{ color: 'var(--text-3)' }}>New here? <button onClick={() => { setMode('signup'); setError(''); setSuccess(''); }} className="font-bold" style={{ color: activeRoleColor }}>Sign Up Free</button></span>
+              <span style={{ color: 'var(--text-3)' }}>New here? <button onClick={() => { setMode('signup'); setError(''); setSuccess(''); }} className="font-bold" style={{ color: activeRoleColor }}>Create Account</button></span>
             ) : (
               <span style={{ color: 'var(--text-3)' }}>Already have an account? <button onClick={() => { setMode('login'); setError(''); setSuccess(''); }} className="font-bold" style={{ color: activeRoleColor }}>Log In</button></span>
             )}

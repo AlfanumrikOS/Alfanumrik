@@ -55,13 +55,13 @@ export function quizShareMessage(params: {
   if (isHi) {
     return {
       title: `${studentName} ने ${subject} में ${score}% स्कोर किया!`,
-      text: `${emoji} ${studentName} ने Alfanumrik पर ${subject} क्विज़ में ${score}% स्कोर किया और +${xpEarned} XP कमाए!\n\nAlfanumrik — भारत का सबसे स्मार्ट AI ट्यूटर। मुफ़्त में शुरू करो!`,
+      text: `${emoji} ${studentName} ने Alfanumrik पर ${subject} क्विज़ में ${score}% स्कोर किया और +${xpEarned} XP कमाए!\n\nAlfanumrik — भारत का सबसे स्मार्ट AI ट्यूटर। अभी शुरू करो!`,
     };
   }
 
   return {
     title: `${studentName} scored ${score}% in ${subject}!`,
-    text: `${emoji} ${studentName} scored ${score}% on a ${subject} quiz on Alfanumrik and earned +${xpEarned} XP!\n\nAlfanumrik — India's smartest AI tutor. Free to start!`,
+    text: `${emoji} ${studentName} scored ${score}% on a ${subject} quiz on Alfanumrik and earned +${xpEarned} XP!\n\nAlfanumrik — India's smartest AI tutor. Try it now!`,
   };
 }
 
@@ -78,12 +78,12 @@ export function streakShareMessage(params: {
   if (isHi) {
     return {
       title: `${studentName} की ${days} दिन की स्ट्रीक! 🔥`,
-      text: `🔥 ${studentName} ने Alfanumrik पर लगातार ${days} दिन पढ़ाई की!\n\nAlfanumrik — AI-powered adaptive learning। मुफ़्त में शुरू करो!`,
+      text: `🔥 ${studentName} ने Alfanumrik पर लगातार ${days} दिन पढ़ाई की!\n\nAlfanumrik — AI-powered adaptive learning। अभी शुरू करो!`,
     };
   }
 
   return {
     title: `${studentName}'s ${days}-day streak! 🔥`,
-    text: `🔥 ${studentName} has been learning for ${days} days straight on Alfanumrik!\n\nAlfanumrik — AI-powered adaptive learning. Free to start!`,
+    text: `🔥 ${studentName} has been learning for ${days} days straight on Alfanumrik!\n\nAlfanumrik — AI-powered adaptive learning. Try it now!`,
   };
 }
