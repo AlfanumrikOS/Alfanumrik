@@ -87,6 +87,50 @@ async function api(action: string, params: Record<string, unknown> = {}) {
 // ============================================================
 // PARENT LOGIN SCREEN
 // ============================================================
+// ── Brute-force protection for parent login ──
+// Tuition centers try to brute-force link codes to monitor students
+// they don't own. Progressive lockout: 3 → 5 → 15 → 60 min.
+const LOCKOUT_KEY = 'alf_parent_lockout';
+const MAX_ATTEMPTS_BEFORE_LOCKOUT = 3;
+const LOCKOUT_DURATIONS = [3 * 60_000, 5 * 60_000, 15 * 60_000, 60 * 60_000]; // 3m, 5m, 15m, 1h
+
+function getLockoutState(): { attempts: number; lockedUntil: number; lockoutLevel: number } {
+  try {
+    const raw = sessionStorage.getItem(LOCKOUT_KEY);
+    if (!raw) return { attempts: 0, lockedUntil: 0, lockoutLevel: 0 };
+    return JSON.parse(raw);
+  } catch { return { attempts: 0, lockedUntil: 0, lockoutLevel: 0 }; }
+}
+
+function recordFailedAttempt(): string | null {
+  const state = getLockoutState();
+  state.attempts++;
+  if (state.attempts >= MAX_ATTEMPTS_BEFORE_LOCKOUT) {
+    const duration = LOCKOUT_DURATIONS[Math.min(state.lockoutLevel, LOCKOUT_DURATIONS.length - 1)];
+    state.lockedUntil = Date.now() + duration;
+    state.lockoutLevel++;
+    state.attempts = 0;
+    sessionStorage.setItem(LOCKOUT_KEY, JSON.stringify(state));
+    const minutes = Math.ceil(duration / 60_000);
+    return `Too many failed attempts. Locked for ${minutes} minute${minutes > 1 ? 's' : ''}.`;
+  }
+  sessionStorage.setItem(LOCKOUT_KEY, JSON.stringify(state));
+  return null;
+}
+
+function clearLockoutAttempts() {
+  sessionStorage.removeItem(LOCKOUT_KEY);
+}
+
+function isLockedOut(): { locked: boolean; message: string } {
+  const state = getLockoutState();
+  if (state.lockedUntil > Date.now()) {
+    const remaining = Math.ceil((state.lockedUntil - Date.now()) / 60_000);
+    return { locked: true, message: `Account locked. Try again in ${remaining} minute${remaining > 1 ? 's' : ''}.` };
+  }
+  return { locked: false, message: '' };
+}
+
 function LoginScreen({ onLogin }: { onLogin: (g: any, s: any) => void }) {
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
@@ -95,16 +139,29 @@ function LoginScreen({ onLogin }: { onLogin: (g: any, s: any) => void }) {
 
   const submit = async () => {
     if (!code.trim()) { setError('Please enter link code'); return; }
+
+    // Check lockout before attempting
+    const lockout = isLockedOut();
+    if (lockout.locked) { setError(lockout.message); return; }
+
     setLoading(true); setError('');
     try {
       const res = await api('parent_login', { link_code: code, parent_name: name || 'Parent' });
       setLoading(false);
-      if (res.error) { setError(res.error); return; }
+      if (res.error) {
+        // Record failed attempt for lockout
+        const lockMsg = recordFailedAttempt();
+        setError(lockMsg || res.error);
+        return;
+      }
+      // Success — clear lockout state
+      clearLockoutAttempts();
       await storeParentSession(res.guardian, res.student);
       onLogin(res.guardian, res.student);
     } catch (err) {
       setLoading(false);
-      setError('Connection error. Please try again.');
+      const lockMsg = recordFailedAttempt();
+      setError(lockMsg || 'Connection error. Please try again.');
     }
   };
 

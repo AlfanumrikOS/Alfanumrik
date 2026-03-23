@@ -180,6 +180,28 @@ export default function QuizPage() {
           });
         }
 
+        // ── ANTI-CHEAT: Client-side validation before submission ──
+        // 1. Minimum time: 3 seconds per question (bots submit instantly)
+        const minTime = allResponses.length * 3;
+        if (timer < minTime) {
+          console.warn(`[AntiCheat] Quiz completed too fast: ${timer}s for ${allResponses.length} questions (min: ${minTime}s)`);
+          // Still submit, but the DB trigger will flag it as suspicious
+        }
+
+        // 2. Detect impossible response patterns
+        // If ALL answers are option 0 (or any single option), flag it
+        const optionCounts = [0, 0, 0, 0];
+        allResponses.forEach(r => { if (r.selected_option >= 0 && r.selected_option < 4) optionCounts[r.selected_option]++; });
+        const maxSameOption = Math.max(...optionCounts);
+        if (allResponses.length >= 5 && maxSameOption === allResponses.length) {
+          console.warn(`[AntiCheat] All answers were option ${optionCounts.indexOf(maxSameOption)} — pattern gaming`);
+        }
+
+        // 3. Verify response count matches question count
+        if (allResponses.length !== questions.length) {
+          console.warn(`[AntiCheat] Response count (${allResponses.length}) != question count (${questions.length})`);
+        }
+
         const subMeta = SUBJECT_META.find(s => s.code === selectedSubject);
         const res = await submitQuizResults(
           student!.id,
@@ -203,7 +225,16 @@ export default function QuizPage() {
         console.error('Submit error:', e);
         const total = responses.length;
         const correct = responses.filter(r => r.is_correct).length;
-        setResults({ total, correct, score_percent: total > 0 ? Math.round((correct / total) * 100) : 0, xp_earned: correct * 10, session_id: '' });
+        // SECURITY: When API fails, show score for display only but DO NOT award XP.
+        // XP must only be granted by the server after answer validation.
+        // Showing xp_earned: 0 with a note that XP will sync when online.
+        setResults({
+          total,
+          correct,
+          score_percent: total > 0 ? Math.round((correct / total) * 100) : 0,
+          xp_earned: 0, // XP is ONLY awarded server-side
+          session_id: '',
+        });
       }
       setLoading(false);
       setScreen('results');

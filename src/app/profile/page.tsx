@@ -239,15 +239,90 @@ export default function ProfilePage() {
     if (student) loadData();
   }, [student, loadData]);
 
+  // ═══ PROFILE LOCK POLICY ═══
+  //
+  // WHY: In India, account sharing kills the business model.
+  // Tuition centers share 1 account across 30 students.
+  // A student changes their name/grade and hands the phone to a friend.
+  // The entire adaptive BKT model becomes useless.
+  //
+  // POLICY:
+  // - Name: Can only be changed ONCE after signup (to fix typos).
+  //   After that, locked forever. To change again, contact support.
+  // - Grade: Can only change UP by 1 (natural promotion: 9 → 10).
+  //   Cannot go down. Cannot skip grades. Resets learning profiles.
+  // - Board: LOCKED after first quiz. Changing board mid-year is a
+  //   red flag for account sharing. Must contact support.
+  //
+  // Everything else (language, subject, school, goal) remains editable
+  // because these are preferences, not identity.
+  //
+  const [nameChangeCount, setNameChangeCount] = useState(0);
+  const [hasQuizHistory, setHasQuizHistory] = useState(false);
+
+  useEffect(() => {
+    if (!student) return;
+    // Check name change history
+    const changes = student.name_change_count ?? 0;
+    setNameChangeCount(changes);
+    // Check if student has quiz history (board becomes locked)
+    supabase
+      .from('quiz_sessions')
+      .select('id', { count: 'exact', head: true })
+      .eq('student_id', student.id)
+      .eq('is_completed', true)
+      .then(({ count }) => setHasQuizHistory((count ?? 0) > 0));
+  }, [student]);
+
+  // Derived lock states
+  const isNameLocked = nameChangeCount >= 1 && student?.name === editName;
+  const isNameEditable = nameChangeCount < 1;
+  const isBoardLocked = hasQuizHistory;
+  const isGradeLocked = false; // Grade can change up by 1
+
   const handleSave = async () => {
     if (!student || !editName.trim()) return;
+
+    // VALIDATE: Name change limit
+    if (editName.trim() !== student.name && nameChangeCount >= 1) {
+      alert(isHi
+        ? 'नाम पहले ही बदला जा चुका है। सहायता से संपर्क करें।'
+        : 'Name has already been changed once. Contact support to change again.');
+      return;
+    }
+
+    // VALIDATE: Board lock after quiz history
+    if (editBoard !== student.board && hasQuizHistory) {
+      alert(isHi
+        ? 'क्विज़ इतिहास होने पर बोर्ड नहीं बदला जा सकता। सहायता से संपर्क करें।'
+        : 'Board cannot be changed after taking quizzes. Contact support.');
+      return;
+    }
+
+    // VALIDATE: Grade can only go up by 1 (natural promotion)
+    const currentGradeNum = parseInt(student.grade);
+    const newGradeNum = parseInt(editGrade);
+    if (!isNaN(currentGradeNum) && !isNaN(newGradeNum)) {
+      if (newGradeNum < currentGradeNum) {
+        alert(isHi
+          ? 'कक्षा कम नहीं की जा सकती। सहायता से संपर्क करें।'
+          : 'Grade cannot be decreased. Contact support if this is an error.');
+        return;
+      }
+      if (newGradeNum > currentGradeNum + 1) {
+        alert(isHi
+          ? 'कक्षा एक बार में सिर्फ 1 बढ़ा सकते हैं।'
+          : 'Grade can only increase by 1 at a time (annual promotion).');
+        return;
+      }
+    }
+
     setSaving(true);
     setSaved(false);
     try {
-      const { error } = await supabase.from('students').update({
-        name: editName.trim(),
-        grade: editGrade,
-        board: editBoard,
+      // Track name change
+      const nameChanged = editName.trim() !== student.name;
+      const updatePayload: Record<string, unknown> = {
         preferred_language: editLang,
         preferred_subject: editSubject,
         school_name: editSchool.trim() || null,
@@ -259,7 +334,21 @@ export default function ProfilePage() {
         parent_name: editParentName.trim() || null,
         parent_phone: editParentPhone.trim() || null,
         updated_at: new Date().toISOString(),
-      }).eq('id', student.id);
+      };
+
+      // Only include identity fields if they actually changed and are allowed
+      if (nameChanged && nameChangeCount < 1) {
+        updatePayload.name = editName.trim();
+        updatePayload.name_change_count = (nameChangeCount || 0) + 1;
+      }
+      if (editGrade !== student.grade) {
+        updatePayload.grade = editGrade;
+      }
+      if (editBoard !== student.board && !hasQuizHistory) {
+        updatePayload.board = editBoard;
+      }
+
+      const { error } = await supabase.from('students').update(updatePayload).eq('id', student.id);
 
       if (error) throw error;
 
@@ -545,7 +634,20 @@ export default function ProfilePage() {
             <Card>
               <SectionHeader icon="📝">{isHi ? 'व्यक्तिगत जानकारी' : 'Personal Info'}</SectionHeader>
               <div className="space-y-3 mt-3">
-                <Input label={isHi ? 'नाम' : 'Full Name'} value={editName} onChange={e => setEditName(e.target.value)} placeholder="Your name" />
+                <div>
+                  <Input
+                    label={isHi ? 'नाम' : 'Full Name'}
+                    value={editName}
+                    onChange={e => isNameEditable ? setEditName(e.target.value) : undefined}
+                    placeholder="Your name"
+                    disabled={!isNameEditable}
+                  />
+                  {!isNameEditable && (
+                    <p className="text-[10px] text-[var(--text-3)] mt-1">
+                      🔒 {isHi ? 'नाम पहले ही बदला जा चुका है' : 'Name already changed once. Contact support to change again.'}
+                    </p>
+                  )}
+                </div>
                 <Input label={isHi ? 'फ़ोन' : 'Phone Number'} value={editPhone} onChange={e => setEditPhone(e.target.value)} placeholder="+91 98765 43210" type="tel" />
               </div>
             </Card>
@@ -559,12 +661,20 @@ export default function ProfilePage() {
                   onChange={setEditGrade}
                   options={GRADES.map(g => ({ value: g, label: `Grade ${g}` }))}
                 />
-                <Select
-                  label={isHi ? 'बोर्ड' : 'Board'}
-                  value={editBoard}
-                  onChange={setEditBoard}
-                  options={BOARDS.map(b => ({ value: b, label: b }))}
-                />
+                <div>
+                  <Select
+                    label={isHi ? 'बोर्ड' : 'Board'}
+                    value={editBoard}
+                    onChange={isBoardLocked ? () => {} : setEditBoard}
+                    options={BOARDS.map(b => ({ value: b, label: b }))}
+                    disabled={isBoardLocked}
+                  />
+                  {isBoardLocked && (
+                    <p className="text-[10px] text-[var(--text-3)] mt-1">
+                      🔒 {isHi ? 'क्विज़ इतिहास के बाद बोर्ड बदलना बंद है' : 'Board locked after quiz history. Contact support.'}
+                    </p>
+                  )}
+                </div>
                 <Select
                   label={isHi ? 'पसंदीदा विषय' : 'Preferred Subject'}
                   value={editSubject}
