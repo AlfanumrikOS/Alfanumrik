@@ -1,79 +1,164 @@
-/* ─── Alfanumrik 2.0 Cognitive Engine ──────────────────────────────────
- *  Pure-function library implementing:
- *  - SM-2 Spaced Repetition (SuperMemo algorithm)
- *  - Bloom's Taxonomy Progression
- *  - Zone of Proximal Development (ZPD) Calculator
- *  - Interleaving Algorithm
- *  - Cognitive Load Manager (fatigue detection)
- *  - Metacognitive Reflection Prompt Generator (bilingual)
- *  - Learning Velocity Analytics
- *  - Knowledge Gap Detector
- *  - Enhanced Quiz Generator (3 modes)
- * ──────────────────────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════
+   ALFANUMRIK 2.0 — Cognitive Engine
+   Pure-function library implementing:
+   - SM-2 Spaced Repetition (SuperMemo algorithm)
+   - Bloom's Taxonomy Progression
+   - Zone of Proximal Development (ZPD) Calculator
+   - Interleaving Algorithm
+   - Cognitive Load Manager (fatigue detection, mid-session adjustment)
+   - Metacognitive Reflection Prompt Generator (bilingual)
+   - Learning Velocity Analytics
+   - Knowledge Gap Detector
+   - Enhanced Quiz Generator (3 modes)
+   ═══════════════════════════════════════════════════════════════ */
 
-// ── Bloom's Taxonomy ──────────────────────────────────────────────────
+// ─── Types ───────────────────────────────────────────────────
 
 export type BloomLevel = 'remember' | 'understand' | 'apply' | 'analyze' | 'evaluate' | 'create';
 
-export const BLOOM_HIERARCHY: BloomLevel[] = [
-  'remember', 'understand', 'apply', 'analyze', 'evaluate', 'create',
-];
+export const BLOOM_LEVELS: BloomLevel[] = ['remember', 'understand', 'apply', 'analyze', 'evaluate', 'create'];
 
-export const BLOOM_CONFIG: Record<BloomLevel, { label: string; labelHi: string; color: string; icon: string; order: number }> = {
-  remember:   { label: 'Remember',   labelHi: 'याद करें',    color: '#9CA3AF', icon: '🧠', order: 0 },
-  understand: { label: 'Understand', labelHi: 'समझें',       color: '#3B82F6', icon: '💡', order: 1 },
-  apply:      { label: 'Apply',      labelHi: 'लागू करें',   color: '#10B981', icon: '🔧', order: 2 },
-  analyze:    { label: 'Analyze',    labelHi: 'विश्लेषण',    color: '#F59E0B', icon: '🔬', order: 3 },
-  evaluate:   { label: 'Evaluate',   labelHi: 'मूल्यांकन',   color: '#EF4444', icon: '⚖️', order: 4 },
-  create:     { label: 'Create',     labelHi: 'रचना करें',   color: '#8B5CF6', icon: '🎨', order: 5 },
+export const BLOOM_ORDER: Record<BloomLevel, number> = {
+  remember: 0,
+  understand: 1,
+  apply: 2,
+  analyze: 3,
+  evaluate: 4,
+  create: 5,
 };
 
-/** Get the next Bloom level for a student on a topic */
-export function getNextBloomLevel(current: BloomLevel): BloomLevel | null {
-  const idx = BLOOM_HIERARCHY.indexOf(current);
-  return idx < BLOOM_HIERARCHY.length - 1 ? BLOOM_HIERARCHY[idx + 1] : null;
-}
-
-/** Check if student has mastered enough at current Bloom level to progress */
-export function shouldProgressBloom(
-  correctAtLevel: number,
-  totalAtLevel: number,
-  threshold = 0.75,
-): boolean {
-  if (totalAtLevel < 3) return false;
-  return correctAtLevel / totalAtLevel >= threshold;
-}
-
-// ── SM-2 Spaced Repetition ────────────────────────────────────────────
-
-export interface SM2State {
-  easeFactor: number;   // min 1.3
-  interval: number;     // days
-  repetitions: number;
-  nextReviewDate: string; // ISO date
-}
-
-export const SM2_DEFAULTS: SM2State = {
-  easeFactor: 2.5,
-  interval: 1,
-  repetitions: 0,
-  nextReviewDate: new Date().toISOString(),
+export const BLOOM_CONFIG: Record<BloomLevel, {
+  label: string;
+  labelHi: string;
+  color: string;
+  icon: string;
+  description: string;
+  descriptionHi: string;
+}> = {
+  remember: {
+    label: 'Remember',
+    labelHi: 'याद करो',
+    color: '#9CA3AF',
+    icon: '○',
+    description: 'Recall facts and basic concepts',
+    descriptionHi: 'तथ्य और बुनियादी अवधारणाएँ याद करो',
+  },
+  understand: {
+    label: 'Understand',
+    labelHi: 'समझो',
+    color: '#3B82F6',
+    icon: '◔',
+    description: 'Explain ideas or concepts',
+    descriptionHi: 'विचारों या अवधारणाओं को समझाओ',
+  },
+  apply: {
+    label: 'Apply',
+    labelHi: 'लागू करो',
+    color: '#10B981',
+    icon: '◑',
+    description: 'Use information in new situations',
+    descriptionHi: 'नई स्थितियों में जानकारी का उपयोग करो',
+  },
+  analyze: {
+    label: 'Analyze',
+    labelHi: 'विश्लेषण करो',
+    color: '#F59E0B',
+    icon: '◕',
+    description: 'Draw connections among ideas',
+    descriptionHi: 'विचारों के बीच संबंध खोजो',
+  },
+  evaluate: {
+    label: 'Evaluate',
+    labelHi: 'मूल्यांकन करो',
+    color: '#EF4444',
+    icon: '◉',
+    description: 'Justify a stand or decision',
+    descriptionHi: 'किसी निर्णय को सही ठहराओ',
+  },
+  create: {
+    label: 'Create',
+    labelHi: 'रचना करो',
+    color: '#8B5CF6',
+    icon: '●',
+    description: 'Produce new or original work',
+    descriptionHi: 'नया या मौलिक काम करो',
+  },
 };
+
+export type QuizMode = 'cognitive' | 'board' | 'practice';
+
+export interface SM2Card {
+  easeFactor: number;    // >= 1.3
+  interval: number;      // days
+  repetitions: number;   // consecutive correct
+}
+
+export interface BloomMastery {
+  bloomLevel: BloomLevel;
+  mastery: number;       // 0-1
+  attempts: number;
+  correct: number;
+}
+
+export interface ZPDResult {
+  targetDifficulty: number; // 0-1 scale
+  targetBloomLevel: BloomLevel;
+  confidenceBand: [number, number]; // [lower, upper] difficulty range
+}
+
+export interface CognitiveLoadState {
+  consecutiveErrors: number;
+  consecutiveCorrect: number;
+  fatigueScore: number;      // 0-1, higher = more fatigued
+  questionsAttempted: number;
+  avgResponseTime: number;
+  shouldEaseOff: boolean;
+  shouldPushHarder: boolean;
+  shouldPause: boolean;
+}
+
+export interface ReflectionPrompt {
+  type: 'metacognitive' | 'praise' | 'pause' | 'transfer';
+  message: string;
+  messageHi: string;
+}
+
+export interface EnrichedQuestion {
+  id: string;
+  bloomLevel: BloomLevel;
+  difficulty: number;
+  source: string;
+  boardYear?: number;
+  topicId?: string;
+  [key: string]: unknown;
+}
+
+export interface QuizGeneratorResult {
+  questions: EnrichedQuestion[];
+  metadata: {
+    mode: QuizMode;
+    bloomDistribution: Record<BloomLevel, number>;
+    interleavingRatio: number;
+    zpdTarget: number;
+    difficultyRange: [number, number];
+  };
+}
+
+// ─── SM-2 Spaced Repetition ──────────────────────────────────
 
 /**
- * SM-2 algorithm: compute next review state based on quality (0-5).
- * quality: 0=total blackout, 3=correct with difficulty, 5=perfect
+ * SuperMemo SM-2 algorithm implementation.
+ * Returns updated card state after a review.
+ * @param card Current card state
+ * @param quality Rating 0-5 (0=complete blackout, 5=perfect)
  */
-export function sm2Update(state: SM2State, quality: number): SM2State {
-  const q = Math.max(0, Math.min(5, Math.round(quality)));
-  let { easeFactor, interval, repetitions } = state;
+export function sm2Update(card: SM2Card, quality: number): SM2Card {
+  const q = Math.min(5, Math.max(0, Math.round(quality)));
 
-  if (q < 3) {
-    // Failed — reset
-    repetitions = 0;
-    interval = 1;
-  } else {
-    // Passed
+  let { easeFactor, interval, repetitions } = card;
+
+  if (q >= 3) {
+    // Correct response
     if (repetitions === 0) {
       interval = 1;
     } else if (repetitions === 1) {
@@ -82,464 +167,667 @@ export function sm2Update(state: SM2State, quality: number): SM2State {
       interval = Math.round(interval * easeFactor);
     }
     repetitions += 1;
+  } else {
+    // Incorrect — reset
+    repetitions = 0;
+    interval = 1;
   }
 
-  // Update ease factor
+  // Update ease factor: EF' = EF + (0.1 - (5-q) * (0.08 + (5-q) * 0.02))
   easeFactor = easeFactor + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02));
   easeFactor = Math.max(1.3, easeFactor);
 
-  const next = new Date();
-  next.setDate(next.getDate() + interval);
+  return { easeFactor, interval, repetitions };
+}
+
+/**
+ * Convert a boolean correct/incorrect + time to SM-2 quality (0-5).
+ */
+export function responseToQuality(isCorrect: boolean, timeSpent: number, avgTime: number): number {
+  if (!isCorrect) {
+    return timeSpent > avgTime * 2 ? 0 : 1; // complete blackout vs. near miss
+  }
+  // Correct responses: rate by speed
+  if (timeSpent < avgTime * 0.5) return 5;  // very fast
+  if (timeSpent < avgTime) return 4;         // normal speed
+  if (timeSpent < avgTime * 1.5) return 3;   // hesitant but correct
+  return 3; // slow but correct
+}
+
+/**
+ * Calculate next review date from SM-2 interval.
+ */
+export function nextReviewDate(interval: number): Date {
+  const date = new Date();
+  date.setDate(date.getDate() + interval);
+  return date;
+}
+
+// ─── Bloom's Taxonomy Progression ────────────────────────────
+
+/**
+ * Determine the highest bloom level a student has mastered for a topic.
+ */
+export function getHighestMasteredBloom(bloomMasteries: BloomMastery[]): BloomLevel {
+  let highest: BloomLevel = 'remember';
+  for (const bm of bloomMasteries) {
+    if (bm.mastery >= 0.7 && BLOOM_ORDER[bm.bloomLevel] > BLOOM_ORDER[highest]) {
+      highest = bm.bloomLevel;
+    }
+  }
+  return highest;
+}
+
+/**
+ * Determine the next bloom level to target for a student on a topic.
+ */
+export function getNextBloomTarget(bloomMasteries: BloomMastery[]): BloomLevel {
+  const highest = getHighestMasteredBloom(bloomMasteries);
+  const nextIdx = Math.min(BLOOM_ORDER[highest] + 1, BLOOM_LEVELS.length - 1);
+  return BLOOM_LEVELS[nextIdx];
+}
+
+/**
+ * Update bloom mastery after a response.
+ */
+export function updateBloomMastery(
+  current: BloomMastery,
+  isCorrect: boolean,
+  weight: number = 0.15
+): BloomMastery {
+  const newAttempts = current.attempts + 1;
+  const newCorrect = current.correct + (isCorrect ? 1 : 0);
+  // Exponential moving average for mastery
+  const target = isCorrect ? 1 : 0;
+  const newMastery = current.mastery + weight * (target - current.mastery);
 
   return {
-    easeFactor,
-    interval,
-    repetitions,
-    nextReviewDate: next.toISOString(),
+    ...current,
+    attempts: newAttempts,
+    correct: newCorrect,
+    mastery: Math.max(0, Math.min(1, newMastery)),
   };
 }
 
-/** Convert quiz accuracy (0-1) to SM-2 quality (0-5) */
-export function accuracyToQuality(accuracy: number, timeSpentRatio = 1): number {
-  // timeSpentRatio: actual/expected. >1 means slow (harder), <1 means fast (easier)
-  const base = accuracy * 5;
-  const timeAdjust = timeSpentRatio > 1.5 ? -0.5 : timeSpentRatio < 0.5 ? 0.5 : 0;
-  return Math.max(0, Math.min(5, base + timeAdjust));
-}
+// ─── Zone of Proximal Development (ZPD) ──────────────────────
 
-// ── Zone of Proximal Development (ZPD) ────────────────────────────────
+/**
+ * Calculate the ZPD target difficulty for a student.
+ * ZPD = just above what the student can do comfortably.
+ * @param currentMastery Overall mastery (0-1)
+ * @param recentAccuracy Accuracy over last N questions (0-1)
+ * @param bloomMasteries Bloom level masteries for the topic
+ */
+export function calculateZPD(
+  currentMastery: number,
+  recentAccuracy: number,
+  bloomMasteries: BloomMastery[] = []
+): ZPDResult {
+  // Target difficulty: slightly above current performance
+  // Sweet spot: 70-85% success rate (Vygotsky's ZPD)
+  const baseTarget = currentMastery + 0.1; // push 10% above mastery
+  const accuracyAdjustment = (recentAccuracy - 0.75) * 0.2; // adjust based on recent performance
+  const targetDifficulty = Math.max(0.1, Math.min(0.95, baseTarget + accuracyAdjustment));
 
-export interface ZPDResult {
-  targetDifficulty: number; // 1-10
-  bloomTarget: BloomLevel;
-  confidence: number;       // 0-1, how confident we are in the target
+  // Confidence band: narrow for consistent students, wide for inconsistent
+  const bandwidth = recentAccuracy > 0.5 ? 0.15 : 0.25;
+  const confidenceBand: [number, number] = [
+    Math.max(0, targetDifficulty - bandwidth),
+    Math.min(1, targetDifficulty + bandwidth),
+  ];
+
+  // Target bloom level based on mastery
+  const targetBloomLevel = bloomMasteries.length > 0
+    ? getNextBloomTarget(bloomMasteries)
+    : difficultyToBloom(targetDifficulty);
+
+  return { targetDifficulty, targetBloomLevel, confidenceBand };
 }
 
 /**
- * Calculate the ZPD target for a student on a topic.
- * masteryLevel: 0-1 (current mastery)
- * recentAccuracy: 0-1 (last 5-10 questions)
- * currentBloom: their highest mastered Bloom level
+ * Map a difficulty (0-1) to a bloom level.
  */
-export function calculateZPD(
-  masteryLevel: number,
-  recentAccuracy: number,
-  currentBloom: BloomLevel,
-  streakCorrect: number,
-  streakWrong: number,
-): ZPDResult {
-  // Base difficulty from mastery
-  let targetDiff = Math.round(masteryLevel * 10) + 1;
-
-  // Adjust based on recent performance
-  if (recentAccuracy > 0.85 && streakCorrect >= 3) {
-    targetDiff = Math.min(10, targetDiff + 2); // Push harder
-  } else if (recentAccuracy > 0.7) {
-    targetDiff = Math.min(10, targetDiff + 1); // Slight push
-  } else if (recentAccuracy < 0.4 || streakWrong >= 3) {
-    targetDiff = Math.max(1, targetDiff - 2); // Ease off
-  } else if (recentAccuracy < 0.55) {
-    targetDiff = Math.max(1, targetDiff - 1); // Slight ease
-  }
-
-  // Bloom target
-  let bloomTarget = currentBloom;
-  if (recentAccuracy > 0.8 && shouldProgressBloom(streakCorrect, streakCorrect + streakWrong)) {
-    bloomTarget = getNextBloomLevel(currentBloom) || currentBloom;
-  }
-
-  // Confidence in our ZPD estimate (higher with more data)
-  const totalAttempts = streakCorrect + streakWrong;
-  const confidence = Math.min(1, totalAttempts / 20);
-
-  return { targetDifficulty: targetDiff, bloomTarget, confidence };
+export function difficultyToBloom(difficulty: number): BloomLevel {
+  if (difficulty < 0.17) return 'remember';
+  if (difficulty < 0.33) return 'understand';
+  if (difficulty < 0.50) return 'apply';
+  if (difficulty < 0.67) return 'analyze';
+  if (difficulty < 0.83) return 'evaluate';
+  return 'create';
 }
 
-// ── Interleaving Algorithm ────────────────────────────────────────────
+/**
+ * Map a bloom level to a difficulty range.
+ */
+export function bloomToDifficultyRange(bloom: BloomLevel): [number, number] {
+  const idx = BLOOM_ORDER[bloom];
+  const step = 1 / 6;
+  return [idx * step, (idx + 1) * step];
+}
+
+/**
+ * Map difficulty (0-1) to question difficulty level (1-3).
+ */
+export function zpdToDifficultyLevel(zpd: number): number {
+  if (zpd < 0.33) return 1;
+  if (zpd < 0.67) return 2;
+  return 3;
+}
+
+// ─── Interleaving Algorithm ──────────────────────────────────
 
 export interface TopicWeight {
   topicId: string;
-  mastery: number;    // 0-1
-  lastAttempted: Date;
-  isWeak: boolean;
+  mastery: number;
+  isWeak: boolean;     // mastery < 0.6
+  isStrong: boolean;   // mastery >= 0.8
+  lastAttempted?: Date;
 }
 
 /**
- * Select topics for an interleaved session.
- * Returns topicIds in recommended order.
+ * Select topics for interleaved practice.
  * 70% weak topics, 30% strong topics (retrieval practice).
  * Never same topic back-to-back.
  */
 export function interleaveTopics(
   topics: TopicWeight[],
-  sessionSize: number,
+  count: number
 ): string[] {
   const weak = topics.filter(t => t.isWeak).sort((a, b) => a.mastery - b.mastery);
-  const strong = topics.filter(t => !t.isWeak).sort(
-    (a, b) => a.lastAttempted.getTime() - b.lastAttempted.getTime(), // least recent first
-  );
+  const strong = topics.filter(t => t.isStrong).sort(() => Math.random() - 0.5);
+  const medium = topics.filter(t => !t.isWeak && !t.isStrong);
 
-  const weakCount = Math.ceil(sessionSize * 0.7);
-  const strongCount = sessionSize - weakCount;
+  const weakCount = Math.round(count * 0.7);
+  const strongCount = Math.round(count * 0.3);
 
-  const selectedWeak = weak.slice(0, weakCount).map(t => t.topicId);
-  const selectedStrong = strong.slice(0, strongCount).map(t => t.topicId);
+  const selected: string[] = [];
 
-  // Interleave: never same topic back-to-back
-  const result: string[] = [];
-  let wi = 0, si = 0;
-  let lastTopic = '';
-
-  for (let i = 0; i < sessionSize; i++) {
-    // Alternate weak/strong with ratio ~70/30
-    const preferWeak = i % 3 !== 2; // positions 0,1 = weak; position 2 = strong
-    let picked: string | undefined;
-
-    if (preferWeak && wi < selectedWeak.length) {
-      picked = selectedWeak[wi++];
-    } else if (si < selectedStrong.length) {
-      picked = selectedStrong[si++];
-    } else if (wi < selectedWeak.length) {
-      picked = selectedWeak[wi++];
-    }
-
-    if (!picked) break;
-
-    // Avoid back-to-back same topic
-    if (picked === lastTopic && result.length > 0) {
-      // Try swapping with next available
-      const alt = wi < selectedWeak.length ? selectedWeak[wi] : si < selectedStrong.length ? selectedStrong[si] : null;
-      if (alt && alt !== lastTopic) {
-        result.push(alt);
-        if (wi < selectedWeak.length && selectedWeak[wi] === alt) wi++;
-        else if (si < selectedStrong.length && selectedStrong[si] === alt) si++;
-        // Put the skipped one back for next iteration
-        result.push(picked);
-        lastTopic = picked;
-        i++; // used two slots
-        continue;
-      }
-    }
-
-    result.push(picked);
-    lastTopic = picked;
+  // Fill weak slots
+  const weakPool = [...weak, ...medium];
+  for (let i = 0; i < weakCount && weakPool.length > 0; i++) {
+    const idx = i % weakPool.length;
+    selected.push(weakPool[idx].topicId);
   }
 
-  return result.slice(0, sessionSize);
+  // Fill strong slots (retrieval practice)
+  for (let i = 0; i < strongCount && strong.length > 0; i++) {
+    const idx = i % strong.length;
+    selected.push(strong[idx].topicId);
+  }
+
+  // Shuffle to prevent back-to-back same topic
+  return deduplicateAdjacent(shuffleArray(selected));
 }
 
-// ── Cognitive Load Manager ────────────────────────────────────────────
-
-export interface SessionMetrics {
-  questionsAnswered: number;
-  correctStreak: number;
-  wrongStreak: number;
-  avgTimePerQuestion: number;   // seconds
-  sessionDurationMinutes: number;
-  recentAccuracy: number;       // last 5 questions
+function shuffleArray<T>(arr: T[]): T[] {
+  const result = [...arr];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
 }
 
-export type CognitiveAction =
-  | { type: 'continue' }
-  | { type: 'ease_difficulty' }
-  | { type: 'increase_difficulty' }
-  | { type: 'suggest_break' }
-  | { type: 'show_reflection'; prompt: string; promptHi: string }
-  | { type: 'offer_help'; topic: string };
+function deduplicateAdjacent(arr: string[]): string[] {
+  if (arr.length <= 1) return arr;
+  const result = [arr[0]];
+  for (let i = 1; i < arr.length; i++) {
+    if (arr[i] !== result[result.length - 1]) {
+      result.push(arr[i]);
+    } else {
+      // Find next different item and swap
+      let swapped = false;
+      for (let j = i + 1; j < arr.length; j++) {
+        if (arr[j] !== result[result.length - 1]) {
+          result.push(arr[j]);
+          arr[j] = arr[i];
+          swapped = true;
+          break;
+        }
+      }
+      if (!swapped) result.push(arr[i]); // no choice, allow adjacent
+    }
+  }
+  return result;
+}
+
+// ─── Cognitive Load Manager ──────────────────────────────────
 
 /**
- * Mid-session cognitive load adjustment.
- * Returns recommended action based on session metrics.
+ * Update cognitive load state after a response.
+ * Detects fatigue, recommends difficulty adjustments.
  */
-export function assessCognitiveLoad(metrics: SessionMetrics): CognitiveAction {
-  const { questionsAnswered, correctStreak, wrongStreak, avgTimePerQuestion, sessionDurationMinutes, recentAccuracy } = metrics;
+export function updateCognitiveLoad(
+  state: CognitiveLoadState,
+  isCorrect: boolean,
+  timeSpent: number
+): CognitiveLoadState {
+  const newState = { ...state };
+  newState.questionsAttempted += 1;
 
-  // Fatigue detection: long session + declining accuracy
-  if (sessionDurationMinutes > 30 && recentAccuracy < 0.4) {
-    return { type: 'suggest_break' };
+  if (isCorrect) {
+    newState.consecutiveCorrect += 1;
+    newState.consecutiveErrors = 0;
+  } else {
+    newState.consecutiveErrors += 1;
+    newState.consecutiveCorrect = 0;
   }
 
-  // Frustration detection: 3+ wrong in a row
-  if (wrongStreak >= 3) {
+  // Update average response time (running average)
+  newState.avgResponseTime = state.avgResponseTime === 0
+    ? timeSpent
+    : state.avgResponseTime * 0.7 + timeSpent * 0.3;
+
+  // Fatigue detection: increasing response times + decreasing accuracy
+  const timeFatigue = timeSpent > state.avgResponseTime * 1.5 ? 0.1 : 0;
+  const errorFatigue = !isCorrect ? 0.08 : -0.03;
+  newState.fatigueScore = Math.max(0, Math.min(1,
+    state.fatigueScore + timeFatigue + errorFatigue
+  ));
+
+  // Decision thresholds
+  newState.shouldEaseOff = newState.consecutiveErrors >= 3 || newState.fatigueScore > 0.6;
+  newState.shouldPushHarder = newState.consecutiveCorrect >= 3 && newState.fatigueScore < 0.3;
+  newState.shouldPause = newState.consecutiveErrors >= 5 || newState.fatigueScore > 0.8;
+
+  return newState;
+}
+
+/**
+ * Create an initial cognitive load state.
+ */
+export function initialCognitiveLoad(): CognitiveLoadState {
+  return {
+    consecutiveErrors: 0,
+    consecutiveCorrect: 0,
+    fatigueScore: 0,
+    questionsAttempted: 0,
+    avgResponseTime: 0,
+    shouldEaseOff: false,
+    shouldPushHarder: false,
+    shouldPause: false,
+  };
+}
+
+/**
+ * Calculate adjusted difficulty based on cognitive load.
+ * Returns a multiplier for the target ZPD difficulty.
+ */
+export function adjustDifficulty(
+  currentZPD: number,
+  cognitiveLoad: CognitiveLoadState
+): number {
+  if (cognitiveLoad.shouldEaseOff) {
+    return Math.max(0.1, currentZPD - 0.15); // drop difficulty
+  }
+  if (cognitiveLoad.shouldPushHarder) {
+    return Math.min(0.95, currentZPD + 0.1); // increase difficulty
+  }
+  return currentZPD; // stay in ZPD
+}
+
+// ─── Metacognitive Reflection Prompts ────────────────────────
+
+/**
+ * Generate a reflection prompt based on the student's current state.
+ */
+export function getReflectionPrompt(
+  isCorrect: boolean,
+  consecutiveErrors: number,
+  consecutiveCorrect: number,
+  bloomLevel: BloomLevel
+): ReflectionPrompt | null {
+  // After wrong answer: metacognitive reflection
+  if (!isCorrect && consecutiveErrors === 0) {
     return {
-      type: 'show_reflection',
-      prompt: "Let's pause. Would reviewing the chapter help before continuing?",
-      promptHi: 'रुकिए। क्या आगे बढ़ने से पहले चैप्टर दोबारा पढ़ना सही रहेगा?',
+      type: 'metacognitive',
+      message: 'Think about why you chose that answer. What concept tripped you up?',
+      messageHi: 'सोचो कि तुमने वो जवाब क्यों चुना। कौन सी अवधारणा ने तुम्हें confuse किया?',
     };
   }
 
-  // Slow answering = cognitive overload
-  if (avgTimePerQuestion > 120 && questionsAnswered > 3) {
-    return { type: 'ease_difficulty' };
+  // After 3 consecutive errors: pause and suggest
+  if (consecutiveErrors >= 3) {
+    return {
+      type: 'pause',
+      message: "Let's pause. Would re-reading the chapter or watching a quick video help?",
+      messageHi: 'रुको। क्या chapter दोबारा पढ़ना या एक video देखना मदद करेगा?',
+    };
   }
 
-  // Crushing it: push harder
-  if (correctStreak >= 3 && recentAccuracy > 0.9) {
-    return { type: 'increase_difficulty' };
+  // After getting a hard question right: praise + transfer
+  if (isCorrect && consecutiveCorrect >= 2 && BLOOM_ORDER[bloomLevel] >= 3) {
+    return {
+      type: 'praise',
+      message: 'Great work! Can you explain to yourself why this is correct?',
+      messageHi: 'शाबाश! क्या तुम खुद को समझा सकते हो कि यह सही क्यों है?',
+    };
   }
 
-  // Boredom: fast + high accuracy
-  if (avgTimePerQuestion < 15 && recentAccuracy > 0.95 && questionsAnswered > 5) {
-    return { type: 'increase_difficulty' };
+  // After first correct on a higher bloom level
+  if (isCorrect && BLOOM_ORDER[bloomLevel] >= 4) {
+    return {
+      type: 'transfer',
+      message: 'Excellent analysis! Can you connect this to what you learned earlier?',
+      messageHi: 'बहुत बढ़िया विश्लेषण! क्या तुम इसे पहले सीखी हुई बात से जोड़ सकते हो?',
+    };
   }
 
-  return { type: 'continue' };
+  return null;
 }
 
-// ── Metacognitive Reflection Prompts ──────────────────────────────────
+// ─── Learning Velocity Analytics ─────────────────────────────
 
-export interface ReflectionPrompt {
-  en: string;
-  hi: string;
-  trigger: 'wrong_answer' | 'streak_wrong' | 'hard_correct' | 'bloom_up' | 'session_end';
-}
-
-const REFLECTION_BANK: ReflectionPrompt[] = [
-  // Wrong answer
-  { trigger: 'wrong_answer', en: 'Think about why you chose that. What concept tripped you up?', hi: 'सोचिए आपने यह विकल्प क्यों चुना। कौन सा concept आपको उलझा रहा है?' },
-  { trigger: 'wrong_answer', en: 'What would you do differently if you saw this question again?', hi: 'अगर यह प्रश्न दोबारा आए तो आप क्या अलग करेंगे?' },
-  { trigger: 'wrong_answer', en: 'Can you identify which step went wrong in your thinking?', hi: 'क्या आप बता सकते हैं कि आपकी सोच में कौन सा कदम गलत हुआ?' },
-
-  // Streak wrong (3+)
-  { trigger: 'streak_wrong', en: "Let's pause. Would re-reading the chapter help?", hi: 'रुकिए। क्या चैप्टर दोबारा पढ़ना मददगार होगा?' },
-  { trigger: 'streak_wrong', en: "This topic seems tricky. Want me to explain the basics first?", hi: 'यह topic कठिन लग रहा है। क्या मैं पहले basics समझाऊं?' },
-
-  // Hard question correct
-  { trigger: 'hard_correct', en: 'Great work! Can you explain to yourself why this is correct?', hi: 'शाबाश! क्या आप खुद को समझा सकते हैं कि यह सही क्यों है?' },
-  { trigger: 'hard_correct', en: 'You nailed it! What strategy helped you solve this?', hi: 'बहुत अच्छा! किस strategy ने आपकी मदद की?' },
-
-  // Bloom level up
-  { trigger: 'bloom_up', en: "You've moved up from {prev} to {next}! You're thinking at a higher level now.", hi: 'आप {prev} से {next} तक पहुंच गए! अब आप उच्च स्तर पर सोच रहे हैं।' },
-
-  // Session end
-  { trigger: 'session_end', en: 'What was the hardest concept today? Review it tomorrow for better retention.', hi: 'आज सबसे कठिन concept क्या था? कल इसे दोहराएं ताकि याद रहे।' },
-  { trigger: 'session_end', en: 'You practiced {count} questions. Which topic needs more work?', hi: 'आपने {count} प्रश्न हल किए। किस topic पर और काम करना चाहिए?' },
-];
-
-/** Get a reflection prompt for a given trigger */
-export function getReflectionPrompt(
-  trigger: ReflectionPrompt['trigger'],
-  vars?: Record<string, string>,
-): ReflectionPrompt {
-  const matching = REFLECTION_BANK.filter(r => r.trigger === trigger);
-  const prompt = matching[Math.floor(Math.random() * matching.length)] || matching[0];
-
-  if (!vars) return prompt;
-
-  let en = prompt.en;
-  let hi = prompt.hi;
-  for (const [key, val] of Object.entries(vars)) {
-    en = en.replace(`{${key}}`, val);
-    hi = hi.replace(`{${key}}`, val);
-  }
-  return { ...prompt, en, hi };
-}
-
-// ── Learning Velocity ─────────────────────────────────────────────────
-
-export interface MasteryDataPoint {
-  date: string;  // ISO date
-  mastery: number; // 0-1
+export interface VelocityDatapoint {
+  date: string; // ISO date
+  mastery: number;
 }
 
 /**
- * Simple linear regression on mastery data points.
- * Returns slope (mastery units per day) and predicted days to target.
+ * Calculate learning velocity using simple linear regression on mastery data.
+ * Returns mastery points per day.
  */
-export function calculateLearningVelocity(
-  dataPoints: MasteryDataPoint[],
-  targetMastery = 0.8,
-): { velocity: number; predictedDaysToTarget: number | null } {
-  if (dataPoints.length < 2) return { velocity: 0, predictedDaysToTarget: null };
+export function calculateLearningVelocity(datapoints: VelocityDatapoint[]): number {
+  if (datapoints.length < 2) return 0;
 
-  const origin = new Date(dataPoints[0].date).getTime();
-  const xs = dataPoints.map(d => (new Date(d.date).getTime() - origin) / (1000 * 60 * 60 * 24)); // days
-  const ys = dataPoints.map(d => d.mastery);
+  const sorted = [...datapoints].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  const firstDate = new Date(sorted[0].date).getTime();
 
+  // Convert to days from first date
+  const xs = sorted.map(d => (new Date(d.date).getTime() - firstDate) / (1000 * 60 * 60 * 24));
+  const ys = sorted.map(d => d.mastery);
+
+  // Simple linear regression
   const n = xs.length;
   const sumX = xs.reduce((a, b) => a + b, 0);
   const sumY = ys.reduce((a, b) => a + b, 0);
-  const sumXY = xs.reduce((acc, x, i) => acc + x * ys[i], 0);
-  const sumX2 = xs.reduce((acc, x) => acc + x * x, 0);
+  const sumXY = xs.reduce((a, x, i) => a + x * ys[i], 0);
+  const sumX2 = xs.reduce((a, x) => a + x * x, 0);
 
   const denom = n * sumX2 - sumX * sumX;
-  if (denom === 0) return { velocity: 0, predictedDaysToTarget: null };
+  if (denom === 0) return 0;
 
   const slope = (n * sumXY - sumX * sumY) / denom;
-  const intercept = (sumY - slope * sumX) / n;
-
-  const currentMastery = ys[ys.length - 1];
-  const currentDay = xs[xs.length - 1];
-
-  let predictedDays: number | null = null;
-  if (slope > 0 && currentMastery < targetMastery) {
-    predictedDays = Math.ceil((targetMastery - intercept - slope * currentDay) / slope);
-    if (predictedDays < 0) predictedDays = null;
-  } else if (currentMastery >= targetMastery) {
-    predictedDays = 0;
-  }
-
-  return { velocity: slope, predictedDaysToTarget: predictedDays };
-}
-
-// ── Knowledge Gap Detector ────────────────────────────────────────────
-
-export interface PrerequisiteChain {
-  topicId: string;
-  prerequisites: string[];  // topicIds that must be mastered first
-}
-
-export interface KnowledgeGap {
-  topicId: string;
-  missingPrerequisites: string[];
-  severity: 'critical' | 'moderate' | 'minor';
+  return Math.max(0, slope); // velocity can't be negative (we clamp)
 }
 
 /**
- * Detect knowledge gaps by checking prerequisite mastery.
- * Returns topics where prerequisites are not sufficiently mastered.
+ * Predict date when student will reach target mastery.
+ */
+export function predictMasteryDate(
+  currentMastery: number,
+  velocity: number,
+  targetMastery: number = 0.95
+): Date | null {
+  if (velocity <= 0) return null;
+  if (currentMastery >= targetMastery) return new Date();
+
+  const daysNeeded = (targetMastery - currentMastery) / velocity;
+  if (daysNeeded > 365) return null; // more than a year, too uncertain
+
+  const date = new Date();
+  date.setDate(date.getDate() + Math.ceil(daysNeeded));
+  return date;
+}
+
+/**
+ * Estimate sessions needed to reach target mastery.
+ * Assumes average 0.05 mastery gain per session.
+ */
+export function estimateSessionsToMastery(
+  currentMastery: number,
+  avgGainPerSession: number = 0.05,
+  targetMastery: number = 0.95
+): number {
+  if (currentMastery >= targetMastery) return 0;
+  if (avgGainPerSession <= 0) return -1;
+  return Math.ceil((targetMastery - currentMastery) / avgGainPerSession);
+}
+
+// ─── Knowledge Gap Detector ──────────────────────────────────
+
+export interface PrerequisiteChain {
+  topicId: string;
+  prerequisiteIds: string[];
+}
+
+export interface DetectedGap {
+  topicId: string;
+  prerequisiteTopicId?: string;
+  gapType: 'weak_prerequisite' | 'missing_bloom_level' | 'stale_knowledge' | 'persistent_error';
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  description: string;
+  descriptionHi: string;
+}
+
+/**
+ * Detect knowledge gaps based on mastery data and prerequisite chains.
  */
 export function detectKnowledgeGaps(
-  chains: PrerequisiteChain[],
-  masteryMap: Map<string, number>,  // topicId -> mastery (0-1)
-  minPrereqMastery = 0.6,
-): KnowledgeGap[] {
-  const gaps: KnowledgeGap[] = [];
+  topicMasteries: Array<{ topicId: string; mastery: number; lastAttempted?: string }>,
+  bloomProgressions: Array<{ topicId: string; bloomLevel: BloomLevel; mastery: number }>,
+  prerequisites: PrerequisiteChain[] = []
+): DetectedGap[] {
+  const gaps: DetectedGap[] = [];
+  const masteryMap = new Map(topicMasteries.map(t => [t.topicId, t]));
 
-  for (const chain of chains) {
-    const topicMastery = masteryMap.get(chain.topicId) ?? 0;
-    if (topicMastery > 0.3) {
-      // Student has attempted this topic — check if prereqs are solid
-      const missing = chain.prerequisites.filter(
-        prereq => (masteryMap.get(prereq) ?? 0) < minPrereqMastery,
-      );
+  // 1. Weak prerequisites: topic has high mastery but prerequisite is low
+  for (const chain of prerequisites) {
+    const topicMastery = masteryMap.get(chain.topicId);
+    if (!topicMastery || topicMastery.mastery < 0.3) continue; // student hasn't started this topic
 
-      if (missing.length > 0) {
-        const avgMissing = missing.reduce((s, p) => s + (masteryMap.get(p) ?? 0), 0) / missing.length;
-        const severity: KnowledgeGap['severity'] =
-          avgMissing < 0.2 ? 'critical' : avgMissing < 0.4 ? 'moderate' : 'minor';
-
-        gaps.push({ topicId: chain.topicId, missingPrerequisites: missing, severity });
+    for (const prereqId of chain.prerequisiteIds) {
+      const prereq = masteryMap.get(prereqId);
+      if (prereq && prereq.mastery < 0.5) {
+        gaps.push({
+          topicId: chain.topicId,
+          prerequisiteTopicId: prereqId,
+          gapType: 'weak_prerequisite',
+          severity: prereq.mastery < 0.3 ? 'critical' : 'high',
+          description: 'You need to strengthen the prerequisite topic first.',
+          descriptionHi: 'पहले prerequisite topic को मजबूत करो।',
+        });
       }
     }
   }
 
-  return gaps.sort((a, b) => {
-    const order = { critical: 0, moderate: 1, minor: 2 };
-    return order[a.severity] - order[b.severity];
-  });
-}
-
-// ── Enhanced Quiz Generator ───────────────────────────────────────────
-
-export type QuizMode = 'cognitive' | 'board' | 'practice';
-
-export interface QuizGeneratorInput {
-  mode: QuizMode;
-  studentId: string;
-  subject: string;
-  // Cognitive mode
-  topicWeights?: TopicWeight[];
-  currentBloom?: BloomLevel;
-  masteryLevel?: number;
-  recentAccuracy?: number;
-  // Board mode
-  boardYear?: number;       // 2015-2024
-  boardSet?: string;        // set code
-  paperSection?: string;    // section filter
-  // Common
-  questionCount?: number;
-}
-
-export interface QuizGeneratorOutput {
-  mode: QuizMode;
-  topicIds: string[];
-  targetDifficulty: number;
-  bloomTarget: BloomLevel;
-  bloomDistribution: Record<BloomLevel, number>;  // percentage
-  interleavingRatio: number;  // 0-1 (0 = no interleaving, 1 = maximum)
-  filters: {
-    source?: 'cbse_board' | 'curated' | 'generated';
-    boardYear?: number;
-    boardSet?: string;
-    maxDifficulty?: number;
-    minDifficulty?: number;
-  };
-}
-
-/**
- * Generate quiz parameters based on mode and student state.
- * Returns configuration for the quiz question fetcher.
- */
-export function generateQuizParams(input: QuizGeneratorInput): QuizGeneratorOutput {
-  const count = input.questionCount || 10;
-
-  if (input.mode === 'board') {
-    // Board Exam Practice: filter by source + year, standard difficulty
-    return {
-      mode: 'board',
-      topicIds: [],
-      targetDifficulty: 5,
-      bloomTarget: 'apply',
-      bloomDistribution: { remember: 15, understand: 20, apply: 30, analyze: 20, evaluate: 10, create: 5 },
-      interleavingRatio: 0.3,
-      filters: {
-        source: 'cbse_board',
-        boardYear: input.boardYear,
-        boardSet: input.boardSet,
-      },
-    };
+  // 2. Missing bloom levels: student can remember but can't apply
+  const bloomByTopic = new Map<string, BloomMastery[]>();
+  for (const bp of bloomProgressions) {
+    if (!bloomByTopic.has(bp.topicId)) bloomByTopic.set(bp.topicId, []);
+    bloomByTopic.get(bp.topicId)!.push({
+      bloomLevel: bp.bloomLevel,
+      mastery: bp.mastery,
+      attempts: 0,
+      correct: 0,
+    });
   }
 
-  if (input.mode === 'practice') {
-    // Standard practice: no ZPD, no interleaving, balanced difficulty
-    return {
-      mode: 'practice',
-      topicIds: [],
-      targetDifficulty: input.masteryLevel ? Math.round(input.masteryLevel * 10) : 5,
-      bloomTarget: input.currentBloom || 'apply',
-      bloomDistribution: { remember: 20, understand: 25, apply: 25, analyze: 15, evaluate: 10, create: 5 },
-      interleavingRatio: 0,
-      filters: {},
-    };
-  }
-
-  // Cognitive mode (default): ZPD + Bloom's + interleaving
-  const zpd = calculateZPD(
-    input.masteryLevel || 0.5,
-    input.recentAccuracy || 0.6,
-    input.currentBloom || 'understand',
-    0,
-    0,
-  );
-
-  const topicIds = input.topicWeights
-    ? interleaveTopics(input.topicWeights, count)
-    : [];
-
-  // Bloom distribution shifts based on target
-  const bloomIdx = BLOOM_HIERARCHY.indexOf(zpd.bloomTarget);
-  const dist: Record<BloomLevel, number> = {
-    remember: 5, understand: 10, apply: 20, analyze: 25, evaluate: 25, create: 15,
-  };
-  // Boost target level and neighbors
-  if (bloomIdx >= 0) {
-    for (let i = 0; i < BLOOM_HIERARCHY.length; i++) {
-      const distance = Math.abs(i - bloomIdx);
-      dist[BLOOM_HIERARCHY[i]] = distance === 0 ? 35 : distance === 1 ? 25 : 10;
+  for (const [topicId, blooms] of bloomByTopic) {
+    const sorted = blooms.sort((a, b) => BLOOM_ORDER[a.bloomLevel] - BLOOM_ORDER[b.bloomLevel]);
+    for (let i = 1; i < sorted.length; i++) {
+      // Check for gaps: lower level mastered but higher level weak
+      if (sorted[i - 1].mastery > 0.7 && sorted[i].mastery < 0.3 && sorted[i].bloomLevel !== 'create') {
+        gaps.push({
+          topicId,
+          gapType: 'missing_bloom_level',
+          severity: 'medium',
+          description: `You can ${sorted[i - 1].bloomLevel} this topic but struggle to ${sorted[i].bloomLevel}.`,
+          descriptionHi: `तुम इस topic को ${sorted[i - 1].bloomLevel} कर सकते हो लेकिन ${sorted[i].bloomLevel} में कठिनाई है।`,
+        });
+        break; // one gap per topic
+      }
     }
   }
 
-  return {
-    mode: 'cognitive',
-    topicIds,
-    targetDifficulty: zpd.targetDifficulty,
-    bloomTarget: zpd.bloomTarget,
-    bloomDistribution: dist,
-    interleavingRatio: 0.7,
-    filters: {
-      minDifficulty: Math.max(1, zpd.targetDifficulty - 2),
-      maxDifficulty: Math.min(10, zpd.targetDifficulty + 2),
-    },
-  };
+  // 3. Stale knowledge: high mastery but not practiced in 30+ days
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+  for (const topic of topicMasteries) {
+    if (topic.mastery > 0.6 && topic.lastAttempted) {
+      const lastDate = new Date(topic.lastAttempted);
+      if (lastDate < thirtyDaysAgo) {
+        gaps.push({
+          topicId: topic.topicId,
+          gapType: 'stale_knowledge',
+          severity: 'low',
+          description: "It's been a while since you practiced this topic. Time for a quick review!",
+          descriptionHi: 'इस topic का अभ्यास किये काफी समय हो गया। एक quick review का समय है!',
+        });
+      }
+    }
+  }
+
+  return gaps;
+}
+
+// ─── Enhanced Quiz Generator ─────────────────────────────────
+
+export interface QuizGeneratorInput {
+  mode: QuizMode;
+  subject: string;
+  grade: string;
+  count: number;
+  // For cognitive mode
+  studentMastery?: number;
+  recentAccuracy?: number;
+  bloomMasteries?: BloomMastery[];
+  topicWeights?: TopicWeight[];
+  cognitiveLoad?: CognitiveLoadState;
+  // For board mode
+  boardYear?: number;
+  // For practice mode
+  difficulty?: number;
+  topicId?: string;
+}
+
+/**
+ * Generate quiz parameters based on mode.
+ * Returns configuration for the server-side quiz fetcher.
+ */
+export function generateQuizParams(input: QuizGeneratorInput): {
+  mode: QuizMode;
+  difficulty: number;
+  bloomTarget: BloomLevel;
+  topicIds: string[];
+  interleavingRatio: number;
+  zpdTarget: number;
+  boardYear?: number;
+  source?: string;
+} {
+  switch (input.mode) {
+    case 'cognitive': {
+      // ZPD-based adaptive selection
+      const zpd = calculateZPD(
+        input.studentMastery ?? 0.5,
+        input.recentAccuracy ?? 0.5,
+        input.bloomMasteries
+      );
+
+      // Adjust for cognitive load
+      const adjustedDifficulty = input.cognitiveLoad
+        ? adjustDifficulty(zpd.targetDifficulty, input.cognitiveLoad)
+        : zpd.targetDifficulty;
+
+      // Interleave topics
+      const topicIds = input.topicWeights
+        ? interleaveTopics(input.topicWeights, input.count)
+        : [];
+
+      return {
+        mode: 'cognitive',
+        difficulty: zpdToDifficultyLevel(adjustedDifficulty),
+        bloomTarget: zpd.targetBloomLevel,
+        topicIds,
+        interleavingRatio: topicIds.length > 0
+          ? new Set(topicIds).size / topicIds.length
+          : 0,
+        zpdTarget: adjustedDifficulty,
+      };
+    }
+
+    case 'board': {
+      return {
+        mode: 'board',
+        difficulty: 0, // all difficulties
+        bloomTarget: 'apply', // board exams focus on application
+        topicIds: [],
+        interleavingRatio: 1, // board papers are naturally interleaved
+        zpdTarget: 0.6,
+        boardYear: input.boardYear,
+        source: 'cbse_board',
+      };
+    }
+
+    case 'practice':
+    default: {
+      return {
+        mode: 'practice',
+        difficulty: input.difficulty ?? 0,
+        bloomTarget: 'understand',
+        topicIds: input.topicId ? [input.topicId] : [],
+        interleavingRatio: 0,
+        zpdTarget: 0.5,
+      };
+    }
+  }
+}
+
+// ─── Board Exam Scoring ──────────────────────────────────────
+
+export interface BoardExamScore {
+  totalMarks: number;
+  obtainedMarks: number;
+  percentage: number;
+  grade: string;
+  message: string;
+  messageHi: string;
+}
+
+/**
+ * Calculate a projected board exam score based on quiz performance.
+ * @param correct Number of correct answers
+ * @param total Total questions
+ * @param totalBoardMarks Total marks on the board paper (typically 80)
+ */
+export function calculateBoardExamScore(
+  correct: number,
+  total: number,
+  totalBoardMarks: number = 80
+): BoardExamScore {
+  const percentage = total > 0 ? (correct / total) * 100 : 0;
+  const obtainedMarks = Math.round((percentage / 100) * totalBoardMarks);
+
+  let grade: string;
+  let message: string;
+  let messageHi: string;
+
+  if (percentage >= 90) {
+    grade = 'A1';
+    message = `Outstanding! You would likely score ${obtainedMarks}/${totalBoardMarks} on the board exam!`;
+    messageHi = `शानदार! बोर्ड परीक्षा में तुम्हारा स्कोर ${obtainedMarks}/${totalBoardMarks} हो सकता है!`;
+  } else if (percentage >= 80) {
+    grade = 'A2';
+    message = `Excellent! Projected score: ${obtainedMarks}/${totalBoardMarks}. Almost there!`;
+    messageHi = `बहुत बढ़िया! अनुमानित स्कोर: ${obtainedMarks}/${totalBoardMarks}। बस थोड़ा और!`;
+  } else if (percentage >= 70) {
+    grade = 'B1';
+    message = `Good effort! Projected score: ${obtainedMarks}/${totalBoardMarks}. Keep practicing!`;
+    messageHi = `अच्छा प्रयास! अनुमानित स्कोर: ${obtainedMarks}/${totalBoardMarks}। अभ्यास जारी रखो!`;
+  } else if (percentage >= 60) {
+    grade = 'B2';
+    message = `Projected score: ${obtainedMarks}/${totalBoardMarks}. Focus on weak areas!`;
+    messageHi = `अनुमानित स्कोर: ${obtainedMarks}/${totalBoardMarks}। कमज़ोर topics पर ध्यान दो!`;
+  } else if (percentage >= 50) {
+    grade = 'C1';
+    message = `Projected score: ${obtainedMarks}/${totalBoardMarks}. More practice needed.`;
+    messageHi = `अनुमानित स्कोर: ${obtainedMarks}/${totalBoardMarks}। और अभ्यास करो।`;
+  } else {
+    grade = 'D';
+    message = `Projected score: ${obtainedMarks}/${totalBoardMarks}. Let Foxy help you review the basics!`;
+    messageHi = `अनुमानित स्कोर: ${obtainedMarks}/${totalBoardMarks}। Foxy से basics सीखो!`;
+  }
+
+  return { totalMarks: totalBoardMarks, obtainedMarks, percentage, grade, message, messageHi };
 }

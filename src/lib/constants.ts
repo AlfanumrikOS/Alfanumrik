@@ -106,5 +106,34 @@ export const MASTERY_LEVELS = [
   { id: 'mastered', label: 'Mastered', labelHi: 'महारत', color: '#F5A623', icon: '●' },
 ] as const;
 
+/* ─── Bloom's Taxonomy Configuration ─── */
+export const BLOOM_LEVELS = [
+  { id: 'remember', label: 'Remember', labelHi: 'याद करो', color: '#9CA3AF', icon: '○', order: 0 },
+  { id: 'understand', label: 'Understand', labelHi: 'समझो', color: '#3B82F6', icon: '◔', order: 1 },
+  { id: 'apply', label: 'Apply', labelHi: 'लागू करो', color: '#10B981', icon: '◑', order: 2 },
+  { id: 'analyze', label: 'Analyze', labelHi: 'विश्लेषण करो', color: '#F59E0B', icon: '◕', order: 3 },
+  { id: 'evaluate', label: 'Evaluate', labelHi: 'मूल्यांकन करो', color: '#EF4444', icon: '◉', order: 4 },
+  { id: 'create', label: 'Create', labelHi: 'रचना करो', color: '#8B5CF6', icon: '●', order: 5 },
+] as const;
+
+/* ─── CBSE Board Exam Years ─── */
+export const BOARD_EXAM_YEARS = [2024, 2023, 2022, 2021, 2020, 2019, 2018, 2017, 2016, 2015] as const;
+
+/* ─── Quiz Modes ─── */
+export const QUIZ_MODES = [
+  { id: 'practice', label: 'Practice', labelHi: 'अभ्यास', icon: '⚡', desc: 'Standard quiz with selected difficulty', descHi: 'चुनी हुई कठिनाई के साथ क्विज़' },
+  { id: 'cognitive', label: 'Smart Practice', labelHi: 'स्मार्ट अभ्यास', icon: '🧠', desc: 'AI-powered adaptive questions using ZPD', descHi: 'AI-संचालित अनुकूली प्रश्न' },
+  { id: 'board', label: 'Board Exam', labelHi: 'बोर्ड परीक्षा', icon: '📋', desc: 'Real CBSE board exam questions', descHi: 'असली CBSE बोर्ड परीक्षा के प्रश्न' },
+] as const;
+
+/* ─── CBSE Question Types ─── */
+export const CBSE_QUESTION_TYPES = [
+  { id: 'mcq', label: 'MCQ', marks: 1 },
+  { id: 'assertion_reasoning', label: 'Assertion-Reasoning', marks: 1 },
+  { id: 'case_based', label: 'Case-Based', marks: 4 },
+  { id: 'short_answer', label: 'Short Answer', marks: 2 },
+  { id: 'long_answer', label: 'Long Answer', marks: 5 },
+] as const;
+
 export const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 export const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';

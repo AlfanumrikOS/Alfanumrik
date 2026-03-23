@@ -312,94 +312,97 @@ export interface SubjectPerformance {
   chapters_total: number;
 }
 
-/* ── Alfanumrik 2.0 Types ── */
+/* ── Alfanumrik 2.0: Cognitive Engine Types ── */
 
 export type BloomLevel = 'remember' | 'understand' | 'apply' | 'analyze' | 'evaluate' | 'create';
 
-export type QuestionSource = 'curated' | 'cbse_board' | 'generated';
-
-export type CBSEQuestionType = 'mcq' | 'assertion_reasoning' | 'case_based' | 'short_answer' | 'long_answer';
-
-export interface BoardPaper {
-  id: string;
-  year: number;
-  set_code: string | null;
-  subject: string;
-  paper_section: string | null;
-  total_marks: number | null;
-}
+export type QuizMode = 'cognitive' | 'board' | 'practice';
 
 export interface BloomProgression {
   id: string;
   student_id: string;
   topic_id: string;
   bloom_level: BloomLevel;
-  correct_at_level: number;
-  total_at_level: number;
-  mastered_at: string | null;
+  attempts: number;
+  correct: number;
+  mastery: number;
+  last_attempted: string | null;
 }
 
 export interface CognitiveSessionMetrics {
   id: string;
   student_id: string;
-  session_id: string;
-  questions_answered: number;
-  correct_streak: number;
-  wrong_streak: number;
-  avg_time_per_question: number;
-  session_duration_minutes: number;
-  recent_accuracy: number;
-  difficulty_adjustments: number;
+  session_id: string | null;
+  zpd_target: number | null;
+  zpd_actual: number | null;
+  zpd_accuracy: number | null;
+  bloom_distribution: Record<string, number> | null;
+  interleaving_ratio: number | null;
   fatigue_detected: boolean;
+  difficulty_adjustments: number;
+  consecutive_errors: number;
+  consecutive_correct: number;
+  avg_response_time: number | null;
+  session_duration: number | null;
+  questions_attempted: number;
 }
 
 export interface LearningVelocity {
   id: string;
   student_id: string;
   topic_id: string;
-  velocity: number;
-  predicted_days_to_target: number | null;
-  data_points: { date: string; mastery: number }[];
-  calculated_at: string;
+  subject: string;
+  velocity_score: number;
+  mastery_datapoints: Array<{ date: string; mastery: number }>;
+  predicted_mastery_date: string | null;
+  sessions_to_mastery: number | null;
 }
 
 export interface KnowledgeGap {
   id: string;
-  student_id: string;
-  topic_id: string;
-  missing_prerequisites: string[];
-  severity: 'critical' | 'moderate' | 'minor';
-  resolved: boolean;
+  topic_title: string;
+  gap_type: string;
+  severity: string;
+  description: string;
+  description_hi: string | null;
+  recommended_action: string | null;
+  recommended_action_hi: string | null;
   detected_at: string;
+}
+
+export interface CBSEBoardPaper {
+  id: string;
+  year: number;
+  subject: string;
+  set_code: string | null;
+  paper_section: string | null;
+  total_marks: number;
+  board: string;
+  grade: string;
+  is_active: boolean;
 }
 
 export interface QuestionResponse {
   id: string;
   student_id: string;
   question_id: string;
-  session_id: string;
-  bloom_level: BloomLevel;
+  session_id: string | null;
+  selected_option: number;
   is_correct: boolean;
-  time_spent_seconds: number;
-  selected_option: string;
+  time_spent: number;
+  bloom_level: string | null;
+  difficulty: number | null;
+  source: string;
+  board_year: number | null;
   reflection_shown: boolean;
+  reflection_type: string | null;
 }
 
-export interface EnhancedQuestion {
-  id: string;
-  question_text: string;
-  question_text_hi?: string;
-  options: string[];
-  correct_option: number;
-  explanation?: string;
-  explanation_hi?: string;
-  subject: string;
-  topic_id: string;
-  difficulty: number;
-  bloom_level: BloomLevel;
-  source: QuestionSource;
-  board_year?: number;
-  marks?: number;
-  cbse_question_type?: CBSEQuestionType;
-  paper_section?: string;
+export interface BoardExamScore {
+  totalMarks: number;
+  obtainedMarks: number;
+  percentage: number;
+  grade: string;
+  message: string;
+  messageHi: string;
 }

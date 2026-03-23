@@ -290,3 +290,105 @@ export async function linkGuardianToStudent(guardianId: string, inviteCode: stri
   if (error) throw error;
   return data;
 }
+
+
+/* ═══ ALFANUMRIK 2.0: COGNITIVE ENGINE APIs ═══ */
+
+/* ── Board Exam Questions ── */
+export async function getBoardExamQuestions(subject: string, grade: string, year?: number, count = 20) {
+  const params: Record<string, unknown> = { p_subject: subject, p_grade: grade, p_count: count };
+  if (year != null) params.p_year = year;
+  const { data, error } = await supabase.rpc('get_board_exam_questions', params);
+  if (error) throw error;
+  return data;
+}
+
+/* ── CBSE Board Papers list ── */
+export async function getBoardPapers(subject?: string) {
+  let query = supabase.from('cbse_board_papers').select('*').eq('is_active', true).order('year', { ascending: false });
+  if (subject) query = query.eq('subject', subject);
+  const { data, error } = await query;
+  if (error) console.error('getBoardPapers:', error.message);
+  return data ?? [];
+}
+
+/* ── Bloom's Progression ── */
+export async function getBloomProgression(studentId: string, subject?: string) {
+  const params: Record<string, unknown> = { p_student_id: studentId };
+  if (subject) params.p_subject = subject;
+  const { data, error } = await supabase.rpc('get_bloom_progression', params);
+  if (error) console.error('getBloomProgression:', error.message);
+  return data ?? [];
+}
+
+/* ── Knowledge Gaps ── */
+export async function getKnowledgeGaps(studentId: string, subject?: string, limit = 10) {
+  const params: Record<string, unknown> = { p_student_id: studentId, p_limit: limit };
+  if (subject) params.p_subject = subject;
+  const { data, error } = await supabase.rpc('get_knowledge_gaps', params);
+  if (error) console.error('getKnowledgeGaps:', error.message);
+  return data ?? [];
+}
+
+/* ── Learning Velocity ── */
+export async function getLearningVelocity(studentId: string, subject?: string) {
+  let query = supabase.from('learning_velocity').select('*').eq('student_id', studentId);
+  if (subject) query = query.eq('subject', subject);
+  const { data, error } = await query.order('updated_at', { ascending: false }).limit(20);
+  if (error) console.error('getLearningVelocity:', error.message);
+  return data ?? [];
+}
+
+/* ── Cognitive Session Metrics ── */
+export async function saveCognitiveMetrics(metrics: {
+  student_id: string;
+  session_id?: string;
+  zpd_target?: number;
+  zpd_actual?: number;
+  bloom_distribution?: Record<string, number>;
+  interleaving_ratio?: number;
+  fatigue_detected?: boolean;
+  difficulty_adjustments?: number;
+  consecutive_errors?: number;
+  consecutive_correct?: number;
+  avg_response_time?: number;
+  session_duration?: number;
+  questions_attempted?: number;
+}) {
+  const { error } = await supabase.from('cognitive_session_metrics').insert(metrics);
+  if (error) console.error('saveCognitiveMetrics:', error.message);
+}
+
+/* ── Question Responses (detailed per-question tracking) ── */
+export async function saveQuestionResponses(responses: Array<{
+  student_id: string;
+  question_id: string;
+  session_id?: string;
+  selected_option: number;
+  is_correct: boolean;
+  time_spent?: number;
+  bloom_level?: string;
+  difficulty?: number;
+  source?: string;
+  board_year?: number;
+  reflection_shown?: boolean;
+  reflection_type?: string;
+}>) {
+  const { error } = await supabase.from('question_responses').insert(responses);
+  if (error) console.error('saveQuestionResponses:', error.message);
+}
+
+/* ── Update Bloom Progression ── */
+export async function upsertBloomProgression(data: {
+  student_id: string;
+  topic_id: string;
+  bloom_level: string;
+  attempts: number;
+  correct: number;
+  mastery: number;
+}) {
+  const { error } = await supabase.from('bloom_progression').upsert(data, {
+    onConflict: 'student_id,topic_id,bloom_level',
+  });
+  if (error) console.error('upsertBloomProgression:', error.message);
+}

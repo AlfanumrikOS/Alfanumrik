@@ -3,14 +3,190 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { getStudentProfiles, getSubjects } from '@/lib/supabase';
-import { Card, ProgressBar, SectionHeader, StatCard, LoadingFoxy, BottomNav } from '@/components/ui';
+import { getStudentProfiles, getSubjects, getBloomProgression, getLearningVelocity, getKnowledgeGaps, supabase } from '@/lib/supabase';
+import { BLOOM_CONFIG, BLOOM_LEVELS, BLOOM_ORDER, getHighestMasteredBloom, predictMasteryDate } from '@/lib/cognitive-engine';
+import type { BloomLevel, KnowledgeGap, LearningVelocity, CognitiveSessionMetrics } from '@/lib/types';
+import { Card, Badge, ProgressBar, SectionHeader, StatCard, LoadingFoxy, BottomNav, Button } from '@/components/ui';
+
+/* ── Helpers ── */
+const SEVERITY_COLORS: Record<string, string> = {
+  critical: '#DC2626',
+  high: '#F59E0B',
+  medium: '#3B82F6',
+  low: '#6B7280',
+};
+
+const SEVERITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+
+function formatDate(d: Date | string | null): string {
+  if (!d) return '---';
+  const date = typeof d === 'string' ? new Date(d) : d;
+  return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+/* ── Bloom Mastery Heatmap for a single subject ── */
+function BloomHeatmap({ data, isHi }: { data: Array<{ bloom_level: BloomLevel; mastery: number }>; isHi: boolean }) {
+  // Aggregate mastery per bloom level
+  const masteryByLevel: Record<BloomLevel, number[]> = {
+    remember: [], understand: [], apply: [], analyze: [], evaluate: [], create: [],
+  };
+  for (const row of data) {
+    if (masteryByLevel[row.bloom_level]) {
+      masteryByLevel[row.bloom_level].push(row.mastery ?? 0);
+    }
+  }
+
+  return (
+    <div className="flex gap-1 items-center w-full">
+      {BLOOM_LEVELS.map((level) => {
+        const values = masteryByLevel[level];
+        const avg = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+        const cfg = BLOOM_CONFIG[level];
+        const opacity = Math.max(0.1, avg);
+        return (
+          <div
+            key={level}
+            className="flex-1 rounded-sm relative group"
+            style={{
+              height: 24,
+              background: cfg.color,
+              opacity,
+              minWidth: 0,
+            }}
+            title={`${isHi ? cfg.labelHi : cfg.label}: ${Math.round(avg * 100)}%`}
+          >
+            <div className="absolute inset-0 flex items-center justify-center text-[9px] font-bold text-white opacity-0 group-hover:opacity-100 transition-opacity">
+              {Math.round(avg * 100)}%
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ── Bloom Legend ── */
+function BloomLegend({ isHi }: { isHi: boolean }) {
+  return (
+    <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2">
+      {BLOOM_LEVELS.map((level) => {
+        const cfg = BLOOM_CONFIG[level];
+        return (
+          <div key={level} className="flex items-center gap-1">
+            <div className="w-2.5 h-2.5 rounded-sm" style={{ background: cfg.color }} />
+            <span className="text-[10px] text-[var(--text-3)]">{isHi ? cfg.labelHi : cfg.label}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ── Learning Velocity Mini-Chart (sparkline-style) ── */
+function VelocitySparkline({ datapoints }: { datapoints: Array<{ date: string; mastery: number }> }) {
+  if (!datapoints || datapoints.length < 2) return <span className="text-[10px] text-[var(--text-3)]">---</span>;
+
+  const sorted = [...datapoints].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  const maxM = Math.max(...sorted.map((d) => d.mastery), 0.01);
+  const width = 80;
+  const height = 24;
+  const step = width / (sorted.length - 1);
+
+  const points = sorted.map((d, i) => `${i * step},${height - (d.mastery / maxM) * height}`).join(' ');
+
+  return (
+    <svg width={width} height={height} className="inline-block">
+      <polyline
+        points={points}
+        fill="none"
+        stroke="var(--teal)"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/* ── Cognitive Session Card ── */
+function SessionMetricCard({ session, isHi }: { session: CognitiveSessionMetrics; isHi: boolean }) {
+  const bloomDist = session.bloom_distribution;
+  const zpdAcc = session.zpd_accuracy != null ? Math.round(session.zpd_accuracy * 100) : null;
+  const dur = session.session_duration != null ? Math.round(session.session_duration / 60) : null;
+
+  return (
+    <Card className="!p-3">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-semibold text-[var(--text-2)]">
+          {session.questions_attempted} {isHi ? 'प्रश्न' : 'questions'}
+        </span>
+        <div className="flex items-center gap-2">
+          {session.fatigue_detected && (
+            <Badge color="#EF4444" size="sm">{isHi ? 'थकान' : 'Fatigue'}</Badge>
+          )}
+          {dur != null && (
+            <span className="text-[10px] text-[var(--text-3)]">{dur}m</span>
+          )}
+        </div>
+      </div>
+
+      {/* ZPD Accuracy */}
+      {zpdAcc != null && (
+        <div className="mb-2">
+          <div className="flex justify-between text-[10px] text-[var(--text-3)] mb-0.5">
+            <span>{isHi ? 'ZPD सटीकता' : 'ZPD Accuracy'}</span>
+            <span>{zpdAcc}%</span>
+          </div>
+          <div className="w-full h-1.5 rounded-full" style={{ background: 'var(--surface-2)' }}>
+            <div
+              className="h-full rounded-full"
+              style={{
+                width: `${zpdAcc}%`,
+                background: zpdAcc >= 70 ? 'var(--green)' : zpdAcc >= 40 ? 'var(--orange)' : '#EF4444',
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Bloom Distribution */}
+      {bloomDist && Object.keys(bloomDist).length > 0 && (
+        <div className="flex gap-0.5">
+          {BLOOM_LEVELS.map((level) => {
+            const count = bloomDist[level] ?? 0;
+            if (count === 0) return null;
+            return (
+              <div
+                key={level}
+                className="rounded-sm text-center text-[9px] font-bold text-white px-1"
+                style={{ background: BLOOM_CONFIG[level].color, minWidth: 16 }}
+                title={`${BLOOM_CONFIG[level].label}: ${count}`}
+              >
+                {count}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   PROGRESS PAGE — Alfanumrik 2.0 with Cognitive Analytics
+   ═══════════════════════════════════════════════════════════════ */
 
 export default function ProgressPage() {
   const { student, snapshot, isLoggedIn, isLoading, isHi, refreshSnapshot } = useAuth();
   const router = useRouter();
+
   const [profiles, setProfiles] = useState<any[]>([]);
   const [subjects, setSubjects] = useState<any[]>([]);
+  const [bloomData, setBloomData] = useState<any[]>([]);
+  const [velocityData, setVelocityData] = useState<LearningVelocity[]>([]);
+  const [knowledgeGaps, setKnowledgeGaps] = useState<KnowledgeGap[]>([]);
+  const [sessionMetrics, setSessionMetrics] = useState<CognitiveSessionMetrics[]>([]);
+  const [activeTab, setActiveTab] = useState<'overview' | 'cognitive'>('overview');
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/');
@@ -19,14 +195,31 @@ export default function ProgressPage() {
   useEffect(() => {
     if (!student) return;
     refreshSnapshot();
+
+    // Core data
     Promise.all([getStudentProfiles(student.id), getSubjects()]).then(([p, s]) => {
       setProfiles(p);
       setSubjects(s);
     });
+
+    // Cognitive 2.0 data
+    getBloomProgression(student.id).then(setBloomData).catch(() => {});
+    getLearningVelocity(student.id).then(setVelocityData).catch(() => {});
+    getKnowledgeGaps(student.id, undefined, 20).then(setKnowledgeGaps).catch(() => {});
+
+    // Cognitive session metrics
+    supabase
+      .from('cognitive_session_metrics')
+      .select('*')
+      .eq('student_id', student.id)
+      .order('created_at', { ascending: false })
+      .limit(10)
+      .then(({ data }) => setSessionMetrics((data as CognitiveSessionMetrics[]) ?? []));
   }, [student?.id]);
 
   if (isLoading || !student) return <LoadingFoxy />;
 
+  /* ── Aggregate stats ── */
   const totalXp = snapshot?.total_xp ?? profiles.reduce((a, p) => a + (p.xp ?? 0), 0);
   const totalMinutes = profiles.reduce((a, p) => a + (p.total_time_minutes ?? 0), 0);
   const totalSessions = profiles.reduce((a, p) => a + (p.total_sessions ?? 0), 0);
@@ -34,49 +227,308 @@ export default function ProgressPage() {
   const totalAsked = profiles.reduce((a, p) => a + (p.total_questions_asked ?? 0), 0);
   const accuracy = totalAsked > 0 ? Math.round((totalCorrect / totalAsked) * 100) : 0;
 
+  /* ── Bloom aggregate: highest mastered level ── */
+  const highestBloom: BloomLevel = bloomData.length > 0
+    ? getHighestMasteredBloom(
+        bloomData.map((b: any) => ({
+          bloomLevel: b.bloom_level as BloomLevel,
+          mastery: b.mastery ?? 0,
+          attempts: b.attempts ?? 0,
+          correct: b.correct ?? 0,
+        }))
+      )
+    : 'remember';
+
+  /* ── Average velocity ── */
+  const avgVelocity = velocityData.length > 0
+    ? velocityData.reduce((a, v) => a + (v.velocity_score ?? 0), 0) / velocityData.length
+    : 0;
+
+  /* ── Mastery predictions: top 3 weakest topics ── */
+  const weakestTopics = [...velocityData]
+    .filter((v) => v.mastery_datapoints && v.mastery_datapoints.length >= 2)
+    .sort((a, b) => {
+      const lastA = a.mastery_datapoints[a.mastery_datapoints.length - 1]?.mastery ?? 0;
+      const lastB = b.mastery_datapoints[b.mastery_datapoints.length - 1]?.mastery ?? 0;
+      return lastA - lastB;
+    })
+    .slice(0, 3);
+
+  /* ── Knowledge gaps grouped by severity ── */
+  const gapsBySeverity = [...knowledgeGaps].sort(
+    (a, b) => (SEVERITY_ORDER[a.severity] ?? 3) - (SEVERITY_ORDER[b.severity] ?? 3)
+  );
+
+  /* ── Bloom data grouped by subject ── */
+  const bloomBySubject = new Map<string, any[]>();
+  for (const row of bloomData) {
+    const subj = row.subject ?? row.topic_subject ?? 'unknown';
+    if (!bloomBySubject.has(subj)) bloomBySubject.set(subj, []);
+    bloomBySubject.get(subj)!.push(row);
+  }
+
   return (
     <div className="mesh-bg min-h-dvh pb-nav">
       <header className="page-header">
         <div className="page-header-inner flex items-center gap-3">
-          <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)]">←</button>
+          <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)]">&larr;</button>
           <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
-            📈 {isHi ? 'प्रगति' : 'My Progress'}
+            {isHi ? 'प्रगति 2.0' : 'Progress 2.0'}
           </h1>
         </div>
       </header>
+
       <main className="app-container py-6 space-y-4">
-        <div className="grid-stats">
-          <StatCard icon="⭐" value={totalXp.toLocaleString()} label="Total XP" color="var(--orange)" />
-          <StatCard icon="🎯" value={`${accuracy}%`} label={isHi ? 'सटीकता' : 'Accuracy'} color="var(--green)" />
-          <StatCard icon="⏱" value={`${totalMinutes}m`} label={isHi ? 'कुल समय' : 'Study Time'} color="var(--teal)" />
-          <StatCard icon="📝" value={totalSessions} label={isHi ? 'सत्र' : 'Sessions'} color="var(--purple)" />
+        {/* ── Tab Switcher ── */}
+        <div className="flex gap-2">
+          <button
+            onClick={() => setActiveTab('overview')}
+            className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all"
+            style={{
+              background: activeTab === 'overview' ? 'var(--orange)' : 'var(--surface-2)',
+              color: activeTab === 'overview' ? '#fff' : 'var(--text-3)',
+            }}
+          >
+            {isHi ? 'सारांश' : 'Overview'}
+          </button>
+          <button
+            onClick={() => setActiveTab('cognitive')}
+            className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all"
+            style={{
+              background: activeTab === 'cognitive' ? 'var(--purple)' : 'var(--surface-2)',
+              color: activeTab === 'cognitive' ? '#fff' : 'var(--text-3)',
+            }}
+          >
+            {isHi ? 'संज्ञानात्मक' : 'Cognitive'}
+          </button>
         </div>
 
-        <div>
-          <SectionHeader icon="📚">{isHi ? 'विषयवार प्रगति' : 'Subject Progress'}</SectionHeader>
-          <div className="space-y-3">
-            {profiles.map((p) => {
-              const meta = subjects.find((s) => s.code === p.subject);
-              const correctPct = p.total_questions_asked > 0
-                ? Math.round((p.total_questions_answered_correctly / p.total_questions_asked) * 100)
-                : 0;
-              return (
-                <Card key={p.id} className="!p-4">
-                  <div className="flex items-center gap-3 mb-3">
-                    <span className="text-2xl">{meta?.icon ?? '📚'}</span>
-                    <div className="flex-1">
-                      <div className="font-semibold text-sm md:text-base">{meta?.name ?? p.subject}</div>
-                      <div className="text-xs text-[var(--text-3)]">
-                        Level {p.level} · {p.xp} XP · {p.streak_days}🔥
+        {/* ══════════════════════════════════════════════════════════
+           OVERVIEW TAB — Enhanced Stats + Subject Progress
+           ══════════════════════════════════════════════════════════ */}
+        {activeTab === 'overview' && (
+          <>
+            {/* Enhanced Stats Row */}
+            <div className="grid-stats">
+              <StatCard icon="⭐" value={totalXp.toLocaleString()} label="Total XP" color="var(--orange)" />
+              <StatCard icon="🎯" value={`${accuracy}%`} label={isHi ? 'सटीकता' : 'Accuracy'} color="var(--green)" />
+              <StatCard icon="⏱" value={`${totalMinutes}m`} label={isHi ? 'कुल समय' : 'Study Time'} color="var(--teal)" />
+              <StatCard icon="📝" value={totalSessions} label={isHi ? 'सत्र' : 'Sessions'} color="var(--purple)" />
+              <StatCard
+                icon={BLOOM_CONFIG[highestBloom].icon}
+                value={isHi ? BLOOM_CONFIG[highestBloom].labelHi : BLOOM_CONFIG[highestBloom].label}
+                label={isHi ? 'ब्लूम स्तर' : 'Bloom Level'}
+                color={BLOOM_CONFIG[highestBloom].color}
+              />
+              <StatCard
+                icon="🚀"
+                value={avgVelocity > 0 ? `${(avgVelocity * 100).toFixed(1)}` : '---'}
+                label={isHi ? 'गति' : 'Velocity'}
+                color="var(--teal)"
+              />
+            </div>
+
+            {/* Subject Progress with Bloom Heatmap */}
+            <div>
+              <SectionHeader icon="📚">{isHi ? 'विषयवार प्रगति' : 'Subject Progress'}</SectionHeader>
+              <div className="space-y-3">
+                {profiles.map((p) => {
+                  const meta = subjects.find((s: any) => s.code === p.subject);
+                  const correctPct = p.total_questions_asked > 0
+                    ? Math.round((p.total_questions_answered_correctly / p.total_questions_asked) * 100)
+                    : 0;
+                  const subjectBloom = bloomBySubject.get(p.subject) ?? [];
+
+                  return (
+                    <Card key={p.id} className="!p-4">
+                      <div className="flex items-center gap-3 mb-3">
+                        <span className="text-2xl">{meta?.icon ?? '📚'}</span>
+                        <div className="flex-1">
+                          <div className="font-semibold text-sm md:text-base">{meta?.name ?? p.subject}</div>
+                          <div className="text-xs text-[var(--text-3)]">
+                            Level {p.level} · {p.xp} XP · {p.streak_days}🔥
+                          </div>
+                        </div>
                       </div>
-                    </div>
+                      <ProgressBar value={correctPct} color={meta?.color} label={isHi ? 'सटीकता' : 'Accuracy'} showPercent height={6} />
+
+                      {/* Bloom Mastery Heatmap */}
+                      {subjectBloom.length > 0 && (
+                        <div className="mt-3">
+                          <div className="text-[10px] text-[var(--text-3)] mb-1 font-medium">
+                            {isHi ? 'ब्लूम स्तर' : 'Bloom Mastery'}
+                          </div>
+                          <BloomHeatmap data={subjectBloom} isHi={isHi} />
+                        </div>
+                      )}
+                    </Card>
+                  );
+                })}
+              </div>
+              {bloomData.length > 0 && <BloomLegend isHi={isHi} />}
+            </div>
+
+            {/* Mastery Predictions */}
+            {weakestTopics.length > 0 && (
+              <div>
+                <SectionHeader icon="🔮">{isHi ? 'महारत की भविष्यवाणी' : 'Mastery Predictions'}</SectionHeader>
+                <div className="space-y-2">
+                  {weakestTopics.map((v) => {
+                    const dp = v.mastery_datapoints;
+                    const currentMastery = dp[dp.length - 1]?.mastery ?? 0;
+                    const predicted = v.predicted_mastery_date
+                      ? new Date(v.predicted_mastery_date)
+                      : predictMasteryDate(currentMastery, v.velocity_score);
+
+                    return (
+                      <Card key={v.id} className="!p-3">
+                        <div className="flex items-center gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-semibold truncate">{v.topic_id}</div>
+                            <div className="text-[11px] text-[var(--text-3)]">
+                              {isHi ? 'वर्तमान' : 'Current'}: {Math.round(currentMastery * 100)}%
+                            </div>
+                          </div>
+                          <VelocitySparkline datapoints={dp} />
+                          <div className="text-right">
+                            <div className="text-[10px] text-[var(--text-3)]">
+                              {isHi ? 'अनुमानित तिथि' : 'Predicted by'}
+                            </div>
+                            <div className="text-xs font-semibold" style={{ color: 'var(--teal)' }}>
+                              {predicted ? formatDate(predicted) : (isHi ? 'अनिश्चित' : 'Uncertain')}
+                            </div>
+                          </div>
+                        </div>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════
+           COGNITIVE TAB — Gaps, Velocity, Sessions
+           ══════════════════════════════════════════════════════════ */}
+        {activeTab === 'cognitive' && (
+          <>
+            {/* Learning Velocity */}
+            {velocityData.length > 0 && (
+              <div>
+                <SectionHeader icon="🚀">{isHi ? 'सीखने की गति' : 'Learning Velocity'}</SectionHeader>
+                <div className="space-y-2">
+                  {velocityData.slice(0, 8).map((v) => {
+                    const dp = v.mastery_datapoints ?? [];
+                    const currentMastery = dp.length > 0 ? dp[dp.length - 1].mastery : 0;
+                    const predicted = v.predicted_mastery_date
+                      ? new Date(v.predicted_mastery_date)
+                      : predictMasteryDate(currentMastery, v.velocity_score);
+
+                    return (
+                      <Card key={v.id} className="!p-3">
+                        <div className="flex items-center gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-semibold truncate">{v.topic_id}</div>
+                            <div className="text-[10px] text-[var(--text-3)]">
+                              {v.subject} · {isHi ? 'गति' : 'v'}: {(v.velocity_score * 100).toFixed(1)}/day
+                            </div>
+                          </div>
+                          <VelocitySparkline datapoints={dp} />
+                          <div className="text-right shrink-0">
+                            <div className="text-xs font-bold" style={{ color: 'var(--teal)' }}>
+                              {Math.round(currentMastery * 100)}%
+                            </div>
+                            {predicted && (
+                              <div className="text-[9px] text-[var(--text-3)]">
+                                {isHi ? 'तक' : 'by'} {formatDate(predicted)}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Knowledge Gaps */}
+            <div>
+              <SectionHeader icon="🕳️">{isHi ? 'ज्ञान की कमियाँ' : 'Knowledge Gaps'}</SectionHeader>
+              {gapsBySeverity.length === 0 ? (
+                <Card className="!p-4 text-center">
+                  <div className="text-2xl mb-1">✅</div>
+                  <div className="text-sm text-[var(--text-3)]">
+                    {isHi ? 'कोई ज्ञान की कमी नहीं मिली!' : 'No knowledge gaps detected!'}
                   </div>
-                  <ProgressBar value={correctPct} color={meta?.color} label={isHi ? 'सटीकता' : 'Accuracy'} showPercent height={6} />
                 </Card>
-              );
-            })}
-          </div>
-        </div>
+              ) : (
+                <div className="space-y-2">
+                  {gapsBySeverity.map((gap) => (
+                    <Card key={gap.id} className="!p-3">
+                      <div className="flex items-start gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            <span className="text-xs font-semibold truncate">{gap.topic_title}</span>
+                            <Badge color={SEVERITY_COLORS[gap.severity] ?? '#6B7280'} size="sm">
+                              {gap.severity}
+                            </Badge>
+                            <span className="text-[10px] text-[var(--text-3)] px-1.5 py-0.5 rounded-md" style={{ background: 'var(--surface-2)' }}>
+                              {gap.gap_type.replace(/_/g, ' ')}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-[var(--text-3)] leading-relaxed">
+                            {isHi && gap.description_hi ? gap.description_hi : gap.description}
+                          </div>
+                        </div>
+                        <Button
+                          variant="soft"
+                          size="sm"
+                          color="var(--orange)"
+                          onClick={() => router.push(`/foxy?topic=${encodeURIComponent(gap.topic_title)}`)}
+                          className="shrink-0"
+                        >
+                          {isHi ? 'ठीक करो' : 'Fix'}
+                        </Button>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Cognitive Session History */}
+            {sessionMetrics.length > 0 && (
+              <div>
+                <SectionHeader icon="🧠">{isHi ? 'संज्ञानात्मक सत्र' : 'Cognitive Sessions'}</SectionHeader>
+                <div className="space-y-2">
+                  {sessionMetrics.map((s) => (
+                    <SessionMetricCard key={s.id} session={s} isHi={isHi} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Empty state for cognitive tab */}
+            {velocityData.length === 0 && gapsBySeverity.length === 0 && sessionMetrics.length === 0 && (
+              <Card className="!p-6 text-center">
+                <div className="text-4xl mb-2">🧠</div>
+                <div className="text-sm font-semibold mb-1">
+                  {isHi ? 'अभी तक कोई संज्ञानात्मक डेटा नहीं' : 'No cognitive data yet'}
+                </div>
+                <div className="text-xs text-[var(--text-3)] mb-3">
+                  {isHi
+                    ? 'कुछ quiz दो, फिर यहाँ analytics दिखेगा!'
+                    : 'Take a few quizzes and your cognitive analytics will appear here!'}
+                </div>
+                <Button variant="primary" size="sm" onClick={() => router.push('/dashboard')}>
+                  {isHi ? 'Quiz शुरू करो' : 'Start a Quiz'}
+                </Button>
+              </Card>
+            )}
+          </>
+        )}
       </main>
       <BottomNav />
     </div>
