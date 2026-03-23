@@ -123,9 +123,10 @@ interface SelectProps {
   onChange: (value: string) => void;
   options: Array<{ value: string; label: string }>;
   className?: string;
+  disabled?: boolean;
 }
 
-export function Select({ label, value, onChange, options, className = '' }: SelectProps) {
+export function Select({ label, value, onChange, options, className = '', disabled }: SelectProps) {
   return (
     <div>
       {label && (
@@ -137,6 +138,8 @@ export function Select({ label, value, onChange, options, className = '' }: Sele
         className={`input-base ${className}`}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        style={disabled ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
       >
         {options.map((opt) => (
           <option key={opt.value} value={opt.value}>{opt.label}</option>

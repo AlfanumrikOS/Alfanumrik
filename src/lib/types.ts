@@ -33,6 +33,10 @@ export interface Student {
   parent_name: string | null;
   parent_phone: string | null;
   target_exam: string | null;
+  name_change_count: number | null;
+  last_grade_change: string | null;
+  last_device_hash: string | null;
+  device_change_count: number | null;
   created_at: string | null;
   updated_at: string | null;
 }

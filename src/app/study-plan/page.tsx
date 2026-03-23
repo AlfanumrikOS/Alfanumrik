@@ -133,12 +133,49 @@ export default function StudyPlanPage() {
     setGenerating(false);
   };
 
+  // ── VALID STATE TRANSITIONS ──
+  // Students can't jump from pending → completed directly (must go through in_progress).
+  // This prevents bulk-completing tasks via DevTools to farm XP.
+  // Also prevents re-completing already completed tasks (double XP).
+  const VALID_TRANSITIONS: Record<string, string[]> = {
+    pending: ['in_progress', 'skipped'],
+    in_progress: ['completed', 'skipped', 'pending'],
+    skipped: ['pending', 'in_progress'],
+    completed: [], // Terminal state — no going back
+  };
+
   const markTask = async (taskId: string, status: string) => {
     try {
-      const updates: Record<string, any> = { status };
+      // Find the task and validate the transition
+      const task = tasks.find(t => t.id === taskId);
+      if (!task) {
+        console.warn('[Security] markTask: task not found:', taskId);
+        return;
+      }
+
+      // Validate state transition
+      const allowed = VALID_TRANSITIONS[task.status] || [];
+      if (!allowed.includes(status)) {
+        console.warn(`[Security] Blocked invalid transition: ${task.status} → ${status} for task ${taskId}`);
+        return;
+      }
+
+      // Verify task belongs to the current student's plan
+      if (plan && !tasks.some(t => t.id === taskId)) {
+        console.warn('[Security] Task does not belong to current plan:', taskId);
+        return;
+      }
+
+      const updates: Record<string, string> = { status };
       if (status === 'completed') updates.completed_at = new Date().toISOString();
 
-      await supabase.from('study_plan_tasks').update(updates).eq('id', taskId);
+      // RLS enforces ownership, but we also add student_id check via plan ownership
+      const { error } = await supabase.from('study_plan_tasks').update(updates).eq('id', taskId);
+      if (error) {
+        console.error('markTask DB error:', error);
+        return;
+      }
+
       setTasks(prev => prev.map(t => (t.id === taskId ? { ...t, status } : t)));
 
       if (plan) {

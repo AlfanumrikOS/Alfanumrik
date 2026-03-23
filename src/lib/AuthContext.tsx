@@ -101,6 +101,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const setActiveRole = (role: UserRole) => {
+    // SECURITY: Only allow switching to roles the server has verified.
+    // This prevents localStorage injection attacks where a student
+    // sets themselves as 'teacher' via DevTools.
+    if (role !== 'none' && roles.length > 0 && !roles.includes(role)) {
+      console.warn(`[Auth] Blocked role switch to "${role}" — not in verified roles:`, roles);
+      return;
+    }
     setActiveRoleState(role);
     if (typeof window !== 'undefined') {
       localStorage.setItem('alfanumrik_active_role', role);
@@ -136,13 +143,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setRoles(rd.roles || []);
           rolesResolved = (rd.roles || []).length > 0;
 
-          // Restore saved role or use primary
+          // Restore saved role — ONLY if it's in the server-verified role list.
+          // This prevents the attack where someone manually writes
+          // localStorage.setItem('alfanumrik_active_role', 'teacher')
           const savedRole = typeof window !== 'undefined'
             ? localStorage.getItem('alfanumrik_active_role') as UserRole | null
             : null;
-          const effectiveRole = savedRole && rd.roles.includes(savedRole)
+          const serverRoles = rd.roles || [];
+          const effectiveRole = savedRole && serverRoles.includes(savedRole)
             ? savedRole
             : rd.primary_role || 'student';
+
+          // If saved role was invalid, clean it from localStorage
+          if (savedRole && !serverRoles.includes(savedRole)) {
+            console.warn(`[Auth] Cleared invalid saved role "${savedRole}". Verified roles:`, serverRoles);
+            localStorage.removeItem('alfanumrik_active_role');
+          }
+
           setActiveRoleState(effectiveRole);
 
           // Load student profile if role exists

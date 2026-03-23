@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { getReviewCards, supabase } from '@/lib/supabase';
@@ -60,13 +60,47 @@ export default function ReviewPage() {
     if (student) load();
   }, [student?.id, load]);
 
+  // Track which cards have been reviewed in this session to prevent double-rating
+  const reviewedCardIds = useRef(new Set<string>());
+
+  // Rate limit: max reviews per minute (prevents automated rapid-fire reviews)
+  const reviewTimestamps = useRef<number[]>([]);
+  const MAX_REVIEWS_PER_MINUTE = 20; // Human can't genuinely review faster than this
+
   const rateCard = async (quality: number) => {
     const card = cards[currentIdx];
     if (!card || !student) return;
 
+    // SECURITY: Prevent double-rating the same card in one session
+    if (reviewedCardIds.current.has(card.id)) {
+      console.warn('[Security] Card already reviewed in this session:', card.id);
+      // Skip to next card
+      if (currentIdx < cards.length - 1) setCurrentIdx(i => i + 1);
+      else setCards([]);
+      return;
+    }
+
+    // SECURITY: Rate limit — detect automated review bots
+    const now = Date.now();
+    reviewTimestamps.current = reviewTimestamps.current.filter(t => now - t < 60_000);
+    if (reviewTimestamps.current.length >= MAX_REVIEWS_PER_MINUTE) {
+      console.warn('[Security] Review rate limit exceeded — possible automation');
+      return;
+    }
+    reviewTimestamps.current.push(now);
+
+    // SECURITY: Validate quality is a valid value (not injected via DevTools)
+    if (![0, 1, 2, 3, 4, 5].includes(quality)) {
+      console.warn('[Security] Invalid quality value:', quality);
+      return;
+    }
+
     // SM-2 algorithm
     let newEase = card.ease_factor + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02));
     if (newEase < 1.3) newEase = 1.3;
+    // Cap ease factor to prevent runaway values from manipulation
+    if (newEase > 3.0) newEase = 3.0;
+
     let newInterval = card.interval_days;
     let newStreak = card.streak;
 
@@ -80,9 +114,17 @@ export default function ReviewPage() {
       newStreak = card.streak + 1;
     }
 
-    // Update in DB
+    // Cap interval to prevent absurd values (max 365 days)
+    if (newInterval > 365) newInterval = 365;
+    // Cap streak to prevent overflow (max 100)
+    if (newStreak > 100) newStreak = 100;
+
+    // Mark as reviewed before DB call to prevent double-click
+    reviewedCardIds.current.add(card.id);
+
+    // Update in DB (RLS ensures student can only update their own cards)
     try {
-      await supabase
+      const { error } = await supabase
         .from('spaced_repetition_cards')
         .update({
           ease_factor: newEase,
@@ -99,8 +141,14 @@ export default function ReviewPage() {
           updated_at: new Date().toISOString(),
         })
         .eq('id', card.id);
+
+      if (error) {
+        console.error('Failed to update card:', error);
+        reviewedCardIds.current.delete(card.id); // Allow retry on error
+      }
     } catch (e) {
       console.error('Failed to update card:', e);
+      reviewedCardIds.current.delete(card.id);
     }
 
     setReviewed((r) => r + 1);
