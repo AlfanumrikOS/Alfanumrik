@@ -202,7 +202,7 @@ export default function BottomNavComponent() {
               {/* Role Switcher for multi-role users */}
               {hasMultipleRoles && (
                 <div className="pt-2 mt-2" style={{ borderTop: '1px solid var(--border)' }}>
-                  <p className="text-[10px] font-bold text-[var(--text-3)] uppercase tracking-widest px-4 mb-1.5">
+                  <p className="text-[11px] font-bold text-[var(--text-3)] uppercase tracking-widest px-4 mb-1.5">
                     {isHi ? 'भूमिका बदलें' : 'Switch Role'}
                   </p>
                   {roles.filter(r => r !== 'none').map(role => {
@@ -273,7 +273,7 @@ export default function BottomNavComponent() {
                     {item.icon}
                   </div>
                   <span
-                    className="text-[10px] font-bold mt-0.5"
+                    className="text-[11px] font-bold mt-0.5"
                     style={{ color: active ? 'var(--orange)' : 'var(--text-2)' }}
                   >
                     {isHi ? item.labelHi : item.label}
@@ -321,7 +321,7 @@ export default function BottomNavComponent() {
             style={{ color: isMoreActive ? 'var(--orange)' : 'var(--text-3)' }}
           >
             <span className="text-[22px] leading-none" aria-hidden="true">&#x2630;</span>
-            <span className="text-[10px] font-semibold tracking-wide">{isHi ? 'और' : 'More'}</span>
+            <span className="text-[11px] font-semibold tracking-wide">{isHi ? 'और' : 'More'}</span>
             {isMoreActive && (
               <span className="w-1 h-1 rounded-full" style={{ background: 'var(--orange)' }} />
             )}
@@ -359,7 +359,7 @@ export default function BottomNavComponent() {
               <div className="text-base font-bold gradient-text" style={{ fontFamily: 'var(--font-display)' }}>
                 Alfanumrik
               </div>
-              <div className="text-[10px] text-[var(--text-3)] -mt-0.5">AI Learning OS</div>
+              <div className="text-[11px] text-[var(--text-3)] -mt-0.5">AI Learning OS</div>
             </div>}
           </button>
           <button
@@ -375,7 +375,7 @@ export default function BottomNavComponent() {
           <div className="space-y-5">
             {sidebarSections.map(section => (
               <div key={section.title}>
-                {!collapsed && <div className="text-[10px] font-bold text-[var(--text-3)] uppercase tracking-widest px-3 mb-1.5">
+                {!collapsed && <div className="text-[11px] font-bold text-[var(--text-3)] uppercase tracking-widest px-3 mb-1.5">
                   {isHi ? section.titleHi : section.title}
                 </div>}
                 <div className="space-y-0.5">
