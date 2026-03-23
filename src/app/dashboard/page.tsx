@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase, getStudentProfiles, getSubjects, getFeatureFlags, getNextTopics, getStudentNotifications, generateNotifications } from '@/lib/supabase';
 import { Card, StatCard, ProgressBar, SectionHeader, ActionTile, SubjectChip, Avatar, LoadingFoxy, BottomNav } from '@/components/ui';
+import TrustFooter from '@/components/TrustFooter';
 import type { StudentLearningProfile, Subject, CurriculumTopic } from '@/lib/types';
 
 const QUICK_ACTIONS = [
@@ -325,6 +326,7 @@ export default function Dashboard() {
         )}
       </main>
 
+      <TrustFooter />
       <BottomNav />
     </div>
   );

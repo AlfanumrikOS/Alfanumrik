@@ -8,8 +8,7 @@ import { Card, Button, SectionHeader, LoadingFoxy, BottomNav, Avatar } from '@/c
 import type { LeaderboardEntry } from '@/lib/types';
 
 // These types come from dynamic RPC responses with many optional fields
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type RPCRecord = Record<string, any>;
+type RPCRecord = Record<string, any>; // eslint-disable-line
 
 type Tab = 'ranks' | 'compete' | 'fame' | 'titles';
 

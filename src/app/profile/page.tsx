@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase, getStudentProfiles, getSubjects, studentJoinClass } from '@/lib/supabase';
 import { Card, Button, Input, Select, Avatar, SectionHeader, ProgressBar, StatCard, LoadingFoxy, BottomNav } from '@/components/ui';
+import TrustFooter from '@/components/TrustFooter';
 import { GRADES, BOARDS, LANGUAGES, SUBJECT_META } from '@/lib/constants';
 
 /* ═══ CONNECTIONS CARD: Parent Link Code + Class Join ═══ */
@@ -772,6 +773,7 @@ export default function ProfilePage() {
           Alfanumrik Learning OS v2.0 · Built with ❤️ in India
         </p>
       </main>
+      <TrustFooter />
       <BottomNav />
     </div>
   );

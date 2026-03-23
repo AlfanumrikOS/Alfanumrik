@@ -135,8 +135,7 @@ function PollTab({ classId, teacherId }: { classId: string; teacherId: string })
 export default function TeacherPage() {
   const { teacher, isLoading: authLoading, isLoggedIn, activeRole } = useAuth();
   const router = useRouter();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [dash, setDash] = useState<any>(null);
+  const [dash, setDash] = useState<any>(null); // eslint-disable-line
   const [heatmap, setHeatmap] = useState<HeatmapData | null>(null);
   const [alerts, setAlerts] = useState<any[]>([]);
   const [tab, setTab] = useState('heatmap');
