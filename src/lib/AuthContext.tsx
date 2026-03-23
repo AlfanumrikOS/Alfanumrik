@@ -199,8 +199,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.warn('get_user_role RPC failed, using fallback:', rpcErr);
       }
 
-      // Fallback: try student table directly
+      // Fallback: try all role tables directly
       if (!rolesResolved) {
+        const detectedRoles: UserRole[] = [];
+        let detectedPrimary: UserRole = 'none';
+
+        // Check student
         const { data: studentData } = await supabase
           .from('students')
           .select('*')
@@ -208,22 +212,62 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .single();
         if (studentData) {
           setStudent(studentData as Student);
-          setRoles(['student']);
-          setActiveRoleState('student');
+          detectedRoles.push('student');
+          detectedPrimary = 'student';
           setLanguageState(studentData.preferred_language ?? 'en');
+        }
+
+        // Check teacher
+        const { data: teacherData } = await supabase
+          .from('teachers')
+          .select('id, name, school_name, subjects_taught, grades_taught, email, phone')
+          .eq('auth_user_id', user.id)
+          .single();
+        if (teacherData) {
+          setTeacher(teacherData as TeacherProfile);
+          detectedRoles.push('teacher');
+          detectedPrimary = 'teacher'; // teacher takes priority
+        }
+
+        // Check guardian
+        const { data: guardianData } = await supabase
+          .from('guardians')
+          .select('id, name, email, phone')
+          .eq('auth_user_id', user.id)
+          .single();
+        if (guardianData) {
+          setGuardian(guardianData as GuardianProfile);
+          detectedRoles.push('guardian');
+          if (detectedPrimary === 'none') detectedPrimary = 'guardian';
+        }
+
+        if (detectedRoles.length > 0) {
+          setRoles(detectedRoles);
+          setActiveRoleState(detectedPrimary);
         } else {
-          // User is authenticated but has no profile yet (new signup).
-          // Set minimum viable state so isLoggedIn becomes true.
-          setRoles(['student']);
-          setActiveRoleState('student');
+          // User is authenticated but has no profile yet (new signup, pre-confirmation).
+          // Use role from auth metadata if available
+          const metaRole = user.user_metadata?.role as string | undefined;
+          const fallbackRole: UserRole = metaRole === 'teacher' ? 'teacher' : metaRole === 'parent' ? 'guardian' : 'student';
+          setRoles([fallbackRole]);
+          setActiveRoleState(fallbackRole);
         }
       }
     } catch (err) {
       console.error('Auth fetch error:', err);
       // If user was authenticated, ensure they're not stuck as "logged out"
+      // Use role from auth metadata if available
       if (hasUser) {
-        setRoles(['student']);
-        setActiveRoleState('student');
+        try {
+          const { data: { user: u } } = await supabase.auth.getUser();
+          const metaRole = u?.user_metadata?.role as string | undefined;
+          const fallbackRole: UserRole = metaRole === 'teacher' ? 'teacher' : metaRole === 'parent' ? 'guardian' : 'student';
+          setRoles([fallbackRole]);
+          setActiveRoleState(fallbackRole);
+        } catch {
+          setRoles(['student']);
+          setActiveRoleState('student');
+        }
       }
     }
     setIsLoading(false);
