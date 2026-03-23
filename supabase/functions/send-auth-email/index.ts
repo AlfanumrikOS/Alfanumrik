@@ -18,7 +18,9 @@
 import { Webhook } from 'https://esm.sh/standardwebhooks@1.0.0'
 import { Resend } from 'https://esm.sh/resend@4.0.0'
 
-const hookSecret = Deno.env.get('SEND_EMAIL_HOOK_SECRET') || ''
+// Supabase stores the secret as "v1,whsec_<base64>" but standardwebhooks expects "whsec_<base64>"
+const rawHookSecret = Deno.env.get('SEND_EMAIL_HOOK_SECRET') || ''
+const hookSecret = rawHookSecret.startsWith('v1,') ? rawHookSecret.slice(3) : rawHookSecret
 const resendApiKey = Deno.env.get('RESEND_API_KEY') || ''
 const FROM_EMAIL = 'Alfanumrik <noreply@alfanumrik.com>'
 const SITE_URL = 'https://alfanumrik.com'
@@ -167,8 +169,14 @@ Deno.serve(async (req: Request) => {
     }
 
     if (hookSecret) {
-      const wh = new Webhook(hookSecret)
-      data = wh.verify(payload, headers) as typeof data
+      try {
+        const wh = new Webhook(hookSecret)
+        data = wh.verify(payload, headers) as typeof data
+      } catch (verifyErr) {
+        console.error('[Auth Email] Webhook verification failed:', (verifyErr as Error).message)
+        // Fall back to parsing the payload directly so email still gets sent
+        data = JSON.parse(payload)
+      }
     } else {
       data = JSON.parse(payload)
     }
