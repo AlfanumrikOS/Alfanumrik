@@ -448,15 +448,28 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
       : 'linear-gradient(135deg, #E8590C, #F59E0B)';
 
   return (
-    <div className="mesh-bg min-h-dvh flex items-center justify-center px-4">
+    <div className="mesh-bg min-h-dvh flex flex-col items-center justify-center px-4 py-8">
       <div className="w-full max-w-sm">
-        {/* Logo */}
-        <div className="text-center mb-4">
+        {/* Hero — First impression. 3 seconds to hook an Indian student. */}
+        <div className="text-center mb-5">
           <div className="text-6xl mb-2 animate-float">{'\uD83E\uDD8A'}</div>
           <h1 className="text-2xl font-extrabold" style={{ fontFamily: 'var(--font-display)', background: 'linear-gradient(135deg, #E8590C, #F59E0B)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
             Alfanumrik
           </h1>
-          <p className="text-xs text-[var(--text-3)] mt-1">{subtitle}</p>
+          <p className="text-sm font-medium mt-1" style={{ color: 'var(--text-2)' }}>{subtitle}</p>
+
+          {/* Value proposition — what PW/Byju's miss on their login screens */}
+          <div className="flex items-center justify-center gap-3 mt-3 flex-wrap">
+            <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full" style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}>
+              CBSE Grades 6-12
+            </span>
+            <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full" style={{ background: 'rgba(22,163,74,0.08)', color: '#16A34A' }}>
+              Hindi & English
+            </span>
+            <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full" style={{ background: 'rgba(124,58,237,0.08)', color: '#7C3AED' }}>
+              100% Free
+            </span>
+          </div>
         </div>
 
         {/* Role Tabs */}
@@ -599,9 +612,20 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
           </div>
         </div>
 
-        <p className="text-center text-[10px] text-[var(--text-3)] mt-4">
-          By signing up, you agree to our Terms of Service
-        </p>
+        {/* Trust signals — Indian parents check this before letting kids sign up */}
+        <div className="mt-5 text-center space-y-2">
+          <div className="flex items-center justify-center gap-4 text-[11px] font-medium" style={{ color: 'var(--text-3)' }}>
+            <span>🛡️ Safe & Secure</span>
+            <span>🇮🇳 Made in India</span>
+            <span>🔒 No Ads</span>
+          </div>
+          <p className="text-[10px]" style={{ color: 'var(--text-3)' }}>
+            By signing up, you agree to our <a href="/terms" className="underline">Terms</a> & <a href="/privacy" className="underline">Privacy Policy</a>
+          </p>
+          <p className="text-[10px]" style={{ color: 'var(--text-3)' }}>
+            © {new Date().getFullYear()} Cusiosense Learning India Pvt. Ltd.
+          </p>
+        </div>
       </div>
     </div>
   );

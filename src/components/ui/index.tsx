@@ -101,9 +101,10 @@ export function Button({
 /* ─── Input ───────────────────────────────────────────────── */
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
+  error?: string;
 }
 
-export function Input({ label, className = '', ...props }: InputProps) {
+export function Input({ label, error, className = '', ...props }: InputProps) {
   return (
     <div>
       {label && (
@@ -111,7 +112,17 @@ export function Input({ label, className = '', ...props }: InputProps) {
           {label}
         </label>
       )}
-      <input className={`input-base ${className}`} {...props} />
+      <input
+        className={`input-base ${className}`}
+        aria-invalid={error ? 'true' : undefined}
+        style={error ? { borderColor: '#DC2626', boxShadow: '0 0 0 2px rgba(220,38,38,0.1)' } : undefined}
+        {...props}
+      />
+      {error && (
+        <p className="text-xs mt-1 ml-1 font-medium" style={{ color: '#DC2626' }} role="alert">
+          {error}
+        </p>
+      )}
     </div>
   );
 }
