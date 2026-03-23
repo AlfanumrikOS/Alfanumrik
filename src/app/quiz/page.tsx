@@ -8,7 +8,13 @@ import { shareResult, quizShareMessage } from '@/lib/share';
 import { getQuizQuestions, submitQuizResults, supabase } from '@/lib/supabase';
 import { Card, Button, ProgressBar, StatCard, LoadingFoxy, BottomNav } from '@/components/ui';
 import { SUBJECT_META } from '@/lib/constants';
+import {
+  BLOOM_CONFIG, BLOOM_LEVELS,
+  initialCognitiveLoad, updateCognitiveLoad, getReflectionPrompt,
+  type BloomLevel, type CognitiveLoadState, type ReflectionPrompt,
+} from '@/lib/cognitive-engine';
 
+type QuizMode = 'practice' | 'cognitive';
 type Screen = 'select' | 'quiz' | 'feedback' | 'results';
 
 interface Question {
@@ -49,9 +55,14 @@ export default function QuizPage() {
 
   // Setup state
   const [screen, setScreen] = useState<Screen>('select');
+  const [quizMode, setQuizMode] = useState<QuizMode>('practice');
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
   const [selectedDifficulty, setSelectedDifficulty] = useState<number | null>(null);
   const [questionCount, setQuestionCount] = useState(10);
+
+  // Cognitive 2.0 state
+  const [cogLoad, setCogLoad] = useState<CognitiveLoadState>(initialCognitiveLoad());
+  const [reflection, setReflection] = useState<ReflectionPrompt | null>(null);
 
   // Quiz state
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -82,6 +93,8 @@ export default function QuizPage() {
     if (subj && SUBJECT_META.find(s => s.code === subj)) {
       setSelectedSubject(subj);
     }
+    const mode = params.get('mode');
+    if (mode === 'cognitive') setQuizMode('cognitive');
   }, []);
 
   // Global timer
@@ -125,6 +138,8 @@ export default function QuizPage() {
       setSelectedOption(null);
       setShowExplanation(false);
       setTimer(0);
+      setCogLoad(initialCognitiveLoad());
+      setReflection(null);
       setScreen('quiz');
     } catch (e) {
       console.error('Quiz load error:', e);
@@ -155,6 +170,15 @@ export default function QuizPage() {
     }]);
     setShowExplanation(true);
     if (qTimerRef.current) clearInterval(qTimerRef.current);
+
+    // Cognitive 2.0: update cognitive load
+    if (quizMode === 'cognitive') {
+      const newCogLoad = updateCognitiveLoad(cogLoad, isCorrect, questionTimer);
+      setCogLoad(newCogLoad);
+      const bloom = (q.bloom_level || 'remember') as BloomLevel;
+      const prompt = getReflectionPrompt(isCorrect, newCogLoad.consecutiveErrors, newCogLoad.consecutiveCorrect, bloom);
+      setReflection(prompt);
+    }
   };
 
   const nextQuestion = async () => {
@@ -162,6 +186,7 @@ export default function QuizPage() {
       setCurrentIdx(i => i + 1);
       setSelectedOption(null);
       setShowExplanation(false);
+      setReflection(null);
     } else {
       // Quiz complete — submit results
       if (timerRef.current) clearInterval(timerRef.current);
@@ -264,6 +289,36 @@ export default function QuizPage() {
           </div>
         </header>
         <main className="app-container py-6 space-y-5">
+          {/* Quiz Mode */}
+          <div>
+            <p className="text-sm text-[var(--text-3)] mb-3 font-medium">
+              {isHi ? 'मोड चुनो' : 'Choose Mode'}
+            </p>
+            <div className="flex gap-3">
+              {([
+                { id: 'practice' as QuizMode, icon: '✏️', label: 'Practice', labelHi: 'अभ्यास', desc: 'Choose your own difficulty', descHi: 'अपनी कठिनाई चुनो', color: '#F5A623' },
+                { id: 'cognitive' as QuizMode, icon: '🧠', label: 'Smart', labelHi: 'स्मार्ट', desc: 'AI picks the right level', descHi: 'AI सही स्तर चुनता है', color: '#7C3AED' },
+              ]).map(m => (
+                <button
+                  key={m.id}
+                  onClick={() => setQuizMode(m.id)}
+                  className="flex-1 rounded-2xl p-4 text-left transition-all active:scale-95"
+                  style={{
+                    background: quizMode === m.id ? `${m.color}12` : 'var(--surface-1)',
+                    border: quizMode === m.id ? `2px solid ${m.color}` : '1.5px solid var(--border)',
+                    boxShadow: quizMode === m.id ? `0 4px 16px ${m.color}20` : 'none',
+                  }}
+                >
+                  <div className="text-2xl mb-1">{m.icon}</div>
+                  <div className="text-sm font-bold" style={{ color: quizMode === m.id ? m.color : 'var(--text-2)' }}>
+                    {isHi ? m.labelHi : m.label}
+                  </div>
+                  <div className="text-[10px] text-[var(--text-3)] mt-0.5">{isHi ? m.descHi : m.desc}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Subject Grid */}
           <div>
             <p className="text-sm text-[var(--text-3)] mb-3 font-medium">
@@ -290,8 +345,8 @@ export default function QuizPage() {
             </div>
           </div>
 
-          {/* Difficulty Selection */}
-          {selectedSubject && (
+          {/* Difficulty Selection (hidden in cognitive mode — ZPD auto-selects) */}
+          {selectedSubject && quizMode === 'practice' && (
             <div>
               <p className="text-sm text-[var(--text-3)] mb-3 font-medium">
                 {isHi ? '2. कठिनाई स्तर' : '2. Difficulty level'}
@@ -404,8 +459,24 @@ export default function QuizPage() {
         <main className="flex-1 max-w-2xl mx-auto w-full px-4 py-5 flex flex-col gap-4">
           {/* Question */}
           <Card className="!p-5">
-            <div className="text-[10px] font-semibold text-[var(--text-3)] mb-2 uppercase tracking-wider">
-              {isHi ? `अध्याय ${q.chapter_number} · ${q.bloom_level}` : `Chapter ${q.chapter_number} · ${q.bloom_level}`}
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-[10px] font-semibold text-[var(--text-3)] uppercase tracking-wider">
+                {isHi ? `अध्याय ${q.chapter_number}` : `Chapter ${q.chapter_number}`}
+              </span>
+              {(() => {
+                const bl = (q.bloom_level || 'remember') as BloomLevel;
+                const bc = BLOOM_CONFIG[bl] || BLOOM_CONFIG.remember;
+                return (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: `${bc.color}18`, color: bc.color }}>
+                    {bc.icon} {isHi ? bc.labelHi : bc.label}
+                  </span>
+                );
+              })()}
+              {quizMode === 'cognitive' && cogLoad.fatigueScore > 0.4 && (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(239,68,68,0.1)', color: '#EF4444' }}>
+                  {isHi ? 'थकान' : 'Fatigue'} {Math.round(cogLoad.fatigueScore * 100)}%
+                </span>
+              )}
             </div>
             <div className="text-base md:text-lg font-semibold leading-relaxed" style={{ whiteSpace: 'pre-wrap' }}>
               {isHi && q.question_hi ? q.question_hi : q.question_text}
@@ -501,6 +572,38 @@ export default function QuizPage() {
             </div>
           )}
 
+          {/* Cognitive Reflection Prompt */}
+          {isAnswered && quizMode === 'cognitive' && reflection && (
+            <div className="rounded-2xl p-4 border" style={{ background: 'rgba(124,58,237,0.05)', borderColor: 'rgba(124,58,237,0.15)' }}>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-lg">🪞</span>
+                <span className="text-xs font-bold" style={{ color: '#7C3AED' }}>
+                  {reflection.type === 'pause' ? (isHi ? 'रुको और सोचो' : 'Pause & Reflect') : (isHi ? 'सोचो' : 'Reflect')}
+                </span>
+              </div>
+              <p className="text-sm leading-relaxed text-[var(--text-2)]">
+                {isHi ? reflection.messageHi : reflection.message}
+              </p>
+            </div>
+          )}
+
+          {/* Cognitive Pause Alert */}
+          {isAnswered && quizMode === 'cognitive' && cogLoad.shouldPause && (
+            <div className="rounded-2xl p-4 border" style={{ background: 'rgba(239,68,68,0.06)', borderColor: 'rgba(239,68,68,0.2)' }}>
+              <div className="flex items-center gap-2">
+                <span className="text-xl">😮‍💨</span>
+                <div>
+                  <p className="text-sm font-bold" style={{ color: '#EF4444' }}>
+                    {isHi ? 'ब्रेक ले लो!' : 'Take a break!'}
+                  </p>
+                  <p className="text-xs text-[var(--text-3)]">
+                    {isHi ? 'थोड़ा आराम करो, फिर वापस आओ।' : 'Rest a bit, then come back stronger.'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Action Buttons */}
           <div className="flex gap-3 mt-auto pb-2">
             {!isAnswered ? (
@@ -579,6 +682,51 @@ export default function QuizPage() {
             <StatCard icon="⭐" value={`+${results.xp_earned}`} label="XP" color="var(--orange)" />
             <StatCard icon="⏱" value={formatTime(timer)} label={isHi ? 'समय' : 'Time'} color="var(--teal)" />
           </div>
+
+          {/* Bloom Analysis */}
+          {quizMode === 'cognitive' && (
+            <div>
+              <p className="text-sm font-semibold text-[var(--text-2)] mb-3">
+                {isHi ? 'ब्लूम विश्लेषण' : 'Bloom Analysis'}
+              </p>
+              <Card className="!p-4">
+                <div className="space-y-2">
+                  {BLOOM_LEVELS.map(bl => {
+                    const bc = BLOOM_CONFIG[bl];
+                    const qsAtLevel = questions.filter(qq => (qq.bloom_level || 'remember') === bl);
+                    const correctAtLevel = qsAtLevel.filter((qq, i) => {
+                      const qIdx = questions.indexOf(qq);
+                      return responses[qIdx]?.is_correct;
+                    }).length;
+                    if (qsAtLevel.length === 0) return null;
+                    const pctCorrect = Math.round((correctAtLevel / qsAtLevel.length) * 100);
+                    return (
+                      <div key={bl} className="flex items-center gap-3">
+                        <span className="text-xs w-5 text-center" style={{ color: bc.color }}>{bc.icon}</span>
+                        <span className="text-xs font-semibold w-20" style={{ color: bc.color }}>
+                          {isHi ? bc.labelHi : bc.label}
+                        </span>
+                        <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: `${bc.color}15` }}>
+                          <div className="h-full rounded-full transition-all" style={{ width: `${pctCorrect}%`, background: bc.color }} />
+                        </div>
+                        <span className="text-[10px] text-[var(--text-3)] w-16 text-right">
+                          {correctAtLevel}/{qsAtLevel.length} ({pctCorrect}%)
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                {cogLoad.fatigueScore > 0.3 && (
+                  <div className="mt-3 pt-3 border-t flex items-center gap-2" style={{ borderColor: 'var(--border)' }}>
+                    <span className="text-sm">😮‍💨</span>
+                    <span className="text-[10px] text-[var(--text-3)]">
+                      {isHi ? `थकान स्कोर: ${Math.round(cogLoad.fatigueScore * 100)}%` : `Fatigue detected: ${Math.round(cogLoad.fatigueScore * 100)}%`}
+                    </span>
+                  </div>
+                )}
+              </Card>
+            </div>
+          )}
 
           {/* Question Review */}
           <div>
