@@ -1,17 +1,25 @@
 /**
- * send-auth-email – Custom Auth Email Hook for Alfanumrik
+ * send-auth-email – Supabase Auth Send Email Hook
  *
- * Supabase Auth Hook that replaces default email templates with
- * beautifully branded Alfanumrik emails for:
- *   - Email confirmation (signup)
- *   - Password reset (recovery)
- *   - Magic link login
+ * Replaces default Supabase auth emails with branded Alfanumrik templates.
+ * Uses standardwebhooks for payload verification as required by Supabase.
  *
- * Configure in Supabase Dashboard -> Auth -> Email Templates -> Hook URL
- * JWT verification is disabled because this is called by Supabase Auth internally.
+ * Handles: signup confirmation, password recovery, magic link, email change.
+ *
+ * Setup:
+ *   1. Deploy this function
+ *   2. Go to Supabase Dashboard -> Authentication -> Hooks
+ *   3. Enable "Send Email" hook -> select "HTTPS" -> paste URL:
+ *      https://dxipobqngyfpqbbznojz.supabase.co/functions/v1/send-auth-email
+ *   4. Copy the generated hook secret and set it as SEND_EMAIL_HOOK_SECRET
+ *      in Edge Functions -> Secrets
  */
 
-const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? ''
+import { Webhook } from 'https://esm.sh/standardwebhooks@1.0.0'
+import { Resend } from 'https://esm.sh/resend@4.0.0'
+
+const hookSecret = Deno.env.get('SEND_EMAIL_HOOK_SECRET') || ''
+const resendApiKey = Deno.env.get('RESEND_API_KEY') || ''
 const FROM_EMAIL = 'Alfanumrik <noreply@alfanumrik.com>'
 const SITE_URL = 'https://alfanumrik.com'
 
@@ -41,9 +49,9 @@ function baseWrapper(content: string, preheader: string): string {
         </td></tr>
         <tr><td style="padding:16px 32px;background:#F8F9FA;border-top:1px solid #E5E7EB;text-align:center;">
           <p style="margin:0;font-size:11px;color:#9CA3AF;line-height:1.6;">
-            &copy; 2026 Alfanumrik EdTech. Made with &#10084;&#65039; in India.<br>
-            <a href="${SITE_URL}/privacy" style="color:#6C5CE7;text-decoration:none;">Privacy</a> &nbsp;|&nbsp;
-            <a href="${SITE_URL}/terms" style="color:#6C5CE7;text-decoration:none;">Terms</a> &nbsp;|&nbsp;
+            &#169; 2026 Alfanumrik EdTech. Made with &#10084;&#65039; in India.<br>
+            <a href="${SITE_URL}/privacy" style="color:#6C5CE7;text-decoration:none;">Privacy</a> &#183;
+            <a href="${SITE_URL}/terms" style="color:#6C5CE7;text-decoration:none;">Terms</a> &#183;
             <a href="mailto:support@alfanumrik.com" style="color:#6C5CE7;text-decoration:none;">Support</a>
           </p>
         </td></tr>
@@ -54,60 +62,60 @@ function baseWrapper(content: string, preheader: string): string {
 </html>`
 }
 
-function confirmationEmail(confirmUrl: string): { subject: string; html: string } {
+function confirmationEmail(url: string): { subject: string; html: string } {
   return {
     subject: 'Confirm your Alfanumrik account',
     html: baseWrapper(`
       <div style="text-align:center;margin-bottom:20px;"><div style="font-size:48px;line-height:1;">&#9993;&#65039;</div></div>
       <h2 style="margin:0 0 8px;font-size:20px;font-weight:800;color:#1F2937;text-align:center;">Verify Your Email</h2>
-      <p style="margin:0 0 24px;font-size:14px;color:#6B7280;text-align:center;line-height:1.6;">You're almost there! Click the button below to confirm your email address and start your learning journey.</p>
+      <p style="margin:0 0 24px;font-size:14px;color:#6B7280;text-align:center;line-height:1.6;">You're almost there! Click the button below to confirm your email and start your learning journey on Alfanumrik.</p>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
         <tr><td align="center" style="padding:8px 0;">
-          <a href="${confirmUrl}" style="display:inline-block;padding:14px 48px;background:linear-gradient(135deg,#6C5CE7,#A855F7);color:#FFFFFF;font-size:15px;font-weight:700;text-decoration:none;border-radius:12px;">Confirm Email &#8594;</a>
+          <a href="${url}" style="display:inline-block;padding:14px 48px;background:linear-gradient(135deg,#6C5CE7,#A855F7);color:#FFFFFF;font-size:15px;font-weight:700;text-decoration:none;border-radius:12px;">Confirm Email &#8594;</a>
         </td></tr>
       </table>
-      <p style="margin:20px 0 0;font-size:12px;color:#9CA3AF;text-align:center;line-height:1.6;">This link expires in 24 hours. If you didn't create an Alfanumrik account, you can safely ignore this email.</p>
+      <p style="margin:20px 0 0;font-size:12px;color:#9CA3AF;text-align:center;line-height:1.6;">This link expires in 24 hours. If you didn't sign up for Alfanumrik, ignore this email.</p>
       <div style="margin:20px 0 0;padding:12px;background:#F5F3FF;border-radius:8px;text-align:center;">
-        <p style="margin:0;font-size:11px;color:#6B7280;word-break:break-all;">If the button doesn't work, copy and paste this link:<br><a href="${confirmUrl}" style="color:#6C5CE7;">${confirmUrl}</a></p>
+        <p style="margin:0;font-size:11px;color:#6B7280;word-break:break-all;">Button not working? Copy this link:<br><a href="${url}" style="color:#6C5CE7;">${url}</a></p>
       </div>
     `, 'Confirm your email to start learning on Alfanumrik.')
   }
 }
 
-function recoveryEmail(resetUrl: string): { subject: string; html: string } {
+function recoveryEmail(url: string): { subject: string; html: string } {
   return {
     subject: 'Reset your Alfanumrik password',
     html: baseWrapper(`
       <div style="text-align:center;margin-bottom:20px;"><div style="font-size:48px;line-height:1;">&#128274;</div></div>
       <h2 style="margin:0 0 8px;font-size:20px;font-weight:800;color:#1F2937;text-align:center;">Reset Your Password</h2>
-      <p style="margin:0 0 24px;font-size:14px;color:#6B7280;text-align:center;line-height:1.6;">We received a request to reset your password. Click the button below to choose a new one.</p>
+      <p style="margin:0 0 24px;font-size:14px;color:#6B7280;text-align:center;line-height:1.6;">We received a request to reset your password. Click below to choose a new one.</p>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
         <tr><td align="center" style="padding:8px 0;">
-          <a href="${resetUrl}" style="display:inline-block;padding:14px 48px;background:linear-gradient(135deg,#EF4444,#DC2626);color:#FFFFFF;font-size:15px;font-weight:700;text-decoration:none;border-radius:12px;">Reset Password &#8594;</a>
+          <a href="${url}" style="display:inline-block;padding:14px 48px;background:linear-gradient(135deg,#EF4444,#DC2626);color:#FFFFFF;font-size:15px;font-weight:700;text-decoration:none;border-radius:12px;">Reset Password &#8594;</a>
         </td></tr>
       </table>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:24px;">
         <tr><td style="padding:14px;background:#FEF2F2;border-radius:10px;border-left:4px solid #EF4444;">
-          <p style="margin:0;font-size:13px;color:#991B1B;line-height:1.5;">&#9888;&#65039; <strong>Security notice:</strong> This link expires in 1 hour. If you didn't request a password reset, please ignore this email. Your password will remain unchanged.</p>
+          <p style="margin:0;font-size:13px;color:#991B1B;line-height:1.5;">&#9888;&#65039; <strong>Security:</strong> This link expires in 1 hour. If you didn't request this, your password is safe &#8212; just ignore this email.</p>
         </td></tr>
       </table>
       <div style="margin:20px 0 0;padding:12px;background:#FEF2F2;border-radius:8px;text-align:center;">
-        <p style="margin:0;font-size:11px;color:#6B7280;word-break:break-all;">If the button doesn't work, copy this link:<br><a href="${resetUrl}" style="color:#EF4444;">${resetUrl}</a></p>
+        <p style="margin:0;font-size:11px;color:#6B7280;word-break:break-all;">Button not working? Copy this link:<br><a href="${url}" style="color:#EF4444;">${url}</a></p>
       </div>
-    `, 'Reset your Alfanumrik password. This link expires in 1 hour.')
+    `, 'Reset your Alfanumrik password. Link expires in 1 hour.')
   }
 }
 
-function magicLinkEmail(loginUrl: string): { subject: string; html: string } {
+function magicLinkEmail(url: string): { subject: string; html: string } {
   return {
     subject: 'Your Alfanumrik login link',
     html: baseWrapper(`
       <div style="text-align:center;margin-bottom:20px;"><div style="font-size:48px;line-height:1;">&#10024;</div></div>
       <h2 style="margin:0 0 8px;font-size:20px;font-weight:800;color:#1F2937;text-align:center;">Magic Login Link</h2>
-      <p style="margin:0 0 24px;font-size:14px;color:#6B7280;text-align:center;line-height:1.6;">Click the button below to log in to your Alfanumrik account. No password needed!</p>
+      <p style="margin:0 0 24px;font-size:14px;color:#6B7280;text-align:center;line-height:1.6;">Click below to log in to Alfanumrik instantly. No password needed!</p>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
         <tr><td align="center" style="padding:8px 0;">
-          <a href="${loginUrl}" style="display:inline-block;padding:14px 48px;background:linear-gradient(135deg,#10B981,#059669);color:#FFFFFF;font-size:15px;font-weight:700;text-decoration:none;border-radius:12px;">Log In &#8594;</a>
+          <a href="${url}" style="display:inline-block;padding:14px 48px;background:linear-gradient(135deg,#10B981,#059669);color:#FFFFFF;font-size:15px;font-weight:700;text-decoration:none;border-radius:12px;">Log In &#8594;</a>
         </td></tr>
       </table>
       <p style="margin:20px 0 0;font-size:12px;color:#9CA3AF;text-align:center;line-height:1.6;">This link expires in 24 hours and can only be used once.</p>
@@ -115,43 +123,80 @@ function magicLinkEmail(loginUrl: string): { subject: string; html: string } {
   }
 }
 
+function emailChangeEmail(url: string): { subject: string; html: string } {
+  return {
+    subject: 'Confirm your new email for Alfanumrik',
+    html: baseWrapper(`
+      <div style="text-align:center;margin-bottom:20px;"><div style="font-size:48px;line-height:1;">&#128231;</div></div>
+      <h2 style="margin:0 0 8px;font-size:20px;font-weight:800;color:#1F2937;text-align:center;">Confirm Email Change</h2>
+      <p style="margin:0 0 24px;font-size:14px;color:#6B7280;text-align:center;line-height:1.6;">You requested to change your email address. Click below to confirm the change.</p>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        <tr><td align="center" style="padding:8px 0;">
+          <a href="${url}" style="display:inline-block;padding:14px 48px;background:linear-gradient(135deg,#6C5CE7,#A855F7);color:#FFFFFF;font-size:15px;font-weight:700;text-decoration:none;border-radius:12px;">Confirm New Email &#8594;</a>
+        </td></tr>
+      </table>
+      <p style="margin:20px 0 0;font-size:12px;color:#9CA3AF;text-align:center;line-height:1.6;">If you didn't request this change, please contact support immediately.</p>
+    `, 'Confirm your new email for Alfanumrik.')
+  }
+}
+
 // ─── Main Handler ─────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', {
-      headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS' },
+  if (req.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      status: 405, headers: { 'Content-Type': 'application/json' },
     })
   }
 
   try {
-    const body = await req.json()
+    const payload = await req.text()
+    const headers = Object.fromEntries(req.headers)
 
-    // Supabase Auth Hook format
-    const { user, email_data } = body
-    if (!user || !email_data) {
-      return new Response(JSON.stringify({ error: 'Invalid hook payload' }), {
+    let data: {
+      user: { email: string }
+      email_data: {
+        token: string
+        token_hash: string
+        redirect_to: string
+        email_action_type: string
+        site_url: string
+        token_new: string
+        token_hash_new: string
+      }
+    }
+
+    if (hookSecret) {
+      const wh = new Webhook(hookSecret)
+      data = wh.verify(payload, headers) as typeof data
+    } else {
+      data = JSON.parse(payload)
+    }
+
+    const { user, email_data } = data
+    if (!user?.email || !email_data) {
+      return new Response(JSON.stringify({ error: 'Invalid payload' }), {
         status: 400, headers: { 'Content-Type': 'application/json' },
       })
     }
 
-    const { email } = user
-    const { token, token_hash, redirect_to, email_action_type } = email_data
+    const { token, token_hash, redirect_to, email_action_type, site_url } = email_data
+    const baseSiteUrl = site_url || SITE_URL
 
-    // Build the confirmation/reset URL
-    let actionUrl = ''
+    let actionUrl: string
     if (token_hash) {
-      actionUrl = `${SITE_URL}/auth/confirm?token_hash=${token_hash}&type=${email_action_type}`
+      actionUrl = `${baseSiteUrl}/auth/confirm?token_hash=${token_hash}&type=${email_action_type}`
+      if (redirect_to) actionUrl += `&next=${encodeURIComponent(redirect_to)}`
     } else if (token) {
-      actionUrl = `${redirect_to || SITE_URL + '/auth/callback'}?token=${token}&type=${email_action_type}`
+      const redirectBase = redirect_to || `${baseSiteUrl}/auth/callback`
+      actionUrl = `${redirectBase}${redirectBase.includes('?') ? '&' : '?'}token=${token}&type=${email_action_type}`
     } else {
-      actionUrl = redirect_to || `${SITE_URL}/dashboard`
+      actionUrl = `${baseSiteUrl}/dashboard`
     }
 
     let emailContent: { subject: string; html: string }
     switch (email_action_type) {
       case 'signup':
-      case 'email_change':
         emailContent = confirmationEmail(actionUrl)
         break
       case 'recovery':
@@ -160,35 +205,43 @@ Deno.serve(async (req: Request) => {
       case 'magic_link':
         emailContent = magicLinkEmail(actionUrl)
         break
+      case 'email_change_new':
+      case 'email_change_current':
+        emailContent = emailChangeEmail(actionUrl)
+        break
       default:
         emailContent = confirmationEmail(actionUrl)
     }
 
-    // Send via Resend if configured
-    if (RESEND_API_KEY) {
-      const res = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RESEND_API_KEY}` },
-        body: JSON.stringify({ from: FROM_EMAIL, to: [email], subject: emailContent.subject, html: emailContent.html }),
+    if (resendApiKey) {
+      const resend = new Resend(resendApiKey)
+      const { error: sendError } = await resend.emails.send({
+        from: FROM_EMAIL,
+        to: [user.email],
+        subject: emailContent.subject,
+        html: emailContent.html,
       })
 
-      if (res.ok) {
-        return new Response(JSON.stringify({ success: true }), {
-          status: 200, headers: { 'Content-Type': 'application/json' },
+      if (sendError) {
+        console.error('[Auth Email] Resend error:', sendError)
+        return new Response(JSON.stringify({ error: sendError.message }), {
+          status: 500, headers: { 'Content-Type': 'application/json' },
         })
       }
-
-      console.error('[Auth Email] Resend error:', await res.text())
+    } else {
+      console.warn('[Auth Email] RESEND_API_KEY not set, falling back to Supabase defaults')
+      return new Response(JSON.stringify({ error: 'Email provider not configured' }), {
+        status: 500, headers: { 'Content-Type': 'application/json' },
+      })
     }
 
-    // If Resend not configured or failed, let Supabase use default template
     return new Response(JSON.stringify({ success: true }), {
       status: 200, headers: { 'Content-Type': 'application/json' },
     })
 
   } catch (err) {
     console.error('[Auth Email] Error:', err)
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
+    return new Response(JSON.stringify({ error: (err as Error).message || 'Internal error' }), {
       status: 500, headers: { 'Content-Type': 'application/json' },
     })
   }
