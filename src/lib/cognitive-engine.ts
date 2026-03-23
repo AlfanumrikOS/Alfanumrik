@@ -643,7 +643,7 @@ export function detectKnowledgeGaps(
     });
   }
 
-  for (const [topicId, blooms] of bloomByTopic) {
+  for (const [topicId, blooms] of Array.from(bloomByTopic.entries())) {
     const sorted = blooms.sort((a, b) => BLOOM_ORDER[a.bloomLevel] - BLOOM_ORDER[b.bloomLevel]);
     for (let i = 1; i < sorted.length; i++) {
       // Check for gaps: lower level mastered but higher level weak
