@@ -4,8 +4,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase, getStudentProfiles, getSubjects, getFeatureFlags, getNextTopics, getStudentNotifications, generateNotifications } from '@/lib/supabase';
-import { Card, StatCard, ProgressBar, SectionHeader, ActionTile, SubjectChip, Avatar, LoadingFoxy, BottomNav } from '@/components/ui';
+import { Card, StatCard, ProgressBar, SectionHeader, ActionTile, SubjectChip, Avatar, BottomNav } from '@/components/ui';
 import TrustFooter from '@/components/TrustFooter';
+import { DashboardSkeleton } from '@/components/Skeleton';
 import type { StudentLearningProfile, Subject, CurriculumTopic } from '@/lib/types';
 
 const QUICK_ACTIONS = [
@@ -76,7 +77,7 @@ export default function Dashboard() {
     if (student) { loadData(); refreshSnapshot(); }
   }, [student?.id]);
 
-  if (isLoading || !student) return <LoadingFoxy />;
+  if (isLoading || !student) return <DashboardSkeleton />;
 
   const totalXp = snapshot?.total_xp ?? profiles.reduce((a, p) => a + (p.xp ?? 0), 0);
   const streak = snapshot?.current_streak ?? Math.max(...profiles.map((p) => p.streak_days ?? 0), 0);

@@ -451,17 +451,23 @@ export default function QuizPage() {
                 <button
                   key={idx}
                   onClick={() => selectAnswer(idx)}
-                  className="w-full rounded-2xl p-4 flex items-center gap-4 transition-all active:scale-[0.98]"
-                  style={{ background: bg, border: `1.5px solid ${border}`, textAlign: 'left' }}
+                  className={`w-full rounded-2xl py-4 px-4 flex items-center gap-4 transition-all active:scale-[0.97] ${isAnswered && isCorrectOpt ? 'quiz-correct' : ''} ${isAnswered && isSelected && !isCorrectOpt ? 'quiz-wrong' : ''}`}
+                  style={{
+                    background: bg,
+                    border: `1.5px solid ${border}`,
+                    textAlign: 'left',
+                    minHeight: 56, /* Fat-finger friendly on budget phones */
+                    boxShadow: isSelected && !isAnswered ? `0 0 0 2px ${subMeta?.color || 'var(--orange)'}30` : 'none',
+                  }}
                   disabled={isAnswered}
                 >
                   <span
-                    className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0 transition-all"
+                    className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0 transition-all"
                     style={{ background: letterBg, color: letterColor }}
                   >
                     {letter}
                   </span>
-                  <span className="text-sm md:text-base font-medium leading-snug" style={{ color: textColor }}>
+                  <span className="text-sm md:text-base font-medium leading-snug flex-1" style={{ color: textColor }}>
                     {optText}
                   </span>
                   {isAnswered && isCorrectOpt && <span className="ml-auto text-xl flex-shrink-0">✓</span>}
