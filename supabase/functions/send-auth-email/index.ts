@@ -6,13 +6,20 @@
  *
  * Handles: signup confirmation, password recovery, magic link, email change.
  *
+ * IMPORTANT: This function MUST always return HTTP 200.
+ * Supabase Auth hooks treat non-200 responses as failures and will BLOCK
+ * the entire auth operation (signup, reset, etc.). Even if email sending
+ * fails, we return 200 so the user can still sign up.
+ *
  * Setup:
- *   1. Deploy this function
+ *   1. Deploy: supabase functions deploy send-auth-email --no-verify-jwt
  *   2. Go to Supabase Dashboard -> Authentication -> Hooks
  *   3. Enable "Send Email" hook -> select "HTTPS" -> paste URL:
  *      https://dxipobqngyfpqbbznojz.supabase.co/functions/v1/send-auth-email
  *   4. Copy the generated hook secret and set it as SEND_EMAIL_HOOK_SECRET
  *      in Edge Functions -> Secrets
+ *   5. Set RESEND_API_KEY in Edge Functions -> Secrets
+ *   6. Verify alfanumrik.com domain in Resend (DNS records: DKIM, SPF, DMARC)
  */
 
 import { Webhook } from 'https://esm.sh/standardwebhooks@1.0.0'
@@ -23,6 +30,8 @@ const rawHookSecret = Deno.env.get('SEND_EMAIL_HOOK_SECRET') || ''
 const hookSecret = rawHookSecret.startsWith('v1,') ? rawHookSecret.slice(3) : rawHookSecret
 const resendApiKey = Deno.env.get('RESEND_API_KEY') || ''
 const FROM_EMAIL = 'Alfanumrik <noreply@alfanumrik.com>'
+// Resend provides this test address that works without domain verification
+const FALLBACK_FROM_EMAIL = 'Alfanumrik <onboarding@resend.dev>'
 const SITE_URL = 'https://alfanumrik.com'
 
 function baseWrapper(content: string, preheader: string): string {
@@ -145,6 +154,11 @@ function emailChangeEmail(url: string): { subject: string; html: string } {
 // ─── Main Handler ─────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { status: 200, headers: { 'Content-Type': 'text/plain' } })
+  }
+
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), {
       status: 405, headers: { 'Content-Type': 'application/json' },
@@ -221,36 +235,57 @@ Deno.serve(async (req: Request) => {
         emailContent = confirmationEmail(actionUrl)
     }
 
-    if (resendApiKey) {
-      const resend = new Resend(resendApiKey)
-      const { error: sendError } = await resend.emails.send({
-        from: FROM_EMAIL,
-        to: [user.email],
-        subject: emailContent.subject,
-        html: emailContent.html,
-      })
-
-      if (sendError) {
-        console.error('[Auth Email] Resend error:', sendError)
-        return new Response(JSON.stringify({ error: sendError.message }), {
-          status: 500, headers: { 'Content-Type': 'application/json' },
-        })
-      }
-    } else {
-      console.warn('[Auth Email] RESEND_API_KEY not set, falling back to Supabase defaults')
-      return new Response(JSON.stringify({ error: 'Email provider not configured' }), {
-        status: 500, headers: { 'Content-Type': 'application/json' },
+    if (!resendApiKey) {
+      // CRITICAL: Return 200 even without API key so Supabase doesn't block signup.
+      // Supabase will use its built-in SMTP as fallback when the hook doesn't send.
+      console.warn('[Auth Email] RESEND_API_KEY not set. Returning 200 so Supabase built-in email can work.')
+      return new Response(JSON.stringify({ success: true, warning: 'no_api_key' }), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
       })
     }
 
-    return new Response(JSON.stringify({ success: true }), {
+    const resend = new Resend(resendApiKey)
+
+    // Try with custom domain first, fall back to Resend's test sender
+    let sent = false
+    for (const fromAddress of [FROM_EMAIL, FALLBACK_FROM_EMAIL]) {
+      try {
+        const { error: sendError } = await resend.emails.send({
+          from: fromAddress,
+          to: [user.email],
+          subject: emailContent.subject,
+          html: emailContent.html,
+        })
+
+        if (sendError) {
+          console.error(`[Auth Email] Resend error with ${fromAddress}:`, sendError)
+          // If custom domain fails (likely not verified), try fallback
+          if (fromAddress === FROM_EMAIL) continue
+        } else {
+          console.log(`[Auth Email] Sent ${email_action_type} email to ${user.email} via ${fromAddress}`)
+          sent = true
+          break
+        }
+      } catch (sendErr) {
+        console.error(`[Auth Email] Send exception with ${fromAddress}:`, sendErr)
+        if (fromAddress === FROM_EMAIL) continue
+      }
+    }
+
+    if (!sent) {
+      console.error('[Auth Email] All send attempts failed for', user.email)
+    }
+
+    // ALWAYS return 200 — never block the auth flow
+    return new Response(JSON.stringify({ success: sent }), {
       status: 200, headers: { 'Content-Type': 'application/json' },
     })
 
   } catch (err) {
     console.error('[Auth Email] Error:', err)
-    return new Response(JSON.stringify({ error: (err as Error).message || 'Internal error' }), {
-      status: 500, headers: { 'Content-Type': 'application/json' },
+    // ALWAYS return 200 — a broken email must never block signup/login
+    return new Response(JSON.stringify({ success: false, error: (err as Error).message || 'Internal error' }), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
     })
   }
 })
