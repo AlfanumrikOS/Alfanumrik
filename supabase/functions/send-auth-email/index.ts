@@ -73,33 +73,47 @@ function baseWrapper(content: string, preheader: string): string {
 </html>`
 }
 
-function confirmationEmail(url: string): { subject: string; html: string } {
+function confirmationEmail(url: string, otpCode?: string): { subject: string; html: string } {
+  const codeBlock = otpCode ? `
+      <div style="margin:0 0 24px;text-align:center;">
+        <p style="margin:0 0 8px;font-size:13px;color:#6B7280;">Your verification code:</p>
+        <div style="display:inline-block;padding:16px 32px;background:#F5F3FF;border:2px dashed #6C5CE7;border-radius:12px;">
+          <span style="font-size:32px;font-weight:800;letter-spacing:6px;color:#6C5CE7;font-family:monospace;">${otpCode}</span>
+        </div>
+        <p style="margin:8px 0 0;font-size:12px;color:#9CA3AF;">Enter this code on the verification page</p>
+      </div>` : ''
   return {
-    subject: 'Confirm your Alfanumrik account',
+    subject: otpCode ? `${otpCode} is your Alfanumrik verification code` : 'Confirm your Alfanumrik account',
     html: baseWrapper(`
       <div style="text-align:center;margin-bottom:20px;"><div style="font-size:48px;line-height:1;">&#9993;&#65039;</div></div>
       <h2 style="margin:0 0 8px;font-size:20px;font-weight:800;color:#1F2937;text-align:center;">Verify Your Email</h2>
-      <p style="margin:0 0 24px;font-size:14px;color:#6B7280;text-align:center;line-height:1.6;">You're almost there! Click the button below to confirm your email and start your learning journey on Alfanumrik.</p>
+      <p style="margin:0 0 24px;font-size:14px;color:#6B7280;text-align:center;line-height:1.6;">You're almost there! Use the code below to confirm your email and start your learning journey.</p>
+      ${codeBlock}
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
         <tr><td align="center" style="padding:8px 0;">
-          <a href="${url}" style="display:inline-block;padding:14px 48px;background:linear-gradient(135deg,#6C5CE7,#A855F7);color:#FFFFFF;font-size:15px;font-weight:700;text-decoration:none;border-radius:12px;">Confirm Email &#8594;</a>
+          <a href="${url}" style="display:inline-block;padding:14px 48px;background:linear-gradient(135deg,#6C5CE7,#A855F7);color:#FFFFFF;font-size:15px;font-weight:700;text-decoration:none;border-radius:12px;">Or Click to Confirm &#8594;</a>
         </td></tr>
       </table>
-      <p style="margin:20px 0 0;font-size:12px;color:#9CA3AF;text-align:center;line-height:1.6;">This link expires in 24 hours. If you didn't sign up for Alfanumrik, ignore this email.</p>
-      <div style="margin:20px 0 0;padding:12px;background:#F5F3FF;border-radius:8px;text-align:center;">
-        <p style="margin:0;font-size:11px;color:#6B7280;word-break:break-all;">Button not working? Copy this link:<br><a href="${url}" style="color:#6C5CE7;">${url}</a></p>
-      </div>
-    `, 'Confirm your email to start learning on Alfanumrik.')
+      <p style="margin:20px 0 0;font-size:12px;color:#9CA3AF;text-align:center;line-height:1.6;">This code expires in 24 hours. If you didn't sign up for Alfanumrik, ignore this email.</p>
+    `, otpCode ? `Your code: ${otpCode}. Confirm your Alfanumrik account.` : 'Confirm your email to start learning on Alfanumrik.')
   }
 }
 
-function recoveryEmail(url: string): { subject: string; html: string } {
+function recoveryEmail(url: string, otpCode?: string): { subject: string; html: string } {
+  const codeBlock = otpCode ? `
+      <div style="margin:0 0 24px;text-align:center;">
+        <p style="margin:0 0 8px;font-size:13px;color:#6B7280;">Your reset code:</p>
+        <div style="display:inline-block;padding:16px 32px;background:#FEF2F2;border:2px dashed #EF4444;border-radius:12px;">
+          <span style="font-size:32px;font-weight:800;letter-spacing:6px;color:#EF4444;font-family:monospace;">${otpCode}</span>
+        </div>
+      </div>` : ''
   return {
-    subject: 'Reset your Alfanumrik password',
+    subject: otpCode ? `${otpCode} is your Alfanumrik password reset code` : 'Reset your Alfanumrik password',
     html: baseWrapper(`
       <div style="text-align:center;margin-bottom:20px;"><div style="font-size:48px;line-height:1;">&#128274;</div></div>
       <h2 style="margin:0 0 8px;font-size:20px;font-weight:800;color:#1F2937;text-align:center;">Reset Your Password</h2>
-      <p style="margin:0 0 24px;font-size:14px;color:#6B7280;text-align:center;line-height:1.6;">We received a request to reset your password. Click below to choose a new one.</p>
+      <p style="margin:0 0 24px;font-size:14px;color:#6B7280;text-align:center;line-height:1.6;">We received a request to reset your password. Use the code below or click the button.</p>
+      ${codeBlock}
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
         <tr><td align="center" style="padding:8px 0;">
           <a href="${url}" style="display:inline-block;padding:14px 48px;background:linear-gradient(135deg,#EF4444,#DC2626);color:#FFFFFF;font-size:15px;font-weight:700;text-decoration:none;border-radius:12px;">Reset Password &#8594;</a>
@@ -107,13 +121,10 @@ function recoveryEmail(url: string): { subject: string; html: string } {
       </table>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:24px;">
         <tr><td style="padding:14px;background:#FEF2F2;border-radius:10px;border-left:4px solid #EF4444;">
-          <p style="margin:0;font-size:13px;color:#991B1B;line-height:1.5;">&#9888;&#65039; <strong>Security:</strong> This link expires in 1 hour. If you didn't request this, your password is safe &#8212; just ignore this email.</p>
+          <p style="margin:0;font-size:13px;color:#991B1B;line-height:1.5;">&#9888;&#65039; <strong>Security:</strong> This code expires in 1 hour. If you didn't request this, your password is safe &#8212; just ignore this email.</p>
         </td></tr>
       </table>
-      <div style="margin:20px 0 0;padding:12px;background:#FEF2F2;border-radius:8px;text-align:center;">
-        <p style="margin:0;font-size:11px;color:#6B7280;word-break:break-all;">Button not working? Copy this link:<br><a href="${url}" style="color:#EF4444;">${url}</a></p>
-      </div>
-    `, 'Reset your Alfanumrik password. Link expires in 1 hour.')
+    `, otpCode ? `Your code: ${otpCode}. Reset your Alfanumrik password.` : 'Reset your Alfanumrik password.')
   }
 }
 
@@ -216,13 +227,16 @@ Deno.serve(async (req: Request) => {
       actionUrl = `${baseSiteUrl}/dashboard`
     }
 
+    // token is the OTP code users can type in; token_hash is for link-based verification
+    const otpCode = token || undefined
+
     let emailContent: { subject: string; html: string }
     switch (email_action_type) {
       case 'signup':
-        emailContent = confirmationEmail(actionUrl)
+        emailContent = confirmationEmail(actionUrl, otpCode)
         break
       case 'recovery':
-        emailContent = recoveryEmail(actionUrl)
+        emailContent = recoveryEmail(actionUrl, otpCode)
         break
       case 'magic_link':
         emailContent = magicLinkEmail(actionUrl)
@@ -232,7 +246,7 @@ Deno.serve(async (req: Request) => {
         emailContent = emailChangeEmail(actionUrl)
         break
       default:
-        emailContent = confirmationEmail(actionUrl)
+        emailContent = confirmationEmail(actionUrl, otpCode)
     }
 
     if (!resendApiKey) {
