@@ -36,7 +36,55 @@ export async function GET(request: NextRequest) {
         return NextResponse.redirect(`${origin}/auth/reset`);
       }
       if (type === 'signup') {
-        // Email confirmation — redirect to dashboard
+        // Email confirmation — send welcome email then redirect to dashboard
+        // Fire-and-forget: fetch user metadata and trigger welcome email
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            const meta = user.user_metadata || {};
+            const email = user.email || '';
+            const name = meta.name || email.split('@')[0];
+
+            // Determine role from profile tables
+            const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+            const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+            const { data: session } = await supabase.auth.getSession();
+            const token = session?.session?.access_token;
+
+            if (token && supabaseUrl) {
+              // Check which profile exists to determine role
+              const { data: studentData } = await supabase.from('students').select('grade, board').eq('auth_user_id', user.id).single();
+              const { data: teacherData } = await supabase.from('teachers').select('school_name').eq('auth_user_id', user.id).single();
+              const { data: guardianData } = await supabase.from('guardians').select('id').eq('auth_user_id', user.id).single();
+
+              let role = 'student';
+              const payload: Record<string, string> = { name, email };
+              if (studentData) {
+                role = 'student';
+                payload.grade = studentData.grade?.replace('Grade ', '') || '';
+                payload.board = studentData.board || '';
+              } else if (teacherData) {
+                role = 'teacher';
+                payload.school_name = teacherData.school_name || '';
+              } else if (guardianData) {
+                role = 'parent';
+              }
+              payload.role = role;
+
+              fetch(`${supabaseUrl}/functions/v1/send-welcome-email`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}`,
+                  'apikey': supabaseAnonKey,
+                },
+                body: JSON.stringify(payload),
+              }).catch(() => {}); // Best-effort, don't block redirect
+            }
+          }
+        } catch {
+          // Welcome email is best-effort — never block signup confirmation
+        }
         return NextResponse.redirect(`${origin}/dashboard`);
       }
       // Default: redirect to the `next` param or dashboard

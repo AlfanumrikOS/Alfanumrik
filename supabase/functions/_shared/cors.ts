@@ -7,6 +7,7 @@ const ALLOWED_ORIGINS = [
   'https://alfanumrik.com',
   'https://www.alfanumrik.com',
   'https://alfanumrik.vercel.app',
+  'https://alfanumrik-ten.vercel.app',
 ];
 
 // Allow localhost in development
