@@ -744,7 +744,7 @@ const REPORT_REASONS = [
 ];
 
 export default function FoxyPage() {
-  const { student: authStudent, isLoggedIn, isLoading: authLoading } = useAuth();
+  const { student: authStudent, isLoggedIn, isLoading: authLoading, activeRole } = useAuth();
   const router = useRouter();
 
   // Core state
@@ -954,14 +954,19 @@ export default function FoxyPage() {
 
   if (!isLoggedIn && !authLoading) return <AuthScreen onSuccess={() => window.location.reload()} />;
 
-  if (!student) return (
-    <div className="mesh-bg min-h-dvh flex items-center justify-center">
-      <div className="text-center">
-        <div className="text-5xl animate-float mb-3">{FOXY_FACES.idle}</div>
-        <p className="text-sm text-[var(--text-3)]">Loading your profile...</p>
+  if (!student) {
+    // Non-student roles: redirect to their dashboard instead of showing Foxy
+    if (activeRole === 'guardian') { router.replace('/parent'); return null; }
+    if (activeRole === 'teacher') { router.replace('/teacher'); return null; }
+    return (
+      <div className="mesh-bg min-h-dvh flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-5xl animate-float mb-3">{FOXY_FACES.idle}</div>
+          <p className="text-sm text-[var(--text-3)]">Loading your profile...</p>
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
 
   return (
     <div className="min-h-dvh flex flex-col pb-nav" style={{ background: 'var(--surface-2)' }}>
