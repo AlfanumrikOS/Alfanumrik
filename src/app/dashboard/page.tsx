@@ -80,7 +80,16 @@ export default function Dashboard() {
     if (student) { loadData(); refreshSnapshot(); }
   }, [student?.id]);
 
-  if (isLoading || !student) return <DashboardSkeleton />;
+  // Show skeleton while loading, but don't block non-student roles — they'll be redirected
+  if (isLoading) return <DashboardSkeleton />;
+  if (!student) {
+    // Non-student role (teacher/guardian) — redirect is already in flight from useEffect
+    // Show skeleton briefly while redirect completes
+    if (activeRole === 'teacher' || activeRole === 'guardian') return <DashboardSkeleton />;
+    // No student profile and no other role — something's wrong, redirect to home
+    router.replace('/');
+    return <DashboardSkeleton />;
+  }
 
   const totalXp = snapshot?.total_xp ?? profiles.reduce((a, p) => a + (p.xp ?? 0), 0);
   const streak = snapshot?.current_streak ?? Math.max(...profiles.map((p) => p.streak_days ?? 0), 0);
