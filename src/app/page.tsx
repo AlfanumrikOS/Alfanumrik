@@ -392,7 +392,17 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
           }
         }
 
-        if (authData.session) {
+        // Fire-and-forget welcome email (non-blocking)
+        const session = authData.session;
+        if (session) {
+          const welcomePayload: Record<string, string> = { role: roleTab, name: name.trim(), email: email.trim() };
+          if (roleTab === 'student') { welcomePayload.grade = grade; welcomePayload.board = board; }
+          if (roleTab === 'teacher') { welcomePayload.school_name = schoolName.trim(); }
+          fetch(`${SUPABASE_URL}/functions/v1/send-welcome-email`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}`, 'apikey': SUPABASE_ANON_KEY },
+            body: JSON.stringify(welcomePayload),
+          }).catch(() => {}); // Silent fail — welcome email is best-effort
           onSuccess();
         } else {
           setSuccess('Check your email for a confirmation link, then log in!');
