@@ -361,8 +361,10 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
       });
       if (authError) { setError(authError.message); setLoading(false); return; }
       if (authData.user) {
+        let profileError: string | null = null;
+
         if (roleTab === 'student') {
-          await supabase.from('students').insert({
+          const { error: insErr } = await supabase.from('students').insert({
             auth_user_id: authData.user.id,
             name: name.trim(),
             email: email.trim(),
@@ -371,8 +373,9 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
             preferred_language: 'en',
             account_status: 'active',
           });
+          if (insErr) profileError = insErr.message;
         } else if (roleTab === 'teacher') {
-          await supabase.from('teachers').insert({
+          const { error: insErr } = await supabase.from('teachers').insert({
             auth_user_id: authData.user.id,
             name: name.trim(),
             email: email.trim(),
@@ -380,13 +383,15 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
             subjects_taught: subjectsTaught,
             grades_taught: gradesTaught,
           });
+          if (insErr) profileError = insErr.message;
         } else if (roleTab === 'parent') {
-          const { data: guardianData } = await supabase.from('guardians').insert({
+          const { data: guardianData, error: insErr } = await supabase.from('guardians').insert({
             auth_user_id: authData.user.id,
             name: name.trim(),
             email: email.trim(),
             phone: phone.trim() || null,
           }).select('id').single();
+          if (insErr) profileError = insErr.message;
 
           if (linkCode.trim() && guardianData) {
             await supabase.rpc('link_guardian_to_student_via_code', {
@@ -394,6 +399,11 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
               p_invite_code: linkCode.trim(),
             });
           }
+        }
+
+        if (profileError) {
+          console.error(`[Signup] Profile insert failed for ${roleTab}:`, profileError);
+          // Don't block signup — user can still verify email. Profile will be re-created on login if needed.
         }
 
         // Fire-and-forget welcome email (non-blocking)
