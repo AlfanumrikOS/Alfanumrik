@@ -82,7 +82,7 @@ async function fetchTopics(subjectCode: string, grade: string): Promise<any[]> {
 }
 
 async function fetchMastery(studentId: string, subject: string): Promise<any[]> {
-  const { data } = await supabase.from('topic_mastery').select('*').eq('student_id', studentId).eq('subject', subject).order('updated_at', { ascending: false });
+  const { data } = await supabase.from('topic_mastery').select('*').eq('student_id', studentId).eq('subject', subject).order('updated_at', { ascending: false }).limit(50);
   return data ?? [];
 }
 
@@ -297,6 +297,11 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
   const [subjectsTaught, setSubjectsTaught] = useState<string[]>([]);
   const [gradesTaught, setGradesTaught] = useState<string[]>([]);
 
+  // Student age / parental consent fields
+  const [studentAgeRange, setStudentAgeRange] = useState<'13-18' | '10-12'>('13-18');
+  const [parentEmail, setParentEmail] = useState('');
+  const [parentConsent, setParentConsent] = useState(false);
+
   // Parent fields
   const [phone, setPhone] = useState('');
   const [linkCode, setLinkCode] = useState('');
@@ -304,6 +309,8 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
   // OTP verification
   const [otpCode, setOtpCode] = useState('');
   const [pendingEmail, setPendingEmail] = useState('');
+  const [consentData, setConsentData] = useState(false);
+  const [consentAnalytics, setConsentAnalytics] = useState(false);
 
   const TEACHER_SUBJECTS = SUBJECT_META.filter(s =>
     ['math', 'science', 'physics', 'chemistry', 'biology', 'english', 'hindi'].includes(s.code)
@@ -346,10 +353,25 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
       if (gradesTaught.length === 0) { setError('Please select at least one grade'); return; }
     }
 
+    if (roleTab === 'student' && studentAgeRange === '10-12') {
+      if (!parentEmail.trim()) { setError('Parent/guardian email is required for students under 13'); return; }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parentEmail.trim())) { setError('Please enter a valid parent/guardian email'); return; }
+      if (!parentConsent) { setError('Please confirm parental consent to continue'); return; }
+    }
+
+    if (!consentData) { setError('Please consent to data processing to continue'); return; }
+
     setError(''); setLoading(true);
     try {
-      const metaData: Record<string, string> = { name: name.trim(), role: roleTab };
-      if (roleTab === 'student') { metaData.grade = grade; metaData.board = board; }
+      const metaData: Record<string, string> = { name: name.trim(), role: roleTab, consent_data: 'true', consent_analytics: consentAnalytics ? 'true' : 'false' };
+      if (roleTab === 'student') {
+        metaData.grade = grade;
+        metaData.board = board;
+        if (studentAgeRange === '10-12') {
+          metaData.is_minor = 'true';
+          metaData.parent_consent_email = parentEmail.trim();
+        }
+      }
 
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: email.trim(),
@@ -625,14 +647,54 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
 
             {/* Student signup fields */}
             {mode === 'signup' && roleTab === 'student' && (
-              <div className="flex gap-2">
-                <select value={grade} onChange={e => setGrade(e.target.value)} style={{ ...inputStyle, flex: 1, cursor: 'pointer' }}>
-                  {AUTH_GRADES.map(g => <option key={g} value={g}>Grade {g}</option>)}
-                </select>
-                <select value={board} onChange={e => setBoard(e.target.value)} style={{ ...inputStyle, flex: 1, cursor: 'pointer' }}>
-                  {AUTH_BOARDS.map(b => <option key={b} value={b}>{b}</option>)}
-                </select>
-              </div>
+              <>
+                <div className="flex gap-2">
+                  <select value={grade} onChange={e => setGrade(e.target.value)} style={{ ...inputStyle, flex: 1, cursor: 'pointer' }}>
+                    {AUTH_GRADES.map(g => <option key={g} value={g}>Grade {g}</option>)}
+                  </select>
+                  <select value={board} onChange={e => setBoard(e.target.value)} style={{ ...inputStyle, flex: 1, cursor: 'pointer' }}>
+                    {AUTH_BOARDS.map(b => <option key={b} value={b}>{b}</option>)}
+                  </select>
+                </div>
+
+                {/* Age range & parental consent */}
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-2)' }}>Age Range</label>
+                  <select value={studentAgeRange} onChange={e => { setStudentAgeRange(e.target.value as '13-18' | '10-12'); if (e.target.value === '13-18') { setParentEmail(''); setParentConsent(false); } }} style={{ ...inputStyle, cursor: 'pointer' }}>
+                    <option value="13-18">13 &ndash; 18 years</option>
+                    <option value="10-12">10 &ndash; 12 years</option>
+                  </select>
+                </div>
+
+                {studentAgeRange === '10-12' && (
+                  <div className="space-y-2 p-3 rounded-xl" style={{ background: 'var(--surface-2)', border: '1.5px solid var(--border)' }}>
+                    <p className="text-xs font-semibold" style={{ color: '#F59E0B' }}>Parental consent required for students under 13</p>
+                    <input
+                      type="email"
+                      placeholder="Parent/Guardian Email"
+                      value={parentEmail}
+                      onChange={e => setParentEmail(e.target.value)}
+                      style={inputStyle}
+                      required
+                    />
+                    <label className="flex items-start gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={parentConsent}
+                        onChange={e => setParentConsent(e.target.checked)}
+                        className="mt-0.5"
+                        style={{ accentColor: '#E8590C' }}
+                      />
+                      <span className="text-xs" style={{ color: 'var(--text-2)' }}>
+                        I confirm that my parent/guardian has given consent for me to use this platform
+                      </span>
+                    </label>
+                    <p className="text-[10px] px-1" style={{ color: 'var(--text-3)' }}>
+                      Your parent/guardian will receive an email to verify their consent.
+                    </p>
+                  </div>
+                )}
+              </>
             )}
 
             {/* Teacher signup fields */}
@@ -686,6 +748,36 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
                   </p>
                 </div>
               </>
+            )}
+
+            {/* DPDPA Consent Checkboxes */}
+            {mode === 'signup' && (
+              <div className="space-y-2">
+                <label className="flex items-start gap-2 cursor-pointer" style={{ fontSize: 12, color: 'var(--text-2)' }}>
+                  <input
+                    type="checkbox"
+                    checked={consentData}
+                    onChange={e => setConsentData(e.target.checked)}
+                    className="mt-0.5 shrink-0"
+                    style={{ accentColor: activeRoleColor, width: 16, height: 16 }}
+                  />
+                  <span>
+                    I consent to the collection and processing of my data as described in the{' '}
+                    <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline font-semibold" style={{ color: activeRoleColor }}>Privacy Policy</a>
+                    <span style={{ color: '#EF4444' }}> *</span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 cursor-pointer" style={{ fontSize: 12, color: 'var(--text-2)' }}>
+                  <input
+                    type="checkbox"
+                    checked={consentAnalytics}
+                    onChange={e => setConsentAnalytics(e.target.checked)}
+                    className="mt-0.5 shrink-0"
+                    style={{ accentColor: activeRoleColor, width: 16, height: 16 }}
+                  />
+                  <span>I consent to analytics tracking to improve the platform</span>
+                </label>
+              </div>
             )}
 
             <button type="submit" disabled={loading} className="w-full py-3 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.98] disabled:opacity-50" style={{ background: buttonGradient }}>

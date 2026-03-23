@@ -388,7 +388,7 @@ export default function ProfilePage() {
       ] = await Promise.all([
         supabase.from('students').select('*').eq('id', student.id).single(),
         supabase.from('student_learning_profiles').select('*').eq('student_id', student.id),
-        supabase.from('quiz_sessions').select('*').eq('student_id', student.id).order('created_at', { ascending: false }).limit(100),
+        supabase.from('quiz_sessions').select('*').eq('student_id', student.id).order('created_at', { ascending: false }).limit(20),
         supabase.from('concept_mastery').select('*').eq('student_id', student.id),
         supabase.from('student_achievements').select('*, achievements(*)').eq('student_id', student.id),
       ]);

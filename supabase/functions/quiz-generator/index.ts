@@ -26,12 +26,16 @@
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders, getCorsHeaders } from '../_shared/cors.ts'
 
-// ─── Simple in-memory rate limiter ──────────────────────────────────────────
+// ─── In-memory rate limiter (first line of defence) ─────────────────────────
+// NOTE: This Map is per-isolate and will reset on cold starts. It provides fast
+// rejection but cannot enforce limits across multiple Edge Function instances.
+// The DB-based check below (`checkRateLimitDb`) acts as the authoritative,
+// cross-instance rate limiter.
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
 const RATE_LIMIT_WINDOW_MS = 60_000 // 1 minute
 const RATE_LIMIT_MAX = 20 // max 20 quiz generations per minute per student
 
-function checkRateLimit(studentId: string): boolean {
+function checkRateLimitMemory(studentId: string): boolean {
   const now = Date.now()
   const entry = rateLimitMap.get(studentId)
   if (!entry || now > entry.resetAt) {
@@ -50,6 +54,29 @@ setInterval(() => {
     if (now > val.resetAt) rateLimitMap.delete(key)
   }
 }, 120_000)
+
+// ─── DB-backed rate limiter (cross-instance, authoritative) ─────────────────
+// Counts recent quiz_sessions for the student to enforce a hard cap that
+// survives cold starts and works across all Edge Function instances.
+const DB_RATE_LIMIT_WINDOW_MS = 60_000 // 1 minute
+const DB_RATE_LIMIT_MAX = 20
+
+async function checkRateLimitDb(studentId: string, supabase: SupabaseClient): Promise<boolean> {
+  const windowStart = new Date(Date.now() - DB_RATE_LIMIT_WINDOW_MS).toISOString()
+  const { count, error } = await supabase
+    .from('quiz_sessions')
+    .select('*', { count: 'exact', head: true })
+    .eq('student_id', studentId)
+    .gte('created_at', windowStart)
+
+  if (error) {
+    // If the DB check fails, fall through and rely on the in-memory limiter
+    console.warn('checkRateLimitDb error, allowing request:', error.message)
+    return true
+  }
+
+  return (count ?? 0) < DB_RATE_LIMIT_MAX
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -278,8 +305,8 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Rate limit check
-    if (!checkRateLimit(student_id)) {
+    // In-memory rate limit check (fast, per-isolate)
+    if (!checkRateLimitMemory(student_id)) {
       return new Response(
         JSON.stringify({ error: 'Too many requests. Please wait before generating another quiz.' }),
         {
@@ -315,6 +342,18 @@ Deno.serve(async (req) => {
         global: authHeader ? { headers: { Authorization: authHeader } } : {},
       },
     )
+
+    // ── DB-backed rate limit check (cross-instance, authoritative) ────────
+    const dbRateOk = await checkRateLimitDb(student_id, supabase)
+    if (!dbRateOk) {
+      return new Response(
+        JSON.stringify({ error: 'Too many requests. Please wait before generating another quiz.' }),
+        {
+          status: 429,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': '60' },
+        },
+      )
+    }
 
     // ── Resolve subject to its UUID ─────────────────────────────────────────
     const subjectId = await resolveSubjectId(supabase, subject)

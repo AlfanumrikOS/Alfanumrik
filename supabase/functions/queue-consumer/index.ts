@@ -499,8 +499,8 @@ Deno.serve(async (req) => {
         results.failed++
 
         const nextAttempt = task.attempts + 1
-        // Exponential backoff: delay reprocessing by 2^attempt minutes
-        const backoffMinutes = Math.pow(2, nextAttempt)
+        // Exponential backoff with jitter: delay reprocessing by 2^attempt * jitter minutes
+        const backoffMinutes = Math.pow(2, nextAttempt) * (0.5 + Math.random() * 0.5)
         const retryAfter = new Date(Date.now() + backoffMinutes * 60_000).toISOString()
 
         await supabaseClient
