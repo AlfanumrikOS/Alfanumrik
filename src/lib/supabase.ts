@@ -113,35 +113,169 @@ export async function getDashboardData(studentId: string) {
 }
 
 export async function getQuizQuestions(subject: string, grade: string, count = 10, difficulty?: number | null) {
+  // Try RPC first, fall back to direct query
   const params: Record<string, unknown> = { p_subject: subject, p_grade: grade, p_count: count };
   if (difficulty != null) params.p_difficulty = difficulty;
-  const { data, error } = await supabase.rpc('get_quiz_questions', params);
+  try {
+    const { data, error } = await supabase.rpc('get_quiz_questions', params);
+    if (!error && data) return data;
+  } catch { /* RPC may not exist — fall back */ }
+
+  // Direct table query fallback
+  let query = supabase.from('question_bank')
+    .select('id, question_text, question_hi, question_type, options, correct_answer_index, explanation, explanation_hi, hint, difficulty, bloom_level, chapter_number')
+    .eq('subject', subject)
+    .eq('grade', grade)
+    .eq('is_active', true)
+    .limit(Math.min(count, 30));
+  if (difficulty != null) query = query.eq('difficulty', difficulty);
+  const { data, error } = await query;
   if (error) throw error;
-  return data;
+  // Shuffle client-side since direct query can't ORDER BY random()
+  return (data ?? []).sort(() => Math.random() - 0.5);
 }
 
 export async function submitQuizResults(studentId: string, subject: string, grade: string, topic: string, chapter: number, responses: import('./types').QuizResponse[], time: number) {
-  const { data, error } = await supabase.rpc('submit_quiz_results', { p_student_id: studentId, p_subject: subject, p_grade: grade, p_topic: topic, p_chapter: chapter, p_responses: responses, p_time: time });
-  if (error) throw error;
-  return data;
+  // Try RPC first
+  try {
+    const { data, error } = await supabase.rpc('submit_quiz_results', {
+      p_student_id: studentId, p_subject: subject, p_grade: grade,
+      p_topic: topic, p_chapter: chapter, p_responses: responses, p_time: time,
+    });
+    if (!error && data) return data;
+    console.warn('submit_quiz_results RPC failed, using fallback:', error?.message);
+  } catch (e) {
+    console.warn('submit_quiz_results RPC error, using fallback:', e);
+  }
+
+  // ── Robust client-side fallback ──
+  const total = responses.length;
+  const correct = responses.filter(r => r.is_correct).length;
+  const scorePct = total > 0 ? Math.round((correct / total) * 100) : 0;
+  const xpEarned = correct * 10 + (scorePct >= 80 ? 20 : 0);
+
+  // 1. Insert quiz session
+  const { data: session, error: sessErr } = await supabase.from('quiz_sessions').insert({
+    student_id: studentId, subject, total_questions: total,
+    correct_answers: correct, score_percent: scorePct,
+    xp_earned: xpEarned, time_seconds: time, grade, completed_at: new Date().toISOString(),
+  }).select('id').single();
+  if (sessErr) console.error('Fallback: quiz_sessions insert failed:', sessErr.message);
+
+  // 2. Upsert learning profile
+  const { data: existing } = await supabase.from('student_learning_profiles')
+    .select('xp, total_sessions, total_questions_asked, total_questions_answered_correctly, total_time_minutes')
+    .eq('student_id', studentId).eq('subject', subject).single();
+
+  if (existing) {
+    await supabase.from('student_learning_profiles').update({
+      xp: (existing.xp ?? 0) + xpEarned,
+      total_sessions: (existing.total_sessions ?? 0) + 1,
+      total_questions_asked: (existing.total_questions_asked ?? 0) + total,
+      total_questions_answered_correctly: (existing.total_questions_answered_correctly ?? 0) + correct,
+      total_time_minutes: (existing.total_time_minutes ?? 0) + Math.max(1, Math.round(time / 60)),
+      last_session_at: new Date().toISOString(),
+      level: Math.max(1, Math.floor(((existing.xp ?? 0) + xpEarned) / 500) + 1),
+    }).eq('student_id', studentId).eq('subject', subject);
+  } else {
+    await supabase.from('student_learning_profiles').insert({
+      student_id: studentId, subject, xp: xpEarned,
+      total_sessions: 1, total_questions_asked: total,
+      total_questions_answered_correctly: correct,
+      total_time_minutes: Math.max(1, Math.round(time / 60)),
+      last_session_at: new Date().toISOString(),
+      streak_days: 1, level: 1, current_level: 'beginner',
+    });
+  }
+
+  // 3. Update student XP and last_active
+  const { data: student } = await supabase.from('students')
+    .select('xp_total, streak_days, last_active')
+    .eq('id', studentId).single();
+  if (student) {
+    const lastActive = student.last_active ? new Date(student.last_active) : null;
+    const today = new Date();
+    const isConsecutiveDay = lastActive && (today.toDateString() !== lastActive.toDateString()) &&
+      (today.getTime() - lastActive.getTime() < 2 * 24 * 60 * 60 * 1000);
+    const isSameDay = lastActive && today.toDateString() === lastActive.toDateString();
+
+    await supabase.from('students').update({
+      xp_total: (student.xp_total ?? 0) + xpEarned,
+      last_active: new Date().toISOString(),
+      streak_days: isSameDay ? (student.streak_days ?? 1) : isConsecutiveDay ? (student.streak_days ?? 0) + 1 : 1,
+    }).eq('id', studentId);
+  }
+
+  return {
+    session_id: session?.id ?? '',
+    total, correct, score_percent: scorePct, xp_earned: xpEarned,
+  };
 }
 
 export async function getLeaderboard(period = 'weekly', limit = 20) {
-  const { data, error } = await supabase.rpc('get_leaderboard', { p_period: period, p_limit: limit });
-  if (error) throw error;
-  return data;
+  try {
+    const { data, error } = await supabase.rpc('get_leaderboard', { p_period: period, p_limit: limit });
+    if (!error && data) return data;
+  } catch { /* RPC may not exist */ }
+
+  // Fallback: direct query
+  const since = new Date();
+  since.setDate(since.getDate() - (period === 'monthly' ? 30 : 7));
+  const { data } = await supabase.from('students')
+    .select('id, name, xp_total, streak_days, avatar_url, grade, school_name, city, board')
+    .eq('is_active', true)
+    .gte('last_active', since.toISOString())
+    .order('xp_total', { ascending: false })
+    .limit(limit);
+  return (data ?? []).map((s, i) => ({
+    rank: i + 1, student_id: s.id, name: s.name,
+    total_xp: s.xp_total ?? 0, streak: s.streak_days ?? 0,
+    avatar_url: s.avatar_url, grade: s.grade,
+    school: s.school_name, city: s.city, board: s.board,
+  }));
 }
 
 export async function getStudyPlan(studentId: string) {
-  const { data, error } = await supabase.rpc('get_study_plan', { p_student_id: studentId });
-  if (error) throw error;
-  return data;
+  try {
+    const { data, error } = await supabase.rpc('get_study_plan', { p_student_id: studentId });
+    if (!error && data) return data;
+  } catch { /* RPC may not exist */ }
+
+  // Fallback: direct query
+  const { data: plan } = await supabase.from('study_plans')
+    .select('*')
+    .eq('student_id', studentId)
+    .eq('is_active', true)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (!plan) return { has_plan: false };
+
+  const { data: tasks } = await supabase.from('study_plan_tasks')
+    .select('*')
+    .eq('plan_id', plan.id)
+    .order('day_number')
+    .order('task_order');
+
+  return { has_plan: true, plan, tasks: tasks ?? [] };
 }
 
 export async function getReviewCards(studentId: string, limit = 10) {
-  const { data, error } = await supabase.rpc('get_review_cards', { p_student_id: studentId, p_limit: limit });
-  if (error) throw error;
-  return data;
+  try {
+    const { data, error } = await supabase.rpc('get_review_cards', { p_student_id: studentId, p_limit: limit });
+    if (!error && data) return data;
+  } catch { /* RPC may not exist */ }
+
+  // Fallback: direct query
+  const { data } = await supabase.from('concept_mastery')
+    .select('id, subject, topic_tag, chapter_title, front_text, back_text, hint, ease_factor, interval_days, streak, repetition_count, total_reviews, correct_reviews')
+    .eq('student_id', studentId)
+    .lte('next_review_at', new Date().toISOString())
+    .not('front_text', 'is', null)
+    .order('next_review_at')
+    .limit(limit);
+  return (data ?? []).map(cm => ({ ...cm, topic: cm.topic_tag, chapter_title: cm.chapter_title || cm.topic_tag }));
 }
 
 export const sendToFoxy = chatWithFoxy;
@@ -265,15 +399,19 @@ export async function getHallOfFame(limit = 30) {
 
 /* ── Notifications (Duolingo-style) ── */
 export async function getStudentNotifications(studentId: string, limit = 30) {
-  const { data, error } = await supabase.rpc('get_student_notifications', { p_student_id: studentId, p_limit: limit });
-  if (error) console.error('getStudentNotifications:', error.message);
-  return data;
+  try {
+    const { data, error } = await supabase.rpc('get_student_notifications', { p_student_id: studentId, p_limit: limit });
+    if (!error && data) return data;
+  } catch { /* RPC may not exist */ }
+  return { unread_count: 0, notifications: [] };
 }
 
 export async function generateNotifications(studentId: string) {
-  const { data, error } = await supabase.rpc('generate_student_notifications', { p_student_id: studentId });
-  if (error) console.error('generateNotifications:', error.message);
-  return data;
+  try {
+    const { data, error } = await supabase.rpc('generate_student_notifications', { p_student_id: studentId });
+    if (!error) return data;
+  } catch { /* RPC may not exist */ }
+  return null;
 }
 
 export async function markAllNotificationsRead(studentId: string) {
