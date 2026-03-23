@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
+import { track } from '@/lib/analytics';
+import { shareResult, quizShareMessage } from '@/lib/share';
 import { getQuizQuestions, submitQuizResults, supabase } from '@/lib/supabase';
 import { Card, Button, ProgressBar, StatCard, LoadingFoxy, BottomNav } from '@/components/ui';
 import { SUBJECT_META } from '@/lib/constants';
@@ -190,6 +192,13 @@ export default function QuizPage() {
         );
         setResults(res);
         refreshSnapshot();
+        track('quiz_completed', {
+          subject: selectedSubject!,
+          score: res?.score_percent ?? 0,
+          questions: allResponses.length,
+          grade: student!.grade,
+          time_seconds: timer,
+        });
       } catch (e) {
         console.error('Submit error:', e);
         const total = responses.length;
@@ -582,6 +591,20 @@ export default function QuizPage() {
 
           {/* Action Buttons */}
           <div className="space-y-2">
+            {/* Share — the growth engine. Indian parents share on WhatsApp. */}
+            <Button
+              fullWidth
+              onClick={() => shareResult(quizShareMessage({
+                studentName: student!.name,
+                subject: subMeta?.name || selectedSubject!,
+                score: pct,
+                xpEarned: results.xp_earned,
+                isHi,
+              }))}
+              style={{ background: '#25D366', color: '#fff' }}
+            >
+              {isHi ? '📱 WhatsApp पर शेयर करो' : '📱 Share on WhatsApp'}
+            </Button>
             <Button fullWidth onClick={() => { setScreen('select'); setQuestions([]); setResponses([]); setResults(null); }}>
               {isHi ? 'एक और क्विज़ खेलो' : 'Take Another Quiz'} ⚡
             </Button>

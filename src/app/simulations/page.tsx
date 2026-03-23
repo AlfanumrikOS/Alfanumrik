@@ -3,8 +3,13 @@ import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { BUILT_IN_SIMULATIONS, type BuiltInSimulation } from '@/components/simulations';
-import SimulationViewer from '../../components/SimulationViewer';
+import dynamic from 'next/dynamic';
 import SimulationCard from '../../components/SimulationCard';
+
+const SimulationViewer = dynamic(() => import('../../components/SimulationViewer'), {
+  loading: () => <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}><span style={{ fontSize: 32 }}>🔬</span></div>,
+  ssr: false,
+});
 import { supabaseUrl as SUPABASE_URL, supabaseAnonKey as SUPABASE_ANON_KEY } from '@/lib/supabase';
 
 interface Simulation {

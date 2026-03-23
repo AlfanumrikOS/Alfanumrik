@@ -1,0 +1,143 @@
+'use client';
+
+/**
+ * SWR Data Layer — Alfanumrik's Caching Architecture
+ *
+ * Why SWR over raw fetch:
+ * 1. Indian students on Jio 4G: show cached data instantly, revalidate in background
+ * 2. Deduplication: 5 components requesting same data = 1 API call
+ * 3. Retry on reconnect: auto-retry when student's phone gets signal back
+ * 4. Focus revalidation: refresh data when student comes back to tab
+ *
+ * This is Alfanumrik's equivalent of Khan Academy's data fetching layer.
+ */
+
+import useSWR, { SWRConfiguration } from 'swr';
+import {
+  getStudentProfiles,
+  getSubjects,
+  getStudentSnapshot,
+  getFeatureFlags,
+  getStudyPlan,
+  getReviewCards,
+  getLeaderboard,
+  getStudentNotifications,
+  getMasteryOverview,
+} from './supabase';
+
+// Default SWR config optimized for Indian mobile networks
+const DEFAULT_CONFIG: SWRConfiguration = {
+  revalidateOnFocus: true,          // Refresh when student returns to tab
+  revalidateOnReconnect: true,      // Refresh when phone gets signal back
+  dedupingInterval: 5000,           // Dedupe requests within 5s
+  errorRetryCount: 3,               // Retry failed requests 3 times
+  errorRetryInterval: 2000,         // 2s between retries
+  keepPreviousData: true,           // Show stale data while loading new
+};
+
+// Longer cache for relatively static data
+const STATIC_CONFIG: SWRConfiguration = {
+  ...DEFAULT_CONFIG,
+  revalidateOnFocus: false,
+  dedupingInterval: 60000,          // Dedupe for 1 min
+  refreshInterval: 5 * 60 * 1000,  // Refresh every 5 min
+};
+
+/* ── Student Learning Profiles ── */
+export function useStudentProfiles(studentId: string | undefined) {
+  return useSWR(
+    studentId ? `profiles/${studentId}` : null,
+    () => getStudentProfiles(studentId!),
+    DEFAULT_CONFIG
+  );
+}
+
+/* ── Subjects List (rarely changes) ── */
+export function useSubjects() {
+  return useSWR('subjects', getSubjects, STATIC_CONFIG);
+}
+
+/* ── Student Snapshot (XP, streaks, mastery counts) ── */
+export function useStudentSnapshot(studentId: string | undefined) {
+  return useSWR(
+    studentId ? `snapshot/${studentId}` : null,
+    () => getStudentSnapshot(studentId!),
+    { ...DEFAULT_CONFIG, refreshInterval: 30000 } // Refresh every 30s for live feel
+  );
+}
+
+/* ── Feature Flags ── */
+export function useFeatureFlags() {
+  return useSWR('flags', getFeatureFlags, STATIC_CONFIG);
+}
+
+/* ── Study Plan ── */
+export function useStudyPlan(studentId: string | undefined) {
+  return useSWR(
+    studentId ? `study-plan/${studentId}` : null,
+    () => getStudyPlan(studentId!),
+    DEFAULT_CONFIG
+  );
+}
+
+/* ── Review Cards (spaced repetition) ── */
+export function useReviewCards(studentId: string | undefined, limit = 20) {
+  return useSWR(
+    studentId ? `review/${studentId}/${limit}` : null,
+    () => getReviewCards(studentId!, limit),
+    DEFAULT_CONFIG
+  );
+}
+
+/* ── Leaderboard ── */
+export function useLeaderboard(period = 'weekly', limit = 50) {
+  return useSWR(
+    `leaderboard/${period}/${limit}`,
+    () => getLeaderboard(period, limit),
+    { ...DEFAULT_CONFIG, refreshInterval: 60000 } // Refresh every min
+  );
+}
+
+/* ── Notifications ── */
+export function useNotifications(studentId: string | undefined, limit = 50) {
+  return useSWR(
+    studentId ? `notifications/${studentId}` : null,
+    () => getStudentNotifications(studentId!, limit),
+    DEFAULT_CONFIG
+  );
+}
+
+/* ── Mastery Overview ── */
+export function useMasteryOverview(studentId: string | undefined, subject?: string) {
+  return useSWR(
+    studentId ? `mastery/${studentId}/${subject || 'all'}` : null,
+    () => getMasteryOverview(studentId!, subject),
+    DEFAULT_CONFIG
+  );
+}
+
+/* ── Cache Invalidation Helpers ── */
+import { mutate } from 'swr';
+
+export function invalidateSnapshot(studentId: string) {
+  mutate(`snapshot/${studentId}`);
+}
+
+export function invalidateProfiles(studentId: string) {
+  mutate(`profiles/${studentId}`);
+}
+
+export function invalidateLeaderboard() {
+  mutate((key: string) => typeof key === 'string' && key.startsWith('leaderboard/'), undefined, { revalidate: true });
+}
+
+export function invalidateNotifications(studentId: string) {
+  mutate(`notifications/${studentId}`);
+}
+
+export function invalidateAll(studentId: string) {
+  invalidateSnapshot(studentId);
+  invalidateProfiles(studentId);
+  invalidateLeaderboard();
+  invalidateNotifications(studentId);
+}

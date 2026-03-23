@@ -5,6 +5,10 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { getLeaderboard, getCompetitions, joinCompetition, getCompetitionLeaderboard, getHallOfFame, supabase } from '@/lib/supabase';
 import { Card, Button, SectionHeader, LoadingFoxy, BottomNav, Avatar } from '@/components/ui';
+import type { LeaderboardEntry } from '@/lib/types';
+
+// These types come from dynamic RPC responses with many optional fields
+type RPCRecord = Record<string, any>; // eslint-disable-line
 
 type Tab = 'ranks' | 'compete' | 'fame' | 'titles';
 
@@ -40,14 +44,14 @@ export default function LeaderboardPage() {
 
   const [tab, setTab] = useState<Tab>('ranks');
   const [period, setPeriod] = useState('weekly');
-  const [entries, setEntries] = useState<any[]>([]);
-  const [competitions, setCompetitions] = useState<any[]>([]);
-  const [fame, setFame] = useState<any[]>([]);
-  const [titles, setTitles] = useState<any[]>([]);
+  const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
+  const [competitions, setCompetitions] = useState<RPCRecord[]>([]);
+  const [fame, setFame] = useState<RPCRecord[]>([]);
+  const [titles, setTitles] = useState<RPCRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState<string | null>(null);
-  const [selectedComp, setSelectedComp] = useState<any>(null);
-  const [compLeaderboard, setCompLeaderboard] = useState<any[]>([]);
+  const [selectedComp, setSelectedComp] = useState<RPCRecord | null>(null);
+  const [compLeaderboard, setCompLeaderboard] = useState<RPCRecord[]>([]);
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/');
@@ -121,7 +125,7 @@ export default function LeaderboardPage() {
     setJoining(null);
   };
 
-  const handleViewCompLeaderboard = async (comp: any) => {
+  const handleViewCompLeaderboard = async (comp: RPCRecord) => {
     setSelectedComp(comp);
     try {
       const data = await getCompetitionLeaderboard(comp.id, 50);
@@ -222,7 +226,7 @@ export default function LeaderboardPage() {
                   return (
                     <div key={idx} className="flex flex-col items-center" style={{ width: idx === 0 ? '40%' : '30%' }}>
                       <div className={`text-${idx === 0 ? '3xl' : '2xl'} mb-1`}>{MEDALS[idx]}</div>
-                      <Avatar name={e.name} size={idx === 0 ? 48 : 36} />
+                      <Avatar name={e.name || e.student_name || ''} size={idx === 0 ? 48 : 36} />
                       <div className={`text-xs font-bold mt-1 truncate max-w-full text-center ${isMe ? 'text-[var(--orange)]' : ''}`}>
                         {e.name}{isMe ? (isHi ? ' (तुम)' : ' (You)') : ''}
                       </div>

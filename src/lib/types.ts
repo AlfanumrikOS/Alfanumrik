@@ -131,3 +131,179 @@ export interface QuizSession {
   xp_earned: number;
   completed_at: string | null;
 }
+
+/* ── Quiz ── */
+export interface QuizResponse {
+  question_id: string;
+  selected_option: string | number;
+  is_correct: boolean;
+  time_spent?: number;
+}
+
+/* ── Mastery ── */
+export interface TopicMastery {
+  id: string;
+  student_id: string;
+  topic_id: string;
+  topic_tag: string;
+  chapter_number: number;
+  mastery_level: number;
+  last_attempted: string;
+  updated_at: string;
+}
+
+/* ── Leaderboard ── */
+export interface LeaderboardEntry {
+  rank: number;
+  student_id: string;
+  student_name: string;
+  name?: string;
+  total_xp: number;
+  xp?: number;
+  streak: number;
+  accuracy?: number;
+  avatar_url?: string;
+  top_title?: string;
+  grade?: string;
+  school?: string;
+  city?: string;
+  board?: string;
+  quizzes_taken?: number;
+  topics_mastered?: number;
+  titles?: { title_name: string; icon: string }[];
+}
+
+export interface Competition {
+  id: string;
+  title: string;
+  title_hi?: string;
+  description?: string;
+  description_hi?: string;
+  competition_type: string;
+  status: 'live' | 'upcoming' | 'completed';
+  start_date: string;
+  end_date: string;
+  participant_count: number;
+  is_featured?: boolean;
+  is_joined?: boolean;
+  accent_color?: string;
+  banner_emoji?: string;
+  bonus_xp_1?: number;
+  bonus_xp_2?: number;
+  bonus_xp_3?: number;
+  my_rank?: number;
+}
+
+export interface FameEntry {
+  id: string;
+  student_id: string;
+  student_name: string;
+  title: string;
+  icon: string;
+  earned_at: string;
+}
+
+export interface StudentTitle {
+  id: string;
+  student_id: string;
+  title_name: string;
+  icon: string;
+  earned_at: string;
+  is_active: boolean;
+}
+
+/* ── Dashboard ── */
+export interface DailyActivity {
+  label: string;
+  quizzes: number;
+  xp: number;
+  active: boolean;
+}
+
+/* ── Teacher ── */
+export interface HeatmapCell {
+  p_know: number;
+  level: string;
+  attempts: number;
+}
+
+export interface HeatmapRow {
+  student_name: string;
+  avg_mastery: number;
+  cells: HeatmapCell[];
+}
+
+export interface HeatmapData {
+  student_count: number;
+  concept_count: number;
+  concepts: { id: string; title: string; chapter: number }[];
+  matrix: HeatmapRow[];
+}
+
+export interface RiskAlert {
+  id: string;
+  student_id: string;
+  student_name: string;
+  severity: 'high' | 'medium' | 'low';
+  title: string;
+  description: string;
+  recommended_action?: string;
+}
+
+/* ── Parent ── */
+export interface ParentGuardian {
+  id: string;
+  name: string;
+  auth_user_id?: string;
+}
+
+export interface StudentChild {
+  id: string;
+  name: string;
+  grade: string;
+}
+
+export interface ActivityBurst {
+  id: string;
+  subject: string;
+  duration_minutes: number;
+  questions_completed: number;
+  xp_earned: number;
+  timestamp: string;
+}
+
+/* ── Reports ── */
+export interface SubjectReport {
+  name: string;
+  mastery_percent: number;
+  chapters_covered: number;
+  quiz_attempts: number;
+  avg_score: number;
+}
+
+export interface ConceptNode {
+  id: string;
+  title: string;
+  mastery_level: number;
+  attempts: number;
+  last_attempted: string;
+}
+
+export interface QuizRecord {
+  id: string;
+  subject: string;
+  score_percent: number;
+  total_questions: number;
+  correct_answers: number;
+  completed_at: string;
+  time_spent_seconds: number;
+}
+
+/* ── HPC ── */
+export interface SubjectPerformance {
+  concepts_attempted: number;
+  concepts_total: number;
+  avg_mastery_pct: number;
+  chapters_covered: number;
+  chapters_total: number;
+}
