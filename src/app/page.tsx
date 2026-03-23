@@ -350,7 +350,10 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: email.trim(),
         password,
-        options: { data: metaData },
+        options: {
+          data: metaData,
+          emailRedirectTo: `${window.location.origin}/auth/callback?type=signup`,
+        },
       });
       if (authError) { setError(authError.message); setLoading(false); return; }
       if (authData.user) {
@@ -405,8 +408,11 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
     if (!email.trim()) { setError('Please enter your email'); return; }
     setError(''); setLoading(true);
     try {
+      // PKCE flow: Supabase emails a link with a `code` param.
+      // The link goes to /auth/callback which exchanges the code server-side,
+      // then redirects to /auth/reset with a valid session.
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: `${window.location.origin}/auth/reset`,
+        redirectTo: `${window.location.origin}/auth/callback?type=recovery`,
       });
       if (resetError) { setError(resetError.message); setLoading(false); return; }
       setSuccess('Password reset link sent to your email!');

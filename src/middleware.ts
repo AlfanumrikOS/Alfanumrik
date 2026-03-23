@@ -1,21 +1,21 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { createServerClient } from '@supabase/ssr';
 
 /* ═══════════════════════════════════════════════════════════════
- * MIDDLEWARE — Security Hardening Layer
+ * MIDDLEWARE — Security Hardening + Auth Session Refresh
  *
  * Dario's principle: Defense in depth. Every layer assumes the
  * layer below it might be compromised.
  *
+ * Layer 0: Supabase session refresh (keeps auth cookies fresh)
  * Layer 1: Security headers (XSS, clickjacking, MIME sniffing)
  * Layer 2: Bot/scanner blocking
  * Layer 3: API rate limiting (IP-based, in-memory with fallback)
  * Layer 4: Request validation
  *
- * NOTE: Auth protection is handled CLIENT-SIDE via AuthContext +
- * Supabase RLS as the server-side enforcement layer.
- * Supabase JS v2 stores auth tokens in localStorage (not cookies),
- * so server-side cookie checks cannot detect logged-in users.
- * RLS policies in PostgreSQL are the true auth boundary.
+ * Auth now uses BOTH localStorage (client-side) AND cookies
+ * (server-side) for the PKCE email flow to work properly.
+ * RLS policies in PostgreSQL remain the true auth boundary.
  * ═══════════════════════════════════════════════════════════════ */
 
 // ── In-memory rate limiter for API-like routes ──
@@ -60,8 +60,37 @@ if (typeof globalThis !== 'undefined') {
   }
 }
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
+
+  // ── Layer 0: Supabase session refresh ──
+  // This keeps the auth cookie fresh on every request.
+  // Required for the PKCE email flow (signup confirm, password reset).
+  let response = NextResponse.next({ request });
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (supabaseUrl && supabaseKey) {
+    const supabase = createServerClient(supabaseUrl, supabaseKey, {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) =>
+            request.cookies.set(name, value)
+          );
+          response = NextResponse.next({ request });
+          cookiesToSet.forEach(({ name, value, options }) =>
+            response.cookies.set(name, value, options)
+          );
+        },
+      },
+    });
+    // Refresh the session — this extends the cookie expiry
+    await supabase.auth.getUser();
+  }
 
   // ── Layer 2: Block common bot/scanner paths early ──
   if (
@@ -97,7 +126,6 @@ export function middleware(request: NextRequest) {
       );
     }
 
-    const response = NextResponse.next();
     response.headers.set('X-RateLimit-Remaining', String(remaining));
     return addSecurityHeaders(response, request);
   }
@@ -114,7 +142,6 @@ export function middleware(request: NextRequest) {
     );
   }
 
-  const response = NextResponse.next();
   return addSecurityHeaders(response, request);
 }
 
