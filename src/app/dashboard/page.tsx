@@ -11,12 +11,22 @@ import type { StudentLearningProfile, Subject, CurriculumTopic } from '@/lib/typ
 
 const QUICK_ACTIONS = [
   { href: '/foxy', icon: '🦊', label: 'Ask Foxy', labelHi: 'फॉक्सी से पूछो', color: '#E8581C' },
+  { href: '/quiz?mode=cognitive', icon: '🧠', label: 'Smart Quiz', labelHi: 'स्मार्ट क्विज़', color: '#7C3AED' },
   { href: '/quiz', icon: '⚡', label: 'Quick Quiz', labelHi: 'क्विज़', color: '#F5A623' },
   { href: '/review', icon: '🔄', label: 'Review', labelHi: 'रिव्यू', color: '#0891B2' },
   { href: '/progress', icon: '📈', label: 'Progress', labelHi: 'प्रगति', color: '#16A34A' },
   { href: '/study-plan', icon: '📅', label: 'Study Plan', labelHi: 'अध्ययन योजना', color: '#7C3AED' },
   { href: '/leaderboard', icon: '🏆', label: 'Leaderboard', labelHi: 'लीडरबोर्ड', color: '#DB2777' },
 ];
+
+const BLOOM_LABELS: Record<string, { icon: string; label: string; labelHi: string }> = {
+  remember: { icon: '📖', label: 'Remember', labelHi: 'याद' },
+  understand: { icon: '💡', label: 'Understand', labelHi: 'समझ' },
+  apply: { icon: '🔧', label: 'Apply', labelHi: 'लागू' },
+  analyze: { icon: '🔍', label: 'Analyze', labelHi: 'विश्लेषण' },
+  evaluate: { icon: '⚖️', label: 'Evaluate', labelHi: 'मूल्यांकन' },
+  create: { icon: '🚀', label: 'Create', labelHi: 'सृजन' },
+};
 
 export default function Dashboard() {
   const { student, snapshot, isLoggedIn, isLoading, isHi, language, setLanguage, refreshSnapshot, activeRole } = useAuth();
@@ -30,6 +40,10 @@ export default function Dashboard() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
   const [showSubjectPicker, setShowSubjectPicker] = useState(false);
+  const [knowledgeGaps, setKnowledgeGaps] = useState<Array<{ id: string; topic_title?: string; severity: string; description: string; description_hi?: string }>>([]);
+  const [showGapsAlert, setShowGapsAlert] = useState(true);
+  const [velocityTrend, setVelocityTrend] = useState<'fast' | 'steady' | 'slow' | null>(null);
+  const [bloomLevel, setBloomLevel] = useState<{ bloom_level: string; mastery: number } | null>(null);
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/');
@@ -73,6 +87,27 @@ export default function Dashboard() {
       await generateNotifications(student.id);
       const notifData = await getStudentNotifications(student.id);
       setUnreadCount(notifData?.unread_count ?? 0);
+    } catch {}
+
+    // Cognitive 2.0: Knowledge gaps
+    try {
+      const { data: gaps } = await supabase.from('knowledge_gaps').select('id, topic_title, severity, description, description_hi').eq('student_id', student.id).order('severity').limit(3);
+      setKnowledgeGaps(gaps ?? []);
+    } catch {}
+
+    // Cognitive 2.0: Learning velocity
+    try {
+      const { data: vel } = await supabase.from('learning_velocity').select('velocity_score').eq('student_id', student.id).order('velocity_score', { ascending: false }).limit(1);
+      if (vel && vel.length > 0) {
+        const v = vel[0].velocity_score;
+        setVelocityTrend(v > 0.05 ? 'fast' : v > 0.02 ? 'steady' : 'slow');
+      }
+    } catch {}
+
+    // Cognitive 2.0: Highest Bloom level
+    try {
+      const { data: bloom } = await supabase.from('bloom_progression').select('bloom_level, mastery').eq('student_id', student.id).gte('mastery', 0.7).order('mastery', { ascending: false }).limit(1);
+      if (bloom && bloom.length > 0) setBloomLevel(bloom[0]);
     } catch {}
   }, [student]);
 
@@ -162,6 +197,11 @@ export default function Dashboard() {
                 <span className="text-2xl font-bold">{streak}</span>
               </div>
               <div className="text-xs text-[var(--text-3)]">{isHi ? 'दिन' : 'day streak'}</div>
+              {velocityTrend && (
+                <div className="text-xs mt-1" style={{ color: velocityTrend === 'fast' ? '#16A34A' : velocityTrend === 'steady' ? '#F59E0B' : '#EF4444' }}>
+                  {velocityTrend === 'fast' ? '↑' : velocityTrend === 'steady' ? '→' : '↓'} {isHi ? (velocityTrend === 'fast' ? 'तेज़' : velocityTrend === 'steady' ? 'स्थिर' : 'धीमा') : velocityTrend}
+                </div>
+              )}
             </div>
           </div>
           <ProgressBar
@@ -182,6 +222,14 @@ export default function Dashboard() {
               label={isHi ? 'क्विज़' : 'Quizzes'}
               color="var(--purple)"
             />
+            {bloomLevel && BLOOM_LABELS[bloomLevel.bloom_level] && (
+              <StatCard
+                icon={BLOOM_LABELS[bloomLevel.bloom_level].icon}
+                value={`${Math.round(bloomLevel.mastery * 100)}%`}
+                label={isHi ? BLOOM_LABELS[bloomLevel.bloom_level].labelHi : BLOOM_LABELS[bloomLevel.bloom_level].label}
+                color="#7C3AED"
+              />
+            )}
           </div>
         </Card>
 
@@ -225,6 +273,33 @@ export default function Dashboard() {
             </div>
             <span className="ml-auto" style={{ color: 'var(--gold)' }}>→</span>
           </button>
+        )}
+
+        {/* Knowledge Gaps Alert */}
+        {knowledgeGaps.length > 0 && showGapsAlert && (
+          <div className="rounded-2xl p-4 relative" style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)' }}>
+            <button onClick={() => setShowGapsAlert(false)} className="absolute top-2 right-3 text-[var(--text-3)] text-sm">✕</button>
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">🔍</span>
+              <div className="flex-1">
+                <div className="font-semibold text-sm" style={{ color: '#DC2626' }}>
+                  {knowledgeGaps.length} {isHi ? 'ज्ञान अंतराल पाए गए' : 'knowledge gaps found'}
+                </div>
+                <div className="text-xs text-[var(--text-3)] mt-1 space-y-0.5">
+                  {knowledgeGaps.slice(0, 2).map(g => (
+                    <div key={g.id}>• {isHi && g.description_hi ? g.description_hi : g.description}</div>
+                  ))}
+                </div>
+                <button
+                  onClick={() => router.push('/foxy')}
+                  className="mt-2 text-xs font-bold px-3 py-1.5 rounded-lg"
+                  style={{ background: 'rgba(232,88,28,0.1)', color: 'var(--orange)' }}
+                >
+                  🦊 {isHi ? 'Foxy से ठीक करो' : 'Fix with Foxy'}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Quick Actions */}

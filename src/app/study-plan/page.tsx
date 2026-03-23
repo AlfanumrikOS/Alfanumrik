@@ -6,6 +6,18 @@ import { useAuth } from '@/lib/AuthContext';
 import { getStudyPlan, generateStudyPlan, supabase } from '@/lib/supabase';
 import { Card, Button, ProgressBar, SectionHeader, LoadingFoxy, BottomNav } from '@/components/ui';
 import { SUBJECT_META } from '@/lib/constants';
+import { BLOOM_CONFIG, type BloomLevel } from '@/lib/cognitive-engine';
+
+const TASK_BLOOM_MAP: Record<string, BloomLevel> = {
+  learn: 'understand', quiz: 'apply', review: 'remember', revision: 'remember',
+  practice: 'apply', notes: 'understand', foxy_chat: 'understand', challenge: 'evaluate',
+};
+
+const ZPD_LABELS: Record<number, { label: string; labelHi: string; color: string }> = {
+  1: { label: 'Easy', labelHi: 'आसान', color: '#16A34A' },
+  2: { label: 'Medium', labelHi: 'मध्यम', color: '#F59E0B' },
+  3: { label: 'Hard', labelHi: 'कठिन', color: '#EF4444' },
+};
 
 interface Task {
   id: string;
@@ -78,6 +90,8 @@ export default function StudyPlanPage() {
   const [genMinutes, setGenMinutes] = useState(60);
   const [genDays, setGenDays] = useState(7);
   const [generating, setGenerating] = useState(false);
+  const [energyLevel, setEnergyLevel] = useState<'high' | 'medium' | 'low' | null>(null);
+  const [criticalGaps, setCriticalGaps] = useState<Array<{ id: string; topic_title?: string; description: string; description_hi?: string }>>([]);
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/');
@@ -102,6 +116,21 @@ export default function StudyPlanPage() {
     } catch {
       setHasPlan(false);
     }
+
+    // Cognitive 2.0: energy level from latest session
+    try {
+      const { data: session } = await supabase.from('cognitive_session_metrics').select('fatigue_detected, consecutive_errors').eq('student_id', student.id).order('created_at', { ascending: false }).limit(1);
+      if (session && session.length > 0) {
+        setEnergyLevel(session[0].fatigue_detected ? 'low' : session[0].consecutive_errors > 2 ? 'medium' : 'high');
+      }
+    } catch {}
+
+    // Cognitive 2.0: critical knowledge gaps
+    try {
+      const { data: gaps } = await supabase.from('knowledge_gaps').select('id, topic_title, description, description_hi').eq('student_id', student.id).eq('severity', 'critical').limit(2);
+      setCriticalGaps(gaps ?? []);
+    } catch {}
+
     setLoading(false);
   }, [student]);
 
@@ -374,9 +403,14 @@ export default function StudyPlanPage() {
                 label={`${plan?.completed_tasks ?? 0}/${plan?.total_tasks ?? 0} ${isHi ? 'पूरे' : 'done'}`}
                 showPercent
               />
-              <div className="flex items-center gap-4 mt-3 text-xs text-[var(--text-3)]">
+              <div className="flex items-center gap-4 mt-3 text-xs text-[var(--text-3)] flex-wrap">
                 <span>📅 {plan?.start_date} → {plan?.end_date}</span>
                 <span>⭐ {earnedXp}/{totalXp} XP</span>
+                {energyLevel && (
+                  <span style={{ color: energyLevel === 'high' ? '#16A34A' : energyLevel === 'medium' ? '#F59E0B' : '#EF4444' }}>
+                    {energyLevel === 'high' ? '⚡' : energyLevel === 'medium' ? '🔋' : '🪫'} {isHi ? (energyLevel === 'high' ? 'ऊर्जा अच्छी' : energyLevel === 'medium' ? 'थोड़ी थकान' : 'आराम करो') : (energyLevel === 'high' ? 'Energy: High' : energyLevel === 'medium' ? 'Energy: Medium' : 'Energy: Low')}
+                  </span>
+                )}
               </div>
             </Card>
 
@@ -464,11 +498,30 @@ export default function StudyPlanPage() {
                                   </p>
                                 )}
 
-                                <div className="flex items-center gap-3 mt-2 flex-wrap">
+                                <div className="flex items-center gap-2 mt-2 flex-wrap">
                                   <span className="text-[10px] text-[var(--text-3)]">⏱ {task.duration_minutes}m</span>
                                   {task.xp_reward > 0 && <span className="text-[10px] text-[var(--text-3)]">⭐ {task.xp_reward} XP</span>}
                                   {task.question_count && <span className="text-[10px] text-[var(--text-3)]">📝 {task.question_count} Qs</span>}
                                   {task.chapter_title && <span className="text-[10px] text-[var(--text-3)] truncate">📚 {task.chapter_title}</span>}
+                                  {/* Bloom badge */}
+                                  {(() => {
+                                    const bl = TASK_BLOOM_MAP[task.task_type] || 'understand';
+                                    const bc = BLOOM_CONFIG[bl];
+                                    return (
+                                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: `${bc.color}15`, color: bc.color }}>
+                                        {bc.icon} {isHi ? bc.labelHi : bc.label}
+                                      </span>
+                                    );
+                                  })()}
+                                  {/* ZPD badge for quiz tasks */}
+                                  {(task.task_type === 'quiz' || task.task_type === 'practice') && task.difficulty > 0 && (() => {
+                                    const z = ZPD_LABELS[task.difficulty] || ZPD_LABELS[2];
+                                    return (
+                                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: `${z.color}15`, color: z.color }}>
+                                        ZPD: {isHi ? z.labelHi : z.label}
+                                      </span>
+                                    );
+                                  })()}
                                 </div>
 
                                 {/* Action buttons */}
@@ -536,6 +589,36 @@ export default function StudyPlanPage() {
                 </div>
               );
             })}
+
+            {/* Critical Knowledge Gaps */}
+            {criticalGaps.length > 0 && (
+              <Card className="!p-4" accent="#EF4444">
+                <div className="flex items-start gap-2">
+                  <span className="text-lg">🦊</span>
+                  <div className="flex-1">
+                    <p className="text-xs font-bold" style={{ color: '#EF4444' }}>
+                      {isHi ? 'Foxy की सलाह' : 'Foxy Suggests'}
+                    </p>
+                    <div className="space-y-2 mt-2">
+                      {criticalGaps.map(g => (
+                        <div key={g.id} className="flex items-center justify-between gap-2">
+                          <span className="text-xs text-[var(--text-3)] flex-1">
+                            {g.topic_title ? `${g.topic_title}: ` : ''}{isHi && g.description_hi ? g.description_hi : g.description}
+                          </span>
+                          <button
+                            onClick={() => router.push(`/foxy${g.topic_title ? `?topic=${encodeURIComponent(g.topic_title)}` : ''}`)}
+                            className="text-[10px] font-bold px-2 py-1 rounded-lg flex-shrink-0"
+                            style={{ background: 'rgba(232,88,28,0.1)', color: 'var(--orange)' }}
+                          >
+                            {isHi ? 'ठीक करो' : 'Fix Now'}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            )}
 
             {/* Science behind the plan */}
             {plan?.ai_reasoning && (
