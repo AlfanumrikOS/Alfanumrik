@@ -348,7 +348,7 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
 
     setError(''); setLoading(true);
     try {
-      const metaData: Record<string, string> = { name: name.trim() };
+      const metaData: Record<string, string> = { name: name.trim(), role: roleTab };
       if (roleTab === 'student') { metaData.grade = grade; metaData.board = board; }
 
       const { data: authData, error: authError } = await supabase.auth.signUp({

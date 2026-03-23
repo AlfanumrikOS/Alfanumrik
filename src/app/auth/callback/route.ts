@@ -85,6 +85,20 @@ export async function GET(request: NextRequest) {
         } catch {
           // Welcome email is best-effort — never block signup confirmation
         }
+        // Redirect based on role
+        try {
+          const { data: { user: u2 } } = await supabase.auth.getUser();
+          if (u2) {
+            const metaRole = u2.user_metadata?.role;
+            if (metaRole === 'teacher') return NextResponse.redirect(`${origin}/teacher`);
+            if (metaRole === 'parent') return NextResponse.redirect(`${origin}/parent`);
+            // Check DB tables as fallback
+            const { data: gd } = await supabase.from('guardians').select('id').eq('auth_user_id', u2.id).single();
+            if (gd) return NextResponse.redirect(`${origin}/parent`);
+            const { data: td } = await supabase.from('teachers').select('id').eq('auth_user_id', u2.id).single();
+            if (td) return NextResponse.redirect(`${origin}/teacher`);
+          }
+        } catch { /* fallback to /dashboard */ }
         return NextResponse.redirect(`${origin}/dashboard`);
       }
       // Default: redirect to the `next` param or dashboard

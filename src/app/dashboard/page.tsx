@@ -19,7 +19,7 @@ const QUICK_ACTIONS = [
 ];
 
 export default function Dashboard() {
-  const { student, snapshot, isLoggedIn, isLoading, isHi, language, setLanguage, refreshSnapshot } = useAuth();
+  const { student, snapshot, isLoggedIn, isLoading, isHi, language, setLanguage, refreshSnapshot, activeRole } = useAuth();
   const router = useRouter();
   const [profiles, setProfiles] = useState<StudentLearningProfile[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -33,7 +33,10 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/');
-  }, [isLoading, isLoggedIn, router]);
+    // Redirect non-student roles to their correct dashboard
+    if (!isLoading && isLoggedIn && activeRole === 'teacher') router.replace('/teacher');
+    if (!isLoading && isLoggedIn && activeRole === 'guardian') router.replace('/parent');
+  }, [isLoading, isLoggedIn, activeRole, router]);
 
   useEffect(() => {
     const h = new Date().getHours();
