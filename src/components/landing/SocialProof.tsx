@@ -102,7 +102,7 @@ function MetricCounter({ end, suffix = '', prefix = '', label, icon, decimals = 
           font-family: var(--font-display);
           font-size: 2rem;
           font-weight: 800;
-          color: var(--orange);
+          color: #1B2B5B;
           line-height: 1.1;
           letter-spacing: -0.02em;
         }
@@ -195,7 +195,7 @@ const TESTIMONIALS: Testimonial[] = [
     quote: 'Foxy explains things better than my tuition teacher. I went from 65% to 89% in maths in just 2 months! The Hindi mode is amazing.',
     rating: 5,
     initials: 'PS',
-    gradient: 'linear-gradient(135deg, #E8581C, #F5A623)',
+    gradient: 'linear-gradient(135deg, #1B2B5B, #0EA5E9)',
   },
   {
     name: 'Rajesh K.',
@@ -204,7 +204,7 @@ const TESTIMONIALS: Testimonial[] = [
     quote: "Finally, I can see exactly what my son is learning. The weekly reports give me peace of mind. Best investment we've made in his education.",
     rating: 5,
     initials: 'RK',
-    gradient: 'linear-gradient(135deg, #0891B2, #16A34A)',
+    gradient: 'linear-gradient(135deg, #0EA5E9, #10B981)',
   },
   {
     name: 'Mrs. Sunita Sharma',
@@ -213,7 +213,7 @@ const TESTIMONIALS: Testimonial[] = [
     quote: 'I use the teacher dashboard to identify which students are struggling. The mastery heatmap is incredibly useful for targeted teaching.',
     rating: 5,
     initials: 'SS',
-    gradient: 'linear-gradient(135deg, #7C3AED, #DB2777)',
+    gradient: 'linear-gradient(135deg, #6366F1, #DB2777)',
   },
   {
     name: 'Arjun M.',
@@ -222,7 +222,7 @@ const TESTIMONIALS: Testimonial[] = [
     quote: 'The study plans and spaced repetition actually work. I\'m retaining concepts weeks after learning them. Board exam prep feels manageable now.',
     rating: 5,
     initials: 'AM',
-    gradient: 'linear-gradient(135deg, #F5A623, #E8581C)',
+    gradient: 'linear-gradient(135deg, #2563EB, #1B2B5B)',
   },
 ];
 
@@ -242,7 +242,7 @@ function StarRating({ rating }: { rating: number }) {
           color: var(--border-mid);
         }
         .star.filled {
-          color: var(--gold);
+          color: #F97316;
         }
       `}</style>
     </div>
@@ -431,19 +431,19 @@ function TrustBadges() {
           border: 1.5px solid;
         }
         .badge-cbse {
-          color: #0891B2;
-          background: rgba(8, 145, 178, 0.08);
-          border-color: rgba(8, 145, 178, 0.2);
+          color: #0EA5E9;
+          background: rgba(14, 165, 233, 0.08);
+          border-color: rgba(14, 165, 233, 0.2);
         }
         .badge-ncert {
-          color: #16A34A;
-          background: rgba(22, 163, 74, 0.08);
-          border-color: rgba(22, 163, 74, 0.2);
+          color: #10B981;
+          background: rgba(16, 185, 129, 0.08);
+          border-color: rgba(16, 185, 129, 0.2);
         }
         .badge-nep {
-          color: #7C3AED;
-          background: rgba(124, 58, 237, 0.08);
-          border-color: rgba(124, 58, 237, 0.2);
+          color: #6366F1;
+          background: rgba(99, 102, 241, 0.08);
+          border-color: rgba(99, 102, 241, 0.2);
         }
         .trust-features {
           display: flex;
@@ -523,8 +523,8 @@ export default function SocialProof() {
           font-weight: 700;
           text-transform: uppercase;
           letter-spacing: 0.1em;
-          color: var(--orange);
-          background: rgba(232, 88, 28, 0.08);
+          color: #1B2B5B;
+          background: rgba(27, 43, 91, 0.08);
           padding: 6px 16px;
           border-radius: 100px;
           margin-bottom: 16px;

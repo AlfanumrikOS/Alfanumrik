@@ -215,17 +215,17 @@ export default function CTASection({ onGetStarted }: CTASectionProps) {
           font-size: 1.05rem;
           font-weight: 700;
           color: #FFFFFF;
-          background: linear-gradient(135deg, var(--orange), var(--orange-light));
+          background: linear-gradient(135deg, #0EA5E9, #2563EB);
           border: none;
           border-radius: 14px;
           cursor: pointer;
           transition: transform 0.2s ease, box-shadow 0.3s ease;
-          box-shadow: 0 4px 24px rgba(232, 88, 28, 0.35);
+          box-shadow: 0 4px 24px rgba(14, 165, 233, 0.35);
           white-space: nowrap;
         }
         .btn-primary:hover {
           transform: translateY(-2px) scale(1.02);
-          box-shadow: 0 8px 40px rgba(232, 88, 28, 0.5);
+          box-shadow: 0 8px 40px rgba(14, 165, 233, 0.5);
         }
         .btn-primary:active {
           transform: translateY(0) scale(0.99);
