@@ -14,7 +14,7 @@ import {
   type BloomLevel, type CognitiveLoadState, type ReflectionPrompt, type ErrorType,
 } from '@/lib/cognitive-engine';
 
-type QuizMode = 'practice' | 'cognitive';
+type QuizMode = 'practice' | 'cognitive' | 'exam';
 type Screen = 'select' | 'quiz' | 'feedback' | 'results';
 
 interface Question {
@@ -60,6 +60,8 @@ export default function QuizPage() {
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
   const [selectedDifficulty, setSelectedDifficulty] = useState<number | null>(null);
   const [questionCount, setQuestionCount] = useState(10);
+  const [examTimeLimit, setExamTimeLimit] = useState(180); // minutes for exam mode
+  const [examTimerActive, setExamTimerActive] = useState(false);
 
   // Cognitive 2.0 state
   const [cogLoad, setCogLoad] = useState<CognitiveLoadState>(initialCognitiveLoad());
@@ -100,16 +102,34 @@ export default function QuizPage() {
     }
     const mode = params.get('mode');
     if (mode === 'cognitive') setQuizMode('cognitive');
+    if (mode === 'exam') setQuizMode('exam');
   }, []);
 
-  // Global timer
+  // Global timer (counts up for practice/cognitive, starts from limit for exam)
   useEffect(() => {
     if (screen === 'quiz') {
-      timerRef.current = setInterval(() => setTimer(t => t + 1), 1000);
+      if (quizMode === 'exam' && !examTimerActive) {
+        setTimer(examTimeLimit * 60); // set to limit in seconds
+        setExamTimerActive(true);
+      }
+      timerRef.current = setInterval(() => {
+        setTimer(t => {
+          if (quizMode === 'exam') {
+            if (t <= 1) {
+              // Time's up — auto-submit
+              if (timerRef.current) clearInterval(timerRef.current);
+              return 0;
+            }
+            return t - 1;
+          }
+          return t + 1;
+        });
+      }, 1000);
       return () => { if (timerRef.current) clearInterval(timerRef.current); };
     }
+    setExamTimerActive(false);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [screen]);
+  }, [screen, quizMode, examTimeLimit, examTimerActive]);
 
   // Per-question timer
   useEffect(() => {
@@ -181,6 +201,21 @@ export default function QuizPage() {
       time_spent: questionTimer,
       error_type: errorType,
     }]);
+
+    // In exam mode, skip explanation — go straight to next question
+    if (quizMode === 'exam') {
+      if (qTimerRef.current) clearInterval(qTimerRef.current);
+      if (currentIdx < questions.length - 1) {
+        setCurrentIdx(i => i + 1);
+        setSelectedOption(null);
+        setHintLevel(0);
+        return;
+      }
+      // Last question — submit
+      nextQuestion();
+      return;
+    }
+
     setShowExplanation(true);
     if (qTimerRef.current) clearInterval(qTimerRef.current);
 
@@ -287,6 +322,25 @@ export default function QuizPage() {
           }))).catch(() => {});
         }
 
+        // Save exam simulation if in exam mode
+        if (quizMode === 'exam' && res?.session_id) {
+          const totalMarks = allResponses.length; // 1 mark per question for MCQ
+          const obtainedMarks = allResponses.filter(r => r.is_correct).length;
+          supabase.from('exam_simulations').insert({
+            student_id: student!.id,
+            subject: selectedSubject!,
+            grade: student!.grade,
+            exam_format: 'cbse',
+            total_marks: totalMarks,
+            obtained_marks: obtainedMarks,
+            percentage: totalMarks > 0 ? Math.round((obtainedMarks / totalMarks) * 100 * 100) / 100 : 0,
+            time_taken_seconds: examTimeLimit * 60 - timer,
+            time_limit_seconds: examTimeLimit * 60,
+            is_completed: true,
+            completed_at: new Date().toISOString(),
+          }).then(() => {});
+        }
+
         track('quiz_completed', {
           subject: selectedSubject!,
           score: res?.score_percent ?? 0,
@@ -346,6 +400,7 @@ export default function QuizPage() {
               {([
                 { id: 'practice' as QuizMode, icon: '✏️', label: 'Practice', labelHi: 'अभ्यास', desc: 'Choose your own difficulty', descHi: 'अपनी कठिनाई चुनो', color: '#F5A623' },
                 { id: 'cognitive' as QuizMode, icon: '🧠', label: 'Smart', labelHi: 'स्मार्ट', desc: 'AI picks the right level', descHi: 'AI सही स्तर चुनता है', color: '#7C3AED' },
+                { id: 'exam' as QuizMode, icon: '📋', label: 'Exam', labelHi: 'परीक्षा', desc: 'CBSE paper format, timed', descHi: 'CBSE पेपर, समयबद्ध', color: '#DC2626' },
               ]).map(m => (
                 <button
                   key={m.id}
@@ -418,6 +473,40 @@ export default function QuizPage() {
             </div>
           )}
 
+          {/* Exam Mode Config */}
+          {selectedSubject && quizMode === 'exam' && (
+            <div>
+              <p className="text-sm text-[var(--text-3)] mb-3 font-medium">
+                {isHi ? '2. समय सीमा (मिनट)' : '2. Time limit (minutes)'}
+              </p>
+              <div className="flex gap-2">
+                {[30, 60, 90, 180].map(m => (
+                  <button
+                    key={m}
+                    onClick={() => setExamTimeLimit(m)}
+                    className="rounded-xl px-4 py-2.5 text-sm font-bold transition-all"
+                    style={{
+                      background: examTimeLimit === m ? '#DC2626' : 'var(--surface-2)',
+                      color: examTimeLimit === m ? '#fff' : 'var(--text-2)',
+                    }}
+                  >
+                    {m} {isHi ? 'मि' : 'min'}
+                  </button>
+                ))}
+              </div>
+              <Card className="!p-3 !mt-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">📋</span>
+                  <div className="text-xs text-[var(--text-3)] leading-relaxed">
+                    {isHi
+                      ? 'CBSE पैटर्न: समयबद्ध परीक्षा, सवालों का जवाब एक बार में — रिवीज़न का समय रखो!'
+                      : 'CBSE format: Timed exam, answer all questions — keep time for revision!'}
+                  </div>
+                </div>
+              </Card>
+            </div>
+          )}
+
           {/* Question Count */}
           {selectedSubject && (
             <div>
@@ -444,11 +533,13 @@ export default function QuizPage() {
 
           {/* Start Button */}
           {selectedSubject && (
-            <Button fullWidth onClick={startQuiz} color={subMeta?.color}>
+            <Button fullWidth onClick={startQuiz} color={quizMode === 'exam' ? '#DC2626' : subMeta?.color}>
               {loading ? (isHi ? 'लोड हो रहा...' : 'Loading...') : (
-                <>
-                  {subMeta?.icon} {isHi ? `${questionCount} सवालों की क्विज़ शुरू करो` : `Start ${questionCount}-Question Quiz`}
-                </>
+                quizMode === 'exam' ? (
+                  <>{isHi ? `📋 ${examTimeLimit} मिनट की परीक्षा शुरू करो` : `📋 Start ${examTimeLimit}-min Exam (${questionCount} Qs)`}</>
+                ) : (
+                  <>{subMeta?.icon} {isHi ? `${questionCount} सवालों की क्विज़ शुरू करो` : `Start ${questionCount}-Question Quiz`}</>
+                )
               )}
             </Button>
           )}
@@ -487,8 +578,8 @@ export default function QuizPage() {
               </div>
               <div className="flex items-center gap-3 text-xs text-[var(--text-3)] font-medium">
                 <span>{correctSoFar}/{responses.length} ✓</span>
-                <span style={{ color: 'var(--orange)', fontWeight: 700, fontFamily: 'var(--font-mono, monospace)' }}>
-                  {formatTime(timer)}
+                <span style={{ color: quizMode === 'exam' && timer < 300 ? '#DC2626' : 'var(--orange)', fontWeight: 700, fontFamily: 'var(--font-mono, monospace)' }}>
+                  {quizMode === 'exam' ? `⏱ ${formatTime(timer)}` : formatTime(timer)}
                 </span>
               </div>
             </div>
