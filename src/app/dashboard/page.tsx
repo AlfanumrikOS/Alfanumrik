@@ -89,25 +89,50 @@ export default function Dashboard() {
       setUnreadCount(notifData?.unread_count ?? 0);
     } catch {}
 
-    // Cognitive 2.0: Knowledge gaps
+    // Cognitive 2.0: Knowledge gaps (DB columns: target_concept_name, missing_prerequisite_name, status)
     try {
-      const { data: gaps } = await supabase.from('knowledge_gaps').select('id, topic_title, severity, description, description_hi').eq('student_id', student.id).order('severity').limit(3);
-      setKnowledgeGaps(gaps ?? []);
+      const { data: gaps } = await supabase.from('knowledge_gaps')
+        .select('id, target_concept_name, missing_prerequisite_name, status, confidence_score')
+        .eq('student_id', student.id)
+        .neq('status', 'resolved')
+        .order('confidence_score', { ascending: false })
+        .limit(3);
+      setKnowledgeGaps((gaps ?? []).map(g => ({
+        id: g.id,
+        topic_title: g.target_concept_name,
+        severity: (g.confidence_score ?? 0) > 0.7 ? 'critical' : 'moderate',
+        description: `Missing prerequisite: ${g.missing_prerequisite_name}`,
+        description_hi: `पूर्व ज्ञान की कमी: ${g.missing_prerequisite_name}`,
+      })));
     } catch {}
 
-    // Cognitive 2.0: Learning velocity
+    // Cognitive 2.0: Learning velocity (DB column: weekly_mastery_rate)
     try {
-      const { data: vel } = await supabase.from('learning_velocity').select('velocity_score').eq('student_id', student.id).order('velocity_score', { ascending: false }).limit(1);
+      const { data: vel } = await supabase.from('learning_velocity')
+        .select('weekly_mastery_rate')
+        .eq('student_id', student.id)
+        .order('last_calculated_at', { ascending: false })
+        .limit(1);
       if (vel && vel.length > 0) {
-        const v = vel[0].velocity_score;
+        const v = vel[0].weekly_mastery_rate ?? 0;
         setVelocityTrend(v > 0.05 ? 'fast' : v > 0.02 ? 'steady' : 'slow');
       }
     } catch {}
 
-    // Cognitive 2.0: Highest Bloom level
+    // Cognitive 2.0: Highest Bloom level (DB has per-level mastery columns)
     try {
-      const { data: bloom } = await supabase.from('bloom_progression').select('bloom_level, mastery').eq('student_id', student.id).gte('mastery', 0.7).order('mastery', { ascending: false }).limit(1);
-      if (bloom && bloom.length > 0) setBloomLevel(bloom[0]);
+      const { data: bloom } = await supabase.from('bloom_progression')
+        .select('current_bloom_level, remember_mastery, understand_mastery, apply_mastery, analyze_mastery, evaluate_mastery, create_mastery')
+        .eq('student_id', student.id)
+        .not('current_bloom_level', 'is', null)
+        .limit(1);
+      if (bloom && bloom.length > 0) {
+        const b = bloom[0];
+        const level = b.current_bloom_level || 'remember';
+        const masteryKey = `${level}_mastery` as keyof typeof b;
+        const mastery = Number(b[masteryKey]) || 0;
+        setBloomLevel({ bloom_level: level, mastery });
+      }
     } catch {}
   }, [student]);
 

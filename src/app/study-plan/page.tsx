@@ -117,18 +117,33 @@ export default function StudyPlanPage() {
       setHasPlan(false);
     }
 
-    // Cognitive 2.0: energy level from latest session
+    // Cognitive 2.0: energy level from latest session (DB columns: fatigue_detected, difficulty_adjustments)
     try {
-      const { data: session } = await supabase.from('cognitive_session_metrics').select('fatigue_detected, consecutive_errors').eq('student_id', student.id).order('created_at', { ascending: false }).limit(1);
+      const { data: session } = await supabase.from('cognitive_session_metrics')
+        .select('fatigue_detected, difficulty_adjustments')
+        .eq('student_id', student.id)
+        .order('created_at', { ascending: false })
+        .limit(1);
       if (session && session.length > 0) {
-        setEnergyLevel(session[0].fatigue_detected ? 'low' : session[0].consecutive_errors > 2 ? 'medium' : 'high');
+        setEnergyLevel(session[0].fatigue_detected ? 'low' : (session[0].difficulty_adjustments ?? 0) > 2 ? 'medium' : 'high');
       }
     } catch {}
 
-    // Cognitive 2.0: critical knowledge gaps
+    // Cognitive 2.0: critical knowledge gaps (DB columns: target_concept_name, missing_prerequisite_name, confidence_score, status)
     try {
-      const { data: gaps } = await supabase.from('knowledge_gaps').select('id, topic_title, description, description_hi').eq('student_id', student.id).eq('severity', 'critical').limit(2);
-      setCriticalGaps(gaps ?? []);
+      const { data: gaps } = await supabase.from('knowledge_gaps')
+        .select('id, target_concept_name, missing_prerequisite_name, confidence_score')
+        .eq('student_id', student.id)
+        .neq('status', 'resolved')
+        .gte('confidence_score', 0.7)
+        .order('confidence_score', { ascending: false })
+        .limit(2);
+      setCriticalGaps((gaps ?? []).map(g => ({
+        id: g.id,
+        topic_title: g.target_concept_name,
+        description: `Missing: ${g.missing_prerequisite_name}`,
+        description_hi: `कमी: ${g.missing_prerequisite_name}`,
+      })));
     } catch {}
 
     setLoading(false);
