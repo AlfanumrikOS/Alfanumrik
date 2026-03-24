@@ -6,8 +6,6 @@ import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { SUPABASE_URL, SUPABASE_ANON_KEY, SUBJECT_META } from '@/lib/constants';
 import { BottomNav } from '@/components/ui';
-import dynamic from 'next/dynamic';
-const LandingPage = dynamic(() => import('@/components/landing/LandingPage'), { ssr: false });
 
 /* ══════════════════════════════════════════════════════════════
    SUBJECT CONFIGURATION
@@ -327,12 +325,12 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
   };
 
   const ROLE_TABS = [
-    { key: 'student' as const, label: 'Student', emoji: '\uD83C\uDF93', color: '#0EA5E9' },
+    { key: 'student' as const, label: 'Student', emoji: '\uD83C\uDF93', color: '#E8590C' },
     { key: 'teacher' as const, label: 'Teacher', emoji: '\uD83D\uDC69\u200D\uD83C\uDFEB', color: '#2563EB' },
     { key: 'parent' as const, label: 'Parent', emoji: '\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67', color: '#16A34A' },
   ];
 
-  const activeRoleColor = ROLE_TABS.find(r => r.key === roleTab)?.color ?? '#0EA5E9';
+  const activeRoleColor = ROLE_TABS.find(r => r.key === roleTab)?.color ?? '#E8590C';
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -535,7 +533,7 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
     ? 'linear-gradient(135deg, #2563EB, #3B82F6)'
     : roleTab === 'parent'
       ? 'linear-gradient(135deg, #16A34A, #22C55E)'
-      : 'linear-gradient(135deg, #1B2B5B, #2563EB)';
+      : 'linear-gradient(135deg, #E8590C, #F59E0B)';
 
   return (
     <div className="mesh-bg min-h-dvh flex flex-col items-center justify-center px-4 py-8">
@@ -543,14 +541,14 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
         {/* Hero — First impression. 3 seconds to hook an Indian student. */}
         <div className="text-center mb-5">
           <div className="text-6xl mb-2 animate-float">{'\uD83E\uDD8A'}</div>
-          <h1 className="text-2xl font-extrabold" style={{ fontFamily: 'var(--font-display)', background: 'linear-gradient(135deg, #1B2B5B, #0EA5E9)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+          <h1 className="text-2xl font-extrabold" style={{ fontFamily: 'var(--font-display)', background: 'linear-gradient(135deg, #E8590C, #F59E0B)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
             Alfanumrik
           </h1>
           <p className="text-sm font-medium mt-1" style={{ color: 'var(--text-2)' }}>{subtitle}</p>
 
           {/* Value proposition — what PW/Byju's miss on their login screens */}
           <div className="flex items-center justify-center gap-3 mt-3 flex-wrap">
-            <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full" style={{ background: 'rgba(14,165,233,0.08)', color: '#0EA5E9' }}>
+            <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full" style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}>
               CBSE Grades 6-12
             </span>
             <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full" style={{ background: 'rgba(22,163,74,0.08)', color: '#16A34A' }}>
@@ -685,7 +683,7 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
                         checked={parentConsent}
                         onChange={e => setParentConsent(e.target.checked)}
                         className="mt-0.5"
-                        style={{ accentColor: '#0EA5E9' }}
+                        style={{ accentColor: '#E8590C' }}
                       />
                       <span className="text-xs" style={{ color: 'var(--text-2)' }}>
                         I confirm that my parent/guardian has given consent for me to use this platform
@@ -840,7 +838,6 @@ const REPORT_REASONS = [
 export default function FoxyPage() {
   const { student: authStudent, isLoggedIn, isLoading: authLoading, activeRole, signOut } = useAuth();
   const router = useRouter();
-  const [showAuth, setShowAuth] = useState(false);
 
   // Core state
   const [student, setStudent] = useState<any>(null);
@@ -1047,10 +1044,7 @@ export default function FoxyPage() {
     </div>
   );
 
-  if (!isLoggedIn && !authLoading) {
-    if (showAuth) return <AuthScreen onSuccess={() => window.location.reload()} />;
-    return <LandingPage onGetStarted={() => setShowAuth(true)} />;
-  }
+  if (!isLoggedIn && !authLoading) return <AuthScreen onSuccess={() => window.location.reload()} />;
 
   if (!student) {
     // Non-student roles: show role-aware screen with navigation (don't auto-redirect)
@@ -1066,7 +1060,7 @@ export default function FoxyPage() {
             <button
               onClick={() => router.push(dashPath)}
               className="w-full py-3 px-4 rounded-xl font-semibold text-white text-sm mb-3"
-              style={{ background: 'linear-gradient(135deg, #1B2B5B, #2563EB)' }}
+              style={{ background: 'linear-gradient(135deg, #E8590C, #F59E0B)' }}
             >
               Go to {roleLabel} Dashboard
             </button>
@@ -1097,7 +1091,7 @@ export default function FoxyPage() {
       {/* ═══ HEADER ═══ */}
       <header className="sticky top-0 z-30 px-3 py-2.5 flex items-center gap-3" style={{ background: 'linear-gradient(135deg, #1a1a2e, #0f3460)', color: '#fff' }}>
         <button onClick={() => router.push('/dashboard')} className="text-white/60 text-sm">←</button>
-        <div className="w-10 h-10 rounded-full flex items-center justify-center text-xl shrink-0" style={{ background: 'linear-gradient(135deg, #F97316, #0EA5E9)', animation: foxyState === 'thinking' ? 'pulse 1s infinite' : 'none' }}>
+        <div className="w-10 h-10 rounded-full flex items-center justify-center text-xl shrink-0" style={{ background: 'linear-gradient(135deg, #E8590C, #F59E0B)', animation: foxyState === 'thinking' ? 'pulse 1s infinite' : 'none' }}>
           {FOXY_FACES[foxyState]}
         </div>
         <div className="flex-1 min-w-0">
@@ -1223,7 +1217,7 @@ export default function FoxyPage() {
             {messages.length === 0 && (
               <div className="text-center py-12 md:py-20 animate-slide-up">
                 <div className="text-6xl md:text-7xl mb-4 animate-float">{FOXY_FACES.idle}</div>
-                <h2 className="text-xl md:text-2xl font-extrabold mb-2" style={{ fontFamily: 'var(--font-display)', background: `linear-gradient(135deg, #0EA5E9, ${cfg.color})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Hi! I am Foxy</h2>
+                <h2 className="text-xl md:text-2xl font-extrabold mb-2" style={{ fontFamily: 'var(--font-display)', background: `linear-gradient(135deg, #E8590C, ${cfg.color})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Hi! I am Foxy</h2>
                 <p className="text-sm text-[var(--text-3)] max-w-sm mx-auto mb-6 leading-relaxed">Your AI tutor. Pick a topic, type below, or tap 🎤 to talk!</p>
                 <div className="flex flex-wrap gap-2 justify-center max-w-md mx-auto">
                   {['What should I study today?', 'Quick quiz', 'Explain last topic', 'Formula sheet', 'Weak areas'].map(prompt => (
@@ -1239,12 +1233,12 @@ export default function FoxyPage() {
               <div key={msg.id} className="mb-4 w-full animate-fade-in">
                 <div className="flex items-center gap-2 mb-1.5">
                   {msg.role === 'tutor'
-                    ? <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs shrink-0" style={{ background: 'linear-gradient(135deg, #F97316, #0EA5E9)' }}>{FOXY_FACES.idle}</div>
+                    ? <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs shrink-0" style={{ background: 'linear-gradient(135deg, #E8590C, #F59E0B)' }}>{FOXY_FACES.idle}</div>
                     : <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] text-white font-bold shrink-0" style={{ background: `linear-gradient(135deg, ${cfg.color}, ${cfg.color}bb)` }}>{student?.name?.[0]?.toUpperCase() || 'S'}</div>}
                   <span className="text-xs font-bold" style={{ color: msg.role === 'tutor' ? 'var(--orange)' : cfg.color }}>{msg.role === 'tutor' ? 'Foxy' : (student?.name || 'You')}</span>
                   <span className="text-[10px] text-[var(--text-3)]">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                   {msg.role === 'tutor' && <span className="ml-auto px-1.5 py-0.5 rounded text-[8px] font-semibold" style={{ background: 'var(--surface-2)', color: 'var(--text-3)', border: '1px solid var(--border)' }}>🤖 AI</span>}
-                  {(msg.xp ?? 0) > 0 && <span className="px-2 py-0.5 rounded-lg text-[10px] font-extrabold text-white" style={{ background: 'linear-gradient(135deg, #0EA5E9, #6366F1)' }}>+{msg.xp} XP</span>}
+                  {(msg.xp ?? 0) > 0 && <span className="px-2 py-0.5 rounded-lg text-[10px] font-extrabold text-white" style={{ background: 'linear-gradient(135deg, #F59E0B, #EF4444)' }}>+{msg.xp} XP</span>}
                 </div>
                 <div className="w-full rounded-2xl px-4 py-3 text-sm leading-relaxed" style={{ background: msg.role === 'student' ? `${cfg.color}08` : 'var(--surface-1)', color: 'var(--text-1)', border: msg.role === 'student' ? `1.5px solid ${cfg.color}20` : msg.reported ? '1.5px solid #EF444440' : '1px solid var(--border)' }}>
                   {msg.role === 'tutor' ? <RichContent content={msg.content} subjectKey={activeSubject} /> : <div className="whitespace-pre-wrap">{msg.content}</div>}
@@ -1352,7 +1346,7 @@ export default function FoxyPage() {
             {/* Thinking */}
             {loading && (
               <div className="flex gap-2.5 items-center mb-4">
-                <div className="w-8 h-8 rounded-full flex items-center justify-center text-base shrink-0" style={{ background: 'linear-gradient(135deg, #F97316, #0EA5E9)', animation: 'pulse 1s infinite' }}>{FOXY_FACES.thinking}</div>
+                <div className="w-8 h-8 rounded-full flex items-center justify-center text-base shrink-0" style={{ background: 'linear-gradient(135deg, #E8590C, #F59E0B)', animation: 'pulse 1s infinite' }}>{FOXY_FACES.thinking}</div>
                 <div className="px-4 py-3 rounded-2xl rounded-bl-sm flex items-center gap-1.5" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
                   {[0, 1, 2].map(i => <div key={i} className="w-2 h-2 rounded-full" style={{ background: cfg.color, animation: `pulse 1s infinite ${i * 0.2}s`, opacity: 0.5 }} />)}
                   <span className="text-xs text-[var(--text-3)] ml-1.5">Foxy is thinking...</span>

@@ -5,20 +5,21 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase, getStudentProfiles, getSubjects, getFeatureFlags, getNextTopics, getStudentNotifications, generateNotifications } from '@/lib/supabase';
 import { Card, StatCard, ProgressBar, SectionHeader, ActionTile, SubjectChip, Avatar, BottomNav } from '@/components/ui';
-import SmartNudge from '@/components/ui/SmartNudge';
 import TrustFooter from '@/components/TrustFooter';
 import { DashboardSkeleton } from '@/components/Skeleton';
 import type { StudentLearningProfile, Subject, CurriculumTopic } from '@/lib/types';
 import { SUBJECT_META } from '@/lib/constants';
 
-/* Reduced to 6 most essential actions (from 9) — Hick's Law */
 const QUICK_ACTIONS = [
-  { href: '/foxy', icon: '🦊', label: 'Ask Foxy', labelHi: 'फॉक्सी से पूछो', color: '#0EA5E9' },
+  { href: '/foxy', icon: '🦊', label: 'Ask Foxy', labelHi: 'फॉक्सी से पूछो', color: '#E8581C' },
   { href: '/quiz?mode=cognitive', icon: '🧠', label: 'Smart Quiz', labelHi: 'स्मार्ट क्विज़', color: '#7C3AED' },
-  { href: '/study-plan', icon: '📅', label: 'Study Plan', labelHi: 'अध्ययन योजना', color: '#7C3AED' },
-  { href: '/scan', icon: '📷', label: 'Scan', labelHi: 'स्कैन', color: '#0D9488' },
+  { href: '/exams', icon: '📋', label: 'My Exams', labelHi: 'मेरी परीक्षाएँ', color: '#DC2626' },
+  { href: '/quiz', icon: '⚡', label: 'Quick Quiz', labelHi: 'क्विज़', color: '#F5A623' },
   { href: '/review', icon: '🔄', label: 'Review', labelHi: 'रिव्यू', color: '#0891B2' },
+  { href: '/scan', icon: '📷', label: 'Scan', labelHi: 'स्कैन', color: '#0D9488' },
+  { href: '/study-plan', icon: '📅', label: 'Study Plan', labelHi: 'अध्ययन योजना', color: '#7C3AED' },
   { href: '/reports', icon: '📊', label: 'Reports', labelHi: 'रिपोर्ट', color: '#16A34A' },
+  { href: '/leaderboard', icon: '🏆', label: 'Leaderboard', labelHi: 'लीडरबोर्ड', color: '#DB2777' },
 ];
 
 const BLOOM_LABELS: Record<string, { icon: string; label: string; labelHi: string }> = {
@@ -51,13 +52,6 @@ export default function Dashboard() {
   const [cbseReadiness, setCbseReadiness] = useState<number | null>(null);
   const [upcomingExams, setUpcomingExams] = useState<Array<{ id: string; exam_name: string; exam_type: string; subject: string; exam_date: string; days_left: number }>>([]);
   const [nudges, setNudges] = useState<Array<{ id: string; nudge_type: string; message: string; message_hi?: string; priority: number }>>([]);
-  const [showDetailedAnalytics, setShowDetailedAnalytics] = useState(false);
-  const [expandedSubjects, setExpandedSubjects] = useState(false);
-  const [dataLoaded, setDataLoaded] = useState(false);
-  const [todayTasks, setTodayTasks] = useState<Array<{
-    id: string; title: string; task_type: string; status: string;
-    duration_minutes: number; xp_reward: number; bloom_level?: string; chapter_title?: string;
-  }>>([]);
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/');
@@ -234,30 +228,6 @@ export default function Dashboard() {
         .limit(3);
       if (nudgeData) setNudges(nudgeData);
     } catch {}
-
-    // Fetch today's study plan tasks
-    try {
-      const today = new Date().toISOString().split('T')[0];
-      const { data: planData } = await supabase
-        .from('study_plans')
-        .select('id')
-        .eq('student_id', student.id)
-        .eq('is_active', true)
-        .limit(1);
-
-      if (planData && planData.length > 0) {
-        const { data: todayTasksData } = await supabase
-          .from('study_plan_tasks')
-          .select('id, title, task_type, status, duration_minutes, xp_reward, bloom_level, chapter_title')
-          .eq('plan_id', planData[0].id)
-          .eq('scheduled_date', today)
-          .order('sort_order')
-          .limit(5);
-        if (todayTasksData) setTodayTasks(todayTasksData);
-      }
-    } catch {}
-
-    setDataLoaded(true);
   }, [student]);
 
   useEffect(() => {
@@ -325,277 +295,202 @@ export default function Dashboard() {
       </header>
 
       <main className="app-container py-4 space-y-4">
+        {/* XP Hero */}
+        <Card accent={meta?.color}>
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-2xl">{meta?.icon ?? '📚'}</span>
+                <span className="font-semibold text-sm text-[var(--text-2)]">
+                  {meta?.name ?? student.preferred_subject} · Grade {student.grade}
+                </span>
+              </div>
+              <div className="text-3xl md:text-4xl font-bold mt-1" style={{ fontFamily: 'var(--font-display)' }}>
+                <span className="gradient-text">{totalXp.toLocaleString()}</span>
+                <span className="text-base text-[var(--text-3)] ml-1">XP</span>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="flex items-center gap-1 justify-end">
+                <span className="text-xl streak-flame">🔥</span>
+                <span className="text-2xl font-bold">{streak}</span>
+              </div>
+              <div className="text-xs text-[var(--text-3)]">{isHi ? 'दिन' : 'day streak'}</div>
+              {velocityTrend && (
+                <div className="text-xs mt-1" style={{ color: velocityTrend === 'fast' ? '#16A34A' : velocityTrend === 'steady' ? '#F59E0B' : '#EF4444' }}>
+                  {velocityTrend === 'fast' ? '↑' : velocityTrend === 'steady' ? '→' : '↓'} {isHi ? (velocityTrend === 'fast' ? 'तेज़' : velocityTrend === 'steady' ? 'स्थिर' : 'धीमा') : velocityTrend}
+                </div>
+              )}
+            </div>
+          </div>
+          <ProgressBar
+            value={((currentXp % 500) / 500) * 100}
+            label={`${isHi ? 'स्तर' : 'Level'} ${currentLevel}`}
+            showPercent
+          />
+          <div className="grid-stats mt-4">
+            <StatCard value={mastered} label={isHi ? 'महारत' : 'Mastered'} color="var(--gold)" />
+            <StatCard value={inProgress} label={isHi ? 'जारी' : 'In Progress'} color="var(--teal)" />
+            <StatCard
+              value={dueCount}
+              label={isHi ? 'रिव्यू' : 'Due Reviews'}
+              color={dueCount > 0 ? 'var(--orange)' : 'var(--text-3)'}
+            />
+            <StatCard
+              value={snapshot?.quizzes_taken ?? 0}
+              label={isHi ? 'क्विज़' : 'Quizzes'}
+              color="var(--purple)"
+            />
+            {bloomLevel && BLOOM_LABELS[bloomLevel.bloom_level] && (
+              <StatCard
+                icon={BLOOM_LABELS[bloomLevel.bloom_level].icon}
+                value={`${Math.round(bloomLevel.mastery * 100)}%`}
+                label={isHi ? BLOOM_LABELS[bloomLevel.bloom_level].labelHi : BLOOM_LABELS[bloomLevel.bloom_level].label}
+                color="#7C3AED"
+              />
+            )}
+            {retentionScore !== null && (
+              <StatCard
+                icon="🧠"
+                value={`${retentionScore}%`}
+                label={isHi ? 'याददाश्त' : 'Retention'}
+                color="#0891B2"
+              />
+            )}
+            {cbseReadiness !== null && (
+              <StatCard
+                icon="🎯"
+                value={`${cbseReadiness}%`}
+                label={isHi ? 'CBSE तैयारी' : 'CBSE Ready'}
+                color="#16A34A"
+              />
+            )}
+          </div>
+        </Card>
 
-        {/* ═══ ABOVE THE FOLD: What should the user do right now? ═══ */}
-
-        {/* 0. New user onboarding — shown when no data at all */}
-        {dataLoaded && profiles.length === 0 && nextTopics.length === 0 && upcomingExams.length === 0 && (
-          <Card accent="#7C3AED" className="!p-5">
-            <h2 className="text-base font-bold mb-1" style={{ fontFamily: 'var(--font-display)' }}>
-              {isHi ? 'Alfanumrik में आपका स्वागत है!' : 'Welcome to Alfanumrik!'} 🎒
-            </h2>
-            <p className="text-xs text-[var(--text-3)] mb-4">{isHi ? 'तीन आसान कदमों में शुरू करो' : "Let's get started in three easy steps"}</p>
-            <div className="space-y-2.5">
+        {/* Error Breakdown */}
+        {errorBreakdown && (
+          <Card>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-base">🔍</span>
+              <span className="text-sm font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+                {isHi ? 'गलती विश्लेषण' : 'Error Analysis'}
+              </span>
+            </div>
+            <div className="space-y-2">
               {[
-                { step: 1, icon: '📚', label: isHi ? 'अपने विषय चुनो' : 'Pick your subjects', action: () => setShowSubjectPicker(true), done: selectedSubjects.length > 1 },
-                { step: 2, icon: '📅', label: isHi ? 'अध्ययन योजना बनाओ' : 'Create a study plan', action: () => router.push('/study-plan'), done: false },
-                { step: 3, icon: '🦊', label: isHi ? 'Foxy से कुछ भी पूछो' : 'Ask Foxy anything', action: () => router.push('/foxy'), done: false },
-              ].map(s => (
-                <button key={s.step} onClick={s.action} className="w-full flex items-center gap-3 p-2.5 rounded-xl transition-all active:scale-[0.98]"
-                  style={{ background: s.done ? 'rgba(22,163,74,0.06)' : 'var(--surface-2)', border: `1px solid ${s.done ? 'rgba(22,163,74,0.2)' : 'var(--border)'}` }}>
-                  <span className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"
-                    style={{ background: s.done ? '#16A34A' : 'var(--orange)' }}>
-                    {s.done ? '✓' : s.step}
-                  </span>
-                  <span className="text-sm font-semibold flex-1 text-left">{s.icon} {s.label}</span>
-                  <span className="text-[var(--text-3)]">{'\u2192'}</span>
-                </button>
+                { label: isHi ? 'लापरवाही' : 'Careless', pct: errorBreakdown.careless, color: '#F59E0B', icon: '⚡' },
+                { label: isHi ? 'अवधारणा' : 'Conceptual', pct: errorBreakdown.conceptual, color: '#EF4444', icon: '🧠' },
+                { label: isHi ? 'गलत समझ' : 'Misread', pct: errorBreakdown.misinterpretation, color: '#8B5CF6', icon: '🔍' },
+              ].map(item => (
+                <div key={item.label} className="flex items-center gap-2">
+                  <span className="text-xs w-4">{item.icon}</span>
+                  <span className="text-xs font-semibold w-20" style={{ color: item.color }}>{item.label}</span>
+                  <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: `${item.color}15` }}>
+                    <div className="h-full rounded-full transition-all" style={{ width: `${item.pct}%`, background: item.color }} />
+                  </div>
+                  <span className="text-[10px] text-[var(--text-3)] w-10 text-right">{item.pct}%</span>
+                </div>
               ))}
             </div>
           </Card>
         )}
 
-        {/* 1a. No upcoming exams fallback — motivational card */}
-        {dataLoaded && upcomingExams.length === 0 && (profiles.length > 0 || nextTopics.length > 0) && (
-          <button onClick={() => router.push('/foxy')} className="w-full text-left">
-            <div className="rounded-2xl p-4 relative overflow-hidden" style={{
-              background: 'linear-gradient(135deg, rgba(124,58,237,0.08), rgba(14,165,233,0.06))',
-              border: '1px solid rgba(124,58,237,0.12)',
-            }}>
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">🚀</span>
-                <div className="flex-1">
-                  <div className="text-sm font-bold">{isHi ? 'कोई परीक्षा नज़दीक नहीं — आगे बढ़ने का सही समय!' : 'No exams coming up — perfect time to get ahead!'}</div>
-                  <div className="text-xs font-semibold mt-0.5" style={{ color: 'var(--orange)' }}>
-                    {isHi ? 'पढ़ना शुरू करो →' : 'Start Learning \u2192'}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </button>
-        )}
-
-        {/* 1. Exam Countdown — Prominent, answering "What's urgent?" */}
-        {!dataLoaded && upcomingExams.length === 0 && (
-          <div className="rounded-2xl p-4 animate-pulse" style={{ background: 'var(--surface-2)', height: '80px' }} />
-        )}
+        {/* Exam Countdown */}
         {upcomingExams.length > 0 && (
-          <button onClick={() => router.push('/exams')} className="w-full">
-            <Card accent={upcomingExams[0].days_left <= 7 ? '#DC2626' : '#1B2B5B'} className="!p-4">
-              <div className="flex items-center gap-4">
-                <div className="text-center flex-shrink-0" style={{ minWidth: '56px' }}>
-                  <div className="text-3xl font-bold" style={{ color: upcomingExams[0].days_left <= 7 ? '#DC2626' : '#1B2B5B', fontFamily: 'var(--font-display)' }}>
-                    {upcomingExams[0].days_left}
-                  </div>
-                  <div className="text-[10px] text-[var(--text-3)] font-semibold uppercase">{isHi ? 'दिन बाकी' : 'days left'}</div>
-                </div>
-                <div className="flex-1 min-w-0 text-left">
-                  <div className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>
-                    {isHi ? 'अगली परीक्षा' : 'Next Exam'}
-                  </div>
-                  <div className="font-bold text-base truncate mt-0.5">{upcomingExams[0].exam_name}</div>
-                  <div className="text-xs text-[var(--text-3)] mt-0.5">
-                    {new Date(upcomingExams[0].exam_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                    {upcomingExams.length > 1 && ` · +${upcomingExams.length - 1} more`}
-                  </div>
-                  {cbseReadiness !== null && (
-                    <div className="mt-2">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[10px] font-semibold" style={{ color: cbseReadiness >= 70 ? '#16A34A' : cbseReadiness >= 40 ? '#F59E0B' : '#EF4444' }}>
-                          {isHi ? `${cbseReadiness}% तैयार` : `You're ${cbseReadiness}% ready for ${upcomingExams[0].exam_name}`}
-                        </span>
+          <div>
+            <SectionHeader icon="📋">{isHi ? 'आगामी परीक्षाएँ' : 'Upcoming Exams'}</SectionHeader>
+            <div className="space-y-2">
+              {upcomingExams.map(exam => {
+                const isUrgent = exam.days_left <= 7;
+                const examMeta = SUBJECT_META.find(s => s.code === exam.subject);
+                const typeLabel = exam.exam_type === 'unit_test' ? (isHi ? 'UT' : 'UT') : exam.exam_type === 'half_yearly' ? (isHi ? 'अर्ध-वार्षिक' : 'Half-Yearly') : (isHi ? 'वार्षिक' : 'Annual');
+                return (
+                  <button key={exam.id} onClick={() => router.push(`/exams`)} className="w-full">
+                    <Card className="!p-3 flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0" style={{ background: isUrgent ? 'rgba(220,38,38,0.1)' : `${examMeta?.color ?? 'var(--orange)'}15` }}>
+                        {examMeta?.icon ?? '📋'}
                       </div>
-                      <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(0,0,0,0.08)' }}>
-                        <div className="h-full rounded-full transition-all" style={{
-                          width: `${cbseReadiness}%`,
-                          background: cbseReadiness >= 70 ? '#16A34A' : cbseReadiness >= 40 ? '#F59E0B' : '#EF4444',
-                        }} />
+                      <div className="flex-1 min-w-0 text-left">
+                        <div className="font-semibold text-sm truncate">{exam.exam_name}</div>
+                        <div className="text-[10px] text-[var(--text-3)] mt-0.5">
+                          {typeLabel} · {new Date(exam.exam_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </div>
-                <span className="text-[var(--text-3)] text-lg">→</span>
-              </div>
-            </Card>
-          </button>
-        )}
-
-        {/* 2. Resume Where You Left Off — Single clear CTA */}
-        {nextTopics.length > 0 && (
-          <Card hoverable onClick={() => router.push('/foxy')} className="!p-4">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-                style={{ background: `${meta?.color ?? 'var(--orange)'}15` }}>
-                {meta?.icon ?? '📚'}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-3)]">
-                  {isHi ? 'जहाँ छोड़ा था वहाँ से शुरू करो' : 'Resume where you left off'}
-                </div>
-                <div className="font-semibold text-sm truncate mt-0.5">{nextTopics[0].title}</div>
-              </div>
-              <button className="px-4 py-2 rounded-xl text-xs font-bold text-white flex-shrink-0" style={{ background: 'var(--orange)' }}>
-                {isHi ? 'शुरू करो' : 'Continue'}
-              </button>
-            </div>
-          </Card>
-        )}
-
-        {/* 2a. No topics — onboarding nudge for study plan */}
-        {dataLoaded && nextTopics.length === 0 && profiles.length > 0 && (
-          <button onClick={() => router.push('/study-plan')} className="w-full text-left">
-            <div className="rounded-2xl p-4" style={{
-              background: 'rgba(124,58,237,0.04)',
-              border: '1.5px dashed rgba(124,58,237,0.3)',
-            }}>
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">📅</span>
-                <div className="flex-1">
-                  <div className="text-sm font-semibold">{isHi ? 'अपनी पहली अध्ययन योजना बनाओ' : 'Create your first study plan'}</div>
-                  <div className="text-xs text-[var(--text-3)] mt-0.5">{isHi ? 'व्यक्तिगत सिफारिशें पाओ' : 'Get personalized recommendations'}</div>
-                  <div className="text-xs font-semibold mt-1" style={{ color: '#7C3AED' }}>
-                    {isHi ? 'योजना बनाओ →' : 'Create Study Plan \u2192'}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </button>
-        )}
-
-        {/* 3. Today's Plan — Top 3 tasks only */}
-        <Card>
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <span className="text-base">🎯</span>
-              <span className="text-sm font-bold" style={{ fontFamily: 'var(--font-display)' }}>
-                {isHi ? "आज की योजना" : "Today's Plan"}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xl streak-flame">🔥</span>
-              <span className="text-lg font-bold">{streak}</span>
-              <span className="text-[10px] text-[var(--text-3)]">{isHi ? 'दिन' : 'days'}</span>
+                      <div className="text-right flex-shrink-0">
+                        <div className="text-lg font-bold" style={{ color: isUrgent ? '#DC2626' : 'var(--orange)', fontFamily: 'var(--font-display)' }}>
+                          {exam.days_left}
+                        </div>
+                        <div className="text-[10px] text-[var(--text-3)]">{isHi ? 'दिन' : 'days'}</div>
+                      </div>
+                    </Card>
+                  </button>
+                );
+              })}
             </div>
           </div>
-          {/* Progress bar for today's tasks */}
-          {todayTasks.length > 0 && (() => {
-            const done = todayTasks.filter(t => t.status === 'completed').length;
-            const total = todayTasks.length;
-            const pct = Math.round((done / total) * 100);
-            return (
-              <div className="mb-3">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[10px] text-[var(--text-3)] font-semibold">
-                    {isHi ? `${done} / ${total} कार्य पूरे` : `${done} of ${total} tasks done today`}
-                  </span>
-                  <span className="text-[10px] font-bold" style={{ color: 'var(--orange)' }}>{pct}%</span>
-                </div>
-                <div className="h-1 rounded-full overflow-hidden" style={{ background: 'rgba(0,0,0,0.06)' }}>
-                  <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: 'var(--orange)' }} />
-                </div>
-              </div>
-            );
-          })()}
+        )}
+
+        {/* Smart Nudges */}
+        {nudges.length > 0 && (
           <div className="space-y-2">
-            {todayTasks.length > 0 ? (
-              <>
-                {todayTasks.slice(0, 3).map(task => {
-                  const taskIcons: Record<string, string> = { learn: '📖', practice: '✏️', quiz: '🧠', review: '🔄', recall: '🔁', revision: '🔄', notes: '📝', foxy_chat: '🦊', challenge: '🎯' };
-                  const statusStyles: Record<string, { bg: string; border: string; color: string; label: string; labelHi: string }> = {
-                    completed: { bg: 'rgba(22,163,74,0.06)', border: 'rgba(22,163,74,0.15)', color: '#16A34A', label: '✓ Done', labelHi: '✓ पूरा' },
-                    in_progress: { bg: 'rgba(245,166,35,0.06)', border: 'rgba(245,166,35,0.15)', color: '#F59E0B', label: '▶ In Progress', labelHi: '▶ जारी' },
-                    pending: { bg: 'var(--surface-2)', border: 'var(--border)', color: 'var(--text-3)', label: '○ Pending', labelHi: '○ बाकी' },
-                  };
-                  const s = statusStyles[task.status] || statusStyles.pending;
-                  const icon = taskIcons[task.task_type] || '📋';
-                  const navMap: Record<string, string> = { learn: '/foxy', foxy_chat: '/foxy', quiz: '/quiz', practice: '/quiz', review: '/review', revision: '/review', recall: '/review' };
-                  const href = navMap[task.task_type] || '/study-plan';
-
-                  return (
-                    <button
-                      key={task.id}
-                      onClick={() => router.push(href)}
-                      className="w-full flex items-center gap-3 p-2.5 rounded-xl transition-all active:scale-[0.98]"
-                      style={{ background: s.bg, border: `1px solid ${s.border}` }}
-                    >
-                      <span className="text-lg flex-shrink-0">{icon}</span>
-                      <div className="flex-1 text-left min-w-0">
-                        <div className="text-sm font-semibold truncate" style={{
-                          textDecoration: task.status === 'completed' ? 'line-through' : 'none',
-                          opacity: task.status === 'completed' ? 0.6 : 1,
-                        }}>
-                          {task.title}
-                        </div>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className="text-[10px] text-[var(--text-3)]">⏱ {task.duration_minutes}m</span>
-                          {task.xp_reward > 0 && <span className="text-[10px] text-[var(--text-3)]">⭐ {task.xp_reward} XP</span>}
-                        </div>
-                      </div>
-                      <span className="text-[10px] font-semibold flex-shrink-0 px-2 py-0.5 rounded-full" style={{ background: `${s.color}12`, color: s.color }}>
-                        {isHi ? s.labelHi : s.label}
-                      </span>
-                    </button>
-                  );
-                })}
-              </>
-            ) : (
-              <>
-                {/* Fallback: show curriculum topics when no study plan tasks */}
-                {dueCount > 0 && flags.spaced_repetition && (
-                  <button onClick={() => router.push('/review')} className="w-full flex items-center gap-3 p-2.5 rounded-xl transition-all active:scale-[0.98]"
-                    style={{ background: 'rgba(245,166,35,0.06)', border: '1px solid rgba(245,166,35,0.15)' }}>
-                    <span className="text-lg">🔄</span>
-                    <div className="flex-1 text-left">
-                      <div className="text-sm font-semibold">{dueCount} {isHi ? 'रिव्यू बाकी' : 'reviews due'}</div>
-                      <div className="text-[10px] text-[var(--text-3)]">{isHi ? 'स्मृति मजबूत करो' : 'Strengthen memory'}</div>
-                    </div>
-                    <span style={{ color: 'var(--gold)' }}>→</span>
-                  </button>
-                )}
-                {nextTopics.slice(1, 3).map(topic => (
-                  <button key={topic.id} onClick={() => router.push('/foxy')} className="w-full flex items-center gap-3 p-2.5 rounded-xl transition-all active:scale-[0.98]"
-                    style={{ background: `${meta?.color ?? 'var(--orange)'}06`, border: `1px solid ${meta?.color ?? 'var(--orange)'}15` }}>
-                    <span className="text-lg">{meta?.icon ?? '📚'}</span>
-                    <div className="flex-1 text-left">
-                      <div className="text-sm font-semibold truncate">{topic.title}</div>
-                      <div className="text-[10px] text-[var(--text-3)]">{isHi ? 'Foxy से सीखो' : 'Learn with Foxy'}</div>
-                    </div>
-                    <span className="text-[var(--text-3)]">→</span>
-                  </button>
-                ))}
-                {/* Today's Plan empty state -- all caught up */}
-                {dataLoaded && !(dueCount > 0 && flags.spaced_repetition) && nextTopics.slice(1, 3).length === 0 && (
-                  <div className="text-center py-4">
-                    <div className="text-2xl mb-1">{'\uD83C\uDF89'}</div>
-                    <div className="text-sm font-semibold">{isHi ? 'सब हो गया!' : "You're all caught up!"}</div>
-                    <button onClick={() => router.push('/quiz')} className="text-xs font-semibold mt-1.5 inline-block" style={{ color: 'var(--orange)' }}>
-                      {isHi ? 'क्विज़ से XP कमाओ →' : 'Try a quiz to earn more XP \u2192'}
-                    </button>
-                  </div>
-                )}
-              </>
-            )}
-            <button onClick={() => router.push('/study-plan')} className="w-full text-xs font-semibold py-2 text-center" style={{ color: 'var(--orange)' }}>
-              {isHi ? 'पूरा प्लान देखो →' : 'See full plan →'}
-            </button>
-          </div>
-        </Card>
-
-        {/* ═══ BELOW THE FOLD: Progressive disclosure ═══ */}
-
-        {/* Knowledge Gaps — Loading shimmer */}
-        {!dataLoaded && (
-          <div className="rounded-2xl p-4 animate-pulse" style={{ background: 'var(--surface-2)' }}>
-            <div className="flex items-start gap-3">
-              <div className="w-8 h-8 rounded-lg" style={{ background: 'var(--border)' }} />
-              <div className="flex-1 space-y-2">
-                <div className="h-3 w-2/3 rounded" style={{ background: 'var(--border)' }} />
-                <div className="h-2 w-full rounded" style={{ background: 'var(--border)' }} />
-              </div>
-            </div>
+            {nudges.map(nudge => {
+              const nudgeIcons: Record<string, string> = { schedule_behind: '⚠️', revision_due: '🔄', streak_risk: '🔥', exam_approaching: '📋', weak_topic: '📉', milestone: '🎉', encouragement: '💪' };
+              const nudgeColors: Record<string, string> = { schedule_behind: '#F59E0B', revision_due: '#0891B2', streak_risk: '#EF4444', exam_approaching: '#DC2626', weak_topic: '#8B5CF6', milestone: '#16A34A', encouragement: '#E8581C' };
+              return (
+                <div key={nudge.id} className="rounded-xl p-3 flex items-start gap-2.5" style={{ background: `${nudgeColors[nudge.nudge_type] ?? 'var(--orange)'}08`, border: `1px solid ${nudgeColors[nudge.nudge_type] ?? 'var(--orange)'}20` }}>
+                  <span className="text-base flex-shrink-0 mt-0.5">{nudgeIcons[nudge.nudge_type] ?? '💡'}</span>
+                  <p className="text-xs text-[var(--text-2)] leading-relaxed flex-1">{isHi && nudge.message_hi ? nudge.message_hi : nudge.message}</p>
+                  <button onClick={async () => { await supabase.from('smart_nudges').update({ is_dismissed: true }).eq('id', nudge.id); setNudges(prev => prev.filter(n => n.id !== nudge.id)); }} className="text-[var(--text-3)] text-xs flex-shrink-0">✕</button>
+                </div>
+              );
+            })}
           </div>
         )}
-        {/* Knowledge Gaps — Only if critical */}
+
+        {/* Continue Learning */}
+        {nextTopics.length > 0 && (
+          <div>
+            <SectionHeader icon="▶">{isHi ? 'आगे सीखो' : 'Continue Learning'}</SectionHeader>
+            {nextTopics.slice(0, 1).map((topic) => (
+              <Card key={topic.id} hoverable onClick={() => router.push('/foxy')} className="flex items-center gap-4 !p-4">
+                <div
+                  className="w-10 h-10 md:w-12 md:h-12 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
+                  style={{ background: `${meta?.color ?? 'var(--orange)'}15` }}
+                >
+                  {meta?.icon ?? '📚'}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-sm md:text-base truncate">{topic.title}</div>
+                  <div className="text-xs text-[var(--text-3)] mt-0.5">
+                    {isHi ? 'Foxy के साथ सीखो' : 'Learn with Foxy'} · Difficulty {topic.difficulty_level}/5
+                  </div>
+                </div>
+                <span className="text-[var(--text-3)]">→</span>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {/* Due Reviews Alert */}
+        {dueCount > 0 && flags.spaced_repetition && (
+          <button
+            onClick={() => router.push('/review')}
+            className="w-full rounded-2xl p-4 flex items-center gap-3 transition-all"
+            style={{ background: 'rgba(245,166,35,0.08)', border: '1px solid rgba(245,166,35,0.2)' }}
+          >
+            <span className="text-2xl">🔄</span>
+            <div className="text-left">
+              <div className="font-semibold text-sm" style={{ color: 'var(--gold)' }}>
+                {dueCount} {isHi ? 'रिव्यू बाकी है!' : 'topics due for review!'}
+              </div>
+              <div className="text-xs text-[var(--text-3)]">{isHi ? 'स्मृति मजबूत करो' : 'Strengthen your memory'}</div>
+            </div>
+            <span className="ml-auto" style={{ color: 'var(--gold)' }}>→</span>
+          </button>
+        )}
+
+        {/* Knowledge Gaps Alert */}
         {knowledgeGaps.length > 0 && showGapsAlert && (
           <div className="rounded-2xl p-4 relative" style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)' }}>
             <button onClick={() => setShowGapsAlert(false)} className="absolute top-2 right-3 text-[var(--text-3)] text-sm">✕</button>
@@ -610,8 +505,11 @@ export default function Dashboard() {
                     <div key={g.id}>• {isHi && g.description_hi ? g.description_hi : g.description}</div>
                   ))}
                 </div>
-                <button onClick={() => router.push('/foxy')} className="mt-2 text-xs font-bold px-3 py-1.5 rounded-lg"
-                  style={{ background: 'rgba(232,88,28,0.1)', color: 'var(--orange)' }}>
+                <button
+                  onClick={() => router.push('/foxy')}
+                  className="mt-2 text-xs font-bold px-3 py-1.5 rounded-lg"
+                  style={{ background: 'rgba(232,88,28,0.1)', color: 'var(--orange)' }}
+                >
                   🦊 {isHi ? 'Foxy से ठीक करो' : 'Fix with Foxy'}
                 </button>
               </div>
@@ -619,52 +517,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Smart Nudges — Client-side intelligent nudging */}
-        <SmartNudge
-          studentData={{
-            subjects: profiles.map(p => ({
-              name: subjects.find(s => s.code === p.subject)?.name ?? p.subject,
-              streak: p.streak_days,
-            })),
-            studyPlan: { completed_pct: mastered > 0 ? Math.round((mastered / Math.max(mastered + inProgress, 1)) * 100) : undefined },
-            upcomingExams: upcomingExams.map(e => ({ name: e.exam_name, date: e.exam_date, syllabus_pct: cbseReadiness ?? undefined })),
-            stats: { problems_solved_today: snapshot?.quizzes_taken },
-          }}
-          maxNudges={2}
-        />
-
-        {/* DB-driven nudges */}
-        {nudges.length > 0 && (
-          <div className="space-y-2">
-            {nudges.map(nudge => {
-              const nudgeIcons: Record<string, string> = { schedule_behind: '⚠️', revision_due: '🔄', streak_risk: '🔥', exam_approaching: '📋', weak_topic: '📉', milestone: '🎉', encouragement: '💪' };
-              const nudgeColors: Record<string, string> = { schedule_behind: '#F59E0B', revision_due: '#0891B2', streak_risk: '#EF4444', exam_approaching: '#DC2626', weak_topic: '#8B5CF6', milestone: '#16A34A', encouragement: '#0EA5E9' };
-              return (
-                <div key={nudge.id} className="rounded-xl p-3 flex items-start gap-2.5" style={{ background: `${nudgeColors[nudge.nudge_type] ?? 'var(--orange)'}08`, border: `1px solid ${nudgeColors[nudge.nudge_type] ?? 'var(--orange)'}20` }}>
-                  <span className="text-base flex-shrink-0 mt-0.5">{nudgeIcons[nudge.nudge_type] ?? '💡'}</span>
-                  <p className="text-xs text-[var(--text-2)] leading-relaxed flex-1">{isHi && nudge.message_hi ? nudge.message_hi : nudge.message}</p>
-                  <button onClick={async () => { await supabase.from('smart_nudges').update({ is_dismissed: true }).eq('id', nudge.id); setNudges(prev => prev.filter(n => n.id !== nudge.id)); }} className="text-[var(--text-3)] text-xs flex-shrink-0">✕</button>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* CBSE Readiness — Single progress bar */}
-        {cbseReadiness !== null && (
-          <Card className="!p-3">
-            <div className="flex items-center gap-2 mb-2">
-              <span>🎯</span>
-              <span className="text-sm font-semibold">{isHi ? 'CBSE तैयारी' : 'CBSE Readiness'}</span>
-              <span className="ml-auto text-base font-bold" style={{ color: cbseReadiness >= 70 ? '#16A34A' : cbseReadiness >= 40 ? '#F59E0B' : '#EF4444', fontFamily: 'var(--font-display)' }}>
-                {cbseReadiness}%
-              </span>
-            </div>
-            <ProgressBar value={cbseReadiness} color={cbseReadiness >= 70 ? '#16A34A' : cbseReadiness >= 40 ? '#F59E0B' : '#EF4444'} height={6} />
-          </Card>
-        )}
-
-        {/* Quick Actions — Reduced to 6 */}
+        {/* Quick Actions */}
         <div>
           <SectionHeader icon="⚡">{isHi ? 'त्वरित क्रियाएँ' : 'Quick Actions'}</SectionHeader>
           <div className="grid-actions">
@@ -751,123 +604,30 @@ export default function Dashboard() {
           </>
         )}
 
-        {/* Subject Progress — Collapsible (collapsed by default) */}
+        {/* XP by Subject (only selected subjects) */}
         {profiles.filter(p => selectedSubjects.includes(p.subject)).length > 0 && (
           <div>
-            <button onClick={() => setExpandedSubjects(!expandedSubjects)} className="w-full flex items-center justify-between mb-2">
-              <SectionHeader icon="🏅">{isHi ? 'विषयवार XP' : 'Subject Progress'}</SectionHeader>
-              <span className="text-xs text-[var(--text-3)] transition-transform" style={{ transform: expandedSubjects ? 'rotate(180deg)' : 'rotate(0deg)' }}>▼</span>
-            </button>
-            {!expandedSubjects ? (
-              /* Collapsed: just progress bars */
-              <div className="space-y-1.5">
-                {profiles.filter(p => selectedSubjects.includes(p.subject)).map((p) => {
-                  const sm = subjects.find((s) => s.code === p.subject);
-                  return (
-                    <div key={p.id} className="flex items-center gap-2">
-                      <span className="text-sm">{sm?.icon ?? '📚'}</span>
-                      <span className="text-xs font-semibold w-16 truncate">{sm?.name ?? p.subject}</span>
-                      <div className="flex-1"><ProgressBar value={((p.xp % 500) / 500) * 100} color={sm?.color} height={4} /></div>
-                      <span className="text-[10px] text-[var(--text-3)]">Lv{p.level}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              /* Expanded: full cards */
-              <div className="space-y-2">
-                {profiles.filter(p => selectedSubjects.includes(p.subject)).map((p) => {
-                  const sm = subjects.find((s) => s.code === p.subject);
-                  return (
-                    <Card key={p.id} className="!p-3 flex items-center gap-3">
-                      <span className="text-lg">{sm?.icon ?? '📚'}</span>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex justify-between text-xs mb-1">
-                          <span className="font-semibold truncate">{sm?.name ?? p.subject}</span>
-                          <span className="text-[var(--text-3)]">{p.xp} XP · Lv{p.level}</span>
-                        </div>
-                        <ProgressBar value={((p.xp % 500) / 500) * 100} color={sm?.color} height={5} />
+            <SectionHeader icon="🏅">{isHi ? 'विषयवार XP' : 'XP by Subject'}</SectionHeader>
+            <div className="space-y-2">
+              {profiles.filter(p => selectedSubjects.includes(p.subject)).map((p) => {
+                const sm = subjects.find((s) => s.code === p.subject);
+                return (
+                  <Card key={p.id} className="!p-3 flex items-center gap-3">
+                    <span className="text-lg">{sm?.icon ?? '📚'}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="font-semibold truncate">{sm?.name ?? p.subject}</span>
+                        <span className="text-[var(--text-3)]">{p.xp} XP · Lv{p.level}</span>
                       </div>
-                    </Card>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Detailed Analytics — Hidden behind progressive disclosure */}
-        {(errorBreakdown || retentionScore !== null || velocityTrend) && (
-          <div>
-            <button onClick={() => setShowDetailedAnalytics(!showDetailedAnalytics)}
-              className="w-full flex items-center justify-between py-2">
-              <span className="text-xs font-semibold text-[var(--text-3)] uppercase tracking-wider">
-                {isHi ? 'विस्तृत विश्लेषण' : 'Detailed Analytics'}
-              </span>
-              <span className="text-xs" style={{ color: 'var(--orange)' }}>
-                {showDetailedAnalytics ? (isHi ? 'छुपाओ' : 'Hide') : (isHi ? 'देखो' : 'Show')} ↓
-              </span>
-            </button>
-            {showDetailedAnalytics && (
-              <div className="space-y-3">
-                {/* Mini stats row */}
-                <div className="grid grid-cols-3 gap-2">
-                  <StatCard value={totalXp.toLocaleString()} label="XP" color="var(--orange)" />
-                  {retentionScore !== null && <StatCard icon="🧠" value={`${retentionScore}%`} label={isHi ? 'याददाश्त' : 'Retention'} color="#0891B2" />}
-                  {velocityTrend && <StatCard icon={velocityTrend === 'fast' ? '↑' : velocityTrend === 'steady' ? '→' : '↓'} value={isHi ? (velocityTrend === 'fast' ? 'तेज़' : velocityTrend === 'steady' ? 'स्थिर' : 'धीमा') : velocityTrend} label={isHi ? 'गति' : 'Velocity'} color={velocityTrend === 'fast' ? '#16A34A' : velocityTrend === 'steady' ? '#F59E0B' : '#EF4444'} />}
-                </div>
-                {/* Error breakdown */}
-                {errorBreakdown && (
-                  <Card>
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="text-base">🔍</span>
-                      <span className="text-sm font-bold" style={{ fontFamily: 'var(--font-display)' }}>{isHi ? 'गलती विश्लेषण' : 'Error Analysis'}</span>
-                    </div>
-                    <div className="space-y-2">
-                      {[
-                        { label: isHi ? 'लापरवाही' : 'Careless', pct: errorBreakdown.careless, color: '#F59E0B', icon: '⚡' },
-                        { label: isHi ? 'अवधारणा' : 'Conceptual', pct: errorBreakdown.conceptual, color: '#EF4444', icon: '🧠' },
-                        { label: isHi ? 'गलत समझ' : 'Misread', pct: errorBreakdown.misinterpretation, color: '#8B5CF6', icon: '🔍' },
-                      ].map(item => (
-                        <div key={item.label} className="flex items-center gap-2">
-                          <span className="text-xs w-4">{item.icon}</span>
-                          <span className="text-xs font-semibold w-20" style={{ color: item.color }}>{item.label}</span>
-                          <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: `${item.color}15` }}>
-                            <div className="h-full rounded-full transition-all" style={{ width: `${item.pct}%`, background: item.color }} />
-                          </div>
-                          <span className="text-[10px] text-[var(--text-3)] w-10 text-right">{item.pct}%</span>
-                        </div>
-                      ))}
+                      <ProgressBar value={((p.xp % 500) / 500) * 100} color={sm?.color} height={5} />
                     </div>
                   </Card>
-                )}
-                <button onClick={() => router.push('/progress')} className="w-full text-xs font-semibold py-2 text-center" style={{ color: 'var(--orange)' }}>
-                  {isHi ? 'पूरा विश्लेषण देखो →' : 'See full analytics →'}
-                </button>
-              </div>
-            )}
+                );
+              })}
+            </div>
           </div>
         )}
       </main>
-
-      {/* Floating "Ask Doubt" Camera Button */}
-      <button
-        onClick={() => router.push('/scan')}
-        className="fixed flex items-center gap-2 rounded-full text-white font-bold text-sm shadow-lg transition-transform active:scale-95"
-        style={{
-          bottom: 'calc(5.5rem + env(safe-area-inset-bottom))',
-          right: '16px',
-          zIndex: 45,
-          background: 'linear-gradient(135deg, #1B2B5B, #0EA5E9)',
-          height: '56px',
-          paddingLeft: '16px',
-          paddingRight: '20px',
-          boxShadow: '0 4px 20px rgba(27, 43, 91, 0.4)',
-        }}
-      >
-        <span className="text-xl">📷</span>
-        <span>{isHi ? 'सवाल पूछो' : 'Ask Doubt'}</span>
-      </button>
 
       <TrustFooter />
       <BottomNav />
