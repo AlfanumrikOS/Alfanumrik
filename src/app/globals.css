@@ -7,8 +7,7 @@
 /* ─── Alfanumrik Light Theme — Anthropic Warm Palette ───── */
 :root {
   --font-display: "Poppins", "Styrene A", sans-serif;
-  --font-body: "Lora", "Georgia", "Tiempos", serif;
-  --font-heading: "Poppins", "Styrene A", sans-serif;
+  --font-body: "Lora", "Georgia", serif;
 
   /* Brand — Anthropic warm palette */
   --primary: #d97757;
