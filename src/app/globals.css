@@ -30,14 +30,14 @@
   --surface-3: #e8e6dc;
 
   /* Borders — warm gray */
-  --border: rgba(20, 20, 19, 0.08);
-  --border-mid: rgba(20, 20, 19, 0.12);
-  --border-strong: rgba(20, 20, 19, 0.20);
+  --border: rgba(20, 20, 19, 0.10);
+  --border-mid: rgba(20, 20, 19, 0.16);
+  --border-strong: rgba(20, 20, 19, 0.28);
 
   /* Text — warm dark hierarchy */
   --text-1: #141413;
-  --text-2: #605e56;
-  --text-3: #b0aea5;
+  --text-2: #4a4843;
+  --text-3: #8a8880;
 
   /* Layout */
   --sidebar-width: 240px;
@@ -56,10 +56,39 @@ body {
   background: var(--bg);
   color: var(--text-1);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: 'kern' 1, 'liga' 1;
   overflow-x: hidden;
   min-height: 100dvh;
 }
 h1, h2, h3, h4, h5 { font-family: var(--font-display); }
+
+/* ─── HiDPI / Retina Rendering ──────────────────────── */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+  body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+  * {
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+  }
+  img, svg {
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+  }
+}
+
+/* High-density color depth */
+@media (color-gamut: p3) {
+  :root {
+    --primary: color(display-p3 0.85 0.47 0.34);
+    --secondary: color(display-p3 0.42 0.61 0.80);
+    --accent: color(display-p3 0.47 0.55 0.36);
+  }
+}
 
 /* ─── Responsive Container ────────────────────────────────── */
 .app-container {

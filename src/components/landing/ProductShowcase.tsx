@@ -20,7 +20,7 @@ interface PhoneScreen {
 function FoxyChatScreen() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '16px 12px', height: '100%' }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: '#d97757', marginBottom: 4 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: '#c4623f', marginBottom: 4 }}>
         🦊 Foxy AI Chat
       </div>
       {/* Student bubble */}
@@ -46,7 +46,7 @@ function FoxyChatScreen() {
       <div style={{ alignSelf: 'flex-start', maxWidth: '82%' }}>
         <div
           style={{
-            background: '#d97757',
+            background: '#c4623f',
             borderRadius: '16px 16px 16px 4px',
             padding: '10px 14px',
             fontSize: 12,
@@ -79,7 +79,7 @@ function FoxyChatScreen() {
         }}
       >
         Ask Foxy anything...
-        <span style={{ color: '#d97757', fontSize: 14 }}>&#8593;</span>
+        <span style={{ color: '#c4623f', fontSize: 14 }}>&#8593;</span>
       </div>
     </div>
   );
@@ -92,14 +92,14 @@ function StudyPlanScreen() {
     { label: 'Word Problems', bloom: 'Analyze', xp: 50, done: false },
   ];
   const bloomColors: Record<string, string> = {
-    Apply: '#d97757',
-    Understand: '#6a9bcc',
-    Analyze: '#788c5d',
+    Apply: '#c4623f',
+    Understand: '#5589b8',
+    Analyze: '#6b7f50',
   };
 
   return (
     <div style={{ padding: '16px 12px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: '#6a9bcc' }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: '#5589b8' }}>
         📋 Today&apos;s Plan
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -121,8 +121,8 @@ function StudyPlanScreen() {
                 width: 18,
                 height: 18,
                 borderRadius: 4,
-                border: `2px solid ${t.done ? '#d97757' : '#D1D5DB'}`,
-                background: t.done ? '#d97757' : 'transparent',
+                border: `2px solid ${t.done ? '#c4623f' : '#D1D5DB'}`,
+                background: t.done ? '#c4623f' : 'transparent',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -159,7 +159,7 @@ function StudyPlanScreen() {
             >
               {t.bloom}
             </span>
-            <span style={{ fontSize: 10, fontWeight: 700, color: '#d97757', whiteSpace: 'nowrap' }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: '#c4623f', whiteSpace: 'nowrap' }}>
               +{t.xp} XP
             </span>
           </div>
@@ -177,14 +177,14 @@ function StudyPlanScreen() {
           }}
         >
           <span style={{ color: '#6B7280' }}>Progress</span>
-          <span style={{ color: '#d97757' }}>60%</span>
+          <span style={{ color: '#c4623f' }}>60%</span>
         </div>
         <div style={{ height: 8, background: '#e8e6dc', borderRadius: 999 }}>
           <div
             style={{
               width: '60%',
               height: '100%',
-              background: '#d97757',
+              background: '#c4623f',
               borderRadius: 999,
             }}
           />
@@ -205,7 +205,7 @@ function InteractiveLabScreen() {
         gap: 12,
       }}
     >
-      <div style={{ fontSize: 13, fontWeight: 700, color: '#6a9bcc', alignSelf: 'flex-start' }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: '#5589b8', alignSelf: 'flex-start' }}>
         🔬 Pendulum Simulation
       </div>
       {/* Pendulum visual */}
@@ -227,7 +227,7 @@ function InteractiveLabScreen() {
             width: 10,
             height: 10,
             borderRadius: '50%',
-            background: '#d97757',
+            background: '#c4623f',
           }}
         />
         {/* Arc path */}
@@ -253,7 +253,7 @@ function InteractiveLabScreen() {
             left: '50%',
             width: 2,
             height: 90,
-            background: '#d97757',
+            background: '#c4623f',
             transformOrigin: 'top center',
             transform: 'rotate(25deg)',
           }}
@@ -267,8 +267,8 @@ function InteractiveLabScreen() {
               width: 24,
               height: 24,
               borderRadius: '50%',
-              background: 'linear-gradient(135deg, #d97757, #e8956f)',
-              boxShadow: '0 4px 12px rgba(217, 119, 87, 0.30)',
+              background: 'linear-gradient(135deg, #c4623f, #d67a52)',
+              boxShadow: '0 4px 12px rgba(196, 98, 63, 0.30)',
             }}
           />
         </div>
@@ -277,7 +277,7 @@ function InteractiveLabScreen() {
       <div
         style={{
           fontSize: 11,
-          color: '#d97757',
+          color: '#c4623f',
           background: '#F5F5F0',
           padding: '6px 12px',
           borderRadius: 8,
@@ -296,7 +296,7 @@ function InteractiveLabScreen() {
               fontWeight: 600,
               padding: '5px 12px',
               borderRadius: 6,
-              background: '#d97757',
+              background: '#c4623f',
               color: '#fff',
             }}
           >
@@ -310,14 +310,14 @@ function InteractiveLabScreen() {
 
 function ProgressDashboardScreen() {
   const subjects = [
-    { name: 'Maths', xp: 1240, max: 2000, pct: 62, color: '#d97757' },
-    { name: 'Science', xp: 880, max: 2000, pct: 44, color: '#6a9bcc' },
-    { name: 'English', xp: 1560, max: 2000, pct: 78, color: '#788c5d' },
+    { name: 'Maths', xp: 1240, max: 2000, pct: 62, color: '#c4623f' },
+    { name: 'Science', xp: 880, max: 2000, pct: 44, color: '#5589b8' },
+    { name: 'English', xp: 1560, max: 2000, pct: 78, color: '#6b7f50' },
   ];
 
   return (
     <div style={{ padding: '16px 12px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: '#d97757' }}>My Progress</div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: '#c4623f' }}>My Progress</div>
       {/* Streak */}
       <div
         style={{
@@ -332,7 +332,7 @@ function ProgressDashboardScreen() {
       >
         <span style={{ fontSize: 18 }}>&#x1F525;</span>
         <div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#d97757' }}>5-day streak!</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#c4623f' }}>5-day streak!</div>
           <div style={{ fontSize: 10, color: '#9CA3AF' }}>Keep it going!</div>
         </div>
       </div>
@@ -383,7 +383,7 @@ function ProgressDashboardScreen() {
 function ParentViewScreen() {
   return (
     <div style={{ padding: '16px 12px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: '#788c5d' }}>Child Progress</div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: '#6b7f50' }}>Child Progress</div>
       {/* Child avatar row */}
       <div
         style={{
@@ -401,7 +401,7 @@ function ParentViewScreen() {
             width: 36,
             height: 36,
             borderRadius: '50%',
-            background: 'linear-gradient(135deg, #788c5d, #96a876)',
+            background: 'linear-gradient(135deg, #6b7f50, #8a9e69)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -430,14 +430,14 @@ function ParentViewScreen() {
           }}
         >
           <span>Overall Progress</span>
-          <span style={{ color: '#788c5d' }}>72%</span>
+          <span style={{ color: '#6b7f50' }}>72%</span>
         </div>
         <div style={{ height: 10, background: '#e8e6dc', borderRadius: 999 }}>
           <div
             style={{
               width: '72%',
               height: '100%',
-              background: '#788c5d',
+              background: '#6b7f50',
               borderRadius: 999,
             }}
           />
@@ -461,7 +461,7 @@ function ParentViewScreen() {
               border: '1px solid #e8e6dc',
             }}
           >
-            <div style={{ fontSize: 14, fontWeight: 700, color: '#788c5d' }}>{s.value}</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#6b7f50' }}>{s.value}</div>
             <div style={{ fontSize: 9, color: '#6B7280' }}>{s.label}</div>
           </div>
         ))}
@@ -472,7 +472,7 @@ function ParentViewScreen() {
           width: '100%',
           padding: '10px 0',
           borderRadius: 10,
-          background: '#788c5d',
+          background: '#6b7f50',
           color: '#fff',
           fontSize: 12,
           fontWeight: 700,
@@ -494,7 +494,7 @@ const SCREENS: PhoneScreen[] = [
     title: 'Foxy AI Chat',
     description: 'Your 24/7 AI tutor that explains concepts with patience and clarity.',
     theme: 'teal',
-    accent: '#d97757',
+    accent: '#c4623f',
     render: FoxyChatScreen,
   },
   {
@@ -502,7 +502,7 @@ const SCREENS: PhoneScreen[] = [
     title: 'Smart Study Plan',
     description: 'Personalized daily plans with Bloom-level tasks and XP rewards.',
     theme: 'purple',
-    accent: '#6a9bcc',
+    accent: '#5589b8',
     render: StudyPlanScreen,
   },
   {
@@ -510,7 +510,7 @@ const SCREENS: PhoneScreen[] = [
     title: 'Interactive Lab',
     description: 'Hands-on simulations that make abstract concepts tangible.',
     theme: 'indigo',
-    accent: '#8b7ec8',
+    accent: '#7b6db8',
     render: InteractiveLabScreen,
   },
   {
@@ -518,7 +518,7 @@ const SCREENS: PhoneScreen[] = [
     title: 'Progress Dashboard',
     description: 'Track XP, streaks, and mastery across every subject.',
     theme: 'teal',
-    accent: '#d97757',
+    accent: '#c4623f',
     render: ProgressDashboardScreen,
   },
   {
@@ -526,7 +526,7 @@ const SCREENS: PhoneScreen[] = [
     title: 'Parent View',
     description: 'Stay informed with real-time insights into your child\u2019s learning.',
     theme: 'green',
-    accent: '#788c5d',
+    accent: '#6b7f50',
     render: ParentViewScreen,
   },
 ];
@@ -578,7 +578,7 @@ export default function ProductShowcase() {
               width: 80,
               height: 4,
               borderRadius: 999,
-              background: 'linear-gradient(90deg, #d97757, #c4a35a, #6a9bcc)',
+              background: 'linear-gradient(90deg, #c4623f, #b8922e, #5589b8)',
               margin: '0 auto 16px',
             }}
           />
@@ -673,7 +673,7 @@ export default function ProductShowcase() {
           transition: box-shadow 0.3s ease;
         }
         .showcase-phone-frame:hover {
-          box-shadow: 0 12px 40px rgba(20, 20, 19, 0.10) !important;
+          box-shadow: 0 12px 40px rgba(20, 20, 19, 0.14) !important;
         }
 
         @media (max-width: 1023px) {

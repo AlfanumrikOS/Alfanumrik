@@ -65,7 +65,7 @@ function FooterColumn({ title, links }: FooterColumnProps) {
           font-weight: 700;
           text-transform: uppercase;
           letter-spacing: 0.08em;
-          color: rgba(255, 255, 255, 0.5);
+          color: rgba(255, 255, 255, 0.65);
         }
         .column-links {
           list-style: none;
@@ -77,13 +77,13 @@ function FooterColumn({ title, links }: FooterColumnProps) {
         }
         .footer-link {
           font-size: 0.92rem;
-          color: rgba(255, 255, 255, 0.65);
+          color: rgba(255, 255, 255, 0.75);
           text-decoration: none;
           transition: color 0.2s ease;
           font-weight: 500;
         }
         .footer-link:hover {
-          color: #d97757;
+          color: #c4623f;
         }
       `}</style>
     </div>
@@ -144,7 +144,7 @@ export default function LandingFooter() {
         .landing-footer {
           background: #141413;
           padding: 64px 20px 32px;
-          color: rgba(255, 255, 255, 0.65);
+          color: rgba(255, 255, 255, 0.75);
           position: relative;
         }
         .footer-top-line {
@@ -153,7 +153,7 @@ export default function LandingFooter() {
           left: 0;
           right: 0;
           height: 1px;
-          background: linear-gradient(90deg, transparent, rgba(217,119,87,0.3), transparent);
+          background: linear-gradient(90deg, transparent, rgba(196,98,63,0.3), transparent);
         }
         .footer-inner {
           max-width: 1120px;
@@ -189,7 +189,7 @@ export default function LandingFooter() {
         }
         .brand-tagline {
           font-size: 0.92rem;
-          color: rgba(255, 255, 255, 0.5);
+          color: rgba(255, 255, 255, 0.65);
           line-height: 1.5;
           max-width: 260px;
         }
@@ -212,8 +212,8 @@ export default function LandingFooter() {
           transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
         }
         .social-icon:hover {
-          background: rgba(217,119,87,0.12);
-          border-color: rgba(217,119,87,0.25);
+          background: rgba(196,98,63,0.12);
+          border-color: rgba(196,98,63,0.25);
           transform: translateY(-2px);
         }
 
@@ -230,7 +230,7 @@ export default function LandingFooter() {
         }
         .copyright {
           font-size: 0.82rem;
-          color: rgba(255, 255, 255, 0.35);
+          color: rgba(255, 255, 255, 0.50);
           line-height: 1.5;
         }
 

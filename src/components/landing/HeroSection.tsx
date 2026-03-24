@@ -185,7 +185,7 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
                 border: '1px solid rgba(217, 119, 87, 0.15)',
                 fontSize: '0.85rem',
                 fontWeight: 600,
-                color: '#d97757',
+                color: '#c4623f',
                 marginBottom: 24,
                 animationDelay: '0.1s',
               }}
@@ -213,7 +213,7 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
                 className="hero-gradient-text"
                 style={{
                   background:
-                    'linear-gradient(135deg, #d97757 0%, #c4a35a 40%, #6a9bcc 70%, #d97757 100%)',
+                    'linear-gradient(135deg, #c4623f 0%, #b8922e 33%, #5589b8 66%, #c4623f 100%)',
                   backgroundSize: '200% 200%',
                   WebkitBackgroundClip: 'text',
                   WebkitTextFillColor: 'transparent',
@@ -258,7 +258,7 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
                 onClick={onGetStarted}
                 className="hero-cta-primary"
                 style={{
-                  background: '#d97757',
+                  background: '#c4623f',
                   border: 'none',
                   padding: '14px 32px',
                   minHeight: 52,
@@ -268,7 +268,7 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
                   cursor: 'pointer',
                   borderRadius: 12,
                   fontFamily: 'var(--font-body)',
-                  boxShadow: '0 2px 8px rgba(217, 119, 87, 0.25)',
+                  boxShadow: '0 2px 8px rgba(196, 98, 63, 0.25)',
                   transition: 'box-shadow 0.3s ease, transform 0.3s ease',
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -899,7 +899,7 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
 
         /* Primary CTA hover, active, and arrow animation */
         .hero-cta-primary:hover {
-          box-shadow: 0 4px 20px rgba(217, 119, 87, 0.35) !important;
+          box-shadow: 0 4px 20px rgba(196, 98, 63, 0.35) !important;
           transform: translateY(-1px);
         }
         .hero-cta-primary:hover .hero-cta-arrow {
@@ -907,7 +907,7 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
         }
         .hero-cta-primary:active {
           transform: scale(0.97) !important;
-          box-shadow: 0 2px 12px rgba(217, 119, 87, 0.3) !important;
+          box-shadow: 0 2px 12px rgba(196, 98, 63, 0.3) !important;
         }
 
         /* Secondary CTA hover */

@@ -95,7 +95,7 @@ export default function LandingNav({ onGetStarted }: LandingNavProps) {
               style={{
                 fontSize: '1.35rem',
                 fontWeight: 700,
-                background: 'linear-gradient(135deg, #d97757 0%, #c4a35a 100%)',
+                background: 'linear-gradient(135deg, #c4623f 0%, #c4a35a 100%)',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
                 backgroundClip: 'text',
@@ -168,7 +168,7 @@ export default function LandingNav({ onGetStarted }: LandingNavProps) {
             <button
               onClick={onGetStarted}
               style={{
-                background: '#d97757',
+                background: '#c4623f',
                 border: 'none',
                 padding: '8px 22px',
                 fontSize: '0.875rem',
@@ -178,14 +178,14 @@ export default function LandingNav({ onGetStarted }: LandingNavProps) {
                 borderRadius: 12,
                 fontFamily: 'var(--font-body)',
                 transition: 'all 0.25s ease',
-                boxShadow: '0 2px 8px rgba(217, 119, 87, 0.20)',
+                boxShadow: '0 2px 8px rgba(196, 98, 63, 0.20)',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.boxShadow = '0 4px 16px rgba(217, 119, 87, 0.30)';
+                e.currentTarget.style.boxShadow = '0 4px 16px rgba(196, 98, 63, 0.30)';
                 e.currentTarget.style.transform = 'translateY(-1px)';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.boxShadow = '0 2px 8px rgba(217, 119, 87, 0.20)';
+                e.currentTarget.style.boxShadow = '0 2px 8px rgba(196, 98, 63, 0.20)';
                 e.currentTarget.style.transform = 'translateY(0)';
               }}
             >
@@ -317,7 +317,7 @@ export default function LandingNav({ onGetStarted }: LandingNavProps) {
               <button
                 onClick={() => { setMobileOpen(false); onGetStarted?.(); }}
                 style={{
-                  background: '#d97757',
+                  background: '#c4623f',
                   border: 'none',
                   padding: '12px 22px',
                   fontSize: '0.95rem',
@@ -327,7 +327,7 @@ export default function LandingNav({ onGetStarted }: LandingNavProps) {
                   borderRadius: 12,
                   fontFamily: 'var(--font-body)',
                   width: '100%',
-                  boxShadow: '0 2px 8px rgba(217, 119, 87, 0.20)',
+                  boxShadow: '0 2px 8px rgba(196, 98, 63, 0.20)',
                 }}
               >
                 Get Started Free

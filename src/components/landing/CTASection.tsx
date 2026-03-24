@@ -202,7 +202,7 @@ export default function CTASection({ onGetStarted }: CTASectionProps) {
         }
         .cta-subheading {
           font-size: 1.1rem;
-          color: rgba(255, 255, 255, 0.7);
+          color: rgba(255, 255, 255, 0.85);
           line-height: 1.6;
           margin-bottom: 36px;
         }
@@ -225,17 +225,17 @@ export default function CTASection({ onGetStarted }: CTASectionProps) {
           font-size: 1.05rem;
           font-weight: 700;
           color: #FFFFFF;
-          background: #d97757;
+          background: #c4623f;
           border: none;
           border-radius: 14px;
           cursor: pointer;
           transition: transform 0.2s ease, box-shadow 0.3s ease;
-          box-shadow: 0 4px 24px rgba(217, 119, 87, 0.30);
+          box-shadow: 0 4px 24px rgba(196, 98, 63, 0.30);
           white-space: nowrap;
         }
         .btn-primary:hover {
           transform: translateY(-2px) scale(1.02);
-          box-shadow: 0 8px 40px rgba(217, 119, 87, 0.45);
+          box-shadow: 0 8px 40px rgba(196, 98, 63, 0.45);
         }
         .btn-primary:active {
           transform: translateY(0) scale(0.99);
@@ -270,12 +270,12 @@ export default function CTASection({ onGetStarted }: CTASectionProps) {
         }
         .cta-note {
           font-size: 0.85rem;
-          color: rgba(255, 255, 255, 0.45);
+          color: rgba(255, 255, 255, 0.60);
           line-height: 1.5;
         }
         .note-label {
           font-weight: 600;
-          color: rgba(255, 255, 255, 0.6);
+          color: rgba(255, 255, 255, 0.78);
           margin-right: 6px;
         }
 
