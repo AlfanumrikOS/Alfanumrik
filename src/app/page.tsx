@@ -6,6 +6,8 @@ import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { SUPABASE_URL, SUPABASE_ANON_KEY, SUBJECT_META } from '@/lib/constants';
 import { BottomNav } from '@/components/ui';
+import dynamic from 'next/dynamic';
+const LandingPage = dynamic(() => import('@/components/landing/LandingPage'), { ssr: false });
 
 /* ══════════════════════════════════════════════════════════════
    SUBJECT CONFIGURATION
@@ -838,6 +840,7 @@ const REPORT_REASONS = [
 export default function FoxyPage() {
   const { student: authStudent, isLoggedIn, isLoading: authLoading, activeRole, signOut } = useAuth();
   const router = useRouter();
+  const [showAuth, setShowAuth] = useState(false);
 
   // Core state
   const [student, setStudent] = useState<any>(null);
@@ -1044,7 +1047,10 @@ export default function FoxyPage() {
     </div>
   );
 
-  if (!isLoggedIn && !authLoading) return <AuthScreen onSuccess={() => window.location.reload()} />;
+  if (!isLoggedIn && !authLoading) {
+    if (showAuth) return <AuthScreen onSuccess={() => window.location.reload()} />;
+    return <LandingPage onGetStarted={() => setShowAuth(true)} />;
+  }
 
   if (!student) {
     // Non-student roles: show role-aware screen with navigation (don't auto-redirect)
