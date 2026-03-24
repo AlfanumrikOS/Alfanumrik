@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback, Suspense, useRef } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { BUILT_IN_SIMULATIONS, type BuiltInSimulation } from '@/components/simulations';
@@ -11,145 +11,6 @@ const SimulationViewer = dynamic(() => import('../../components/SimulationViewer
   ssr: false,
 });
 import { supabaseUrl as SUPABASE_URL, supabaseAnonKey as SUPABASE_ANON_KEY } from '@/lib/supabase';
-
-/* ═══ Adaptive Step-by-Step Viewer for Mobile ═══ */
-function useIsMobile(breakpoint = 640) {
-  const [isMobile, setIsMobile] = useState(false);
-  useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < breakpoint);
-    check();
-    window.addEventListener('resize', check);
-    return () => window.removeEventListener('resize', check);
-  }, [breakpoint]);
-  return isMobile;
-}
-
-interface SimStep {
-  title: string;
-  description: string;
-  emoji: string;
-}
-
-function SimulationStepView({ sim, onBack, children }: {
-  sim: { title: string; description: string; thumbnailEmoji?: string; conceptTags?: string[]; foxyTip?: string };
-  onBack: () => void;
-  children: React.ReactNode;
-}) {
-  const [currentStep, setCurrentStep] = useState(0);
-  const touchStart = useRef<number | null>(null);
-
-  const steps: SimStep[] = [
-    { title: 'Introduction', description: sim.description, emoji: '📖' },
-    { title: 'Simulation', description: 'Interact with the simulation below. Drag, slide, and explore!', emoji: sim.thumbnailEmoji || '🔬' },
-    ...(sim.foxyTip ? [{ title: "Foxy's Tip", description: sim.foxyTip, emoji: '🦊' }] : []),
-    ...(sim.conceptTags?.length ? [{ title: 'Key Concepts', description: sim.conceptTags.join(' · '), emoji: '💡' }] : []),
-  ];
-  const totalSteps = steps.length;
-
-  const handleTouchStart = (e: React.TouchEvent) => { touchStart.current = e.touches[0].clientX; };
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    if (touchStart.current === null) return;
-    const diff = e.changedTouches[0].clientX - touchStart.current;
-    if (Math.abs(diff) > 50) {
-      if (diff < 0 && currentStep < totalSteps - 1) setCurrentStep(s => s + 1);
-      if (diff > 0 && currentStep > 0) setCurrentStep(s => s - 1);
-    }
-    touchStart.current = null;
-  };
-
-  return (
-    <div style={{ padding: '16px' }}>
-      <button onClick={onBack} style={{
-        marginBottom: '12px', padding: '10px 18px', borderRadius: '10px',
-        border: '1px solid #e0e0e0', background: '#fff', fontSize: '14px',
-        cursor: 'pointer', fontWeight: 500, color: '#555',
-        display: 'flex', alignItems: 'center', gap: '6px', minHeight: '48px',
-      }}>
-        <span style={{ fontSize: '16px' }}>&#8592;</span> Back
-      </button>
-
-      {/* Progress bar */}
-      <div style={{ display: 'flex', gap: '4px', marginBottom: '16px' }}>
-        {steps.map((_, i) => (
-          <div key={i} style={{
-            flex: 1, height: '4px', borderRadius: '2px',
-            background: i <= currentStep ? '#6366F1' : '#e5e7eb',
-            transition: 'background 0.3s',
-          }} />
-        ))}
-      </div>
-
-      {/* Step indicator */}
-      <div style={{ fontSize: '12px', color: '#888', marginBottom: '8px', fontWeight: 500 }}>
-        Step {currentStep + 1} of {totalSteps}
-      </div>
-
-      {/* Step content */}
-      <div
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-        style={{
-          background: '#fff', borderRadius: '16px', padding: '20px',
-          border: '1px solid rgba(99,102,241,0.12)', minHeight: '200px',
-          boxShadow: '0 2px 12px rgba(99,102,241,0.08)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
-          <span style={{ fontSize: '28px' }}>{steps[currentStep].emoji}</span>
-          <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#1a1a1a', margin: 0, fontFamily: 'Sora, sans-serif' }}>
-            {steps[currentStep].title}
-          </h3>
-        </div>
-        <p style={{ fontSize: '15px', color: '#555', lineHeight: 1.7, margin: 0 }}>
-          {steps[currentStep].description}
-        </p>
-        {/* Show actual simulation on step 1 */}
-        {currentStep === 1 && <div style={{ marginTop: '16px' }}>{children}</div>}
-      </div>
-
-      {/* Dot indicators */}
-      <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginTop: '16px' }}>
-        {steps.map((_, i) => (
-          <button key={i} onClick={() => setCurrentStep(i)} style={{
-            width: i === currentStep ? '24px' : '8px', height: '8px',
-            borderRadius: '4px', border: 'none', cursor: 'pointer',
-            background: i === currentStep ? '#6366F1' : '#d1d5db',
-            transition: 'all 0.3s',
-          }} />
-        ))}
-      </div>
-
-      {/* Prev / Next buttons */}
-      <div style={{ display: 'flex', gap: '12px', marginTop: '20px' }}>
-        <button
-          onClick={() => setCurrentStep(s => Math.max(0, s - 1))}
-          disabled={currentStep === 0}
-          style={{
-            flex: 1, padding: '14px', borderRadius: '12px', fontSize: '15px',
-            fontWeight: 600, cursor: currentStep === 0 ? 'default' : 'pointer',
-            border: '1px solid #e0e0e0', background: '#fff',
-            color: currentStep === 0 ? '#ccc' : '#555', minHeight: '52px',
-          }}
-        >
-          ← Previous
-        </button>
-        <button
-          onClick={() => setCurrentStep(s => Math.min(totalSteps - 1, s + 1))}
-          disabled={currentStep === totalSteps - 1}
-          style={{
-            flex: 1, padding: '14px', borderRadius: '12px', fontSize: '15px',
-            fontWeight: 600, cursor: currentStep === totalSteps - 1 ? 'default' : 'pointer',
-            border: 'none',
-            background: currentStep === totalSteps - 1 ? '#e5e7eb' : '#6366F1',
-            color: currentStep === totalSteps - 1 ? '#999' : '#fff', minHeight: '52px',
-          }}
-        >
-          Next →
-        </button>
-      </div>
-    </div>
-  );
-}
 
 interface Simulation {
   id: string;
@@ -244,7 +105,6 @@ export default function SimulationsPage() {
   const [activeDbSim, setActiveDbSim] = useState<Simulation | null>(null);
   const [loading, setLoading] = useState(true);
   const [interactions, setInteractions] = useState(0);
-  const isMobile = useIsMobile();
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/');
@@ -295,7 +155,7 @@ export default function SimulationsPage() {
   const isActive = activeBuiltIn || activeDbSim;
 
   return (
-    <div style={{ minHeight: '100vh', background: '#FAFBFF', paddingBottom: '100px' }}>
+    <div style={{ minHeight: '100vh', background: '#FBF8F4', paddingBottom: '100px' }}>
       {/* Header */}
       <div style={{
         background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 40%, #a855f7 100%)',
@@ -370,216 +230,142 @@ export default function SimulationsPage() {
         </div>
       )}
 
-      {/* Active Simulation (Built-in) — Adaptive Layout */}
+      {/* Active Simulation (Built-in) */}
       {activeBuiltIn && (
-        isMobile ? (
-          /* Mobile: Step-by-step mode */
-          <SimulationStepView
-            sim={{
-              title: activeBuiltIn.title,
-              description: activeBuiltIn.description,
-              thumbnailEmoji: activeBuiltIn.thumbnailEmoji,
-              conceptTags: activeBuiltIn.conceptTags,
-              foxyTip: activeBuiltIn.foxyTip,
-            }}
-            onBack={closeSim}
-          >
-            <Suspense fallback={<LoadingSpinner />}>
-              <activeBuiltIn.component />
-            </Suspense>
-          </SimulationStepView>
-        ) : (
-          /* Desktop: Full simulation view */
-          <div style={{ padding: '16px 20px' }}>
-            <button onClick={closeSim} style={{
-              marginBottom: '14px', padding: '8px 18px', borderRadius: '10px',
-              border: '1px solid #e0e0e0', background: '#fff', fontSize: '13px',
-              cursor: 'pointer', fontWeight: 500, color: '#555',
-              display: 'flex', alignItems: 'center', gap: '6px',
-            }}>
-              <span style={{ fontSize: '16px' }}>&#8592;</span> Back to all simulations
-            </button>
+        <div style={{ padding: '16px 20px' }}>
+          <button onClick={closeSim} style={{
+            marginBottom: '14px', padding: '8px 18px', borderRadius: '10px',
+            border: '1px solid #e0e0e0', background: '#fff', fontSize: '13px',
+            cursor: 'pointer', fontWeight: 500, color: '#555',
+            display: 'flex', alignItems: 'center', gap: '6px',
+          }}>
+            <span style={{ fontSize: '16px' }}>&#8592;</span> Back to all simulations
+          </button>
 
+          <div style={{
+            borderRadius: '16px',
+            overflow: 'hidden',
+            border: '1px solid rgba(99,102,241,0.15)',
+            background: '#fff',
+            boxShadow: '0 4px 20px rgba(99,102,241,0.1)',
+          }}>
             <div style={{
-              borderRadius: '16px',
-              overflow: 'hidden',
-              border: '1px solid rgba(99,102,241,0.15)',
-              background: '#fff',
-              boxShadow: '0 4px 20px rgba(99,102,241,0.1)',
+              padding: '14px 18px',
+              background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)',
+              display: 'flex', alignItems: 'center', gap: '12px',
             }}>
-              <div style={{
-                padding: '14px 18px',
-                background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)',
-                display: 'flex', alignItems: 'center', gap: '12px',
-              }}>
-                <span style={{ fontSize: '24px' }}>{activeBuiltIn.thumbnailEmoji}</span>
-                <div>
-                  <div style={{ color: '#fff', fontWeight: 700, fontSize: '16px' }}>{activeBuiltIn.title}</div>
-                  <div style={{ color: 'rgba(255,255,255,0.75)', fontSize: '12px', marginTop: '2px' }}>{activeBuiltIn.description}</div>
-                </div>
-              </div>
-
-              <div style={{ padding: '0' }}>
-                <Suspense fallback={<LoadingSpinner />}>
-                  <activeBuiltIn.component />
-                </Suspense>
+              <span style={{ fontSize: '24px' }}>{activeBuiltIn.thumbnailEmoji}</span>
+              <div>
+                <div style={{ color: '#fff', fontWeight: 700, fontSize: '16px' }}>{activeBuiltIn.title}</div>
+                <div style={{ color: 'rgba(255,255,255,0.75)', fontSize: '12px', marginTop: '2px' }}>{activeBuiltIn.description}</div>
               </div>
             </div>
 
-            {/* Foxy tip */}
-            {activeBuiltIn.foxyTip && (
-              <div style={{
-                marginTop: '16px',
-                background: '#fff',
-                borderRadius: '14px',
-                padding: '14px 16px',
-                border: '1px solid rgba(14,165,233,0.15)',
-                display: 'flex',
-                gap: '12px',
-                alignItems: 'flex-start',
-              }}>
-                <span style={{ fontSize: '28px', flexShrink: 0 }}>🦊</span>
-                <div>
-                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#0EA5E9', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>
-                    Foxy&apos;s Tip
-                  </div>
-                  <div style={{ fontSize: '13px', color: '#1a1a1a', lineHeight: 1.6 }}>
-                    {activeBuiltIn.foxyTip}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Concept tags */}
-            <div style={{ marginTop: '12px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-              {activeBuiltIn.conceptTags.map((tag, i) => (
-                <span key={i} style={{
-                  fontSize: '11px', padding: '4px 10px', borderRadius: '8px',
-                  background: '#f5f3ff', color: '#6366F1', fontWeight: 500,
-                }}>
-                  {tag}
-                </span>
-              ))}
+            <div style={{ padding: '0' }}>
+              <Suspense fallback={<LoadingSpinner />}>
+                <activeBuiltIn.component />
+              </Suspense>
             </div>
           </div>
-        )
+
+          {/* Foxy tip */}
+          {activeBuiltIn.foxyTip && (
+            <div style={{
+              marginTop: '16px',
+              background: '#fff',
+              borderRadius: '14px',
+              padding: '14px 16px',
+              border: '1px solid rgba(232,88,28,0.15)',
+              display: 'flex',
+              gap: '12px',
+              alignItems: 'flex-start',
+            }}>
+              <span style={{ fontSize: '28px', flexShrink: 0 }}>🦊</span>
+              <div>
+                <div style={{ fontSize: '11px', fontWeight: 700, color: '#E8581C', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>
+                  Foxy&apos;s Tip
+                </div>
+                <div style={{ fontSize: '13px', color: '#1a1a1a', lineHeight: 1.6 }}>
+                  {activeBuiltIn.foxyTip}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Concept tags */}
+          <div style={{ marginTop: '12px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+            {activeBuiltIn.conceptTags.map((tag, i) => (
+              <span key={i} style={{
+                fontSize: '11px', padding: '4px 10px', borderRadius: '8px',
+                background: '#f5f3ff', color: '#6366F1', fontWeight: 500,
+              }}>
+                {tag}
+              </span>
+            ))}
+          </div>
+        </div>
       )}
 
-      {/* Active Simulation (DB) — Adaptive Layout */}
+      {/* Active Simulation (DB) */}
       {activeDbSim && activeDbSim.widget_code && (
-        isMobile ? (
-          <SimulationStepView
-            sim={{
-              title: activeDbSim.title,
-              description: activeDbSim.description,
-              thumbnailEmoji: activeDbSim.thumbnail_emoji,
-              conceptTags: activeDbSim.concept_tags,
-              foxyTip: activeDbSim.foxy_intro_prompt,
-            }}
-            onBack={closeSim}
-          >
-            <SimulationViewer
-              widgetCode={activeDbSim.widget_code}
-              title={activeDbSim.title}
-              description={activeDbSim.description}
-              simType={activeDbSim.sim_type}
-              onInteraction={() => setInteractions(prev => prev + 1)}
-            />
-          </SimulationStepView>
-        ) : (
-          <div style={{ padding: '16px 20px' }}>
-            <button onClick={closeSim} style={{
-              marginBottom: '14px', padding: '8px 18px', borderRadius: '10px',
-              border: '1px solid #e0e0e0', background: '#fff', fontSize: '13px',
-              cursor: 'pointer', fontWeight: 500, color: '#555',
-              display: 'flex', alignItems: 'center', gap: '6px',
+        <div style={{ padding: '16px 20px' }}>
+          <button onClick={closeSim} style={{
+            marginBottom: '14px', padding: '8px 18px', borderRadius: '10px',
+            border: '1px solid #e0e0e0', background: '#fff', fontSize: '13px',
+            cursor: 'pointer', fontWeight: 500, color: '#555',
+            display: 'flex', alignItems: 'center', gap: '6px',
+          }}>
+            <span style={{ fontSize: '16px' }}>&#8592;</span> Back to all simulations
+          </button>
+
+          <SimulationViewer
+            widgetCode={activeDbSim.widget_code}
+            title={activeDbSim.title}
+            description={activeDbSim.description}
+            simType={activeDbSim.sim_type}
+            onInteraction={() => setInteractions(prev => prev + 1)}
+          />
+
+          {activeDbSim.foxy_intro_prompt && (
+            <div style={{
+              marginTop: '16px', background: '#fff', borderRadius: '14px',
+              padding: '14px 16px', border: '1px solid rgba(232,88,28,0.15)',
+              display: 'flex', gap: '12px', alignItems: 'flex-start',
             }}>
-              <span style={{ fontSize: '16px' }}>&#8592;</span> Back to all simulations
-            </button>
-
-            <SimulationViewer
-              widgetCode={activeDbSim.widget_code}
-              title={activeDbSim.title}
-              description={activeDbSim.description}
-              simType={activeDbSim.sim_type}
-              onInteraction={() => setInteractions(prev => prev + 1)}
-            />
-
-            {activeDbSim.foxy_intro_prompt && (
-              <div style={{
-                marginTop: '16px', background: '#fff', borderRadius: '14px',
-                padding: '14px 16px', border: '1px solid rgba(14,165,233,0.15)',
-                display: 'flex', gap: '12px', alignItems: 'flex-start',
-              }}>
-                <span style={{ fontSize: '28px' }}>🦊</span>
-                <div>
-                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#0EA5E9', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>
-                    Foxy says
-                  </div>
-                  <div style={{ fontSize: '13px', color: '#1a1a1a', lineHeight: 1.6 }}>
-                    {activeDbSim.foxy_intro_prompt}
-                  </div>
-                  <div style={{ marginTop: '8px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                    {(activeDbSim.foxy_followup_prompts || []).slice(0, 3).map((prompt: string, i: number) => (
-                      <a key={i} href={`/foxy?q=${encodeURIComponent(prompt)}`} style={{
-                        fontSize: '11px', padding: '4px 10px', borderRadius: '8px',
-                        background: '#f5f3ff', color: '#6366F1', textDecoration: 'none',
-                        border: '1px solid rgba(99,102,241,0.15)',
-                      }}>
-                        {prompt.length > 50 ? prompt.substring(0, 50) + '...' : prompt}
-                      </a>
-                    ))}
-                  </div>
+              <span style={{ fontSize: '28px' }}>🦊</span>
+              <div>
+                <div style={{ fontSize: '11px', fontWeight: 700, color: '#E8581C', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>
+                  Foxy says
+                </div>
+                <div style={{ fontSize: '13px', color: '#1a1a1a', lineHeight: 1.6 }}>
+                  {activeDbSim.foxy_intro_prompt}
+                </div>
+                <div style={{ marginTop: '8px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                  {(activeDbSim.foxy_followup_prompts || []).slice(0, 3).map((prompt: string, i: number) => (
+                    <a key={i} href={`/foxy?q=${encodeURIComponent(prompt)}`} style={{
+                      fontSize: '11px', padding: '4px 10px', borderRadius: '8px',
+                      background: '#f5f3ff', color: '#6366F1', textDecoration: 'none',
+                      border: '1px solid rgba(99,102,241,0.15)',
+                    }}>
+                      {prompt.length > 50 ? prompt.substring(0, 50) + '...' : prompt}
+                    </a>
+                  ))}
                 </div>
               </div>
-            )}
+            </div>
+          )}
 
-            {interactions > 0 && (
-              <div style={{ marginTop: '12px', textAlign: 'center', fontSize: '12px', color: '#22c55e', fontWeight: 500 }}>
-                {interactions} interaction{interactions > 1 ? 's' : ''} — great exploring!
-              </div>
-            )}
-          </div>
-        )
+          {interactions > 0 && (
+            <div style={{ marginTop: '12px', textAlign: 'center', fontSize: '12px', color: '#22c55e', fontWeight: 500 }}>
+              {interactions} interaction{interactions > 1 ? 's' : ''} — great exploring!
+            </div>
+          )}
+        </div>
       )}
 
       {/* Simulation Grid */}
       {!isActive && (
         <div style={{ padding: '20px' }}>
-          {/* Quick Start — Top 3 recommended */}
-          {filteredBuiltIn.length > 0 && (
-            <div style={{ marginBottom: '24px' }}>
-              <div style={{ fontSize: '14px', fontWeight: 700, color: '#6366F1', marginBottom: '10px', fontFamily: 'Sora, sans-serif', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                Quick Start
-              </div>
-              <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '8px', WebkitOverflowScrolling: 'touch' as const }}>
-                {filteredBuiltIn.slice(0, 3).map(sim => (
-                  <button
-                    key={`qs-${sim.id}`}
-                    onClick={() => openBuiltIn(sim)}
-                    style={{
-                      flex: '0 0 auto', width: isMobile ? '260px' : '280px',
-                      background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)',
-                      borderRadius: '14px', border: 'none', padding: '16px',
-                      cursor: 'pointer', textAlign: 'left', color: '#fff',
-                      minHeight: '52px', transition: 'transform 0.2s',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <span style={{ fontSize: '28px' }}>{sim.thumbnailEmoji}</span>
-                      <div>
-                        <div style={{ fontWeight: 700, fontSize: '14px', lineHeight: 1.3 }}>{sim.title}</div>
-                        <div style={{ fontSize: '11px', opacity: 0.8, marginTop: '2px' }}>
-                          {sim.estimatedTimeMinutes} min · {difficultyLabels[sim.difficulty]}
-                        </div>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* Built-in simulations */}
           {filteredBuiltIn.length > 0 && (
             <>
@@ -676,8 +462,11 @@ export default function SimulationsPage() {
                       </span>
                     </div>
 
-                    {!isMobile && (
-                      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                    <div style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      paddingTop: '10px', borderTop: '1px solid #f0f0f0',
+                    }}>
+                      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                         {sim.conceptTags.slice(0, 3).map((tag, i) => (
                           <span key={i} style={{
                             fontSize: '9px', padding: '2px 7px', borderRadius: '4px',
@@ -687,41 +476,12 @@ export default function SimulationsPage() {
                           </span>
                         ))}
                       </div>
-                    )}
-
-                    <div style={{
-                      paddingTop: '10px', borderTop: '1px solid #f0f0f0',
-                    }}>
-                      {isMobile ? (
-                        /* Full-width Play button on mobile — large thumb target */
-                        <div style={{
-                          background: '#6366F1', color: '#fff', borderRadius: '10px',
-                          padding: '12px', textAlign: 'center', fontSize: '14px',
-                          fontWeight: 700, minHeight: '48px', display: 'flex',
-                          alignItems: 'center', justifyContent: 'center', gap: '6px',
-                        }}>
-                          Play Simulation <span style={{ fontSize: '16px' }}>&#9654;</span>
-                        </div>
-                      ) : (
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                            {sim.conceptTags.slice(0, 3).map((tag, i) => (
-                              <span key={i} style={{
-                                fontSize: '9px', padding: '2px 7px', borderRadius: '4px',
-                                background: '#f5f3ff', color: '#6366F1',
-                              }}>
-                                {tag}
-                              </span>
-                            ))}
-                          </div>
-                          <span style={{
-                            fontSize: '12px', color: '#6366F1', fontWeight: 700,
-                            display: 'flex', alignItems: 'center', gap: '4px',
-                          }}>
-                            Play <span style={{ fontSize: '14px' }}>&#9654;</span>
-                          </span>
-                        </div>
-                      )}
+                      <span style={{
+                        fontSize: '12px', color: '#6366F1', fontWeight: 700,
+                        display: 'flex', alignItems: 'center', gap: '4px',
+                      }}>
+                        Play <span style={{ fontSize: '14px' }}>&#9654;</span>
+                      </span>
                     </div>
                   </div>
                 ))}
