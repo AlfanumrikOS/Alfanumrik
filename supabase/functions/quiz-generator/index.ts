@@ -285,6 +285,32 @@ Deno.serve(async (req) => {
   }
 
   try {
+    // ── Authenticate caller ───────────────────────────────────────────────
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'Missing Authorization header' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    const authSupabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      {
+        auth: { persistSession: false },
+        global: { headers: { Authorization: authHeader } },
+      },
+    )
+
+    const { data: { user }, error: authError } = await authSupabase.auth.getUser()
+    if (authError || !user) {
+      return new Response(JSON.stringify({ error: 'Invalid or expired token' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     // ── Parse & validate request body ──────────────────────────────────────
     let body: RequestBody
     try {
@@ -301,6 +327,21 @@ Deno.serve(async (req) => {
     if (!student_id) {
       return new Response(JSON.stringify({ error: 'student_id is required' }), {
         status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // ── Verify student belongs to authenticated user ────────────────────
+    const { data: studentRow, error: studentError } = await authSupabase
+      .from('students')
+      .select('id')
+      .eq('id', student_id)
+      .eq('auth_user_id', user.id)
+      .maybeSingle()
+
+    if (studentError || !studentRow) {
+      return new Response(JSON.stringify({ error: 'student_id does not belong to authenticated user' }), {
+        status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
@@ -333,7 +374,6 @@ Deno.serve(async (req) => {
     // ── Build Supabase client ───────────────────────────────────────────────
     // Use the caller's JWT when supplied (RLS-aware); fall back to service role
     // for internal calls (e.g. from another Edge Function).
-    const authHeader = req.headers.get('Authorization')
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',

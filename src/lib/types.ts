@@ -332,42 +332,50 @@ export interface BloomProgression {
 export interface CognitiveSessionMetrics {
   id: string;
   student_id: string;
-  session_id: string | null;
-  zpd_target: number | null;
-  zpd_actual: number | null;
-  zpd_accuracy: number | null;
-  bloom_distribution: Record<string, number> | null;
-  interleaving_ratio: number | null;
+  quiz_session_id: string | null;
+  questions_in_zpd: number | null;
+  questions_too_easy: number | null;
+  questions_too_hard: number | null;
+  zpd_accuracy_rate: number | null;
+  response_time_trend: string | null;
+  accuracy_trend: string | null;
   fatigue_detected: boolean;
-  difficulty_adjustments: number;
-  consecutive_errors: number;
-  consecutive_correct: number;
-  avg_response_time: number | null;
-  session_duration: number | null;
-  questions_attempted: number;
+  difficulty_adjustments: number | null;
+  interleaved_questions: number | null;
+  blocked_questions: number | null;
+  avg_response_time_seconds: number | null;
+  flow_state_probability: number | null;
+  session_start: string | null;
+  session_end: string | null;
+  created_at: string;
 }
 
 export interface LearningVelocity {
   id: string;
   student_id: string;
-  topic_id: string;
+  concept_id: string | null;
   subject: string;
-  velocity_score: number;
-  mastery_datapoints: Array<{ date: string; mastery: number }>;
+  weekly_mastery_rate: number | null;
+  acceleration: number | null;
   predicted_mastery_date: string | null;
-  sessions_to_mastery: number | null;
+  velocity_history: Record<string, unknown> | null;
+  last_calculated_at: string | null;
 }
 
 export interface KnowledgeGap {
   id: string;
-  topic_title: string;
-  gap_type: string;
-  severity: string;
-  description: string;
-  description_hi: string | null;
-  recommended_action: string | null;
-  recommended_action_hi: string | null;
-  detected_at: string;
+  student_id: string;
+  target_concept_name: string;
+  missing_prerequisite_name: string;
+  detection_method: string;
+  confidence_score: number | null;
+  status: string;
+  detected_at: string | null;
+  // Computed fields for UI compatibility
+  topic_title?: string;
+  severity?: string;
+  description?: string;
+  description_hi?: string;
 }
 
 export interface CBSEBoardPaper {

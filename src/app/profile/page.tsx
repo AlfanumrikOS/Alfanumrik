@@ -224,13 +224,13 @@ export default function ProfilePage() {
     // Quiz stats
     const { data: qs } = await supabase
       .from('quiz_sessions')
-      .select('score_percent, xp_earned')
+      .select('score_percent, score')
       .eq('student_id', student.id)
       .eq('is_completed', true);
     if (qs && qs.length > 0) {
       const avg = Math.round(qs.reduce((a, q) => a + (q.score_percent || 0), 0) / qs.length);
       const best = Math.max(...qs.map(q => q.score_percent || 0));
-      const xp = qs.reduce((a, q) => a + (q.xp_earned || 0), 0);
+      const xp = qs.reduce((a, q) => a + (q.score || 0), 0);
       setQuizStats({ total: qs.length, avgScore: avg, bestScore: best, totalXpFromQuiz: xp });
     }
   }, [student]);
