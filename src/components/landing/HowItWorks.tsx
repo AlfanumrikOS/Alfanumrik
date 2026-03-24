@@ -67,7 +67,7 @@ function MiniProgressBar() {
         <div className="hiw-mini-progress__bar">
           <div
             className="hiw-mini-progress__fill"
-            style={{ width: '78%', background: 'var(--orange)' }}
+            style={{ width: '78%', background: '#1B2B5B' }}
           />
         </div>
         <span className="hiw-mini-progress__pct">78%</span>
@@ -77,7 +77,7 @@ function MiniProgressBar() {
         <div className="hiw-mini-progress__bar">
           <div
             className="hiw-mini-progress__fill"
-            style={{ width: '62%', background: 'var(--teal)' }}
+            style={{ width: '62%', background: '#0EA5E9' }}
           />
         </div>
         <span className="hiw-mini-progress__pct">62%</span>
@@ -96,7 +96,7 @@ const STEPS: Step[] = [
     title: 'Sign Up Free',
     description: 'Pick your grade, board, and subjects. Takes 30 seconds.',
     icon: '✨',
-    accentColor: 'var(--orange)',
+    accentColor: '#1B2B5B',
     visual: <MiniSignupForm />,
   },
   {
@@ -105,7 +105,7 @@ const STEPS: Step[] = [
     description:
       'Your AI tutor learns your strengths and gaps. Start with any topic or scan a question.',
     icon: '🦊',
-    accentColor: 'var(--teal)',
+    accentColor: '#0EA5E9',
     visual: <MiniChatBubble />,
   },
   {
@@ -114,7 +114,7 @@ const STEPS: Step[] = [
     description:
       'Foxy builds your mastery day by day. Parents and teachers see real results.',
     icon: '📈',
-    accentColor: 'var(--green)',
+    accentColor: '#10B981',
     visual: <MiniProgressBar />,
   },
 ];
@@ -285,7 +285,7 @@ const hiwCSS = `
 }
 
 .hiw-header__accent {
-  color: var(--orange);
+  color: #1B2B5B;
   position: relative;
 }
 
@@ -296,7 +296,7 @@ const hiwCSS = `
   bottom: -2px;
   width: 100%;
   height: 3px;
-  background: linear-gradient(90deg, var(--orange), var(--gold));
+  background: linear-gradient(90deg, #1B2B5B, #0EA5E9);
   border-radius: 2px;
 }
 
@@ -337,9 +337,9 @@ const hiwCSS = `
     height: 100%;
     background: linear-gradient(
       90deg,
-      var(--orange),
-      var(--teal),
-      var(--green)
+      #1B2B5B,
+      #0EA5E9,
+      #10B981
     );
     border-radius: 2px;
     transform-origin: left;
@@ -472,9 +472,9 @@ const hiwCSS = `
 }
 
 .hiw-mini-chip--active {
-  background: rgba(232, 88, 28, 0.10);
-  color: var(--orange);
-  border-color: rgba(232, 88, 28, 0.25);
+  background: rgba(14, 165, 233, 0.10);
+  color: #0EA5E9;
+  border-color: rgba(14, 165, 233, 0.25);
   font-weight: 600;
 }
 
@@ -500,7 +500,7 @@ const hiwCSS = `
 }
 
 .hiw-mini-chat__bubble--foxy {
-  background: rgba(232, 88, 28, 0.06);
+  background: rgba(14, 165, 233, 0.06);
   border-radius: 12px 12px 12px 4px;
   padding: 10px 12px;
 }
