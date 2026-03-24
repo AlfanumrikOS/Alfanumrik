@@ -327,12 +327,12 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
   };
 
   const ROLE_TABS = [
-    { key: 'student' as const, label: 'Student', emoji: '\uD83C\uDF93', color: '#E8590C' },
+    { key: 'student' as const, label: 'Student', emoji: '\uD83C\uDF93', color: '#0EA5E9' },
     { key: 'teacher' as const, label: 'Teacher', emoji: '\uD83D\uDC69\u200D\uD83C\uDFEB', color: '#2563EB' },
     { key: 'parent' as const, label: 'Parent', emoji: '\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67', color: '#16A34A' },
   ];
 
-  const activeRoleColor = ROLE_TABS.find(r => r.key === roleTab)?.color ?? '#E8590C';
+  const activeRoleColor = ROLE_TABS.find(r => r.key === roleTab)?.color ?? '#0EA5E9';
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -535,7 +535,7 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
     ? 'linear-gradient(135deg, #2563EB, #3B82F6)'
     : roleTab === 'parent'
       ? 'linear-gradient(135deg, #16A34A, #22C55E)'
-      : 'linear-gradient(135deg, #E8590C, #F59E0B)';
+      : 'linear-gradient(135deg, #1B2B5B, #2563EB)';
 
   return (
     <div className="mesh-bg min-h-dvh flex flex-col items-center justify-center px-4 py-8">
@@ -543,14 +543,14 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
         {/* Hero — First impression. 3 seconds to hook an Indian student. */}
         <div className="text-center mb-5">
           <div className="text-6xl mb-2 animate-float">{'\uD83E\uDD8A'}</div>
-          <h1 className="text-2xl font-extrabold" style={{ fontFamily: 'var(--font-display)', background: 'linear-gradient(135deg, #E8590C, #F59E0B)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+          <h1 className="text-2xl font-extrabold" style={{ fontFamily: 'var(--font-display)', background: 'linear-gradient(135deg, #1B2B5B, #0EA5E9)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
             Alfanumrik
           </h1>
           <p className="text-sm font-medium mt-1" style={{ color: 'var(--text-2)' }}>{subtitle}</p>
 
           {/* Value proposition — what PW/Byju's miss on their login screens */}
           <div className="flex items-center justify-center gap-3 mt-3 flex-wrap">
-            <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full" style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}>
+            <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full" style={{ background: 'rgba(14,165,233,0.08)', color: '#0EA5E9' }}>
               CBSE Grades 6-12
             </span>
             <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full" style={{ background: 'rgba(22,163,74,0.08)', color: '#16A34A' }}>

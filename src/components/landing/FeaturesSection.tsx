@@ -425,8 +425,8 @@ const featuresCSS = `
 }
 
 .bilingual-badge--en {
-  background: rgba(8, 145, 178, 0.10);
-  color: var(--teal);
+  background: rgba(14, 165, 233, 0.10);
+  color: #0EA5E9;
 }
 
 .bilingual-badge--hi {
@@ -482,11 +482,11 @@ const featuresCSS = `
 }
 
 .bilingual-bubble--foxy {
-  background: rgba(232, 88, 28, 0.08);
+  background: rgba(14, 165, 233, 0.08);
   color: var(--text-1);
   border-bottom-left-radius: 4px;
   align-self: flex-start;
-  border: 1px solid rgba(232, 88, 28, 0.12);
+  border: 1px solid rgba(14, 165, 233, 0.12);
 }
 
 /* ── Reduced motion ─────────────────────────────────────────── */
