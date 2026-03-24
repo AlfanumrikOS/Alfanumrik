@@ -110,15 +110,16 @@ function VelocitySparkline({ datapoints }: { datapoints: Array<{ date: string; m
 
 /* ── Cognitive Session Card ── */
 function SessionMetricCard({ session, isHi }: { session: CognitiveSessionMetrics; isHi: boolean }) {
-  const bloomDist = session.bloom_distribution;
-  const zpdAcc = session.zpd_accuracy != null ? Math.round(session.zpd_accuracy * 100) : null;
-  const dur = session.session_duration != null ? Math.round(session.session_duration / 60) : null;
+  const zpdAcc = session.zpd_accuracy_rate != null ? Math.round(session.zpd_accuracy_rate * 100) : null;
+  const dur = session.session_start && session.session_end
+    ? Math.round((new Date(session.session_end).getTime() - new Date(session.session_start).getTime()) / 60000)
+    : null;
 
   return (
     <Card className="!p-3">
       <div className="flex items-center justify-between mb-2">
         <span className="text-xs font-semibold text-[var(--text-2)]">
-          {session.questions_attempted} {isHi ? 'प्रश्न' : 'questions'}
+          {(session.questions_in_zpd ?? 0) + (session.questions_too_easy ?? 0) + (session.questions_too_hard ?? 0)} {isHi ? 'प्रश्न' : 'questions'}
         </span>
         <div className="flex items-center gap-2">
           {session.fatigue_detected && (
@@ -149,23 +150,12 @@ function SessionMetricCard({ session, isHi }: { session: CognitiveSessionMetrics
         </div>
       )}
 
-      {/* Bloom Distribution */}
-      {bloomDist && Object.keys(bloomDist).length > 0 && (
+      {/* ZPD Distribution */}
+      {(session.questions_in_zpd ?? 0) + (session.questions_too_easy ?? 0) + (session.questions_too_hard ?? 0) > 0 && (
         <div className="flex gap-0.5">
-          {BLOOM_LEVELS.map((level) => {
-            const count = bloomDist[level] ?? 0;
-            if (count === 0) return null;
-            return (
-              <div
-                key={level}
-                className="rounded-sm text-center text-[9px] font-bold text-white px-1"
-                style={{ background: BLOOM_CONFIG[level].color, minWidth: 16 }}
-                title={`${BLOOM_CONFIG[level].label}: ${count}`}
-              >
-                {count}
-              </div>
-            );
-          })}
+          {session.questions_in_zpd ? <div className="rounded-sm text-center text-[9px] font-bold text-white px-1" style={{ background: '#16A34A', minWidth: 16 }} title={`In ZPD: ${session.questions_in_zpd}`}>{session.questions_in_zpd}</div> : null}
+          {session.questions_too_easy ? <div className="rounded-sm text-center text-[9px] font-bold text-white px-1" style={{ background: '#3B82F6', minWidth: 16 }} title={`Too Easy: ${session.questions_too_easy}`}>{session.questions_too_easy}</div> : null}
+          {session.questions_too_hard ? <div className="rounded-sm text-center text-[9px] font-bold text-white px-1" style={{ background: '#EF4444', minWidth: 16 }} title={`Too Hard: ${session.questions_too_hard}`}>{session.questions_too_hard}</div> : null}
         </div>
       )}
     </Card>
@@ -227,42 +217,52 @@ export default function ProgressPage() {
   const totalAsked = profiles.reduce((a, p) => a + (p.total_questions_asked ?? 0), 0);
   const accuracy = totalAsked > 0 ? Math.round((totalCorrect / totalAsked) * 100) : 0;
 
-  /* ── Bloom aggregate: highest mastered level ── */
-  const highestBloom: BloomLevel = bloomData.length > 0
+  /* ── Bloom aggregate: transform DB rows into per-level mastery data ── */
+  const bloomFlattened = bloomData.flatMap((b: any) =>
+    BLOOM_LEVELS.map((level) => ({
+      bloom_level: level as BloomLevel,
+      mastery: Number(b[`${level}_mastery`]) || 0,
+      subject: b.subject ?? 'unknown',
+    })).filter(item => item.mastery > 0)
+  );
+  const highestBloom: BloomLevel = bloomFlattened.length > 0
     ? getHighestMasteredBloom(
-        bloomData.map((b: any) => ({
-          bloomLevel: b.bloom_level as BloomLevel,
-          mastery: b.mastery ?? 0,
-          attempts: b.attempts ?? 0,
-          correct: b.correct ?? 0,
+        bloomFlattened.map((b) => ({
+          bloomLevel: b.bloom_level,
+          mastery: b.mastery,
+          attempts: 1,
+          correct: b.mastery > 0.5 ? 1 : 0,
         }))
       )
     : 'remember';
 
   /* ── Average velocity ── */
   const avgVelocity = velocityData.length > 0
-    ? velocityData.reduce((a, v) => a + (v.velocity_score ?? 0), 0) / velocityData.length
+    ? velocityData.reduce((a, v) => a + (v.weekly_mastery_rate ?? 0), 0) / velocityData.length
     : 0;
 
   /* ── Mastery predictions: top 3 weakest topics ── */
   const weakestTopics = [...velocityData]
-    .filter((v) => v.mastery_datapoints && v.mastery_datapoints.length >= 2)
-    .sort((a, b) => {
-      const lastA = a.mastery_datapoints[a.mastery_datapoints.length - 1]?.mastery ?? 0;
-      const lastB = b.mastery_datapoints[b.mastery_datapoints.length - 1]?.mastery ?? 0;
-      return lastA - lastB;
-    })
+    .filter((v) => (v.weekly_mastery_rate ?? 0) > 0)
+    .sort((a, b) => (a.weekly_mastery_rate ?? 0) - (b.weekly_mastery_rate ?? 0))
     .slice(0, 3);
 
-  /* ── Knowledge gaps grouped by severity ── */
-  const gapsBySeverity = [...knowledgeGaps].sort(
+  /* ── Knowledge gaps grouped by severity (computed from confidence_score) ── */
+  const gapsWithSeverity = knowledgeGaps.map(g => ({
+    ...g,
+    severity: (g.confidence_score ?? 0) > 0.7 ? 'critical' : (g.confidence_score ?? 0) > 0.4 ? 'high' : 'medium',
+    topic_title: g.target_concept_name,
+    description: `Missing: ${g.missing_prerequisite_name}`,
+    description_hi: `कमी: ${g.missing_prerequisite_name}`,
+  }));
+  const gapsBySeverity = [...gapsWithSeverity].sort(
     (a, b) => (SEVERITY_ORDER[a.severity] ?? 3) - (SEVERITY_ORDER[b.severity] ?? 3)
   );
 
   /* ── Bloom data grouped by subject ── */
   const bloomBySubject = new Map<string, any[]>();
-  for (const row of bloomData) {
-    const subj = row.subject ?? row.topic_subject ?? 'unknown';
+  for (const row of bloomFlattened) {
+    const subj = row.subject ?? 'unknown';
     if (!bloomBySubject.has(subj)) bloomBySubject.set(subj, []);
     bloomBySubject.get(subj)!.push(row);
   }
@@ -374,22 +374,20 @@ export default function ProgressPage() {
                 <SectionHeader icon="🔮">{isHi ? 'महारत की भविष्यवाणी' : 'Mastery Predictions'}</SectionHeader>
                 <div className="space-y-2">
                   {weakestTopics.map((v) => {
-                    const dp = v.mastery_datapoints;
-                    const currentMastery = dp[dp.length - 1]?.mastery ?? 0;
+                    const rate = v.weekly_mastery_rate ?? 0;
                     const predicted = v.predicted_mastery_date
                       ? new Date(v.predicted_mastery_date)
-                      : predictMasteryDate(currentMastery, v.velocity_score);
+                      : predictMasteryDate(rate, rate);
 
                     return (
                       <Card key={v.id} className="!p-3">
                         <div className="flex items-center gap-3">
                           <div className="flex-1 min-w-0">
-                            <div className="text-sm font-semibold truncate">{v.topic_id}</div>
+                            <div className="text-sm font-semibold truncate">{v.subject}</div>
                             <div className="text-[11px] text-[var(--text-3)]">
-                              {isHi ? 'वर्तमान' : 'Current'}: {Math.round(currentMastery * 100)}%
+                              {isHi ? 'गति' : 'Rate'}: {(rate * 100).toFixed(1)}%/wk
                             </div>
                           </div>
-                          <VelocitySparkline datapoints={dp} />
                           <div className="text-right">
                             <div className="text-[10px] text-[var(--text-3)]">
                               {isHi ? 'अनुमानित तिथि' : 'Predicted by'}
@@ -419,25 +417,23 @@ export default function ProgressPage() {
                 <SectionHeader icon="🚀">{isHi ? 'सीखने की गति' : 'Learning Velocity'}</SectionHeader>
                 <div className="space-y-2">
                   {velocityData.slice(0, 8).map((v) => {
-                    const dp = v.mastery_datapoints ?? [];
-                    const currentMastery = dp.length > 0 ? dp[dp.length - 1].mastery : 0;
+                    const rate = v.weekly_mastery_rate ?? 0;
                     const predicted = v.predicted_mastery_date
                       ? new Date(v.predicted_mastery_date)
-                      : predictMasteryDate(currentMastery, v.velocity_score);
+                      : predictMasteryDate(rate, rate);
 
                     return (
                       <Card key={v.id} className="!p-3">
                         <div className="flex items-center gap-3">
                           <div className="flex-1 min-w-0">
-                            <div className="text-xs font-semibold truncate">{v.topic_id}</div>
+                            <div className="text-xs font-semibold truncate">{v.subject}</div>
                             <div className="text-[10px] text-[var(--text-3)]">
-                              {v.subject} · {isHi ? 'गति' : 'v'}: {(v.velocity_score * 100).toFixed(1)}/day
+                              {isHi ? 'गति' : 'Rate'}: {(rate * 100).toFixed(1)}%/wk
                             </div>
                           </div>
-                          <VelocitySparkline datapoints={dp} />
                           <div className="text-right shrink-0">
                             <div className="text-xs font-bold" style={{ color: 'var(--teal)' }}>
-                              {Math.round(currentMastery * 100)}%
+                              {Math.round(rate * 100)}%
                             </div>
                             {predicted && (
                               <div className="text-[9px] text-[var(--text-3)]">
@@ -470,23 +466,23 @@ export default function ProgressPage() {
                       <div className="flex items-start gap-2">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1 flex-wrap">
-                            <span className="text-xs font-semibold truncate">{gap.topic_title}</span>
-                            <Badge color={SEVERITY_COLORS[gap.severity] ?? '#6B7280'} size="sm">
-                              {gap.severity}
+                            <span className="text-xs font-semibold truncate">{gap.topic_title ?? gap.target_concept_name}</span>
+                            <Badge color={SEVERITY_COLORS[gap.severity ?? 'medium'] ?? '#6B7280'} size="sm">
+                              {gap.severity ?? 'medium'}
                             </Badge>
                             <span className="text-[10px] text-[var(--text-3)] px-1.5 py-0.5 rounded-md" style={{ background: 'var(--surface-2)' }}>
-                              {gap.gap_type.replace(/_/g, ' ')}
+                              {gap.detection_method?.replace(/_/g, ' ') ?? 'detected'}
                             </span>
                           </div>
                           <div className="text-[11px] text-[var(--text-3)] leading-relaxed">
-                            {isHi && gap.description_hi ? gap.description_hi : gap.description}
+                            {isHi && gap.description_hi ? gap.description_hi : (gap.description ?? `Missing: ${gap.missing_prerequisite_name}`)}
                           </div>
                         </div>
                         <Button
                           variant="soft"
                           size="sm"
                           color="var(--orange)"
-                          onClick={() => router.push(`/foxy?topic=${encodeURIComponent(gap.topic_title)}`)}
+                          onClick={() => router.push(`/foxy?topic=${encodeURIComponent(gap.topic_title ?? gap.target_concept_name)}`)}
                           className="shrink-0"
                         >
                           {isHi ? 'ठीक करो' : 'Fix'}

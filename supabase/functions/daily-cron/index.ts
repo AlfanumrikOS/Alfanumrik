@@ -259,16 +259,21 @@ Deno.serve(async (req) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
-  // Optionally restrict to internal cron calls — check for a shared secret
+  // Require CRON_SECRET for all calls
   const cronSecret = Deno.env.get('CRON_SECRET')
-  if (cronSecret) {
-    const authHeader = req.headers.get('x-cron-secret')
-    if (authHeader !== cronSecret) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
+  if (!cronSecret) {
+    console.error('CRON_SECRET environment variable is not set')
+    return new Response(JSON.stringify({ error: 'Server misconfiguration' }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
+  }
+  const cronAuthHeader = req.headers.get('x-cron-secret')
+  if (cronAuthHeader !== cronSecret) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
   }
 
   const startTime = Date.now()
