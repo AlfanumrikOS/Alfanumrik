@@ -83,7 +83,7 @@ function FooterColumn({ title, links }: FooterColumnProps) {
           font-weight: 500;
         }
         .footer-link:hover {
-          color: #0EA5E9;
+          color: #00B17A;
         }
       `}</style>
     </div>
@@ -93,6 +93,8 @@ function FooterColumn({ title, links }: FooterColumnProps) {
 export default function LandingFooter() {
   return (
     <footer className="landing-footer">
+      {/* Jade gradient line at top */}
+      <div className="footer-top-line" />
       <div className="footer-inner">
         {/* ── Top grid ── */}
         <div className="footer-grid">
@@ -140,9 +142,18 @@ export default function LandingFooter() {
 
       <style jsx>{`
         .landing-footer {
-          background: #0F172A;
+          background: #0D1B2A;
           padding: 64px 20px 32px;
           color: rgba(255, 255, 255, 0.65);
+          position: relative;
+        }
+        .footer-top-line {
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          height: 1px;
+          background: linear-gradient(90deg, transparent, #00B17A, #00D68F, #00B17A, transparent);
         }
         .footer-inner {
           max-width: 1120px;
@@ -201,8 +212,8 @@ export default function LandingFooter() {
           transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
         }
         .social-icon:hover {
-          background: rgba(14, 165, 233, 0.15);
-          border-color: rgba(14, 165, 233, 0.3);
+          background: rgba(0, 177, 122, 0.15);
+          border-color: rgba(0, 177, 122, 0.3);
           transform: translateY(-2px);
         }
 

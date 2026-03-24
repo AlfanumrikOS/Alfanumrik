@@ -62,7 +62,7 @@ function FloatingEmojis() {
         }
         .floating-emoji {
           position: absolute;
-          opacity: 0.12;
+          opacity: 0.15;
           animation: emojiDrift linear infinite;
           will-change: transform;
         }
@@ -127,6 +127,16 @@ export default function CTASection({ onGetStarted }: CTASectionProps) {
     <section ref={sectionRef} className="cta-section" id="get-started">
       <FloatingEmojis />
 
+      {/* Jade radial glow */}
+      <div className="jade-glow" aria-hidden="true" />
+
+      {/* Animated jade light beams */}
+      <div className="light-beams" aria-hidden="true">
+        <div className="beam beam-1" />
+        <div className="beam beam-2" />
+        <div className="beam beam-3" />
+      </div>
+
       <div
         className="cta-content"
         style={{
@@ -169,9 +179,53 @@ export default function CTASection({ onGetStarted }: CTASectionProps) {
       <style jsx>{`
         .cta-section {
           position: relative;
-          background: linear-gradient(165deg, #0F172A 0%, #1E1B4B 100%);
+          background: linear-gradient(165deg, #0D1B2A 0%, #00B17A 120%);
           padding: 80px 20px 88px;
           overflow: hidden;
+        }
+        .jade-glow {
+          position: absolute;
+          inset: 0;
+          background: radial-gradient(circle at 50% 60%, rgba(0, 177, 122, 0.15) 0%, transparent 60%);
+          pointer-events: none;
+          z-index: 0;
+        }
+        .light-beams {
+          position: absolute;
+          inset: 0;
+          overflow: hidden;
+          pointer-events: none;
+          z-index: 0;
+        }
+        .beam {
+          position: absolute;
+          width: 1px;
+          height: 200%;
+          background: rgba(0, 177, 122, 0.03);
+          top: -50%;
+          transform-origin: center center;
+          animation: beamRotate linear infinite;
+        }
+        .beam-1 {
+          left: 30%;
+          animation-duration: 20s;
+          transform: rotate(25deg);
+        }
+        .beam-2 {
+          left: 55%;
+          animation-duration: 28s;
+          transform: rotate(-15deg);
+          animation-delay: -5s;
+        }
+        .beam-3 {
+          left: 75%;
+          animation-duration: 24s;
+          transform: rotate(35deg);
+          animation-delay: -10s;
+        }
+        @keyframes beamRotate {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
         }
         .cta-content {
           position: relative;
@@ -215,17 +269,17 @@ export default function CTASection({ onGetStarted }: CTASectionProps) {
           font-size: 1.05rem;
           font-weight: 700;
           color: #FFFFFF;
-          background: linear-gradient(135deg, #0EA5E9, #2563EB);
+          background: linear-gradient(135deg, #00B17A, #00D68F);
           border: none;
           border-radius: 14px;
           cursor: pointer;
           transition: transform 0.2s ease, box-shadow 0.3s ease;
-          box-shadow: 0 4px 24px rgba(14, 165, 233, 0.35);
+          box-shadow: 0 4px 24px rgba(0, 177, 122, 0.35);
           white-space: nowrap;
         }
         .btn-primary:hover {
           transform: translateY(-2px) scale(1.02);
-          box-shadow: 0 8px 40px rgba(14, 165, 233, 0.5);
+          box-shadow: 0 8px 40px rgba(0, 177, 122, 0.5);
         }
         .btn-primary:active {
           transform: translateY(0) scale(0.99);
