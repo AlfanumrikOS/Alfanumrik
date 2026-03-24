@@ -53,6 +53,10 @@ export default function Dashboard() {
   const [nudges, setNudges] = useState<Array<{ id: string; nudge_type: string; message: string; message_hi?: string; priority: number }>>([]);
   const [showDetailedAnalytics, setShowDetailedAnalytics] = useState(false);
   const [expandedSubjects, setExpandedSubjects] = useState(false);
+  const [todayTasks, setTodayTasks] = useState<Array<{
+    id: string; title: string; task_type: string; status: string;
+    duration_minutes: number; xp_reward: number; bloom_level?: string; chapter_title?: string;
+  }>>([]);
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/');
@@ -319,6 +323,21 @@ export default function Dashboard() {
                     {new Date(upcomingExams[0].exam_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                     {upcomingExams.length > 1 && ` · +${upcomingExams.length - 1} more`}
                   </div>
+                  {cbseReadiness !== null && (
+                    <div className="mt-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] font-semibold" style={{ color: cbseReadiness >= 70 ? '#16A34A' : cbseReadiness >= 40 ? '#F59E0B' : '#EF4444' }}>
+                          {isHi ? `${cbseReadiness}% तैयार` : `You're ${cbseReadiness}% ready for ${upcomingExams[0].exam_name}`}
+                        </span>
+                      </div>
+                      <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(0,0,0,0.08)' }}>
+                        <div className="h-full rounded-full transition-all" style={{
+                          width: `${cbseReadiness}%`,
+                          background: cbseReadiness >= 70 ? '#16A34A' : cbseReadiness >= 40 ? '#F59E0B' : '#EF4444',
+                        }} />
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <span className="text-[var(--text-3)] text-lg">→</span>
               </div>
@@ -362,6 +381,23 @@ export default function Dashboard() {
               <span className="text-[10px] text-[var(--text-3)]">{isHi ? 'दिन' : 'days'}</span>
             </div>
           </div>
+          {(() => {
+            const totalTasks = (dueCount > 0 && flags.spaced_repetition ? 1 : 0) + nextTopics.slice(1, 3).length;
+            const doneTasks = 0; // tasks completed today — future: track via state
+            return totalTasks > 0 ? (
+              <div className="mb-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] text-[var(--text-3)] font-semibold">
+                    {isHi ? `${doneTasks} / ${totalTasks} कार्य पूरे` : `${doneTasks} of ${totalTasks} tasks done today`}
+                  </span>
+                  <span className="text-[10px] font-bold" style={{ color: 'var(--orange)' }}>{totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0}%</span>
+                </div>
+                <div className="h-1 rounded-full overflow-hidden" style={{ background: 'rgba(0,0,0,0.06)' }}>
+                  <div className="h-full rounded-full transition-all" style={{ width: `${totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0}%`, background: 'var(--orange)' }} />
+                </div>
+              </div>
+            ) : null;
+          })()}
           <div className="space-y-2">
             {/* Show top 3 recommended actions */}
             {dueCount > 0 && flags.spaced_repetition && (
@@ -648,6 +684,25 @@ export default function Dashboard() {
           </div>
         )}
       </main>
+
+      {/* Floating "Ask Doubt" Camera Button */}
+      <button
+        onClick={() => router.push('/scan')}
+        className="fixed flex items-center gap-2 rounded-full text-white font-bold text-sm shadow-lg transition-transform active:scale-95"
+        style={{
+          bottom: 'calc(5.5rem + env(safe-area-inset-bottom))',
+          right: '16px',
+          zIndex: 45,
+          background: 'linear-gradient(135deg, #E8581C, #F5A623)',
+          height: '56px',
+          paddingLeft: '16px',
+          paddingRight: '20px',
+          boxShadow: '0 4px 20px rgba(232, 88, 28, 0.4)',
+        }}
+      >
+        <span className="text-xl">📷</span>
+        <span>{isHi ? 'सवाल पूछो' : 'Ask Doubt'}</span>
+      </button>
 
       <TrustFooter />
       <BottomNav />
