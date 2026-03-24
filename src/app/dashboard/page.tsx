@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase, getStudentProfiles, getSubjects, getFeatureFlags, getNextTopics, getStudentNotifications, generateNotifications } from '@/lib/supabase';
-import { Card, StatCard, ProgressBar, SectionHeader, ActionTile, SubjectChip, Avatar, BottomNav, EmptyState } from '@/components/ui';
+import { Card, StatCard, ProgressBar, SectionHeader, ActionTile, SubjectChip, Avatar, BottomNav } from '@/components/ui';
 import SmartNudge from '@/components/ui/SmartNudge';
 import TrustFooter from '@/components/TrustFooter';
 import { DashboardSkeleton } from '@/components/Skeleton';
@@ -235,6 +235,28 @@ export default function Dashboard() {
       if (nudgeData) setNudges(nudgeData);
     } catch {}
 
+    // Fetch today's study plan tasks
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const { data: planData } = await supabase
+        .from('study_plans')
+        .select('id')
+        .eq('student_id', student.id)
+        .eq('is_active', true)
+        .limit(1);
+
+      if (planData && planData.length > 0) {
+        const { data: todayTasksData } = await supabase
+          .from('study_plan_tasks')
+          .select('id, title, task_type, status, duration_minutes, xp_reward, bloom_level, chapter_title')
+          .eq('plan_id', planData[0].id)
+          .eq('scheduled_date', today)
+          .order('sort_order')
+          .limit(5);
+        if (todayTasksData) setTodayTasks(todayTasksData);
+      }
+    } catch {}
+
     setDataLoaded(true);
   }, [student]);
 
@@ -306,7 +328,57 @@ export default function Dashboard() {
 
         {/* ═══ ABOVE THE FOLD: What should the user do right now? ═══ */}
 
+        {/* 0. New user onboarding — shown when no data at all */}
+        {dataLoaded && profiles.length === 0 && nextTopics.length === 0 && upcomingExams.length === 0 && (
+          <Card accent="#7C3AED" className="!p-5">
+            <h2 className="text-base font-bold mb-1" style={{ fontFamily: 'var(--font-display)' }}>
+              {isHi ? 'Alfanumrik में आपका स्वागत है!' : 'Welcome to Alfanumrik!'} 🎒
+            </h2>
+            <p className="text-xs text-[var(--text-3)] mb-4">{isHi ? 'तीन आसान कदमों में शुरू करो' : "Let's get started in three easy steps"}</p>
+            <div className="space-y-2.5">
+              {[
+                { step: 1, icon: '📚', label: isHi ? 'अपने विषय चुनो' : 'Pick your subjects', action: () => setShowSubjectPicker(true), done: selectedSubjects.length > 1 },
+                { step: 2, icon: '📅', label: isHi ? 'अध्ययन योजना बनाओ' : 'Create a study plan', action: () => router.push('/study-plan'), done: false },
+                { step: 3, icon: '🦊', label: isHi ? 'Foxy से कुछ भी पूछो' : 'Ask Foxy anything', action: () => router.push('/foxy'), done: false },
+              ].map(s => (
+                <button key={s.step} onClick={s.action} className="w-full flex items-center gap-3 p-2.5 rounded-xl transition-all active:scale-[0.98]"
+                  style={{ background: s.done ? 'rgba(22,163,74,0.06)' : 'var(--surface-2)', border: `1px solid ${s.done ? 'rgba(22,163,74,0.2)' : 'var(--border)'}` }}>
+                  <span className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"
+                    style={{ background: s.done ? '#16A34A' : 'var(--orange)' }}>
+                    {s.done ? '✓' : s.step}
+                  </span>
+                  <span className="text-sm font-semibold flex-1 text-left">{s.icon} {s.label}</span>
+                  <span className="text-[var(--text-3)]">{'\u2192'}</span>
+                </button>
+              ))}
+            </div>
+          </Card>
+        )}
+
+        {/* 1a. No upcoming exams fallback — motivational card */}
+        {dataLoaded && upcomingExams.length === 0 && (profiles.length > 0 || nextTopics.length > 0) && (
+          <button onClick={() => router.push('/foxy')} className="w-full text-left">
+            <div className="rounded-2xl p-4 relative overflow-hidden" style={{
+              background: 'linear-gradient(135deg, rgba(124,58,237,0.08), rgba(232,88,28,0.06))',
+              border: '1px solid rgba(124,58,237,0.12)',
+            }}>
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">🚀</span>
+                <div className="flex-1">
+                  <div className="text-sm font-bold">{isHi ? 'कोई परीक्षा नज़दीक नहीं — आगे बढ़ने का सही समय!' : 'No exams coming up — perfect time to get ahead!'}</div>
+                  <div className="text-xs font-semibold mt-0.5" style={{ color: 'var(--orange)' }}>
+                    {isHi ? 'पढ़ना शुरू करो →' : 'Start Learning \u2192'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </button>
+        )}
+
         {/* 1. Exam Countdown — Prominent, answering "What's urgent?" */}
+        {!dataLoaded && upcomingExams.length === 0 && (
+          <div className="rounded-2xl p-4 animate-pulse" style={{ background: 'var(--surface-2)', height: '80px' }} />
+        )}
         {upcomingExams.length > 0 && (
           <button onClick={() => router.push('/exams')} className="w-full">
             <Card accent={upcomingExams[0].days_left <= 7 ? '#DC2626' : 'var(--orange)'} className="!p-4">
@@ -369,6 +441,27 @@ export default function Dashboard() {
           </Card>
         )}
 
+        {/* 2a. No topics — onboarding nudge for study plan */}
+        {dataLoaded && nextTopics.length === 0 && profiles.length > 0 && (
+          <button onClick={() => router.push('/study-plan')} className="w-full text-left">
+            <div className="rounded-2xl p-4" style={{
+              background: 'rgba(124,58,237,0.04)',
+              border: '1.5px dashed rgba(124,58,237,0.3)',
+            }}>
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">📅</span>
+                <div className="flex-1">
+                  <div className="text-sm font-semibold">{isHi ? 'अपनी पहली अध्ययन योजना बनाओ' : 'Create your first study plan'}</div>
+                  <div className="text-xs text-[var(--text-3)] mt-0.5">{isHi ? 'व्यक्तिगत सिफारिशें पाओ' : 'Get personalized recommendations'}</div>
+                  <div className="text-xs font-semibold mt-1" style={{ color: '#7C3AED' }}>
+                    {isHi ? 'योजना बनाओ →' : 'Create Study Plan \u2192'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </button>
+        )}
+
         {/* 3. Today's Plan — Top 3 tasks only */}
         <Card>
           <div className="flex items-center justify-between mb-3">
@@ -425,6 +518,16 @@ export default function Dashboard() {
                 <span className="text-[var(--text-3)]">→</span>
               </button>
             ))}
+            {/* Today's Plan empty state — all caught up */}
+            {dataLoaded && !(dueCount > 0 && flags.spaced_repetition) && nextTopics.slice(1, 3).length === 0 && (
+              <div className="text-center py-4">
+                <div className="text-2xl mb-1">{'\uD83C\uDF89'}</div>
+                <div className="text-sm font-semibold">{isHi ? 'सब हो गया!' : "You're all caught up!"}</div>
+                <button onClick={() => router.push('/quiz')} className="text-xs font-semibold mt-1.5 inline-block" style={{ color: 'var(--orange)' }}>
+                  {isHi ? 'क्विज़ से XP कमाओ →' : 'Try a quiz to earn more XP \u2192'}
+                </button>
+              </div>
+            )}
             <button onClick={() => router.push('/study-plan')} className="w-full text-xs font-semibold py-2 text-center" style={{ color: 'var(--orange)' }}>
               {isHi ? 'पूरा प्लान देखो →' : 'See full plan →'}
             </button>
@@ -433,6 +536,18 @@ export default function Dashboard() {
 
         {/* ═══ BELOW THE FOLD: Progressive disclosure ═══ */}
 
+        {/* Knowledge Gaps — Loading shimmer */}
+        {!dataLoaded && (
+          <div className="rounded-2xl p-4 animate-pulse" style={{ background: 'var(--surface-2)' }}>
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 rounded-lg" style={{ background: 'var(--border)' }} />
+              <div className="flex-1 space-y-2">
+                <div className="h-3 w-2/3 rounded" style={{ background: 'var(--border)' }} />
+                <div className="h-2 w-full rounded" style={{ background: 'var(--border)' }} />
+              </div>
+            </div>
+          </div>
+        )}
         {/* Knowledge Gaps — Only if critical */}
         {knowledgeGaps.length > 0 && showGapsAlert && (
           <div className="rounded-2xl p-4 relative" style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)' }}>

@@ -186,32 +186,184 @@ function LoginScreen({ onLogin }: { onLogin: (g: any, s: any) => void }) {
 }
 
 // ============================================================
-// STAT CARD
+// PROGRESS METER — Semicircular gauge for overall readiness
 // ============================================================
-function Stat({ label, value, color, icon }: { label: string; value: string | number; color: string; icon: string }) {
+function ProgressMeter({ percent, name, grade }: { percent: number; name: string; grade: string | number }) {
+  const p = Math.min(100, Math.max(0, percent));
+  const color = p >= 70 ? '#059669' : p >= 40 ? '#D97706' : '#EF4444';
+  const label = p >= 70 ? 'On Track' : p >= 40 ? 'Needs Attention' : 'Falling Behind';
+  // SVG semicircle arc
+  const radius = 70;
+  const circumference = Math.PI * radius; // half-circle
+  const offset = circumference - (p / 100) * circumference;
   return (
-    <div style={{ backgroundColor: '#0F172A', borderRadius: 12, padding: '12px 14px', border: '1px solid #1E293B' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-        <span style={{ fontSize: 14 }}>{icon}</span>
-        <span style={{ color: '#64748B', fontSize: 11, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>{label}</span>
-      </div>
-      <span style={{ color, fontSize: 22, fontWeight: 700 }}>{value}</span>
+    <div style={{ ...cardStyle, textAlign: 'center', paddingTop: 24, paddingBottom: 20 }}>
+      <svg width="180" height="100" viewBox="0 0 180 100" style={{ display: 'block', margin: '0 auto' }}>
+        {/* Background arc */}
+        <path d="M 20 90 A 70 70 0 0 1 160 90" fill="none" stroke="#1E293B" strokeWidth="12" strokeLinecap="round" />
+        {/* Foreground arc */}
+        <path d="M 20 90 A 70 70 0 0 1 160 90" fill="none" stroke={color} strokeWidth="12" strokeLinecap="round"
+          strokeDasharray={`${circumference}`} strokeDashoffset={offset}
+          style={{ transition: 'stroke-dashoffset 0.8s ease, stroke 0.5s ease' }} />
+        <text x="90" y="75" textAnchor="middle" fill={color} fontSize="28" fontWeight="700" fontFamily="inherit">{p}%</text>
+        <text x="90" y="93" textAnchor="middle" fill="#64748B" fontSize="11" fontFamily="inherit">Study Health</text>
+      </svg>
+      <h2 style={{ fontSize: 20, fontWeight: 700, color: '#F8FAFC', margin: '8px 0 2px' }}>{name}</h2>
+      <p style={{ fontSize: 13, color: '#94A3B8', margin: 0 }}>Grade {grade}</p>
+      <span style={{
+        display: 'inline-block', marginTop: 8, padding: '4px 14px', borderRadius: 20,
+        fontSize: 12, fontWeight: 600, color,
+        backgroundColor: `${color}18`, border: `1px solid ${color}40`,
+      }}>{label}</span>
     </div>
   );
 }
 
 // ============================================================
-// WEEKLY ACTIVITY CHART
+// SMART ALERTS — Prominent parent alerts
+// ============================================================
+function SmartAlerts({ stats, weekSummary, dailyActivity, studentName }: {
+  stats: any; weekSummary: any; dailyActivity: any[]; studentName: string;
+}) {
+  const alerts: { icon: string; text: string; hint: string; severity: 'red' | 'amber' }[] = [];
+
+  // Detect inactive days from dailyActivity (count trailing inactive days)
+  if (dailyActivity && dailyActivity.length > 0) {
+    let inactiveDays = 0;
+    for (let i = dailyActivity.length - 1; i >= 0; i--) {
+      if (!dailyActivity[i].active) inactiveDays++;
+      else break;
+    }
+    if (inactiveDays > 2) {
+      alerts.push({
+        icon: '\u26A0\uFE0F',
+        text: `${studentName} hasn\u2019t studied in ${inactiveDays} days`,
+        hint: 'Encourage them to do a quick review session',
+        severity: inactiveDays > 4 ? 'red' : 'amber',
+      });
+    }
+  }
+
+  // Streak broken
+  if (stats && stats.streak === 0 && stats.totalQuizzes > 0) {
+    alerts.push({
+      icon: '\uD83D\uDD25',
+      text: 'Study streak was broken recently',
+      hint: 'A short 5-minute quiz can restart the streak',
+      severity: 'amber',
+    });
+  }
+
+  // Low accuracy warning
+  if (stats && stats.accuracy > 0 && stats.accuracy < 50) {
+    alerts.push({
+      icon: '\uD83D\uDCCB',
+      text: `Accuracy is at ${stats.accuracy}% \u2014 below target`,
+      hint: 'Suggest reviewing weak topics before attempting new ones',
+      severity: 'red',
+    });
+  }
+
+  // Low weekly activity
+  if (weekSummary && weekSummary.activeDays <= 2) {
+    alerts.push({
+      icon: '\uD83D\uDCCB',
+      text: `Only ${weekSummary.activeDays} active day${weekSummary.activeDays !== 1 ? 's' : ''} this week`,
+      hint: 'Encourage them to study a little each day',
+      severity: 'amber',
+    });
+  }
+
+  if (alerts.length === 0) return null;
+
+  return (
+    <div style={{ marginBottom: 14 }}>
+      {alerts.map((a, i) => {
+        const bg = a.severity === 'red' ? '#7F1D1D' : '#78350F';
+        const border = a.severity === 'red' ? '#DC2626' : '#D97706';
+        return (
+          <div key={i} style={{
+            backgroundColor: bg, borderRadius: 12, padding: '12px 14px',
+            border: `1px solid ${border}60`, marginBottom: i < alerts.length - 1 ? 8 : 0,
+          }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#FEF2F2' }}>
+              {a.icon} {a.text}
+            </div>
+            <div style={{ fontSize: 12, color: '#FBBF24', marginTop: 4, fontStyle: 'italic' }}>
+              {a.hint}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ============================================================
+// SIMPLE STAT — Compact single metric
+// ============================================================
+function SimpleStat({ label, value, color, icon }: { label: string; value: string | number; color: string; icon: string }) {
+  return (
+    <div style={{ backgroundColor: '#0F172A', borderRadius: 12, padding: '14px 16px', border: '1px solid #1E293B', textAlign: 'center', flex: 1 }}>
+      <span style={{ fontSize: 18 }}>{icon}</span>
+      <div style={{ color, fontSize: 24, fontWeight: 700, margin: '4px 0 2px' }}>{value}</div>
+      <div style={{ color: '#64748B', fontSize: 11, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>{label}</div>
+    </div>
+  );
+}
+
+// ============================================================
+// WEAK AREAS — Top struggling subjects/topics
+// ============================================================
+function WeakAreas({ bktMastery, stats }: { bktMastery: any; stats: any }) {
+  const weakTopics: { icon: string; name: string }[] = [];
+
+  // Use BKT data to find weak areas
+  if (bktMastery && bktMastery.levels) {
+    const attempted = bktMastery.levels.attempted || 0;
+    const familiar = bktMastery.levels.familiar || 0;
+    if (attempted > 0) weakTopics.push({ icon: '\uD83D\uDCD0', name: `${attempted} topic${attempted > 1 ? 's' : ''} barely started` });
+    if (familiar > 0) weakTopics.push({ icon: '\uD83D\uDCD8', name: `${familiar} topic${familiar > 1 ? 's' : ''} need more practice` });
+  }
+
+  // Low accuracy as a weak signal
+  if (stats && stats.accuracy > 0 && stats.accuracy < 60) {
+    weakTopics.push({ icon: '\uD83C\uDFAF', name: `Overall accuracy is low (${stats.accuracy}%)` });
+  }
+
+  if (weakTopics.length === 0) return null;
+
+  return (
+    <div style={cardStyle}>
+      <h3 style={cardTitle}>Weak Areas</h3>
+      {weakTopics.slice(0, 3).map((t, i) => (
+        <div key={i} style={{
+          display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px',
+          backgroundColor: '#1E293B', borderRadius: 10, marginBottom: i < Math.min(weakTopics.length, 3) - 1 ? 8 : 0,
+        }}>
+          <span style={{ fontSize: 20 }}>{t.icon}</span>
+          <div style={{ flex: 1 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#E2E8F0' }}>{t.name}</span>
+            <div style={{ fontSize: 11, color: '#D97706', marginTop: 2 }}>Needs practice</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ============================================================
+// WEEKLY ACTIVITY CHART — Simplified bars
 // ============================================================
 function WeeklyChart({ data }: { data: any[] }) {
   const maxQ = Math.max(...data.map(d => d.quizzes), 1);
   return (
     <div style={cardStyle}>
       <h3 style={cardTitle}>This week</h3>
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 100, marginTop: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 80, marginTop: 8 }}>
         {data.map((d, i) => (
           <div key={i} style={{ flex: 1, textAlign: 'center' }}>
-            <div style={{ height: Math.max(4, (d.quizzes / maxQ) * 80), backgroundColor: d.active ? '#6366F1' : '#1E293B', borderRadius: 4, marginBottom: 6, transition: 'height 0.3s' }} />
+            <div style={{ height: Math.max(4, (d.quizzes / maxQ) * 64), backgroundColor: d.active ? '#6366F1' : '#1E293B', borderRadius: 4, marginBottom: 6, transition: 'height 0.3s' }} />
             <span style={{ fontSize: 10, color: d.active ? '#E2E8F0' : '#475569' }}>{d.label}</span>
           </div>
         ))}
@@ -221,24 +373,34 @@ function WeeklyChart({ data }: { data: any[] }) {
 }
 
 // ============================================================
-// BKT MASTERY RING
+// SIMPLIFIED MASTERY — Mastered / In Progress / Needs Work
 // ============================================================
-function MasteryRing({ levels, total }: { levels: Record<string, number>; total: number }) {
-  if (total === 0) return <p style={{ color: '#475569', fontSize: 13, fontStyle: 'italic' }}>No adaptive data yet.</p>;
-  const data = [
-    { label: 'Mastered', count: levels.mastered || 0, color: '#059669' },
-    { label: 'Proficient', count: levels.proficient || 0, color: '#7C3AED' },
-    { label: 'Familiar', count: levels.familiar || 0, color: '#2563EB' },
-    { label: 'Attempted', count: levels.attempted || 0, color: '#D97706' },
+function SimpleMastery({ levels, total }: { levels: Record<string, number>; total: number }) {
+  if (total === 0) return null;
+  const mastered = (levels.mastered || 0);
+  const inProgress = (levels.proficient || 0) + (levels.familiar || 0);
+  const needsWork = (levels.attempted || 0);
+  const items = [
+    { label: 'Mastered', count: mastered, color: '#059669' },
+    { label: 'In Progress', count: inProgress, color: '#6366F1' },
+    { label: 'Needs Work', count: needsWork, color: '#D97706' },
   ].filter(d => d.count > 0);
+  if (items.length === 0) return null;
   return (
-    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-      {data.map(d => (
-        <div key={d.label} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', backgroundColor: '#1E293B', borderRadius: 8, borderLeft: `3px solid ${d.color}` }}>
-          <span style={{ fontSize: 18, fontWeight: 700, color: d.color }}>{d.count}</span>
-          <span style={{ fontSize: 12, color: '#94A3B8' }}>{d.label}</span>
-        </div>
-      ))}
+    <div style={cardStyle}>
+      <h3 style={cardTitle}>Topic Mastery</h3>
+      <div style={{ display: 'flex', gap: 10 }}>
+        {items.map(d => (
+          <div key={d.label} style={{
+            flex: 1, textAlign: 'center', padding: '10px 8px',
+            backgroundColor: '#1E293B', borderRadius: 10, borderTop: `3px solid ${d.color}`,
+          }}>
+            <div style={{ fontSize: 22, fontWeight: 700, color: d.color }}>{d.count}</div>
+            <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2 }}>{d.label}</div>
+          </div>
+        ))}
+      </div>
+      <p style={{ fontSize: 11, color: '#475569', margin: '10px 0 0' }}>{total} concepts tracked</p>
     </div>
   );
 }
@@ -279,62 +441,111 @@ function Dashboard({ guardian, student }: { guardian: any; student: any }) {
   if (!dash || dash.error) return <div style={pageStyle}><div style={{ textAlign: 'center', padding: 60, color: '#EF4444' }}>{dash?.error || 'Failed to load dashboard'}</div></div>;
 
   const s = dash.stats;
+  const childName = dash.student?.name || student.name;
+  const childGrade = dash.student?.grade || student.grade;
+
+  // Compute overall readiness % from available signals
+  const overallPercent = Math.round(
+    ((s.accuracy || 0) * 0.4) +
+    (Math.min((s.streak || 0) / 7, 1) * 100 * 0.2) +
+    ((dash.weekSummary ? Math.min(dash.weekSummary.activeDays / 7, 1) * 100 : 0) * 0.2) +
+    ((dash.bktMastery && dash.bktMastery.total > 0
+      ? ((dash.bktMastery.levels.mastered || 0) + (dash.bktMastery.levels.proficient || 0)) / dash.bktMastery.total * 100
+      : (s.accuracy || 0)) * 0.2)
+  );
+
+  // Download report handler
+  const downloadReport = () => {
+    const report = {
+      student: childName,
+      grade: childGrade,
+      generatedAt: new Date().toISOString(),
+      overallProgress: `${overallPercent}%`,
+      weekSummary: dash.weekSummary ? {
+        quizzes: dash.weekSummary.quizzes,
+        avgScore: `${dash.weekSummary.avgScore}%`,
+        activeDays: `${dash.weekSummary.activeDays}/7`,
+      } : null,
+      stats: {
+        studyTimeMinutes: s.minutes || 0,
+        accuracy: `${s.accuracy || 0}%`,
+        streak: `${s.streak || 0} days`,
+        totalQuizzes: s.totalQuizzes || 0,
+      },
+      mastery: dash.bktMastery ? {
+        total: dash.bktMastery.total,
+        mastered: dash.bktMastery.levels.mastered || 0,
+        inProgress: (dash.bktMastery.levels.proficient || 0) + (dash.bktMastery.levels.familiar || 0),
+        needsWork: dash.bktMastery.levels.attempted || 0,
+      } : null,
+    };
+    const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${childName.replace(/\s+/g, '_')}_weekly_report.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div style={pageStyle}>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
 
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid #1E293B' }}>
-        <div>
-          <p style={{ fontSize: 11, color: '#6366F1', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: 1, margin: '0 0 4px' }}>Parent Dashboard</p>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#F8FAFC', margin: 0 }}>{dash.student?.name || student.name}</h1>
-          <p style={{ fontSize: 14, color: '#64748B', margin: '4px 0 0' }}>Grade {dash.student?.grade || student.grade} | {dash.subject || 'Science'}</p>
-        </div>
+      {/* Header — minimal */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, paddingBottom: 12, borderBottom: '1px solid #1E293B' }}>
+        <p style={{ fontSize: 11, color: '#6366F1', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: 1, margin: 0 }}>Parent Dashboard</p>
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={load} style={{ padding: '6px 12px', background: 'transparent', color: '#6366F1', border: '1px solid #334155', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>Refresh</button>
           <button onClick={logout} style={{ padding: '6px 12px', background: 'transparent', color: '#94A3B8', border: '1px solid #334155', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>Logout</button>
         </div>
       </div>
 
-      {/* Stats Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginBottom: 16 }}>
-        <Stat icon="&#x2B50;" label="XP" value={s.xp || 0} color="#F59E0B" />
-        <Stat icon="&#x1F525;" label="Streak" value={`${s.streak || 0}d`} color="#EF4444" />
-        <Stat icon="&#x1F3AF;" label="Accuracy" value={`${s.accuracy || 0}%`} color="#059669" />
-        <Stat icon="&#x1F4DA;" label="Quizzes" value={s.totalQuizzes || 0} color="#6366F1" />
+      {/* A. Child Progress Meter */}
+      <ProgressMeter percent={overallPercent} name={childName} grade={childGrade} />
+
+      {/* B. Smart Parent Alerts */}
+      <SmartAlerts
+        stats={s}
+        weekSummary={dash.weekSummary}
+        dailyActivity={dash.dailyActivity || []}
+        studentName={childName}
+      />
+
+      {/* C. Download Report Button */}
+      <button onClick={downloadReport} style={{
+        width: '100%', padding: '14px 20px', backgroundColor: '#1E293B',
+        color: '#E2E8F0', border: '1px solid #334155', borderRadius: 12,
+        fontSize: 15, fontWeight: 600, cursor: 'pointer', marginBottom: 14,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+      }}>
+        {'\uD83D\uDCE5'} Download Weekly Report
+      </button>
+
+      {/* D. Three Simple Metrics */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+        <SimpleStat icon={'\u23F1\uFE0F'} label="Study Time" value={`${s.minutes || 0}m`} color="#8B5CF6" />
+        <SimpleStat icon={'\uD83C\uDFAF'} label="Accuracy" value={`${s.accuracy || 0}%`} color={s.accuracy >= 70 ? '#059669' : s.accuracy >= 40 ? '#D97706' : '#EF4444'} />
+        <SimpleStat
+          icon={'\uD83D\uDCDA'}
+          label="Mastered"
+          value={dash.bktMastery ? (dash.bktMastery.levels.mastered || 0) : 0}
+          color="#059669"
+        />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: 10, marginBottom: 16 }}>
-        <Stat icon="&#x23F1;" label="Study time" value={`${s.minutes || 0}m`} color="#8B5CF6" />
-        <Stat icon="&#x1F4AC;" label="Foxy chats" value={s.totalChats || 0} color="#EC4899" />
-        <Stat icon="&#x1F4CA;" label="Avg score" value={`${s.avgScore || 0}%`} color="#2563EB" />
-      </div>
+      {/* E. Weak Areas */}
+      <WeakAreas bktMastery={dash.bktMastery} stats={s} />
 
-      {/* Weekly Activity */}
+      {/* Weekly Activity — simplified */}
       {dash.dailyActivity && <WeeklyChart data={dash.dailyActivity} />}
 
-      {/* Week Summary */}
-      {dash.weekSummary && (
-        <div style={{ ...cardStyle, display: 'flex', justifyContent: 'space-around', padding: '14px 20px', textAlign: 'center' }}>
-          <div><span style={{ fontSize: 20, fontWeight: 700, color: '#6366F1' }}>{dash.weekSummary.quizzes}</span><br /><span style={{ fontSize: 11, color: '#64748B' }}>quizzes this week</span></div>
-          <div style={{ width: 1, backgroundColor: '#1E293B' }} />
-          <div><span style={{ fontSize: 20, fontWeight: 700, color: '#059669' }}>{dash.weekSummary.avgScore}%</span><br /><span style={{ fontSize: 11, color: '#64748B' }}>avg score</span></div>
-          <div style={{ width: 1, backgroundColor: '#1E293B' }} />
-          <div><span style={{ fontSize: 20, fontWeight: 700, color: '#D97706' }}>{dash.weekSummary.activeDays}/7</span><br /><span style={{ fontSize: 11, color: '#64748B' }}>active days</span></div>
-        </div>
-      )}
-
-      {/* BKT Adaptive Mastery */}
+      {/* Simplified Mastery (Mastered / In Progress / Needs Work) */}
       {dash.bktMastery && dash.bktMastery.total > 0 && (
-        <div style={cardStyle}>
-          <h3 style={cardTitle}>Adaptive mastery (BKT engine)</h3>
-          <MasteryRing levels={dash.bktMastery.levels} total={dash.bktMastery.total} />
-          <p style={{ fontSize: 12, color: '#475569', margin: '10px 0 0' }}>{dash.bktMastery.total} concepts tracked by the Bayesian Knowledge Tracing engine</p>
-        </div>
+        <SimpleMastery levels={dash.bktMastery.levels} total={dash.bktMastery.total} />
       )}
 
-      {/* Active Bursts / Adventures */}
+      {/* Active Bursts / Adventures — kept as-is */}
       {dash.activeBursts && dash.activeBursts.length > 0 && (
         <div style={cardStyle}>
           <h3 style={cardTitle}>Active learning adventures</h3>
@@ -356,7 +567,7 @@ function Dashboard({ guardian, student }: { guardian: any; student: any }) {
         </div>
       )}
 
-      {/* Insights */}
+      {/* Insights — kept */}
       {dash.insights && dash.insights.length > 0 && (
         <div style={cardStyle}>
           <h3 style={cardTitle}>Insights for you</h3>
@@ -366,9 +577,9 @@ function Dashboard({ guardian, student }: { guardian: any; student: any }) {
         </div>
       )}
 
-      {/* Tips toggle */}
+      {/* Tips — collapsed by default */}
       <button onClick={() => setShowTips(!showTips)} style={{ width: '100%', padding: '10px 16px', backgroundColor: '#0F172A', color: '#6366F1', border: '1px solid #1E293B', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', marginBottom: 14 }}>
-        {showTips ? 'Hide' : 'Show'} parenting tips
+        {showTips ? '\u25B2 Hide' : '\u25BC Show'} parenting tips
       </button>
       {showTips && tips.length > 0 && (
         <div style={cardStyle}>
