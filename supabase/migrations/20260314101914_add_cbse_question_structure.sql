@@ -1,0 +1,3 @@
+-- Migration: add_cbse_question_structure
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

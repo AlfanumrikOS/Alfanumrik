@@ -1,0 +1,3 @@
+-- Migration: adaptive_learning_rpcs
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

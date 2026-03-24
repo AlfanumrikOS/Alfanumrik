@@ -1,0 +1,3 @@
+-- Migration: fix_get_user_role_with_onboarding
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

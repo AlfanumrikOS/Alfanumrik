@@ -1,0 +1,3 @@
+-- Migration: devops_agent_v2_tables
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

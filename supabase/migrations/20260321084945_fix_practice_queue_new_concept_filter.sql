@@ -1,0 +1,3 @@
+-- Migration: fix_practice_queue_new_concept_filter
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

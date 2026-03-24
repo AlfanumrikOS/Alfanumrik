@@ -1,0 +1,3 @@
+-- Migration: launch_production_hardening
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

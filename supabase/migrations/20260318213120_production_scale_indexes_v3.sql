@@ -1,0 +1,3 @@
+-- Migration: production_scale_indexes_v3
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

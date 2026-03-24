@@ -1,0 +1,3 @@
+-- Migration: create_interactive_simulations_table
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

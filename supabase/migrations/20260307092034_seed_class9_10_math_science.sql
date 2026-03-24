@@ -1,0 +1,3 @@
+-- Migration: seed_class9_10_math_science
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

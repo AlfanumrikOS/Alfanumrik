@@ -1,0 +1,3 @@
+-- Migration: create_spaced_repetition_and_diagnostic_functions
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

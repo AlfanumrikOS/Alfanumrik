@@ -1,0 +1,3 @@
+-- Migration: seed_assessment_questions_multi_grade
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

@@ -1,0 +1,3 @@
+-- Migration: add_name_change_count_to_students
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

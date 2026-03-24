@@ -1,0 +1,3 @@
+-- Migration: unified_3_layer_depth_model
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

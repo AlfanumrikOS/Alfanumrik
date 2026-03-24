@@ -1,0 +1,3 @@
+-- Migration: super_admin_setup
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

@@ -1,0 +1,3 @@
+-- Migration: make_guardian_id_nullable_for_pending_invites
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

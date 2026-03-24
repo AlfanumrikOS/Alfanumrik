@@ -1,0 +1,3 @@
+-- Migration: alfanumrik_v2_question_responses_and_enhancements
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

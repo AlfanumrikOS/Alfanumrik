@@ -1,0 +1,3 @@
+-- Migration: rate_limiting_table
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

@@ -1,0 +1,3 @@
+-- Migration: adaptive_orchestrator_schema
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

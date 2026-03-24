@@ -1,0 +1,3 @@
+-- Migration: fix_security_function_search_paths
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

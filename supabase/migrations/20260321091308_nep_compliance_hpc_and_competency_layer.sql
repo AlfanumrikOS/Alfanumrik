@@ -1,0 +1,3 @@
+-- Migration: nep_compliance_hpc_and_competency_layer
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

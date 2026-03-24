@@ -1,0 +1,3 @@
+-- Migration: study_plan_generator_v3_with_topics
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

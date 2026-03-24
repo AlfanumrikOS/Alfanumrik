@@ -1,0 +1,3 @@
+-- Migration: misconception_remediation_tables
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

@@ -1,0 +1,3 @@
+-- Migration: fix_rls_classes_schools_and_remaining_tables
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

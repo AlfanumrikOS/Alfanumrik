@@ -1,0 +1,3 @@
+-- Migration: learning_graph_6_level
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

@@ -1,0 +1,3 @@
+-- Migration: handle_new_user_trigger_and_role_detection
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

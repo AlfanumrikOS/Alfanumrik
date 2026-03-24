@@ -1,0 +1,3 @@
+-- Migration: create_ai_response_verification_system
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

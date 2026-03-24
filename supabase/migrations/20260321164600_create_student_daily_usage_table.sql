@@ -1,0 +1,3 @@
+-- Migration: create_student_daily_usage_table
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

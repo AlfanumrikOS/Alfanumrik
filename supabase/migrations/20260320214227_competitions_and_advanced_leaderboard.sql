@@ -1,0 +1,3 @@
+-- Migration: competitions_and_advanced_leaderboard
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

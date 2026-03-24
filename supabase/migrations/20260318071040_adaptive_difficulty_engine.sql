@@ -1,0 +1,3 @@
+-- Migration: adaptive_difficulty_engine
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

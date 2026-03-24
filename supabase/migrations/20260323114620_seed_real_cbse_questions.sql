@@ -1,0 +1,3 @@
+-- Migration: seed_real_cbse_questions
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

@@ -1,0 +1,3 @@
+-- Migration: tighten_rls_critical_tables
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

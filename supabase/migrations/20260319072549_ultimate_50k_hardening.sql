@@ -1,0 +1,3 @@
+-- Migration: ultimate_50k_hardening
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

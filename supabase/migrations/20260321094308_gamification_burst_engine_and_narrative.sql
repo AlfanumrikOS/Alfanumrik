@@ -1,0 +1,3 @@
+-- Migration: gamification_burst_engine_and_narrative
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

@@ -1,0 +1,3 @@
+-- Migration: cognitive_learner_model_v2
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

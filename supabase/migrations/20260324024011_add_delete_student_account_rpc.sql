@@ -1,0 +1,3 @@
+-- Migration: add_delete_student_account_rpc
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

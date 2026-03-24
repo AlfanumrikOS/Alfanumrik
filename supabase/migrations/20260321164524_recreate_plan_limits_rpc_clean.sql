@@ -1,0 +1,3 @@
+-- Migration: recreate_plan_limits_rpc_clean
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

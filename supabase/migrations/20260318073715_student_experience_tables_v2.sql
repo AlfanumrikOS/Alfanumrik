@@ -1,0 +1,3 @@
+-- Migration: student_experience_tables_v2
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

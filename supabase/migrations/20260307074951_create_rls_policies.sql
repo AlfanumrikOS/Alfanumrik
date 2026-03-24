@@ -1,0 +1,3 @@
+-- Migration: create_rls_policies
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

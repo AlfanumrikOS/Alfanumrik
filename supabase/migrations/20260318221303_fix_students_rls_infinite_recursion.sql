@@ -1,0 +1,3 @@
+-- Migration: fix_students_rls_infinite_recursion
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

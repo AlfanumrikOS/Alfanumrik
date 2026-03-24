@@ -1,0 +1,3 @@
+-- Migration: create_student_stats_view
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

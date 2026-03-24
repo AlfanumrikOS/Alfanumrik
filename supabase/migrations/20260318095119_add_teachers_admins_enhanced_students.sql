@@ -1,0 +1,3 @@
+-- Migration: add_teachers_admins_enhanced_students
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

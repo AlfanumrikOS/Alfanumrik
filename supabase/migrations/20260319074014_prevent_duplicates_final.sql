@@ -1,0 +1,3 @@
+-- Migration: prevent_duplicates_final
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

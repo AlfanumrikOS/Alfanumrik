@@ -1,0 +1,3 @@
+-- Migration: fix_drop_broken_archives_and_recreate
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

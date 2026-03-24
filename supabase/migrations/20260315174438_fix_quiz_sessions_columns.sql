@@ -1,0 +1,3 @@
+-- Migration: fix_quiz_sessions_columns
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

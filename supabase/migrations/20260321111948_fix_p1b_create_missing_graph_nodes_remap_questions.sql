@@ -1,0 +1,3 @@
+-- Migration: fix_p1b_create_missing_graph_nodes_remap_questions
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

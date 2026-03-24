@@ -1,0 +1,3 @@
+-- Migration: alfanumrik_v2_cognitive_metrics_and_tracking
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

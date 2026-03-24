@@ -1,0 +1,3 @@
+-- Migration: bulk_generate_starter_questions_for_all_missing_chapters
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

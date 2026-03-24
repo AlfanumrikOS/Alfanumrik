@@ -1,0 +1,3 @@
+-- Migration: auto_create_student_on_signup
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

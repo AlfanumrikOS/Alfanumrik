@@ -1,0 +1,3 @@
+-- Migration: fix_question_bank_grade_format_and_rpc
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

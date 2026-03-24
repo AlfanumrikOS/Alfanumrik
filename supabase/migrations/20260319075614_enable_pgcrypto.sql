@@ -1,0 +1,3 @@
+-- Migration: enable_pgcrypto
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

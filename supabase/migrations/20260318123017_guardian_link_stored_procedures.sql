@@ -1,0 +1,3 @@
+-- Migration: guardian_link_stored_procedures
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

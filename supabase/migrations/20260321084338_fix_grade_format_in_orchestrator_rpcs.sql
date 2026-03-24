@@ -1,0 +1,3 @@
+-- Migration: fix_grade_format_in_orchestrator_rpcs
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

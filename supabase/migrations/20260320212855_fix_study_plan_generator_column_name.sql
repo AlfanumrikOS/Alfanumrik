@@ -1,0 +1,3 @@
+-- Migration: fix_study_plan_generator_column_name
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

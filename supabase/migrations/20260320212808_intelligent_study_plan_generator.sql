@@ -1,0 +1,3 @@
+-- Migration: intelligent_study_plan_generator
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

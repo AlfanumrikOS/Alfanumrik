@@ -1,0 +1,3 @@
+-- Migration: fix_study_plan_task_types
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference
