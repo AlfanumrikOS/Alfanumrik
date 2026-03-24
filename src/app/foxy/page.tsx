@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@/lib/constants';
-import { BottomNav } from '@/components/ui';
+import { BottomNav, FocusMode } from '@/components/ui';
 import { LESSON_STEPS, getLessonStepPrompt, getNextLessonStep, type LessonStep, type LessonState } from '@/lib/cognitive-engine';
 
 /* ══════════════════════════════════════════════════════════════
@@ -323,6 +323,8 @@ export default function FoxyPage() {
   const [studentSubs, setStudentSubs] = useState<string[]>([]);
   const [showTopicSheet, setShowTopicSheet] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [focusMode, setFocusMode] = useState(false);
+  const [focusSuggestionDismissed, setFocusSuggestionDismissed] = useState(false);
 
   // Error reporting
   const [reportModal, setReportModal] = useState<{ msgId: number; studentMsg: string; foxyMsg: string } | null>(null);
@@ -565,6 +567,7 @@ export default function FoxyPage() {
           {LANGS.map(l => <button key={l.code} onClick={() => { if (!isLangLocked) setLanguage(l.code); }} className="text-[10px] font-bold px-2 py-1 rounded-lg transition-all" style={{ background: language === l.code ? 'rgba(255,255,255,0.2)' : 'transparent', color: language === l.code ? '#fff' : 'rgba(255,255,255,0.4)', opacity: isLangLocked && language !== l.code ? 0.2 : 1, cursor: isLangLocked ? 'default' : 'pointer' }}>{l.label}</button>)}
           {isLangLocked && <span className="text-[8px] text-white/30">🔒</span>}
           <button onClick={() => { if (voiceEnabled) { stopSpeaking(); setVoiceEnabled(false); } else setVoiceEnabled(true); }} className="ml-1 px-2 py-1 rounded-lg text-sm transition-all" style={{ background: voiceEnabled ? 'rgba(245,166,35,0.3)' : 'rgba(255,255,255,0.1)' }}>{voiceEnabled ? (isSpeaking ? '🔊' : '🔈') : '🔇'}</button>
+          <button onClick={() => setFocusMode(true)} className="ml-1 px-2 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95" style={{ background: focusMode ? 'rgba(245,166,35,0.3)' : 'rgba(255,255,255,0.1)', color: focusMode ? '#F5A623' : 'rgba(255,255,255,0.6)' }} title="Focus Mode">🎯</button>
         </div>
       </header>
 
@@ -639,6 +642,20 @@ export default function FoxyPage() {
           ))}
         </div>
       </div>
+
+      {/* Focus mode suggestion for Learn/Practice */}
+      {!focusMode && !focusSuggestionDismissed && (sessionMode === 'learn' || sessionMode === 'practice') && messages.length >= 2 && (
+        <div className="px-3 py-2 flex items-center gap-2 animate-slide-down" style={{ background: `${cfg.color}06`, borderBottom: `1px solid ${cfg.color}15` }}>
+          <span className="text-sm">🎯</span>
+          <span className="text-[11px] font-semibold flex-1" style={{ color: cfg.color }}>
+            {language === 'hi' ? 'बेहतर एकाग्रता के लिए Focus Mode आज़माएं!' : 'Try Focus Mode for distraction-free studying!'}
+          </span>
+          <button onClick={() => setFocusMode(true)} className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-white transition-all active:scale-95" style={{ background: cfg.color }}>
+            {language === 'hi' ? 'शुरू करें' : 'Start'}
+          </button>
+          <button onClick={() => setFocusSuggestionDismissed(true)} className="text-[10px] px-1" style={{ color: 'var(--text-3)' }}>✕</button>
+        </div>
+      )}
 
       {/* Close dropdowns */}
       {(showSubjectDD || showChapterDD) && <div className="fixed inset-0 z-40" onClick={() => { setShowSubjectDD(false); setShowChapterDD(false); }} />}
@@ -938,6 +955,47 @@ export default function FoxyPage() {
       )}
 
       {isSpeaking && <button onClick={stopSpeaking} className="fixed bottom-20 right-4 z-50 w-12 h-12 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-all" style={{ background: '#EF4444', color: '#fff', fontSize: 18, boxShadow: '0 4px 20px rgba(239,68,68,0.4)' }}>■</button>}
+
+      {/* ═══ FOCUS MODE OVERLAY ═══ */}
+      <FocusMode
+        active={focusMode}
+        onExit={() => setFocusMode(false)}
+        subjectColor={cfg.color}
+        subjectIcon={cfg.icon}
+        subjectName={cfg.name}
+      >
+        {/* Replicate chat column inside focus mode */}
+        <div className="flex-1 flex flex-col min-w-0">
+          <div className="flex-1 overflow-y-auto px-3 md:px-5 py-4">
+            <div className="focus-reading">
+              {messages.map((msg) => (
+                <div key={msg.id} className="mb-4 w-full animate-fade-in">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    {msg.role === 'tutor'
+                      ? <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs shrink-0" style={{ background: 'linear-gradient(135deg, #E8590C, #F59E0B)' }}>{FOXY_FACES.idle}</div>
+                      : <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] text-white font-bold shrink-0" style={{ background: `linear-gradient(135deg, ${cfg.color}, ${cfg.color}bb)` }}>{student?.name?.[0]?.toUpperCase() || 'S'}</div>}
+                    <span className="text-xs font-bold" style={{ color: msg.role === 'tutor' ? 'var(--orange)' : cfg.color }}>{msg.role === 'tutor' ? 'Foxy' : (student?.name || 'You')}</span>
+                    {(msg.xp ?? 0) > 0 && <span className="px-2 py-0.5 rounded-lg text-[10px] font-extrabold text-white" style={{ background: 'linear-gradient(135deg, #F59E0B, #EF4444)' }}>+{msg.xp} XP</span>}
+                  </div>
+                  <div className="w-full rounded-2xl px-4 py-3 leading-relaxed" style={{ background: msg.role === 'student' ? `${cfg.color}08` : 'var(--surface-1)', color: 'var(--text-1)', border: msg.role === 'student' ? `1.5px solid ${cfg.color}20` : '1px solid var(--border)' }}>
+                    {msg.role === 'tutor' ? <RichContent content={msg.content} subjectKey={activeSubject} /> : <div className="whitespace-pre-wrap">{msg.content}</div>}
+                  </div>
+                </div>
+              ))}
+              {loading && (
+                <div className="flex gap-2.5 items-center mb-4">
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-base shrink-0" style={{ background: 'linear-gradient(135deg, #E8590C, #F59E0B)', animation: 'pulse 1s infinite' }}>{FOXY_FACES.thinking}</div>
+                  <div className="px-4 py-3 rounded-2xl rounded-bl-sm flex items-center gap-1.5" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
+                    {[0, 1, 2].map(i => <div key={i} className="w-2 h-2 rounded-full" style={{ background: cfg.color, animation: `pulse 1s infinite ${i * 0.2}s`, opacity: 0.5 }} />)}
+                    <span className="text-xs text-[var(--text-3)] ml-1.5">Foxy is thinking...</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          <ChatInput onSubmit={sendMessage} subjectKey={activeSubject} disabled={loading} onMicTap={isListening ? stopListening : startListening} isListening={isListening} />
+        </div>
+      </FocusMode>
 
       <BottomNav />
 {/* Foxy styles in globals.css */}

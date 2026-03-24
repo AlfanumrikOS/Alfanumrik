@@ -4,29 +4,41 @@ import { useAuth, type UserRole } from '@/lib/AuthContext';
 import { ROLE_CONFIG } from '@/lib/constants';
 
 /* ═══ NAVIGATION ARCHITECTURE ═══
- * Research-backed: Duolingo 5-tab model (the gold standard for EdTech)
- * - 5 bottom tabs max on mobile (thumb-zone optimized)
- * - Center position = primary action (Foxy AI tutor)
- * - "More" sheet for secondary features (no hidden features)
- * - Desktop sidebar groups by function with section headers
- * - Every page reachable in ≤ 2 taps
+ * Max 4 tabs on mobile bottom nav (cleaner, less cluttered)
+ * - Student: Home, Study, Progress, Profile  +  Foxy FAB floating above nav
+ * - Teacher: Home, Classes, Reports, Profile
+ * - Guardian: Home, Children, Reports, Profile
+ * - Desktop sidebar unchanged — groups by function with section headers
+ * - Less-used pages accessible from Home or Profile screens
  */
 
-const CORE_TABS = [
+interface NavTab {
+  href: string;
+  icon: string;
+  activeIcon: string;
+  label: string;
+  labelHi: string;
+}
+
+const STUDENT_TABS: NavTab[] = [
   { href: '/dashboard', icon: '🏠', activeIcon: '🏠', label: 'Home', labelHi: 'होम' },
-  { href: '/study-plan', icon: '📚', activeIcon: '📚', label: 'Learn', labelHi: 'सीखो' },
-  { href: '/foxy', icon: '🦊', activeIcon: '🦊', label: 'Foxy', labelHi: 'फॉक्सी', isFab: true },
-  { href: '/quiz', icon: '⚡', activeIcon: '⚡', label: 'Quiz', labelHi: 'क्विज़' },
-  { href: '/profile', icon: '👤', activeIcon: '👤', label: 'Me', labelHi: 'मैं' },
+  { href: '/study-plan', icon: '📚', activeIcon: '📚', label: 'Study', labelHi: 'पढ़ाई' },
+  { href: '/progress', icon: '📈', activeIcon: '📈', label: 'Progress', labelHi: 'प्रगति' },
+  { href: '/profile', icon: '👤', activeIcon: '👤', label: 'Profile', labelHi: 'प्रोफ़ाइल' },
 ];
 
-const MORE_ITEMS = [
-  { href: '/simulations', icon: '🔬', label: 'Interactive Lab', labelHi: 'इंटरैक्टिव लैब' },
-  { href: '/leaderboard', icon: '🏆', label: 'Rankings & Compete', labelHi: 'रैंकिंग और प्रतियोगिता' },
-  { href: '/progress', icon: '📈', label: 'My Progress', labelHi: 'मेरी प्रगति' },
-  { href: '/review', icon: '🔄', label: 'Flashcard Review', labelHi: 'फ्लैशकार्ड रिव्यू' },
-  { href: '/notifications', icon: '🔔', label: 'Notifications', labelHi: 'सूचनाएँ' },
-  { href: '/help', icon: '❓', label: 'Help & Support', labelHi: 'सहायता और सपोर्ट' },
+const TEACHER_TABS: NavTab[] = [
+  { href: '/teacher', icon: '🏠', activeIcon: '🏠', label: 'Home', labelHi: 'होम' },
+  { href: '/teacher/classes', icon: '🏫', activeIcon: '🏫', label: 'Classes', labelHi: 'कक्षाएँ' },
+  { href: '/teacher/reports', icon: '📊', activeIcon: '📊', label: 'Reports', labelHi: 'रिपोर्ट' },
+  { href: '/teacher/profile', icon: '👤', activeIcon: '👤', label: 'Profile', labelHi: 'प्रोफ़ाइल' },
+];
+
+const GUARDIAN_TABS: NavTab[] = [
+  { href: '/parent', icon: '🏠', activeIcon: '🏠', label: 'Home', labelHi: 'होम' },
+  { href: '/parent/children', icon: '👧', activeIcon: '👧', label: 'Children', labelHi: 'बच्चे' },
+  { href: '/parent/reports', icon: '📊', activeIcon: '📊', label: 'Reports', labelHi: 'रिपोर्ट' },
+  { href: '/parent/profile', icon: '👤', activeIcon: '👤', label: 'Profile', labelHi: 'प्रोफ़ाइल' },
 ];
 
 const SIDEBAR_SECTIONS = [
@@ -63,42 +75,10 @@ const SIDEBAR_SECTIONS = [
   },
 ];
 
-function getCoreTabs(role: UserRole) {
-  if (role === 'teacher') {
-    const nav = ROLE_CONFIG.teacher.nav;
-    return [
-      { href: nav[0].href, icon: nav[0].icon, activeIcon: nav[0].icon, label: nav[0].label, labelHi: nav[0].labelHi },
-      { href: nav[1].href, icon: nav[1].icon, activeIcon: nav[1].icon, label: nav[1].label, labelHi: nav[1].labelHi },
-      { href: nav[2].href, icon: nav[2].icon, activeIcon: nav[2].icon, label: nav[2].label, labelHi: nav[2].labelHi },
-      { href: nav[3].href, icon: nav[3].icon, activeIcon: nav[3].icon, label: nav[3].label, labelHi: nav[3].labelHi },
-    ];
-  }
-  if (role === 'guardian') {
-    const nav = ROLE_CONFIG.guardian.nav;
-    return [
-      { href: nav[0].href, icon: nav[0].icon, activeIcon: nav[0].icon, label: nav[0].label, labelHi: nav[0].labelHi },
-      { href: nav[1].href, icon: nav[1].icon, activeIcon: nav[1].icon, label: nav[1].label, labelHi: nav[1].labelHi },
-      { href: nav[2].href, icon: nav[2].icon, activeIcon: nav[2].icon, label: nav[2].label, labelHi: nav[2].labelHi },
-      { href: nav[3].href, icon: nav[3].icon, activeIcon: nav[3].icon, label: nav[3].label, labelHi: nav[3].labelHi },
-    ];
-  }
-  return CORE_TABS; // default student tabs
-}
-
-function getMoreItems(role: UserRole) {
-  if (role === 'teacher') {
-    const nav = ROLE_CONFIG.teacher.nav;
-    return nav.slice(4).map(item => ({
-      href: item.href, icon: item.icon, label: item.label, labelHi: item.labelHi,
-    }));
-  }
-  if (role === 'guardian') {
-    const nav = ROLE_CONFIG.guardian.nav;
-    return nav.slice(4).map(item => ({
-      href: item.href, icon: item.icon, label: item.label, labelHi: item.labelHi,
-    }));
-  }
-  return MORE_ITEMS; // default student items
+function getCoreTabs(role: UserRole): NavTab[] {
+  if (role === 'teacher') return TEACHER_TABS;
+  if (role === 'guardian') return GUARDIAN_TABS;
+  return STUDENT_TABS;
 }
 
 function getSidebarSections(role: UserRole) {
@@ -128,7 +108,7 @@ function getSidebarSections(role: UserRole) {
       },
     ];
   }
-  return SIDEBAR_SECTIONS; // default student sections
+  return SIDEBAR_SECTIONS;
 }
 
 export default function BottomNavComponent() {
@@ -136,102 +116,50 @@ export default function BottomNavComponent() {
   const router = useRouter();
   const auth = useAuth();
   const isHi = auth?.isHi ?? false;
-  const { roles, activeRole, setActiveRole } = auth;
-  const [showMore, setShowMore] = useState(false);
+  const { roles, activeRole } = auth;
   const [collapsed, setCollapsed] = useState(false);
 
   const tabs = getCoreTabs(activeRole);
-  const moreItems = getMoreItems(activeRole);
   const sidebarSections = getSidebarSections(activeRole);
 
   const isActive = (href: string) => pathname === href || (href !== '/' && pathname.startsWith(href));
-  const isMoreActive = moreItems.some(m => isActive(m.href));
-  const hasMultipleRoles = roles.length > 1;
-
-  const handleRoleSwitch = (role: UserRole) => {
-    setActiveRole(role);
-    const config = ROLE_CONFIG[role];
-    if (config?.homePath) {
-      setShowMore(false);
-      router.push(config.homePath);
-    }
-  };
+  const foxyActive = isActive('/foxy');
 
   return (
     <>
-      {/* ─── MORE SHEET (mobile overlay) ──────────────── */}
-      {showMore && (
-        <>
+      {/* ─── Foxy FAB (floating, students only) ──────────────── */}
+      {activeRole === 'student' && (
+        <button
+          onClick={() => router.push('/foxy')}
+          aria-label="Foxy - AI Tutor"
+          aria-current={foxyActive ? 'page' : undefined}
+          className="bottom-nav-mobile fixed z-[55] transition-transform active:scale-90"
+          style={{
+            bottom: 'calc(5rem + env(safe-area-inset-bottom, 6px) + 12px)',
+            right: '16px',
+          }}
+        >
           <div
-            className="fixed inset-0 z-[60]"
-            style={{ background: 'rgba(0,0,0,0.3)' }}
-            onClick={() => setShowMore(false)}
-            role="presentation"
-            aria-hidden="true"
-          />
-          <div
-            className="fixed bottom-0 left-0 right-0 z-[70] rounded-t-3xl"
+            className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl shadow-lg"
             style={{
-              background: 'var(--surface-1)',
-              paddingBottom: 'env(safe-area-inset-bottom, 16px)',
-              boxShadow: '0 -8px 40px rgba(0,0,0,0.12)',
+              background: foxyActive
+                ? 'linear-gradient(135deg, #E8581C, #F5A623)'
+                : 'linear-gradient(135deg, #E8581C, #D84315)',
+              boxShadow: '0 4px 16px rgba(232,88,28,0.35)',
             }}
           >
-            <div className="flex justify-center pt-3 pb-2">
-              <div className="w-10 h-1 rounded-full" style={{ background: 'var(--border-mid, #ccc)' }} />
-            </div>
-            <div className="px-5 pb-4 space-y-1">
-              {moreItems.map(item => {
-                const active = isActive(item.href);
-                return (
-                  <button
-                    key={item.href}
-                    onClick={() => { setShowMore(false); router.push(item.href); }}
-                    className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl text-left transition-all active:scale-[0.98]"
-                    style={{
-                      background: active ? 'rgba(232,88,28,0.08)' : 'transparent',
-                      color: active ? 'var(--orange)' : 'var(--text-2)',
-                    }}
-                  >
-                    <span className="text-xl w-7 text-center">{item.icon}</span>
-                    <span className="text-sm font-semibold">{isHi ? item.labelHi : item.label}</span>
-                    {active && <span className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: 'var(--orange)' }} />}
-                  </button>
-                );
-              })}
-              {/* Role Switcher for multi-role users */}
-              {hasMultipleRoles && (
-                <div className="pt-2 mt-2" style={{ borderTop: '1px solid var(--border)' }}>
-                  <p className="text-[11px] font-bold text-[var(--text-3)] uppercase tracking-widest px-4 mb-1.5">
-                    {isHi ? 'भूमिका बदलें' : 'Switch Role'}
-                  </p>
-                  {roles.filter(r => r !== 'none').map(role => {
-                    const cfg = ROLE_CONFIG[role];
-                    const isCurrent = role === activeRole;
-                    return (
-                      <button
-                        key={role}
-                        onClick={() => handleRoleSwitch(role)}
-                        className="w-full flex items-center gap-4 px-4 py-3 rounded-2xl text-left transition-all active:scale-[0.98]"
-                        style={{
-                          background: isCurrent ? `${cfg.color}12` : 'transparent',
-                          color: isCurrent ? cfg.color : 'var(--text-2)',
-                        }}
-                      >
-                        <span className="text-xl w-7 text-center">{cfg.icon}</span>
-                        <span className="text-sm font-semibold">{isHi ? cfg.labelHi : cfg.label}</span>
-                        {isCurrent && <span className="ml-auto text-xs px-2 py-0.5 rounded-full" style={{ background: `${cfg.color}20`, color: cfg.color }}>{isHi ? 'सक्रिय' : 'Active'}</span>}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+            🦊
           </div>
-        </>
+          <span
+            className="text-[11px] font-bold mt-0.5 block text-center"
+            style={{ color: foxyActive ? 'var(--orange)' : 'var(--text-2)' }}
+          >
+            {isHi ? 'फॉक्सी' : 'Foxy'}
+          </span>
+        </button>
       )}
 
-      {/* ─── Mobile Bottom Nav ──────────────── */}
+      {/* ─── Mobile Bottom Nav (4 tabs) ──────────────── */}
       <nav
         className="bottom-nav-mobile fixed bottom-0 left-0 right-0 z-50 border-t"
         aria-label="Main navigation"
@@ -251,38 +179,6 @@ export default function BottomNavComponent() {
           {tabs.map((item) => {
             const active = isActive(item.href);
 
-            /* ── Foxy FAB (center) ── only for student role */
-            if (activeRole === 'student' && 'isFab' in item && item.isFab) {
-              return (
-                <button
-                  key={item.href}
-                  onClick={() => router.push(item.href)}
-                  aria-label={`${item.label} - AI Tutor`}
-                  aria-current={active ? 'page' : undefined}
-                  className="flex flex-col items-center -mt-5 transition-transform active:scale-90"
-                >
-                  <div
-                    className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl shadow-lg"
-                    style={{
-                      background: active
-                        ? 'linear-gradient(135deg, #E8581C, #F5A623)'
-                        : 'linear-gradient(135deg, #E8581C, #D84315)',
-                      boxShadow: '0 4px 16px rgba(232,88,28,0.35)',
-                    }}
-                  >
-                    {item.icon}
-                  </div>
-                  <span
-                    className="text-[11px] font-bold mt-0.5"
-                    style={{ color: active ? 'var(--orange)' : 'var(--text-2)' }}
-                  >
-                    {isHi ? item.labelHi : item.label}
-                  </span>
-                </button>
-              );
-            }
-
-            /* ── Regular tabs ── */
             return (
               <button
                 key={item.href}
@@ -311,21 +207,6 @@ export default function BottomNavComponent() {
               </button>
             );
           })}
-
-          {/* ── More button (replaces hidden items) ── */}
-          <button
-            onClick={() => setShowMore(!showMore)}
-            aria-label="More options"
-            aria-expanded={showMore}
-            className="flex flex-col items-center gap-0.5 min-w-[56px] py-1.5 transition-all"
-            style={{ color: isMoreActive ? 'var(--orange)' : 'var(--text-3)' }}
-          >
-            <span className="text-[22px] leading-none" aria-hidden="true">&#x2630;</span>
-            <span className="text-[11px] font-semibold tracking-wide">{isHi ? 'और' : 'More'}</span>
-            {isMoreActive && (
-              <span className="w-1 h-1 rounded-full" style={{ background: 'var(--orange)' }} />
-            )}
-          </button>
         </div>
       </nav>
 

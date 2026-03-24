@@ -372,3 +372,6 @@ export function LoadingFoxy() {
 
 /* ─── Bottom Nav ──────────────────────────────────────────── */
 export { default as BottomNav } from './BottomNavComponent';
+
+/* ─── Focus Mode ─────────────────────────────────────────── */
+export { FocusMode } from './FocusMode';
