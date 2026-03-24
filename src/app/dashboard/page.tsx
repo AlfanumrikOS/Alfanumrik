@@ -44,6 +44,9 @@ export default function Dashboard() {
   const [showGapsAlert, setShowGapsAlert] = useState(true);
   const [velocityTrend, setVelocityTrend] = useState<'fast' | 'steady' | 'slow' | null>(null);
   const [bloomLevel, setBloomLevel] = useState<{ bloom_level: string; mastery: number } | null>(null);
+  const [errorBreakdown, setErrorBreakdown] = useState<{ careless: number; conceptual: number; misinterpretation: number } | null>(null);
+  const [retentionScore, setRetentionScore] = useState<number | null>(null);
+  const [cbseReadiness, setCbseReadiness] = useState<number | null>(null);
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/');
@@ -132,6 +135,60 @@ export default function Dashboard() {
         const masteryKey = `${level}_mastery` as keyof typeof b;
         const mastery = Number(b[masteryKey]) || 0;
         setBloomLevel({ bloom_level: level, mastery });
+      }
+    } catch {}
+
+    // Cognitive 2.0: Error breakdown from question_responses
+    try {
+      const { data: errData } = await supabase
+        .from('question_responses')
+        .select('is_correct, response_time_seconds')
+        .eq('student_id', student.id)
+        .eq('is_correct', false)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (errData && errData.length > 0) {
+        const avgTime = errData.reduce((a, r) => a + (r.response_time_seconds || 10), 0) / errData.length;
+        let careless = 0, conceptual = 0, misinterpretation = 0;
+        errData.forEach(r => {
+          const t = r.response_time_seconds || 10;
+          if (t < avgTime * 0.3 || t < 3) careless++;
+          else if (t > avgTime * 2.5) conceptual++;
+          else misinterpretation++;
+        });
+        const total = errData.length;
+        setErrorBreakdown({
+          careless: Math.round((careless / total) * 100),
+          conceptual: Math.round((conceptual / total) * 100),
+          misinterpretation: Math.round((misinterpretation / total) * 100),
+        });
+      }
+    } catch {}
+
+    // Cognitive 2.0: Retention score from retention_tests
+    try {
+      const { data: retData } = await supabase
+        .from('retention_tests')
+        .select('score')
+        .eq('student_id', student.id)
+        .eq('status', 'completed')
+        .order('completed_at', { ascending: false })
+        .limit(10);
+      if (retData && retData.length > 0) {
+        const avg = retData.reduce((a, r) => a + (r.score || 0), 0) / retData.length;
+        setRetentionScore(Math.round(avg * 100));
+      }
+    } catch {}
+
+    // Cognitive 2.0: CBSE Readiness from adaptive_profile
+    try {
+      const { data: profile } = await supabase
+        .from('adaptive_profile')
+        .select('cbse_readiness_pct')
+        .eq('student_id', student.id)
+        .limit(1);
+      if (profile && profile.length > 0 && profile[0].cbse_readiness_pct != null) {
+        setCbseReadiness(Math.round(profile[0].cbse_readiness_pct));
       }
     } catch {}
   }, [student]);
@@ -255,8 +312,52 @@ export default function Dashboard() {
                 color="#7C3AED"
               />
             )}
+            {retentionScore !== null && (
+              <StatCard
+                icon="🧠"
+                value={`${retentionScore}%`}
+                label={isHi ? 'याददाश्त' : 'Retention'}
+                color="#0891B2"
+              />
+            )}
+            {cbseReadiness !== null && (
+              <StatCard
+                icon="🎯"
+                value={`${cbseReadiness}%`}
+                label={isHi ? 'CBSE तैयारी' : 'CBSE Ready'}
+                color="#16A34A"
+              />
+            )}
           </div>
         </Card>
+
+        {/* Error Breakdown */}
+        {errorBreakdown && (
+          <Card>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-base">🔍</span>
+              <span className="text-sm font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+                {isHi ? 'गलती विश्लेषण' : 'Error Analysis'}
+              </span>
+            </div>
+            <div className="space-y-2">
+              {[
+                { label: isHi ? 'लापरवाही' : 'Careless', pct: errorBreakdown.careless, color: '#F59E0B', icon: '⚡' },
+                { label: isHi ? 'अवधारणा' : 'Conceptual', pct: errorBreakdown.conceptual, color: '#EF4444', icon: '🧠' },
+                { label: isHi ? 'गलत समझ' : 'Misread', pct: errorBreakdown.misinterpretation, color: '#8B5CF6', icon: '🔍' },
+              ].map(item => (
+                <div key={item.label} className="flex items-center gap-2">
+                  <span className="text-xs w-4">{item.icon}</span>
+                  <span className="text-xs font-semibold w-20" style={{ color: item.color }}>{item.label}</span>
+                  <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: `${item.color}15` }}>
+                    <div className="h-full rounded-full transition-all" style={{ width: `${item.pct}%`, background: item.color }} />
+                  </div>
+                  <span className="text-[10px] text-[var(--text-3)] w-10 text-right">{item.pct}%</span>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
 
         {/* Continue Learning */}
         {nextTopics.length > 0 && (

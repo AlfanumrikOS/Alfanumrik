@@ -643,6 +643,86 @@ export default function FoxyPage() {
       {/* Close dropdowns */}
       {(showSubjectDD || showChapterDD) && <div className="fixed inset-0 z-40" onClick={() => { setShowSubjectDD(false); setShowChapterDD(false); }} />}
 
+      {/* ═══ LESSON STEP PROGRESS BAR ═══ */}
+      {sessionMode === 'lesson' && (
+        <div className="px-3 py-2" style={{ background: 'var(--surface-1)', borderBottom: '1px solid var(--border)' }}>
+          <div className="flex items-center gap-1 mb-1.5">
+            {LESSON_STEPS.map((step, idx) => {
+              const isCompleted = lessonStepsCompleted.includes(step);
+              const isCurrent = step === lessonStep;
+              const stepLabels: Record<string, string> = {
+                hook: '🪝 Hook', visualization: '👁 Visual', guided_examples: '📝 Examples',
+                active_recall: '🧠 Recall', application: '🔧 Apply', spaced_revision: '🔄 Revise',
+              };
+              return (
+                <div key={step} className="flex-1 flex flex-col items-center gap-0.5">
+                  <div className="w-full h-1.5 rounded-full" style={{
+                    background: isCompleted ? cfg.color : isCurrent ? `${cfg.color}60` : 'var(--surface-2)',
+                    transition: 'all 0.3s ease',
+                  }} />
+                  <span className="text-[8px] font-bold truncate" style={{
+                    color: isCompleted ? cfg.color : isCurrent ? cfg.color : 'var(--text-3)',
+                  }}>{stepLabels[step] || step}</span>
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-semibold" style={{ color: cfg.color }}>
+              {language === 'hi' ? 'पाठ प्रगति' : 'Lesson Progress'}: {lessonStepsCompleted.length + 1}/{LESSON_STEPS.length}
+            </span>
+            {!loading && messages.length > 0 && (
+              <button
+                onClick={advanceLessonStep}
+                className="px-3 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95"
+                style={{ background: `${cfg.color}15`, color: cfg.color, border: `1px solid ${cfg.color}30` }}
+              >
+                {lessonStep === 'spaced_revision'
+                  ? (language === 'hi' ? '✓ पूरा हुआ' : '✓ Complete')
+                  : (language === 'hi' ? 'अगला चरण →' : 'Next Step →')}
+              </button>
+            )}
+          </div>
+          {/* Predict-before-reveal for active recall step */}
+          {showPredictionInput && !predictionSubmitted && (
+            <div className="mt-2 p-3 rounded-xl" style={{ background: `${cfg.color}06`, border: `1px solid ${cfg.color}20` }}>
+              <p className="text-xs font-semibold mb-1.5" style={{ color: cfg.color }}>
+                🧠 {language === 'hi' ? 'पहले अपना अनुमान लिखो:' : 'Write your prediction first:'}
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={lessonPrediction}
+                  onChange={e => setLessonPrediction(e.target.value)}
+                  placeholder={language === 'hi' ? 'तुम्हारा अनुमान...' : 'Your prediction...'}
+                  className="flex-1 text-sm rounded-lg px-3 py-2 outline-none"
+                  style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+                />
+                <button
+                  onClick={() => {
+                    if (lessonPrediction.trim()) {
+                      setPredictionSubmitted(true);
+                      sendMessage(`My prediction: ${lessonPrediction.trim()}`);
+                      setLessonPrediction('');
+                    }
+                  }}
+                  disabled={!lessonPrediction.trim()}
+                  className="px-3 py-2 rounded-lg text-xs font-bold text-white disabled:opacity-40"
+                  style={{ background: cfg.color }}
+                >
+                  {language === 'hi' ? 'भेजो' : 'Submit'}
+                </button>
+              </div>
+            </div>
+          )}
+          {showPredictionInput && predictionSubmitted && (
+            <div className="mt-2 text-[10px] font-semibold" style={{ color: '#16A34A' }}>
+              ✓ {language === 'hi' ? 'अनुमान जमा हो गया! Foxy का जवाब देखो।' : 'Prediction submitted! See Foxy\'s answer below.'}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ═══ MAIN CHAT AREA ═══ */}
       <div className="flex-1 flex overflow-hidden relative">
         {/* Desktop sidebar */}
