@@ -72,11 +72,11 @@ CREATE INDEX IF NOT EXISTS idx_student_learning_profiles_student_subject
 CREATE INDEX IF NOT EXISTS idx_concept_mastery_student_id
   ON concept_mastery(student_id);
 
-CREATE INDEX IF NOT EXISTS idx_concept_mastery_concept_id
-  ON concept_mastery(concept_id);
+CREATE INDEX IF NOT EXISTS idx_concept_mastery_topic_id
+  ON concept_mastery(topic_id);
 
-CREATE INDEX IF NOT EXISTS idx_concept_mastery_student_concept
-  ON concept_mastery(student_id, concept_id);
+CREATE INDEX IF NOT EXISTS idx_concept_mastery_student_topic
+  ON concept_mastery(student_id, topic_id);
 
 CREATE INDEX IF NOT EXISTS idx_concept_mastery_next_review
   ON concept_mastery(student_id, next_review_at);
@@ -125,11 +125,11 @@ CREATE INDEX IF NOT EXISTS idx_spaced_repetition_cards_review_date
 CREATE INDEX IF NOT EXISTS idx_competitions_status
   ON competitions(status);
 
-CREATE INDEX IF NOT EXISTS idx_competition_entries_student_id
-  ON competition_entries(student_id);
+CREATE INDEX IF NOT EXISTS idx_competition_participants_student_id
+  ON competition_participants(student_id);
 
-CREATE INDEX IF NOT EXISTS idx_competition_entries_competition_id
-  ON competition_entries(competition_id);
+CREATE INDEX IF NOT EXISTS idx_competition_participants_competition_id
+  ON competition_participants(competition_id);
 
 -- ============================================================
 -- SECTION 4: Realtime Publications

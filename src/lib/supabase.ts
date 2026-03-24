@@ -270,14 +270,15 @@ export async function getReviewCards(studentId: string, limit = 10) {
   } catch { /* RPC may not exist */ }
 
   // Fallback: use spaced_repetition_cards if available, else concept_mastery
+  const today = new Date().toISOString().split('T')[0]; // next_review_date is DATE type
   const { data: cards } = await supabase.from('spaced_repetition_cards')
-    .select('id, student_id, subject, topic_tag, chapter_title, front_text, back_text, hint, ease_factor, interval_days, streak, repetition_count, total_reviews, correct_reviews, next_review_at')
+    .select('id, student_id, subject, topic, chapter_title, front_text, back_text, hint, ease_factor, interval_days, streak, repetition_count, total_reviews, correct_reviews, next_review_date')
     .eq('student_id', studentId)
-    .lte('next_review_at', new Date().toISOString())
-    .order('next_review_at')
+    .lte('next_review_date', today)
+    .order('next_review_date')
     .limit(limit);
   if (cards && cards.length > 0) {
-    return cards.map(c => ({ ...c, topic: c.topic_tag, chapter_title: c.chapter_title || c.topic_tag }));
+    return cards.map(c => ({ ...c, topic: c.topic, chapter_title: c.chapter_title || c.topic }));
   }
   // Final fallback: concept_mastery (limited columns)
   const { data } = await supabase.from('concept_mastery')
