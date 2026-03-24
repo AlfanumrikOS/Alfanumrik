@@ -477,56 +477,103 @@ export default function Dashboard() {
               <span className="text-[10px] text-[var(--text-3)]">{isHi ? 'दिन' : 'days'}</span>
             </div>
           </div>
-          {(() => {
-            const totalTasks = (dueCount > 0 && flags.spaced_repetition ? 1 : 0) + nextTopics.slice(1, 3).length;
-            const doneTasks = 0; // tasks completed today — future: track via state
-            return totalTasks > 0 ? (
+          {/* Progress bar for today's tasks */}
+          {todayTasks.length > 0 && (() => {
+            const done = todayTasks.filter(t => t.status === 'completed').length;
+            const total = todayTasks.length;
+            const pct = Math.round((done / total) * 100);
+            return (
               <div className="mb-3">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-[10px] text-[var(--text-3)] font-semibold">
-                    {isHi ? `${doneTasks} / ${totalTasks} कार्य पूरे` : `${doneTasks} of ${totalTasks} tasks done today`}
+                    {isHi ? `${done} / ${total} कार्य पूरे` : `${done} of ${total} tasks done today`}
                   </span>
-                  <span className="text-[10px] font-bold" style={{ color: 'var(--orange)' }}>{totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0}%</span>
+                  <span className="text-[10px] font-bold" style={{ color: 'var(--orange)' }}>{pct}%</span>
                 </div>
                 <div className="h-1 rounded-full overflow-hidden" style={{ background: 'rgba(0,0,0,0.06)' }}>
-                  <div className="h-full rounded-full transition-all" style={{ width: `${totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0}%`, background: 'var(--orange)' }} />
+                  <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: 'var(--orange)' }} />
                 </div>
               </div>
-            ) : null;
+            );
           })()}
           <div className="space-y-2">
-            {/* Show top 3 recommended actions */}
-            {dueCount > 0 && flags.spaced_repetition && (
-              <button onClick={() => router.push('/review')} className="w-full flex items-center gap-3 p-2.5 rounded-xl transition-all active:scale-[0.98]"
-                style={{ background: 'rgba(245,166,35,0.06)', border: '1px solid rgba(245,166,35,0.15)' }}>
-                <span className="text-lg">🔄</span>
-                <div className="flex-1 text-left">
-                  <div className="text-sm font-semibold">{dueCount} {isHi ? 'रिव्यू बाकी' : 'reviews due'}</div>
-                  <div className="text-[10px] text-[var(--text-3)]">{isHi ? 'स्मृति मजबूत करो' : 'Strengthen memory'}</div>
-                </div>
-                <span style={{ color: 'var(--gold)' }}>→</span>
-              </button>
-            )}
-            {nextTopics.slice(1, 3).map(topic => (
-              <button key={topic.id} onClick={() => router.push('/foxy')} className="w-full flex items-center gap-3 p-2.5 rounded-xl transition-all active:scale-[0.98]"
-                style={{ background: `${meta?.color ?? 'var(--orange)'}06`, border: `1px solid ${meta?.color ?? 'var(--orange)'}15` }}>
-                <span className="text-lg">{meta?.icon ?? '📚'}</span>
-                <div className="flex-1 text-left">
-                  <div className="text-sm font-semibold truncate">{topic.title}</div>
-                  <div className="text-[10px] text-[var(--text-3)]">{isHi ? 'Foxy से सीखो' : 'Learn with Foxy'}</div>
-                </div>
-                <span className="text-[var(--text-3)]">→</span>
-              </button>
-            ))}
-            {/* Today's Plan empty state — all caught up */}
-            {dataLoaded && !(dueCount > 0 && flags.spaced_repetition) && nextTopics.slice(1, 3).length === 0 && (
-              <div className="text-center py-4">
-                <div className="text-2xl mb-1">{'\uD83C\uDF89'}</div>
-                <div className="text-sm font-semibold">{isHi ? 'सब हो गया!' : "You're all caught up!"}</div>
-                <button onClick={() => router.push('/quiz')} className="text-xs font-semibold mt-1.5 inline-block" style={{ color: 'var(--orange)' }}>
-                  {isHi ? 'क्विज़ से XP कमाओ →' : 'Try a quiz to earn more XP \u2192'}
-                </button>
-              </div>
+            {todayTasks.length > 0 ? (
+              <>
+                {todayTasks.slice(0, 3).map(task => {
+                  const taskIcons: Record<string, string> = { learn: '📖', practice: '✏️', quiz: '🧠', review: '🔄', recall: '🔁', revision: '🔄', notes: '📝', foxy_chat: '🦊', challenge: '🎯' };
+                  const statusStyles: Record<string, { bg: string; border: string; color: string; label: string; labelHi: string }> = {
+                    completed: { bg: 'rgba(22,163,74,0.06)', border: 'rgba(22,163,74,0.15)', color: '#16A34A', label: '✓ Done', labelHi: '✓ पूरा' },
+                    in_progress: { bg: 'rgba(245,166,35,0.06)', border: 'rgba(245,166,35,0.15)', color: '#F59E0B', label: '▶ In Progress', labelHi: '▶ जारी' },
+                    pending: { bg: 'var(--surface-2)', border: 'var(--border)', color: 'var(--text-3)', label: '○ Pending', labelHi: '○ बाकी' },
+                  };
+                  const s = statusStyles[task.status] || statusStyles.pending;
+                  const icon = taskIcons[task.task_type] || '📋';
+                  const navMap: Record<string, string> = { learn: '/foxy', foxy_chat: '/foxy', quiz: '/quiz', practice: '/quiz', review: '/review', revision: '/review', recall: '/review' };
+                  const href = navMap[task.task_type] || '/study-plan';
+
+                  return (
+                    <button
+                      key={task.id}
+                      onClick={() => router.push(href)}
+                      className="w-full flex items-center gap-3 p-2.5 rounded-xl transition-all active:scale-[0.98]"
+                      style={{ background: s.bg, border: `1px solid ${s.border}` }}
+                    >
+                      <span className="text-lg flex-shrink-0">{icon}</span>
+                      <div className="flex-1 text-left min-w-0">
+                        <div className="text-sm font-semibold truncate" style={{
+                          textDecoration: task.status === 'completed' ? 'line-through' : 'none',
+                          opacity: task.status === 'completed' ? 0.6 : 1,
+                        }}>
+                          {task.title}
+                        </div>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-[10px] text-[var(--text-3)]">⏱ {task.duration_minutes}m</span>
+                          {task.xp_reward > 0 && <span className="text-[10px] text-[var(--text-3)]">⭐ {task.xp_reward} XP</span>}
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-semibold flex-shrink-0 px-2 py-0.5 rounded-full" style={{ background: `${s.color}12`, color: s.color }}>
+                        {isHi ? s.labelHi : s.label}
+                      </span>
+                    </button>
+                  );
+                })}
+              </>
+            ) : (
+              <>
+                {/* Fallback: show curriculum topics when no study plan tasks */}
+                {dueCount > 0 && flags.spaced_repetition && (
+                  <button onClick={() => router.push('/review')} className="w-full flex items-center gap-3 p-2.5 rounded-xl transition-all active:scale-[0.98]"
+                    style={{ background: 'rgba(245,166,35,0.06)', border: '1px solid rgba(245,166,35,0.15)' }}>
+                    <span className="text-lg">🔄</span>
+                    <div className="flex-1 text-left">
+                      <div className="text-sm font-semibold">{dueCount} {isHi ? 'रिव्यू बाकी' : 'reviews due'}</div>
+                      <div className="text-[10px] text-[var(--text-3)]">{isHi ? 'स्मृति मजबूत करो' : 'Strengthen memory'}</div>
+                    </div>
+                    <span style={{ color: 'var(--gold)' }}>→</span>
+                  </button>
+                )}
+                {nextTopics.slice(1, 3).map(topic => (
+                  <button key={topic.id} onClick={() => router.push('/foxy')} className="w-full flex items-center gap-3 p-2.5 rounded-xl transition-all active:scale-[0.98]"
+                    style={{ background: `${meta?.color ?? 'var(--orange)'}06`, border: `1px solid ${meta?.color ?? 'var(--orange)'}15` }}>
+                    <span className="text-lg">{meta?.icon ?? '📚'}</span>
+                    <div className="flex-1 text-left">
+                      <div className="text-sm font-semibold truncate">{topic.title}</div>
+                      <div className="text-[10px] text-[var(--text-3)]">{isHi ? 'Foxy से सीखो' : 'Learn with Foxy'}</div>
+                    </div>
+                    <span className="text-[var(--text-3)]">→</span>
+                  </button>
+                ))}
+                {/* Today's Plan empty state -- all caught up */}
+                {dataLoaded && !(dueCount > 0 && flags.spaced_repetition) && nextTopics.slice(1, 3).length === 0 && (
+                  <div className="text-center py-4">
+                    <div className="text-2xl mb-1">{'\uD83C\uDF89'}</div>
+                    <div className="text-sm font-semibold">{isHi ? 'सब हो गया!' : "You're all caught up!"}</div>
+                    <button onClick={() => router.push('/quiz')} className="text-xs font-semibold mt-1.5 inline-block" style={{ color: 'var(--orange)' }}>
+                      {isHi ? 'क्विज़ से XP कमाओ →' : 'Try a quiz to earn more XP \u2192'}
+                    </button>
+                  </div>
+                )}
+              </>
             )}
             <button onClick={() => router.push('/study-plan')} className="w-full text-xs font-semibold py-2 text-center" style={{ color: 'var(--orange)' }}>
               {isHi ? 'पूरा प्लान देखो →' : 'See full plan →'}
