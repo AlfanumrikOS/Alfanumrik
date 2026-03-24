@@ -77,7 +77,7 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
             maxWidth: 700,
             maxHeight: 700,
             borderRadius: '50%',
-            background: 'radial-gradient(circle, rgba(232,88,28,0.10) 0%, rgba(245,166,35,0.06) 40%, transparent 70%)',
+            background: 'radial-gradient(circle, rgba(37,99,235,0.10) 0%, rgba(14,165,233,0.06) 40%, transparent 70%)',
             filter: 'blur(40px)',
           }}
         />
@@ -93,7 +93,7 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
             maxWidth: 600,
             maxHeight: 600,
             borderRadius: '50%',
-            background: 'radial-gradient(circle, rgba(124,58,237,0.08) 0%, rgba(124,58,237,0.03) 40%, transparent 70%)',
+            background: 'radial-gradient(circle, rgba(99,102,241,0.08) 0%, rgba(99,102,241,0.03) 40%, transparent 70%)',
             filter: 'blur(50px)',
           }}
         />
@@ -109,7 +109,7 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
             maxWidth: 500,
             maxHeight: 500,
             borderRadius: '50%',
-            background: 'radial-gradient(circle, rgba(245,166,35,0.07) 0%, transparent 60%)',
+            background: 'radial-gradient(circle, rgba(14,165,233,0.07) 0%, transparent 60%)',
             filter: 'blur(60px)',
           }}
         />
@@ -158,11 +158,11 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
                 gap: 8,
                 padding: '6px 16px',
                 borderRadius: 100,
-                background: 'rgba(232, 88, 28, 0.08)',
-                border: '1px solid rgba(232, 88, 28, 0.15)',
+                background: 'rgba(14, 165, 233, 0.08)',
+                border: '1px solid rgba(14, 165, 233, 0.15)',
                 fontSize: '0.85rem',
                 fontWeight: 600,
-                color: 'var(--orange)',
+                color: '#0EA5E9',
                 marginBottom: 24,
                 animationDelay: '0.1s',
               }}

@@ -167,7 +167,7 @@ interface BadgeProps {
   size?: 'sm' | 'md';
 }
 
-export function Badge({ children, color = 'var(--orange)', size = 'sm' }: BadgeProps) {
+export function Badge({ children, color = '#0EA5E9', size = 'sm' }: BadgeProps) {
   const sizeClass = size === 'sm' ? 'text-[11px] px-2.5 py-0.5' : 'text-xs px-3 py-1';
   return (
     <span
@@ -192,7 +192,7 @@ interface ProgressBarProps {
   showPercent?: boolean;
 }
 
-export function ProgressBar({ value, color = 'var(--orange)', height = 8, label, showPercent }: ProgressBarProps) {
+export function ProgressBar({ value, color = '#0EA5E9', height = 8, label, showPercent }: ProgressBarProps) {
   const pct = Math.min(100, Math.max(0, value));
   return (
     <div>
@@ -334,7 +334,7 @@ export function Avatar({ name, size = 36 }: AvatarProps) {
         width: size,
         height: size,
         fontSize: size * 0.38,
-        background: 'linear-gradient(135deg, var(--orange), var(--gold))',
+        background: 'linear-gradient(135deg, #1B2B5B, #0EA5E9)',
       }}
     >
       {name[0]?.toUpperCase() ?? '?'}

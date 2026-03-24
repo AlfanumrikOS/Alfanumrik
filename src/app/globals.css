@@ -2,40 +2,40 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ─── Alfanumrik Light Theme ──────────────────────────────── */
+/* ─── Alfanumrik Light Theme — European EdTech Alliance ───── */
 :root {
   --font-display: "Sora", sans-serif;
   --font-body: "Plus Jakarta Sans", sans-serif;
 
-  /* Brand */
-  --orange: #E8581C;
-  --orange-light: #FF7A3D;
-  --gold: #F5A623;
-  --teal: #0891B2;
-  --green: #16A34A;
-  --purple: #7C3AED;
-  --pink: #DB2777;
-  --red: #DC2626;
+  /* Brand — European EdTech inspired */
+  --primary: #1B2B5B;
+  --primary-light: #2563EB;
+  --secondary: #0EA5E9;
+  --accent: #6366F1;
+  --orange: #F97316;  /* Coral — var name kept for compat */
+  --orange-light: #FB923C;
+  --gold: #F59E0B;
+  --teal: #0EA5E9;
+  --green: #10B981;
+  --purple: #6366F1;
+  --pink: #EC4899;
+  --red: #EF4444;
 
-  /* Surfaces — warm cream base */
-  --bg: #FBF8F4;
+  /* Surfaces — clean cool white */
+  --bg: #FAFBFF;
   --surface-1: #FFFFFF;
-  --surface-2: #F5F0EA;
-  --surface-3: #EDE6DC;
+  --surface-2: #F1F5F9;
+  --surface-3: #E2E8F0;
 
-  /* Borders */
-  --border: rgba(0, 0, 0, 0.08);
-  --border-mid: rgba(0, 0, 0, 0.12);
-  --border-strong: rgba(0, 0, 0, 0.18);
+  /* Borders — cool gray */
+  --border: rgba(15, 23, 42, 0.08);
+  --border-mid: rgba(15, 23, 42, 0.12);
+  --border-strong: rgba(15, 23, 42, 0.20);
 
-  /* Text — Contrast-checked against --bg (#FBF8F4)
-     text-1 on bg: 15.2:1 (AAA) — primary text
-     text-2 on bg: 6.8:1 (AA)  — secondary text
-     text-3 on bg: 4.5:1 (AA)  — tertiary/hint text (was 3.8:1, fixed)
-     Indian students study outdoors & in harsh sunlight — contrast matters more */
-  --text-1: #1A1207;
-  --text-2: #4A3F2E;
-  --text-3: #7D7264;
+  /* Text — dark navy hierarchy */
+  --text-1: #0F172A;
+  --text-2: #475569;
+  --text-3: #94A3B8;
 
   /* Layout */
   --sidebar-width: 240px;
@@ -200,7 +200,7 @@ h1, h2, h3, h4, h5 { font-family: var(--font-display); }
   top: 0;
   z-index: 40;
   border-bottom: 1px solid var(--border);
-  background: rgba(251, 248, 244, 0.88);
+  background: rgba(250, 251, 255, 0.88);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
 }
@@ -282,7 +282,7 @@ h1, h2, h3, h4, h5 { font-family: var(--font-display); }
 /* ─── Scrollbar ───────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(232, 88, 28, 0.25); border-radius: 4px; }
+::-webkit-scrollbar-thumb { background: rgba(15, 23, 42, 0.18); border-radius: 4px; }
 
 /* ─── Glass (Light) ───────────────────────────────────────── */
 .glass {
@@ -300,20 +300,20 @@ h1, h2, h3, h4, h5 { font-family: var(--font-display); }
 
 /* ─── Gradients ───────────────────────────────────────────── */
 .gradient-text {
-  background: linear-gradient(135deg, var(--orange), var(--gold));
+  background: linear-gradient(135deg, var(--primary), var(--secondary), var(--accent));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
-.gradient-brand { background: linear-gradient(135deg, var(--orange), var(--gold)); }
-.gradient-cool { background: linear-gradient(135deg, var(--teal), #6C5CE7); }
+.gradient-brand { background: linear-gradient(135deg, var(--primary), var(--secondary)); }
+.gradient-cool { background: linear-gradient(135deg, var(--secondary), var(--accent)); }
 .gradient-warm { background: linear-gradient(135deg, var(--pink), var(--orange)); }
 
 /* ─── Glows ───────────────────────────────────────────────── */
-.glow-orange { box-shadow: 0 0 24px rgba(232, 88, 28, 0.2), 0 0 48px rgba(232, 88, 28, 0.08); }
-.glow-teal { box-shadow: 0 0 24px rgba(8, 145, 178, 0.2); }
-.glow-gold { box-shadow: 0 0 24px rgba(245, 166, 35, 0.2); }
-.text-glow-orange { text-shadow: 0 0 12px rgba(232, 88, 28, 0.3); }
+.glow-orange { box-shadow: 0 0 24px rgba(249, 115, 22, 0.2), 0 0 48px rgba(249, 115, 22, 0.08); }
+.glow-teal { box-shadow: 0 0 24px rgba(14, 165, 233, 0.2); }
+.glow-gold { box-shadow: 0 0 24px rgba(245, 158, 11, 0.2); }
+.text-glow-orange { text-shadow: 0 0 12px rgba(249, 115, 22, 0.3); }
 
 /* ─── Keyframes ───────────────────────────────────────────── */
 @keyframes slideUp { 0% { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
@@ -351,7 +351,7 @@ h1, h2, h3, h4, h5 { font-family: var(--font-display); }
 .card-hover:hover {
   transform: translateY(-3px);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08);
-  border-color: rgba(232, 88, 28, 0.25);
+  border-color: rgba(37, 99, 235, 0.25);
 }
 .card-hover:active { transform: translateY(0) scale(0.98); }
 .xp-bar { transition: width 1.2s cubic-bezier(0.4, 0, 0.2, 1); }
