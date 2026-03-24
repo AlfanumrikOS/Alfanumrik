@@ -67,7 +67,7 @@ function MiniProgressBar() {
         <div className="hiw-mini-progress__bar">
           <div
             className="hiw-mini-progress__fill"
-            style={{ width: '78%', background: '#d97757' }}
+            style={{ width: '78%', background: '#c4623f' }}
           />
         </div>
         <span className="hiw-mini-progress__pct">78%</span>
@@ -77,7 +77,7 @@ function MiniProgressBar() {
         <div className="hiw-mini-progress__bar">
           <div
             className="hiw-mini-progress__fill"
-            style={{ width: '62%', background: '#6a9bcc' }}
+            style={{ width: '62%', background: '#5589b8' }}
           />
         </div>
         <span className="hiw-mini-progress__pct">62%</span>
@@ -96,7 +96,7 @@ const STEPS: Step[] = [
     title: 'Sign Up Free',
     description: 'Pick your grade, board, and subjects. Takes 30 seconds.',
     icon: '✨',
-    accentColor: '#d97757',
+    accentColor: '#c4623f',
     visual: <MiniSignupForm />,
   },
   {
@@ -105,7 +105,7 @@ const STEPS: Step[] = [
     description:
       'Your AI tutor learns your strengths and gaps. Start with any topic or scan a question.',
     icon: '🦊',
-    accentColor: '#6a9bcc',
+    accentColor: '#5589b8',
     visual: <MiniChatBubble />,
   },
   {
@@ -114,7 +114,7 @@ const STEPS: Step[] = [
     description:
       'Foxy builds your mastery day by day. Parents and teachers see real results.',
     icon: '📈',
-    accentColor: '#788c5d',
+    accentColor: '#6b7f50',
     visual: <MiniProgressBar />,
   },
 ];
@@ -268,9 +268,9 @@ const hiwCSS = `
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #d97757;
-  background: rgba(217,119,87,0.08);
-  border: 1px solid rgba(217,119,87,0.18);
+  color: #c4623f;
+  background: rgba(196, 98, 63,0.08);
+  border: 1px solid rgba(196, 98, 63,0.18);
   border-radius: 100px;
   padding: 6px 16px;
   margin-bottom: 20px;
@@ -286,7 +286,7 @@ const hiwCSS = `
 }
 
 .hiw-header__accent {
-  color: #d97757;
+  color: #c4623f;
   position: relative;
 }
 
@@ -297,7 +297,7 @@ const hiwCSS = `
   bottom: -2px;
   width: 100%;
   height: 3px;
-  background: linear-gradient(90deg, #d97757, #c4a35a);
+  background: linear-gradient(90deg, #c4623f, #b8922e);
   border-radius: 2px;
 }
 
@@ -338,9 +338,9 @@ const hiwCSS = `
     height: 100%;
     background: linear-gradient(
       90deg,
-      #d97757,
-      #6a9bcc,
-      #788c5d
+      #c4623f,
+      #5589b8,
+      #6b7f50
     );
     border-radius: 2px;
     transform-origin: left;
@@ -355,7 +355,7 @@ const hiwCSS = `
     width: 40px;
     height: 6px;
     border-radius: 3px;
-    background: radial-gradient(ellipse at center, rgba(217, 119, 87, 0.7) 0%, transparent 70%);
+    background: radial-gradient(ellipse at center, rgba(196, 98, 63, 0.7) 0%, transparent 70%);
     animation: hiw-pulse-travel 3s ease-in-out infinite 1.5s;
     pointer-events: none;
   }
@@ -503,9 +503,9 @@ const hiwCSS = `
 }
 
 .hiw-mini-chip--active {
-  background: rgba(217,119,87,0.10);
-  color: #d97757;
-  border-color: rgba(217,119,87,0.25);
+  background: rgba(196, 98, 63,0.10);
+  color: #c4623f;
+  border-color: rgba(196, 98, 63,0.25);
   font-weight: 600;
 }
 
@@ -531,7 +531,7 @@ const hiwCSS = `
 }
 
 .hiw-mini-chat__bubble--foxy {
-  background: rgba(217, 119, 87, 0.06);
+  background: rgba(196, 98, 63, 0.06);
   border-radius: 12px 12px 12px 4px;
   padding: 10px 12px;
 }
@@ -599,7 +599,7 @@ const hiwCSS = `
   gap: 6px;
   font-family: var(--font-body);
   font-size: 13px;
-  color: #d97757;
+  color: #c4623f;
   padding-top: 4px;
 }
 
@@ -620,7 +620,7 @@ const hiwCSS = `
   font-size: clamp(16px, 2vw, 18px);
   font-weight: 700;
   color: #fff;
-  background: #d97757;
+  background: #c4623f;
   border: none;
   border-radius: 12px;
   padding: 16px 32px;
@@ -629,16 +629,16 @@ const hiwCSS = `
   transition:
     transform 0.25s ease,
     box-shadow 0.25s ease;
-  box-shadow: 0 2px 12px rgba(217, 119, 87, 0.25);
+  box-shadow: 0 2px 12px rgba(196, 98, 63, 0.25);
 }
 
 .hiw-cta__button:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 20px rgba(217, 119, 87, 0.35);
+  box-shadow: 0 4px 20px rgba(196, 98, 63, 0.35);
 }
 
 .hiw-cta__button:focus-visible {
-  outline: 3px solid #d97757;
+  outline: 3px solid #c4623f;
   outline-offset: 3px;
 }
 
