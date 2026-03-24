@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@/lib/constants';
-import { BottomNav } from '@/components/ui';
+import { BottomNav, FocusMode } from '@/components/ui';
 import { LESSON_STEPS, getLessonStepPrompt, getNextLessonStep, type LessonStep, type LessonState } from '@/lib/cognitive-engine';
 
 /* ══════════════════════════════════════════════════════════════
@@ -323,6 +323,8 @@ export default function FoxyPage() {
   const [studentSubs, setStudentSubs] = useState<string[]>([]);
   const [showTopicSheet, setShowTopicSheet] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [focusMode, setFocusMode] = useState(false);
+  const [focusSuggestionDismissed, setFocusSuggestionDismissed] = useState(false);
 
   // Error reporting
   const [reportModal, setReportModal] = useState<{ msgId: number; studentMsg: string; foxyMsg: string } | null>(null);
@@ -565,6 +567,7 @@ export default function FoxyPage() {
           {LANGS.map(l => <button key={l.code} onClick={() => { if (!isLangLocked) setLanguage(l.code); }} className="text-[10px] font-bold px-2 py-1 rounded-lg transition-all" style={{ background: language === l.code ? 'rgba(255,255,255,0.2)' : 'transparent', color: language === l.code ? '#fff' : 'rgba(255,255,255,0.4)', opacity: isLangLocked && language !== l.code ? 0.2 : 1, cursor: isLangLocked ? 'default' : 'pointer' }}>{l.label}</button>)}
           {isLangLocked && <span className="text-[8px] text-white/30">🔒</span>}
           <button onClick={() => { if (voiceEnabled) { stopSpeaking(); setVoiceEnabled(false); } else setVoiceEnabled(true); }} className="ml-1 px-2 py-1 rounded-lg text-sm transition-all" style={{ background: voiceEnabled ? 'rgba(245,166,35,0.3)' : 'rgba(255,255,255,0.1)' }}>{voiceEnabled ? (isSpeaking ? '🔊' : '🔈') : '🔇'}</button>
+          <button onClick={() => setFocusMode(true)} className="ml-1 px-2 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95" style={{ background: focusMode ? 'rgba(245,166,35,0.3)' : 'rgba(255,255,255,0.1)', color: focusMode ? '#F5A623' : 'rgba(255,255,255,0.6)' }} title="Focus Mode">🎯</button>
         </div>
       </header>
 
