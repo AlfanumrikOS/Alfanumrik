@@ -10,8 +10,8 @@ import { Card, Button, ProgressBar, StatCard, LoadingFoxy, BottomNav } from '@/c
 import { SUBJECT_META } from '@/lib/constants';
 import {
   BLOOM_CONFIG, BLOOM_LEVELS,
-  initialCognitiveLoad, updateCognitiveLoad, getReflectionPrompt,
-  type BloomLevel, type CognitiveLoadState, type ReflectionPrompt,
+  initialCognitiveLoad, updateCognitiveLoad, getReflectionPrompt, classifyError,
+  type BloomLevel, type CognitiveLoadState, type ReflectionPrompt, type ErrorType,
 } from '@/lib/cognitive-engine';
 
 type QuizMode = 'practice' | 'cognitive';
@@ -37,6 +37,7 @@ interface Response {
   selected_option: number;
   is_correct: boolean;
   time_spent: number;
+  error_type?: ErrorType;
 }
 
 const DIFF_LABELS = [
@@ -55,7 +56,7 @@ export default function QuizPage() {
 
   // Setup state
   const [screen, setScreen] = useState<Screen>('select');
-  const [quizMode, setQuizMode] = useState<QuizMode>('practice');
+  const [quizMode, setQuizMode] = useState<QuizMode>('cognitive');
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
   const [selectedDifficulty, setSelectedDifficulty] = useState<number | null>(null);
   const [questionCount, setQuestionCount] = useState(10);
@@ -70,6 +71,7 @@ export default function QuizPage() {
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [responses, setResponses] = useState<Response[]>([]);
   const [showExplanation, setShowExplanation] = useState(false);
+  const [hintLevel, setHintLevel] = useState(0);
   const [timer, setTimer] = useState(0);
   const [questionTimer, setQuestionTimer] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -165,11 +167,19 @@ export default function QuizPage() {
     if (selectedOption === null) return;
     const q = questions[currentIdx];
     const isCorrect = selectedOption === q.correct_answer_index;
+
+    // Classify error type for cognitive analysis
+    const avgTime = responses.length > 0
+      ? responses.reduce((a, r) => a + r.time_spent, 0) / responses.length
+      : questionTimer;
+    const errorType = classifyError(isCorrect, questionTimer, avgTime, q.difficulty, 0.5);
+
     setResponses(prev => [...prev, {
       question_id: q.id,
       selected_option: selectedOption,
       is_correct: isCorrect,
       time_spent: questionTimer,
+      error_type: errorType,
     }]);
     setShowExplanation(true);
     if (qTimerRef.current) clearInterval(qTimerRef.current);
@@ -190,6 +200,7 @@ export default function QuizPage() {
       setSelectedOption(null);
       setShowExplanation(false);
       setReflection(null);
+      setHintLevel(0);
     } else {
       // Quiz complete — submit results
       if (timerRef.current) clearInterval(timerRef.current);
@@ -641,13 +652,34 @@ export default function QuizPage() {
             </div>
           )}
 
+          {/* Progressive Hints */}
+          {!isAnswered && q.hint && (
+            <div className="space-y-2">
+              {hintLevel >= 1 && (
+                <div className="rounded-xl p-3 text-sm" style={{ background: 'rgba(245,166,35,0.08)', border: '1px solid rgba(245,166,35,0.2)', color: 'var(--text-2)' }}>
+                  💡 {q.hint}
+                </div>
+              )}
+              {hintLevel >= 2 && (
+                <div className="rounded-xl p-3 text-sm" style={{ background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.15)', color: 'var(--text-2)' }}>
+                  🔍 {q.hint} {isHi ? 'अंतर्निहित अवधारणा और सूत्र के बारे में सोचो।' : 'Think about the underlying concept and formula.'}
+                </div>
+              )}
+              {hintLevel >= 3 && (
+                <div className="rounded-xl p-3 text-sm" style={{ background: 'rgba(22,163,74,0.06)', border: '1px solid rgba(22,163,74,0.15)', color: 'var(--text-2)' }}>
+                  🎯 {isHi ? 'उत्तर से संबंधित:' : 'The answer involves:'} {q.explanation?.split('.')[0] || (isHi ? 'व्याख्या उपलब्ध नहीं' : 'No explanation available')}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Action Buttons */}
           <div className="flex gap-3 mt-auto pb-2">
             {!isAnswered ? (
               <>
-                {q.hint && selectedOption === null && (
-                  <Button variant="ghost" onClick={() => alert(q.hint)} size="sm">
-                    💡 {isHi ? 'संकेत' : 'Hint'}
+                {q.hint && selectedOption === null && hintLevel < 3 && (
+                  <Button variant="ghost" onClick={() => setHintLevel(prev => Math.min(prev + 1, 3))} size="sm">
+                    {hintLevel === 0 ? (isHi ? '💡 संकेत' : '💡 Hint') : `💡 ${hintLevel}/3`}
                   </Button>
                 )}
                 <Button
@@ -719,6 +751,43 @@ export default function QuizPage() {
             <StatCard icon="⭐" value={`+${results.xp_earned}`} label="XP" color="var(--orange)" />
             <StatCard icon="⏱" value={formatTime(timer)} label={isHi ? 'समय' : 'Time'} color="var(--teal)" />
           </div>
+
+          {/* Error Classification Breakdown */}
+          {responses.some(r => !r.is_correct) && (
+            <div>
+              <p className="text-sm font-semibold text-[var(--text-2)] mb-3">
+                {isHi ? 'गलती विश्लेषण' : 'Error Breakdown'}
+              </p>
+              <Card className="!p-4">
+                <div className="space-y-2">
+                  {(() => {
+                    const wrongResponses = responses.filter(r => !r.is_correct);
+                    const careless = wrongResponses.filter(r => r.error_type === 'careless').length;
+                    const conceptual = wrongResponses.filter(r => r.error_type === 'conceptual').length;
+                    const misinterpretation = wrongResponses.filter(r => r.error_type === 'misinterpretation').length;
+                    const total = wrongResponses.length;
+                    const items = [
+                      { label: isHi ? 'लापरवाही' : 'Careless', count: careless, color: '#F59E0B', icon: '⚡' },
+                      { label: isHi ? 'अवधारणा' : 'Conceptual', count: conceptual, color: '#EF4444', icon: '🧠' },
+                      { label: isHi ? 'गलत समझ' : 'Misinterpretation', count: misinterpretation, color: '#8B5CF6', icon: '🔍' },
+                    ];
+                    return items.map(item => (
+                      <div key={item.label} className="flex items-center gap-3">
+                        <span className="text-xs w-5 text-center">{item.icon}</span>
+                        <span className="text-xs font-semibold w-28" style={{ color: item.color }}>{item.label}</span>
+                        <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: `${item.color}15` }}>
+                          <div className="h-full rounded-full transition-all" style={{ width: total > 0 ? `${(item.count / total) * 100}%` : '0%', background: item.color }} />
+                        </div>
+                        <span className="text-[10px] text-[var(--text-3)] w-12 text-right">
+                          {item.count} ({total > 0 ? Math.round((item.count / total) * 100) : 0}%)
+                        </span>
+                      </div>
+                    ));
+                  })()}
+                </div>
+              </Card>
+            </div>
+          )}
 
           {/* Bloom Analysis */}
           {quizMode === 'cognitive' && (

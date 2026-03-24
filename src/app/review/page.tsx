@@ -29,6 +29,14 @@ const QUALITY_BUTTONS = [
   { q: 5, label: '😎 Easy', labelHi: '😎 आसान', color: '#16A34A' },
 ];
 
+interface RetentionTest {
+  id: string;
+  topic_title: string;
+  subject: string;
+  predicted_retention: number;
+  scheduled_date: string;
+}
+
 export default function ReviewPage() {
   const { student, isLoggedIn, isLoading, isHi } = useAuth();
   const router = useRouter();
@@ -38,6 +46,7 @@ export default function ReviewPage() {
   const [showHint, setShowHint] = useState(false);
   const [loading, setLoading] = useState(true);
   const [reviewed, setReviewed] = useState(0);
+  const [retentionTests, setRetentionTests] = useState<RetentionTest[]>([]);
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/');
@@ -52,6 +61,20 @@ export default function ReviewPage() {
     } catch (e) {
       console.error('Failed to load review cards:', e);
       setCards([]);
+    }
+    // Load pending retention tests
+    try {
+      const { data: tests } = await supabase
+        .from('retention_tests')
+        .select('id, topic_title, subject, predicted_retention, scheduled_date')
+        .eq('student_id', student.id)
+        .eq('status', 'pending')
+        .lte('scheduled_date', new Date().toISOString().split('T')[0])
+        .order('scheduled_date')
+        .limit(5);
+      setRetentionTests(tests ?? []);
+    } catch {
+      setRetentionTests([]);
     }
     setLoading(false);
   }, [student]);
@@ -197,6 +220,38 @@ export default function ReviewPage() {
       </header>
 
       <main className="flex-1 max-w-lg mx-auto px-4 py-6 w-full flex flex-col">
+        {/* Retention Tests Due */}
+        {retentionTests.length > 0 && !loading && (
+          <div className="mb-4 rounded-2xl p-4" style={{ background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.15)' }}>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-lg">🧠</span>
+              <span className="text-sm font-bold" style={{ color: '#7C3AED' }}>
+                {retentionTests.length} {isHi ? 'रिटेंशन टेस्ट बाकी' : 'Retention Tests Due'}
+              </span>
+            </div>
+            <div className="space-y-1.5">
+              {retentionTests.map(test => (
+                <div key={test.id} className="flex items-center gap-2 text-xs">
+                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: test.predicted_retention < 0.5 ? '#EF4444' : '#F59E0B' }} />
+                  <span className="flex-1 truncate font-medium" style={{ color: 'var(--text-2)' }}>
+                    {test.topic_title}
+                  </span>
+                  <span className="text-[var(--text-3)] flex-shrink-0">
+                    {Math.round((test.predicted_retention ?? 0) * 100)}% {isHi ? 'याददाश्त' : 'retention'}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={() => router.push('/quiz?mode=cognitive')}
+              className="mt-2 w-full py-2 rounded-xl text-xs font-bold transition-all active:scale-95"
+              style={{ background: 'rgba(124,58,237,0.1)', color: '#7C3AED', border: '1px solid rgba(124,58,237,0.2)' }}
+            >
+              🧠 {isHi ? 'रिटेंशन टेस्ट लो' : 'Take Retention Test'}
+            </button>
+          </div>
+        )}
+
         {loading ? (
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">

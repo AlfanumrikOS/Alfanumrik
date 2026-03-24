@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@/lib/constants';
 import { BottomNav } from '@/components/ui';
+import { LESSON_STEPS, getLessonStepPrompt, getNextLessonStep, type LessonStep, type LessonState } from '@/lib/cognitive-engine';
 
 /* ══════════════════════════════════════════════════════════════
    SUBJECT CONFIGURATION
@@ -42,6 +43,7 @@ const MODES = [
   { id: 'doubt', emoji: '❓', label: 'Doubt', labelHi: 'डाउट', autoPrompt: () => '', autoPromptHi: () => '' },
   { id: 'revision', emoji: '🔄', label: 'Revise', labelHi: 'रिवीज़', autoPrompt: (topic: string) => topic ? `Give me a quick revision summary of: ${topic}` : 'Summarize the key points for revision', autoPromptHi: (topic: string) => topic ? `${topic} का त्वरित पुनरावृत्ति सारांश दो` : 'रिवीज़न के लिए मुख्य बिंदु बताओ' },
   { id: 'notes', emoji: '📝', label: 'Notes', labelHi: 'नोट्स', autoPrompt: (topic: string) => topic ? `Create concise exam notes for: ${topic}` : 'Create exam-ready notes for this chapter', autoPromptHi: (topic: string) => topic ? `${topic} के लिए परीक्षा नोट्स बनाओ` : 'इस अध्याय के परीक्षा नोट्स बनाओ' },
+  { id: 'lesson', emoji: '🎓', label: 'Lesson', labelHi: 'पाठ', autoPrompt: () => '', autoPromptHi: () => '' },
 ];
 
 const MATH_SYMBOL_TABS = [
@@ -337,6 +339,13 @@ export default function FoxyPage() {
   const recognitionRef = useRef<any>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
+  // Lesson flow state
+  const [lessonStep, setLessonStep] = useState<LessonStep>('hook');
+  const [lessonStepsCompleted, setLessonStepsCompleted] = useState<LessonStep[]>([]);
+  const [lessonPrediction, setLessonPrediction] = useState('');
+  const [showPredictionInput, setShowPredictionInput] = useState(false);
+  const [predictionSubmitted, setPredictionSubmitted] = useState(false);
+
   useEffect(() => { if (!authLoading && !isLoggedIn) router.replace('/'); }, [authLoading, isLoggedIn, router]);
 
   // Preload voices
@@ -488,11 +497,48 @@ export default function FoxyPage() {
     if (!mode) return;
     // Doubt mode: let user type their own question
     if (modeId === 'doubt') return;
+    // Lesson mode: start lesson flow
+    if (modeId === 'lesson') {
+      setLessonStep('hook');
+      setLessonStepsCompleted([]);
+      setPredictionSubmitted(false);
+      setShowPredictionInput(false);
+      const topicName = activeTopic?.title || '';
+      if (topicName) {
+        const prompt = getLessonStepPrompt('hook', topicName, language);
+        sendMessage(prompt);
+      }
+      return;
+    }
     // Auto-send a contextual prompt
     const topicName = activeTopic?.title || '';
     const prompt = language === 'hi' ? mode.autoPromptHi(topicName) : mode.autoPrompt(topicName);
     if (prompt) sendMessage(prompt);
   }, [activeTopic, language, sendMessage]);
+
+  // Advance lesson step
+  const advanceLessonStep = useCallback(() => {
+    const state: LessonState = {
+      currentStep: lessonStep,
+      stepsCompleted: lessonStepsCompleted,
+      recallScore: null,
+      applicationScore: null,
+    };
+    const next = getNextLessonStep(state);
+    if (next === 'complete') {
+      setSessionMode('learn');
+      return;
+    }
+    setLessonStepsCompleted(prev => [...prev, lessonStep]);
+    setLessonStep(next);
+    setPredictionSubmitted(false);
+    setShowPredictionInput(next === 'active_recall');
+    const topicName = activeTopic?.title || '';
+    if (topicName) {
+      const prompt = getLessonStepPrompt(next, topicName, language);
+      sendMessage(prompt);
+    }
+  }, [lessonStep, lessonStepsCompleted, activeTopic, language, sendMessage]);
 
   const cfg = SUBJECTS[activeSubject] || SUBJECTS.science;
 
@@ -596,6 +642,86 @@ export default function FoxyPage() {
 
       {/* Close dropdowns */}
       {(showSubjectDD || showChapterDD) && <div className="fixed inset-0 z-40" onClick={() => { setShowSubjectDD(false); setShowChapterDD(false); }} />}
+
+      {/* ═══ LESSON STEP PROGRESS BAR ═══ */}
+      {sessionMode === 'lesson' && (
+        <div className="px-3 py-2" style={{ background: 'var(--surface-1)', borderBottom: '1px solid var(--border)' }}>
+          <div className="flex items-center gap-1 mb-1.5">
+            {LESSON_STEPS.map((step, idx) => {
+              const isCompleted = lessonStepsCompleted.includes(step);
+              const isCurrent = step === lessonStep;
+              const stepLabels: Record<string, string> = {
+                hook: '🪝 Hook', visualization: '👁 Visual', guided_examples: '📝 Examples',
+                active_recall: '🧠 Recall', application: '🔧 Apply', spaced_revision: '🔄 Revise',
+              };
+              return (
+                <div key={step} className="flex-1 flex flex-col items-center gap-0.5">
+                  <div className="w-full h-1.5 rounded-full" style={{
+                    background: isCompleted ? cfg.color : isCurrent ? `${cfg.color}60` : 'var(--surface-2)',
+                    transition: 'all 0.3s ease',
+                  }} />
+                  <span className="text-[8px] font-bold truncate" style={{
+                    color: isCompleted ? cfg.color : isCurrent ? cfg.color : 'var(--text-3)',
+                  }}>{stepLabels[step] || step}</span>
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-semibold" style={{ color: cfg.color }}>
+              {language === 'hi' ? 'पाठ प्रगति' : 'Lesson Progress'}: {lessonStepsCompleted.length + 1}/{LESSON_STEPS.length}
+            </span>
+            {!loading && messages.length > 0 && (
+              <button
+                onClick={advanceLessonStep}
+                className="px-3 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95"
+                style={{ background: `${cfg.color}15`, color: cfg.color, border: `1px solid ${cfg.color}30` }}
+              >
+                {lessonStep === 'spaced_revision'
+                  ? (language === 'hi' ? '✓ पूरा हुआ' : '✓ Complete')
+                  : (language === 'hi' ? 'अगला चरण →' : 'Next Step →')}
+              </button>
+            )}
+          </div>
+          {/* Predict-before-reveal for active recall step */}
+          {showPredictionInput && !predictionSubmitted && (
+            <div className="mt-2 p-3 rounded-xl" style={{ background: `${cfg.color}06`, border: `1px solid ${cfg.color}20` }}>
+              <p className="text-xs font-semibold mb-1.5" style={{ color: cfg.color }}>
+                🧠 {language === 'hi' ? 'पहले अपना अनुमान लिखो:' : 'Write your prediction first:'}
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={lessonPrediction}
+                  onChange={e => setLessonPrediction(e.target.value)}
+                  placeholder={language === 'hi' ? 'तुम्हारा अनुमान...' : 'Your prediction...'}
+                  className="flex-1 text-sm rounded-lg px-3 py-2 outline-none"
+                  style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+                />
+                <button
+                  onClick={() => {
+                    if (lessonPrediction.trim()) {
+                      setPredictionSubmitted(true);
+                      sendMessage(`My prediction: ${lessonPrediction.trim()}`);
+                      setLessonPrediction('');
+                    }
+                  }}
+                  disabled={!lessonPrediction.trim()}
+                  className="px-3 py-2 rounded-lg text-xs font-bold text-white disabled:opacity-40"
+                  style={{ background: cfg.color }}
+                >
+                  {language === 'hi' ? 'भेजो' : 'Submit'}
+                </button>
+              </div>
+            </div>
+          )}
+          {showPredictionInput && predictionSubmitted && (
+            <div className="mt-2 text-[10px] font-semibold" style={{ color: '#16A34A' }}>
+              ✓ {language === 'hi' ? 'अनुमान जमा हो गया! Foxy का जवाब देखो।' : 'Prediction submitted! See Foxy\'s answer below.'}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ═══ MAIN CHAT AREA ═══ */}
       <div className="flex-1 flex overflow-hidden relative">

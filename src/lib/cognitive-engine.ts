@@ -1,15 +1,22 @@
 /* ═══════════════════════════════════════════════════════════════
    ALFANUMRIK 2.0 — Cognitive Engine
-   Pure-function library implementing:
+   Pure-function library implementing 15 cognitive science principles:
    - SM-2 Spaced Repetition (SuperMemo algorithm)
    - Bloom's Taxonomy Progression
    - Zone of Proximal Development (ZPD) Calculator
-   - Interleaving Algorithm
+   - Interleaving Algorithm (enhanced, always-on)
    - Cognitive Load Manager (fatigue detection, mid-session adjustment)
    - Metacognitive Reflection Prompt Generator (bilingual)
    - Learning Velocity Analytics
    - Knowledge Gap Detector
    - Enhanced Quiz Generator (3 modes)
+   - IRT Student Ability Estimation (3PL Newton-Raphson MLE)
+   - Bayesian Knowledge Tracing (BKT with adaptive parameters)
+   - Error Classification (careless / conceptual / misinterpretation)
+   - RL Reward Function (reinforcement learning for question selection)
+   - Retention Decay Model (Ebbinghaus forgetting curve)
+   - Lesson Flow Engine (6-step structured lesson with gating)
+   - Predict-Before-Reveal (active recall prompts)
    ═══════════════════════════════════════════════════════════════ */
 
 // ─── Types ───────────────────────────────────────────────────
@@ -830,4 +837,195 @@ export function calculateBoardExamScore(
   }
 
   return { totalMarks: totalBoardMarks, obtainedMarks, percentage, grade, message, messageHi };
+}
+
+// ─── IRT Student Ability Estimation ──────────────────────────
+
+/**
+ * Newton-Raphson MLE for 3PL IRT model.
+ * Estimates student ability (theta) from response data.
+ */
+export function estimateTheta(responses: { isCorrect: boolean; difficulty: number; discrimination?: number; guessing?: number }[]): number {
+  // Newton-Raphson MLE for 3PL IRT
+  let theta = 0;
+  for (let iter = 0; iter < 10; iter++) {
+    let scoreSum = 0, infoSum = 0;
+    for (const r of responses) {
+      const a = r.discrimination ?? 1.0;
+      const b = (r.difficulty - 2) * 1.5; // Map 1-5 to IRT scale
+      const c = r.guessing ?? 0.25;
+      const p = c + (1 - c) / (1 + Math.exp(-1.7 * a * (theta - b)));
+      scoreSum += a * ((r.isCorrect ? 1 : 0) - p);
+      infoSum += a * a * p * (1 - p);
+    }
+    if (infoSum > 0.001) theta = Math.max(-4, Math.min(4, theta + scoreSum / infoSum));
+  }
+  return theta;
+}
+
+/**
+ * Probability of correct response under 3PL IRT model.
+ */
+export function irtProbCorrect(theta: number, difficulty: number, discrimination = 1.0, guessing = 0.25): number {
+  const b = (difficulty - 2) * 1.5;
+  return guessing + (1 - guessing) / (1 + Math.exp(-1.7 * discrimination * (theta - b)));
+}
+
+// ─── Enhanced BKT with Per-Concept Parameters ────────────────
+
+export interface BKTParams {
+  pKnow: number; pLearn: number; pGuess: number; pSlip: number;
+}
+
+/**
+ * Bayesian Knowledge Tracing update with adaptive parameter adjustment.
+ */
+export function bktUpdate(params: BKTParams, isCorrect: boolean): { newPKnow: number; predicted: number; params: BKTParams } {
+  const predicted = params.pKnow * (1 - params.pSlip) + (1 - params.pKnow) * params.pGuess;
+  const posterior = isCorrect
+    ? (params.pKnow * (1 - params.pSlip)) / Math.max(predicted, 0.001)
+    : (params.pKnow * params.pSlip) / Math.max(1 - predicted, 0.001);
+  const newPKnow = posterior + (1 - posterior) * params.pLearn;
+
+  // Adapt parameters based on outcome
+  const newParams = { ...params };
+  if (isCorrect && params.pKnow > 0.7) newParams.pLearn = Math.min(0.4, params.pLearn + 0.01);
+  if (!isCorrect && params.pKnow < 0.3) newParams.pLearn = Math.max(0.05, params.pLearn - 0.01);
+  if (!isCorrect && params.pKnow > 0.8) newParams.pSlip = Math.min(0.3, params.pSlip + 0.02);
+  if (isCorrect) newParams.pSlip = Math.max(0.02, params.pSlip - 0.005);
+
+  return { newPKnow, predicted, params: newParams };
+}
+
+// ─── Error Classification ────────────────────────────────────
+
+export type ErrorType = 'correct' | 'careless' | 'conceptual' | 'misinterpretation';
+
+/**
+ * Classify the type of error based on response characteristics.
+ */
+export function classifyError(
+  isCorrect: boolean,
+  responseTimeSec: number,
+  avgResponseTimeSec: number,
+  questionDifficulty: number,
+  studentMastery: number
+): ErrorType {
+  if (isCorrect) return 'correct';
+  if (responseTimeSec < avgResponseTimeSec * 0.3 || responseTimeSec < 3) return 'careless';
+  if (studentMastery > 0.7 && questionDifficulty <= 2) return 'careless';
+  if (responseTimeSec > avgResponseTimeSec * 2.5) return 'conceptual';
+  if (questionDifficulty >= 3 && studentMastery < 0.4) return 'conceptual';
+  return 'misinterpretation';
+}
+
+// ─── RL Reward Function ──────────────────────────────────────
+
+/**
+ * Calculate reinforcement learning reward for question selection.
+ */
+export function calculateReward(
+  isCorrect: boolean,
+  responseTimeSec: number,
+  difficulty: number,
+  engagementScore: number = 0.5
+): number {
+  const timeFactor = isCorrect && responseTimeSec >= 5 && responseTimeSec <= 30 ? 1.0
+    : isCorrect && responseTimeSec < 5 ? 0.2 // too fast, guessing
+    : responseTimeSec <= 60 ? 0.6 : 0.3;
+
+  let reward = 0.35 * (isCorrect ? 1.0 : -0.3)
+    + 0.25 * timeFactor
+    + 0.20 * engagementScore
+    + 0.20 * 0.5; // mastery placeholder
+
+  if (isCorrect && difficulty >= 2) reward += 0.15; // ZPD bonus
+  if (isCorrect && difficulty === 1 && responseTimeSec < 5) reward -= 0.1; // too easy penalty
+
+  return Math.max(-1, Math.min(1, reward));
+}
+
+// ─── Retention Decay Model ───────────────────────────────────
+
+/**
+ * Ebbinghaus forgetting curve: R = e^(-t/S)
+ * Predicts retention probability after a given number of days.
+ */
+export function predictRetention(daysSinceStudy: number, strength: number = 1.0): number {
+  return Math.exp(-daysSinceStudy / Math.max(strength, 0.5));
+}
+
+/**
+ * Determine if a topic should be retested based on predicted retention.
+ */
+export function shouldRetest(daysSinceStudy: number, strength: number, threshold = 0.5): boolean {
+  return predictRetention(daysSinceStudy, strength) < threshold;
+}
+
+// ─── Lesson Flow Engine ──────────────────────────────────────
+
+export const LESSON_STEPS = ['hook', 'visualization', 'guided_examples', 'active_recall', 'application', 'spaced_revision'] as const;
+export type LessonStep = typeof LESSON_STEPS[number];
+
+export interface LessonState {
+  currentStep: LessonStep;
+  stepsCompleted: LessonStep[];
+  recallScore: number | null;
+  applicationScore: number | null;
+}
+
+/**
+ * Determine the next step in a lesson flow, with gating logic.
+ */
+export function getNextLessonStep(state: LessonState): LessonStep | 'complete' {
+  const idx = LESSON_STEPS.indexOf(state.currentStep);
+  // Must complete recall with >=60% before application
+  if (state.currentStep === 'active_recall' && (state.recallScore ?? 0) < 0.6) return 'guided_examples';
+  if (idx < LESSON_STEPS.length - 1) return LESSON_STEPS[idx + 1];
+  return 'complete';
+}
+
+/**
+ * Generate a bilingual prompt for a given lesson step.
+ */
+export function getLessonStepPrompt(step: LessonStep, topic: string, language: string): string {
+  const isHi = language === 'hi';
+  const prompts: Record<LessonStep, string> = {
+    hook: isHi ? `"${topic}" का एक रोचक real-life example बताओ जो curiosity जगाए।` : `Give me an engaging real-life hook for "${topic}" that sparks curiosity.`,
+    visualization: isHi ? `"${topic}" को एक diagram या visual analogy से समझाओ।` : `Explain "${topic}" using a visual diagram or analogy. Describe what I should picture.`,
+    guided_examples: isHi ? `"${topic}" के 2 solved examples step-by-step दिखाओ।` : `Show me 2 worked examples for "${topic}" with step-by-step solutions.`,
+    active_recall: isHi ? `"${topic}" पर 3 recall questions पूछो। मुझे पहले answer करने दो।` : `Ask me 3 recall questions on "${topic}". Let me answer before revealing the answer.`,
+    application: isHi ? `"${topic}" पर 2 CBSE board-style application questions दो।` : `Give me 2 CBSE board-style application questions on "${topic}".`,
+    spaced_revision: isHi ? `"${topic}" का quick revision summary दो - key points, formulas, common mistakes।` : `Give me a quick revision summary for "${topic}" - key points, formulas, and common mistakes.`,
+  };
+  return prompts[step];
+}
+
+// ─── Predict-Before-Reveal for Active Recall ─────────────────
+
+export interface PredictionChallenge {
+  question: string;
+  studentPrediction: string | null;
+  actualAnswer: string;
+  wasCorrect: boolean | null;
+}
+
+/**
+ * Generate a prediction prompt for active recall.
+ */
+export function generatePredictionPrompt(topic: string, language: string): string {
+  return language === 'hi'
+    ? `"${topic}" के बारे में एक prediction question पूछो। Student को पहले predict करने दो, फिर answer reveal करो।`
+    : `Ask a prediction question about "${topic}". Let the student predict first, then reveal the answer with explanation.`;
+}
+
+// ─── Enhanced Interleaving ───────────────────────────────────
+
+/**
+ * Determine if interleaving should be applied.
+ * Always interleave if student has attempted 2+ topics or session is long enough.
+ */
+export function shouldInterleave(sessionLength: number, topicCount: number): boolean {
+  // Always interleave if student has attempted 2+ topics
+  return topicCount >= 2 || sessionLength >= 5;
 }
