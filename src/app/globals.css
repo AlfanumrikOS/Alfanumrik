@@ -48,7 +48,7 @@
 
 /* ─── Base ────────────────────────────────────────────────── */
 * { margin: 0; padding: 0; box-sizing: border-box; }
-html { scroll-behavior: smooth; }
+html { scroll-behavior: smooth; color-scheme: light; }
 body {
   font-family: var(--font-body);
   font-size: 16px;
@@ -1108,69 +1108,12 @@ img, video, iframe, canvas, svg {
   z-index: 40;
 }
 
-/* ─── Dark Mode ──────────────────────────────────────────── */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0B1120;
-    --surface-1: #111827;
-    --surface-2: #1E293B;
-    --surface-3: #334155;
-
-    --border: rgba(255, 255, 255, 0.08);
-    --border-mid: rgba(255, 255, 255, 0.12);
-    --border-strong: rgba(255, 255, 255, 0.18);
-
-    --text-1: #F1F5F9;
-    --text-2: #CBD5E1;
-    --text-3: #64748B;
-  }
-
-  body {
-    -webkit-font-smoothing: antialiased;
-  }
-
-  .glass {
-    background: rgba(17, 24, 39, 0.75);
-  }
-  .glass-mid {
-    background: rgba(17, 24, 39, 0.6);
-  }
-
-  .page-header {
-    background: rgba(11, 17, 32, 0.88);
-  }
-
-  .input-base {
-    background: var(--surface-2);
-    color: var(--text-1);
-  }
-
-  .mesh-bg {
-    background:
-      radial-gradient(ellipse 60% 50% at 20% 10%, rgba(27, 43, 91, 0.12) 0, transparent 60%),
-      radial-gradient(ellipse 50% 40% at 80% 80%, rgba(14, 165, 233, 0.08) 0, transparent 55%),
-      radial-gradient(ellipse 40% 60% at 50% 50%, rgba(99, 102, 241, 0.06) 0, transparent 65%),
-      var(--bg);
-  }
-
-  ::selection {
-    background: rgba(14, 165, 233, 0.3);
-    color: var(--text-1);
-  }
-
-  select.input-base option {
-    background: var(--surface-2);
-    color: var(--text-1);
-  }
-
-  ::-webkit-scrollbar-thumb {
-    background: rgba(148, 163, 184, 0.35);
-  }
-
-  img, video {
-    opacity: 0.92;
-  }
-}
+/* ─── Dark Mode — DISABLED ───────────────────────────────
+   App is light-only. The dark media query was overriding
+   text variables to near-white (#F1F5F9) while backgrounds
+   stayed cream (#faf9f5), making ALL text invisible on
+   dark-mode OS. Forced light via color-scheme: light on html.
+   ───────────────────────────────────────────────────────── */
 
 /* ─── Print Safety ───────────────────────────────────────── */
 @media print {
