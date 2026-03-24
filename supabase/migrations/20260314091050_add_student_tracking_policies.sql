@@ -1,0 +1,3 @@
+-- Migration: add_student_tracking_policies
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

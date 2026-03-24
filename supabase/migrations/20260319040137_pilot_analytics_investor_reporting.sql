@@ -1,0 +1,3 @@
+-- Migration: pilot_analytics_investor_reporting
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

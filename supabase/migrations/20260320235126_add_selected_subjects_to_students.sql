@@ -1,0 +1,3 @@
+-- Migration: add_selected_subjects_to_students
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

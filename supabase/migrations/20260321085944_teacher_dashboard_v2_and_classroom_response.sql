@@ -1,0 +1,3 @@
+-- Migration: teacher_dashboard_v2_and_classroom_response
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

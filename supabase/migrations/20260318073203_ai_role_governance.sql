@@ -1,0 +1,3 @@
+-- Migration: ai_role_governance
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

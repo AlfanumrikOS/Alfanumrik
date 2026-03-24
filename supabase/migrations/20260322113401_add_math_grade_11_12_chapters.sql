@@ -1,0 +1,3 @@
+-- Migration: add_math_grade_11_12_chapters
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

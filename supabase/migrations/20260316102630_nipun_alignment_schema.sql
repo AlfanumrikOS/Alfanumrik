@@ -1,0 +1,3 @@
+-- Migration: nipun_alignment_schema
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

@@ -1,0 +1,3 @@
+-- Migration: perf_fix_rls_duplicate_indexes_v2
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

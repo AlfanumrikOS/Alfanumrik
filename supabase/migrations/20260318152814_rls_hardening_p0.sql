@@ -1,0 +1,3 @@
+-- Migration: rls_hardening_p0
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

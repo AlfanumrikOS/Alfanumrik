@@ -1,0 +1,3 @@
+-- Migration: fix_rls_guardian_links_and_admin
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

@@ -1,0 +1,3 @@
+-- Migration: add_scalability_infrastructure
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

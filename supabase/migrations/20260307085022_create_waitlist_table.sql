@@ -1,0 +1,3 @@
+-- Migration: create_waitlist_table
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

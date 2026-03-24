@@ -1,0 +1,3 @@
+-- Migration: create_chapter_progress_tracking
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

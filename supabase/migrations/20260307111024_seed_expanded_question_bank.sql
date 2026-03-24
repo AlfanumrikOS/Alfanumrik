@@ -1,0 +1,3 @@
+-- Migration: seed_expanded_question_bank
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

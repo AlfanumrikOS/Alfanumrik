@@ -1,0 +1,3 @@
+-- Migration: fix_p7_updated_at_hot_path_tables_and_auto_trigger
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

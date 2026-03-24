@@ -1,0 +1,3 @@
+-- Migration: parent_portal_and_roles
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

@@ -1,0 +1,3 @@
+-- Migration: fix_dashboard_rpc_achievement_column
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

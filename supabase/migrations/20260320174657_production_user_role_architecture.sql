@@ -1,0 +1,3 @@
+-- Migration: production_user_role_architecture
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

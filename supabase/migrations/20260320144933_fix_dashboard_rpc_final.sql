@@ -1,0 +1,3 @@
+-- Migration: fix_dashboard_rpc_final
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

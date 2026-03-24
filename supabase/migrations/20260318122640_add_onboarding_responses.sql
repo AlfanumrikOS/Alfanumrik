@@ -1,0 +1,3 @@
+-- Migration: add_onboarding_responses
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

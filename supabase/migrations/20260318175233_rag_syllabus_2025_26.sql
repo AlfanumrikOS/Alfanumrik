@@ -1,0 +1,3 @@
+-- Migration: rag_syllabus_2025_26
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

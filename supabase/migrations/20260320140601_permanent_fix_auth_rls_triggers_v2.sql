@@ -1,0 +1,3 @@
+-- Migration: permanent_fix_auth_rls_triggers_v2
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

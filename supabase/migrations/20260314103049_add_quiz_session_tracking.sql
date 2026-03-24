@@ -1,0 +1,3 @@
+-- Migration: add_quiz_session_tracking
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

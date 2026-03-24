@@ -1,0 +1,3 @@
+-- Migration: fix_security_scale_v2
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

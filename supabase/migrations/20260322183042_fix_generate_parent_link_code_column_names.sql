@@ -1,0 +1,3 @@
+-- Migration: fix_generate_parent_link_code_column_names
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

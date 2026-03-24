@@ -1,0 +1,3 @@
+-- Migration: add_textbook_content_tables
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

@@ -1,0 +1,3 @@
+-- Migration: fix_remaining_indexes_and_verify
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

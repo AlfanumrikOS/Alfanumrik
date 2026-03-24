@@ -1,0 +1,3 @@
+-- Migration: add_admin_auth_functions
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

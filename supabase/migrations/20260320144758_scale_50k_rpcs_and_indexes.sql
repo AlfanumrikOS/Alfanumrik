@@ -1,0 +1,3 @@
+-- Migration: scale_50k_rpcs_and_indexes
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

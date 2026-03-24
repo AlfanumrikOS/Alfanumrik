@@ -1,0 +1,3 @@
+-- Migration: add_student_notes_system
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

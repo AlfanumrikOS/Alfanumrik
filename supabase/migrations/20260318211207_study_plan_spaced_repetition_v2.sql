@@ -1,0 +1,3 @@
+-- Migration: study_plan_spaced_repetition_v2
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

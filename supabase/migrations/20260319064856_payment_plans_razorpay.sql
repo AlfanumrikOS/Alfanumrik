@@ -1,0 +1,3 @@
+-- Migration: payment_plans_razorpay
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

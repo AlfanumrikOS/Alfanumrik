@@ -1,0 +1,3 @@
+-- Migration: pedagogy_stack_tarl_formative_tutoring
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

@@ -1,0 +1,3 @@
+-- Migration: auto_generate_review_cards_from_quiz
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

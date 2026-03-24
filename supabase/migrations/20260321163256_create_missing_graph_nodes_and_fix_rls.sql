@@ -1,0 +1,3 @@
+-- Migration: create_missing_graph_nodes_and_fix_rls
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

@@ -1,0 +1,3 @@
+-- Migration: grade9_10_remaining_core_questions
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

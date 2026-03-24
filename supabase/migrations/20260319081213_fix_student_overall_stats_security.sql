@@ -1,0 +1,3 @@
+-- Migration: fix_student_overall_stats_security
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

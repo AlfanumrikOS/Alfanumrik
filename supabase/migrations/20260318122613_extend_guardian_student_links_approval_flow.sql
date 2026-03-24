@@ -1,0 +1,3 @@
+-- Migration: extend_guardian_student_links_approval_flow
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

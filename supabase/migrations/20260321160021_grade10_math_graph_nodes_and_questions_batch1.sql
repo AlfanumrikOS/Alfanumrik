@@ -1,0 +1,3 @@
+-- Migration: grade10_math_graph_nodes_and_questions_batch1
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

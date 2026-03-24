@@ -1,0 +1,3 @@
+-- Migration: add_senior_subjects_journey_cognitive
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

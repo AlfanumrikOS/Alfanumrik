@@ -1,0 +1,3 @@
+-- Migration: create_generate_parent_link_code_function
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

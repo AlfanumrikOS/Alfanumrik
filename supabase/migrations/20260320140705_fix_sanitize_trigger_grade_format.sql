@@ -1,0 +1,3 @@
+-- Migration: fix_sanitize_trigger_grade_format
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

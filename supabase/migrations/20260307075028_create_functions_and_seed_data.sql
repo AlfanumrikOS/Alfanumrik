@@ -1,0 +1,3 @@
+-- Migration: create_functions_and_seed_data
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

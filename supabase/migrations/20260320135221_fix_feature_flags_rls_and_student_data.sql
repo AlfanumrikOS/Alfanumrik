@@ -1,0 +1,3 @@
+-- Migration: fix_feature_flags_rls_and_student_data
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

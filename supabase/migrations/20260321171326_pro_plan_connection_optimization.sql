@@ -1,0 +1,3 @@
+-- Migration: pro_plan_connection_optimization
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

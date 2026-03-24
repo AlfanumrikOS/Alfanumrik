@@ -1,0 +1,3 @@
+-- Migration: create_core_student_tables
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

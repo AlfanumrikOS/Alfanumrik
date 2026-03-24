@@ -1,0 +1,3 @@
+-- Migration: rag_pipeline_schema
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

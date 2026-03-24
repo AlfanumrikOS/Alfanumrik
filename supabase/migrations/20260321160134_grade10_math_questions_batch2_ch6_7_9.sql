@@ -1,0 +1,3 @@
+-- Migration: grade10_math_questions_batch2_ch6_7_9
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

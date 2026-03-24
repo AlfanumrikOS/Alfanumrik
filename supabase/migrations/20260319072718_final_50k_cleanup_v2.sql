@@ -1,0 +1,3 @@
+-- Migration: final_50k_cleanup_v2
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

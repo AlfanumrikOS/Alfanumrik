@@ -1,0 +1,3 @@
+-- Migration: auto_create_student_profiles_and_xp_system
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

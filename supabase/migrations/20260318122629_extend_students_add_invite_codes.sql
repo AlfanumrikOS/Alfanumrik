@@ -1,0 +1,3 @@
+-- Migration: extend_students_add_invite_codes
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

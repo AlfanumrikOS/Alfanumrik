@@ -1,0 +1,3 @@
+-- Migration: fix_performance_rls_indexes
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

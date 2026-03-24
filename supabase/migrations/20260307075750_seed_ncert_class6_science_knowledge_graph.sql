@@ -1,0 +1,3 @@
+-- Migration: seed_ncert_class6_science_knowledge_graph
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

@@ -1,0 +1,3 @@
+-- Migration: offline_sync_infrastructure
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

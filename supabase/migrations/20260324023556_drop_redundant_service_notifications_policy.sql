@@ -1,0 +1,3 @@
+-- Migration: drop_redundant_service_notifications_policy
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference

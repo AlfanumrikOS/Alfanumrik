@@ -1,0 +1,3 @@
+-- Migration: production_audit_fix_p1_concept_codes_indexes_soft_delete
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference
