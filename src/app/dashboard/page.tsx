@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase, getStudentProfiles, getSubjects, getFeatureFlags, getNextTopics, getStudentNotifications, generateNotifications } from '@/lib/supabase';
-import { Card, StatCard, ProgressBar, SectionHeader, ActionTile, SubjectChip, Avatar, BottomNav } from '@/components/ui';
+import { Card, StatCard, ProgressBar, SectionHeader, ActionTile, SubjectChip, Avatar, BottomNav, EmptyState } from '@/components/ui';
 import SmartNudge from '@/components/ui/SmartNudge';
 import TrustFooter from '@/components/TrustFooter';
 import { DashboardSkeleton } from '@/components/Skeleton';
@@ -53,6 +53,7 @@ export default function Dashboard() {
   const [nudges, setNudges] = useState<Array<{ id: string; nudge_type: string; message: string; message_hi?: string; priority: number }>>([]);
   const [showDetailedAnalytics, setShowDetailedAnalytics] = useState(false);
   const [expandedSubjects, setExpandedSubjects] = useState(false);
+  const [dataLoaded, setDataLoaded] = useState(false);
   const [todayTasks, setTodayTasks] = useState<Array<{
     id: string; title: string; task_type: string; status: string;
     duration_minutes: number; xp_reward: number; bloom_level?: string; chapter_title?: string;
@@ -233,6 +234,8 @@ export default function Dashboard() {
         .limit(3);
       if (nudgeData) setNudges(nudgeData);
     } catch {}
+
+    setDataLoaded(true);
   }, [student]);
 
   useEffect(() => {
