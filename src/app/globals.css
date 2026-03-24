@@ -822,3 +822,222 @@ img, video, iframe, canvas, svg {
   .pb-nav { padding-bottom: 0 !important; }
   body { background: #fff; }
 }
+
+/* ─── Foxy Voice Companion ─────────────────────────────────── */
+
+/* Voice waveform container */
+.foxy-voice-bar {
+  height: 48px;
+  border-radius: 12px;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.foxy-voice-bar.active {
+  background: linear-gradient(135deg, rgba(232, 88, 28, 0.06), rgba(245, 166, 35, 0.06));
+  border: 1px solid rgba(232, 88, 28, 0.15);
+}
+
+/* Listening state indicator */
+.foxy-listening-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 16px;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1.5px solid rgba(239, 68, 68, 0.2);
+  animation: fadeIn 0.2s ease;
+}
+
+.foxy-listening-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #EF4444;
+  animation: pulse 1s infinite;
+}
+
+/* Interim transcript overlay */
+.foxy-interim-transcript {
+  padding: 6px 14px;
+  border-radius: 12px;
+  background: rgba(239, 68, 68, 0.06);
+  border: 1px solid rgba(239, 68, 68, 0.15);
+  font-size: 13px;
+  color: var(--text-2);
+  font-style: italic;
+  animation: fadeIn 0.15s ease;
+}
+
+/* Talk to Learn hero button */
+.foxy-talk-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 32px 24px;
+  border-radius: 24px;
+  background: linear-gradient(135deg, rgba(232, 88, 28, 0.04), rgba(245, 166, 35, 0.04));
+  border: 2px dashed rgba(232, 88, 28, 0.2);
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.foxy-talk-hero:hover {
+  background: linear-gradient(135deg, rgba(232, 88, 28, 0.08), rgba(245, 166, 35, 0.08));
+  border-color: rgba(232, 88, 28, 0.35);
+  transform: translateY(-2px);
+}
+
+.foxy-talk-hero:active {
+  transform: scale(0.98);
+}
+
+/* Voice-enabled message play button */
+.foxy-play-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  transition: all 0.15s ease;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+}
+
+.foxy-play-btn:hover {
+  background: var(--surface-2);
+}
+
+.foxy-play-btn.active {
+  background: rgba(232, 88, 28, 0.1);
+  color: var(--orange);
+}
+
+/* Conversation starters grid */
+.foxy-starters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+.foxy-starter-chip {
+  padding: 8px 14px;
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.foxy-starter-chip:hover {
+  border-color: var(--border-mid);
+  background: var(--surface-2);
+  transform: translateY(-1px);
+}
+
+.foxy-starter-chip:active {
+  transform: scale(0.96);
+}
+
+/* Voice mode overlay during listening — subtle red tint */
+.foxy-voice-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 25;
+  background: radial-gradient(circle at bottom center, rgba(239, 68, 68, 0.04), transparent 70%);
+  animation: fadeIn 0.3s ease;
+}
+
+/* Speaking indicator in header */
+.foxy-speaking-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  animation: fadeIn 0.2s ease;
+}
+
+/* Audio loading shimmer on play button */
+.foxy-audio-loading {
+  position: relative;
+  overflow: hidden;
+}
+
+.foxy-audio-loading::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(232, 88, 28, 0.1), transparent);
+  animation: shimmer 1.5s infinite;
+}
+
+/* Smooth height transitions for voice bar */
+.foxy-voice-section {
+  overflow: hidden;
+  transition: max-height 0.3s ease, opacity 0.3s ease, padding 0.3s ease;
+}
+
+.foxy-voice-section.collapsed {
+  max-height: 0;
+  opacity: 0;
+  padding: 0;
+}
+
+.foxy-voice-section.expanded {
+  max-height: 80px;
+  opacity: 1;
+}
+
+/* Mobile voice input area enhancement */
+@media (max-width: 640px) {
+  .foxy-talk-hero {
+    padding: 24px 16px;
+    border-radius: 20px;
+  }
+
+  .foxy-starters {
+    gap: 6px;
+  }
+
+  .foxy-starter-chip {
+    padding: 7px 12px;
+    font-size: 11px;
+  }
+
+  .foxy-voice-bar {
+    height: 40px;
+  }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .foxy-listening-dot {
+    animation: none;
+    opacity: 0.8;
+  }
+
+  .foxy-talk-hero:hover {
+    transform: none;
+  }
+
+  .foxy-voice-section {
+    transition: none;
+  }
+}
