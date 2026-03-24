@@ -5,21 +5,20 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase, getStudentProfiles, getSubjects, getFeatureFlags, getNextTopics, getStudentNotifications, generateNotifications } from '@/lib/supabase';
 import { Card, StatCard, ProgressBar, SectionHeader, ActionTile, SubjectChip, Avatar, BottomNav } from '@/components/ui';
+import SmartNudge from '@/components/ui/SmartNudge';
 import TrustFooter from '@/components/TrustFooter';
 import { DashboardSkeleton } from '@/components/Skeleton';
 import type { StudentLearningProfile, Subject, CurriculumTopic } from '@/lib/types';
 import { SUBJECT_META } from '@/lib/constants';
 
+/* Reduced to 6 most essential actions (from 9) — Hick's Law */
 const QUICK_ACTIONS = [
   { href: '/foxy', icon: '🦊', label: 'Ask Foxy', labelHi: 'फॉक्सी से पूछो', color: '#E8581C' },
   { href: '/quiz?mode=cognitive', icon: '🧠', label: 'Smart Quiz', labelHi: 'स्मार्ट क्विज़', color: '#7C3AED' },
-  { href: '/exams', icon: '📋', label: 'My Exams', labelHi: 'मेरी परीक्षाएँ', color: '#DC2626' },
-  { href: '/quiz', icon: '⚡', label: 'Quick Quiz', labelHi: 'क्विज़', color: '#F5A623' },
-  { href: '/review', icon: '🔄', label: 'Review', labelHi: 'रिव्यू', color: '#0891B2' },
-  { href: '/scan', icon: '📷', label: 'Scan', labelHi: 'स्कैन', color: '#0D9488' },
   { href: '/study-plan', icon: '📅', label: 'Study Plan', labelHi: 'अध्ययन योजना', color: '#7C3AED' },
+  { href: '/scan', icon: '📷', label: 'Scan', labelHi: 'स्कैन', color: '#0D9488' },
+  { href: '/review', icon: '🔄', label: 'Review', labelHi: 'रिव्यू', color: '#0891B2' },
   { href: '/reports', icon: '📊', label: 'Reports', labelHi: 'रिपोर्ट', color: '#16A34A' },
-  { href: '/leaderboard', icon: '🏆', label: 'Leaderboard', labelHi: 'लीडरबोर्ड', color: '#DB2777' },
 ];
 
 const BLOOM_LABELS: Record<string, { icon: string; label: string; labelHi: string }> = {
@@ -52,6 +51,8 @@ export default function Dashboard() {
   const [cbseReadiness, setCbseReadiness] = useState<number | null>(null);
   const [upcomingExams, setUpcomingExams] = useState<Array<{ id: string; exam_name: string; exam_type: string; subject: string; exam_date: string; days_left: number }>>([]);
   const [nudges, setNudges] = useState<Array<{ id: string; nudge_type: string; message: string; message_hi?: string; priority: number }>>([]);
+  const [showDetailedAnalytics, setShowDetailedAnalytics] = useState(false);
+  const [expandedSubjects, setExpandedSubjects] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/');
@@ -295,143 +296,143 @@ export default function Dashboard() {
       </header>
 
       <main className="app-container py-4 space-y-4">
-        {/* XP Hero */}
-        <Card accent={meta?.color}>
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-2xl">{meta?.icon ?? '📚'}</span>
-                <span className="font-semibold text-sm text-[var(--text-2)]">
-                  {meta?.name ?? student.preferred_subject} · Grade {student.grade}
-                </span>
-              </div>
-              <div className="text-3xl md:text-4xl font-bold mt-1" style={{ fontFamily: 'var(--font-display)' }}>
-                <span className="gradient-text">{totalXp.toLocaleString()}</span>
-                <span className="text-base text-[var(--text-3)] ml-1">XP</span>
-              </div>
-            </div>
-            <div className="text-right">
-              <div className="flex items-center gap-1 justify-end">
-                <span className="text-xl streak-flame">🔥</span>
-                <span className="text-2xl font-bold">{streak}</span>
-              </div>
-              <div className="text-xs text-[var(--text-3)]">{isHi ? 'दिन' : 'day streak'}</div>
-              {velocityTrend && (
-                <div className="text-xs mt-1" style={{ color: velocityTrend === 'fast' ? '#16A34A' : velocityTrend === 'steady' ? '#F59E0B' : '#EF4444' }}>
-                  {velocityTrend === 'fast' ? '↑' : velocityTrend === 'steady' ? '→' : '↓'} {isHi ? (velocityTrend === 'fast' ? 'तेज़' : velocityTrend === 'steady' ? 'स्थिर' : 'धीमा') : velocityTrend}
-                </div>
-              )}
-            </div>
-          </div>
-          <ProgressBar
-            value={((currentXp % 500) / 500) * 100}
-            label={`${isHi ? 'स्तर' : 'Level'} ${currentLevel}`}
-            showPercent
-          />
-          <div className="grid-stats mt-4">
-            <StatCard value={mastered} label={isHi ? 'महारत' : 'Mastered'} color="var(--gold)" />
-            <StatCard value={inProgress} label={isHi ? 'जारी' : 'In Progress'} color="var(--teal)" />
-            <StatCard
-              value={dueCount}
-              label={isHi ? 'रिव्यू' : 'Due Reviews'}
-              color={dueCount > 0 ? 'var(--orange)' : 'var(--text-3)'}
-            />
-            <StatCard
-              value={snapshot?.quizzes_taken ?? 0}
-              label={isHi ? 'क्विज़' : 'Quizzes'}
-              color="var(--purple)"
-            />
-            {bloomLevel && BLOOM_LABELS[bloomLevel.bloom_level] && (
-              <StatCard
-                icon={BLOOM_LABELS[bloomLevel.bloom_level].icon}
-                value={`${Math.round(bloomLevel.mastery * 100)}%`}
-                label={isHi ? BLOOM_LABELS[bloomLevel.bloom_level].labelHi : BLOOM_LABELS[bloomLevel.bloom_level].label}
-                color="#7C3AED"
-              />
-            )}
-            {retentionScore !== null && (
-              <StatCard
-                icon="🧠"
-                value={`${retentionScore}%`}
-                label={isHi ? 'याददाश्त' : 'Retention'}
-                color="#0891B2"
-              />
-            )}
-            {cbseReadiness !== null && (
-              <StatCard
-                icon="🎯"
-                value={`${cbseReadiness}%`}
-                label={isHi ? 'CBSE तैयारी' : 'CBSE Ready'}
-                color="#16A34A"
-              />
-            )}
-          </div>
-        </Card>
 
-        {/* Error Breakdown */}
-        {errorBreakdown && (
-          <Card>
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-base">🔍</span>
-              <span className="text-sm font-bold" style={{ fontFamily: 'var(--font-display)' }}>
-                {isHi ? 'गलती विश्लेषण' : 'Error Analysis'}
-              </span>
-            </div>
-            <div className="space-y-2">
-              {[
-                { label: isHi ? 'लापरवाही' : 'Careless', pct: errorBreakdown.careless, color: '#F59E0B', icon: '⚡' },
-                { label: isHi ? 'अवधारणा' : 'Conceptual', pct: errorBreakdown.conceptual, color: '#EF4444', icon: '🧠' },
-                { label: isHi ? 'गलत समझ' : 'Misread', pct: errorBreakdown.misinterpretation, color: '#8B5CF6', icon: '🔍' },
-              ].map(item => (
-                <div key={item.label} className="flex items-center gap-2">
-                  <span className="text-xs w-4">{item.icon}</span>
-                  <span className="text-xs font-semibold w-20" style={{ color: item.color }}>{item.label}</span>
-                  <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: `${item.color}15` }}>
-                    <div className="h-full rounded-full transition-all" style={{ width: `${item.pct}%`, background: item.color }} />
+        {/* ═══ ABOVE THE FOLD: What should the user do right now? ═══ */}
+
+        {/* 1. Exam Countdown — Prominent, answering "What's urgent?" */}
+        {upcomingExams.length > 0 && (
+          <button onClick={() => router.push('/exams')} className="w-full">
+            <Card accent={upcomingExams[0].days_left <= 7 ? '#DC2626' : 'var(--orange)'} className="!p-4">
+              <div className="flex items-center gap-4">
+                <div className="text-center flex-shrink-0" style={{ minWidth: '56px' }}>
+                  <div className="text-3xl font-bold" style={{ color: upcomingExams[0].days_left <= 7 ? '#DC2626' : 'var(--orange)', fontFamily: 'var(--font-display)' }}>
+                    {upcomingExams[0].days_left}
                   </div>
-                  <span className="text-[10px] text-[var(--text-3)] w-10 text-right">{item.pct}%</span>
+                  <div className="text-[10px] text-[var(--text-3)] font-semibold uppercase">{isHi ? 'दिन बाकी' : 'days left'}</div>
                 </div>
-              ))}
+                <div className="flex-1 min-w-0 text-left">
+                  <div className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>
+                    {isHi ? 'अगली परीक्षा' : 'Next Exam'}
+                  </div>
+                  <div className="font-bold text-base truncate mt-0.5">{upcomingExams[0].exam_name}</div>
+                  <div className="text-xs text-[var(--text-3)] mt-0.5">
+                    {new Date(upcomingExams[0].exam_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    {upcomingExams.length > 1 && ` · +${upcomingExams.length - 1} more`}
+                  </div>
+                </div>
+                <span className="text-[var(--text-3)] text-lg">→</span>
+              </div>
+            </Card>
+          </button>
+        )}
+
+        {/* 2. Resume Where You Left Off — Single clear CTA */}
+        {nextTopics.length > 0 && (
+          <Card hoverable onClick={() => router.push('/foxy')} className="!p-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
+                style={{ background: `${meta?.color ?? 'var(--orange)'}15` }}>
+                {meta?.icon ?? '📚'}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-3)]">
+                  {isHi ? 'जहाँ छोड़ा था वहाँ से शुरू करो' : 'Resume where you left off'}
+                </div>
+                <div className="font-semibold text-sm truncate mt-0.5">{nextTopics[0].title}</div>
+              </div>
+              <button className="px-4 py-2 rounded-xl text-xs font-bold text-white flex-shrink-0" style={{ background: 'var(--orange)' }}>
+                {isHi ? 'शुरू करो' : 'Continue'}
+              </button>
             </div>
           </Card>
         )}
 
-        {/* Exam Countdown */}
-        {upcomingExams.length > 0 && (
-          <div>
-            <SectionHeader icon="📋">{isHi ? 'आगामी परीक्षाएँ' : 'Upcoming Exams'}</SectionHeader>
-            <div className="space-y-2">
-              {upcomingExams.map(exam => {
-                const isUrgent = exam.days_left <= 7;
-                const examMeta = SUBJECT_META.find(s => s.code === exam.subject);
-                const typeLabel = exam.exam_type === 'unit_test' ? (isHi ? 'UT' : 'UT') : exam.exam_type === 'half_yearly' ? (isHi ? 'अर्ध-वार्षिक' : 'Half-Yearly') : (isHi ? 'वार्षिक' : 'Annual');
-                return (
-                  <button key={exam.id} onClick={() => router.push(`/exams`)} className="w-full">
-                    <Card className="!p-3 flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0" style={{ background: isUrgent ? 'rgba(220,38,38,0.1)' : `${examMeta?.color ?? 'var(--orange)'}15` }}>
-                        {examMeta?.icon ?? '📋'}
-                      </div>
-                      <div className="flex-1 min-w-0 text-left">
-                        <div className="font-semibold text-sm truncate">{exam.exam_name}</div>
-                        <div className="text-[10px] text-[var(--text-3)] mt-0.5">
-                          {typeLabel} · {new Date(exam.exam_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                        </div>
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        <div className="text-lg font-bold" style={{ color: isUrgent ? '#DC2626' : 'var(--orange)', fontFamily: 'var(--font-display)' }}>
-                          {exam.days_left}
-                        </div>
-                        <div className="text-[10px] text-[var(--text-3)]">{isHi ? 'दिन' : 'days'}</div>
-                      </div>
-                    </Card>
-                  </button>
-                );
-              })}
+        {/* 3. Today's Plan — Top 3 tasks only */}
+        <Card>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span className="text-base">🎯</span>
+              <span className="text-sm font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+                {isHi ? "आज की योजना" : "Today's Plan"}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xl streak-flame">🔥</span>
+              <span className="text-lg font-bold">{streak}</span>
+              <span className="text-[10px] text-[var(--text-3)]">{isHi ? 'दिन' : 'days'}</span>
+            </div>
+          </div>
+          <div className="space-y-2">
+            {/* Show top 3 recommended actions */}
+            {dueCount > 0 && flags.spaced_repetition && (
+              <button onClick={() => router.push('/review')} className="w-full flex items-center gap-3 p-2.5 rounded-xl transition-all active:scale-[0.98]"
+                style={{ background: 'rgba(245,166,35,0.06)', border: '1px solid rgba(245,166,35,0.15)' }}>
+                <span className="text-lg">🔄</span>
+                <div className="flex-1 text-left">
+                  <div className="text-sm font-semibold">{dueCount} {isHi ? 'रिव्यू बाकी' : 'reviews due'}</div>
+                  <div className="text-[10px] text-[var(--text-3)]">{isHi ? 'स्मृति मजबूत करो' : 'Strengthen memory'}</div>
+                </div>
+                <span style={{ color: 'var(--gold)' }}>→</span>
+              </button>
+            )}
+            {nextTopics.slice(1, 3).map(topic => (
+              <button key={topic.id} onClick={() => router.push('/foxy')} className="w-full flex items-center gap-3 p-2.5 rounded-xl transition-all active:scale-[0.98]"
+                style={{ background: `${meta?.color ?? 'var(--orange)'}06`, border: `1px solid ${meta?.color ?? 'var(--orange)'}15` }}>
+                <span className="text-lg">{meta?.icon ?? '📚'}</span>
+                <div className="flex-1 text-left">
+                  <div className="text-sm font-semibold truncate">{topic.title}</div>
+                  <div className="text-[10px] text-[var(--text-3)]">{isHi ? 'Foxy से सीखो' : 'Learn with Foxy'}</div>
+                </div>
+                <span className="text-[var(--text-3)]">→</span>
+              </button>
+            ))}
+            <button onClick={() => router.push('/study-plan')} className="w-full text-xs font-semibold py-2 text-center" style={{ color: 'var(--orange)' }}>
+              {isHi ? 'पूरा प्लान देखो →' : 'See full plan →'}
+            </button>
+          </div>
+        </Card>
+
+        {/* ═══ BELOW THE FOLD: Progressive disclosure ═══ */}
+
+        {/* Knowledge Gaps — Only if critical */}
+        {knowledgeGaps.length > 0 && showGapsAlert && (
+          <div className="rounded-2xl p-4 relative" style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)' }}>
+            <button onClick={() => setShowGapsAlert(false)} className="absolute top-2 right-3 text-[var(--text-3)] text-sm">✕</button>
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">🔍</span>
+              <div className="flex-1">
+                <div className="font-semibold text-sm" style={{ color: '#DC2626' }}>
+                  {knowledgeGaps.length} {isHi ? 'ज्ञान अंतराल पाए गए' : 'knowledge gaps found'}
+                </div>
+                <div className="text-xs text-[var(--text-3)] mt-1 space-y-0.5">
+                  {knowledgeGaps.slice(0, 2).map(g => (
+                    <div key={g.id}>• {isHi && g.description_hi ? g.description_hi : g.description}</div>
+                  ))}
+                </div>
+                <button onClick={() => router.push('/foxy')} className="mt-2 text-xs font-bold px-3 py-1.5 rounded-lg"
+                  style={{ background: 'rgba(232,88,28,0.1)', color: 'var(--orange)' }}>
+                  🦊 {isHi ? 'Foxy से ठीक करो' : 'Fix with Foxy'}
+                </button>
+              </div>
             </div>
           </div>
         )}
 
-        {/* Smart Nudges */}
+        {/* Smart Nudges — Client-side intelligent nudging */}
+        <SmartNudge
+          studentData={{
+            subjects: profiles.map(p => ({
+              name: subjects.find(s => s.code === p.subject)?.name ?? p.subject,
+              streak: p.streak_days,
+            })),
+            studyPlan: { completed_pct: mastered > 0 ? Math.round((mastered / Math.max(mastered + inProgress, 1)) * 100) : undefined },
+            upcomingExams: upcomingExams.map(e => ({ name: e.exam_name, date: e.exam_date, syllabus_pct: cbseReadiness ?? undefined })),
+            stats: { problems_solved_today: snapshot?.quizzes_taken },
+          }}
+          maxNudges={2}
+        />
+
+        {/* DB-driven nudges */}
         {nudges.length > 0 && (
           <div className="space-y-2">
             {nudges.map(nudge => {
@@ -448,76 +449,21 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Continue Learning */}
-        {nextTopics.length > 0 && (
-          <div>
-            <SectionHeader icon="▶">{isHi ? 'आगे सीखो' : 'Continue Learning'}</SectionHeader>
-            {nextTopics.slice(0, 1).map((topic) => (
-              <Card key={topic.id} hoverable onClick={() => router.push('/foxy')} className="flex items-center gap-4 !p-4">
-                <div
-                  className="w-10 h-10 md:w-12 md:h-12 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-                  style={{ background: `${meta?.color ?? 'var(--orange)'}15` }}
-                >
-                  {meta?.icon ?? '📚'}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-sm md:text-base truncate">{topic.title}</div>
-                  <div className="text-xs text-[var(--text-3)] mt-0.5">
-                    {isHi ? 'Foxy के साथ सीखो' : 'Learn with Foxy'} · Difficulty {topic.difficulty_level}/5
-                  </div>
-                </div>
-                <span className="text-[var(--text-3)]">→</span>
-              </Card>
-            ))}
-          </div>
-        )}
-
-        {/* Due Reviews Alert */}
-        {dueCount > 0 && flags.spaced_repetition && (
-          <button
-            onClick={() => router.push('/review')}
-            className="w-full rounded-2xl p-4 flex items-center gap-3 transition-all"
-            style={{ background: 'rgba(245,166,35,0.08)', border: '1px solid rgba(245,166,35,0.2)' }}
-          >
-            <span className="text-2xl">🔄</span>
-            <div className="text-left">
-              <div className="font-semibold text-sm" style={{ color: 'var(--gold)' }}>
-                {dueCount} {isHi ? 'रिव्यू बाकी है!' : 'topics due for review!'}
-              </div>
-              <div className="text-xs text-[var(--text-3)]">{isHi ? 'स्मृति मजबूत करो' : 'Strengthen your memory'}</div>
+        {/* CBSE Readiness — Single progress bar */}
+        {cbseReadiness !== null && (
+          <Card className="!p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <span>🎯</span>
+              <span className="text-sm font-semibold">{isHi ? 'CBSE तैयारी' : 'CBSE Readiness'}</span>
+              <span className="ml-auto text-base font-bold" style={{ color: cbseReadiness >= 70 ? '#16A34A' : cbseReadiness >= 40 ? '#F59E0B' : '#EF4444', fontFamily: 'var(--font-display)' }}>
+                {cbseReadiness}%
+              </span>
             </div>
-            <span className="ml-auto" style={{ color: 'var(--gold)' }}>→</span>
-          </button>
+            <ProgressBar value={cbseReadiness} color={cbseReadiness >= 70 ? '#16A34A' : cbseReadiness >= 40 ? '#F59E0B' : '#EF4444'} height={6} />
+          </Card>
         )}
 
-        {/* Knowledge Gaps Alert */}
-        {knowledgeGaps.length > 0 && showGapsAlert && (
-          <div className="rounded-2xl p-4 relative" style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)' }}>
-            <button onClick={() => setShowGapsAlert(false)} className="absolute top-2 right-3 text-[var(--text-3)] text-sm">✕</button>
-            <div className="flex items-start gap-3">
-              <span className="text-2xl">🔍</span>
-              <div className="flex-1">
-                <div className="font-semibold text-sm" style={{ color: '#DC2626' }}>
-                  {knowledgeGaps.length} {isHi ? 'ज्ञान अंतराल पाए गए' : 'knowledge gaps found'}
-                </div>
-                <div className="text-xs text-[var(--text-3)] mt-1 space-y-0.5">
-                  {knowledgeGaps.slice(0, 2).map(g => (
-                    <div key={g.id}>• {isHi && g.description_hi ? g.description_hi : g.description}</div>
-                  ))}
-                </div>
-                <button
-                  onClick={() => router.push('/foxy')}
-                  className="mt-2 text-xs font-bold px-3 py-1.5 rounded-lg"
-                  style={{ background: 'rgba(232,88,28,0.1)', color: 'var(--orange)' }}
-                >
-                  🦊 {isHi ? 'Foxy से ठीक करो' : 'Fix with Foxy'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Quick Actions */}
+        {/* Quick Actions — Reduced to 6 */}
         <div>
           <SectionHeader icon="⚡">{isHi ? 'त्वरित क्रियाएँ' : 'Quick Actions'}</SectionHeader>
           <div className="grid-actions">
@@ -604,27 +550,101 @@ export default function Dashboard() {
           </>
         )}
 
-        {/* XP by Subject (only selected subjects) */}
+        {/* Subject Progress — Collapsible (collapsed by default) */}
         {profiles.filter(p => selectedSubjects.includes(p.subject)).length > 0 && (
           <div>
-            <SectionHeader icon="🏅">{isHi ? 'विषयवार XP' : 'XP by Subject'}</SectionHeader>
-            <div className="space-y-2">
-              {profiles.filter(p => selectedSubjects.includes(p.subject)).map((p) => {
-                const sm = subjects.find((s) => s.code === p.subject);
-                return (
-                  <Card key={p.id} className="!p-3 flex items-center gap-3">
-                    <span className="text-lg">{sm?.icon ?? '📚'}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex justify-between text-xs mb-1">
-                        <span className="font-semibold truncate">{sm?.name ?? p.subject}</span>
-                        <span className="text-[var(--text-3)]">{p.xp} XP · Lv{p.level}</span>
+            <button onClick={() => setExpandedSubjects(!expandedSubjects)} className="w-full flex items-center justify-between mb-2">
+              <SectionHeader icon="🏅">{isHi ? 'विषयवार XP' : 'Subject Progress'}</SectionHeader>
+              <span className="text-xs text-[var(--text-3)] transition-transform" style={{ transform: expandedSubjects ? 'rotate(180deg)' : 'rotate(0deg)' }}>▼</span>
+            </button>
+            {!expandedSubjects ? (
+              /* Collapsed: just progress bars */
+              <div className="space-y-1.5">
+                {profiles.filter(p => selectedSubjects.includes(p.subject)).map((p) => {
+                  const sm = subjects.find((s) => s.code === p.subject);
+                  return (
+                    <div key={p.id} className="flex items-center gap-2">
+                      <span className="text-sm">{sm?.icon ?? '📚'}</span>
+                      <span className="text-xs font-semibold w-16 truncate">{sm?.name ?? p.subject}</span>
+                      <div className="flex-1"><ProgressBar value={((p.xp % 500) / 500) * 100} color={sm?.color} height={4} /></div>
+                      <span className="text-[10px] text-[var(--text-3)]">Lv{p.level}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              /* Expanded: full cards */
+              <div className="space-y-2">
+                {profiles.filter(p => selectedSubjects.includes(p.subject)).map((p) => {
+                  const sm = subjects.find((s) => s.code === p.subject);
+                  return (
+                    <Card key={p.id} className="!p-3 flex items-center gap-3">
+                      <span className="text-lg">{sm?.icon ?? '📚'}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between text-xs mb-1">
+                          <span className="font-semibold truncate">{sm?.name ?? p.subject}</span>
+                          <span className="text-[var(--text-3)]">{p.xp} XP · Lv{p.level}</span>
+                        </div>
+                        <ProgressBar value={((p.xp % 500) / 500) * 100} color={sm?.color} height={5} />
                       </div>
-                      <ProgressBar value={((p.xp % 500) / 500) * 100} color={sm?.color} height={5} />
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Detailed Analytics — Hidden behind progressive disclosure */}
+        {(errorBreakdown || retentionScore !== null || velocityTrend) && (
+          <div>
+            <button onClick={() => setShowDetailedAnalytics(!showDetailedAnalytics)}
+              className="w-full flex items-center justify-between py-2">
+              <span className="text-xs font-semibold text-[var(--text-3)] uppercase tracking-wider">
+                {isHi ? 'विस्तृत विश्लेषण' : 'Detailed Analytics'}
+              </span>
+              <span className="text-xs" style={{ color: 'var(--orange)' }}>
+                {showDetailedAnalytics ? (isHi ? 'छुपाओ' : 'Hide') : (isHi ? 'देखो' : 'Show')} ↓
+              </span>
+            </button>
+            {showDetailedAnalytics && (
+              <div className="space-y-3">
+                {/* Mini stats row */}
+                <div className="grid grid-cols-3 gap-2">
+                  <StatCard value={totalXp.toLocaleString()} label="XP" color="var(--orange)" />
+                  {retentionScore !== null && <StatCard icon="🧠" value={`${retentionScore}%`} label={isHi ? 'याददाश्त' : 'Retention'} color="#0891B2" />}
+                  {velocityTrend && <StatCard icon={velocityTrend === 'fast' ? '↑' : velocityTrend === 'steady' ? '→' : '↓'} value={isHi ? (velocityTrend === 'fast' ? 'तेज़' : velocityTrend === 'steady' ? 'स्थिर' : 'धीमा') : velocityTrend} label={isHi ? 'गति' : 'Velocity'} color={velocityTrend === 'fast' ? '#16A34A' : velocityTrend === 'steady' ? '#F59E0B' : '#EF4444'} />}
+                </div>
+                {/* Error breakdown */}
+                {errorBreakdown && (
+                  <Card>
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-base">🔍</span>
+                      <span className="text-sm font-bold" style={{ fontFamily: 'var(--font-display)' }}>{isHi ? 'गलती विश्लेषण' : 'Error Analysis'}</span>
+                    </div>
+                    <div className="space-y-2">
+                      {[
+                        { label: isHi ? 'लापरवाही' : 'Careless', pct: errorBreakdown.careless, color: '#F59E0B', icon: '⚡' },
+                        { label: isHi ? 'अवधारणा' : 'Conceptual', pct: errorBreakdown.conceptual, color: '#EF4444', icon: '🧠' },
+                        { label: isHi ? 'गलत समझ' : 'Misread', pct: errorBreakdown.misinterpretation, color: '#8B5CF6', icon: '🔍' },
+                      ].map(item => (
+                        <div key={item.label} className="flex items-center gap-2">
+                          <span className="text-xs w-4">{item.icon}</span>
+                          <span className="text-xs font-semibold w-20" style={{ color: item.color }}>{item.label}</span>
+                          <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: `${item.color}15` }}>
+                            <div className="h-full rounded-full transition-all" style={{ width: `${item.pct}%`, background: item.color }} />
+                          </div>
+                          <span className="text-[10px] text-[var(--text-3)] w-10 text-right">{item.pct}%</span>
+                        </div>
+                      ))}
                     </div>
                   </Card>
-                );
-              })}
-            </div>
+                )}
+                <button onClick={() => router.push('/progress')} className="w-full text-xs font-semibold py-2 text-center" style={{ color: 'var(--orange)' }}>
+                  {isHi ? 'पूरा विश्लेषण देखो →' : 'See full analytics →'}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </main>
