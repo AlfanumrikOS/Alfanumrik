@@ -62,6 +62,34 @@ if (typeof globalThis !== 'undefined') {
 
 export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
+  const pathname = path; // alias for clarity in API checks
+
+  // ── Layer 0.5: API Authentication Check ──
+  if (pathname.startsWith('/api/v1/')) {
+    // Handle CORS preflight requests
+    if (request.method === 'OPTIONS') {
+      return new NextResponse(null, {
+        status: 204,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+          'Access-Control-Max-Age': '86400',
+        },
+      });
+    }
+
+    // Check for Authorization header or valid session cookie
+    const authHeader = request.headers.get('Authorization');
+    const hasSession = request.cookies.getAll().some(c => c.name.includes('auth-token'));
+
+    if (!authHeader && !hasSession) {
+      return NextResponse.json(
+        { error: 'Authentication required', code: 'AUTH_REQUIRED' },
+        { status: 401, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+  }
 
   // ── Layer 0: Supabase session refresh ──
   // This keeps the auth cookie fresh on every request.
@@ -131,7 +159,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // General rate limit for all routes
-  const { allowed } = checkRateLimit(`general:${ip}`, RATE_LIMIT_MAX);
+  const { allowed, remaining: generalRemaining } = checkRateLimit(`general:${ip}`, RATE_LIMIT_MAX);
   if (!allowed) {
     return new NextResponse(
       JSON.stringify({ error: 'Rate limit exceeded. Please slow down.' }),
@@ -140,6 +168,17 @@ export async function middleware(request: NextRequest) {
         headers: { 'Content-Type': 'application/json', 'Retry-After': '60' },
       }
     );
+  }
+
+  // Add rate limit headers for API routes
+  if (pathname.startsWith('/api/v1/')) {
+    response.headers.set('X-RateLimit-Limit', String(RATE_LIMIT_MAX));
+    response.headers.set('X-RateLimit-Remaining', String(generalRemaining));
+
+    // Add CORS headers for API routes
+    response.headers.set('Access-Control-Allow-Origin', '*');
+    response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    response.headers.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
   }
 
   return addSecurityHeaders(response, request);
