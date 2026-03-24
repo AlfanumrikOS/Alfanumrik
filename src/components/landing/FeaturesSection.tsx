@@ -20,48 +20,48 @@ const FEATURES: Feature[] = [
     title: 'Foxy AI Tutor',
     description:
       'A patient, brilliant tutor available 24/7. Teaches in Hindi, English, or Hinglish — adapting to your child\u2019s exact level.',
-    accentColor: 'var(--orange)',
-    bgColor: 'rgba(232, 88, 28, 0.10)',
+    accentColor: '#0EA5E9',
+    bgColor: 'rgba(14, 165, 233, 0.10)',
   },
   {
     emoji: '🧠',
     title: 'Adaptive Learning',
     description:
       'Powered by Bayesian Knowledge Tracing. Every question, every answer shapes a personalized learning path.',
-    accentColor: 'var(--purple)',
-    bgColor: 'rgba(124, 58, 237, 0.10)',
+    accentColor: '#6366F1',
+    bgColor: 'rgba(99, 102, 241, 0.10)',
   },
   {
     emoji: '📅',
     title: 'Smart Study Plans',
     description:
       'AI generates daily plans with the perfect mix: Learn \u2192 Practice \u2192 Quiz \u2192 Review. Science-backed spaced repetition.',
-    accentColor: 'var(--teal)',
-    bgColor: 'rgba(8, 145, 178, 0.10)',
+    accentColor: '#0EA5E9',
+    bgColor: 'rgba(14, 165, 233, 0.10)',
   },
   {
     emoji: '🔬',
     title: 'Interactive Simulations',
     description:
       'Touch, drag, and experiment. Physics, Chemistry, Biology \u2014 concepts come alive with interactive labs.',
-    accentColor: 'var(--green)',
-    bgColor: 'rgba(22, 163, 74, 0.10)',
+    accentColor: '#10B981',
+    bgColor: 'rgba(16, 185, 129, 0.10)',
   },
   {
     emoji: '📋',
     title: 'Board Exam Ready',
     description:
       'CBSE-aligned content. Previous year patterns. Chapter-wise practice. Your child walks into exams confident.',
-    accentColor: 'var(--gold)',
-    bgColor: 'rgba(245, 166, 35, 0.10)',
+    accentColor: '#1B2B5B',
+    bgColor: 'rgba(27, 43, 91, 0.10)',
   },
   {
     emoji: '👨\u200D👩\u200D👧',
     title: 'Parent Dashboard',
     description:
       'Know exactly where your child stands. Weekly reports, weak areas, study alerts \u2014 without being intrusive.',
-    accentColor: 'var(--purple)',
-    bgColor: 'rgba(124, 58, 237, 0.10)',
+    accentColor: '#6366F1',
+    bgColor: 'rgba(99, 102, 241, 0.10)',
   },
 ];
 
@@ -250,9 +250,9 @@ const featuresCSS = `
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--orange);
-  background: rgba(232, 88, 28, 0.08);
-  border: 1px solid rgba(232, 88, 28, 0.18);
+  color: #1B2B5B;
+  background: rgba(27, 43, 91, 0.08);
+  border: 1px solid rgba(27, 43, 91, 0.18);
   border-radius: 100px;
   padding: 6px 16px;
   margin-bottom: 20px;
@@ -319,7 +319,7 @@ const featuresCSS = `
 }
 
 .feature-card:focus-within {
-  outline: 2px solid var(--orange);
+  outline: 2px solid #1B2B5B;
   outline-offset: 2px;
 }
 
@@ -430,13 +430,13 @@ const featuresCSS = `
 }
 
 .bilingual-badge--hi {
-  background: rgba(232, 88, 28, 0.10);
-  color: var(--orange);
+  background: rgba(27, 43, 91, 0.10);
+  color: #1B2B5B;
 }
 
 .bilingual-badge--hing {
-  background: rgba(124, 58, 237, 0.10);
-  color: var(--purple);
+  background: rgba(99, 102, 241, 0.10);
+  color: #6366F1;
 }
 
 .bilingual-card__title {

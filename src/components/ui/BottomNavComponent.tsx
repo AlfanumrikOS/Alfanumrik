@@ -193,7 +193,7 @@ export default function BottomNavComponent() {
                   aria-hidden="true"
                   style={{
                     transform: active ? 'scale(1.15)' : 'scale(1)',
-                    filter: active ? 'drop-shadow(0 0 6px rgba(232, 88, 28, 0.35))' : 'none',
+                    filter: active ? 'drop-shadow(0 0 6px rgba(14, 165, 233, 0.35))' : 'none',
                   }}
                 >
                   {active ? item.activeIcon : item.icon}
@@ -202,7 +202,7 @@ export default function BottomNavComponent() {
                   {isHi ? item.labelHi : item.label}
                 </span>
                 {active && (
-                  <span className="w-1 h-1 rounded-full" style={{ background: 'var(--orange)' }} />
+                  <span className="w-1 h-1 rounded-full" style={{ background: '#0EA5E9' }} />
                 )}
               </button>
             );
@@ -270,9 +270,9 @@ export default function BottomNavComponent() {
                         className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all"
                         style={{
                           background: active
-                            ? isFoxy ? 'rgba(232,88,28,0.12)' : 'rgba(232,88,28,0.06)'
+                            ? isFoxy ? 'rgba(14,165,233,0.12)' : 'rgba(14,165,233,0.06)'
                             : 'transparent',
-                          color: active ? 'var(--orange)' : 'var(--text-2)',
+                          color: active ? '#0EA5E9' : 'var(--text-2)',
                           fontWeight: active ? 600 : 500,
                           fontSize: '14px',
                         }}
@@ -280,7 +280,7 @@ export default function BottomNavComponent() {
                         <span className="text-lg w-6 text-center">{item.icon}</span>
                         {!collapsed && <span>{isHi ? item.labelHi : item.label}</span>}
                         {active && !collapsed && (
-                          <span className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: 'var(--orange)' }} />
+                          <span className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#0EA5E9' }} />
                         )}
                       </button>
                     );

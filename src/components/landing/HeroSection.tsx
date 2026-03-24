@@ -188,7 +188,7 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
               <span
                 className="hero-gradient-text"
                 style={{
-                  background: 'linear-gradient(135deg, var(--orange) 0%, var(--gold) 33%, var(--purple) 66%, var(--orange) 100%)',
+                  background: 'linear-gradient(135deg, #1B2B5B 0%, #0EA5E9 33%, #6366F1 66%, #1B2B5B 100%)',
                   backgroundSize: '200% 200%',
                   WebkitBackgroundClip: 'text',
                   WebkitTextFillColor: 'transparent',
@@ -232,7 +232,7 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
                 onClick={onGetStarted}
                 className="hero-cta-primary"
                 style={{
-                  background: 'linear-gradient(135deg, var(--orange) 0%, var(--orange-light) 100%)',
+                  background: 'linear-gradient(135deg, #1B2B5B 0%, #2563EB 100%)',
                   border: 'none',
                   padding: '14px 32px',
                   minHeight: 52,
@@ -242,7 +242,7 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
                   cursor: 'pointer',
                   borderRadius: 14,
                   fontFamily: 'var(--font-body)',
-                  boxShadow: '0 4px 16px rgba(232, 88, 28, 0.3)',
+                  boxShadow: '0 4px 16px rgba(27, 43, 91, 0.3)',
                   transition: 'box-shadow 0.25s ease, transform 0.25s ease',
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -313,7 +313,7 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
             >
               <div
                 style={{
-                  background: '#1A1207',
+                  background: '#0F172A',
                   borderRadius: 28,
                   padding: 3,
                   boxShadow:
@@ -347,7 +347,7 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
                         width: 72,
                         height: 20,
                         borderRadius: 12,
-                        background: '#1A1207',
+                        background: '#0F172A',
                       }}
                     />
                   </div>
@@ -405,7 +405,7 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
                         width: 32,
                         height: 32,
                         borderRadius: '50%',
-                        background: 'linear-gradient(135deg, var(--orange) 0%, var(--gold) 100%)',
+                        background: 'linear-gradient(135deg, #0EA5E9 0%, #2563EB 100%)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -465,7 +465,7 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
                               ? '16px 16px 4px 16px'
                               : '16px 16px 16px 4px',
                             background: msg.role === 'student'
-                              ? 'linear-gradient(135deg, var(--orange), var(--orange-light))'
+                              ? 'linear-gradient(135deg, #0EA5E9, #2563EB)'
                               : 'var(--surface-2)',
                             color: msg.role === 'student' ? '#fff' : 'var(--text-1)',
                             fontSize: '0.78rem',
@@ -523,7 +523,7 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
                         height="16"
                         viewBox="0 0 24 24"
                         fill="none"
-                        stroke="var(--orange)"
+                        stroke="#0EA5E9"
                         strokeWidth="2.5"
                         strokeLinecap="round"
                         strokeLinejoin="round"
@@ -586,7 +586,7 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
                   color: 'var(--text-2)',
                   padding: '6px 14px',
                   borderRadius: 100,
-                  background: 'rgba(255,255,255,0.6)',
+                  background: 'rgba(14,165,233,0.06)',
                   border: '1px solid var(--border)',
                 }}
               >
@@ -720,7 +720,7 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
 
         /* Primary CTA hover, active, and arrow animation */
         .hero-cta-primary:hover {
-          box-shadow: 0 8px 32px rgba(232, 88, 28, 0.45) !important;
+          box-shadow: 0 8px 32px rgba(27, 43, 91, 0.45) !important;
           transform: translateY(-2px);
         }
         .hero-cta-primary:hover .hero-cta-arrow {
@@ -728,7 +728,7 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
         }
         .hero-cta-primary:active {
           transform: scale(0.97) !important;
-          box-shadow: 0 2px 12px rgba(232, 88, 28, 0.35) !important;
+          box-shadow: 0 2px 12px rgba(27, 43, 91, 0.35) !important;
         }
 
         /* Secondary CTA hover */

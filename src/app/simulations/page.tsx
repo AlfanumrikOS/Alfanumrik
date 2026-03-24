@@ -295,7 +295,7 @@ export default function SimulationsPage() {
   const isActive = activeBuiltIn || activeDbSim;
 
   return (
-    <div style={{ minHeight: '100vh', background: '#FBF8F4', paddingBottom: '100px' }}>
+    <div style={{ minHeight: '100vh', background: '#FAFBFF', paddingBottom: '100px' }}>
       {/* Header */}
       <div style={{
         background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 40%, #a855f7 100%)',
@@ -433,14 +433,14 @@ export default function SimulationsPage() {
                 background: '#fff',
                 borderRadius: '14px',
                 padding: '14px 16px',
-                border: '1px solid rgba(232,88,28,0.15)',
+                border: '1px solid rgba(14,165,233,0.15)',
                 display: 'flex',
                 gap: '12px',
                 alignItems: 'flex-start',
               }}>
                 <span style={{ fontSize: '28px', flexShrink: 0 }}>🦊</span>
                 <div>
-                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#E8581C', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#0EA5E9', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>
                     Foxy&apos;s Tip
                   </div>
                   <div style={{ fontSize: '13px', color: '#1a1a1a', lineHeight: 1.6 }}>
@@ -508,12 +508,12 @@ export default function SimulationsPage() {
             {activeDbSim.foxy_intro_prompt && (
               <div style={{
                 marginTop: '16px', background: '#fff', borderRadius: '14px',
-                padding: '14px 16px', border: '1px solid rgba(232,88,28,0.15)',
+                padding: '14px 16px', border: '1px solid rgba(14,165,233,0.15)',
                 display: 'flex', gap: '12px', alignItems: 'flex-start',
               }}>
                 <span style={{ fontSize: '28px' }}>🦊</span>
                 <div>
-                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#E8581C', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#0EA5E9', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>
                     Foxy says
                   </div>
                   <div style={{ fontSize: '13px', color: '#1a1a1a', lineHeight: 1.6 }}>

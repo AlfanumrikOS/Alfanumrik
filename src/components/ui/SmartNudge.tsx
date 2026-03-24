@@ -38,7 +38,7 @@ interface Nudge {
 
 const NUDGE_COLORS: Record<NudgeType, string> = {
   exam: '#DC2626',
-  behavior: '#E8581C',
+  behavior: '#F97316',
   retention: '#0891B2',
   time: '#7C3AED',
   motivational: '#16A34A',

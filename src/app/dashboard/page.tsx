@@ -13,7 +13,7 @@ import { SUBJECT_META } from '@/lib/constants';
 
 /* Reduced to 6 most essential actions (from 9) — Hick's Law */
 const QUICK_ACTIONS = [
-  { href: '/foxy', icon: '🦊', label: 'Ask Foxy', labelHi: 'फॉक्सी से पूछो', color: '#E8581C' },
+  { href: '/foxy', icon: '🦊', label: 'Ask Foxy', labelHi: 'फॉक्सी से पूछो', color: '#0EA5E9' },
   { href: '/quiz?mode=cognitive', icon: '🧠', label: 'Smart Quiz', labelHi: 'स्मार्ट क्विज़', color: '#7C3AED' },
   { href: '/study-plan', icon: '📅', label: 'Study Plan', labelHi: 'अध्ययन योजना', color: '#7C3AED' },
   { href: '/scan', icon: '📷', label: 'Scan', labelHi: 'स्कैन', color: '#0D9488' },
@@ -359,7 +359,7 @@ export default function Dashboard() {
         {dataLoaded && upcomingExams.length === 0 && (profiles.length > 0 || nextTopics.length > 0) && (
           <button onClick={() => router.push('/foxy')} className="w-full text-left">
             <div className="rounded-2xl p-4 relative overflow-hidden" style={{
-              background: 'linear-gradient(135deg, rgba(124,58,237,0.08), rgba(232,88,28,0.06))',
+              background: 'linear-gradient(135deg, rgba(124,58,237,0.08), rgba(14,165,233,0.06))',
               border: '1px solid rgba(124,58,237,0.12)',
             }}>
               <div className="flex items-center gap-3">
@@ -381,10 +381,10 @@ export default function Dashboard() {
         )}
         {upcomingExams.length > 0 && (
           <button onClick={() => router.push('/exams')} className="w-full">
-            <Card accent={upcomingExams[0].days_left <= 7 ? '#DC2626' : 'var(--orange)'} className="!p-4">
+            <Card accent={upcomingExams[0].days_left <= 7 ? '#DC2626' : '#1B2B5B'} className="!p-4">
               <div className="flex items-center gap-4">
                 <div className="text-center flex-shrink-0" style={{ minWidth: '56px' }}>
-                  <div className="text-3xl font-bold" style={{ color: upcomingExams[0].days_left <= 7 ? '#DC2626' : 'var(--orange)', fontFamily: 'var(--font-display)' }}>
+                  <div className="text-3xl font-bold" style={{ color: upcomingExams[0].days_left <= 7 ? '#DC2626' : '#1B2B5B', fontFamily: 'var(--font-display)' }}>
                     {upcomingExams[0].days_left}
                   </div>
                   <div className="text-[10px] text-[var(--text-3)] font-semibold uppercase">{isHi ? 'दिन बाकी' : 'days left'}</div>
@@ -638,7 +638,7 @@ export default function Dashboard() {
           <div className="space-y-2">
             {nudges.map(nudge => {
               const nudgeIcons: Record<string, string> = { schedule_behind: '⚠️', revision_due: '🔄', streak_risk: '🔥', exam_approaching: '📋', weak_topic: '📉', milestone: '🎉', encouragement: '💪' };
-              const nudgeColors: Record<string, string> = { schedule_behind: '#F59E0B', revision_due: '#0891B2', streak_risk: '#EF4444', exam_approaching: '#DC2626', weak_topic: '#8B5CF6', milestone: '#16A34A', encouragement: '#E8581C' };
+              const nudgeColors: Record<string, string> = { schedule_behind: '#F59E0B', revision_due: '#0891B2', streak_risk: '#EF4444', exam_approaching: '#DC2626', weak_topic: '#8B5CF6', milestone: '#16A34A', encouragement: '#0EA5E9' };
               return (
                 <div key={nudge.id} className="rounded-xl p-3 flex items-start gap-2.5" style={{ background: `${nudgeColors[nudge.nudge_type] ?? 'var(--orange)'}08`, border: `1px solid ${nudgeColors[nudge.nudge_type] ?? 'var(--orange)'}20` }}>
                   <span className="text-base flex-shrink-0 mt-0.5">{nudgeIcons[nudge.nudge_type] ?? '💡'}</span>
@@ -858,11 +858,11 @@ export default function Dashboard() {
           bottom: 'calc(5.5rem + env(safe-area-inset-bottom))',
           right: '16px',
           zIndex: 45,
-          background: 'linear-gradient(135deg, #E8581C, #F5A623)',
+          background: 'linear-gradient(135deg, #1B2B5B, #0EA5E9)',
           height: '56px',
           paddingLeft: '16px',
           paddingRight: '20px',
-          boxShadow: '0 4px 20px rgba(232, 88, 28, 0.4)',
+          boxShadow: '0 4px 20px rgba(27, 43, 91, 0.4)',
         }}
       >
         <span className="text-xl">📷</span>
