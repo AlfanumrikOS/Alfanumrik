@@ -20,48 +20,48 @@ const FEATURES: Feature[] = [
     title: 'Foxy AI Tutor',
     description:
       'A patient, brilliant tutor available 24/7. Teaches in Hindi, English, or Hinglish — adapting to your child\u2019s exact level.',
-    accentColor: '#00B17A',
-    bgColor: 'rgba(0, 177, 122, 0.10)',
+    accentColor: '#d97757',
+    bgColor: 'rgba(217,119,87,0.08)',
   },
   {
     emoji: '🧠',
     title: 'Adaptive Learning',
     description:
       'Powered by Bayesian Knowledge Tracing. Every question, every answer shapes a personalized learning path.',
-    accentColor: '#1B4B6B',
-    bgColor: 'rgba(27, 75, 107, 0.10)',
+    accentColor: '#6a9bcc',
+    bgColor: 'rgba(106,155,204,0.08)',
   },
   {
     emoji: '📅',
     title: 'Smart Study Plans',
     description:
       'AI generates daily plans with the perfect mix: Learn \u2192 Practice \u2192 Quiz \u2192 Review. Science-backed spaced repetition.',
-    accentColor: '#00D68F',
-    bgColor: 'rgba(0, 214, 143, 0.10)',
+    accentColor: '#788c5d',
+    bgColor: 'rgba(120,140,93,0.08)',
   },
   {
     emoji: '🔬',
     title: 'Interactive Simulations',
     description:
       'Touch, drag, and experiment. Physics, Chemistry, Biology \u2014 concepts come alive with interactive labs.',
-    accentColor: '#10B981',
-    bgColor: 'rgba(16, 185, 129, 0.10)',
+    accentColor: '#c4a35a',
+    bgColor: 'rgba(196,163,90,0.08)',
   },
   {
     emoji: '📋',
     title: 'Board Exam Ready',
     description:
       'CBSE-aligned content. Previous year patterns. Chapter-wise practice. Your child walks into exams confident.',
-    accentColor: '#7C3AED',
-    bgColor: 'rgba(124, 58, 237, 0.10)',
+    accentColor: '#8b7ec8',
+    bgColor: 'rgba(139,126,200,0.08)',
   },
   {
     emoji: '👨\u200D👩\u200D👧',
     title: 'Parent Dashboard',
     description:
       'Know exactly where your child stands. Weekly reports, weak areas, study alerts \u2014 without being intrusive.',
-    accentColor: '#00B17A',
-    bgColor: 'rgba(0, 177, 122, 0.10)',
+    accentColor: '#d97757',
+    bgColor: 'rgba(217,119,87,0.08)',
   },
 ];
 
@@ -142,7 +142,7 @@ function BilingualCard({ isVisible }: { isVisible: boolean }) {
           <div className="bilingual-bubble bilingual-bubble--foxy">
             Koi baat nahi! 😊 Chalo step-by-step dekhte hain&hellip;
             <br />
-            <span style={{ color: '#00B17A', fontWeight: 600 }}>
+            <span style={{ color: '#d97757', fontWeight: 600 }}>
               v = u + at
             </span>
           </div>
@@ -192,8 +192,8 @@ export default function FeaturesSection() {
       <svg className="features-section__pattern" aria-hidden="true" width="100%" height="100%">
         <defs>
           <pattern id="hex-pattern" width="56" height="100" patternUnits="userSpaceOnUse" patternTransform="scale(1.5)">
-            <path d="M28 0L56 16.6V49.4L28 66L0 49.4V16.6Z" fill="none" stroke="#00B17A" strokeWidth="0.5" opacity="0.02" />
-            <path d="M28 34L56 50.6V83.4L28 100L0 83.4V50.6Z" fill="none" stroke="#00B17A" strokeWidth="0.5" opacity="0.02" />
+            <path d="M28 0L56 16.6V49.4L28 66L0 49.4V16.6Z" fill="none" stroke="#d97757" strokeWidth="0.5" opacity="0.02" />
+            <path d="M28 34L56 50.6V83.4L28 100L0 83.4V50.6Z" fill="none" stroke="#d97757" strokeWidth="0.5" opacity="0.02" />
           </pattern>
         </defs>
         <rect width="100%" height="100%" fill="url(#hex-pattern)" />
@@ -269,7 +269,7 @@ const featuresCSS = `
   width: 64px;
   height: 3px;
   margin: 0 auto 20px;
-  background: linear-gradient(90deg, #00B17A, #00D68F);
+  background: linear-gradient(90deg, #d97757, #c4a35a);
   border-radius: 2px;
 }
 
@@ -287,9 +287,9 @@ const featuresCSS = `
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #00B17A;
-  background: rgba(0, 177, 122, 0.08);
-  border: 1px solid rgba(0, 177, 122, 0.18);
+  color: #d97757;
+  background: rgba(217,119,87,0.08);
+  border: 1px solid rgba(217,119,87,0.18);
   border-radius: 100px;
   padding: 6px 16px;
   margin-bottom: 20px;
@@ -351,12 +351,12 @@ const featuresCSS = `
 
 .feature-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 8px 30px rgba(0, 177, 122, 0.08), 0 2px 8px rgba(0, 177, 122, 0.04);
-  border-color: rgba(0, 177, 122, 0.25);
+  box-shadow: 0 8px 30px rgba(20, 20, 19, 0.06), 0 2px 8px rgba(20, 20, 19, 0.03);
+  border-color: var(--border);
 }
 
 .feature-card:focus-within {
-  outline: 2px solid #00B17A;
+  outline: 2px solid #d97757;
   outline-offset: 2px;
 }
 
@@ -373,7 +373,7 @@ const featuresCSS = `
 
 .feature-card:hover .feature-card__accent {
   height: 56px;
-  box-shadow: 0 0 12px rgba(0, 177, 122, 0.3);
+  box-shadow: 0 0 12px rgba(217, 119, 87, 0.3);
 }
 
 /* Icon circle */
@@ -433,7 +433,7 @@ const featuresCSS = `
 }
 
 .bilingual-card__inner:hover {
-  box-shadow: 0 8px 30px rgba(0, 177, 122, 0.08);
+  box-shadow: 0 8px 30px rgba(20, 20, 19, 0.06);
 }
 
 @media (min-width: 768px) {
@@ -464,18 +464,18 @@ const featuresCSS = `
 }
 
 .bilingual-badge--en {
-  background: rgba(0, 177, 122, 0.10);
-  color: #00B17A;
+  background: rgba(217,119,87,0.10);
+  color: #d97757;
 }
 
 .bilingual-badge--hi {
-  background: rgba(27, 75, 107, 0.10);
-  color: #1B4B6B;
+  background: rgba(106,155,204,0.10);
+  color: #6a9bcc;
 }
 
 .bilingual-badge--hing {
-  background: rgba(124, 58, 237, 0.10);
-  color: #7C3AED;
+  background: rgba(120,140,93,0.10);
+  color: #788c5d;
 }
 
 .bilingual-card__title {
@@ -521,11 +521,11 @@ const featuresCSS = `
 }
 
 .bilingual-bubble--foxy {
-  background: rgba(0, 177, 122, 0.08);
+  background: rgba(217, 119, 87, 0.06);
   color: var(--text-1);
   border-bottom-left-radius: 4px;
   align-self: flex-start;
-  border: 1px solid rgba(0, 177, 122, 0.12);
+  border: 1px solid rgba(217, 119, 87, 0.12);
 }
 
 /* ── Reduced motion ─────────────────────────────────────────── */

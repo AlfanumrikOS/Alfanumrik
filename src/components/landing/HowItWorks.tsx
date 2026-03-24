@@ -67,7 +67,7 @@ function MiniProgressBar() {
         <div className="hiw-mini-progress__bar">
           <div
             className="hiw-mini-progress__fill"
-            style={{ width: '78%', background: '#00B17A' }}
+            style={{ width: '78%', background: '#d97757' }}
           />
         </div>
         <span className="hiw-mini-progress__pct">78%</span>
@@ -77,7 +77,7 @@ function MiniProgressBar() {
         <div className="hiw-mini-progress__bar">
           <div
             className="hiw-mini-progress__fill"
-            style={{ width: '62%', background: '#00D68F' }}
+            style={{ width: '62%', background: '#6a9bcc' }}
           />
         </div>
         <span className="hiw-mini-progress__pct">62%</span>
@@ -96,7 +96,7 @@ const STEPS: Step[] = [
     title: 'Sign Up Free',
     description: 'Pick your grade, board, and subjects. Takes 30 seconds.',
     icon: '✨',
-    accentColor: '#00B17A',
+    accentColor: '#d97757',
     visual: <MiniSignupForm />,
   },
   {
@@ -105,7 +105,7 @@ const STEPS: Step[] = [
     description:
       'Your AI tutor learns your strengths and gaps. Start with any topic or scan a question.',
     icon: '🦊',
-    accentColor: '#00D68F',
+    accentColor: '#6a9bcc',
     visual: <MiniChatBubble />,
   },
   {
@@ -114,7 +114,7 @@ const STEPS: Step[] = [
     description:
       'Foxy builds your mastery day by day. Parents and teachers see real results.',
     icon: '📈',
-    accentColor: '#1B4B6B',
+    accentColor: '#788c5d',
     visual: <MiniProgressBar />,
   },
 ];
@@ -268,9 +268,9 @@ const hiwCSS = `
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #00B17A;
-  background: rgba(0, 177, 122, 0.08);
-  border: 1px solid rgba(0, 177, 122, 0.18);
+  color: #d97757;
+  background: rgba(217,119,87,0.08);
+  border: 1px solid rgba(217,119,87,0.18);
   border-radius: 100px;
   padding: 6px 16px;
   margin-bottom: 20px;
@@ -286,7 +286,7 @@ const hiwCSS = `
 }
 
 .hiw-header__accent {
-  color: #00B17A;
+  color: #d97757;
   position: relative;
 }
 
@@ -297,7 +297,7 @@ const hiwCSS = `
   bottom: -2px;
   width: 100%;
   height: 3px;
-  background: linear-gradient(90deg, #00B17A, #00D68F);
+  background: linear-gradient(90deg, #d97757, #c4a35a);
   border-radius: 2px;
 }
 
@@ -338,9 +338,9 @@ const hiwCSS = `
     height: 100%;
     background: linear-gradient(
       90deg,
-      #00B17A,
-      #00D68F,
-      #1B4B6B
+      #d97757,
+      #6a9bcc,
+      #788c5d
     );
     border-radius: 2px;
     transform-origin: left;
@@ -355,7 +355,7 @@ const hiwCSS = `
     width: 40px;
     height: 6px;
     border-radius: 3px;
-    background: radial-gradient(ellipse at center, rgba(0, 214, 143, 0.7) 0%, transparent 70%);
+    background: radial-gradient(ellipse at center, rgba(217, 119, 87, 0.7) 0%, transparent 70%);
     animation: hiw-pulse-travel 3s ease-in-out infinite 1.5s;
     pointer-events: none;
   }
@@ -404,7 +404,7 @@ const hiwCSS = `
   font-size: 20px;
   font-weight: 700;
   margin-bottom: 20px;
-  box-shadow: 0 4px 12px rgba(0, 177, 122, 0.2), 0 0 0 4px rgba(0, 177, 122, 0.08);
+  box-shadow: 0 4px 12px rgba(20, 20, 19, 0.10), 0 0 0 4px rgba(20, 20, 19, 0.04);
   flex-shrink: 0;
 }
 
@@ -421,7 +421,7 @@ const hiwCSS = `
 }
 
 .hiw-step:hover .hiw-step__visual {
-  box-shadow: 0 6px 20px rgba(0, 177, 122, 0.10), 0 2px 8px rgba(0, 177, 122, 0.06);
+  box-shadow: 0 6px 20px rgba(20, 20, 19, 0.06);
   transform: translateY(-2px);
 }
 
@@ -503,9 +503,9 @@ const hiwCSS = `
 }
 
 .hiw-mini-chip--active {
-  background: rgba(0, 177, 122, 0.10);
-  color: #00B17A;
-  border-color: rgba(0, 177, 122, 0.25);
+  background: rgba(217,119,87,0.10);
+  color: #d97757;
+  border-color: rgba(217,119,87,0.25);
   font-weight: 600;
 }
 
@@ -531,7 +531,7 @@ const hiwCSS = `
 }
 
 .hiw-mini-chat__bubble--foxy {
-  background: rgba(0, 177, 122, 0.06);
+  background: rgba(217, 119, 87, 0.06);
   border-radius: 12px 12px 12px 4px;
   padding: 10px 12px;
 }
@@ -599,7 +599,7 @@ const hiwCSS = `
   gap: 6px;
   font-family: var(--font-body);
   font-size: 13px;
-  color: #FF6B35;
+  color: #d97757;
   padding-top: 4px;
 }
 
@@ -620,25 +620,25 @@ const hiwCSS = `
   font-size: clamp(16px, 2vw, 18px);
   font-weight: 700;
   color: #fff;
-  background: linear-gradient(135deg, #00B17A 0%, #00D68F 100%);
+  background: #d97757;
   border: none;
-  border-radius: 14px;
+  border-radius: 12px;
   padding: 16px 32px;
   text-decoration: none;
   cursor: pointer;
   transition:
     transform 0.25s ease,
     box-shadow 0.25s ease;
-  box-shadow: 0 4px 16px rgba(0, 177, 122, 0.25);
+  box-shadow: 0 2px 12px rgba(217, 119, 87, 0.25);
 }
 
 .hiw-cta__button:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 28px rgba(0, 177, 122, 0.35);
+  box-shadow: 0 4px 20px rgba(217, 119, 87, 0.35);
 }
 
 .hiw-cta__button:focus-visible {
-  outline: 3px solid #00B17A;
+  outline: 3px solid #d97757;
   outline-offset: 3px;
 }
 
