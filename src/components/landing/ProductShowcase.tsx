@@ -38,7 +38,7 @@ function FoxyChatScreen() {
         >
           Explain quadratic equations 🤔
         </div>
-        <div style={{ fontSize: 10, color: '#9CA3AF', textAlign: 'right', marginTop: 2 }}>
+        <div style={{ fontSize: 10, color: '#8a8880', textAlign: 'right', marginTop: 2 }}>
           You
         </div>
       </div>
@@ -62,17 +62,17 @@ function FoxyChatScreen() {
           <br />
           Here, <b>a</b>, <b>b</b>, and <b>c</b> are constants...
         </div>
-        <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 2 }}>🦊 Foxy</div>
+        <div style={{ fontSize: 10, color: '#8a8880', marginTop: 2 }}>🦊 Foxy</div>
       </div>
       {/* Input hint */}
       <div
         style={{
           marginTop: 'auto',
-          border: '1px solid #E5E7EB',
+          border: '1px solid #e8e6dc',
           borderRadius: 20,
           padding: '8px 14px',
           fontSize: 11,
-          color: '#9CA3AF',
+          color: '#8a8880',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -121,7 +121,7 @@ function StudyPlanScreen() {
                 width: 18,
                 height: 18,
                 borderRadius: 4,
-                border: `2px solid ${t.done ? '#c4623f' : '#D1D5DB'}`,
+                border: `2px solid ${t.done ? '#c4623f' : '#c4c2b8'}`,
                 background: t.done ? '#c4623f' : 'transparent',
                 display: 'flex',
                 alignItems: 'center',
@@ -138,7 +138,7 @@ function StudyPlanScreen() {
                 style={{
                   fontSize: 12,
                   fontWeight: 600,
-                  color: '#1F2937',
+                  color: '#141413',
                   textDecoration: t.done ? 'line-through' : 'none',
                   opacity: t.done ? 0.7 : 1,
                 }}
@@ -176,7 +176,7 @@ function StudyPlanScreen() {
             marginBottom: 4,
           }}
         >
-          <span style={{ color: '#6B7280' }}>Progress</span>
+          <span style={{ color: '#4a4843' }}>Progress</span>
           <span style={{ color: '#c4623f' }}>60%</span>
         </div>
         <div style={{ height: 8, background: '#e8e6dc', borderRadius: 999 }}>
@@ -333,7 +333,7 @@ function ProgressDashboardScreen() {
         <span style={{ fontSize: 18 }}>&#x1F525;</span>
         <div>
           <div style={{ fontSize: 13, fontWeight: 700, color: '#c4623f' }}>5-day streak!</div>
-          <div style={{ fontSize: 10, color: '#9CA3AF' }}>Keep it going!</div>
+          <div style={{ fontSize: 10, color: '#8a8880' }}>Keep it going!</div>
         </div>
       </div>
       {/* Subject cards */}
@@ -355,12 +355,12 @@ function ProgressDashboardScreen() {
               marginBottom: 6,
             }}
           >
-            <span style={{ fontSize: 12, fontWeight: 600, color: '#1F2937' }}>{s.name}</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: '#141413' }}>{s.name}</span>
             <span style={{ fontSize: 10, fontWeight: 700, color: s.color }}>
               {s.xp} / {s.max} XP
             </span>
           </div>
-          <div style={{ height: 6, background: '#E5E7EB', borderRadius: 999 }}>
+          <div style={{ height: 6, background: '#e8e6dc', borderRadius: 999 }}>
             <div
               style={{
                 width: `${s.pct}%`,
@@ -371,7 +371,7 @@ function ProgressDashboardScreen() {
               }}
             />
           </div>
-          <div style={{ fontSize: 10, color: '#6B7280', marginTop: 4, textAlign: 'right' }}>
+          <div style={{ fontSize: 10, color: '#4a4843', marginTop: 4, textAlign: 'right' }}>
             Mastery: {s.pct}%
           </div>
         </div>
@@ -413,8 +413,8 @@ function ParentViewScreen() {
           A
         </div>
         <div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: '#065F46' }}>Ananya</div>
-          <div style={{ fontSize: 10, color: '#6B7280' }}>Class 8 &middot; CBSE</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#141413' }}>Ananya</div>
+          <div style={{ fontSize: 10, color: '#4a4843' }}>Class 8 &middot; CBSE</div>
         </div>
       </div>
       {/* Progress meter */}
@@ -425,7 +425,7 @@ function ParentViewScreen() {
             justifyContent: 'space-between',
             fontSize: 11,
             fontWeight: 600,
-            color: '#374151',
+            color: '#141413',
             marginBottom: 6,
           }}
         >
@@ -462,7 +462,7 @@ function ParentViewScreen() {
             }}
           >
             <div style={{ fontSize: 14, fontWeight: 700, color: '#6b7f50' }}>{s.value}</div>
-            <div style={{ fontSize: 9, color: '#6B7280' }}>{s.label}</div>
+            <div style={{ fontSize: 9, color: '#4a4843' }}>{s.label}</div>
           </div>
         ))}
       </div>
@@ -631,7 +631,7 @@ export default function ProductShowcase() {
                     padding: '28px 16px 6px',
                     fontSize: 10,
                     fontWeight: 600,
-                    color: '#6B7280',
+                    color: '#4a4843',
                   }}
                 >
                   <span>9:41</span>
@@ -656,7 +656,7 @@ export default function ProductShowcase() {
                 >
                   {screen.title}
                 </div>
-                <div style={{ fontSize: 12, color: '#6B7280', lineHeight: 1.4 }}>
+                <div style={{ fontSize: 12, color: '#4a4843', lineHeight: 1.4 }}>
                   {screen.description}
                 </div>
               </div>

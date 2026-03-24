@@ -23,14 +23,14 @@ function MiniSignupForm() {
         <span className="hiw-mini-form__label">Grade</span>
         <div className="hiw-mini-form__select">
           <span>Class 10</span>
-          <span style={{ opacity: 0.4 }}>&#9662;</span>
+          <span style={{ opacity: 0.7 }}>&#9662;</span>
         </div>
       </div>
       <div className="hiw-mini-form__field">
         <span className="hiw-mini-form__label">Board</span>
         <div className="hiw-mini-form__select">
           <span>CBSE</span>
-          <span style={{ opacity: 0.4 }}>&#9662;</span>
+          <span style={{ opacity: 0.7 }}>&#9662;</span>
         </div>
       </div>
       <div className="hiw-mini-form__chips">
