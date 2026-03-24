@@ -659,6 +659,7 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
         /* Phone float animation */
         .hero-phone-float {
           animation: heroFloat 4s ease-in-out infinite;
+          will-change: transform;
         }
 
         @keyframes heroFloat {
@@ -740,11 +741,6 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
           transform: scale(0.97);
         }
 
-        /* Phone float — will-change for GPU layer */
-        .hero-phone-float {
-          will-change: transform;
-        }
-
         /* Responsive: stack on mobile */
         @media (max-width: 860px) {
           .hero-layout {
@@ -780,6 +776,13 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
           .hero-typing-dot {
             animation: none !important;
             opacity: 0.6 !important;
+          }
+          .hero-gradient-text {
+            animation: none !important;
+          }
+          .hero-cta-primary,
+          .hero-cta-secondary {
+            transition: none !important;
           }
         }
       `}</style>
