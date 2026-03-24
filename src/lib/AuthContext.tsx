@@ -245,12 +245,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setRoles(detectedRoles);
           setActiveRoleState(detectedPrimary);
         } else {
-          // User is authenticated but has no profile yet (new signup, pre-confirmation).
-          // Use role from auth metadata if available
+          // User is authenticated but has no profile yet.
+          // Auto-create profile from auth metadata (handles failed signup inserts).
           const metaRole = user.user_metadata?.role as string | undefined;
-          const fallbackRole: UserRole = metaRole === 'teacher' ? 'teacher' : metaRole === 'parent' ? 'guardian' : 'student';
-          setRoles([fallbackRole]);
-          setActiveRoleState(fallbackRole);
+          const metaName = user.user_metadata?.name as string || user.email?.split('@')[0] || 'Student';
+          const metaGrade = user.user_metadata?.grade as string || '6';
+          const metaBoard = user.user_metadata?.board as string || 'CBSE';
+
+          try {
+            if (!metaRole || metaRole === 'student') {
+              const { data: newStudent } = await supabase.from('students').insert({
+                auth_user_id: user.id, name: metaName, email: user.email,
+                grade: metaGrade.startsWith('Grade') ? metaGrade : `Grade ${metaGrade}`,
+                board: metaBoard, preferred_language: 'en', account_status: 'active',
+              }).select('*').single();
+              if (newStudent) { setStudent(newStudent as Student); setRoles(['student']); setActiveRoleState('student'); }
+            } else if (metaRole === 'teacher') {
+              const { data: newTeacher } = await supabase.from('teachers').insert({
+                auth_user_id: user.id, name: metaName, email: user.email || '',
+              }).select('id, name, school_name, subjects_taught, grades_taught, email, phone').single();
+              if (newTeacher) { setTeacher(newTeacher as TeacherProfile); setRoles(['teacher']); setActiveRoleState('teacher'); }
+            } else if (metaRole === 'parent') {
+              const { data: newGuardian } = await supabase.from('guardians').insert({
+                auth_user_id: user.id, name: metaName, email: user.email,
+              }).select('id, name, email, phone').single();
+              if (newGuardian) { setGuardian(newGuardian as GuardianProfile); setRoles(['guardian']); setActiveRoleState('guardian'); }
+            }
+          } catch (profileErr) {
+            console.warn('Auto-create profile failed:', profileErr);
+          }
+
+          // Final fallback if insert also failed
+          if (roles.length === 0) {
+            const fallbackRole: UserRole = metaRole === 'teacher' ? 'teacher' : metaRole === 'parent' ? 'guardian' : 'student';
+            setRoles([fallbackRole]);
+            setActiveRoleState(fallbackRole);
+          }
         }
       }
     } catch (err) {

@@ -50,7 +50,7 @@ const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
 const OPTION_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#8B5CF6'];
 
 export default function QuizPage() {
-  const { student, isLoggedIn, isLoading, isHi, refreshSnapshot } = useAuth();
+  const { student, isLoggedIn, isLoading, isHi, refreshSnapshot, activeRole } = useAuth();
   const router = useRouter();
 
   // Setup state
@@ -83,7 +83,10 @@ export default function QuizPage() {
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/');
-  }, [isLoading, isLoggedIn, router]);
+    if (!isLoading && isLoggedIn && !student && activeRole !== 'student') {
+      router.replace(activeRole === 'teacher' ? '/teacher' : activeRole === 'guardian' ? '/parent' : '/');
+    }
+  }, [isLoading, isLoggedIn, student, activeRole, router]);
 
   // Check URL params for pre-selected subject
   useEffect(() => {
@@ -146,7 +149,7 @@ export default function QuizPage() {
       alert(isHi ? 'क्विज़ लोड करने में समस्या हुई। कृपया फिर से कोशिश करें।' : 'Failed to load quiz. Please try again.');
     }
     setLoading(false);
-  }, [selectedSubject, student, questionCount, isHi]);
+  }, [selectedSubject, student, questionCount, selectedDifficulty, isHi]);
 
   const parseOptions = (opts: string | string[]): string[] => {
     if (Array.isArray(opts)) return opts;

@@ -99,6 +99,11 @@ async function callFoxyTutor(params: Record<string, any>) {
       headers: { Authorization: `Bearer ${SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
     });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => 'Unknown error');
+      console.error('Foxy tutor error:', res.status, errText);
+      return { reply: res.status === 429 ? 'Slow down! Wait a moment and try again.' : 'Foxy is taking a short break. Try again!', xp_earned: 0, session_id: null };
+    }
     const data = await res.json();
     return { reply: data.reply || data.response || data.message || 'Let me think...', xp_earned: data.xp_earned || 0, session_id: data.session_id || null };
   } catch {
