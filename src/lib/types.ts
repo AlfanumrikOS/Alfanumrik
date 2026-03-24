@@ -414,3 +414,69 @@ export interface BoardExamScore {
   message: string;
   messageHi: string;
 }
+
+/* ── Alfanumrik 3.0: RBAC Types ── */
+
+export type RoleName = 'student' | 'parent' | 'teacher' | 'tutor' | 'admin' | 'super_admin';
+
+export type OwnershipType = 'own' | 'linked' | 'assigned' | 'any';
+
+export interface Role {
+  id: string;
+  name: RoleName;
+  display_name: string;
+  display_name_hi: string | null;
+  description: string | null;
+  hierarchy_level: number;
+  is_system_role: boolean;
+  is_active: boolean;
+}
+
+export interface Permission {
+  id: string;
+  code: string;
+  resource: string;
+  action: string;
+  description: string | null;
+  is_active: boolean;
+}
+
+export interface UserRole {
+  id: string;
+  auth_user_id: string;
+  role_id: string;
+  is_active: boolean;
+  assigned_at: string;
+  expires_at: string | null;
+}
+
+export interface AuditLog {
+  id: string;
+  auth_user_id: string | null;
+  action: string;
+  resource_type: string;
+  resource_id: string | null;
+  details: Record<string, unknown>;
+  ip_address: string | null;
+  user_agent: string | null;
+  status: 'success' | 'failure' | 'denied';
+  created_at: string;
+}
+
+export interface AdminUser {
+  id: string;
+  auth_user_id: string;
+  name: string;
+  email: string | null;
+  admin_level: 'super_admin' | 'admin' | 'moderator';
+  is_active: boolean;
+}
+
+export interface ResourceAccessRule {
+  id: string;
+  role_id: string;
+  resource_type: string;
+  ownership_check: OwnershipType;
+  field_restrictions: string[];
+  max_records_per_request: number;
+}
