@@ -494,7 +494,7 @@ function Dashboard({ guardian, student }: { guardian: any; student: any }) {
 
       {/* Header — minimal */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, paddingBottom: 12, borderBottom: '1px solid #1E293B' }}>
-        <p style={{ fontSize: 11, color: '#6366F1', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: 1, margin: 0 }}>Parent Dashboard</p>
+        <p style={{ fontSize: 11, color: '#1B2B5B', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: 1, margin: 0 }}>Parent Dashboard</p>
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={load} style={{ padding: '6px 12px', background: 'transparent', color: '#6366F1', border: '1px solid #334155', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>Refresh</button>
           <button onClick={logout} style={{ padding: '6px 12px', background: 'transparent', color: '#94A3B8', border: '1px solid #334155', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>Logout</button>
@@ -514,8 +514,8 @@ function Dashboard({ guardian, student }: { guardian: any; student: any }) {
 
       {/* C. Download Report Button */}
       <button onClick={downloadReport} style={{
-        width: '100%', padding: '14px 20px', backgroundColor: '#1E293B',
-        color: '#E2E8F0', border: '1px solid #334155', borderRadius: 12,
+        width: '100%', padding: '14px 20px', background: 'linear-gradient(135deg, #1B2B5B, #2563EB)',
+        color: '#fff', border: 'none', borderRadius: 12,
         fontSize: 15, fontWeight: 600, cursor: 'pointer', marginBottom: 14,
         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
       }}>
@@ -648,4 +648,4 @@ const pageStyle: React.CSSProperties = { maxWidth: 600, margin: '0 auto', paddin
 const cardStyle: React.CSSProperties = { backgroundColor: '#0F172A', borderRadius: 14, padding: '16px 18px', border: '1px solid #1E293B', marginBottom: 14 };
 const cardTitle: React.CSSProperties = { fontSize: 15, fontWeight: 600, color: '#F1F5F9', margin: '0 0 12px' };
 const inputStyle: React.CSSProperties = { width: '100%', padding: '12px 14px', backgroundColor: '#1E293B', border: '1px solid #334155', borderRadius: 10, color: '#E2E8F0', fontSize: 15, outline: 'none', marginBottom: 10, boxSizing: 'border-box' };
-const btnStyle: React.CSSProperties = { padding: '12px 20px', backgroundColor: '#6366F1', color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 600, cursor: 'pointer' };
+const btnStyle: React.CSSProperties = { padding: '12px 20px', background: 'linear-gradient(135deg, #1B2B5B, #2563EB)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 600, cursor: 'pointer' };

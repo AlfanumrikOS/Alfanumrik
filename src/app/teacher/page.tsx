@@ -72,9 +72,9 @@ function TodaysFocus({ alertCount, studentCount, onPrimaryCTA }: {
   const primaryLabel = hasAlerts ? `Review ${alertCount} Alert${alertCount !== 1 ? 's' : ''}` : 'View Dashboard';
   return (
     <div style={{
-      background: 'linear-gradient(135deg, #1E1B4B 0%, #0F172A 100%)',
+      background: 'linear-gradient(135deg, #1B2B5B 0%, #0F172A 100%)',
       borderRadius: 14, padding: '18px 20px',
-      border: '1px solid #312E81', marginBottom: 16,
+      border: '1px solid #1E3A6E', marginBottom: 16,
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
         <h2 style={{ fontSize: 15, fontWeight: 700, color: '#E0E7FF', margin: 0 }}>
@@ -535,7 +535,7 @@ export default function TeacherPage() {
 
       {/* ── Tabs ─────────────────────────────────── */}
       <nav style={{ display: 'flex', gap: 4, padding: 4, backgroundColor: '#0F172A', borderRadius: 10, border: '1px solid #1E293B', marginBottom: 16 }}>
-        {tabs.map(t => (<button key={t.id} onClick={() => setTab(t.id)} style={{ padding: '8px 16px', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer', fontWeight: tab === t.id ? 600 : 500, backgroundColor: tab === t.id ? '#6366F1' : 'transparent', color: tab === t.id ? '#fff' : '#64748B' }}>{t.label}</button>))}
+        {tabs.map(t => (<button key={t.id} onClick={() => setTab(t.id)} style={{ padding: '8px 16px', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer', fontWeight: tab === t.id ? 600 : 500, backgroundColor: tab === t.id ? '#0EA5E9' : 'transparent', color: tab === t.id ? '#fff' : '#64748B' }}>{t.label}</button>))}
       </nav>
       {tab === 'heatmap' && heatmap && <HeatmapTab data={heatmap} />}
       {tab === 'alerts' && <AlertsTab alerts={alerts} onResolve={resolveAlert} />}

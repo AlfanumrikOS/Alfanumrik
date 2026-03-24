@@ -20,19 +20,19 @@ interface PhoneScreen {
 function FoxyChatScreen() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '16px 12px', height: '100%' }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: '#E8581C', marginBottom: 4 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: '#0EA5E9', marginBottom: 4 }}>
         🦊 Foxy AI Chat
       </div>
       {/* Student bubble */}
       <div style={{ alignSelf: 'flex-end', maxWidth: '78%' }}>
         <div
           style={{
-            background: '#FFF3ED',
-            border: '1px solid #FDDCC8',
+            background: '#EFF6FF',
+            border: '1px solid #BFDBFE',
             borderRadius: '16px 16px 4px 16px',
             padding: '10px 14px',
             fontSize: 12,
-            color: '#7C2D12',
+            color: '#1E3A5F',
             lineHeight: 1.5,
           }}
         >
@@ -46,7 +46,7 @@ function FoxyChatScreen() {
       <div style={{ alignSelf: 'flex-start', maxWidth: '82%' }}>
         <div
           style={{
-            background: 'linear-gradient(135deg, #E8581C 0%, #F5A623 100%)',
+            background: 'linear-gradient(135deg, #1B2B5B 0%, #0EA5E9 100%)',
             borderRadius: '16px 16px 16px 4px',
             padding: '10px 14px',
             fontSize: 12,
@@ -79,7 +79,7 @@ function FoxyChatScreen() {
         }}
       >
         Ask Foxy anything...
-        <span style={{ color: '#E8581C', fontSize: 14 }}>&#8593;</span>
+        <span style={{ color: '#0EA5E9', fontSize: 14 }}>&#8593;</span>
       </div>
     </div>
   );
@@ -92,14 +92,14 @@ function StudyPlanScreen() {
     { label: 'Word Problems', bloom: 'Analyze', xp: 50, done: false },
   ];
   const bloomColors: Record<string, string> = {
-    Apply: '#7C3AED',
-    Understand: '#0891B2',
-    Analyze: '#E8581C',
+    Apply: '#6366F1',
+    Understand: '#0EA5E9',
+    Analyze: '#1B2B5B',
   };
 
   return (
     <div style={{ padding: '16px 12px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: '#7C3AED' }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: '#6366F1' }}>
         📋 Today&apos;s Plan
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -111,9 +111,9 @@ function StudyPlanScreen() {
               alignItems: 'center',
               gap: 8,
               padding: '8px 10px',
-              background: t.done ? '#F5F3FF' : '#fff',
+              background: t.done ? '#EEF2FF' : '#fff',
               borderRadius: 10,
-              border: '1px solid #EDE9FE',
+              border: '1px solid #E0E7FF',
             }}
           >
             <span
@@ -121,8 +121,8 @@ function StudyPlanScreen() {
                 width: 18,
                 height: 18,
                 borderRadius: 4,
-                border: `2px solid ${t.done ? '#7C3AED' : '#D1D5DB'}`,
-                background: t.done ? '#7C3AED' : 'transparent',
+                border: `2px solid ${t.done ? '#6366F1' : '#D1D5DB'}`,
+                background: t.done ? '#6366F1' : 'transparent',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -159,7 +159,7 @@ function StudyPlanScreen() {
             >
               {t.bloom}
             </span>
-            <span style={{ fontSize: 10, fontWeight: 700, color: '#F5A623', whiteSpace: 'nowrap' }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: '#0EA5E9', whiteSpace: 'nowrap' }}>
               +{t.xp} XP
             </span>
           </div>
@@ -177,14 +177,14 @@ function StudyPlanScreen() {
           }}
         >
           <span style={{ color: '#6B7280' }}>Progress</span>
-          <span style={{ color: '#7C3AED' }}>60%</span>
+          <span style={{ color: '#6366F1' }}>60%</span>
         </div>
-        <div style={{ height: 8, background: '#EDE9FE', borderRadius: 999 }}>
+        <div style={{ height: 8, background: '#E0E7FF', borderRadius: 999 }}>
           <div
             style={{
               width: '60%',
               height: '100%',
-              background: 'linear-gradient(90deg, #7C3AED, #A78BFA)',
+              background: 'linear-gradient(90deg, #6366F1, #818CF8)',
               borderRadius: 999,
             }}
           />
@@ -310,29 +310,29 @@ function InteractiveLabScreen() {
 
 function ProgressDashboardScreen() {
   const subjects = [
-    { name: 'Maths', xp: 1240, max: 2000, pct: 62, color: '#E8581C' },
-    { name: 'Science', xp: 880, max: 2000, pct: 44, color: '#0891B2' },
-    { name: 'English', xp: 1560, max: 2000, pct: 78, color: '#7C3AED' },
+    { name: 'Maths', xp: 1240, max: 2000, pct: 62, color: '#1B2B5B' },
+    { name: 'Science', xp: 880, max: 2000, pct: 44, color: '#0EA5E9' },
+    { name: 'English', xp: 1560, max: 2000, pct: 78, color: '#6366F1' },
   ];
 
   return (
     <div style={{ padding: '16px 12px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: '#0891B2' }}>My Progress</div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: '#0EA5E9' }}>My Progress</div>
       {/* Streak */}
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
           gap: 6,
-          background: '#FFF7ED',
+          background: '#EFF6FF',
           borderRadius: 10,
           padding: '8px 12px',
-          border: '1px solid #FDDCC8',
+          border: '1px solid #BFDBFE',
         }}
       >
         <span style={{ fontSize: 18 }}>&#x1F525;</span>
         <div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#E8581C' }}>5-day streak!</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#1B2B5B' }}>5-day streak!</div>
           <div style={{ fontSize: 10, color: '#9CA3AF' }}>Keep it going!</div>
         </div>
       </div>
@@ -383,7 +383,7 @@ function ProgressDashboardScreen() {
 function ParentViewScreen() {
   return (
     <div style={{ padding: '16px 12px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: '#059669' }}>Child Progress</div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: '#10B981' }}>Child Progress</div>
       {/* Child avatar row */}
       <div
         style={{
@@ -401,7 +401,7 @@ function ParentViewScreen() {
             width: 36,
             height: 36,
             borderRadius: '50%',
-            background: 'linear-gradient(135deg, #059669, #34D399)',
+            background: 'linear-gradient(135deg, #10B981, #34D399)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -430,14 +430,14 @@ function ParentViewScreen() {
           }}
         >
           <span>Overall Progress</span>
-          <span style={{ color: '#059669' }}>72%</span>
+          <span style={{ color: '#10B981' }}>72%</span>
         </div>
         <div style={{ height: 10, background: '#D1FAE5', borderRadius: 999 }}>
           <div
             style={{
               width: '72%',
               height: '100%',
-              background: 'linear-gradient(90deg, #059669, #34D399)',
+              background: 'linear-gradient(90deg, #10B981, #34D399)',
               borderRadius: 999,
             }}
           />
@@ -461,7 +461,7 @@ function ParentViewScreen() {
               border: '1px solid #BBF7D0',
             }}
           >
-            <div style={{ fontSize: 14, fontWeight: 700, color: '#059669' }}>{s.value}</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#10B981' }}>{s.value}</div>
             <div style={{ fontSize: 9, color: '#6B7280' }}>{s.label}</div>
           </div>
         ))}
@@ -472,7 +472,7 @@ function ParentViewScreen() {
           width: '100%',
           padding: '10px 0',
           borderRadius: 10,
-          background: 'linear-gradient(135deg, #059669, #34D399)',
+          background: 'linear-gradient(135deg, #10B981, #34D399)',
           color: '#fff',
           fontSize: 12,
           fontWeight: 700,
@@ -493,8 +493,8 @@ const SCREENS: PhoneScreen[] = [
     id: 'foxy-chat',
     title: 'Foxy AI Chat',
     description: 'Your 24/7 AI tutor that explains concepts with patience and clarity.',
-    theme: 'orange',
-    accent: '#E8581C',
+    theme: 'teal',
+    accent: '#0EA5E9',
     render: FoxyChatScreen,
   },
   {
@@ -502,7 +502,7 @@ const SCREENS: PhoneScreen[] = [
     title: 'Smart Study Plan',
     description: 'Personalized daily plans with Bloom-level tasks and XP rewards.',
     theme: 'purple',
-    accent: '#7C3AED',
+    accent: '#6366F1',
     render: StudyPlanScreen,
   },
   {
@@ -510,7 +510,7 @@ const SCREENS: PhoneScreen[] = [
     title: 'Interactive Lab',
     description: 'Hands-on simulations that make abstract concepts tangible.',
     theme: 'indigo',
-    accent: '#4F46E5',
+    accent: '#6366F1',
     render: InteractiveLabScreen,
   },
   {
@@ -518,7 +518,7 @@ const SCREENS: PhoneScreen[] = [
     title: 'Progress Dashboard',
     description: 'Track XP, streaks, and mastery across every subject.',
     theme: 'teal',
-    accent: '#0891B2',
+    accent: '#0EA5E9',
     render: ProgressDashboardScreen,
   },
   {
@@ -526,7 +526,7 @@ const SCREENS: PhoneScreen[] = [
     title: 'Parent View',
     description: 'Stay informed with real-time insights into your child\u2019s learning.',
     theme: 'green',
-    accent: '#059669',
+    accent: '#10B981',
     render: ParentViewScreen,
   },
 ];
@@ -557,7 +557,7 @@ export default function ProductShowcase() {
   }, []);
 
   return (
-    <section id="product-showcase" className="landing-section" style={{ background: '#FBF8F4' }}>
+    <section id="product-showcase" className="landing-section" style={{ background: '#FAFBFF' }}>
       <div className="landing-container">
         {/* ── Heading ────────────────────────────────────────── */}
         <div style={{ textAlign: 'center', marginBottom: 48 }}>
@@ -570,7 +570,7 @@ export default function ProductShowcase() {
               width: 80,
               height: 4,
               borderRadius: 999,
-              background: 'linear-gradient(90deg, #E8581C, #F5A623, #0891B2)',
+              background: 'linear-gradient(90deg, #1B2B5B, #0EA5E9, #6366F1)',
               margin: '0 auto 16px',
             }}
           />
