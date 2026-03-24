@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAuth } from '@/lib/AuthContext';
+import { REPORT_MONTHS_COUNT } from '@/lib/constants';
 
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -520,40 +521,409 @@ function PrintShareSection({ studentName, reportData }: { studentName: string; r
 }
 
 // ============================================================
+// HELPERS: Month list for monthly reports
+// ============================================================
+function getLastNMonths(n: number): { label: string; value: string }[] {
+  const months: { label: string; value: string }[] = [];
+  const now = new Date();
+  for (let i = 0; i < n; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const year = d.getFullYear();
+    const month = d.getMonth();
+    const label = d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    const value = `${year}-${String(month + 1).padStart(2, '0')}`;
+    months.push({ label, value });
+  }
+  return months;
+}
+
+// ============================================================
+// CIRCULAR PROGRESS (for monthly report)
+// ============================================================
+function CircularProgressRing({ value, size = 72, color = '#16A34A', label }: {
+  value: number; size?: number; color?: string; label?: string;
+}) {
+  const pct = Math.min(100, Math.max(0, value));
+  const radius = (size - 8) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (pct / 100) * circumference;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+      <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#F1F5F9" strokeWidth={6} />
+        <circle
+          cx={size / 2} cy={size / 2} r={radius} fill="none"
+          stroke={color} strokeWidth={6} strokeLinecap="round"
+          strokeDasharray={circumference} strokeDashoffset={offset}
+          style={{ transition: 'stroke-dashoffset 0.5s ease' }}
+        />
+        <text
+          x={size / 2} y={size / 2}
+          textAnchor="middle" dominantBaseline="central"
+          fill="#1E293B" fontSize={size * 0.22} fontWeight={700}
+          transform={`rotate(90, ${size / 2}, ${size / 2})`}
+        >
+          {Math.round(pct)}%
+        </text>
+      </svg>
+      {label && <span style={{ fontSize: 10, color: '#64748B', fontWeight: 600 }}>{label}</span>}
+    </div>
+  );
+}
+
+// ============================================================
+// MONTHLY REPORT SECTION (Parent read-only view)
+// ============================================================
+function MonthlyReportSection({ guardianId, studentId, studentName }: {
+  guardianId: string; studentId: string; studentName: string;
+}) {
+  const months = useMemo(() => getLastNMonths(REPORT_MONTHS_COUNT), []);
+  const [selectedMonth, setSelectedMonth] = useState(months[0]?.value ?? '');
+  const [monthlyData, setMonthlyData] = useState<any>(null);
+  const [monthlyLoading, setMonthlyLoading] = useState(false);
+
+  useEffect(() => {
+    if (!studentId || !selectedMonth) return;
+    const fetchMonthlyReport = async () => {
+      setMonthlyLoading(true);
+      try {
+        const res = await api('get_monthly_report', {
+          guardian_id: guardianId,
+          student_id: studentId,
+          report_month: selectedMonth,
+        });
+        if (res && !res.error) {
+          setMonthlyData(res.report_data ?? res);
+        } else {
+          setMonthlyData(null);
+        }
+      } catch {
+        setMonthlyData(null);
+      }
+      setMonthlyLoading(false);
+    };
+    fetchMonthlyReport();
+  }, [guardianId, studentId, selectedMonth]);
+
+  const handlePrintMonthly = () => {
+    window.print();
+  };
+
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <div style={sectionHeading}>Monthly Report</div>
+
+      {/* Month selector pills */}
+      <div className="no-print" style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 8, marginBottom: 12 }}>
+        {months.map((m) => (
+          <button
+            key={m.value}
+            onClick={() => setSelectedMonth(m.value)}
+            style={{
+              padding: '6px 14px',
+              borderRadius: 20,
+              border: 'none',
+              fontSize: 12,
+              fontWeight: selectedMonth === m.value ? 700 : 500,
+              backgroundColor: selectedMonth === m.value ? '#16A34A' : '#F1F5F9',
+              color: selectedMonth === m.value ? '#fff' : '#64748B',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              transition: 'all 0.2s',
+            }}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+
+      {monthlyLoading && (
+        <div style={{ ...cardStyle, textAlign: 'center', padding: 40 }}>
+          <div style={{ width: 32, height: 32, border: '3px solid #E2E8F0', borderTopColor: '#16A34A', borderRadius: '50%', margin: '0 auto 12px', animation: 'spin 0.8s linear infinite' }} />
+          <span style={{ fontSize: 13, color: '#64748B' }}>Loading monthly report...</span>
+        </div>
+      )}
+
+      {!monthlyLoading && !monthlyData && (
+        <div style={{ ...cardStyle, textAlign: 'center', padding: 30 }}>
+          <div style={{ fontSize: 32, marginBottom: 8 }}>{'\uD83D\uDCCA'}</div>
+          <p style={{ fontSize: 14, color: '#64748B' }}>No monthly report available for this period.</p>
+        </div>
+      )}
+
+      {!monthlyLoading && monthlyData && (
+        <>
+          {/* Learning Metrics */}
+          <div style={cardStyle}>
+            <h3 style={cardTitle}>Learning Metrics</h3>
+            <div style={{ display: 'flex', justifyContent: 'space-around', marginBottom: 16 }}>
+              <CircularProgressRing
+                value={monthlyData.conceptMasteryPct ?? 0}
+                color="#16A34A"
+                label="Concept Mastery"
+              />
+              <CircularProgressRing
+                value={monthlyData.retentionScore ?? 0}
+                color="#0891B2"
+                label="7-Day Retention"
+              />
+            </div>
+
+            {/* Weak areas prominently displayed */}
+            {monthlyData.weakChapters && monthlyData.weakChapters.length > 0 && (
+              <div style={{
+                backgroundColor: '#FEF2F2',
+                borderRadius: 12,
+                padding: '12px 14px',
+                marginBottom: 10,
+                border: '1px solid #FECACA',
+              }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#DC2626', marginBottom: 6 }}>
+                  {'\u26A0\uFE0F'} Needs Attention
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {monthlyData.weakChapters.map((ch: string, i: number) => (
+                    <span key={i} style={{
+                      fontSize: 11, padding: '3px 10px', borderRadius: 12,
+                      backgroundColor: '#FEE2E2', color: '#DC2626', fontWeight: 600,
+                    }}>
+                      {ch}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {monthlyData.strongChapters && monthlyData.strongChapters.length > 0 && (
+              <div style={{
+                backgroundColor: '#F0FDF4',
+                borderRadius: 12,
+                padding: '12px 14px',
+                border: '1px solid #BBF7D0',
+              }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#16A34A', marginBottom: 6 }}>
+                  {'\u2705'} Strong In
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {monthlyData.strongChapters.map((ch: string, i: number) => (
+                    <span key={i} style={{
+                      fontSize: 11, padding: '3px 10px', borderRadius: 12,
+                      backgroundColor: '#DCFCE7', color: '#16A34A', fontWeight: 600,
+                    }}>
+                      {ch}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Performance & Exam Readiness */}
+          <div style={cardStyle}>
+            <h3 style={cardTitle}>Performance & Exam Readiness</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginBottom: 12 }}>
+              <div style={{ textAlign: 'center', padding: 12, backgroundColor: '#F8FAFC', borderRadius: 12 }}>
+                <div style={{ fontSize: 10, color: '#64748B', textTransform: 'uppercase' as const }}>Predicted Score</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: '#E8581C' }}>
+                  {monthlyData.predictedScore ?? '--'}
+                </div>
+                <div style={{ fontSize: 10, color: '#94A3B8' }}>/80</div>
+              </div>
+              <div style={{ textAlign: 'center', padding: 12, backgroundColor: '#F8FAFC', borderRadius: 12 }}>
+                <div style={{ fontSize: 10, color: '#64748B', textTransform: 'uppercase' as const }}>Syllabus Done</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: '#0891B2' }}>
+                  {monthlyData.syllabusCompletionPct ?? 0}%
+                </div>
+              </div>
+            </div>
+
+            {/* Accuracy trend bars */}
+            {monthlyData.accuracyTrend && monthlyData.accuracyTrend.length > 0 && (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 6 }}>Weekly Accuracy</div>
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 60 }}>
+                  {monthlyData.accuracyTrend.map((val: number, i: number) => {
+                    const h = Math.max(4, (val / 100) * 100);
+                    return (
+                      <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                        <span style={{ fontSize: 9, fontWeight: 600, color: '#64748B' }}>{Math.round(val)}%</span>
+                        <div style={{
+                          width: '100%', borderRadius: '4px 4px 0 0',
+                          height: `${h}%`,
+                          backgroundColor: val >= 70 ? '#16A34A' : val >= 40 ? '#F59E0B' : '#EF4444',
+                          transition: 'height 0.4s ease',
+                        }} />
+                        <span style={{ fontSize: 9, color: '#94A3B8' }}>W{i + 1}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div style={{ fontSize: 13, color: '#475569' }}>
+              Time Efficiency: <strong>{(monthlyData.timeEfficiency ?? 0).toFixed(2)} questions/min</strong>
+            </div>
+          </div>
+
+          {/* Study Consistency */}
+          <div style={cardStyle}>
+            <h3 style={cardTitle}>Study Consistency</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 10 }}>
+              <div style={{ textAlign: 'center', padding: 10, backgroundColor: '#F8FAFC', borderRadius: 10 }}>
+                <div style={{ fontSize: 18, fontWeight: 800, color: '#16A34A' }}>{monthlyData.studyConsistencyPct ?? 0}%</div>
+                <div style={{ fontSize: 10, color: '#64748B' }}>Consistency</div>
+              </div>
+              <div style={{ textAlign: 'center', padding: 10, backgroundColor: '#F8FAFC', borderRadius: 10 }}>
+                <div style={{ fontSize: 18, fontWeight: 800, color: '#0891B2' }}>{monthlyData.totalStudyMinutes ?? 0}m</div>
+                <div style={{ fontSize: 10, color: '#64748B' }}>Study Time</div>
+              </div>
+              <div style={{ textAlign: 'center', padding: 10, backgroundColor: '#F8FAFC', borderRadius: 10 }}>
+                <div style={{ fontSize: 18, fontWeight: 800, color: '#7C3AED' }}>{monthlyData.totalQuestionsAttempted ?? 0}</div>
+                <div style={{ fontSize: 10, color: '#64748B' }}>Questions</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Improvements & Achievements */}
+          {((monthlyData.improvementAreas && monthlyData.improvementAreas.length > 0) ||
+            (monthlyData.achievements && monthlyData.achievements.length > 0)) && (
+            <div style={cardStyle}>
+              <h3 style={cardTitle}>Improvements & Achievements</h3>
+              {monthlyData.achievements && monthlyData.achievements.length > 0 && (
+                <div style={{ marginBottom: 10 }}>
+                  {monthlyData.achievements.map((a: string, i: number) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                      <span style={{ fontSize: 14 }}>{'\u2705'}</span>
+                      <span style={{ fontSize: 13, color: '#1E293B' }}>{a}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {monthlyData.improvementAreas && monthlyData.improvementAreas.length > 0 && (
+                <div>
+                  {monthlyData.improvementAreas.map((a: string, i: number) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                      <span style={{ fontSize: 14 }}>{'\uD83D\uDCA1'}</span>
+                      <span style={{ fontSize: 13, color: '#475569' }}>{a}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Download PDF */}
+          <div className="no-print" style={{ textAlign: 'center', marginTop: 12 }}>
+            <button onClick={handlePrintMonthly} style={{
+              padding: '12px 28px', backgroundColor: '#16A34A', color: '#fff',
+              border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700,
+              cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8,
+            }}>
+              {'\uD83D\uDDA8\uFE0F'} Download PDF
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// CHILD SELECTOR
+// ============================================================
+function ChildSelector({ childList, selectedId, onSelect }: {
+  childList: Array<{ id: string; name: string; grade?: string }>;
+  selectedId: string;
+  onSelect: (id: string) => void;
+}) {
+  if (childList.length <= 1) return null;
+  return (
+    <div className="no-print" style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 8, marginBottom: 12 }}>
+      {childList.map((child) => (
+        <button
+          key={child.id}
+          onClick={() => onSelect(child.id)}
+          style={{
+            padding: '8px 16px',
+            borderRadius: 12,
+            border: selectedId === child.id ? '2px solid #16A34A' : '1px solid #E2E8F0',
+            backgroundColor: selectedId === child.id ? '#F0FDF4' : '#FFFFFF',
+            color: selectedId === child.id ? '#16A34A' : '#475569',
+            fontSize: 13,
+            fontWeight: selectedId === child.id ? 700 : 500,
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            transition: 'all 0.2s',
+          }}
+        >
+          {child.name}{child.grade ? ` (${child.grade})` : ''}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ============================================================
 // MAIN REPORT PAGE
 // ============================================================
 export default function ParentReportsPage() {
   const auth = useAuth();
   const [guardian, setGuardian] = useState<any>(null);
   const [student, setStudent] = useState<any>(null);
+  const [children, setChildren] = useState<Array<{ id: string; name: string; grade?: string }>>([]);
   const [checking, setChecking] = useState(true);
   const [loading, setLoading] = useState(true);
   const [report, setReport] = useState<any>(null);
   const [error, setError] = useState('');
   const [dateRange, setDateRange] = useState<'week' | 'month' | 'all'>('week');
+  const [viewMode, setViewMode] = useState<'weekly' | 'monthly'>('weekly');
   const hasFetched = useRef(false);
 
-  // Auth: resolve guardian + student
+  // Auth: resolve guardian + student + children list
   useEffect(() => {
     if (auth.isLoading) return;
 
+    const resolveSession = async (g: any, s: any) => {
+      setGuardian(g);
+      setStudent(s);
+      // Load all children for this guardian
+      if (g?.id) {
+        try {
+          const res = await api('get_children', { guardian_id: g.id });
+          if (res?.children && Array.isArray(res.children)) {
+            setChildren(res.children);
+          } else if (s) {
+            setChildren([{ id: s.id, name: s.name, grade: s.grade }]);
+          }
+        } catch {
+          if (s) setChildren([{ id: s.id, name: s.name, grade: s.grade }]);
+        }
+      }
+      setChecking(false);
+    };
+
     if (auth.guardian) {
-      setGuardian(auth.guardian);
       loadParentSession().then(session => {
-        if (session) setStudent(session.student);
-        setChecking(false);
+        resolveSession(auth.guardian, session?.student ?? null);
       });
       return;
     }
 
     loadParentSession().then(session => {
       if (session) {
-        setGuardian(session.guardian);
-        setStudent(session.student);
+        resolveSession(session.guardian, session.student);
+      } else {
+        setChecking(false);
       }
-      setChecking(false);
     });
   }, [auth.isLoading, auth.guardian]);
+
+  // Handle child selection
+  const handleSelectChild = (childId: string) => {
+    const child = children.find(c => c.id === childId);
+    if (child) setStudent(child);
+  };
 
   // Auth guard: redirect if not logged in
   useEffect(() => {
@@ -679,44 +1049,92 @@ export default function ParentReportsPage() {
           </a>
         </div>
 
-        {/* Date range selector */}
-        <div className="no-print" style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-          {([
-            { key: 'week' as const, label: 'This Week' },
-            { key: 'month' as const, label: 'This Month' },
-            { key: 'all' as const, label: 'All Time' },
-          ]).map(opt => (
-            <button
-              key={opt.key}
-              onClick={() => setDateRange(opt.key)}
-              style={{
-                padding: '7px 16px',
-                backgroundColor: dateRange === opt.key ? '#FFFFFF' : 'rgba(255,255,255,0.15)',
-                color: dateRange === opt.key ? '#15803D' : 'rgba(255,255,255,0.9)',
-                border: 'none',
-                borderRadius: 20,
-                fontSize: 13,
-                fontWeight: dateRange === opt.key ? 700 : 500,
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-              }}
-            >
-              {opt.label}
-            </button>
-          ))}
+        {/* View mode toggle */}
+        <div className="no-print" style={{ display: 'flex', gap: 8, marginTop: 16, marginBottom: 8 }}>
+          <button
+            onClick={() => setViewMode('weekly')}
+            style={{
+              padding: '7px 16px',
+              backgroundColor: viewMode === 'weekly' ? '#FFFFFF' : 'rgba(255,255,255,0.15)',
+              color: viewMode === 'weekly' ? '#15803D' : 'rgba(255,255,255,0.9)',
+              border: 'none', borderRadius: 20, fontSize: 13,
+              fontWeight: viewMode === 'weekly' ? 700 : 500,
+              cursor: 'pointer', transition: 'all 0.2s',
+            }}
+          >
+            Weekly / Range
+          </button>
+          <button
+            onClick={() => setViewMode('monthly')}
+            style={{
+              padding: '7px 16px',
+              backgroundColor: viewMode === 'monthly' ? '#FFFFFF' : 'rgba(255,255,255,0.15)',
+              color: viewMode === 'monthly' ? '#15803D' : 'rgba(255,255,255,0.9)',
+              border: 'none', borderRadius: 20, fontSize: 13,
+              fontWeight: viewMode === 'monthly' ? 700 : 500,
+              cursor: 'pointer', transition: 'all 0.2s',
+            }}
+          >
+            Monthly Report
+          </button>
         </div>
+
+        {/* Date range selector (only in weekly mode) */}
+        {viewMode === 'weekly' && (
+          <div className="no-print" style={{ display: 'flex', gap: 8 }}>
+            {([
+              { key: 'week' as const, label: 'This Week' },
+              { key: 'month' as const, label: 'This Month' },
+              { key: 'all' as const, label: 'All Time' },
+            ]).map(opt => (
+              <button
+                key={opt.key}
+                onClick={() => setDateRange(opt.key)}
+                style={{
+                  padding: '7px 16px',
+                  backgroundColor: dateRange === opt.key ? '#FFFFFF' : 'rgba(255,255,255,0.15)',
+                  color: dateRange === opt.key ? '#15803D' : 'rgba(255,255,255,0.9)',
+                  border: 'none',
+                  borderRadius: 20,
+                  fontSize: 13,
+                  fontWeight: dateRange === opt.key ? 700 : 500,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div style={{ padding: '0 16px' }}>
-        {/* ── LOADING / ERROR ── */}
-        {loading && (
+        {/* ── CHILD SELECTOR ── */}
+        <ChildSelector
+          childList={children}
+          selectedId={student?.id ?? ''}
+          onSelect={handleSelectChild}
+        />
+
+        {/* ── MONTHLY REPORT VIEW ── */}
+        {viewMode === 'monthly' && guardian && student && (
+          <MonthlyReportSection
+            guardianId={guardian.id}
+            studentId={student.id}
+            studentName={student.name}
+          />
+        )}
+
+        {/* ── WEEKLY / RANGE VIEW ── */}
+        {viewMode === 'weekly' && loading && (
           <div style={{ textAlign: 'center', padding: 60, color: '#64748B' }}>
             <div style={{ width: 36, height: 36, border: '3px solid #E2E8F0', borderTopColor: '#16A34A', borderRadius: '50%', margin: '0 auto 14px', animation: 'spin 0.8s linear infinite' }} />
             Loading {student.name}&apos;s report...
           </div>
         )}
 
-        {error && !loading && (
+        {viewMode === 'weekly' && error && !loading && (
           <div style={{ ...cardStyle, textAlign: 'center', color: '#EF4444' }}>
             <div style={{ fontSize: 36, marginBottom: 8 }}>{'\uD83D\uDE1F'}</div>
             <p style={{ fontSize: 15, fontWeight: 600 }}>{error}</p>
@@ -728,7 +1146,7 @@ export default function ParentReportsPage() {
           </div>
         )}
 
-        {!loading && !error && (
+        {viewMode === 'weekly' && !loading && !error && (
           <>
             {/* ── 1. PERFORMANCE SUMMARY CARDS ── */}
             <div style={{ marginBottom: 20 }}>

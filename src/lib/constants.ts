@@ -54,6 +54,9 @@ export const ROLE_CONFIG = {
       { href: '/progress', icon: '📈', label: 'Progress', labelHi: 'प्रगति' },
       { href: '/leaderboard', icon: '🏆', label: 'Ranks', labelHi: 'रैंक' },
       { href: '/review', icon: '🔄', label: 'Review', labelHi: 'रिव्यू' },
+      { href: '/exams', icon: '📋', label: 'Exams', labelHi: 'परीक्षा' },
+      { href: '/scan', icon: '📷', label: 'Scan', labelHi: 'स्कैन' },
+      { href: '/reports', icon: '📊', label: 'Reports', labelHi: 'रिपोर्ट' },
       { href: '/study-plan', icon: '📅', label: 'Plan', labelHi: 'योजना' },
       { href: '/profile', icon: '👤', label: 'Profile', labelHi: 'प्रोफ़ाइल' },
     ],
@@ -77,6 +80,7 @@ export const ROLE_CONFIG = {
       { href: '/parent', icon: '🏠', label: 'Dashboard', labelHi: 'डैशबोर्ड' },
       { href: '/parent/children', icon: '👧', label: 'Children', labelHi: 'बच्चे' },
       { href: '/parent/reports', icon: '📊', label: 'Reports', labelHi: 'रिपोर्ट' },
+      { href: '/parent/children', icon: '📋', label: 'Exams', labelHi: 'परीक्षा' },
       { href: '/parent/support', icon: '💬', label: 'Support', labelHi: 'सहायता' },
       { href: '/parent/profile', icon: '👤', label: 'Profile', labelHi: 'प्रोफ़ाइल' },
     ],
@@ -137,3 +141,28 @@ export const CBSE_QUESTION_TYPES = [
 
 export const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 export const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
+/* ─── Exam Configuration ─── */
+export const EXAM_TYPES = [
+  { id: 'unit_test', label: 'Unit Test', labelHi: 'इकाई परीक्षा', icon: '📝', marks: 25, duration: 60 },
+  { id: 'half_yearly', label: 'Half-Yearly', labelHi: 'अर्ध-वार्षिक', icon: '📋', marks: 80, duration: 180 },
+  { id: 'annual', label: 'Annual Exam', labelHi: 'वार्षिक परीक्षा', icon: '🎓', marks: 80, duration: 180 },
+] as const;
+
+export const CBSE_SECTIONS = [
+  { id: 'A', label: 'Section A', labelHi: 'खंड A', desc: 'MCQ (1 mark each)', marks: 20 },
+  { id: 'B', label: 'Section B', labelHi: 'खंड B', desc: 'Short Answer (2 marks)', marks: 20 },
+  { id: 'C', label: 'Section C', labelHi: 'खंड C', desc: 'Long Answer (3 marks)', marks: 18 },
+  { id: 'D', label: 'Section D', labelHi: 'खंड D', desc: 'Long Answer (5 marks)', marks: 20 },
+  { id: 'E', label: 'Section E', labelHi: 'खंड E', desc: 'Case Study (4 marks)', marks: 12 },
+] as const;
+
+export const IMAGE_TYPES = [
+  { id: 'assignment', label: 'Assignment', labelHi: 'असाइनमेंट', icon: '📝' },
+  { id: 'question_paper', label: 'Question Paper', labelHi: 'प्रश्न पत्र', icon: '📄' },
+  { id: 'notes', label: 'Notes', labelHi: 'नोट्स', icon: '📓' },
+  { id: 'textbook', label: 'Textbook', labelHi: 'पाठ्यपुस्तक', icon: '📖' },
+  { id: 'other', label: 'Other', labelHi: 'अन्य', icon: '📎' },
+] as const;
+
+export const REPORT_MONTHS_COUNT = 6;

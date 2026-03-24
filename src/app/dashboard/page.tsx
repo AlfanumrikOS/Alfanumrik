@@ -8,14 +8,17 @@ import { Card, StatCard, ProgressBar, SectionHeader, ActionTile, SubjectChip, Av
 import TrustFooter from '@/components/TrustFooter';
 import { DashboardSkeleton } from '@/components/Skeleton';
 import type { StudentLearningProfile, Subject, CurriculumTopic } from '@/lib/types';
+import { SUBJECT_META } from '@/lib/constants';
 
 const QUICK_ACTIONS = [
   { href: '/foxy', icon: '🦊', label: 'Ask Foxy', labelHi: 'फॉक्सी से पूछो', color: '#E8581C' },
   { href: '/quiz?mode=cognitive', icon: '🧠', label: 'Smart Quiz', labelHi: 'स्मार्ट क्विज़', color: '#7C3AED' },
+  { href: '/exams', icon: '📋', label: 'My Exams', labelHi: 'मेरी परीक्षाएँ', color: '#DC2626' },
   { href: '/quiz', icon: '⚡', label: 'Quick Quiz', labelHi: 'क्विज़', color: '#F5A623' },
   { href: '/review', icon: '🔄', label: 'Review', labelHi: 'रिव्यू', color: '#0891B2' },
-  { href: '/progress', icon: '📈', label: 'Progress', labelHi: 'प्रगति', color: '#16A34A' },
+  { href: '/scan', icon: '📷', label: 'Scan', labelHi: 'स्कैन', color: '#0D9488' },
   { href: '/study-plan', icon: '📅', label: 'Study Plan', labelHi: 'अध्ययन योजना', color: '#7C3AED' },
+  { href: '/reports', icon: '📊', label: 'Reports', labelHi: 'रिपोर्ट', color: '#16A34A' },
   { href: '/leaderboard', icon: '🏆', label: 'Leaderboard', labelHi: 'लीडरबोर्ड', color: '#DB2777' },
 ];
 
@@ -47,6 +50,8 @@ export default function Dashboard() {
   const [errorBreakdown, setErrorBreakdown] = useState<{ careless: number; conceptual: number; misinterpretation: number } | null>(null);
   const [retentionScore, setRetentionScore] = useState<number | null>(null);
   const [cbseReadiness, setCbseReadiness] = useState<number | null>(null);
+  const [upcomingExams, setUpcomingExams] = useState<Array<{ id: string; exam_name: string; exam_type: string; subject: string; exam_date: string; days_left: number }>>([]);
+  const [nudges, setNudges] = useState<Array<{ id: string; nudge_type: string; message: string; message_hi?: string; priority: number }>>([]);
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/');
@@ -190,6 +195,38 @@ export default function Dashboard() {
       if (profile && profile.length > 0 && profile[0].cbse_readiness_pct != null) {
         setCbseReadiness(Math.round(profile[0].cbse_readiness_pct));
       }
+    } catch {}
+
+    // Exam countdown: upcoming exams
+    try {
+      const { data: exams } = await supabase
+        .from('exam_configs')
+        .select('id, exam_name, exam_type, subject, exam_date')
+        .eq('student_id', student.id)
+        .eq('is_active', true)
+        .gte('exam_date', new Date().toISOString().split('T')[0])
+        .order('exam_date')
+        .limit(3);
+      if (exams) {
+        const today = new Date();
+        setUpcomingExams(exams.map(e => ({
+          ...e,
+          days_left: Math.max(0, Math.ceil((new Date(e.exam_date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24))),
+        })));
+      }
+    } catch {}
+
+    // Smart nudges
+    try {
+      const { data: nudgeData } = await supabase
+        .from('smart_nudges')
+        .select('id, nudge_type, message, message_hi, priority')
+        .eq('student_id', student.id)
+        .eq('is_read', false)
+        .eq('is_dismissed', false)
+        .order('priority', { ascending: false })
+        .limit(3);
+      if (nudgeData) setNudges(nudgeData);
     } catch {}
   }, [student]);
 
@@ -357,6 +394,58 @@ export default function Dashboard() {
               ))}
             </div>
           </Card>
+        )}
+
+        {/* Exam Countdown */}
+        {upcomingExams.length > 0 && (
+          <div>
+            <SectionHeader icon="📋">{isHi ? 'आगामी परीक्षाएँ' : 'Upcoming Exams'}</SectionHeader>
+            <div className="space-y-2">
+              {upcomingExams.map(exam => {
+                const isUrgent = exam.days_left <= 7;
+                const examMeta = SUBJECT_META.find(s => s.code === exam.subject);
+                const typeLabel = exam.exam_type === 'unit_test' ? (isHi ? 'UT' : 'UT') : exam.exam_type === 'half_yearly' ? (isHi ? 'अर्ध-वार्षिक' : 'Half-Yearly') : (isHi ? 'वार्षिक' : 'Annual');
+                return (
+                  <button key={exam.id} onClick={() => router.push(`/exams`)} className="w-full">
+                    <Card className="!p-3 flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0" style={{ background: isUrgent ? 'rgba(220,38,38,0.1)' : `${examMeta?.color ?? 'var(--orange)'}15` }}>
+                        {examMeta?.icon ?? '📋'}
+                      </div>
+                      <div className="flex-1 min-w-0 text-left">
+                        <div className="font-semibold text-sm truncate">{exam.exam_name}</div>
+                        <div className="text-[10px] text-[var(--text-3)] mt-0.5">
+                          {typeLabel} · {new Date(exam.exam_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                        </div>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <div className="text-lg font-bold" style={{ color: isUrgent ? '#DC2626' : 'var(--orange)', fontFamily: 'var(--font-display)' }}>
+                          {exam.days_left}
+                        </div>
+                        <div className="text-[10px] text-[var(--text-3)]">{isHi ? 'दिन' : 'days'}</div>
+                      </div>
+                    </Card>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Smart Nudges */}
+        {nudges.length > 0 && (
+          <div className="space-y-2">
+            {nudges.map(nudge => {
+              const nudgeIcons: Record<string, string> = { schedule_behind: '⚠️', revision_due: '🔄', streak_risk: '🔥', exam_approaching: '📋', weak_topic: '📉', milestone: '🎉', encouragement: '💪' };
+              const nudgeColors: Record<string, string> = { schedule_behind: '#F59E0B', revision_due: '#0891B2', streak_risk: '#EF4444', exam_approaching: '#DC2626', weak_topic: '#8B5CF6', milestone: '#16A34A', encouragement: '#E8581C' };
+              return (
+                <div key={nudge.id} className="rounded-xl p-3 flex items-start gap-2.5" style={{ background: `${nudgeColors[nudge.nudge_type] ?? 'var(--orange)'}08`, border: `1px solid ${nudgeColors[nudge.nudge_type] ?? 'var(--orange)'}20` }}>
+                  <span className="text-base flex-shrink-0 mt-0.5">{nudgeIcons[nudge.nudge_type] ?? '💡'}</span>
+                  <p className="text-xs text-[var(--text-2)] leading-relaxed flex-1">{isHi && nudge.message_hi ? nudge.message_hi : nudge.message}</p>
+                  <button onClick={async () => { await supabase.from('smart_nudges').update({ is_dismissed: true }).eq('id', nudge.id); setNudges(prev => prev.filter(n => n.id !== nudge.id)); }} className="text-[var(--text-3)] text-xs flex-shrink-0">✕</button>
+                </div>
+              );
+            })}
+          </div>
         )}
 
         {/* Continue Learning */}

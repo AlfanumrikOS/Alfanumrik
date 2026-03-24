@@ -1029,3 +1029,384 @@ export function shouldInterleave(sessionLength: number, topicCount: number): boo
   // Always interleave if student has attempted 2+ topics
   return topicCount >= 2 || sessionLength >= 5;
 }
+
+// ─── Exam Planning & Analytics ──────────────────────────────
+
+export interface ExamConfig {
+  id: string;
+  examType: 'unit_test' | 'half_yearly' | 'annual';
+  examName: string;
+  examDate: string;
+  subject: string;
+  grade: string;
+  totalMarks: number;
+  durationMinutes: number;
+}
+
+export interface ExamChapter {
+  chapterNumber: number;
+  chapterTitle: string;
+  marksWeightage: number;
+  difficultyWeight: number;
+  studentMastery: number;
+  isCovered: boolean;
+}
+
+export function calculateChapterPriority(chapter: ExamChapter, daysUntilExam: number): number {
+  // Priority = (Marks Weightage * Difficulty Weight * (1 - Student Mastery)) / time_pressure
+  const masteryGap = 1 - chapter.studentMastery;
+  const timePressure = Math.max(1, daysUntilExam / 30); // normalize to 30 days
+  const urgencyBoost = daysUntilExam <= 7 ? 2.0 : daysUntilExam <= 14 ? 1.5 : 1.0;
+
+  return (chapter.marksWeightage * chapter.difficultyWeight * masteryGap * urgencyBoost) / timePressure;
+}
+
+// ─── Study Plan Generation ──────────────────────────────────
+
+export interface DailyStudyPlan {
+  dayNumber: number;
+  date: string;
+  tasks: StudyTask[];
+  totalMinutes: number;
+}
+
+export interface StudyTask {
+  type: 'new_learning' | 'practice' | 'revision' | 'mock_test' | 'weak_topic_focus';
+  chapterNumber: number;
+  chapterTitle: string;
+  durationMinutes: number;
+  description: string;
+  descriptionHi: string;
+  priority: number;
+}
+
+export function generateExamStudyPlan(
+  chapters: ExamChapter[],
+  daysUntilExam: number,
+  dailyMinutes: number = 60
+): DailyStudyPlan[] {
+  const plan: DailyStudyPlan[] = [];
+  const today = new Date();
+
+  // Calculate priorities
+  const prioritized = chapters
+    .map(ch => ({ ...ch, priority: calculateChapterPriority(ch, daysUntilExam) }))
+    .sort((a, b) => b.priority - a.priority);
+
+  // Allocate time per day based on optimal learning cycle:
+  // 20% recall/revision, 40% new learning, 30% practice, 10% mock test (last week only)
+  const daysAvailable = Math.max(1, daysUntilExam);
+
+  for (let day = 1; day <= daysAvailable; day++) {
+    const date = new Date(today);
+    date.setDate(date.getDate() + day);
+    const dateStr = date.toISOString().split('T')[0];
+
+    const tasks: StudyTask[] = [];
+    const isLastWeek = day > daysAvailable - 7;
+    const isLastDay = day === daysAvailable;
+
+    // Revision (spaced repetition) — 20% of time
+    const revisionMinutes = Math.round(dailyMinutes * 0.2);
+    const revisionChapter = prioritized[day % prioritized.length];
+    if (revisionChapter) {
+      tasks.push({
+        type: 'revision',
+        chapterNumber: revisionChapter.chapterNumber,
+        chapterTitle: revisionChapter.chapterTitle,
+        durationMinutes: revisionMinutes,
+        description: `Quick recall: ${revisionChapter.chapterTitle}`,
+        descriptionHi: `त्वरित स्मरण: ${revisionChapter.chapterTitle}`,
+        priority: revisionChapter.priority,
+      });
+    }
+
+    if (isLastDay) {
+      // Last day: full mock test
+      tasks.push({
+        type: 'mock_test',
+        chapterNumber: 0,
+        chapterTitle: 'Full Mock Test',
+        durationMinutes: dailyMinutes - revisionMinutes,
+        description: 'Full exam simulation — all chapters',
+        descriptionHi: 'पूरा परीक्षा अभ्यास — सभी अध्याय',
+        priority: 100,
+      });
+    } else if (isLastWeek) {
+      // Last week: 50% practice, 30% revision, 20% mock
+      const practiceMin = Math.round((dailyMinutes - revisionMinutes) * 0.5);
+      const mockMin = Math.round((dailyMinutes - revisionMinutes) * 0.3);
+      const weakMin = dailyMinutes - revisionMinutes - practiceMin - mockMin;
+
+      const practiceChapter = prioritized[(day * 2) % prioritized.length];
+      if (practiceChapter) {
+        tasks.push({
+          type: 'practice',
+          chapterNumber: practiceChapter.chapterNumber,
+          chapterTitle: practiceChapter.chapterTitle,
+          durationMinutes: practiceMin,
+          description: `Practice problems: ${practiceChapter.chapterTitle}`,
+          descriptionHi: `अभ्यास: ${practiceChapter.chapterTitle}`,
+          priority: practiceChapter.priority,
+        });
+      }
+
+      tasks.push({
+        type: 'mock_test',
+        chapterNumber: 0,
+        chapterTitle: 'Mini Mock',
+        durationMinutes: mockMin,
+        description: 'Mini mock test — timed practice',
+        descriptionHi: 'मिनी मॉक टेस्ट — समयबद्ध अभ्यास',
+        priority: 90,
+      });
+
+      const weakChapter = prioritized.find(ch => ch.studentMastery < 0.5);
+      if (weakChapter && weakMin > 0) {
+        tasks.push({
+          type: 'weak_topic_focus',
+          chapterNumber: weakChapter.chapterNumber,
+          chapterTitle: weakChapter.chapterTitle,
+          durationMinutes: weakMin,
+          description: `Focus on weak: ${weakChapter.chapterTitle}`,
+          descriptionHi: `कमज़ोर विषय: ${weakChapter.chapterTitle}`,
+          priority: weakChapter.priority,
+        });
+      }
+    } else {
+      // Normal days: 40% new learning, 30% practice, 10% weak topic focus
+      const learnMin = Math.round((dailyMinutes - revisionMinutes) * 0.5);
+      const practiceMin = Math.round((dailyMinutes - revisionMinutes) * 0.35);
+      const weakMin = dailyMinutes - revisionMinutes - learnMin - practiceMin;
+
+      // Distribute chapters across days (round-robin by priority)
+      const chapterIdx = (day - 1) % prioritized.length;
+      const learnChapter = prioritized[chapterIdx];
+      const practiceChapter = prioritized[(chapterIdx + 1) % prioritized.length];
+
+      if (learnChapter) {
+        tasks.push({
+          type: 'new_learning',
+          chapterNumber: learnChapter.chapterNumber,
+          chapterTitle: learnChapter.chapterTitle,
+          durationMinutes: learnMin,
+          description: `Learn: ${learnChapter.chapterTitle}`,
+          descriptionHi: `सीखो: ${learnChapter.chapterTitle}`,
+          priority: learnChapter.priority,
+        });
+      }
+
+      if (practiceChapter) {
+        tasks.push({
+          type: 'practice',
+          chapterNumber: practiceChapter.chapterNumber,
+          chapterTitle: practiceChapter.chapterTitle,
+          durationMinutes: practiceMin,
+          description: `Practice: ${practiceChapter.chapterTitle}`,
+          descriptionHi: `अभ्यास: ${practiceChapter.chapterTitle}`,
+          priority: practiceChapter.priority,
+        });
+      }
+
+      const weakChapter = prioritized.find(ch => ch.studentMastery < 0.5 && ch !== learnChapter);
+      if (weakChapter && weakMin > 0) {
+        tasks.push({
+          type: 'weak_topic_focus',
+          chapterNumber: weakChapter.chapterNumber,
+          chapterTitle: weakChapter.chapterTitle,
+          durationMinutes: weakMin,
+          description: `Focus: ${weakChapter.chapterTitle}`,
+          descriptionHi: `ध्यान दो: ${weakChapter.chapterTitle}`,
+          priority: weakChapter.priority,
+        });
+      }
+    }
+
+    plan.push({
+      dayNumber: day,
+      date: dateStr,
+      tasks,
+      totalMinutes: tasks.reduce((a, t) => a + t.durationMinutes, 0),
+    });
+  }
+
+  return plan;
+}
+
+// ─── Exam Score Prediction ──────────────────────────────────
+
+export function predictExamScore(
+  chapters: ExamChapter[],
+  totalMarks: number
+): { predicted: number; confidence: number; breakdown: Array<{ chapter: string; predicted: number; max: number }> } {
+  let totalPredicted = 0;
+  const breakdown: Array<{ chapter: string; predicted: number; max: number }> = [];
+
+  const totalWeightage = chapters.reduce((a, ch) => a + ch.marksWeightage, 0) || 1;
+
+  for (const ch of chapters) {
+    const chapterMarks = (ch.marksWeightage / totalWeightage) * totalMarks;
+    // Apply mastery with a slight penalty for uncertainty
+    const predicted = chapterMarks * ch.studentMastery * 0.9; // 10% confidence discount
+    totalPredicted += predicted;
+    breakdown.push({
+      chapter: ch.chapterTitle,
+      predicted: Math.round(predicted * 10) / 10,
+      max: Math.round(chapterMarks * 10) / 10,
+    });
+  }
+
+  // Confidence based on coverage and mastery variance
+  const masteries = chapters.map(ch => ch.studentMastery);
+  const avgMastery = masteries.reduce((a, b) => a + b, 0) / (masteries.length || 1);
+  const variance = masteries.reduce((a, m) => a + Math.pow(m - avgMastery, 2), 0) / (masteries.length || 1);
+  const confidence = Math.max(0.3, Math.min(0.95, avgMastery * (1 - variance)));
+
+  return {
+    predicted: Math.round(totalPredicted * 10) / 10,
+    confidence: Math.round(confidence * 100) / 100,
+    breakdown,
+  };
+}
+
+// ─── Image Content Classification ───────────────────────────
+
+export type ImageContentType = 'mcq' | 'numerical' | 'theory' | 'diagram' | 'mixed' | 'unknown';
+
+export interface ImageAnalysisResult {
+  contentType: ImageContentType;
+  detectedSubject: string | null;
+  detectedChapter: number | null;
+  questions: Array<{
+    text: string;
+    type: ImageContentType;
+    difficulty?: number;
+  }>;
+  syllabusMapping: Array<{
+    topicId: string;
+    topicTitle: string;
+    confidence: number;
+  }>;
+}
+
+export function classifyImageText(ocrText: string, subject?: string): ImageAnalysisResult {
+  // Heuristic classification based on OCR text patterns
+  const text = ocrText.toLowerCase();
+
+  // Detect question type patterns
+  const hasMCQ = /\(a\)|option\s*[a-d]|\([1-4]\)/i.test(ocrText);
+  const hasNumerical = /calculate|find the value|solve|compute|evaluate/i.test(ocrText);
+  const hasTheory = /define|explain|describe|discuss|differentiate|compare/i.test(ocrText);
+  const hasDiagram = /diagram|figure|graph|draw|sketch|plot/i.test(ocrText);
+
+  let contentType: ImageContentType = 'unknown';
+  if (hasMCQ) contentType = 'mcq';
+  else if (hasNumerical) contentType = 'numerical';
+  else if (hasTheory) contentType = 'theory';
+  else if (hasDiagram) contentType = 'diagram';
+  else if (text.length > 50) contentType = 'mixed';
+
+  // Detect subject from keywords
+  let detectedSubject: string | null = subject || null;
+  if (!detectedSubject) {
+    if (/quadratic|polynomial|triangle|circle|algebra|geometry|equation|matrix|integral/i.test(ocrText)) detectedSubject = 'math';
+    else if (/force|velocity|acceleration|newton|ohm|lens|wave|momentum/i.test(ocrText)) detectedSubject = 'physics';
+    else if (/element|compound|acid|base|reaction|periodic|bond|mole/i.test(ocrText)) detectedSubject = 'chemistry';
+    else if (/cell|organism|photosynthesis|dna|evolution|ecosystem|tissue/i.test(ocrText)) detectedSubject = 'biology';
+  }
+
+  // Split into individual questions (heuristic: look for Q1, Q2, etc.)
+  const questionPatterns = ocrText.split(/(?:Q\.|Q\d+|question\s*\d+|\d+\.\s)/i).filter(q => q.trim().length > 10);
+  const questions = questionPatterns.map(q => ({
+    text: q.trim(),
+    type: contentType,
+    difficulty: hasNumerical ? 2 : hasTheory ? 1 : hasMCQ ? 1 : 2,
+  }));
+
+  return {
+    contentType,
+    detectedSubject,
+    detectedChapter: null,
+    questions,
+    syllabusMapping: [],
+  };
+}
+
+// ─── Monthly Report Metrics ─────────────────────────────────
+
+export interface MonthlyReportData {
+  conceptMasteryPct: number;
+  retentionScore: number;
+  weakChapters: string[];
+  strongChapters: string[];
+  accuracyTrend: number[]; // last 4 weeks
+  timeEfficiency: number; // questions per minute
+  predictedScore: number;
+  syllabusCompletionPct: number;
+  studyConsistencyPct: number;
+  totalStudyMinutes: number;
+  totalQuestionsAttempted: number;
+  improvementAreas: string[];
+  achievements: string[];
+}
+
+export function computeMonthlyReportMetrics(params: {
+  masteries: Array<{ mastery: number; topic: string }>;
+  quizScores: number[];
+  weeklyAccuracies: number[];
+  totalMinutes: number;
+  totalQuestions: number;
+  daysActive: number;
+  daysInMonth: number;
+  chapters: ExamChapter[];
+  totalMarks: number;
+}): MonthlyReportData {
+  const { masteries, quizScores, weeklyAccuracies, totalMinutes, totalQuestions, daysActive, daysInMonth, chapters, totalMarks } = params;
+
+  const avgMastery = masteries.length > 0
+    ? masteries.reduce((a, m) => a + m.mastery, 0) / masteries.length
+    : 0;
+
+  const weakChapters = masteries.filter(m => m.mastery < 0.5).map(m => m.topic).slice(0, 5);
+  const strongChapters = masteries.filter(m => m.mastery >= 0.8).map(m => m.topic).slice(0, 5);
+
+  const retentionScore = quizScores.length > 0
+    ? quizScores.slice(-5).reduce((a, s) => a + s, 0) / Math.min(5, quizScores.length)
+    : 0;
+
+  const timeEfficiency = totalMinutes > 0 ? totalQuestions / totalMinutes : 0;
+  const studyConsistencyPct = Math.round((daysActive / Math.max(1, daysInMonth)) * 100);
+
+  const coveredCount = chapters.filter(ch => ch.studentMastery > 0).length;
+  const syllabusCompletionPct = chapters.length > 0
+    ? Math.round((coveredCount / chapters.length) * 100)
+    : 0;
+
+  const predicted = predictExamScore(chapters, totalMarks);
+
+  const improvements: string[] = [];
+  if (weakChapters.length > 0) improvements.push(`Focus on: ${weakChapters.slice(0, 2).join(', ')}`);
+  if (studyConsistencyPct < 60) improvements.push('Increase study consistency');
+  if (timeEfficiency < 0.5) improvements.push('Work on speed and accuracy');
+
+  const achievements: string[] = [];
+  if (avgMastery > 0.8) achievements.push('High overall mastery');
+  if (studyConsistencyPct > 80) achievements.push('Consistent study habit');
+  if (strongChapters.length > 3) achievements.push('Multiple chapters mastered');
+
+  return {
+    conceptMasteryPct: Math.round(avgMastery * 100),
+    retentionScore: Math.round(retentionScore),
+    weakChapters,
+    strongChapters,
+    accuracyTrend: weeklyAccuracies,
+    timeEfficiency: Math.round(timeEfficiency * 100) / 100,
+    predictedScore: predicted.predicted,
+    syllabusCompletionPct,
+    studyConsistencyPct,
+    totalStudyMinutes: totalMinutes,
+    totalQuestionsAttempted: totalQuestions,
+    improvementAreas: improvements,
+    achievements,
+  };
+}
