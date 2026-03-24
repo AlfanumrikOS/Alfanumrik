@@ -9,7 +9,7 @@
  * and "app is loading". Duolingo, Khan Academy, and Instagram all use
  * skeletons for this exact reason.
  *
- * Design: Matches Alfanumrik's warm cream palette with subtle shimmer.
+ * Design: Matches Alfanumrik's cool navy/teal palette with subtle shimmer.
  */
 
 function Bone({ width = '100%', height = 16, radius = 8, className = '' }: {

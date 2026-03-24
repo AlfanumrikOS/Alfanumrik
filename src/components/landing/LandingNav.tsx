@@ -67,7 +67,7 @@ export default function LandingNav({ onGetStarted }: LandingNavProps) {
           transform: hidden && !mobileOpen ? 'translateY(-100%)' : 'translateY(0)',
           transition: 'transform 0.35s cubic-bezier(0.4, 0, 0.2, 1), background 0.3s ease, backdrop-filter 0.3s ease',
           background: scrolled
-            ? 'rgba(255, 255, 255, 0.78)'
+            ? 'rgba(250, 251, 255, 0.85)'
             : 'transparent',
           backdropFilter: scrolled ? 'blur(16px) saturate(180%)' : 'none',
           WebkitBackdropFilter: scrolled ? 'blur(16px) saturate(180%)' : 'none',
@@ -95,7 +95,7 @@ export default function LandingNav({ onGetStarted }: LandingNavProps) {
               style={{
                 fontSize: '1.35rem',
                 fontWeight: 700,
-                background: 'linear-gradient(135deg, var(--orange) 0%, var(--gold) 100%)',
+                background: 'linear-gradient(135deg, #1B2B5B 0%, #0EA5E9 100%)',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
                 backgroundClip: 'text',
@@ -168,7 +168,7 @@ export default function LandingNav({ onGetStarted }: LandingNavProps) {
             <button
               onClick={onGetStarted}
               style={{
-                background: 'linear-gradient(135deg, var(--orange) 0%, var(--orange-light) 100%)',
+                background: 'linear-gradient(135deg, #1B2B5B 0%, #2563EB 100%)',
                 border: 'none',
                 padding: '8px 22px',
                 fontSize: '0.875rem',
@@ -178,14 +178,14 @@ export default function LandingNav({ onGetStarted }: LandingNavProps) {
                 borderRadius: 10,
                 fontFamily: 'var(--font-body)',
                 transition: 'all 0.25s ease',
-                boxShadow: '0 2px 8px rgba(232, 88, 28, 0.25)',
+                boxShadow: '0 2px 8px rgba(27, 43, 91, 0.25)',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.boxShadow = '0 4px 20px rgba(232, 88, 28, 0.4)';
+                e.currentTarget.style.boxShadow = '0 4px 20px rgba(27, 43, 91, 0.4)';
                 e.currentTarget.style.transform = 'translateY(-1px)';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.boxShadow = '0 2px 8px rgba(232, 88, 28, 0.25)';
+                e.currentTarget.style.boxShadow = '0 2px 8px rgba(27, 43, 91, 0.25)';
                 e.currentTarget.style.transform = 'translateY(0)';
               }}
             >
@@ -257,7 +257,7 @@ export default function LandingNav({ onGetStarted }: LandingNavProps) {
             overflow: 'hidden',
             transition: 'max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease',
             opacity: mobileOpen ? 1 : 0,
-            background: 'rgba(255,255,255,0.96)',
+            background: 'rgba(250,251,255,0.96)',
             backdropFilter: 'blur(20px)',
             WebkitBackdropFilter: 'blur(20px)',
             borderBottom: mobileOpen ? '1px solid rgba(0,0,0,0.06)' : 'none',
@@ -317,7 +317,7 @@ export default function LandingNav({ onGetStarted }: LandingNavProps) {
               <button
                 onClick={() => { setMobileOpen(false); onGetStarted?.(); }}
                 style={{
-                  background: 'linear-gradient(135deg, var(--orange) 0%, var(--orange-light) 100%)',
+                  background: 'linear-gradient(135deg, #1B2B5B 0%, #2563EB 100%)',
                   border: 'none',
                   padding: '12px 22px',
                   fontSize: '0.95rem',
@@ -327,7 +327,7 @@ export default function LandingNav({ onGetStarted }: LandingNavProps) {
                   borderRadius: 12,
                   fontFamily: 'var(--font-body)',
                   width: '100%',
-                  boxShadow: '0 2px 8px rgba(232, 88, 28, 0.25)',
+                  boxShadow: '0 2px 8px rgba(27, 43, 91, 0.25)',
                 }}
               >
                 Get Started Free

@@ -35,7 +35,7 @@ export function FocusMode({
   children,
   active,
   onExit,
-  subjectColor = 'var(--orange)',
+  subjectColor = '#0EA5E9',
   subjectIcon = '📖',
   subjectName = 'Study',
 }: FocusModeProps) {

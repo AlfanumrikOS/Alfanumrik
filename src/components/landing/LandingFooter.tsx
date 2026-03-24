@@ -83,7 +83,7 @@ function FooterColumn({ title, links }: FooterColumnProps) {
           font-weight: 500;
         }
         .footer-link:hover {
-          color: var(--orange);
+          color: #0EA5E9;
         }
       `}</style>
     </div>
@@ -140,7 +140,7 @@ export default function LandingFooter() {
 
       <style jsx>{`
         .landing-footer {
-          background: #1A1207;
+          background: #0F172A;
           padding: 64px 20px 32px;
           color: rgba(255, 255, 255, 0.65);
         }
@@ -201,8 +201,8 @@ export default function LandingFooter() {
           transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
         }
         .social-icon:hover {
-          background: rgba(232, 88, 28, 0.15);
-          border-color: rgba(232, 88, 28, 0.3);
+          background: rgba(14, 165, 233, 0.15);
+          border-color: rgba(14, 165, 233, 0.3);
           transform: translateY(-2px);
         }
 
