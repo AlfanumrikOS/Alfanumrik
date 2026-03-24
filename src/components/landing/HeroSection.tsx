@@ -54,15 +54,7 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
         padding: '80px 24px 60px',
       }}
     >
-      {/* ─── SVG grain filter ─── */}
-      <svg style={{ position: 'absolute', width: 0, height: 0 }}>
-        <filter id="grain">
-          <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch" />
-          <feColorMatrix type="saturate" values="0" />
-        </filter>
-      </svg>
-
-      {/* ─── Warm background with grain overlay ─── */}
+      {/* ─── Animated gradient mesh background ─── */}
       <div
         aria-hidden="true"
         style={{
@@ -70,22 +62,10 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
           inset: 0,
           zIndex: 0,
           overflow: 'hidden',
-          background: '#faf9f5',
+          background: 'var(--bg)',
         }}
       >
-        {/* Grain texture overlay */}
-        <div
-          aria-hidden="true"
-          style={{
-            position: 'absolute',
-            inset: 0,
-            opacity: 0.03,
-            filter: 'url(#grain)',
-            zIndex: 0,
-          }}
-        />
-
-        {/* Warm amber/terra cotta glow - top right */}
+        {/* Warm orange glow - top right */}
         <div
           className="hero-gradient-orb hero-orb-1"
           style={{
@@ -97,12 +77,11 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
             maxWidth: 700,
             maxHeight: 700,
             borderRadius: '50%',
-            background:
-              'radial-gradient(circle, rgba(217,119,87,0.08) 0%, transparent 70%)',
+            background: 'radial-gradient(circle, rgba(232,88,28,0.10) 0%, rgba(245,166,35,0.06) 40%, transparent 70%)',
             filter: 'blur(40px)',
           }}
         />
-        {/* Subtle blue glow - bottom left */}
+        {/* Purple glow - bottom left */}
         <div
           className="hero-gradient-orb hero-orb-2"
           style={{
@@ -114,12 +93,11 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
             maxWidth: 600,
             maxHeight: 600,
             borderRadius: '50%',
-            background:
-              'radial-gradient(circle, rgba(106,155,204,0.06) 0%, transparent 70%)',
+            background: 'radial-gradient(circle, rgba(124,58,237,0.08) 0%, rgba(124,58,237,0.03) 40%, transparent 70%)',
             filter: 'blur(50px)',
           }}
         />
-        {/* Subtle green glow - center */}
+        {/* Gold glow - center */}
         <div
           className="hero-gradient-orb hero-orb-3"
           style={{
@@ -131,8 +109,7 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
             maxWidth: 500,
             maxHeight: 500,
             borderRadius: '50%',
-            background:
-              'radial-gradient(circle, rgba(120,140,93,0.05) 0%, transparent 60%)',
+            background: 'radial-gradient(circle, rgba(245,166,35,0.07) 0%, transparent 60%)',
             filter: 'blur(60px)',
           }}
         />
@@ -181,11 +158,11 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
                 gap: 8,
                 padding: '6px 16px',
                 borderRadius: 100,
-                background: 'rgba(217, 119, 87, 0.08)',
-                border: '1px solid rgba(217, 119, 87, 0.15)',
+                background: 'rgba(232, 88, 28, 0.08)',
+                border: '1px solid rgba(232, 88, 28, 0.15)',
                 fontSize: '0.85rem',
                 fontWeight: 600,
-                color: '#c4623f',
+                color: 'var(--orange)',
                 marginBottom: 24,
                 animationDelay: '0.1s',
               }}
@@ -205,15 +182,13 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
                 color: 'var(--text-1)',
                 marginBottom: 20,
                 animationDelay: '0.25s',
-                fontFamily: 'var(--font-heading)',
               }}
             >
               Your Child&apos;s Personal{' '}
               <span
                 className="hero-gradient-text"
                 style={{
-                  background:
-                    'linear-gradient(135deg, #c4623f 0%, #b8922e 33%, #5589b8 66%, #c4623f 100%)',
+                  background: 'linear-gradient(135deg, var(--orange) 0%, var(--gold) 33%, var(--purple) 66%, var(--orange) 100%)',
                   backgroundSize: '200% 200%',
                   WebkitBackgroundClip: 'text',
                   WebkitTextFillColor: 'transparent',
@@ -230,12 +205,11 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
               className="hero-fade-in"
               style={{
                 fontSize: 'clamp(1rem, 2vw, 1.2rem)',
-                lineHeight: 1.75,
+                lineHeight: 1.65,
                 color: 'var(--text-2)',
                 maxWidth: 520,
                 marginBottom: 36,
                 animationDelay: '0.4s',
-                fontFamily: 'var(--font-body)',
               }}
             >
               Foxy adapts to every student&apos;s level. Hindi &amp; English.
@@ -258,7 +232,7 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
                 onClick={onGetStarted}
                 className="hero-cta-primary"
                 style={{
-                  background: '#c4623f',
+                  background: 'linear-gradient(135deg, var(--orange) 0%, var(--orange-light) 100%)',
                   border: 'none',
                   padding: '14px 32px',
                   minHeight: 52,
@@ -266,10 +240,10 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
                   fontWeight: 700,
                   color: '#fff',
                   cursor: 'pointer',
-                  borderRadius: 12,
+                  borderRadius: 14,
                   fontFamily: 'var(--font-body)',
-                  boxShadow: '0 2px 8px rgba(196, 98, 63, 0.25)',
-                  transition: 'box-shadow 0.3s ease, transform 0.3s ease',
+                  boxShadow: '0 4px 16px rgba(232, 88, 28, 0.3)',
+                  transition: 'box-shadow 0.25s ease, transform 0.25s ease',
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 8,
@@ -277,16 +251,7 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
                 }}
               >
                 Start Learning Free
-                <span
-                  className="hero-cta-arrow"
-                  style={{
-                    fontSize: '1.1rem',
-                    display: 'inline-block',
-                    transition: 'transform 0.3s ease',
-                  }}
-                >
-                  &rarr;
-                </span>
+                <span className="hero-cta-arrow" style={{ fontSize: '1.1rem', display: 'inline-block', transition: 'transform 0.25s ease' }}>&rarr;</span>
               </button>
 
               {/* Secondary CTA */}
@@ -294,17 +259,16 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
                 className="hero-cta-secondary"
                 style={{
                   background: 'none',
-                  border: '1.5px solid #e8e6dc',
+                  border: '1.5px solid var(--border-mid)',
                   padding: '14px 28px',
                   minHeight: 52,
                   fontSize: '1.05rem',
                   fontWeight: 600,
                   color: 'var(--text-2)',
                   cursor: 'pointer',
-                  borderRadius: 12,
+                  borderRadius: 14,
                   fontFamily: 'var(--font-body)',
-                  transition:
-                    'border-color 0.3s ease, color 0.3s ease, background 0.3s ease',
+                  transition: 'border-color 0.25s ease, color 0.25s ease, background 0.25s ease',
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 8,
@@ -322,11 +286,7 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
                   strokeLinejoin="round"
                 >
                   <circle cx="12" cy="12" r="10" />
-                  <polygon
-                    points="10,8 16,12 10,16"
-                    fill="currentColor"
-                    stroke="none"
-                  />
+                  <polygon points="10,8 16,12 10,16" fill="currentColor" stroke="none" />
                 </svg>
                 Watch Demo
               </button>
@@ -349,32 +309,15 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
                 width: 300,
                 maxWidth: '100%',
                 perspective: 1200,
-                position: 'relative',
               }}
             >
-              {/* Warm orange glow behind phone */}
-              <div
-                aria-hidden="true"
-                style={{
-                  position: 'absolute',
-                  top: '50%',
-                  left: '50%',
-                  transform: 'translate(-50%, -50%)',
-                  width: 340,
-                  height: 340,
-                  borderRadius: '50%',
-                  background:
-                    'radial-gradient(circle, rgba(217,119,87,0.12) 0%, transparent 70%)',
-                  filter: 'blur(30px)',
-                }}
-              />
               <div
                 style={{
-                  background: '#141413',
+                  background: '#1A1207',
                   borderRadius: 28,
                   padding: 3,
                   boxShadow:
-                    '0 24px 60px rgba(20,20,19,0.12), 0 8px 24px rgba(20,20,19,0.08)',
+                    '0 24px 60px rgba(0,0,0,0.15), 0 8px 24px rgba(0,0,0,0.1)',
                   transform: 'rotateY(-6deg) rotateX(2deg)',
                   transformStyle: 'preserve-3d',
                 }}
@@ -404,7 +347,7 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
                         width: 72,
                         height: 20,
                         borderRadius: 12,
-                        background: '#141413',
+                        background: '#1A1207',
                       }}
                     />
                   </div>
@@ -422,66 +365,14 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
                     }}
                   >
                     <span>9:41</span>
-                    <div
-                      style={{
-                        display: 'flex',
-                        gap: 4,
-                        alignItems: 'center',
-                      }}
-                    >
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                      >
-                        <path d="M1 9l2 2c4.97-4.97 13.03-4.97 18 0l2-2C16.93 2.93 7.08 2.93 1 9zm8 8l3 3 3-3c-1.65-1.66-4.34-1.66-6 0zm-4-4l2 2c2.76-2.76 7.24-2.76 10 0l2-2C15.14 9.14 8.87 9.14 5 13z" />
-                      </svg>
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                      >
-                        <rect x="2" y="6" width="3" height="12" rx="1" />
-                        <rect x="7" y="4" width="3" height="14" rx="1" />
-                        <rect x="12" y="2" width="3" height="16" rx="1" />
-                        <rect x="17" y="0" width="3" height="18" rx="1" />
-                      </svg>
+                    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M1 9l2 2c4.97-4.97 13.03-4.97 18 0l2-2C16.93 2.93 7.08 2.93 1 9zm8 8l3 3 3-3c-1.65-1.66-4.34-1.66-6 0zm-4-4l2 2c2.76-2.76 7.24-2.76 10 0l2-2C15.14 9.14 8.87 9.14 5 13z"/></svg>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="2" y="6" width="3" height="12" rx="1"/><rect x="7" y="4" width="3" height="14" rx="1"/><rect x="12" y="2" width="3" height="16" rx="1"/><rect x="17" y="0" width="3" height="18" rx="1"/></svg>
                       {/* Battery icon */}
-                      <svg
-                        width="18"
-                        height="14"
-                        viewBox="0 0 28 14"
-                        fill="currentColor"
-                      >
-                        <rect
-                          x="0"
-                          y="1"
-                          width="22"
-                          height="12"
-                          rx="2"
-                          ry="2"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
-                        />
-                        <rect
-                          x="2"
-                          y="3"
-                          width="16"
-                          height="8"
-                          rx="1"
-                          ry="1"
-                        />
-                        <rect
-                          x="23"
-                          y="4"
-                          width="3"
-                          height="6"
-                          rx="1"
-                          ry="1"
-                        />
+                      <svg width="18" height="14" viewBox="0 0 28 14" fill="currentColor">
+                        <rect x="0" y="1" width="22" height="12" rx="2" ry="2" fill="none" stroke="currentColor" strokeWidth="1.5"/>
+                        <rect x="2" y="3" width="16" height="8" rx="1" ry="1"/>
+                        <rect x="23" y="4" width="3" height="6" rx="1" ry="1"/>
                       </svg>
                     </div>
                   </div>
@@ -514,15 +405,14 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
                         width: 32,
                         height: 32,
                         borderRadius: '50%',
-                        background:
-                          'linear-gradient(135deg, #d97757, #e8956f)',
+                        background: 'linear-gradient(135deg, var(--orange) 0%, var(--gold) 100%)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         fontSize: '1rem',
                       }}
                     >
-                      {'\u{1F98A}'}
+                      🦊
                     </div>
                     <div>
                       <div
@@ -563,30 +453,21 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
                         key={i}
                         style={{
                           display: 'flex',
-                          justifyContent:
-                            msg.role === 'student'
-                              ? 'flex-end'
-                              : 'flex-start',
-                          animation:
-                            'heroMsgSlideIn 0.4s ease-out forwards',
+                          justifyContent: msg.role === 'student' ? 'flex-end' : 'flex-start',
+                          animation: 'heroMsgSlideIn 0.4s ease-out forwards',
                         }}
                       >
                         <div
                           style={{
                             maxWidth: '82%',
                             padding: '10px 14px',
-                            borderRadius:
-                              msg.role === 'student'
-                                ? '16px 16px 4px 16px'
-                                : '16px 16px 16px 4px',
-                            background:
-                              msg.role === 'student'
-                                ? '#d97757'
-                                : 'var(--surface-2)',
-                            color:
-                              msg.role === 'student'
-                                ? '#fff'
-                                : 'var(--text-1)',
+                            borderRadius: msg.role === 'student'
+                              ? '16px 16px 4px 16px'
+                              : '16px 16px 16px 4px',
+                            background: msg.role === 'student'
+                              ? 'linear-gradient(135deg, var(--orange), var(--orange-light))'
+                              : 'var(--surface-2)',
+                            color: msg.role === 'student' ? '#fff' : 'var(--text-1)',
                             fontSize: '0.78rem',
                             lineHeight: 1.5,
                             fontWeight: 500,
@@ -597,42 +478,24 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
                       </div>
                     ))}
                     {/* Typing indicator — only show before Foxy replies */}
-                    {visibleMessages < CHAT_MESSAGES.length &&
-                      visibleMessages > 0 &&
-                      CHAT_MESSAGES[visibleMessages]?.role === 'foxy' && (
+                    {visibleMessages < CHAT_MESSAGES.length && visibleMessages > 0 && CHAT_MESSAGES[visibleMessages]?.role === 'foxy' && (
+                      <div style={{ display: 'flex', justifyContent: 'flex-start', animation: 'heroMsgSlideIn 0.3s ease-out forwards' }}>
                         <div
                           style={{
+                            padding: '10px 18px',
+                            borderRadius: '16px 16px 16px 4px',
+                            background: 'var(--surface-2)',
                             display: 'flex',
-                            justifyContent: 'flex-start',
-                            animation:
-                              'heroMsgSlideIn 0.3s ease-out forwards',
+                            gap: 4,
+                            alignItems: 'center',
                           }}
                         >
-                          <div
-                            style={{
-                              padding: '10px 18px',
-                              borderRadius: '16px 16px 16px 4px',
-                              background: 'var(--surface-2)',
-                              display: 'flex',
-                              gap: 4,
-                              alignItems: 'center',
-                            }}
-                          >
-                            <span
-                              className="hero-typing-dot"
-                              style={{ animationDelay: '0s' }}
-                            />
-                            <span
-                              className="hero-typing-dot"
-                              style={{ animationDelay: '0.15s' }}
-                            />
-                            <span
-                              className="hero-typing-dot"
-                              style={{ animationDelay: '0.3s' }}
-                            />
-                          </div>
+                          <span className="hero-typing-dot" style={{ animationDelay: '0s' }} />
+                          <span className="hero-typing-dot" style={{ animationDelay: '0.15s' }} />
+                          <span className="hero-typing-dot" style={{ animationDelay: '0.3s' }} />
                         </div>
-                      )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Input bar */}
@@ -660,7 +523,7 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
                         height="16"
                         viewBox="0 0 24 24"
                         fill="none"
-                        stroke="#d97757"
+                        stroke="var(--orange)"
                         strokeWidth="2.5"
                         strokeLinecap="round"
                         strokeLinejoin="round"
@@ -723,8 +586,8 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
                   color: 'var(--text-2)',
                   padding: '6px 14px',
                   borderRadius: 100,
-                  background: 'rgba(217, 119, 87, 0.06)',
-                  border: '1px solid rgba(217, 119, 87, 0.10)',
+                  background: 'rgba(255,255,255,0.6)',
+                  border: '1px solid var(--border)',
                 }}
               >
                 <span>{item.icon}</span>
@@ -746,15 +609,7 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
             opacity: 0.5,
           }}
         >
-          <span
-            style={{
-              fontSize: '0.7rem',
-              color: 'var(--text-3)',
-              fontWeight: 500,
-              letterSpacing: '0.06em',
-              textTransform: 'uppercase',
-            }}
-          >
+          <span style={{ fontSize: '0.7rem', color: 'var(--text-3)', fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
             Scroll
           </span>
           <svg
@@ -808,13 +663,8 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
         }
 
         @keyframes heroFloat {
-          0%,
-          100% {
-            transform: translateY(0);
-          }
-          50% {
-            transform: translateY(-12px);
-          }
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-12px); }
         }
 
         /* Gradient orb drift — slow 18s cycle so it feels ambient, not distracting */
@@ -822,23 +672,13 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
           animation: heroOrbDrift 18s ease-in-out infinite alternate;
           will-change: transform;
         }
-        .hero-orb-1 {
-          animation-delay: 0s;
-        }
-        .hero-orb-2 {
-          animation-delay: -6s;
-        }
-        .hero-orb-3 {
-          animation-delay: -12s;
-        }
+        .hero-orb-1 { animation-delay: 0s; }
+        .hero-orb-2 { animation-delay: -6s; }
+        .hero-orb-3 { animation-delay: -12s; }
 
         @keyframes heroOrbDrift {
-          0% {
-            transform: translate(0, 0) scale(1);
-          }
-          100% {
-            transform: translate(30px, 20px) scale(1.05);
-          }
+          0% { transform: translate(0, 0) scale(1); }
+          100% { transform: translate(30px, 20px) scale(1.05); }
         }
 
         /* Typing indicator dots */
@@ -852,16 +692,8 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
         }
 
         @keyframes heroTypingBounce {
-          0%,
-          80%,
-          100% {
-            transform: translateY(0);
-            opacity: 0.4;
-          }
-          40% {
-            transform: translateY(-5px);
-            opacity: 1;
-          }
+          0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+          40% { transform: translateY(-5px); opacity: 1; }
         }
 
         /* Scroll indicator bounce */
@@ -870,13 +702,8 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
         }
 
         @keyframes heroBounce {
-          0%,
-          100% {
-            transform: translateY(0);
-          }
-          50% {
-            transform: translateY(6px);
-          }
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(6px); }
         }
 
         /* Animated gradient text */
@@ -886,35 +713,29 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
         }
 
         @keyframes heroGradientShift {
-          0% {
-            background-position: 0% 50%;
-          }
-          50% {
-            background-position: 100% 50%;
-          }
-          100% {
-            background-position: 0% 50%;
-          }
+          0% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
         }
 
         /* Primary CTA hover, active, and arrow animation */
         .hero-cta-primary:hover {
-          box-shadow: 0 4px 20px rgba(196, 98, 63, 0.35) !important;
-          transform: translateY(-1px);
+          box-shadow: 0 8px 32px rgba(232, 88, 28, 0.45) !important;
+          transform: translateY(-2px);
         }
         .hero-cta-primary:hover .hero-cta-arrow {
           transform: translateX(4px);
         }
         .hero-cta-primary:active {
           transform: scale(0.97) !important;
-          box-shadow: 0 2px 12px rgba(196, 98, 63, 0.3) !important;
+          box-shadow: 0 2px 12px rgba(232, 88, 28, 0.35) !important;
         }
 
         /* Secondary CTA hover */
         .hero-cta-secondary:hover {
           border-color: var(--border-strong) !important;
           color: var(--text-1) !important;
-          background: rgba(0, 0, 0, 0.02) !important;
+          background: rgba(0,0,0,0.02) !important;
         }
         .hero-cta-secondary:active {
           transform: scale(0.97);
