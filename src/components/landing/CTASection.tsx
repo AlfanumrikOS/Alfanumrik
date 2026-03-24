@@ -62,7 +62,7 @@ function FloatingEmojis() {
         }
         .floating-emoji {
           position: absolute;
-          opacity: 0.08;
+          opacity: 0.12;
           animation: emojiDrift linear infinite;
           will-change: transform;
         }
@@ -127,9 +127,6 @@ export default function CTASection({ onGetStarted }: CTASectionProps) {
     <section ref={sectionRef} className="cta-section" id="get-started">
       <FloatingEmojis />
 
-      {/* Warm radial glow */}
-      <div className="warm-glow" aria-hidden="true" />
-
       <div
         className="cta-content"
         style={{
@@ -172,16 +169,9 @@ export default function CTASection({ onGetStarted }: CTASectionProps) {
       <style jsx>{`
         .cta-section {
           position: relative;
-          background: linear-gradient(165deg, #141413 0%, #2a2520 100%);
+          background: linear-gradient(165deg, #0F172A 0%, #1E1B4B 100%);
           padding: 80px 20px 88px;
           overflow: hidden;
-        }
-        .warm-glow {
-          position: absolute;
-          inset: 0;
-          background: radial-gradient(circle at 50% 60%, rgba(217,119,87,0.10) 0%, transparent 60%);
-          pointer-events: none;
-          z-index: 0;
         }
         .cta-content {
           position: relative;
@@ -202,7 +192,7 @@ export default function CTASection({ onGetStarted }: CTASectionProps) {
         }
         .cta-subheading {
           font-size: 1.1rem;
-          color: rgba(255, 255, 255, 0.85);
+          color: rgba(255, 255, 255, 0.7);
           line-height: 1.6;
           margin-bottom: 36px;
         }
@@ -225,17 +215,17 @@ export default function CTASection({ onGetStarted }: CTASectionProps) {
           font-size: 1.05rem;
           font-weight: 700;
           color: #FFFFFF;
-          background: #c4623f;
+          background: linear-gradient(135deg, var(--orange), var(--orange-light));
           border: none;
           border-radius: 14px;
           cursor: pointer;
           transition: transform 0.2s ease, box-shadow 0.3s ease;
-          box-shadow: 0 4px 24px rgba(196, 98, 63, 0.30);
+          box-shadow: 0 4px 24px rgba(232, 88, 28, 0.35);
           white-space: nowrap;
         }
         .btn-primary:hover {
           transform: translateY(-2px) scale(1.02);
-          box-shadow: 0 8px 40px rgba(196, 98, 63, 0.45);
+          box-shadow: 0 8px 40px rgba(232, 88, 28, 0.5);
         }
         .btn-primary:active {
           transform: translateY(0) scale(0.99);
@@ -270,12 +260,12 @@ export default function CTASection({ onGetStarted }: CTASectionProps) {
         }
         .cta-note {
           font-size: 0.85rem;
-          color: rgba(255, 255, 255, 0.60);
+          color: rgba(255, 255, 255, 0.45);
           line-height: 1.5;
         }
         .note-label {
           font-weight: 600;
-          color: rgba(255, 255, 255, 0.78);
+          color: rgba(255, 255, 255, 0.6);
           margin-right: 6px;
         }
 

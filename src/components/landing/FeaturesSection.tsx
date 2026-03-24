@@ -20,48 +20,48 @@ const FEATURES: Feature[] = [
     title: 'Foxy AI Tutor',
     description:
       'A patient, brilliant tutor available 24/7. Teaches in Hindi, English, or Hinglish — adapting to your child\u2019s exact level.',
-    accentColor: '#c4623f',
-    bgColor: 'rgba(196, 98, 63,0.08)',
+    accentColor: 'var(--orange)',
+    bgColor: 'rgba(232, 88, 28, 0.10)',
   },
   {
     emoji: '🧠',
     title: 'Adaptive Learning',
     description:
       'Powered by Bayesian Knowledge Tracing. Every question, every answer shapes a personalized learning path.',
-    accentColor: '#5589b8',
-    bgColor: 'rgba(85, 137, 184,0.08)',
+    accentColor: 'var(--purple)',
+    bgColor: 'rgba(124, 58, 237, 0.10)',
   },
   {
     emoji: '📅',
     title: 'Smart Study Plans',
     description:
       'AI generates daily plans with the perfect mix: Learn \u2192 Practice \u2192 Quiz \u2192 Review. Science-backed spaced repetition.',
-    accentColor: '#6b7f50',
-    bgColor: 'rgba(107, 127, 80,0.08)',
+    accentColor: 'var(--teal)',
+    bgColor: 'rgba(8, 145, 178, 0.10)',
   },
   {
     emoji: '🔬',
     title: 'Interactive Simulations',
     description:
       'Touch, drag, and experiment. Physics, Chemistry, Biology \u2014 concepts come alive with interactive labs.',
-    accentColor: '#b8922e',
-    bgColor: 'rgba(184, 146, 46,0.08)',
+    accentColor: 'var(--green)',
+    bgColor: 'rgba(22, 163, 74, 0.10)',
   },
   {
     emoji: '📋',
     title: 'Board Exam Ready',
     description:
       'CBSE-aligned content. Previous year patterns. Chapter-wise practice. Your child walks into exams confident.',
-    accentColor: '#7b6db8',
-    bgColor: 'rgba(123, 109, 184,0.08)',
+    accentColor: 'var(--gold)',
+    bgColor: 'rgba(245, 166, 35, 0.10)',
   },
   {
     emoji: '👨\u200D👩\u200D👧',
     title: 'Parent Dashboard',
     description:
       'Know exactly where your child stands. Weekly reports, weak areas, study alerts \u2014 without being intrusive.',
-    accentColor: '#c4623f',
-    bgColor: 'rgba(196, 98, 63,0.08)',
+    accentColor: 'var(--purple)',
+    bgColor: 'rgba(124, 58, 237, 0.10)',
   },
 ];
 
@@ -83,8 +83,6 @@ function FeatureCard({
           ? 'translateY(0)'
           : 'translateY(24px)',
         transitionDelay: `${index * 100}ms`,
-        // Jade-tinted top border glow using card's accent color
-        borderTop: `1px solid ${feature.accentColor}4D`,
       }}
     >
       {/* Left accent border */}
@@ -142,7 +140,7 @@ function BilingualCard({ isVisible }: { isVisible: boolean }) {
           <div className="bilingual-bubble bilingual-bubble--foxy">
             Koi baat nahi! 😊 Chalo step-by-step dekhte hain&hellip;
             <br />
-            <span style={{ color: '#c4623f', fontWeight: 600 }}>
+            <span style={{ color: 'var(--teal)', fontWeight: 600 }}>
               v = u + at
             </span>
           </div>
@@ -188,22 +186,9 @@ export default function FeaturesSection() {
     >
       <style>{featuresCSS}</style>
 
-      {/* Decorative hexagon SVG pattern */}
-      <svg className="features-section__pattern" aria-hidden="true" width="100%" height="100%">
-        <defs>
-          <pattern id="hex-pattern" width="56" height="100" patternUnits="userSpaceOnUse" patternTransform="scale(1.5)">
-            <path d="M28 0L56 16.6V49.4L28 66L0 49.4V16.6Z" fill="none" stroke="#c4623f" strokeWidth="0.5" opacity="0.02" />
-            <path d="M28 34L56 50.6V83.4L28 100L0 83.4V50.6Z" fill="none" stroke="#c4623f" strokeWidth="0.5" opacity="0.02" />
-          </pattern>
-        </defs>
-        <rect width="100%" height="100%" fill="url(#hex-pattern)" />
-      </svg>
-
       <div className="features-section__container">
         {/* Header */}
         <div className="features-section__header">
-          {/* Thin jade gradient line above header */}
-          <div className="features-section__gradient-line" />
           <span className="features-section__badge">Features</span>
           <h2 className="features-section__title">
             Everything Your Child Needs to Excel
@@ -245,32 +230,10 @@ const featuresCSS = `
   overflow: hidden;
 }
 
-/* Decorative hexagon pattern background */
-.features-section__pattern {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: 0;
-}
-
 .features-section__container {
-  position: relative;
-  z-index: 1;
   max-width: 1120px;
   margin: 0 auto;
   padding: 0 20px;
-}
-
-/* ── Jade gradient line above header ───────────────────────── */
-.features-section__gradient-line {
-  width: 64px;
-  height: 3px;
-  margin: 0 auto 20px;
-  background: linear-gradient(90deg, #c4623f, #b8922e);
-  border-radius: 2px;
 }
 
 /* ── Header ─────────────────────────────────────────────────── */
@@ -287,9 +250,9 @@ const featuresCSS = `
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #c4623f;
-  background: rgba(196, 98, 63,0.08);
-  border: 1px solid rgba(196, 98, 63,0.18);
+  color: var(--orange);
+  background: rgba(232, 88, 28, 0.08);
+  border: 1px solid rgba(232, 88, 28, 0.18);
   border-radius: 100px;
   padding: 6px 16px;
   margin-bottom: 20px;
@@ -351,12 +314,12 @@ const featuresCSS = `
 
 .feature-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 8px 30px rgba(20, 20, 19, 0.06), 0 2px 8px rgba(20, 20, 19, 0.03);
-  border-color: var(--border);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.06), 0 2px 8px rgba(0, 0, 0, 0.04);
+  border-color: var(--border-mid);
 }
 
 .feature-card:focus-within {
-  outline: 2px solid #c4623f;
+  outline: 2px solid var(--orange);
   outline-offset: 2px;
 }
 
@@ -368,12 +331,11 @@ const featuresCSS = `
   width: 3px;
   height: 40px;
   border-radius: 0 4px 4px 0;
-  transition: height 0.3s ease, box-shadow 0.3s ease;
+  transition: height 0.3s ease;
 }
 
 .feature-card:hover .feature-card__accent {
   height: 56px;
-  box-shadow: 0 0 12px rgba(196, 98, 63, 0.3);
 }
 
 /* Icon circle */
@@ -387,7 +349,6 @@ const featuresCSS = `
   font-size: 22px;
   margin-bottom: 16px;
   transition: transform 0.3s ease;
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
 .feature-card:hover .feature-card__icon {
@@ -433,7 +394,7 @@ const featuresCSS = `
 }
 
 .bilingual-card__inner:hover {
-  box-shadow: 0 8px 30px rgba(20, 20, 19, 0.06);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.06);
 }
 
 @media (min-width: 768px) {
@@ -464,18 +425,18 @@ const featuresCSS = `
 }
 
 .bilingual-badge--en {
-  background: rgba(196, 98, 63,0.10);
-  color: #c4623f;
+  background: rgba(8, 145, 178, 0.10);
+  color: var(--teal);
 }
 
 .bilingual-badge--hi {
-  background: rgba(85, 137, 184,0.10);
-  color: #5589b8;
+  background: rgba(232, 88, 28, 0.10);
+  color: var(--orange);
 }
 
 .bilingual-badge--hing {
-  background: rgba(107, 127, 80,0.10);
-  color: #6b7f50;
+  background: rgba(124, 58, 237, 0.10);
+  color: var(--purple);
 }
 
 .bilingual-card__title {
@@ -521,11 +482,11 @@ const featuresCSS = `
 }
 
 .bilingual-bubble--foxy {
-  background: rgba(196, 98, 63, 0.06);
+  background: rgba(232, 88, 28, 0.08);
   color: var(--text-1);
   border-bottom-left-radius: 4px;
   align-self: flex-start;
-  border: 1px solid rgba(196, 98, 63, 0.12);
+  border: 1px solid rgba(232, 88, 28, 0.12);
 }
 
 /* ── Reduced motion ─────────────────────────────────────────── */

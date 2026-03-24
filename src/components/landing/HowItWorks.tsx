@@ -23,14 +23,14 @@ function MiniSignupForm() {
         <span className="hiw-mini-form__label">Grade</span>
         <div className="hiw-mini-form__select">
           <span>Class 10</span>
-          <span style={{ opacity: 0.7 }}>&#9662;</span>
+          <span style={{ opacity: 0.4 }}>&#9662;</span>
         </div>
       </div>
       <div className="hiw-mini-form__field">
         <span className="hiw-mini-form__label">Board</span>
         <div className="hiw-mini-form__select">
           <span>CBSE</span>
-          <span style={{ opacity: 0.7 }}>&#9662;</span>
+          <span style={{ opacity: 0.4 }}>&#9662;</span>
         </div>
       </div>
       <div className="hiw-mini-form__chips">
@@ -67,7 +67,7 @@ function MiniProgressBar() {
         <div className="hiw-mini-progress__bar">
           <div
             className="hiw-mini-progress__fill"
-            style={{ width: '78%', background: '#c4623f' }}
+            style={{ width: '78%', background: 'var(--orange)' }}
           />
         </div>
         <span className="hiw-mini-progress__pct">78%</span>
@@ -77,7 +77,7 @@ function MiniProgressBar() {
         <div className="hiw-mini-progress__bar">
           <div
             className="hiw-mini-progress__fill"
-            style={{ width: '62%', background: '#5589b8' }}
+            style={{ width: '62%', background: 'var(--teal)' }}
           />
         </div>
         <span className="hiw-mini-progress__pct">62%</span>
@@ -96,7 +96,7 @@ const STEPS: Step[] = [
     title: 'Sign Up Free',
     description: 'Pick your grade, board, and subjects. Takes 30 seconds.',
     icon: '✨',
-    accentColor: '#c4623f',
+    accentColor: 'var(--orange)',
     visual: <MiniSignupForm />,
   },
   {
@@ -105,7 +105,7 @@ const STEPS: Step[] = [
     description:
       'Your AI tutor learns your strengths and gaps. Start with any topic or scan a question.',
     icon: '🦊',
-    accentColor: '#5589b8',
+    accentColor: 'var(--teal)',
     visual: <MiniChatBubble />,
   },
   {
@@ -114,7 +114,7 @@ const STEPS: Step[] = [
     description:
       'Foxy builds your mastery day by day. Parents and teachers see real results.',
     icon: '📈',
-    accentColor: '#6b7f50',
+    accentColor: 'var(--green)',
     visual: <MiniProgressBar />,
   },
 ];
@@ -209,7 +209,6 @@ export default function HowItWorks() {
                 transform: isVisible ? 'scaleX(1)' : 'scaleX(0)',
               }}
             />
-            <div className="hiw-connector__pulse" />
           </div>
 
           {STEPS.map((step) => (
@@ -268,9 +267,9 @@ const hiwCSS = `
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #c4623f;
-  background: rgba(196, 98, 63,0.08);
-  border: 1px solid rgba(196, 98, 63,0.18);
+  color: var(--teal);
+  background: rgba(8, 145, 178, 0.08);
+  border: 1px solid rgba(8, 145, 178, 0.18);
   border-radius: 100px;
   padding: 6px 16px;
   margin-bottom: 20px;
@@ -286,7 +285,7 @@ const hiwCSS = `
 }
 
 .hiw-header__accent {
-  color: #c4623f;
+  color: var(--orange);
   position: relative;
 }
 
@@ -297,7 +296,7 @@ const hiwCSS = `
   bottom: -2px;
   width: 100%;
   height: 3px;
-  background: linear-gradient(90deg, #c4623f, #b8922e);
+  background: linear-gradient(90deg, var(--orange), var(--gold));
   border-radius: 2px;
 }
 
@@ -338,43 +337,13 @@ const hiwCSS = `
     height: 100%;
     background: linear-gradient(
       90deg,
-      #c4623f,
-      #5589b8,
-      #6b7f50
+      var(--orange),
+      var(--teal),
+      var(--green)
     );
     border-radius: 2px;
     transform-origin: left;
     transition: transform 1s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.3s;
-  }
-
-  /* Jade pulse animation - bright spot traveling along the line */
-  .hiw-connector__pulse {
-    position: absolute;
-    top: -2px;
-    left: 0;
-    width: 40px;
-    height: 6px;
-    border-radius: 3px;
-    background: radial-gradient(ellipse at center, rgba(196, 98, 63, 0.7) 0%, transparent 70%);
-    animation: hiw-pulse-travel 3s ease-in-out infinite 1.5s;
-    pointer-events: none;
-  }
-
-  @keyframes hiw-pulse-travel {
-    0% {
-      left: 0%;
-      opacity: 0;
-    }
-    10% {
-      opacity: 1;
-    }
-    90% {
-      opacity: 1;
-    }
-    100% {
-      left: calc(100% - 40px);
-      opacity: 0;
-    }
   }
 }
 
@@ -404,7 +373,7 @@ const hiwCSS = `
   font-size: 20px;
   font-weight: 700;
   margin-bottom: 20px;
-  box-shadow: 0 4px 12px rgba(20, 20, 19, 0.10), 0 0 0 4px rgba(20, 20, 19, 0.04);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.10);
   flex-shrink: 0;
 }
 
@@ -421,7 +390,7 @@ const hiwCSS = `
 }
 
 .hiw-step:hover .hiw-step__visual {
-  box-shadow: 0 6px 20px rgba(20, 20, 19, 0.06);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.06);
   transform: translateY(-2px);
 }
 
@@ -503,9 +472,9 @@ const hiwCSS = `
 }
 
 .hiw-mini-chip--active {
-  background: rgba(196, 98, 63,0.10);
-  color: #c4623f;
-  border-color: rgba(196, 98, 63,0.25);
+  background: rgba(232, 88, 28, 0.10);
+  color: var(--orange);
+  border-color: rgba(232, 88, 28, 0.25);
   font-weight: 600;
 }
 
@@ -531,7 +500,7 @@ const hiwCSS = `
 }
 
 .hiw-mini-chat__bubble--foxy {
-  background: rgba(196, 98, 63, 0.06);
+  background: rgba(232, 88, 28, 0.06);
   border-radius: 12px 12px 12px 4px;
   padding: 10px 12px;
 }
@@ -599,7 +568,7 @@ const hiwCSS = `
   gap: 6px;
   font-family: var(--font-body);
   font-size: 13px;
-  color: #c4623f;
+  color: var(--orange);
   padding-top: 4px;
 }
 
@@ -620,25 +589,25 @@ const hiwCSS = `
   font-size: clamp(16px, 2vw, 18px);
   font-weight: 700;
   color: #fff;
-  background: #c4623f;
+  background: linear-gradient(135deg, var(--orange) 0%, var(--orange-light) 100%);
   border: none;
-  border-radius: 12px;
+  border-radius: 14px;
   padding: 16px 32px;
   text-decoration: none;
   cursor: pointer;
   transition:
     transform 0.25s ease,
     box-shadow 0.25s ease;
-  box-shadow: 0 2px 12px rgba(196, 98, 63, 0.25);
+  box-shadow: 0 4px 16px rgba(232, 88, 28, 0.25);
 }
 
 .hiw-cta__button:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 20px rgba(196, 98, 63, 0.35);
+  box-shadow: 0 8px 28px rgba(232, 88, 28, 0.35);
 }
 
 .hiw-cta__button:focus-visible {
-  outline: 3px solid #c4623f;
+  outline: 3px solid var(--orange);
   outline-offset: 3px;
 }
 
@@ -672,9 +641,6 @@ const hiwCSS = `
   .hiw-connector__fill {
     transition: none !important;
     transform: scaleX(1) !important;
-  }
-  .hiw-connector__pulse {
-    animation: none !important;
   }
   .hiw-step:hover .hiw-step__visual {
     transform: none;

@@ -44,7 +44,7 @@ export type UserRole = 'student' | 'teacher' | 'guardian' | 'none';
 
 export const ROLE_CONFIG = {
   student: {
-    label: 'Student', labelHi: 'छात्र', icon: '🎓', color: '#0EA5E9',
+    label: 'Student', labelHi: 'छात्र', icon: '🎓', color: '#E8581C',
     homePath: '/dashboard',
     nav: [
       { href: '/dashboard', icon: '⬡', label: 'Home', labelHi: 'होम' },
@@ -107,7 +107,7 @@ export const MASTERY_LEVELS = [
   { id: 'developing', label: 'Developing', labelHi: 'विकासशील', color: '#FF9800', icon: '◔' },
   { id: 'familiar', label: 'Familiar', labelHi: 'परिचित', color: '#0891B2', icon: '◑' },
   { id: 'proficient', label: 'Proficient', labelHi: 'कुशल', color: '#16A34A', icon: '◕' },
-  { id: 'mastered', label: 'Mastered', labelHi: 'महारत', color: '#0EA5E9', icon: '●' },
+  { id: 'mastered', label: 'Mastered', labelHi: 'महारत', color: '#F5A623', icon: '●' },
 ] as const;
 
 /* ─── Bloom's Taxonomy Configuration ─── */

@@ -65,7 +65,7 @@ function FooterColumn({ title, links }: FooterColumnProps) {
           font-weight: 700;
           text-transform: uppercase;
           letter-spacing: 0.08em;
-          color: rgba(255, 255, 255, 0.65);
+          color: rgba(255, 255, 255, 0.5);
         }
         .column-links {
           list-style: none;
@@ -77,13 +77,13 @@ function FooterColumn({ title, links }: FooterColumnProps) {
         }
         .footer-link {
           font-size: 0.92rem;
-          color: rgba(255, 255, 255, 0.75);
+          color: rgba(255, 255, 255, 0.65);
           text-decoration: none;
           transition: color 0.2s ease;
           font-weight: 500;
         }
         .footer-link:hover {
-          color: #c4623f;
+          color: var(--orange);
         }
       `}</style>
     </div>
@@ -93,8 +93,6 @@ function FooterColumn({ title, links }: FooterColumnProps) {
 export default function LandingFooter() {
   return (
     <footer className="landing-footer">
-      {/* Jade gradient line at top */}
-      <div className="footer-top-line" />
       <div className="footer-inner">
         {/* ── Top grid ── */}
         <div className="footer-grid">
@@ -142,18 +140,9 @@ export default function LandingFooter() {
 
       <style jsx>{`
         .landing-footer {
-          background: #141413;
+          background: #1A1207;
           padding: 64px 20px 32px;
-          color: rgba(255, 255, 255, 0.75);
-          position: relative;
-        }
-        .footer-top-line {
-          position: absolute;
-          top: 0;
-          left: 0;
-          right: 0;
-          height: 1px;
-          background: linear-gradient(90deg, transparent, rgba(196,98,63,0.3), transparent);
+          color: rgba(255, 255, 255, 0.65);
         }
         .footer-inner {
           max-width: 1120px;
@@ -189,7 +178,7 @@ export default function LandingFooter() {
         }
         .brand-tagline {
           font-size: 0.92rem;
-          color: rgba(255, 255, 255, 0.65);
+          color: rgba(255, 255, 255, 0.5);
           line-height: 1.5;
           max-width: 260px;
         }
@@ -212,8 +201,8 @@ export default function LandingFooter() {
           transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
         }
         .social-icon:hover {
-          background: rgba(196,98,63,0.12);
-          border-color: rgba(196,98,63,0.25);
+          background: rgba(232, 88, 28, 0.15);
+          border-color: rgba(232, 88, 28, 0.3);
           transform: translateY(-2px);
         }
 
@@ -230,7 +219,7 @@ export default function LandingFooter() {
         }
         .copyright {
           font-size: 0.82rem;
-          color: rgba(255, 255, 255, 0.50);
+          color: rgba(255, 255, 255, 0.35);
           line-height: 1.5;
         }
 
