@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@/lib/constants';
 import { BottomNav } from '@/components/ui';
+import { LESSON_STEPS, getLessonStepPrompt, getNextLessonStep, type LessonStep, type LessonState } from '@/lib/cognitive-engine';
 
 /* ══════════════════════════════════════════════════════════════
    SUBJECT CONFIGURATION
@@ -42,6 +43,7 @@ const MODES = [
   { id: 'doubt', emoji: '❓', label: 'Doubt', labelHi: 'डाउट', autoPrompt: () => '', autoPromptHi: () => '' },
   { id: 'revision', emoji: '🔄', label: 'Revise', labelHi: 'रिवीज़', autoPrompt: (topic: string) => topic ? `Give me a quick revision summary of: ${topic}` : 'Summarize the key points for revision', autoPromptHi: (topic: string) => topic ? `${topic} का त्वरित पुनरावृत्ति सारांश दो` : 'रिवीज़न के लिए मुख्य बिंदु बताओ' },
   { id: 'notes', emoji: '📝', label: 'Notes', labelHi: 'नोट्स', autoPrompt: (topic: string) => topic ? `Create concise exam notes for: ${topic}` : 'Create exam-ready notes for this chapter', autoPromptHi: (topic: string) => topic ? `${topic} के लिए परीक्षा नोट्स बनाओ` : 'इस अध्याय के परीक्षा नोट्स बनाओ' },
+  { id: 'lesson', emoji: '🎓', label: 'Lesson', labelHi: 'पाठ', autoPrompt: () => '', autoPromptHi: () => '' },
 ];
 
 const MATH_SYMBOL_TABS = [
@@ -337,6 +339,13 @@ export default function FoxyPage() {
   const recognitionRef = useRef<any>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
+  // Lesson flow state
+  const [lessonStep, setLessonStep] = useState<LessonStep>('hook');
+  const [lessonStepsCompleted, setLessonStepsCompleted] = useState<LessonStep[]>([]);
+  const [lessonPrediction, setLessonPrediction] = useState('');
+  const [showPredictionInput, setShowPredictionInput] = useState(false);
+  const [predictionSubmitted, setPredictionSubmitted] = useState(false);
+
   useEffect(() => { if (!authLoading && !isLoggedIn) router.replace('/'); }, [authLoading, isLoggedIn, router]);
 
   // Preload voices
@@ -488,11 +497,48 @@ export default function FoxyPage() {
     if (!mode) return;
     // Doubt mode: let user type their own question
     if (modeId === 'doubt') return;
+    // Lesson mode: start lesson flow
+    if (modeId === 'lesson') {
+      setLessonStep('hook');
+      setLessonStepsCompleted([]);
+      setPredictionSubmitted(false);
+      setShowPredictionInput(false);
+      const topicName = activeTopic?.title || '';
+      if (topicName) {
+        const prompt = getLessonStepPrompt('hook', topicName, language);
+        sendMessage(prompt);
+      }
+      return;
+    }
     // Auto-send a contextual prompt
     const topicName = activeTopic?.title || '';
     const prompt = language === 'hi' ? mode.autoPromptHi(topicName) : mode.autoPrompt(topicName);
     if (prompt) sendMessage(prompt);
   }, [activeTopic, language, sendMessage]);
+
+  // Advance lesson step
+  const advanceLessonStep = useCallback(() => {
+    const state: LessonState = {
+      currentStep: lessonStep,
+      stepsCompleted: lessonStepsCompleted,
+      recallScore: null,
+      applicationScore: null,
+    };
+    const next = getNextLessonStep(state);
+    if (next === 'complete') {
+      setSessionMode('learn');
+      return;
+    }
+    setLessonStepsCompleted(prev => [...prev, lessonStep]);
+    setLessonStep(next);
+    setPredictionSubmitted(false);
+    setShowPredictionInput(next === 'active_recall');
+    const topicName = activeTopic?.title || '';
+    if (topicName) {
+      const prompt = getLessonStepPrompt(next, topicName, language);
+      sendMessage(prompt);
+    }
+  }, [lessonStep, lessonStepsCompleted, activeTopic, language, sendMessage]);
 
   const cfg = SUBJECTS[activeSubject] || SUBJECTS.science;
 
