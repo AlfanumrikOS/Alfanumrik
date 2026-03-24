@@ -4,14 +4,13 @@ import React, { useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import LandingNav from './LandingNav';
 import HeroSection from './HeroSection';
 
-/* ─── Lazy-load below-fold sections (when they exist) ─── */
-// These will be uncommented as other agents create them:
-// const ProductShowcase = lazy(() => import('./ProductShowcase'));
-// const FeaturesSection = lazy(() => import('./FeaturesSection'));
-// const HowItWorks = lazy(() => import('./HowItWorks'));
-// const SocialProof = lazy(() => import('./SocialProof'));
-// const CTASection = lazy(() => import('./CTASection'));
-// const LandingFooter = lazy(() => import('./LandingFooter'));
+/* ─── Lazy-load below-fold sections ─── */
+const ProductShowcase = lazy(() => import('./ProductShowcase'));
+const FeaturesSection = lazy(() => import('./FeaturesSection'));
+const HowItWorks = lazy(() => import('./HowItWorks'));
+const SocialProof = lazy(() => import('./SocialProof'));
+const CTASection = lazy(() => import('./CTASection'));
+const LandingFooter = lazy(() => import('./LandingFooter'));
 
 interface LandingPageProps {
   onGetStarted?: () => void;
@@ -60,19 +59,23 @@ function useScrollReveal() {
   return initObserver;
 }
 
-/* ─── Placeholder section component for not-yet-created sections ─── */
-function PlaceholderSection({ id }: { id: string }) {
+/* ─── Lazy section wrapper with minimal loading fallback ─── */
+function LazySection({ children }: { children: React.ReactNode }) {
   return (
-    <section
-      id={id}
-      className="scroll-reveal"
-      style={{
-        minHeight: 200,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    />
+    <Suspense
+      fallback={
+        <div
+          style={{
+            minHeight: 200,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        />
+      }
+    >
+      {children}
+    </Suspense>
   );
 }
 
@@ -99,18 +102,31 @@ export default function LandingPage({ onGetStarted }: LandingPageProps) {
       <LandingNav onGetStarted={handleGetStarted} />
       <HeroSection onGetStarted={handleGetStarted} />
 
-      {/* Below-fold sections — placeholders until other agents create them */}
-      <PlaceholderSection id="product-showcase" />
+      <LazySection>
+        <ProductShowcase />
+      </LazySection>
 
-      <PlaceholderSection id="features" />
+      <LazySection>
+        <FeaturesSection />
+      </LazySection>
 
-      <PlaceholderSection id="how-it-works" />
+      <LazySection>
+        <HowItWorks />
+      </LazySection>
 
-      <PlaceholderSection id="testimonials" />
+      <LazySection>
+        <div id="testimonials">
+          <SocialProof />
+        </div>
+      </LazySection>
 
-      <PlaceholderSection id="cta" />
+      <LazySection>
+        <CTASection onGetStarted={handleGetStarted} />
+      </LazySection>
 
-      <PlaceholderSection id="footer" />
+      <LazySection>
+        <LandingFooter />
+      </LazySection>
     </div>
   );
 }

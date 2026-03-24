@@ -186,8 +186,10 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
             >
               Your Child&apos;s Personal{' '}
               <span
+                className="hero-gradient-text"
                 style={{
-                  background: 'linear-gradient(135deg, var(--orange) 0%, var(--gold) 50%, var(--purple) 100%)',
+                  background: 'linear-gradient(135deg, var(--orange) 0%, var(--gold) 33%, var(--purple) 66%, var(--orange) 100%)',
+                  backgroundSize: '200% 200%',
                   WebkitBackgroundClip: 'text',
                   WebkitTextFillColor: 'transparent',
                   backgroundClip: 'text',
@@ -233,6 +235,7 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
                   background: 'linear-gradient(135deg, var(--orange) 0%, var(--orange-light) 100%)',
                   border: 'none',
                   padding: '14px 32px',
+                  minHeight: 52,
                   fontSize: '1.05rem',
                   fontWeight: 700,
                   color: '#fff',
@@ -240,22 +243,15 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
                   borderRadius: 14,
                   fontFamily: 'var(--font-body)',
                   boxShadow: '0 4px 16px rgba(232, 88, 28, 0.3)',
-                  transition: 'all 0.25s ease',
+                  transition: 'box-shadow 0.25s ease, transform 0.25s ease',
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 8,
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.boxShadow = '0 6px 28px rgba(232, 88, 28, 0.45)';
-                  e.currentTarget.style.transform = 'translateY(-2px)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.boxShadow = '0 4px 16px rgba(232, 88, 28, 0.3)';
-                  e.currentTarget.style.transform = 'translateY(0)';
+                  willChange: 'transform',
                 }}
               >
                 Start Learning Free
-                <span style={{ fontSize: '1.1rem' }}>&rarr;</span>
+                <span className="hero-cta-arrow" style={{ fontSize: '1.1rem', display: 'inline-block', transition: 'transform 0.25s ease' }}>&rarr;</span>
               </button>
 
               {/* Secondary CTA */}
@@ -265,26 +261,17 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
                   background: 'none',
                   border: '1.5px solid var(--border-mid)',
                   padding: '14px 28px',
+                  minHeight: 52,
                   fontSize: '1.05rem',
                   fontWeight: 600,
                   color: 'var(--text-2)',
                   cursor: 'pointer',
                   borderRadius: 14,
                   fontFamily: 'var(--font-body)',
-                  transition: 'all 0.25s ease',
+                  transition: 'border-color 0.25s ease, color 0.25s ease, background 0.25s ease',
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 8,
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = 'var(--border-strong)';
-                  e.currentTarget.style.color = 'var(--text-1)';
-                  e.currentTarget.style.background = 'rgba(0,0,0,0.02)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = 'var(--border-mid)';
-                  e.currentTarget.style.color = 'var(--text-2)';
-                  e.currentTarget.style.background = 'none';
                 }}
               >
                 {/* Play icon */}
@@ -340,15 +327,35 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
                     background: 'var(--surface-1)',
                     borderRadius: 25,
                     overflow: 'hidden',
-                    minHeight: 440,
+                    /* Enforce realistic 9:19.5 phone aspect ratio */
+                    aspectRatio: '9 / 19.5',
+                    minHeight: 540,
                     display: 'flex',
                     flexDirection: 'column',
                   }}
                 >
+                  {/* Dynamic Island / Camera notch */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'center',
+                      paddingTop: 8,
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 72,
+                        height: 20,
+                        borderRadius: 12,
+                        background: '#1A1207',
+                      }}
+                    />
+                  </div>
+
                   {/* Phone status bar */}
                   <div
                     style={{
-                      padding: '10px 16px 6px',
+                      padding: '6px 16px 6px',
                       display: 'flex',
                       justifyContent: 'space-between',
                       alignItems: 'center',
@@ -361,19 +368,38 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
                     <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M1 9l2 2c4.97-4.97 13.03-4.97 18 0l2-2C16.93 2.93 7.08 2.93 1 9zm8 8l3 3 3-3c-1.65-1.66-4.34-1.66-6 0zm-4-4l2 2c2.76-2.76 7.24-2.76 10 0l2-2C15.14 9.14 8.87 9.14 5 13z"/></svg>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="2" y="6" width="3" height="12" rx="1"/><rect x="7" y="4" width="3" height="14" rx="1"/><rect x="12" y="2" width="3" height="16" rx="1"/><rect x="17" y="0" width="3" height="18" rx="1"/></svg>
+                      {/* Battery icon */}
+                      <svg width="18" height="14" viewBox="0 0 28 14" fill="currentColor">
+                        <rect x="0" y="1" width="22" height="12" rx="2" ry="2" fill="none" stroke="currentColor" strokeWidth="1.5"/>
+                        <rect x="2" y="3" width="16" height="8" rx="1" ry="1"/>
+                        <rect x="23" y="4" width="3" height="6" rx="1" ry="1"/>
+                      </svg>
                     </div>
                   </div>
 
                   {/* App header */}
                   <div
                     style={{
-                      padding: '8px 16px 10px',
+                      padding: '8px 12px 10px',
                       borderBottom: '1px solid var(--border)',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: 10,
+                      gap: 8,
                     }}
                   >
+                    {/* Back button */}
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="var(--text-3)"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <polyline points="15,18 9,12 15,6" />
+                    </svg>
                     <div
                       style={{
                         width: 32,
@@ -451,16 +477,14 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
                         </div>
                       </div>
                     ))}
-                    {/* Typing indicator when not all messages shown */}
-                    {visibleMessages < CHAT_MESSAGES.length && visibleMessages > 0 && (
-                      <div style={{ display: 'flex', justifyContent: CHAT_MESSAGES[visibleMessages]?.role === 'student' ? 'flex-end' : 'flex-start' }}>
+                    {/* Typing indicator — only show before Foxy replies */}
+                    {visibleMessages < CHAT_MESSAGES.length && visibleMessages > 0 && CHAT_MESSAGES[visibleMessages]?.role === 'foxy' && (
+                      <div style={{ display: 'flex', justifyContent: 'flex-start', animation: 'heroMsgSlideIn 0.3s ease-out forwards' }}>
                         <div
                           style={{
                             padding: '10px 18px',
-                            borderRadius: 16,
-                            background: CHAT_MESSAGES[visibleMessages]?.role === 'student'
-                              ? 'rgba(232,88,28,0.15)'
-                              : 'var(--surface-2)',
+                            borderRadius: '16px 16px 16px 4px',
+                            background: 'var(--surface-2)',
                             display: 'flex',
                             gap: 4,
                             alignItems: 'center',
