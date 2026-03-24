@@ -2,40 +2,40 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ─── Alfanumrik Light Theme — European EdTech Alliance ───── */
+/* ─── Alfanumrik Light Theme — Alef Education Jade ───── */
 :root {
   --font-display: "Sora", sans-serif;
   --font-body: "Plus Jakarta Sans", sans-serif;
 
-  /* Brand — European EdTech inspired */
-  --primary: #1B2B5B;
-  --primary-light: #2563EB;
-  --secondary: #0EA5E9;
-  --accent: #6366F1;
-  --orange: #F97316;  /* Coral — var name kept for compat */
-  --orange-light: #FB923C;
-  --gold: #F59E0B;
+  /* Brand — Alef Education jade green inspired */
+  --primary: #00B17A;
+  --primary-light: #00D68F;
+  --secondary: #ADE3D3;
+  --accent: #1B4B6B;
+  --orange: #FF6B35;
+  --orange-light: #FF8A5C;
+  --gold: #FFB800;
   --teal: #0EA5E9;
-  --green: #10B981;
-  --purple: #6366F1;
+  --green: #00B17A;
+  --purple: #7C3AED;
   --pink: #EC4899;
   --red: #EF4444;
 
-  /* Surfaces — clean cool white */
-  --bg: #FAFBFF;
+  /* Surfaces — pristine white with subtle warmth */
+  --bg: #FAFFFE;
   --surface-1: #FFFFFF;
-  --surface-2: #F1F5F9;
-  --surface-3: #E2E8F0;
+  --surface-2: #F0FAF6;
+  --surface-3: #E0F2EB;
 
-  /* Borders — cool gray */
-  --border: rgba(15, 23, 42, 0.08);
-  --border-mid: rgba(15, 23, 42, 0.12);
-  --border-strong: rgba(15, 23, 42, 0.20);
+  /* Borders — jade tinted */
+  --border: rgba(0, 177, 122, 0.08);
+  --border-mid: rgba(0, 177, 122, 0.15);
+  --border-strong: rgba(0, 177, 122, 0.25);
 
-  /* Text — dark navy hierarchy */
-  --text-1: #0F172A;
-  --text-2: #475569;
-  --text-3: #94A3B8;
+  /* Text — deep dark */
+  --text-1: #0D1B2A;
+  --text-2: #374151;
+  --text-3: #6B7280;
 
   /* Layout */
   --sidebar-width: 240px;

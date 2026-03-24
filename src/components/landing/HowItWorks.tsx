@@ -67,7 +67,7 @@ function MiniProgressBar() {
         <div className="hiw-mini-progress__bar">
           <div
             className="hiw-mini-progress__fill"
-            style={{ width: '78%', background: '#1B2B5B' }}
+            style={{ width: '78%', background: '#00B17A' }}
           />
         </div>
         <span className="hiw-mini-progress__pct">78%</span>
@@ -77,7 +77,7 @@ function MiniProgressBar() {
         <div className="hiw-mini-progress__bar">
           <div
             className="hiw-mini-progress__fill"
-            style={{ width: '62%', background: '#0EA5E9' }}
+            style={{ width: '62%', background: '#00D68F' }}
           />
         </div>
         <span className="hiw-mini-progress__pct">62%</span>
@@ -96,7 +96,7 @@ const STEPS: Step[] = [
     title: 'Sign Up Free',
     description: 'Pick your grade, board, and subjects. Takes 30 seconds.',
     icon: '✨',
-    accentColor: '#1B2B5B',
+    accentColor: '#00B17A',
     visual: <MiniSignupForm />,
   },
   {
@@ -105,7 +105,7 @@ const STEPS: Step[] = [
     description:
       'Your AI tutor learns your strengths and gaps. Start with any topic or scan a question.',
     icon: '🦊',
-    accentColor: '#0EA5E9',
+    accentColor: '#00D68F',
     visual: <MiniChatBubble />,
   },
   {
@@ -114,7 +114,7 @@ const STEPS: Step[] = [
     description:
       'Foxy builds your mastery day by day. Parents and teachers see real results.',
     icon: '📈',
-    accentColor: '#10B981',
+    accentColor: '#1B4B6B',
     visual: <MiniProgressBar />,
   },
 ];
@@ -209,6 +209,7 @@ export default function HowItWorks() {
                 transform: isVisible ? 'scaleX(1)' : 'scaleX(0)',
               }}
             />
+            <div className="hiw-connector__pulse" />
           </div>
 
           {STEPS.map((step) => (
@@ -267,9 +268,9 @@ const hiwCSS = `
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--teal);
-  background: rgba(8, 145, 178, 0.08);
-  border: 1px solid rgba(8, 145, 178, 0.18);
+  color: #00B17A;
+  background: rgba(0, 177, 122, 0.08);
+  border: 1px solid rgba(0, 177, 122, 0.18);
   border-radius: 100px;
   padding: 6px 16px;
   margin-bottom: 20px;
@@ -285,7 +286,7 @@ const hiwCSS = `
 }
 
 .hiw-header__accent {
-  color: #1B2B5B;
+  color: #00B17A;
   position: relative;
 }
 
@@ -296,7 +297,7 @@ const hiwCSS = `
   bottom: -2px;
   width: 100%;
   height: 3px;
-  background: linear-gradient(90deg, #1B2B5B, #0EA5E9);
+  background: linear-gradient(90deg, #00B17A, #00D68F);
   border-radius: 2px;
 }
 
@@ -337,13 +338,43 @@ const hiwCSS = `
     height: 100%;
     background: linear-gradient(
       90deg,
-      #1B2B5B,
-      #0EA5E9,
-      #10B981
+      #00B17A,
+      #00D68F,
+      #1B4B6B
     );
     border-radius: 2px;
     transform-origin: left;
     transition: transform 1s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.3s;
+  }
+
+  /* Jade pulse animation - bright spot traveling along the line */
+  .hiw-connector__pulse {
+    position: absolute;
+    top: -2px;
+    left: 0;
+    width: 40px;
+    height: 6px;
+    border-radius: 3px;
+    background: radial-gradient(ellipse at center, rgba(0, 214, 143, 0.7) 0%, transparent 70%);
+    animation: hiw-pulse-travel 3s ease-in-out infinite 1.5s;
+    pointer-events: none;
+  }
+
+  @keyframes hiw-pulse-travel {
+    0% {
+      left: 0%;
+      opacity: 0;
+    }
+    10% {
+      opacity: 1;
+    }
+    90% {
+      opacity: 1;
+    }
+    100% {
+      left: calc(100% - 40px);
+      opacity: 0;
+    }
   }
 }
 
@@ -373,7 +404,7 @@ const hiwCSS = `
   font-size: 20px;
   font-weight: 700;
   margin-bottom: 20px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.10);
+  box-shadow: 0 4px 12px rgba(0, 177, 122, 0.2), 0 0 0 4px rgba(0, 177, 122, 0.08);
   flex-shrink: 0;
 }
 
@@ -390,7 +421,7 @@ const hiwCSS = `
 }
 
 .hiw-step:hover .hiw-step__visual {
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 6px 20px rgba(0, 177, 122, 0.10), 0 2px 8px rgba(0, 177, 122, 0.06);
   transform: translateY(-2px);
 }
 
@@ -472,9 +503,9 @@ const hiwCSS = `
 }
 
 .hiw-mini-chip--active {
-  background: rgba(14, 165, 233, 0.10);
-  color: #0EA5E9;
-  border-color: rgba(14, 165, 233, 0.25);
+  background: rgba(0, 177, 122, 0.10);
+  color: #00B17A;
+  border-color: rgba(0, 177, 122, 0.25);
   font-weight: 600;
 }
 
@@ -500,7 +531,7 @@ const hiwCSS = `
 }
 
 .hiw-mini-chat__bubble--foxy {
-  background: rgba(14, 165, 233, 0.06);
+  background: rgba(0, 177, 122, 0.06);
   border-radius: 12px 12px 12px 4px;
   padding: 10px 12px;
 }
@@ -568,7 +599,7 @@ const hiwCSS = `
   gap: 6px;
   font-family: var(--font-body);
   font-size: 13px;
-  color: #F97316;
+  color: #FF6B35;
   padding-top: 4px;
 }
 
@@ -589,7 +620,7 @@ const hiwCSS = `
   font-size: clamp(16px, 2vw, 18px);
   font-weight: 700;
   color: #fff;
-  background: linear-gradient(135deg, #1B2B5B 0%, #2563EB 100%);
+  background: linear-gradient(135deg, #00B17A 0%, #00D68F 100%);
   border: none;
   border-radius: 14px;
   padding: 16px 32px;
@@ -598,16 +629,16 @@ const hiwCSS = `
   transition:
     transform 0.25s ease,
     box-shadow 0.25s ease;
-  box-shadow: 0 4px 16px rgba(27, 43, 91, 0.25);
+  box-shadow: 0 4px 16px rgba(0, 177, 122, 0.25);
 }
 
 .hiw-cta__button:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 28px rgba(27, 43, 91, 0.35);
+  box-shadow: 0 8px 28px rgba(0, 177, 122, 0.35);
 }
 
 .hiw-cta__button:focus-visible {
-  outline: 3px solid #1B2B5B;
+  outline: 3px solid #00B17A;
   outline-offset: 3px;
 }
 
@@ -641,6 +672,9 @@ const hiwCSS = `
   .hiw-connector__fill {
     transition: none !important;
     transform: scaleX(1) !important;
+  }
+  .hiw-connector__pulse {
+    animation: none !important;
   }
   .hiw-step:hover .hiw-step__visual {
     transform: none;
