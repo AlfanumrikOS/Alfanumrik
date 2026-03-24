@@ -568,7 +568,7 @@ const hiwCSS = `
   gap: 6px;
   font-family: var(--font-body);
   font-size: 13px;
-  color: var(--orange);
+  color: #F97316;
   padding-top: 4px;
 }
 
@@ -589,7 +589,7 @@ const hiwCSS = `
   font-size: clamp(16px, 2vw, 18px);
   font-weight: 700;
   color: #fff;
-  background: linear-gradient(135deg, var(--orange) 0%, var(--orange-light) 100%);
+  background: linear-gradient(135deg, #1B2B5B 0%, #2563EB 100%);
   border: none;
   border-radius: 14px;
   padding: 16px 32px;
@@ -598,16 +598,16 @@ const hiwCSS = `
   transition:
     transform 0.25s ease,
     box-shadow 0.25s ease;
-  box-shadow: 0 4px 16px rgba(232, 88, 28, 0.25);
+  box-shadow: 0 4px 16px rgba(27, 43, 91, 0.25);
 }
 
 .hiw-cta__button:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 28px rgba(232, 88, 28, 0.35);
+  box-shadow: 0 8px 28px rgba(27, 43, 91, 0.35);
 }
 
 .hiw-cta__button:focus-visible {
-  outline: 3px solid var(--orange);
+  outline: 3px solid #1B2B5B;
   outline-offset: 3px;
 }
 

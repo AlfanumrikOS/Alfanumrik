@@ -1244,7 +1244,7 @@ export default function FoxyPage() {
                   <span className="text-xs font-bold" style={{ color: msg.role === 'tutor' ? 'var(--orange)' : cfg.color }}>{msg.role === 'tutor' ? 'Foxy' : (student?.name || 'You')}</span>
                   <span className="text-[10px] text-[var(--text-3)]">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                   {msg.role === 'tutor' && <span className="ml-auto px-1.5 py-0.5 rounded text-[8px] font-semibold" style={{ background: 'var(--surface-2)', color: 'var(--text-3)', border: '1px solid var(--border)' }}>🤖 AI</span>}
-                  {(msg.xp ?? 0) > 0 && <span className="px-2 py-0.5 rounded-lg text-[10px] font-extrabold text-white" style={{ background: 'linear-gradient(135deg, #F59E0B, #EF4444)' }}>+{msg.xp} XP</span>}
+                  {(msg.xp ?? 0) > 0 && <span className="px-2 py-0.5 rounded-lg text-[10px] font-extrabold text-white" style={{ background: 'linear-gradient(135deg, #0EA5E9, #6366F1)' }}>+{msg.xp} XP</span>}
                 </div>
                 <div className="w-full rounded-2xl px-4 py-3 text-sm leading-relaxed" style={{ background: msg.role === 'student' ? `${cfg.color}08` : 'var(--surface-1)', color: 'var(--text-1)', border: msg.role === 'student' ? `1.5px solid ${cfg.color}20` : msg.reported ? '1.5px solid #EF444440' : '1px solid var(--border)' }}>
                   {msg.role === 'tutor' ? <RichContent content={msg.content} subjectKey={activeSubject} /> : <div className="whitespace-pre-wrap">{msg.content}</div>}
