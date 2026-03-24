@@ -10,8 +10,8 @@ import { Card, Button, ProgressBar, StatCard, LoadingFoxy, BottomNav } from '@/c
 import { SUBJECT_META } from '@/lib/constants';
 import {
   BLOOM_CONFIG, BLOOM_LEVELS,
-  initialCognitiveLoad, updateCognitiveLoad, getReflectionPrompt,
-  type BloomLevel, type CognitiveLoadState, type ReflectionPrompt,
+  initialCognitiveLoad, updateCognitiveLoad, getReflectionPrompt, classifyError,
+  type BloomLevel, type CognitiveLoadState, type ReflectionPrompt, type ErrorType,
 } from '@/lib/cognitive-engine';
 
 type QuizMode = 'practice' | 'cognitive';
@@ -37,6 +37,7 @@ interface Response {
   selected_option: number;
   is_correct: boolean;
   time_spent: number;
+  error_type?: ErrorType;
 }
 
 const DIFF_LABELS = [
@@ -55,7 +56,7 @@ export default function QuizPage() {
 
   // Setup state
   const [screen, setScreen] = useState<Screen>('select');
-  const [quizMode, setQuizMode] = useState<QuizMode>('practice');
+  const [quizMode, setQuizMode] = useState<QuizMode>('cognitive');
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
   const [selectedDifficulty, setSelectedDifficulty] = useState<number | null>(null);
   const [questionCount, setQuestionCount] = useState(10);
@@ -70,6 +71,7 @@ export default function QuizPage() {
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [responses, setResponses] = useState<Response[]>([]);
   const [showExplanation, setShowExplanation] = useState(false);
+  const [hintLevel, setHintLevel] = useState(0);
   const [timer, setTimer] = useState(0);
   const [questionTimer, setQuestionTimer] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -165,11 +167,19 @@ export default function QuizPage() {
     if (selectedOption === null) return;
     const q = questions[currentIdx];
     const isCorrect = selectedOption === q.correct_answer_index;
+
+    // Classify error type for cognitive analysis
+    const avgTime = responses.length > 0
+      ? responses.reduce((a, r) => a + r.time_spent, 0) / responses.length
+      : questionTimer;
+    const errorType = classifyError(isCorrect, questionTimer, avgTime, q.difficulty, 0.5);
+
     setResponses(prev => [...prev, {
       question_id: q.id,
       selected_option: selectedOption,
       is_correct: isCorrect,
       time_spent: questionTimer,
+      error_type: errorType,
     }]);
     setShowExplanation(true);
     if (qTimerRef.current) clearInterval(qTimerRef.current);
@@ -190,6 +200,7 @@ export default function QuizPage() {
       setSelectedOption(null);
       setShowExplanation(false);
       setReflection(null);
+      setHintLevel(0);
     } else {
       // Quiz complete — submit results
       if (timerRef.current) clearInterval(timerRef.current);
