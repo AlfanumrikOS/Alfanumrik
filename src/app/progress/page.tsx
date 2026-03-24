@@ -205,7 +205,7 @@ export default function ProgressPage() {
       .order('created_at', { ascending: false })
       .limit(10)
       .then(({ data }) => setSessionMetrics((data as CognitiveSessionMetrics[]) ?? []));
-  }, [student?.id]);
+  }, [student?.id, refreshSnapshot]);
 
   if (isLoading || !student) return <LoadingFoxy />;
 

@@ -1,23 +1,35 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 export const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 export const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
-if (typeof window !== 'undefined' && (!supabaseUrl || !supabaseAnonKey)) {
-  console.error('Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY');
-}
+// Lazy-init: avoid throwing during Next.js static page generation (build time)
+// where env vars may not yet be available.
+let _supabase: SupabaseClient | null = null;
 
-export const supabase = createClient(
-  supabaseUrl,
-  supabaseAnonKey,
-  {
+function getSupabase(): SupabaseClient {
+  if (_supabase) return _supabase;
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY');
+  }
+  _supabase = createClient(supabaseUrl, supabaseAnonKey, {
     auth: {
       autoRefreshToken: true,
       persistSession: true,
       detectSessionInUrl: true,
     },
-  }
-);
+  });
+  return _supabase;
+}
+
+// Proxy that lazily initializes on first property access
+export const supabase: SupabaseClient = new Proxy({} as SupabaseClient, {
+  get(_target, prop, receiver) {
+    const client = getSupabase();
+    const value = Reflect.get(client, prop, receiver);
+    return typeof value === 'function' ? value.bind(client) : value;
+  },
+});
 
 /* ── Timeout wrapper for fetch calls ── */
 function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 15000): Promise<Response> {
