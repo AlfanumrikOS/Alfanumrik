@@ -2,7 +2,7 @@
 
 ## 1. URL Configuration
 Go to: **Supabase Dashboard → Authentication → URL Configuration**
-URL: https://supabase.com/dashboard/project/dxipobqngyfpqbbznojz/auth/url-configuration
+URL: https://supabase.com/dashboard/project/shktyoxqhundlvkiwguu/auth/url-configuration
 
 ### Site URL
 ```
@@ -26,7 +26,7 @@ http://localhost:3000/auth/confirm
 
 ## 2. Email Templates
 Go to: **Supabase Dashboard → Authentication → Email Templates**
-URL: https://supabase.com/dashboard/project/dxipobqngyfpqbbznojz/auth/templates
+URL: https://supabase.com/dashboard/project/shktyoxqhundlvkiwguu/auth/templates
 
 ### Confirm Signup Template
 Subject: `Confirm your Alfanumrik account`
@@ -208,11 +208,11 @@ To send from `@alfanumrik.com` (recommended for production):
 If this hook is enabled but the edge function fails, auth emails won't be sent.
 
 Go to: **Supabase Dashboard → Authentication → Hooks**
-URL: https://supabase.com/dashboard/project/dxipobqngyfpqbbznojz/auth/hooks
+URL: https://supabase.com/dashboard/project/shktyoxqhundlvkiwguu/auth/hooks
 
 Enable "Send Email" hook → select "HTTPS" → paste:
 ```
-https://dxipobqngyfpqbbznojz.supabase.co/functions/v1/send-auth-email
+https://shktyoxqhundlvkiwguu.supabase.co/functions/v1/send-auth-email
 ```
 
 Copy the generated hook secret and set it as `SEND_EMAIL_HOOK_SECRET` in Edge Functions → Secrets.
