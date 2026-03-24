@@ -666,13 +666,14 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
           50% { transform: translateY(-12px); }
         }
 
-        /* Gradient orb drift */
+        /* Gradient orb drift — slow 18s cycle so it feels ambient, not distracting */
         .hero-gradient-orb {
-          animation: heroOrbDrift 8s ease-in-out infinite alternate;
+          animation: heroOrbDrift 18s ease-in-out infinite alternate;
+          will-change: transform;
         }
         .hero-orb-1 { animation-delay: 0s; }
-        .hero-orb-2 { animation-delay: -3s; }
-        .hero-orb-3 { animation-delay: -5s; }
+        .hero-orb-2 { animation-delay: -6s; }
+        .hero-orb-3 { animation-delay: -12s; }
 
         @keyframes heroOrbDrift {
           0% { transform: translate(0, 0) scale(1); }
@@ -702,6 +703,46 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
         @keyframes heroBounce {
           0%, 100% { transform: translateY(0); }
           50% { transform: translateY(6px); }
+        }
+
+        /* Animated gradient text */
+        .hero-gradient-text {
+          animation: heroGradientShift 6s ease-in-out infinite;
+          will-change: background-position;
+        }
+
+        @keyframes heroGradientShift {
+          0% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
+        }
+
+        /* Primary CTA hover, active, and arrow animation */
+        .hero-cta-primary:hover {
+          box-shadow: 0 8px 32px rgba(232, 88, 28, 0.45) !important;
+          transform: translateY(-2px);
+        }
+        .hero-cta-primary:hover .hero-cta-arrow {
+          transform: translateX(4px);
+        }
+        .hero-cta-primary:active {
+          transform: scale(0.97) !important;
+          box-shadow: 0 2px 12px rgba(232, 88, 28, 0.35) !important;
+        }
+
+        /* Secondary CTA hover */
+        .hero-cta-secondary:hover {
+          border-color: var(--border-strong) !important;
+          color: var(--text-1) !important;
+          background: rgba(0,0,0,0.02) !important;
+        }
+        .hero-cta-secondary:active {
+          transform: scale(0.97);
+        }
+
+        /* Phone float — will-change for GPU layer */
+        .hero-phone-float {
+          will-change: transform;
         }
 
         /* Responsive: stack on mobile */
