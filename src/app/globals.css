@@ -1,41 +1,43 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* ─── Alfanumrik Light Theme — Alef Education Jade ───── */
+/* ─── Alfanumrik Light Theme — Anthropic Warm Palette ───── */
 :root {
-  --font-display: "Sora", sans-serif;
-  --font-body: "Plus Jakarta Sans", sans-serif;
+  --font-display: "Poppins", "Styrene A", sans-serif;
+  --font-body: "Lora", "Georgia", serif;
 
-  /* Brand — Alef Education jade green inspired */
-  --primary: #00B17A;
-  --primary-light: #00D68F;
-  --secondary: #ADE3D3;
-  --accent: #1B4B6B;
-  --orange: #FF6B35;
-  --orange-light: #FF8A5C;
-  --gold: #FFB800;
-  --teal: #00B17A;
-  --green: #00B17A;
-  --purple: #7C3AED;
-  --pink: #EC4899;
-  --red: #EF4444;
+  /* Brand — Anthropic warm palette */
+  --primary: #d97757;
+  --primary-light: #e8956f;
+  --secondary: #6a9bcc;
+  --accent: #788c5d;
+  --orange: #d97757;
+  --orange-light: #e8956f;
+  --gold: #c4a35a;
+  --teal: #6a9bcc;
+  --green: #788c5d;
+  --purple: #8b7ec8;
+  --pink: #c47a8a;
+  --red: #c45c5c;
 
-  /* Surfaces — pristine white with jade tint */
-  --bg: #FAFFFE;
+  /* Surfaces — warm cream/beige */
+  --bg: #faf9f5;
   --surface-1: #FFFFFF;
-  --surface-2: #F0FAF6;
-  --surface-3: #E0F2EB;
+  --surface-2: #F5F5F0;
+  --surface-3: #e8e6dc;
 
-  /* Borders — jade tinted */
-  --border: rgba(0, 177, 122, 0.08);
-  --border-mid: rgba(0, 177, 122, 0.15);
-  --border-strong: rgba(0, 177, 122, 0.25);
+  /* Borders — warm gray */
+  --border: rgba(20, 20, 19, 0.08);
+  --border-mid: rgba(20, 20, 19, 0.12);
+  --border-strong: rgba(20, 20, 19, 0.20);
 
-  /* Text — deep dark */
-  --text-1: #0D1B2A;
-  --text-2: #374151;
-  --text-3: #6B7280;
+  /* Text — warm dark hierarchy */
+  --text-1: #141413;
+  --text-2: #605e56;
+  --text-3: #b0aea5;
 
   /* Layout */
   --sidebar-width: 240px;
