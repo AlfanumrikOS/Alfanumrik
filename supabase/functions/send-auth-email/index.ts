@@ -15,7 +15,7 @@
  *   1. Deploy: supabase functions deploy send-auth-email --no-verify-jwt
  *   2. Go to Supabase Dashboard -> Authentication -> Hooks
  *   3. Enable "Send Email" hook -> select "HTTPS" -> paste URL:
- *      https://dxipobqngyfpqbbznojz.supabase.co/functions/v1/send-auth-email
+ *      https://shktyoxqhundlvkiwguu.supabase.co/functions/v1/send-auth-email
  *   4. Copy the generated hook secret and set it as SEND_EMAIL_HOOK_SECRET
  *      in Edge Functions -> Secrets
  *   5. Set RESEND_API_KEY in Edge Functions -> Secrets
