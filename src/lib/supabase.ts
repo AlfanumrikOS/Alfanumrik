@@ -39,8 +39,8 @@ export async function getStudentSnapshot(studentId: string) {
   const streak = Math.max(...p.map((r) => r.streak_days ?? 0), 0);
   const totalCorrect = p.reduce((a, r) => a + (r.total_questions_answered_correctly ?? 0), 0);
   const totalAsked = p.reduce((a, r) => a + (r.total_questions_asked ?? 0), 0);
-  const { count: mastered } = await supabase.from('concept_mastery').select('*', { count: 'exact', head: true }).eq('student_id', studentId).gte('mastery_level', 0.95);
-  const { count: inProgress } = await supabase.from('concept_mastery').select('*', { count: 'exact', head: true }).eq('student_id', studentId).lt('mastery_level', 0.95).gt('mastery_level', 0);
+  const { count: mastered } = await supabase.from('concept_mastery').select('*', { count: 'exact', head: true }).eq('student_id', studentId).gte('mastery_probability', 0.95);
+  const { count: inProgress } = await supabase.from('concept_mastery').select('*', { count: 'exact', head: true }).eq('student_id', studentId).lt('mastery_probability', 0.95).gt('mastery_probability', 0);
   const { count: quizzes } = await supabase.from('quiz_sessions').select('*', { count: 'exact', head: true }).eq('student_id', studentId);
 
   return {
@@ -154,11 +154,13 @@ export async function submitQuizResults(studentId: string, subject: string, grad
   const scorePct = total > 0 ? Math.round((correct / total) * 100) : 0;
   const xpEarned = correct * 10 + (scorePct >= 80 ? 20 : 0);
 
-  // 1. Insert quiz session
+  // 1. Insert quiz session (columns must match DB schema exactly)
   const { data: session, error: sessErr } = await supabase.from('quiz_sessions').insert({
-    student_id: studentId, subject, total_questions: total,
-    correct_answers: correct, score_percent: scorePct,
-    xp_earned: xpEarned, time_seconds: time, grade, completed_at: new Date().toISOString(),
+    student_id: studentId, subject, grade, total_questions: total,
+    correct_answers: correct, wrong_answers: total - correct,
+    score_percent: scorePct, score: correct * 10,
+    time_taken_seconds: time, total_answered: total,
+    is_completed: true, completed_at: new Date().toISOString(),
   }).select('id').single();
   if (sessErr) console.error('Fallback: quiz_sessions insert failed:', sessErr.message);
 
@@ -267,15 +269,24 @@ export async function getReviewCards(studentId: string, limit = 10) {
     if (!error && data) return data;
   } catch { /* RPC may not exist */ }
 
-  // Fallback: direct query
-  const { data } = await supabase.from('concept_mastery')
-    .select('id, subject, topic_tag, chapter_title, front_text, back_text, hint, ease_factor, interval_days, streak, repetition_count, total_reviews, correct_reviews')
+  // Fallback: use spaced_repetition_cards if available, else concept_mastery
+  const { data: cards } = await supabase.from('spaced_repetition_cards')
+    .select('id, student_id, subject, topic_tag, chapter_title, front_text, back_text, hint, ease_factor, interval_days, streak, repetition_count, total_reviews, correct_reviews, next_review_at')
     .eq('student_id', studentId)
     .lte('next_review_at', new Date().toISOString())
-    .not('front_text', 'is', null)
     .order('next_review_at')
     .limit(limit);
-  return (data ?? []).map(cm => ({ ...cm, topic: cm.topic_tag, chapter_title: cm.chapter_title || cm.topic_tag }));
+  if (cards && cards.length > 0) {
+    return cards.map(c => ({ ...c, topic: c.topic_tag, chapter_title: c.chapter_title || c.topic_tag }));
+  }
+  // Final fallback: concept_mastery (limited columns)
+  const { data } = await supabase.from('concept_mastery')
+    .select('id, topic_id, ease_factor, mastery_probability, consecutive_correct, next_review_at')
+    .eq('student_id', studentId)
+    .lte('next_review_at', new Date().toISOString())
+    .order('next_review_at')
+    .limit(limit);
+  return (data ?? []).map(cm => ({ ...cm, topic: cm.topic_id, front_text: '', back_text: '' }));
 }
 
 export const sendToFoxy = chatWithFoxy;
@@ -480,18 +491,18 @@ export async function getLearningVelocity(studentId: string, subject?: string) {
 /* ── Cognitive Session Metrics ── */
 export async function saveCognitiveMetrics(metrics: {
   student_id: string;
-  session_id?: string;
-  zpd_target?: number;
-  zpd_actual?: number;
-  bloom_distribution?: Record<string, number>;
-  interleaving_ratio?: number;
+  quiz_session_id?: string;
+  questions_in_zpd?: number;
+  questions_too_easy?: number;
+  questions_too_hard?: number;
+  zpd_accuracy_rate?: number;
   fatigue_detected?: boolean;
   difficulty_adjustments?: number;
-  consecutive_errors?: number;
-  consecutive_correct?: number;
-  avg_response_time?: number;
-  session_duration?: number;
-  questions_attempted?: number;
+  avg_response_time_seconds?: number;
+  interleaved_questions?: number;
+  blocked_questions?: number;
+  session_start?: string;
+  session_end?: string;
 }) {
   const { error } = await supabase.from('cognitive_session_metrics').insert(metrics);
   if (error) console.error('saveCognitiveMetrics:', error.message);
@@ -501,16 +512,20 @@ export async function saveCognitiveMetrics(metrics: {
 export async function saveQuestionResponses(responses: Array<{
   student_id: string;
   question_id: string;
-  session_id?: string;
-  selected_option: number;
+  quiz_session_id?: string;
+  selected_answer?: string;
   is_correct: boolean;
-  time_spent?: number;
-  bloom_level?: string;
-  difficulty?: number;
-  source?: string;
-  board_year?: number;
-  reflection_shown?: boolean;
-  reflection_type?: string;
+  response_time_seconds: number;
+  bloom_level_attempted: string;
+  was_in_zpd?: boolean;
+  cognitive_load_experienced?: string;
+  reflection_prompt?: string;
+  reflection_response?: string;
+  reflection_quality?: number;
+  error_type?: string;
+  misconception_detected?: string;
+  quality?: number;
+  interleaved?: boolean;
 }>) {
   const { error } = await supabase.from('question_responses').insert(responses);
   if (error) console.error('saveQuestionResponses:', error.message);
@@ -519,14 +534,20 @@ export async function saveQuestionResponses(responses: Array<{
 /* ── Update Bloom Progression ── */
 export async function upsertBloomProgression(data: {
   student_id: string;
-  topic_id: string;
-  bloom_level: string;
-  attempts: number;
-  correct: number;
-  mastery: number;
+  concept_id: string;
+  subject: string;
+  current_bloom_level?: string;
+  zpd_bloom_level?: string;
+  remember_mastery?: number;
+  understand_mastery?: number;
+  apply_mastery?: number;
+  analyze_mastery?: number;
+  evaluate_mastery?: number;
+  create_mastery?: number;
 }) {
-  const { error } = await supabase.from('bloom_progression').upsert(data, {
-    onConflict: 'student_id,topic_id,bloom_level',
-  });
+  const { error } = await supabase.from('bloom_progression').upsert(
+    { ...data, last_practiced_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+    { onConflict: 'student_id,concept_id' },
+  );
   if (error) console.error('upsertBloomProgression:', error.message);
 }

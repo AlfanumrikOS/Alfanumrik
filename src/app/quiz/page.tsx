@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { track } from '@/lib/analytics';
 import { shareResult, quizShareMessage } from '@/lib/share';
-import { getQuizQuestions, submitQuizResults, supabase } from '@/lib/supabase';
+import { getQuizQuestions, submitQuizResults, saveCognitiveMetrics, saveQuestionResponses, supabase } from '@/lib/supabase';
 import { Card, Button, ProgressBar, StatCard, LoadingFoxy, BottomNav } from '@/components/ui';
 import { SUBJECT_META } from '@/lib/constants';
 import {
@@ -239,6 +239,40 @@ export default function QuizPage() {
         );
         setResults(res);
         refreshSnapshot();
+
+        // Save cognitive metrics for this session (fire-and-forget)
+        if (quizMode === 'cognitive' && res?.session_id) {
+          const inZpd = allResponses.filter((_, i) => questions[i]?.difficulty === 2).length;
+          const tooEasy = allResponses.filter((_, i) => questions[i]?.difficulty === 1).length;
+          const tooHard = allResponses.filter((_, i) => questions[i]?.difficulty === 3).length;
+          saveCognitiveMetrics({
+            student_id: student!.id,
+            quiz_session_id: res.session_id,
+            questions_in_zpd: inZpd,
+            questions_too_easy: tooEasy,
+            questions_too_hard: tooHard,
+            zpd_accuracy_rate: inZpd > 0 ? allResponses.filter((r, i) => r.is_correct && questions[i]?.difficulty === 2).length / inZpd : undefined,
+            fatigue_detected: cogLoad.fatigueScore > 0.6,
+            difficulty_adjustments: cogLoad.shouldEaseOff || cogLoad.shouldPushHarder ? 1 : 0,
+            avg_response_time_seconds: allResponses.length > 0
+              ? allResponses.reduce((a, r) => a + r.time_spent, 0) / allResponses.length
+              : undefined,
+          }).catch(() => {});
+
+          // Save per-question responses
+          saveQuestionResponses(allResponses.map((r, i) => ({
+            student_id: student!.id,
+            question_id: r.question_id,
+            quiz_session_id: res.session_id,
+            selected_answer: String(r.selected_option),
+            is_correct: r.is_correct,
+            response_time_seconds: r.time_spent,
+            bloom_level_attempted: questions[i]?.bloom_level || 'remember',
+            was_in_zpd: questions[i]?.difficulty === 2,
+            quality: r.is_correct ? (r.time_spent < 10 ? 5 : 4) : (r.time_spent < 5 ? 1 : 2),
+          }))).catch(() => {});
+        }
+
         track('quiz_completed', {
           subject: selectedSubject!,
           score: res?.score_percent ?? 0,
