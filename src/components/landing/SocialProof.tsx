@@ -66,16 +66,21 @@ interface MetricProps {
   prefix?: string;
   label: string;
   icon: string;
+  decimals?: number;
 }
 
-function MetricCounter({ end, suffix = '', prefix = '', label, icon }: MetricProps) {
-  const { value, ref } = useCountUp(end);
+function MetricCounter({ end, suffix = '', prefix = '', label, icon, decimals = 0 }: MetricProps) {
+  const scaledEnd = decimals > 0 ? Math.round(end * Math.pow(10, decimals)) : end;
+  const { value, ref } = useCountUp(scaledEnd);
+  const displayValue = decimals > 0
+    ? (value / Math.pow(10, decimals)).toFixed(decimals)
+    : value.toLocaleString('en-IN');
 
   return (
     <div ref={ref} className="metric-counter">
       <span className="metric-icon">{icon}</span>
       <span className="metric-value">
-        {prefix}{value.toLocaleString('en-IN')}{suffix}
+        {prefix}{displayValue}{suffix}
       </span>
       <span className="metric-label">{label}</span>
 
@@ -127,7 +132,7 @@ function MetricsBanner() {
       <div className="metrics-grid">
         <MetricCounter end={10000} suffix="+" label="Students Learning" icon="🎓" />
         <MetricCounter end={96} suffix="%" label="Accuracy Rate" icon="🎯" />
-        <MetricCounter end={48} prefix="" suffix="" label="Average Rating" icon="⭐" />
+        <MetricCounter end={4.8} decimals={1} suffix="★" label="Average Rating" icon="⭐" />
         <MetricCounter end={50000} suffix="+" label="Questions Solved" icon="✅" />
       </div>
 
