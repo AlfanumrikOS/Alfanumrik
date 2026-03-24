@@ -836,7 +836,7 @@ const REPORT_REASONS = [
 ];
 
 export default function FoxyPage() {
-  const { student: authStudent, isLoggedIn, isLoading: authLoading, activeRole } = useAuth();
+  const { student: authStudent, isLoggedIn, isLoading: authLoading, activeRole, signOut } = useAuth();
   const router = useRouter();
 
   // Core state
@@ -1047,9 +1047,34 @@ export default function FoxyPage() {
   if (!isLoggedIn && !authLoading) return <AuthScreen onSuccess={() => window.location.reload()} />;
 
   if (!student) {
-    // Non-student roles: redirect to their dashboard instead of showing Foxy
-    if (activeRole === 'guardian') { router.replace('/parent'); return null; }
-    if (activeRole === 'teacher') { router.replace('/teacher'); return null; }
+    // Non-student roles: show role-aware screen with navigation (don't auto-redirect)
+    if (activeRole === 'guardian' || activeRole === 'teacher') {
+      const dashPath = activeRole === 'guardian' ? '/parent' : '/teacher';
+      const roleLabel = activeRole === 'guardian' ? 'Parent' : 'Teacher';
+      return (
+        <div className="mesh-bg min-h-dvh flex items-center justify-center">
+          <div className="text-center max-w-xs mx-auto px-4">
+            <div className="text-5xl mb-4">{activeRole === 'guardian' ? '👨‍👩‍👧' : '👩‍🏫'}</div>
+            <h2 className="text-lg font-bold mb-2" style={{ color: 'var(--text-1)' }}>Welcome, {roleLabel}!</h2>
+            <p className="text-sm mb-6" style={{ color: 'var(--text-3)' }}>You are logged in as a {roleLabel.toLowerCase()}. Foxy AI Tutor is for students.</p>
+            <button
+              onClick={() => router.push(dashPath)}
+              className="w-full py-3 px-4 rounded-xl font-semibold text-white text-sm mb-3"
+              style={{ background: 'linear-gradient(135deg, #E8590C, #F59E0B)' }}
+            >
+              Go to {roleLabel} Dashboard
+            </button>
+            <button
+              onClick={async () => { await signOut(); window.location.reload(); }}
+              className="w-full py-2.5 px-4 rounded-xl text-sm font-medium"
+              style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', color: 'var(--text-2)' }}
+            >
+              Sign out &amp; switch account
+            </button>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="mesh-bg min-h-dvh flex items-center justify-center">
         <div className="text-center">
