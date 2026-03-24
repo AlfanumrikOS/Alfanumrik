@@ -146,7 +146,7 @@ export default function QuizPage() {
       alert(isHi ? 'क्विज़ लोड करने में समस्या हुई। कृपया फिर से कोशिश करें।' : 'Failed to load quiz. Please try again.');
     }
     setLoading(false);
-  }, [selectedSubject, student, questionCount, isHi]);
+  }, [selectedSubject, student, questionCount, selectedDifficulty, isHi]);
 
   const parseOptions = (opts: string | string[]): string[] => {
     if (Array.isArray(opts)) return opts;
