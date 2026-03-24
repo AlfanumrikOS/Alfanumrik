@@ -35,6 +35,11 @@ describe('Smoke tests', () => {
   });
 
   it('supabase client is created', async () => {
+    // Set test env vars so the lazy-init proxy can create the client
+    process.env.NEXT_PUBLIC_SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://test.supabase.co';
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'test-anon-key';
+    // Re-import to pick up env vars (modules are cached, so reset first)
+    vi.resetModules();
     const { supabase } = await import('@/lib/supabase');
     expect(supabase).toBeDefined();
     expect(supabase.auth).toBeDefined();
