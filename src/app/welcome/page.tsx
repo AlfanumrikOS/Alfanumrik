@@ -67,21 +67,21 @@ const FEATURES = [
 ];
 
 const STEPS_STUDENT = [
-  { num: '1', title: 'Sign Up Free', desc: 'Create your account in 30 seconds. Pick your grade, board, and subjects.' },
-  { num: '2', title: 'Start Learning', desc: 'Chat with Foxy, take quizzes, or explore interactive labs. Learn your way.' },
-  { num: '3', title: 'Track Progress', desc: 'See your mastery grow topic by topic. Earn XP, maintain streaks, climb ranks.' },
+  { icon: '✨', title: 'Sign Up Free', desc: 'Create your account in 30 seconds. Pick your grade, board, and subjects.' },
+  { icon: '🦊', title: 'Start Learning', desc: 'Chat with Foxy, take quizzes, or explore interactive labs. Learn your way.' },
+  { icon: '📈', title: 'Track Progress', desc: 'See your mastery grow topic by topic. Earn XP, maintain streaks, climb ranks.' },
 ];
 
 const STEPS_PARENT = [
-  { num: '1', title: 'Connect to Child', desc: 'Enter the link code from your child\'s profile. Instant access to their learning journey.' },
-  { num: '2', title: 'Review Reports', desc: 'Weekly reports show study time, quiz scores, strengths, and areas needing attention.' },
-  { num: '3', title: 'Stay Involved', desc: 'Get alerts when streaks are at risk. Celebrate milestones together.' },
+  { icon: '🔗', title: 'Connect to Child', desc: "Enter the link code from your child's profile. Instant access to their learning journey." },
+  { icon: '📊', title: 'Review Reports', desc: 'Weekly reports show study time, quiz scores, strengths, and areas needing attention.' },
+  { icon: '🎉', title: 'Stay Involved', desc: 'Get alerts when streaks are at risk. Celebrate milestones together.' },
 ];
 
 const STEPS_TEACHER = [
-  { num: '1', title: 'Create Your Class', desc: 'Add students, assign subjects, and set up your virtual classroom.' },
-  { num: '2', title: 'Assign & Track', desc: 'Create quizzes and worksheets. Monitor every student\'s mastery in real-time.' },
-  { num: '3', title: 'Generate Reports', desc: 'One-click class reports, individual student analytics, and gap identification.' },
+  { icon: '🏫', title: 'Create Your Class', desc: 'Add students, assign subjects, and set up your virtual classroom.' },
+  { icon: '📝', title: 'Assign & Track', desc: "Create quizzes and worksheets. Monitor every student's mastery in real-time." },
+  { icon: '📋', title: 'Generate Reports', desc: 'One-click class reports, individual student analytics, and gap identification.' },
 ];
 
 const BENEFITS = [
@@ -214,7 +214,7 @@ export default function WelcomePage() {
           borderColor: 'var(--border)',
         }}
       >
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+        <div className="max-w-6xl mx-auto px-3 sm:px-6 h-16 flex items-center justify-between">
           <Link href="/welcome" className="flex items-center gap-2">
             <span className="text-2xl">🦊</span>
             <span
@@ -246,22 +246,22 @@ export default function WelcomePage() {
       {/* ═══ HERO ═══ */}
       <section className="relative overflow-hidden">
         <div className="mesh-bg" style={{ position: 'absolute', inset: 0, opacity: 0.5 }} />
-        <div className="relative max-w-5xl mx-auto px-4 sm:px-6 pt-12 pb-14 sm:pt-16 sm:pb-20 text-center">
+        <div className="relative max-w-5xl mx-auto px-4 sm:px-6 pt-8 pb-10 sm:pt-14 sm:pb-18 text-center">
           <div className="inline-flex items-center gap-2 text-xs font-bold px-4 py-1.5 rounded-full mb-4 animate-slide-up"
             style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)', border: '1px solid rgba(232,88,28,0.15)' }}>
             <span>🇮🇳</span> Built for Indian Students — CBSE Grades 6–12
           </div>
 
           <h1
-            className="text-3xl sm:text-4xl lg:text-5xl font-extrabold leading-tight mb-5 animate-slide-up"
+            className="text-2xl sm:text-4xl lg:text-5xl font-extrabold leading-tight mb-4 animate-slide-up"
             style={{ fontFamily: 'var(--font-display)', animationDelay: '0.05s' }}
           >
-            Learn Smarter with{' '}
+            Learn Smarter with<br />
             <span className="gradient-text">Your AI Tutor</span>
           </h1>
 
           <p
-            className="text-base sm:text-lg max-w-2xl mx-auto mb-6 animate-slide-up"
+            className="text-sm sm:text-lg max-w-xl sm:max-w-2xl mx-auto mb-6 animate-slide-up"
             style={{ color: 'var(--text-2)', lineHeight: 1.7, animationDelay: '0.1s' }}
           >
             Alfanumrik adapts to <em>your</em> level. Foxy, your AI tutor, teaches 16 subjects in Hindi & English
@@ -274,18 +274,18 @@ export default function WelcomePage() {
 
           {/* Stats bar */}
           <div
-            className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-8 max-w-lg sm:max-w-none mx-auto mt-10 animate-slide-up"
+            className="grid grid-cols-4 gap-3 sm:gap-8 max-w-md sm:max-w-none mx-auto mt-10 animate-slide-up"
             style={{ animationDelay: '0.2s' }}
           >
             {[
               { value: '16', label: 'Subjects' },
-              { value: 'Grades 6–12', label: 'CBSE' },
-              { value: 'Hindi & English', label: 'Bilingual' },
+              { value: '6–12', label: 'Grades' },
+              { value: 'हिन्दी+En', label: 'Bilingual' },
               { value: 'Free', label: 'To Start' },
             ].map(s => (
               <div key={s.label} className="text-center">
-                <div className="text-lg sm:text-xl font-extrabold" style={{ color: 'var(--orange)' }}>{s.value}</div>
-                <div className="text-xs font-medium" style={{ color: 'var(--text-3)' }}>{s.label}</div>
+                <div className="text-sm sm:text-xl font-extrabold" style={{ color: 'var(--orange)' }}>{s.value}</div>
+                <div className="text-[10px] sm:text-xs font-medium" style={{ color: 'var(--text-3)' }}>{s.label}</div>
               </div>
             ))}
           </div>
@@ -331,18 +331,22 @@ export default function WelcomePage() {
                   boxShadow: '0 2px 12px rgba(0,0,0,0.03)',
                 }}
               >
-                <div
-                  className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl mb-4"
-                  style={{ background: `${item.color}12` }}
-                >
-                  {item.icon}
+                <div className="flex sm:flex-col items-start sm:items-start gap-3 sm:gap-0">
+                  <div
+                    className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center text-xl sm:text-2xl shrink-0 sm:mb-4"
+                    style={{ background: `${item.color}12` }}
+                  >
+                    {item.icon}
+                  </div>
+                  <div>
+                    <h3 className="text-sm sm:text-base font-bold mb-1 sm:mb-2" style={{ fontFamily: 'var(--font-display)' }}>
+                      {item.title}
+                    </h3>
+                    <p className="text-xs sm:text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>
+                      {item.desc}
+                    </p>
+                  </div>
                 </div>
-                <h3 className="text-base font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
-                  {item.title}
-                </h3>
-                <p className="text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>
-                  {item.desc}
-                </p>
               </div>
               </StaggerItem>
             ))}
@@ -366,13 +370,17 @@ export default function WelcomePage() {
                   className="rounded-2xl p-5 transition-all hover:shadow-md h-full"
                   style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
                 >
-                  <div className="text-3xl mb-3">{f.icon}</div>
-                  <h3 className="text-sm font-bold mb-1.5" style={{ fontFamily: 'var(--font-display)' }}>
-                    {f.title}
-                  </h3>
-                  <p className="text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>
-                    {f.desc}
-                  </p>
+                  <div className="flex sm:flex-col items-start gap-3 sm:gap-0">
+                    <div className="text-2xl sm:text-3xl shrink-0 sm:mb-3">{f.icon}</div>
+                    <div>
+                      <h3 className="text-sm font-bold mb-1 sm:mb-1.5" style={{ fontFamily: 'var(--font-display)' }}>
+                        {f.title}
+                      </h3>
+                      <p className="text-xs sm:text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>
+                        {f.desc}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </StaggerItem>
             ))}
@@ -391,20 +399,24 @@ export default function WelcomePage() {
 
           {/* Student Steps */}
           <div className="mb-10">
-            <h3 className="text-center text-sm font-bold mb-6" style={{ color: 'var(--orange)' }}>
-              🎓 For Students
-            </h3>
-            <div className="grid sm:grid-cols-3 gap-5">
-              {STEPS_STUDENT.map(s => (
-                <div key={s.num} className="text-center">
-                  <div
-                    className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-extrabold text-white mx-auto mb-3"
-                    style={{ background: 'linear-gradient(135deg, #E8581C, #F5A623)' }}
-                  >
-                    {s.num}
+            <div className="flex items-center justify-center gap-2 mb-5">
+              <span className="text-lg">🎓</span>
+              <h3 className="text-sm font-bold" style={{ color: 'var(--orange)', fontFamily: 'var(--font-display)' }}>
+                For Students
+              </h3>
+            </div>
+            <div className="grid sm:grid-cols-3 gap-3 sm:gap-4">
+              {STEPS_STUDENT.map((s, i) => (
+                <div key={i} className="rounded-2xl p-4 sm:p-5 relative overflow-hidden" style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
+                  <div className="flex sm:flex-col items-start sm:items-center gap-3 sm:gap-0 sm:text-center">
+                    <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center text-xl sm:text-2xl shrink-0 sm:mb-3" style={{ background: 'rgba(232,88,28,0.08)' }}>
+                      {s.icon}
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold mb-0.5 sm:mb-1">{s.title}</h4>
+                      <p className="text-xs sm:text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>{s.desc}</p>
+                    </div>
                   </div>
-                  <h4 className="text-sm font-bold mb-1">{s.title}</h4>
-                  <p className="text-sm" style={{ color: 'var(--text-2)' }}>{s.desc}</p>
                 </div>
               ))}
             </div>
@@ -412,20 +424,24 @@ export default function WelcomePage() {
 
           {/* Parent Steps */}
           <div className="mb-10">
-            <h3 className="text-center text-sm font-bold mb-6" style={{ color: '#16A34A' }}>
-              👨‍👩‍👧 For Parents
-            </h3>
-            <div className="grid sm:grid-cols-3 gap-5">
-              {STEPS_PARENT.map(s => (
-                <div key={s.num} className="text-center">
-                  <div
-                    className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-extrabold text-white mx-auto mb-3"
-                    style={{ background: 'linear-gradient(135deg, #16A34A, #22C55E)' }}
-                  >
-                    {s.num}
+            <div className="flex items-center justify-center gap-2 mb-5">
+              <span className="text-lg">👨‍👩‍👧</span>
+              <h3 className="text-sm font-bold" style={{ color: '#16A34A', fontFamily: 'var(--font-display)' }}>
+                For Parents
+              </h3>
+            </div>
+            <div className="grid sm:grid-cols-3 gap-3 sm:gap-4">
+              {STEPS_PARENT.map((s, i) => (
+                <div key={i} className="rounded-2xl p-4 sm:p-5 relative overflow-hidden" style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
+                  <div className="flex sm:flex-col items-start sm:items-center gap-3 sm:gap-0 sm:text-center">
+                    <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center text-xl sm:text-2xl shrink-0 sm:mb-3" style={{ background: 'rgba(22,163,74,0.08)' }}>
+                      {s.icon}
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold mb-0.5 sm:mb-1">{s.title}</h4>
+                      <p className="text-xs sm:text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>{s.desc}</p>
+                    </div>
                   </div>
-                  <h4 className="text-sm font-bold mb-1">{s.title}</h4>
-                  <p className="text-sm" style={{ color: 'var(--text-2)' }}>{s.desc}</p>
                 </div>
               ))}
             </div>
@@ -433,20 +449,24 @@ export default function WelcomePage() {
 
           {/* Teacher Steps */}
           <div>
-            <h3 className="text-center text-sm font-bold mb-6" style={{ color: '#2563EB' }}>
-              👩‍🏫 For Teachers
-            </h3>
-            <div className="grid sm:grid-cols-3 gap-5">
-              {STEPS_TEACHER.map(s => (
-                <div key={s.num} className="text-center">
-                  <div
-                    className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-extrabold text-white mx-auto mb-3"
-                    style={{ background: 'linear-gradient(135deg, #2563EB, #3B82F6)' }}
-                  >
-                    {s.num}
+            <div className="flex items-center justify-center gap-2 mb-5">
+              <span className="text-lg">👩‍🏫</span>
+              <h3 className="text-sm font-bold" style={{ color: '#2563EB', fontFamily: 'var(--font-display)' }}>
+                For Teachers
+              </h3>
+            </div>
+            <div className="grid sm:grid-cols-3 gap-3 sm:gap-4">
+              {STEPS_TEACHER.map((s, i) => (
+                <div key={i} className="rounded-2xl p-4 sm:p-5 relative overflow-hidden" style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
+                  <div className="flex sm:flex-col items-start sm:items-center gap-3 sm:gap-0 sm:text-center">
+                    <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center text-xl sm:text-2xl shrink-0 sm:mb-3" style={{ background: 'rgba(37,99,235,0.08)' }}>
+                      {s.icon}
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold mb-0.5 sm:mb-1">{s.title}</h4>
+                      <p className="text-xs sm:text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>{s.desc}</p>
+                    </div>
                   </div>
-                  <h4 className="text-sm font-bold mb-1">{s.title}</h4>
-                  <p className="text-sm" style={{ color: 'var(--text-2)' }}>{s.desc}</p>
                 </div>
               ))}
             </div>
@@ -569,7 +589,7 @@ export default function WelcomePage() {
                 style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}
               >
                 <summary
-                  className="flex items-center justify-between cursor-pointer px-5 py-4 text-sm font-semibold list-none"
+                  className="flex items-center justify-between cursor-pointer px-4 py-3.5 sm:px-5 sm:py-4 text-sm font-semibold list-none"
                   style={{ color: 'var(--text-1)' }}
                 >
                   {faq.q}
@@ -580,7 +600,7 @@ export default function WelcomePage() {
                     +
                   </span>
                 </summary>
-                <div className="px-5 pb-4 text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>
+                <div className="px-4 pb-3.5 sm:px-5 sm:pb-4 text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>
                   {faq.a}
                 </div>
               </details>
