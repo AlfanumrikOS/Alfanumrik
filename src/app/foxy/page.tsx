@@ -7,6 +7,12 @@ import { supabase } from '@/lib/supabase';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@/lib/constants';
 import { BottomNav } from '@/components/ui';
 import { LESSON_STEPS, getLessonStepPrompt, getNextLessonStep, type LessonStep, type LessonState } from '@/lib/cognitive-engine';
+import { useVoice } from '@/hooks/useVoice';
+import { checkDailyUsage, recordUsage, type UsageResult } from '@/lib/usage';
+import { ConversationStarters } from '@/components/foxy/ConversationStarters';
+import { ChatBubble } from '@/components/foxy/ChatBubble';
+import { VoiceWaveform } from '@/components/foxy/VoiceWaveform';
+import { TalkToLearnButton } from '@/components/foxy/TalkToLearnButton';
 
 /* ══════════════════════════════════════════════════════════════
    SUBJECT CONFIGURATION
@@ -331,13 +337,14 @@ export default function FoxyPage() {
   const [reportSubmitting, setReportSubmitting] = useState(false);
   const [reportSuccess, setReportSuccess] = useState(false);
 
-  // Voice
+  // Voice — unified hook replaces manual Web Speech API
   const [voiceEnabled, setVoiceEnabled] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const [isListening, setIsListening] = useState(false);
-  const voicesRef = useRef<SpeechSynthesisVoice[]>([]);
-  const recognitionRef = useRef<any>(null);
   const endRef = useRef<HTMLDivElement>(null);
+
+  // Usage enforcement
+  const [chatUsage, setChatUsage] = useState<UsageResult | null>(null);
+  const [ttsUsage, setTtsUsage] = useState<UsageResult | null>(null);
+  const [showLimitModal, setShowLimitModal] = useState(false);
 
   // Lesson flow state
   const [lessonStep, setLessonStep] = useState<LessonStep>('hook');
@@ -346,15 +353,25 @@ export default function FoxyPage() {
   const [showPredictionInput, setShowPredictionInput] = useState(false);
   const [predictionSubmitted, setPredictionSubmitted] = useState(false);
 
+  // Ref to forward sendMessage to useVoice's onTranscript (avoids circular dep)
+  const sendMessageRef = useRef<(text: string) => void>(() => {});
+
+  // Unified voice hook
+  const voice = useVoice({
+    language,
+    enabled: voiceEnabled,
+    onTranscript: (text: string) => sendMessageRef.current(text),
+  });
+
   useEffect(() => { if (!authLoading && !isLoggedIn) router.replace('/'); }, [authLoading, isLoggedIn, router]);
 
-  // Preload voices
+  // Fetch usage stats on mount and after student loads
   useEffect(() => {
-    if (typeof window === 'undefined' || !window.speechSynthesis) return;
-    const load = () => { voicesRef.current = window.speechSynthesis.getVoices(); };
-    load(); window.speechSynthesis.onvoiceschanged = load;
-    return () => { window.speechSynthesis.onvoiceschanged = null; };
-  }, []);
+    if (!student?.id) return;
+    const plan = student.subscription_plan || 'free';
+    checkDailyUsage(student.id, 'foxy_chat', plan).then(setChatUsage);
+    checkDailyUsage(student.id, 'foxy_tts', plan).then(setTtsUsage);
+  }, [student?.id, student?.subscription_plan]);
 
   // Init student data
   useEffect(() => {
@@ -385,28 +402,35 @@ export default function FoxyPage() {
   // Auto-scroll
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
-  // TTS
-  const speakText = useCallback((text: string) => {
-    if (!voiceEnabled || typeof window === 'undefined' || !window.speechSynthesis) return;
-    window.speechSynthesis.cancel();
-    let clean = text.replace(/\[KEY:\s*([^\]]+)\]/g, '$1').replace(/\[ANS:\s*([^\]]+)\]/g, 'The answer is $1.').replace(/\[FORMULA:\s*([^\]]+)\]/g, 'The formula is $1.').replace(/\[TIP:\s*([^\]]+)\]/g, 'Exam tip: $1.').replace(/\[MARKS:\s*([^\]]+)\]/g, 'This is a $1 marks question.').replace(/\[DIAGRAM:\s*([^\]]+)\]/g, 'You should draw a diagram of $1.').replace(/<!--[\s\S]*?-->/g, '').replace(/\n+/g, '. ').replace(/\s+/g, ' ').trim();
-    if (!clean) return;
-    const voices = voicesRef.current.length > 0 ? voicesRef.current : window.speechSynthesis.getVoices();
-    const voice = language === 'hi' ? (voices.find(v => v.lang === 'hi-IN') || voices.find(v => v.lang.startsWith('hi'))) : (voices.find(v => v.lang === 'en-IN') || voices.find(v => v.name.toLowerCase().includes('india')) || voices.find(v => v.lang.startsWith('en')) || null);
-    if (clean.length > 300) {
-      const chunks = clean.match(/[^.!?]+[.!?]+/g) || [clean];
-      setIsSpeaking(true);
-      chunks.forEach((chunk, i) => { const u = new SpeechSynthesisUtterance(chunk.trim()); if (voice) u.voice = voice; u.rate = 0.9; u.pitch = 1.05; u.lang = language === 'hi' ? 'hi-IN' : 'en-IN'; if (i === chunks.length - 1) u.onend = () => setIsSpeaking(false); u.onerror = () => setIsSpeaking(false); window.speechSynthesis.speak(u); });
-    } else {
-      const u = new SpeechSynthesisUtterance(clean); if (voice) u.voice = voice; u.rate = 0.9; u.pitch = 1.05; u.lang = language === 'hi' ? 'hi-IN' : 'en-IN'; u.onstart = () => setIsSpeaking(true); u.onend = () => setIsSpeaking(false); u.onerror = () => setIsSpeaking(false); window.speechSynthesis.speak(u);
+  // TTS — uses unified voice hook; records usage
+  const speakText = useCallback(async (text: string) => {
+    if (!voiceEnabled) return;
+    // Record TTS usage
+    if (student?.id) {
+      recordUsage(student.id, 'foxy_tts');
+      setTtsUsage(prev => prev ? { ...prev, count: prev.count + 1, remaining: Math.max(0, prev.remaining - 1), allowed: prev.count + 1 < prev.limit } : prev);
     }
-  }, [voiceEnabled, language]);
+    await voice.speak(text);
+  }, [voiceEnabled, voice.speak, student?.id]);
 
-  const stopSpeaking = useCallback(() => { if (typeof window !== 'undefined' && window.speechSynthesis) { window.speechSynthesis.cancel(); setIsSpeaking(false); } }, []);
+  const stopSpeaking = useCallback(() => { voice.stopSpeaking(); }, [voice.stopSpeaking]);
 
-  // STT
+  // Send message with usage enforcement
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim()) return;
+
+    // Check chat usage limit
+    if (student?.id) {
+      const usage = await checkDailyUsage(student.id, 'foxy_chat', student.subscription_plan || 'free');
+      setChatUsage(usage);
+      if (!usage.allowed) {
+        setShowLimitModal(true);
+        return;
+      }
+      recordUsage(student.id, 'foxy_chat');
+      setChatUsage(prev => prev ? { ...prev, count: prev.count + 1, remaining: Math.max(0, prev.remaining - 1), allowed: prev.count + 1 < prev.limit } : prev);
+    }
+
     setMessages(p => [...p, { id: Date.now(), role: 'student', content: text, timestamp: new Date().toISOString() }]);
     setLoading(true); setFoxyState('thinking'); setShowTopicSheet(false);
     try {
@@ -466,18 +490,12 @@ export default function FoxyPage() {
     setReportSubmitting(false);
   }, [reportModal, student, chatSessionId, reportReason, reportCorrection, activeSubject, studentGrade, activeTopic, sessionMode, language]);
 
-  const startListening = useCallback(() => {
-    if (typeof window === 'undefined') return;
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) { alert('Speech recognition not supported. Try Chrome.'); return; }
-    const r = new SR(); r.continuous = false; r.interimResults = false; r.lang = language === 'hi' ? 'hi-IN' : 'en-IN';
-    r.onstart = () => setIsListening(true);
-    r.onresult = (e: any) => { const t = e.results[0][0].transcript; if (t.trim()) sendMessage(t.trim()); };
-    r.onerror = () => setIsListening(false); r.onend = () => setIsListening(false);
-    recognitionRef.current = r; r.start();
-  }, [language, sendMessage]);
+  // STT — delegate to unified voice hook
+  const startListening = useCallback(() => { voice.startListening(); }, [voice.startListening]);
+  const stopListening = useCallback(() => { voice.stopListening(); }, [voice.stopListening]);
 
-  const stopListening = useCallback(() => { if (recognitionRef.current) { recognitionRef.current.stop(); setIsListening(false); } }, []);
+  // Keep sendMessageRef in sync for useVoice's onTranscript callback
+  useEffect(() => { sendMessageRef.current = sendMessage; }, [sendMessage]);
 
   const switchSubject = (key: string) => {
     setActiveSubject(key); setActiveTopic(null); setSelectedChapters([]); setShowSubjectDD(false); setMessages([]); setChatSessionId(null);
@@ -564,9 +582,24 @@ export default function FoxyPage() {
         <div className="flex items-center gap-1.5">
           {LANGS.map(l => <button key={l.code} onClick={() => { if (!isLangLocked) setLanguage(l.code); }} className="text-[10px] font-bold px-2 py-1 rounded-lg transition-all" style={{ background: language === l.code ? 'rgba(255,255,255,0.2)' : 'transparent', color: language === l.code ? '#fff' : 'rgba(255,255,255,0.4)', opacity: isLangLocked && language !== l.code ? 0.2 : 1, cursor: isLangLocked ? 'default' : 'pointer' }}>{l.label}</button>)}
           {isLangLocked && <span className="text-[8px] text-white/30">🔒</span>}
-          <button onClick={() => { if (voiceEnabled) { stopSpeaking(); setVoiceEnabled(false); } else setVoiceEnabled(true); }} className="ml-1 px-2 py-1 rounded-lg text-sm transition-all" style={{ background: voiceEnabled ? 'rgba(245,166,35,0.3)' : 'rgba(255,255,255,0.1)' }}>{voiceEnabled ? (isSpeaking ? '🔊' : '🔈') : '🔇'}</button>
+          <button onClick={() => { if (voiceEnabled) { stopSpeaking(); setVoiceEnabled(false); } else setVoiceEnabled(true); }} className="ml-1 px-2 py-1 rounded-lg text-sm transition-all" style={{ background: voiceEnabled ? 'rgba(245,166,35,0.3)' : 'rgba(255,255,255,0.1)' }}>{voiceEnabled ? (voice.isSpeaking ? '🔊' : '🔈') : '🔇'}</button>
+          {chatUsage && <span className="text-[8px] opacity-40 ml-1">{chatUsage.remaining}/{chatUsage.limit}</span>}
         </div>
       </header>
+
+      {/* Voice waveform — shown when Foxy is speaking via ElevenLabs */}
+      {voiceEnabled && voice.isSpeaking && (
+        <div className="foxy-voice-bar">
+          <VoiceWaveform isActive={voice.isSpeaking} analyserNode={voice.analyserNode} color={cfg.color} />
+        </div>
+      )}
+
+      {/* Interim transcript overlay — live STT feedback */}
+      {voice.interimTranscript && (
+        <div className="foxy-interim-transcript">
+          <span className="text-xs opacity-70">🎤 {voice.interimTranscript}</span>
+        </div>
+      )}
 
       {/* ═══ SUBJECT + CHAPTER + MODE BAR ═══ */}
       <div className="foxy-toolbar" style={{ background: 'var(--surface-1)', borderBottom: '1px solid var(--border)' }}>
@@ -756,72 +789,61 @@ export default function FoxyPage() {
         {/* Chat column */}
         <div className="flex-1 flex flex-col min-w-0">
           <div className="flex-1 overflow-y-auto px-3 md:px-5 py-4">
-            {/* Empty state */}
+            {/* Empty state with ConversationStarters */}
             {messages.length === 0 && (
               <div className="text-center py-12 md:py-20 animate-slide-up">
                 <div className="text-6xl md:text-7xl mb-4 animate-float">{FOXY_FACES.idle}</div>
                 <h2 className="text-xl md:text-2xl font-extrabold mb-2" style={{ fontFamily: 'var(--font-display)', background: `linear-gradient(135deg, #E8590C, ${cfg.color})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Hi! I am Foxy</h2>
-                <p className="text-sm text-[var(--text-3)] max-w-sm mx-auto mb-6 leading-relaxed">Your AI tutor. Pick a topic, type below, or tap 🎤 to talk!</p>
-                <div className="flex flex-wrap gap-2 justify-center max-w-md mx-auto">
-                  {['What should I study today?', 'Quick quiz', 'Explain last topic', 'Formula sheet', 'Weak areas'].map(prompt => (
-                    <button key={prompt} onClick={() => sendMessage(prompt)} className="px-3.5 py-2 rounded-xl text-xs font-semibold transition-all active:scale-95" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', color: 'var(--text-2)' }}>{prompt}</button>
-                  ))}
-                </div>
+                <p className="text-sm text-[var(--text-3)] max-w-sm mx-auto mb-4 leading-relaxed">Your AI tutor. Pick a topic, type below, or tap 🎤 to talk!</p>
+
+                {/* Voice hero button */}
+                {voiceEnabled && voice.sttAvailable && (
+                  <div className="mb-6">
+                    <TalkToLearnButton
+                      isListening={voice.isListening}
+                      isSpeaking={voice.isSpeaking}
+                      isLoading={voice.isLoadingAudio}
+                      onTap={voice.isListening ? stopListening : startListening}
+                      size="lg"
+                      color={cfg.color}
+                    />
+                    <p className="text-[10px] text-[var(--text-3)] mt-2">Tap to talk to Foxy</p>
+                  </div>
+                )}
+
+                {/* Smart conversation starters */}
+                <ConversationStarters
+                  subject={activeSubject}
+                  language={language}
+                  topicTitle={activeTopic?.title}
+                  onSelect={sendMessage}
+                />
+
                 <button onClick={() => setShowChapterDD(true)} className="mt-6 px-5 py-2.5 rounded-xl text-sm font-bold" style={{ background: `${cfg.color}10`, color: cfg.color, border: `1.5px solid ${cfg.color}30` }}>{cfg.icon} Browse {topics.length} Chapters</button>
               </div>
             )}
 
-            {/* Messages */}
-            {messages.map((msg, msgIdx) => (
-              <div key={msg.id} className="mb-4 w-full animate-fade-in">
-                <div className="flex items-center gap-2 mb-1.5">
-                  {msg.role === 'tutor'
-                    ? <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs shrink-0" style={{ background: 'linear-gradient(135deg, #E8590C, #F59E0B)' }}>{FOXY_FACES.idle}</div>
-                    : <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] text-white font-bold shrink-0" style={{ background: `linear-gradient(135deg, ${cfg.color}, ${cfg.color}bb)` }}>{student?.name?.[0]?.toUpperCase() || 'S'}</div>}
-                  <span className="text-xs font-bold" style={{ color: msg.role === 'tutor' ? 'var(--orange)' : cfg.color }}>{msg.role === 'tutor' ? 'Foxy' : (student?.name || 'You')}</span>
-                  <span className="text-[10px] text-[var(--text-3)]">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                  {msg.role === 'tutor' && <span className="ml-auto px-1.5 py-0.5 rounded text-[8px] font-semibold" style={{ background: 'var(--surface-2)', color: 'var(--text-3)', border: '1px solid var(--border)' }}>🤖 AI</span>}
-                  {(msg.xp ?? 0) > 0 && <span className="px-2 py-0.5 rounded-lg text-[10px] font-extrabold text-white" style={{ background: 'linear-gradient(135deg, #F59E0B, #EF4444)' }}>+{msg.xp} XP</span>}
-                </div>
-                <div className="w-full rounded-2xl px-4 py-3 text-sm leading-relaxed" style={{ background: msg.role === 'student' ? `${cfg.color}08` : 'var(--surface-1)', color: 'var(--text-1)', border: msg.role === 'student' ? `1.5px solid ${cfg.color}20` : msg.reported ? '1.5px solid #EF444440' : '1px solid var(--border)' }}>
-                  {msg.role === 'tutor' ? <RichContent content={msg.content} subjectKey={activeSubject} /> : <div className="whitespace-pre-wrap">{msg.content}</div>}
-                </div>
-
-                {/* ── Feedback bar for tutor messages ── */}
-                {msg.role === 'tutor' && msg.content !== 'Oops! Please try again.' && (
-                  <div className="flex items-center gap-1 mt-1.5 pl-1">
-                    {/* Thumbs up */}
-                    <button
-                      onClick={() => handleFeedback(msg.id, true)}
-                      className="px-2 py-1 rounded-lg text-[11px] transition-all active:scale-90"
-                      style={{ background: msg.feedback === 'up' ? '#16A34A18' : 'transparent', color: msg.feedback === 'up' ? '#16A34A' : 'var(--text-3)', border: msg.feedback === 'up' ? '1px solid #16A34A30' : '1px solid transparent' }}
-                    >{msg.feedback === 'up' ? '👍' : '👍'}</button>
-
-                    {/* Thumbs down */}
-                    <button
-                      onClick={() => { handleFeedback(msg.id, false); }}
-                      className="px-2 py-1 rounded-lg text-[11px] transition-all active:scale-90"
-                      style={{ background: msg.feedback === 'down' ? '#EF444418' : 'transparent', color: msg.feedback === 'down' ? '#EF4444' : 'var(--text-3)', border: msg.feedback === 'down' ? '1px solid #EF444430' : '1px solid transparent' }}
-                    >👎</button>
-
-                    {/* Report error */}
-                    {!msg.reported ? (
-                      <button
-                        onClick={() => openReport(msg.id)}
-                        className="px-2 py-1 rounded-lg text-[10px] font-semibold transition-all active:scale-95 ml-1"
-                        style={{ color: 'var(--text-3)' }}
-                      >⚠️ Report</button>
-                    ) : (
-                      <span className="px-2 py-1 text-[10px] font-semibold" style={{ color: '#EF4444' }}>✓ Reported</span>
-                    )}
-
-                    {/* AI disclaimer for math/science */}
-                    {['math', 'science', 'physics', 'chemistry'].includes(activeSubject) && (msg.content.includes('=') || msg.content.includes('formula') || msg.content.includes('²') || msg.content.includes('√')) && (
-                      <span className="ml-auto text-[9px] px-2 py-0.5 rounded" style={{ color: 'var(--text-3)', background: 'var(--surface-2)' }}>Verify with textbook</span>
-                    )}
-                  </div>
-                )}
-              </div>
+            {/* Messages — using ChatBubble component */}
+            {messages.map((msg) => (
+              <ChatBubble
+                key={msg.id}
+                role={msg.role}
+                content={msg.role === 'tutor' ? <RichContent content={msg.content} subjectKey={activeSubject} /> : <div className="whitespace-pre-wrap">{msg.content}</div>}
+                rawContent={msg.content}
+                timestamp={msg.timestamp}
+                studentName={student?.name}
+                xp={msg.xp}
+                feedback={msg.feedback}
+                reported={msg.reported}
+                color={cfg.color}
+                isSpeaking={voice.isSpeaking}
+                isLoadingAudio={voice.isLoadingAudio}
+                voiceEnabled={voiceEnabled}
+                activeSubject={activeSubject}
+                onPlayAudio={() => voice.isSpeaking ? stopSpeaking() : speakText(msg.content)}
+                onFeedback={(isUp) => handleFeedback(msg.id, isUp)}
+                onReport={() => openReport(msg.id)}
+              />
             ))}
 
             {/* ── Report Error Modal ── */}
@@ -899,7 +921,7 @@ export default function FoxyPage() {
             <div ref={endRef} />
           </div>
 
-          <ChatInput onSubmit={sendMessage} subjectKey={activeSubject} disabled={loading} onMicTap={isListening ? stopListening : startListening} isListening={isListening} />
+          <ChatInput onSubmit={sendMessage} subjectKey={activeSubject} disabled={loading} onMicTap={voice.isListening ? stopListening : startListening} isListening={voice.isListening} />
         </div>
       </div>
 
@@ -937,10 +959,29 @@ export default function FoxyPage() {
         </>
       )}
 
-      {isSpeaking && <button onClick={stopSpeaking} className="fixed bottom-20 right-4 z-50 w-12 h-12 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-all" style={{ background: '#EF4444', color: '#fff', fontSize: 18, boxShadow: '0 4px 20px rgba(239,68,68,0.4)' }}>■</button>}
+      {voice.isSpeaking && <button onClick={stopSpeaking} className="fixed bottom-20 right-4 z-50 w-12 h-12 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-all" style={{ background: '#EF4444', color: '#fff', fontSize: 18, boxShadow: '0 4px 20px rgba(239,68,68,0.4)' }}>■</button>}
+
+      {/* ═══ USAGE LIMIT MODAL ═══ */}
+      {showLimitModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={() => setShowLimitModal(false)}>
+          <div className="w-full max-w-sm mx-4 rounded-2xl p-6 text-center animate-slide-up" style={{ background: 'var(--surface-1)' }} onClick={e => e.stopPropagation()}>
+            <div className="text-4xl mb-3">⏳</div>
+            <h3 className="text-base font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
+              {language === 'hi' ? 'आज की सीमा पूरी हो गई' : 'Daily Limit Reached'}
+            </h3>
+            <p className="text-xs mb-4 leading-relaxed" style={{ color: 'var(--text-3)' }}>
+              {language === 'hi'
+                ? `आपने आज ${chatUsage?.limit || 50} संदेश भेज दिए हैं। कल फिर से प्रयास करें या अपग्रेड करें।`
+                : `You've used all ${chatUsage?.limit || 50} messages for today. Come back tomorrow or upgrade your plan.`}
+            </p>
+            <button onClick={() => setShowLimitModal(false)} className="px-6 py-2.5 rounded-xl text-xs font-bold text-white" style={{ background: 'var(--orange)' }}>
+              {language === 'hi' ? 'ठीक है' : 'Got it'}
+            </button>
+          </div>
+        </div>
+      )}
 
       <BottomNav />
-{/* Foxy styles in globals.css */}
     </div>
   );
 }

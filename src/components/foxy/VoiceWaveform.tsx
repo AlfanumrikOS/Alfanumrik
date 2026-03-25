@@ -45,9 +45,9 @@ export function VoiceWaveform({
     const barWidth = Math.max(2, (w / barCount) * 0.6);
     const gap = (w - barWidth * barCount) / (barCount - 1);
 
-    let dataArray: Uint8Array | null = null;
+    let dataArray: Uint8Array<ArrayBuffer> | null = null;
     if (analyserNode) {
-      dataArray = new Uint8Array(analyserNode.frequencyBinCount);
+      dataArray = new Uint8Array(analyserNode.frequencyBinCount) as Uint8Array<ArrayBuffer>;
     }
 
     function draw() {
