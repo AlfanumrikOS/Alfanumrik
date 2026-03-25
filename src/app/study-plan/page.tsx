@@ -7,6 +7,7 @@ import { getStudyPlan, generateStudyPlan, supabase } from '@/lib/supabase';
 import { Card, Button, ProgressBar, SectionHeader, LoadingFoxy, BottomNav } from '@/components/ui';
 import { SUBJECT_META } from '@/lib/constants';
 import { BLOOM_CONFIG, type BloomLevel } from '@/lib/cognitive-engine';
+import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 
 const TASK_BLOOM_MAP: Record<string, BloomLevel> = {
   learn: 'understand', quiz: 'apply', review: 'remember', revision: 'remember',
@@ -276,6 +277,7 @@ export default function StudyPlanPage() {
       {header}
 
       <main className="app-container py-5 space-y-4">
+        <SectionErrorBoundary section="Study Plan">
         {loading ? (
           <div className="text-center py-16">
             <div className="text-4xl animate-float mb-3">📅</div>
@@ -649,6 +651,7 @@ export default function StudyPlanPage() {
             )}
           </>
         )}
+        </SectionErrorBoundary>
       </main>
 
       <BottomNav />

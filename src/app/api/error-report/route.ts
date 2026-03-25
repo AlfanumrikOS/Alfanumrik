@@ -16,11 +16,17 @@ import { logger } from '@/lib/logger';
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 const RATE_WINDOW = 60_000;
 const RATE_MAX = 10;
+const MAX_MAP_SIZE = 5_000; // Prevent unbounded memory growth under DDoS
 
 function checkRateLimit(ip: string): boolean {
   const now = Date.now();
   const entry = rateLimitMap.get(ip);
   if (!entry || now > entry.resetAt) {
+    // Evict oldest entries if map is at capacity
+    if (rateLimitMap.size >= MAX_MAP_SIZE) {
+      const firstKey = rateLimitMap.keys().next().value;
+      if (firstKey) rateLimitMap.delete(firstKey);
+    }
     rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_WINDOW });
     return true;
   }

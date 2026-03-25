@@ -71,15 +71,28 @@ export async function POST(request: Request) {
       );
     }
 
-    const url = supabaseAdmin.storage.from('uploads').getPublicUrl(path).data
-      .publicUrl;
+    // Use signed URL instead of public URL to prevent unauthorized access.
+    // Signed URLs expire after 24 hours — client should refresh via the
+    // image_uploads table path column if needed.
+    const { data: signedData, error: signedErr } = await supabaseAdmin.storage
+      .from('uploads')
+      .createSignedUrl(path, 24 * 60 * 60); // 24 hour expiry
 
-    // Save metadata to database
+    if (signedErr || !signedData?.signedUrl) {
+      return NextResponse.json(
+        { error: 'Failed to generate secure URL' },
+        { status: 500 }
+      );
+    }
+
+    // Save metadata to database — store both the signed URL (for immediate use)
+    // and the storage path (for generating new signed URLs later)
     const { data, error } = await supabaseAdmin
       .from('image_uploads')
       .insert({
         student_id: auth.studentId,
-        image_url: url,
+        image_url: signedData.signedUrl,
+        storage_path: path,
         image_type: imageType,
         processing_status: 'pending',
       })

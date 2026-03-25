@@ -49,6 +49,19 @@ export default function ResetPasswordPage() {
     if (e) {
       setError(e.message);
     } else {
+      // Audit log: record password change for security compliance
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          await supabase.from('audit_logs').insert({
+            user_id: user.id,
+            action: 'password_reset',
+            resource_type: 'auth',
+            details: { method: 'email_link' },
+            status: 'success',
+          });
+        }
+      } catch { /* audit is best-effort — don't block the success flow */ }
       setSuccess(true);
       // Sign out so they can log in fresh with new password
       await supabase.auth.signOut();
@@ -103,11 +116,14 @@ export default function ResetPasswordPage() {
                 <Input
                   type={showPassword ? 'text' : 'password'}
                   placeholder={`New password (min ${PASSWORD_MIN_LENGTH} chars, A-z, 0-9)`}
+                  aria-label="New password"
+                  autoComplete="new-password"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                 />
                 <button
                   onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
                   style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color: 'var(--text-3)' }}
                 >
                   {showPassword ? '🙈' : '👁️'}
@@ -116,6 +132,8 @@ export default function ResetPasswordPage() {
               <Input
                 type={showPassword ? 'text' : 'password'}
                 placeholder="Confirm new password"
+                aria-label="Confirm new password"
+                autoComplete="new-password"
                 value={confirmPassword}
                 onChange={e => setConfirmPassword(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && resetPassword()}

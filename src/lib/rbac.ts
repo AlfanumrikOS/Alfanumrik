@@ -17,6 +17,7 @@
  */
 
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
+import { logger } from '@/lib/logger';
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -94,7 +95,7 @@ export async function getUserPermissions(authUserId: string): Promise<UserPermis
   const { data, error } = await supabase.rpc('get_user_permissions', { p_auth_user_id: authUserId });
 
   if (error || !data) {
-    console.error('[RBAC] Failed to get permissions:', error?.message);
+    logger.error('rbac_permissions_failed', { error: error ? new Error(error.message) : new Error('unknown'), route: 'rbac' });
     return { roles: [], permissions: [] };
   }
 
@@ -242,7 +243,7 @@ export async function logAudit(authUserId: string | null, entry: AuditEntry): Pr
       status: entry.status || 'success',
     });
   } catch (e) {
-    console.error('[RBAC] Audit log failed:', e);
+    logger.error('rbac_audit_log_failed', { error: e instanceof Error ? e : new Error(String(e)), route: 'rbac' });
   }
 }
 

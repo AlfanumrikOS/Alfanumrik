@@ -12,6 +12,7 @@ import { useVoice } from '@/hooks/useVoice';
 import { checkDailyUsage, recordUsage, type UsageResult } from '@/lib/usage';
 import { ConversationStarters } from '@/components/foxy/ConversationStarters';
 import { ChatBubble } from '@/components/foxy/ChatBubble';
+import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 
 // Lazy-load heavy audio components — not needed until user interacts with voice
 const VoiceWaveform = dynamic(() => import('@/components/foxy/VoiceWaveform').then(m => ({ default: m.VoiceWaveform })), { ssr: false });
@@ -779,6 +780,7 @@ export default function FoxyPage() {
       )}
 
       {/* ═══ MAIN CHAT AREA ═══ */}
+      <SectionErrorBoundary section="Foxy Chat">
       <div className="flex-1 flex overflow-hidden relative">
         {/* Desktop sidebar */}
         <div className="hidden lg:flex shrink-0 relative" style={{ width: sidebarOpen ? 280 : 0, transition: 'width 0.3s ease' }}>
@@ -1002,6 +1004,7 @@ export default function FoxyPage() {
           </div>
         </div>
       )}
+      </SectionErrorBoundary>
 
       <BottomNav />
     </div>

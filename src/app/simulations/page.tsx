@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { BUILT_IN_SIMULATIONS, type BuiltInSimulation } from '@/components/simulations';
 import dynamic from 'next/dynamic';
 import SimulationCard from '../../components/SimulationCard';
+import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 
 const SimulationViewer = dynamic(() => import('../../components/SimulationViewer'), {
   loading: () => <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}><span style={{ fontSize: 32 }}>🔬</span></div>,
@@ -178,6 +179,7 @@ export default function SimulationsPage() {
         </p>
       </div>
 
+      <SectionErrorBoundary section="Simulations">
       {/* Filters */}
       {!isActive && (
         <div style={{ padding: '14px 20px 12px', background: '#fff', borderBottom: '1px solid #f0f0f0', position: 'sticky', top: 0, zIndex: 10 }}>
@@ -546,6 +548,7 @@ export default function SimulationsPage() {
           )}
         </div>
       )}
+      </SectionErrorBoundary>
 
       <style jsx>{`
         @keyframes pulse {
