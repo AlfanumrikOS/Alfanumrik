@@ -181,8 +181,11 @@ export async function middleware(request: NextRequest) {
     return new NextResponse(null, { status: 404 });
   }
 
-  // ── Layer 2.1: Protect /internal/admin/* routes ──
-  if (path.startsWith('/internal/admin') || path.startsWith('/api/internal/admin')) {
+  // ── Layer 2.1: Protect /internal/admin API routes ──
+  // The admin dashboard page (/internal/admin) is allowed through —
+  // it has its own secret-key gate in the UI before making any API calls.
+  // Only the API routes require middleware-level auth.
+  if (path.startsWith('/api/internal/admin')) {
     const adminKey = request.headers.get('x-admin-key');
     const hasSession = request.cookies.getAll().some(c => /^sb-.+-auth-token/.test(c.name));
     const secretKey = process.env.ADMIN_SECRET_KEY;
