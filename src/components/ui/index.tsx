@@ -61,7 +61,7 @@ export function Button({
 }: ButtonProps) {
   const base = fullWidth ? 'w-full' : '';
   const sizeMap = {
-    sm: 'text-xs px-3 py-2 rounded-lg',
+    sm: 'text-sm px-3 py-2.5 rounded-lg',
     md: 'text-sm px-5 py-3 rounded-xl',
     lg: 'text-base px-7 py-4 rounded-2xl',
   };
@@ -168,7 +168,7 @@ interface BadgeProps {
 }
 
 export function Badge({ children, color = 'var(--orange)', size = 'sm' }: BadgeProps) {
-  const sizeClass = size === 'sm' ? 'text-[11px] px-2.5 py-0.5' : 'text-xs px-3 py-1';
+  const sizeClass = size === 'sm' ? 'text-xs px-2.5 py-0.5' : 'text-sm px-3 py-1';
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-full font-semibold ${sizeClass}`}
@@ -228,7 +228,7 @@ export function StatCard({ value, label, color = 'var(--text-1)', icon }: StatCa
     <div className="rounded-xl py-2.5 px-3 text-center" style={{ background: 'var(--surface-2)' }}>
       {icon && <div className="text-lg mb-0.5">{icon}</div>}
       <div className="text-xl font-bold" style={{ color }}>{value}</div>
-      <div className="text-[11px] text-[var(--text-3)] mt-0.5 font-medium">{label}</div>
+      <div className="text-xs text-[var(--text-3)] mt-0.5 font-medium">{label}</div>
     </div>
   );
 }
@@ -256,7 +256,7 @@ export function SubjectChip({ icon, name, color, active, onClick, size = 'md' }:
       >
         <div className="text-lg">{icon}</div>
         <div
-          className="text-[11px] mt-0.5 truncate font-semibold"
+          className="text-xs mt-0.5 truncate font-semibold"
           style={{ color: active ? color : 'var(--text-3)' }}
         >
           {name.split(' ')[0]}

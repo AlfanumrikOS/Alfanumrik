@@ -306,7 +306,7 @@ export default function BottomNavComponent() {
                 onClick={() => router.push(item.href)}
                 aria-label={item.label}
                 aria-current={active ? 'page' : undefined}
-                className="flex flex-col items-center gap-0.5 min-w-[56px] py-1.5 transition-all"
+                className="flex flex-col items-center gap-1 min-w-[56px] py-2 transition-all"
                 style={{ color: active ? 'var(--orange)' : 'var(--text-3)' }}
               >
                 <span
@@ -404,7 +404,7 @@ export default function BottomNavComponent() {
                       <button
                         key={item.href}
                         onClick={() => router.push(item.href)}
-                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all"
+                        className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-all"
                         style={{
                           background: active
                             ? isFoxy ? 'rgba(232,88,28,0.12)' : 'rgba(232,88,28,0.06)'

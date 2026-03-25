@@ -124,7 +124,7 @@ function SessionMetricCard({ session, isHi }: { session: CognitiveSessionMetrics
         </span>
         <div className="flex items-center gap-2">
           {session.fatigue_detected && (
-            <Badge color="#EF4444" size="sm">{isHi ? 'थकान' : 'Fatigue'}</Badge>
+            <Badge color="#EF4444" size="sm">{isHi ? 'थकान' : 'Low Energy'}</Badge>
           )}
           {dur != null && (
             <span className="text-[10px] text-[var(--text-3)]">{dur}m</span>
@@ -136,7 +136,7 @@ function SessionMetricCard({ session, isHi }: { session: CognitiveSessionMetrics
       {zpdAcc != null && (
         <div className="mb-2">
           <div className="flex justify-between text-[10px] text-[var(--text-3)] mb-0.5">
-            <span>{isHi ? 'ZPD सटीकता' : 'ZPD Accuracy'}</span>
+            <span>{isHi ? 'सही स्तर पर सटीकता' : 'Right-Level Accuracy'}</span>
             <span>{zpdAcc}%</span>
           </div>
           <div className="w-full h-1.5 rounded-full" style={{ background: 'var(--surface-2)' }}>
@@ -301,7 +301,7 @@ export default function ProgressPage() {
               color: activeTab === 'cognitive' ? '#fff' : 'var(--text-3)',
             }}
           >
-            {isHi ? 'संज्ञानात्मक' : 'Cognitive'}
+            {isHi ? 'गहन विश्लेषण' : 'Deep Analysis'}
           </button>
         </div>
 
@@ -499,7 +499,7 @@ export default function ProgressPage() {
             {/* Cognitive Session History */}
             {sessionMetrics.length > 0 && (
               <div>
-                <SectionHeader icon="🧠">{isHi ? 'संज्ञानात्मक सत्र' : 'Cognitive Sessions'}</SectionHeader>
+                <SectionHeader icon="🧠">{isHi ? 'स्मार्ट क्विज़ सत्र' : 'Smart Quiz Sessions'}</SectionHeader>
                 <div className="space-y-2">
                   {sessionMetrics.map((s) => (
                     <SessionMetricCard key={s.id} session={s} isHi={isHi} />
@@ -513,7 +513,7 @@ export default function ProgressPage() {
               <Card className="!p-6 text-center">
                 <div className="text-4xl mb-2">🧠</div>
                 <div className="text-sm font-semibold mb-1">
-                  {isHi ? 'अभी तक कोई संज्ञानात्मक डेटा नहीं' : 'No cognitive data yet'}
+                  {isHi ? 'अभी तक कोई विश्लेषण डेटा नहीं' : 'No analysis data yet'}
                 </div>
                 <div className="text-xs text-[var(--text-3)] mb-3">
                   {isHi

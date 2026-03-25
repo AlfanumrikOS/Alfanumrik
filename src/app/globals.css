@@ -51,6 +51,8 @@ body {
   font-family: var(--font-body);
   background: var(--bg);
   color: var(--text-1);
+  font-size: 16px;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
   min-height: 100dvh;
@@ -370,7 +372,7 @@ h1, h2, h3, h4, h5 { font-family: var(--font-display); }
 .xp-bar { transition: width 1.2s cubic-bezier(0.4, 0, 0.2, 1); }
 
 /* ─── Spacing Helpers ─────────────────────────────────────── */
-.pb-nav { padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px)); }
+.pb-nav { padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px)); }
 
 /* ─── Skip Navigation (keyboard accessibility) ────────────── */
 .skip-nav {
@@ -760,6 +762,17 @@ img, video, iframe, canvas, svg {
 .safe-bottom {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
+
+/* ─── Small Phone Optimization (320-375px) ────────────────── */
+@media (max-width: 375px) {
+  .grid-subjects { grid-template-columns: repeat(3, 1fr) !important; }
+  .grid-actions { gap: 10px !important; }
+}
+
+/* ─── Minimum Font Size for Readability ────────────────────── */
+/* Enforces 12px minimum on secondary text for outdoor/sunlight use */
+.text-\[10px\] { font-size: 11px !important; }
+.text-\[9px\] { font-size: 11px !important; }
 
 /* ─── Text Overflow Protection ───────────────────────────── */
 .text-break {
