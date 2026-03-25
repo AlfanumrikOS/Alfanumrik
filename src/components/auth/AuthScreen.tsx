@@ -10,11 +10,13 @@ const AUTH_BOARDS = ['CBSE', 'ICSE', 'State Board', 'IB', 'Other'];
 
 interface AuthScreenProps {
   onSuccess: () => void;
+  /** Pre-select a role tab (from ?role= query param) */
+  initialRole?: 'student' | 'teacher' | 'parent';
 }
 
-export function AuthScreen({ onSuccess }: AuthScreenProps) {
+export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenProps) {
   const [mode, setMode] = useState<'login' | 'signup' | 'forgot' | 'check-email'>('login');
-  const [roleTab, setRoleTab] = useState<'student' | 'teacher' | 'parent'>('student');
+  const [roleTab, setRoleTab] = useState<'student' | 'teacher' | 'parent'>(initialRole);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
