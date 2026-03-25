@@ -30,8 +30,7 @@ const rawHookSecret = Deno.env.get('SEND_EMAIL_HOOK_SECRET') || ''
 const hookSecret = rawHookSecret.startsWith('v1,') ? rawHookSecret.slice(3) : rawHookSecret
 const resendApiKey = Deno.env.get('RESEND_API_KEY') || ''
 const FROM_EMAIL = 'Alfanumrik <noreply@alfanumrik.com>'
-// Resend provides this test address that works without domain verification
-const FALLBACK_FROM_EMAIL = 'Alfanumrik <onboarding@resend.dev>'
+const REPLY_TO = 'support@alfanumrik.com'
 const SITE_URL = 'https://alfanumrik.com'
 
 function baseWrapper(content: string, preheader: string): string {
@@ -73,7 +72,30 @@ function baseWrapper(content: string, preheader: string): string {
 </html>`
 }
 
-function confirmationEmail(url: string, otpCode?: string): { subject: string; html: string } {
+/** Strip HTML tags and decode entities for plain-text email version */
+function htmlToPlainText(html: string): string {
+  return html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '  - ')
+    .replace(/<\/h[1-6]>/gi, '\n\n')
+    .replace(/<a[^>]+href="([^"]*)"[^>]*>([^<]*)<\/a>/gi, '$2 ($1)')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#169;/g, '(c)')
+    .replace(/&#\d+;/g, '')
+    .replace(/&[a-z]+;/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+function confirmationEmail(url: string, otpCode?: string): { subject: string; html: string; text: string } {
   const codeBlock = otpCode ? `
       <div style="margin:0 0 24px;text-align:center;">
         <p style="margin:0 0 8px;font-size:13px;color:#6B7280;">Your verification code:</p>
@@ -82,9 +104,8 @@ function confirmationEmail(url: string, otpCode?: string): { subject: string; ht
         </div>
         <p style="margin:8px 0 0;font-size:12px;color:#9CA3AF;">Enter this code on the verification page</p>
       </div>` : ''
-  return {
-    subject: otpCode ? `${otpCode} is your Alfanumrik verification code` : 'Confirm your Alfanumrik account',
-    html: baseWrapper(`
+  const subject = otpCode ? `${otpCode} - Alfanumrik verification code` : 'Confirm your Alfanumrik account'
+  const html = baseWrapper(`
       <div style="text-align:center;margin-bottom:20px;"><div style="font-size:48px;line-height:1;">&#9993;&#65039;</div></div>
       <h2 style="margin:0 0 8px;font-size:20px;font-weight:800;color:#1F2937;text-align:center;">Verify Your Email</h2>
       <p style="margin:0 0 24px;font-size:14px;color:#6B7280;text-align:center;line-height:1.6;">You're almost there! Use the code below to confirm your email and start your learning journey.</p>
@@ -96,10 +117,13 @@ function confirmationEmail(url: string, otpCode?: string): { subject: string; ht
       </table>
       <p style="margin:20px 0 0;font-size:12px;color:#9CA3AF;text-align:center;line-height:1.6;">This code expires in 24 hours. If you didn't sign up for Alfanumrik, ignore this email.</p>
     `, otpCode ? `Your code: ${otpCode}. Confirm your Alfanumrik account.` : 'Confirm your email to start learning on Alfanumrik.')
-  }
+  const text = otpCode
+    ? `Your Alfanumrik verification code: ${otpCode}\n\nOr confirm your email by visiting:\n${url}\n\nThis code expires in 24 hours.\nIf you didn't sign up for Alfanumrik, ignore this email.\n\n(c) 2026 Alfanumrik EdTech`
+    : `Confirm your Alfanumrik account by visiting:\n${url}\n\nThis link expires in 24 hours.\nIf you didn't sign up for Alfanumrik, ignore this email.\n\n(c) 2026 Alfanumrik EdTech`
+  return { subject, html, text }
 }
 
-function recoveryEmail(url: string, otpCode?: string): { subject: string; html: string } {
+function recoveryEmail(url: string, otpCode?: string): { subject: string; html: string; text: string } {
   const codeBlock = otpCode ? `
       <div style="margin:0 0 24px;text-align:center;">
         <p style="margin:0 0 8px;font-size:13px;color:#6B7280;">Your reset code:</p>
@@ -107,9 +131,8 @@ function recoveryEmail(url: string, otpCode?: string): { subject: string; html: 
           <span style="font-size:32px;font-weight:800;letter-spacing:6px;color:#EF4444;font-family:monospace;">${otpCode}</span>
         </div>
       </div>` : ''
-  return {
-    subject: otpCode ? `${otpCode} is your Alfanumrik password reset code` : 'Reset your Alfanumrik password',
-    html: baseWrapper(`
+  const subject = otpCode ? `${otpCode} - Alfanumrik password reset code` : 'Reset your Alfanumrik password'
+  const html = baseWrapper(`
       <div style="text-align:center;margin-bottom:20px;"><div style="font-size:48px;line-height:1;">&#128274;</div></div>
       <h2 style="margin:0 0 8px;font-size:20px;font-weight:800;color:#1F2937;text-align:center;">Reset Your Password</h2>
       <p style="margin:0 0 24px;font-size:14px;color:#6B7280;text-align:center;line-height:1.6;">We received a request to reset your password. Use the code below or click the button.</p>
@@ -125,13 +148,15 @@ function recoveryEmail(url: string, otpCode?: string): { subject: string; html: 
         </td></tr>
       </table>
     `, otpCode ? `Your code: ${otpCode}. Reset your Alfanumrik password.` : 'Reset your Alfanumrik password.')
-  }
+  const text = otpCode
+    ? `Your Alfanumrik password reset code: ${otpCode}\n\nOr reset your password by visiting:\n${url}\n\nSecurity: This code expires in 1 hour.\nIf you didn't request this, your password is safe - just ignore this email.\n\n(c) 2026 Alfanumrik EdTech`
+    : `Reset your Alfanumrik password by visiting:\n${url}\n\nSecurity: This link expires in 1 hour.\nIf you didn't request this, your password is safe - just ignore this email.\n\n(c) 2026 Alfanumrik EdTech`
+  return { subject, html, text }
 }
 
-function magicLinkEmail(url: string): { subject: string; html: string } {
-  return {
-    subject: 'Your Alfanumrik login link',
-    html: baseWrapper(`
+function magicLinkEmail(url: string): { subject: string; html: string; text: string } {
+  const subject = 'Your Alfanumrik login link'
+  const html = baseWrapper(`
       <div style="text-align:center;margin-bottom:20px;"><div style="font-size:48px;line-height:1;">&#10024;</div></div>
       <h2 style="margin:0 0 8px;font-size:20px;font-weight:800;color:#1F2937;text-align:center;">Magic Login Link</h2>
       <p style="margin:0 0 24px;font-size:14px;color:#6B7280;text-align:center;line-height:1.6;">Click below to log in to Alfanumrik instantly. No password needed!</p>
@@ -142,13 +167,13 @@ function magicLinkEmail(url: string): { subject: string; html: string } {
       </table>
       <p style="margin:20px 0 0;font-size:12px;color:#9CA3AF;text-align:center;line-height:1.6;">This link expires in 24 hours and can only be used once.</p>
     `, 'Log in to Alfanumrik with one click.')
-  }
+  const text = `Log in to Alfanumrik by visiting:\n${url}\n\nThis link expires in 24 hours and can only be used once.\nIf you didn't request this, ignore this email.\n\n(c) 2026 Alfanumrik EdTech`
+  return { subject, html, text }
 }
 
-function emailChangeEmail(url: string): { subject: string; html: string } {
-  return {
-    subject: 'Confirm your new email for Alfanumrik',
-    html: baseWrapper(`
+function emailChangeEmail(url: string): { subject: string; html: string; text: string } {
+  const subject = 'Confirm your new email for Alfanumrik'
+  const html = baseWrapper(`
       <div style="text-align:center;margin-bottom:20px;"><div style="font-size:48px;line-height:1;">&#128231;</div></div>
       <h2 style="margin:0 0 8px;font-size:20px;font-weight:800;color:#1F2937;text-align:center;">Confirm Email Change</h2>
       <p style="margin:0 0 24px;font-size:14px;color:#6B7280;text-align:center;line-height:1.6;">You requested to change your email address. Click below to confirm the change.</p>
@@ -159,7 +184,8 @@ function emailChangeEmail(url: string): { subject: string; html: string } {
       </table>
       <p style="margin:20px 0 0;font-size:12px;color:#9CA3AF;text-align:center;line-height:1.6;">If you didn't request this change, please contact support immediately.</p>
     `, 'Confirm your new email for Alfanumrik.')
-  }
+  const text = `Confirm your new email for Alfanumrik by visiting:\n${url}\n\nIf you didn't request this change, please contact support immediately at support@alfanumrik.com.\n\n(c) 2026 Alfanumrik EdTech`
+  return { subject, html, text }
 }
 
 // ─── Main Handler ─────────────────────────────────────────────────────────────
@@ -230,7 +256,7 @@ Deno.serve(async (req: Request) => {
     // token is the OTP code users can type in; token_hash is for link-based verification
     const otpCode = token || undefined
 
-    let emailContent: { subject: string; html: string }
+    let emailContent: { subject: string; html: string; text: string }
     switch (email_action_type) {
       case 'signup':
         emailContent = confirmationEmail(actionUrl, otpCode)
@@ -260,34 +286,35 @@ Deno.serve(async (req: Request) => {
 
     const resend = new Resend(resendApiKey)
 
-    // Try with custom domain first, fall back to Resend's test sender
+    // Send from verified custom domain only — never fall back to resend.dev
+    // (resend.dev is a shared test domain with poor reputation → guaranteed spam)
     let sent = false
-    for (const fromAddress of [FROM_EMAIL, FALLBACK_FROM_EMAIL]) {
-      try {
-        const { error: sendError } = await resend.emails.send({
-          from: fromAddress,
-          to: [user.email],
-          subject: emailContent.subject,
-          html: emailContent.html,
-        })
+    try {
+      const { data: sendData, error: sendError } = await resend.emails.send({
+        from: FROM_EMAIL,
+        replyTo: REPLY_TO,
+        to: [user.email],
+        subject: emailContent.subject,
+        html: emailContent.html,
+        text: emailContent.text,
+        tags: [
+          { name: 'category', value: 'auth' },
+          { name: 'type', value: email_action_type },
+        ],
+      })
 
-        if (sendError) {
-          console.error(`[Auth Email] Resend error with ${fromAddress}:`, sendError)
-          // If custom domain fails (likely not verified), try fallback
-          if (fromAddress === FROM_EMAIL) continue
-        } else {
-          console.log(`[Auth Email] Sent ${email_action_type} email to ${user.email} via ${fromAddress}`)
-          sent = true
-          break
-        }
-      } catch (sendErr) {
-        console.error(`[Auth Email] Send exception with ${fromAddress}:`, sendErr)
-        if (fromAddress === FROM_EMAIL) continue
+      if (sendError) {
+        console.error('[Auth Email] Resend error:', sendError)
+      } else {
+        console.log(`[Auth Email] Sent ${email_action_type} email to ${user.email}, id: ${sendData?.id}`)
+        sent = true
       }
+    } catch (sendErr) {
+      console.error('[Auth Email] Send exception:', sendErr)
     }
 
     if (!sent) {
-      console.error('[Auth Email] All send attempts failed for', user.email)
+      console.error('[Auth Email] Send failed for', user.email, '- check domain verification in Resend dashboard')
     }
 
     // ALWAYS return 200 — never block the auth flow
