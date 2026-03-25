@@ -103,9 +103,8 @@ function baseWrapper(content: string, preheader: string): string {
 function studentEmail(name: string, grade?: string, board?: string): { subject: string; html: string; text: string } {
   const firstName = name.split(' ')[0]
   const gradeText = grade ? ` (Grade ${grade}${board ? `, ${board}` : ''})` : ''
-  return {
-    subject: `Welcome to Alfanumrik, ${firstName}! Your learning adventure begins`,
-    html: baseWrapper(`
+  const subject = `Welcome to Alfanumrik, ${firstName}! Your learning adventure begins`
+  const html = baseWrapper(`
       <div style="text-align:center;margin-bottom:24px;"><div style="font-size:56px;line-height:1;">&#127775;</div></div>
       <h2 style="margin:0 0 8px;font-size:22px;font-weight:800;color:#1F2937;text-align:center;">Welcome aboard, ${firstName}!</h2>
       <p style="margin:0 0 24px;font-size:14px;color:#6B7280;text-align:center;line-height:1.6;">You're now part of Alfanumrik${gradeText}. Let's make learning fun and effective!</p>
@@ -137,12 +136,12 @@ function studentEmail(name: string, grade?: string, board?: string): { subject: 
   return { subject, html, text }
 }
 
+
 function teacherEmail(name: string, schoolName?: string): { subject: string; html: string; text: string } {
   const firstName = name.split(' ')[0]
   const schoolText = schoolName ? ` at ${schoolName}` : ''
-  return {
-    subject: `Welcome to Alfanumrik, ${firstName}! Your classroom just got smarter`,
-    html: baseWrapper(`
+  const subject = `Welcome to Alfanumrik, ${firstName}! Your classroom just got smarter`
+  const html = baseWrapper(`
       <div style="text-align:center;margin-bottom:24px;"><div style="font-size:56px;line-height:1;">&#127912;</div></div>
       <h2 style="margin:0 0 8px;font-size:22px;font-weight:800;color:#1F2937;text-align:center;">Welcome, ${firstName}!</h2>
       <p style="margin:0 0 24px;font-size:14px;color:#6B7280;text-align:center;line-height:1.6;">Thank you for joining Alfanumrik${schoolText}. You now have access to India's most adaptive classroom tools.</p>
@@ -181,9 +180,8 @@ function teacherEmail(name: string, schoolName?: string): { subject: string; htm
 
 function parentEmail(name: string): { subject: string; html: string; text: string } {
   const firstName = name.split(' ')[0]
-  return {
-    subject: `Welcome to Alfanumrik, ${firstName}! Stay connected to your child's learning`,
-    html: baseWrapper(`
+  const subject = `Welcome to Alfanumrik, ${firstName}! Stay connected to your child's learning`
+  const html = baseWrapper(`
       <div style="text-align:center;margin-bottom:24px;"><div style="font-size:56px;line-height:1;">&#128104;&#8205;&#128105;&#8205;&#128103;</div></div>
       <h2 style="margin:0 0 8px;font-size:22px;font-weight:800;color:#1F2937;text-align:center;">Welcome, ${firstName}!</h2>
       <p style="margin:0 0 24px;font-size:14px;color:#6B7280;text-align:center;line-height:1.6;">Thank you for joining Alfanumrik. You'll now receive insights on your child's learning progress.</p>
