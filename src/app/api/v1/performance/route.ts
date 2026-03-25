@@ -59,13 +59,16 @@ export async function GET(request: Request) {
         .select(
           'topic_id, mastery_probability, consecutive_correct, updated_at'
         )
-        .eq('student_id', targetStudentId),
+        .eq('student_id', targetStudentId)
+        .order('updated_at', { ascending: false })
+        .limit(200),
       supabaseAdmin
         .from('learning_velocity')
         .select(
           'subject, weekly_mastery_rate, acceleration, predicted_mastery_date'
         )
-        .eq('student_id', targetStudentId),
+        .eq('student_id', targetStudentId)
+        .limit(50),
     ]);
 
     logAudit(auth.userId, {

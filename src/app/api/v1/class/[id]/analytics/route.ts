@@ -82,13 +82,16 @@ export async function GET(
         .select(
           'student_id, topic_id, mastery_probability, consecutive_correct, updated_at'
         )
-        .in('student_id', studentIds),
+        .in('student_id', studentIds)
+        .order('updated_at', { ascending: false })
+        .limit(1000),
       supabaseAdmin
         .from('learning_velocity')
         .select(
           'student_id, subject, weekly_mastery_rate, acceleration, predicted_mastery_date'
         )
-        .in('student_id', studentIds),
+        .in('student_id', studentIds)
+        .limit(500),
     ]);
 
     // Compute aggregate statistics
