@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { createServerClient } from '@supabase/ssr';
 import { logger } from '@/lib/logger';
+import { isValidUUID } from '@/lib/sanitize';
 
 /* ═══════════════════════════════════════════════════════════════
    ElevenLabs Text-to-Speech API Route
@@ -46,6 +47,15 @@ export async function POST(req: NextRequest) {
   try {
     const { text, language, studentId } = await req.json();
 
+    if (!text || typeof text !== 'string') {
+      return NextResponse.json({ error: 'text is required' }, { status: 400 });
+    }
+
+    // Validate studentId format to prevent injection into Supabase queries
+    if (studentId && !isValidUUID(studentId)) {
+      return NextResponse.json({ error: 'Invalid studentId' }, { status: 400 });
+    }
+
     // ── Per-student daily rate limiting ──
     if (studentId) {
       const sb = supabaseAdmin;
@@ -84,10 +94,6 @@ export async function POST(req: NextRequest) {
         p_feature: 'foxy_tts',
         p_usage_date: today,
       }).then(() => {});
-    }
-
-    if (!text || typeof text !== 'string') {
-      return NextResponse.json({ error: 'text is required' }, { status: 400 });
     }
 
     // Clean text for speech — remove markdown artifacts, tags, etc.

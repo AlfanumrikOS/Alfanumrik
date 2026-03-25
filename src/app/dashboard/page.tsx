@@ -7,6 +7,7 @@ import { supabase, getStudentProfiles, getSubjects, getFeatureFlags, getNextTopi
 import { Card, StatCard, ProgressBar, SectionHeader, ActionTile, SubjectChip, Avatar, BottomNav } from '@/components/ui';
 import TrustFooter from '@/components/TrustFooter';
 import { DashboardSkeleton } from '@/components/Skeleton';
+import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import type { StudentLearningProfile, Subject, CurriculumTopic } from '@/lib/types';
 import { SUBJECT_META } from '@/lib/constants';
 
@@ -295,6 +296,7 @@ export default function Dashboard() {
       </header>
 
       <main className="app-container py-4 space-y-4">
+       <SectionErrorBoundary section="Dashboard">
         {/* XP Hero */}
         <Card accent={meta?.color}>
           <div className="flex items-center justify-between mb-3">
@@ -627,6 +629,7 @@ export default function Dashboard() {
             </div>
           </div>
         )}
+       </SectionErrorBoundary>
       </main>
 
       <TrustFooter />
