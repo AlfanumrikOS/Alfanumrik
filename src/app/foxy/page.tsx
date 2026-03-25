@@ -338,7 +338,7 @@ export default function FoxyPage() {
   const [reportSuccess, setReportSuccess] = useState(false);
 
   // Voice — unified hook replaces manual Web Speech API
-  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
   const endRef = useRef<HTMLDivElement>(null);
 
   // Usage enforcement
