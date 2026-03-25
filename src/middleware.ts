@@ -64,30 +64,50 @@ export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const pathname = path; // alias for clarity in API checks
 
+  // ── CORS: Allowed origins (not wildcard) ──
+  const ALLOWED_ORIGINS = [
+    'https://alfanumrik.com',
+    'https://www.alfanumrik.com',
+    'https://alfanumrik.vercel.app',
+    'https://alfanumrik-ten.vercel.app',
+  ];
+  if (process.env.NODE_ENV !== 'production') {
+    ALLOWED_ORIGINS.push('http://localhost:3000', 'http://localhost:3001');
+  }
+
+  const origin = request.headers.get('origin') || '';
+  const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+
   // ── Layer 0.5: API Authentication Check ──
   if (pathname.startsWith('/api/v1/')) {
+    // Health endpoint is public (no auth required, used by monitors)
+    const isHealthCheck = pathname === '/api/v1/health';
+
     // Handle CORS preflight requests
     if (request.method === 'OPTIONS') {
       return new NextResponse(null, {
         status: 204,
         headers: {
-          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Origin': allowedOrigin,
           'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+          'Access-Control-Allow-Headers': 'Authorization, Content-Type, x-request-id',
           'Access-Control-Max-Age': '86400',
+          'Vary': 'Origin',
         },
       });
     }
 
-    // Check for Authorization header or valid session cookie
-    const authHeader = request.headers.get('Authorization');
-    const hasSession = request.cookies.getAll().some(c => c.name.includes('auth-token'));
+    // Check for Authorization header or valid session cookie (skip for health)
+    if (!isHealthCheck) {
+      const authHeader = request.headers.get('Authorization');
+      const hasSession = request.cookies.getAll().some(c => c.name.includes('auth-token'));
 
-    if (!authHeader && !hasSession) {
-      return NextResponse.json(
-        { error: 'Authentication required', code: 'AUTH_REQUIRED' },
-        { status: 401, headers: { 'Content-Type': 'application/json' } }
-      );
+      if (!authHeader && !hasSession) {
+        return NextResponse.json(
+          { error: 'Authentication required', code: 'AUTH_REQUIRED' },
+          { status: 401, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
     }
   }
 
@@ -185,10 +205,11 @@ export async function middleware(request: NextRequest) {
     response.headers.set('X-RateLimit-Limit', String(RATE_LIMIT_MAX));
     response.headers.set('X-RateLimit-Remaining', String(generalRemaining));
 
-    // Add CORS headers for API routes
-    response.headers.set('Access-Control-Allow-Origin', '*');
+    // Add CORS headers for API routes (origin-checked, not wildcard)
+    response.headers.set('Access-Control-Allow-Origin', allowedOrigin);
     response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    response.headers.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+    response.headers.set('Access-Control-Allow-Headers', 'Authorization, Content-Type, x-request-id');
+    response.headers.set('Vary', 'Origin');
   }
 
   return addSecurityHeaders(response, request);
