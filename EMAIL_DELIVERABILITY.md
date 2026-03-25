@@ -13,11 +13,11 @@ Authorizes Resend's servers to send email on behalf of alfanumrik.com.
 
 | Type | Host/Name | Value | TTL |
 |------|-----------|-------|-----|
-| TXT | `@` | `v=spf1 include:resend.dev ~all` | 3600 |
+| TXT | `@` | `v=spf1 include:resend.dev include:secureserver.net ~all` | 3600 |
 
-> **IMPORTANT:** Do NOT use `include:amazonses.com`. Resend requires `include:resend.dev`.
-> If you already have an SPF record, merge it: `v=spf1 include:resend.dev include:_spf.google.com ~all`
-> SPF allows only ONE TXT record per domain — multiple SPF records will FAIL validation.
+> **IMPORTANT:** Only ONE SPF TXT record allowed per domain — multiple SPF records will FAIL validation.
+> The `include:secureserver.net` authorizes GoDaddy's mail servers (MX). The `include:resend.dev` authorizes Resend.
+> If you switch mail providers, merge their SPF include into this single record.
 
 ### DKIM Records
 Resend provides 3 CNAME records when you add your domain. They look like this:
@@ -123,7 +123,7 @@ Run these checks after DNS setup:
 ```bash
 # Check SPF record
 dig TXT alfanumrik.com +short
-# Should include: "v=spf1 include:resend.dev ~all"
+# Should include: "v=spf1 include:resend.dev include:secureserver.net ~all"
 
 # Check DKIM
 dig CNAME resend._domainkey.alfanumrik.com +short
