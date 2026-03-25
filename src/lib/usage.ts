@@ -4,9 +4,11 @@
  * Tracks and enforces daily usage limits per student per feature.
  * Uses Supabase `student_daily_usage` table (upserted on first call).
  *
- * Free-tier limits:
- *   foxy_chat  — 50 messages / day
- *   foxy_tts   — 20 TTS calls / day
+ * Plan limits (aligned with subscription_plans table):
+ *   free:      5 chats / 3 TTS per day
+ *   starter:   30 chats / 15 TTS per day
+ *   pro:       100 chats / 50 TTS per day
+ *   unlimited: 999,999 each (effectively unlimited)
  */
 
 import { supabase } from './supabase';
@@ -16,9 +18,11 @@ import { supabase } from './supabase';
 type Feature = 'foxy_chat' | 'foxy_tts';
 
 const PLAN_LIMITS: Record<string, Record<Feature, number>> = {
-  free:    { foxy_chat: 50, foxy_tts: 20 },
-  basic:   { foxy_chat: 200, foxy_tts: 80 },
-  premium: { foxy_chat: 1000, foxy_tts: 500 },
+  free:      { foxy_chat: 5,      foxy_tts: 3 },
+  starter:   { foxy_chat: 30,     foxy_tts: 15 },
+  basic:     { foxy_chat: 30,     foxy_tts: 15 },   // alias for starter
+  pro:       { foxy_chat: 100,    foxy_tts: 50 },
+  premium:   { foxy_chat: 100,    foxy_tts: 50 },   // alias for pro
   unlimited: { foxy_chat: 999999, foxy_tts: 999999 },
 };
 

@@ -223,8 +223,8 @@ export default function WelcomePage() {
           </Link>
           <div className="flex items-center gap-1 sm:gap-3">
             <Link href="/product" className="hidden sm:inline-block text-xs font-semibold px-3 py-2 rounded-lg" style={{ color: 'var(--text-2)' }}>Product</Link>
+            <Link href="/pricing" className="hidden sm:inline-block text-xs font-semibold px-3 py-2 rounded-lg" style={{ color: 'var(--text-2)' }}>Pricing</Link>
             <Link href="/for-schools" className="hidden sm:inline-block text-xs font-semibold px-3 py-2 rounded-lg" style={{ color: 'var(--text-2)' }}>For Schools</Link>
-            <Link href="/research" className="hidden sm:inline-block text-xs font-semibold px-3 py-2 rounded-lg" style={{ color: 'var(--text-2)' }}>Research</Link>
             <Link href="/demo" className="hidden sm:inline-block text-xs font-semibold px-3 py-2 rounded-lg" style={{ color: 'var(--orange)' }}>Book Demo</Link>
             <Link href="/login" className="hidden sm:inline-block text-sm font-semibold px-4 py-2 rounded-lg" style={{ color: 'var(--text-2)' }}>Log In</Link>
             <Link href="/login" className="text-sm font-bold px-5 py-2.5 rounded-xl text-white" style={{ background: 'var(--orange)' }}>Sign Up Free</Link>
