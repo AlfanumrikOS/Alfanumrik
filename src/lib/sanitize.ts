@@ -91,6 +91,25 @@ export function validateBody<T extends Record<string, unknown>>(
   return { valid: true, data: body as T };
 }
 
+/** Validate password strength — minimum 8 chars, must include uppercase, lowercase, and digit */
+export const PASSWORD_MIN_LENGTH = 8;
+
+export function validatePassword(password: string): { valid: true } | { valid: false; error: string } {
+  if (password.length < PASSWORD_MIN_LENGTH) {
+    return { valid: false, error: `Password must be at least ${PASSWORD_MIN_LENGTH} characters` };
+  }
+  if (!/[a-z]/.test(password)) {
+    return { valid: false, error: 'Password must include a lowercase letter' };
+  }
+  if (!/[A-Z]/.test(password)) {
+    return { valid: false, error: 'Password must include an uppercase letter' };
+  }
+  if (!/\d/.test(password)) {
+    return { valid: false, error: 'Password must include a number' };
+  }
+  return { valid: true };
+}
+
 /** Rate limit key generator — normalize IP for consistent tracking */
 export function normalizeIP(request: Request): string {
   const headers = request.headers;

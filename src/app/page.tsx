@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { SUPABASE_URL, SUPABASE_ANON_KEY, SUBJECT_META } from '@/lib/constants';
+import { validatePassword } from '@/lib/sanitize';
 import { BottomNav } from '@/components/ui';
 
 /* ══════════════════════════════════════════════════════════════
@@ -344,7 +345,8 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) { setError('Please enter your name'); return; }
-    if (password.length < 6) { setError('Password must be at least 6 characters'); return; }
+    const pwCheck = validatePassword(password);
+    if (!pwCheck.valid) { setError(pwCheck.error); return; }
 
     if (roleTab === 'teacher') {
       if (!schoolName.trim()) { setError('Please enter your school name'); return; }
@@ -608,7 +610,7 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
 
             {mode !== 'forgot' && mode !== 'check-email' && (
               <div className="relative">
-                <input type={showPassword ? 'text' : 'password'} placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} style={{ ...inputStyle, paddingRight: 44 }} required minLength={6} />
+                <input type={showPassword ? 'text' : 'password'} placeholder="Password (min 8 chars, A-z, 0-9)" value={password} onChange={e => setPassword(e.target.value)} style={{ ...inputStyle, paddingRight: 44 }} required minLength={8} />
                 <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--text-3)' }}>
                   {showPassword ? '\uD83D\uDE48' : '\uD83D\uDC41'}
                 </button>

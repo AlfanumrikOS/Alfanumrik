@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { validatePassword, PASSWORD_MIN_LENGTH } from '@/lib/sanitize';
 import { Button, Input, Card, LoadingFoxy } from '@/components/ui';
 
 export default function ResetPasswordPage() {
@@ -39,7 +40,8 @@ export default function ResetPasswordPage() {
 
   const resetPassword = async () => {
     if (!password) { setError('Enter a new password'); return; }
-    if (password.length < 6) { setError('Password must be at least 6 characters'); return; }
+    const pwCheck = validatePassword(password);
+    if (!pwCheck.valid) { setError(pwCheck.error); return; }
     if (password !== confirmPassword) { setError('Passwords do not match'); return; }
 
     setLoading(true); setError('');
@@ -100,7 +102,7 @@ export default function ResetPasswordPage() {
               <div style={{ position: 'relative' }}>
                 <Input
                   type={showPassword ? 'text' : 'password'}
-                  placeholder="New password (min 6 characters)"
+                  placeholder={`New password (min ${PASSWORD_MIN_LENGTH} chars, A-z, 0-9)`}
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                 />
@@ -122,22 +124,26 @@ export default function ResetPasswordPage() {
               {/* Password strength indicator */}
               {password && (
                 <div style={{ display: 'flex', gap: 4 }}>
-                  {[1, 2, 3, 4].map(i => (
-                    <div
-                      key={i}
-                      style={{
-                        flex: 1, height: 4, borderRadius: 2,
-                        background: password.length >= i * 3
-                          ? password.length >= 10 && /[A-Z]/.test(password) && /\d/.test(password) ? '#16A34A'
-                          : password.length >= 8 ? '#F5A623'
-                          : '#DC2626'
-                          : 'var(--surface-2)',
-                        transition: 'background 0.3s',
-                      }}
-                    />
-                  ))}
+                  {[1, 2, 3, 4].map(i => {
+                    const hasLower = /[a-z]/.test(password);
+                    const hasUpper = /[A-Z]/.test(password);
+                    const hasDigit = /\d/.test(password);
+                    const score = (password.length >= PASSWORD_MIN_LENGTH ? 1 : 0) + (hasLower ? 1 : 0) + (hasUpper ? 1 : 0) + (hasDigit ? 1 : 0);
+                    return (
+                      <div
+                        key={i}
+                        style={{
+                          flex: 1, height: 4, borderRadius: 2,
+                          background: i <= score
+                            ? score === 4 ? '#16A34A' : score >= 3 ? '#F5A623' : '#DC2626'
+                            : 'var(--surface-2)',
+                          transition: 'background 0.3s',
+                        }}
+                      />
+                    );
+                  })}
                   <span style={{ fontSize: 10, color: 'var(--text-3)', marginLeft: 4, whiteSpace: 'nowrap' }}>
-                    {password.length < 6 ? 'Too short' : password.length < 8 ? 'Fair' : password.length >= 10 && /[A-Z]/.test(password) && /\d/.test(password) ? 'Strong' : 'Good'}
+                    {password.length < PASSWORD_MIN_LENGTH ? 'Too short' : validatePassword(password).valid ? 'Strong' : 'Needs more variety'}
                   </span>
                 </div>
               )}
