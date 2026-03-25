@@ -10,44 +10,63 @@ import { logger } from '@/lib/logger';
 export async function GET(request: NextRequest) {
   try {
     const auth = await authorizeRequest(request, 'system.audit');
-    if (!auth.authorized) return auth.errorResponse!;
+    if (!auth.authorized) {
+      return NextResponse.json(
+        { error: auth.reason || 'Unauthorized' },
+        { status: 401 }
+      );
+    }
 
-    const [students, teachers, guardians, quizSessions, chatSessions, auditLogs] = await Promise.all([
-      supabaseAdmin.from('students').select('id', { count: 'exact', head: true }),
-      supabaseAdmin.from('teachers').select('id', { count: 'exact', head: true }),
-      supabaseAdmin.from('guardians').select('id', { count: 'exact', head: true }),
-      supabaseAdmin.from('quiz_sessions').select('id', { count: 'exact', head: true }),
-      supabaseAdmin.from('chat_sessions').select('id', { count: 'exact', head: true }),
-      supabaseAdmin.from('audit_logs').select('id', { count: 'exact', head: true }),
+    // Query counts with individual error handling
+    const queryCount = async (table: string, since?: string) => {
+      try {
+        let q = supabaseAdmin.from(table).select('*', { count: 'exact', head: true });
+        if (since) q = q.gte('created_at', since);
+        const { count, error } = await q;
+        if (error) return 0;
+        return count || 0;
+      } catch {
+        return 0;
+      }
+    };
+
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+    const [studentCount, teacherCount, parentCount, quizCount, chatCount, auditCount] = await Promise.all([
+      queryCount('students'),
+      queryCount('teachers'),
+      queryCount('guardians'),
+      queryCount('quiz_sessions'),
+      queryCount('chat_sessions'),
+      queryCount('audit_logs'),
     ]);
 
-    // Recent activity (last 24h)
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const [recentQuizzes, recentChats, recentSignups] = await Promise.all([
-      supabaseAdmin.from('quiz_sessions').select('id', { count: 'exact', head: true }).gte('created_at', since),
-      supabaseAdmin.from('chat_sessions').select('id', { count: 'exact', head: true }).gte('created_at', since),
-      supabaseAdmin.from('students').select('id', { count: 'exact', head: true }).gte('created_at', since),
+      queryCount('quiz_sessions', since),
+      queryCount('chat_sessions', since),
+      queryCount('students', since),
     ]);
 
     logAudit(auth.userId, { action: 'view', resourceType: 'system_stats' });
 
     return NextResponse.json({
       totals: {
-        students: students.count || 0,
-        teachers: teachers.count || 0,
-        parents: guardians.count || 0,
-        quiz_sessions: quizSessions.count || 0,
-        chat_sessions: chatSessions.count || 0,
-        audit_logs: auditLogs.count || 0,
+        students: studentCount,
+        teachers: teacherCount,
+        parents: parentCount,
+        quiz_sessions: quizCount,
+        chat_sessions: chatCount,
+        audit_logs: auditCount,
       },
       last_24h: {
-        quizzes: recentQuizzes.count || 0,
-        chats: recentChats.count || 0,
-        signups: recentSignups.count || 0,
+        quizzes: recentQuizzes,
+        chats: recentChats,
+        signups: recentSignups,
       },
     });
   } catch (err) {
-    logger.error('admin_stats_failed', { error: err instanceof Error ? err : new Error(String(err)), route: '/api/internal/admin/stats' });
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    const message = err instanceof Error ? err.message : String(err);
+    logger.error('admin_stats_failed', { error: err instanceof Error ? err : new Error(message), route: '/api/internal/admin/stats' });
+    return NextResponse.json({ error: 'Internal server error', details: message }, { status: 500 });
   }
 }

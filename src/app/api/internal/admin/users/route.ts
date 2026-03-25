@@ -11,7 +11,9 @@ import { logger } from '@/lib/logger';
 export async function GET(request: NextRequest) {
   try {
     const auth = await authorizeRequest(request, 'user.manage');
-    if (!auth.authorized) return auth.errorResponse!;
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.reason || 'Unauthorized' }, { status: 401 });
+    }
 
     const url = new URL(request.url);
     const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'));
@@ -86,7 +88,9 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const auth = await authorizeRequest(request, 'user.manage');
-    if (!auth.authorized) return auth.errorResponse!;
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.reason || 'Unauthorized' }, { status: 401 });
+    }
 
     const { user_id, table, updates } = await request.json();
 
