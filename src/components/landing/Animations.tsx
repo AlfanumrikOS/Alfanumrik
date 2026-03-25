@@ -1,7 +1,27 @@
 'use client';
 
-import { motion, useInView } from 'framer-motion';
-import { useRef, type ReactNode } from 'react';
+import { useRef, useEffect, useState, type ReactNode } from 'react';
+
+/**
+ * CSS-only viewport-triggered animations.
+ * Replaces framer-motion (40KB) with native IntersectionObserver (0KB).
+ */
+
+function useInView(margin = '-40px') {
+  const ref = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) { setVisible(true); obs.disconnect(); } },
+      { rootMargin: margin }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [margin]);
+  return { ref, visible };
+}
 
 /* Fade-up animation triggered when element enters viewport */
 export function FadeIn({
@@ -13,23 +33,23 @@ export function FadeIn({
   delay?: number;
   className?: string;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const isInView = useInView(ref, { once: true, margin: '-50px' });
-
+  const { ref, visible } = useInView();
   return (
-    <motion.div
+    <div
       ref={ref}
       className={className}
-      initial={{ opacity: 0, y: 24 }}
-      animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 24 }}
-      transition={{ duration: 0.5, delay, ease: [0.25, 0.1, 0.25, 1] }}
+      style={{
+        opacity: visible ? 1 : 0,
+        transform: visible ? 'translateY(0)' : 'translateY(24px)',
+        transition: `opacity 0.5s cubic-bezier(0.25,0.1,0.25,1) ${delay}s, transform 0.5s cubic-bezier(0.25,0.1,0.25,1) ${delay}s`,
+      }}
     >
       {children}
-    </motion.div>
+    </div>
   );
 }
 
-/* Stagger children animations */
+/* Stagger children animations — uses CSS nth-child delays */
 export function StaggerContainer({
   children,
   className = '',
@@ -37,22 +57,11 @@ export function StaggerContainer({
   children: ReactNode;
   className?: string;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const isInView = useInView(ref, { once: true, margin: '-30px' });
-
+  const { ref, visible } = useInView('-30px');
   return (
-    <motion.div
-      ref={ref}
-      className={className}
-      initial="hidden"
-      animate={isInView ? 'visible' : 'hidden'}
-      variants={{
-        visible: { transition: { staggerChildren: 0.08 } },
-        hidden: {},
-      }}
-    >
+    <div ref={ref} className={`${className} ${visible ? 'stagger-visible' : 'stagger-hidden'}`}>
       {children}
-    </motion.div>
+    </div>
   );
 }
 
@@ -65,19 +74,13 @@ export function StaggerItem({
   className?: string;
 }) {
   return (
-    <motion.div
-      className={className}
-      variants={{
-        hidden: { opacity: 0, y: 20 },
-        visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.25, 0.1, 0.25, 1] } },
-      }}
-    >
+    <div className={`stagger-item ${className}`}>
       {children}
-    </motion.div>
+    </div>
   );
 }
 
-/* Scale-up on hover for cards */
+/* Scale-up on hover for cards — pure CSS */
 export function HoverScale({
   children,
   className = '',
@@ -86,26 +89,26 @@ export function HoverScale({
   className?: string;
 }) {
   return (
-    <motion.div
-      className={className}
-      whileHover={{ y: -4 }}
-      transition={{ duration: 0.2 }}
-    >
+    <div className={`card-hover ${className}`}>
       {children}
-    </motion.div>
+    </div>
   );
 }
 
 /* Counter animation for stats */
 export function CountUp({ value, suffix = '' }: { value: string; suffix?: string }) {
+  const { ref, visible } = useInView();
   return (
-    <motion.span
-      initial={{ opacity: 0, scale: 0.8 }}
-      whileInView={{ opacity: 1, scale: 1 }}
-      viewport={{ once: true }}
-      transition={{ duration: 0.4, ease: 'easeOut' }}
+    <span
+      ref={ref}
+      style={{
+        opacity: visible ? 1 : 0,
+        transform: visible ? 'scale(1)' : 'scale(0.8)',
+        transition: 'opacity 0.4s ease-out, transform 0.4s ease-out',
+        display: 'inline-block',
+      }}
     >
       {value}{suffix}
-    </motion.span>
+    </span>
   );
 }
