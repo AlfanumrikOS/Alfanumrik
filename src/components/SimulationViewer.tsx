@@ -78,18 +78,18 @@ ${widgetCode}
 <script>
   function notifyHeight() {
     const h = document.documentElement.scrollHeight;
-    window.parent.postMessage({ type: 'sim-resize', height: h + 20 }, '*');
+    window.parent.postMessage({ type: 'sim-resize', height: h + 20 }, window.location.origin || '*');
   }
   const ro = new ResizeObserver(notifyHeight);
   ro.observe(document.body);
   setTimeout(notifyHeight, 100);
   setTimeout(notifyHeight, 500);
   document.addEventListener('input', () => {
-    window.parent.postMessage({ type: 'sim-interaction', action: 'input', ts: Date.now() }, '*');
+    window.parent.postMessage({ type: 'sim-interaction', action: 'input', ts: Date.now() }, window.location.origin || '*');
   });
   document.addEventListener('click', (e) => {
     if (e.target.tagName === 'BUTTON') {
-      window.parent.postMessage({ type: 'sim-interaction', action: 'button', ts: Date.now() }, '*');
+      window.parent.postMessage({ type: 'sim-interaction', action: 'button', ts: Date.now() }, window.location.origin || '*');
     }
   });
 </script>

@@ -92,6 +92,14 @@ const nextConfig = {
           { key: 'Cache-Control', value: 'no-store, max-age=0' },
         ],
       },
+      // HTML pages — short cache with stale-while-revalidate for offline resilience
+      // Indian mobile users on patchy 4G benefit from cached pages
+      {
+        source: '/(dashboard|foxy|quiz|progress|review|study-plan|leaderboard|simulations|profile|notifications|reports|scan|exams|help)',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=60, stale-while-revalidate=300' },
+        ],
+      },
     ];
   },
 };

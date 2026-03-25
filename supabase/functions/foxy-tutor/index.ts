@@ -81,15 +81,21 @@ const FALLBACK_REPLIES: Record<string, string> = {
   hinglish: "Abhi connection mein thodi problem aa rahi hai. Please thodi der baad try karo! 🦊",
 }
 
-// ─── Rate limiter (in-memory, per-isolate) ─────────────────────
+// ─── Rate limiter (in-memory, per-isolate, bounded) ─────────────
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
 const RATE_WINDOW = 60_000
 const RATE_MAX = 30 // 30 messages per minute per student
+const RATE_MAP_MAX_SIZE = 5_000 // Prevent unbounded memory growth
 
 function checkRateLimit(key: string): boolean {
   const now = Date.now()
   const e = rateLimitMap.get(key)
   if (!e || now > e.resetAt) {
+    // Evict oldest entries if at capacity
+    if (rateLimitMap.size >= RATE_MAP_MAX_SIZE) {
+      const firstKey = rateLimitMap.keys().next().value
+      if (firstKey) rateLimitMap.delete(firstKey)
+    }
     rateLimitMap.set(key, { count: 1, resetAt: now + RATE_WINDOW })
     return true
   }

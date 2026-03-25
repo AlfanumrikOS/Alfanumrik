@@ -1,79 +1,86 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
+import { Ratelimit } from '@upstash/ratelimit';
+import { Redis } from '@upstash/redis';
 
 /* ═══════════════════════════════════════════════════════════════
  * MIDDLEWARE — Security Hardening + Auth Session Refresh
  *
- * Dario's principle: Defense in depth. Every layer assumes the
- * layer below it might be compromised.
+ * Defense in depth. Every layer assumes the layer below might be
+ * compromised.
  *
  * Layer 0: Supabase session refresh (keeps auth cookies fresh)
  * Layer 1: Security headers (XSS, clickjacking, MIME sniffing)
  * Layer 2: Bot/scanner blocking
- * Layer 3: API rate limiting (IP-based, in-memory with fallback)
+ * Layer 3: Distributed rate limiting (Upstash Redis, falls back to in-memory)
  * Layer 4: Request validation
  *
- * Auth now uses BOTH localStorage (client-side) AND cookies
- * (server-side) for the PKCE email flow to work properly.
  * RLS policies in PostgreSQL remain the true auth boundary.
  * ═══════════════════════════════════════════════════════════════ */
 
-// ── Rate limiter with bounded map (prevents memory leaks) ──
-const MAX_MAP_SIZE = 10_000; // Hard cap on tracked IPs — prevents OOM
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
-const RATE_LIMIT_WINDOW = 60_000; // 1 minute
+// ── Rate limiting: Distributed (Upstash Redis) with in-memory fallback ──
 const RATE_LIMIT_MAX = 60;        // 60 requests per minute per IP
 const RATE_LIMIT_PARENT_MAX = 5;  // 5 parent login attempts per minute per IP
 const RATE_LIMIT_ADMIN_MAX = 10;  // 10 requests per minute for /internal/admin/*
 
+// Distributed rate limiter via Upstash Redis (works across all Vercel instances)
+let redisRateLimiter: Ratelimit | null = null;
+let redisParentLimiter: Ratelimit | null = null;
+let redisAdminLimiter: Ratelimit | null = null;
+
+if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+  const redis = new Redis({
+    url: process.env.UPSTASH_REDIS_REST_URL,
+    token: process.env.UPSTASH_REDIS_REST_TOKEN,
+  });
+  redisRateLimiter = new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(RATE_LIMIT_MAX, '1 m'), prefix: 'rl:general' });
+  redisParentLimiter = new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(RATE_LIMIT_PARENT_MAX, '1 m'), prefix: 'rl:parent' });
+  redisAdminLimiter = new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(RATE_LIMIT_ADMIN_MAX, '1 m'), prefix: 'rl:admin' });
+}
+
+// In-memory fallback if Upstash not configured
+const MAX_MAP_SIZE = 10_000;
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT_WINDOW = 60_000;
+
 function getRateLimitKey(request: NextRequest): string {
-  // Prefer Vercel's trusted IP header (cannot be spoofed by clients),
-  // then Cloudflare's, then x-forwarded-for first hop, then x-real-ip.
-  const ip =
+  return (
     request.headers.get('x-vercel-forwarded-for')?.split(',')[0]?.trim() ||
     request.headers.get('cf-connecting-ip') ||
     request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
     request.headers.get('x-real-ip') ||
-    'unknown';
-  return ip;
+    'unknown'
+  );
 }
 
-function checkRateLimit(key: string, max: number): { allowed: boolean; remaining: number } {
+function checkRateLimitLocal(key: string, max: number): { allowed: boolean; remaining: number } {
   const now = Date.now();
   const entry = rateLimitMap.get(key);
-
   if (!entry || now > entry.resetAt) {
-    // Evict oldest entries if map is at capacity
     if (rateLimitMap.size >= MAX_MAP_SIZE) {
-      // Delete first 1000 entries (oldest, since Map preserves insertion order)
-      let deleted = 0;
-      const keysToDelete: string[] = [];
-      rateLimitMap.forEach((_v, k) => {
-        if (deleted < 1000) { keysToDelete.push(k); deleted++; }
-      });
-      keysToDelete.forEach(k => rateLimitMap.delete(k));
+      const firstKey = rateLimitMap.keys().next().value;
+      if (firstKey) rateLimitMap.delete(firstKey);
     }
     rateLimitMap.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW });
     return { allowed: true, remaining: max - 1 };
   }
-
   entry.count++;
-  if (entry.count > max) {
-    return { allowed: false, remaining: 0 };
-  }
+  if (entry.count > max) return { allowed: false, remaining: 0 };
   return { allowed: true, remaining: max - entry.count };
 }
 
-// Clean up stale entries every 2 minutes
-if (typeof globalThis !== 'undefined' && typeof setInterval !== 'undefined') {
-  setInterval(() => {
-    const now = Date.now();
-    const expired: string[] = [];
-    rateLimitMap.forEach((entry, key) => {
-      if (now > entry.resetAt) expired.push(key);
-    });
-    expired.forEach(k => rateLimitMap.delete(k));
-  }, 2 * 60_000);
+async function checkRateLimit(key: string, max: number, type: 'general' | 'parent' | 'admin' = 'general'): Promise<{ allowed: boolean; remaining: number }> {
+  const limiter = type === 'parent' ? redisParentLimiter : type === 'admin' ? redisAdminLimiter : redisRateLimiter;
+  if (limiter) {
+    try {
+      const result = await limiter.limit(key);
+      return { allowed: result.success, remaining: result.remaining };
+    } catch {
+      // Redis unavailable — fall back to in-memory
+      return checkRateLimitLocal(key, max);
+    }
+  }
+  return checkRateLimitLocal(key, max);
 }
 
 export async function middleware(request: NextRequest) {
@@ -210,7 +217,7 @@ export async function middleware(request: NextRequest) {
 
     // Rate limit: 10 requests/minute for admin routes
     const adminIp = getRateLimitKey(request);
-    const { allowed: adminAllowed } = checkRateLimit(`admin:${adminIp}`, RATE_LIMIT_ADMIN_MAX);
+    const { allowed: adminAllowed } = await checkRateLimit(`admin:${adminIp}`, RATE_LIMIT_ADMIN_MAX, 'admin');
     if (!adminAllowed) {
       return new NextResponse(
         JSON.stringify({ error: 'Rate limit exceeded. Please slow down.' }),
@@ -236,7 +243,7 @@ export async function middleware(request: NextRequest) {
 
   // Stricter rate limit for parent portal (brute-force protection)
   if (path === '/parent' || path.startsWith('/parent/')) {
-    const { allowed, remaining } = checkRateLimit(`parent:${ip}`, RATE_LIMIT_PARENT_MAX);
+    const { allowed, remaining } = await checkRateLimit(`parent:${ip}`, RATE_LIMIT_PARENT_MAX, 'parent');
     if (!allowed) {
       return new NextResponse(
         JSON.stringify({ error: 'Too many attempts. Please wait 1 minute.' }),
@@ -261,7 +268,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // General rate limit for all routes
-  const { allowed, remaining: generalRemaining } = checkRateLimit(`general:${ip}`, RATE_LIMIT_MAX);
+  const { allowed, remaining: generalRemaining } = await checkRateLimit(`general:${ip}`, RATE_LIMIT_MAX, 'general');
   if (!allowed) {
     return new NextResponse(
       JSON.stringify({ error: 'Rate limit exceeded. Please slow down.' }),
