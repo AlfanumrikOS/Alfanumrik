@@ -123,26 +123,26 @@ export default function MonthlyReportsPage() {
         // Compute from raw data
         const { data: quizzes } = await supabase
           .from('quiz_sessions')
-          .select('score_percent, completed_at, topic, total_questions, time_seconds')
+          .select('score_percent, completed_at, subject, total_questions, time_taken_seconds')
           .eq('student_id', student.id)
           .gte('completed_at', monthInfo.start)
           .lte('completed_at', monthInfo.end + 'T23:59:59')
           .order('completed_at', { ascending: true });
 
         const { data: profiles } = await supabase
-          .from('student_profiles')
+          .from('student_learning_profiles')
           .select('total_time_minutes, total_questions_asked, total_questions_answered_correctly')
           .eq('student_id', student.id);
 
         const { data: masteryRows } = await supabase
-          .from('bloom_mastery')
+          .from('bloom_progression')
           .select('topic, remember_mastery, understand_mastery, apply_mastery')
           .eq('student_id', student.id);
 
         const quizList = quizzes ?? [];
         const scores = quizList.map((q: any) => q.score_percent ?? 0);
         const quizLabels = quizList.map((q: any, i: number) => ({
-          label: q.topic ?? `Quiz ${i + 1}`,
+          label: q.subject ?? `Quiz ${i + 1}`,
           score: q.score_percent ?? 0,
         }));
         setQuizScores(quizLabels);
@@ -181,12 +181,12 @@ export default function MonthlyReportsPage() {
 
         const masteries = (masteryRows ?? []).map((m: any) => ({
           mastery: Math.max(m.remember_mastery ?? 0, m.understand_mastery ?? 0, m.apply_mastery ?? 0),
-          topic: m.topic ?? 'Unknown',
+          topic: m.subject ?? 'Unknown',
         }));
 
         const chapters: ExamChapter[] = masteries.map((m, i) => ({
           chapterNumber: i + 1,
-          chapterTitle: m.topic,
+          chapterTitle: m.topic,  // topic is mapped from subject above
           marksWeightage: 10,
           difficultyWeight: 1,
           studentMastery: m.mastery,
