@@ -114,52 +114,23 @@ async function processQuizTask(supabase: SupabaseClient, payload: QuizPayload): 
     throw new Error('quiz_processing: missing student_id or responses')
   }
 
-  // 1. Update concept_mastery (BKT) for each response that has a concept/topic
-  const masteryUpdates: Promise<unknown>[] = []
-
+  // 1. Update concept_mastery (BKT) via atomic RPC — prevents race conditions
+  //    The RPC uses SELECT ... FOR UPDATE to lock the row during read-modify-write.
+  //    Process sequentially per student to avoid deadlocks on row locks.
   for (const resp of responses) {
     const topicId = resp.topic_id ?? resp.concept_id
     if (!topicId) continue
 
-    // Fetch existing mastery row
-    const { data: existing } = await supabase
-      .from('concept_mastery')
-      .select('id, mastery_level, ease_factor, review_interval, total_attempts, correct_attempts')
-      .eq('student_id', student_id)
-      .eq('topic_id', topicId)
-      .maybeSingle()
+    const { error: bktError } = await supabase.rpc('update_concept_mastery_bkt', {
+      p_student_id: student_id,
+      p_topic_id: topicId,
+      p_is_correct: resp.is_correct,
+    })
 
-    const currentMastery = (existing?.mastery_level as number) ?? 0.1
-    const newMastery = bktUpdate(currentMastery, resp.is_correct)
-
-    const easeFactor = (existing?.ease_factor as number) ?? 2.5
-    const newEaseFactor = resp.is_correct
-      ? Math.min(3.0, easeFactor + 0.1)
-      : Math.max(1.3, easeFactor - 0.2)
-    const currentInterval = (existing?.review_interval as number) ?? 0
-    const newInterval = nextReviewInterval(currentInterval, newEaseFactor, resp.is_correct)
-
-    const upsertData = {
-      student_id,
-      topic_id: topicId,
-      mastery_level: newMastery,
-      ease_factor: newEaseFactor,
-      review_interval: newInterval,
-      last_reviewed_at: new Date().toISOString(),
-      next_review_at: new Date(Date.now() + newInterval * 86_400_000).toISOString(),
-      total_attempts: ((existing?.total_attempts as number) ?? 0) + 1,
-      correct_attempts: ((existing?.correct_attempts as number) ?? 0) + (resp.is_correct ? 1 : 0),
-      updated_at: new Date().toISOString(),
+    if (bktError) {
+      console.warn(`BKT update failed for ${student_id}/${topicId}:`, bktError.message)
     }
-
-    masteryUpdates.push(
-      supabase.from('concept_mastery').upsert(upsertData, {
-        onConflict: 'student_id,topic_id',
-      }),
-    )
   }
-
-  await Promise.all(masteryUpdates)
 
   // 2. Generate spaced-repetition review cards for missed questions
   const missedResponses = responses.filter((r) => !r.is_correct)

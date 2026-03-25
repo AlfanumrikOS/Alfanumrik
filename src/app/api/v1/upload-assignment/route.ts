@@ -1,10 +1,6 @@
 import { NextResponse } from 'next/server';
 import { authorizeRequest, logAudit } from '@/lib/rbac';
-import { createClient } from '@supabase/supabase-js';
-
-function getDb() {
-  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL || '', process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '');
-}
+import { supabaseAdmin } from '@/lib/supabase-admin';
 
 const ALLOWED_FILE_TYPES = [
   'image/jpeg',
@@ -59,7 +55,7 @@ export async function POST(request: Request) {
     const path = `${auth.studentId}/${Date.now()}_${sanitizedName}`;
 
     // Upload to Supabase storage
-    const { error: uploadErr } = await getDb().storage
+    const { error: uploadErr } = await supabaseAdmin.storage
       .from('uploads')
       .upload(path, file);
 
@@ -70,11 +66,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const url = getDb().storage.from('uploads').getPublicUrl(path).data
+    const url = supabaseAdmin.storage.from('uploads').getPublicUrl(path).data
       .publicUrl;
 
     // Save metadata to database
-    const { data, error } = await getDb()
+    const { data, error } = await supabaseAdmin
       .from('image_uploads')
       .insert({
         student_id: auth.studentId,

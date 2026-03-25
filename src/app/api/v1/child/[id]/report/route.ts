@@ -1,10 +1,6 @@
 import { NextResponse } from 'next/server';
 import { authorizeRequest, logAudit } from '@/lib/rbac';
-import { createClient } from '@supabase/supabase-js';
-
-function getDb() {
-  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL || '', process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '');
-}
+import { supabaseAdmin } from '@/lib/supabase-admin';
 
 /**
  * GET /api/v1/child/:id/report — Download child monthly report
@@ -39,7 +35,7 @@ export async function GET(
       );
     }
 
-    const { data: report } = await getDb()
+    const { data: report } = await supabaseAdmin
       .from('monthly_reports')
       .select('*')
       .eq('student_id', childId)

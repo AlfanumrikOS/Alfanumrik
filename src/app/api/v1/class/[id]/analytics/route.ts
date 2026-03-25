@@ -1,10 +1,6 @@
 import { NextResponse } from 'next/server';
 import { authorizeRequest, logAudit } from '@/lib/rbac';
-import { createClient } from '@supabase/supabase-js';
-
-function getDb() {
-  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL || '', process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '');
-}
+import { supabaseAdmin } from '@/lib/supabase-admin';
 
 /**
  * GET /api/v1/class/:id/analytics — View class-level analytics
@@ -24,7 +20,7 @@ export async function GET(
     if (!auth.authorized) return auth.errorResponse!;
 
     // Resolve teacher_id from the authenticated user
-    const { data: teacher } = await getDb()
+    const { data: teacher } = await supabaseAdmin
       .from('teachers')
       .select('id')
       .eq('user_id', auth.userId)
@@ -38,7 +34,7 @@ export async function GET(
     }
 
     // Verify teacher is assigned to this class
-    const { data: classTeacher } = await getDb()
+    const { data: classTeacher } = await supabaseAdmin
       .from('class_teachers')
       .select('id')
       .eq('class_id', classId)
@@ -53,7 +49,7 @@ export async function GET(
     }
 
     // Get student IDs in the class
-    const { data: classStudents } = await getDb()
+    const { data: classStudents } = await supabaseAdmin
       .from('class_students')
       .select('student_id')
       .eq('class_id', classId);
@@ -72,7 +68,7 @@ export async function GET(
 
     // Fetch analytics in parallel
     const [quizzes, mastery, velocity] = await Promise.all([
-      getDb()
+      supabaseAdmin
         .from('quiz_sessions')
         .select(
           'student_id, subject, score_percent, total_questions, correct_answers, completed_at'
@@ -80,13 +76,13 @@ export async function GET(
         .in('student_id', studentIds)
         .order('completed_at', { ascending: false })
         .limit(200),
-      getDb()
+      supabaseAdmin
         .from('concept_mastery')
         .select(
           'student_id, topic_id, mastery_probability, consecutive_correct, updated_at'
         )
         .in('student_id', studentIds),
-      getDb()
+      supabaseAdmin
         .from('learning_velocity')
         .select(
           'student_id, subject, weekly_mastery_rate, acceleration, predicted_mastery_date'

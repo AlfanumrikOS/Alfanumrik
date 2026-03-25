@@ -1,10 +1,6 @@
 import { NextResponse } from 'next/server';
 import { authorizeRequest, logAudit } from '@/lib/rbac';
-import { createClient } from '@supabase/supabase-js';
-
-function getDb() {
-  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL || '', process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '');
-}
+import { supabaseAdmin } from '@/lib/supabase-admin';
 
 /**
  * GET /api/v1/study-plan — View active study plan for the authenticated student
@@ -17,7 +13,7 @@ export async function GET(request: Request) {
     });
     if (!auth.authorized) return auth.errorResponse!;
 
-    const { data, error } = await getDb()
+    const { data, error } = await supabaseAdmin
       .from('study_plans')
       .select('*, study_plan_tasks(*)')
       .eq('student_id', auth.studentId)

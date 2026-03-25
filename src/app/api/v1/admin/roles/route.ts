@@ -1,10 +1,6 @@
 import { NextResponse } from 'next/server';
 import { authorizeRequest, logAudit } from '@/lib/rbac';
-import { createClient } from '@supabase/supabase-js';
-
-function getDb() {
-  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL || '', process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '');
-}
+import { supabaseAdmin } from '@/lib/supabase-admin';
 
 /**
  * GET /api/v1/admin/roles — List all roles with their permissions
@@ -15,7 +11,7 @@ export async function GET(request: Request) {
     const auth = await authorizeRequest(request, 'system.manage_roles');
     if (!auth.authorized) return auth.errorResponse!;
 
-    const { data: roles, error } = await getDb()
+    const { data: roles, error } = await supabaseAdmin
       .from('roles')
       .select('*, role_permissions(*, permissions(*))')
       .order('name');
@@ -73,7 +69,7 @@ export async function POST(request: Request) {
     }
 
     // Check for duplicate role name
-    const { data: existing } = await getDb()
+    const { data: existing } = await supabaseAdmin
       .from('roles')
       .select('id')
       .eq('name', body.name)
@@ -87,7 +83,7 @@ export async function POST(request: Request) {
     }
 
     // Create the role
-    const { data: role, error: roleError } = await getDb()
+    const { data: role, error: roleError } = await supabaseAdmin
       .from('roles')
       .insert({
         name: body.name,
@@ -106,7 +102,7 @@ export async function POST(request: Request) {
     // Assign permissions if provided
     if (body.permissions && Array.isArray(body.permissions) && body.permissions.length > 0) {
       // Resolve permission IDs
-      const { data: permissionRecords } = await getDb()
+      const { data: permissionRecords } = await supabaseAdmin
         .from('permissions')
         .select('id, name')
         .in('name', body.permissions);
@@ -117,7 +113,7 @@ export async function POST(request: Request) {
           permission_id: p.id,
         }));
 
-        await getDb().from('role_permissions').insert(rolePermissions);
+        await supabaseAdmin.from('role_permissions').insert(rolePermissions);
       }
     }
 
@@ -162,7 +158,7 @@ export async function PATCH(request: Request) {
     }
 
     // Verify the role exists
-    const { data: role } = await getDb()
+    const { data: role } = await supabaseAdmin
       .from('roles')
       .select('id, name')
       .eq('id', body.role_id)
@@ -176,14 +172,14 @@ export async function PATCH(request: Request) {
     }
 
     // Remove existing permission assignments
-    await getDb()
+    await supabaseAdmin
       .from('role_permissions')
       .delete()
       .eq('role_id', body.role_id);
 
     // Assign new permissions
     if (body.permissions.length > 0) {
-      const { data: permissionRecords } = await getDb()
+      const { data: permissionRecords } = await supabaseAdmin
         .from('permissions')
         .select('id, name')
         .in('name', body.permissions);
@@ -194,7 +190,7 @@ export async function PATCH(request: Request) {
           permission_id: p.id,
         }));
 
-        const { error: insertError } = await getDb()
+        const { error: insertError } = await supabaseAdmin
           .from('role_permissions')
           .insert(rolePermissions);
 

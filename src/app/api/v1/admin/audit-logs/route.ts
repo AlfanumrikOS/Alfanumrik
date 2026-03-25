@@ -1,10 +1,6 @@
 import { NextResponse } from 'next/server';
 import { authorizeRequest } from '@/lib/rbac';
-import { createClient } from '@supabase/supabase-js';
-
-function getDb() {
-  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL || '', process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '');
-}
+import { supabaseAdmin } from '@/lib/supabase-admin';
 
 const MAX_PAGE_SIZE = 100;
 const DEFAULT_PAGE_SIZE = 50;
@@ -39,7 +35,7 @@ export async function GET(request: Request) {
     const from = url.searchParams.get('from');
     const to = url.searchParams.get('to');
 
-    let query = getDb()
+    let query = supabaseAdmin
       .from('audit_logs')
       .select('*', { count: 'exact' })
       .order('created_at', { ascending: false })

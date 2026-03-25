@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { supabaseAdmin } from '@/lib/supabase-admin';
 import { createServerClient } from '@supabase/ssr';
 
 /* ═══════════════════════════════════════════════════════════════
@@ -11,7 +11,6 @@ import { createServerClient } from '@supabase/ssr';
 
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || '';
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 // Warm, friendly female voice — good for educational content
 const VOICE_ID = process.env.ELEVENLABS_VOICE_ID || 'EXAVITQu4vr4xnSDxMaL'; // "Sarah" — clear, warm, patient
@@ -47,8 +46,8 @@ export async function POST(req: NextRequest) {
     const { text, language, studentId } = await req.json();
 
     // ── Per-student daily rate limiting ──
-    if (studentId && SUPABASE_URL && SUPABASE_SERVICE_KEY) {
-      const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+    if (studentId) {
+      const sb = supabaseAdmin;
       const today = new Date().toISOString().slice(0, 10);
 
       const { data: usageRow } = await sb
