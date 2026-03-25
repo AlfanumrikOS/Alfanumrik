@@ -91,6 +91,16 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  // ── Layer 0.6: Protected page routes (require Supabase session) ──
+  const PROTECTED_PREFIXES = ['/parent/children', '/parent/reports', '/parent/profile', '/parent/support'];
+  if (PROTECTED_PREFIXES.some(p => path.startsWith(p))) {
+    const hasSession = request.cookies.getAll().some(c => c.name.includes('auth-token'));
+    if (!hasSession) {
+      const loginUrl = new URL('/parent', request.url);
+      return NextResponse.redirect(loginUrl);
+    }
+  }
+
   // ── Layer 0: Supabase session refresh ──
   // This keeps the auth cookie fresh on every request.
   // Required for the PKCE email flow (signup confirm, password reset).
