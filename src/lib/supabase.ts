@@ -45,15 +45,20 @@ export async function getStudentSnapshot(studentId: string) {
     if (!error && data) return data as import('./types').StudentSnapshot;
   } catch { /* RPC may not exist — fall back */ }
 
-  const { data: profiles } = await supabase.from('student_learning_profiles').select('*').eq('student_id', studentId);
-  const p = profiles ?? [];
+  const [profilesResult, masteredResult, inProgressResult, quizzesResult] = await Promise.all([
+    supabase.from('student_learning_profiles').select('*').eq('student_id', studentId),
+    supabase.from('concept_mastery').select('*', { count: 'exact', head: true }).eq('student_id', studentId).gte('mastery_probability', 0.95),
+    supabase.from('concept_mastery').select('*', { count: 'exact', head: true }).eq('student_id', studentId).lt('mastery_probability', 0.95).gt('mastery_probability', 0),
+    supabase.from('quiz_sessions').select('*', { count: 'exact', head: true }).eq('student_id', studentId),
+  ]);
+  const p = profilesResult.data ?? [];
   const totalXp = p.reduce((a, r) => a + (r.xp ?? 0), 0);
   const streak = Math.max(...p.map((r) => r.streak_days ?? 0), 0);
   const totalCorrect = p.reduce((a, r) => a + (r.total_questions_answered_correctly ?? 0), 0);
   const totalAsked = p.reduce((a, r) => a + (r.total_questions_asked ?? 0), 0);
-  const { count: mastered } = await supabase.from('concept_mastery').select('*', { count: 'exact', head: true }).eq('student_id', studentId).gte('mastery_probability', 0.95);
-  const { count: inProgress } = await supabase.from('concept_mastery').select('*', { count: 'exact', head: true }).eq('student_id', studentId).lt('mastery_probability', 0.95).gt('mastery_probability', 0);
-  const { count: quizzes } = await supabase.from('quiz_sessions').select('*', { count: 'exact', head: true }).eq('student_id', studentId);
+  const mastered = masteredResult.count;
+  const inProgress = inProgressResult.count;
+  const quizzes = quizzesResult.count;
 
   return {
     total_xp: totalXp, current_streak: streak, topics_mastered: mastered ?? 0,

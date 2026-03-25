@@ -102,14 +102,21 @@ async function fetchChatHistory(studentId: string) {
 
 async function callFoxyTutor(params: Record<string, any>) {
   try {
+    // Get user's JWT for authenticated edge function calls — anon key causes 401
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token || SUPABASE_ANON_KEY;
+
     const res = await fetch(`${SUPABASE_URL}/functions/v1/foxy-tutor`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
     });
     if (!res.ok) {
       const errText = await res.text().catch(() => 'Unknown error');
       console.error('Foxy tutor error:', res.status, errText);
+      if (res.status === 401 || res.status === 403) {
+        return { reply: 'Session expired. Please refresh the page and try again!', xp_earned: 0, session_id: null };
+      }
       return { reply: res.status === 429 ? 'Slow down! Wait a moment and try again.' : 'Foxy is taking a short break. Try again!', xp_earned: 0, session_id: null };
     }
     const data = await res.json();

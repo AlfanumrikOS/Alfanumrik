@@ -102,15 +102,17 @@ export async function GET(request: NextRequest) {
         return NextResponse.redirect(`${origin}/dashboard`);
       }
       // Default: redirect to the `next` param or dashboard
+      // Validate `next` to prevent open redirect — must be a relative path
+      const safeNext = (next.startsWith('/') && !next.startsWith('//')) ? next : '/dashboard';
       const forwardedHost = request.headers.get('x-forwarded-host');
       const isLocalEnv = process.env.NODE_ENV === 'development';
 
       if (isLocalEnv) {
-        return NextResponse.redirect(`${origin}${next}`);
+        return NextResponse.redirect(`${origin}${safeNext}`);
       } else if (forwardedHost) {
-        return NextResponse.redirect(`https://${forwardedHost}${next}`);
+        return NextResponse.redirect(`https://${forwardedHost}${safeNext}`);
       } else {
-        return NextResponse.redirect(`${origin}${next}`);
+        return NextResponse.redirect(`${origin}${safeNext}`);
       }
     }
 

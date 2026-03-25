@@ -37,13 +37,16 @@ export async function GET(
         .select(
           'topic_id, mastery_probability, consecutive_correct, updated_at'
         )
-        .eq('student_id', childId),
+        .eq('student_id', childId)
+        .order('updated_at', { ascending: false })
+        .limit(200),
       supabaseAdmin
         .from('learning_velocity')
         .select(
           'subject, weekly_mastery_rate, acceleration, predicted_mastery_date'
         )
-        .eq('student_id', childId),
+        .eq('student_id', childId)
+        .limit(50),
       supabaseAdmin
         .from('study_plans')
         .select('id, plan_name, is_active, created_at')
