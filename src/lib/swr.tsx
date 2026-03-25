@@ -141,3 +141,8 @@ export function invalidateAll(studentId: string) {
   invalidateLeaderboard();
   invalidateNotifications(studentId);
 }
+
+/** Clear ALL SWR cache entries — call on signout to prevent data leakage between accounts */
+export function clearAllCache() {
+  mutate(() => true, undefined, { revalidate: false });
+}

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth, type UserRole } from '@/lib/AuthContext';
 import { ROLE_CONFIG } from '@/lib/constants';
@@ -139,6 +139,20 @@ export default function BottomNavComponent() {
   const { roles, activeRole, setActiveRole } = auth;
   const [showMore, setShowMore] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const moreSheetRef = useRef<HTMLDivElement>(null);
+
+  // Focus management and keyboard support for More sheet
+  useEffect(() => {
+    if (showMore && moreSheetRef.current) {
+      const firstButton = moreSheetRef.current.querySelector('button');
+      firstButton?.focus();
+    }
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && showMore) setShowMore(false);
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [showMore]);
 
   const tabs = getCoreTabs(activeRole);
   const moreItems = getMoreItems(activeRole);
@@ -170,6 +184,9 @@ export default function BottomNavComponent() {
             aria-hidden="true"
           />
           <div
+            ref={moreSheetRef}
+            role="dialog"
+            aria-label="More navigation options"
             className="fixed bottom-0 left-0 right-0 z-[70] rounded-t-3xl"
             style={{
               background: 'var(--surface-1)',
@@ -364,6 +381,7 @@ export default function BottomNavComponent() {
           </button>
           <button
             onClick={() => setCollapsed(!collapsed)}
+            aria-label={collapsed ? 'Expand sidebar menu' : 'Collapse sidebar menu'}
             className="w-full flex items-center justify-center py-2 mb-2 rounded-lg transition-all hover:bg-[var(--surface-2)]"
             style={{ color: 'var(--text-3)' }}
             title={collapsed ? 'Expand menu' : 'Collapse menu'}
