@@ -540,7 +540,7 @@ export default function ScanPage() {
                       <div className="flex items-center gap-3">
                         <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 border" style={{ borderColor: 'var(--border)' }}>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={upload.image_url} alt="" className="w-full h-full object-cover" />
+                          <img src={upload.image_url} alt={`Scanned ${upload.image_type || 'document'}`} className="w-full h-full object-cover" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">

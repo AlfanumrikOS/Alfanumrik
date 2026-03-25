@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@/lib/constants';
@@ -11,8 +12,10 @@ import { useVoice } from '@/hooks/useVoice';
 import { checkDailyUsage, recordUsage, type UsageResult } from '@/lib/usage';
 import { ConversationStarters } from '@/components/foxy/ConversationStarters';
 import { ChatBubble } from '@/components/foxy/ChatBubble';
-import { VoiceWaveform } from '@/components/foxy/VoiceWaveform';
-import { TalkToLearnButton } from '@/components/foxy/TalkToLearnButton';
+
+// Lazy-load heavy audio components — not needed until user interacts with voice
+const VoiceWaveform = dynamic(() => import('@/components/foxy/VoiceWaveform').then(m => ({ default: m.VoiceWaveform })), { ssr: false });
+const TalkToLearnButton = dynamic(() => import('@/components/foxy/TalkToLearnButton').then(m => ({ default: m.TalkToLearnButton })), { ssr: false });
 
 /* ══════════════════════════════════════════════════════════════
    SUBJECT CONFIGURATION

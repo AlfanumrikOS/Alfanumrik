@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { supabase, getStudentSnapshot } from './supabase';
+import { clearAllCache } from './swr';
 import type { Student, StudentSnapshot } from './types';
 
 /* ─── Role Types ─── */
@@ -311,6 +312,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
+    // Clear SWR cache to prevent data leakage between accounts on shared devices
+    clearAllCache();
     setAuthUserId(null);
     setStudent(null);
     setSnapshot(null);

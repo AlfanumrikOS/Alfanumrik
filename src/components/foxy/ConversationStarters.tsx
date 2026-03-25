@@ -92,14 +92,15 @@ export function ConversationStarters({ subject, language, topicTitle, onSelect }
   }, [subject, topicTitle]);
 
   return (
-    <div className="foxy-starters">
+    <div className="foxy-starters" role="group" aria-label="Conversation starters">
       {starters.map((s, i) => (
         <button
           key={i}
           onClick={() => onSelect(language === 'hi' ? s.textHi : s.text)}
           className="foxy-starter-chip"
+          aria-label={language === 'hi' ? s.textHi : s.text}
         >
-          <span className="mr-1">{s.icon}</span>
+          <span className="mr-1" aria-hidden="true">{s.icon}</span>
           {language === 'hi' ? s.textHi : s.text}
         </button>
       ))}

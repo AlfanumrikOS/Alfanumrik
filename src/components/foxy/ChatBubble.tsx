@@ -120,6 +120,8 @@ export function ChatBubble({
           {/* Thumbs up */}
           <button
             onClick={() => onFeedback(true)}
+            aria-label="Helpful response"
+            aria-pressed={feedback === 'up'}
             className="px-2 py-1 rounded-lg text-[11px] transition-all active:scale-90"
             style={{
               background: feedback === 'up' ? '#16A34A18' : 'transparent',
@@ -133,6 +135,8 @@ export function ChatBubble({
           {/* Thumbs down */}
           <button
             onClick={() => onFeedback(false)}
+            aria-label="Not helpful response"
+            aria-pressed={feedback === 'down'}
             className="px-2 py-1 rounded-lg text-[11px] transition-all active:scale-90"
             style={{
               background: feedback === 'down' ? '#EF444418' : 'transparent',
@@ -147,6 +151,7 @@ export function ChatBubble({
           {!reported ? (
             <button
               onClick={onReport}
+              aria-label="Report incorrect response"
               className="px-2 py-1 rounded-lg text-[10px] font-semibold transition-all active:scale-95 ml-1"
               style={{ color: 'var(--text-3)' }}
             >
