@@ -285,6 +285,40 @@ Deno.serve(async (req: Request) => {
       return errorResponse('grade and subject are required', 400, origin)
     }
 
+    // ── Input length and format validation ──
+    // Cap message length to prevent token exhaustion attacks (~1500 tokens max)
+    const MAX_MESSAGE_LENGTH = 5000
+    if (message.length > MAX_MESSAGE_LENGTH) {
+      return errorResponse(`Message too long (max ${MAX_MESSAGE_LENGTH} chars)`, 400, origin)
+    }
+
+    // Whitelist mode to prevent prompt injection via arbitrary mode strings
+    const VALID_MODES = ['learn', 'quiz', 'revision', 'doubt']
+    const safeMode = VALID_MODES.includes(mode) ? mode : 'learn'
+
+    // Whitelist language
+    const VALID_LANGUAGES = ['en', 'hi', 'hinglish']
+    const safeLanguage = VALID_LANGUAGES.includes(language) ? language : 'en'
+
+    // Sanitize topic_title: strip anything that looks like prompt injection
+    const safeTopicTitle = topic_title
+      ? topic_title.replace(/<[^>]*>/g, '').replace(/[{}`]/g, '').slice(0, 200)
+      : null
+
+    // Sanitize selected_chapters
+    const safeChapters = selected_chapters
+      ? selected_chapters.replace(/<[^>]*>/g, '').replace(/[{}`]/g, '').slice(0, 500)
+      : null
+
+    // Whitelist lesson_step
+    const VALID_LESSON_STEPS = ['hook', 'visualization', 'guided_examples', 'active_recall', 'application', 'spaced_revision']
+    const safeLessonStep = lesson_step && VALID_LESSON_STEPS.includes(lesson_step) ? lesson_step : null
+
+    // Sanitize student_name
+    const safeName = student_name
+      ? student_name.replace(/<[^>]*>/g, '').replace(/[{}`]/g, '').slice(0, 100)
+      : null
+
     // ── Rate limit ──
     if (!checkRateLimit(student_id)) {
       return errorResponse('Too many messages. Please slow down.', 429, origin)
@@ -309,7 +343,7 @@ Deno.serve(async (req: Request) => {
         .eq('id', student_id)
         .maybeSingle(),
       session_id
-        ? supabase.from('chat_sessions').select('messages').eq('id', session_id).maybeSingle()
+        ? supabase.from('chat_sessions').select('messages').eq('id', session_id).eq('student_id', student_id).maybeSingle()
         : Promise.resolve({ data: null }),
       fetchRAGContext(supabase, message, subject, grade),
     ])
@@ -324,7 +358,7 @@ Deno.serve(async (req: Request) => {
         {
           error: 'Daily chat limit reached',
           code: 'CHAT_LIMIT',
-          reply: language === 'hi'
+          reply: safeLanguage === 'hi'
             ? `आज के ${limit} संदेश पूरे हो गए। कल फिर आना! 🦊`
             : `You've used all ${limit} messages for today. Come back tomorrow! 🦊`,
           xp_earned: 0,
@@ -336,12 +370,18 @@ Deno.serve(async (req: Request) => {
       )
     }
 
-    // Record usage (fire-and-forget)
-    supabase.rpc('increment_daily_usage', {
+    // Record usage BEFORE processing — await to prevent TOCTOU bypass
+    // where concurrent requests all pass the check before any increment completes
+    const { error: usageIncErr } = await supabase.rpc('increment_daily_usage', {
       p_student_id: student_id,
       p_feature: 'foxy_chat',
       p_usage_date: today,
-    }).then(() => {})
+    })
+    if (usageIncErr) {
+      // Fail closed: deny request if usage can't be recorded
+      console.error('Usage increment failed:', usageIncErr.message)
+      return errorResponse('Usage tracking unavailable, please try again', 503, origin)
+    }
 
     // ── Parse chat history from session ──
     let chatHistory: Array<{ role: string; content: string }> = []
@@ -357,10 +397,10 @@ Deno.serve(async (req: Request) => {
 
     // ── Build messages for Claude ──
     const systemPrompt = buildSystemPrompt(
-      grade, subject, language, mode,
-      topic_title || null,
-      selected_chapters || null,
-      lesson_step || null,
+      grade, subject, safeLanguage, safeMode,
+      safeTopicTitle,
+      safeChapters,
+      safeLessonStep,
       ragContext,
     )
 
@@ -377,7 +417,7 @@ Deno.serve(async (req: Request) => {
       console.warn('Circuit breaker OPEN — returning fallback response')
       return jsonResponse(
         {
-          reply: FALLBACK_REPLIES[language] || FALLBACK_REPLIES.en,
+          reply: FALLBACK_REPLIES[safeLanguage] || FALLBACK_REPLIES.en,
           xp_earned: 5,
           session_id: activeSessionId,
           fallback: true,
@@ -459,7 +499,7 @@ Deno.serve(async (req: Request) => {
       // Return friendly fallback instead of error
       return jsonResponse(
         {
-          reply: FALLBACK_REPLIES[language] || FALLBACK_REPLIES.en,
+          reply: FALLBACK_REPLIES[safeLanguage] || FALLBACK_REPLIES.en,
           xp_earned: 5,
           session_id: activeSessionId,
           fallback: true,
@@ -474,14 +514,10 @@ Deno.serve(async (req: Request) => {
     const reply = claudeData.content?.[0]?.text || 'Hmm, let me think about that...'
 
     // ── Determine XP ──
-    let xpEarned = 5 // base XP for engagement
-    const lowerMsg = message.toLowerCase()
-    if (lowerMsg.includes('answer') || lowerMsg.includes('because') || lowerMsg.includes('therefore')) {
-      xpEarned = 10
-    }
-    if (lowerMsg.includes('explain') || lowerMsg.includes('why') || message.length > 200) {
-      xpEarned = 15
-    }
+    // Fixed XP per interaction to prevent inflation via keyword stuffing.
+    // Quality-based XP should be determined by analyzing the AI response,
+    // not the student's input (which is fully client-controlled).
+    const xpEarned = 5
 
     // ── Persist chat session ──
     const now = new Date().toISOString()
@@ -491,10 +527,16 @@ Deno.serve(async (req: Request) => {
     ]
 
     if (activeSessionId) {
-      // Append to existing session (reuse messages from parallel query)
+      // Append to existing session — cap total messages to prevent unbounded growth
+      const MAX_SESSION_MESSAGES = 200
       const prevMessages = Array.isArray(sessionResult.data?.messages) ? sessionResult.data.messages : []
-      const updatedMessages = [...prevMessages, ...newMessages]
+      // If at capacity, drop oldest messages (keep last MAX - 2 to make room for new pair)
+      const trimmedPrev = prevMessages.length >= MAX_SESSION_MESSAGES
+        ? prevMessages.slice(-(MAX_SESSION_MESSAGES - 2))
+        : prevMessages
+      const updatedMessages = [...trimmedPrev, ...newMessages]
 
+      // Include student_id in WHERE to prevent cross-student session hijack
       supabase
         .from('chat_sessions')
         .update({
@@ -503,6 +545,7 @@ Deno.serve(async (req: Request) => {
           updated_at: now,
         })
         .eq('id', activeSessionId)
+        .eq('student_id', student_id)
         .then(() => {}).catch(() => {})
     } else {
       // Create new session
@@ -512,7 +555,7 @@ Deno.serve(async (req: Request) => {
           student_id,
           subject,
           grade,
-          title: topic_title || `${subject} chat`,
+          title: safeTopicTitle || `${subject} chat`,
           messages: newMessages,
           message_count: 2,
           is_active: true,
@@ -542,13 +585,13 @@ Deno.serve(async (req: Request) => {
       grade,
       mode,
       topic_id: topic_id || null,
-      lesson_step: lesson_step || null,
+      lesson_step: safeLessonStep,
       message_length: message.length,
       reply_length: reply.length,
       latency_ms: latencyMs,
       model: 'claude-haiku-4-5-20251001',
       xp_earned: xpEarned,
-      language,
+      language: safeLanguage,
       created_at: now,
     }).then(() => {}).catch(() => {})
 

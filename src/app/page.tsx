@@ -914,6 +914,10 @@ export default function FoxyPage() {
   // STT
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim()) return;
+    if (text.length > 5000) {
+      setMessages(p => [...p, { id: Date.now(), role: 'tutor', content: 'Message too long! Please keep it under 5000 characters.', timestamp: new Date().toISOString() }]);
+      return;
+    }
     setMessages(p => [...p, { id: Date.now(), role: 'student', content: text, timestamp: new Date().toISOString() }]);
     setLoading(true); setFoxyState('thinking'); setShowTopicSheet(false);
     try {

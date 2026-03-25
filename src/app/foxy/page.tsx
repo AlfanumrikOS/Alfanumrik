@@ -434,6 +434,11 @@ export default function FoxyPage() {
   // Send message with usage enforcement
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim()) return;
+    // Client-side length limit matching server-side MAX_MESSAGE_LENGTH
+    if (text.length > 5000) {
+      setMessages(p => [...p, { id: Date.now(), role: 'tutor', content: 'Message too long! Please keep it under 5000 characters.', timestamp: new Date().toISOString() }]);
+      return;
+    }
 
     // Check chat usage limit
     if (student?.id) {
