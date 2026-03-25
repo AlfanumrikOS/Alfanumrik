@@ -180,6 +180,15 @@ export async function middleware(request: NextRequest) {
     return new NextResponse(null, { status: 404 });
   }
 
+  // ── Layer 2.5: Redirect unauthenticated visitors from / to /welcome ──
+  // Done in middleware to avoid client-side flash (page loads then redirects)
+  if (path === '/') {
+    const hasSession = request.cookies.getAll().some(c => /^sb-.+-auth-token/.test(c.name));
+    if (!hasSession) {
+      return NextResponse.redirect(new URL('/welcome', request.url));
+    }
+  }
+
   // ── Layer 3: Rate limiting for sensitive routes ──
   const ip = getRateLimitKey(request);
 

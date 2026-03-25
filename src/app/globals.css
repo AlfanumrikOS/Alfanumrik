@@ -848,20 +848,7 @@ img, video, iframe, canvas, svg {
   }
 }
 
-/* ─── Reduced Motion (Accessibility) ─────────────────────── */
-/* Some users get motion sickness or have vestibular disorders.
-   This is also important for older Indian phones where animations
-   cause jank and drain battery. Respect the OS preference. */
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-  .animate-float, .animate-shimmer, .animate-spin-slow,
-  .streak-flame, .typing-dot { animation: none !important; }
-}
+/* Duplicate prefers-reduced-motion block removed — see line 347 */
 
 /* ─── Print Safety ───────────────────────────────────────── */
 @media print {

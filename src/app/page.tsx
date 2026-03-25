@@ -115,13 +115,6 @@ export default function FoxyPage() {
   const { student: authStudent, isLoggedIn, isLoading: authLoading, activeRole, signOut } = useAuth();
   const router = useRouter();
 
-  // Redirect unauthenticated visitors to the marketing landing page
-  useEffect(() => {
-    if (!authLoading && !isLoggedIn) {
-      router.replace('/welcome');
-    }
-  }, [authLoading, isLoggedIn, router]);
-
   // Core state
   const [student, setStudent] = useState<any>(null);
   const [activeSubject, setActiveSubject] = useState('science');
