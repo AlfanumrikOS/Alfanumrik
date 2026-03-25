@@ -220,7 +220,18 @@ Deno.serve(async (req: Request) => {
     let actionUrl: string
     if (token_hash) {
       actionUrl = `${baseSiteUrl}/auth/confirm?token_hash=${token_hash}&type=${email_action_type}`
-      if (redirect_to) actionUrl += `&next=${encodeURIComponent(redirect_to)}`
+      if (redirect_to) {
+        // redirect_to may be a full URL (e.g. https://alfanumrik.com/auth/callback?type=signup)
+        // The confirm route prepends its own origin, so we must pass only the path portion
+        let nextPath = redirect_to
+        try {
+          const parsed = new URL(redirect_to)
+          nextPath = parsed.pathname + parsed.search
+        } catch {
+          // Already a relative path — use as-is
+        }
+        actionUrl += `&next=${encodeURIComponent(nextPath)}`
+      }
     } else if (token) {
       actionUrl = `${baseSiteUrl}/auth/callback?token=${token}&type=${email_action_type}`
     } else {

@@ -17,7 +17,18 @@ export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl;
   const token_hash = searchParams.get('token_hash');
   const type = searchParams.get('type') as 'signup' | 'recovery' | 'email' | 'invite' | null;
-  const next = searchParams.get('next') ?? '/dashboard';
+  const rawNext = searchParams.get('next') ?? '/dashboard';
+  // next may be an absolute URL (e.g. https://alfanumrik.com/auth/callback?type=signup)
+  // or a relative path (/dashboard). Ensure we only use the path portion with origin.
+  let next = rawNext;
+  if (rawNext.startsWith('http')) {
+    try {
+      const parsed = new URL(rawNext);
+      next = parsed.pathname + parsed.search;
+    } catch {
+      next = '/dashboard';
+    }
+  }
 
   if (token_hash && type) {
     const supabase = await createSupabaseServerClient();
