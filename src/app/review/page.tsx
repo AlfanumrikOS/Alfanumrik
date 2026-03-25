@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { getReviewCards, supabase } from '@/lib/supabase';
 import { Card, Button, LoadingFoxy, BottomNav } from '@/components/ui';
+import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 
 interface ReviewCard {
   id: string;
@@ -220,6 +221,7 @@ export default function ReviewPage() {
       </header>
 
       <main className="flex-1 max-w-lg mx-auto px-4 py-6 w-full flex flex-col">
+        <SectionErrorBoundary section="Flashcard Review">
         {/* Retention Tests Due */}
         {retentionTests.length > 0 && !loading && (
           <div className="mb-4 rounded-2xl p-4" style={{ background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.15)' }}>
@@ -419,6 +421,7 @@ export default function ReviewPage() {
             </div>
           </div>
         )}
+        </SectionErrorBoundary>
       </main>
 
       <BottomNav />

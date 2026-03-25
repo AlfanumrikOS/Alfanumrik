@@ -204,6 +204,11 @@ export async function middleware(request: NextRequest) {
     return addSecurityHeaders(response, request);
   }
 
+  // Exempt health endpoint from rate limiting (used by uptime monitors)
+  if (pathname === '/api/v1/health') {
+    return addSecurityHeaders(response, request);
+  }
+
   // General rate limit for all routes
   const { allowed, remaining: generalRemaining } = checkRateLimit(`general:${ip}`, RATE_LIMIT_MAX);
   if (!allowed) {

@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { Card, Button, SectionHeader, LoadingFoxy, BottomNav, Badge } from '@/components/ui';
 import { SUBJECT_META } from '@/lib/constants';
+import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 
 /* ─── Types ─── */
 interface ExtractedQuestion {
@@ -275,6 +276,7 @@ export default function ScanPage() {
       </header>
 
       <main className="app-container py-5 space-y-4">
+        <SectionErrorBoundary section="Scan">
         {/* ═══ UPLOAD AREA ═══ */}
         {(processingState === 'idle' || processingState === 'error') && (
           <>
@@ -578,6 +580,7 @@ export default function ScanPage() {
             )}
           </>
         )}
+        </SectionErrorBoundary>
       </main>
 
       <BottomNav />

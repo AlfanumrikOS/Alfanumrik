@@ -7,6 +7,7 @@ import { getStudentProfiles, getSubjects, getBloomProgression, getLearningVeloci
 import { BLOOM_CONFIG, BLOOM_LEVELS, BLOOM_ORDER, getHighestMasteredBloom, predictMasteryDate } from '@/lib/cognitive-engine';
 import type { BloomLevel, KnowledgeGap, LearningVelocity, CognitiveSessionMetrics } from '@/lib/types';
 import { Card, Badge, ProgressBar, SectionHeader, StatCard, LoadingFoxy, BottomNav, Button } from '@/components/ui';
+import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 
 /* ── Helpers ── */
 const SEVERITY_COLORS: Record<string, string> = {
@@ -279,6 +280,7 @@ export default function ProgressPage() {
       </header>
 
       <main className="app-container py-6 space-y-4">
+        <SectionErrorBoundary section="Progress">
         {/* ── Tab Switcher ── */}
         <div className="flex gap-2">
           <button
@@ -525,6 +527,7 @@ export default function ProgressPage() {
             )}
           </>
         )}
+        </SectionErrorBoundary>
       </main>
       <BottomNav />
     </div>

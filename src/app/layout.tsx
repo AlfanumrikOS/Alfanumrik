@@ -75,10 +75,11 @@ export default function RootLayout({
         <JsonLd />
       </head>
       <body>
+        <a href="#main-content" className="skip-nav">Skip to content</a>
         <AuthProvider>
           <NetworkStatus />
           <ErrorBoundary>
-            <div className="app-shell">{children}</div>
+            <div id="main-content" className="app-shell">{children}</div>
           </ErrorBoundary>
           <RegisterSW />
           <CookieConsent />
