@@ -188,7 +188,7 @@ export async function middleware(request: NextRequest) {
   if (path.startsWith('/api/internal/admin')) {
     const adminKey = request.headers.get('x-admin-key');
     const hasSession = request.cookies.getAll().some(c => /^sb-.+-auth-token/.test(c.name));
-    const secretKey = process.env.ADMIN_SECRET_KEY;
+    const secretKey = process.env.SUPER_ADMIN_SECRET;
 
     // Require either valid admin key header or Supabase session cookie
     const isAuthorized = (secretKey && adminKey === secretKey) || hasSession;
