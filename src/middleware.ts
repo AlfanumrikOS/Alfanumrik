@@ -18,15 +18,22 @@ import { createServerClient } from '@supabase/ssr';
  * RLS policies in PostgreSQL remain the true auth boundary.
  * ═══════════════════════════════════════════════════════════════ */
 
-// ── In-memory rate limiter for API-like routes ──
+// ── Rate limiter with bounded map (prevents memory leaks) ──
+const MAX_MAP_SIZE = 10_000; // Hard cap on tracked IPs — prevents OOM
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT_WINDOW = 60_000; // 1 minute
 const RATE_LIMIT_MAX = 60;        // 60 requests per minute per IP
 const RATE_LIMIT_PARENT_MAX = 5;  // 5 parent login attempts per minute per IP
 
 function getRateLimitKey(request: NextRequest): string {
-  const forwarded = request.headers.get('x-forwarded-for');
-  const ip = forwarded?.split(',')[0]?.trim() || request.headers.get('x-real-ip') || 'unknown';
+  // Prefer Vercel's trusted IP header (cannot be spoofed by clients),
+  // then Cloudflare's, then x-forwarded-for first hop, then x-real-ip.
+  const ip =
+    request.headers.get('x-vercel-forwarded-for')?.split(',')[0]?.trim() ||
+    request.headers.get('cf-connecting-ip') ||
+    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    request.headers.get('x-real-ip') ||
+    'unknown';
   return ip;
 }
 
@@ -35,6 +42,16 @@ function checkRateLimit(key: string, max: number): { allowed: boolean; remaining
   const entry = rateLimitMap.get(key);
 
   if (!entry || now > entry.resetAt) {
+    // Evict oldest entries if map is at capacity
+    if (rateLimitMap.size >= MAX_MAP_SIZE) {
+      // Delete first 1000 entries (oldest, since Map preserves insertion order)
+      let deleted = 0;
+      const keysToDelete: string[] = [];
+      rateLimitMap.forEach((_v, k) => {
+        if (deleted < 1000) { keysToDelete.push(k); deleted++; }
+      });
+      keysToDelete.forEach(k => rateLimitMap.delete(k));
+    }
     rateLimitMap.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW });
     return { allowed: true, remaining: max - 1 };
   }
@@ -46,18 +63,16 @@ function checkRateLimit(key: string, max: number): { allowed: boolean; remaining
   return { allowed: true, remaining: max - entry.count };
 }
 
-// Clean up stale entries every 5 minutes
-if (typeof globalThis !== 'undefined') {
-  const cleanup = () => {
+// Clean up stale entries every 2 minutes
+if (typeof globalThis !== 'undefined' && typeof setInterval !== 'undefined') {
+  setInterval(() => {
     const now = Date.now();
+    const expired: string[] = [];
     rateLimitMap.forEach((entry, key) => {
-      if (now > entry.resetAt) rateLimitMap.delete(key);
+      if (now > entry.resetAt) expired.push(key);
     });
-  };
-  // Use setInterval only in Node.js runtime
-  if (typeof setInterval !== 'undefined') {
-    setInterval(cleanup, 5 * 60_000);
-  }
+    expired.forEach(k => rateLimitMap.delete(k));
+  }, 2 * 60_000);
 }
 
 export async function middleware(request: NextRequest) {
