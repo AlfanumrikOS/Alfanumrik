@@ -171,8 +171,8 @@ function LoginScreen({ onLogin }: { onLogin: (g: any, s: any) => void }) {
         <div style={{ fontSize: 48, marginBottom: 12 }}>&#x1F9D1;&#x200D;&#x1F393;</div>
         <h1 style={{ fontSize: 22, fontWeight: 700, color: '#F8FAFC', margin: '0 0 4px' }}>Parent Dashboard</h1>
         <p style={{ fontSize: 14, color: '#64748B', margin: '0 0 24px' }}>Enter your child&apos;s link code to view their progress</p>
-        <input style={inputStyle} placeholder="Your name" value={name} onChange={e => setName(e.target.value)} />
-        <input style={{ ...inputStyle, fontSize: 20, letterSpacing: 4, textAlign: 'center', textTransform: 'uppercase' }} placeholder="LINK CODE" value={code} onChange={e => setCode(e.target.value.toUpperCase())} maxLength={8} onKeyDown={e => e.key === 'Enter' && submit()} />
+        <input style={inputStyle} placeholder="Your name" value={name} onChange={e => setName(e.target.value)} aria-label="Your name" autoComplete="name" />
+        <input style={{ ...inputStyle, fontSize: 20, letterSpacing: 4, textAlign: 'center', textTransform: 'uppercase' }} placeholder="LINK CODE" value={code} onChange={e => setCode(e.target.value.toUpperCase())} maxLength={8} onKeyDown={e => e.key === 'Enter' && submit()} aria-label="Child link code" />
         {error && <p style={{ color: '#EF4444', fontSize: 13, margin: '8px 0' }}>{error}</p>}
         <button onClick={submit} disabled={loading} style={{ ...btnStyle, width: '100%', marginTop: 8, opacity: loading ? 0.5 : 1 }}>
           {loading ? 'Connecting...' : 'View Dashboard'}
