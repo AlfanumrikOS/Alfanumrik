@@ -129,17 +129,22 @@ export const logger = {
   error(message: string, meta?: Record<string, unknown>): void {
     if (!shouldLog('error')) return;
 
-    // Capture to Sentry for centralized error aggregation
-    const originalError = meta?.error instanceof Error ? meta.error : undefined;
-    if (originalError) {
-      Sentry.captureException(originalError, {
-        extra: { ...meta, logMessage: message },
-      });
-    } else {
-      Sentry.captureMessage(message, {
-        level: 'error',
-        extra: meta,
-      });
+    // Capture to Sentry for centralized error aggregation.
+    // Wrapped in try-catch so a Sentry failure never breaks the logger itself.
+    try {
+      const originalError = meta?.error instanceof Error ? meta.error : undefined;
+      if (originalError) {
+        Sentry.captureException(originalError, {
+          extra: { ...meta, logMessage: message },
+        });
+      } else {
+        Sentry.captureMessage(message, {
+          level: 'error',
+          extra: meta,
+        });
+      }
+    } catch {
+      // Sentry failed — don't break the logger
     }
 
     // Extract error details if an Error object is passed
