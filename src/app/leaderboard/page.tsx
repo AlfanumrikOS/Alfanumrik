@@ -205,7 +205,7 @@ export default function LeaderboardPage() {
                       {entries[myRank]?.total_xp?.toLocaleString() ?? 0} XP · {entries[myRank]?.accuracy ?? 0}% {isHi ? 'सटीकता' : 'accuracy'}
                     </div>
                     {entries[myRank]?.top_title && (
-                      <div className="text-[10px] mt-1 font-semibold" style={{ color: 'var(--purple)' }}>
+                      <div className="text-xs mt-1 font-semibold" style={{ color: 'var(--purple)' }}>
                         🎖️ {entries[myRank].top_title}
                       </div>
                     )}
@@ -230,7 +230,7 @@ export default function LeaderboardPage() {
                       <div className={`text-xs font-bold mt-1 truncate max-w-full text-center ${isMe ? 'text-[var(--orange)]' : ''}`}>
                         {e.name}{isMe ? (isHi ? ' (तुम)' : ' (You)') : ''}
                       </div>
-                      <div className="text-[10px] text-[var(--text-3)]">Gr {e.grade}</div>
+                      <div className="text-xs text-[var(--text-3)]">Gr {e.grade}</div>
                       <div className={`w-full ${height} rounded-t-xl mt-2 flex items-end justify-center pb-2`}
                         style={{ background: `${RANK_COLORS[idx]}20`, border: `1.5px solid ${RANK_COLORS[idx]}40` }}>
                         <span className="text-sm font-bold" style={{ color: RANK_COLORS[idx] }}>
@@ -267,12 +267,12 @@ export default function LeaderboardPage() {
                 <SectionHeader icon="📊">
                   {isHi ? `टॉप ${entries.length} छात्र` : `Top ${entries.length} Students`}
                 </SectionHeader>
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {entries.map((entry, idx) => {
                     const isMe = entry.student_id === student.id;
                     return (
                       <Card key={entry.student_id}
-                        className={`!p-3 flex items-center gap-3 ${isMe ? 'ring-2 ring-[var(--orange)]' : ''}`}>
+                        className={`!p-4 flex items-center gap-3 ${isMe ? 'ring-2 ring-[var(--orange)]' : ''}`}>
                         <div className="w-8 text-center flex-shrink-0">
                           {idx < 3 ? <span className="text-xl">{MEDALS[idx]}</span>
                             : <span className="text-sm font-bold text-[var(--text-3)]">#{idx + 1}</span>}
@@ -283,20 +283,20 @@ export default function LeaderboardPage() {
                             {entry.name}
                             {isMe && <span className="text-xs text-[var(--orange)] ml-1">({isHi ? 'तुम' : 'You'})</span>}
                           </div>
-                          <div className="text-[10px] text-[var(--text-3)]">
+                          <div className="text-xs text-[var(--text-3)]">
                             Gr {entry.grade}
                             {entry.school && ` · ${entry.school}`}
                             {entry.city && ` · ${entry.city}`}
                           </div>
                           {entry.top_title && (
-                            <div className="text-[10px] font-semibold mt-0.5" style={{ color: 'var(--purple)' }}>
+                            <div className="text-xs font-semibold mt-0.5" style={{ color: 'var(--purple)' }}>
                               🎖️ {entry.top_title}
                             </div>
                           )}
                         </div>
                         <div className="text-right flex-shrink-0">
                           <div className="text-sm font-bold gradient-text">{entry.total_xp?.toLocaleString()}</div>
-                          <div className="text-[10px] text-[var(--text-3)]">
+                          <div className="text-xs text-[var(--text-3)]">
                             {entry.accuracy}% · 🔥{entry.streak}
                           </div>
                         </div>
@@ -338,11 +338,11 @@ export default function LeaderboardPage() {
                       <span className="text-4xl">{comp.banner_emoji}</span>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="text-[10px] px-2 py-0.5 rounded-full font-bold"
+                          <span className="text-xs px-2 py-0.5 rounded-full font-bold"
                             style={{ background: STATUS_BADGE[comp.status].bg, color: STATUS_BADGE[comp.status].color }}>
                             {isHi ? STATUS_BADGE[comp.status].labelHi : STATUS_BADGE[comp.status].label}
                           </span>
-                          <span className="text-[10px] text-[var(--text-3)]">
+                          <span className="text-xs text-[var(--text-3)]">
                             {COMP_LABELS[comp.competition_type] || comp.competition_type}
                           </span>
                         </div>
@@ -380,7 +380,7 @@ export default function LeaderboardPage() {
                               {joining === comp.id ? '...' : (isHi ? '🚀 अभी जुड़ो' : '🚀 Join Now')}
                             </button>
                           )}
-                          <span className="text-[10px] text-[var(--text-3)]">
+                          <span className="text-xs text-[var(--text-3)]">
                             👥 {comp.participant_count} {isHi ? 'छात्र' : 'joined'}
                           </span>
                         </div>
@@ -399,7 +399,7 @@ export default function LeaderboardPage() {
                         <span className="text-2xl flex-shrink-0">{comp.banner_emoji}</span>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
-                            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold"
+                            <span className="text-xs px-2 py-0.5 rounded-full font-bold"
                               style={{ background: sb.bg, color: sb.color }}>
                               {isHi ? sb.labelHi : sb.label}
                             </span>
@@ -409,9 +409,9 @@ export default function LeaderboardPage() {
                             {isHi && comp.description_hi ? comp.description_hi : comp.description}
                           </div>
                           <div className="flex items-center gap-3 mt-2">
-                            <span className="text-[10px] text-[var(--text-3)]">🥇 {comp.bonus_xp_1} XP</span>
-                            <span className="text-[10px] text-[var(--text-3)]">👥 {comp.participant_count}</span>
-                            {comp.is_joined && <span className="text-[10px] font-bold" style={{ color: '#16A34A' }}>✓ Joined</span>}
+                            <span className="text-xs text-[var(--text-3)]">🥇 {comp.bonus_xp_1} XP</span>
+                            <span className="text-xs text-[var(--text-3)]">👥 {comp.participant_count}</span>
+                            {comp.is_joined && <span className="text-xs font-bold" style={{ color: '#16A34A' }}>✓ Joined</span>}
                           </div>
                           <div className="mt-2">
                             {comp.status === 'live' && !comp.is_joined && (
@@ -429,7 +429,7 @@ export default function LeaderboardPage() {
                               </button>
                             )}
                             {comp.status === 'upcoming' && (
-                              <span className="text-[10px] text-[var(--text-3)]">
+                              <span className="text-xs text-[var(--text-3)]">
                                 {isHi ? 'शुरू:' : 'Starts:'} {new Date(comp.start_date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}
                               </span>
                             )}
@@ -477,12 +477,12 @@ export default function LeaderboardPage() {
                 </Button>
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {compLeaderboard.map((entry, idx) => {
                   const isMe = entry.student_id === student.id;
                   return (
                     <Card key={entry.student_id}
-                      className={`!p-3 flex items-center gap-3 ${isMe ? 'ring-2 ring-[var(--orange)]' : ''}`}>
+                      className={`!p-4 flex items-center gap-3 ${isMe ? 'ring-2 ring-[var(--orange)]' : ''}`}>
                       <div className="w-8 text-center flex-shrink-0">
                         {idx < 3 ? <span className="text-xl">{MEDALS[idx]}</span>
                           : <span className="text-sm font-bold text-[var(--text-3)]">#{idx + 1}</span>}
@@ -493,7 +493,7 @@ export default function LeaderboardPage() {
                           {entry.name}
                           {isMe && <span className="text-xs text-[var(--orange)] ml-1">({isHi ? 'तुम' : 'You'})</span>}
                         </div>
-                        <div className="text-[10px] text-[var(--text-3)]">
+                        <div className="text-xs text-[var(--text-3)]">
                           Gr {entry.grade}{entry.school ? ` · ${entry.school}` : ''}
                         </div>
                       </div>
@@ -501,7 +501,7 @@ export default function LeaderboardPage() {
                         <div className="text-sm font-bold" style={{ color: selectedComp.accent_color }}>
                           {entry.score}
                         </div>
-                        <div className="text-[10px] text-[var(--text-3)]">{entry.accuracy}%</div>
+                        <div className="text-xs text-[var(--text-3)]">{entry.accuracy}%</div>
                       </div>
                     </Card>
                   );
@@ -544,7 +544,7 @@ export default function LeaderboardPage() {
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-bold">{entry.student_name}</div>
                         <div className="text-xs font-semibold" style={{ color: 'var(--orange)' }}>{entry.title}</div>
-                        <div className="text-[10px] text-[var(--text-3)] mt-0.5">
+                        <div className="text-xs text-[var(--text-3)] mt-0.5">
                           Grade {entry.grade} · {entry.month_year} · {entry.subject || 'All Subjects'}
                           {entry.xp_bonus > 0 && ` · +${entry.xp_bonus} XP`}
                         </div>
@@ -597,8 +597,8 @@ export default function LeaderboardPage() {
                       }}>
                       <div className="text-3xl mb-2">{t.icon || '🏆'}</div>
                       <div className="text-xs font-bold">{isHi && t.title_hi ? t.title_hi : t.title}</div>
-                      <div className="text-[10px] text-[var(--text-3)] mt-1 capitalize">{t.tier} · {t.source}</div>
-                      <div className="text-[10px] text-[var(--text-3)]">
+                      <div className="text-xs text-[var(--text-3)] mt-1 capitalize">{t.tier} · {t.source}</div>
+                      <div className="text-xs text-[var(--text-3)]">
                         {new Date(t.earned_at).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}
                       </div>
                     </div>
