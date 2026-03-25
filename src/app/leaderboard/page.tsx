@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { getLeaderboard, getCompetitions, joinCompetition, getCompetitionLeaderboard, getHallOfFame, supabase } from '@/lib/supabase';
 import { Card, Button, SectionHeader, LoadingFoxy, BottomNav, Avatar } from '@/components/ui';
 import type { LeaderboardEntry } from '@/lib/types';
+import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 
 // These types come from dynamic RPC responses with many optional fields
 type RPCRecord = Record<string, any>; // eslint-disable-line
@@ -173,6 +174,7 @@ export default function LeaderboardPage() {
       </header>
 
       <main className="app-container py-4 space-y-3">
+        <SectionErrorBoundary section="Leaderboard">
 
         {/* ═══ RANKINGS TAB ═══ */}
         {tab === 'ranks' && (
@@ -608,6 +610,7 @@ export default function LeaderboardPage() {
             )}
           </>
         )}
+        </SectionErrorBoundary>
       </main>
 
       <BottomNav />
