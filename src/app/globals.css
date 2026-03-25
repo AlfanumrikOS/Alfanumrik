@@ -344,6 +344,23 @@ h1, h2, h3, h4, h5 { font-family: var(--font-display); }
 .quiz-wrong { animation: shake 0.35s ease; }
 .xp-rise { animation: xpRise 1.2s ease forwards; }
 
+/* ─── Stagger Animations (CSS-only, replaces framer-motion) ── */
+.stagger-hidden .stagger-item {
+  opacity: 0;
+  transform: translateY(20px);
+}
+.stagger-visible .stagger-item {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.4s cubic-bezier(0.25,0.1,0.25,1), transform 0.4s cubic-bezier(0.25,0.1,0.25,1);
+}
+.stagger-visible .stagger-item:nth-child(1) { transition-delay: 0s; }
+.stagger-visible .stagger-item:nth-child(2) { transition-delay: 0.08s; }
+.stagger-visible .stagger-item:nth-child(3) { transition-delay: 0.16s; }
+.stagger-visible .stagger-item:nth-child(4) { transition-delay: 0.24s; }
+.stagger-visible .stagger-item:nth-child(5) { transition-delay: 0.32s; }
+.stagger-visible .stagger-item:nth-child(6) { transition-delay: 0.40s; }
+
 /* ─── Reduced Motion (vestibular disorder accessibility) ──── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
