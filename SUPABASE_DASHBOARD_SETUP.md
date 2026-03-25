@@ -196,8 +196,9 @@ To send from `@alfanumrik.com` (recommended for production):
 4. In Resend → Domains → Add domain: `alfanumrik.com`
 5. Add these DNS records to your domain registrar (GoDaddy/Cloudflare):
    - **DKIM**: 3 CNAME records Resend gives you
-   - **SPF**: TXT record `v=spf1 include:amazonses.com ~all`
-   - **DMARC**: TXT record `v=DMARC1; p=none;`
+   - **SPF**: TXT record `v=spf1 include:resend.dev ~all`
+   - **DMARC**: TXT record `v=DMARC1; p=quarantine; rua=mailto:dmarc@alfanumrik.com; pct=100; adkim=s; aspf=s`
+   - See `EMAIL_DELIVERABILITY.md` for full details and warm-up strategy
 6. Wait for verification (can take 5-60 minutes)
 7. Until verified, emails will still send via `onboarding@resend.dev`
 

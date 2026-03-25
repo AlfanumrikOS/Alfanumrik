@@ -47,8 +47,7 @@ function errorResponse(message: string, status = 400, requestOrigin?: string | n
 // ─── Config ───────────────────────────────────────────────────────────────────
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? ''
 const FROM_EMAIL = 'Alfanumrik <welcome@alfanumrik.com>'
-// Resend provides this test address that works without domain verification
-const FALLBACK_FROM_EMAIL = 'Alfanumrik <onboarding@resend.dev>'
+const REPLY_TO = 'support@alfanumrik.com'
 const SITE_URL = 'https://alfanumrik.com'
 
 interface WelcomeRequest {
@@ -101,7 +100,7 @@ function baseWrapper(content: string, preheader: string): string {
 </html>`
 }
 
-function studentEmail(name: string, grade?: string, board?: string): { subject: string; html: string } {
+function studentEmail(name: string, grade?: string, board?: string): { subject: string; html: string; text: string } {
   const firstName = name.split(' ')[0]
   const gradeText = grade ? ` (Grade ${grade}${board ? `, ${board}` : ''})` : ''
   return {
@@ -134,10 +133,11 @@ function studentEmail(name: string, grade?: string, board?: string): { subject: 
       </table>
       <p style="margin:24px 0 0;font-size:12px;color:#9CA3AF;text-align:center;line-height:1.6;">Questions? Just ask Foxy inside the app or email <a href="mailto:support@alfanumrik.com" style="color:#6C5CE7;">support@alfanumrik.com</a></p>
     `, `Welcome to Alfanumrik, ${firstName}! Your AI-powered learning journey starts now.`)
-  }
+  const text = `Welcome to Alfanumrik, ${firstName}!${gradeText}\n\nYou're now part of Alfanumrik. Here's what's waiting for you:\n\n- Foxy AI Tutor: Your personal study buddy\n- Adaptive Quizzes: Smart questions that match your level\n- XP & Streaks: Earn points and climb the leaderboard\n- Spaced Repetition: Never forget what you learn\n\nPro Tip: Start with a 5-question quiz in your favourite subject!\n\nStart learning: ${SITE_URL}/dashboard\n\nQuestions? Email support@alfanumrik.com\n\n(c) 2026 Alfanumrik EdTech\n${SITE_URL}/privacy | ${SITE_URL}/terms`
+  return { subject, html, text }
 }
 
-function teacherEmail(name: string, schoolName?: string): { subject: string; html: string } {
+function teacherEmail(name: string, schoolName?: string): { subject: string; html: string; text: string } {
   const firstName = name.split(' ')[0]
   const schoolText = schoolName ? ` at ${schoolName}` : ''
   return {
@@ -175,10 +175,11 @@ function teacherEmail(name: string, schoolName?: string): { subject: string; htm
       </table>
       <p style="margin:24px 0 0;font-size:12px;color:#9CA3AF;text-align:center;line-height:1.6;">Need help onboarding your school? Write to <a href="mailto:support@alfanumrik.com" style="color:#3B82F6;">support@alfanumrik.com</a></p>
     `, `Welcome to Alfanumrik, ${firstName}! Your AI-powered classroom tools are ready.`)
-  }
+  const text = `Welcome to Alfanumrik, ${firstName}!${schoolText}\n\nYour Teaching Superpowers:\n- Create Classes and invite students with a code\n- Assign Smart Quizzes aligned to CBSE/ICSE syllabus\n- Live Performance Dashboard for each student\n- Export Reports as CSV or PDF\n\nQuick Setup:\n1. Go to Dashboard > Classes and create your first class\n2. Share the class invite code with your students\n3. Assign a quiz and watch real-time results!\n\nOpen your dashboard: ${SITE_URL}/dashboard\n\nNeed help? Email support@alfanumrik.com\n\n(c) 2026 Alfanumrik EdTech\n${SITE_URL}/privacy | ${SITE_URL}/terms`
+  return { subject, html, text }
 }
 
-function parentEmail(name: string): { subject: string; html: string } {
+function parentEmail(name: string): { subject: string; html: string; text: string } {
   const firstName = name.split(' ')[0]
   return {
     subject: `Welcome to Alfanumrik, ${firstName}! Stay connected to your child's learning`,
@@ -211,7 +212,8 @@ function parentEmail(name: string): { subject: string; html: string } {
       </table>
       <p style="margin:24px 0 0;font-size:12px;color:#9CA3AF;text-align:center;line-height:1.6;">Questions? Email us at <a href="mailto:support@alfanumrik.com" style="color:#F97316;">support@alfanumrik.com</a></p>
     `, `Welcome to Alfanumrik, ${firstName}! Your parent portal is ready.`)
-  }
+  const text = `Welcome to Alfanumrik, ${firstName}!\n\nWhat You Can Track:\n- Daily Digest of quizzes, topics, and XP\n- Subject Mastery progress for each subject\n- Study Streaks and consistency\n- Weekly Reports delivered to your inbox\n- Teacher Updates on assignments\n\nLink Your Child's Account:\nAsk your child to share their Parent Link Code from their profile page.\nEnter it in Dashboard > Link Child.\n\nOpen parent portal: ${SITE_URL}/parent\n\nQuestions? Email support@alfanumrik.com\n\n(c) 2026 Alfanumrik EdTech\n${SITE_URL}/privacy | ${SITE_URL}/terms`
+  return { subject, html, text }
 }
 
 // ─── Main Handler ─────────────────────────────────────────────────────────────
@@ -240,7 +242,7 @@ Deno.serve(async (req: Request) => {
 
     if (!role || !name || !email) return errorResponse('Missing required fields: role, name, email', 400, origin)
 
-    let emailContent: { subject: string; html: string }
+    let emailContent: { subject: string; html: string; text: string }
     switch (role) {
       case 'student': emailContent = studentEmail(name, grade, board); break
       case 'teacher': emailContent = teacherEmail(name, school_name); break
@@ -248,30 +250,38 @@ Deno.serve(async (req: Request) => {
       default: return errorResponse('Invalid role', 400, origin)
     }
 
-    // Send via Resend API if configured
+    // Send via Resend API if configured — custom domain only (never use resend.dev)
     if (RESEND_API_KEY) {
-      // Try custom domain first, fall back to Resend's test sender
-      for (const fromAddress of [FROM_EMAIL, FALLBACK_FROM_EMAIL]) {
-        try {
-          const res = await fetch('https://api.resend.com/emails', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RESEND_API_KEY}` },
-            body: JSON.stringify({ from: fromAddress, to: [email], subject: emailContent.subject, html: emailContent.html }),
-          })
-          if (res.ok) {
-            const result = await res.json()
-            console.log(`[Welcome Email] Sent to ${email} via ${fromAddress}`)
-            return jsonResponse({ sent: true, provider: 'resend', id: result.id }, 200, {}, origin)
-          }
-          const errText = await res.text()
-          console.error(`[Welcome Email] Resend error with ${fromAddress}:`, errText)
-          // If custom domain fails, try fallback
-          if (fromAddress === FROM_EMAIL) continue
-          return jsonResponse({ sent: false, fallback: 'resend_error', error: errText }, 200, {}, origin)
-        } catch (fetchErr) {
-          console.error(`[Welcome Email] Fetch error with ${fromAddress}:`, fetchErr)
-          if (fromAddress === FROM_EMAIL) continue
+      try {
+        const res = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RESEND_API_KEY}` },
+          body: JSON.stringify({
+            from: FROM_EMAIL,
+            reply_to: REPLY_TO,
+            to: [email],
+            subject: emailContent.subject,
+            html: emailContent.html,
+            text: emailContent.text,
+            headers: {
+              'List-Unsubscribe': `<mailto:unsubscribe@alfanumrik.com?subject=unsubscribe>`,
+              'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+            },
+            tags: [
+              { name: 'category', value: 'welcome' },
+              { name: 'role', value: role },
+            ],
+          }),
+        })
+        if (res.ok) {
+          const result = await res.json()
+          console.log(`[Welcome Email] Sent to ${email}, id: ${result.id}`)
+          return jsonResponse({ sent: true, provider: 'resend', id: result.id }, 200, {}, origin)
         }
+        const errText = await res.text()
+        console.error('[Welcome Email] Resend error:', errText)
+      } catch (fetchErr) {
+        console.error('[Welcome Email] Fetch error:', fetchErr)
       }
     }
 
