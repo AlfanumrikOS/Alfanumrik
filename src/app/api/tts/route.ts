@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { createServerClient } from '@supabase/ssr';
 
 /* ═══════════════════════════════════════════════════════════════
    ElevenLabs Text-to-Speech API Route
    Keeps API key server-side. Returns audio/mpeg stream.
    Per-student daily rate limiting via student_daily_usage table.
+   Requires authenticated Supabase session.
    ═══════════════════════════════════════════════════════════════ */
 
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || '';
@@ -26,6 +28,19 @@ const FREE_TTS_DAILY_LIMIT = 20;
 export async function POST(req: NextRequest) {
   if (!ELEVENLABS_API_KEY) {
     return NextResponse.json({ error: 'TTS not configured' }, { status: 503 });
+  }
+
+  // ── Auth check: require valid Supabase session ──
+  if (SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    const supabaseAuth = createServerClient(
+      SUPABASE_URL,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      { cookies: { getAll: () => req.cookies.getAll(), setAll: () => {} } },
+    );
+    const { data: { user } } = await supabaseAuth.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
   }
 
   try {
