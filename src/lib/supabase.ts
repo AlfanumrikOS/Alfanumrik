@@ -170,6 +170,8 @@ export async function submitQuizResults(studentId: string, subject: string, grad
   }
 
   // ── Robust client-side fallback ──
+  // Uses atomic RPC for XP/profile updates to prevent race conditions
+  // when multiple quiz submissions happen concurrently.
   const total = responses.length;
   const correct = responses.filter(r => r.is_correct).length;
   const scorePct = total > 0 ? Math.round((correct / total) * 100) : 0;
@@ -185,48 +187,29 @@ export async function submitQuizResults(studentId: string, subject: string, grad
   }).select('id').single();
   if (sessErr) console.error('Fallback: quiz_sessions insert failed:', sessErr.message);
 
-  // 2. Upsert learning profile
-  const { data: existing } = await supabase.from('student_learning_profiles')
-    .select('xp, total_sessions, total_questions_asked, total_questions_answered_correctly, total_time_minutes')
-    .eq('student_id', studentId).eq('subject', subject).single();
-
-  if (existing) {
-    await supabase.from('student_learning_profiles').update({
-      xp: (existing.xp ?? 0) + xpEarned,
-      total_sessions: (existing.total_sessions ?? 0) + 1,
-      total_questions_asked: (existing.total_questions_asked ?? 0) + total,
-      total_questions_answered_correctly: (existing.total_questions_answered_correctly ?? 0) + correct,
-      total_time_minutes: (existing.total_time_minutes ?? 0) + Math.max(1, Math.round(time / 60)),
-      last_session_at: new Date().toISOString(),
-      level: Math.max(1, Math.floor(((existing.xp ?? 0) + xpEarned) / 500) + 1),
-    }).eq('student_id', studentId).eq('subject', subject);
-  } else {
-    await supabase.from('student_learning_profiles').insert({
+  // 2. Atomically update learning profile and student XP via RPC
+  // This avoids the read-modify-write race condition where concurrent
+  // quiz submissions could lose XP or corrupt counters.
+  try {
+    await supabase.rpc('atomic_quiz_profile_update', {
+      p_student_id: studentId,
+      p_subject: subject,
+      p_xp: xpEarned,
+      p_total: total,
+      p_correct: correct,
+      p_time_seconds: time,
+    });
+  } catch (atomicErr) {
+    console.warn('atomic_quiz_profile_update failed, using non-atomic fallback:', atomicErr);
+    // Last-resort fallback: upsert with ON CONFLICT if the RPC doesn't exist
+    await supabase.from('student_learning_profiles').upsert({
       student_id: studentId, subject, xp: xpEarned,
       total_sessions: 1, total_questions_asked: total,
       total_questions_answered_correctly: correct,
       total_time_minutes: Math.max(1, Math.round(time / 60)),
       last_session_at: new Date().toISOString(),
       streak_days: 1, level: 1, current_level: 'beginner',
-    });
-  }
-
-  // 3. Update student XP and last_active
-  const { data: student } = await supabase.from('students')
-    .select('xp_total, streak_days, last_active')
-    .eq('id', studentId).single();
-  if (student) {
-    const lastActive = student.last_active ? new Date(student.last_active) : null;
-    const today = new Date();
-    const isConsecutiveDay = lastActive && (today.toDateString() !== lastActive.toDateString()) &&
-      (today.getTime() - lastActive.getTime() < 2 * 24 * 60 * 60 * 1000);
-    const isSameDay = lastActive && today.toDateString() === lastActive.toDateString();
-
-    await supabase.from('students').update({
-      xp_total: (student.xp_total ?? 0) + xpEarned,
-      last_active: new Date().toISOString(),
-      streak_days: isSameDay ? (student.streak_days ?? 1) : isConsecutiveDay ? (student.streak_days ?? 0) + 1 : 1,
-    }).eq('id', studentId);
+    }, { onConflict: 'student_id,subject' });
   }
 
   return {
