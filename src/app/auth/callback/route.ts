@@ -102,15 +102,30 @@ export async function GET(request: NextRequest) {
         return NextResponse.redirect(`${origin}/dashboard`);
       }
       // Default: redirect to the `next` param or dashboard
-      // Validate `next` to prevent open redirect — must be a relative path
-      const safeNext = (next.startsWith('/') && !next.startsWith('//')) ? next : '/dashboard';
-      const forwardedHost = request.headers.get('x-forwarded-host');
+      // Validate `next` to prevent open redirect attacks:
+      // - Must start with exactly one /
+      // - Must not contain protocol-relative URLs (//), encoded slashes (%2f),
+      //   backslashes, or javascript: URIs
+      // - Only use trusted x-forwarded-host from Vercel (not arbitrary proxies)
+      const SAFE_NEXT_PATTERN = /^\/[a-zA-Z0-9\-_/?.=&]+$/;
+      const safeNext = (
+        next.startsWith('/') &&
+        !next.startsWith('//') &&
+        !next.includes('\\') &&
+        !next.toLowerCase().includes('%2f') &&
+        !next.toLowerCase().includes('javascript:') &&
+        SAFE_NEXT_PATTERN.test(next)
+      ) ? next : '/dashboard';
+
+      // Only trust Vercel's forwarded host header (x-vercel-forwarded-host),
+      // not the generic x-forwarded-host which can be spoofed by proxies
+      const vercelHost = request.headers.get('x-vercel-forwarded-host');
       const isLocalEnv = process.env.NODE_ENV === 'development';
 
       if (isLocalEnv) {
         return NextResponse.redirect(`${origin}${safeNext}`);
-      } else if (forwardedHost) {
-        return NextResponse.redirect(`https://${forwardedHost}${safeNext}`);
+      } else if (vercelHost) {
+        return NextResponse.redirect(`https://${vercelHost}${safeNext}`);
       } else {
         return NextResponse.redirect(`${origin}${safeNext}`);
       }

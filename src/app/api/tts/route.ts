@@ -88,12 +88,23 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // Record usage (fire-and-forget)
-      sb.rpc('increment_daily_usage', {
+      // Record usage BEFORE processing — fail closed to prevent TOCTOU bypass.
+      // The increment_daily_usage RPC uses INSERT ON CONFLICT (atomic),
+      // so concurrent requests will each correctly increment the counter.
+      const { error: incErr } = await sb.rpc('increment_daily_usage', {
         p_student_id: studentId,
         p_feature: 'foxy_tts',
         p_usage_date: today,
-      }).then(() => {});
+      });
+      if (incErr) {
+        // Fail closed: if we can't record usage, deny the request to prevent
+        // unlimited TTS calls when the DB is down or rate limit table is unavailable
+        logger.error('tts_usage_increment_failed', { error: new Error(incErr.message), route: '/api/tts' });
+        return NextResponse.json(
+          { error: 'Usage tracking unavailable, please try again', code: 'USAGE_ERROR' },
+          { status: 503 },
+        );
+      }
     }
 
     // Clean text for speech — remove markdown artifacts, tags, etc.
