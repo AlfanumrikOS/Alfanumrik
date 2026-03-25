@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { authorizeRequest, logAudit } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { sanitizeText, isValidUUID } from '@/lib/sanitize';
 
 interface CreateExamBody {
   class_id: string;
@@ -32,6 +33,21 @@ export async function POST(request: Request) {
         { error: 'Missing required fields: class_id, exam_name, exam_date' },
         { status: 400 }
       );
+    }
+
+    // Validate UUID format for class_id
+    if (!isValidUUID(body.class_id)) {
+      return NextResponse.json(
+        { error: 'Invalid class_id format' },
+        { status: 400 }
+      );
+    }
+
+    // Sanitize text inputs
+    body.exam_name = sanitizeText(body.exam_name, 200);
+    if (body.exam_type) body.exam_type = sanitizeText(body.exam_type, 50);
+    if (body.chapters) {
+      body.chapters = body.chapters.map(c => sanitizeText(c, 200));
     }
 
     // Validate exam_date format

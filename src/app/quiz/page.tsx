@@ -7,6 +7,7 @@ import { track } from '@/lib/analytics';
 import { shareResult, quizShareMessage } from '@/lib/share';
 import { getQuizQuestions, submitQuizResults, saveCognitiveMetrics, saveQuestionResponses, supabase } from '@/lib/supabase';
 import { Card, Button, ProgressBar, StatCard, LoadingFoxy, BottomNav } from '@/components/ui';
+import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import { SUBJECT_META } from '@/lib/constants';
 import {
   BLOOM_CONFIG, BLOOM_LEVELS,
@@ -812,6 +813,7 @@ export default function QuizPage() {
 
     return (
       <div className="mesh-bg min-h-dvh pb-nav">
+       <SectionErrorBoundary section="Quiz Results">
         <header className="page-header">
           <div className="page-header-inner flex items-center gap-3">
             <button onClick={() => { setScreen('select'); setQuestions([]); }} className="text-[var(--text-3)]">&larr;</button>
@@ -1000,6 +1002,7 @@ export default function QuizPage() {
             </Button>
           </div>
         </main>
+       </SectionErrorBoundary>
         <BottomNav />
       </div>
     );

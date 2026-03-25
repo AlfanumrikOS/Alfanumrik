@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { authorizeRequest, logAudit } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { sanitizeFilename } from '@/lib/sanitize';
 
 const ALLOWED_FILE_TYPES = [
   'image/jpeg',
@@ -25,7 +26,10 @@ export async function POST(request: Request) {
 
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
-    const imageType = (formData.get('image_type') as string) || 'assignment';
+    const rawImageType = (formData.get('image_type') as string) || 'assignment';
+    // Whitelist image_type to prevent arbitrary values in the database
+    const VALID_IMAGE_TYPES = ['assignment', 'question_paper', 'notes', 'textbook'];
+    const imageType = VALID_IMAGE_TYPES.includes(rawImageType) ? rawImageType : 'assignment';
 
     // Validate file presence
     if (!file) {
@@ -52,7 +56,7 @@ export async function POST(request: Request) {
     }
 
     // Sanitize filename and build storage path
-    const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const sanitizedName = sanitizeFilename(file.name);
     const path = `${auth.studentId}/${Date.now()}_${sanitizedName}`;
 
     // Upload to Supabase storage
