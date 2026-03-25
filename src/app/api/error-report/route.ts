@@ -57,12 +57,28 @@ export async function POST(request: NextRequest) {
 
     const data = JSON.parse(body);
 
+    // Sanitize log inputs to prevent log injection attacks.
+    // Strip control characters that could corrupt log parsers.
+    const sanitizeLogField = (val: unknown, maxLen: number): string => {
+      if (typeof val !== 'string') return '';
+      return val
+        .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '') // strip control chars
+        .slice(0, maxLen);
+    };
+
+    const safeMessage = sanitizeLogField(data.message, 500);
+    const safeStack = sanitizeLogField(data.stack, 500);
+    const safeComponentStack = sanitizeLogField(data.componentStack, 300);
+    // Validate URL format — only allow http(s) or relative paths
+    const rawUrl = typeof data.url === 'string' ? data.url : '';
+    const safeUrl = /^(https?:\/\/|\/)[^\s<>"{}|\\^`]*$/.test(rawUrl) ? rawUrl.slice(0, 500) : '';
+
     // Structured logging — picked up by Vercel log drains
     logger.error('Client error report', {
-      errorMessage: data.message,
-      errorStack: data.stack?.slice(0, 500),
-      componentStack: data.componentStack?.slice(0, 300),
-      url: data.url,
+      errorMessage: safeMessage,
+      errorStack: safeStack,
+      componentStack: safeComponentStack,
+      url: safeUrl,
       userAgent: request.headers.get('user-agent')?.slice(0, 200),
       ip,
       source: 'client_error_boundary',
@@ -78,11 +94,11 @@ export async function POST(request: NextRequest) {
           .insert({
             action: 'client_error',
             resource_type: 'frontend',
-            resource_id: data.url || null,
+            resource_id: safeUrl || null,
             details: {
-              message: data.message?.slice(0, 500),
-              stack: data.stack?.slice(0, 1000),
-              componentStack: data.componentStack?.slice(0, 500),
+              message: safeMessage,
+              stack: safeStack,
+              componentStack: safeComponentStack,
               userAgent: request.headers.get('user-agent')?.slice(0, 200),
             },
             ip_address: ip,
