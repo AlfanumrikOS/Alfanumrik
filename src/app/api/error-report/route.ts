@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
+import { logger } from '@/lib/logger';
 
 /**
  * POST /api/error-report
- * Collects client-side error reports from ErrorBoundary and error.tsx.
- * IP-based rate limiting to prevent abuse.
+ *
+ * Production error collection endpoint:
+ * 1. Receives client-side errors from ErrorBoundary / error.tsx / sendBeacon
+ * 2. Persists to audit_logs table for monitoring dashboards
+ * 3. Logs structured JSON for Vercel log drains (Datadog, Betterstack, etc.)
+ * 4. Rate-limited to 10 reports/min per IP to prevent abuse
  */
 
 // Simple in-memory rate limiter: 10 reports per minute per IP
@@ -23,6 +29,16 @@ function checkRateLimit(ip: string): boolean {
   return true;
 }
 
+// Cleanup stale rate limit entries every 5 minutes
+if (typeof setInterval !== 'undefined') {
+  setInterval(() => {
+    const now = Date.now();
+    rateLimitMap.forEach((entry, key) => {
+      if (now > entry.resetAt) rateLimitMap.delete(key);
+    });
+  }, 5 * 60_000);
+}
+
 export async function POST(request: NextRequest) {
   // Rate limit by IP
   const forwarded = request.headers.get('x-forwarded-for');
@@ -39,13 +55,45 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Payload too large' }, { status: 413 });
     }
 
-    if (process.env.NODE_ENV === 'development') {
-      const data = JSON.parse(body);
-      console.warn('[Error Report]', data.message || data);
-    }
+    const data = JSON.parse(body);
 
-    // TODO: Forward to Sentry, Supabase logs, or external logging service
-    // Example: await fetch('https://sentry.io/api/...', { method: 'POST', body });
+    // Structured logging — picked up by Vercel log drains
+    logger.error('Client error report', {
+      errorMessage: data.message,
+      errorStack: data.stack?.slice(0, 500),
+      componentStack: data.componentStack?.slice(0, 300),
+      url: data.url,
+      userAgent: request.headers.get('user-agent')?.slice(0, 200),
+      ip,
+      source: 'client_error_boundary',
+    });
+
+    // Persist to audit_logs (fire-and-forget, don't block response)
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (supabaseUrl && serviceRoleKey) {
+      const supabase = createClient(supabaseUrl, serviceRoleKey);
+      // Fire-and-forget: persist error to audit_logs
+      Promise.resolve(
+        supabase
+          .from('audit_logs')
+          .insert({
+            action: 'client_error',
+            resource_type: 'frontend',
+            resource_id: data.url || null,
+            details: {
+              message: data.message?.slice(0, 500),
+              stack: data.stack?.slice(0, 1000),
+              componentStack: data.componentStack?.slice(0, 500),
+              userAgent: request.headers.get('user-agent')?.slice(0, 200),
+            },
+            ip_address: ip,
+            user_agent: request.headers.get('user-agent')?.slice(0, 500),
+            status: 'failure',
+          })
+      ).catch(() => {}); // never fail the response due to logging
+    }
 
     return NextResponse.json({ received: true }, { status: 200 });
   } catch {

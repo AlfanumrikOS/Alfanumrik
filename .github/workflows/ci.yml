@@ -1,10 +1,14 @@
-name: CI
+name: CI — Alfanumrik
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, master, develop]
   pull_request:
-    branches: [main]
+    branches: [main, master]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   NODE_VERSION: '20'
@@ -12,6 +16,7 @@ env:
   NEXT_PUBLIC_SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder'
 
 jobs:
+  # ── Step 1: Type Check + Lint ──
   quality:
     name: Lint, Type-check & Test
     runs-on: ubuntu-latest
@@ -33,8 +38,9 @@ jobs:
         run: npm run type-check
 
       - name: Run tests
-        run: npm test
+        run: npm test -- --reporter=verbose
 
+  # ── Step 2: Production Build ──
   build:
     name: Production Build
     runs-on: ubuntu-latest
@@ -53,9 +59,50 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Bundle size report
+        run: |
+          echo "## Bundle Size Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          BUILD_SIZE=$(du -sh .next/ 2>/dev/null | cut -f1)
+          echo "| Total build | $BUILD_SIZE |" >> $GITHUB_STEP_SUMMARY
+          PAGES=$(find .next/server -name "*.html" 2>/dev/null | wc -l)
+          echo "| Static pages | $PAGES |" >> $GITHUB_STEP_SUMMARY
+          CHUNKS=$(find .next/static/chunks -name "*.js" 2>/dev/null | wc -l)
+          echo "| JS chunks | $CHUNKS |" >> $GITHUB_STEP_SUMMARY
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: nextjs-build
           path: .next/
           retention-days: 7
+
+  # ── Step 3: Post-deploy health check (main branch only) ──
+  health-check:
+    name: Post-Deploy Health Check
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - name: Wait for Vercel deployment
+        run: sleep 60
+
+      - name: Health check
+        run: |
+          for i in 1 2 3; do
+            RESPONSE=$(curl -s -w "\n%{http_code}" \
+              https://alfanumrik.vercel.app/api/v1/health 2>/dev/null)
+            STATUS=$(echo "$RESPONSE" | tail -1)
+            BODY=$(echo "$RESPONSE" | head -1)
+            if [ "$STATUS" = "200" ]; then
+              echo "✅ Health check passed (attempt $i)"
+              echo "$BODY" | head -c 500
+              exit 0
+            fi
+            echo "⏳ Attempt $i/3 returned HTTP $STATUS"
+            sleep 15
+          done
+          echo "❌ Health check failed after 3 attempts"
+          exit 1
