@@ -9,7 +9,7 @@ function getDb() {
 
 function checkAdminKey(request: NextRequest): boolean {
   const adminKey = request.headers.get('x-admin-key');
-  const secretKey = process.env.ADMIN_SECRET_KEY;
+  const secretKey = process.env.SUPER_ADMIN_SECRET;
   return !!(secretKey && adminKey && adminKey === secretKey);
 }
 
