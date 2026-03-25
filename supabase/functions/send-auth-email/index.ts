@@ -210,8 +210,11 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    const { token, token_hash, redirect_to, email_action_type, site_url } = email_data
-    const baseSiteUrl = site_url || SITE_URL
+    const { token, token_hash, redirect_to, email_action_type } = email_data
+
+    // Always use our app URL — never trust site_url from Supabase payload
+    // (Supabase may send its own project URL which causes "No API key" errors)
+    const baseSiteUrl = SITE_URL
 
     // Build link-based verification URL only (no OTP codes)
     let actionUrl: string
@@ -219,8 +222,7 @@ Deno.serve(async (req: Request) => {
       actionUrl = `${baseSiteUrl}/auth/confirm?token_hash=${token_hash}&type=${email_action_type}`
       if (redirect_to) actionUrl += `&next=${encodeURIComponent(redirect_to)}`
     } else if (token) {
-      const redirectBase = redirect_to || `${baseSiteUrl}/auth/callback`
-      actionUrl = `${redirectBase}${redirectBase.includes('?') ? '&' : '?'}token=${token}&type=${email_action_type}`
+      actionUrl = `${baseSiteUrl}/auth/callback?token=${token}&type=${email_action_type}`
     } else {
       actionUrl = `${baseSiteUrl}/dashboard`
     }
