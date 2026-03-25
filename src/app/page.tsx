@@ -280,7 +280,7 @@ const AUTH_GRADES = ['6', '7', '8', '9', '10', '11', '12'];
 const AUTH_BOARDS = ['CBSE', 'ICSE', 'State Board', 'IB', 'Other'];
 
 function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
-  const [mode, setMode] = useState<'login' | 'signup' | 'forgot' | 'verify'>('login');
+  const [mode, setMode] = useState<'login' | 'signup' | 'forgot' | 'check-email'>('login');
   const [roleTab, setRoleTab] = useState<'student' | 'teacher' | 'parent'>('student');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -306,8 +306,7 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
   const [phone, setPhone] = useState('');
   const [linkCode, setLinkCode] = useState('');
 
-  // OTP verification
-  const [otpCode, setOtpCode] = useState('');
+  // Email verification pending
   const [pendingEmail, setPendingEmail] = useState('');
   const [consentData, setConsentData] = useState(false);
   const [consentAnalytics, setConsentAnalytics] = useState(false);
@@ -442,8 +441,7 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
           onSuccess();
         } else {
           setPendingEmail(email.trim());
-          setOtpCode('');
-          setMode('verify');
+          setMode('check-email');
           setSuccess('');
           setError('');
           setLoading(false);
@@ -469,35 +467,14 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
     } catch { setError('Connection error. Please try again.'); setLoading(false); }
   };
 
-  const handleVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!otpCode.trim()) { setError('Please enter the verification code'); return; }
-    setError(''); setLoading(true);
-    try {
-      const { data, error: verifyError } = await supabase.auth.verifyOtp({
-        email: pendingEmail,
-        token: otpCode.trim(),
-        type: 'signup',
-      });
-      if (verifyError) { setError(verifyError.message); setLoading(false); return; }
-      if (data.session) {
-        onSuccess();
-      } else {
-        setSuccess('Email verified! You can now log in.');
-        setMode('login');
-        setLoading(false);
-      }
-    } catch { setError('Connection error. Please try again.'); setLoading(false); }
-  };
-
-  const handleResendOtp = async () => {
+  const handleResendVerification = async () => {
     setError(''); setLoading(true);
     try {
       const { error: resendError } = await supabase.auth.resend({
         type: 'signup',
         email: pendingEmail,
       });
-      if (resendError) { setError(resendError.message); } else { setSuccess('New code sent! Check your email.'); }
+      if (resendError) { setError(resendError.message); } else { setSuccess('Verification email sent again! Check your inbox.'); }
       setLoading(false);
     } catch { setError('Connection error.'); setLoading(false); }
   };
@@ -561,7 +538,7 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
         </div>
 
         {/* Role Tabs */}
-        {mode !== 'verify' && <div className="flex gap-1 mb-4 p-1 rounded-2xl" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
+        {mode !== 'check-email' && <div className="flex gap-1 mb-4 p-1 rounded-2xl" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
           {ROLE_TABS.map(tab => {
             const isActive = roleTab === tab.key;
             return (
@@ -585,7 +562,7 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
         {/* Form Card */}
         <div className="rounded-2xl p-6" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', boxShadow: '0 4px 24px rgba(0,0,0,0.06)' }}>
           <h2 className="text-lg font-bold mb-4 text-center" style={{ color: 'var(--text-1)' }}>
-            {mode === 'login' ? 'Welcome Back!' : mode === 'signup' ? signupTitle : mode === 'verify' ? 'Verify Your Email' : 'Reset Password'}
+            {mode === 'login' ? 'Welcome Back!' : mode === 'signup' ? signupTitle : mode === 'check-email' ? 'Check Your Email' : 'Reset Password'}
           </h2>
 
           {error && (
@@ -599,44 +576,37 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
             </div>
           )}
 
-          <form onSubmit={mode === 'login' ? handleLogin : mode === 'signup' ? handleSignup : mode === 'verify' ? handleVerifyOtp : handleForgot} className="space-y-3">
-            {mode === 'verify' && (
-              <>
-                <p className="text-xs text-center mb-2" style={{ color: 'var(--text-2)', lineHeight: 1.6 }}>
-                  We sent a verification code to <strong>{pendingEmail}</strong>. Enter it below to confirm your account.
+          <form onSubmit={mode === 'login' ? handleLogin : mode === 'signup' ? handleSignup : handleForgot} className="space-y-3">
+            {mode === 'check-email' && (
+              <div className="text-center space-y-4 py-2">
+                <div className="text-4xl">📧</div>
+                <p className="text-sm" style={{ color: 'var(--text-2)', lineHeight: 1.6 }}>
+                  We sent a verification link to<br/><strong style={{ color: 'var(--text-1)' }}>{pendingEmail}</strong>
                 </p>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="Enter verification code"
-                  value={otpCode}
-                  onChange={e => setOtpCode(e.target.value.replace(/\D/g, ''))}
-                  style={{ ...inputStyle, textAlign: 'center', fontSize: 20, fontWeight: 700, letterSpacing: 8 }}
-                  maxLength={8}
-                  autoFocus
-                  required
-                />
+                <p className="text-xs" style={{ color: 'var(--text-3)', lineHeight: 1.5 }}>
+                  Click the link in your email to verify your account and start learning. Check your spam folder if you don&apos;t see it.
+                </p>
                 <button
                   type="button"
-                  onClick={handleResendOtp}
+                  onClick={handleResendVerification}
                   disabled={loading}
-                  className="w-full text-center text-xs font-semibold py-1"
+                  className="w-full text-center text-xs font-semibold py-2"
                   style={{ color: activeRoleColor }}
                 >
-                  Didn&apos;t receive it? Resend Code
+                  {loading ? '...' : "Didn\u0027t receive it? Resend Email"}
                 </button>
-              </>
+              </div>
             )}
 
             {mode === 'signup' && (
               <input type="text" placeholder="Your Name" value={name} onChange={e => setName(e.target.value)} style={inputStyle} required />
             )}
 
-            {mode !== 'verify' && (
+            {mode !== 'check-email' && (
             <input type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} style={inputStyle} required />
             )}
 
-            {mode !== 'forgot' && mode !== 'verify' && (
+            {mode !== 'forgot' && mode !== 'check-email' && (
               <div className="relative">
                 <input type={showPassword ? 'text' : 'password'} placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} style={{ ...inputStyle, paddingRight: 44 }} required minLength={6} />
                 <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--text-3)' }}>
@@ -780,9 +750,11 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
               </div>
             )}
 
+            {mode !== 'check-email' && (
             <button type="submit" disabled={loading} className="w-full py-3 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.98] disabled:opacity-50" style={{ background: buttonGradient }}>
-              {loading ? '...' : mode === 'login' ? 'Log In' : mode === 'signup' ? 'Create Account' : mode === 'verify' ? 'Verify & Continue' : 'Send Reset Link'}
+              {loading ? '...' : mode === 'login' ? 'Log In' : mode === 'signup' ? 'Create Account' : 'Send Reset Link'}
             </button>
+            )}
           </form>
 
           {mode === 'login' && (

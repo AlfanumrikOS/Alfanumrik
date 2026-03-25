@@ -91,49 +91,37 @@ function htmlToPlainText(html: string): string {
     .trim()
 }
 
-function confirmationEmail(url: string, otpCode?: string): { subject: string; html: string; text: string } {
-  const codeBlock = otpCode ? `
-          <p style="margin:0 0 4px;font-size:13px;color:#52525b;">Your verification code:</p>
-          <p style="margin:0 0 16px;font-size:28px;font-weight:700;letter-spacing:4px;color:#18181b;font-family:monospace;">${otpCode}</p>` : ''
+function confirmationEmail(url: string): { subject: string; html: string; text: string } {
   const subject = 'Verify your Alfanumrik account'
   const html = baseWrapper(`
           <h2 style="margin:0 0 16px;font-size:18px;font-weight:600;color:#18181b;">Verify your email address</h2>
-          <p style="margin:0 0 24px;font-size:14px;color:#3f3f46;line-height:1.6;">Thank you for signing up for Alfanumrik. Please use the code below to verify your email address.</p>
-          ${codeBlock}
+          <p style="margin:0 0 24px;font-size:14px;color:#3f3f46;line-height:1.6;">Thank you for signing up for Alfanumrik! Click the button below to verify your email and start learning.</p>
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
             <tr><td align="center" style="padding:8px 0;">
               <a href="${url}" style="display:inline-block;padding:12px 32px;background-color:#6C5CE7;color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;border-radius:6px;">Verify Email Address</a>
             </td></tr>
           </table>
-          <p style="margin:24px 0 0;font-size:13px;color:#71717a;line-height:1.5;">This ${otpCode ? 'code' : 'link'} expires in 24 hours. If you did not create an account with Alfanumrik, you can safely ignore this email.</p>
+          <p style="margin:24px 0 0;font-size:13px;color:#71717a;line-height:1.5;">This link expires in 24 hours. If you did not create an account with Alfanumrik, you can safely ignore this email.</p>
           <p style="margin:16px 0 0;font-size:12px;color:#a1a1aa;line-height:1.5;">If the button does not work, copy and paste this URL into your browser:<br><a href="${url}" style="color:#6C5CE7;word-break:break-all;">${url}</a></p>
     `, 'Verify your email address for Alfanumrik.')
-  const text = otpCode
-    ? `Verify your Alfanumrik account\n\nYour verification code: ${otpCode}\n\nOr verify by visiting this link:\n${url}\n\nThis code expires in 24 hours.\nIf you did not create an account, you can ignore this email.\n\nAlfanumrik EdTech Pvt. Ltd., India`
-    : `Verify your Alfanumrik account\n\nVerify your email by visiting:\n${url}\n\nThis link expires in 24 hours.\nIf you did not create an account, you can ignore this email.\n\nAlfanumrik EdTech Pvt. Ltd., India`
+  const text = `Verify your Alfanumrik account\n\nVerify your email by clicking this link:\n${url}\n\nThis link expires in 24 hours.\nIf you did not create an account, you can ignore this email.\n\nAlfanumrik EdTech Pvt. Ltd., India`
   return { subject, html, text }
 }
 
-function recoveryEmail(url: string, otpCode?: string): { subject: string; html: string; text: string } {
-  const codeBlock = otpCode ? `
-          <p style="margin:0 0 4px;font-size:13px;color:#52525b;">Your reset code:</p>
-          <p style="margin:0 0 16px;font-size:28px;font-weight:700;letter-spacing:4px;color:#18181b;font-family:monospace;">${otpCode}</p>` : ''
+function recoveryEmail(url: string): { subject: string; html: string; text: string } {
   const subject = 'Reset your Alfanumrik password'
   const html = baseWrapper(`
           <h2 style="margin:0 0 16px;font-size:18px;font-weight:600;color:#18181b;">Reset your password</h2>
-          <p style="margin:0 0 24px;font-size:14px;color:#3f3f46;line-height:1.6;">We received a request to reset the password for your Alfanumrik account. Use the code below or click the button to set a new password.</p>
-          ${codeBlock}
+          <p style="margin:0 0 24px;font-size:14px;color:#3f3f46;line-height:1.6;">We received a request to reset the password for your Alfanumrik account. Click the button below to set a new password.</p>
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
             <tr><td align="center" style="padding:8px 0;">
               <a href="${url}" style="display:inline-block;padding:12px 32px;background-color:#6C5CE7;color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;border-radius:6px;">Reset Password</a>
             </td></tr>
           </table>
-          <p style="margin:24px 0 0;font-size:13px;color:#71717a;line-height:1.5;">This ${otpCode ? 'code' : 'link'} expires in 1 hour. If you did not request a password reset, no action is needed - your account is secure.</p>
+          <p style="margin:24px 0 0;font-size:13px;color:#71717a;line-height:1.5;">This link expires in 1 hour. If you did not request a password reset, no action is needed - your account is secure.</p>
           <p style="margin:16px 0 0;font-size:12px;color:#a1a1aa;line-height:1.5;">If the button does not work, copy and paste this URL into your browser:<br><a href="${url}" style="color:#6C5CE7;word-break:break-all;">${url}</a></p>
     `, 'Reset your Alfanumrik password.')
-  const text = otpCode
-    ? `Reset your Alfanumrik password\n\nYour password reset code: ${otpCode}\n\nOr reset by visiting:\n${url}\n\nThis code expires in 1 hour.\nIf you did not request this, no action is needed.\n\nAlfanumrik EdTech Pvt. Ltd., India`
-    : `Reset your Alfanumrik password\n\nReset your password by visiting:\n${url}\n\nThis link expires in 1 hour.\nIf you did not request this, no action is needed.\n\nAlfanumrik EdTech Pvt. Ltd., India`
+  const text = `Reset your Alfanumrik password\n\nReset your password by clicking this link:\n${url}\n\nThis link expires in 1 hour.\nIf you did not request this, no action is needed.\n\nAlfanumrik EdTech Pvt. Ltd., India`
   return { subject, html, text }
 }
 
@@ -225,6 +213,7 @@ Deno.serve(async (req: Request) => {
     const { token, token_hash, redirect_to, email_action_type, site_url } = email_data
     const baseSiteUrl = site_url || SITE_URL
 
+    // Build link-based verification URL only (no OTP codes)
     let actionUrl: string
     if (token_hash) {
       actionUrl = `${baseSiteUrl}/auth/confirm?token_hash=${token_hash}&type=${email_action_type}`
@@ -236,16 +225,13 @@ Deno.serve(async (req: Request) => {
       actionUrl = `${baseSiteUrl}/dashboard`
     }
 
-    // token is the OTP code users can type in; token_hash is for link-based verification
-    const otpCode = token || undefined
-
     let emailContent: { subject: string; html: string; text: string }
     switch (email_action_type) {
       case 'signup':
-        emailContent = confirmationEmail(actionUrl, otpCode)
+        emailContent = confirmationEmail(actionUrl)
         break
       case 'recovery':
-        emailContent = recoveryEmail(actionUrl, otpCode)
+        emailContent = recoveryEmail(actionUrl)
         break
       case 'magic_link':
         emailContent = magicLinkEmail(actionUrl)
@@ -255,7 +241,7 @@ Deno.serve(async (req: Request) => {
         emailContent = emailChangeEmail(actionUrl)
         break
       default:
-        emailContent = confirmationEmail(actionUrl, otpCode)
+        emailContent = confirmationEmail(actionUrl)
     }
 
     if (!resendApiKey) {
