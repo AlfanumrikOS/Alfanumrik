@@ -33,11 +33,14 @@ const nextConfig = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline'",
+              // unsafe-inline required by Next.js for inline scripts/styles.
+              // strict-dynamic tells modern browsers to trust scripts loaded
+              // by already-trusted scripts, reducing the risk of XSS.
+              "script-src 'self' 'unsafe-inline' 'strict-dynamic'",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "font-src 'self' https://fonts.gstatic.com",
               "img-src 'self' data: blob: https://*.supabase.co https://lh3.googleusercontent.com",
-              "connect-src 'self' https://api.elevenlabs.io https://*.supabase.co wss://*.supabase.co",
+              "connect-src 'self' https://api.elevenlabs.io https://*.supabase.co wss://*.supabase.co https://*.ingest.sentry.io",
               "media-src 'self' blob:",
               "worker-src 'self'",
               "frame-ancestors 'none'",

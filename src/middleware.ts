@@ -215,10 +215,14 @@ export async function middleware(request: NextRequest) {
     );
   }
 
-  // Add rate limit headers for API routes
-  if (pathname.startsWith('/api/v1/')) {
+  // Add rate limit + security headers for API routes
+  if (pathname.startsWith('/api/v1/') || pathname.startsWith('/api/')) {
     response.headers.set('X-RateLimit-Limit', String(RATE_LIMIT_MAX));
     response.headers.set('X-RateLimit-Remaining', String(generalRemaining));
+
+    // Prevent CDN/browser from caching API responses (personalized data)
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    response.headers.set('Pragma', 'no-cache');
 
     // Add CORS headers for API routes (origin-checked, not wildcard)
     response.headers.set('Access-Control-Allow-Origin', allowedOrigin);
