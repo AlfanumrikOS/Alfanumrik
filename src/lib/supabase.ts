@@ -100,10 +100,14 @@ export async function getNextTopics(studentId: string, subject: string | null | 
 /* ── Foxy AI tutor chat ── */
 export async function chatWithFoxy(params: { message: string; student_id: string; session_id?: string; subject?: string; grade: string; language: string; mode: string; }) {
   try {
+    // Get the current user's JWT for authenticated edge function calls
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token || supabaseAnonKey;
+
     const res = await fetchWithTimeout(`${supabaseUrl}/functions/v1/foxy-tutor`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${supabaseAnonKey}` },
-      body: JSON.stringify({ messages: [{ role: 'user', content: params.message }], student_id: params.student_id, session_id: params.session_id, subject: params.subject, grade: params.grade, language: params.language, mode: params.mode }),
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ message: params.message, session_id: params.session_id, subject: params.subject, grade: params.grade, language: params.language, mode: params.mode }),
     }, 30000); // 30s timeout for AI responses
     if (!res.ok) throw new Error(`Foxy error: ${res.status}`);
     const data = await res.json();

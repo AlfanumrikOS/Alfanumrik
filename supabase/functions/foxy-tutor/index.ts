@@ -156,6 +156,44 @@ async function fetchRAGContext(
   }
 }
 
+// ─── JWT verification ───────────────────────────────────────────
+async function verifyAndGetStudentId(
+  req: Request,
+): Promise<{ studentId: string; authUserId: string } | { error: string; status: number }> {
+  const authHeader = req.headers.get('authorization')
+  if (!authHeader?.startsWith('Bearer ')) {
+    return { error: 'Missing or invalid Authorization header', status: 401 }
+  }
+
+  const token = authHeader.replace('Bearer ', '')
+
+  // Create a client scoped to the user's JWT — this validates the token
+  // against Supabase Auth server (not just local decode)
+  const userClient = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_ANON_KEY') || '', {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+  })
+
+  const { data: { user }, error: authError } = await userClient.auth.getUser()
+  if (authError || !user) {
+    return { error: 'Invalid or expired token', status: 401 }
+  }
+
+  // Look up student_id from verified auth user — NEVER trust client-supplied student_id
+  const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+  const { data: student, error: studentError } = await adminClient
+    .from('students')
+    .select('id')
+    .eq('auth_user_id', user.id)
+    .eq('is_active', true)
+    .maybeSingle()
+
+  if (studentError || !student) {
+    return { error: 'No active student profile linked to this account', status: 403 }
+  }
+
+  return { studentId: student.id, authUserId: user.id }
+}
+
 // ─── Main handler ──────────────────────────────────────────────
 Deno.serve(async (req: Request) => {
   const origin = req.headers.get('origin')
@@ -174,10 +212,16 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    // ── Verify JWT and resolve student_id from auth ──
+    const authResult = await verifyAndGetStudentId(req)
+    if ('error' in authResult) {
+      return errorResponse(authResult.error, authResult.status, origin)
+    }
+    const { studentId: student_id, authUserId: _authUserId } = authResult
+
     const body = await req.json()
     const {
       message,
-      student_id,
       student_name,
       grade,
       subject,
@@ -193,9 +237,6 @@ Deno.serve(async (req: Request) => {
     if (!message || typeof message !== 'string') {
       return errorResponse('message is required', 400, origin)
     }
-    if (!student_id) {
-      return errorResponse('student_id is required', 400, origin)
-    }
     if (!grade || !subject) {
       return errorResponse('grade and subject are required', 400, origin)
     }
@@ -205,7 +246,7 @@ Deno.serve(async (req: Request) => {
       return errorResponse('Too many messages. Please slow down.', 429, origin)
     }
 
-    // ── Supabase client ──
+    // ── Supabase admin client (for privileged DB operations) ──
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
     const today = new Date().toISOString().slice(0, 10)
 
