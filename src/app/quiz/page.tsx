@@ -4,13 +4,13 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { track } from '@/lib/analytics';
-import { shareResult, quizShareMessage } from '@/lib/share';
 import { getQuizQuestions, submitQuizResults, saveCognitiveMetrics, saveQuestionResponses, supabase } from '@/lib/supabase';
-import { Card, Button, ProgressBar, StatCard, LoadingFoxy, BottomNav } from '@/components/ui';
-import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
+import { Card, Button, ProgressBar, LoadingFoxy } from '@/components/ui';
 import { SUBJECT_META } from '@/lib/constants';
+import QuizSetup from '@/components/quiz/QuizSetup';
+import QuizResults from '@/components/quiz/QuizResults';
 import {
-  BLOOM_CONFIG, BLOOM_LEVELS,
+  BLOOM_CONFIG,
   initialCognitiveLoad, updateCognitiveLoad, getReflectionPrompt, classifyError,
   type BloomLevel, type CognitiveLoadState, type ReflectionPrompt, type ErrorType,
 } from '@/lib/cognitive-engine';
@@ -41,15 +41,7 @@ interface Response {
   error_type?: ErrorType;
 }
 
-const DIFF_LABELS = [
-  { id: null, label: 'All Levels', labelHi: 'सभी स्तर', icon: '🎯' },
-  { id: 1, label: 'Easy', labelHi: 'आसान', icon: '🟢' },
-  { id: 2, label: 'Medium', labelHi: 'मध्यम', icon: '🟡' },
-  { id: 3, label: 'Hard', labelHi: 'कठिन', icon: '🔴' },
-];
-
 const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
-const OPTION_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#8B5CF6'];
 
 export default function QuizPage() {
   const { student, isLoggedIn, isLoading, isHi, refreshSnapshot, activeRole } = useAuth();
@@ -93,17 +85,20 @@ export default function QuizPage() {
     }
   }, [isLoading, isLoggedIn, student, activeRole, router]);
 
-  // Check URL params for pre-selected subject
+  // Check URL params for pre-selected subject/mode (passed as initial values to QuizSetup)
+  const [initialSubject, setInitialSubject] = useState<string | null>(null);
+  const [initialMode, setInitialMode] = useState<QuizMode>('cognitive');
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
     const subj = params.get('subject');
     if (subj && SUBJECT_META.find(s => s.code === subj)) {
       setSelectedSubject(subj);
+      setInitialSubject(subj);
     }
     const mode = params.get('mode');
-    if (mode === 'cognitive') setQuizMode('cognitive');
-    if (mode === 'exam') setQuizMode('exam');
+    if (mode === 'cognitive') { setQuizMode('cognitive'); setInitialMode('cognitive'); }
+    if (mode === 'exam') { setQuizMode('exam'); setInitialMode('exam'); }
   }, []);
 
   // Global timer (counts up for practice/cognitive, starts from limit for exam)
@@ -142,15 +137,32 @@ export default function QuizPage() {
     return () => { if (qTimerRef.current) clearInterval(qTimerRef.current); };
   }, [screen, currentIdx, showExplanation]);
 
-  const startQuiz = useCallback(async () => {
-    if (!selectedSubject || !student) return;
+  const startQuiz = useCallback(async (opts?: {
+    subject: string;
+    difficulty: number | null;
+    questionCount: number;
+    quizMode: QuizMode;
+    examTimeLimit: number;
+  }) => {
+    // When called from QuizSetup, apply the selected options to page state
+    const subj = opts?.subject ?? selectedSubject;
+    const diff = opts?.difficulty ?? selectedDifficulty;
+    const qCount = opts?.questionCount ?? questionCount;
+    if (opts) {
+      setSelectedSubject(opts.subject);
+      setSelectedDifficulty(opts.difficulty);
+      setQuestionCount(opts.questionCount);
+      setQuizMode(opts.quizMode);
+      setExamTimeLimit(opts.examTimeLimit);
+    }
+    if (!subj || !student) return;
     setLoading(true);
     try {
       const data = await getQuizQuestions(
-        selectedSubject,
+        subj,
         student.grade,
-        questionCount,
-        selectedDifficulty
+        qCount,
+        diff
       );
       const qs = Array.isArray(data) ? data : [];
       if (qs.length === 0) {
@@ -382,183 +394,14 @@ export default function QuizPage() {
   // ═══ SUBJECT SELECTION SCREEN ═══
   if (screen === 'select') {
     return (
-      <div className="mesh-bg min-h-dvh pb-nav">
-        <header className="page-header">
-          <div className="page-header-inner flex items-center gap-3">
-            <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)]">&larr;</button>
-            <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
-              {isHi ? 'क्विज़ शुरू करो' : 'Start a Quiz'}
-            </h1>
-          </div>
-        </header>
-        <main className="app-container py-6 space-y-5">
-          {/* Quiz Mode */}
-          <div>
-            <p className="text-sm text-[var(--text-3)] mb-3 font-medium">
-              {isHi ? 'मोड चुनो' : 'Choose Mode'}
-            </p>
-            <div className="flex gap-3">
-              {([
-                { id: 'practice' as QuizMode, icon: '✏️', label: 'Practice', labelHi: 'अभ्यास', desc: 'Choose your own difficulty', descHi: 'अपनी कठिनाई चुनो', color: '#F5A623' },
-                { id: 'cognitive' as QuizMode, icon: '🧠', label: 'Smart', labelHi: 'स्मार्ट', desc: 'AI picks the right level', descHi: 'AI सही स्तर चुनता है', color: '#7C3AED' },
-                { id: 'exam' as QuizMode, icon: '📋', label: 'Exam', labelHi: 'परीक्षा', desc: 'CBSE paper format, timed', descHi: 'CBSE पेपर, समयबद्ध', color: '#DC2626' },
-              ]).map(m => (
-                <button
-                  key={m.id}
-                  onClick={() => setQuizMode(m.id)}
-                  className="flex-1 rounded-2xl p-4 text-left transition-all active:scale-95"
-                  style={{
-                    background: quizMode === m.id ? `${m.color}12` : 'var(--surface-1)',
-                    border: quizMode === m.id ? `2px solid ${m.color}` : '1.5px solid var(--border)',
-                    boxShadow: quizMode === m.id ? `0 4px 16px ${m.color}20` : 'none',
-                  }}
-                >
-                  <div className="text-2xl mb-1">{m.icon}</div>
-                  <div className="text-sm font-bold" style={{ color: quizMode === m.id ? m.color : 'var(--text-2)' }}>
-                    {isHi ? m.labelHi : m.label}
-                  </div>
-                  <div className="text-[10px] text-[var(--text-3)] mt-0.5">{isHi ? m.descHi : m.desc}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Subject Grid */}
-          <div>
-            <p className="text-sm text-[var(--text-3)] mb-3 font-medium">
-              {isHi ? '1. विषय चुनो' : '1. Choose your subject'}
-            </p>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              {SUBJECT_META.slice(0, 9).map(s => (
-                <button
-                  key={s.code}
-                  onClick={() => setSelectedSubject(s.code)}
-                  className="rounded-2xl p-4 text-center transition-all active:scale-95"
-                  style={{
-                    background: selectedSubject === s.code ? `${s.color}12` : 'var(--surface-1)',
-                    border: selectedSubject === s.code ? `2px solid ${s.color}` : '1.5px solid var(--border)',
-                    boxShadow: selectedSubject === s.code ? `0 4px 16px ${s.color}20` : '0 2px 8px rgba(0,0,0,0.03)',
-                  }}
-                >
-                  <div className="text-3xl mb-2">{s.icon}</div>
-                  <div className="text-sm font-semibold" style={{ color: selectedSubject === s.code ? s.color : 'var(--text-2)' }}>
-                    {s.name}
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Difficulty Selection (hidden in cognitive mode — ZPD auto-selects) */}
-          {selectedSubject && quizMode === 'practice' && (
-            <div>
-              <p className="text-sm text-[var(--text-3)] mb-3 font-medium">
-                {isHi ? '2. कठिनाई स्तर' : '2. Difficulty level'}
-              </p>
-              <div className="flex gap-2 flex-wrap">
-                {DIFF_LABELS.map(d => (
-                  <button
-                    key={String(d.id)}
-                    onClick={() => setSelectedDifficulty(d.id)}
-                    className="rounded-xl px-4 py-2.5 text-sm font-semibold transition-all"
-                    style={{
-                      background: selectedDifficulty === d.id ? 'var(--orange)' : 'var(--surface-2)',
-                      color: selectedDifficulty === d.id ? '#fff' : 'var(--text-2)',
-                      border: selectedDifficulty === d.id ? '1.5px solid var(--orange)' : '1.5px solid transparent',
-                    }}
-                  >
-                    {d.icon} {isHi ? d.labelHi : d.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Exam Mode Config */}
-          {selectedSubject && quizMode === 'exam' && (
-            <div>
-              <p className="text-sm text-[var(--text-3)] mb-3 font-medium">
-                {isHi ? '2. समय सीमा (मिनट)' : '2. Time limit (minutes)'}
-              </p>
-              <div className="flex gap-2">
-                {[30, 60, 90, 180].map(m => (
-                  <button
-                    key={m}
-                    onClick={() => setExamTimeLimit(m)}
-                    className="rounded-xl px-4 py-2.5 text-sm font-bold transition-all"
-                    style={{
-                      background: examTimeLimit === m ? '#DC2626' : 'var(--surface-2)',
-                      color: examTimeLimit === m ? '#fff' : 'var(--text-2)',
-                    }}
-                  >
-                    {m} {isHi ? 'मि' : 'min'}
-                  </button>
-                ))}
-              </div>
-              <Card className="!p-3 !mt-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-lg">📋</span>
-                  <div className="text-xs text-[var(--text-3)] leading-relaxed">
-                    {isHi
-                      ? 'CBSE पैटर्न: समयबद्ध परीक्षा, सवालों का जवाब एक बार में — रिवीज़न का समय रखो!'
-                      : 'CBSE format: Timed exam, answer all questions — keep time for revision!'}
-                  </div>
-                </div>
-              </Card>
-            </div>
-          )}
-
-          {/* Question Count */}
-          {selectedSubject && (
-            <div>
-              <p className="text-sm text-[var(--text-3)] mb-3 font-medium">
-                {isHi ? '3. कितने सवाल?' : '3. Number of questions'}
-              </p>
-              <div className="flex gap-2">
-                {[5, 10, 15, 20].map(n => (
-                  <button
-                    key={n}
-                    onClick={() => setQuestionCount(n)}
-                    className="rounded-xl px-5 py-2.5 text-sm font-bold transition-all"
-                    style={{
-                      background: questionCount === n ? 'var(--orange)' : 'var(--surface-2)',
-                      color: questionCount === n ? '#fff' : 'var(--text-2)',
-                    }}
-                  >
-                    {n}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Start Button */}
-          {selectedSubject && (
-            <Button fullWidth onClick={startQuiz} color={quizMode === 'exam' ? '#DC2626' : subMeta?.color}>
-              {loading ? (isHi ? 'लोड हो रहा...' : 'Loading...') : (
-                quizMode === 'exam' ? (
-                  <>{isHi ? `📋 ${examTimeLimit} मिनट की परीक्षा शुरू करो` : `📋 Start ${examTimeLimit}-min Exam (${questionCount} Qs)`}</>
-                ) : (
-                  <>{subMeta?.icon} {isHi ? `${questionCount} सवालों की क्विज़ शुरू करो` : `Start ${questionCount}-Question Quiz`}</>
-                )
-              )}
-            </Button>
-          )}
-
-          {/* Quick stats */}
-          <Card className="!p-4">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">💡</span>
-              <div className="text-xs text-[var(--text-3)] leading-relaxed">
-                {isHi
-                  ? 'हर सही जवाब पर 10 XP मिलता है। 80%+ स्कोर पर बोनस 20 XP!'
-                  : 'Earn 10 XP per correct answer. Score 80%+ for a bonus 20 XP!'}
-              </div>
-            </div>
-          </Card>
-        </main>
-        <BottomNav />
-      </div>
+      <QuizSetup
+        isHi={isHi}
+        initialSubject={initialSubject}
+        initialMode={initialMode}
+        loading={loading}
+        onStart={startQuiz}
+        onGoBack={() => router.push('/dashboard')}
+      />
     );
   }
 
@@ -800,211 +643,20 @@ export default function QuizPage() {
 
   // ═══ RESULTS SCREEN ═══
   if (screen === 'results' && results) {
-    const pct = results.score_percent;
-    const grade = pct >= 90 ? 'A+' : pct >= 80 ? 'A' : pct >= 70 ? 'B' : pct >= 60 ? 'C' : pct >= 40 ? 'D' : 'F';
-    const emoji = pct >= 80 ? '🏆' : pct >= 60 ? '👍' : pct >= 40 ? '💪' : '📚';
-    const message = pct >= 80
-      ? (isHi ? 'शानदार! तुम तो CBSE topper हो!' : 'Outstanding! You nailed it!')
-      : pct >= 60
-        ? (isHi ? 'बहुत अच्छा! थोड़ा और अभ्यास करो!' : 'Good job! A little more practice!')
-        : pct >= 40
-          ? (isHi ? 'ठीक है! रिव्यू करके फिर try करो!' : 'Keep going! Review and try again!')
-          : (isHi ? 'कोई बात नहीं! Foxy से सीखो!' : 'No worries! Learn with Foxy first!');
-
     return (
-      <div className="mesh-bg min-h-dvh pb-nav">
-       <SectionErrorBoundary section="Quiz Results">
-        <header className="page-header">
-          <div className="page-header-inner flex items-center gap-3">
-            <button onClick={() => { setScreen('select'); setQuestions([]); }} className="text-[var(--text-3)]">&larr;</button>
-            <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
-              {isHi ? 'क्विज़ नतीजे' : 'Quiz Results'}
-            </h1>
-          </div>
-        </header>
-        <main className="app-container py-6 space-y-5 max-w-lg mx-auto">
-          {/* Score Card */}
-          <Card accent={pct >= 60 ? '#16A34A' : '#DC2626'}>
-            <div className="text-center py-4">
-              <div className="text-5xl mb-3">{emoji}</div>
-              <div className="text-6xl font-bold mb-1" style={{ fontFamily: 'var(--font-display)', color: pct >= 60 ? '#16A34A' : '#DC2626' }}>
-                {pct}%
-              </div>
-              <div className="text-xl font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
-                Grade: {grade}
-              </div>
-              <p className="text-sm text-[var(--text-3)]">{message}</p>
-            </div>
-          </Card>
-
-          {/* Stats Grid */}
-          <div className="grid-stats">
-            <StatCard icon="✓" value={results.correct} label={isHi ? 'सही' : 'Correct'} color="#16A34A" />
-            <StatCard icon="✗" value={results.total - results.correct} label={isHi ? 'गलत' : 'Wrong'} color="#DC2626" />
-            <StatCard icon="⭐" value={`+${results.xp_earned}`} label="XP" color="var(--orange)" />
-            <StatCard icon="⏱" value={formatTime(timer)} label={isHi ? 'समय' : 'Time'} color="var(--teal)" />
-          </div>
-
-          {/* Error Classification Breakdown */}
-          {responses.some(r => !r.is_correct) && (
-            <div>
-              <p className="text-sm font-semibold text-[var(--text-2)] mb-3">
-                {isHi ? 'गलती विश्लेषण' : 'Error Breakdown'}
-              </p>
-              <Card className="!p-4">
-                <div className="space-y-2">
-                  {(() => {
-                    const wrongResponses = responses.filter(r => !r.is_correct);
-                    const careless = wrongResponses.filter(r => r.error_type === 'careless').length;
-                    const conceptual = wrongResponses.filter(r => r.error_type === 'conceptual').length;
-                    const misinterpretation = wrongResponses.filter(r => r.error_type === 'misinterpretation').length;
-                    const total = wrongResponses.length;
-                    const items = [
-                      { label: isHi ? 'लापरवाही' : 'Careless', count: careless, color: '#F59E0B', icon: '⚡' },
-                      { label: isHi ? 'अवधारणा' : 'Conceptual', count: conceptual, color: '#EF4444', icon: '🧠' },
-                      { label: isHi ? 'गलत समझ' : 'Misinterpretation', count: misinterpretation, color: '#8B5CF6', icon: '🔍' },
-                    ];
-                    return items.map(item => (
-                      <div key={item.label} className="flex items-center gap-3">
-                        <span className="text-xs w-5 text-center">{item.icon}</span>
-                        <span className="text-xs font-semibold w-28" style={{ color: item.color }}>{item.label}</span>
-                        <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: `${item.color}15` }}>
-                          <div className="h-full rounded-full transition-all" style={{ width: total > 0 ? `${(item.count / total) * 100}%` : '0%', background: item.color }} />
-                        </div>
-                        <span className="text-[10px] text-[var(--text-3)] w-12 text-right">
-                          {item.count} ({total > 0 ? Math.round((item.count / total) * 100) : 0}%)
-                        </span>
-                      </div>
-                    ));
-                  })()}
-                </div>
-              </Card>
-            </div>
-          )}
-
-          {/* Bloom Analysis */}
-          {quizMode === 'cognitive' && (
-            <div>
-              <p className="text-sm font-semibold text-[var(--text-2)] mb-3">
-                {isHi ? 'ब्लूम विश्लेषण' : 'Bloom Analysis'}
-              </p>
-              <Card className="!p-4">
-                <div className="space-y-2">
-                  {BLOOM_LEVELS.map(bl => {
-                    const bc = BLOOM_CONFIG[bl];
-                    const qsAtLevel = questions.filter(qq => (qq.bloom_level || 'remember') === bl);
-                    const correctAtLevel = qsAtLevel.filter((qq, i) => {
-                      const qIdx = questions.indexOf(qq);
-                      return responses[qIdx]?.is_correct;
-                    }).length;
-                    if (qsAtLevel.length === 0) return null;
-                    const pctCorrect = Math.round((correctAtLevel / qsAtLevel.length) * 100);
-                    return (
-                      <div key={bl} className="flex items-center gap-3">
-                        <span className="text-xs w-5 text-center" style={{ color: bc.color }}>{bc.icon}</span>
-                        <span className="text-xs font-semibold w-20" style={{ color: bc.color }}>
-                          {isHi ? bc.labelHi : bc.label}
-                        </span>
-                        <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: `${bc.color}15` }}>
-                          <div className="h-full rounded-full transition-all" style={{ width: `${pctCorrect}%`, background: bc.color }} />
-                        </div>
-                        <span className="text-[10px] text-[var(--text-3)] w-16 text-right">
-                          {correctAtLevel}/{qsAtLevel.length} ({pctCorrect}%)
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-                {cogLoad.fatigueScore > 0.3 && (
-                  <div className="mt-3 pt-3 border-t flex items-center gap-2" style={{ borderColor: 'var(--border)' }}>
-                    <span className="text-sm">😮‍💨</span>
-                    <span className="text-[10px] text-[var(--text-3)]">
-                      {isHi ? `थकान स्कोर: ${Math.round(cogLoad.fatigueScore * 100)}%` : `Fatigue detected: ${Math.round(cogLoad.fatigueScore * 100)}%`}
-                    </span>
-                  </div>
-                )}
-              </Card>
-            </div>
-          )}
-
-          {/* Question Review */}
-          <div>
-            <p className="text-sm font-semibold text-[var(--text-2)] mb-3">
-              {isHi ? 'सवालों की समीक्षा' : 'Question Review'}
-            </p>
-            <div className="space-y-2">
-              {questions.map((question, idx) => {
-                const resp = responses[idx];
-                const correct = resp?.is_correct;
-                return (
-                  <div
-                    key={question.id}
-                    className="rounded-xl p-3 flex items-center gap-3"
-                    style={{
-                      background: correct ? 'rgba(22,163,74,0.06)' : 'rgba(220,38,38,0.04)',
-                      border: `1px solid ${correct ? 'rgba(22,163,74,0.15)' : 'rgba(220,38,38,0.12)'}`,
-                    }}
-                  >
-                    <span
-                      className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
-                      style={{
-                        background: correct ? '#16A34A' : '#DC2626',
-                        color: '#fff',
-                      }}
-                    >
-                      {correct ? '✓' : '✗'}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-medium truncate" style={{ color: 'var(--text-2)' }}>
-                        {question.question_text.substring(0, 80)}{question.question_text.length > 80 ? '...' : ''}
-                      </div>
-                      {!correct && (
-                        <div className="text-[10px] text-[var(--text-3)] mt-0.5">
-                          {isHi ? 'सही:' : 'Correct:'} {OPTION_LETTERS[question.correct_answer_index]}
-                        </div>
-                      )}
-                    </div>
-                    <span className="text-[10px] text-[var(--text-3)] flex-shrink-0">
-                      {resp?.time_spent || 0}s
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="space-y-2">
-            {/* Share — the growth engine. Indian parents share on WhatsApp. */}
-            <Button
-              fullWidth
-              onClick={() => shareResult(quizShareMessage({
-                studentName: student!.name,
-                subject: subMeta?.name || selectedSubject!,
-                score: pct,
-                xpEarned: results.xp_earned,
-                isHi,
-              }))}
-              style={{ background: '#25D366', color: '#fff' }}
-            >
-              {isHi ? '📱 WhatsApp पर शेयर करो' : '📱 Share on WhatsApp'}
-            </Button>
-            <Button fullWidth onClick={() => { setScreen('select'); setQuestions([]); setResponses([]); setResults(null); }}>
-              {isHi ? 'एक और क्विज़ खेलो' : 'Take Another Quiz'} ⚡
-            </Button>
-            {pct < 60 && (
-              <Button fullWidth variant="ghost" onClick={() => router.push('/foxy')}>
-                🦊 {isHi ? 'Foxy से सीखो' : 'Learn with Foxy'}
-              </Button>
-            )}
-            <Button fullWidth variant="ghost" onClick={() => router.push('/dashboard')}>
-              {isHi ? 'होम' : 'Home'}
-            </Button>
-          </div>
-        </main>
-       </SectionErrorBoundary>
-        <BottomNav />
-      </div>
+      <QuizResults
+        results={results}
+        questions={questions}
+        responses={responses}
+        isHi={isHi}
+        quizMode={quizMode}
+        cogLoad={cogLoad}
+        selectedSubject={selectedSubject}
+        studentName={student!.name}
+        timer={timer}
+        onRetry={() => { setScreen('select'); setQuestions([]); setResponses([]); setResults(null); }}
+        onGoHome={() => router.push('/dashboard')}
+      />
     );
   }
 

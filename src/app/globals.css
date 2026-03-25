@@ -342,6 +342,21 @@ h1, h2, h3, h4, h5 { font-family: var(--font-display); }
 .quiz-wrong { animation: shake 0.35s ease; }
 .xp-rise { animation: xpRise 1.2s ease forwards; }
 
+/* ─── Reduced Motion (vestibular disorder accessibility) ──── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .animate-float, .animate-shimmer, .animate-spin-slow,
+  .typing-dot, .streak-flame, .xp-rise {
+    animation: none !important;
+  }
+  .card-hover:hover { transform: none; }
+}
+
 /* ─── Interactive ─────────────────────────────────────────── */
 .card-hover {
   transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s ease, border-color 0.25s ease;

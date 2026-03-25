@@ -4,24 +4,14 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase, getStudentProfiles, getSubjects, getFeatureFlags, getNextTopics, getStudentNotifications, generateNotifications } from '@/lib/supabase';
-import { Card, StatCard, ProgressBar, SectionHeader, ActionTile, SubjectChip, Avatar, BottomNav } from '@/components/ui';
+import { Card, StatCard, ProgressBar, SectionHeader, SubjectChip, Avatar, BottomNav } from '@/components/ui';
 import TrustFooter from '@/components/TrustFooter';
 import { DashboardSkeleton } from '@/components/Skeleton';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import type { StudentLearningProfile, Subject, CurriculumTopic } from '@/lib/types';
 import { SUBJECT_META } from '@/lib/constants';
-
-const QUICK_ACTIONS = [
-  { href: '/foxy', icon: '🦊', label: 'Ask Foxy', labelHi: 'फॉक्सी से पूछो', color: '#E8581C' },
-  { href: '/quiz?mode=cognitive', icon: '🧠', label: 'Smart Quiz', labelHi: 'स्मार्ट क्विज़', color: '#7C3AED' },
-  { href: '/exams', icon: '📋', label: 'My Exams', labelHi: 'मेरी परीक्षाएँ', color: '#DC2626' },
-  { href: '/quiz', icon: '⚡', label: 'Quick Quiz', labelHi: 'क्विज़', color: '#F5A623' },
-  { href: '/review', icon: '🔄', label: 'Review', labelHi: 'रिव्यू', color: '#0891B2' },
-  { href: '/scan', icon: '📷', label: 'Scan', labelHi: 'स्कैन', color: '#0D9488' },
-  { href: '/study-plan', icon: '📅', label: 'Study Plan', labelHi: 'अध्ययन योजना', color: '#7C3AED' },
-  { href: '/reports', icon: '📊', label: 'Reports', labelHi: 'रिपोर्ट', color: '#16A34A' },
-  { href: '/leaderboard', icon: '🏆', label: 'Leaderboard', labelHi: 'लीडरबोर्ड', color: '#DB2777' },
-];
+import QuickActions from '@/components/dashboard/QuickActions';
+import SubjectProgress from '@/components/dashboard/SubjectProgress';
 
 const BLOOM_LABELS: Record<string, { icon: string; label: string; labelHi: string }> = {
   remember: { icon: '📖', label: 'Remember', labelHi: 'याद' },
@@ -520,20 +510,7 @@ export default function Dashboard() {
         )}
 
         {/* Quick Actions */}
-        <div>
-          <SectionHeader icon="⚡">{isHi ? 'त्वरित क्रियाएँ' : 'Quick Actions'}</SectionHeader>
-          <div className="grid-actions">
-            {QUICK_ACTIONS.map((a) => (
-              <ActionTile
-                key={a.href}
-                icon={a.icon}
-                label={isHi ? a.labelHi : a.label}
-                color={a.color}
-                onClick={() => router.push(a.href)}
-              />
-            ))}
-          </div>
-        </div>
+        <QuickActions isHi={isHi} />
 
         {/* My Subjects (only student's chosen subjects) */}
         {subjects.length > 0 && (
@@ -607,28 +584,12 @@ export default function Dashboard() {
         )}
 
         {/* XP by Subject (only selected subjects) */}
-        {profiles.filter(p => selectedSubjects.includes(p.subject)).length > 0 && (
-          <div>
-            <SectionHeader icon="🏅">{isHi ? 'विषयवार XP' : 'XP by Subject'}</SectionHeader>
-            <div className="space-y-2">
-              {profiles.filter(p => selectedSubjects.includes(p.subject)).map((p) => {
-                const sm = subjects.find((s) => s.code === p.subject);
-                return (
-                  <Card key={p.id} className="!p-3 flex items-center gap-3">
-                    <span className="text-lg">{sm?.icon ?? '📚'}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex justify-between text-xs mb-1">
-                        <span className="font-semibold truncate">{sm?.name ?? p.subject}</span>
-                        <span className="text-[var(--text-3)]">{p.xp} XP · Lv{p.level}</span>
-                      </div>
-                      <ProgressBar value={((p.xp % 500) / 500) * 100} color={sm?.color} height={5} />
-                    </div>
-                  </Card>
-                );
-              })}
-            </div>
-          </div>
-        )}
+        <SubjectProgress
+          profiles={profiles}
+          subjects={subjects}
+          selectedSubjects={selectedSubjects}
+          isHi={isHi}
+        />
        </SectionErrorBoundary>
       </main>
 

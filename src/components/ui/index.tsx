@@ -364,7 +364,7 @@ export function EmptyState({ icon, title, description, action }: EmptyStateProps
 /* ─── Loading Spinner ─────────────────────────────────────── */
 export function LoadingFoxy() {
   return (
-    <div className="mesh-bg min-h-dvh flex items-center justify-center">
+    <div className="mesh-bg min-h-dvh flex items-center justify-center" role="status" aria-label="Loading">
       <div className="text-5xl animate-float">🦊</div>
     </div>
   );

@@ -67,7 +67,7 @@ export default function TeacherProfilePage() {
       </div>
 
       {toast && (
-        <div style={{ margin: '16px 20px 0', padding: '10px 16px', borderRadius: 10, background: '#D1FAE5', color: '#059669', fontSize: 13, fontWeight: 600, textAlign: 'center' }}>
+        <div role="alert" style={{ margin: '16px 20px 0', padding: '10px 16px', borderRadius: 10, background: '#D1FAE5', color: '#059669', fontSize: 13, fontWeight: 600, textAlign: 'center' }}>
           {toast}
         </div>
       )}
@@ -110,12 +110,12 @@ export default function TeacherProfilePage() {
           <div style={{ background: '#fff', borderRadius: 16, padding: 20, border: '1px solid #e5e7eb' }}>
             <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16, color: '#1a1a1a' }}>Edit Profile</div>
             <div style={{ marginBottom: 12 }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>Name</label>
-              <input value={name} onChange={e => setName(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #e0e0e0', fontSize: 14, outline: 'none' }} />
+              <label htmlFor="teacher-name" style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>Name</label>
+              <input id="teacher-name" value={name} onChange={e => setName(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #e0e0e0', fontSize: 14, outline: 'none' }} />
             </div>
             <div style={{ marginBottom: 16 }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>School Name</label>
-              <input value={schoolName} onChange={e => setSchoolName(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #e0e0e0', fontSize: 14, outline: 'none' }} />
+              <label htmlFor="teacher-school" style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>School Name</label>
+              <input id="teacher-school" value={schoolName} onChange={e => setSchoolName(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #e0e0e0', fontSize: 14, outline: 'none' }} />
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={handleSave} disabled={saving} style={{ padding: '10px 24px', borderRadius: 10, border: 'none', background: '#2563EB', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>

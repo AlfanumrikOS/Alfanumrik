@@ -121,13 +121,27 @@ function FaqItem({ q, a }: { q: string; a: string }) {
     <div
       style={{
         ...cardStyle,
-        cursor: 'pointer',
         transition: 'border-color 0.2s',
         borderColor: open ? '#16A34A' : '#1E3A2F',
       }}
-      onClick={() => setOpen(!open)}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 12,
+          width: '100%',
+          background: 'none',
+          border: 'none',
+          padding: 0,
+          cursor: 'pointer',
+          textAlign: 'left',
+        }}
+      >
         <span style={{ fontSize: 14, fontWeight: 600, color: '#F1F5F9', flex: 1 }}>{q}</span>
         <span
           style={{
@@ -140,7 +154,7 @@ function FaqItem({ q, a }: { q: string; a: string }) {
         >
           ▼
         </span>
-      </div>
+      </button>
       <div
         style={{
           maxHeight: open ? 300 : 0,
@@ -240,6 +254,7 @@ function Toast({ message, onDone }: { message: string; onDone: () => void }) {
 
   return (
     <div
+      role="alert"
       style={{
         position: 'fixed',
         bottom: 24,
@@ -366,16 +381,18 @@ export default function ParentSupportPage() {
       {/* Section 2: Contact Support */}
       <h2 style={sectionTitle}>📩 Contact Support</h2>
       <div style={cardStyle}>
-        <label style={{ fontSize: 12, color: '#64748B', display: 'block', marginBottom: 4 }}>Name</label>
+        <label htmlFor="support-name" style={{ fontSize: 12, color: '#64748B', display: 'block', marginBottom: 4 }}>Name</label>
         <input
+          id="support-name"
           style={inputStyle}
           placeholder="Your name"
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
 
-        <label style={{ fontSize: 12, color: '#64748B', display: 'block', marginBottom: 4 }}>Email</label>
+        <label htmlFor="support-email" style={{ fontSize: 12, color: '#64748B', display: 'block', marginBottom: 4 }}>Email</label>
         <input
+          id="support-email"
           style={inputStyle}
           placeholder="your@email.com"
           type="email"
@@ -383,8 +400,9 @@ export default function ParentSupportPage() {
           onChange={(e) => setEmail(e.target.value)}
         />
 
-        <label style={{ fontSize: 12, color: '#64748B', display: 'block', marginBottom: 4 }}>Category</label>
+        <label htmlFor="support-category" style={{ fontSize: 12, color: '#64748B', display: 'block', marginBottom: 4 }}>Category</label>
         <select
+          id="support-category"
           value={category}
           onChange={(e) => setCategory(e.target.value)}
           style={{
@@ -405,10 +423,11 @@ export default function ParentSupportPage() {
           ))}
         </select>
 
-        <label style={{ fontSize: 12, color: '#64748B', display: 'block', marginBottom: 4 }}>
+        <label htmlFor="support-message" style={{ fontSize: 12, color: '#64748B', display: 'block', marginBottom: 4 }}>
           Message <span style={{ color: '#475569' }}>(min 20 characters)</span>
         </label>
         <textarea
+          id="support-message"
           style={{
             ...inputStyle,
             minHeight: 100,
