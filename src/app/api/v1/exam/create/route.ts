@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { authorizeRequest, logAudit } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { logger } from '@/lib/logger';
 
 interface CreateExamBody {
   class_id: string;
@@ -136,7 +137,8 @@ export async function POST(request: Request) {
       },
       { status: 201 }
     );
-  } catch {
+  } catch (err) {
+    logger.error('exam_create_failed', { error: err instanceof Error ? err : new Error(String(err)), route: '/api/v1/exam/create' });
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

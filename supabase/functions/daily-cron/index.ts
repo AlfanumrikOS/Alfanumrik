@@ -288,17 +288,24 @@ Deno.serve(async (req) => {
     const stepResults: Record<string, number | string> = {}
     const stepErrors: Record<string, string> = {}
 
-    // Run steps sequentially so failures in one don't block others
-    for (const [name, fn] of [
+    // Run all independent steps in parallel — each has its own error handling
+    // so a slow/failing step doesn't delay others. Critical for scaling:
+    // at 5K users, sequential execution can exceed Vercel's function timeout.
+    const steps: [string, () => Promise<number>][] = [
       ['streaks_reset', () => resetMissedStreaks(supabase)],
       ['leaderboard_entries_updated', () => recalculateLeaderboards(supabase)],
       ['parent_digests_sent', () => generateParentDigests(supabase)],
       ['task_queue_rows_deleted', () => cleanupTaskQueue(supabase)],
-    ] as [string, () => Promise<number>][]) {
-      try {
-        stepResults[name] = await fn()
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
+    ]
+
+    const settled = await Promise.allSettled(steps.map(([, fn]) => fn()))
+    for (let i = 0; i < steps.length; i++) {
+      const [name] = steps[i]
+      const result = settled[i]
+      if (result.status === 'fulfilled') {
+        stepResults[name] = result.value
+      } else {
+        const msg = result.reason instanceof Error ? result.reason.message : String(result.reason)
         stepErrors[name] = msg
         console.error(`daily-cron step [${name}] failed:`, msg)
       }

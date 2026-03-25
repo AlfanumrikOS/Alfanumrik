@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { authorizeRequest, logAudit } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { logger } from '@/lib/logger';
 
 /**
  * GET /api/v1/admin/roles — List all roles with their permissions
@@ -29,7 +30,8 @@ export async function GET(request: Request) {
     });
 
     return NextResponse.json({ data: roles || [] });
-  } catch {
+  } catch (err) {
+    logger.error('admin_roles_list_failed', { error: err instanceof Error ? err : new Error(String(err)), route: '/api/v1/admin/roles' });
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
@@ -128,7 +130,8 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json({ data: role }, { status: 201 });
-  } catch {
+  } catch (err) {
+    logger.error('admin_roles_create_failed', { error: err instanceof Error ? err : new Error(String(err)), route: '/api/v1/admin/roles' });
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
@@ -218,7 +221,8 @@ export async function PATCH(request: Request) {
       role_id: body.role_id,
       permissions_set: body.permissions.length,
     });
-  } catch {
+  } catch (err) {
+    logger.error('admin_roles_update_failed', { error: err instanceof Error ? err : new Error(String(err)), route: '/api/v1/admin/roles' });
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

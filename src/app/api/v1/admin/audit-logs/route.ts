@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { authorizeRequest } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { logger } from '@/lib/logger';
 
 const MAX_PAGE_SIZE = 100;
 const DEFAULT_PAGE_SIZE = 50;
@@ -62,7 +63,8 @@ export async function GET(request: Request) {
       page,
       limit,
     });
-  } catch {
+  } catch (err) {
+    logger.error('admin_audit_logs_failed', { error: err instanceof Error ? err : new Error(String(err)), route: '/api/v1/admin/audit-logs' });
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

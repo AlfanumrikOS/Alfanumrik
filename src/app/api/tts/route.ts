@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { createServerClient } from '@supabase/ssr';
+import { logger } from '@/lib/logger';
 
 /* ═══════════════════════════════════════════════════════════════
    ElevenLabs Text-to-Speech API Route
@@ -151,7 +152,7 @@ export async function POST(req: NextRequest) {
 
     return new NextResponse(res.body, { status: 200, headers });
   } catch (err) {
-    console.error('TTS route error:', err);
+    logger.error('tts_generation_failed', { error: err instanceof Error ? err : new Error(String(err)), route: '/api/tts' });
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

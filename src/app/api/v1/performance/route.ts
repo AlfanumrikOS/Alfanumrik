@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { authorizeRequest, logAudit, canAccessStudent } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { logger } from '@/lib/logger';
 
 /**
  * GET /api/v1/performance — View performance data
@@ -79,7 +80,8 @@ export async function GET(request: Request) {
       mastery: mastery.data || [],
       velocity: velocity.data || [],
     });
-  } catch {
+  } catch (err) {
+    logger.error('performance_view_failed', { error: err instanceof Error ? err : new Error(String(err)), route: '/api/v1/performance' });
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

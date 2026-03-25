@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { authorizeRequest, logAudit } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { logger } from '@/lib/logger';
 
 /**
  * GET /api/v1/child/:id/report — Download child monthly report
@@ -57,7 +58,8 @@ export async function GET(
     }
 
     return NextResponse.json({ data: report });
-  } catch {
+  } catch (err) {
+    logger.error('child_report_failed', { error: err instanceof Error ? err : new Error(String(err)), route: '/api/v1/child/[id]/report' });
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

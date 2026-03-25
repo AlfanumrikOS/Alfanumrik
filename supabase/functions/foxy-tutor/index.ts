@@ -37,6 +37,50 @@ const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY') || ''
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
 
+// ─── Circuit breaker for Claude API ─────────────────────────────
+// Prevents hammering a failing API. Trips after 5 consecutive failures,
+// reopens after 60 seconds (half-open: allows 1 test request).
+const circuitBreaker = {
+  failures: 0,
+  lastFailureAt: 0,
+  state: 'closed' as 'closed' | 'open' | 'half-open',
+  FAILURE_THRESHOLD: 5,
+  RESET_TIMEOUT: 60_000, // 60 seconds
+
+  canRequest(): boolean {
+    if (this.state === 'closed') return true
+    if (this.state === 'open') {
+      // Check if reset timeout has elapsed
+      if (Date.now() - this.lastFailureAt > this.RESET_TIMEOUT) {
+        this.state = 'half-open'
+        return true // Allow one test request
+      }
+      return false
+    }
+    // half-open: already allowed one request, block further until result
+    return false
+  },
+
+  recordSuccess(): void {
+    this.failures = 0
+    this.state = 'closed'
+  },
+
+  recordFailure(): void {
+    this.failures++
+    this.lastFailureAt = Date.now()
+    if (this.failures >= this.FAILURE_THRESHOLD) {
+      this.state = 'open'
+    }
+  },
+}
+
+const FALLBACK_REPLIES: Record<string, string> = {
+  en: "I'm having trouble connecting right now. Please try again in a moment! In the meantime, you can review your notes or try a quiz. 🦊",
+  hi: "अभी कनेक्ट करने में समस्या हो रही है। कृपया कुछ देर बाद पुनः प्रयास करें! 🦊",
+  hinglish: "Abhi connection mein thodi problem aa rahi hai. Please thodi der baad try karo! 🦊",
+}
+
 // ─── Rate limiter (in-memory, per-isolate) ─────────────────────
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
 const RATE_WINDOW = 60_000
@@ -325,30 +369,105 @@ Deno.serve(async (req: Request) => {
       { role: 'user', content: message },
     ]
 
-    // ── Call Claude API ──
+    // ── Call Claude API (with circuit breaker, timeout, retry) ──
     const startTime = Date.now()
 
-    const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1024,
-        system: systemPrompt,
-        messages,
-      }),
-    })
+    // Circuit breaker: if API has been failing, return fallback immediately
+    if (!circuitBreaker.canRequest()) {
+      console.warn('Circuit breaker OPEN — returning fallback response')
+      return jsonResponse(
+        {
+          reply: FALLBACK_REPLIES[language] || FALLBACK_REPLIES.en,
+          xp_earned: 5,
+          session_id: activeSessionId,
+          fallback: true,
+        },
+        200,
+        {},
+        origin,
+      )
+    }
+
+    // Helper: single Claude API call with 20s timeout
+    async function callClaude(): Promise<Response> {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 20_000)
+      try {
+        return await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'x-api-key': ANTHROPIC_API_KEY,
+            'anthropic-version': '2023-06-01',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 1024,
+            system: systemPrompt,
+            messages,
+          }),
+          signal: controller.signal,
+        })
+      } finally {
+        clearTimeout(timeoutId)
+      }
+    }
+
+    // Try up to 2 times (initial + 1 retry on transient errors)
+    let claudeRes: Response | null = null
+    let lastError: string | null = null
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        claudeRes = await callClaude()
+        if (claudeRes.ok) {
+          circuitBreaker.recordSuccess()
+          break
+        }
+
+        // Transient errors: retry after brief delay
+        if ([429, 500, 502, 503].includes(claudeRes.status) && attempt === 0) {
+          lastError = `HTTP ${claudeRes.status}`
+          console.warn(`Claude API transient error (${claudeRes.status}), retrying in 1s...`)
+          await new Promise(resolve => setTimeout(resolve, 1000))
+          claudeRes = null
+          continue
+        }
+
+        // Non-transient error: don't retry
+        lastError = `HTTP ${claudeRes.status}`
+        break
+      } catch (fetchErr) {
+        lastError = fetchErr instanceof DOMException && fetchErr.name === 'AbortError'
+          ? 'Timeout (20s)'
+          : String(fetchErr)
+
+        if (attempt === 0) {
+          console.warn(`Claude API fetch error: ${lastError}, retrying in 1s...`)
+          await new Promise(resolve => setTimeout(resolve, 1000))
+          continue
+        }
+      }
+    }
 
     const latencyMs = Date.now() - startTime
 
-    if (!claudeRes.ok) {
-      const errText = await claudeRes.text().catch(() => 'Unknown')
-      console.error('Claude API error:', claudeRes.status, errText)
-      return errorResponse('Tutor temporarily unavailable', 502, origin)
+    if (!claudeRes?.ok) {
+      circuitBreaker.recordFailure()
+      console.error('Claude API failed after retries:', lastError, `(${latencyMs}ms)`)
+
+      // Return friendly fallback instead of error
+      return jsonResponse(
+        {
+          reply: FALLBACK_REPLIES[language] || FALLBACK_REPLIES.en,
+          xp_earned: 5,
+          session_id: activeSessionId,
+          fallback: true,
+        },
+        200,
+        {},
+        origin,
+      )
     }
 
     const claudeData = await claudeRes.json()

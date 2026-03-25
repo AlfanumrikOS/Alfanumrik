@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { authorizeRequest, logAudit } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { logger } from '@/lib/logger';
 
 /**
  * GET /api/v1/child/:id/progress — View child's learning progress
@@ -65,7 +66,8 @@ export async function GET(
       velocity: velocity.data || [],
       active_study_plan: studyPlan.data || null,
     });
-  } catch {
+  } catch (err) {
+    logger.error('child_progress_failed', { error: err instanceof Error ? err : new Error(String(err)), route: '/api/v1/child/[id]/progress' });
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

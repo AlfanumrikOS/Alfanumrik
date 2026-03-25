@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { authorizeRequest, logAudit } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { logger } from '@/lib/logger';
 
 const ALLOWED_FILE_TYPES = [
   'image/jpeg',
@@ -96,7 +97,8 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({ data }, { status: 201 });
-  } catch {
+  } catch (err) {
+    logger.error('upload_assignment_failed', { error: err instanceof Error ? err : new Error(String(err)), route: '/api/v1/upload-assignment' });
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
