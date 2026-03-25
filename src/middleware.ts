@@ -24,6 +24,7 @@ const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT_WINDOW = 60_000; // 1 minute
 const RATE_LIMIT_MAX = 60;        // 60 requests per minute per IP
 const RATE_LIMIT_PARENT_MAX = 5;  // 5 parent login attempts per minute per IP
+const RATE_LIMIT_ADMIN_MAX = 10;  // 10 requests per minute for /internal/admin/*
 
 function getRateLimitKey(request: NextRequest): string {
   // Prefer Vercel's trusted IP header (cannot be spoofed by clients),
@@ -173,11 +174,39 @@ export async function middleware(request: NextRequest) {
     path.endsWith('.php') ||
     path.endsWith('.env') ||
     path.startsWith('/.git') ||
-    path.startsWith('/admin') ||
+    (path.startsWith('/admin') && !path.startsWith('/internal/admin')) ||
     path.startsWith('/cgi-bin') ||
     path.includes('..') // Path traversal attempt
   ) {
     return new NextResponse(null, { status: 404 });
+  }
+
+  // ── Layer 2.1: Protect /internal/admin/* routes ──
+  if (path.startsWith('/internal/admin') || path.startsWith('/api/internal/admin')) {
+    const adminKey = request.headers.get('x-admin-key');
+    const hasSession = request.cookies.getAll().some(c => /^sb-.+-auth-token/.test(c.name));
+    const secretKey = process.env.ADMIN_SECRET_KEY;
+
+    // Require either valid admin key header or Supabase session cookie
+    const isAuthorized = (secretKey && adminKey === secretKey) || hasSession;
+
+    if (!isAuthorized) {
+      // Return 404 (not 403) to hide that the route exists
+      return new NextResponse(null, { status: 404 });
+    }
+
+    // Rate limit: 10 requests/minute for admin routes
+    const adminIp = getRateLimitKey(request);
+    const { allowed: adminAllowed } = checkRateLimit(`admin:${adminIp}`, RATE_LIMIT_ADMIN_MAX);
+    if (!adminAllowed) {
+      return new NextResponse(
+        JSON.stringify({ error: 'Rate limit exceeded. Please slow down.' }),
+        {
+          status: 429,
+          headers: { 'Content-Type': 'application/json', 'Retry-After': '60' },
+        }
+      );
+    }
   }
 
   // ── Layer 2.5: Redirect unauthenticated visitors from / to /welcome ──
