@@ -113,9 +113,11 @@ setInterval(() => {
 
 // ─── Usage limits by plan ──────────────────────────────────────
 const PLAN_LIMITS: Record<string, number> = {
-  free: 50,
-  basic: 200,
-  premium: 1000,
+  free: 5,
+  starter: 30,
+  basic: 30,      // alias for starter
+  pro: 100,
+  premium: 100,   // alias for pro
   unlimited: 999999,
 }
 
