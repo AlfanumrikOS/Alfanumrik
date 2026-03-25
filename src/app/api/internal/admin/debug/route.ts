@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
  * Returns which env vars are set (NOT their values)
  */
 export async function GET(request: NextRequest) {
-  const adminKey = request.headers.get('x-admin-key');
+  const adminKey = request.headers.get('x-admin-secret');
   const secretKey = process.env.SUPER_ADMIN_SECRET;
 
   // Check auth
@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
       error: 'Unauthorized',
       debug: {
         headerPresent: !!adminKey,
-        headerName: 'x-admin-key',
+        headerName: 'x-admin-secret',
         envVarSet: !!secretKey,
         envVarName: 'SUPER_ADMIN_SECRET',
         envVarLength: secretKey?.length ?? 0,

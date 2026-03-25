@@ -11,7 +11,7 @@ import { createClient } from '@supabase/supabase-js';
 export async function GET(request: NextRequest) {
   try {
     // Simple auth: check x-admin-key header
-    const adminKey = request.headers.get('x-admin-key');
+    const adminKey = request.headers.get('x-admin-secret');
     const secretKey = process.env.SUPER_ADMIN_SECRET;
 
     if (!secretKey || !adminKey || adminKey !== secretKey) {
