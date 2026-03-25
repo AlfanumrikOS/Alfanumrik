@@ -1,10 +1,6 @@
 import { NextResponse } from 'next/server';
 import { authorizeRequest, logAudit } from '@/lib/rbac';
-import { createClient } from '@supabase/supabase-js';
-
-function getDb() {
-  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL || '', process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '');
-}
+import { supabaseAdmin } from '@/lib/supabase-admin';
 
 interface CreateExamBody {
   class_id: string;
@@ -46,7 +42,7 @@ export async function POST(request: Request) {
     }
 
     // Resolve teacher_id from the authenticated user
-    const { data: teacher } = await getDb()
+    const { data: teacher } = await supabaseAdmin
       .from('teachers')
       .select('id')
       .eq('user_id', auth.userId)
@@ -60,7 +56,7 @@ export async function POST(request: Request) {
     }
 
     // Verify teacher is assigned to this class
-    const { data: classTeacher } = await getDb()
+    const { data: classTeacher } = await supabaseAdmin
       .from('class_teachers')
       .select('id')
       .eq('class_id', body.class_id)
@@ -75,7 +71,7 @@ export async function POST(request: Request) {
     }
 
     // Get all students in the class
-    const { data: students } = await getDb()
+    const { data: students } = await supabaseAdmin
       .from('class_students')
       .select('student_id')
       .eq('class_id', body.class_id);
@@ -98,7 +94,7 @@ export async function POST(request: Request) {
       created_by: auth.userId,
     }));
 
-    const { data: insertedExams, error: examError } = await getDb()
+    const { data: insertedExams, error: examError } = await supabaseAdmin
       .from('exam_configs')
       .insert(examConfigs)
       .select('id, student_id');
@@ -119,7 +115,7 @@ export async function POST(request: Request) {
         }))
       );
 
-      await getDb().from('exam_chapters').insert(chapterRows);
+      await supabaseAdmin.from('exam_chapters').insert(chapterRows);
     }
 
     logAudit(auth.userId, {

@@ -1,10 +1,6 @@
 import { NextResponse } from 'next/server';
 import { authorizeRequest, logAudit, canAccessStudent } from '@/lib/rbac';
-import { createClient } from '@supabase/supabase-js';
-
-function getDb() {
-  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL || '', process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '');
-}
+import { supabaseAdmin } from '@/lib/supabase-admin';
 
 /**
  * GET /api/v1/performance — View performance data
@@ -49,7 +45,7 @@ export async function GET(request: Request) {
 
     // Fetch performance data in parallel
     const [quizzes, mastery, velocity] = await Promise.all([
-      getDb()
+      supabaseAdmin
         .from('quiz_sessions')
         .select(
           'id, subject, score_percent, total_questions, correct_answers, completed_at'
@@ -57,13 +53,13 @@ export async function GET(request: Request) {
         .eq('student_id', targetStudentId)
         .order('completed_at', { ascending: false })
         .limit(20),
-      getDb()
+      supabaseAdmin
         .from('concept_mastery')
         .select(
           'topic_id, mastery_probability, consecutive_correct, updated_at'
         )
         .eq('student_id', targetStudentId),
-      getDb()
+      supabaseAdmin
         .from('learning_velocity')
         .select(
           'subject, weekly_mastery_rate, acceleration, predicted_mastery_date'

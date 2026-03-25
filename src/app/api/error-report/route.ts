@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 
 /**
@@ -69,11 +69,8 @@ export async function POST(request: NextRequest) {
     });
 
     // Persist to audit_logs (fire-and-forget, don't block response)
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (supabaseUrl && serviceRoleKey) {
-      const supabase = createClient(supabaseUrl, serviceRoleKey);
+    try {
+      const supabase = getSupabaseAdmin();
       // Fire-and-forget: persist error to audit_logs
       Promise.resolve(
         supabase
@@ -93,6 +90,8 @@ export async function POST(request: NextRequest) {
             status: 'failure',
           })
       ).catch(() => {}); // never fail the response due to logging
+    } catch {
+      // Admin client not configured — skip persistence
     }
 
     return NextResponse.json({ received: true }, { status: 200 });

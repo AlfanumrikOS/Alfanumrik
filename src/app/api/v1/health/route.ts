@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { supabaseAdmin } from '@/lib/supabase-admin';
 
 /**
  * GET /api/v1/health
@@ -27,8 +27,7 @@ export async function GET() {
     if (!supabaseUrl || !supabaseKey) {
       checks.database = { status: 'down', latencyMs: 0, error: 'Missing env vars' };
     } else {
-      const client = createClient(supabaseUrl, supabaseKey);
-      const { error } = await client.from('curriculum_topics').select('id').limit(1);
+      const { error } = await supabaseAdmin.from('curriculum_topics').select('id').limit(1);
       const latencyMs = Date.now() - dbStart;
 
       if (error) {
