@@ -1,55 +1,66 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 
-function getDb() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
-}
-
-function checkAdminKey(request: NextRequest): boolean {
+function checkAuth(request: NextRequest): boolean {
   const adminKey = request.headers.get('x-admin-secret');
   const secretKey = process.env.SUPER_ADMIN_SECRET;
   return !!(secretKey && adminKey && adminKey === secretKey);
 }
 
-/**
- * GET /api/internal/admin/users — List users by role
- */
-export async function GET(request: NextRequest) {
-  try {
-    if (!checkAdminKey(request)) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+async function supabaseQuery(table: string, params: string) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  const res = await fetch(`${url}/rest/v1/${table}?${params}`, {
+    headers: {
+      'apikey': key,
+      'Authorization': `Bearer ${key}`,
+      'Prefer': 'count=exact',
+    },
+  });
+  const data = await res.json();
+  const range = res.headers.get('content-range');
+  const total = range ? parseInt(range.split('/')[1]) || 0 : data.length;
+  return { data, total };
+}
 
-    const db = getDb();
-    const url = new URL(request.url);
-    const role = url.searchParams.get('role') || 'student';
-    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'));
-    const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '25')));
-    const search = url.searchParams.get('search');
+async function supabaseUpdate(table: string, id: string, updates: Record<string, unknown>) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  const res = await fetch(`${url}/rest/v1/${table}?id=eq.${id}`, {
+    method: 'PATCH',
+    headers: {
+      'apikey': key,
+      'Authorization': `Bearer ${key}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'return=minimal',
+    },
+    body: JSON.stringify(updates),
+  });
+  return res.ok;
+}
+
+export async function GET(request: NextRequest) {
+  if (!checkAuth(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const params = new URL(request.url).searchParams;
+    const role = params.get('role') || 'student';
+    const page = Math.max(1, parseInt(params.get('page') || '1'));
+    const limit = Math.min(100, Math.max(1, parseInt(params.get('limit') || '25')));
+    const search = params.get('search');
     const offset = (page - 1) * limit;
 
     const table = role === 'teacher' ? 'teachers' : role === 'guardian' || role === 'parent' ? 'guardians' : 'students';
 
-    // Use raw SQL via RPC to avoid Supabase parser type issues
-    let query = db.from(table).select('*', { count: 'exact' });
-    if (search) query = query.ilike('name', `%${search}%`);
-    query = query.order('created_at', { ascending: false }).range(offset, offset + limit - 1);
+    let queryParams = `select=*&order=created_at.desc&offset=${offset}&limit=${limit}`;
+    if (search) queryParams += `&name=ilike.*${encodeURIComponent(search)}*`;
 
-    const { data, count, error } = await query;
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    const rows = (data || []).map((r: Record<string, unknown>) => {
-      const row = r as Record<string, unknown>;
-      return { ...row, role: table === 'guardians' ? 'parent' : role };
-    });
+    const { data, total } = await supabaseQuery(table, queryParams);
 
     return NextResponse.json({
-      data: rows,
-      total: count || 0,
+      data: (data || []).map((r: Record<string, unknown>) => ({ ...r, role: table === 'guardians' ? 'parent' : role })),
+      total,
       page,
       limit,
     });
@@ -58,20 +69,15 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/**
- * PATCH /api/internal/admin/users — Update user fields
- */
 export async function PATCH(request: NextRequest) {
+  if (!checkAuth(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
-    if (!checkAdminKey(request)) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const db = getDb();
     const { user_id, table, updates } = await request.json();
-
     if (!user_id || !table || !updates) {
-      return NextResponse.json({ error: 'Missing user_id, table, or updates' }, { status: 400 });
+      return NextResponse.json({ error: 'Missing fields' }, { status: 400 });
     }
 
     const ALLOWED: Record<string, string[]> = {
@@ -80,25 +86,17 @@ export async function PATCH(request: NextRequest) {
       guardians: ['is_active'],
     };
 
-    if (!ALLOWED[table]) {
-      return NextResponse.json({ error: 'Invalid table' }, { status: 400 });
-    }
+    if (!ALLOWED[table]) return NextResponse.json({ error: 'Invalid table' }, { status: 400 });
 
     const safe: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(updates)) {
       if (ALLOWED[table].includes(k)) safe[k] = v;
     }
 
-    if (Object.keys(safe).length === 0) {
-      return NextResponse.json({ error: 'No valid fields' }, { status: 400 });
-    }
+    if (Object.keys(safe).length === 0) return NextResponse.json({ error: 'No valid fields' }, { status: 400 });
 
-    const { error } = await db.from(table).update(safe).eq('id', user_id);
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    return NextResponse.json({ success: true });
+    const ok = await supabaseUpdate(table, user_id, safe);
+    return ok ? NextResponse.json({ success: true }) : NextResponse.json({ error: 'Update failed' }, { status: 500 });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 });
   }
