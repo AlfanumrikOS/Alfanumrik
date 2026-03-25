@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { Card, Button, ProgressBar, SectionHeader, LoadingFoxy, BottomNav, Badge } from '@/components/ui';
 import { SUBJECT_META } from '@/lib/constants';
+import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 
 /* ─── Types ─── */
 interface ExamChapter {
@@ -258,6 +259,7 @@ export default function ExamsPage() {
       </header>
 
       <main className="app-container py-5 space-y-4">
+        <SectionErrorBoundary section="Exams">
         {/* ═══ ADD EXAM FORM ═══ */}
         {showForm && (
           <Card accent="var(--orange)">
@@ -546,6 +548,7 @@ export default function ExamsPage() {
             })}
           </>
         )}
+        </SectionErrorBoundary>
       </main>
 
       <BottomNav />
