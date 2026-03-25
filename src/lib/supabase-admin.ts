@@ -34,6 +34,22 @@ export function getSupabaseAdmin(): SupabaseClient {
       autoRefreshToken: false,
       persistSession: false,
     },
+    // Global fetch timeout: abort requests that take longer than 10s.
+    // Prevents hanging connections from tying up Vercel serverless functions.
+    // Vercel has a 30s hard limit; we fail fast at 10s to allow for retries.
+    global: {
+      fetch: (input: RequestInfo | URL, init?: RequestInit) => {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10_000);
+        return fetch(input, {
+          ...init,
+          signal: controller.signal,
+        }).finally(() => clearTimeout(timeoutId));
+      },
+    },
+    db: {
+      schema: 'public',
+    },
   });
 
   return _adminClient;
