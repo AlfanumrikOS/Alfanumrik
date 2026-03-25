@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { authorizeRequest, logAudit } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { logger } from '@/lib/logger';
 
 /**
  * GET /api/v1/class/:id/analytics — View class-level analytics
@@ -142,7 +143,8 @@ export async function GET(
       mastery: masteryData,
       velocity: velocity.data || [],
     });
-  } catch {
+  } catch (err) {
+    logger.error('class_analytics_failed', { error: err instanceof Error ? err : new Error(String(err)), route: '/api/v1/class/[id]/analytics' });
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

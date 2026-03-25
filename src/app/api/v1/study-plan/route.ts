@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { authorizeRequest, logAudit } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { logger } from '@/lib/logger';
 
 /**
  * GET /api/v1/study-plan — View active study plan for the authenticated student
@@ -36,7 +37,8 @@ export async function GET(request: Request) {
     }
 
     return NextResponse.json({ data });
-  } catch {
+  } catch (err) {
+    logger.error('study_plan_view_failed', { error: err instanceof Error ? err : new Error(String(err)), route: '/api/v1/study-plan' });
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
