@@ -161,14 +161,14 @@ function CTAButtons({ className = '' }: { className?: string }) {
       </Link>
       <Link
         href="/login?role=parent"
-        className="btn-ghost text-sm px-6 py-3 rounded-xl font-semibold w-full sm:w-auto text-center"
+        className="btn-ghost text-sm px-6 py-3.5 rounded-xl font-semibold w-full sm:w-auto text-center"
         style={{ color: '#16A34A', border: '1.5px solid #16A34A40' }}
       >
         For Parents
       </Link>
       <Link
         href="/login?role=teacher"
-        className="btn-ghost text-sm px-6 py-3 rounded-xl font-semibold w-full sm:w-auto text-center"
+        className="btn-ghost text-sm px-6 py-3.5 rounded-xl font-semibold w-full sm:w-auto text-center"
         style={{ color: '#2563EB', border: '1.5px solid #2563EB40' }}
       >
         For Teachers
@@ -179,7 +179,7 @@ function CTAButtons({ className = '' }: { className?: string }) {
 
 function SectionTitle({ badge, title, subtitle }: { badge: string; title: string; subtitle: string }) {
   return (
-    <div className="text-center mb-10 max-w-2xl mx-auto">
+    <div className="text-center mb-8 max-w-2xl mx-auto">
       <span
         className="inline-block text-xs font-bold px-3 py-1 rounded-full mb-3"
         style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}
@@ -227,7 +227,7 @@ export default function WelcomePage() {
           <div className="flex items-center gap-2">
             <Link
               href="/login"
-              className="text-sm font-semibold px-4 py-2 rounded-lg transition-all"
+              className="hidden sm:inline-block text-sm font-semibold px-4 py-2 rounded-lg transition-all"
               style={{ color: 'var(--text-2)' }}
             >
               Log In
@@ -246,14 +246,14 @@ export default function WelcomePage() {
       {/* ═══ HERO ═══ */}
       <section className="relative overflow-hidden">
         <div className="mesh-bg" style={{ position: 'absolute', inset: 0, opacity: 0.5 }} />
-        <div className="relative max-w-5xl mx-auto px-4 sm:px-6 pt-16 pb-20 sm:pt-24 sm:pb-28 text-center">
-          <div className="inline-flex items-center gap-2 text-xs font-bold px-4 py-1.5 rounded-full mb-6 animate-slide-up"
+        <div className="relative max-w-5xl mx-auto px-4 sm:px-6 pt-12 pb-14 sm:pt-16 sm:pb-20 text-center">
+          <div className="inline-flex items-center gap-2 text-xs font-bold px-4 py-1.5 rounded-full mb-4 animate-slide-up"
             style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)', border: '1px solid rgba(232,88,28,0.15)' }}>
             <span>🇮🇳</span> Built for Indian Students — CBSE Grades 6–12
           </div>
 
           <h1
-            className="text-3xl sm:text-5xl lg:text-6xl font-extrabold leading-tight mb-5 animate-slide-up"
+            className="text-3xl sm:text-4xl lg:text-5xl font-extrabold leading-tight mb-5 animate-slide-up"
             style={{ fontFamily: 'var(--font-display)', animationDelay: '0.05s' }}
           >
             Learn Smarter with{' '}
@@ -261,7 +261,7 @@ export default function WelcomePage() {
           </h1>
 
           <p
-            className="text-base sm:text-lg max-w-2xl mx-auto mb-8 animate-slide-up"
+            className="text-base sm:text-lg max-w-2xl mx-auto mb-6 animate-slide-up"
             style={{ color: 'var(--text-2)', lineHeight: 1.7, animationDelay: '0.1s' }}
           >
             Alfanumrik adapts to <em>your</em> level. Foxy, your AI tutor, teaches 16 subjects in Hindi & English
@@ -269,12 +269,12 @@ export default function WelcomePage() {
           </p>
 
           <div className="animate-slide-up" style={{ animationDelay: '0.15s' }}>
-            <CTAButtons />
+            <CTAButtons className="justify-center" />
           </div>
 
           {/* Stats bar */}
           <div
-            className="flex flex-wrap items-center justify-center gap-6 sm:gap-10 mt-12 animate-slide-up"
+            className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-8 max-w-lg sm:max-w-none mx-auto mt-10 animate-slide-up"
             style={{ animationDelay: '0.2s' }}
           >
             {[
@@ -293,7 +293,7 @@ export default function WelcomePage() {
       </section>
 
       {/* ═══ PRODUCT OVERVIEW ═══ */}
-      <section className="py-16 sm:py-20" style={{ background: 'var(--surface-1)' }}>
+      <section className="py-12 sm:py-16" style={{ background: 'var(--surface-1)' }}>
         <div className="max-w-5xl mx-auto px-4 sm:px-6">
           <SectionTitle
             badge="WHAT IS ALFANUMRIK"
@@ -301,7 +301,7 @@ export default function WelcomePage() {
             subtitle="Not a video library. Not a question bank. Alfanumrik is an intelligent system that learns how you learn — and teaches accordingly."
           />
 
-          <StaggerContainer className="grid sm:grid-cols-3 gap-5">
+          <StaggerContainer className="grid sm:grid-cols-3 gap-4 sm:gap-5">
             {[
               {
                 icon: '🧠',
@@ -351,7 +351,7 @@ export default function WelcomePage() {
       </section>
 
       {/* ═══ KEY FEATURES ═══ */}
-      <section className="py-16 sm:py-20">
+      <section className="py-12 sm:py-16">
         <div className="max-w-5xl mx-auto px-4 sm:px-6">
           <SectionTitle
             badge="FEATURES"
@@ -359,7 +359,7 @@ export default function WelcomePage() {
             subtitle="From AI tutoring to interactive labs — built for how Indian students actually study."
           />
 
-          <StaggerContainer className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          <StaggerContainer className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
             {FEATURES.map(f => (
               <StaggerItem key={f.title}>
                 <div
@@ -381,7 +381,7 @@ export default function WelcomePage() {
       </section>
 
       {/* ═══ HOW IT WORKS ═══ */}
-      <section className="py-16 sm:py-20" style={{ background: 'var(--surface-1)' }}>
+      <section className="py-12 sm:py-16" style={{ background: 'var(--surface-1)' }}>
         <div className="max-w-5xl mx-auto px-4 sm:px-6">
           <SectionTitle
             badge="HOW IT WORKS"
@@ -390,7 +390,7 @@ export default function WelcomePage() {
           />
 
           {/* Student Steps */}
-          <div className="mb-12">
+          <div className="mb-10">
             <h3 className="text-center text-sm font-bold mb-6" style={{ color: 'var(--orange)' }}>
               🎓 For Students
             </h3>
@@ -411,7 +411,7 @@ export default function WelcomePage() {
           </div>
 
           {/* Parent Steps */}
-          <div className="mb-12">
+          <div className="mb-10">
             <h3 className="text-center text-sm font-bold mb-6" style={{ color: '#16A34A' }}>
               👨‍👩‍👧 For Parents
             </h3>
@@ -455,7 +455,7 @@ export default function WelcomePage() {
       </section>
 
       {/* ═══ BENEFITS ═══ */}
-      <section className="py-16 sm:py-20">
+      <section className="py-12 sm:py-16">
         <div className="max-w-5xl mx-auto px-4 sm:px-6">
           <SectionTitle
             badge="WHY ALFANUMRIK"
@@ -463,7 +463,7 @@ export default function WelcomePage() {
             subtitle="Backed by cognitive science — Bloom's taxonomy, spaced repetition, and zone of proximal development."
           />
 
-          <div className="grid sm:grid-cols-2 gap-5">
+          <div className="grid sm:grid-cols-2 gap-4 sm:gap-5">
             {BENEFITS.map(b => (
               <div
                 key={b.title}
@@ -484,7 +484,7 @@ export default function WelcomePage() {
       </section>
 
       {/* ═══ TRUST & CREDIBILITY ═══ */}
-      <section className="py-16 sm:py-20" style={{ background: 'var(--surface-1)' }}>
+      <section className="py-12 sm:py-16" style={{ background: 'var(--surface-1)' }}>
         <div className="max-w-5xl mx-auto px-4 sm:px-6">
           <SectionTitle
             badge="TRUST & SECURITY"
@@ -492,11 +492,11 @@ export default function WelcomePage() {
             subtitle="Enterprise-grade security certifications. DPDPA compliant. No ads. No data selling. Ever."
           />
 
-          <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
             {TRUST_BADGES.map(b => (
               <div
                 key={b.label}
-                className="rounded-2xl px-5 py-4 text-center min-w-[120px]"
+                className="rounded-2xl px-4 py-3 sm:px-5 sm:py-4 text-center"
                 style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}
               >
                 <div className="text-2xl mb-1">{b.icon}</div>
@@ -513,7 +513,7 @@ export default function WelcomePage() {
       </section>
 
       {/* ═══ TESTIMONIALS ═══ */}
-      <section className="py-16 sm:py-20">
+      <section className="py-12 sm:py-16">
         <div className="max-w-5xl mx-auto px-4 sm:px-6">
           <SectionTitle
             badge="WHAT USERS SAY"
@@ -521,7 +521,7 @@ export default function WelcomePage() {
             subtitle="Real feedback from the Alfanumrik community across India."
           />
 
-          <StaggerContainer className="grid sm:grid-cols-3 gap-5">
+          <StaggerContainer className="grid sm:grid-cols-3 gap-4 sm:gap-5">
             {TESTIMONIALS.map(t => (
               <StaggerItem key={t.name}>
               <div
@@ -552,7 +552,7 @@ export default function WelcomePage() {
       </section>
 
       {/* ═══ FAQ ═══ */}
-      <section className="py-16 sm:py-20" style={{ background: 'var(--surface-1)' }}>
+      <section className="py-12 sm:py-16" style={{ background: 'var(--surface-1)' }}>
         <div className="max-w-3xl mx-auto px-4 sm:px-6">
           <SectionTitle
             badge="FAQ"
@@ -591,7 +591,7 @@ export default function WelcomePage() {
       </section>
 
       {/* ═══ FINAL CTA ═══ */}
-      <section className="relative overflow-hidden py-16 sm:py-24">
+      <section className="relative overflow-hidden py-12 sm:py-20">
         <div className="mesh-bg" style={{ position: 'absolute', inset: 0, opacity: 0.4 }} />
         <div className="relative max-w-3xl mx-auto px-4 sm:px-6 text-center">
           <div className="text-5xl mb-4 animate-float">🦊</div>
@@ -615,7 +615,7 @@ export default function WelcomePage() {
         style={{ background: 'var(--surface-1)', borderColor: 'var(--border)' }}
       >
         <div className="max-w-5xl mx-auto px-4 sm:px-6">
-          <div className="grid sm:grid-cols-4 gap-8 mb-8">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 sm:gap-8 mb-8">
             {/* Brand */}
             <div className="sm:col-span-1">
               <div className="flex items-center gap-2 mb-3">
