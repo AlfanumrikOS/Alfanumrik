@@ -181,21 +181,31 @@ export async function middleware(request: NextRequest) {
     return new NextResponse(null, { status: 404 });
   }
 
-  // ── Layer 2.1: Protect /internal/admin API routes ──
-  // The admin dashboard page (/internal/admin) is allowed through —
-  // it has its own secret-key gate in the UI before making any API calls.
-  // Only the API routes require middleware-level auth.
-  if (path.startsWith('/api/internal/admin')) {
-    const adminKey = request.headers.get('x-admin-key');
-    const hasSession = request.cookies.getAll().some(c => /^sb-.+-auth-token/.test(c.name));
+  // ── Layer 2.1: Protect ALL /internal/admin routes (page + API) ──
+  // Server-side auth: secret must match BEFORE page or API renders.
+  // Accepts secret via query param (?secret=xxx) for page access,
+  // or via x-admin-secret header for API calls.
+  if (path.startsWith('/internal/admin') || path.startsWith('/api/internal/admin')) {
     const secretKey = process.env.SUPER_ADMIN_SECRET;
 
-    // Require either valid admin key header or Supabase session cookie
-    const isAuthorized = (secretKey && adminKey === secretKey) || hasSession;
+    // Get secret from header (API calls) or query param (page access)
+    const headerSecret = request.headers.get('x-admin-secret');
+    const querySecret = request.nextUrl.searchParams.get('secret');
+    const providedSecret = headerSecret || querySecret;
 
-    if (!isAuthorized) {
-      // Return 404 (not 403) to hide that the route exists
-      return new NextResponse(null, { status: 404 });
+    if (!secretKey || !providedSecret || providedSecret !== secretKey) {
+      // Return 401 JSON for API routes, 401 HTML for page
+      if (path.startsWith('/api/')) {
+        return new NextResponse(
+          JSON.stringify({ error: 'Unauthorized' }),
+          { status: 401, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      // For the page: return a minimal 401 response
+      return new NextResponse(
+        '<html><body style="background:#0f0f0f;color:#e0e0e0;font-family:monospace;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><div style="font-size:48px;margin-bottom:16px">🔐</div><h1 style="font-size:18px;margin-bottom:8px">Access Denied</h1><p style="color:#888;font-size:13px">Invalid or missing admin secret.</p></div></body></html>',
+        { status: 401, headers: { 'Content-Type': 'text/html' } }
+      );
     }
 
     // Rate limit: 10 requests/minute for admin routes

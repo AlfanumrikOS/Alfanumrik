@@ -31,9 +31,6 @@ interface AuditEntry {
 }
 
 export default function SuperAdminPage() {
-  const [authenticated, setAuthenticated] = useState(false);
-  const [secretKey, setSecretKey] = useState('');
-  const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'logs'>('dashboard');
 
   // Dashboard state
@@ -48,29 +45,17 @@ export default function SuperAdminPage() {
   const [logPage, setLogPage] = useState(1);
   const [loading, setLoading] = useState(false);
 
-  // Simple headers — only admin key needed, no JWT
+  // Get the secret from URL query param — middleware already validated it
+  const [secretKey] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    return new URLSearchParams(window.location.search).get('secret') || '';
+  });
+
+  // Headers for API calls
   const adminHeaders = useCallback(() => ({
     'Content-Type': 'application/json',
-    'x-admin-key': secretKey,
+    'x-admin-secret': secretKey,
   }), [secretKey]);
-
-  // Verify admin access
-  const verifyAccess = async () => {
-    if (!secretKey.trim()) { setError('Enter admin key'); return; }
-    setError('');
-    try {
-      const res = await fetch('/api/internal/admin/stats', { headers: adminHeaders() });
-      if (res.ok) {
-        const data = await res.json();
-        setStats(data);
-        setAuthenticated(true);
-      } else {
-        setError('Invalid admin key or insufficient permissions');
-      }
-    } catch {
-      setError('Connection failed');
-    }
-  };
 
   // Fetch stats
   const fetchStats = useCallback(async () => {
@@ -114,11 +99,11 @@ export default function SuperAdminPage() {
   }, [adminHeaders, logPage]);
 
   useEffect(() => {
-    if (!authenticated) return;
+    if (!secretKey) return;
     if (activeTab === 'dashboard') fetchStats();
     if (activeTab === 'users') fetchUsers();
     if (activeTab === 'logs') fetchLogs();
-  }, [authenticated, activeTab, fetchStats, fetchUsers, fetchLogs]);
+  }, [secretKey, activeTab, fetchStats, fetchUsers, fetchLogs]);
 
   // Toggle user active status
   const toggleUserActive = async (user: UserRecord) => {
@@ -135,26 +120,10 @@ export default function SuperAdminPage() {
     if (res.ok) fetchUsers();
   };
 
-  // Admin key gate
-  if (!authenticated) {
+  if (!secretKey) {
     return (
       <div style={styles.center}>
-        <div style={styles.keyCard}>
-          <div style={{ fontSize: 32, marginBottom: 12 }}>🔐</div>
-          <h1 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>Admin Access</h1>
-          {error && <div style={styles.error}>{error}</div>}
-          <input
-            type="password"
-            value={secretKey}
-            onChange={e => setSecretKey(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && verifyAccess()}
-            placeholder="Enter admin secret key"
-            style={styles.input}
-            aria-label="Admin secret key"
-            autoComplete="off"
-          />
-          <button onClick={verifyAccess} style={styles.primaryBtn}>Verify Access</button>
-        </div>
+        <p style={{ color: '#888' }}>No secret provided. Access via: /internal/admin?secret=YOUR_KEY</p>
       </div>
     );
   }
@@ -334,7 +303,6 @@ export default function SuperAdminPage() {
 /* ─── Styles ─── */
 const styles: Record<string, React.CSSProperties> = {
   center: { minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#0f0f0f', color: '#e0e0e0', fontFamily: 'monospace' },
-  keyCard: { padding: 32, borderRadius: 12, border: '1px solid #2a2a2a', background: '#1a1a1a', textAlign: 'center', width: 320 },
   error: { padding: '8px 12px', borderRadius: 8, background: '#2a1010', color: '#EF4444', fontSize: 12, marginBottom: 12, border: '1px solid #3a1515' },
   input: { width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #333', background: '#111', color: '#e0e0e0', fontSize: 13, outline: 'none', marginBottom: 12, fontFamily: 'monospace' },
   primaryBtn: { width: '100%', padding: '10px 16px', borderRadius: 8, border: 'none', background: '#E8581C', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' },
