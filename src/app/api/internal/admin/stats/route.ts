@@ -1,70 +1,75 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 
-/**
- * GET /api/internal/admin/stats — System overview stats
- *
- * Auth: ADMIN_SECRET_KEY header only (no RBAC dependency).
- * This avoids the authorizeRequest → cookie parsing → Sentry wrapping
- * chain that was causing 500 errors.
- */
-export async function GET(request: NextRequest) {
+// Direct Supabase REST API helper — bypasses JS client entirely
+async function supabaseRest(table: string, params: string = '', method: string = 'GET') {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) throw new Error('Missing Supabase config');
+
+  const res = await fetch(`${url}/rest/v1/${table}?${params}`, {
+    method,
+    headers: {
+      'apikey': key,
+      'Authorization': `Bearer ${key}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'count=exact',
+    },
+  });
+
+  return res;
+}
+
+async function countRows(table: string, filter?: string): Promise<number> {
   try {
-    // Simple auth: check x-admin-key header
-    const adminKey = request.headers.get('x-admin-secret');
-    const secretKey = process.env.SUPER_ADMIN_SECRET;
-
-    if (!secretKey || !adminKey || adminKey !== secretKey) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const params = `select=id&limit=0${filter ? `&${filter}` : ''}`;
+    const res = await supabaseRest(table, params, 'HEAD');
+    const range = res.headers.get('content-range'); // "0-0/123"
+    if (range) {
+      const total = range.split('/')[1];
+      return parseInt(total) || 0;
     }
+    return 0;
+  } catch {
+    return -1;
+  }
+}
 
-    // Create a fresh Supabase admin client (avoids singleton issues)
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+function checkAuth(request: NextRequest): boolean {
+  const adminKey = request.headers.get('x-admin-secret');
+  const secretKey = process.env.SUPER_ADMIN_SECRET;
+  return !!(secretKey && adminKey && adminKey === secretKey);
+}
 
-    if (!supabaseUrl || !serviceKey) {
-      return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 });
-    }
+export async function GET(request: NextRequest) {
+  if (!checkAuth(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
 
-    const db = createClient(supabaseUrl, serviceKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
-
-    // Query counts — each in try/catch so one failure doesn't kill all
-    const count = async (table: string, since?: string) => {
-      try {
-        let q = db.from(table).select('*', { count: 'exact', head: true });
-        if (since) q = q.gte('created_at', since);
-        const { count: c } = await q;
-        return c ?? 0;
-      } catch {
-        return -1; // indicates error
-      }
-    };
-
+  try {
     const since24h = new Date(Date.now() - 86400000).toISOString();
+    const since7d = new Date(Date.now() - 7 * 86400000).toISOString();
 
-    const [students, teachers, parents, quizzes, chats, audits, rQuizzes, rChats, rSignups] =
-      await Promise.all([
-        count('students'),
-        count('teachers'),
-        count('guardians'),
-        count('quiz_sessions'),
-        count('chat_sessions'),
-        count('audit_logs'),
-        count('quiz_sessions', since24h),
-        count('chat_sessions', since24h),
-        count('students', since24h),
-      ]);
+    const [students, teachers, parents, quizzes, chats,
+           rStudents, rQuizzes, rChats,
+           weekStudents, weekQuizzes] = await Promise.all([
+      countRows('students'),
+      countRows('teachers'),
+      countRows('guardians'),
+      countRows('quiz_sessions'),
+      countRows('chat_sessions'),
+      countRows('students', `created_at=gte.${since24h}`),
+      countRows('quiz_sessions', `created_at=gte.${since24h}`),
+      countRows('chat_sessions', `created_at=gte.${since24h}`),
+      countRows('students', `created_at=gte.${since7d}`),
+      countRows('quiz_sessions', `created_at=gte.${since7d}`),
+    ]);
 
     return NextResponse.json({
-      totals: { students, teachers, parents, quiz_sessions: quizzes, chat_sessions: chats, audit_logs: audits },
-      last_24h: { quizzes: rQuizzes, chats: rChats, signups: rSignups },
+      totals: { students, teachers, parents, quiz_sessions: quizzes, chat_sessions: chats },
+      last_24h: { signups: rStudents, quizzes: rQuizzes, chats: rChats },
+      last_7d: { signups: weekStudents, quizzes: weekQuizzes },
     });
   } catch (err) {
-    return NextResponse.json(
-      { error: 'Internal error', message: err instanceof Error ? err.message : String(err) },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 });
   }
 }
