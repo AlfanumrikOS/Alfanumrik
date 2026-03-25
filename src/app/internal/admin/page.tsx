@@ -51,11 +51,16 @@ export default function SuperAdminPage() {
   const [logPage, setLogPage] = useState(1);
   const [loading, setLoading] = useState(false);
 
-  const adminHeaders = useCallback(() => {
+  const adminHeaders = useCallback(async () => {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'x-admin-key': secretKey,
     };
+    // Get the Supabase JWT so authorizeRequest can verify permissions
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      headers['Authorization'] = `Bearer ${session.access_token}`;
+    }
     return headers;
   }, [secretKey]);
 
@@ -64,7 +69,7 @@ export default function SuperAdminPage() {
     if (!secretKey.trim()) { setError('Enter admin key'); return; }
     setError('');
     try {
-      const res = await fetch('/api/internal/admin/stats', { headers: adminHeaders() });
+      const res = await fetch('/api/internal/admin/stats', { headers: await adminHeaders() });
       if (res.ok) {
         const data = await res.json();
         setStats(data);
@@ -81,7 +86,7 @@ export default function SuperAdminPage() {
   const fetchStats = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/internal/admin/stats', { headers: adminHeaders() });
+      const res = await fetch('/api/internal/admin/stats', { headers: await adminHeaders() });
       if (res.ok) setStats(await res.json());
     } catch { /* silent */ }
     setLoading(false);
@@ -93,7 +98,7 @@ export default function SuperAdminPage() {
     try {
       const params = new URLSearchParams({ role: userRole, page: String(userPage), limit: '25' });
       if (userSearch) params.set('search', userSearch);
-      const res = await fetch(`/api/internal/admin/users?${params}`, { headers: adminHeaders() });
+      const res = await fetch(`/api/internal/admin/users?${params}`, { headers: await adminHeaders() });
       if (res.ok) {
         const data = await res.json();
         setUsers(data.data || []);
@@ -108,7 +113,7 @@ export default function SuperAdminPage() {
     setLoading(true);
     try {
       const params = new URLSearchParams({ page: String(logPage), limit: '25' });
-      const res = await fetch(`/api/v1/admin/audit-logs?${params}`, { headers: adminHeaders() });
+      const res = await fetch(`/api/v1/admin/audit-logs?${params}`, { headers: await adminHeaders() });
       if (res.ok) {
         const data = await res.json();
         setLogs(data.data || []);
@@ -130,7 +135,7 @@ export default function SuperAdminPage() {
     const table = user.role === 'teacher' ? 'teachers' : user.role === 'guardian' ? 'guardians' : 'students';
     const res = await fetch('/api/internal/admin/users', {
       method: 'PATCH',
-      headers: adminHeaders(),
+      headers: await adminHeaders(),
       body: JSON.stringify({
         user_id: user.id,
         table,
