@@ -93,7 +93,7 @@ const BENEFITS = [
 
 const TESTIMONIALS = [
   {
-    quote: 'Foxy explains better than my tuition teacher. I went from 62% to 89% in science in just 3 months.',
+    quote: 'Foxy explains concepts step by step in a way I actually understand. My science scores have improved significantly.',
     name: 'Priya S.',
     role: 'Class 10 Student, Delhi',
     avatar: '🎓',
@@ -217,28 +217,17 @@ export default function WelcomePage() {
         <div className="max-w-6xl mx-auto px-3 sm:px-6 h-16 flex items-center justify-between">
           <Link href="/welcome" className="flex items-center gap-2">
             <span className="text-2xl">🦊</span>
-            <span
-              className="text-lg font-extrabold gradient-text"
-              style={{ fontFamily: 'var(--font-display)' }}
-            >
+            <span className="text-lg font-extrabold gradient-text" style={{ fontFamily: 'var(--font-display)' }}>
               Alfanumrik
             </span>
           </Link>
-          <div className="flex items-center gap-2">
-            <Link
-              href="/login"
-              className="hidden sm:inline-block text-sm font-semibold px-4 py-2 rounded-lg transition-all"
-              style={{ color: 'var(--text-2)' }}
-            >
-              Log In
-            </Link>
-            <Link
-              href="/login"
-              className="text-sm font-bold px-5 py-2.5 rounded-xl text-white transition-all active:scale-[0.97]"
-              style={{ background: 'var(--orange)' }}
-            >
-              Sign Up Free
-            </Link>
+          <div className="flex items-center gap-1 sm:gap-3">
+            <Link href="/product" className="hidden sm:inline-block text-xs font-semibold px-3 py-2 rounded-lg" style={{ color: 'var(--text-2)' }}>Product</Link>
+            <Link href="/for-schools" className="hidden sm:inline-block text-xs font-semibold px-3 py-2 rounded-lg" style={{ color: 'var(--text-2)' }}>For Schools</Link>
+            <Link href="/research" className="hidden sm:inline-block text-xs font-semibold px-3 py-2 rounded-lg" style={{ color: 'var(--text-2)' }}>Research</Link>
+            <Link href="/demo" className="hidden sm:inline-block text-xs font-semibold px-3 py-2 rounded-lg" style={{ color: 'var(--orange)' }}>Book Demo</Link>
+            <Link href="/login" className="hidden sm:inline-block text-sm font-semibold px-4 py-2 rounded-lg" style={{ color: 'var(--text-2)' }}>Log In</Link>
+            <Link href="/login" className="text-sm font-bold px-5 py-2.5 rounded-xl text-white" style={{ background: 'var(--orange)' }}>Sign Up Free</Link>
           </div>
         </div>
       </nav>
@@ -657,10 +646,11 @@ export default function WelcomePage() {
               </h4>
               <div className="space-y-2">
                 {[
-                  { href: '/login', label: 'Student Login' },
-                  { href: '/login?role=parent', label: 'Parent Portal' },
-                  { href: '/login?role=teacher', label: 'Teacher Dashboard' },
-                  { href: '/simulations', label: 'Interactive Labs' },
+                  { href: '/product', label: 'Product Overview' },
+                  { href: '/for-schools', label: 'For Schools' },
+                  { href: '/for-teachers', label: 'For Teachers' },
+                  { href: '/for-parents', label: 'For Parents' },
+                  { href: '/demo', label: 'Book a Demo' },
                 ].map(link => (
                   <Link key={link.href} href={link.href} className="block text-sm hover:underline" style={{ color: 'var(--text-2)' }}>
                     {link.label}
@@ -678,6 +668,7 @@ export default function WelcomePage() {
                 {[
                   { href: '/privacy', label: 'Privacy Policy' },
                   { href: '/terms', label: 'Terms of Service' },
+                  { href: '/security', label: 'Security' },
                   { href: '/help', label: 'Help Center' },
                 ].map(link => (
                   <Link key={link.href} href={link.href} className="block text-sm hover:underline" style={{ color: 'var(--text-2)' }}>
@@ -693,8 +684,9 @@ export default function WelcomePage() {
                 Contact
               </h4>
               <div className="space-y-2 text-sm" style={{ color: 'var(--text-2)' }}>
-                <p>support@alfanumrik.com</p>
-                <p>Cusiosense Learning India Pvt. Ltd.</p>
+                <p><Link href="/contact" className="hover:underline">support@alfanumrik.com</Link></p>
+                <p><Link href="/about" className="hover:underline">About Us</Link></p>
+                <p><Link href="/research" className="hover:underline">Research</Link></p>
                 <p>India 🇮🇳</p>
               </div>
             </div>
