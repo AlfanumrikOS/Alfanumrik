@@ -396,7 +396,7 @@ export default function ScanPage() {
             {previewUrl && (
               <div className="w-32 h-32 mx-auto rounded-xl overflow-hidden mb-4 border" style={{ borderColor: 'var(--border)' }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={previewUrl} alt="Uploaded" className="w-full h-full object-cover" />
+                <img src={previewUrl} alt="Uploaded document preview" width={128} height={128} loading="lazy" className="w-full h-full object-cover" />
               </div>
             )}
             <div className="text-4xl animate-float mb-3">🔍</div>
@@ -423,7 +423,7 @@ export default function ScanPage() {
             {previewUrl && (
               <div className="w-full h-40 rounded-2xl overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={previewUrl} alt="Scanned" className="w-full h-full object-cover" />
+                <img src={previewUrl} alt="Scanned document preview" width={400} height={160} loading="lazy" className="w-full h-full object-cover" />
               </div>
             )}
 
@@ -542,7 +542,7 @@ export default function ScanPage() {
                       <div className="flex items-center gap-3">
                         <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 border" style={{ borderColor: 'var(--border)' }}>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={upload.image_url} alt={`Scanned ${upload.image_type || 'document'}`} className="w-full h-full object-cover" />
+                          <img src={upload.image_url} alt={`Scanned ${upload.image_type || 'document'}`} width={48} height={48} loading="lazy" className="w-full h-full object-cover" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">

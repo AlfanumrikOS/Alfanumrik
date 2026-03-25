@@ -9,6 +9,9 @@
     "lint": "next lint",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "analyze": "ANALYZE=true next build",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
@@ -26,6 +29,8 @@
     "swr": "^2.4.1"
   },
   "devDependencies": {
+    "@next/bundle-analyzer": "^16.2.1",
+    "@playwright/test": "^1.58.2",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^20.14.2",
