@@ -153,21 +153,21 @@ function CTAButtons({ className = '' }: { className?: string }) {
   return (
     <div className={`flex flex-col sm:flex-row items-center gap-3 ${className}`}>
       <Link
-        href="/"
+        href="/login"
         className="btn-primary text-sm px-7 py-3.5 rounded-xl font-bold text-white w-full sm:w-auto text-center"
         style={{ background: 'linear-gradient(135deg, #E8581C, #F5A623)' }}
       >
         Start Learning Free
       </Link>
       <Link
-        href="/?role=parent"
+        href="/login?role=parent"
         className="btn-ghost text-sm px-6 py-3 rounded-xl font-semibold w-full sm:w-auto text-center"
         style={{ color: '#16A34A', border: '1.5px solid #16A34A40' }}
       >
         For Parents
       </Link>
       <Link
-        href="/?role=teacher"
+        href="/login?role=teacher"
         className="btn-ghost text-sm px-6 py-3 rounded-xl font-semibold w-full sm:w-auto text-center"
         style={{ color: '#2563EB', border: '1.5px solid #2563EB40' }}
       >
@@ -226,14 +226,14 @@ export default function WelcomePage() {
           </Link>
           <div className="flex items-center gap-2">
             <Link
-              href="/"
+              href="/login"
               className="text-sm font-semibold px-4 py-2 rounded-lg transition-all"
               style={{ color: 'var(--text-2)' }}
             >
               Log In
             </Link>
             <Link
-              href="/"
+              href="/login"
               className="text-sm font-bold px-5 py-2.5 rounded-xl text-white transition-all active:scale-[0.97]"
               style={{ background: 'var(--orange)' }}
             >
@@ -637,9 +637,9 @@ export default function WelcomePage() {
               </h4>
               <div className="space-y-2">
                 {[
-                  { href: '/', label: 'Student Login' },
-                  { href: '/?role=parent', label: 'Parent Portal' },
-                  { href: '/?role=teacher', label: 'Teacher Dashboard' },
+                  { href: '/login', label: 'Student Login' },
+                  { href: '/login?role=parent', label: 'Parent Portal' },
+                  { href: '/login?role=teacher', label: 'Teacher Dashboard' },
                   { href: '/simulations', label: 'Interactive Labs' },
                 ].map(link => (
                   <Link key={link.href} href={link.href} className="block text-sm hover:underline" style={{ color: 'var(--text-2)' }}>

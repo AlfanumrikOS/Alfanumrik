@@ -5,10 +5,9 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { SUPABASE_URL, SUPABASE_ANON_KEY, SUBJECT_META } from '@/lib/constants';
-import { BottomNav } from '@/components/ui';
+import { BottomNav, LoadingFoxy } from '@/components/ui';
 import { RichContent } from '@/components/foxy/RichContent';
 import { ChatInput } from '@/components/foxy/ChatInput';
-import { AuthScreen } from '@/components/auth/AuthScreen';
 
 /* ══════════════════════════════════════════════════════════════
    SUBJECT CONFIGURATION
@@ -115,6 +114,13 @@ const REPORT_REASONS = [
 export default function FoxyPage() {
   const { student: authStudent, isLoggedIn, isLoading: authLoading, activeRole, signOut } = useAuth();
   const router = useRouter();
+
+  // Redirect unauthenticated visitors to the marketing landing page
+  useEffect(() => {
+    if (!authLoading && !isLoggedIn) {
+      router.replace('/welcome');
+    }
+  }, [authLoading, isLoggedIn, router]);
 
   // Core state
   const [student, setStudent] = useState<any>(null);
@@ -325,7 +331,7 @@ export default function FoxyPage() {
     </div>
   );
 
-  if (!isLoggedIn && !authLoading) return <AuthScreen onSuccess={() => window.location.reload()} />;
+  if (!isLoggedIn) return <LoadingFoxy />;
 
   if (!student) {
     // Non-student roles: show role-aware screen with navigation (don't auto-redirect)
