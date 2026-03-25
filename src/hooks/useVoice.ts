@@ -18,7 +18,7 @@ interface UseVoiceOptions {
 
 interface UseVoiceReturn {
   // TTS
-  speak: (text: string) => Promise<void>;
+  speak: (text: string, studentId?: string) => Promise<void>;
   stopSpeaking: () => void;
   isSpeaking: boolean;
   isLoadingAudio: boolean;
@@ -71,7 +71,7 @@ export function useVoice({ language, onTranscript, enabled }: UseVoiceOptions): 
   }, []);
 
   // ─── TTS: ElevenLabs with Web Speech API fallback ───
-  const speak = useCallback(async (text: string) => {
+  const speak = useCallback(async (text: string, studentId?: string) => {
     if (!enabled || !text.trim()) return;
 
     // Stop any current speech
@@ -89,7 +89,7 @@ export function useVoice({ language, onTranscript, enabled }: UseVoiceOptions): 
       const res = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, language }),
+        body: JSON.stringify({ text, language, studentId }),
         signal: abortRef.current.signal,
       });
 

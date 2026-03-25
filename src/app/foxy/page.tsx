@@ -402,16 +402,22 @@ export default function FoxyPage() {
   // Auto-scroll
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
-  // TTS — uses unified voice hook; records usage
+  // TTS — uses unified voice hook; checks limit then records usage
   const speakText = useCallback(async (text: string) => {
     if (!voiceEnabled) return;
-    // Record TTS usage
+    // Check TTS usage limit before speaking
     if (student?.id) {
+      const usage = await checkDailyUsage(student.id, 'foxy_tts', student.subscription_plan || 'free');
+      setTtsUsage(usage);
+      if (!usage.allowed) {
+        // Silently fall back — don't block chat, just skip TTS
+        return;
+      }
       recordUsage(student.id, 'foxy_tts');
       setTtsUsage(prev => prev ? { ...prev, count: prev.count + 1, remaining: Math.max(0, prev.remaining - 1), allowed: prev.count + 1 < prev.limit } : prev);
     }
-    await voice.speak(text);
-  }, [voiceEnabled, voice.speak, student?.id]);
+    await voice.speak(text, student?.id);
+  }, [voiceEnabled, voice.speak, student?.id, student?.subscription_plan]);
 
   const stopSpeaking = useCallback(() => { voice.stopSpeaking(); }, [voice.stopSpeaking]);
 
@@ -583,7 +589,8 @@ export default function FoxyPage() {
           {LANGS.map(l => <button key={l.code} onClick={() => { if (!isLangLocked) setLanguage(l.code); }} className="text-[10px] font-bold px-2 py-1 rounded-lg transition-all" style={{ background: language === l.code ? 'rgba(255,255,255,0.2)' : 'transparent', color: language === l.code ? '#fff' : 'rgba(255,255,255,0.4)', opacity: isLangLocked && language !== l.code ? 0.2 : 1, cursor: isLangLocked ? 'default' : 'pointer' }}>{l.label}</button>)}
           {isLangLocked && <span className="text-[8px] text-white/30">🔒</span>}
           <button onClick={() => { if (voiceEnabled) { stopSpeaking(); setVoiceEnabled(false); } else setVoiceEnabled(true); }} className="ml-1 px-2 py-1 rounded-lg text-sm transition-all" style={{ background: voiceEnabled ? 'rgba(245,166,35,0.3)' : 'rgba(255,255,255,0.1)' }}>{voiceEnabled ? (voice.isSpeaking ? '🔊' : '🔈') : '🔇'}</button>
-          {chatUsage && <span className="text-[8px] opacity-40 ml-1">{chatUsage.remaining}/{chatUsage.limit}</span>}
+          {chatUsage && <span className="text-[8px] opacity-40 ml-1" title="Chat messages remaining">💬{chatUsage.remaining}/{chatUsage.limit}</span>}
+          {voiceEnabled && ttsUsage && <span className="text-[8px] opacity-40 ml-0.5" title="Voice calls remaining">🔊{ttsUsage.remaining}/{ttsUsage.limit}</span>}
         </div>
       </header>
 
