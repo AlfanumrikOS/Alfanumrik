@@ -104,7 +104,7 @@ function confirmationEmail(url: string, otpCode?: string): { subject: string; ht
         </div>
         <p style="margin:8px 0 0;font-size:12px;color:#9CA3AF;">Enter this code on the verification page</p>
       </div>` : ''
-  const subject = otpCode ? `${otpCode} - Alfanumrik verification code` : 'Confirm your Alfanumrik account'
+  const subject = otpCode ? `Alfanumrik: Verify your email (code inside)` : 'Confirm your Alfanumrik account'
   const html = baseWrapper(`
       <div style="text-align:center;margin-bottom:20px;"><div style="font-size:48px;line-height:1;">&#9993;&#65039;</div></div>
       <h2 style="margin:0 0 8px;font-size:20px;font-weight:800;color:#1F2937;text-align:center;">Verify Your Email</h2>
@@ -116,7 +116,7 @@ function confirmationEmail(url: string, otpCode?: string): { subject: string; ht
         </td></tr>
       </table>
       <p style="margin:20px 0 0;font-size:12px;color:#9CA3AF;text-align:center;line-height:1.6;">This code expires in 24 hours. If you didn't sign up for Alfanumrik, ignore this email.</p>
-    `, otpCode ? `Your code: ${otpCode}. Confirm your Alfanumrik account.` : 'Confirm your email to start learning on Alfanumrik.')
+    `, 'Confirm your email to start learning on Alfanumrik.')
   const text = otpCode
     ? `Your Alfanumrik verification code: ${otpCode}\n\nOr confirm your email by visiting:\n${url}\n\nThis code expires in 24 hours.\nIf you didn't sign up for Alfanumrik, ignore this email.\n\n(c) 2026 Alfanumrik EdTech`
     : `Confirm your Alfanumrik account by visiting:\n${url}\n\nThis link expires in 24 hours.\nIf you didn't sign up for Alfanumrik, ignore this email.\n\n(c) 2026 Alfanumrik EdTech`
@@ -131,7 +131,7 @@ function recoveryEmail(url: string, otpCode?: string): { subject: string; html: 
           <span style="font-size:32px;font-weight:800;letter-spacing:6px;color:#EF4444;font-family:monospace;">${otpCode}</span>
         </div>
       </div>` : ''
-  const subject = otpCode ? `${otpCode} - Alfanumrik password reset code` : 'Reset your Alfanumrik password'
+  const subject = otpCode ? `Alfanumrik: Reset your password (code inside)` : 'Reset your Alfanumrik password'
   const html = baseWrapper(`
       <div style="text-align:center;margin-bottom:20px;"><div style="font-size:48px;line-height:1;">&#128274;</div></div>
       <h2 style="margin:0 0 8px;font-size:20px;font-weight:800;color:#1F2937;text-align:center;">Reset Your Password</h2>
@@ -147,7 +147,7 @@ function recoveryEmail(url: string, otpCode?: string): { subject: string; html: 
           <p style="margin:0;font-size:13px;color:#991B1B;line-height:1.5;">&#9888;&#65039; <strong>Security:</strong> This code expires in 1 hour. If you didn't request this, your password is safe &#8212; just ignore this email.</p>
         </td></tr>
       </table>
-    `, otpCode ? `Your code: ${otpCode}. Reset your Alfanumrik password.` : 'Reset your Alfanumrik password.')
+    `, 'Reset your Alfanumrik password securely.')
   const text = otpCode
     ? `Your Alfanumrik password reset code: ${otpCode}\n\nOr reset your password by visiting:\n${url}\n\nSecurity: This code expires in 1 hour.\nIf you didn't request this, your password is safe - just ignore this email.\n\n(c) 2026 Alfanumrik EdTech`
     : `Reset your Alfanumrik password by visiting:\n${url}\n\nSecurity: This link expires in 1 hour.\nIf you didn't request this, your password is safe - just ignore this email.\n\n(c) 2026 Alfanumrik EdTech`
@@ -297,6 +297,11 @@ Deno.serve(async (req: Request) => {
         subject: emailContent.subject,
         html: emailContent.html,
         text: emailContent.text,
+        headers: {
+          'X-Entity-Ref-ID': `auth-${email_action_type}-${Date.now()}`,
+          'List-Unsubscribe': '<mailto:unsubscribe@alfanumrik.com?subject=unsubscribe>',
+          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+        },
         tags: [
           { name: 'category', value: 'auth' },
           { name: 'type', value: email_action_type },

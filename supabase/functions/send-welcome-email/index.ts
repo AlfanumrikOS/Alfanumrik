@@ -264,6 +264,7 @@ Deno.serve(async (req: Request) => {
             html: emailContent.html,
             text: emailContent.text,
             headers: {
+              'X-Entity-Ref-ID': `welcome-${role}-${Date.now()}`,
               'List-Unsubscribe': `<mailto:unsubscribe@alfanumrik.com?subject=unsubscribe>`,
               'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
             },
