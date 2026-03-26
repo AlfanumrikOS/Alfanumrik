@@ -6,7 +6,7 @@
  *   - Teacher: Classroom tools, quick setup guide, dashboard CTA
  *   - Parent:  Tracking features, child linking guide, parent portal CTA
  *
- * Supports Resend API as primary provider with notification fallback.
+ * Supports Mailgun API as primary provider with notification fallback.
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -45,10 +45,40 @@ function errorResponse(message: string, status = 400, requestOrigin?: string | n
 }
 
 // ─── Config ───────────────────────────────────────────────────────────────────
-const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? ''
+const MAILGUN_API_KEY = Deno.env.get('MAILGUN_API_KEY') ?? ''
+const MAILGUN_DOMAIN = Deno.env.get('MAILGUN_DOMAIN') ?? ''
 const FROM_EMAIL = 'Alfanumrik <welcome@alfanumrik.com>'
 const REPLY_TO = 'support@alfanumrik.com'
 const SITE_URL = 'https://alfanumrik.com'
+
+async function sendMailgunEmail(params: {
+  to: string; subject: string; html: string; text: string;
+  from?: string; replyTo?: string;
+  headers?: Record<string, string>;
+  tags?: Array<{ name: string; value: string }>;
+}): Promise<{ success: boolean; id?: string; error?: string }> {
+  const form = new FormData()
+  form.append('from', params.from || FROM_EMAIL)
+  form.append('to', params.to)
+  form.append('subject', params.subject)
+  form.append('html', params.html)
+  form.append('text', params.text)
+  if (params.replyTo) form.append('h:Reply-To', params.replyTo)
+  if (params.headers) {
+    for (const [k, v] of Object.entries(params.headers)) form.append(`h:${k}`, v)
+  }
+  if (params.tags) {
+    for (const t of params.tags) form.append('o:tag', `${t.name}:${t.value}`)
+  }
+  const res = await fetch(`https://api.mailgun.net/v3/${MAILGUN_DOMAIN}/messages`, {
+    method: 'POST',
+    headers: { 'Authorization': `Basic ${btoa(`api:${MAILGUN_API_KEY}`)}` },
+    body: form,
+  })
+  if (!res.ok) return { success: false, error: await res.text() }
+  const result = await res.json()
+  return { success: true, id: result.id }
+}
 
 interface WelcomeRequest {
   role: 'student' | 'teacher' | 'parent'
@@ -248,37 +278,32 @@ Deno.serve(async (req: Request) => {
       default: return errorResponse('Invalid role', 400, origin)
     }
 
-    // Send via Resend API if configured — custom domain only (never use resend.dev)
-    if (RESEND_API_KEY) {
+    // Send via Mailgun API if configured
+    if (MAILGUN_API_KEY && MAILGUN_DOMAIN) {
       try {
-        const res = await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RESEND_API_KEY}` },
-          body: JSON.stringify({
-            from: FROM_EMAIL,
-            reply_to: REPLY_TO,
-            to: [email],
-            subject: emailContent.subject,
-            html: emailContent.html,
-            text: emailContent.text,
-            headers: {
-              'X-Entity-Ref-ID': `welcome-${role}-${Date.now()}`,
-              'List-Unsubscribe': `<mailto:unsubscribe@alfanumrik.com?subject=unsubscribe>`,
-              'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
-            },
-            tags: [
-              { name: 'category', value: 'welcome' },
-              { name: 'role', value: role },
-            ],
-          }),
+        const result = await sendMailgunEmail({
+          to: email,
+          subject: emailContent.subject,
+          html: emailContent.html,
+          text: emailContent.text,
+          from: FROM_EMAIL,
+          replyTo: REPLY_TO,
+          headers: {
+            'X-Entity-Ref-ID': `welcome-${role}-${Date.now()}`,
+            'List-Unsubscribe': `<mailto:unsubscribe@alfanumrik.com?subject=unsubscribe>`,
+            'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+          },
+          tags: [
+            { name: 'category', value: 'welcome' },
+            { name: 'role', value: role },
+          ],
         })
-        if (res.ok) {
-          const result = await res.json()
+
+        if (result.success) {
           console.log(`[Welcome Email] Sent to ${email}, id: ${result.id}`)
-          return jsonResponse({ sent: true, provider: 'resend', id: result.id }, 200, {}, origin)
+          return jsonResponse({ sent: true, provider: 'mailgun', id: result.id }, 200, {}, origin)
         }
-        const errText = await res.text()
-        console.error('[Welcome Email] Resend error:', errText)
+        console.error('[Welcome Email] Mailgun error:', result.error)
       } catch (fetchErr) {
         console.error('[Welcome Email] Fetch error:', fetchErr)
       }

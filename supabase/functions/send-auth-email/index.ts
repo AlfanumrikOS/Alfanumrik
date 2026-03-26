@@ -18,20 +18,50 @@
  *      https://shktyoxqhundlvkiwguu.supabase.co/functions/v1/send-auth-email
  *   4. Copy the generated hook secret and set it as SEND_EMAIL_HOOK_SECRET
  *      in Edge Functions -> Secrets
- *   5. Set RESEND_API_KEY in Edge Functions -> Secrets
- *   6. Verify alfanumrik.com domain in Resend (DNS records: DKIM, SPF, DMARC)
+ *   5. Set MAILGUN_API_KEY and MAILGUN_DOMAIN in Edge Functions -> Secrets
+ *   6. Verify alfanumrik.com domain in Mailgun (DNS records: DKIM, SPF, DMARC)
  */
 
 import { Webhook } from 'https://esm.sh/standardwebhooks@1.0.0'
-import { Resend } from 'https://esm.sh/resend@4.0.0'
 
 // Supabase stores the secret as "v1,whsec_<base64>" but standardwebhooks expects "whsec_<base64>"
 const rawHookSecret = Deno.env.get('SEND_EMAIL_HOOK_SECRET') || ''
 const hookSecret = rawHookSecret.startsWith('v1,') ? rawHookSecret.slice(3) : rawHookSecret
-const resendApiKey = Deno.env.get('RESEND_API_KEY') || ''
+const mailgunApiKey = Deno.env.get('MAILGUN_API_KEY') || ''
+const mailgunDomain = Deno.env.get('MAILGUN_DOMAIN') || ''
 const FROM_EMAIL = 'Alfanumrik <noreply@alfanumrik.com>'
 const REPLY_TO = 'support@alfanumrik.com'
 const SITE_URL = 'https://alfanumrik.com'
+
+// ─── Mailgun Email Sender ───────────────────────────────────────────────────
+async function sendMailgunEmail(params: {
+  to: string; subject: string; html: string; text: string;
+  from?: string; replyTo?: string;
+  headers?: Record<string, string>;
+  tags?: Array<{ name: string; value: string }>;
+}): Promise<{ success: boolean; id?: string; error?: string }> {
+  const form = new FormData()
+  form.append('from', params.from || FROM_EMAIL)
+  form.append('to', params.to)
+  form.append('subject', params.subject)
+  form.append('html', params.html)
+  form.append('text', params.text)
+  if (params.replyTo) form.append('h:Reply-To', params.replyTo)
+  if (params.headers) {
+    for (const [k, v] of Object.entries(params.headers)) form.append(`h:${k}`, v)
+  }
+  if (params.tags) {
+    for (const t of params.tags) form.append('o:tag', `${t.name}:${t.value}`)
+  }
+  const res = await fetch(`https://api.mailgun.net/v3/${mailgunDomain}/messages`, {
+    method: 'POST',
+    headers: { 'Authorization': `Basic ${btoa(`api:${mailgunApiKey}`)}` },
+    body: form,
+  })
+  if (!res.ok) return { success: false, error: await res.text() }
+  const result = await res.json()
+  return { success: true, id: result.id }
+}
 
 function baseWrapper(content: string, preheader: string): string {
   return `<!DOCTYPE html>
@@ -264,28 +294,22 @@ Deno.serve(async (req: Request) => {
         emailContent = confirmationEmail(actionUrl)
     }
 
-    if (!resendApiKey) {
-      // CRITICAL: Return 200 even without API key so Supabase doesn't block signup.
-      // Supabase will use its built-in SMTP as fallback when the hook doesn't send.
-      console.warn('[Auth Email] RESEND_API_KEY not set. Returning 200 so Supabase built-in email can work.')
-      return new Response(JSON.stringify({ success: true, warning: 'no_api_key' }), {
+    if (!mailgunApiKey || !mailgunDomain) {
+      console.warn('[Auth Email] MAILGUN_API_KEY or MAILGUN_DOMAIN not set. Returning 200 so Supabase built-in email can work.')
+      return new Response(JSON.stringify({ success: true, warning: 'no_mailgun_config' }), {
         status: 200, headers: { 'Content-Type': 'application/json' },
       })
     }
 
-    const resend = new Resend(resendApiKey)
-
-    // Send from verified custom domain only — never fall back to resend.dev
-    // (resend.dev is a shared test domain with poor reputation → guaranteed spam)
     let sent = false
     try {
-      const { data: sendData, error: sendError } = await resend.emails.send({
-        from: FROM_EMAIL,
-        replyTo: REPLY_TO,
-        to: [user.email],
+      const result = await sendMailgunEmail({
+        to: user.email,
         subject: emailContent.subject,
         html: emailContent.html,
         text: emailContent.text,
+        from: FROM_EMAIL,
+        replyTo: REPLY_TO,
         headers: {
           'X-Entity-Ref-ID': `auth-${email_action_type}-${Date.now()}`,
           'List-Unsubscribe': '<mailto:unsubscribe@alfanumrik.com?subject=unsubscribe>',
@@ -297,10 +321,10 @@ Deno.serve(async (req: Request) => {
         ],
       })
 
-      if (sendError) {
-        console.error('[Auth Email] Resend error:', sendError)
+      if (result.error) {
+        console.error('[Auth Email] Mailgun error:', result.error)
       } else {
-        console.log(`[Auth Email] Sent ${email_action_type} email to ${user.email}, id: ${sendData?.id}`)
+        console.log(`[Auth Email] Sent ${email_action_type} email to ${user.email}, id: ${result.id}`)
         sent = true
       }
     } catch (sendErr) {
@@ -308,7 +332,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (!sent) {
-      console.error('[Auth Email] Send failed for', user.email, '- check domain verification in Resend dashboard')
+      console.error('[Auth Email] Send failed for', user.email, '- check domain verification in Mailgun dashboard')
     }
 
     // ALWAYS return 200 — never block the auth flow
