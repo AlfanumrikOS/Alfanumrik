@@ -556,3 +556,19 @@ export async function upsertBloomProgression(data: {
   );
   if (error) console.error('upsertBloomProgression:', error.message);
 }
+
+// ─── Topic Diagrams ──────────────────────────────────────
+
+export async function getTopicDiagrams(subject: string, grade: string, chapterNumber: number) {
+  const g = grade.startsWith('Grade') ? grade : `Grade ${grade}`;
+  const { data, error } = await supabase
+    .from('topic_diagrams')
+    .select('id, image_url, caption, caption_hi, alt_text, diagram_type, display_order, topic')
+    .eq('subject', subject)
+    .eq('grade', g)
+    .eq('chapter_number', chapterNumber)
+    .eq('is_active', true)
+    .order('display_order');
+  if (error) console.error('getTopicDiagrams:', error.message);
+  return data ?? [];
+}
