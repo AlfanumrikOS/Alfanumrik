@@ -87,7 +87,7 @@ export function ChatBubble({
 
       {/* Message body */}
       <div
-        className="w-full rounded-2xl px-4 py-3 text-sm leading-relaxed"
+        className="w-full rounded-2xl px-4 py-3 text-sm leading-relaxed overflow-hidden min-w-0"
         style={{
           background: isTutor ? 'var(--surface-1)' : `${color}08`,
           color: 'var(--text-1)',
