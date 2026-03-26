@@ -79,7 +79,11 @@ export async function POST(req: NextRequest) {
         .maybeSingle();
 
       const plan = studentRow?.subscription_plan || 'free';
-      const limit = plan === 'premium' ? 500 : plan === 'basic' ? 80 : FREE_TTS_DAILY_LIMIT;
+      // Plan limits aligned with usage.ts and subscription_plans table
+      const TTS_LIMITS: Record<string, number> = {
+        free: 3, starter: 15, basic: 15, pro: 50, premium: 50, unlimited: 999999,
+      };
+      const limit = TTS_LIMITS[plan] ?? TTS_LIMITS.free;
 
       if (currentCount >= limit) {
         return NextResponse.json(
