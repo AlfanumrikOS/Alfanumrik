@@ -59,11 +59,12 @@ export async function POST(request: NextRequest) {
     const amount = PRICING[plan_code][billing_cycle as 'monthly' | 'yearly'];
 
     // Create Razorpay order
+    const authString = Buffer.from(`${razorpayKey}:${razorpaySecret}`).toString('base64');
     const orderRes = await fetch('https://api.razorpay.com/v1/orders', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': 'Basic ' + btoa(`${razorpayKey}:${razorpaySecret}`),
+        'Authorization': `Basic ${authString}`,
       },
       body: JSON.stringify({
         amount,
@@ -80,8 +81,9 @@ export async function POST(request: NextRequest) {
 
     if (!orderRes.ok) {
       const err = await orderRes.text();
-      console.error('Razorpay order creation failed:', err);
-      return NextResponse.json({ error: 'Payment gateway error' }, { status: 502 });
+      console.error('Razorpay order creation failed:', orderRes.status, err);
+      console.error('Razorpay key used:', razorpayKey?.substring(0, 12) + '...');
+      return NextResponse.json({ error: 'Payment gateway error. Please try again.' }, { status: 502 });
     }
 
     const order = await orderRes.json();
