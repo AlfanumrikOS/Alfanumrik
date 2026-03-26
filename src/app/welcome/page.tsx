@@ -131,7 +131,7 @@ const FAQS = [
   },
   {
     q: 'Is Alfanumrik free?',
-    a: 'Yes! Alfanumrik offers a generous free tier with 50 Foxy chats per day, unlimited quizzes, and full access to all subjects. Premium plans are available for extended usage, voice tutoring, and advanced analytics.',
+    a: 'Yes! Alfanumrik offers a free tier with 5 Foxy chats and 5 quizzes per day. Starter, Pro, and Unlimited plans are available for more chats, quizzes, and subjects.',
   },
   {
     q: 'Which boards and grades are supported?',
