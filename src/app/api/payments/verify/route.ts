@@ -69,7 +69,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify Razorpay HMAC signature
-    const razorpaySecret = process.env.RAZORPAY_KEY_SECRET!;
+    const razorpaySecret = process.env.RAZORPAY_KEY_SECRET;
+    if (!razorpaySecret) {
+      console.error('verify: MISSING RAZORPAY_KEY_SECRET env var');
+      return NextResponse.json({ error: 'Payment system not configured. Please contact support.' }, { status: 503 });
+    }
     const expectedSignature = crypto
       .createHmac('sha256', razorpaySecret)
       .update(`${razorpay_order_id}|${razorpay_payment_id}`)
