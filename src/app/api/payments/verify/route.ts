@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
 
     const studentId = studentRow?.id;
 
-    // Record payment
+    // Record payment (ignore if webhook already inserted it)
     if (studentId) {
       const PRICING: Record<string, Record<string, number>> = {
         starter: { monthly: 29900, yearly: 239900 },
@@ -93,7 +93,8 @@ export async function POST(request: NextRequest) {
         unlimited: { monthly: 149900, yearly: 1199900 },
       };
 
-      await admin.from('payment_history').insert({
+      // Insert payment record — ignore conflict if webhook already recorded it
+      const { error: insertErr } = await admin.from('payment_history').insert({
         student_id: studentId,
         razorpay_payment_id,
         razorpay_order_id,
@@ -105,6 +106,9 @@ export async function POST(request: NextRequest) {
         status: 'captured',
         payment_method: 'razorpay',
       });
+      if (insertErr && !insertErr.message.includes('duplicate')) {
+        console.error('payment_history insert error:', insertErr.message);
+      }
     }
 
     // Activate subscription via RPC
