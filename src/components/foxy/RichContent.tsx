@@ -42,7 +42,7 @@ function renderInline(text: string, color: string): ReactNode {
     const [, tag, val] = m;
     if (tag === 'KEY') parts.push(<span key={k++} className="font-bold" style={{ color, borderBottom: `2px solid ${color}40`, paddingBottom: 1 }}>{val}</span>);
     else if (tag === 'ANS') parts.push(<span key={k++} className="inline-block px-3 py-1 my-1 rounded-lg font-extrabold text-sm" style={{ border: `2px solid ${color}`, color, background: `${color}08` }}>{val}</span>);
-    else if (tag === 'FORMULA') parts.push(<code key={k++} className="inline-block px-3 py-1.5 my-1 rounded-lg font-semibold text-xs" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', fontFamily: 'monospace' }}>{val}</code>);
+    else if (tag === 'FORMULA') parts.push(<code key={k++} className="inline-block max-w-full px-3 py-1.5 my-1 rounded-lg font-semibold text-xs" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', fontFamily: 'monospace', overflowWrap: 'break-word' }}>{val}</code>);
     else if (tag === 'TIP') parts.push(<div key={k++} className="my-2 px-3 py-2.5 rounded-xl text-xs" style={{ background: '#fffbeb', border: '1px solid #f59e0b30', color: '#92400e' }}><span className="font-extrabold">Exam Tip: </span>{val}</div>);
     else if (tag === 'MARKS') parts.push(<span key={k++} className="inline-block px-2 py-0.5 rounded-lg text-[11px] font-bold ml-1" style={{ background: '#7c3aed15', color: '#7c3aed' }}>({val} marks)</span>);
     last = m.index + m[0].length;
@@ -85,7 +85,7 @@ export const RichContent = memo(function RichContent({ content, subjectKey, subj
     else { flush(); els.push(<p key={idx} className="my-1.5 leading-[1.75] text-[var(--text-2)]">{renderInline(t, cfg.color)}</p>); }
   });
   flush();
-  return <div>{els}</div>;
+  return <div className="overflow-hidden" style={{ overflowWrap: 'break-word', wordBreak: 'break-word' }}>{els}</div>;
 });
 
 export default RichContent;

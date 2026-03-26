@@ -176,6 +176,7 @@ export default function FoxyPage() {
   // Voice — unified hook replaces manual Web Speech API
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const endRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Usage enforcement
   const [chatUsage, setChatUsage] = useState<UsageResult | null>(null);
@@ -236,7 +237,12 @@ export default function FoxyPage() {
   }, [activeSubject, studentGrade, student?.id]);
 
   // Auto-scroll
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      const el = scrollContainerRef.current;
+      if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    });
+  }, [messages]);
 
   // TTS — uses unified voice hook; checks limit then records usage
   const speakText = useCallback(async (text: string) => {
@@ -444,14 +450,14 @@ export default function FoxyPage() {
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-sm font-bold truncate">Foxy <span className="text-[10px] font-semibold opacity-60">AI Tutor</span></div>
-          <div className="text-[10px] opacity-50 flex gap-2"><span>{totalXP + xpGained} XP</span><span>{streakDays}d streak</span><span>Gr {studentGrade}</span></div>
+          <div className="text-[10px] opacity-50 flex gap-2"><span className="hidden sm:inline">{totalXP + xpGained} XP</span><span className="hidden sm:inline">{streakDays}d streak</span><span>Gr {studentGrade}</span></div>
         </div>
         <div className="flex items-center gap-1.5">
-          {LANGS.map(l => <button key={l.code} onClick={() => { if (!isLangLocked) setLanguage(l.code); }} className="text-[10px] font-bold px-2 py-1 rounded-lg transition-all" style={{ background: language === l.code ? 'rgba(255,255,255,0.2)' : 'transparent', color: language === l.code ? '#fff' : 'rgba(255,255,255,0.4)', opacity: isLangLocked && language !== l.code ? 0.2 : 1, cursor: isLangLocked ? 'default' : 'pointer' }}>{l.label}</button>)}
+          {LANGS.map(l => <button key={l.code} onClick={() => { if (!isLangLocked) setLanguage(l.code); }} className={`text-[10px] font-bold px-2 py-1 rounded-lg transition-all ${language !== l.code ? 'hidden sm:inline-block' : ''}`} style={{ background: language === l.code ? 'rgba(255,255,255,0.2)' : 'transparent', color: language === l.code ? '#fff' : 'rgba(255,255,255,0.4)', opacity: isLangLocked && language !== l.code ? 0.2 : 1, cursor: isLangLocked ? 'default' : 'pointer' }}>{l.label}</button>)}
           {isLangLocked && <span className="text-[8px] text-white/30">🔒</span>}
           <button onClick={() => { if (voiceEnabled) { stopSpeaking(); setVoiceEnabled(false); } else setVoiceEnabled(true); }} className="ml-1 px-2 py-1 rounded-lg text-sm transition-all" style={{ background: voiceEnabled ? 'rgba(245,166,35,0.3)' : 'rgba(255,255,255,0.1)' }}>{voiceEnabled ? (voice.isSpeaking ? '🔊' : '🔈') : '🔇'}</button>
-          {chatUsage && <span className="text-[8px] opacity-40 ml-1" title="Chat messages remaining">💬{chatUsage.remaining}/{chatUsage.limit}</span>}
-          {voiceEnabled && ttsUsage && <span className="text-[8px] opacity-40 ml-0.5" title="Voice calls remaining">🔊{ttsUsage.remaining}/{ttsUsage.limit}</span>}
+          {chatUsage && <span className="hidden sm:inline text-[8px] opacity-40 ml-1" title="Chat messages remaining">💬{chatUsage.remaining}/{chatUsage.limit}</span>}
+          {voiceEnabled && ttsUsage && <span className="hidden sm:inline text-[8px] opacity-40 ml-0.5" title="Voice calls remaining">🔊{ttsUsage.remaining}/{ttsUsage.limit}</span>}
         </div>
       </header>
 
@@ -477,7 +483,7 @@ export default function FoxyPage() {
             <span className="text-sm">{cfg.icon}</span><span>{cfg.name}</span><span className="text-[10px] ml-0.5 opacity-60">{showSubjectDD ? '▲' : '▼'}</span>
           </button>
           {showSubjectDD && (
-            <div className="absolute top-full left-0 mt-1 z-50 w-56 rounded-2xl overflow-hidden shadow-lg" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
+            <div className="absolute top-full left-0 mt-1 z-50 w-[calc(100vw-24px)] sm:w-56 rounded-2xl overflow-hidden shadow-lg" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
               <div className="p-2 text-[10px] font-bold uppercase tracking-wider text-[var(--text-3)] px-3">My Subjects</div>
               {(studentSubs.length > 0 ? studentSubs : Object.keys(SUBJECTS)).map(key => {
                 const sub = SUBJECTS[key]; if (!sub) return null;
@@ -499,7 +505,7 @@ export default function FoxyPage() {
             <span className="text-sm">📖</span><span>{selectedChapters.length > 0 ? `${selectedChapters.length} Ch` : `All ${topics.length} Ch`}</span><span className="text-[10px] ml-0.5 opacity-60">{showChapterDD ? '▲' : '▼'}</span>
           </button>
           {showChapterDD && (
-            <div className="absolute top-full left-0 mt-1 z-50 w-72 max-h-[50vh] rounded-2xl overflow-hidden shadow-lg flex flex-col" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
+            <div className="absolute top-full left-0 mt-1 z-50 w-[calc(100vw-24px)] sm:w-72 max-h-[50vh] rounded-2xl overflow-hidden shadow-lg flex flex-col" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
               <div className="p-2 px-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
                 <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-3)]">{cfg.icon} {cfg.name} Chapters</span>
                 <button onClick={() => setSelectedChapters([])} className="text-[10px] font-semibold" style={{ color: 'var(--orange)' }}>Clear All</button>
@@ -657,7 +663,7 @@ export default function FoxyPage() {
 
         {/* Chat column */}
         <div className="flex-1 flex flex-col min-w-0">
-          <div className="flex-1 overflow-y-auto px-3 md:px-5 py-4">
+          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-3 md:px-5 py-4 pb-32">
             {/* Empty state with ConversationStarters */}
             {messages.length === 0 && (
               <div className="text-center py-12 md:py-20 animate-slide-up">
