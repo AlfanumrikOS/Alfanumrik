@@ -37,12 +37,10 @@ export interface ChatInputProps {
   onSubmit: (t: string) => void;
   subjectKey: string;
   disabled: boolean;
-  onMicTap?: () => void;
-  isListening?: boolean;
   subjectConfig?: { color: string; icon: string };
 }
 
-export function ChatInput({ onSubmit, subjectKey, disabled, onMicTap, isListening, subjectConfig }: ChatInputProps) {
+export function ChatInput({ onSubmit, subjectKey, disabled, subjectConfig }: ChatInputProps) {
   const [text, setText] = useState('');
   const [showSymbols, setShowSymbols] = useState(false);
   const [symTab, setSymTab] = useState('basic');
@@ -121,12 +119,6 @@ export function ChatInput({ onSubmit, subjectKey, disabled, onMicTap, isListenin
           placeholder={pointMode ? '1. Write your answer point by point...\n(Shift+Enter for next point)' : 'Ask Foxy anything... (Shift+Enter for new line)'}
           rows={pointMode ? 3 : 1} className="flex-1 min-w-0 text-sm rounded-2xl px-4 py-2.5 resize-none outline-none leading-relaxed"
           style={{ background: 'var(--surface-2)', border: `1.5px solid ${pointMode ? `${cfg.color}40` : 'var(--border)'}`, fontFamily: 'var(--font-body)', maxHeight: 200, minHeight: pointMode ? 80 : 40, overflowWrap: 'break-word', wordBreak: 'break-word' }} />
-        {onMicTap && (
-          <button onClick={onMicTap} className="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-lg transition-all active:scale-90"
-            style={{ background: isListening ? '#EF444420' : 'var(--surface-2)', border: isListening ? '2px solid #EF4444' : '1.5px solid var(--border)' }}>
-            {isListening ? '🔴' : '🎤'}
-          </button>
-        )}
         <button onClick={send} disabled={disabled || !text.trim()}
           className="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-lg font-bold transition-all active:scale-90 disabled:opacity-40"
           style={{ background: text.trim() ? `linear-gradient(135deg, ${cfg.color}, ${cfg.color}dd)` : 'var(--surface-2)', color: text.trim() ? '#fff' : 'var(--text-3)' }}>
