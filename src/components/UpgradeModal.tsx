@@ -47,13 +47,20 @@ const PLANS = [
 ];
 
 export function UpgradeModal({ isOpen, onClose, feature, currentLimit, onUpgradeSuccess }: UpgradeModalProps) {
-  const { checkout, loading, error } = useCheckout();
+  const { checkout, loading, status, error } = useCheckout();
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
   const [success, setSuccess] = useState(false);
 
   if (!isOpen) return null;
 
   const featureLabel = feature === 'chat' ? 'Foxy chats' : feature === 'tts' ? 'voice calls' : 'quizzes';
+
+  // Status messages for trust
+  const statusMessage = status === 'loading_gateway' ? 'Loading payment gateway...'
+    : status === 'creating_order' ? 'Creating secure payment...'
+    : status === 'verifying' ? 'Payment received, verifying...'
+    : status === 'activating' ? 'Verified! Activating your plan...'
+    : null;
 
   if (success) {
     return (
@@ -131,12 +138,18 @@ export function UpgradeModal({ isOpen, onClose, feature, currentLimit, onUpgrade
                 disabled={loading}
                 className="px-4 py-2 rounded-xl text-xs font-bold text-white shrink-0"
                 style={{ background: loading ? '#ccc' : `linear-gradient(135deg, ${plan.color}, ${plan.color}cc)` }}>
-                {loading ? '...' : 'Upgrade'}
+                {loading ? (status === 'verifying' ? 'Verifying...' : status === 'activating' ? 'Activating...' : '...') : 'Upgrade'}
               </button>
             </div>
           ))}
         </div>
 
+        {statusMessage && (
+          <div className="text-xs text-center mb-3 flex items-center justify-center gap-2" style={{ color: 'var(--orange)' }}>
+            <span className="inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+            {statusMessage}
+          </div>
+        )}
         {error && <p className="text-xs text-center mb-3" style={{ color: '#EF4444' }}>{error}</p>}
 
         {/* Footer */}

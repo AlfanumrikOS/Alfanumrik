@@ -3,6 +3,18 @@ import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
 
+/**
+ * Payment Verification Route
+ *
+ * Called by the client after Razorpay checkout succeeds.
+ * 1. Verifies HMAC signature (proves payment is genuine)
+ * 2. Records payment in payment_history (idempotent)
+ * 3. Activates subscription via RPC (idempotent)
+ * 4. Returns success ONLY if entitlement is actually granted
+ *
+ * NEVER returns success:true if subscription activation failed.
+ */
+
 export async function POST(request: NextRequest) {
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -65,14 +77,14 @@ export async function POST(request: NextRequest) {
     // Use Supabase admin client (service_role) for all DB operations
     const admin = createClient(supabaseUrl, serviceKey);
 
-    // Duplicate protection
+    // Duplicate protection — if already processed, return success
     const { data: existing } = await admin
       .from('payment_history')
-      .select('id')
+      .select('id, status')
       .eq('razorpay_payment_id', razorpay_payment_id)
       .limit(1);
 
-    if (existing && existing.length > 0) {
+    if (existing && existing.length > 0 && existing[0].status === 'captured') {
       return NextResponse.json({ success: true, plan: plan_code, note: 'already_processed' });
     }
 
@@ -84,34 +96,35 @@ export async function POST(request: NextRequest) {
       .single();
 
     const studentId = studentRow?.id;
-
-    // Record payment (ignore if webhook already inserted it)
-    if (studentId) {
-      const PRICING: Record<string, Record<string, number>> = {
-        starter: { monthly: 29900, yearly: 239900 },
-        pro: { monthly: 69900, yearly: 559900 },
-        unlimited: { monthly: 149900, yearly: 1199900 },
-      };
-
-      // Insert payment record — ignore conflict if webhook already recorded it
-      const { error: insertErr } = await admin.from('payment_history').insert({
-        student_id: studentId,
-        razorpay_payment_id,
-        razorpay_order_id,
-        razorpay_signature,
-        plan_code,
-        billing_cycle,
-        currency: 'INR',
-        amount: PRICING[plan_code][billing_cycle],
-        status: 'captured',
-        payment_method: 'razorpay',
-      });
-      if (insertErr && !insertErr.message.includes('duplicate')) {
-        console.error('payment_history insert error:', insertErr.message);
-      }
+    if (!studentId) {
+      console.error('verify: student not found for auth_user_id:', user.id);
+      return NextResponse.json({ error: 'Student profile not found' }, { status: 404 });
     }
 
-    // Activate subscription via RPC
+    // Record payment — ignore duplicate constraint (webhook may have already inserted)
+    const PRICING: Record<string, Record<string, number>> = {
+      starter: { monthly: 29900, yearly: 239900 },
+      pro: { monthly: 69900, yearly: 559900 },
+      unlimited: { monthly: 149900, yearly: 1199900 },
+    };
+
+    const { error: insertErr } = await admin.from('payment_history').insert({
+      student_id: studentId,
+      razorpay_payment_id,
+      razorpay_order_id,
+      razorpay_signature,
+      plan_code,
+      billing_cycle,
+      currency: 'INR',
+      amount: PRICING[plan_code][billing_cycle],
+      status: 'captured',
+      payment_method: 'razorpay',
+    });
+    if (insertErr && !insertErr.message.includes('duplicate')) {
+      console.error('verify: payment_history insert failed:', insertErr.message);
+    }
+
+    // Activate subscription via RPC — this is the critical step
     const { error: rpcError } = await admin.rpc('activate_subscription', {
       p_auth_user_id: user.id,
       p_plan_code: plan_code,
@@ -121,12 +134,42 @@ export async function POST(request: NextRequest) {
     });
 
     if (rpcError) {
-      console.error('activate_subscription RPC failed:', rpcError.message);
+      console.error('verify: activate_subscription RPC failed:', rpcError.message);
+
       // Fallback: directly update students table
-      await admin
+      const { error: patchError } = await admin
         .from('students')
         .update({ subscription_plan: plan_code })
         .eq('auth_user_id', user.id);
+
+      if (patchError) {
+        // BOTH RPC and PATCH failed — this is a critical failure
+        // DO NOT return success — payment captured but access NOT granted
+        console.error('verify: CRITICAL — both RPC and PATCH failed:', patchError.message);
+        console.error('verify: RECONCILIATION REQUIRED — payment_id:', razorpay_payment_id, 'user:', user.id, 'plan:', plan_code);
+
+        return NextResponse.json({
+          error: 'Payment received but access update failed. Your payment is safe — our team will activate your plan shortly.',
+          payment_id: razorpay_payment_id,
+          status: 'reconciliation_required',
+        }, { status: 503 });
+      }
+    }
+
+    // Verify the update actually took effect by reading back
+    const { data: verify } = await admin
+      .from('students')
+      .select('subscription_plan')
+      .eq('auth_user_id', user.id)
+      .single();
+
+    if (verify?.subscription_plan !== plan_code) {
+      console.error('verify: post-update check failed — expected:', plan_code, 'got:', verify?.subscription_plan);
+      return NextResponse.json({
+        error: 'Payment received but access update is being confirmed. Please refresh the page.',
+        payment_id: razorpay_payment_id,
+        status: 'pending_confirmation',
+      }, { status: 202 });
     }
 
     return NextResponse.json({ success: true, plan: plan_code });
