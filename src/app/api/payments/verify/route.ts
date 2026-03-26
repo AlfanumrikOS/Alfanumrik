@@ -93,17 +93,45 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, plan: plan_code, note: 'already_processed' });
     }
 
-    // Look up student ID
-    const { data: studentRow } = await admin
+    // Look up student ID — try auth_user_id first, then check if multiple records exist
+    let studentId: string | undefined;
+    const { data: studentRow, error: studentErr } = await admin
       .from('students')
       .select('id')
       .eq('auth_user_id', user.id)
-      .single();
+      .limit(1)
+      .maybeSingle();
 
-    const studentId = studentRow?.id;
+    studentId = studentRow?.id;
+
+    // If not found, log details for debugging
     if (!studentId) {
-      console.error('verify: student not found for auth_user_id:', user.id);
-      return NextResponse.json({ error: 'Student profile not found' }, { status: 404 });
+      console.error('verify: student not found for auth_user_id:', user.id, 'email:', user.email, 'error:', studentErr?.message);
+
+      // Fallback: try finding by email (handles cases where auth_user_id changed after re-signup)
+      if (user.email) {
+        const { data: emailRow } = await admin
+          .from('students')
+          .select('id')
+          .eq('email', user.email)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (emailRow) {
+          studentId = emailRow.id;
+          // Fix the stale auth_user_id
+          await admin.from('students').update({ auth_user_id: user.id }).eq('id', studentId);
+          console.log('verify: found student by email, fixed auth_user_id:', studentId);
+        }
+      }
+    }
+
+    if (!studentId) {
+      console.error('verify: student not found by auth_user_id or email — user:', user.id, user.email);
+      return NextResponse.json({
+        error: 'Student profile not found. Please contact support.',
+        payment_id: razorpay_payment_id,
+      }, { status: 404 });
     }
 
     // Record payment — ignore duplicate constraint (webhook may have already inserted)
