@@ -79,7 +79,9 @@ export function useCheckout() {
 
       if (!orderRes.ok) {
         const data = await orderRes.json().catch(() => ({ error: 'Failed to create order' }));
-        const msg = data.error || 'Payment initialization failed';
+        const msg = data.debug_razorpay
+          ? `${data.error} [${data.debug_status}: ${data.debug_razorpay?.substring(0, 100)}]`
+          : (data.error || 'Payment initialization failed');
         setError(msg);
         onError?.(msg);
         setLoading(false);
