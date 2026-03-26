@@ -32,6 +32,7 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Auth check: require valid Supabase session ──
+  let authUserId: string | null = null;
   if (SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
     const supabaseAuth = createServerClient(
       SUPABASE_URL,
@@ -42,6 +43,7 @@ export async function POST(req: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
+    authUserId = user.id;
   }
 
   try {
@@ -54,6 +56,19 @@ export async function POST(req: NextRequest) {
     // Validate studentId format to prevent injection into Supabase queries
     if (studentId && !isValidUUID(studentId)) {
       return NextResponse.json({ error: 'Invalid studentId' }, { status: 400 });
+    }
+
+    // Verify studentId belongs to authenticated user (prevent quota theft / data leak)
+    if (studentId && authUserId) {
+      const sb = supabaseAdmin;
+      const { data: studentOwner } = await sb
+        .from('students')
+        .select('auth_user_id')
+        .eq('id', studentId)
+        .maybeSingle();
+      if (!studentOwner || studentOwner.auth_user_id !== authUserId) {
+        return NextResponse.json({ error: 'Access denied' }, { status: 403 });
+      }
     }
 
     // ── Per-student daily rate limiting ──
