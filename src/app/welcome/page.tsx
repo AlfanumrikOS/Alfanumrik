@@ -216,9 +216,8 @@ export default function WelcomePage() {
       >
         <div className="max-w-6xl mx-auto px-3 sm:px-6 h-16 flex items-center justify-between">
           <Link href="/welcome" className="flex items-center gap-2">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/favicon.svg" alt="Alfanumrik" width={32} height={32} style={{ width: 32, height: 32, objectFit: 'contain' }} />
-            <span className="text-lg font-extrabold" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}>
+            <span className="text-2xl">🦊</span>
+            <span className="text-lg font-extrabold gradient-text" style={{ fontFamily: 'var(--font-display)' }}>
               Alfanumrik
             </span>
           </Link>
