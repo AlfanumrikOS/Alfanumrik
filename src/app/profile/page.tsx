@@ -8,6 +8,25 @@ import { Card, Button, Input, Select, Avatar, SectionHeader, ProgressBar, StatCa
 import TrustFooter from '@/components/TrustFooter';
 import { GRADES, BOARDS, LANGUAGES, SUBJECT_META } from '@/lib/constants';
 import { PlanBadge } from '@/components/PlanBadge';
+import { isSoundEnabled, setSoundEnabled, playSound } from '@/lib/sounds';
+
+function SoundToggle() {
+  const [on, setOn] = useState(() => isSoundEnabled());
+  return (
+    <button
+      onClick={() => {
+        const next = !on;
+        setOn(next);
+        setSoundEnabled(next);
+        if (next) playSound('tap');
+      }}
+      className="text-xs font-semibold px-3 py-1 rounded-lg transition-all"
+      style={{ background: on ? '#16A34A20' : 'var(--surface-2)', color: on ? '#16A34A' : 'var(--text-3)' }}
+    >
+      {on ? '🔔 On' : '🔕 Off'}
+    </button>
+  );
+}
 
 /* ═══ CONNECTIONS CARD: Parent Link Code + Class Join ═══ */
 function ConnectionsCard({ studentId, isHi }: { studentId: string; isHi: boolean }) {
@@ -874,6 +893,10 @@ export default function ProfilePage() {
                 <div className="flex justify-between">
                   <span className="text-[var(--text-3)]">{isHi ? 'स्थिति' : 'Status'}</span>
                   <span className="font-medium" style={{ color: 'var(--green)' }}>{student.account_status ?? 'Active'}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[var(--text-3)]">{isHi ? 'ध्वनि प्रतिक्रिया' : 'Sound Effects'}</span>
+                  <SoundToggle />
                 </div>
               </div>
             </Card>

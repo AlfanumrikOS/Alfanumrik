@@ -130,7 +130,7 @@ export function UpgradeModal({ isOpen, onClose, feature, currentLimit, onUpgrade
                 onClick={() => checkout({
                   planCode: plan.code,
                   billingCycle,
-                  onSuccess: () => setSuccess(true),
+                  onSuccess: () => { setSuccess(true); import('@/lib/sounds').then(({ playSound }) => playSound('upgrade')); },
                 })}
                 disabled={loading}
                 className="px-4 py-2 rounded-xl text-xs font-bold text-white shrink-0"
