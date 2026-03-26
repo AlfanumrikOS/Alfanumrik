@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { useCheckout } from '@/hooks/useCheckout';
+import { useAuth } from '@/lib/AuthContext';
 
 /* ─── Plan Data ─── */
 
@@ -105,6 +107,9 @@ const PLANS: Plan[] = [
 
 export function PricingCards() {
   const [annual, setAnnual] = useState(false);
+  const { isLoggedIn } = useAuth();
+  const { checkout, loading: checkoutLoading } = useCheckout();
+  const [successPlan, setSuccessPlan] = useState<string | null>(null);
 
   return (
     <section style={{ padding: '0 16px 64px', maxWidth: 1100, margin: '0 auto' }}>
@@ -217,21 +222,34 @@ export function PricingCards() {
                 )}
               </div>
 
-              {/* CTA Button */}
-              <Link
-                href={plan.href}
-                style={{
+              {/* CTA Button — checkout for logged-in users, login for guests */}
+              {plan.free || !isLoggedIn ? (
+                <Link href={plan.href} style={{
                   display: 'block', textAlign: 'center', padding: '12px 20px', borderRadius: 12,
-                  fontSize: 14, fontWeight: 700, textDecoration: 'none',
-                  fontFamily: 'var(--font-display)',
+                  fontSize: 14, fontWeight: 700, textDecoration: 'none', fontFamily: 'var(--font-display)',
                   background: isPopular ? 'var(--orange, #E8581C)' : plan.free ? 'var(--surface-2, #F5F0EA)' : 'var(--text-1, #1a1a1a)',
-                  color: plan.free ? 'var(--text-1, #1a1a1a)' : '#fff',
-                  marginBottom: 24,
-                  transition: 'opacity 0.15s',
-                }}
-              >
-                {plan.cta}
-              </Link>
+                  color: plan.free ? 'var(--text-1, #1a1a1a)' : '#fff', marginBottom: 24, transition: 'opacity 0.15s',
+                }}>
+                  {plan.cta}
+                </Link>
+              ) : (
+                <button
+                  onClick={() => {
+                    const planCode = plan.name.toLowerCase() as 'starter' | 'pro' | 'unlimited';
+                    checkout({ planCode, billingCycle: annual ? 'yearly' : 'monthly', onSuccess: (p) => setSuccessPlan(p) });
+                  }}
+                  disabled={checkoutLoading}
+                  style={{
+                    display: 'block', width: '100%', textAlign: 'center', padding: '12px 20px', borderRadius: 12,
+                    fontSize: 14, fontWeight: 700, border: 'none', cursor: checkoutLoading ? 'wait' : 'pointer',
+                    fontFamily: 'var(--font-display)',
+                    background: isPopular ? 'var(--orange, #E8581C)' : 'var(--text-1, #1a1a1a)',
+                    color: '#fff', marginBottom: 24, transition: 'opacity 0.15s', opacity: checkoutLoading ? 0.6 : 1,
+                  }}
+                >
+                  {successPlan === plan.name.toLowerCase() ? '✓ Upgraded!' : checkoutLoading ? 'Processing...' : plan.cta}
+                </button>
+              )}
 
               {/* Feature List */}
               <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
