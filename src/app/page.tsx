@@ -324,7 +324,16 @@ export default function FoxyPage() {
     </div>
   );
 
-  if (!isLoggedIn) return <LoadingFoxy />;
+  // Not logged in — redirect to landing page (middleware also handles this,
+  // but this catches the race condition after signout where cookie isn't cleared yet)
+  if (!isLoggedIn) {
+    router.replace('/welcome');
+    return (
+      <div className="mesh-bg min-h-dvh flex items-center justify-center">
+        <div className="text-center"><div className="text-5xl animate-float mb-3">{FOXY_FACES.idle}</div><p className="text-sm text-[var(--text-3)]">Redirecting...</p></div>
+      </div>
+    );
+  }
 
   if (!student) {
     // Non-student roles: show role-aware screen with navigation (don't auto-redirect)
