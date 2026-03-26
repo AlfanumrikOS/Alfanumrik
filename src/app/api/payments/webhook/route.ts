@@ -41,8 +41,14 @@ export async function POST(request: NextRequest) {
     const event = JSON.parse(body);
     const eventType = event.event;
 
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !serviceKey) {
+      console.error('webhook: MISSING ENV VARS — SUPABASE_SERVICE_ROLE_KEY:', !!serviceKey, 'URL:', !!supabaseUrl);
+      return NextResponse.json({ error: 'Server not configured' }, { status: 503 });
+    }
+
     const admin = createClient(supabaseUrl, serviceKey);
 
     // ── payment.captured: activate subscription (safety net) ──
