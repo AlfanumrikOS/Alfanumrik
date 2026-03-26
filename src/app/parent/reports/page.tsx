@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { REPORT_MONTHS_COUNT } from '@/lib/constants';
+import { BottomNav } from '@/components/ui';
 
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -1231,6 +1232,7 @@ export default function ParentReportsPage() {
           </>
         )}
       </div>
+      <BottomNav />
     </div>
   );
 }

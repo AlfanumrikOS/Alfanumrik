@@ -6,6 +6,7 @@ import { BUILT_IN_SIMULATIONS, type BuiltInSimulation } from '@/components/simul
 import dynamic from 'next/dynamic';
 import SimulationCard from '../../components/SimulationCard';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
+import { BottomNav } from '@/components/ui';
 
 const SimulationViewer = dynamic(() => import('../../components/SimulationViewer'), {
   loading: () => <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}><span style={{ fontSize: 32 }}>🔬</span></div>,
@@ -556,6 +557,7 @@ export default function SimulationsPage() {
           50% { transform: scale(1.1); }
         }
       `}</style>
+      <BottomNav />
     </div>
   );
 }

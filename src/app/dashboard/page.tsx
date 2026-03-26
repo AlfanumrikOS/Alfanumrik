@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase, getSubjects, getFeatureFlags, getNextTopics, generateNotifications } from '@/lib/supabase';
+import { useDashboardData } from '@/lib/swr';
 import { Card, StatCard, ProgressBar, SectionHeader, SubjectChip, Avatar, BottomNav } from '@/components/ui';
 import TrustFooter from '@/components/TrustFooter';
 import { DashboardSkeleton } from '@/components/Skeleton';
@@ -58,82 +59,64 @@ export default function Dashboard() {
       : (h < 12 ? 'Good morning' : h < 17 ? 'Hello' : 'Good evening'));
   }, [isHi]);
 
-  const loadData = useCallback(async () => {
-    if (!student) return;
+  // SWR: auto-caching, dedup, background revalidation, reconnect-resilient
+  const { data: dashData } = useDashboardData(student?.id);
 
-    // Batch RPC: one round-trip replaces 12+ individual queries
-    const [rpcResult, subs, feats, nextTopicsResult] = await Promise.all([
-      supabase.rpc('get_dashboard_data', { p_student_id: student.id }),
+  const loadStaticData = useCallback(async () => {
+    if (!student) return;
+    const [subs, feats, nextTopicsResult] = await Promise.all([
       getSubjects(),
       getFeatureFlags(),
       getNextTopics(student.id, student.preferred_subject, student.grade),
     ]);
-
-    const d = rpcResult.data as Record<string, any> | null;
-    if (d) {
-      setProfiles(d.profiles ?? []);
-      setDueCount(d.due_count ?? 0);
-      setUnreadCount(d.unread_count ?? 0);
-
-      // Knowledge gaps
-      const gaps = d.knowledge_gaps ?? [];
-      setKnowledgeGaps(gaps.map((g: any) => ({
-        id: g.id,
-        topic_title: g.target_concept_name,
-        severity: (g.confidence_score ?? 0) > 0.7 ? 'critical' : 'moderate',
-        description: `Missing prerequisite: ${g.missing_prerequisite_name}`,
-        description_hi: `पूर्व ज्ञान की कमी: ${g.missing_prerequisite_name}`,
-      })));
-
-      // Velocity
-      if (d.velocity != null) {
-        const v = Number(d.velocity);
-        setVelocityTrend(v > 0.05 ? 'fast' : v > 0.02 ? 'steady' : 'slow');
-      }
-
-      // Bloom
-      if (d.bloom) {
-        const level = d.bloom.current_bloom_level || 'remember';
-        const masteryKey = `${level}_mastery`;
-        setBloomLevel({ bloom_level: level, mastery: Number(d.bloom[masteryKey]) || 0 });
-      }
-
-      // CBSE readiness
-      if (d.cbse_readiness != null) setCbseReadiness(Math.round(d.cbse_readiness));
-
-      // Exams
-      const today = new Date();
-      setUpcomingExams((d.exams ?? []).map((e: any) => ({
-        ...e,
-        days_left: Math.max(0, Math.ceil((new Date(e.exam_date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24))),
-      })));
-
-      // Nudges
-      setNudges(d.nudges ?? []);
-
-      // Retention score
-      if (d.retention_score != null) setRetentionScore(Math.round(d.retention_score));
-
-      // Error breakdown
-      if (d.error_breakdown) setErrorBreakdown({
-        careless: d.error_breakdown.careless ?? 0,
-        conceptual: d.error_breakdown.conceptual ?? 0,
-        misinterpretation: d.error_breakdown.misinterpretation ?? 0,
-      });
-    }
-
     setSubjects(subs);
     setFlags(feats);
     setNextTopics(nextTopicsResult.slice(0, 3));
     setSelectedSubjects((student.selected_subjects || [student.preferred_subject].filter(Boolean)) as string[]);
-
-    // Generate notifications in background (non-blocking)
     generateNotifications(student.id).catch(() => {});
   }, [student]);
 
+  // Process dashboard RPC data when SWR returns it
   useEffect(() => {
-    if (student) { loadData(); refreshSnapshot(); }
-  }, [student?.id, loadData, refreshSnapshot]);
+    if (!dashData) return;
+    const d = dashData;
+    setProfiles(d.profiles ?? []);
+    setDueCount(d.due_count ?? 0);
+    setUnreadCount(d.unread_count ?? 0);
+    const gaps = d.knowledge_gaps ?? [];
+    setKnowledgeGaps(gaps.map((g: any) => ({
+      id: g.id,
+      topic_title: g.target_concept_name,
+      severity: (g.confidence_score ?? 0) > 0.7 ? 'critical' : 'moderate',
+      description: `Missing prerequisite: ${g.missing_prerequisite_name}`,
+      description_hi: `पूर्व ज्ञान की कमी: ${g.missing_prerequisite_name}`,
+    })));
+    if (d.velocity != null) {
+      const v = Number(d.velocity);
+      setVelocityTrend(v > 0.05 ? 'fast' : v > 0.02 ? 'steady' : 'slow');
+    }
+    if (d.bloom) {
+      const level = d.bloom.current_bloom_level || 'remember';
+      setBloomLevel({ bloom_level: level, mastery: Number(d.bloom[`${level}_mastery`]) || 0 });
+    }
+    if (d.cbse_readiness != null) setCbseReadiness(Math.round(d.cbse_readiness));
+    const today = new Date();
+    setUpcomingExams((d.exams ?? []).map((e: any) => ({
+      ...e,
+      days_left: Math.max(0, Math.ceil((new Date(e.exam_date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24))),
+    })));
+    setNudges(d.nudges ?? []);
+    if (d.retention_score != null) setRetentionScore(Math.round(d.retention_score));
+    if (d.error_breakdown) setErrorBreakdown({
+      careless: d.error_breakdown.careless ?? 0,
+      conceptual: d.error_breakdown.conceptual ?? 0,
+      misinterpretation: d.error_breakdown.misinterpretation ?? 0,
+    });
+  }, [dashData]);
+
+  useEffect(() => {
+    if (student) { loadStaticData(); refreshSnapshot(); }
+  }, [student?.id, loadStaticData, refreshSnapshot]);
 
   // Show skeleton while loading, but don't block non-student roles — they'll be redirected
   if (isLoading) return <DashboardSkeleton />;
@@ -483,7 +466,7 @@ export default function Dashboard() {
                   const subs = selectedSubjects.length > 0 ? selectedSubjects : [student.preferred_subject];
                   await supabase.from('students').update({ selected_subjects: subs, preferred_subject: subs[0] }).eq('id', student.id);
                   setShowSubjectPicker(false);
-                  loadData();
+                  loadStaticData();
                 }} disabled={selectedSubjects.length === 0} className="w-full py-3 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-40"
                   style={{ background: 'var(--orange)' }}>
                   {isHi ? `${selectedSubjects.length} विषय सेव करो` : `Save ${selectedSubjects.length} Subject${selectedSubjects.length !== 1 ? 's' : ''}`}

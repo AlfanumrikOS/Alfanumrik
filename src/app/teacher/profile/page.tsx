@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { SUBJECT_META } from '@/lib/constants';
+import { BottomNav } from '@/components/ui';
 
 export default function TeacherProfilePage() {
   const { teacher, isLoggedIn, isLoading: authLoading, activeRole, signOut } = useAuth();
@@ -132,6 +133,7 @@ export default function TeacherProfilePage() {
           Sign Out
         </button>
       </div>
+      <BottomNav />
     </div>
   );
 }

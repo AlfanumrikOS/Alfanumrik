@@ -13,6 +13,7 @@
  */
 
 import useSWR, { SWRConfiguration } from 'swr';
+import { supabase } from './supabase';
 import {
   getStudentProfiles,
   getSubjects,
@@ -116,6 +117,19 @@ export function useMasteryOverview(studentId: string | undefined, subject?: stri
   );
 }
 
+/* ── Dashboard (batched RPC) ── */
+export function useDashboardData(studentId: string | undefined) {
+  return useSWR(
+    studentId ? `dashboard/${studentId}` : null,
+    async () => {
+      const { data, error } = await supabase.rpc('get_dashboard_data', { p_student_id: studentId });
+      if (error) throw error;
+      return data as Record<string, any>;
+    },
+    DEFAULT_CONFIG
+  );
+}
+
 /* ── Cache Invalidation Helpers ── */
 import { mutate } from 'swr';
 
@@ -133,6 +147,10 @@ export function invalidateLeaderboard() {
 
 export function invalidateNotifications(studentId: string) {
   mutate(`notifications/${studentId}`);
+}
+
+export function invalidateDashboard(studentId: string) {
+  mutate(`dashboard/${studentId}`);
 }
 
 export function invalidateAll(studentId: string) {

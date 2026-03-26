@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
 import { SUBJECT_META } from '@/lib/constants';
+import { BottomNav } from '@/components/ui';
 
 const GRADES = ['6', '7', '8', '9', '10', '11', '12'];
 const DIFFICULTIES = ['Easy', 'Medium', 'Hard'] as const;
@@ -410,6 +411,7 @@ export default function TeacherWorksheetsPage() {
           )}
         </div>
       )}
+      <BottomNav />
     </div>
   );
 }
