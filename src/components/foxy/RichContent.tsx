@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, type ReactNode } from 'react';
+import { memo, useState, type ReactNode } from 'react';
 
 /* ══════════════════════════════════════════════════════════════
    RICH TEXT RENDERER
@@ -85,7 +85,43 @@ export const RichContent = memo(function RichContent({ content, subjectKey, subj
     else { flush(); els.push(<p key={idx} className="my-1.5 leading-[1.75] text-[var(--text-2)]">{renderInline(t, cfg.color)}</p>); }
   });
   flush();
+
+  // Collapsible long responses — show first ~6 elements, expand on click
+  const COLLAPSE_THRESHOLD = 8;
+  if (els.length > COLLAPSE_THRESHOLD) {
+    return <CollapsibleContent elements={els} threshold={COLLAPSE_THRESHOLD} color={cfg.color} />;
+  }
+
   return <div className="overflow-hidden" style={{ overflowWrap: 'break-word', wordBreak: 'break-word' }}>{els}</div>;
 });
+
+function CollapsibleContent({ elements, threshold, color }: { elements: ReactNode[]; threshold: number; color: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const visible = expanded ? elements : elements.slice(0, threshold);
+
+  return (
+    <div className="overflow-hidden" style={{ overflowWrap: 'break-word', wordBreak: 'break-word' }}>
+      {visible}
+      {!expanded && (
+        <button
+          onClick={() => setExpanded(true)}
+          className="mt-2 text-[11px] font-bold px-3 py-1.5 rounded-lg transition-all active:scale-95"
+          style={{ background: `${color}10`, color, border: `1px solid ${color}25` }}
+        >
+          ↓ Show more ({elements.length - threshold} more sections)
+        </button>
+      )}
+      {expanded && elements.length > threshold && (
+        <button
+          onClick={() => setExpanded(false)}
+          className="mt-2 text-[11px] font-bold px-3 py-1.5 rounded-lg transition-all active:scale-95"
+          style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }}
+        >
+          ↑ Show less
+        </button>
+      )}
+    </div>
+  );
+}
 
 export default RichContent;
