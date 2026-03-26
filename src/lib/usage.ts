@@ -5,9 +5,9 @@
  * Uses Supabase `student_daily_usage` table with feature + usage_count columns.
  *
  * Plan limits (aligned with subscription_plans table):
- *   free:      5 chats / 3 TTS / 5 quizzes per day
- *   starter:   30 chats / 15 TTS / 20 quizzes per day
- *   pro:       100 chats / 50 TTS / unlimited quizzes per day
+ *   free:      5 chats / 5 quizzes per day
+ *   starter:   30 chats / 20 quizzes per day
+ *   pro:       100 chats / unlimited quizzes per day
  *   unlimited: unlimited everything
  */
 
@@ -15,15 +15,15 @@ import { supabase } from './supabase';
 
 // ─── Limits by subscription plan ─────────────────────────────
 
-type Feature = 'foxy_chat' | 'foxy_tts' | 'quiz';
+type Feature = 'foxy_chat' | 'quiz';
 
 const PLAN_LIMITS: Record<string, Record<Feature, number>> = {
-  free:      { foxy_chat: 5,      foxy_tts: 3,      quiz: 5 },
-  starter:   { foxy_chat: 30,     foxy_tts: 15,     quiz: 20 },
-  basic:     { foxy_chat: 30,     foxy_tts: 15,     quiz: 20 },
-  pro:       { foxy_chat: 100,    foxy_tts: 50,     quiz: 999999 },
-  premium:   { foxy_chat: 100,    foxy_tts: 50,     quiz: 999999 },
-  unlimited: { foxy_chat: 999999, foxy_tts: 999999,  quiz: 999999 },
+  free:      { foxy_chat: 5,      quiz: 5 },
+  starter:   { foxy_chat: 30,     quiz: 20 },
+  basic:     { foxy_chat: 30,     quiz: 20 },
+  pro:       { foxy_chat: 100,    quiz: 999999 },
+  premium:   { foxy_chat: 100,    quiz: 999999 },
+  unlimited: { foxy_chat: 999999, quiz: 999999 },
 };
 
 function getLimitForPlan(plan: string, feature: Feature): number {
@@ -150,7 +150,7 @@ export async function getDailyUsageSummary(
     .eq('usage_date', today);
 
   const rows = data ?? [];
-  const features: Feature[] = ['foxy_chat', 'foxy_tts', 'quiz'];
+  const features: Feature[] = ['foxy_chat', 'quiz'];
   const result = {} as Record<Feature, UsageResult>;
 
   for (const f of features) {

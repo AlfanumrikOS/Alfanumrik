@@ -180,6 +180,43 @@ export default function Dashboard() {
 
       <main className="app-container py-4 space-y-4">
        <SectionErrorBoundary section="Dashboard">
+        {/* ═══ WELCOME BANNER — only for new students with no activity ═══ */}
+        {totalXp === 0 && profiles.length <= 1 && (
+          <div className="rounded-2xl p-5 mb-1" style={{ background: 'linear-gradient(135deg, #FFF7ED, #FEF3E2)', border: '1px solid #FDBA7420' }}>
+            <div className="flex items-center gap-3 mb-3">
+              <span className="text-3xl">🦊</span>
+              <div>
+                <h2 className="text-base font-bold" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}>
+                  {isHi ? `स्वागत है, ${student.name}!` : `Welcome, ${student.name}!`}
+                </h2>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>
+                  {isHi ? 'अपनी सीखने की यात्रा शुरू करें — 3 आसान कदम' : 'Start your learning journey — here\'s how'}
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <button onClick={() => router.push('/foxy')} className="flex flex-col items-center gap-1.5 p-3 rounded-xl transition-all active:scale-95" style={{ background: '#E8581C10', border: '1px solid #E8581C30' }}>
+                <span className="text-xl">💬</span>
+                <span className="text-[10px] font-semibold text-center leading-tight" style={{ color: 'var(--text-2)' }}>
+                  {isHi ? 'Foxy से बात करो' : 'Chat with Foxy'}
+                </span>
+              </button>
+              <button onClick={() => router.push('/quiz')} className="flex flex-col items-center gap-1.5 p-3 rounded-xl transition-all active:scale-95" style={{ background: '#7C3AED10', border: '1px solid #7C3AED30' }}>
+                <span className="text-xl">⚡</span>
+                <span className="text-[10px] font-semibold text-center leading-tight" style={{ color: 'var(--text-2)' }}>
+                  {isHi ? 'पहला क्विज़ लो' : 'Take First Quiz'}
+                </span>
+              </button>
+              <button onClick={() => router.push('/study-plan')} className="flex flex-col items-center gap-1.5 p-3 rounded-xl transition-all active:scale-95" style={{ background: '#0891B210', border: '1px solid #0891B230' }}>
+                <span className="text-xl">📚</span>
+                <span className="text-[10px] font-semibold text-center leading-tight" style={{ color: 'var(--text-2)' }}>
+                  {isHi ? 'स्टडी प्लान बनाओ' : 'Create Study Plan'}
+                </span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* XP Hero */}
         <Card accent={meta?.color}>
           <div className="flex items-center justify-between mb-3">

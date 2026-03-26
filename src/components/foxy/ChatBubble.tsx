@@ -4,7 +4,7 @@ import { type ReactNode } from 'react';
 
 /* ═══════════════════════════════════════════════════════════════
    ChatBubble — Message bubble for Foxy conversations
-   Supports tutor/student roles, play-audio button, feedback
+   Supports tutor/student roles, feedback
    ═══════════════════════════════════════════════════════════════ */
 
 interface ChatBubbleProps {
@@ -17,11 +17,7 @@ interface ChatBubbleProps {
   feedback?: 'up' | 'down' | null;
   reported?: boolean;
   color: string;
-  isSpeaking: boolean;
-  isLoadingAudio: boolean;
-  voiceEnabled: boolean;
   activeSubject: string;
-  onPlayAudio: () => void;
   onFeedback: (isUp: boolean) => void;
   onReport: () => void;
 }
@@ -36,11 +32,7 @@ export function ChatBubble({
   feedback,
   reported,
   color,
-  isSpeaking,
-  isLoadingAudio,
-  voiceEnabled,
   activeSubject,
-  onPlayAudio,
   onFeedback,
   onReport,
 }: ChatBubbleProps) {
@@ -102,21 +94,6 @@ export function ChatBubble({
       {/* Action bar for tutor messages */}
       {isTutor && rawContent !== 'Oops! Please try again.' && (
         <div className="flex items-center gap-1 mt-1.5 pl-1">
-          {/* Play/stop audio */}
-          {voiceEnabled && (
-            <button
-              onClick={onPlayAudio}
-              className="px-2 py-1 rounded-lg text-[11px] transition-all active:scale-90"
-              style={{
-                background: isSpeaking ? `${color}15` : 'transparent',
-                color: isSpeaking ? color : 'var(--text-3)',
-                border: isSpeaking ? `1px solid ${color}30` : '1px solid transparent',
-              }}
-            >
-              {isLoadingAudio ? '⏳' : isSpeaking ? '⏹ Stop' : '🔊 Play'}
-            </button>
-          )}
-
           {/* Thumbs up */}
           <button
             onClick={() => onFeedback(true)}

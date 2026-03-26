@@ -2,13 +2,11 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@/lib/constants';
 import { BottomNav } from '@/components/ui';
 import { LESSON_STEPS, getLessonStepPrompt, getNextLessonStep, type LessonStep, type LessonState } from '@/lib/cognitive-engine';
-import { useVoice } from '@/hooks/useVoice';
 import { checkDailyUsage, recordUsage, clearUsageCache, type UsageResult } from '@/lib/usage';
 import { ConversationStarters } from '@/components/foxy/ConversationStarters';
 import { ChatBubble } from '@/components/foxy/ChatBubble';
@@ -16,10 +14,6 @@ import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import { RichContent } from '@/components/foxy/RichContent';
 import { ChatInput } from '@/components/foxy/ChatInput';
 import { UpgradeModal } from '@/components/UpgradeModal';
-
-// Lazy-load heavy audio components — not needed until user interacts with voice
-const VoiceWaveform = dynamic(() => import('@/components/foxy/VoiceWaveform').then(m => ({ default: m.VoiceWaveform })), { ssr: false });
-const TalkToLearnButton = dynamic(() => import('@/components/foxy/TalkToLearnButton').then(m => ({ default: m.TalkToLearnButton })), { ssr: false });
 
 /* ══════════════════════════════════════════════════════════════
    SUBJECT CONFIGURATION
@@ -50,7 +44,6 @@ const LANGS = [
 ];
 
 const MODES = [
-  { id: 'talk', emoji: '🎙️', label: "Let's Talk", labelHi: 'बात करो', autoPrompt: (topic: string) => topic ? `Let's have a conversation about: ${topic}. Ask me what I already know and guide me step by step.` : "Hi Foxy! Let's talk. Ask me what I want to learn today.", autoPromptHi: (topic: string) => topic ? `चलो ${topic} के बारे में बात करते हैं। मुझसे पूछो कि मुझे क्या पता है।` : 'हाय फॉक्सी! चलो बात करते हैं। मुझसे पूछो कि मैं आज क्या सीखना चाहता हूँ।' },
   { id: 'learn', emoji: '📖', label: 'Learn', labelHi: 'सीखो', autoPrompt: (topic: string) => topic ? `Teach me about: ${topic}` : 'Teach me the next concept step by step', autoPromptHi: (topic: string) => topic ? `मुझे सिखाओ: ${topic}` : 'मुझे अगला कॉन्सेप्ट सिखाओ' },
   { id: 'practice', emoji: '✏️', label: 'Practice', labelHi: 'अभ्यास', autoPrompt: (topic: string) => topic ? `Give me 3 practice problems on: ${topic}` : 'Give me practice problems to solve', autoPromptHi: (topic: string) => topic ? `मुझे 3 अभ्यास प्रश्न दो: ${topic}` : 'मुझे अभ्यास प्रश्न दो' },
   { id: 'quiz', emoji: '⚡', label: 'Quiz', labelHi: 'क्विज़', autoPrompt: (topic: string) => topic ? `Quiz me on: ${topic} (5 MCQ questions, board exam pattern)` : 'Quiz me with 5 MCQ questions on this chapter', autoPromptHi: (topic: string) => topic ? `मुझसे क्विज़ लो: ${topic} (5 MCQ प्रश्न, बोर्ड परीक्षा पैटर्न)` : 'मुझसे 5 MCQ प्रश्न पूछो' },
@@ -180,14 +173,11 @@ export default function FoxyPage() {
   const [reportSubmitting, setReportSubmitting] = useState(false);
   const [reportSuccess, setReportSuccess] = useState(false);
 
-  // Voice — unified hook replaces manual Web Speech API
-  const [voiceEnabled, setVoiceEnabled] = useState(true);
   const endRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Usage enforcement
   const [chatUsage, setChatUsage] = useState<UsageResult | null>(null);
-  const [ttsUsage, setTtsUsage] = useState<UsageResult | null>(null);
   const [showLimitModal, setShowLimitModal] = useState(false);
 
   // Lesson flow state
@@ -197,16 +187,6 @@ export default function FoxyPage() {
   const [showPredictionInput, setShowPredictionInput] = useState(false);
   const [predictionSubmitted, setPredictionSubmitted] = useState(false);
 
-  // Ref to forward sendMessage to useVoice's onTranscript (avoids circular dep)
-  const sendMessageRef = useRef<(text: string) => void>(() => {});
-
-  // Unified voice hook
-  const voice = useVoice({
-    language,
-    enabled: voiceEnabled,
-    onTranscript: (text: string) => sendMessageRef.current(text),
-  });
-
   useEffect(() => { if (!authLoading && !isLoggedIn) router.replace('/'); }, [authLoading, isLoggedIn, router]);
 
   // Fetch usage stats on mount and after student loads
@@ -214,7 +194,6 @@ export default function FoxyPage() {
     if (!student?.id) return;
     const plan = student.subscription_plan || 'free';
     checkDailyUsage(student.id, 'foxy_chat', plan).then(setChatUsage);
-    checkDailyUsage(student.id, 'foxy_tts', plan).then(setTtsUsage);
   }, [student?.id, student?.subscription_plan]);
 
   // Init student data
@@ -251,25 +230,6 @@ export default function FoxyPage() {
     });
   }, [messages]);
 
-  // TTS — uses unified voice hook; checks limit then records usage
-  const speakText = useCallback(async (text: string) => {
-    if (!voiceEnabled) return;
-    // Check TTS usage limit before speaking
-    if (student?.id) {
-      const usage = await checkDailyUsage(student.id, 'foxy_tts', student.subscription_plan || 'free');
-      setTtsUsage(usage);
-      if (!usage.allowed) {
-        // Silently fall back — don't block chat, just skip TTS
-        return;
-      }
-      recordUsage(student.id, 'foxy_tts');
-      setTtsUsage(prev => prev ? { ...prev, count: prev.count + 1, remaining: Math.max(0, prev.remaining - 1), allowed: prev.count + 1 < prev.limit } : prev);
-    }
-    await voice.speak(text, student?.id);
-  }, [voiceEnabled, voice.speak, student?.id, student?.subscription_plan]);
-
-  const stopSpeaking = useCallback(() => { voice.stopSpeaking(); }, [voice.stopSpeaking]);
-
   // Send message with usage enforcement
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim()) return;
@@ -305,7 +265,6 @@ export default function FoxyPage() {
         return;
       }
       setMessages(p => [...p, { id: Date.now() + 1, role: 'tutor', content: resp.reply, timestamp: new Date().toISOString(), xp: resp.xp_earned }]);
-      if (voiceEnabled) setTimeout(() => speakText(resp.reply), 300);
       if (resp.xp_earned > 0) setXpGained(p => p + resp.xp_earned);
       if (resp.session_id) setChatSessionId(resp.session_id);
       setFoxyState('happy'); setTimeout(() => setFoxyState('idle'), 2000);
@@ -314,7 +273,7 @@ export default function FoxyPage() {
       setFoxyState('idle');
     }
     setLoading(false);
-  }, [student, studentGrade, activeSubject, language, sessionMode, activeTopic, chatSessionId, selectedChapters, topics, voiceEnabled, speakText]);
+  }, [student, studentGrade, activeSubject, language, sessionMode, activeTopic, chatSessionId, selectedChapters, topics]);
 
   // Feedback: thumbs up/down
   const handleFeedback = useCallback(async (msgId: number, isUp: boolean) => {
@@ -358,13 +317,6 @@ export default function FoxyPage() {
     setReportSubmitting(false);
   }, [reportModal, student, chatSessionId, reportReason, reportCorrection, activeSubject, studentGrade, activeTopic, sessionMode, language]);
 
-  // STT — delegate to unified voice hook
-  const startListening = useCallback(() => { voice.startListening(); }, [voice.startListening]);
-  const stopListening = useCallback(() => { voice.stopListening(); }, [voice.stopListening]);
-
-  // Keep sendMessageRef in sync for useVoice's onTranscript callback
-  useEffect(() => { sendMessageRef.current = sendMessage; }, [sendMessage]);
-
   const switchSubject = (key: string) => {
     setActiveSubject(key); setActiveTopic(null); setSelectedChapters([]); setShowSubjectDD(false); setMessages([]); setChatSessionId(null);
     if (typeof window !== 'undefined') localStorage.setItem('alfanumrik_subject', key);
@@ -376,31 +328,11 @@ export default function FoxyPage() {
   // Language toggle lock for language subjects
   const isLangLocked = activeSubject === 'hindi' || activeSubject === 'english';
 
-  // Auto-listen after Foxy finishes speaking in "Let's Talk" mode
-  useEffect(() => {
-    if (sessionMode === 'talk' && voiceEnabled && !voice.isSpeaking && !loading && !voice.isListening && messages.length > 0) {
-      const timer = setTimeout(() => {
-        if (sessionMode === 'talk' && !voice.isSpeaking && !loading) {
-          startListening();
-        }
-      }, 800);
-      return () => clearTimeout(timer);
-    }
-  }, [sessionMode, voiceEnabled, voice.isSpeaking, loading, voice.isListening, messages.length, startListening]);
-
   // Mode switch with auto-prompt
   const switchMode = useCallback((modeId: string) => {
     setSessionMode(modeId);
     const mode = MODES.find(m => m.id === modeId);
     if (!mode) return;
-    // "Let's Talk" mode: auto-enable voice + start conversation
-    if (modeId === 'talk') {
-      setVoiceEnabled(true);
-      const topicName = activeTopic?.title || '';
-      const prompt = language === 'hi' ? mode.autoPromptHi(topicName) : mode.autoPrompt(topicName);
-      if (prompt) sendMessage(prompt);
-      return;
-    }
     // Doubt mode: let user type their own question
     if (modeId === 'doubt') return;
     // Lesson mode: start lesson flow
@@ -470,25 +402,9 @@ export default function FoxyPage() {
         <div className="flex items-center gap-1.5">
           {LANGS.map(l => <button key={l.code} onClick={() => { if (!isLangLocked) setLanguage(l.code); }} className={`text-[10px] font-bold px-2 py-1 rounded-lg transition-all ${language !== l.code ? 'hidden sm:inline-block' : ''}`} style={{ background: language === l.code ? 'rgba(255,255,255,0.2)' : 'transparent', color: language === l.code ? '#fff' : 'rgba(255,255,255,0.4)', opacity: isLangLocked && language !== l.code ? 0.2 : 1, cursor: isLangLocked ? 'default' : 'pointer' }}>{l.label}</button>)}
           {isLangLocked && <span className="text-[8px] text-white/30">🔒</span>}
-          <button onClick={() => { if (voiceEnabled) { stopSpeaking(); setVoiceEnabled(false); } else setVoiceEnabled(true); }} className="ml-1 px-2 py-1 rounded-lg text-sm transition-all" style={{ background: voiceEnabled ? 'rgba(245,166,35,0.3)' : 'rgba(255,255,255,0.1)' }}>{voiceEnabled ? (voice.isSpeaking ? '🔊' : '🔈') : '🔇'}</button>
           {chatUsage && <span className="hidden sm:inline text-[8px] opacity-40 ml-1" title="Chat messages remaining">💬{chatUsage.remaining}/{chatUsage.limit}</span>}
-          {voiceEnabled && ttsUsage && <span className="hidden sm:inline text-[8px] opacity-40 ml-0.5" title="Voice calls remaining">🔊{ttsUsage.remaining}/{ttsUsage.limit}</span>}
         </div>
       </header>
-
-      {/* Voice waveform — shown when Foxy is speaking via ElevenLabs */}
-      {voiceEnabled && voice.isSpeaking && (
-        <div className="foxy-voice-bar">
-          <VoiceWaveform isActive={voice.isSpeaking} analyserNode={voice.analyserNode} color={cfg.color} />
-        </div>
-      )}
-
-      {/* Interim transcript overlay — live STT feedback */}
-      {voice.interimTranscript && (
-        <div className="foxy-interim-transcript">
-          <span className="text-xs opacity-70">🎤 {voice.interimTranscript}</span>
-        </div>
-      )}
 
       {/* ═══ SUBJECT + CHAPTER + MODE BAR ═══ */}
       <div className="foxy-toolbar" style={{ background: 'var(--surface-1)', borderBottom: '1px solid var(--border)' }}>
@@ -684,22 +600,7 @@ export default function FoxyPage() {
               <div className="text-center py-12 md:py-20 animate-slide-up">
                 <div className="text-6xl md:text-7xl mb-4 animate-float">{FOXY_FACES.idle}</div>
                 <h2 className="text-xl md:text-2xl font-extrabold mb-2" style={{ fontFamily: 'var(--font-display)', background: `linear-gradient(135deg, #E8590C, ${cfg.color})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Hi! I am Foxy</h2>
-                <p className="text-sm text-[var(--text-3)] max-w-sm mx-auto mb-4 leading-relaxed">Your AI tutor. Pick a topic, type below, or tap 🎤 to talk!</p>
-
-                {/* Voice hero button */}
-                {voiceEnabled && voice.sttAvailable && (
-                  <div className="mb-6">
-                    <TalkToLearnButton
-                      isListening={voice.isListening}
-                      isSpeaking={voice.isSpeaking}
-                      isLoading={voice.isLoadingAudio}
-                      onTap={voice.isListening ? stopListening : startListening}
-                      size="lg"
-                      color={cfg.color}
-                    />
-                    <p className="text-[10px] text-[var(--text-3)] mt-2">Tap to talk to Foxy</p>
-                  </div>
-                )}
+                <p className="text-sm text-[var(--text-3)] max-w-sm mx-auto mb-4 leading-relaxed">Your AI tutor. Pick a topic or type below!</p>
 
                 {/* Smart conversation starters */}
                 <ConversationStarters
@@ -726,11 +627,7 @@ export default function FoxyPage() {
                 feedback={msg.feedback}
                 reported={msg.reported}
                 color={cfg.color}
-                isSpeaking={voice.isSpeaking}
-                isLoadingAudio={voice.isLoadingAudio}
-                voiceEnabled={voiceEnabled}
                 activeSubject={activeSubject}
-                onPlayAudio={() => voice.isSpeaking ? stopSpeaking() : speakText(msg.content)}
                 onFeedback={(isUp) => handleFeedback(msg.id, isUp)}
                 onReport={() => openReport(msg.id)}
               />
@@ -811,7 +708,7 @@ export default function FoxyPage() {
             <div ref={endRef} />
           </div>
 
-          <ChatInput onSubmit={sendMessage} subjectKey={activeSubject} disabled={loading} onMicTap={voice.isListening ? stopListening : startListening} isListening={voice.isListening} />
+          <ChatInput onSubmit={sendMessage} subjectKey={activeSubject} disabled={loading} />
         </div>
       </div>
 
@@ -849,7 +746,6 @@ export default function FoxyPage() {
         </>
       )}
 
-      {voice.isSpeaking && <button onClick={stopSpeaking} className="fixed bottom-20 right-4 z-50 w-12 h-12 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-all" style={{ background: '#EF4444', color: '#fff', fontSize: 18, boxShadow: '0 4px 20px rgba(239,68,68,0.4)' }}>■</button>}
 
       {/* ═══ UPGRADE MODAL (replaces old limit modal) ═══ */}
       <UpgradeModal

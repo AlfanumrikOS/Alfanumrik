@@ -7,7 +7,7 @@ import Link from 'next/link';
 interface UpgradeModalProps {
   isOpen: boolean;
   onClose: () => void;
-  feature: string; // 'chat' | 'tts' | 'quiz'
+  feature: string; // 'chat' | 'quiz'
   currentLimit: number;
   onUpgradeSuccess?: () => void;
 }
@@ -19,7 +19,6 @@ const PLANS = [
     price: '₹299',
     priceYearly: '₹200',
     chats: 30,
-    tts: 15,
     quizzes: 20,
     color: '#E8581C',
   },
@@ -29,7 +28,6 @@ const PLANS = [
     price: '₹699',
     priceYearly: '₹467',
     chats: 100,
-    tts: 50,
     quizzes: '∞',
     highlight: true,
     color: '#7C3AED',
@@ -40,7 +38,6 @@ const PLANS = [
     price: '₹1,499',
     priceYearly: '₹1,000',
     chats: '∞',
-    tts: '∞',
     quizzes: '∞',
     color: '#0891B2',
   },
@@ -53,7 +50,7 @@ export function UpgradeModal({ isOpen, onClose, feature, currentLimit, onUpgrade
 
   if (!isOpen) return null;
 
-  const featureLabel = feature === 'chat' ? 'Foxy chats' : feature === 'tts' ? 'voice calls' : 'quizzes';
+  const featureLabel = feature === 'chat' ? 'Foxy chats' : 'quizzes';
 
   // Status messages for trust
   const statusMessage = status === 'loading_gateway' ? 'Loading payment gateway...'
@@ -126,7 +123,7 @@ export function UpgradeModal({ isOpen, onClose, feature, currentLimit, onUpgrade
                   </div>
                 )}
                 <div className="text-[10px] mt-1" style={{ color: 'var(--text-3)' }}>
-                  {plan.chats} chats · {plan.tts} voice · {plan.quizzes} quizzes /day
+                  {plan.chats} chats · {plan.quizzes} quizzes /day
                 </div>
               </div>
               <button
