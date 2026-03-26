@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { BottomNav } from '@/components/ui';
 
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -608,6 +609,7 @@ export default function ParentChildrenPage() {
       <p style={{ textAlign: 'center', fontSize: 11, color: '#475569', margin: '24px 0 12px' }}>
         Alfanumrik Learning OS | Parent Portal
       </p>
+      <BottomNav />
     </div>
   );
 }

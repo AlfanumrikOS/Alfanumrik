@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { SUBJECT_META } from '@/lib/constants';
+import { BottomNav } from '@/components/ui';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -806,6 +807,7 @@ export default function TeacherClassesPage() {
           {toast}
         </div>
       )}
+      <BottomNav />
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
 import { supabaseUrl as SUPABASE_URL, supabaseAnonKey as SUPABASE_ANON } from '@/lib/supabase';
 import type { HeatmapData, HeatmapCell, RiskAlert } from '@/lib/types';
+import { BottomNav } from '@/components/ui';
 
 async function api(action: string, params: Record<string, unknown> = {}) {
   const res = await fetch(`${SUPABASE_URL}/functions/v1/teacher-dashboard`, {
@@ -203,6 +204,7 @@ export default function TeacherPage() {
       {tab === 'heatmap' && heatmap && <HeatmapTab data={heatmap} />}
       {tab === 'alerts' && <AlertsTab alerts={alerts} onResolve={resolveAlert} />}
       {tab === 'poll' && <PollTab classId={classId} teacherId={teacherId} />}
+      <BottomNav />
     </div>
   );
 }
