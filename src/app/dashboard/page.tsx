@@ -8,6 +8,7 @@ import { useDashboardData } from '@/lib/swr';
 import { Card, StatCard, ProgressBar, SectionHeader, SubjectChip, Avatar, BottomNav } from '@/components/ui';
 import TrustFooter from '@/components/TrustFooter';
 import { DashboardSkeleton } from '@/components/Skeleton';
+import { calculateLevel, xpToNextLevel, getLevelName } from '@/lib/xp-rules';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import type { StudentLearningProfile, Subject, CurriculumTopic } from '@/lib/types';
 import { SUBJECT_META } from '@/lib/constants';
@@ -245,11 +246,22 @@ export default function Dashboard() {
               )}
             </div>
           </div>
-          <ProgressBar
-            value={((currentXp % 500) / 500) * 100}
-            label={`${isHi ? 'स्तर' : 'Level'} ${currentLevel}`}
-            showPercent
-          />
+          {(() => {
+            const lvl = calculateLevel(totalXp);
+            const prog = xpToNextLevel(totalXp);
+            const lvlName = getLevelName(lvl);
+            return (
+              <>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[11px] font-bold" style={{ color: meta?.color || 'var(--orange)' }}>
+                    {isHi ? `स्तर ${lvl}` : `Level ${lvl}`} · {lvlName}
+                  </span>
+                  <span className="text-[10px] text-[var(--text-3)]">{prog.current}/{prog.needed} XP</span>
+                </div>
+                <ProgressBar value={prog.progress} color={meta?.color} />
+              </>
+            );
+          })()}
           <div className="grid-stats mt-4">
             <StatCard value={mastered} label={isHi ? 'महारत' : 'Mastered'} color="var(--gold)" />
             <StatCard value={inProgress} label={isHi ? 'जारी' : 'In Progress'} color="var(--teal)" />
