@@ -6,7 +6,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { supabase, getStudentProfiles, getSubjects, studentJoinClass } from '@/lib/supabase';
 import { Card, Button, Input, Select, Avatar, SectionHeader, ProgressBar, StatCard, LoadingFoxy, BottomNav } from '@/components/ui';
 import TrustFooter from '@/components/TrustFooter';
-import { GRADES, BOARDS, LANGUAGES, SUBJECT_META } from '@/lib/constants';
+import { GRADES, BOARDS, LANGUAGES, SUBJECT_META, getSubjectsForGrade } from '@/lib/constants';
 import { PlanBadge } from '@/components/PlanBadge';
 import { isSoundEnabled, setSoundEnabled, playSound } from '@/lib/sounds';
 
@@ -533,7 +533,7 @@ export default function ProfilePage() {
                   { l: isHi ? 'कक्षा' : 'Grade', v: `Grade ${student.grade}` },
                   { l: isHi ? 'बोर्ड' : 'Board', v: student.board ?? 'CBSE' },
                   { l: isHi ? 'भाषा' : 'Language', v: LANGUAGES.find(la => la.code === student.preferred_language)?.label ?? student.preferred_language },
-                  { l: isHi ? 'पसंदीदा विषय' : 'Preferred Subject', v: SUBJECT_META.find(s => s.code === student.preferred_subject)?.name ?? student.preferred_subject ?? '—' },
+                  { l: isHi ? 'पसंदीदा विषय' : 'Preferred Subject', v: getSubjectsForGrade(student.grade).find(s => s.code === student.preferred_subject)?.name ?? SUBJECT_META.find(s => s.code === student.preferred_subject)?.name ?? student.preferred_subject ?? '—' },
                   { l: isHi ? 'स्कूल' : 'School', v: student.school_name ?? '—' },
                   { l: isHi ? 'शहर' : 'City', v: [student.city, student.state].filter(Boolean).join(', ') || '—' },
                   { l: isHi ? 'लक्ष्य' : 'Academic Goal', v: GOALS.find(g => g.value === student.academic_goal)?.label ?? student.academic_goal ?? '—' },
@@ -699,7 +699,7 @@ export default function ProfilePage() {
                   label={isHi ? 'पसंदीदा विषय' : 'Preferred Subject'}
                   value={editSubject}
                   onChange={setEditSubject}
-                  options={SUBJECT_META.map(s => ({ value: s.code, label: `${s.icon} ${s.name}` }))}
+                  options={getSubjectsForGrade(editGrade).map(s => ({ value: s.code, label: `${s.icon} ${s.name}` }))}
                 />
                 <Select
                   label={isHi ? 'भाषा' : 'Language'}
