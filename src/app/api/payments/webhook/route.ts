@@ -1,5 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
+
+/**
+ * Razorpay Webhook Handler
+ *
+ * Safety net for the payment lifecycle. If the client-side verify callback
+ * fails (network issue, browser close, etc.), this webhook ensures the
+ * subscription is still activated.
+ *
+ * Handles:
+ * - payment.captured → activate subscription (idempotent)
+ * - payment.failed → record failure
+ * - subscription.cancelled/expired → downgrade to free
+ *
+ * All writes are idempotent — safe for duplicate webhook deliveries.
+ */
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,42 +34,144 @@ export async function POST(request: NextRequest) {
       .digest('hex');
 
     if (expectedSignature !== signature) {
+      console.error('Webhook signature mismatch');
       return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
     }
 
     const event = JSON.parse(body);
     const eventType = event.event;
 
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+    const admin = createClient(supabaseUrl, serviceKey);
 
+    // ── payment.captured: activate subscription (safety net) ──
     if (eventType === 'payment.captured') {
-      // Payment successful — log it
       const payment = event.payload.payment.entity;
-      console.log(`Payment captured: ${payment.id}, amount: ${payment.amount}, email: ${payment.email}`);
+      const orderId = payment.order_id;
+      const paymentId = payment.id;
+      const userId = payment.notes?.user_id;
+      const planCode = payment.notes?.plan_code;
+      const billingCycle = payment.notes?.billing_cycle || 'monthly';
+
+      console.log(`Webhook: payment.captured ${paymentId}, order: ${orderId}, plan: ${planCode}`);
+
+      if (userId && planCode) {
+        // Check if already processed (idempotency)
+        const { data: existing } = await admin
+          .from('payment_history')
+          .select('id, status')
+          .eq('razorpay_payment_id', paymentId)
+          .limit(1);
+
+        if (existing && existing.length > 0 && existing[0].status === 'captured') {
+          // Already processed by verify route — skip
+          console.log(`Webhook: payment ${paymentId} already processed, skipping`);
+          return NextResponse.json({ received: true, note: 'already_processed' });
+        }
+
+        // Record payment if not already recorded
+        if (!existing || existing.length === 0) {
+          const { data: studentRow } = await admin
+            .from('students')
+            .select('id')
+            .eq('auth_user_id', userId)
+            .single();
+
+          if (studentRow) {
+            await admin.from('payment_history').insert({
+              student_id: studentRow.id,
+              razorpay_payment_id: paymentId,
+              razorpay_order_id: orderId,
+              plan_code: planCode,
+              billing_cycle: billingCycle,
+              currency: payment.currency || 'INR',
+              amount: payment.amount,
+              status: 'captured',
+              payment_method: 'razorpay',
+              notes: { source: 'webhook' },
+            });
+          }
+        }
+
+        // Activate subscription (idempotent — upserts)
+        const { error: rpcError } = await admin.rpc('activate_subscription', {
+          p_auth_user_id: userId,
+          p_plan_code: planCode,
+          p_billing_cycle: billingCycle,
+          p_razorpay_payment_id: paymentId,
+          p_razorpay_order_id: orderId,
+        });
+
+        if (rpcError) {
+          console.error(`Webhook: activate_subscription failed for ${userId}:`, rpcError.message);
+          // Fallback: direct update
+          await admin
+            .from('students')
+            .update({ subscription_plan: planCode })
+            .eq('auth_user_id', userId);
+        } else {
+          console.log(`Webhook: subscription activated for ${userId} → ${planCode}`);
+        }
+      }
     }
 
+    // ── payment.failed: record failure ──
     if (eventType === 'payment.failed') {
-      // Payment failed — log for follow-up
       const payment = event.payload.payment.entity;
-      console.log(`Payment failed: ${payment.id}, reason: ${payment.error_description}`);
+      console.log(`Webhook: payment.failed ${payment.id}, reason: ${payment.error_description}`);
+
+      const userId = payment.notes?.user_id;
+      if (userId) {
+        const { data: studentRow } = await admin
+          .from('students')
+          .select('id')
+          .eq('auth_user_id', userId)
+          .single();
+
+        if (studentRow) {
+          const { error: failInsertErr } = await admin.from('payment_history').insert({
+            student_id: studentRow.id,
+            razorpay_payment_id: payment.id,
+            razorpay_order_id: payment.order_id,
+            plan_code: payment.notes?.plan_code || 'unknown',
+            billing_cycle: payment.notes?.billing_cycle || 'monthly',
+            currency: payment.currency || 'INR',
+            amount: payment.amount || 0,
+            status: 'failed',
+            payment_method: 'razorpay',
+            notes: { source: 'webhook', error: payment.error_description },
+          });
+          // Ignore duplicate constraint violations
+          if (failInsertErr && !failInsertErr.message.includes('duplicate')) {
+            console.error('Webhook: failed payment insert error:', failInsertErr.message);
+          }
+        }
+      }
     }
 
+    // ── subscription.cancelled / subscription.expired: downgrade ──
     if (eventType === 'subscription.cancelled' || eventType === 'subscription.expired') {
-      // Downgrade user to free
       const subscription = event.payload.subscription?.entity;
       const userId = subscription?.notes?.user_id;
+
       if (userId) {
-        await fetch(`${supabaseUrl}/rest/v1/students?auth_user_id=eq.${userId}`, {
-          method: 'PATCH',
-          headers: {
-            'apikey': serviceKey,
-            'Authorization': `Bearer ${serviceKey}`,
-            'Content-Type': 'application/json',
-            'Prefer': 'return=minimal',
-          },
-          body: JSON.stringify({ subscription_plan: 'free' }),
-        });
+        console.log(`Webhook: ${eventType} for user ${userId}`);
+
+        await admin
+          .from('students')
+          .update({ subscription_plan: 'free' })
+          .eq('auth_user_id', userId);
+
+        await admin
+          .from('student_subscriptions')
+          .update({
+            status: eventType === 'subscription.cancelled' ? 'cancelled' : 'expired',
+            cancelled_at: new Date().toISOString(),
+          })
+          .eq('student_id', (
+            await admin.from('students').select('id').eq('auth_user_id', userId).single()
+          ).data?.id);
       }
     }
 
