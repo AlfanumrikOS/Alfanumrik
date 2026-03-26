@@ -41,13 +41,14 @@ const nextConfig = {
               // unsafe-inline required by Next.js for inline scripts/styles.
               // strict-dynamic tells modern browsers to trust scripts loaded
               // by already-trusted scripts, reducing the risk of XSS.
-              "script-src 'self' 'unsafe-inline' 'strict-dynamic'",
+              "script-src 'self' 'unsafe-inline' 'strict-dynamic' https://checkout.razorpay.com",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "font-src 'self' https://fonts.gstatic.com",
               "img-src 'self' data: blob: https://*.supabase.co https://lh3.googleusercontent.com",
               "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.ingest.sentry.io https://checkout.razorpay.com https://api.razorpay.com",
               "media-src 'self' blob:",
               "worker-src 'self'",
+              "frame-src https://api.razorpay.com https://checkout.razorpay.com",
               "frame-ancestors 'none'",
               "base-uri 'self'",
               "form-action 'self'",
