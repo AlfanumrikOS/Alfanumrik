@@ -83,7 +83,13 @@ export async function POST(request: NextRequest) {
       const err = await orderRes.text();
       console.error('Razorpay order creation failed:', orderRes.status, err);
       console.error('Razorpay key used:', razorpayKey?.substring(0, 12) + '...');
-      return NextResponse.json({ error: 'Payment gateway error. Please try again.' }, { status: 502 });
+      // Return actual Razorpay error for debugging
+      return NextResponse.json({
+        error: 'Payment gateway error. Please try again.',
+        debug_status: orderRes.status,
+        debug_razorpay: err.substring(0, 500),
+        debug_key_prefix: razorpayKey?.substring(0, 16),
+      }, { status: 502 });
     }
 
     const order = await orderRes.json();
