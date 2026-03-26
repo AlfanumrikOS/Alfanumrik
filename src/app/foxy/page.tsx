@@ -148,6 +148,7 @@ export default function FoxyPage() {
   const [topics, setTopics] = useState<any[]>([]);
   const [masteryData, setMasteryData] = useState<any[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [collapsedAbove, setCollapsedAbove] = useState<number | null>(null); // index above which messages are collapsed
   const [loading, setLoading] = useState(false);
   const [sessionMode, setSessionMode] = useState('learn');
   const [language, setLanguage] = useState('en');
@@ -325,6 +326,18 @@ export default function FoxyPage() {
     else if (key === 'english') setLanguage('en');
   };
 
+  // Start a fresh topic session — clears chat, keeps subject
+  const startNewTopic = useCallback(() => {
+    setMessages([]);
+    setChatSessionId(null);
+    setActiveTopic(null);
+    setSelectedChapters([]);
+    setCollapsedAbove(null);
+    setLessonStep('hook');
+    setLessonStepsCompleted([]);
+    setXpGained(0);
+  }, []);
+
   // Language toggle lock for language subjects
   const isLangLocked = activeSubject === 'hindi' || activeSubject === 'english';
 
@@ -481,6 +494,30 @@ export default function FoxyPage() {
       {/* Close dropdowns */}
       {(showSubjectDD || showChapterDD) && <div className="fixed inset-0 z-40" onClick={() => { setShowSubjectDD(false); setShowChapterDD(false); }} />}
 
+      {/* ═══ CONTEXT BAR — shows active topic + new topic button ═══ */}
+      {messages.length > 0 && (
+        <div className="px-3 py-2 flex items-center justify-between gap-2" style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <span className="text-sm">{cfg.icon}</span>
+            <div className="min-w-0">
+              <div className="text-[11px] font-bold truncate" style={{ color: 'var(--text-1)' }}>
+                {activeTopic ? `Ch ${activeTopic.chapter_number}: ${activeTopic.title}` : cfg.name}
+              </div>
+              <div className="text-[9px] font-medium" style={{ color: cfg.color }}>
+                {MODES.find(m => m.id === sessionMode)?.emoji} {MODES.find(m => m.id === sessionMode)?.label} · {messages.length} messages
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={startNewTopic}
+            className="shrink-0 text-[10px] font-bold px-3 py-1.5 rounded-lg transition-all active:scale-95"
+            style={{ background: 'var(--surface-2)', color: 'var(--text-3)', border: '1px solid var(--border)' }}
+          >
+            + New Topic
+          </button>
+        </div>
+      )}
+
       {/* ═══ LESSON STEP PROGRESS BAR ═══ */}
       {sessionMode === 'lesson' && (
         <div className="px-3 py-2" style={{ background: 'var(--surface-1)', borderBottom: '1px solid var(--border)' }}>
@@ -578,7 +615,7 @@ export default function FoxyPage() {
                 const lvl = mastery?.mastery_level || 'not_started';
                 const lc = MASTERY_COLORS[lvl] || MASTERY_COLORS.not_started;
                 return (
-                  <button key={topic.id} onClick={() => { setActiveTopic(topic); sendMessage(`Teach me about: ${topic.title} (Chapter ${topic.chapter_number})`); }} className="w-full text-left p-3 rounded-xl transition-all active:scale-[0.98]" style={{ border: `1px solid ${lc}25`, background: 'var(--surface-1)' }}>
+                  <button key={topic.id} onClick={() => { setActiveTopic(topic); setMessages([]); setChatSessionId(null); setCollapsedAbove(null); setTimeout(() => sendMessage(`Teach me about: ${topic.title} (Chapter ${topic.chapter_number})`), 50); }} className="w-full text-left p-3 rounded-xl transition-all active:scale-[0.98]" style={{ border: `1px solid ${lc}25`, background: activeTopic?.id === topic.id ? `${lc}10` : 'var(--surface-1)' }}>
                     <div className="text-xs font-bold truncate" style={{ color: 'var(--text-1)' }}>Ch {topic.chapter_number}: {topic.title}</div>
                     <div className="flex items-center gap-2 mt-1">
                       <div className="w-16 h-1.5 rounded-full" style={{ background: 'var(--surface-2)' }}><div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: lc }} /></div>
@@ -614,24 +651,49 @@ export default function FoxyPage() {
               </div>
             )}
 
-            {/* Messages — using ChatBubble component */}
-            {messages.map((msg) => (
-              <ChatBubble
-                key={msg.id}
-                role={msg.role}
-                content={msg.role === 'tutor' ? <RichContent content={msg.content} subjectKey={activeSubject} /> : <div className="whitespace-pre-wrap">{msg.content}</div>}
-                rawContent={msg.content}
-                timestamp={msg.timestamp}
-                studentName={student?.name}
-                xp={msg.xp}
-                feedback={msg.feedback}
-                reported={msg.reported}
-                color={cfg.color}
-                activeSubject={activeSubject}
-                onFeedback={(isUp) => handleFeedback(msg.id, isUp)}
-                onReport={() => openReport(msg.id)}
-              />
-            ))}
+            {/* Messages — with collapsing for long threads */}
+            {messages.length > 10 && collapsedAbove === null && (
+              <button
+                onClick={() => setCollapsedAbove(messages.length - 6)}
+                className="w-full text-center py-2 mb-3 rounded-xl text-[11px] font-semibold transition-all active:scale-[0.98]"
+                style={{ background: 'var(--surface-1)', color: 'var(--text-3)', border: '1px solid var(--border)' }}
+              >
+                ↑ Show only recent messages ({messages.length} total)
+              </button>
+            )}
+
+            {collapsedAbove !== null && (
+              <button
+                onClick={() => setCollapsedAbove(null)}
+                className="w-full text-center py-2 mb-3 rounded-xl text-[11px] font-semibold transition-all active:scale-[0.98]"
+                style={{ background: `${cfg.color}08`, color: cfg.color, border: `1px solid ${cfg.color}20` }}
+              >
+                ↓ Show all {messages.length} messages
+              </button>
+            )}
+
+            {messages.map((msg, idx) => {
+              // Skip collapsed messages
+              if (collapsedAbove !== null && idx < collapsedAbove) return null;
+
+              return (
+                <ChatBubble
+                  key={msg.id}
+                  role={msg.role}
+                  content={msg.role === 'tutor' ? <RichContent content={msg.content} subjectKey={activeSubject} /> : <div className="whitespace-pre-wrap">{msg.content}</div>}
+                  rawContent={msg.content}
+                  timestamp={msg.timestamp}
+                  studentName={student?.name}
+                  xp={msg.xp}
+                  feedback={msg.feedback}
+                  reported={msg.reported}
+                  color={cfg.color}
+                  activeSubject={activeSubject}
+                  onFeedback={(isUp) => handleFeedback(msg.id, isUp)}
+                  onReport={() => openReport(msg.id)}
+                />
+              );
+            })}
 
             {/* ── Report Error Modal ── */}
             {reportModal && (
