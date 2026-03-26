@@ -29,7 +29,7 @@
 │ • Study Plans  │ │ • Exams   │ │ • export-report  │
 │ • Simulations  │ │ • Perf.   │ │ • daily-cron     │
 │ • Foxy Chat    │ │ • Classes │ │ • queue-consumer │
-│ • Leaderboard  │ │ • TTS     │ │ • send-auth-email│
+│ • Leaderboard  │ │ • Perf.   │ │ • send-auth-email│
 └────────────────┘ └──────────┘ └──────────────────┘
           │              │              │
           └──────────────┼──────────────┘
@@ -51,7 +51,7 @@
 │  ┌──────────────────────┐  └─────────────────────────────────┘  │
 │  │   External AI APIs    │                                       │
 │  │  • Claude Haiku (chat)│  ┌─────────────────────────────────┐  │
-│  │  • ElevenLabs (TTS)   │  │  External Services               │  │
+│  │  • Razorpay (Payments) │  │  External Services               │  │
 │  │  • RAG embeddings     │  │  • Resend (email)                │  │
 │  └──────────────────────┘  │  • Vercel Analytics               │  │
 │                             │  • Vercel Speed Insights          │  │
@@ -70,7 +70,7 @@
 | **Database** | PostgreSQL (Supabase) | RLS, pgvector, JSONB, BRIN indexes |
 | **Edge Functions** | Deno (Supabase) | AI tutor, quiz gen, email hooks |
 | **AI** | Claude Haiku | Low-latency, cost-effective tutoring |
-| **Voice** | ElevenLabs | TTS with Hindi/English support |
+| **Payments** | Razorpay | INR payments with order+verify+webhook |
 | **Hosting** | Vercel | Auto-scaling, edge network, ISR |
 | **Email** | Resend | Transactional emails (auth, reports) |
 | **Monitoring** | Vercel Analytics + custom logging | Performance + error tracking |
@@ -251,7 +251,7 @@ ISR (Incremental Static Regeneration):
 | Vercel | Pro | $20 |
 | Supabase | Pro | $25 |
 | Claude API (Haiku) | Pay-per-use | ~$300 |
-| ElevenLabs (TTS) | Starter | $5 |
+| Razorpay (Payments) | Live | Usage-based |
 | Resend (Email) | Free tier | $0 |
 | Domain + DNS | Annual | ~$2/mo |
 | **Total** | | **~$352/mo** |
