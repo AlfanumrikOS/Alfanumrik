@@ -18,7 +18,18 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    const { data: { user } } = await supabase.auth.getUser();
+    // Try cookie-based auth first, fall back to Bearer token
+    let user = (await supabase.auth.getUser()).data.user;
+    if (!user) {
+      const authHeader = request.headers.get('Authorization');
+      if (authHeader?.startsWith('Bearer ')) {
+        const { createClient } = await import('@supabase/supabase-js');
+        const directClient = createClient(supabaseUrl, supabaseKey, {
+          global: { headers: { Authorization: authHeader } },
+        });
+        user = (await directClient.auth.getUser()).data.user;
+      }
+    }
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

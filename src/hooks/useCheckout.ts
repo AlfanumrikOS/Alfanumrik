@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
+import { supabase } from '@/lib/supabase';
 
 /**
  * Razorpay Checkout Hook — handles the complete payment flow:
@@ -55,10 +56,24 @@ export function useCheckout() {
         return;
       }
 
+      // Get fresh access token for API auth
+      const { data: { session } } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+      if (!accessToken) {
+        const msg = 'Please log in again to continue.';
+        setError(msg);
+        onError?.(msg);
+        setLoading(false);
+        return;
+      }
+
       // Create order on backend
       const orderRes = await fetch('/api/payments/create-order', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({ plan_code: planCode, billing_cycle: billingCycle }),
       });
 
@@ -91,7 +106,10 @@ export function useCheckout() {
           try {
             const verifyRes = await fetch('/api/payments/verify', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${accessToken}`,
+              },
               body: JSON.stringify({
                 razorpay_order_id: response.razorpay_order_id,
                 razorpay_payment_id: response.razorpay_payment_id,
