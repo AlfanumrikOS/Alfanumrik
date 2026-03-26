@@ -108,10 +108,16 @@ async function callFoxyTutor(params: Record<string, any>) {
       body: JSON.stringify(params),
     });
     if (!res.ok) {
-      const errText = await res.text().catch(() => 'Unknown error');
-      console.error('Foxy tutor error:', res.status, errText);
+      // Try to parse JSON body for structured error info (e.g. CHAT_LIMIT code)
+      let errBody: any = null;
+      try { errBody = await res.json(); } catch { /* not JSON */ }
+      console.error('Foxy tutor error:', res.status, errBody);
       if (res.status === 401 || res.status === 403) {
         return { reply: 'Session expired. Please refresh the page and try again!', xp_earned: 0, session_id: null };
+      }
+      if (res.status === 429 && errBody?.code === 'CHAT_LIMIT') {
+        // Signal daily limit reached so the caller can show UpgradeModal
+        return { reply: errBody.reply || `You've used all your messages for today.`, xp_earned: 0, session_id: null, limitReached: true };
       }
       return { reply: res.status === 429 ? 'Slow down! Wait a moment and try again.' : 'Foxy is taking a short break. Try again!', xp_earned: 0, session_id: null };
     }
@@ -290,6 +296,14 @@ export default function FoxyPage() {
     try {
       const chapCtx = selectedChapters.length > 0 ? topics.filter(t => selectedChapters.includes(t.id)).map(t => `Ch ${t.chapter_number}: ${t.title}`).join(', ') : null;
       const resp = await callFoxyTutor({ message: text, student_id: student?.id || '', student_name: student?.name || 'Student', grade: studentGrade, subject: activeSubject, language, mode: sessionMode, topic_id: activeTopic?.id || null, topic_title: activeTopic?.title || null, session_id: chatSessionId, selected_chapters: chapCtx });
+      // Server confirmed daily limit reached — show UpgradeModal
+      if (resp.limitReached) {
+        setMessages(p => [...p, { id: Date.now() + 1, role: 'tutor', content: resp.reply, timestamp: new Date().toISOString() }]);
+        setShowLimitModal(true);
+        setFoxyState('idle');
+        setLoading(false);
+        return;
+      }
       setMessages(p => [...p, { id: Date.now() + 1, role: 'tutor', content: resp.reply, timestamp: new Date().toISOString(), xp: resp.xp_earned }]);
       if (voiceEnabled) setTimeout(() => speakText(resp.reply), 300);
       if (resp.xp_earned > 0) setXpGained(p => p + resp.xp_earned);
