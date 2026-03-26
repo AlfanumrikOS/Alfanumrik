@@ -15,6 +15,7 @@ import { ChatBubble } from '@/components/foxy/ChatBubble';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import { RichContent } from '@/components/foxy/RichContent';
 import { ChatInput } from '@/components/foxy/ChatInput';
+import { UpgradeModal } from '@/components/UpgradeModal';
 
 // Lazy-load heavy audio components — not needed until user interacts with voice
 const VoiceWaveform = dynamic(() => import('@/components/foxy/VoiceWaveform').then(m => ({ default: m.VoiceWaveform })), { ssr: false });
@@ -836,25 +837,19 @@ export default function FoxyPage() {
 
       {voice.isSpeaking && <button onClick={stopSpeaking} className="fixed bottom-20 right-4 z-50 w-12 h-12 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-all" style={{ background: '#EF4444', color: '#fff', fontSize: 18, boxShadow: '0 4px 20px rgba(239,68,68,0.4)' }}>■</button>}
 
-      {/* ═══ USAGE LIMIT MODAL ═══ */}
-      {showLimitModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={() => setShowLimitModal(false)}>
-          <div className="w-full max-w-sm mx-4 rounded-2xl p-6 text-center animate-slide-up" style={{ background: 'var(--surface-1)' }} onClick={e => e.stopPropagation()}>
-            <div className="text-4xl mb-3">⏳</div>
-            <h3 className="text-base font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
-              {language === 'hi' ? 'आज की सीमा पूरी हो गई' : 'Daily Limit Reached'}
-            </h3>
-            <p className="text-xs mb-4 leading-relaxed" style={{ color: 'var(--text-3)' }}>
-              {language === 'hi'
-                ? `आपने आज ${chatUsage?.limit || 50} संदेश भेज दिए हैं। कल फिर से प्रयास करें या अपग्रेड करें।`
-                : `You've used all ${chatUsage?.limit || 50} messages for today. Come back tomorrow or upgrade your plan.`}
-            </p>
-            <button onClick={() => setShowLimitModal(false)} className="px-6 py-2.5 rounded-xl text-xs font-bold text-white" style={{ background: 'var(--orange)' }}>
-              {language === 'hi' ? 'ठीक है' : 'Got it'}
-            </button>
-          </div>
-        </div>
-      )}
+      {/* ═══ UPGRADE MODAL (replaces old limit modal) ═══ */}
+      <UpgradeModal
+        isOpen={showLimitModal}
+        onClose={() => setShowLimitModal(false)}
+        feature="chat"
+        currentLimit={chatUsage?.limit || 5}
+        onUpgradeSuccess={() => {
+          // Refresh usage after upgrade
+          if (student?.id) {
+            checkDailyUsage(student.id, 'foxy_chat', student.subscription_plan || 'free').then(setChatUsage);
+          }
+        }}
+      />
       </SectionErrorBoundary>
 
       <BottomNav />
