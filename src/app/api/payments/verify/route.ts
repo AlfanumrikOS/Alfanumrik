@@ -23,7 +23,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, plan_code, billing_cycle } = await request.json();
+    const body = await request.json();
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, plan_code, billing_cycle } = body;
+
+    // Input validation
+    if (!razorpay_order_id || typeof razorpay_order_id !== 'string' || !razorpay_order_id.startsWith('order_')) {
+      return NextResponse.json({ error: 'Invalid order ID' }, { status: 400 });
+    }
+    if (!razorpay_payment_id || typeof razorpay_payment_id !== 'string' || !razorpay_payment_id.startsWith('pay_')) {
+      return NextResponse.json({ error: 'Invalid payment ID' }, { status: 400 });
+    }
+    if (!razorpay_signature || typeof razorpay_signature !== 'string' || razorpay_signature.length !== 64) {
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
+    }
+    if (!plan_code || !['starter', 'pro', 'unlimited'].includes(plan_code)) {
+      return NextResponse.json({ error: 'Invalid plan' }, { status: 400 });
+    }
+    if (!billing_cycle || !['monthly', 'yearly'].includes(billing_cycle)) {
+      return NextResponse.json({ error: 'Invalid billing cycle' }, { status: 400 });
+    }
 
     // Verify signature
     const razorpaySecret = process.env.RAZORPAY_KEY_SECRET!;

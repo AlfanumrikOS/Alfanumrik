@@ -94,7 +94,7 @@ export default function LeaderboardPage() {
     if (!student) return;
     setLoading(true);
     try {
-      const { data } = await supabase.from('student_titles').select('*').eq('student_id', student.id).eq('is_active', true).order('earned_at', { ascending: false });
+      const { data } = await supabase.from('student_titles').select('*').eq('student_id', student.id).eq('is_active', true).order('earned_at', { ascending: false }).limit(50);
       setTitles(data ?? []);
     } catch { setTitles([]); }
     setLoading(false);

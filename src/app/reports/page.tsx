@@ -120,24 +120,27 @@ export default function MonthlyReportsPage() {
           return;
         }
 
-        // Compute from raw data
-        const { data: quizzes } = await supabase
-          .from('quiz_sessions')
-          .select('score_percent, completed_at, subject, total_questions, time_taken_seconds')
-          .eq('student_id', student.id)
-          .gte('completed_at', monthInfo.start)
-          .lte('completed_at', monthInfo.end + 'T23:59:59')
-          .order('completed_at', { ascending: true });
-
-        const { data: profiles } = await supabase
-          .from('student_learning_profiles')
-          .select('total_time_minutes, total_questions_asked, total_questions_answered_correctly')
-          .eq('student_id', student.id);
-
-        const { data: masteryRows } = await supabase
-          .from('bloom_progression')
-          .select('topic, remember_mastery, understand_mastery, apply_mastery')
-          .eq('student_id', student.id);
+        // Compute from raw data — parallel fetch (was sequential)
+        const [{ data: quizzes }, { data: profiles }, { data: masteryRows }] = await Promise.all([
+          supabase
+            .from('quiz_sessions')
+            .select('score_percent, completed_at, subject, total_questions, time_taken_seconds')
+            .eq('student_id', student.id)
+            .gte('completed_at', monthInfo.start)
+            .lte('completed_at', monthInfo.end + 'T23:59:59')
+            .order('completed_at', { ascending: true })
+            .limit(200),
+          supabase
+            .from('student_learning_profiles')
+            .select('total_time_minutes, total_questions_asked, total_questions_answered_correctly')
+            .eq('student_id', student.id)
+            .limit(20),
+          supabase
+            .from('bloom_progression')
+            .select('topic, remember_mastery, understand_mastery, apply_mastery')
+            .eq('student_id', student.id)
+            .limit(50),
+        ]);
 
         const quizList = quizzes ?? [];
         const scores = quizList.map((q: any) => q.score_percent ?? 0);
