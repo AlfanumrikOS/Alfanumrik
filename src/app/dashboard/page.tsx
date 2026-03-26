@@ -11,7 +11,7 @@ import { DashboardSkeleton } from '@/components/Skeleton';
 import { calculateLevel, xpToNextLevel, getLevelName } from '@/lib/xp-rules';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import type { StudentLearningProfile, Subject, CurriculumTopic } from '@/lib/types';
-import { SUBJECT_META } from '@/lib/constants';
+import { SUBJECT_META, GRADE_SUBJECTS } from '@/lib/constants';
 import { PlanBadge } from '@/components/PlanBadge';
 import QuickActions from '@/components/dashboard/QuickActions';
 import SubjectProgress from '@/components/dashboard/SubjectProgress';
@@ -74,7 +74,10 @@ export default function Dashboard() {
     setSubjects(subs);
     setFlags(feats);
     setNextTopics(nextTopicsResult.slice(0, 3));
-    setSelectedSubjects((student.selected_subjects || [student.preferred_subject].filter(Boolean)) as string[]);
+    const gradeKey = (student.grade || '9').replace('Grade ', '').trim();
+    const gradeSubjects = GRADE_SUBJECTS[gradeKey] || GRADE_SUBJECTS['9'];
+    const rawSelected = (student.selected_subjects || [student.preferred_subject].filter(Boolean)) as string[];
+    setSelectedSubjects(rawSelected.filter(s => gradeSubjects.includes(s)));
     generateNotifications(student.id).catch(() => {});
   }, [student]);
 
