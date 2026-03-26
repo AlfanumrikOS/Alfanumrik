@@ -8,15 +8,15 @@ import { FadeIn, StaggerContainer, StaggerItem } from '@/components/landing/Anim
    ═══════════════════════════════════════════════════════════════ */
 
 export const metadata: Metadata = {
-  title: 'Alfanumrik — India\'s Smartest AI Learning Platform for CBSE Students',
+  title: 'Alfanumrik — CBSE Learning Platform | Understand Better, Score Higher',
   description:
-    'Alfanumrik is an adaptive AI learning platform for CBSE Grades 6–12. Personalized tutoring in Hindi & English, real-time progress tracking, smart quizzes, and interactive simulations. Built by Cusiosense Learning India.',
+    'Alfanumrik helps CBSE students in Grades 6–12 understand concepts clearly, practice with board-pattern questions, and track real progress. Available in Hindi & English. Start free.',
   keywords:
-    'adaptive learning platform, AI learning app, personalized education, CBSE AI tutor, online learning India, AI tutor Hindi, board exam preparation, class 9 10 science math, Alfanumrik, Foxy AI tutor',
+    'CBSE learning platform, study app for students, online learning India, exam preparation CBSE, practice tests CBSE, concept clarity learning, improve marks CBSE, homework help students',
   openGraph: {
-    title: 'Alfanumrik — AI-Powered Adaptive Learning for CBSE Students',
+    title: 'Alfanumrik — Understand Better, Score Higher',
     description:
-      'Meet Foxy, your personal AI tutor. 16 subjects, Hindi & English, Grades 6–12. Adaptive quizzes, spaced repetition, gamified learning. Start free.',
+      'A structured learning platform for CBSE students. Clear explanations, smart practice, real progress tracking. Grades 6–12, Hindi & English.',
     url: 'https://alfanumrik.com/welcome',
     locale: 'en_IN',
     type: 'website',
@@ -24,9 +24,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Alfanumrik — AI Tutor for CBSE Students',
+    title: 'Alfanumrik — CBSE Learning Made Clear',
     description:
-      'Personalized AI tutoring in Hindi & English. Adaptive learning, smart quizzes, real-time progress. Grades 6–12.',
+      'Understand concepts, practice smart, track progress. CBSE Grades 6–12 in Hindi & English.',
   },
   alternates: { canonical: 'https://alfanumrik.com/welcome' },
 };
@@ -36,40 +36,40 @@ export const metadata: Metadata = {
 const FEATURES = [
   {
     icon: '🦊',
-    title: 'AI Tutor — Foxy',
-    desc: 'Chat or talk with Foxy, your personal AI tutor. Get step-by-step explanations in Hindi or English, exactly at your level.',
+    title: 'Foxy — Your Study Buddy',
+    desc: 'Ask any doubt, get clear step-by-step explanations in Hindi or English. Like having a patient friend who explains things your way.',
   },
   {
     icon: '🎯',
-    title: 'Adaptive Learning',
-    desc: 'Questions adjust to your skill level in real-time. Never too easy, never too hard — always in your learning zone.',
+    title: 'Questions That Match Your Level',
+    desc: 'Practice questions adapt to what you know. You\'ll always be challenged — but never overwhelmed.',
   },
   {
     icon: '⚡',
-    title: 'Smart Quizzes',
-    desc: 'Practice with CBSE board-pattern questions. Instant feedback, detailed explanations, and bloom-level analysis.',
+    title: 'Board-Pattern Practice',
+    desc: 'Practice with real CBSE exam-style questions. Get instant feedback and understand where you went wrong.',
   },
   {
     icon: '📊',
-    title: 'Parent Reports',
-    desc: 'Parents get clear weekly reports — what your child studied, where they need help, and how they\'re improving.',
+    title: 'Progress Reports for Parents',
+    desc: 'Parents see clear weekly reports — what your child studied, where they need help, and how they\'re improving.',
   },
   {
     icon: '🏫',
     title: 'Teacher Dashboard',
-    desc: 'Manage classes, assign worksheets, track every student\'s mastery — all in one place.',
+    desc: 'Create classes, assign work, and see how every student is doing — all in one place.',
   },
   {
     icon: '🔬',
-    title: 'Interactive Simulations',
+    title: 'Interactive Experiments',
     desc: 'Physics, chemistry, and math come alive. Drag, play, and experiment with real science simulations.',
   },
 ];
 
 const STEPS_STUDENT = [
-  { icon: '✨', title: 'Sign Up Free', desc: 'Create your account in 30 seconds. Pick your grade, board, and subjects.' },
-  { icon: '🦊', title: 'Start Learning', desc: 'Chat with Foxy, take quizzes, or explore interactive labs. Learn your way.' },
-  { icon: '📈', title: 'Track Progress', desc: 'See your mastery grow topic by topic. Earn XP, maintain streaks, climb ranks.' },
+  { icon: '✨', title: 'Sign Up Free', desc: 'Pick your grade and subjects. Takes 30 seconds.' },
+  { icon: '📖', title: 'Learn & Practice', desc: 'Get clear explanations, solve practice questions, and clear your doubts — all in one place.' },
+  { icon: '📈', title: 'See Your Improvement', desc: 'Track which topics you\'ve mastered and where you need more practice. Watch your confidence grow.' },
 ];
 
 const STEPS_PARENT = [
@@ -85,15 +85,15 @@ const STEPS_TEACHER = [
 ];
 
 const BENEFITS = [
-  { icon: '🚀', title: 'Learn 2× Faster', desc: 'AI adapts to your pace. No wasted time on what you already know.' },
-  { icon: '🧠', title: 'Understand Deeply', desc: 'Bloom\'s taxonomy progression ensures real understanding, not just memorization.' },
-  { icon: '😌', title: 'Less Exam Stress', desc: 'Spaced repetition and board-pattern practice build confidence before exams.' },
-  { icon: '🎮', title: 'Actually Fun', desc: 'XP, streaks, leaderboards, and competitions make studying something you look forward to.' },
+  { icon: '💡', title: 'Understand, Don\'t Memorize', desc: 'Every concept is explained clearly with examples. Real understanding stays longer than rote learning.' },
+  { icon: '📝', title: 'Practice That Actually Helps', desc: 'Questions match your level and follow CBSE exam patterns. Practice what matters for your exams.' },
+  { icon: '😌', title: 'Less Exam Stress', desc: 'Regular practice and revision builds confidence. Walk into exams knowing you\'ve prepared well.' },
+  { icon: '🏆', title: 'Stay Motivated', desc: 'Earn XP, maintain streaks, and see yourself improve. Learning feels rewarding, not like a chore.' },
 ];
 
 const TESTIMONIALS = [
   {
-    quote: 'Foxy explains concepts step by step in a way I actually understand. My science scores have improved significantly.',
+    quote: 'The step-by-step explanations actually make sense. My science scores improved from 65 to 88 in two months.',
     name: 'Priya S.',
     role: 'Class 10 Student, Delhi',
     avatar: '🎓',
@@ -115,34 +115,34 @@ const TESTIMONIALS = [
 const FAQS = [
   {
     q: 'What is Alfanumrik?',
-    a: 'Alfanumrik is an AI-powered adaptive learning platform for CBSE students in Grades 6–12. It uses a personal AI tutor called Foxy to teach 16 subjects in Hindi and English, with smart quizzes, spaced repetition, and interactive simulations.',
+    a: 'Alfanumrik is a structured learning platform for CBSE students in Grades 6–12. It helps you understand concepts clearly, practice with exam-pattern questions, and track your real progress — all in Hindi and English.',
   },
   {
-    q: 'How does adaptive learning work?',
-    a: 'Our system uses Bayesian mastery tracking and Bloom\'s taxonomy to understand what you know and what you need to learn next. Questions automatically adjust difficulty to keep you in your optimal learning zone — challenging enough to grow, but not so hard you get frustrated.',
+    q: 'How is this different from watching YouTube videos?',
+    a: 'Videos are one-size-fits-all. Alfanumrik adapts to what you know. It finds your weak spots, gives you targeted practice, and tracks which topics you\'ve actually mastered — not just watched.',
   },
   {
     q: 'Is it safe for my child?',
-    a: 'Absolutely. We follow DPDPA (Digital Personal Data Protection Act) compliance, encrypt all data, never show ads, and never sell data. Students under 13 require verified parental consent. ISO 27001 & ISO 42001 certified.',
+    a: 'Yes. We follow DPDPA (Digital Personal Data Protection Act) compliance, encrypt all data, never show ads, and never sell data. Students under 13 require parental consent.',
   },
   {
     q: 'How do parents track their child\'s progress?',
-    a: 'Parents connect via a simple link code from their child\'s profile. You\'ll see weekly reports covering study time, quiz scores, mastery progression, strengths, and areas needing attention — all without needing to understand the technology.',
+    a: 'Parents connect using a simple link code from their child\'s profile. You\'ll see clear weekly reports showing what they studied, quiz scores, strengths, and areas needing attention.',
   },
   {
     q: 'Is Alfanumrik free?',
-    a: 'Yes! Alfanumrik offers a free tier with 5 Foxy chats and 5 quizzes per day. Starter, Pro, and Unlimited plans are available for more chats, quizzes, and subjects.',
+    a: 'Yes! The free plan includes 5 study sessions and 5 quizzes per day. Starter, Pro, and Unlimited plans are available for more practice and subjects.',
   },
   {
     q: 'Which boards and grades are supported?',
-    a: 'Currently we support CBSE Grades 6–12 with 16 subjects including Math, Science, Physics, Chemistry, Biology, English, Hindi, Social Studies, Computer Science, and Commerce subjects. ICSE and State Board support coming soon.',
+    a: 'Currently CBSE Grades 6–12 with 16 subjects including Math, Science, Physics, Chemistry, Biology, English, Hindi, and more. ICSE and State Board support coming soon.',
   },
 ];
 
 const TRUST_BADGES = [
   { icon: '🛡️', label: 'ISO 27001', desc: 'Information Security' },
-  { icon: '🤖', label: 'ISO 42001', desc: 'AI Management' },
-  { icon: '📋', label: 'ISO 42005', desc: 'AI Impact Assessment' },
+  { icon: '🤖', label: 'ISO 42001', desc: 'Technology Management' },
+  { icon: '📋', label: 'ISO 42005', desc: 'Impact Assessment' },
   { icon: '🔒', label: 'PCI-DSS', desc: 'Payment Security' },
   { icon: '🇮🇳', label: 'DPIIT', desc: 'Recognised Startup' },
 ];
@@ -245,16 +245,16 @@ export default function WelcomePage() {
             className="text-2xl sm:text-4xl lg:text-5xl font-extrabold leading-tight mb-4 animate-slide-up"
             style={{ fontFamily: 'var(--font-display)', animationDelay: '0.05s' }}
           >
-            Learn Smarter with<br />
-            <span className="gradient-text">Your AI Tutor</span>
+            Understand Better.<br />
+            <span className="gradient-text">Score Higher.</span>
           </h1>
 
           <p
             className="text-sm sm:text-lg max-w-xl sm:max-w-2xl mx-auto mb-6 animate-slide-up"
             style={{ color: 'var(--text-2)', lineHeight: 1.7, animationDelay: '0.1s' }}
           >
-            Alfanumrik adapts to <em>your</em> level. Foxy, your AI tutor, teaches 16 subjects in Hindi & English
-            with smart quizzes, interactive labs, and real-time progress tracking.
+            A structured CBSE learning platform that helps you understand concepts clearly,
+            practice with exam-pattern questions, and track real progress — in Hindi & English.
           </p>
 
           <div className="animate-slide-up" style={{ animationDelay: '0.15s' }}>
@@ -300,8 +300,8 @@ export default function WelcomePage() {
               },
               {
                 icon: '🦊',
-                title: 'AI-Powered Tutoring',
-                desc: 'Foxy explains concepts step-by-step, answers doubts in seconds, and adjusts difficulty in real-time.',
+                title: 'Clear Explanations',
+                desc: 'Foxy explains concepts step-by-step, answers doubts instantly, and adjusts to your level automatically.',
                 color: '#E8581C',
               },
               {
@@ -349,7 +349,7 @@ export default function WelcomePage() {
           <SectionTitle
             badge="FEATURES"
             title="Everything You Need to Excel"
-            subtitle="From AI tutoring to interactive labs — built for how Indian students actually study."
+            subtitle="From clear explanations to interactive experiments — built for how Indian students actually study."
           />
 
           <StaggerContainer className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
