@@ -49,6 +49,7 @@ const LANGS = [
 ];
 
 const MODES = [
+  { id: 'talk', emoji: '🎙️', label: "Let's Talk", labelHi: 'बात करो', autoPrompt: (topic: string) => topic ? `Let's have a conversation about: ${topic}. Ask me what I already know and guide me step by step.` : "Hi Foxy! Let's talk. Ask me what I want to learn today.", autoPromptHi: (topic: string) => topic ? `चलो ${topic} के बारे में बात करते हैं। मुझसे पूछो कि मुझे क्या पता है।` : 'हाय फॉक्सी! चलो बात करते हैं। मुझसे पूछो कि मैं आज क्या सीखना चाहता हूँ।' },
   { id: 'learn', emoji: '📖', label: 'Learn', labelHi: 'सीखो', autoPrompt: (topic: string) => topic ? `Teach me about: ${topic}` : 'Teach me the next concept step by step', autoPromptHi: (topic: string) => topic ? `मुझे सिखाओ: ${topic}` : 'मुझे अगला कॉन्सेप्ट सिखाओ' },
   { id: 'practice', emoji: '✏️', label: 'Practice', labelHi: 'अभ्यास', autoPrompt: (topic: string) => topic ? `Give me 3 practice problems on: ${topic}` : 'Give me practice problems to solve', autoPromptHi: (topic: string) => topic ? `मुझे 3 अभ्यास प्रश्न दो: ${topic}` : 'मुझे अभ्यास प्रश्न दो' },
   { id: 'quiz', emoji: '⚡', label: 'Quiz', labelHi: 'क्विज़', autoPrompt: (topic: string) => topic ? `Quiz me on: ${topic} (5 MCQ questions, board exam pattern)` : 'Quiz me with 5 MCQ questions on this chapter', autoPromptHi: (topic: string) => topic ? `मुझसे क्विज़ लो: ${topic} (5 MCQ प्रश्न, बोर्ड परीक्षा पैटर्न)` : 'मुझसे 5 MCQ प्रश्न पूछो' },
@@ -354,11 +355,31 @@ export default function FoxyPage() {
   // Language toggle lock for language subjects
   const isLangLocked = activeSubject === 'hindi' || activeSubject === 'english';
 
+  // Auto-listen after Foxy finishes speaking in "Let's Talk" mode
+  useEffect(() => {
+    if (sessionMode === 'talk' && voiceEnabled && !voice.isSpeaking && !loading && !voice.isListening && messages.length > 0) {
+      const timer = setTimeout(() => {
+        if (sessionMode === 'talk' && !voice.isSpeaking && !loading) {
+          startListening();
+        }
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [sessionMode, voiceEnabled, voice.isSpeaking, loading, voice.isListening, messages.length, startListening]);
+
   // Mode switch with auto-prompt
   const switchMode = useCallback((modeId: string) => {
     setSessionMode(modeId);
     const mode = MODES.find(m => m.id === modeId);
     if (!mode) return;
+    // "Let's Talk" mode: auto-enable voice + start conversation
+    if (modeId === 'talk') {
+      setVoiceEnabled(true);
+      const topicName = activeTopic?.title || '';
+      const prompt = language === 'hi' ? mode.autoPromptHi(topicName) : mode.autoPrompt(topicName);
+      if (prompt) sendMessage(prompt);
+      return;
+    }
     // Doubt mode: let user type their own question
     if (modeId === 'doubt') return;
     // Lesson mode: start lesson flow
