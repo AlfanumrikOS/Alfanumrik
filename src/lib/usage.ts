@@ -42,6 +42,11 @@ interface CachedUsage {
 const cache = new Map<string, CachedUsage>();
 const CACHE_TTL = 30_000; // 30 seconds
 
+/** Clear usage cache — call after plan upgrade so new limits take effect immediately */
+export function clearUsageCache() {
+  cache.clear();
+}
+
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }

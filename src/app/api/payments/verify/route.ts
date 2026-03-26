@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
 
     // Payment verified — activate subscription using service role
     const adminUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const db = await fetch(`${adminUrl}/rest/v1/rpc/activate_subscription`, {
+    const rpcRes = await fetch(`${adminUrl}/rest/v1/rpc/activate_subscription`, {
       method: 'POST',
       headers: {
         'apikey': serviceKey,
@@ -83,17 +83,21 @@ export async function POST(request: NextRequest) {
       }),
     });
 
-    // Also update student's subscription_plan field
-    await fetch(`${adminUrl}/rest/v1/students?auth_user_id=eq.${user.id}`, {
-      method: 'PATCH',
-      headers: {
-        'apikey': serviceKey,
-        'Authorization': `Bearer ${serviceKey}`,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=minimal',
-      },
-      body: JSON.stringify({ subscription_plan: plan_code }),
-    });
+    if (!rpcRes.ok) {
+      const rpcErr = await rpcRes.text().catch(() => 'Unknown RPC error');
+      console.error('activate_subscription RPC failed:', rpcRes.status, rpcErr);
+      // Fallback: directly update subscription_plan so user isn't stuck
+      await fetch(`${adminUrl}/rest/v1/students?auth_user_id=eq.${user.id}`, {
+        method: 'PATCH',
+        headers: {
+          'apikey': serviceKey,
+          'Authorization': `Bearer ${serviceKey}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal',
+        },
+        body: JSON.stringify({ subscription_plan: plan_code }),
+      });
+    }
 
     return NextResponse.json({ success: true, plan: plan_code });
   } catch (err) {

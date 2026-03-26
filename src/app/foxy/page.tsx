@@ -9,7 +9,7 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@/lib/constants';
 import { BottomNav } from '@/components/ui';
 import { LESSON_STEPS, getLessonStepPrompt, getNextLessonStep, type LessonStep, type LessonState } from '@/lib/cognitive-engine';
 import { useVoice } from '@/hooks/useVoice';
-import { checkDailyUsage, recordUsage, type UsageResult } from '@/lib/usage';
+import { checkDailyUsage, recordUsage, clearUsageCache, type UsageResult } from '@/lib/usage';
 import { ConversationStarters } from '@/components/foxy/ConversationStarters';
 import { ChatBubble } from '@/components/foxy/ChatBubble';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
@@ -858,7 +858,8 @@ export default function FoxyPage() {
         feature="chat"
         currentLimit={chatUsage?.limit || 5}
         onUpgradeSuccess={() => {
-          // Refresh usage after upgrade
+          // Clear usage cache so new plan limits take effect immediately
+          clearUsageCache();
           if (student?.id) {
             checkDailyUsage(student.id, 'foxy_chat', student.subscription_plan || 'free').then(setChatUsage);
           }
