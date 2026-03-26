@@ -65,8 +65,54 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid payment signature' }, { status: 400 });
     }
 
-    // Payment verified — activate subscription using service role
+    // Payment verified — check for duplicate before activating
     const adminUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+
+    // Duplicate protection: check if this payment_id was already processed
+    const dupCheck = await fetch(
+      `${adminUrl}/rest/v1/payment_history?razorpay_payment_id=eq.${razorpay_payment_id}&select=id&limit=1`,
+      { headers: { 'apikey': serviceKey, 'Authorization': `Bearer ${serviceKey}` } },
+    );
+    const dupData = await dupCheck.json().catch(() => []);
+    if (Array.isArray(dupData) && dupData.length > 0) {
+      return NextResponse.json({ success: true, plan: plan_code, note: 'already_processed' });
+    }
+
+    // Record payment in payment_history BEFORE activating (idempotency marker)
+    const studentLookup = await fetch(
+      `${adminUrl}/rest/v1/students?auth_user_id=eq.${user.id}&select=id&limit=1`,
+      { headers: { 'apikey': serviceKey, 'Authorization': `Bearer ${serviceKey}` } },
+    );
+    const studentRows = await studentLookup.json().catch(() => []);
+    const studentId = studentRows?.[0]?.id;
+
+    if (studentId) {
+      await fetch(`${adminUrl}/rest/v1/payment_history`, {
+        method: 'POST',
+        headers: {
+          'apikey': serviceKey,
+          'Authorization': `Bearer ${serviceKey}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal',
+        },
+        body: JSON.stringify({
+          student_id: studentId,
+          razorpay_payment_id,
+          razorpay_order_id,
+          razorpay_signature,
+          plan_code,
+          billing_cycle,
+          currency: 'INR',
+          amount: plan_code === 'starter' ? (billing_cycle === 'yearly' ? 239900 : 29900)
+            : plan_code === 'pro' ? (billing_cycle === 'yearly' ? 559900 : 69900)
+            : (billing_cycle === 'yearly' ? 1199900 : 149900),
+          status: 'captured',
+          payment_method: 'razorpay',
+        }),
+      });
+    }
+
+    // Activate subscription using service role
     const rpcRes = await fetch(`${adminUrl}/rest/v1/rpc/activate_subscription`, {
       method: 'POST',
       headers: {

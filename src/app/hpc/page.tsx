@@ -90,6 +90,11 @@ export default function HPCPage() {
     <div style={pageStyle}>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}} .hpc-card{background:#0F172A;border-radius:14px;padding:18px 20px;border:1px solid #1E293B;margin-bottom:14px} .hpc-title{font-size:15px;font-weight:600;color:#F1F5F9;margin:0 0 12px} .hpc-label{font-size:12px;color:#64748B;font-weight:500;margin:0 0 4px;text-transform:uppercase;letter-spacing:0.5px}`}</style>
 
+      {/* Back navigation */}
+      <button onClick={() => router.push('/dashboard')} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: '#6366F1', fontSize: 13, fontWeight: 600, cursor: 'pointer', padding: '0 0 12px', marginBottom: 4 }}>
+        ← Back to Dashboard
+      </button>
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid #1E293B' }}>
         <div>
           <p style={{ fontSize: 11, color: '#6366F1', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: 1, margin: '0 0 4px' }}>NEP 2020 Holistic Progress Card</p>
