@@ -245,6 +245,7 @@ export default function FoxyPage() {
       const usage = await checkDailyUsage(student.id, 'foxy_chat', student.subscription_plan || 'free');
       setChatUsage(usage);
       if (!usage.allowed) {
+        import('@/lib/sounds').then(({ playSound }) => playSound('limit'));
         setShowLimitModal(true);
         return;
       }

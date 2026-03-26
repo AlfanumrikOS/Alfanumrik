@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, Button, StatCard, BottomNav } from '@/components/ui';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
@@ -70,6 +71,11 @@ export default function QuizResults({
   onGoHome,
 }: QuizResultsProps) {
   const router = useRouter();
+
+  // Play completion sound on mount
+  useEffect(() => {
+    import('@/lib/sounds').then(({ playSound }) => playSound('complete'));
+  }, []);
 
   const formatTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
 
