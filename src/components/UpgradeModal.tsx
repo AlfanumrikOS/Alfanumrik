@@ -113,6 +113,11 @@ export function UpgradeModal({ isOpen, onClose, feature, currentLimit, onUpgrade
                 <div className="text-lg font-extrabold mt-0.5" style={{ color: plan.color }}>
                   {billingCycle === 'yearly' ? plan.priceYearly : plan.price}<span className="text-xs font-normal" style={{ color: 'var(--text-3)' }}>/mo</span>
                 </div>
+                {billingCycle === 'yearly' && (
+                  <div className="text-[10px]" style={{ color: 'var(--text-3)' }}>
+                    Billed as {plan.code === 'starter' ? '₹2,399' : plan.code === 'pro' ? '₹5,599' : '₹11,999'}/year
+                  </div>
+                )}
                 <div className="text-[10px] mt-1" style={{ color: 'var(--text-3)' }}>
                   {plan.chats} chats · {plan.tts} voice · {plan.quizzes} quizzes /day
                 </div>
