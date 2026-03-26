@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { supabase, getStudentProfiles, getSubjects, getFeatureFlags, getNextTopics, getStudentNotifications, generateNotifications } from '@/lib/supabase';
+import { supabase, getSubjects, getFeatureFlags, getNextTopics, generateNotifications } from '@/lib/supabase';
 import { Card, StatCard, ProgressBar, SectionHeader, SubjectChip, Avatar, BottomNav } from '@/components/ui';
 import TrustFooter from '@/components/TrustFooter';
 import { DashboardSkeleton } from '@/components/Skeleton';
@@ -60,165 +60,75 @@ export default function Dashboard() {
 
   const loadData = useCallback(async () => {
     if (!student) return;
-    const [profs, subs, feats] = await Promise.all([
-      getStudentProfiles(student.id),
+
+    // Batch RPC: one round-trip replaces 12+ individual queries
+    const [rpcResult, subs, feats, nextTopicsResult] = await Promise.all([
+      supabase.rpc('get_dashboard_data', { p_student_id: student.id }),
       getSubjects(),
       getFeatureFlags(),
+      getNextTopics(student.id, student.preferred_subject, student.grade),
     ]);
-    setProfiles(profs);
-    setSubjects(subs);
-    setFlags(feats);
-    setNextTopics(
-      (await getNextTopics(student.id, student.preferred_subject, student.grade)).slice(0, 3)
-    );
-    const { count } = await supabase
-      .from('concept_mastery')
-      .select('*', { count: 'exact', head: true })
-      .eq('student_id', student.id)
-      .lte('next_review_at', new Date().toISOString());
-    setDueCount(count ?? 0);
 
-    // Load student's selected subjects
-    setSelectedSubjects((student.selected_subjects || [student.preferred_subject].filter(Boolean)) as string[]);
+    const d = rpcResult.data as Record<string, any> | null;
+    if (d) {
+      setProfiles(d.profiles ?? []);
+      setDueCount(d.due_count ?? 0);
+      setUnreadCount(d.unread_count ?? 0);
 
-    // Generate contextual notifications + get unread count
-    try {
-      await generateNotifications(student.id);
-      const notifData = await getStudentNotifications(student.id);
-      setUnreadCount(notifData?.unread_count ?? 0);
-    } catch {}
-
-    // Cognitive 2.0: Knowledge gaps (DB columns: target_concept_name, missing_prerequisite_name, status)
-    try {
-      const { data: gaps } = await supabase.from('knowledge_gaps')
-        .select('id, target_concept_name, missing_prerequisite_name, status, confidence_score')
-        .eq('student_id', student.id)
-        .neq('status', 'resolved')
-        .order('confidence_score', { ascending: false })
-        .limit(3);
-      setKnowledgeGaps((gaps ?? []).map(g => ({
+      // Knowledge gaps
+      const gaps = d.knowledge_gaps ?? [];
+      setKnowledgeGaps(gaps.map((g: any) => ({
         id: g.id,
         topic_title: g.target_concept_name,
         severity: (g.confidence_score ?? 0) > 0.7 ? 'critical' : 'moderate',
         description: `Missing prerequisite: ${g.missing_prerequisite_name}`,
         description_hi: `पूर्व ज्ञान की कमी: ${g.missing_prerequisite_name}`,
       })));
-    } catch {}
 
-    // Cognitive 2.0: Learning velocity (DB column: weekly_mastery_rate)
-    try {
-      const { data: vel } = await supabase.from('learning_velocity')
-        .select('weekly_mastery_rate')
-        .eq('student_id', student.id)
-        .order('last_calculated_at', { ascending: false })
-        .limit(1);
-      if (vel && vel.length > 0) {
-        const v = vel[0].weekly_mastery_rate ?? 0;
+      // Velocity
+      if (d.velocity != null) {
+        const v = Number(d.velocity);
         setVelocityTrend(v > 0.05 ? 'fast' : v > 0.02 ? 'steady' : 'slow');
       }
-    } catch {}
 
-    // Cognitive 2.0: Highest Bloom level (DB has per-level mastery columns)
-    try {
-      const { data: bloom } = await supabase.from('bloom_progression')
-        .select('current_bloom_level, remember_mastery, understand_mastery, apply_mastery, analyze_mastery, evaluate_mastery, create_mastery')
-        .eq('student_id', student.id)
-        .not('current_bloom_level', 'is', null)
-        .limit(1);
-      if (bloom && bloom.length > 0) {
-        const b = bloom[0];
-        const level = b.current_bloom_level || 'remember';
-        const masteryKey = `${level}_mastery` as keyof typeof b;
-        const mastery = Number(b[masteryKey]) || 0;
-        setBloomLevel({ bloom_level: level, mastery });
+      // Bloom
+      if (d.bloom) {
+        const level = d.bloom.current_bloom_level || 'remember';
+        const masteryKey = `${level}_mastery`;
+        setBloomLevel({ bloom_level: level, mastery: Number(d.bloom[masteryKey]) || 0 });
       }
-    } catch {}
 
-    // Cognitive 2.0: Error breakdown from question_responses
-    try {
-      const { data: errData } = await supabase
-        .from('question_responses')
-        .select('is_correct, response_time_seconds')
-        .eq('student_id', student.id)
-        .eq('is_correct', false)
-        .order('created_at', { ascending: false })
-        .limit(50);
-      if (errData && errData.length > 0) {
-        const avgTime = errData.reduce((a, r) => a + (r.response_time_seconds || 10), 0) / errData.length;
-        let careless = 0, conceptual = 0, misinterpretation = 0;
-        errData.forEach(r => {
-          const t = r.response_time_seconds || 10;
-          if (t < avgTime * 0.3 || t < 3) careless++;
-          else if (t > avgTime * 2.5) conceptual++;
-          else misinterpretation++;
-        });
-        const total = errData.length;
-        setErrorBreakdown({
-          careless: Math.round((careless / total) * 100),
-          conceptual: Math.round((conceptual / total) * 100),
-          misinterpretation: Math.round((misinterpretation / total) * 100),
-        });
-      }
-    } catch {}
+      // CBSE readiness
+      if (d.cbse_readiness != null) setCbseReadiness(Math.round(d.cbse_readiness));
 
-    // Cognitive 2.0: Retention score from retention_tests
-    try {
-      const { data: retData } = await supabase
-        .from('retention_tests')
-        .select('score')
-        .eq('student_id', student.id)
-        .eq('status', 'completed')
-        .order('completed_at', { ascending: false })
-        .limit(10);
-      if (retData && retData.length > 0) {
-        const avg = retData.reduce((a, r) => a + (r.score || 0), 0) / retData.length;
-        setRetentionScore(Math.round(avg * 100));
-      }
-    } catch {}
+      // Exams
+      const today = new Date();
+      setUpcomingExams((d.exams ?? []).map((e: any) => ({
+        ...e,
+        days_left: Math.max(0, Math.ceil((new Date(e.exam_date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24))),
+      })));
 
-    // Cognitive 2.0: CBSE Readiness from adaptive_profile
-    try {
-      const { data: profile } = await supabase
-        .from('adaptive_profile')
-        .select('cbse_readiness_pct')
-        .eq('student_id', student.id)
-        .limit(1);
-      if (profile && profile.length > 0 && profile[0].cbse_readiness_pct != null) {
-        setCbseReadiness(Math.round(profile[0].cbse_readiness_pct));
-      }
-    } catch {}
+      // Nudges
+      setNudges(d.nudges ?? []);
 
-    // Exam countdown: upcoming exams
-    try {
-      const { data: exams } = await supabase
-        .from('exam_configs')
-        .select('id, exam_name, exam_type, subject, exam_date')
-        .eq('student_id', student.id)
-        .eq('is_active', true)
-        .gte('exam_date', new Date().toISOString().split('T')[0])
-        .order('exam_date')
-        .limit(3);
-      if (exams) {
-        const today = new Date();
-        setUpcomingExams(exams.map(e => ({
-          ...e,
-          days_left: Math.max(0, Math.ceil((new Date(e.exam_date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24))),
-        })));
-      }
-    } catch {}
+      // Retention score
+      if (d.retention_score != null) setRetentionScore(Math.round(d.retention_score));
 
-    // Smart nudges
-    try {
-      const { data: nudgeData } = await supabase
-        .from('smart_nudges')
-        .select('id, nudge_type, message, message_hi, priority')
-        .eq('student_id', student.id)
-        .eq('is_read', false)
-        .eq('is_dismissed', false)
-        .order('priority', { ascending: false })
-        .limit(3);
-      if (nudgeData) setNudges(nudgeData);
-    } catch {}
+      // Error breakdown
+      if (d.error_breakdown) setErrorBreakdown({
+        careless: d.error_breakdown.careless ?? 0,
+        conceptual: d.error_breakdown.conceptual ?? 0,
+        misinterpretation: d.error_breakdown.misinterpretation ?? 0,
+      });
+    }
+
+    setSubjects(subs);
+    setFlags(feats);
+    setNextTopics(nextTopicsResult.slice(0, 3));
+    setSelectedSubjects((student.selected_subjects || [student.preferred_subject].filter(Boolean)) as string[]);
+
+    // Generate notifications in background (non-blocking)
+    generateNotifications(student.id).catch(() => {});
   }, [student]);
 
   useEffect(() => {

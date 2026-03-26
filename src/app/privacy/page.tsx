@@ -1,6 +1,10 @@
-'use client';
-
+import type { Metadata } from 'next';
 import Link from 'next/link';
+
+export const metadata: Metadata = {
+  title: 'Privacy Policy — Alfanumrik',
+  description: 'How Alfanumrik protects student data and privacy. CBSE adaptive learning platform privacy policy.',
+};
 
 export default function PrivacyPage() {
   return (
