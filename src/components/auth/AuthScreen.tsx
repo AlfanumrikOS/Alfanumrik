@@ -174,22 +174,13 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
           }).catch(() => {});
           onSuccess();
         } else {
-          // Auto-confirm is enabled — try signing in immediately
-          // (the database trigger confirms email on insert)
-          const { error: signInErr } = await supabase.auth.signInWithPassword({
-            email: email.trim(),
-            password,
-          });
-          if (!signInErr) {
-            onSuccess();
-          } else {
-            // Fallback: show check-email screen if auto-confirm somehow didn't work
-            setPendingEmail(email.trim());
-            setMode('check-email');
-            setSuccess('Account created! You can now log in.');
-            setError('');
-            setLoading(false);
-          }
+          // No session returned — email confirmation required
+          // User will receive a Mailgun-sent confirmation email
+          setPendingEmail(email.trim());
+          setMode('check-email');
+          setSuccess('');
+          setError('');
+          setLoading(false);
         }
       }
     } catch { setError('Connection error. Please try again.'); setLoading(false); }
