@@ -32,6 +32,24 @@ export const SUBJECT_META = [
   { code: 'coding', name: 'Coding', icon: '</>', color: '#0984E3' },
 ] as const;
 
+/** Grade-specific subject availability — CBSE curriculum mapping */
+export const GRADE_SUBJECTS: Record<string, string[]> = {
+  '6':  ['math', 'science', 'english', 'hindi', 'social_studies', 'coding'],
+  '7':  ['math', 'science', 'english', 'hindi', 'social_studies', 'coding'],
+  '8':  ['math', 'science', 'english', 'hindi', 'social_studies', 'coding'],
+  '9':  ['math', 'science', 'english', 'hindi', 'social_studies', 'computer_science'],
+  '10': ['math', 'science', 'english', 'hindi', 'social_studies', 'computer_science'],
+  '11': ['math', 'physics', 'chemistry', 'biology', 'english', 'computer_science', 'economics', 'accountancy', 'business_studies', 'political_science', 'history_sr', 'geography'],
+  '12': ['math', 'physics', 'chemistry', 'biology', 'english', 'computer_science', 'economics', 'accountancy', 'business_studies', 'political_science', 'history_sr', 'geography'],
+};
+
+/** Get subjects available for a specific grade */
+export function getSubjectsForGrade(grade: string): typeof SUBJECT_META[number][] {
+  const g = grade.replace('Grade ', '').trim();
+  const codes = GRADE_SUBJECTS[g] || GRADE_SUBJECTS['9']; // fallback to Grade 9
+  return SUBJECT_META.filter(s => codes.includes(s.code));
+}
+
 export const FOXY_MODES = [
   { id: 'learn', label: 'Learn', labelHi: 'सीखो', icon: '📖', desc: 'Step-by-step lesson' },
   { id: 'doubt', label: 'Ask Doubt', labelHi: 'डाउट पूछो', icon: '❓', desc: 'Clear any confusion' },

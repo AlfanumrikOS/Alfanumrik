@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@/lib/constants';
+import { SUPABASE_URL, SUPABASE_ANON_KEY, GRADE_SUBJECTS } from '@/lib/constants';
 import { BottomNav } from '@/components/ui';
 import { LESSON_STEPS, getLessonStepPrompt, getNextLessonStep, type LessonStep, type LessonState } from '@/lib/cognitive-engine';
 import { checkDailyUsage, clearUsageCache, type UsageResult } from '@/lib/usage';
@@ -60,9 +60,8 @@ const MASTERY_COLORS: Record<string, string> = {
 };
 
 function getGradeSubjects(grade: string): string[] {
-  const g = parseInt(grade) || 9;
-  if (g <= 10) return ['math', 'science', 'english', 'hindi', 'social_studies'];
-  return ['physics', 'chemistry', 'biology', 'math', 'english'];
+  const g = grade.replace('Grade ', '').trim();
+  return GRADE_SUBJECTS[g] || GRADE_SUBJECTS['9'];
 }
 
 /* ══════════════════════════════════════════════════════════════
