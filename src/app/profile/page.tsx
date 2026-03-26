@@ -7,6 +7,7 @@ import { supabase, getStudentProfiles, getSubjects, studentJoinClass } from '@/l
 import { Card, Button, Input, Select, Avatar, SectionHeader, ProgressBar, StatCard, LoadingFoxy, BottomNav } from '@/components/ui';
 import TrustFooter from '@/components/TrustFooter';
 import { GRADES, BOARDS, LANGUAGES, SUBJECT_META } from '@/lib/constants';
+import { PlanBadge } from '@/components/PlanBadge';
 
 /* ═══ CONNECTIONS CARD: Parent Link Code + Class Join ═══ */
 function ConnectionsCard({ studentId, isHi }: { studentId: string; isHi: boolean }) {
@@ -866,9 +867,9 @@ export default function ProfilePage() {
                   <span className="text-[var(--text-3)]">{isHi ? 'सदस्य बने' : 'Member since'}</span>
                   <span className="font-medium">{memberSince}</span>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex justify-between items-center">
                   <span className="text-[var(--text-3)]">{isHi ? 'योजना' : 'Plan'}</span>
-                  <span className="font-medium capitalize">{student.subscription_plan ?? 'Trial'}</span>
+                  <PlanBadge planCode={student.subscription_plan} size="md" showUpgrade isHi={isHi} />
                 </div>
                 <div className="flex justify-between">
                   <span className="text-[var(--text-3)]">{isHi ? 'स्थिति' : 'Status'}</span>

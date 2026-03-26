@@ -12,6 +12,7 @@ import { calculateLevel, xpToNextLevel, getLevelName } from '@/lib/xp-rules';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import type { StudentLearningProfile, Subject, CurriculumTopic } from '@/lib/types';
 import { SUBJECT_META } from '@/lib/constants';
+import { PlanBadge } from '@/components/PlanBadge';
 import QuickActions from '@/components/dashboard/QuickActions';
 import SubjectProgress from '@/components/dashboard/SubjectProgress';
 
@@ -146,9 +147,12 @@ export default function Dashboard() {
         <div className="page-header-inner flex items-center justify-between">
           <div>
             <p className="text-xs text-[var(--text-3)]">{greeting},</p>
-            <h1 className="text-lg md:text-xl font-bold" style={{ fontFamily: 'var(--font-display)' }}>
-              {student.name} 👋
-            </h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-lg md:text-xl font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+                {student.name} 👋
+              </h1>
+              <PlanBadge planCode={student.subscription_plan} size="sm" />
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <button
