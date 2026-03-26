@@ -11,7 +11,6 @@ export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Read ?role= query param to pre-select the correct tab
   const roleParam = searchParams.get('role');
   const initialRole: 'student' | 'teacher' | 'parent' =
     roleParam === 'teacher' ? 'teacher'
@@ -20,7 +19,6 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!isLoading && isLoggedIn) {
-      // Redirect to the correct role dashboard after login/signup
       if (activeRole === 'teacher') router.replace('/teacher');
       else if (activeRole === 'guardian') router.replace('/parent');
       else router.replace('/dashboard');
@@ -28,14 +26,21 @@ export default function LoginPage() {
   }, [isLoggedIn, isLoading, activeRole, router]);
 
   if (isLoading) return <LoadingFoxy />;
-  if (isLoggedIn) return <LoadingFoxy />;
+
+  // If logged in, the useEffect will redirect — show loading briefly
+  if (isLoggedIn) {
+    router.replace('/dashboard');
+    return <LoadingFoxy />;
+  }
 
   return (
     <AuthScreen
       initialRole={initialRole}
       onSuccess={() => {
-        // After successful auth, refresh to trigger the redirect above
-        window.location.href = '/login';
+        // Trigger auth state refresh — AuthContext will detect the new session
+        // and the useEffect above will redirect to the correct dashboard
+        router.refresh();
+        router.replace('/dashboard');
       }}
     />
   );
