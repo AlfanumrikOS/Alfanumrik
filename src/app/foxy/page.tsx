@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@/lib/constants';
 import { BottomNav } from '@/components/ui';
 import { LESSON_STEPS, getLessonStepPrompt, getNextLessonStep, type LessonStep, type LessonState } from '@/lib/cognitive-engine';
-import { checkDailyUsage, recordUsage, clearUsageCache, type UsageResult } from '@/lib/usage';
+import { checkDailyUsage, clearUsageCache, type UsageResult } from '@/lib/usage';
 import { ConversationStarters } from '@/components/foxy/ConversationStarters';
 import { ChatBubble } from '@/components/foxy/ChatBubble';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
@@ -248,7 +248,9 @@ export default function FoxyPage() {
         setShowLimitModal(true);
         return;
       }
-      recordUsage(student.id, 'foxy_chat');
+      // NOTE: Do NOT call recordUsage here — the server-side edge function
+      // increments usage atomically BEFORE processing. Client-side increment
+      // caused double-counting (every chat counted twice).
       setChatUsage(prev => prev ? { ...prev, count: prev.count + 1, remaining: Math.max(0, prev.remaining - 1), allowed: prev.count + 1 < prev.limit } : prev);
     }
 
