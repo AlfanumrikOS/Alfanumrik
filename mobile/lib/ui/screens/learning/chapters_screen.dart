@@ -51,7 +51,9 @@ class ChaptersScreen extends ConsumerWidget {
             itemBuilder: (context, index) {
               final ch = chapters[index];
               return GestureDetector(
-                onTap: () => context.go('/learn/$subjectCode/${ch.id}'),
+                onTap: () => context.go(
+                  '/learn/$subjectCode/${ch.id}?title=${Uri.encodeComponent(ch.title)}',
+                ),
                 child: Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(

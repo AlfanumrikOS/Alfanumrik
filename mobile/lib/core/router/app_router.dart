@@ -1,12 +1,15 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../ui/screens/splash/splash_screen.dart';
 import '../../ui/screens/auth/login_screen.dart';
 import '../../ui/screens/auth/signup_screen.dart';
 import '../../ui/screens/dashboard/dashboard_screen.dart';
 import '../../ui/screens/learning/subjects_screen.dart';
 import '../../ui/screens/learning/chapters_screen.dart';
+import '../../ui/screens/learning/topics_screen.dart';
 import '../../ui/screens/learning/concept_screen.dart';
 import '../../ui/screens/chat/chat_screen.dart';
 import '../../ui/screens/quiz/quiz_screen.dart';
@@ -16,18 +19,28 @@ import '../../ui/widgets/app_shell.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
-    initialLocation: '/',
+    initialLocation: '/splash',
     redirect: (context, state) {
+      final loc = state.matchedLocation;
+
+      // Allow splash to handle its own redirect
+      if (loc == '/splash') return null;
+
       final session = Supabase.instance.client.auth.currentSession;
       final isAuth = session != null;
-      final isLoginRoute = state.matchedLocation == '/login' ||
-          state.matchedLocation == '/signup';
+      final isAuthRoute = loc == '/login' || loc == '/signup';
 
-      if (!isAuth && !isLoginRoute) return '/login';
-      if (isAuth && isLoginRoute) return '/';
+      if (!isAuth && !isAuthRoute) return '/login';
+      if (isAuth && isAuthRoute) return '/home';
       return null;
     },
     routes: [
+      // Splash
+      GoRoute(
+        path: '/splash',
+        builder: (context, state) => const SplashScreen(),
+      ),
+
       // Auth routes (no shell)
       GoRoute(
         path: '/login',
@@ -35,7 +48,21 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/signup',
-        builder: (context, state) => const SignupScreen(),
+        pageBuilder: (context, state) => CustomTransitionPage(
+          child: const SignupScreen(),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            return SlideTransition(
+              position: Tween(
+                begin: const Offset(1, 0),
+                end: Offset.zero,
+              ).animate(CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeInOut,
+              )),
+              child: child,
+            );
+          },
+        ),
       ),
 
       // Main app with bottom nav shell
@@ -43,7 +70,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state, child) => AppShell(child: child),
         routes: [
           GoRoute(
-            path: '/',
+            path: '/home',
             pageBuilder: (context, state) => const NoTransitionPage(
               child: DashboardScreen(),
             ),
@@ -56,16 +83,32 @@ final routerProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: ':subjectCode',
-                builder: (context, state) => ChaptersScreen(
-                  subjectCode: state.pathParameters['subjectCode']!,
+                pageBuilder: (context, state) => _slideFromRight(
+                  ChaptersScreen(
+                    subjectCode: state.pathParameters['subjectCode']!,
+                  ),
                 ),
                 routes: [
                   GoRoute(
-                    path: ':topicId',
-                    builder: (context, state) => ConceptScreen(
-                      topicId: state.pathParameters['topicId']!,
-                      subjectCode: state.pathParameters['subjectCode']!,
+                    path: ':chapterId',
+                    pageBuilder: (context, state) => _slideFromRight(
+                      TopicsScreen(
+                        subjectCode: state.pathParameters['subjectCode']!,
+                        chapterId: state.pathParameters['chapterId']!,
+                        chapterTitle: state.uri.queryParameters['title'] ?? 'Topics',
+                      ),
                     ),
+                    routes: [
+                      GoRoute(
+                        path: ':topicId',
+                        pageBuilder: (context, state) => _slideFromRight(
+                          ConceptScreen(
+                            topicId: state.pathParameters['topicId']!,
+                            subjectCode: state.pathParameters['subjectCode']!,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -95,8 +138,50 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Full-screen routes (no bottom nav)
       GoRoute(
         path: '/plans',
-        builder: (context, state) => const PlansScreen(),
+        pageBuilder: (context, state) => _slideFromBottom(
+          const PlansScreen(),
+        ),
       ),
     ],
   );
 });
+
+/// Slide from right transition for pushed screens
+CustomTransitionPage _slideFromRight(Widget child) {
+  return CustomTransitionPage(
+    child: child,
+    transitionDuration: const Duration(milliseconds: 250),
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      return SlideTransition(
+        position: Tween(
+          begin: const Offset(1, 0),
+          end: Offset.zero,
+        ).animate(CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeInOut,
+        )),
+        child: child,
+      );
+    },
+  );
+}
+
+/// Slide from bottom transition for modal screens
+CustomTransitionPage _slideFromBottom(Widget child) {
+  return CustomTransitionPage(
+    child: child,
+    transitionDuration: const Duration(milliseconds: 300),
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      return SlideTransition(
+        position: Tween(
+          begin: const Offset(0, 1),
+          end: Offset.zero,
+        ).animate(CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+        )),
+        child: child,
+      );
+    },
+  );
+}

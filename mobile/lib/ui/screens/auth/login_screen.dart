@@ -43,7 +43,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (!mounted) return;
 
     result.when(
-      success: (_) => context.go('/'),
+      success: (_) => context.go('/home'),
       failure: (msg) => setState(() {
         _isLoading = false;
         _error = msg;
