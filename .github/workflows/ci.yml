@@ -2,7 +2,7 @@ name: CI — Alfanumrik
 
 on:
   push:
-    branches: [main, master, develop]
+    branches: [main, master, develop, claude/*]
   pull_request:
     branches: [main, master]
 

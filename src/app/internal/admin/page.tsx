@@ -42,7 +42,31 @@ interface AuditEntry {
   created_at: string;
 }
 
-type Tab = 'dashboard' | 'users' | 'reports' | 'logs';
+type Tab = 'dashboard' | 'users' | 'content' | 'analytics' | 'reports' | 'logs';
+
+interface ContentRecord {
+  id: string;
+  title?: string;
+  question_text?: string;
+  subject_code?: string;
+  subject?: string;
+  grade?: string;
+  chapter_number?: number;
+  topic_order?: number;
+  difficulty?: string;
+  is_active?: boolean;
+  created_at?: string;
+  [key: string]: unknown;
+}
+
+interface AnalyticsData {
+  engagement: { date: string; signups: number; quizzes: number; chats: number }[];
+  popular_subjects: { subject: string; count: number }[];
+  revenue: { plan: string; count: number }[];
+  retention: { period: string; count: number }[];
+  content_stats: { chapters: number; topics: number; questions: number };
+  top_students: { id: string; name: string; email: string; grade: string; xp_total: number; streak_days: number }[];
+}
 
 export default function SuperAdminPage() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
@@ -57,6 +81,13 @@ export default function SuperAdminPage() {
   const [logPage, setLogPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [reportStatus, setReportStatus] = useState('');
+  const [content, setContent] = useState<ContentRecord[]>([]);
+  const [contentTotal, setContentTotal] = useState(0);
+  const [contentType, setContentType] = useState('chapters');
+  const [contentPage, setContentPage] = useState(1);
+  const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null);
+  const [showContentForm, setShowContentForm] = useState(false);
+  const [contentForm, setContentForm] = useState<Record<string, string>>({});
 
   // Get secret from URL — middleware already validated it
   const [secretKey] = useState(() => {
@@ -100,12 +131,54 @@ export default function SuperAdminPage() {
     setLoading(false);
   }, [h, logPage]);
 
+  const fetchContent = useCallback(async () => {
+    setLoading(true);
+    try {
+      const p = new URLSearchParams({ type: contentType, page: String(contentPage), limit: '25' });
+      const res = await fetch(`/api/internal/admin/content?${p}`, { headers: h() });
+      if (res.ok) { const d = await res.json(); setContent(d.data || []); setContentTotal(d.total || 0); }
+    } catch { /* */ }
+    setLoading(false);
+  }, [h, contentType, contentPage]);
+
+  const fetchAnalytics = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/internal/admin/analytics', { headers: h() });
+      if (res.ok) setAnalyticsData(await res.json());
+    } catch { /* */ }
+    setLoading(false);
+  }, [h]);
+
+  const createContent = async () => {
+    const typeMap: Record<string, string> = { chapters: 'chapter', topics: 'topic', questions: 'question' };
+    try {
+      const res = await fetch('/api/internal/admin/content', {
+        method: 'POST', headers: h(),
+        body: JSON.stringify({ type: typeMap[contentType], data: contentForm }),
+      });
+      if (res.ok) { setShowContentForm(false); setContentForm({}); fetchContent(); }
+      else { const e = await res.json(); alert(e.error || 'Failed to create'); }
+    } catch { alert('Failed to create content'); }
+  };
+
+  const toggleContent = async (item: ContentRecord) => {
+    const typeMap: Record<string, string> = { chapters: 'chapter', topics: 'topic', questions: 'question' };
+    await fetch('/api/internal/admin/content', {
+      method: 'PATCH', headers: h(),
+      body: JSON.stringify({ type: typeMap[contentType], id: item.id, updates: { is_active: !item.is_active } }),
+    });
+    fetchContent();
+  };
+
   useEffect(() => {
     if (!secretKey) return;
     if (activeTab === 'dashboard') fetchStats();
     if (activeTab === 'users') fetchUsers();
+    if (activeTab === 'content') fetchContent();
+    if (activeTab === 'analytics') fetchAnalytics();
     if (activeTab === 'logs') fetchLogs();
-  }, [secretKey, activeTab, fetchStats, fetchUsers, fetchLogs]);
+  }, [secretKey, activeTab, fetchStats, fetchUsers, fetchContent, fetchAnalytics, fetchLogs]);
 
   // ── Actions ──
   const toggleUser = async (user: UserRecord) => {
@@ -142,6 +215,8 @@ export default function SuperAdminPage() {
   const TABS: { key: Tab; label: string; icon: string }[] = [
     { key: 'dashboard', label: 'Dashboard', icon: '📊' },
     { key: 'users', label: 'Users', icon: '👥' },
+    { key: 'content', label: 'Content', icon: '📚' },
+    { key: 'analytics', label: 'Analytics', icon: '📈' },
     { key: 'reports', label: 'Reports', icon: '📋' },
     { key: 'logs', label: 'Audit Logs', icon: '🔍' },
   ];
@@ -337,6 +412,287 @@ export default function SuperAdminPage() {
               <span style={{ fontSize: 12, color: '#666', padding: '6px 12px' }}>Page {userPage} of {Math.max(1, Math.ceil(userTotal / 25))}</span>
               <button disabled={users.length < 25} onClick={() => setUserPage(p => p + 1)} style={S.pageBtn}>Next →</button>
             </div>
+          </div>
+        )}
+
+        {/* ═══ CONTENT MANAGEMENT ═══ */}
+        {activeTab === 'content' && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {['chapters', 'topics', 'questions'].map(t => (
+                  <button key={t} onClick={() => { setContentType(t); setContentPage(1); }}
+                    style={{ ...S.filterBtn, ...(contentType === t ? S.filterActive : {}) }}>
+                    {t === 'chapters' ? '📖' : t === 'topics' ? '📝' : '❓'} {t}
+                  </button>
+                ))}
+              </div>
+              <button onClick={() => { setShowContentForm(!showContentForm); setContentForm({}); }}
+                style={{ ...S.quickBtn, background: '#16A34A10', color: '#16A34A', borderColor: '#16A34A40' }}>
+                {showContentForm ? '✕ Cancel' : '+ Add New'}
+              </button>
+            </div>
+
+            <div style={{ fontSize: 11, color: '#555', marginBottom: 8 }}>{contentTotal} {contentType} found</div>
+
+            {/* Create Form */}
+            {showContentForm && (
+              <div style={{ ...S.card, marginBottom: 16 }}>
+                <h3 style={{ fontSize: 13, fontWeight: 700, color: '#16A34A', marginBottom: 12 }}>
+                  Add New {contentType === 'chapters' ? 'Chapter' : contentType === 'topics' ? 'Topic' : 'Question'}
+                </h3>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  {contentType === 'chapters' && (
+                    <>
+                      <input placeholder="Title *" value={contentForm.title || ''} onChange={e => setContentForm(f => ({ ...f, title: e.target.value }))} style={S.searchInput} />
+                      <input placeholder="Title (Hindi)" value={contentForm.title_hi || ''} onChange={e => setContentForm(f => ({ ...f, title_hi: e.target.value }))} style={S.searchInput} />
+                      <input placeholder="Subject code (math, science...)" value={contentForm.subject_code || ''} onChange={e => setContentForm(f => ({ ...f, subject_code: e.target.value }))} style={S.searchInput} />
+                      <input placeholder="Grade (Grade 10)" value={contentForm.grade || ''} onChange={e => setContentForm(f => ({ ...f, grade: e.target.value }))} style={S.searchInput} />
+                      <input placeholder="Chapter number" type="number" value={contentForm.chapter_number || ''} onChange={e => setContentForm(f => ({ ...f, chapter_number: e.target.value }))} style={S.searchInput} />
+                      <input placeholder="Description" value={contentForm.description || ''} onChange={e => setContentForm(f => ({ ...f, description: e.target.value }))} style={S.searchInput} />
+                    </>
+                  )}
+                  {contentType === 'topics' && (
+                    <>
+                      <input placeholder="Chapter ID *" value={contentForm.chapter_id || ''} onChange={e => setContentForm(f => ({ ...f, chapter_id: e.target.value }))} style={S.searchInput} />
+                      <input placeholder="Title *" value={contentForm.title || ''} onChange={e => setContentForm(f => ({ ...f, title: e.target.value }))} style={S.searchInput} />
+                      <input placeholder="Title (Hindi)" value={contentForm.title_hi || ''} onChange={e => setContentForm(f => ({ ...f, title_hi: e.target.value }))} style={S.searchInput} />
+                      <input placeholder="Topic order" type="number" value={contentForm.topic_order || ''} onChange={e => setContentForm(f => ({ ...f, topic_order: e.target.value }))} style={S.searchInput} />
+                    </>
+                  )}
+                  {contentType === 'questions' && (
+                    <>
+                      <input placeholder="Subject (math, science...)" value={contentForm.subject || ''} onChange={e => setContentForm(f => ({ ...f, subject: e.target.value }))} style={S.searchInput} />
+                      <input placeholder="Grade (Grade 10)" value={contentForm.grade || ''} onChange={e => setContentForm(f => ({ ...f, grade: e.target.value }))} style={S.searchInput} />
+                      <input placeholder="Chapter title" value={contentForm.chapter_title || ''} onChange={e => setContentForm(f => ({ ...f, chapter_title: e.target.value }))} style={S.searchInput} />
+                      <input placeholder="Difficulty (easy/medium/hard)" value={contentForm.difficulty || ''} onChange={e => setContentForm(f => ({ ...f, difficulty: e.target.value }))} style={S.searchInput} />
+                    </>
+                  )}
+                </div>
+                {contentType === 'topics' && (
+                  <textarea placeholder="Concept text (supports markdown)" value={contentForm.concept_text || ''}
+                    onChange={e => setContentForm(f => ({ ...f, concept_text: e.target.value }))}
+                    style={{ ...S.searchInput, width: '100%', minHeight: 120, marginTop: 10, resize: 'vertical' }} />
+                )}
+                {contentType === 'questions' && (
+                  <>
+                    <textarea placeholder="Question text *" value={contentForm.question_text || ''}
+                      onChange={e => setContentForm(f => ({ ...f, question_text: e.target.value }))}
+                      style={{ ...S.searchInput, width: '100%', minHeight: 60, marginTop: 10, resize: 'vertical' }} />
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
+                      <input placeholder="Option A *" value={contentForm.option_a || ''} onChange={e => setContentForm(f => ({ ...f, option_a: e.target.value }))} style={S.searchInput} />
+                      <input placeholder="Option B *" value={contentForm.option_b || ''} onChange={e => setContentForm(f => ({ ...f, option_b: e.target.value }))} style={S.searchInput} />
+                      <input placeholder="Option C *" value={contentForm.option_c || ''} onChange={e => setContentForm(f => ({ ...f, option_c: e.target.value }))} style={S.searchInput} />
+                      <input placeholder="Option D *" value={contentForm.option_d || ''} onChange={e => setContentForm(f => ({ ...f, option_d: e.target.value }))} style={S.searchInput} />
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
+                      <input placeholder="Correct option (0=A, 1=B, 2=C, 3=D)" type="number" value={contentForm.correct_option || ''}
+                        onChange={e => setContentForm(f => ({ ...f, correct_option: e.target.value }))} style={S.searchInput} />
+                      <input placeholder="Explanation" value={contentForm.explanation || ''} onChange={e => setContentForm(f => ({ ...f, explanation: e.target.value }))} style={S.searchInput} />
+                    </div>
+                  </>
+                )}
+                <button onClick={createContent} style={{ ...S.quickBtn, marginTop: 12, background: '#16A34A20', color: '#16A34A', borderColor: '#16A34A40' }}>
+                  Save {contentType === 'chapters' ? 'Chapter' : contentType === 'topics' ? 'Topic' : 'Question'}
+                </button>
+              </div>
+            )}
+
+            {/* Content Table */}
+            <div style={{ overflowX: 'auto' }}>
+              <table style={S.table}>
+                <thead>
+                  <tr>
+                    {contentType === 'chapters' && <><th style={S.th}>#</th><th style={S.th}>Title</th><th style={S.th}>Subject</th><th style={S.th}>Grade</th></>}
+                    {contentType === 'topics' && <><th style={S.th}>#</th><th style={S.th}>Title</th><th style={S.th}>Chapter ID</th></>}
+                    {contentType === 'questions' && <><th style={S.th}>Question</th><th style={S.th}>Subject</th><th style={S.th}>Grade</th><th style={S.th}>Difficulty</th></>}
+                    <th style={S.th}>Status</th>
+                    <th style={S.th}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {content.length === 0 && (
+                    <tr><td colSpan={6} style={{ ...S.td, textAlign: 'center', color: '#555', padding: 24 }}>No {contentType} found. Add some!</td></tr>
+                  )}
+                  {content.map(item => (
+                    <tr key={item.id}>
+                      {contentType === 'chapters' && (
+                        <>
+                          <td style={S.td}>{item.chapter_number as number ?? '—'}</td>
+                          <td style={S.td}><strong>{item.title || '—'}</strong></td>
+                          <td style={S.td}>{item.subject_code || '—'}</td>
+                          <td style={S.td}>{item.grade || '—'}</td>
+                        </>
+                      )}
+                      {contentType === 'topics' && (
+                        <>
+                          <td style={S.td}>{item.topic_order as number ?? '—'}</td>
+                          <td style={S.td}><strong>{item.title || '—'}</strong></td>
+                          <td style={{ ...S.td, fontSize: 10 }}><code>{(item.chapter_id as string)?.slice(0, 8) || '—'}</code></td>
+                        </>
+                      )}
+                      {contentType === 'questions' && (
+                        <>
+                          <td style={{ ...S.td, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.question_text || '—'}</td>
+                          <td style={S.td}>{item.subject || '—'}</td>
+                          <td style={S.td}>{item.grade || '—'}</td>
+                          <td style={S.td}>{item.difficulty || '—'}</td>
+                        </>
+                      )}
+                      <td style={S.td}>
+                        <span style={{
+                          fontSize: 10, padding: '2px 8px', borderRadius: 10,
+                          background: item.is_active !== false ? '#16A34A20' : '#EF444420',
+                          color: item.is_active !== false ? '#16A34A' : '#EF4444',
+                        }}>{item.is_active !== false ? 'Active' : 'Disabled'}</span>
+                      </td>
+                      <td style={S.td}>
+                        <button onClick={() => toggleContent(item)} style={{
+                          ...S.actionBtn,
+                          color: item.is_active !== false ? '#EF4444' : '#22C55E',
+                          borderColor: item.is_active !== false ? '#EF444440' : '#22C55E40',
+                        }}>{item.is_active !== false ? 'Disable' : 'Enable'}</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'center', alignItems: 'center' }}>
+              <button disabled={contentPage <= 1} onClick={() => setContentPage(p => p - 1)} style={S.pageBtn}>← Prev</button>
+              <span style={{ fontSize: 12, color: '#666', padding: '6px 12px' }}>Page {contentPage} of {Math.max(1, Math.ceil(contentTotal / 25))}</span>
+              <button disabled={content.length < 25} onClick={() => setContentPage(p => p + 1)} style={S.pageBtn}>Next →</button>
+            </div>
+          </div>
+        )}
+
+        {/* ═══ ANALYTICS ═══ */}
+        {activeTab === 'analytics' && (
+          <div>
+            {analyticsData ? (
+              <>
+                {/* Content Stats */}
+                <h2 style={S.h2}>Content Overview</h2>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 28 }}>
+                  {[
+                    { label: 'Chapters', value: analyticsData.content_stats.chapters, icon: '📖', color: '#3B82F6' },
+                    { label: 'Topics', value: analyticsData.content_stats.topics, icon: '📝', color: '#16A34A' },
+                    { label: 'Questions', value: analyticsData.content_stats.questions, icon: '❓', color: '#F59E0B' },
+                  ].map(s => (
+                    <div key={s.label} style={{ ...S.card, borderLeft: `3px solid ${s.color}` }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: 28, fontWeight: 800, color: s.color }}>{s.value >= 0 ? s.value : '—'}</span>
+                        <span style={{ fontSize: 24 }}>{s.icon}</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: '#888', marginTop: 4, textTransform: 'uppercase', letterSpacing: 1 }}>{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Retention */}
+                <h2 style={S.h2}>Student Retention</h2>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 28 }}>
+                  {analyticsData.retention.map(r => (
+                    <div key={r.period} style={{ ...S.card, borderLeft: '3px solid #8B5CF6' }}>
+                      <span style={{ fontSize: 28, fontWeight: 800, color: '#8B5CF6' }}>{r.count}</span>
+                      <div style={{ fontSize: 11, color: '#888', marginTop: 4, textTransform: 'uppercase', letterSpacing: 1 }}>Active {r.period}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Revenue breakdown */}
+                <h2 style={S.h2}>Subscription Plans</h2>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 28 }}>
+                  {analyticsData.revenue.map(r => {
+                    const planColors: Record<string, string> = { free: '#888', starter_monthly: '#3B82F6', starter_yearly: '#3B82F6', pro_monthly: '#F59E0B', pro_yearly: '#F59E0B', ultimate_monthly: '#E8581C', ultimate_yearly: '#E8581C' };
+                    return (
+                      <div key={r.plan} style={{ ...S.card, borderLeft: `3px solid ${planColors[r.plan] || '#555'}` }}>
+                        <span style={{ fontSize: 24, fontWeight: 800, color: planColors[r.plan] || '#888' }}>{r.count}</span>
+                        <div style={{ fontSize: 10, color: '#888', marginTop: 4, textTransform: 'capitalize' }}>{r.plan.replace(/_/g, ' ')}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Popular Subjects */}
+                <h2 style={S.h2}>Popular Subjects (by quiz count)</h2>
+                <div style={{ ...S.card, marginBottom: 28 }}>
+                  {analyticsData.popular_subjects.length === 0 ? (
+                    <div style={{ color: '#555', fontSize: 12 }}>No quiz data yet</div>
+                  ) : analyticsData.popular_subjects.slice(0, 10).map(s => {
+                    const maxCount = analyticsData.popular_subjects[0]?.count || 1;
+                    return (
+                      <div key={s.subject} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                        <span style={{ fontSize: 12, color: '#aaa', width: 100, textTransform: 'capitalize' }}>{s.subject}</span>
+                        <div style={{ flex: 1, height: 16, background: '#1a1a1a', borderRadius: 4, overflow: 'hidden' }}>
+                          <div style={{ width: `${(s.count / maxCount) * 100}%`, height: '100%', background: '#E8581C', borderRadius: 4 }} />
+                        </div>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: '#E8581C', width: 40, textAlign: 'right' }}>{s.count}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Top Students */}
+                <h2 style={S.h2}>Top Students by XP</h2>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={S.table}>
+                    <thead>
+                      <tr>
+                        <th style={S.th}>Rank</th>
+                        <th style={S.th}>Name</th>
+                        <th style={S.th}>Grade</th>
+                        <th style={S.th}>XP</th>
+                        <th style={S.th}>Streak</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {analyticsData.top_students.map((s, i) => (
+                        <tr key={s.id}>
+                          <td style={S.td}><span style={{ color: i < 3 ? '#F59E0B' : '#888', fontWeight: 700 }}>{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}</span></td>
+                          <td style={S.td}><strong>{s.name}</strong></td>
+                          <td style={S.td}>{s.grade || '—'}</td>
+                          <td style={S.td}><span style={{ color: '#F59E0B', fontWeight: 700 }}>{s.xp_total}</span></td>
+                          <td style={S.td}><span style={{ color: '#EF4444' }}>{s.streak_days}d</span></td>
+                        </tr>
+                      ))}
+                      {analyticsData.top_students.length === 0 && (
+                        <tr><td colSpan={5} style={{ ...S.td, textAlign: 'center', color: '#555', padding: 24 }}>No students yet</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* 30-day Engagement */}
+                <h2 style={{ ...S.h2, marginTop: 28 }}>30-Day Engagement</h2>
+                <div style={{ ...S.card, overflowX: 'auto' }}>
+                  <div style={{ display: 'flex', gap: 2, alignItems: 'flex-end', height: 120, minWidth: 600 }}>
+                    {analyticsData.engagement.map(day => {
+                      const total = day.signups + day.quizzes + day.chats;
+                      const maxTotal = Math.max(...analyticsData.engagement.map(d => d.signups + d.quizzes + d.chats), 1);
+                      return (
+                        <div key={day.date} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }} title={`${day.date}: ${day.signups} signups, ${day.quizzes} quizzes, ${day.chats} chats`}>
+                          <div style={{ width: '100%', background: '#E8581C', borderRadius: 2, height: `${(total / maxTotal) * 100}px`, minHeight: total > 0 ? 2 : 0 }} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
+                    <span style={{ fontSize: 9, color: '#555' }}>{analyticsData.engagement[0]?.date}</span>
+                    <span style={{ fontSize: 9, color: '#555' }}>{analyticsData.engagement[analyticsData.engagement.length - 1]?.date}</span>
+                  </div>
+                </div>
+
+                <button onClick={fetchAnalytics} style={{ ...S.quickBtn, marginTop: 16 }}>↻ Refresh Analytics</button>
+              </>
+            ) : !loading && (
+              <div style={{ textAlign: 'center', padding: 40, color: '#555' }}>
+                <div style={{ fontSize: 32, marginBottom: 8 }}>📈</div>
+                <p>Loading analytics...</p>
+                <button onClick={fetchAnalytics} style={{ ...S.quickBtn, marginTop: 12 }}>Retry</button>
+              </div>
+            )}
           </div>
         )}
 
