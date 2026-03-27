@@ -26,6 +26,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     super.initState();
     _scrollController.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       final chat = ref.read(chatProvider);
       if (chat.session == null) {
         ref.read(chatProvider.notifier).startSession();
