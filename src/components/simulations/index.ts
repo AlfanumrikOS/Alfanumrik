@@ -26,6 +26,11 @@ const PHScale = dynamic(() => import('./PHScale'), { ssr: false });
 const PythagorasTheorem = dynamic(() => import('./PythagorasTheorem'), { ssr: false });
 const FractionVisualizer = dynamic(() => import('./FractionVisualizer'), { ssr: false });
 const TrigCircle = dynamic(() => import('./TrigCircle'), { ssr: false });
+const NewtonLaws = dynamic(() => import('./NewtonLaws'), { ssr: false });
+const BohrModel = dynamic(() => import('./BohrModel'), { ssr: false });
+const QuadraticGraph = dynamic(() => import('./QuadraticGraph'), { ssr: false });
+const HookesLaw = dynamic(() => import('./HookesLaw'), { ssr: false });
+const LinearGraph = dynamic(() => import('./LinearGraph'), { ssr: false });
 
 export const BUILT_IN_SIMULATIONS: BuiltInSimulation[] = [
   {
@@ -153,5 +158,75 @@ export const BUILT_IN_SIMULATIONS: BuiltInSimulation[] = [
     conceptTags: ['Trigonometry', 'Unit Circle', 'Sin', 'Cos', 'Tan', 'Angles', 'Waves'],
     foxyTip: 'Drag the point around the circle and watch how sin and cos change. What happens at 90°?',
     component: TrigCircle,
+  },
+  {
+    id: 'builtin-newton-laws',
+    title: "Newton's Laws — Force & Motion",
+    description: 'Push a block with different forces and masses. See F = ma in action with free body diagrams and real-time acceleration.',
+    subject: 'physics',
+    grade: ['9', '10', '11'],
+    thumbnailEmoji: '🧱',
+    difficulty: 2,
+    bloomLevel: 'apply',
+    estimatedTimeMinutes: 10,
+    conceptTags: ['Force', "Newton's Laws", 'Acceleration', 'Friction', 'F=ma'],
+    foxyTip: 'Double the force with the same mass — what happens to acceleration? Now double the mass instead!',
+    component: NewtonLaws,
+  },
+  {
+    id: 'builtin-bohr-model',
+    title: 'Bohr Atomic Model',
+    description: 'Explore the electron configuration of the first 20 elements. Watch electrons orbit in shells and learn valence, valency, and element types.',
+    subject: 'chemistry',
+    grade: ['9', '10', '11'],
+    thumbnailEmoji: '⚛️',
+    difficulty: 2,
+    bloomLevel: 'understand',
+    estimatedTimeMinutes: 8,
+    conceptTags: ['Atom', 'Bohr Model', 'Electron Configuration', 'Shells', 'Valence'],
+    foxyTip: 'Compare Na and Cl — why do they form NaCl? Look at their valence electrons!',
+    component: BohrModel,
+  },
+  {
+    id: 'builtin-quadratic-graph',
+    title: 'Quadratic Equation Grapher',
+    description: 'Graph y = ax² + bx + c and see roots, vertex, and discriminant change as you adjust coefficients.',
+    subject: 'math',
+    grade: ['9', '10', '11'],
+    thumbnailEmoji: '📈',
+    difficulty: 2,
+    bloomLevel: 'analyze',
+    estimatedTimeMinutes: 10,
+    conceptTags: ['Quadratic', 'Parabola', 'Roots', 'Vertex', 'Discriminant'],
+    foxyTip: 'Set a=1, b=0, c=1 — no real roots! The parabola doesn\'t touch the x-axis. What does the discriminant show?',
+    component: QuadraticGraph,
+  },
+  {
+    id: 'builtin-hookes-law',
+    title: "Hooke's Law Spring Lab",
+    description: 'Hang masses from a spring and watch it stretch. See F = kx on a live graph, then trigger oscillations!',
+    subject: 'physics',
+    grade: ['9', '10', '11'],
+    thumbnailEmoji: '🔩',
+    difficulty: 2,
+    bloomLevel: 'apply',
+    estimatedTimeMinutes: 8,
+    conceptTags: ["Hooke's Law", 'Spring', 'Elasticity', 'SHM', 'Energy'],
+    foxyTip: 'Increase k (stiffer spring) and watch the oscillation period decrease. Why?',
+    component: HookesLaw,
+  },
+  {
+    id: 'builtin-linear-graph',
+    title: 'Linear Equation Grapher',
+    description: 'Graph y = mx + c and visualise slope, intercepts, and angle. Compare two lines to find intersections or check if they are parallel!',
+    subject: 'math',
+    grade: ['8', '9', '10'],
+    thumbnailEmoji: '📊',
+    difficulty: 1,
+    bloomLevel: 'understand',
+    estimatedTimeMinutes: 8,
+    conceptTags: ['Linear Equation', 'Slope', 'Intercept', 'Coordinate Geometry', 'Parallel Lines'],
+    foxyTip: 'Two lines with the same slope never meet — they are parallel! What if their product of slopes is -1?',
+    component: LinearGraph,
   },
 ];
