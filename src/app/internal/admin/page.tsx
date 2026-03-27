@@ -282,7 +282,7 @@ export default function SuperAdminPage() {
     if (activeTab === 'support') fetchSupport();
     if (activeTab === 'institutions') fetchInstitutions();
     if (activeTab === 'logs') fetchLogs();
-  }, [secretKey, activeTab, fetchStats, fetchUsers, fetchContent, fetchAnalytics, fetchLogs]);
+  }, [secretKey, activeTab, fetchStats, fetchUsers, fetchContent, fetchAnalytics, fetchFlags, fetchSupport, fetchInstitutions, fetchLogs]);
 
   // ── Actions ──
   const toggleUser = async (user: UserRecord) => {
