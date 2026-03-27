@@ -44,7 +44,14 @@ class ChaptersScreen extends ConsumerWidget {
               ),
             );
           }
-          return ListView.separated(
+          return RefreshIndicator(
+            color: color,
+            onRefresh: () async {
+              ref.invalidate(chaptersProvider(subjectCode));
+              await Future.delayed(const Duration(milliseconds: 300));
+            },
+            child: ListView.separated(
+            physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.all(16),
             itemCount: chapters.length,
             separatorBuilder: (_, __) => const SizedBox(height: 8),
@@ -124,6 +131,7 @@ class ChaptersScreen extends ConsumerWidget {
                 ),
               );
             },
+          ),
           );
         },
       ),

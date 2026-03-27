@@ -74,7 +74,14 @@ class TopicsScreen extends ConsumerWidget {
             );
           }
 
-          return ListView.separated(
+          return RefreshIndicator(
+            color: color,
+            onRefresh: () async {
+              ref.invalidate(topicsProvider(chapterId));
+              await Future.delayed(const Duration(milliseconds: 300));
+            },
+            child: ListView.separated(
+            physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.all(16),
             itemCount: topics.length,
             separatorBuilder: (_, __) => const SizedBox(height: 8),
@@ -152,6 +159,7 @@ class TopicsScreen extends ConsumerWidget {
                 ),
               );
             },
+          ),
           );
         },
       ),

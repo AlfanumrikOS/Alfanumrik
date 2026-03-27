@@ -187,78 +187,173 @@ class ConceptScreen extends ConsumerWidget {
   }
 }
 
-/// Renders concept text with basic formatting support
+/// Renders concept text with formatting: headings, bullets, numbered lists,
+/// bold/italic inline text, and highlighted key terms.
 class _ConceptContent extends StatelessWidget {
   final String text;
 
   const _ConceptContent({required this.text});
 
+  static final _numberedListPattern = RegExp(r'^\d+[\.\)]\s+');
+  static final _boldPattern = RegExp(r'\*\*(.+?)\*\*');
+  static final _italicPattern = RegExp(r'\*(.+?)\*');
+
   @override
   Widget build(BuildContext context) {
-    // Split by double newlines for paragraphs
-    final paragraphs = text.split('\n\n');
+    final lines = text.split('\n');
+    final widgets = <Widget>[];
+
+    for (final line in lines) {
+      final trimmed = line.trim();
+      if (trimmed.isEmpty) {
+        widgets.add(const SizedBox(height: 8));
+        continue;
+      }
+
+      // Heading
+      if (trimmed.startsWith('#')) {
+        final level = trimmed.indexOf(RegExp(r'[^#]'));
+        final cleaned = trimmed.substring(level).trim();
+        widgets.add(Padding(
+          padding: const EdgeInsets.only(top: 16, bottom: 6),
+          child: Text(
+            cleaned,
+            style: TextStyle(
+              fontSize: level <= 1 ? 18 : (level == 2 ? 16 : 15),
+              fontWeight: FontWeight.w700,
+              color: AppColors.textPrimary,
+              height: 1.4,
+            ),
+          ),
+        ));
+        continue;
+      }
+
+      // Bullet points
+      if (trimmed.startsWith('- ') || trimmed.startsWith('• ')) {
+        widgets.add(Padding(
+          padding: const EdgeInsets.only(bottom: 4, left: 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(top: 6),
+                child: Icon(Icons.circle, size: 5, color: AppColors.textTertiary),
+              ),
+              const SizedBox(width: 10),
+              Expanded(child: _buildRichText(trimmed.substring(2))),
+            ],
+          ),
+        ));
+        continue;
+      }
+
+      // Numbered lists
+      final numMatch = _numberedListPattern.firstMatch(trimmed);
+      if (numMatch != null) {
+        final number = trimmed.substring(0, numMatch.end - 1).trim();
+        final content = trimmed.substring(numMatch.end);
+        widgets.add(Padding(
+          padding: const EdgeInsets.only(bottom: 4, left: 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 22,
+                child: Text(
+                  '$number.',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textSecondary,
+                    height: 1.6,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(child: _buildRichText(content)),
+            ],
+          ),
+        ));
+        continue;
+      }
+
+      // Regular paragraph
+      widgets.add(Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: _buildRichText(trimmed),
+      ));
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: paragraphs.map((para) {
-        final trimmed = para.trim();
-        if (trimmed.isEmpty) return const SizedBox(height: 8);
+      children: widgets,
+    );
+  }
 
-        // Heading detection (starts with # or is short + bold-ish)
-        if (trimmed.startsWith('#')) {
-          final cleaned = trimmed.replaceAll(RegExp(r'^#+\s*'), '');
-          return Padding(
-            padding: const EdgeInsets.only(top: 16, bottom: 8),
-            child: Text(
-              cleaned,
-              style: const TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary,
-                height: 1.4,
-              ),
-            ),
-          );
-        }
+  /// Renders text with **bold** and *italic* inline formatting.
+  Widget _buildRichText(String text) {
+    if (!text.contains('*')) {
+      return Text(
+        text,
+        style: const TextStyle(
+          fontSize: 14,
+          color: AppColors.textPrimary,
+          height: 1.7,
+        ),
+      );
+    }
 
-        // Bullet points
-        if (trimmed.startsWith('- ') || trimmed.startsWith('• ')) {
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 6, left: 4),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('•  ',
-                    style: TextStyle(
-                        fontSize: 14, color: AppColors.textSecondary)),
-                Expanded(
-                  child: Text(
-                    trimmed.substring(2),
-                    style: const TextStyle(
-                      fontSize: 14,
-                      color: AppColors.textPrimary,
-                      height: 1.6,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        }
+    final spans = <TextSpan>[];
+    var remaining = text;
 
-        // Regular paragraph
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: Text(
-            trimmed,
-            style: const TextStyle(
-              fontSize: 14,
-              color: AppColors.textPrimary,
-              height: 1.7,
-            ),
-          ),
-        );
-      }).toList(),
+    while (remaining.isNotEmpty) {
+      // Try bold first
+      final boldMatch = _boldPattern.firstMatch(remaining);
+      final italicMatch = _italicPattern.firstMatch(remaining);
+
+      // Find the earliest match
+      RegExpMatch? earliest;
+      bool isBold = false;
+      if (boldMatch != null && (italicMatch == null || boldMatch.start <= italicMatch.start)) {
+        earliest = boldMatch;
+        isBold = true;
+      } else if (italicMatch != null) {
+        earliest = italicMatch;
+      }
+
+      if (earliest == null) {
+        spans.add(TextSpan(text: remaining));
+        break;
+      }
+
+      // Add text before match
+      if (earliest.start > 0) {
+        spans.add(TextSpan(text: remaining.substring(0, earliest.start)));
+      }
+
+      // Add formatted text
+      spans.add(TextSpan(
+        text: earliest.group(1),
+        style: TextStyle(
+          fontWeight: isBold ? FontWeight.w700 : FontWeight.w400,
+          fontStyle: isBold ? FontStyle.normal : FontStyle.italic,
+          color: isBold ? AppColors.textPrimary : AppColors.textSecondary,
+        ),
+      ));
+
+      remaining = remaining.substring(earliest.end);
+    }
+
+    return RichText(
+      text: TextSpan(
+        style: const TextStyle(
+          fontSize: 14,
+          color: AppColors.textPrimary,
+          height: 1.7,
+        ),
+        children: spans,
+      ),
     );
   }
 }
