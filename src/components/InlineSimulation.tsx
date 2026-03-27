@@ -47,6 +47,10 @@ const SIMULATION_MAP: Record<string, { id: string; title: string; emoji: string;
     id: 'builtin-fractions', title: 'Pizza Fraction Lab', emoji: '🍕',
     tip: 'Cut the pizza to understand fractions visually!',
   },
+  'trigonometry|sin|cos|tan|unit circle|sine|cosine|tangent': {
+    id: 'builtin-trig-circle', title: 'Trigonometry Circle Lab', emoji: '🔄',
+    tip: 'Drag the point around the circle and watch sin, cos, tan change!',
+  },
 };
 
 // Lazy-load simulation components — each imported directly from its file
@@ -60,6 +64,7 @@ const COMPONENTS: Record<string, any> = {
   'builtin-ph-scale': dynamic(() => import('@/components/simulations/PHScale'), { ssr: false }),
   'builtin-pythagoras': dynamic(() => import('@/components/simulations/PythagorasTheorem'), { ssr: false }),
   'builtin-fractions': dynamic(() => import('@/components/simulations/FractionVisualizer'), { ssr: false }),
+  'builtin-trig-circle': dynamic(() => import('@/components/simulations/TrigCircle'), { ssr: false }),
 };
 
 /** Find a matching simulation for a given topic/concept text */

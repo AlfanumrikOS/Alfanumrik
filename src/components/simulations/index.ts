@@ -25,6 +25,7 @@ const ProjectileMotion = dynamic(() => import('./ProjectileMotion'), { ssr: fals
 const PHScale = dynamic(() => import('./PHScale'), { ssr: false });
 const PythagorasTheorem = dynamic(() => import('./PythagorasTheorem'), { ssr: false });
 const FractionVisualizer = dynamic(() => import('./FractionVisualizer'), { ssr: false });
+const TrigCircle = dynamic(() => import('./TrigCircle'), { ssr: false });
 
 export const BUILT_IN_SIMULATIONS: BuiltInSimulation[] = [
   {
@@ -138,5 +139,19 @@ export const BUILT_IN_SIMULATIONS: BuiltInSimulation[] = [
     conceptTags: ['Fractions', 'Comparison', 'Addition', 'Visualization'],
     foxyTip: 'Which is bigger: 3/4 or 5/8? Use the compare mode to find out visually!',
     component: FractionVisualizer,
+  },
+  {
+    id: 'builtin-trig-circle',
+    title: 'Trigonometry Circle Lab',
+    description: 'Explore sin, cos, and tan on the unit circle. See how angles create waves.',
+    subject: 'math',
+    grade: ['9', '10', '11', '12'],
+    thumbnailEmoji: '🔄',
+    difficulty: 3,
+    bloomLevel: 'understand',
+    estimatedTimeMinutes: 10,
+    conceptTags: ['Trigonometry', 'Unit Circle', 'Sin', 'Cos', 'Tan', 'Angles', 'Waves'],
+    foxyTip: 'Drag the point around the circle and watch how sin and cos change. What happens at 90°?',
+    component: TrigCircle,
   },
 ];
