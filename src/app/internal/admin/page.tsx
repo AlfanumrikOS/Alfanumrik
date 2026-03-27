@@ -42,7 +42,7 @@ interface AuditEntry {
   created_at: string;
 }
 
-type Tab = 'dashboard' | 'users' | 'content' | 'analytics' | 'reports' | 'logs';
+type Tab = 'dashboard' | 'users' | 'content' | 'analytics' | 'flags' | 'institutions' | 'reports' | 'logs';
 
 interface ContentRecord {
   id: string;
@@ -54,6 +54,28 @@ interface ContentRecord {
   chapter_number?: number;
   topic_order?: number;
   difficulty?: string;
+  is_active?: boolean;
+  created_at?: string;
+  [key: string]: unknown;
+}
+
+interface FeatureFlag {
+  id: string;
+  name: string;
+  enabled: boolean;
+  created_at: string;
+}
+
+interface InstitutionRecord {
+  id: string;
+  name: string;
+  board: string;
+  city?: string;
+  state?: string;
+  principal_name?: string;
+  contact_email?: string;
+  student_count?: number;
+  teacher_count?: number;
   is_active?: boolean;
   created_at?: string;
   [key: string]: unknown;
@@ -88,6 +110,11 @@ export default function SuperAdminPage() {
   const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null);
   const [showContentForm, setShowContentForm] = useState(false);
   const [contentForm, setContentForm] = useState<Record<string, string>>({});
+  const [flags, setFlags] = useState<FeatureFlag[]>([]);
+  const [newFlagName, setNewFlagName] = useState('');
+  const [institutions, setInstitutions] = useState<InstitutionRecord[]>([]);
+  const [institutionTotal, setInstitutionTotal] = useState(0);
+  const [institutionPage, setInstitutionPage] = useState(1);
 
   // Get secret from URL — middleware already validated it
   const [secretKey] = useState(() => {
@@ -150,6 +177,52 @@ export default function SuperAdminPage() {
     setLoading(false);
   }, [h]);
 
+  const fetchFlags = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/internal/admin/feature-flags', { headers: h() });
+      if (res.ok) { const d = await res.json(); setFlags(d.data || []); }
+    } catch { /* */ }
+    setLoading(false);
+  }, [h]);
+
+  const toggleFlag = async (flag: FeatureFlag) => {
+    await fetch('/api/internal/admin/feature-flags', {
+      method: 'PATCH', headers: h(),
+      body: JSON.stringify({ id: flag.id, updates: { enabled: !flag.enabled } }),
+    });
+    fetchFlags();
+  };
+
+  const createFlag = async () => {
+    if (!newFlagName.trim()) return;
+    await fetch('/api/internal/admin/feature-flags', {
+      method: 'POST', headers: h(),
+      body: JSON.stringify({ name: newFlagName.trim(), enabled: false }),
+    });
+    setNewFlagName('');
+    fetchFlags();
+  };
+
+  const deleteFlag = async (flag: FeatureFlag) => {
+    if (!confirm(`Delete flag "${flag.name}"?`)) return;
+    await fetch('/api/internal/admin/feature-flags', {
+      method: 'DELETE', headers: h(),
+      body: JSON.stringify({ id: flag.id }),
+    });
+    fetchFlags();
+  };
+
+  const fetchInstitutions = useCallback(async () => {
+    setLoading(true);
+    try {
+      const p = new URLSearchParams({ page: String(institutionPage), limit: '25' });
+      const res = await fetch(`/api/internal/admin/users?role=school&${p}`, { headers: h() });
+      if (res.ok) { const d = await res.json(); setInstitutions(d.data || []); setInstitutionTotal(d.total || 0); }
+    } catch { /* */ }
+    setLoading(false);
+  }, [h, institutionPage]);
+
   const createContent = async () => {
     const typeMap: Record<string, string> = { chapters: 'chapter', topics: 'topic', questions: 'question' };
     try {
@@ -177,6 +250,8 @@ export default function SuperAdminPage() {
     if (activeTab === 'users') fetchUsers();
     if (activeTab === 'content') fetchContent();
     if (activeTab === 'analytics') fetchAnalytics();
+    if (activeTab === 'flags') fetchFlags();
+    if (activeTab === 'institutions') fetchInstitutions();
     if (activeTab === 'logs') fetchLogs();
   }, [secretKey, activeTab, fetchStats, fetchUsers, fetchContent, fetchAnalytics, fetchLogs]);
 
@@ -217,6 +292,8 @@ export default function SuperAdminPage() {
     { key: 'users', label: 'Users', icon: '👥' },
     { key: 'content', label: 'Content', icon: '📚' },
     { key: 'analytics', label: 'Analytics', icon: '📈' },
+    { key: 'flags', label: 'Flags', icon: '🚩' },
+    { key: 'institutions', label: 'Schools', icon: '🏫' },
     { key: 'reports', label: 'Reports', icon: '📋' },
     { key: 'logs', label: 'Audit Logs', icon: '🔍' },
   ];
@@ -693,6 +770,113 @@ export default function SuperAdminPage() {
                 <button onClick={fetchAnalytics} style={{ ...S.quickBtn, marginTop: 12 }}>Retry</button>
               </div>
             )}
+          </div>
+        )}
+
+        {/* ═══ FEATURE FLAGS ═══ */}
+        {activeTab === 'flags' && (
+          <div>
+            <h2 style={S.h2}>Feature Flags & Kill Switches</h2>
+            <p style={{ fontSize: 12, color: '#666', marginBottom: 16 }}>Control feature rollouts, emergency disables, and beta access. Toggle any flag instantly.</p>
+
+            <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+              <input value={newFlagName} onChange={e => setNewFlagName(e.target.value)} placeholder="New flag name (e.g. foxy_ai_enabled)"
+                style={{ ...S.searchInput, flex: 1 }} onKeyDown={e => e.key === 'Enter' && createFlag()} />
+              <button onClick={createFlag} style={{ ...S.quickBtn, background: '#16A34A10', color: '#16A34A', borderColor: '#16A34A40' }}>+ Add Flag</button>
+            </div>
+
+            <div style={{ display: 'grid', gap: 8 }}>
+              {flags.length === 0 && !loading && (
+                <div style={{ ...S.card, textAlign: 'center', color: '#555', padding: 24 }}>No feature flags configured. Add one above.</div>
+              )}
+              {flags.map(flag => (
+                <div key={flag.id} style={{ ...S.card, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <code style={{ fontSize: 13, fontWeight: 700, color: flag.enabled ? '#16A34A' : '#888' }}>{flag.name}</code>
+                    <div style={{ fontSize: 10, color: '#555', marginTop: 2 }}>Created {new Date(flag.created_at).toLocaleDateString()}</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <button onClick={() => toggleFlag(flag)} style={{
+                      padding: '6px 16px', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700,
+                      background: flag.enabled ? '#16A34A' : '#333', color: '#fff',
+                    }}>{flag.enabled ? 'ON' : 'OFF'}</button>
+                    <button onClick={() => deleteFlag(flag)} style={{ ...S.actionBtn, color: '#EF4444', borderColor: '#EF444440', fontSize: 10 }}>Delete</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ marginTop: 24 }}>
+              <h2 style={S.h2}>Recommended Flags</h2>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8 }}>
+                {['foxy_ai_enabled', 'razorpay_payments', 'quiz_module', 'simulations', 'parent_portal', 'teacher_portal', 'leaderboard', 'push_notifications', 'onboarding_flow', 'beta_features'].map(name => {
+                  const exists = flags.some(f => f.name === name);
+                  return (
+                    <div key={name} style={{ ...S.card, opacity: exists ? 0.5 : 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <code style={{ fontSize: 11, color: '#aaa' }}>{name}</code>
+                      {!exists && (
+                        <button onClick={() => { setNewFlagName(name); createFlag(); }} style={{ ...S.actionBtn, color: '#3B82F6', borderColor: '#3B82F640', fontSize: 10 }}>Add</button>
+                      )}
+                      {exists && <span style={{ fontSize: 10, color: '#16A34A' }}>Active</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ═══ INSTITUTIONS ═══ */}
+        {activeTab === 'institutions' && (
+          <div>
+            <h2 style={S.h2}>School & Institution Management</h2>
+            <p style={{ fontSize: 12, color: '#666', marginBottom: 16 }}>Manage onboarded schools, their admins, and subscription status.</p>
+
+            <div style={{ fontSize: 11, color: '#555', marginBottom: 8 }}>{institutionTotal} schools found</div>
+
+            <div style={{ overflowX: 'auto' }}>
+              <table style={S.table}>
+                <thead>
+                  <tr>
+                    <th style={S.th}>School</th>
+                    <th style={S.th}>Board</th>
+                    <th style={S.th}>City</th>
+                    <th style={S.th}>Principal</th>
+                    <th style={S.th}>Students</th>
+                    <th style={S.th}>Teachers</th>
+                    <th style={S.th}>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {institutions.length === 0 && (
+                    <tr><td colSpan={7} style={{ ...S.td, textAlign: 'center', color: '#555', padding: 24 }}>No schools onboarded yet. Schools will appear here once registered.</td></tr>
+                  )}
+                  {institutions.map(inst => (
+                    <tr key={inst.id}>
+                      <td style={S.td}><strong>{inst.name || '—'}</strong></td>
+                      <td style={S.td}>{inst.board || '—'}</td>
+                      <td style={S.td}>{inst.city || '—'}</td>
+                      <td style={S.td}>{inst.principal_name || '—'}</td>
+                      <td style={S.td}><span style={{ color: '#E8581C', fontWeight: 700 }}>{inst.student_count ?? 0}</span></td>
+                      <td style={S.td}><span style={{ color: '#3B82F6', fontWeight: 700 }}>{inst.teacher_count ?? 0}</span></td>
+                      <td style={S.td}>
+                        <span style={{
+                          fontSize: 10, padding: '2px 8px', borderRadius: 10,
+                          background: inst.is_active !== false ? '#16A34A20' : '#EF444420',
+                          color: inst.is_active !== false ? '#16A34A' : '#EF4444',
+                        }}>{inst.is_active !== false ? 'Active' : 'Suspended'}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'center', alignItems: 'center' }}>
+              <button disabled={institutionPage <= 1} onClick={() => setInstitutionPage(p => p - 1)} style={S.pageBtn}>← Prev</button>
+              <span style={{ fontSize: 12, color: '#666', padding: '6px 12px' }}>Page {institutionPage} of {Math.max(1, Math.ceil(institutionTotal / 25))}</span>
+              <button disabled={institutions.length < 25} onClick={() => setInstitutionPage(p => p + 1)} style={S.pageBtn}>Next →</button>
+            </div>
           </div>
         )}
 
