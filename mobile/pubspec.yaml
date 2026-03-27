@@ -12,7 +12,8 @@ dependencies:
     sdk: flutter
 
   # Supabase — Auth, DB, Realtime
-  supabase_flutter: ^2.3.0
+  supabase_flutter: ^2.8.0
+  app_links: ^6.5.0
 
   # State Management — Lightweight, compile-safe
   flutter_riverpod: ^2.4.9
