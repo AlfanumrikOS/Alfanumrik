@@ -6,6 +6,9 @@
 -keep class io.flutter.** { *; }
 -keep class io.flutter.plugins.** { *; }
 
+# Play Core (deferred components) — not used but referenced by Flutter engine
+-dontwarn com.google.android.play.core.**
+
 # Razorpay — payment gateway
 -keepclassmembers class * {
     @android.webkit.JavascriptInterface <methods>;
