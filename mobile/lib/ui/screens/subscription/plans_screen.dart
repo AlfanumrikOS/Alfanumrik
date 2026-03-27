@@ -20,6 +20,7 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
   bool _isYearly = true;
   bool _isLoading = false;
   String? _error;
+  String _selectedPlanCode = '';
   late Razorpay _razorpay;
 
   @override
@@ -38,9 +39,11 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
   }
 
   Future<void> _checkout(PlanInfo plan) async {
+    if (_isLoading) return;
     final student = ref.read(studentProvider).valueOrNull;
     if (student == null) return;
 
+    _selectedPlanCode = plan.code;
     setState(() { _isLoading = true; _error = null; });
 
     final billingCycle = _isYearly ? 'yearly' : 'monthly';
@@ -86,7 +89,7 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
       orderId: response.orderId ?? '',
       paymentId: response.paymentId ?? '',
       signature: response.signature ?? '',
-      planCode: '', // Extracted from order notes
+      planCode: _selectedPlanCode,
       billingCycle: _isYearly ? 'yearly' : 'monthly',
     );
 
