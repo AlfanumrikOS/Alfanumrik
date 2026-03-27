@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.alfanumrik.app"
-    compileSdk = 36
+    compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -22,7 +22,7 @@ android {
     defaultConfig {
         applicationId = "com.alfanumrik.app"
         minSdk = 21          // Android 5.0 — covers 99%+ of Indian devices
-        targetSdk = 36
+        targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         multiDexEnabled true

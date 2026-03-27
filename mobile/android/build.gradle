@@ -11,15 +11,21 @@ subprojects {
 }
 subprojects {
     project.evaluationDependsOn(":app")
-    afterEvaluate { project ->
-        if (project.hasProperty('android')) {
-            project.android {
-                if (namespace == null) {
-                    namespace project.group
-                }
-                compileSdkVersion 36
-            }
-        }
+}
+
+// Plugins like app_links reference flutter.compileSdkVersion which is
+// only defined by the Flutter Gradle Plugin in :app. Provide fallback
+// values so subprojects can resolve it during evaluation.
+subprojects { proj ->
+    if (proj.name != 'app') {
+        proj.ext.set("flutter", [
+            compileSdkVersion: 34,
+            targetSdkVersion: 34,
+            ndkVersion: "26.1.10909125",
+            minSdkVersion: 21,
+            versionCode: 1,
+            versionName: "1.0.0"
+        ])
     }
 }
 
