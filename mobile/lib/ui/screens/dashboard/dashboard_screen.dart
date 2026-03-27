@@ -180,6 +180,31 @@ class DashboardScreen extends ConsumerWidget {
                                 ],
                               ),
                             ),
+                            // Daily usage limits
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _UsageBar(
+                                    icon: Icons.chat_bubble_outline_rounded,
+                                    label: 'Foxy Chats',
+                                    used: dash.usage.foxyChatsUsed,
+                                    limit: dash.usage.foxyChatsLimit,
+                                    color: AppColors.accent,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: _UsageBar(
+                                    icon: Icons.quiz_outlined,
+                                    label: 'Quizzes',
+                                    used: dash.usage.quizzesUsed,
+                                    limit: dash.usage.quizzesLimit,
+                                    color: AppColors.mathColor,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ],
                         ),
                       ),
@@ -409,6 +434,78 @@ class _SubjectCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _UsageBar extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final int used;
+  final int limit;
+  final Color color;
+
+  const _UsageBar({
+    required this.icon,
+    required this.label,
+    required this.used,
+    required this.limit,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final ratio = limit > 0 ? (used / limit).clamp(0.0, 1.0) : 0.0;
+    final isAtLimit = used >= limit;
+
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.borderLight),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 14, color: isAtLimit ? AppColors.error : color),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+              Text(
+                '$used/$limit',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: isAtLimit ? AppColors.error : color,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: LinearProgressIndicator(
+              value: ratio,
+              minHeight: 4,
+              backgroundColor: AppColors.borderLight,
+              valueColor: AlwaysStoppedAnimation(
+                isAtLimit ? AppColors.error : color,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
