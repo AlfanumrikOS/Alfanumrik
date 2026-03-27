@@ -13,22 +13,6 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
-// Fix: plugins like app_links reference `flutter.compileSdkVersion`
-// which is only defined by the Flutter Gradle Plugin in :app.
-// Provide fallback values so subprojects don't crash during evaluation.
-subprojects { proj ->
-    if (proj.name != 'app') {
-        proj.ext.set("flutter", [
-            compileSdkVersion: 36,
-            targetSdkVersion: 36,
-            ndkVersion: "27.0.12077973",
-            minSdkVersion: 21,
-            versionCode: 1,
-            versionName: "1.0.0"
-        ])
-    }
-}
-
 tasks.register("clean", Delete) {
     delete rootProject.buildDir
 }
