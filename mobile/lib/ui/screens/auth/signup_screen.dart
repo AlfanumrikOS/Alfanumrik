@@ -33,6 +33,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
   }
 
   Future<void> _signUp() async {
+    if (_isLoading) return;
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
     setState(() { _isLoading = true; _error = null; });

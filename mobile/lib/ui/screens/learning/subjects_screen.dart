@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -21,13 +22,17 @@ class SubjectsScreen extends ConsumerWidget {
       appBar: AppBar(title: const Text('Subjects')),
       body: ListView.separated(
         padding: const EdgeInsets.all(16),
+        physics: const AlwaysScrollableScrollPhysics(),
         itemCount: subjects.length,
         separatorBuilder: (_, __) => const SizedBox(height: 10),
         itemBuilder: (context, index) {
           final subj = subjects[index];
           final color = AppColors.subjectColor(subj.code);
           return GestureDetector(
-            onTap: () => context.go('/learn/${subj.code}'),
+            onTap: () {
+              HapticFeedback.selectionClick();
+              context.go('/learn/${subj.code}');
+            },
             child: Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(

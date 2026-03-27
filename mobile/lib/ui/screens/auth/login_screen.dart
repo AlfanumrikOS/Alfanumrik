@@ -28,6 +28,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Future<void> _login() async {
+    if (_isLoading) return;
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
     setState(() {
