@@ -60,6 +60,7 @@ async function fetchSimulations(subject: string, grade: string): Promise<Simulat
   if (subject !== 'all') params.append('subject_code', `eq.${subject}`);
   if (grade !== 'all') params.append('grade', `eq.${grade}`);
   params.append('widget_code', 'neq.PLACEHOLDER');
+  params.append('quality_status', 'neq.rejected');
   params.append('limit', '50');
 
   try {

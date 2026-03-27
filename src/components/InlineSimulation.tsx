@@ -51,6 +51,29 @@ const SIMULATION_MAP: Record<string, { id: string; title: string; emoji: string;
     id: 'builtin-trig-circle', title: 'Trigonometry Circle Lab', emoji: '🔄',
     tip: 'Drag the point around the circle and watch sin, cos, tan change!',
   },
+  // Physics — Newton & Hooke
+  'newton|force|f=ma|acceleration|inertia|action reaction': {
+    id: 'builtin-newton-laws', title: "Newton's Laws Lab", emoji: '🧱',
+    tip: 'Apply a force and watch acceleration change — then try doubling the mass!',
+  },
+  'hooke|spring|elastic|restoring force|extension': {
+    id: 'builtin-hookes-law', title: "Hooke's Law Spring Lab", emoji: '🔩',
+    tip: 'Pull the spring and see F = kx on the live graph!',
+  },
+  // Chemistry — Atomic Structure
+  'bohr|atomic model|electron configuration|shell|valence electron|valency': {
+    id: 'builtin-bohr-model', title: 'Bohr Atomic Model', emoji: '⚛️',
+    tip: 'Click different elements and watch electrons fill the shells!',
+  },
+  // Math — Graphs
+  'quadratic|parabola|ax2|discriminant|vertex|roots of equation': {
+    id: 'builtin-quadratic-graph', title: 'Quadratic Equation Grapher', emoji: '📈',
+    tip: 'Change a, b, c and see how the parabola shape and roots change!',
+  },
+  'linear equation|slope|y=mx|intercept|straight line graph|coordinate geometry': {
+    id: 'builtin-linear-graph', title: 'Linear Equation Grapher', emoji: '📊',
+    tip: 'Change the slope and see the line rotate. Add a second line to find the intersection!',
+  },
 };
 
 // Lazy-load simulation components — each imported directly from its file
@@ -65,6 +88,11 @@ const COMPONENTS: Record<string, any> = {
   'builtin-pythagoras': dynamic(() => import('@/components/simulations/PythagorasTheorem'), { ssr: false }),
   'builtin-fractions': dynamic(() => import('@/components/simulations/FractionVisualizer'), { ssr: false }),
   'builtin-trig-circle': dynamic(() => import('@/components/simulations/TrigCircle'), { ssr: false }),
+  'builtin-newton-laws': dynamic(() => import('@/components/simulations/NewtonLaws'), { ssr: false }),
+  'builtin-bohr-model': dynamic(() => import('@/components/simulations/BohrModel'), { ssr: false }),
+  'builtin-quadratic-graph': dynamic(() => import('@/components/simulations/QuadraticGraph'), { ssr: false }),
+  'builtin-hookes-law': dynamic(() => import('@/components/simulations/HookesLaw'), { ssr: false }),
+  'builtin-linear-graph': dynamic(() => import('@/components/simulations/LinearGraph'), { ssr: false }),
 };
 
 /** Find a matching simulation for a given topic/concept text */
