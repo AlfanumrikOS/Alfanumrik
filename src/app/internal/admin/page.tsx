@@ -972,7 +972,7 @@ export default function SuperAdminPage() {
             <button onClick={() => { setSupportAction('failed_jobs'); void fetchSupport('failed_jobs'); }}
               style={{ ...S.quickBtn, marginBottom: 12 }}>↻ Load Failed Jobs</button>
 
-            {supportData && (supportData as Record<string, unknown>).data && (
+            {supportData && 'data' in supportData && (
               <div style={{ overflowX: 'auto' }}>
                 <table style={S.table}>
                   <thead>
