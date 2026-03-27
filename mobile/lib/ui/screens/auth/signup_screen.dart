@@ -91,7 +91,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                     padding: const EdgeInsets.all(12),
                     margin: const EdgeInsets.only(bottom: 16),
                     decoration: BoxDecoration(
-                      color: AppColors.error.withValues(alpha: 0.08),
+                      color: AppColors.error.withOpacity(0.08),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(_error!,

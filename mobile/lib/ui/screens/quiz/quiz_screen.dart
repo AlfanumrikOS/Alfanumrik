@@ -67,7 +67,7 @@ class QuizScreen extends ConsumerWidget {
                     decoration: BoxDecoration(
                       color: AppColors.surface,
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: color.withValues(alpha: 0.15)),
+                      border: Border.all(color: color.withOpacity(0.15)),
                     ),
                     child: Row(
                       children: [
@@ -176,7 +176,7 @@ class _QuizInProgress extends ConsumerWidget {
                           padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
                             color: isSelected
-                                ? AppColors.primary.withValues(alpha: 0.06)
+                                ? AppColors.primary.withOpacity(0.06)
                                 : AppColors.surface,
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
@@ -333,7 +333,7 @@ class _ResultScreen extends ConsumerWidget {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: (isGood ? AppColors.success : AppColors.warning)
-                        .withValues(alpha: 0.1),
+                        .withOpacity(0.1),
                     border: Border.all(
                       color: isGood ? AppColors.success : AppColors.warning,
                       width: 3,

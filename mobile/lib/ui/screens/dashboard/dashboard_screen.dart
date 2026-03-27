@@ -72,13 +72,13 @@ class DashboardScreen extends ConsumerWidget {
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                             decoration: BoxDecoration(
                               color: student.isPremium
-                                  ? AppColors.planPro.withValues(alpha: 0.1)
-                                  : AppColors.planFree.withValues(alpha: 0.1),
+                                  ? AppColors.planPro.withOpacity( 0.1)
+                                  : AppColors.planFree.withOpacity( 0.1),
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(
                                 color: student.isPremium
-                                    ? AppColors.planPro.withValues(alpha: 0.3)
-                                    : AppColors.planFree.withValues(alpha: 0.3),
+                                    ? AppColors.planPro.withOpacity( 0.3)
+                                    : AppColors.planFree.withOpacity( 0.3),
                               ),
                             ),
                             child: Text(
@@ -268,12 +268,12 @@ class DashboardScreen extends ConsumerWidget {
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 colors: [
-                                  AppColors.primary.withValues(alpha: 0.08),
-                                  AppColors.accent.withValues(alpha: 0.06),
+                                  AppColors.primary.withOpacity( 0.08),
+                                  AppColors.accent.withOpacity( 0.06),
                                 ],
                               ),
                               borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: AppColors.primary.withValues(alpha: 0.15)),
+                              border: Border.all(color: AppColors.primary.withOpacity( 0.15)),
                             ),
                             child: const Row(
                               children: [
@@ -340,9 +340,9 @@ class _StatCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.06),
+          color: color.withOpacity( 0.06),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withValues(alpha: 0.15)),
+          border: Border.all(color: color.withOpacity( 0.15)),
         ),
         child: Column(
           children: [
@@ -391,7 +391,7 @@ class _SubjectCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withValues(alpha: 0.15)),
+          border: Border.all(color: color.withOpacity( 0.15)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -434,9 +434,9 @@ class _ActionCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 14),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.06),
+          color: color.withOpacity( 0.06),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withValues(alpha: 0.15)),
+          border: Border.all(color: color.withOpacity( 0.15)),
         ),
         child: Row(
           children: [

@@ -1,18 +1,14 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../core/cache/cache_manager.dart';
 import '../../core/network/api_result.dart';
 import '../models/quiz_question.dart';
 
 class QuizRepository {
   final SupabaseClient _client;
-  final CacheManager _cache;
 
   QuizRepository({
     SupabaseClient? client,
-    CacheManager? cache,
-  })  : _client = client ?? Supabase.instance.client,
-        _cache = cache ?? CacheManager();
+  })  : _client = client ?? Supabase.instance.client;
 
   /// Fetch quiz questions for a subject + grade
   Future<ApiResult<List<QuizQuestion>>> getQuestions({

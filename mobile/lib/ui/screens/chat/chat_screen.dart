@@ -285,9 +285,9 @@ class _QuickPrompt extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: AppColors.accent.withValues(alpha: 0.06),
+          color: AppColors.accent.withOpacity(0.06),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppColors.accent.withValues(alpha: 0.2)),
+          border: Border.all(color: AppColors.accent.withOpacity(0.2)),
         ),
         child: Text(
           text,

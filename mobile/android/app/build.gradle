@@ -1,64 +1,40 @@
 plugins {
     id "com.android.application"
     id "kotlin-android"
+    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id "dev.flutter.flutter-gradle-plugin"
 }
 
-def localProperties = new Properties()
-def localPropertiesFile = rootProject.file('local.properties')
-if (localPropertiesFile.exists()) {
-    localPropertiesFile.withReader('UTF-8') { reader ->
-        localProperties.load(reader)
-    }
-}
-
-def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
-if (flutterVersionCode == null) {
-    flutterVersionCode = '1'
-}
-
-def flutterVersionName = localProperties.getProperty('flutter.versionName')
-if (flutterVersionName == null) {
-    flutterVersionName = '1.0'
-}
-
 android {
-    namespace "com.alfanumrik.app"
-    compileSdk flutter.compileSdkVersion
-    ndkVersion flutter.ndkVersion
+    namespace = "com.alfanumrik.app"
+    compileSdk = 36
+    ndkVersion = flutter.ndkVersion
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
     }
 
     kotlinOptions {
-        jvmTarget = '1.8'
-    }
-
-    sourceSets {
-        main.java.srcDirs += 'src/main/kotlin'
+        jvmTarget = JavaVersion.VERSION_1_8
     }
 
     defaultConfig {
-        applicationId "com.alfanumrik.app"
-        minSdkVersion 21
-        targetSdkVersion flutter.targetSdkVersion
-        versionCode flutterVersionCode.toInteger()
-        versionName flutterVersionName
-
-        // Enable multidex for 64K method limit
+        applicationId = "com.alfanumrik.app"
+        minSdk = 21          // Android 5.0 — covers 99%+ of Indian devices
+        targetSdk = 36
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
         multiDexEnabled true
     }
 
     buildTypes {
         release {
-            // Enable code shrinking + obfuscation
+            // R8 code shrinking + resource shrinking
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-
-            signingConfig signingConfigs.debug // Replace with release keystore
+            signingConfig = signingConfigs.debug  // Replace with release keystore for Play Store
         }
 
         debug {
@@ -67,7 +43,7 @@ android {
         }
     }
 
-    // Split APKs by ABI for smaller download size
+    // Split APKs by CPU architecture — reduces download size by ~40%
     splits {
         abi {
             enable true
@@ -77,7 +53,6 @@ android {
         }
     }
 
-    // Optimize APK size
     packagingOptions {
         exclude 'META-INF/DEPENDENCIES'
         exclude 'META-INF/LICENSE'
@@ -90,7 +65,7 @@ android {
 }
 
 flutter {
-    source '../..'
+    source = "../.."
 }
 
 dependencies {

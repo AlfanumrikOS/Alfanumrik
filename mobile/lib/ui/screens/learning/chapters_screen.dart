@@ -66,7 +66,7 @@ class ChaptersScreen extends ConsumerWidget {
                         width: 36,
                         height: 36,
                         decoration: BoxDecoration(
-                          color: color.withValues(alpha: 0.1),
+                          color: color.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         alignment: Alignment.center,

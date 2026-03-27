@@ -6,7 +6,7 @@
 -keep class io.flutter.** { *; }
 -keep class io.flutter.plugins.** { *; }
 
-# Razorpay
+# Razorpay — payment gateway
 -keepclassmembers class * {
     @android.webkit.JavascriptInterface <methods>;
 }
@@ -15,19 +15,19 @@
 -dontwarn com.razorpay.**
 -keep class com.razorpay.** { *; }
 
-# Supabase / OkHttp
+# Supabase / OkHttp / Retrofit
 -dontwarn okhttp3.**
 -dontwarn okio.**
 -keep class okhttp3.** { *; }
+-keep class okio.** { *; }
 
-# Hive
+# Hive local storage
 -keep class * extends com.google.crypto.tink.shaded.protobuf.GeneratedMessageLite { *; }
 
-# Gson (used by some plugins)
+# Gson
 -keepattributes Signature
--keepattributes *Annotation*
 -keep class com.google.gson.** { *; }
 
-# General
+# Keep source file names for crash reports
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
