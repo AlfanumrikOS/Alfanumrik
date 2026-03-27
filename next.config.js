@@ -16,6 +16,11 @@ const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   compress: true,
+  eslint: {
+    // Lint warnings (no-console, exhaustive-deps) should not break production builds.
+    // Lint is checked separately via `npm run lint`.
+    ignoreDuringBuilds: true,
+  },
   images: {
     formats: ['image/avif', 'image/webp'],
     remotePatterns: [
