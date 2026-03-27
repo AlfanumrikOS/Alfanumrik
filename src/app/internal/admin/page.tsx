@@ -282,7 +282,7 @@ export default function SuperAdminPage() {
     if (activeTab === 'support') fetchSupport();
     if (activeTab === 'institutions') fetchInstitutions();
     if (activeTab === 'logs') fetchLogs();
-  }, [secretKey, activeTab, fetchStats, fetchUsers, fetchContent, fetchAnalytics, fetchLogs]);
+  }, [secretKey, activeTab, fetchStats, fetchUsers, fetchContent, fetchAnalytics, fetchFlags, fetchSupport, fetchInstitutions, fetchLogs]);
 
   // ── Actions ──
   const toggleUser = async (user: UserRecord) => {
@@ -969,7 +969,7 @@ export default function SuperAdminPage() {
 
             {/* Failed Jobs */}
             <h2 style={S.h2}>Failed Jobs</h2>
-            <button onClick={() => { setSupportAction('failed_jobs'); fetchSupport('failed_jobs'); }}
+            <button onClick={() => { setSupportAction('failed_jobs'); void fetchSupport('failed_jobs'); }}
               style={{ ...S.quickBtn, marginBottom: 12 }}>↻ Load Failed Jobs</button>
 
             {supportData && (supportData as Record<string, unknown>).data && (
