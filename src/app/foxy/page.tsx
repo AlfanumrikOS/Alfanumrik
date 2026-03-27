@@ -9,6 +9,7 @@ import { BottomNav } from '@/components/ui';
 import { LESSON_STEPS, getLessonStepPrompt, getNextLessonStep, type LessonStep, type LessonState } from '@/lib/cognitive-engine';
 import { checkDailyUsage, clearUsageCache, type UsageResult } from '@/lib/usage';
 import { ConversationStarters } from '@/components/foxy/ConversationStarters';
+import { findSimulation, InlineSimulation } from '@/components/InlineSimulation';
 import { ChatBubble } from '@/components/foxy/ChatBubble';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import { RichContent } from '@/components/foxy/RichContent';
@@ -634,6 +635,20 @@ export default function FoxyPage() {
         {/* Chat column */}
         <div className="flex-1 flex flex-col min-w-0">
           <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-3 md:px-5 py-4 pb-32">
+            {/* Inline simulation — shows when active topic matches a simulation */}
+            {activeTopic && (() => {
+              const sim = findSimulation(activeTopic.title || '');
+              return sim ? (
+                <InlineSimulation
+                  simulationId={sim.id}
+                  title={sim.title}
+                  emoji={sim.emoji}
+                  tip={sim.tip}
+                  color={cfg.color}
+                />
+              ) : null;
+            })()}
+
             {/* Empty state with ConversationStarters */}
             {messages.length === 0 && (
               <div className="text-center py-12 md:py-20 animate-slide-up">
