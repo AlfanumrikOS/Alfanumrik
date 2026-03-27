@@ -91,10 +91,10 @@ class ConceptScreen extends ConsumerWidget {
                       Container(
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
-                          color: AppColors.accent.withValues(alpha: 0.06),
+                          color: AppColors.accent.withOpacity(0.06),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: AppColors.accent.withValues(alpha: 0.15),
+                            color: AppColors.accent.withOpacity(0.15),
                           ),
                         ),
                         child: Row(

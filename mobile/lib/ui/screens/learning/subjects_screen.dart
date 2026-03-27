@@ -33,7 +33,7 @@ class SubjectsScreen extends ConsumerWidget {
               decoration: BoxDecoration(
                 color: AppColors.surface,
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: color.withValues(alpha: 0.15)),
+                border: Border.all(color: color.withOpacity(0.15)),
               ),
               child: Row(
                 children: [
@@ -41,7 +41,7 @@ class SubjectsScreen extends ConsumerWidget {
                     width: 44,
                     height: 44,
                     decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.1),
+                      color: color.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     alignment: Alignment.center,
@@ -71,7 +71,7 @@ class SubjectsScreen extends ConsumerWidget {
                     ),
                   ),
                   Icon(Icons.arrow_forward_ios_rounded,
-                      size: 14, color: color.withValues(alpha: 0.5)),
+                      size: 14, color: color.withOpacity(0.5)),
                 ],
               ),
             ),

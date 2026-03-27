@@ -57,6 +57,7 @@ class ApiClient {
   }
 
   AppException _mapStatusCode(int? code) {
+    if (code == null) return const NetworkException('Request failed');
     return switch (code) {
       401 => NetworkException.unauthorized(),
       429 => const UsageLimitException('api', 0),
