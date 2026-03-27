@@ -66,6 +66,25 @@ interface FeatureFlag {
   created_at: string;
 }
 
+interface FailedJob {
+  task_type: string;
+  status: string;
+  attempts: number;
+  last_error: string | null;
+  created_at: string;
+}
+
+interface SupportActivityData {
+  quiz_sessions: { id: string }[];
+  chat_sessions: { id: string }[];
+  daily_usage: { date: string }[];
+}
+
+interface SupportFailedJobsData {
+  data: FailedJob[];
+  total: number;
+}
+
 interface InstitutionRecord {
   id: string;
   name: string;
@@ -113,7 +132,8 @@ export default function SuperAdminPage() {
   const [flags, setFlags] = useState<FeatureFlag[]>([]);
   const [newFlagName, setNewFlagName] = useState('');
   const [supportAction, setSupportAction] = useState('failed_jobs');
-  const [supportData, setSupportData] = useState<Record<string, unknown> | null>(null);
+  const [supportActivityData, setSupportActivityData] = useState<SupportActivityData | null>(null);
+  const [supportJobsData, setSupportJobsData] = useState<SupportFailedJobsData | null>(null);
   const [supportUserId, setSupportUserId] = useState('');
   const [supportEmail, setSupportEmail] = useState('');
   const [institutions, setInstitutions] = useState<InstitutionRecord[]>([]);
@@ -223,7 +243,11 @@ export default function SuperAdminPage() {
       const a = action || supportAction;
       const p = new URLSearchParams({ action: a, ...params });
       const res = await fetch(`/api/internal/admin/support?${p}`, { headers: h() });
-      if (res.ok) setSupportData(await res.json());
+      if (res.ok) {
+        const data = await res.json();
+        if (a === 'user_activity') setSupportActivityData(data as SupportActivityData);
+        else if (a === 'failed_jobs') setSupportJobsData(data as SupportFailedJobsData);
+      }
     } catch { /* */ }
     setLoading(false);
   }, [h, supportAction]);
@@ -925,10 +949,10 @@ export default function SuperAdminPage() {
                   <button onClick={() => fetchSupport('user_activity', { user_id: supportUserId })}
                     style={S.quickBtn}>Lookup</button>
                 </div>
-                {supportData && supportAction === 'user_activity' && (
+                {supportActivityData && (
                   <div style={{ marginTop: 10, fontSize: 11, color: '#aaa' }}>
-                    <div>Quiz sessions: {(supportData as Record<string, unknown[]>).quiz_sessions?.length ?? 0}</div>
-                    <div>Chat sessions: {(supportData as Record<string, unknown[]>).chat_sessions?.length ?? 0}</div>
+                    <div>Quiz sessions: {supportActivityData.quiz_sessions?.length ?? 0}</div>
+                    <div>Chat sessions: {supportActivityData.chat_sessions?.length ?? 0}</div>
                   </div>
                 )}
               </div>
@@ -972,7 +996,7 @@ export default function SuperAdminPage() {
             <button onClick={() => { setSupportAction('failed_jobs'); void fetchSupport('failed_jobs'); }}
               style={{ ...S.quickBtn, marginBottom: 12 }}>↻ Load Failed Jobs</button>
 
-            {supportData && 'data' in supportData && (
+            {supportJobsData && supportJobsData.data.length > 0 && (
               <div style={{ overflowX: 'auto' }}>
                 <table style={S.table}>
                   <thead>
@@ -985,19 +1009,19 @@ export default function SuperAdminPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {((supportData as Record<string, Array<Record<string, unknown>>>).data || []).map((job, i) => (
+                    {supportJobsData.data.map((job, i) => (
                       <tr key={i}>
-                        <td style={S.td}><code style={{ color: '#E8581C' }}>{String(job.task_type || '—')}</code></td>
+                        <td style={S.td}><code style={{ color: '#E8581C' }}>{job.task_type || '—'}</code></td>
                         <td style={S.td}>
                           <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: '#EF444420', color: '#EF4444' }}>
-                            {String(job.status || 'failed')}
+                            {job.status || 'failed'}
                           </span>
                         </td>
-                        <td style={S.td}>{String(job.attempts ?? 0)}</td>
+                        <td style={S.td}>{job.attempts}</td>
                         <td style={{ ...S.td, fontSize: 10, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {String(job.last_error || '—').slice(0, 80)}
+                          {(job.last_error || '—').slice(0, 80)}
                         </td>
-                        <td style={{ ...S.td, fontSize: 11 }}>{job.created_at ? new Date(String(job.created_at)).toLocaleString() : '—'}</td>
+                        <td style={{ ...S.td, fontSize: 11 }}>{job.created_at ? new Date(job.created_at).toLocaleString() : '—'}</td>
                       </tr>
                     ))}
                   </tbody>
