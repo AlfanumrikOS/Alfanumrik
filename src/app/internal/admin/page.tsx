@@ -42,7 +42,7 @@ interface AuditEntry {
   created_at: string;
 }
 
-type Tab = 'dashboard' | 'users' | 'content' | 'analytics' | 'flags' | 'institutions' | 'reports' | 'logs';
+type Tab = 'dashboard' | 'users' | 'content' | 'analytics' | 'flags' | 'institutions' | 'support' | 'reports' | 'logs';
 
 interface ContentRecord {
   id: string;
@@ -112,6 +112,10 @@ export default function SuperAdminPage() {
   const [contentForm, setContentForm] = useState<Record<string, string>>({});
   const [flags, setFlags] = useState<FeatureFlag[]>([]);
   const [newFlagName, setNewFlagName] = useState('');
+  const [supportAction, setSupportAction] = useState('failed_jobs');
+  const [supportData, setSupportData] = useState<Record<string, unknown> | null>(null);
+  const [supportUserId, setSupportUserId] = useState('');
+  const [supportEmail, setSupportEmail] = useState('');
   const [institutions, setInstitutions] = useState<InstitutionRecord[]>([]);
   const [institutionTotal, setInstitutionTotal] = useState(0);
   const [institutionPage, setInstitutionPage] = useState(1);
@@ -213,6 +217,30 @@ export default function SuperAdminPage() {
     fetchFlags();
   };
 
+  const fetchSupport = useCallback(async (action?: string, params?: Record<string, string>) => {
+    setLoading(true);
+    try {
+      const a = action || supportAction;
+      const p = new URLSearchParams({ action: a, ...params });
+      const res = await fetch(`/api/internal/admin/support?${p}`, { headers: h() });
+      if (res.ok) setSupportData(await res.json());
+    } catch { /* */ }
+    setLoading(false);
+  }, [h, supportAction]);
+
+  const supportPost = async (action: string, body: Record<string, unknown>) => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/internal/admin/support?action=${action}`, {
+        method: 'POST', headers: h(), body: JSON.stringify(body),
+      });
+      const d = await res.json();
+      if (res.ok) alert(d.message || 'Action completed');
+      else alert(d.error || 'Action failed');
+    } catch { alert('Request failed'); }
+    setLoading(false);
+  };
+
   const fetchInstitutions = useCallback(async () => {
     setLoading(true);
     try {
@@ -251,6 +279,7 @@ export default function SuperAdminPage() {
     if (activeTab === 'content') fetchContent();
     if (activeTab === 'analytics') fetchAnalytics();
     if (activeTab === 'flags') fetchFlags();
+    if (activeTab === 'support') fetchSupport();
     if (activeTab === 'institutions') fetchInstitutions();
     if (activeTab === 'logs') fetchLogs();
   }, [secretKey, activeTab, fetchStats, fetchUsers, fetchContent, fetchAnalytics, fetchLogs]);
@@ -294,6 +323,7 @@ export default function SuperAdminPage() {
     { key: 'analytics', label: 'Analytics', icon: '📈' },
     { key: 'flags', label: 'Flags', icon: '🚩' },
     { key: 'institutions', label: 'Schools', icon: '🏫' },
+    { key: 'support', label: 'Support', icon: '🛠' },
     { key: 'reports', label: 'Reports', icon: '📋' },
     { key: 'logs', label: 'Audit Logs', icon: '🔍' },
   ];
@@ -877,6 +907,103 @@ export default function SuperAdminPage() {
               <span style={{ fontSize: 12, color: '#666', padding: '6px 12px' }}>Page {institutionPage} of {Math.max(1, Math.ceil(institutionTotal / 25))}</span>
               <button disabled={institutions.length < 25} onClick={() => setInstitutionPage(p => p + 1)} style={S.pageBtn}>Next →</button>
             </div>
+          </div>
+        )}
+
+        {/* ═══ SUPPORT & OPS ═══ */}
+        {activeTab === 'support' && (
+          <div>
+            <h2 style={S.h2}>Support & Intervention Tools</h2>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
+              {/* User Activity Lookup */}
+              <div style={S.card}>
+                <h3 style={{ fontSize: 13, fontWeight: 700, color: '#E8581C', marginBottom: 10 }}>User Activity Lookup</h3>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input value={supportUserId} onChange={e => setSupportUserId(e.target.value)} placeholder="User ID"
+                    style={{ ...S.searchInput, flex: 1 }} />
+                  <button onClick={() => fetchSupport('user_activity', { user_id: supportUserId })}
+                    style={S.quickBtn}>Lookup</button>
+                </div>
+                {supportData && supportAction === 'user_activity' && (
+                  <div style={{ marginTop: 10, fontSize: 11, color: '#aaa' }}>
+                    <div>Quiz sessions: {(supportData as Record<string, unknown[]>).quiz_sessions?.length ?? 0}</div>
+                    <div>Chat sessions: {(supportData as Record<string, unknown[]>).chat_sessions?.length ?? 0}</div>
+                  </div>
+                )}
+              </div>
+
+              {/* Password Reset */}
+              <div style={S.card}>
+                <h3 style={{ fontSize: 13, fontWeight: 700, color: '#3B82F6', marginBottom: 10 }}>Password Reset</h3>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input value={supportEmail} onChange={e => setSupportEmail(e.target.value)} placeholder="User email"
+                    style={{ ...S.searchInput, flex: 1 }} />
+                  <button onClick={() => supportPost('reset_password', { email: supportEmail })}
+                    style={{ ...S.quickBtn, color: '#3B82F6', borderColor: '#3B82F640', background: '#3B82F610' }}>Reset</button>
+                </div>
+              </div>
+
+              {/* Resend Invite */}
+              <div style={S.card}>
+                <h3 style={{ fontSize: 13, fontWeight: 700, color: '#16A34A', marginBottom: 10 }}>Resend Invite</h3>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input value={supportEmail} onChange={e => setSupportEmail(e.target.value)} placeholder="User email"
+                    style={{ ...S.searchInput, flex: 1 }} />
+                  <button onClick={() => supportPost('resend_invite', { email: supportEmail, type: 'student' })}
+                    style={{ ...S.quickBtn, color: '#16A34A', borderColor: '#16A34A40', background: '#16A34A10' }}>Send</button>
+                </div>
+              </div>
+
+              {/* Parent-Student Links */}
+              <div style={S.card}>
+                <h3 style={{ fontSize: 13, fontWeight: 700, color: '#F59E0B', marginBottom: 10 }}>Parent-Student Links</h3>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input value={supportUserId} onChange={e => setSupportUserId(e.target.value)} placeholder="Student ID"
+                    style={{ ...S.searchInput, flex: 1 }} />
+                  <button onClick={() => fetchSupport('parent_links', { student_id: supportUserId })}
+                    style={{ ...S.quickBtn, color: '#F59E0B', borderColor: '#F59E0B40', background: '#F59E0B10' }}>View</button>
+                </div>
+              </div>
+            </div>
+
+            {/* Failed Jobs */}
+            <h2 style={S.h2}>Failed Jobs</h2>
+            <button onClick={() => { setSupportAction('failed_jobs'); fetchSupport('failed_jobs'); }}
+              style={{ ...S.quickBtn, marginBottom: 12 }}>↻ Load Failed Jobs</button>
+
+            {supportData && (supportData as Record<string, unknown>).data && (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={S.table}>
+                  <thead>
+                    <tr>
+                      <th style={S.th}>Type</th>
+                      <th style={S.th}>Status</th>
+                      <th style={S.th}>Attempts</th>
+                      <th style={S.th}>Error</th>
+                      <th style={S.th}>Created</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {((supportData as Record<string, Array<Record<string, unknown>>>).data || []).map((job, i) => (
+                      <tr key={i}>
+                        <td style={S.td}><code style={{ color: '#E8581C' }}>{String(job.task_type || '—')}</code></td>
+                        <td style={S.td}>
+                          <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: '#EF444420', color: '#EF4444' }}>
+                            {String(job.status || 'failed')}
+                          </span>
+                        </td>
+                        <td style={S.td}>{String(job.attempts ?? 0)}</td>
+                        <td style={{ ...S.td, fontSize: 10, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {String(job.last_error || '—').slice(0, 80)}
+                        </td>
+                        <td style={{ ...S.td, fontSize: 11 }}>{job.created_at ? new Date(String(job.created_at)).toLocaleString() : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 
