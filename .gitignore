@@ -8,3 +8,14 @@ supabase/.temp/
 .vercel
 *.tsbuildinfo
 next-env.d.ts
+
+# Flutter / Android
+mobile/build/
+mobile/.dart_tool/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/android/key.properties
+mobile/android/app/*.jks
+mobile/android/app/*.keystore
+*.apk
+*.aab
