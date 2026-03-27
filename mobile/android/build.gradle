@@ -19,8 +19,8 @@ subprojects {
 subprojects { proj ->
     if (proj.name != 'app') {
         proj.ext.set("flutter", [
-            compileSdkVersion: 34,
-            targetSdkVersion: 34,
+            compileSdkVersion: 35,
+            targetSdkVersion: 35,
             ndkVersion: "26.1.10909125",
             minSdkVersion: 21,
             versionCode: 1,
