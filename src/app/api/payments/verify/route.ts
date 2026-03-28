@@ -49,16 +49,17 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, plan_code, billing_cycle } = body;
+    const {
+      razorpay_order_id, razorpay_payment_id, razorpay_signature,
+      razorpay_subscription_id,
+      plan_code, billing_cycle, type,
+    } = body;
 
     // Input validation
-    if (!razorpay_order_id || typeof razorpay_order_id !== 'string' || !razorpay_order_id.startsWith('order_')) {
-      return NextResponse.json({ error: 'Invalid order ID' }, { status: 400 });
-    }
     if (!razorpay_payment_id || typeof razorpay_payment_id !== 'string' || !razorpay_payment_id.startsWith('pay_')) {
       return NextResponse.json({ error: 'Invalid payment ID' }, { status: 400 });
     }
-    if (!razorpay_signature || typeof razorpay_signature !== 'string' || razorpay_signature.length !== 64) {
+    if (!razorpay_signature || typeof razorpay_signature !== 'string') {
       return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
     }
     if (!plan_code || !['starter', 'pro', 'unlimited'].includes(plan_code)) {
@@ -74,9 +75,16 @@ export async function POST(request: NextRequest) {
       console.error('verify: MISSING RAZORPAY_KEY_SECRET env var');
       return NextResponse.json({ error: 'Payment system not configured. Please contact support.' }, { status: 503 });
     }
+
+    // Subscription verification: HMAC of subscription_id|payment_id
+    // Order verification: HMAC of order_id|payment_id
+    const signaturePayload = type === 'subscription'
+      ? `${razorpay_subscription_id}|${razorpay_payment_id}`
+      : `${razorpay_order_id}|${razorpay_payment_id}`;
+
     const expectedSignature = crypto
       .createHmac('sha256', razorpaySecret)
-      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+      .update(signaturePayload)
       .digest('hex');
 
     if (expectedSignature !== razorpay_signature) {
@@ -179,6 +187,7 @@ export async function POST(request: NextRequest) {
       p_billing_cycle: billing_cycle,
       p_razorpay_payment_id: razorpay_payment_id,
       p_razorpay_order_id: razorpay_order_id,
+      p_razorpay_subscription_id: razorpay_subscription_id || null,
     });
 
     if (rpcError) {

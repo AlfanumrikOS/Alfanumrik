@@ -5,14 +5,12 @@ import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 
 /**
- * Razorpay Checkout Hook — handles the complete payment flow:
- * 1. Calls /api/payments/create-order to create Razorpay order
- * 2. Opens Razorpay checkout modal
- * 3. On success, calls /api/payments/verify to activate subscription
- * 4. Refreshes auth state to reflect new plan
+ * Razorpay Checkout Hook — unified for recurring + one-time flows.
  *
- * Handles: success, failure, cancel/dismiss, duplicate, network errors.
- * Shows intermediate status messages for user trust.
+ * Monthly plans → Razorpay Subscription (recurring)
+ * Yearly plans  → Razorpay Order (one-time)
+ *
+ * Client sends only plan_code + billing_cycle — never amounts.
  */
 
 declare global {
@@ -62,147 +60,237 @@ export function useCheckout() {
     setStatus('loading_gateway');
 
     try {
-      // Load Razorpay script
       const loaded = await loadRazorpayScript();
       if (!loaded) {
-        const msg = 'Payment gateway could not be loaded. Check your connection and try again.';
-        setError(msg);
-        setStatus('failed');
-        onError?.(msg);
-        setLoading(false);
+        fail('Payment gateway could not be loaded. Check your connection and try again.', onError);
         return;
       }
 
-      // Get fresh access token for API auth
       const { data: { session } } = await supabase.auth.getSession();
       const accessToken = session?.access_token;
       if (!accessToken) {
-        const msg = 'Session expired. Please log in again to continue.';
-        setError(msg);
-        setStatus('failed');
-        onError?.(msg);
-        setLoading(false);
+        fail('Session expired. Please log in again to continue.', onError);
         return;
       }
 
-      // Create order on backend
+      const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+      };
+
+      // Call unified subscribe endpoint
       setStatus('creating_order');
-      const orderRes = await fetch('/api/payments/create-order', {
+      const res = await fetch('/api/payments/subscribe', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
-        },
+        headers,
         body: JSON.stringify({ plan_code: planCode, billing_cycle: billingCycle }),
       });
 
-      if (!orderRes.ok) {
-        const data = await orderRes.json().catch(() => ({ error: 'Failed to create order' }));
-        const msg = data.error || 'Payment initialization failed. Please try again.';
-        setError(msg);
-        setStatus('failed');
-        onError?.(msg);
-        setLoading(false);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: 'Payment initialization failed' }));
+        fail(data.error || 'Payment initialization failed. Please try again.', onError);
         return;
       }
 
-      const order = await orderRes.json();
+      const data = await res.json();
       setStatus('checkout_open');
 
-      // Open Razorpay checkout
-      const options = {
-        key: order.key,
-        amount: order.amount,
-        currency: order.currency,
-        name: 'Alfanumrik',
-        description: `${planCode.charAt(0).toUpperCase() + planCode.slice(1)} Plan (${billingCycle})`,
-        order_id: order.order_id,
-        prefill: {
-          name: student?.name || '',
-          email: student?.email || '',
-        },
-        theme: { color: '#E8581C' },
-
-        // SUCCESS: payment captured by Razorpay
-        handler: async (response: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {
-          setStatus('verifying');
-          try {
-            const verifyRes = await fetch('/api/payments/verify', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${accessToken}`,
-              },
-              body: JSON.stringify({
-                razorpay_order_id: response.razorpay_order_id,
-                razorpay_payment_id: response.razorpay_payment_id,
-                razorpay_signature: response.razorpay_signature,
-                plan_code: planCode,
-                billing_cycle: billingCycle,
-              }),
-            });
-
-            const data = await verifyRes.json().catch(() => ({}));
-
-            if (verifyRes.ok && data.success) {
-              setStatus('activating');
-              await refreshStudent();
-              setStatus('success');
-              onSuccess?.(planCode);
-            } else if (verifyRes.status === 202 || data.status === 'pending_confirmation') {
-              // Payment received but access update is pending — still show success
-              // Webhook will complete the activation
-              await refreshStudent();
-              setStatus('success');
-              onSuccess?.(planCode);
-            } else if (data.status === 'reconciliation_required') {
-              // Payment captured but DB update failed — show trust message
-              setError(`Payment received (${data.payment_id}). Your plan will be activated shortly.`);
-              setStatus('failed');
-              onError?.('Payment received but activation pending. Please refresh the page in a few minutes.');
-            } else {
-              setError(data.error || 'Payment verification failed. Please contact support.');
-              setStatus('failed');
-              onError?.(data.error || 'Payment verification failed');
-            }
-          } catch {
-            setError('Payment verification failed. If charged, your plan will be activated automatically.');
-            setStatus('failed');
-            onError?.('Payment verification failed');
-          }
-          setLoading(false);
-        },
-
-        // DISMISS: user closed the modal without paying
-        modal: {
-          ondismiss: () => {
-            setStatus('cancelled');
-            setLoading(false);
-            // No error — user intentionally closed. Can retry immediately.
-          },
-        },
-      };
-
-      const rzp = new window.Razorpay(options);
-
-      // FAILURE: Razorpay payment failed (card declined, etc.)
-      rzp.on('payment.failed', (response: any) => {
-        const reason = response?.error?.description || 'Payment failed. Please try again.';
-        console.error('Razorpay payment failed:', response?.error?.code, reason);
-        setError(reason);
-        setStatus('failed');
-        setLoading(false);
-      });
-
-      rzp.open();
+      if (data.type === 'subscription') {
+        // ─── Monthly recurring: Razorpay Subscription checkout ───
+        openSubscriptionCheckout({
+          subscriptionId: data.subscription_id,
+          key: data.key,
+          planCode,
+          billingCycle,
+          accessToken,
+          headers,
+          onSuccess,
+          onError,
+        });
+      } else {
+        // ─── Yearly one-time: Razorpay Order checkout ────────────
+        openOrderCheckout({
+          orderId: data.order_id,
+          amount: data.amount,
+          currency: data.currency,
+          key: data.key,
+          planCode,
+          billingCycle,
+          accessToken,
+          headers,
+          onSuccess,
+          onError,
+        });
+      }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Payment failed. Please try again.';
+      fail(err instanceof Error ? err.message : 'Payment failed. Please try again.', onError);
+    }
+
+    function fail(msg: string, onErr?: (s: string) => void) {
       setError(msg);
       setStatus('failed');
-      onError?.(msg);
+      onErr?.(msg);
       setLoading(false);
     }
   }, [student, refreshStudent]);
 
+  // ─── Subscription checkout (monthly recurring) ─────────────
+
+  function openSubscriptionCheckout(params: {
+    subscriptionId: string;
+    key: string;
+    planCode: string;
+    billingCycle: string;
+    accessToken: string;
+    headers: Record<string, string>;
+    onSuccess?: (plan: string) => void;
+    onError?: (error: string) => void;
+  }) {
+    const options = {
+      key: params.key,
+      subscription_id: params.subscriptionId,
+      name: 'Alfanumrik',
+      description: `${capitalize(params.planCode)} Plan — Monthly`,
+      prefill: {
+        name: student?.name || '',
+        email: student?.email || '',
+      },
+      theme: { color: '#E8581C' },
+
+      handler: async (response: { razorpay_payment_id: string; razorpay_subscription_id: string; razorpay_signature: string }) => {
+        setStatus('verifying');
+        try {
+          const verifyRes = await fetch('/api/payments/verify', {
+            method: 'POST',
+            headers: params.headers,
+            body: JSON.stringify({
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_subscription_id: response.razorpay_subscription_id,
+              razorpay_signature: response.razorpay_signature,
+              plan_code: params.planCode,
+              billing_cycle: 'monthly',
+              type: 'subscription',
+            }),
+          });
+
+          const data = await verifyRes.json().catch(() => ({}));
+          if (verifyRes.ok && data.success) {
+            setStatus('activating');
+            await refreshStudent();
+            setStatus('success');
+            params.onSuccess?.(params.planCode);
+          } else {
+            setError(data.error || 'Verification failed. Your payment is safe — plan will activate shortly.');
+            setStatus('failed');
+          }
+        } catch {
+          setError('Verification failed. If charged, your plan will activate automatically.');
+          setStatus('failed');
+        }
+        setLoading(false);
+      },
+
+      modal: {
+        ondismiss: () => {
+          setStatus('cancelled');
+          setLoading(false);
+        },
+      },
+    };
+
+    const rzp = new window.Razorpay(options);
+    rzp.on('payment.failed', (response: any) => {
+      setError(response?.error?.description || 'Payment failed. Please try again.');
+      setStatus('failed');
+      setLoading(false);
+    });
+    rzp.open();
+  }
+
+  // ─── Order checkout (yearly one-time) ──────────────────────
+
+  function openOrderCheckout(params: {
+    orderId: string;
+    amount: number;
+    currency: string;
+    key: string;
+    planCode: string;
+    billingCycle: string;
+    accessToken: string;
+    headers: Record<string, string>;
+    onSuccess?: (plan: string) => void;
+    onError?: (error: string) => void;
+  }) {
+    const options = {
+      key: params.key,
+      amount: params.amount,
+      currency: params.currency,
+      name: 'Alfanumrik',
+      description: `${capitalize(params.planCode)} Plan — Yearly`,
+      order_id: params.orderId,
+      prefill: {
+        name: student?.name || '',
+        email: student?.email || '',
+      },
+      theme: { color: '#E8581C' },
+
+      handler: async (response: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {
+        setStatus('verifying');
+        try {
+          const verifyRes = await fetch('/api/payments/verify', {
+            method: 'POST',
+            headers: params.headers,
+            body: JSON.stringify({
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+              plan_code: params.planCode,
+              billing_cycle: 'yearly',
+              type: 'order',
+            }),
+          });
+
+          const data = await verifyRes.json().catch(() => ({}));
+          if (verifyRes.ok && data.success) {
+            setStatus('activating');
+            await refreshStudent();
+            setStatus('success');
+            params.onSuccess?.(params.planCode);
+          } else if (verifyRes.status === 202 || data.status === 'pending_confirmation') {
+            await refreshStudent();
+            setStatus('success');
+            params.onSuccess?.(params.planCode);
+          } else {
+            setError(data.error || 'Payment verification failed. Please contact support.');
+            setStatus('failed');
+          }
+        } catch {
+          setError('Verification failed. If charged, your plan will activate automatically.');
+          setStatus('failed');
+        }
+        setLoading(false);
+      },
+
+      modal: {
+        ondismiss: () => {
+          setStatus('cancelled');
+          setLoading(false);
+        },
+      },
+    };
+
+    const rzp = new window.Razorpay(options);
+    rzp.on('payment.failed', (response: any) => {
+      setError(response?.error?.description || 'Payment failed. Please try again.');
+      setStatus('failed');
+      setLoading(false);
+    });
+    rzp.open();
+  }
+
   return { checkout, loading, status, error };
+}
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
