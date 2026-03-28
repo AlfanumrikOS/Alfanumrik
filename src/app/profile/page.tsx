@@ -361,9 +361,7 @@ export default function ProfilePage() {
         updatePayload.name = editName.trim();
         updatePayload.name_change_count = (nameChangeCount || 0) + 1;
       }
-      if (editGrade !== student.grade) {
-        updatePayload.grade = editGrade;
-      }
+      // Grade is system-managed — never allow client update
       if (editBoard !== student.board && !hasQuizHistory) {
         updatePayload.board = editBoard;
       }
@@ -675,12 +673,12 @@ export default function ProfilePage() {
             <Card>
               <SectionHeader icon="🎓">{isHi ? 'शैक्षणिक विवरण' : 'Academic Details'}</SectionHeader>
               <div className="space-y-3 mt-3">
-                <Select
-                  label={isHi ? 'कक्षा' : 'Grade'}
-                  value={editGrade}
-                  onChange={setEditGrade}
-                  options={GRADES.map(g => ({ value: g, label: `Grade ${g}` }))}
-                />
+                <div>
+                  <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--text-3)' }}>{isHi ? 'कक्षा' : 'Grade'}</label>
+                  <div className="p-2.5 rounded-lg text-sm" style={{ background: 'var(--surface-2)', color: 'var(--text-2)', border: '1px solid var(--border)' }}>
+                    Grade {editGrade} <span className="text-xs ml-2" style={{ color: 'var(--text-3)' }}>🔒 {isHi ? 'सिस्टम द्वारा प्रबंधित' : 'System-managed'}</span>
+                  </div>
+                </div>
                 <div>
                   <Select
                     label={isHi ? 'बोर्ड' : 'Board'}
