@@ -47,6 +47,13 @@ export default function CmsPage() {
   const [view, setView] = useState<View>('overview');
   const [accessToken, setAccessToken] = useState<string | null>(null);
 
+  // Assets
+  const [assets, setAssets] = useState<{ id: string; file_name: string; file_type: string; file_size: number | null; storage_path: string; alt_text: string | null; caption: string | null; created_at: string }[]>([]);
+  const [assetEntityType, setAssetEntityType] = useState('');
+  const [assetEntityId, setAssetEntityId] = useState('');
+  const [showAssetForm, setShowAssetForm] = useState(false);
+  const [assetForm, setAssetForm] = useState<Record<string, string>>({});
+
   // Create forms
   const [showCreateTopic, setShowCreateTopic] = useState(false);
   const [showCreateQuestion, setShowCreateQuestion] = useState(false);
@@ -231,6 +238,46 @@ export default function CmsPage() {
     setVersionEntityType(entityType);
     setVersionEntityId(entityId);
     setView('versions');
+  };
+
+  const loadAssets = async (entityType: string, entityId: string) => {
+    try {
+      const res = await fetch(`/api/super-admin/platform-ops?action=assets&entity_type=${entityType}&entity_id=${entityId}`, { headers: h() });
+      if (res.ok) { const d = await res.json(); setAssets(d.data || []); }
+    } catch { /* */ }
+    setAssetEntityType(entityType);
+    setAssetEntityId(entityId);
+  };
+
+  const registerAsset = async () => {
+    if (!assetForm.file_name || !assetForm.storage_path) { alert('File name and storage path required'); return; }
+    try {
+      await fetch('/api/super-admin/platform-ops?action=register_asset', {
+        method: 'POST', headers: h(),
+        body: JSON.stringify({
+          entity_type: assetEntityType || 'general',
+          entity_id: assetEntityId || null,
+          file_name: assetForm.file_name,
+          file_type: assetForm.file_type || 'application/octet-stream',
+          file_size: assetForm.file_size ? parseInt(assetForm.file_size) : null,
+          storage_path: assetForm.storage_path,
+          alt_text: assetForm.alt_text || null,
+          caption: assetForm.caption || null,
+        }),
+      });
+      setAssetForm({}); setShowAssetForm(false);
+      if (assetEntityType && assetEntityId) loadAssets(assetEntityType, assetEntityId);
+    } catch (e) { alert(e instanceof Error ? e.message : 'Register failed'); }
+  };
+
+  const deleteAsset = async (assetId: string) => {
+    if (!confirm('Remove this asset?')) return;
+    try {
+      await fetch('/api/super-admin/platform-ops?action=delete_asset', {
+        method: 'POST', headers: h(), body: JSON.stringify({ id: assetId }),
+      });
+      if (assetEntityType && assetEntityId) loadAssets(assetEntityType, assetEntityId);
+    } catch { alert('Delete failed'); }
   };
 
   if (!accessToken) return <div style={S.center}><p style={{ color: '#888' }}>Loading...</p></div>;
@@ -441,7 +488,10 @@ export default function CmsPage() {
                       <td style={S.td}><span style={{ fontSize: 10, color: '#aaa' }}>{t.bloom_focus}</span></td>
                       <td style={S.td}><TransitionButtons entityType="topic" entityId={t.id} currentStatus={t.content_status} /></td>
                       <td style={S.td}>
-                        <button onClick={() => openVersions('topic', t.id)} style={{ ...S.actionBtn, fontSize: 10 }}>History</button>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button onClick={() => { loadAssets('topic', t.id); }} style={{ ...S.actionBtn, fontSize: 10, color: '#8B5CF6', borderColor: '#8B5CF640' }}>Assets</button>
+                          <button onClick={() => openVersions('topic', t.id)} style={{ ...S.actionBtn, fontSize: 10 }}>History</button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -563,7 +613,10 @@ export default function CmsPage() {
                       <td style={S.td}><StatusBadge status={q.content_status} /></td>
                       <td style={S.td}><TransitionButtons entityType="question" entityId={q.id} currentStatus={q.content_status} /></td>
                       <td style={S.td}>
-                        <button onClick={() => openVersions('question', q.id)} style={{ ...S.actionBtn, fontSize: 10 }}>History</button>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button onClick={() => { loadAssets('question', q.id); }} style={{ ...S.actionBtn, fontSize: 10, color: '#8B5CF6', borderColor: '#8B5CF640' }}>Assets</button>
+                          <button onClick={() => openVersions('question', q.id)} style={{ ...S.actionBtn, fontSize: 10 }}>History</button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -649,6 +702,69 @@ export default function CmsPage() {
                   <button onClick={() => setDiffSnapshot(null)} style={{ ...S.actionBtn, marginTop: 10, fontSize: 11 }}>Close</button>
                 </div>
               </div>
+            )}
+          </div>
+        )}
+        {/* Asset Panel */}
+        {assetEntityId && (
+          <div style={{ marginTop: 20, padding: 16, background: '#111', borderRadius: 10, border: '1px solid #1e1e1e' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <h2 style={{ ...S.h2, margin: 0 }}>Assets — {assetEntityType} {assetEntityId.slice(0, 8)}</h2>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button onClick={() => setShowAssetForm(!showAssetForm)}
+                  style={{ ...S.actionBtn, color: '#16A34A', borderColor: '#16A34A40', fontSize: 10 }}>
+                  {showAssetForm ? 'Cancel' : '+ Attach Asset'}
+                </button>
+                <button onClick={() => { setAssetEntityId(''); setAssets([]); }}
+                  style={{ ...S.actionBtn, fontSize: 10 }}>Close</button>
+              </div>
+            </div>
+
+            {showAssetForm && (
+              <div style={{ marginBottom: 12, padding: 12, background: '#0a0a0a', borderRadius: 8 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <input placeholder="File name *" value={assetForm.file_name || ''} onChange={e => setAssetForm(f => ({ ...f, file_name: e.target.value }))} style={S.searchInput} />
+                  <input placeholder="Storage path * (e.g. cms-media/topics/abc.png)" value={assetForm.storage_path || ''} onChange={e => setAssetForm(f => ({ ...f, storage_path: e.target.value }))} style={S.searchInput} />
+                  <input placeholder="File type (image/png)" value={assetForm.file_type || ''} onChange={e => setAssetForm(f => ({ ...f, file_type: e.target.value }))} style={S.searchInput} />
+                  <input placeholder="File size (bytes)" type="number" value={assetForm.file_size || ''} onChange={e => setAssetForm(f => ({ ...f, file_size: e.target.value }))} style={S.searchInput} />
+                  <input placeholder="Alt text" value={assetForm.alt_text || ''} onChange={e => setAssetForm(f => ({ ...f, alt_text: e.target.value }))} style={S.searchInput} />
+                  <input placeholder="Caption" value={assetForm.caption || ''} onChange={e => setAssetForm(f => ({ ...f, caption: e.target.value }))} style={S.searchInput} />
+                </div>
+                <button onClick={registerAsset} style={{ ...S.actionBtn, marginTop: 8, color: '#16A34A', borderColor: '#16A34A40', padding: '6px 16px' }}>Register Asset</button>
+              </div>
+            )}
+
+            {assets.length === 0 ? (
+              <div style={{ fontSize: 12, color: '#555' }}>No assets attached. Click "+ Attach Asset" to add one.</div>
+            ) : (
+              <table style={S.table}>
+                <thead>
+                  <tr>
+                    <th style={S.th}>File</th>
+                    <th style={S.th}>Type</th>
+                    <th style={S.th}>Size</th>
+                    <th style={S.th}>Path</th>
+                    <th style={S.th}>Alt</th>
+                    <th style={S.th}>Added</th>
+                    <th style={S.th}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {assets.map(a => (
+                    <tr key={a.id}>
+                      <td style={S.td}><strong>{a.file_name}</strong></td>
+                      <td style={{ ...S.td, fontSize: 10 }}>{a.file_type}</td>
+                      <td style={{ ...S.td, fontSize: 10 }}>{a.file_size ? `${(a.file_size / 1024).toFixed(1)} KB` : '—'}</td>
+                      <td style={{ ...S.td, fontSize: 10, maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.storage_path}</td>
+                      <td style={{ ...S.td, fontSize: 10 }}>{a.alt_text || '—'}</td>
+                      <td style={{ ...S.td, fontSize: 10 }}>{new Date(a.created_at).toLocaleDateString()}</td>
+                      <td style={S.td}>
+                        <button onClick={() => deleteAsset(a.id)} style={{ ...S.actionBtn, color: '#EF4444', borderColor: '#EF444440', fontSize: 10 }}>Remove</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             )}
           </div>
         )}
