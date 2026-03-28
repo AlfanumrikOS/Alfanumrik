@@ -878,29 +878,34 @@ export default function SuperAdminPage() {
                   style={{ ...S.searchInput, flex: 1, minWidth: 200 }} />
                 <select value={assignRoleName} onChange={e => setAssignRoleName(e.target.value)} style={S.filterBtn}>
                   <option value="">Select role</option>
-                  {allRoles.map(r => <option key={r.id} value={r.name}>{r.display_name} ({r.name})</option>)}
+                  {Array.isArray(allRoles) && allRoles.map(r => r && r.id ? <option key={r.id} value={r.name}>{r.display_name || r.name}</option> : null)}
                 </select>
                 <button onClick={assignRole} style={{ ...S.quickBtn, background: '#111', color: '#aaa', borderColor: '#333' }}>Assign</button>
               </div>
             </div>
 
             {/* Roles Table */}
-            <h2 style={S.h2}>Available Roles ({allRoles.length})</h2>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 10, marginBottom: 24 }}>
-              {allRoles.map(r => (
-                <div key={r.id} style={{ ...S.card, borderLeft: `3px solid ${r.hierarchy_level >= 90 ? '#fff' : r.hierarchy_level >= 50 ? '#aaa' : '#666'}` }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: '#e0e0e0' }}>{r.display_name}</div>
-                      <code style={{ fontSize: 10, color: '#888' }}>{r.name}</code>
+            <h2 style={S.h2}>Available Roles ({Array.isArray(allRoles) ? allRoles.length : 0})</h2>
+            {Array.isArray(allRoles) && allRoles.length > 0 ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 10, marginBottom: 24 }}>
+                {allRoles.map(r => r && r.id ? (
+                  <div key={r.id} style={{ ...S.card, borderLeft: `3px solid ${(r.hierarchy_level || 0) >= 90 ? '#fff' : (r.hierarchy_level || 0) >= 50 ? '#aaa' : '#666'}` }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#e0e0e0' }}>{r.display_name || r.name || '—'}</div>
+                        <code style={{ fontSize: 10, color: '#888' }}>{r.name || '—'}</code>
+                      </div>
+                      <span style={{ fontSize: 10, color: '#555', background: '#1a1a1a', padding: '2px 6px', borderRadius: 4 }}>Lv {r.hierarchy_level ?? '?'}</span>
                     </div>
-                    <span style={{ fontSize: 10, color: '#555', background: '#1a1a1a', padding: '2px 6px', borderRadius: 4 }}>Lv {r.hierarchy_level}</span>
+                    {r.description && <div style={{ fontSize: 10, color: '#666', marginTop: 4 }}>{r.description}</div>}
                   </div>
-                  {r.description && <div style={{ fontSize: 10, color: '#666', marginTop: 4 }}>{r.description}</div>}
-                  {r.is_system_role && <span style={{ fontSize: 9, color: '#aaa', marginTop: 4, display: 'inline-block' }}>System Role</span>}
-                </div>
-              ))}
-            </div>
+                ) : null)}
+              </div>
+            ) : (
+              <div style={{ ...S.card, marginBottom: 24, textAlign: 'center', color: '#555', padding: 24 }}>
+                {loading ? 'Loading roles...' : 'No roles found. Check API connection.'}
+              </div>
+            )}
 
             {/* User Role Assignments */}
             <h2 style={S.h2}>Current Assignments ({userRolesTotal})</h2>
@@ -916,22 +921,26 @@ export default function SuperAdminPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {userRoles.length === 0 && <tr><td colSpan={5} style={{ ...S.td, textAlign: 'center', color: '#555', padding: 24 }}>No role assignments found</td></tr>}
-                  {userRoles.map(ur => (
+                  {(!Array.isArray(userRoles) || userRoles.length === 0) && (
+                    <tr><td colSpan={5} style={{ ...S.td, textAlign: 'center', color: '#555', padding: 24 }}>
+                      {loading ? 'Loading...' : 'No role assignments found'}
+                    </td></tr>
+                  )}
+                  {Array.isArray(userRoles) && userRoles.map(ur => ur && ur.id ? (
                     <tr key={ur.id}>
-                      <td style={{ ...S.td, fontSize: 10 }}><code>{ur.auth_user_id?.slice(0, 12)}...</code></td>
-                      <td style={S.td}><span style={{ color: '#aaa', fontWeight: 600 }}>{ur.roles?.display_name || ur.roles?.name || (ur.role_id ? ur.role_id.slice(0, 8) : '—')}</span></td>
+                      <td style={{ ...S.td, fontSize: 10 }}><code>{ur.auth_user_id ? ur.auth_user_id.slice(0, 12) + '...' : '—'}</code></td>
+                      <td style={S.td}><span style={{ color: '#aaa', fontWeight: 600 }}>{ur.roles?.display_name || ur.roles?.name || '—'}</span></td>
                       <td style={S.td}>
                         <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: ur.is_active ? '#111' : '#0a0a0a', color: ur.is_active ? '#fff' : '#666' }}>
                           {ur.is_active ? 'Active' : 'Inactive'}
                         </span>
                       </td>
-                      <td style={{ ...S.td, fontSize: 11 }}>{new Date(ur.created_at).toLocaleDateString()}</td>
+                      <td style={{ ...S.td, fontSize: 11 }}>{ur.created_at ? new Date(ur.created_at).toLocaleDateString() : '—'}</td>
                       <td style={S.td}>
                         <button onClick={() => revokeRole(ur.id)} style={{ ...S.actionBtn, color: '#888', borderColor: '#333', fontSize: 10 }}>Revoke</button>
                       </td>
                     </tr>
-                  ))}
+                  ) : null)}
                 </tbody>
               </table>
             </div>
