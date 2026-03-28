@@ -143,9 +143,13 @@ describe('Admin API Route Structure', () => {
     }
   });
 
-  it('no internal/admin route files exist', async () => {
+  it('super-admin API routes are the canonical admin surface', async () => {
     const fs = await import('fs');
-    expect(fs.existsSync('src/app/internal')).toBe(false);
-    expect(fs.existsSync('src/app/api/internal')).toBe(false);
+    // Canonical admin API routes must exist
+    expect(fs.existsSync('src/app/api/super-admin')).toBe(true);
+    // Super admin pages must exist
+    expect(fs.existsSync('src/app/super-admin/page.tsx')).toBe(true);
+    expect(fs.existsSync('src/app/super-admin/login/page.tsx')).toBe(true);
+    expect(fs.existsSync('src/app/super-admin/cms/page.tsx')).toBe(true);
   });
 });
