@@ -1,54 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-// ---------------------------------------------------------------------------
-// Auth
-// ---------------------------------------------------------------------------
-function checkAuth(request: NextRequest): boolean {
-  const adminKey = request.headers.get('x-admin-secret');
-  const secretKey = process.env.SUPER_ADMIN_SECRET;
-  return !!(secretKey && adminKey && adminKey === secretKey);
-}
-
-// ---------------------------------------------------------------------------
-// Supabase REST helpers
-// ---------------------------------------------------------------------------
-function supabaseHeaders(prefer: string = 'count=exact') {
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  return {
-    'apikey': key,
-    'Authorization': `Bearer ${key}`,
-    'Content-Type': 'application/json',
-    'Prefer': prefer,
-  };
-}
-
-function supabaseUrl(table: string, params: string = ''): string {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  return `${url}/rest/v1/${table}${params ? `?${params}` : ''}`;
-}
-
-async function logAudit(action: string, entityId: string, details: Record<string, unknown>) {
-  try {
-    await fetch(supabaseUrl('admin_audit_log'), {
-      method: 'POST',
-      headers: supabaseHeaders('return=minimal'),
-      body: JSON.stringify({
-        action,
-        entity_type: 'feature_flag',
-        entity_id: entityId,
-        details,
-      }),
-    });
-  } catch { /* fire and forget */ }
-}
+import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../../lib/admin-auth';
 
 // ---------------------------------------------------------------------------
 // GET  — list all feature flags (with optional search)
 // ---------------------------------------------------------------------------
 export async function GET(request: NextRequest) {
-  if (!checkAuth(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const auth = await authorizeAdmin(request);
+  if (!auth.authorized) return auth.response;
 
   try {
     const params = new URL(request.url).searchParams;
@@ -60,9 +18,9 @@ export async function GET(request: NextRequest) {
       queryParts.push(`name=ilike.*${encodeURIComponent(search)}*`);
     }
 
-    const res = await fetch(supabaseUrl('feature_flags', queryParts.join('&')), {
+    const res = await fetch(supabaseAdminUrl('feature_flags', queryParts.join('&')), {
       method: 'GET',
-      headers: supabaseHeaders('count=exact'),
+      headers: supabaseAdminHeaders('count=exact'),
     });
 
     if (!res.ok) {
@@ -84,9 +42,8 @@ export async function GET(request: NextRequest) {
 // POST — create a new feature flag
 // ---------------------------------------------------------------------------
 export async function POST(request: NextRequest) {
-  if (!checkAuth(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const auth = await authorizeAdmin(request);
+  if (!auth.authorized) return auth.response;
 
   try {
     const body = await request.json();
@@ -101,9 +58,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Check uniqueness
-    const checkRes = await fetch(supabaseUrl('feature_flags', `select=id&name=eq.${encodeURIComponent(name)}&limit=1`), {
+    const checkRes = await fetch(supabaseAdminUrl('feature_flags', `select=id&name=eq.${encodeURIComponent(name)}&limit=1`), {
       method: 'GET',
-      headers: supabaseHeaders('count=exact'),
+      headers: supabaseAdminHeaders('count=exact'),
     });
 
     if (checkRes.ok) {
@@ -116,9 +73,9 @@ export async function POST(request: NextRequest) {
     const payload: Record<string, unknown> = { name, enabled };
     if (description !== undefined) payload.description = description;
 
-    const res = await fetch(supabaseUrl('feature_flags'), {
+    const res = await fetch(supabaseAdminUrl('feature_flags'), {
       method: 'POST',
-      headers: supabaseHeaders('return=representation'),
+      headers: supabaseAdminHeaders('return=representation'),
       body: JSON.stringify(payload),
     });
 
@@ -138,9 +95,8 @@ export async function POST(request: NextRequest) {
 // PATCH — update an existing feature flag
 // ---------------------------------------------------------------------------
 export async function PATCH(request: NextRequest) {
-  if (!checkAuth(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const auth = await authorizeAdmin(request);
+  if (!auth.authorized) return auth.response;
 
   try {
     const body = await request.json();
@@ -160,9 +116,9 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'No valid fields to update.' }, { status: 400 });
     }
 
-    const res = await fetch(supabaseUrl('feature_flags', `id=eq.${encodeURIComponent(id)}`), {
+    const res = await fetch(supabaseAdminUrl('feature_flags', `id=eq.${encodeURIComponent(id)}`), {
       method: 'PATCH',
-      headers: supabaseHeaders('return=representation'),
+      headers: supabaseAdminHeaders('return=representation'),
       body: JSON.stringify(safe),
     });
 
@@ -176,7 +132,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'No record found with that id.' }, { status: 404 });
     }
 
-    await logAudit('feature_flag.updated', id, { updates: safe });
+    await logAdminAudit(auth, 'feature_flag.updated', 'feature_flag', id, { updates: safe });
     return NextResponse.json({ success: true, data: updated });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 });
@@ -187,9 +143,8 @@ export async function PATCH(request: NextRequest) {
 // DELETE — hard delete a feature flag
 // ---------------------------------------------------------------------------
 export async function DELETE(request: NextRequest) {
-  if (!checkAuth(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const auth = await authorizeAdmin(request);
+  if (!auth.authorized) return auth.response;
 
   try {
     const body = await request.json();
@@ -199,9 +154,9 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Missing "id".' }, { status: 400 });
     }
 
-    const res = await fetch(supabaseUrl('feature_flags', `id=eq.${encodeURIComponent(id)}`), {
+    const res = await fetch(supabaseAdminUrl('feature_flags', `id=eq.${encodeURIComponent(id)}`), {
       method: 'DELETE',
-      headers: supabaseHeaders('return=representation'),
+      headers: supabaseAdminHeaders('return=representation'),
     });
 
     if (!res.ok) {
@@ -214,7 +169,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'No record found with that id.' }, { status: 404 });
     }
 
-    await logAudit('feature_flag.deleted', id, { deleted: deleted[0] });
+    await logAdminAudit(auth, 'feature_flag.deleted', 'feature_flag', id, { deleted: deleted[0] });
     return NextResponse.json({ success: true, data: deleted });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 });

@@ -1,19 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { authorizeAdmin, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../../lib/admin-auth';
 
 // Direct Supabase REST API helper — bypasses JS client entirely
 async function supabaseRest(table: string, params: string = '', method: string = 'GET') {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error('Missing Supabase config');
-
-  const res = await fetch(`${url}/rest/v1/${table}?${params}`, {
+  const res = await fetch(supabaseAdminUrl(table, params), {
     method,
-    headers: {
-      'apikey': key,
-      'Authorization': `Bearer ${key}`,
-      'Content-Type': 'application/json',
-      'Prefer': 'count=exact',
-    },
+    headers: supabaseAdminHeaders('count=exact'),
   });
 
   return res;
@@ -34,16 +26,9 @@ async function countRows(table: string, filter?: string): Promise<number> {
   }
 }
 
-function checkAuth(request: NextRequest): boolean {
-  const adminKey = request.headers.get('x-admin-secret');
-  const secretKey = process.env.SUPER_ADMIN_SECRET;
-  return !!(secretKey && adminKey && adminKey === secretKey);
-}
-
 export async function GET(request: NextRequest) {
-  if (!checkAuth(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const auth = await authorizeAdmin(request);
+  if (!auth.authorized) return auth.response;
 
   try {
     const since24h = new Date(Date.now() - 86400000).toISOString();

@@ -1,31 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-// ---------------------------------------------------------------------------
-// Auth
-// ---------------------------------------------------------------------------
-function checkAuth(request: NextRequest): boolean {
-  const adminKey = request.headers.get('x-admin-secret');
-  const secretKey = process.env.SUPER_ADMIN_SECRET;
-  return !!(secretKey && adminKey && adminKey === secretKey);
-}
-
-// ---------------------------------------------------------------------------
-// Supabase REST helpers
-// ---------------------------------------------------------------------------
-function supabaseHeaders(prefer: string = 'count=exact') {
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  return {
-    'apikey': key,
-    'Authorization': `Bearer ${key}`,
-    'Content-Type': 'application/json',
-    'Prefer': prefer,
-  };
-}
-
-function supabaseUrl(table: string, params: string = ''): string {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  return `${url}/rest/v1/${table}${params ? `?${params}` : ''}`;
-}
+import { authorizeAdmin, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../../lib/admin-auth';
 
 // ---------------------------------------------------------------------------
 // Table / field mapping
@@ -72,9 +46,8 @@ function sanitiseFields(type: ContentType, data: Record<string, unknown>): Recor
 // GET  — list content with filtering & pagination
 // ---------------------------------------------------------------------------
 export async function GET(request: NextRequest) {
-  if (!checkAuth(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const auth = await authorizeAdmin(request);
+  if (!auth.authorized) return auth.response;
 
   try {
     const params = new URL(request.url).searchParams;
@@ -107,9 +80,9 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const res = await fetch(supabaseUrl(table, queryParts.join('&')), {
+    const res = await fetch(supabaseAdminUrl(table, queryParts.join('&')), {
       method: 'GET',
-      headers: supabaseHeaders('count=exact'),
+      headers: supabaseAdminHeaders('count=exact'),
     });
 
     if (!res.ok) {
@@ -131,9 +104,8 @@ export async function GET(request: NextRequest) {
 // POST — create new content
 // ---------------------------------------------------------------------------
 export async function POST(request: NextRequest) {
-  if (!checkAuth(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const auth = await authorizeAdmin(request);
+  if (!auth.authorized) return auth.response;
 
   try {
     const body = await request.json();
@@ -154,9 +126,9 @@ export async function POST(request: NextRequest) {
 
     const table = TABLE_MAP[type];
 
-    const res = await fetch(supabaseUrl(table), {
+    const res = await fetch(supabaseAdminUrl(table), {
       method: 'POST',
-      headers: supabaseHeaders('return=representation'),
+      headers: supabaseAdminHeaders('return=representation'),
       body: JSON.stringify(safe),
     });
 
@@ -176,9 +148,8 @@ export async function POST(request: NextRequest) {
 // PATCH — update existing content
 // ---------------------------------------------------------------------------
 export async function PATCH(request: NextRequest) {
-  if (!checkAuth(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const auth = await authorizeAdmin(request);
+  if (!auth.authorized) return auth.response;
 
   try {
     const body = await request.json();
@@ -199,9 +170,9 @@ export async function PATCH(request: NextRequest) {
 
     const table = TABLE_MAP[type];
 
-    const res = await fetch(supabaseUrl(table, `id=eq.${encodeURIComponent(id)}`), {
+    const res = await fetch(supabaseAdminUrl(table, `id=eq.${encodeURIComponent(id)}`), {
       method: 'PATCH',
-      headers: supabaseHeaders('return=representation'),
+      headers: supabaseAdminHeaders('return=representation'),
       body: JSON.stringify(safe),
     });
 
@@ -225,9 +196,8 @@ export async function PATCH(request: NextRequest) {
 // DELETE — soft delete (set is_active = false)
 // ---------------------------------------------------------------------------
 export async function DELETE(request: NextRequest) {
-  if (!checkAuth(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const auth = await authorizeAdmin(request);
+  if (!auth.authorized) return auth.response;
 
   try {
     const body = await request.json();
@@ -243,9 +213,9 @@ export async function DELETE(request: NextRequest) {
 
     const table = TABLE_MAP[type];
 
-    const res = await fetch(supabaseUrl(table, `id=eq.${encodeURIComponent(id)}`), {
+    const res = await fetch(supabaseAdminUrl(table, `id=eq.${encodeURIComponent(id)}`), {
       method: 'PATCH',
-      headers: supabaseHeaders('return=representation'),
+      headers: supabaseAdminHeaders('return=representation'),
       body: JSON.stringify({ is_active: false }),
     });
 

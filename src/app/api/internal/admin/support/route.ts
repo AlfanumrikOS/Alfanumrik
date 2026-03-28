@@ -1,41 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../../lib/admin-auth';
 
 // ---------------------------------------------------------------------------
-// Auth
+// Supabase REST helper
 // ---------------------------------------------------------------------------
-function checkAuth(request: NextRequest): boolean {
-  const adminKey = request.headers.get('x-admin-secret');
-  const secretKey = process.env.SUPER_ADMIN_SECRET;
-  return !!(secretKey && adminKey && adminKey === secretKey);
-}
-
-// ---------------------------------------------------------------------------
-// Supabase REST helpers
-// ---------------------------------------------------------------------------
-function supabaseHeaders(prefer: string = 'count=exact') {
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  return {
-    'apikey': key,
-    'Authorization': `Bearer ${key}`,
-    'Content-Type': 'application/json',
-    'Prefer': prefer,
-  };
-}
-
-function supabaseUrl(table: string, params: string = ''): string {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  return `${url}/rest/v1/${table}${params ? `?${params}` : ''}`;
-}
-
 async function supabaseRest(
   table: string,
   params: string,
   options: { method?: string; prefer?: string; body?: unknown } = {},
 ) {
   const { method = 'GET', prefer = 'count=exact', body } = options;
-  const res = await fetch(supabaseUrl(table, params), {
+  const res = await fetch(supabaseAdminUrl(table, params), {
     method,
-    headers: supabaseHeaders(prefer),
+    headers: supabaseAdminHeaders(prefer),
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
   return res;
@@ -45,9 +22,8 @@ async function supabaseRest(
 // GET  — support query actions
 // ---------------------------------------------------------------------------
 export async function GET(request: NextRequest) {
-  if (!checkAuth(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const auth = await authorizeAdmin(request);
+  if (!auth.authorized) return auth.response;
 
   try {
     const params = new URL(request.url).searchParams;
@@ -165,9 +141,8 @@ export async function GET(request: NextRequest) {
 // POST — support intervention actions
 // ---------------------------------------------------------------------------
 export async function POST(request: NextRequest) {
-  if (!checkAuth(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const auth = await authorizeAdmin(request);
+  if (!auth.authorized) return auth.response;
 
   try {
     const body = await request.json();
@@ -264,19 +239,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'No record found with that id.' }, { status: 404 });
       }
 
-      // Log to audit_logs
-      await supabaseRest('audit_logs', '', {
-        method: 'POST',
-        prefer: 'return=minimal',
-        body: {
-          action: 'fix_relationship',
-          resource_type: type,
-          resource_id: id,
-          details: { updates: safe },
-          status: 'success',
-          created_at: new Date().toISOString(),
-        },
-      });
+      // Log to audit trail
+      await logAdminAudit(auth, 'fix_relationship', type, id, { updates: safe });
 
       return NextResponse.json({ success: true, data: updated });
     }
