@@ -920,7 +920,7 @@ export default function SuperAdminPage() {
                   {userRoles.map(ur => (
                     <tr key={ur.id}>
                       <td style={{ ...S.td, fontSize: 10 }}><code>{ur.auth_user_id?.slice(0, 12)}...</code></td>
-                      <td style={S.td}><span style={{ color: '#aaa', fontWeight: 600 }}>{ur.roles?.display_name || ur.roles?.name || ur.role_id.slice(0, 8)}</span></td>
+                      <td style={S.td}><span style={{ color: '#aaa', fontWeight: 600 }}>{ur.roles?.display_name || ur.roles?.name || (ur.role_id ? ur.role_id.slice(0, 8) : '—')}</span></td>
                       <td style={S.td}>
                         <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: ur.is_active ? '#111' : '#0a0a0a', color: ur.is_active ? '#fff' : '#666' }}>
                           {ur.is_active ? 'Active' : 'Inactive'}

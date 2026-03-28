@@ -72,26 +72,30 @@ export async function GET(request: NextRequest) {
       supabaseRest('quiz_sessions', `select=student_id&created_at=gte.${since1d}&limit=50000`),
       supabaseRest('quiz_sessions', `select=student_id&created_at=gte.${since7d}&limit=50000`),
       supabaseRest('quiz_sessions', `select=student_id&created_at=gte.${since30d}&limit=50000`),
-      // 7. Content stats: chapters count (HEAD for count)
-      supabaseRest('chapters', `select=id&limit=0`, 'HEAD'),
-      supabaseRest('topics', `select=id&limit=0`, 'HEAD'),
-      supabaseRest('question_bank', `select=id&limit=0`, 'HEAD'),
+      // 7. Content stats (curriculum_topics is the actual table)
+      supabaseRest('curriculum_topics', `select=id&parent_topic_id=is.null&deleted_at=is.null&limit=0`, 'HEAD'),
+      supabaseRest('curriculum_topics', `select=id&deleted_at=is.null&limit=0`, 'HEAD'),
+      supabaseRest('question_bank', `select=id&deleted_at=is.null&limit=0`, 'HEAD'),
       // 8. Top students by XP
       supabaseRest('students', `select=id,name,email,grade,xp_total,streak_days,avatar_url&order=xp_total.desc.nullslast&limit=10`),
     ]);
 
-    // Parse JSON responses
+    // Parse JSON responses — safe fallback to empty array if any query failed
+    const safeJson = async <T>(res: Response): Promise<T[]> => {
+      try { const d = await res.json(); return Array.isArray(d) ? d : []; }
+      catch { return []; }
+    };
     const [signups, quizzes, chats, subjectRows, planRows, active1dRows, active7dRows, active30dRows, topStudents] =
       await Promise.all([
-        signupsRes.json() as Promise<{ created_at: string }[]>,
-        quizzesRes.json() as Promise<{ created_at: string }[]>,
-        chatsRes.json() as Promise<{ created_at: string }[]>,
-        subjectsRes.json() as Promise<{ subject: string }[]>,
-        plansRes.json() as Promise<{ subscription_plan: string | null }[]>,
-        active1dRes.json() as Promise<{ student_id: string }[]>,
-        active7dRes.json() as Promise<{ student_id: string }[]>,
-        active30dRes.json() as Promise<{ student_id: string }[]>,
-        topStudentsRes.json() as Promise<{ id: string; name: string; email: string; grade: string; xp_total: number; streak_days: number; avatar_url: string | null }[]>,
+        safeJson<{ created_at: string }>(signupsRes),
+        safeJson<{ created_at: string }>(quizzesRes),
+        safeJson<{ created_at: string }>(chatsRes),
+        safeJson<{ subject: string }>(subjectsRes),
+        safeJson<{ subscription_plan: string | null }>(plansRes),
+        safeJson<{ student_id: string }>(active1dRes),
+        safeJson<{ student_id: string }>(active7dRes),
+        safeJson<{ student_id: string }>(active30dRes),
+        safeJson<{ id: string; name: string; email: string; grade: string; xp_total: number; streak_days: number; avatar_url: string | null }>(topStudentsRes),
       ]);
 
     // --- 1. Engagement: daily breakdown ---
@@ -127,13 +131,13 @@ export async function GET(request: NextRequest) {
       .map(([plan, count]) => ({ plan, count }))
       .sort((a, b) => b.count - a.count);
 
-    // --- 4. Retention: unique active students ---
+    // --- 4. Retention: unique active students (array format for frontend .map()) ---
     const uniqueCount = (rows: { student_id: string }[]) => new Set(rows.map((r) => r.student_id)).size;
-    const retention = {
-      active_1d: uniqueCount(active1dRows),
-      active_7d: uniqueCount(active7dRows),
-      active_30d: uniqueCount(active30dRows),
-    };
+    const retention = [
+      { period: '24h', count: uniqueCount(active1dRows) },
+      { period: '7d', count: uniqueCount(active7dRows) },
+      { period: '30d', count: uniqueCount(active30dRows) },
+    ];
 
     // --- 5. Content stats ---
     const parseCount = (res: Response): number => {
