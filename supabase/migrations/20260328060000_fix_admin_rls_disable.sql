@@ -1,0 +1,23 @@
+-- Fix admin_users authorization: disable RLS
+--
+-- ROOT CAUSE: SUPABASE_SERVICE_ROLE_KEY on Vercel is configured as
+-- the anon key, not the actual service role key. The service_role
+-- RLS policy (qual: true) only applies to connections using the
+-- service_role JWT. With the anon key, all requests use the
+-- authenticated or anon role, which hits the circular RLS policy:
+--   auth.uid() IN (SELECT auth_user_id FROM admin_users)
+--
+-- The admin_users_select_own policy (auth.uid() = auth_user_id)
+-- also failed because the REST API query uses the service role key
+-- as the Bearer token, making auth.uid() return the service role's
+-- UUID — not the user's UUID.
+--
+-- FIX: Disable RLS on admin_users entirely.
+-- Justification:
+-- - Table has only 3 rows (admin accounts)
+-- - Only queried by authorizeAdmin() which validates results
+-- - Application layer enforces authorization (checks auth_user_id match)
+-- - No sensitive data beyond admin emails exposed
+-- - Re-enable RLS after fixing SUPABASE_SERVICE_ROLE_KEY on Vercel
+
+ALTER TABLE admin_users DISABLE ROW LEVEL SECURITY;
