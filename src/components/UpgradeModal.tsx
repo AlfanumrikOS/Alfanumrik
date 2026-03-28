@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useCheckout } from '@/hooks/useCheckout';
+import { SubscriptionConfirm } from '@/components/SubscriptionConfirm';
 import Link from 'next/link';
 
 interface UpgradeModalProps {
@@ -11,6 +12,12 @@ interface UpgradeModalProps {
   currentLimit: number;
   onUpgradeSuccess?: () => void;
 }
+
+const PRICE_MAP: Record<string, { monthly: number; yearly: number }> = {
+  starter: { monthly: 299, yearly: 2399 },
+  pro: { monthly: 699, yearly: 5599 },
+  unlimited: { monthly: 1499, yearly: 11999 },
+};
 
 const PLANS = [
   {
@@ -47,6 +54,7 @@ export function UpgradeModal({ isOpen, onClose, feature, currentLimit, onUpgrade
   const { checkout, loading, status, error } = useCheckout();
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
   const [success, setSuccess] = useState(false);
+  const [confirmPlan, setConfirmPlan] = useState<typeof PLANS[number] | null>(null);
 
   if (!isOpen) return null;
 
@@ -127,11 +135,7 @@ export function UpgradeModal({ isOpen, onClose, feature, currentLimit, onUpgrade
                 </div>
               </div>
               <button
-                onClick={() => checkout({
-                  planCode: plan.code,
-                  billingCycle,
-                  onSuccess: () => { setSuccess(true); import('@/lib/sounds').then(({ playSound }) => playSound('upgrade')); },
-                })}
+                onClick={() => setConfirmPlan(plan)}
                 disabled={loading}
                 className="px-4 py-2 rounded-xl text-xs font-bold text-white shrink-0"
                 style={{ background: loading ? '#ccc' : `linear-gradient(135deg, ${plan.color}, ${plan.color}cc)` }}>
@@ -159,6 +163,31 @@ export function UpgradeModal({ isOpen, onClose, feature, currentLimit, onUpgrade
           </button>
         </div>
       </div>
+
+      {/* Subscription confirmation dialog */}
+      <SubscriptionConfirm
+        isOpen={!!confirmPlan}
+        planName={confirmPlan?.name || ''}
+        planCode={confirmPlan?.code || ''}
+        priceMonthly={PRICE_MAP[confirmPlan?.code || '']?.monthly || 0}
+        priceYearly={PRICE_MAP[confirmPlan?.code || '']?.yearly || 0}
+        billingCycle={billingCycle}
+        loading={loading}
+        onCancel={() => setConfirmPlan(null)}
+        onConfirm={() => {
+          if (!confirmPlan) return;
+          checkout({
+            planCode: confirmPlan.code,
+            billingCycle,
+            onSuccess: () => {
+              setSuccess(true);
+              setConfirmPlan(null);
+              import('@/lib/sounds').then(({ playSound }) => playSound('upgrade'));
+            },
+            onError: () => setConfirmPlan(null),
+          });
+        }}
+      />
     </div>
   );
 }
