@@ -81,12 +81,47 @@ export async function getSubjects() {
   return data ?? [];
 }
 
-/* ── Feature flags ── */
-export async function getFeatureFlags() {
-  const { data, error } = await supabase.from('feature_flags').select('flag_name, is_enabled');
+/* ── Feature flags ──
+ * Loads flags with scoping awareness.
+ *
+ * Precedence (from feature-flags.ts):
+ * 1. Flag must exist and be globally enabled (is_enabled = true)
+ * 2. If target_environments is set, current env must match
+ * 3. If target_roles is set, user role must match
+ * 4. If target_institutions is set, user school must match
+ * 5. If all scoping passes (or is empty = global), flag is ON
+ *
+ * Client-side: evaluates with available context (role from AuthContext).
+ * Server-side: use isFeatureEnabled() from lib/feature-flags.ts directly.
+ */
+export async function getFeatureFlags(context?: { role?: string; institutionId?: string }) {
+  const { data, error } = await supabase.from('feature_flags')
+    .select('flag_name, is_enabled, target_roles, target_environments, target_institutions');
   if (error) console.error('getFeatureFlags:', error.message);
+
+  const env = typeof window === 'undefined'
+    ? (process.env.VERCEL_ENV || process.env.NODE_ENV || 'production')
+    : 'production'; // Client assumes production
+
   const flags: Record<string, boolean> = {};
-  (data ?? []).forEach((f) => { flags[f.flag_name] = f.is_enabled; });
+  (data ?? []).forEach((f: { flag_name: string; is_enabled: boolean; target_roles: string[] | null; target_environments: string[] | null; target_institutions: string[] | null }) => {
+    let enabled = f.is_enabled;
+
+    // Environment scoping
+    if (enabled && f.target_environments && f.target_environments.length > 0) {
+      if (!f.target_environments.includes(env)) enabled = false;
+    }
+    // Role scoping
+    if (enabled && f.target_roles && f.target_roles.length > 0) {
+      if (!context?.role || !f.target_roles.includes(context.role)) enabled = false;
+    }
+    // Institution scoping
+    if (enabled && f.target_institutions && f.target_institutions.length > 0) {
+      if (!context?.institutionId || !f.target_institutions.includes(context.institutionId)) enabled = false;
+    }
+
+    flags[f.flag_name] = enabled;
+  });
   return flags;
 }
 

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../constants/app_colors.dart';
 
 /// Alfanumrik Material theme — warm scholarly aesthetic.
@@ -7,13 +6,10 @@ import '../constants/app_colors.dart';
 class AppTheme {
   AppTheme._();
 
-  static final _textTheme = GoogleFonts.soraTextTheme();
-  static final _fontFamily = GoogleFonts.sora().fontFamily;
-
   static ThemeData get light => ThemeData(
         useMaterial3: true,
         brightness: Brightness.light,
-        textTheme: _textTheme,
+        fontFamily: 'Sora',
         scaffoldBackgroundColor: AppColors.background,
         colorScheme: const ColorScheme.light(
           primary: AppColors.primary,
@@ -24,14 +20,14 @@ class AppTheme {
           onSecondary: Colors.white,
           onSurface: AppColors.textPrimary,
         ),
-        appBarTheme: AppBarTheme(
+        appBarTheme: const AppBarTheme(
           elevation: 0,
           scrolledUnderElevation: 1,
           backgroundColor: AppColors.background,
           foregroundColor: AppColors.textPrimary,
           centerTitle: false,
           titleTextStyle: TextStyle(
-            fontFamily: _fontFamily,
+            fontFamily: 'Sora',
             fontSize: 18,
             fontWeight: FontWeight.w600,
             color: AppColors.textPrimary,
@@ -55,8 +51,8 @@ class AppTheme {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
             ),
-            textStyle: TextStyle(
-              fontFamily: _fontFamily,
+            textStyle: const TextStyle(
+              fontFamily: 'Sora',
               fontSize: 15,
               fontWeight: FontWeight.w600,
             ),

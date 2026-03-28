@@ -20,7 +20,6 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
   bool _isYearly = true;
   bool _isLoading = false;
   String? _error;
-  String _selectedPlanCode = '';
   late Razorpay _razorpay;
 
   @override
@@ -39,11 +38,9 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
   }
 
   Future<void> _checkout(PlanInfo plan) async {
-    if (_isLoading) return;
     final student = ref.read(studentProvider).valueOrNull;
     if (student == null) return;
 
-    _selectedPlanCode = plan.code;
     setState(() { _isLoading = true; _error = null; });
 
     final billingCycle = _isYearly ? 'yearly' : 'monthly';
@@ -89,7 +86,7 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
       orderId: response.orderId ?? '',
       paymentId: response.paymentId ?? '',
       signature: response.signature ?? '',
-      planCode: _selectedPlanCode,
+      planCode: '', // Extracted from order notes
       billingCycle: _isYearly ? 'yearly' : 'monthly',
     );
 
@@ -155,7 +152,7 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
                           color: !_isYearly ? AppColors.surface : Colors.transparent,
                           borderRadius: BorderRadius.circular(10),
                           boxShadow: !_isYearly
-                              ? [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4)]
+                              ? [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4)]
                               : null,
                         ),
                         alignment: Alignment.center,
@@ -179,7 +176,7 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
                           color: _isYearly ? AppColors.surface : Colors.transparent,
                           borderRadius: BorderRadius.circular(10),
                           boxShadow: _isYearly
-                              ? [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4)]
+                              ? [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4)]
                               : null,
                         ),
                         alignment: Alignment.center,
@@ -198,7 +195,7 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
-                                color: AppColors.success.withOpacity(0.1),
+                                color: AppColors.success.withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: const Text(
@@ -226,7 +223,7 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
                 padding: const EdgeInsets.all(12),
                 margin: const EdgeInsets.only(bottom: 16),
                 decoration: BoxDecoration(
-                  color: AppColors.error.withOpacity(0.08),
+                  color: AppColors.error.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(_error!, style: const TextStyle(color: AppColors.error, fontSize: 13)),

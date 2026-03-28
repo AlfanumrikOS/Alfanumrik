@@ -10,7 +10,7 @@ class ApiConstants {
 
   static const String supabaseAnonKey = String.fromEnvironment(
     'SUPABASE_ANON_KEY',
-    defaultValue: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNoa3R5b3hxaHVuZGx2a2l3Z3V1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDI4MDY2NzAsImV4cCI6MjA1ODM4MjY3MH0.sJFKgyB1X_yeByVh-fhyFBkVd8tvqLVqfr2gLITKvBs',
+    defaultValue: '', // Must be provided at build time
   );
 
   static const String razorpayKeyId = String.fromEnvironment(
