@@ -3,13 +3,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-/* ═══════════════════════════════════════════════════════════════
-   ALFANUMRIK CMS — Content Management System for Super Admin
-   Hierarchy: Board → Grade → Subject → Chapter → Topic
-   Workflow: Draft → Review → Published → Archived
-   Protected via Supabase session + admin_users DB verification.
-   ═══════════════════════════════════════════════════════════════ */
-
 type View = 'overview' | 'topics' | 'questions' | 'versions';
 
 interface Subject { id: string; code: string; name: string; icon: string; color: string; is_active: boolean; }
@@ -316,7 +309,6 @@ export default function CmsPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ fontSize: 20 }}>📚</span>
           <div>
-            <div style={{ fontSize: 15, fontWeight: 800, color: '#fff' }}>ALFANUMRIK CMS</div>
             <div style={{ fontSize: 10, color: '#555', letterSpacing: 2, textTransform: 'uppercase' }}>Content Management</div>
           </div>
         </div>
@@ -347,7 +339,7 @@ export default function CmsPage() {
         {loading && <div style={{ fontSize: 11, color: '#fff', marginBottom: 12 }}>Loading...</div>}
         {error && <div style={{ padding: '8px 14px', borderRadius: 8, background: '#2a1010', color: '#888', fontSize: 12, marginBottom: 12, border: '1px solid #3a1515' }}>{error} <button onClick={() => setError('')} style={{ color: '#888', background: 'none', border: 'none', cursor: 'pointer', marginLeft: 8 }}>✕</button></div>}
 
-        {/* ═══ OVERVIEW ═══ */}
+        {/* Overview */}
         {view === 'overview' && stats && (
           <div>
             <h2 style={S.h2}>Content Overview</h2>
@@ -389,7 +381,7 @@ export default function CmsPage() {
           </div>
         )}
 
-        {/* ═══ TOPICS ═══ */}
+        {/* Topics */}
         {view === 'topics' && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
@@ -509,7 +501,7 @@ export default function CmsPage() {
           </div>
         )}
 
-        {/* ═══ QUESTIONS ═══ */}
+        {/* Questions */}
         {view === 'questions' && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
@@ -634,7 +626,7 @@ export default function CmsPage() {
           </div>
         )}
 
-        {/* ═══ VERSION HISTORY ═══ */}
+        {/* Version History */}
         {view === 'versions' && (
           <div>
             <h2 style={S.h2}>Version History — {versionEntityType} {versionEntityId.slice(0, 8)}</h2>
