@@ -191,9 +191,8 @@ export default function SuperAdminPage() {
 
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [adminName, setAdminName] = useState('');
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  const [supabase] = useState(() =>
+    createClient(process.env.NEXT_PUBLIC_SUPABASE_URL || '', process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '')
   );
 
   // Get Supabase session token for API calls
