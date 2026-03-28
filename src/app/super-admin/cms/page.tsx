@@ -84,7 +84,9 @@ export default function CmsPage() {
   const [versionEntityType, setVersionEntityType] = useState('');
   const [versionEntityId, setVersionEntityId] = useState('');
 
-  const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
+  const [supabase] = useState(() =>
+    createClient(process.env.NEXT_PUBLIC_SUPABASE_URL || '', process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '')
+  );
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
