@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../lib/admin-auth';
 
-// ---------------------------------------------------------------------------
-// Supabase REST helper
-// ---------------------------------------------------------------------------
 async function supabaseRest(
   table: string,
   params: string,
@@ -18,9 +15,7 @@ async function supabaseRest(
   return res;
 }
 
-// ---------------------------------------------------------------------------
 // GET  — support query actions
-// ---------------------------------------------------------------------------
 export async function GET(request: NextRequest) {
   const auth = await authorizeAdmin(request);
   if (!auth.authorized) return auth.response;
@@ -137,9 +132,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// ---------------------------------------------------------------------------
 // POST — support intervention actions
-// ---------------------------------------------------------------------------
 export async function POST(request: NextRequest) {
   const auth = await authorizeAdmin(request);
   if (!auth.authorized) return auth.response;
