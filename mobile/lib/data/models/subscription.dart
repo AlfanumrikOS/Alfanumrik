@@ -4,8 +4,8 @@ class PlanInfo extends Equatable {
   final String code;
   final String name;
   final String icon;
-  final int priceMonthly; // in paise
-  final int priceYearly; // in paise
+  final int priceMonthly; // in rupees (INR)
+  final int priceYearly; // in rupees (INR)
   final List<String> benefits;
   final bool isPopular;
 
@@ -19,10 +19,9 @@ class PlanInfo extends Equatable {
     this.isPopular = false,
   });
 
-  String get monthlyDisplay => '₹${priceMonthly ~/ 100}/mo';
-  String get yearlyDisplay => '₹${priceYearly ~/ 100}/yr';
-  String get yearlyMonthlyDisplay =>
-      '₹${(priceYearly ~/ 12) ~/ 100}/mo';
+  String get monthlyDisplay => '₹$priceMonthly/mo';
+  String get yearlyDisplay => '₹$priceYearly/yr';
+  String get yearlyMonthlyDisplay => '₹${priceYearly ~/ 12}/mo';
 
   @override
   List<Object?> get props => [code, name];
@@ -68,8 +67,8 @@ class Plans {
       code: 'starter',
       name: 'Starter',
       icon: '🌱',
-      priceMonthly: 29900, // ₹299
-      priceYearly: 239900, // ₹2,399
+      priceMonthly: 299,
+      priceYearly: 2399,
       benefits: [
         '30 Foxy chats/day',
         '20 quizzes/day',
@@ -81,8 +80,8 @@ class Plans {
       code: 'pro',
       name: 'Pro',
       icon: '⚡',
-      priceMonthly: 69900, // ₹699
-      priceYearly: 559900, // ₹5,599
+      priceMonthly: 699,
+      priceYearly: 5599,
       isPopular: true,
       benefits: [
         '100 Foxy chats/day',
@@ -96,8 +95,8 @@ class Plans {
       code: 'unlimited',
       name: 'Unlimited',
       icon: '👑',
-      priceMonthly: 149900, // ₹1,499
-      priceYearly: 1199900, // ₹11,999
+      priceMonthly: 1499,
+      priceYearly: 11999,
       benefits: [
         'Unlimited Foxy chats',
         'Unlimited quizzes',

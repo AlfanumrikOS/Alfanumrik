@@ -164,7 +164,7 @@ export async function POST(request: NextRequest) {
       plan_code,
       billing_cycle,
       currency: 'INR',
-      amount: priceRupees * 100, // store in paisa for consistency with Razorpay
+      amount: priceRupees, // store in rupees (INR)
       status: 'captured',
       payment_method: 'razorpay',
     });

@@ -52,7 +52,7 @@ ALTER TABLE students
 ALTER TABLE students
   ADD CONSTRAINT chk_student_plan_code CHECK (subscription_plan IN ('free', 'starter', 'pro', 'unlimited'));
 
--- 8. payment_history: ensure amount is always positive (paisa)
+-- 8. payment_history: ensure amount is always positive (stored in rupees INR)
 ALTER TABLE payment_history
   ADD CONSTRAINT chk_payment_amount_positive CHECK (amount > 0);
 

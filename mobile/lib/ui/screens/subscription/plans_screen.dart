@@ -262,7 +262,7 @@ class _PlanCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final price = isYearly ? plan.priceYearly : plan.priceMonthly;
-    final displayPrice = '₹${price ~/ 100}';
+    final displayPrice = '₹$price';
     final period = isYearly ? '/year' : '/month';
 
     return Container(

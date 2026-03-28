@@ -71,9 +71,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Plan not available' }, { status: 400 });
     }
 
-    // DB stores rupees; Razorpay needs paisa (smallest currency unit)
+    // Resolve canonical price in rupees from DB
     const priceRupees = billing_cycle === 'yearly' ? plan.price_yearly : plan.price_monthly;
-    const amount = priceRupees * 100;
+    // Convert to paisa ONLY for Razorpay API (this is the sole conversion point)
+    const razorpayAmount = priceRupees * 100;
 
     // Create Razorpay order
     const authString = Buffer.from(`${razorpayKey}:${razorpaySecret}`).toString('base64');
@@ -84,7 +85,7 @@ export async function POST(request: NextRequest) {
         'Authorization': `Basic ${authString}`,
       },
       body: JSON.stringify({
-        amount,
+        amount: razorpayAmount,
         currency: 'INR',
         receipt: `${user.id.substring(0, 8)}_${plan_code}_${Date.now().toString(36)}`,
         notes: {
@@ -107,7 +108,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       order_id: order.id,
-      amount: order.amount,
+      amount: order.amount, // paisa — required by Razorpay checkout widget
+      price_inr: priceRupees, // rupees — for display only
       currency: order.currency,
       key: razorpayKey,
       plan_code,
