@@ -20,9 +20,7 @@ type Feature = 'foxy_chat' | 'quiz';
 const PLAN_LIMITS: Record<string, Record<Feature, number>> = {
   free:      { foxy_chat: 5,      quiz: 5 },
   starter:   { foxy_chat: 30,     quiz: 20 },
-  basic:     { foxy_chat: 30,     quiz: 20 },
   pro:       { foxy_chat: 100,    quiz: 999999 },
-  premium:   { foxy_chat: 100,    quiz: 999999 },
   unlimited: { foxy_chat: 999999, quiz: 999999 },
 };
 

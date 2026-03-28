@@ -40,10 +40,10 @@ Alfanumrik is an AI-powered learning app built for Indian CBSE students from Cla
 • Plan status and upgrade options
 
 💎 FLEXIBLE PLANS
-• Free plan: 5 Foxy chats + 3 quizzes per day
-• Starter (₹99/mo): 25 chats + 20 quizzes
-• Pro (₹199/mo): 100 chats + unlimited quizzes
-• Ultimate (₹299/mo): Unlimited everything
+• Free plan: 5 Foxy chats + 5 quizzes per day
+• Starter (₹299/mo): 30 chats + 20 quizzes
+• Pro (₹699/mo): 100 chats + unlimited quizzes
+• Unlimited (₹1,499/mo): Unlimited everything
 
 🔒 SAFE & LIGHTWEIGHT
 • No ads, no distractions

@@ -126,10 +126,10 @@ describe('Payment flow — Feature type validation', () => {
 describe('Payment flow — UpgradeModal plan codes match usage.ts plans', () => {
   it('UpgradeModal exports plan codes that exist in PLAN_LIMITS', async () => {
     // UpgradeModal PLANS use codes: starter, pro, unlimited
-    // PLAN_LIMITS keys include: free, starter, basic, pro, premium, unlimited
+    // PLAN_LIMITS keys: free, starter, pro, unlimited
     // All UpgradeModal codes must be a subset of PLAN_LIMITS keys.
     const upgradeModalPlanCodes = ['starter', 'pro', 'unlimited'];
-    const planLimitsKeys = ['free', 'starter', 'basic', 'pro', 'premium', 'unlimited'];
+    const planLimitsKeys = ['free', 'starter', 'pro', 'unlimited'];
 
     for (const code of upgradeModalPlanCodes) {
       expect(planLimitsKeys).toContain(code);

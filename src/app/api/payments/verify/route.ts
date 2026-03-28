@@ -144,13 +144,18 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Record payment — ignore duplicate constraint (webhook may have already inserted)
-    const PRICING: Record<string, Record<string, number>> = {
-      starter: { monthly: 29900, yearly: 239900 },
-      pro: { monthly: 69900, yearly: 559900 },
-      unlimited: { monthly: 149900, yearly: 1199900 },
-    };
+    // Get amount from subscription_plans (source of truth)
+    const { data: planRow } = await admin
+      .from('subscription_plans')
+      .select('price_monthly, price_yearly')
+      .eq('plan_code', plan_code)
+      .single();
 
+    const priceRupees = planRow
+      ? (billing_cycle === 'yearly' ? planRow.price_yearly : planRow.price_monthly)
+      : 0;
+
+    // Record payment — ignore duplicate constraint (webhook may have already inserted)
     const { error: insertErr } = await admin.from('payment_history').insert({
       student_id: studentId,
       razorpay_payment_id,
@@ -159,7 +164,7 @@ export async function POST(request: NextRequest) {
       plan_code,
       billing_cycle,
       currency: 'INR',
-      amount: PRICING[plan_code][billing_cycle],
+      amount: priceRupees, // store in rupees (INR)
       status: 'captured',
       payment_method: 'razorpay',
     });

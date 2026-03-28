@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
               plan_code: planCode,
               billing_cycle: billingCycle,
               currency: payment.currency || 'INR',
-              amount: payment.amount,
+              amount: Math.round((payment.amount || 0) / 100), // Razorpay sends paisa; store as rupees
               status: 'captured',
               payment_method: 'razorpay',
               notes: { source: 'webhook' },
@@ -145,7 +145,7 @@ export async function POST(request: NextRequest) {
             plan_code: payment.notes?.plan_code || 'unknown',
             billing_cycle: payment.notes?.billing_cycle || 'monthly',
             currency: payment.currency || 'INR',
-            amount: payment.amount || 0,
+            amount: Math.round((payment.amount || 0) / 100), // Razorpay sends paisa; store as rupees
             status: 'failed',
             payment_method: 'razorpay',
             notes: { source: 'webhook', error: payment.error_description },

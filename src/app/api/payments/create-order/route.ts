@@ -41,22 +41,40 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid billing cycle' }, { status: 400 });
     }
 
-    // Get plan from DB
     const razorpayKey = process.env.RAZORPAY_KEY_ID;
     const razorpaySecret = process.env.RAZORPAY_KEY_SECRET;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!razorpayKey || !razorpaySecret) {
       return NextResponse.json({ error: 'Payment gateway not configured' }, { status: 503 });
     }
+    if (!serviceKey) {
+      console.error('create-order: MISSING SUPABASE_SERVICE_ROLE_KEY');
+      return NextResponse.json({ error: 'Payment system not configured' }, { status: 503 });
+    }
 
-    // Plan pricing (in paisa — Razorpay uses smallest currency unit)
-    const PRICING: Record<string, { monthly: number; yearly: number }> = {
-      starter:   { monthly: 29900,   yearly: 239900 },   // ₹299/mo, ₹2399/yr
-      pro:       { monthly: 69900,   yearly: 559900 },   // ₹699/mo, ₹5599/yr
-      unlimited: { monthly: 149900,  yearly: 1199900 },  // ₹1499/mo, ₹11999/yr
-    };
+    // Read pricing from subscription_plans table (source of truth)
+    const { createClient } = await import('@supabase/supabase-js');
+    const admin = createClient(supabaseUrl, serviceKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
 
-    const amount = PRICING[plan_code][billing_cycle as 'monthly' | 'yearly'];
+    const { data: plan, error: planErr } = await admin
+      .from('subscription_plans')
+      .select('price_monthly, price_yearly')
+      .eq('plan_code', plan_code)
+      .eq('is_active', true)
+      .single();
+
+    if (planErr || !plan) {
+      console.error('create-order: plan not found in DB:', plan_code, planErr?.message);
+      return NextResponse.json({ error: 'Plan not available' }, { status: 400 });
+    }
+
+    // Resolve canonical price in rupees from DB
+    const priceRupees = billing_cycle === 'yearly' ? plan.price_yearly : plan.price_monthly;
+    // Convert to paisa ONLY for Razorpay API (this is the sole conversion point)
+    const razorpayAmount = priceRupees * 100;
 
     // Create Razorpay order
     const authString = Buffer.from(`${razorpayKey}:${razorpaySecret}`).toString('base64');
@@ -67,7 +85,7 @@ export async function POST(request: NextRequest) {
         'Authorization': `Basic ${authString}`,
       },
       body: JSON.stringify({
-        amount,
+        amount: razorpayAmount,
         currency: 'INR',
         receipt: `${user.id.substring(0, 8)}_${plan_code}_${Date.now().toString(36)}`,
         notes: {
@@ -90,7 +108,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       order_id: order.id,
-      amount: order.amount,
+      amount: order.amount, // paisa — required by Razorpay checkout widget
+      price_inr: priceRupees, // rupees — for display only
       currency: order.currency,
       key: razorpayKey,
       plan_code,

@@ -4,8 +4,8 @@ class PlanInfo extends Equatable {
   final String code;
   final String name;
   final String icon;
-  final int priceMonthly; // in paise
-  final int priceYearly; // in paise
+  final int priceMonthly; // in rupees (INR)
+  final int priceYearly; // in rupees (INR)
   final List<String> benefits;
   final bool isPopular;
 
@@ -19,10 +19,9 @@ class PlanInfo extends Equatable {
     this.isPopular = false,
   });
 
-  String get monthlyDisplay => '₹${priceMonthly ~/ 100}/mo';
-  String get yearlyDisplay => '₹${priceYearly ~/ 100}/yr';
-  String get yearlyMonthlyDisplay =>
-      '₹${(priceYearly ~/ 12) ~/ 100}/mo';
+  String get monthlyDisplay => '₹$priceMonthly/mo';
+  String get yearlyDisplay => '₹$priceYearly/yr';
+  String get yearlyMonthlyDisplay => '₹${priceYearly ~/ 12}/mo';
 
   @override
   List<Object?> get props => [code, name];
@@ -68,40 +67,40 @@ class Plans {
       code: 'starter',
       name: 'Starter',
       icon: '🌱',
-      priceMonthly: 9900, // ₹99
-      priceYearly: 79900, // ₹799
+      priceMonthly: 299,
+      priceYearly: 2399,
       benefits: [
-        '25 Foxy chats/day',
+        '30 Foxy chats/day',
         '20 quizzes/day',
-        'All subjects',
-        'Basic progress tracking',
+        '4 subjects',
+        'Interactive labs',
       ],
     ),
     PlanInfo(
       code: 'pro',
       name: 'Pro',
       icon: '⚡',
-      priceMonthly: 19900, // ₹199
-      priceYearly: 159900, // ₹1,599
+      priceMonthly: 699,
+      priceYearly: 5599,
       isPopular: true,
       benefits: [
         '100 Foxy chats/day',
         'Unlimited quizzes',
-        'All simulations',
+        'All subjects',
         'Detailed analytics',
         'Parent reports',
       ],
     ),
     PlanInfo(
-      code: 'ultimate',
-      name: 'Ultimate',
+      code: 'unlimited',
+      name: 'Unlimited',
       icon: '👑',
-      priceMonthly: 29900, // ₹299
-      priceYearly: 239900, // ₹2,399
+      priceMonthly: 1499,
+      priceYearly: 11999,
       benefits: [
         'Unlimited Foxy chats',
         'Unlimited quizzes',
-        'All simulations',
+        'All subjects',
         'Priority support',
         'Full analytics',
         'Study planner',

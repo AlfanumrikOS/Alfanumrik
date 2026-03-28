@@ -824,8 +824,8 @@ export default function SuperAdminPage() {
                           <td style={S.td}><span style={{ color: '#aaa' }}>{u.xp_total ?? 0}</span></td>
                           <td style={S.td}>
                             <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4,
-                              background: u.subscription_plan === 'premium' ? '#111' : u.subscription_plan === 'basic' ? '#111' : '#0a0a0a',
-                              color: u.subscription_plan === 'premium' ? '#fff' : u.subscription_plan === 'basic' ? '#aaa' : '#666',
+                              background: u.subscription_plan === 'unlimited' ? '#111' : u.subscription_plan === 'pro' ? '#111' : u.subscription_plan === 'starter' ? '#111' : '#0a0a0a',
+                              color: u.subscription_plan === 'unlimited' ? '#fff' : u.subscription_plan === 'pro' ? '#fff' : u.subscription_plan === 'starter' ? '#aaa' : '#666',
                             }}>{u.subscription_plan || 'free'}</span>
                           </td>
                         </>
