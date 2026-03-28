@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../lib/admin-auth';
 
-// ---------------------------------------------------------------------------
 // Table / field mapping
-// ---------------------------------------------------------------------------
 type ContentType = 'chapter' | 'topic' | 'question';
 
 const TABLE_MAP: Record<ContentType, string> = {
@@ -42,9 +40,7 @@ function sanitiseFields(type: ContentType, data: Record<string, unknown>): Recor
   return safe;
 }
 
-// ---------------------------------------------------------------------------
 // GET  — list content with filtering & pagination
-// ---------------------------------------------------------------------------
 export async function GET(request: NextRequest) {
   const auth = await authorizeAdmin(request);
   if (!auth.authorized) return auth.response;
@@ -100,9 +96,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// ---------------------------------------------------------------------------
 // POST — create new content
-// ---------------------------------------------------------------------------
 export async function POST(request: NextRequest) {
   const auth = await authorizeAdmin(request);
   if (!auth.authorized) return auth.response;
@@ -146,9 +140,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// ---------------------------------------------------------------------------
 // PATCH — update existing content
-// ---------------------------------------------------------------------------
 export async function PATCH(request: NextRequest) {
   const auth = await authorizeAdmin(request);
   if (!auth.authorized) return auth.response;
@@ -196,9 +188,7 @@ export async function PATCH(request: NextRequest) {
   }
 }
 
-// ---------------------------------------------------------------------------
 // DELETE — soft delete (set is_active = false)
-// ---------------------------------------------------------------------------
 export async function DELETE(request: NextRequest) {
   const auth = await authorizeAdmin(request);
   if (!auth.authorized) return auth.response;

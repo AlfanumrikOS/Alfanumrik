@@ -1,29 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAdmin, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../lib/admin-auth';
 
-// Direct Supabase REST API helper — bypasses JS client entirely
-async function supabaseRest(table: string, params: string = '', method: string = 'GET') {
-  const res = await fetch(supabaseAdminUrl(table, params), {
-    method,
-    headers: supabaseAdminHeaders('count=exact'),
-  });
-
-  return res;
-}
-
 async function countRows(table: string, filter?: string): Promise<number> {
   try {
     const params = `select=id&limit=0${filter ? `&${filter}` : ''}`;
-    const res = await supabaseRest(table, params, 'HEAD');
-    const range = res.headers.get('content-range'); // "0-0/123"
-    if (range) {
-      const total = range.split('/')[1];
-      return parseInt(total) || 0;
-    }
-    return 0;
-  } catch {
-    return -1;
-  }
+    const res = await fetch(supabaseAdminUrl(table, params), { method: 'HEAD', headers: supabaseAdminHeaders() });
+    const range = res.headers.get('content-range');
+    return range ? parseInt(range.split('/')[1]) || 0 : 0;
+  } catch { return -1; }
 }
 
 export async function GET(request: NextRequest) {
@@ -35,8 +19,7 @@ export async function GET(request: NextRequest) {
     const since7d = new Date(Date.now() - 7 * 86400000).toISOString();
 
     const [students, teachers, parents, quizzes, chats,
-           rStudents, rQuizzes, rChats,
-           weekStudents, weekQuizzes] = await Promise.all([
+           rStudents, rQuizzes, rChats, weekStudents, weekQuizzes] = await Promise.all([
       countRows('students'),
       countRows('teachers'),
       countRows('guardians'),

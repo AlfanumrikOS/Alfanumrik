@@ -2,19 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAdmin, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../lib/admin-auth';
 import { cacheStats, cacheFetch, CACHE_TTL } from '../../../../lib/cache';
 
-/**
- * Platform observability API
- *
- * Returns system health, error trends, job status, and key metrics.
- */
-
 async function countRows(table: string, filter?: string): Promise<number> {
   try {
     const params = `select=id&limit=0${filter ? `&${filter}` : ''}`;
-    const res = await fetch(supabaseAdminUrl(table, params), {
-      method: 'HEAD',
-      headers: supabaseAdminHeaders('count=exact'),
-    });
+    const res = await fetch(supabaseAdminUrl(table, params), { method: 'HEAD', headers: supabaseAdminHeaders() });
     const range = res.headers.get('content-range');
     return range ? parseInt(range.split('/')[1]) || 0 : 0;
   } catch { return -1; }
@@ -26,19 +17,14 @@ export async function GET(request: NextRequest) {
 
   try {
     const data = await cacheFetch('obs:platform', CACHE_TTL.SHORT, async () => {
-      const now = new Date();
-      const since24h = new Date(now.getTime() - 86400000).toISOString();
-      const since7d = new Date(now.getTime() - 7 * 86400000).toISOString();
+      const since24h = new Date(Date.now() - 86400000).toISOString();
+      const since7d = new Date(Date.now() - 7 * 86400000).toISOString();
 
-      const [
-        totalStudents, totalTeachers, totalParents,
-        activeStudents24h, activeStudents7d,
-        quizzes24h, chats24h,
-        failedJobs, pendingJobs,
-        auditEntries24h,
-        totalQuestions, totalTopics,
-        flagsEnabled, flagsTotal,
-      ] = await Promise.all([
+      const [totalStudents, totalTeachers, totalParents,
+             activeStudents24h, activeStudents7d,
+             quizzes24h, chats24h, failedJobs, pendingJobs,
+             auditEntries24h, totalQuestions, totalTopics,
+             flagsEnabled, flagsTotal] = await Promise.all([
         countRows('students', 'deleted_at=is.null'),
         countRows('teachers'),
         countRows('guardians'),
@@ -51,39 +37,17 @@ export async function GET(request: NextRequest) {
         countRows('admin_audit_log', `created_at=gte.${since24h}`),
         countRows('question_bank', 'deleted_at=is.null'),
         countRows('curriculum_topics', 'deleted_at=is.null'),
-        countRows('feature_flags', 'enabled=eq.true'),
+        countRows('feature_flags', 'is_enabled=eq.true'),
         countRows('feature_flags'),
       ]);
 
       return {
-        health: {
-          status: failedJobs > 10 ? 'degraded' : 'healthy',
-          checked_at: now.toISOString(),
-        },
-        users: {
-          students: totalStudents,
-          teachers: totalTeachers,
-          parents: totalParents,
-          active_24h: activeStudents24h,
-          active_7d: activeStudents7d,
-        },
-        activity_24h: {
-          quizzes: quizzes24h,
-          chats: chats24h,
-          admin_actions: auditEntries24h,
-        },
-        content: {
-          topics: totalTopics,
-          questions: totalQuestions,
-        },
-        jobs: {
-          failed: failedJobs,
-          pending: pendingJobs,
-        },
-        feature_flags: {
-          enabled: flagsEnabled,
-          total: flagsTotal,
-        },
+        health: { status: failedJobs > 10 ? 'degraded' : 'healthy', checked_at: new Date().toISOString() },
+        users: { students: totalStudents, teachers: totalTeachers, parents: totalParents, active_24h: activeStudents24h, active_7d: activeStudents7d },
+        activity_24h: { quizzes: quizzes24h, chats: chats24h, admin_actions: auditEntries24h },
+        content: { topics: totalTopics, questions: totalQuestions },
+        jobs: { failed: failedJobs, pending: pendingJobs },
+        feature_flags: { enabled: flagsEnabled, total: flagsTotal },
         cache: cacheStats(),
       };
     });
