@@ -42,7 +42,7 @@ const SIDEBAR_SECTIONS = [
     items: [
       { href: '/study-plan', icon: '📚', label: 'Study Plan', labelHi: 'अध्ययन योजना' },
       { href: '/simulations', icon: '🔬', label: 'Interactive Lab', labelHi: 'इंटरैक्टिव लैब' },
-      { href: '/quiz', icon: '⚡', label: 'Quick Quiz', labelHi: 'क्विज़' },
+      { href: '/quiz', icon: '⚡', label: 'Quiz', labelHi: 'क्विज़' },
       { href: '/review', icon: '🔄', label: 'Flashcard Review', labelHi: 'फ्लैशकार्ड रिव्यू' },
     ],
   },
