@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl, type AdminAuth } from '../../../../../lib/admin-auth';
-import { cacheFetch, cacheInvalidatePrefix, CACHE_TTL } from '../../../../../lib/cache';
+import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl, type AdminAuth } from '../../../../lib/admin-auth';
+import { cacheFetch, cacheInvalidatePrefix, CACHE_TTL } from '../../../../lib/cache';
 
 /**
  * CMS API — Full content management for Super Admin

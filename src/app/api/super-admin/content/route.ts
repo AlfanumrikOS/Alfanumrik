@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authorizeAdmin, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../../lib/admin-auth';
+import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../lib/admin-auth';
 
 // ---------------------------------------------------------------------------
 // Table / field mapping
@@ -138,6 +138,8 @@ export async function POST(request: NextRequest) {
     }
 
     const created = await res.json();
+    const createdId = Array.isArray(created) ? created[0]?.id : created?.id;
+    await logAdminAudit(auth, `content.${type}.created`, table, createdId || '', { data: safe });
     return NextResponse.json({ success: true, data: created }, { status: 201 });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 });
@@ -169,6 +171,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const table = TABLE_MAP[type];
+    const auditType = type; const auditId = id;
 
     const res = await fetch(supabaseAdminUrl(table, `id=eq.${encodeURIComponent(id)}`), {
       method: 'PATCH',
@@ -186,6 +189,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'No record found with that id.' }, { status: 404 });
     }
 
+    await logAdminAudit(auth, `content.${auditType}.updated`, TABLE_MAP[auditType], auditId, { updates: safe });
     return NextResponse.json({ success: true, data: updated });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 });
@@ -229,6 +233,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'No record found with that id.' }, { status: 404 });
     }
 
+    await logAdminAudit(auth, `content.${type}.deleted`, table, id, {});
     return NextResponse.json({ success: true, data: updated });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 });

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../../lib/admin-auth';
+import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../lib/admin-auth';
 
 // ---------------------------------------------------------------------------
 // Supabase REST helper
@@ -182,6 +182,7 @@ export async function POST(request: NextRequest) {
       }
 
       const created = await res.json();
+      await logAdminAudit(auth, 'support.resend_invite', 'user', email, { user_type: type });
       return NextResponse.json({ success: true, data: created }, { status: 201 });
     }
 
@@ -272,6 +273,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: `Password reset failed: ${text}` }, { status: res.status });
       }
 
+      await logAdminAudit(auth, 'support.reset_password', 'user', email, {});
       return NextResponse.json({ success: true, message: `Password reset email sent to ${email}.` });
     }
 

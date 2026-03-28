@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../../lib/admin-auth';
+import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../lib/admin-auth';
 
 // ---------------------------------------------------------------------------
 // GET  — list all feature flags (with optional search)
@@ -85,6 +85,8 @@ export async function POST(request: NextRequest) {
     }
 
     const created = await res.json();
+    const flagId = Array.isArray(created) ? created[0]?.id : created?.id;
+    await logAdminAudit(auth, 'feature_flag.created', 'feature_flags', flagId || '', { name, enabled });
     return NextResponse.json({ success: true, data: created }, { status: 201 });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 });

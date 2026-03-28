@@ -2,11 +2,9 @@
 
 ## Accessing the Admin Dashboard
 
-```
-https://alfanumrik.vercel.app/internal/admin?secret=YOUR_SUPER_ADMIN_SECRET
-```
+The Super Admin is located at the `/super-admin` route. Authentication is via Supabase session — the user must exist in the `admin_users` table with `is_active = true`.
 
-The secret is stored as `SUPER_ADMIN_SECRET` in Vercel environment variables.
+No query-param secrets are used. Access requires logging in with a valid admin account.
 
 ## Admin Dashboard Tabs
 
@@ -105,7 +103,7 @@ The secret is stored as `SUPER_ADMIN_SECRET` in Vercel environment variables.
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL | Vercel |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public auth key | Vercel |
 | `SUPABASE_SERVICE_ROLE_KEY` | Admin DB access | Vercel (secret) |
-| `SUPER_ADMIN_SECRET` | Admin panel access | Vercel (secret) |
+| ~~`SUPER_ADMIN_SECRET`~~ | **REMOVED** — admin auth now uses Supabase session + admin_users table | N/A |
 | `RAZORPAY_KEY_ID` | Payment gateway | Vercel |
 | `RAZORPAY_KEY_SECRET` | Payment signature | Vercel (secret) |
 | `RAZORPAY_WEBHOOK_SECRET` | Webhook validation | Vercel (secret) |

@@ -101,7 +101,7 @@ ALTER TABLE question_bank DROP COLUMN IF EXISTS content_status;
 ### 2. Security Breach
 1. Rotate all secrets immediately:
    - SUPABASE_SERVICE_ROLE_KEY
-   - SUPER_ADMIN_SECRET
+   - (SUPER_ADMIN_SECRET removed — admin auth is now session-based)
    - RAZORPAY_KEY_SECRET
    - RAZORPAY_WEBHOOK_SECRET
 2. Review audit_logs for unauthorized actions

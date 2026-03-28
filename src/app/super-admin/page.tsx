@@ -43,7 +43,10 @@ interface AuditEntry {
   created_at: string;
 }
 
-type Tab = 'dashboard' | 'users' | 'content' | 'analytics' | 'flags' | 'institutions' | 'support' | 'reports' | 'logs';
+type Tab = 'dashboard' | 'users' | 'roles' | 'content' | 'analytics' | 'flags' | 'institutions' | 'support' | 'reports' | 'logs';
+
+interface RoleRecord { id: string; name: string; display_name: string; hierarchy_level: number; is_system_role: boolean; description: string; }
+interface UserRoleRecord { id: string; auth_user_id: string; role_id: string; is_active: boolean; created_at: string; roles: { name: string; display_name: string } | null; }
 
 interface ContentRecord {
   id: string;
@@ -122,6 +125,10 @@ export default function SuperAdminPage() {
   const [logs, setLogs] = useState<AuditEntry[]>([]);
   const [logTotal, setLogTotal] = useState(0);
   const [logPage, setLogPage] = useState(1);
+  const [logActionFilter, setLogActionFilter] = useState('');
+  const [logEntityFilter, setLogEntityFilter] = useState('');
+  const [logDateFrom, setLogDateFrom] = useState('');
+  const [logDateTo, setLogDateTo] = useState('');
   const [loading, setLoading] = useState(false);
   const [reportStatus, setReportStatus] = useState('');
   const [content, setContent] = useState<ContentRecord[]>([]);
@@ -138,6 +145,11 @@ export default function SuperAdminPage() {
   const [supportJobsData, setSupportJobsData] = useState<SupportFailedJobsData | null>(null);
   const [supportUserId, setSupportUserId] = useState('');
   const [supportEmail, setSupportEmail] = useState('');
+  const [allRoles, setAllRoles] = useState<RoleRecord[]>([]);
+  const [userRoles, setUserRoles] = useState<UserRoleRecord[]>([]);
+  const [userRolesTotal, setUserRolesTotal] = useState(0);
+  const [assignUserId, setAssignUserId] = useState('');
+  const [assignRoleName, setAssignRoleName] = useState('');
   const [institutions, setInstitutions] = useState<InstitutionRecord[]>([]);
   const [institutionTotal, setInstitutionTotal] = useState(0);
   const [institutionPage, setInstitutionPage] = useState(1);
@@ -156,7 +168,7 @@ export default function SuperAdminPage() {
       if (session) {
         setAccessToken(session.access_token);
       } else {
-        window.location.href = '/internal/admin/login';
+        window.location.href = '/super-admin/login';
       }
     };
     getSession();
@@ -165,7 +177,7 @@ export default function SuperAdminPage() {
       if (session) {
         setAccessToken(session.access_token);
       } else {
-        window.location.href = '/internal/admin/login';
+        window.location.href = '/super-admin/login';
       }
     });
 
@@ -181,7 +193,7 @@ export default function SuperAdminPage() {
   const fetchStats = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/internal/admin/stats', { headers: h() });
+      const res = await fetch('/api/super-admin/stats', { headers: h() });
       if (res.ok) setStats(await res.json());
     } catch { /* */ }
     setLoading(false);
@@ -192,7 +204,7 @@ export default function SuperAdminPage() {
     try {
       const p = new URLSearchParams({ role: userRole, page: String(userPage), limit: '25' });
       if (userSearch) p.set('search', userSearch);
-      const res = await fetch(`/api/internal/admin/users?${p}`, { headers: h() });
+      const res = await fetch(`/api/super-admin/users?${p}`, { headers: h() });
       if (res.ok) { const d = await res.json(); setUsers(d.data || []); setUserTotal(d.total || 0); }
     } catch { /* */ }
     setLoading(false);
@@ -202,17 +214,21 @@ export default function SuperAdminPage() {
     setLoading(true);
     try {
       const p = new URLSearchParams({ page: String(logPage), limit: '25' });
-      const res = await fetch(`/api/internal/admin/logs?${p}`, { headers: h() });
+      if (logActionFilter) p.set('action_filter', logActionFilter);
+      if (logEntityFilter) p.set('entity_filter', logEntityFilter);
+      if (logDateFrom) p.set('date_from', logDateFrom);
+      if (logDateTo) p.set('date_to', logDateTo);
+      const res = await fetch(`/api/super-admin/logs?${p}`, { headers: h() });
       if (res.ok) { const d = await res.json(); setLogs(d.data || []); setLogTotal(d.total || 0); }
     } catch { /* */ }
     setLoading(false);
-  }, [h, logPage]);
+  }, [h, logPage, logActionFilter, logEntityFilter, logDateFrom, logDateTo]);
 
   const fetchContent = useCallback(async () => {
     setLoading(true);
     try {
       const p = new URLSearchParams({ type: contentType, page: String(contentPage), limit: '25' });
-      const res = await fetch(`/api/internal/admin/content?${p}`, { headers: h() });
+      const res = await fetch(`/api/super-admin/content?${p}`, { headers: h() });
       if (res.ok) { const d = await res.json(); setContent(d.data || []); setContentTotal(d.total || 0); }
     } catch { /* */ }
     setLoading(false);
@@ -221,7 +237,7 @@ export default function SuperAdminPage() {
   const fetchAnalytics = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/internal/admin/analytics', { headers: h() });
+      const res = await fetch('/api/super-admin/analytics', { headers: h() });
       if (res.ok) setAnalyticsData(await res.json());
     } catch { /* */ }
     setLoading(false);
@@ -230,14 +246,14 @@ export default function SuperAdminPage() {
   const fetchFlags = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/internal/admin/feature-flags', { headers: h() });
+      const res = await fetch('/api/super-admin/feature-flags', { headers: h() });
       if (res.ok) { const d = await res.json(); setFlags(d.data || []); }
     } catch { /* */ }
     setLoading(false);
   }, [h]);
 
   const toggleFlag = async (flag: FeatureFlag) => {
-    await fetch('/api/internal/admin/feature-flags', {
+    await fetch('/api/super-admin/feature-flags', {
       method: 'PATCH', headers: h(),
       body: JSON.stringify({ id: flag.id, updates: { enabled: !flag.enabled } }),
     });
@@ -246,7 +262,7 @@ export default function SuperAdminPage() {
 
   const createFlag = async () => {
     if (!newFlagName.trim()) return;
-    await fetch('/api/internal/admin/feature-flags', {
+    await fetch('/api/super-admin/feature-flags', {
       method: 'POST', headers: h(),
       body: JSON.stringify({ name: newFlagName.trim(), enabled: false }),
     });
@@ -256,7 +272,7 @@ export default function SuperAdminPage() {
 
   const deleteFlag = async (flag: FeatureFlag) => {
     if (!confirm(`Delete flag "${flag.name}"?`)) return;
-    await fetch('/api/internal/admin/feature-flags', {
+    await fetch('/api/super-admin/feature-flags', {
       method: 'DELETE', headers: h(),
       body: JSON.stringify({ id: flag.id }),
     });
@@ -268,7 +284,7 @@ export default function SuperAdminPage() {
     try {
       const a = action || supportAction;
       const p = new URLSearchParams({ action: a, ...params });
-      const res = await fetch(`/api/internal/admin/support?${p}`, { headers: h() });
+      const res = await fetch(`/api/super-admin/support?${p}`, { headers: h() });
       if (res.ok) {
         const data = await res.json();
         if (a === 'user_activity') setSupportActivityData(data as SupportActivityData);
@@ -281,7 +297,7 @@ export default function SuperAdminPage() {
   const supportPost = async (action: string, body: Record<string, unknown>) => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/internal/admin/support?action=${action}`, {
+      const res = await fetch(`/api/super-admin/support?action=${action}`, {
         method: 'POST', headers: h(), body: JSON.stringify(body),
       });
       const d = await res.json();
@@ -291,18 +307,49 @@ export default function SuperAdminPage() {
     setLoading(false);
   };
 
+  const fetchRoles = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [rolesRes, urRes] = await Promise.all([
+        fetch('/api/super-admin/roles?action=roles', { headers: h() }),
+        fetch('/api/super-admin/roles?action=user_roles', { headers: h() }),
+      ]);
+      if (rolesRes.ok) { const d = await rolesRes.json(); setAllRoles(d.data || []); }
+      if (urRes.ok) { const d = await urRes.json(); setUserRoles(d.data || []); setUserRolesTotal(d.total || 0); }
+    } catch { /* */ }
+    setLoading(false);
+  }, [h]);
+
+  const assignRole = async () => {
+    if (!assignUserId || !assignRoleName) { alert('User ID and role name required'); return; }
+    try {
+      const res = await fetch('/api/super-admin/roles', { method: 'POST', headers: h(), body: JSON.stringify({ auth_user_id: assignUserId, role_name: assignRoleName }) });
+      const d = await res.json();
+      if (!res.ok) { alert(d.error || 'Assign failed'); return; }
+      setAssignUserId(''); setAssignRoleName(''); fetchRoles();
+    } catch { alert('Assign failed'); }
+  };
+
+  const revokeRole = async (userRoleId: string) => {
+    if (!confirm('Revoke this role assignment?')) return;
+    try {
+      await fetch('/api/super-admin/roles', { method: 'DELETE', headers: h(), body: JSON.stringify({ user_role_id: userRoleId }) });
+      fetchRoles();
+    } catch { alert('Revoke failed'); }
+  };
+
   const fetchInstitutions = useCallback(async () => {
     setLoading(true);
     try {
       const p = new URLSearchParams({ page: String(institutionPage), limit: '25' });
-      const res = await fetch(`/api/internal/admin/institutions?${p}`, { headers: h() });
+      const res = await fetch(`/api/super-admin/institutions?${p}`, { headers: h() });
       if (res.ok) { const d = await res.json(); setInstitutions(d.data || []); setInstitutionTotal(d.total || 0); }
     } catch { /* */ }
     setLoading(false);
   }, [h, institutionPage]);
 
   const toggleInstitution = async (inst: InstitutionRecord) => {
-    await fetch('/api/internal/admin/institutions', {
+    await fetch('/api/super-admin/institutions', {
       method: 'PATCH', headers: h(),
       body: JSON.stringify({ id: inst.id, updates: { is_active: !inst.is_active } }),
     });
@@ -312,7 +359,7 @@ export default function SuperAdminPage() {
   const createContent = async () => {
     const typeMap: Record<string, string> = { chapters: 'chapter', topics: 'topic', questions: 'question' };
     try {
-      const res = await fetch('/api/internal/admin/content', {
+      const res = await fetch('/api/super-admin/content', {
         method: 'POST', headers: h(),
         body: JSON.stringify({ type: typeMap[contentType], data: contentForm }),
       });
@@ -323,7 +370,7 @@ export default function SuperAdminPage() {
 
   const toggleContent = async (item: ContentRecord) => {
     const typeMap: Record<string, string> = { chapters: 'chapter', topics: 'topic', questions: 'question' };
-    await fetch('/api/internal/admin/content', {
+    await fetch('/api/super-admin/content', {
       method: 'PATCH', headers: h(),
       body: JSON.stringify({ type: typeMap[contentType], id: item.id, updates: { is_active: !item.is_active } }),
     });
@@ -334,18 +381,19 @@ export default function SuperAdminPage() {
     if (!accessToken) return;
     if (activeTab === 'dashboard') fetchStats();
     if (activeTab === 'users') fetchUsers();
+    if (activeTab === 'roles') fetchRoles();
     if (activeTab === 'content') fetchContent();
     if (activeTab === 'analytics') fetchAnalytics();
     if (activeTab === 'flags') fetchFlags();
     if (activeTab === 'support') fetchSupport();
     if (activeTab === 'institutions') fetchInstitutions();
     if (activeTab === 'logs') fetchLogs();
-  }, [accessToken, activeTab, fetchStats, fetchUsers, fetchContent, fetchAnalytics, fetchFlags, fetchSupport, fetchInstitutions, fetchLogs]);
+  }, [accessToken, activeTab, fetchStats, fetchUsers, fetchRoles, fetchContent, fetchAnalytics, fetchFlags, fetchSupport, fetchInstitutions, fetchLogs]);
 
   // ── Actions ──
   const toggleUser = async (user: UserRecord) => {
     const table = user.role === 'teacher' ? 'teachers' : user.role === 'parent' ? 'guardians' : 'students';
-    await fetch('/api/internal/admin/users', {
+    await fetch('/api/super-admin/users', {
       method: 'PATCH', headers: h(),
       body: JSON.stringify({ user_id: user.id, table, updates: { is_active: !user.is_active } }),
     });
@@ -355,7 +403,7 @@ export default function SuperAdminPage() {
   const downloadReport = async (type: string, format: string) => {
     setReportStatus(`Generating ${type} report...`);
     try {
-      const res = await fetch(`/api/internal/admin/reports?type=${type}&format=${format}`, { headers: h() });
+      const res = await fetch(`/api/super-admin/reports?type=${type}&format=${format}`, { headers: h() });
       if (!res.ok) { setReportStatus('Failed to generate report'); return; }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -377,6 +425,7 @@ export default function SuperAdminPage() {
   const TABS: { key: Tab; label: string; icon: string }[] = [
     { key: 'dashboard', label: 'Dashboard', icon: '📊' },
     { key: 'users', label: 'Users', icon: '👥' },
+    { key: 'roles', label: 'Roles', icon: '🔐' },
     { key: 'content', label: 'Content', icon: '📚' },
     { key: 'analytics', label: 'Analytics', icon: '📈' },
     { key: 'flags', label: 'Flags', icon: '🚩' },
@@ -400,7 +449,7 @@ export default function SuperAdminPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {adminName && <span style={{ fontSize: 11, color: '#888' }}>{adminName}</span>}
           <span style={{ fontSize: 10, color: '#444' }}>{new Date().toLocaleString()}</span>
-          <button onClick={async () => { await supabase.auth.signOut(); window.location.href = '/internal/admin/login'; }}
+          <button onClick={async () => { await supabase.auth.signOut(); window.location.href = '/super-admin/login'; }}
             style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #333', background: 'transparent', color: '#888', fontSize: 10, cursor: 'pointer' }}>
             Logout
           </button>
@@ -583,6 +632,79 @@ export default function SuperAdminPage() {
               <button disabled={userPage <= 1} onClick={() => setUserPage(p => p - 1)} style={S.pageBtn}>← Prev</button>
               <span style={{ fontSize: 12, color: '#666', padding: '6px 12px' }}>Page {userPage} of {Math.max(1, Math.ceil(userTotal / 25))}</span>
               <button disabled={users.length < 25} onClick={() => setUserPage(p => p + 1)} style={S.pageBtn}>Next →</button>
+            </div>
+          </div>
+        )}
+
+        {/* ═══ ROLES ═══ */}
+        {activeTab === 'roles' && (
+          <div>
+            <h2 style={S.h2}>Role Management</h2>
+
+            {/* Assign Role */}
+            <div style={{ ...S.card, marginBottom: 20 }}>
+              <h3 style={{ fontSize: 13, fontWeight: 700, color: '#3B82F6', marginBottom: 10 }}>Assign Role to User</h3>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <input value={assignUserId} onChange={e => setAssignUserId(e.target.value)} placeholder="auth_user_id (UUID)"
+                  style={{ ...S.searchInput, flex: 1, minWidth: 200 }} />
+                <select value={assignRoleName} onChange={e => setAssignRoleName(e.target.value)} style={S.filterBtn}>
+                  <option value="">Select role</option>
+                  {allRoles.map(r => <option key={r.id} value={r.name}>{r.display_name} ({r.name})</option>)}
+                </select>
+                <button onClick={assignRole} style={{ ...S.quickBtn, background: '#3B82F610', color: '#3B82F6', borderColor: '#3B82F640' }}>Assign</button>
+              </div>
+            </div>
+
+            {/* Roles Table */}
+            <h2 style={S.h2}>Available Roles ({allRoles.length})</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 10, marginBottom: 24 }}>
+              {allRoles.map(r => (
+                <div key={r.id} style={{ ...S.card, borderLeft: `3px solid ${r.hierarchy_level >= 90 ? '#EF4444' : r.hierarchy_level >= 50 ? '#3B82F6' : '#888'}` }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#e0e0e0' }}>{r.display_name}</div>
+                      <code style={{ fontSize: 10, color: '#888' }}>{r.name}</code>
+                    </div>
+                    <span style={{ fontSize: 10, color: '#555', background: '#1a1a1a', padding: '2px 6px', borderRadius: 4 }}>Lv {r.hierarchy_level}</span>
+                  </div>
+                  {r.description && <div style={{ fontSize: 10, color: '#666', marginTop: 4 }}>{r.description}</div>}
+                  {r.is_system_role && <span style={{ fontSize: 9, color: '#F59E0B', marginTop: 4, display: 'inline-block' }}>System Role</span>}
+                </div>
+              ))}
+            </div>
+
+            {/* User Role Assignments */}
+            <h2 style={S.h2}>Current Assignments ({userRolesTotal})</h2>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={S.table}>
+                <thead>
+                  <tr>
+                    <th style={S.th}>User ID</th>
+                    <th style={S.th}>Role</th>
+                    <th style={S.th}>Active</th>
+                    <th style={S.th}>Assigned</th>
+                    <th style={S.th}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {userRoles.length === 0 && <tr><td colSpan={5} style={{ ...S.td, textAlign: 'center', color: '#555', padding: 24 }}>No role assignments found</td></tr>}
+                  {userRoles.map(ur => (
+                    <tr key={ur.id}>
+                      <td style={{ ...S.td, fontSize: 10 }}><code>{ur.auth_user_id?.slice(0, 12)}...</code></td>
+                      <td style={S.td}><span style={{ color: '#3B82F6', fontWeight: 600 }}>{ur.roles?.display_name || ur.roles?.name || ur.role_id.slice(0, 8)}</span></td>
+                      <td style={S.td}>
+                        <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: ur.is_active ? '#16A34A20' : '#EF444420', color: ur.is_active ? '#16A34A' : '#EF4444' }}>
+                          {ur.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                      <td style={{ ...S.td, fontSize: 11 }}>{new Date(ur.created_at).toLocaleDateString()}</td>
+                      <td style={S.td}>
+                        <button onClick={() => revokeRole(ur.id)} style={{ ...S.actionBtn, color: '#EF4444', borderColor: '#EF444440', fontSize: 10 }}>Revoke</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
@@ -1128,7 +1250,28 @@ export default function SuperAdminPage() {
               <h2 style={{ ...S.h2, margin: 0 }}>Audit Logs</h2>
               <button onClick={() => downloadReport('audit', 'csv')} style={{ ...S.quickBtn, fontSize: 11 }}>⬇ Export CSV</button>
             </div>
-            <div style={{ fontSize: 11, color: '#555', marginBottom: 8 }}>{logTotal} total entries</div>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+              <input value={logActionFilter} onChange={e => { setLogActionFilter(e.target.value); setLogPage(1); }} placeholder="Filter by action..."
+                style={S.searchInput} />
+              <select value={logEntityFilter} onChange={e => { setLogEntityFilter(e.target.value); setLogPage(1); }} style={S.filterBtn}>
+                <option value="">All entities</option>
+                <option value="feature_flag">Feature Flag</option>
+                <option value="school">School</option>
+                <option value="user">User</option>
+                <option value="curriculum_topics">Topic</option>
+                <option value="question_bank">Question</option>
+                <option value="user_roles">Role Assignment</option>
+              </select>
+              <input type="date" value={logDateFrom} onChange={e => { setLogDateFrom(e.target.value); setLogPage(1); }}
+                style={{ ...S.searchInput, width: 140 }} />
+              <input type="date" value={logDateTo} onChange={e => { setLogDateTo(e.target.value); setLogPage(1); }}
+                style={{ ...S.searchInput, width: 140 }} />
+              {(logActionFilter || logEntityFilter || logDateFrom || logDateTo) && (
+                <button onClick={() => { setLogActionFilter(''); setLogEntityFilter(''); setLogDateFrom(''); setLogDateTo(''); setLogPage(1); }}
+                  style={{ ...S.actionBtn, fontSize: 10 }}>Clear filters</button>
+              )}
+            </div>
+            <div style={{ fontSize: 11, color: '#555', marginBottom: 8 }}>{logTotal} entries{logActionFilter || logEntityFilter || logDateFrom || logDateTo ? ' (filtered)' : ''}</div>
 
             <div style={{ overflowX: 'auto' }}>
               <table style={S.table}>

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authorizeAdmin, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../../lib/admin-auth';
+import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../lib/admin-auth';
 
 async function supabaseQuery(table: string, params: string) {
   const res = await fetch(supabaseAdminUrl(table, params), {
@@ -76,7 +76,11 @@ export async function PATCH(request: NextRequest) {
     if (Object.keys(safe).length === 0) return NextResponse.json({ error: 'No valid fields' }, { status: 400 });
 
     const ok = await supabaseUpdate(table, user_id, safe);
-    return ok ? NextResponse.json({ success: true }) : NextResponse.json({ error: 'Update failed' }, { status: 500 });
+    if (!ok) return NextResponse.json({ error: 'Update failed' }, { status: 500 });
+
+    const action = safe.is_active === false ? 'user.suspended' : safe.is_active === true ? 'user.activated' : 'user.updated';
+    await logAdminAudit(auth, action, table, user_id, { updates: safe });
+    return NextResponse.json({ success: true });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 });
   }
