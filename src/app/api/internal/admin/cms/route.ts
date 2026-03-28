@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl, type AdminAuth } from '../../../../../lib/admin-auth';
+import { cacheFetch, cacheInvalidatePrefix, CACHE_TTL } from '../../../../../lib/cache';
 
 /**
  * CMS API — Full content management for Super Admin
  *
  * GET    ?action=topics|questions|subjects|hierarchy|versions|stats
- * POST   ?action=create_topic|create_question|transition|create_version|rollback
+ * POST   ?action=create_topic|create_question|transition|create_version|rollback|bulk_transition
  * PATCH  ?action=update_topic|update_question
  *
  * All actions require admin session via authorizeAdmin().
  * All mutations are audit-logged with real user identity.
+ * Hot paths cached with TTL (invalidated on mutations).
  */
 
 async function supabaseGet(table: string, params: string) {
@@ -49,27 +51,32 @@ export async function GET(request: NextRequest) {
   const action = params.get('action') || 'topics';
 
   try {
-    // ── CMS Stats ──
+    // ── CMS Stats (cached 60s) ──
     if (action === 'stats') {
-      const [topics, questions, published, draft, review, archived] = await Promise.all([
-        supabaseGet('curriculum_topics', 'select=id&limit=0&deleted_at=is.null'),
-        supabaseGet('question_bank', 'select=id&limit=0&deleted_at=is.null'),
-        supabaseGet('curriculum_topics', 'select=id&limit=0&content_status=eq.published&deleted_at=is.null'),
-        supabaseGet('curriculum_topics', 'select=id&limit=0&content_status=eq.draft&deleted_at=is.null'),
-        supabaseGet('curriculum_topics', 'select=id&limit=0&content_status=eq.review&deleted_at=is.null'),
-        supabaseGet('curriculum_topics', 'select=id&limit=0&content_status=eq.archived&deleted_at=is.null'),
-      ]);
-      return NextResponse.json({
-        topics: topics.total,
-        questions: questions.total,
-        workflow: { published: published.total, draft: draft.total, review: review.total, archived: archived.total },
+      const data = await cacheFetch('cms:stats', CACHE_TTL.SHORT, async () => {
+        const [topics, questions, published, draft, review, archived] = await Promise.all([
+          supabaseGet('curriculum_topics', 'select=id&limit=0&deleted_at=is.null'),
+          supabaseGet('question_bank', 'select=id&limit=0&deleted_at=is.null'),
+          supabaseGet('curriculum_topics', 'select=id&limit=0&content_status=eq.published&deleted_at=is.null'),
+          supabaseGet('curriculum_topics', 'select=id&limit=0&content_status=eq.draft&deleted_at=is.null'),
+          supabaseGet('curriculum_topics', 'select=id&limit=0&content_status=eq.review&deleted_at=is.null'),
+          supabaseGet('curriculum_topics', 'select=id&limit=0&content_status=eq.archived&deleted_at=is.null'),
+        ]);
+        return {
+          topics: topics.total, questions: questions.total,
+          workflow: { published: published.total, draft: draft.total, review: review.total, archived: archived.total },
+        };
       });
+      return NextResponse.json(data);
     }
 
-    // ── Subjects list ──
+    // ── Subjects list (cached 30min) ──
     if (action === 'subjects') {
-      const r = await supabaseGet('subjects', 'select=id,code,name,icon,color,is_active,display_order&order=display_order.asc');
-      return NextResponse.json({ data: r.data, total: r.total });
+      const data = await cacheFetch('cms:subjects', CACHE_TTL.STATIC * 6, async () => {
+        const r = await supabaseGet('subjects', 'select=id,code,name,icon,color,is_active,display_order&order=display_order.asc');
+        return { data: r.data, total: r.total };
+      });
+      return NextResponse.json(data);
     }
 
     // ── Hierarchy: topics for a grade+subject ──
@@ -198,6 +205,7 @@ export async function POST(request: NextRequest) {
       // Create initial version snapshot
       await createVersionSnapshot(auth, 'topic', created.id, created, 'Initial creation');
       await logAdminAudit(auth, 'cms.topic.created', 'curriculum_topics', created.id, { title: safe.title, grade: safe.grade });
+      cacheInvalidatePrefix('cms:');
       return NextResponse.json({ data: created }, { status: 201 });
     }
 
@@ -224,6 +232,7 @@ export async function POST(request: NextRequest) {
       const created = Array.isArray(r.data) ? r.data[0] : r.data;
       await createVersionSnapshot(auth, 'question', created.id, created, 'Initial creation');
       await logAdminAudit(auth, 'cms.question.created', 'question_bank', created.id, { grade: safe.grade, subject: safe.subject });
+      cacheInvalidatePrefix('cms:');
       return NextResponse.json({ data: created }, { status: 201 });
     }
 
@@ -256,6 +265,7 @@ export async function POST(request: NextRequest) {
       }
 
       await logAdminAudit(auth, `cms.${entity_type}.${new_status}`, table, entity_id, { new_status, notes });
+      cacheInvalidatePrefix('cms:');
       return NextResponse.json({ success: true, new_status });
     }
 
@@ -321,7 +331,35 @@ export async function POST(request: NextRequest) {
         version_id,
       });
 
+      cacheInvalidatePrefix('cms:');
       return NextResponse.json({ success: true, rolled_back_to: version.version_number });
+    }
+
+    // ── Bulk status transition ──
+    if (action === 'bulk_transition') {
+      const { entity_type, entity_ids, new_status } = body;
+      if (!entity_type || !Array.isArray(entity_ids) || !new_status) {
+        return NextResponse.json({ error: 'entity_type, entity_ids[], and new_status required' }, { status: 400 });
+      }
+
+      const table = entity_type === 'topic' ? 'curriculum_topics' : entity_type === 'question' ? 'question_bank' : null;
+      if (!table) return NextResponse.json({ error: 'entity_type must be topic or question' }, { status: 400 });
+
+      const res = await fetch(supabaseAdminUrl('rpc/bulk_transition_status'), {
+        method: 'POST',
+        headers: supabaseAdminHeaders('return=representation'),
+        body: JSON.stringify({ p_table: table, p_ids: entity_ids, p_new_status: new_status, p_actor_id: auth.userId }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        return NextResponse.json({ error: `Bulk transition failed: ${text}` }, { status: 400 });
+      }
+
+      const count = await res.json();
+      await logAdminAudit(auth, `cms.bulk_${new_status}`, table, entity_ids.join(','), { count, new_status, total_ids: entity_ids.length });
+      cacheInvalidatePrefix('cms:');
+      return NextResponse.json({ success: true, transitioned: count });
     }
 
     return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
