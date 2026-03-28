@@ -32,7 +32,10 @@ export type AdminAuthResult = AdminAuth | AdminAuthFailure;
 function getSupabaseConfig() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error('Missing Supabase config');
+  if (!url) throw new Error('NEXT_PUBLIC_SUPABASE_URL not configured');
+  if (!key) throw new Error('SUPABASE_SERVICE_ROLE_KEY not configured');
+  // Service role key starts with 'eyJ' and is longer than anon key typically
+  // Both are JWTs but service role has role=service_role in payload
   return { url, key };
 }
 
@@ -111,6 +114,12 @@ export async function authorizeAdmin(request: NextRequest): Promise<AdminAuthRes
     });
 
     if (!userRes.ok) {
+      const gotrueError = await userRes.text().catch(() => 'unknown');
+      console.error('[authorizeAdmin] GoTrue verification failed:', {
+        status: userRes.status,
+        error: gotrueError.slice(0, 200),
+        tokenPrefix: accessToken.slice(0, 20) + '...',
+      });
       return {
         authorized: false,
         response: NextResponse.json(
@@ -122,6 +131,11 @@ export async function authorizeAdmin(request: NextRequest): Promise<AdminAuthRes
 
     const userData = await userRes.json();
     const userId = userData.id;
+    console.log('[authorizeAdmin] GoTrue user verified:', {
+      userId,
+      email: userData.email,
+      gotrue_ok: true,
+    });
     if (!userId) {
       return {
         authorized: false,
@@ -132,34 +146,57 @@ export async function authorizeAdmin(request: NextRequest): Promise<AdminAuthRes
       };
     }
 
-    // Check admin_users table via REST API
-    const adminRes = await fetch(
-      `${url}/rest/v1/admin_users?select=id,name,email,admin_level&auth_user_id=eq.${userId}&is_active=eq.true&limit=1`,
-      {
-        headers: {
-          'apikey': key,
-          'Authorization': `Bearer ${key}`,
-          'Content-Type': 'application/json',
-        },
-      }
-    );
+    // Check admin_users table via REST API (service role bypasses RLS)
+    const adminQueryUrl = `${url}/rest/v1/admin_users?select=id,name,email,admin_level&auth_user_id=eq.${userId}&is_active=eq.true&limit=1`;
+    const adminRes = await fetch(adminQueryUrl, {
+      headers: {
+        'apikey': key,
+        'Authorization': `Bearer ${key}`,
+        'Content-Type': 'application/json',
+      },
+    });
 
     if (!adminRes.ok) {
+      const adminErrorText = await adminRes.text().catch(() => 'unknown');
+      console.error('[authorizeAdmin] admin_users query failed:', {
+        status: adminRes.status,
+        error: adminErrorText.slice(0, 200),
+        userId,
+        keyPresent: !!key,
+        keyPrefix: key?.slice(0, 10) + '...',
+      });
       return {
         authorized: false,
         response: NextResponse.json(
-          { error: 'Authorization check failed.' },
+          { error: `Authorization check failed (HTTP ${adminRes.status}).` },
           { status: 500 }
         ),
       };
     }
 
     const admins = await adminRes.json();
+
     if (!Array.isArray(admins) || admins.length === 0) {
+      // Diagnostic: log why lookup failed so we can debug
+      console.error('[authorizeAdmin] admin_users lookup returned empty', {
+        userId,
+        userEmail: userData.email,
+        resultType: typeof admins,
+        resultIsArray: Array.isArray(admins),
+        resultLength: Array.isArray(admins) ? admins.length : -1,
+        keyPrefix: key?.slice(0, 10) + '...',
+      });
       return {
         authorized: false,
         response: NextResponse.json(
-          { error: 'Access denied. You are not an authorized administrator.' },
+          {
+            error: 'Access denied. You are not an authorized administrator.',
+            debug: {
+              userId,
+              email: userData.email,
+              adminRecordsFound: Array.isArray(admins) ? admins.length : 0,
+            },
+          },
           { status: 403 }
         ),
       };

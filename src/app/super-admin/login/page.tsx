@@ -43,14 +43,19 @@ export default function AdminLoginPage() {
       });
 
       if (res.status === 403) {
+        const detail = await res.json().catch(() => ({}));
         await supabase.auth.signOut();
-        setError('Access denied. This account is not authorized as an administrator.');
+        const debugMsg = detail.debug
+          ? ` (userId: ${detail.debug.userId}, email: ${detail.debug.email}, records: ${detail.debug.adminRecordsFound})`
+          : '';
+        setError(`Access denied. This account is not authorized as an administrator.${debugMsg}`);
         setLoading(false);
         return;
       }
 
       if (!res.ok) {
-        setError('Verification failed. Please try again.');
+        const errDetail = await res.json().catch(() => ({}));
+        setError(errDetail.error || 'Verification failed. Please try again.');
         setLoading(false);
         return;
       }
