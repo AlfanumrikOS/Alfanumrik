@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl, type AdminAuth } from '../../../../lib/admin-auth';
+import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl, isValidUUID, type AdminAuth } from '../../../../lib/admin-auth';
 import { cacheFetch, cacheInvalidatePrefix, CACHE_TTL } from '../../../../lib/cache';
 
 /**
@@ -293,7 +293,7 @@ export async function POST(request: NextRequest) {
     // ── Rollback to a previous version ──
     if (action === 'rollback') {
       const { version_id } = body;
-      if (!version_id) return NextResponse.json({ error: 'version_id required' }, { status: 400 });
+      if (!version_id || !isValidUUID(version_id)) return NextResponse.json({ error: 'Valid version_id (UUID) required' }, { status: 400 });
 
       // Get the version snapshot
       const vr = await supabaseGet('cms_item_versions', `select=*&id=eq.${version_id}&limit=1`);
