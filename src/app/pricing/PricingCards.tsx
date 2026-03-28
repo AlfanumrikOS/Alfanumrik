@@ -4,14 +4,18 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useCheckout } from '@/hooks/useCheckout';
 import { useAuth } from '@/lib/AuthContext';
+import { SubscriptionConfirm } from '@/components/SubscriptionConfirm';
 
 /* ─── Plan Data ─── */
 
 interface Plan {
   name: string;
+  code: string;
   tagline: string;
   monthlyPrice: string;
   yearlyPrice: string;
+  monthlyPriceNum: number;
+  yearlyPriceNum: number;
   yearlySaving: string;
   popular: boolean;
   features: { label: string; included: boolean }[];
@@ -23,9 +27,12 @@ interface Plan {
 const PLANS: Plan[] = [
   {
     name: 'Explorer',
+    code: 'free',
     tagline: 'Get started with Foxy for free',
     monthlyPrice: 'Free',
     yearlyPrice: 'Free',
+    monthlyPriceNum: 0,
+    yearlyPriceNum: 0,
     yearlySaving: '',
     popular: false,
     free: true,
@@ -42,9 +49,12 @@ const PLANS: Plan[] = [
   },
   {
     name: 'Starter',
+    code: 'starter',
     tagline: 'More chats, more subjects',
     monthlyPrice: '\u20B9299',
     yearlyPrice: '\u20B92,399',
+    monthlyPriceNum: 299,
+    yearlyPriceNum: 2399,
     yearlySaving: 'Save 33%',
     popular: false,
     free: false,
@@ -61,9 +71,12 @@ const PLANS: Plan[] = [
   },
   {
     name: 'Pro',
+    code: 'pro',
     tagline: 'The complete learning experience',
     monthlyPrice: '\u20B9699',
     yearlyPrice: '\u20B95,599',
+    monthlyPriceNum: 699,
+    yearlyPriceNum: 5599,
     yearlySaving: 'Save 33%',
     popular: true,
     free: false,
@@ -80,9 +93,12 @@ const PLANS: Plan[] = [
   },
   {
     name: 'Unlimited',
+    code: 'unlimited',
     tagline: 'No limits, maximum results',
     monthlyPrice: '\u20B91,499',
     yearlyPrice: '\u20B911,999',
+    monthlyPriceNum: 1499,
+    yearlyPriceNum: 11999,
     yearlySaving: 'Save 33%',
     popular: false,
     free: false,
@@ -106,6 +122,7 @@ export function PricingCards() {
   const { isLoggedIn } = useAuth();
   const { checkout, loading: checkoutLoading } = useCheckout();
   const [successPlan, setSuccessPlan] = useState<string | null>(null);
+  const [confirmPlan, setConfirmPlan] = useState<Plan | null>(null);
 
   return (
     <section style={{ padding: '0 16px 64px', maxWidth: 1100, margin: '0 auto' }}>
@@ -230,10 +247,7 @@ export function PricingCards() {
                 </Link>
               ) : (
                 <button
-                  onClick={() => {
-                    const planCode = plan.name.toLowerCase() as 'starter' | 'pro' | 'unlimited';
-                    checkout({ planCode, billingCycle: annual ? 'yearly' : 'monthly', onSuccess: (p) => setSuccessPlan(p) });
-                  }}
+                  onClick={() => setConfirmPlan(plan)}
                   disabled={checkoutLoading}
                   style={{
                     display: 'block', width: '100%', textAlign: 'center', padding: '12px 20px', borderRadius: 12,
@@ -270,6 +284,28 @@ export function PricingCards() {
           );
         })}
       </div>
+
+      {/* Subscription confirmation dialog */}
+      <SubscriptionConfirm
+        isOpen={!!confirmPlan}
+        planName={confirmPlan?.name || ''}
+        planCode={confirmPlan?.code || ''}
+        priceMonthly={confirmPlan?.monthlyPriceNum || 0}
+        priceYearly={confirmPlan?.yearlyPriceNum || 0}
+        billingCycle={annual ? 'yearly' : 'monthly'}
+        loading={checkoutLoading}
+        onCancel={() => setConfirmPlan(null)}
+        onConfirm={() => {
+          if (!confirmPlan) return;
+          const planCode = confirmPlan.code as 'starter' | 'pro' | 'unlimited';
+          checkout({
+            planCode,
+            billingCycle: annual ? 'yearly' : 'monthly',
+            onSuccess: (p) => { setSuccessPlan(p); setConfirmPlan(null); },
+            onError: () => setConfirmPlan(null),
+          });
+        }}
+      />
     </section>
   );
 }
