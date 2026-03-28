@@ -107,7 +107,7 @@ export async function GET(request: NextRequest) {
       if (grade) filters.push(`grade=eq.${encodeURIComponent(grade)}`);
       if (subjectId) filters.push(`subject_id=eq.${subjectId}`);
       if (status) filters.push(`content_status=eq.${status}`);
-      if (search) filters.push(`title=ilike.*${encodeURIComponent(search)}*`);
+      if (search) filters.push(`search_vector=fts.${encodeURIComponent(search)}`);
 
       const r = await supabaseGet('curriculum_topics',
         `select=${fields}&${filters.join('&')}&order=grade.asc,chapter_number.asc.nullslast,display_order.asc&offset=${offset}&limit=${limit}`
@@ -134,7 +134,7 @@ export async function GET(request: NextRequest) {
       if (status) filters.push(`content_status=eq.${status}`);
       if (difficulty) filters.push(`difficulty=eq.${difficulty}`);
       if (questionType) filters.push(`question_type=eq.${encodeURIComponent(questionType)}`);
-      if (search) filters.push(`question_text=ilike.*${encodeURIComponent(search)}*`);
+      if (search) filters.push(`search_vector=fts.${encodeURIComponent(search)}`);
 
       const r = await supabaseGet('question_bank',
         `select=${fields}&${filters.join('&')}&order=created_at.desc&offset=${offset}&limit=${limit}`

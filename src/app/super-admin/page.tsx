@@ -45,6 +45,20 @@ interface AuditEntry {
 
 type Tab = 'dashboard' | 'users' | 'roles' | 'content' | 'analytics' | 'flags' | 'institutions' | 'support' | 'reports' | 'logs';
 
+interface DeployInfo {
+  app_version: string; environment: string; region: string; server_time: string; node_version: string;
+  deployment: { id: string; url: string; branch: string; commit_sha: string; commit_message: string; commit_author: string };
+  rollback_instructions: string[];
+}
+interface ObsData {
+  health: { status: string; checked_at: string };
+  users: { students: number; teachers: number; parents: number; active_24h: number; active_7d: number };
+  activity_24h: { quizzes: number; chats: number; admin_actions: number };
+  content: { topics: number; questions: number };
+  jobs: { failed: number; pending: number };
+  feature_flags: { enabled: number; total: number };
+  cache: { size: number; keys: string[] };
+}
 interface RoleRecord { id: string; name: string; display_name: string; hierarchy_level: number; is_system_role: boolean; description: string; }
 interface UserRoleRecord { id: string; auth_user_id: string; role_id: string; is_active: boolean; created_at: string; roles: { name: string; display_name: string } | null; }
 
@@ -67,7 +81,13 @@ interface FeatureFlag {
   id: string;
   name: string;
   enabled: boolean;
+  rollout_percentage: number | null;
+  target_institutions: string[];
+  target_roles: string[];
+  target_environments: string[];
+  description: string | null;
   created_at: string;
+  updated_at: string | null;
 }
 
 interface FailedJob {
@@ -140,11 +160,16 @@ export default function SuperAdminPage() {
   const [contentForm, setContentForm] = useState<Record<string, string>>({});
   const [flags, setFlags] = useState<FeatureFlag[]>([]);
   const [newFlagName, setNewFlagName] = useState('');
+  const [editingFlagId, setEditingFlagId] = useState<string | null>(null);
+  const [flagScopeRoles, setFlagScopeRoles] = useState('');
+  const [flagScopeEnvs, setFlagScopeEnvs] = useState('');
   const [supportAction, setSupportAction] = useState('failed_jobs');
   const [supportActivityData, setSupportActivityData] = useState<SupportActivityData | null>(null);
   const [supportJobsData, setSupportJobsData] = useState<SupportFailedJobsData | null>(null);
   const [supportUserId, setSupportUserId] = useState('');
   const [supportEmail, setSupportEmail] = useState('');
+  const [deployInfo, setDeployInfo] = useState<DeployInfo | null>(null);
+  const [obsData, setObsData] = useState<ObsData | null>(null);
   const [allRoles, setAllRoles] = useState<RoleRecord[]>([]);
   const [userRoles, setUserRoles] = useState<UserRoleRecord[]>([]);
   const [userRolesTotal, setUserRolesTotal] = useState(0);
@@ -193,8 +218,14 @@ export default function SuperAdminPage() {
   const fetchStats = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/super-admin/stats', { headers: h() });
-      if (res.ok) setStats(await res.json());
+      const [statsRes, deployRes, obsRes] = await Promise.all([
+        fetch('/api/super-admin/stats', { headers: h() }),
+        fetch('/api/super-admin/deploy', { headers: h() }),
+        fetch('/api/super-admin/observability', { headers: h() }),
+      ]);
+      if (statsRes.ok) setStats(await statsRes.json());
+      if (deployRes.ok) setDeployInfo(await deployRes.json());
+      if (obsRes.ok) setObsData(await obsRes.json());
     } catch { /* */ }
     setLoading(false);
   }, [h]);
@@ -267,6 +298,17 @@ export default function SuperAdminPage() {
       body: JSON.stringify({ name: newFlagName.trim(), enabled: false }),
     });
     setNewFlagName('');
+    fetchFlags();
+  };
+
+  const saveFlagScoping = async (flagId: string) => {
+    const roles = flagScopeRoles.split(',').map(s => s.trim()).filter(Boolean);
+    const envs = flagScopeEnvs.split(',').map(s => s.trim()).filter(Boolean);
+    await fetch('/api/super-admin/feature-flags', {
+      method: 'PATCH', headers: h(),
+      body: JSON.stringify({ id: flagId, updates: { target_roles: roles, target_environments: envs } }),
+    });
+    setEditingFlagId(null);
     fetchFlags();
   };
 
@@ -538,6 +580,94 @@ export default function SuperAdminPage() {
                   <button onClick={() => setActiveTab('logs')} style={S.quickBtn}>View Audit Logs</button>
                   <button onClick={fetchStats} style={{ ...S.quickBtn, color: '#22C55E', borderColor: '#22C55E40' }}>↻ Refresh</button>
                 </div>
+
+                {/* Observability */}
+                {obsData && (
+                  <div style={{ marginTop: 28 }}>
+                    <h2 style={S.h2}>Platform Health</h2>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 16 }}>
+                      <div style={{ ...S.card, borderLeft: `3px solid ${obsData.health.status === 'healthy' ? '#16A34A' : '#EF4444'}` }}>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: obsData.health.status === 'healthy' ? '#16A34A' : '#EF4444' }}>
+                          {obsData.health.status === 'healthy' ? '● Healthy' : '● Degraded'}
+                        </div>
+                        <div style={{ fontSize: 10, color: '#888' }}>System Status</div>
+                      </div>
+                      <div style={{ ...S.card, borderLeft: '3px solid #3B82F6' }}>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: '#3B82F6' }}>{obsData.users.active_24h}</div>
+                        <div style={{ fontSize: 10, color: '#888' }}>Active Today</div>
+                      </div>
+                      <div style={{ ...S.card, borderLeft: '3px solid #8B5CF6' }}>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: '#8B5CF6' }}>{obsData.users.active_7d}</div>
+                        <div style={{ fontSize: 10, color: '#888' }}>Active 7 Days</div>
+                      </div>
+                      <div style={{ ...S.card, borderLeft: `3px solid ${obsData.jobs.failed > 0 ? '#EF4444' : '#888'}` }}>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: obsData.jobs.failed > 0 ? '#EF4444' : '#888' }}>{obsData.jobs.failed}</div>
+                        <div style={{ fontSize: 10, color: '#888' }}>Failed Jobs</div>
+                      </div>
+                      <div style={{ ...S.card, borderLeft: '3px solid #F59E0B' }}>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: '#F59E0B' }}>{obsData.feature_flags.enabled}/{obsData.feature_flags.total}</div>
+                        <div style={{ fontSize: 10, color: '#888' }}>Flags Enabled</div>
+                      </div>
+                      <div style={{ ...S.card, borderLeft: '3px solid #E8581C' }}>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: '#E8581C' }}>{obsData.cache.size}</div>
+                        <div style={{ fontSize: 10, color: '#888' }}>Cache Entries</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Deployment */}
+                {deployInfo && (
+                  <div style={{ marginTop: 16 }}>
+                    <h2 style={S.h2}>Current Deployment</h2>
+                    <div style={{ ...S.card, marginBottom: 16 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
+                        <div>
+                          <div style={{ fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: 1 }}>Version</div>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: '#E8581C', marginTop: 2 }}>{deployInfo.app_version}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: 1 }}>Environment</div>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: deployInfo.environment === 'production' ? '#16A34A' : '#F59E0B', marginTop: 2 }}>
+                            {deployInfo.environment}
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: 1 }}>Branch</div>
+                          <div style={{ fontSize: 13, color: '#aaa', marginTop: 2 }}>{deployInfo.deployment.branch}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: 1 }}>Commit</div>
+                          <code style={{ fontSize: 11, color: '#3B82F6', marginTop: 2, display: 'block' }}>
+                            {deployInfo.deployment.commit_sha.slice(0, 10)}
+                          </code>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: 1 }}>Author</div>
+                          <div style={{ fontSize: 13, color: '#aaa', marginTop: 2 }}>{deployInfo.deployment.commit_author}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: 1 }}>Region</div>
+                          <div style={{ fontSize: 13, color: '#aaa', marginTop: 2 }}>{deployInfo.region}</div>
+                        </div>
+                      </div>
+                      {deployInfo.deployment.commit_message !== 'unknown' && (
+                        <div style={{ marginTop: 12, padding: '8px 12px', background: '#0a0a0a', borderRadius: 6, fontSize: 11, color: '#888' }}>
+                          {deployInfo.deployment.commit_message}
+                        </div>
+                      )}
+                    </div>
+
+                    <details style={{ marginBottom: 16 }}>
+                      <summary style={{ cursor: 'pointer', fontSize: 12, color: '#888', fontWeight: 600 }}>Rollback Instructions</summary>
+                      <div style={{ ...S.card, marginTop: 8 }}>
+                        <ol style={{ margin: 0, paddingLeft: 20, fontSize: 12, color: '#aaa', lineHeight: 2 }}>
+                          {deployInfo.rollback_instructions.map((step, i) => <li key={i}>{step}</li>)}
+                        </ol>
+                      </div>
+                    </details>
+                  </div>
+                )}
               </>
             ) : !loading && (
               <div style={{ textAlign: 'center', padding: 40, color: '#555' }}>
@@ -1007,18 +1137,58 @@ export default function SuperAdminPage() {
                 <div style={{ ...S.card, textAlign: 'center', color: '#555', padding: 24 }}>No feature flags configured. Add one above.</div>
               )}
               {flags.map(flag => (
-                <div key={flag.id} style={{ ...S.card, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <code style={{ fontSize: 13, fontWeight: 700, color: flag.enabled ? '#16A34A' : '#888' }}>{flag.name}</code>
-                    <div style={{ fontSize: 10, color: '#555', marginTop: 2 }}>Created {new Date(flag.created_at).toLocaleDateString()}</div>
+                <div key={flag.id} style={{ ...S.card }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <code style={{ fontSize: 13, fontWeight: 700, color: flag.enabled ? '#16A34A' : '#888' }}>{flag.name}</code>
+                      {flag.description && <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>{flag.description}</div>}
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <button onClick={() => {
+                        if (editingFlagId === flag.id) { setEditingFlagId(null); }
+                        else { setEditingFlagId(flag.id); setFlagScopeRoles((flag.target_roles || []).join(', ')); setFlagScopeEnvs((flag.target_environments || []).join(', ')); }
+                      }} style={{ ...S.actionBtn, fontSize: 10, color: '#3B82F6', borderColor: '#3B82F640' }}>
+                        {editingFlagId === flag.id ? 'Cancel' : 'Scope'}
+                      </button>
+                      <button onClick={() => toggleFlag(flag)} style={{
+                        padding: '6px 16px', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700,
+                        background: flag.enabled ? '#16A34A' : '#333', color: '#fff',
+                      }}>{flag.enabled ? 'ON' : 'OFF'}</button>
+                      <button onClick={() => deleteFlag(flag)} style={{ ...S.actionBtn, color: '#EF4444', borderColor: '#EF444440', fontSize: 10 }}>Del</button>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <button onClick={() => toggleFlag(flag)} style={{
-                      padding: '6px 16px', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700,
-                      background: flag.enabled ? '#16A34A' : '#333', color: '#fff',
-                    }}>{flag.enabled ? 'ON' : 'OFF'}</button>
-                    <button onClick={() => deleteFlag(flag)} style={{ ...S.actionBtn, color: '#EF4444', borderColor: '#EF444440', fontSize: 10 }}>Delete</button>
+                  {/* Scoping tags */}
+                  <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
+                    {flag.target_roles && flag.target_roles.length > 0 && flag.target_roles.map(r => (
+                      <span key={r} style={{ fontSize: 9, padding: '1px 6px', borderRadius: 4, background: '#3B82F615', color: '#3B82F6' }}>role:{r}</span>
+                    ))}
+                    {flag.target_environments && flag.target_environments.length > 0 && flag.target_environments.map(e => (
+                      <span key={e} style={{ fontSize: 9, padding: '1px 6px', borderRadius: 4, background: '#F59E0B15', color: '#F59E0B' }}>env:{e}</span>
+                    ))}
+                    {(!flag.target_roles || flag.target_roles.length === 0) && (!flag.target_environments || flag.target_environments.length === 0) && (
+                      <span style={{ fontSize: 9, color: '#555' }}>Global (all roles, all environments)</span>
+                    )}
                   </div>
+                  {/* Scoping editor */}
+                  {editingFlagId === flag.id && (
+                    <div style={{ marginTop: 10, padding: 10, background: '#0a0a0a', borderRadius: 8 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                        <div>
+                          <label style={{ fontSize: 10, color: '#888', display: 'block', marginBottom: 4 }}>Target Roles (comma-separated)</label>
+                          <input value={flagScopeRoles} onChange={e => setFlagScopeRoles(e.target.value)} placeholder="student, teacher, parent"
+                            style={S.searchInput} />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 10, color: '#888', display: 'block', marginBottom: 4 }}>Target Environments (comma-separated)</label>
+                          <input value={flagScopeEnvs} onChange={e => setFlagScopeEnvs(e.target.value)} placeholder="production, staging"
+                            style={S.searchInput} />
+                        </div>
+                      </div>
+                      <button onClick={() => saveFlagScoping(flag.id)} style={{ ...S.actionBtn, marginTop: 8, color: '#16A34A', borderColor: '#16A34A40', padding: '6px 16px' }}>
+                        Save Scoping
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
