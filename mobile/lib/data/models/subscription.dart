@@ -68,40 +68,40 @@ class Plans {
       code: 'starter',
       name: 'Starter',
       icon: '🌱',
-      priceMonthly: 9900, // ₹99
-      priceYearly: 79900, // ₹799
+      priceMonthly: 29900, // ₹299
+      priceYearly: 239900, // ₹2,399
       benefits: [
-        '25 Foxy chats/day',
+        '30 Foxy chats/day',
         '20 quizzes/day',
-        'All subjects',
-        'Basic progress tracking',
+        '4 subjects',
+        'Interactive labs',
       ],
     ),
     PlanInfo(
       code: 'pro',
       name: 'Pro',
       icon: '⚡',
-      priceMonthly: 19900, // ₹199
-      priceYearly: 159900, // ₹1,599
+      priceMonthly: 69900, // ₹699
+      priceYearly: 559900, // ₹5,599
       isPopular: true,
       benefits: [
         '100 Foxy chats/day',
         'Unlimited quizzes',
-        'All simulations',
+        'All subjects',
         'Detailed analytics',
         'Parent reports',
       ],
     ),
     PlanInfo(
-      code: 'ultimate',
-      name: 'Ultimate',
+      code: 'unlimited',
+      name: 'Unlimited',
       icon: '👑',
-      priceMonthly: 29900, // ₹299
-      priceYearly: 239900, // ₹2,399
+      priceMonthly: 149900, // ₹1,499
+      priceYearly: 1199900, // ₹11,999
       benefits: [
         'Unlimited Foxy chats',
         'Unlimited quizzes',
-        'All simulations',
+        'All subjects',
         'Priority support',
         'Full analytics',
         'Study planner',
