@@ -6,10 +6,7 @@
 -keep class io.flutter.** { *; }
 -keep class io.flutter.plugins.** { *; }
 
-# Play Core (deferred components) — not used but referenced by Flutter engine
--dontwarn com.google.android.play.core.**
-
-# Razorpay — payment gateway
+# Razorpay
 -keepclassmembers class * {
     @android.webkit.JavascriptInterface <methods>;
 }
@@ -18,19 +15,19 @@
 -dontwarn com.razorpay.**
 -keep class com.razorpay.** { *; }
 
-# Supabase / OkHttp / Retrofit
+# Supabase / OkHttp
 -dontwarn okhttp3.**
 -dontwarn okio.**
 -keep class okhttp3.** { *; }
--keep class okio.** { *; }
 
-# Hive local storage
+# Hive
 -keep class * extends com.google.crypto.tink.shaded.protobuf.GeneratedMessageLite { *; }
 
-# Gson
+# Gson (used by some plugins)
 -keepattributes Signature
+-keepattributes *Annotation*
 -keep class com.google.gson.** { *; }
 
-# Keep source file names for crash reports
+# General
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile

@@ -21,7 +21,7 @@ import { Redis } from '@upstash/redis';
 // ── Rate limiting: Distributed (Upstash Redis) with in-memory fallback ──
 const RATE_LIMIT_MAX = 60;        // 60 requests per minute per IP
 const RATE_LIMIT_PARENT_MAX = 5;  // 5 parent login attempts per minute per IP
-const RATE_LIMIT_ADMIN_MAX = 10;  // 10 requests per minute for /super-admin/*
+const RATE_LIMIT_ADMIN_MAX = 10;  // 10 requests per minute for /internal/admin/*
 
 // Distributed rate limiter via Upstash Redis (works across all Vercel instances)
 let redisRateLimiter: Ratelimit | null = null;
@@ -188,33 +188,38 @@ export async function middleware(request: NextRequest) {
     path.endsWith('.php') ||
     path.endsWith('.env') ||
     path.startsWith('/.git') ||
-    (path.startsWith('/admin') && !path.startsWith('/super-admin')) ||
-    path.startsWith('/internal/admin') || // Block old admin route
+    (path.startsWith('/admin') && !path.startsWith('/internal/admin')) ||
     path.startsWith('/cgi-bin') ||
     path.includes('..') // Path traversal attempt
   ) {
     return new NextResponse(null, { status: 404 });
   }
 
-  // ── Layer 2.1: Protect ALL /super-admin routes ──
-  // Requires valid Supabase session. Route handlers perform the
-  // admin_users DB check via authorizeAdmin() for per-user verification.
-  // The /super-admin/login page is exempt (needs to be accessible to log in).
-  if (
-    (path.startsWith('/super-admin') || path.startsWith('/api/super-admin'))
-    && path !== '/super-admin/login'
-  ) {
-    const hasSession = request.cookies.getAll().some(c => /^sb-.+-auth-token/.test(c.name));
-    const hasBearer = !!request.headers.get('Authorization')?.startsWith('Bearer ');
+  // ── Layer 2.1: Protect ALL /internal/admin routes (page + API) ──
+  // Server-side auth: secret must match BEFORE page or API renders.
+  // Accepts secret via query param (?secret=xxx) for page access,
+  // or via x-admin-secret header for API calls.
+  if (path.startsWith('/internal/admin') || path.startsWith('/api/internal/admin')) {
+    const secretKey = process.env.SUPER_ADMIN_SECRET;
 
-    if (!hasSession && !hasBearer) {
+    // Get secret from header (API calls) or query param (page access)
+    const headerSecret = request.headers.get('x-admin-secret');
+    const querySecret = request.nextUrl.searchParams.get('secret');
+    const providedSecret = headerSecret || querySecret;
+
+    if (!secretKey || !providedSecret || providedSecret !== secretKey) {
+      // Return 401 JSON for API routes, 401 HTML for page
       if (path.startsWith('/api/')) {
         return new NextResponse(
-          JSON.stringify({ error: 'Authentication required. Please log in.' }),
+          JSON.stringify({ error: 'Unauthorized' }),
           { status: 401, headers: { 'Content-Type': 'application/json' } }
         );
       }
-      return NextResponse.redirect(new URL('/super-admin/login', request.url));
+      // For the page: return a minimal 401 response
+      return new NextResponse(
+        '<html><body style="background:#0f0f0f;color:#e0e0e0;font-family:monospace;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><div style="font-size:48px;margin-bottom:16px">🔐</div><h1 style="font-size:18px;margin-bottom:8px">Access Denied</h1><p style="color:#888;font-size:13px">Invalid or missing admin secret.</p></div></body></html>',
+        { status: 401, headers: { 'Content-Type': 'text/html' } }
+      );
     }
 
     // Rate limit: 10 requests/minute for admin routes

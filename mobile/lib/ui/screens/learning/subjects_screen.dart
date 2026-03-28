@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -22,23 +21,19 @@ class SubjectsScreen extends ConsumerWidget {
       appBar: AppBar(title: const Text('Subjects')),
       body: ListView.separated(
         padding: const EdgeInsets.all(16),
-        physics: const AlwaysScrollableScrollPhysics(),
         itemCount: subjects.length,
         separatorBuilder: (_, __) => const SizedBox(height: 10),
         itemBuilder: (context, index) {
           final subj = subjects[index];
           final color = AppColors.subjectColor(subj.code);
           return GestureDetector(
-            onTap: () {
-              HapticFeedback.selectionClick();
-              context.go('/learn/${subj.code}');
-            },
+            onTap: () => context.go('/learn/${subj.code}'),
             child: Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: AppColors.surface,
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: color.withOpacity(0.15)),
+                border: Border.all(color: color.withValues(alpha: 0.15)),
               ),
               child: Row(
                 children: [
@@ -46,7 +41,7 @@ class SubjectsScreen extends ConsumerWidget {
                     width: 44,
                     height: 44,
                     decoration: BoxDecoration(
-                      color: color.withOpacity(0.1),
+                      color: color.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     alignment: Alignment.center,
@@ -76,7 +71,7 @@ class SubjectsScreen extends ConsumerWidget {
                     ),
                   ),
                   Icon(Icons.arrow_forward_ios_rounded,
-                      size: 14, color: color.withOpacity(0.5)),
+                      size: 14, color: color.withValues(alpha: 0.5)),
                 ],
               ),
             ),

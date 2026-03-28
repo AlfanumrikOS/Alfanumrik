@@ -72,13 +72,13 @@ class DashboardScreen extends ConsumerWidget {
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                             decoration: BoxDecoration(
                               color: student.isPremium
-                                  ? AppColors.planPro.withOpacity( 0.1)
-                                  : AppColors.planFree.withOpacity( 0.1),
+                                  ? AppColors.planPro.withValues(alpha: 0.1)
+                                  : AppColors.planFree.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(
                                 color: student.isPremium
-                                    ? AppColors.planPro.withOpacity( 0.3)
-                                    : AppColors.planFree.withOpacity( 0.3),
+                                    ? AppColors.planPro.withValues(alpha: 0.3)
+                                    : AppColors.planFree.withValues(alpha: 0.3),
                               ),
                             ),
                             child: Text(
@@ -180,31 +180,6 @@ class DashboardScreen extends ConsumerWidget {
                                 ],
                               ),
                             ),
-                            // Daily usage limits
-                            const SizedBox(height: 10),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _UsageBar(
-                                    icon: Icons.chat_bubble_outline_rounded,
-                                    label: 'Foxy Chats',
-                                    used: dash.usage.foxyChatsUsed,
-                                    limit: dash.usage.foxyChatsLimit,
-                                    color: AppColors.accent,
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: _UsageBar(
-                                    icon: Icons.quiz_outlined,
-                                    label: 'Quizzes',
-                                    used: dash.usage.quizzesUsed,
-                                    limit: dash.usage.quizzesLimit,
-                                    color: AppColors.mathColor,
-                                  ),
-                                ),
-                              ],
-                            ),
                           ],
                         ),
                       ),
@@ -293,12 +268,12 @@ class DashboardScreen extends ConsumerWidget {
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 colors: [
-                                  AppColors.primary.withOpacity( 0.08),
-                                  AppColors.accent.withOpacity( 0.06),
+                                  AppColors.primary.withValues(alpha: 0.08),
+                                  AppColors.accent.withValues(alpha: 0.06),
                                 ],
                               ),
                               borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: AppColors.primary.withOpacity( 0.15)),
+                              border: Border.all(color: AppColors.primary.withValues(alpha: 0.15)),
                             ),
                             child: const Row(
                               children: [
@@ -365,9 +340,9 @@ class _StatCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
         decoration: BoxDecoration(
-          color: color.withOpacity( 0.06),
+          color: color.withValues(alpha: 0.06),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withOpacity( 0.15)),
+          border: Border.all(color: color.withValues(alpha: 0.15)),
         ),
         child: Column(
           children: [
@@ -416,7 +391,7 @@ class _SubjectCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withOpacity( 0.15)),
+          border: Border.all(color: color.withValues(alpha: 0.15)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -434,78 +409,6 @@ class _SubjectCard extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _UsageBar extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final int used;
-  final int limit;
-  final Color color;
-
-  const _UsageBar({
-    required this.icon,
-    required this.label,
-    required this.used,
-    required this.limit,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final ratio = limit > 0 ? (used / limit).clamp(0.0, 1.0) : 0.0;
-    final isAtLimit = used >= limit;
-
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.borderLight),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 14, color: isAtLimit ? AppColors.error : color),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ),
-              Text(
-                '$used/$limit',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: isAtLimit ? AppColors.error : color,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(3),
-            child: LinearProgressIndicator(
-              value: ratio,
-              minHeight: 4,
-              backgroundColor: AppColors.borderLight,
-              valueColor: AlwaysStoppedAnimation(
-                isAtLimit ? AppColors.error : color,
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -531,9 +434,9 @@ class _ActionCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 14),
         decoration: BoxDecoration(
-          color: color.withOpacity( 0.06),
+          color: color.withValues(alpha: 0.06),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withOpacity( 0.15)),
+          border: Border.all(color: color.withValues(alpha: 0.15)),
         ),
         child: Row(
           children: [
