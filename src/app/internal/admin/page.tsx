@@ -33,12 +33,12 @@ interface UserRecord {
 
 interface AuditEntry {
   id: string;
-  auth_user_id: string;
+  admin_id: string;
   action: string;
-  resource_type: string;
-  resource_id: string | null;
+  entity_type: string;
+  entity_id: string | null;
   details: Record<string, unknown> | null;
-  status: string;
+  ip_address: string | null;
   created_at: string;
 }
 
@@ -92,12 +92,13 @@ interface InstitutionRecord {
   city?: string;
   state?: string;
   principal_name?: string;
-  contact_email?: string;
-  student_count?: number;
-  teacher_count?: number;
+  email?: string;
+  phone?: string;
+  max_students?: number;
+  max_teachers?: number;
+  subscription_plan?: string;
   is_active?: boolean;
   created_at?: string;
-  [key: string]: unknown;
 }
 
 interface AnalyticsData {
@@ -269,11 +270,19 @@ export default function SuperAdminPage() {
     setLoading(true);
     try {
       const p = new URLSearchParams({ page: String(institutionPage), limit: '25' });
-      const res = await fetch(`/api/internal/admin/users?role=school&${p}`, { headers: h() });
+      const res = await fetch(`/api/internal/admin/institutions?${p}`, { headers: h() });
       if (res.ok) { const d = await res.json(); setInstitutions(d.data || []); setInstitutionTotal(d.total || 0); }
     } catch { /* */ }
     setLoading(false);
   }, [h, institutionPage]);
+
+  const toggleInstitution = async (inst: InstitutionRecord) => {
+    await fetch('/api/internal/admin/institutions', {
+      method: 'PATCH', headers: h(),
+      body: JSON.stringify({ id: inst.id, updates: { is_active: !inst.is_active } }),
+    });
+    fetchInstitutions();
+  };
 
   const createContent = async () => {
     const typeMap: Record<string, string> = { chapters: 'chapter', topics: 'topic', questions: 'question' };
@@ -898,12 +907,14 @@ export default function SuperAdminPage() {
                     <th style={S.th}>Principal</th>
                     <th style={S.th}>Students</th>
                     <th style={S.th}>Teachers</th>
+                    <th style={S.th}>Plan</th>
                     <th style={S.th}>Status</th>
+                    <th style={S.th}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {institutions.length === 0 && (
-                    <tr><td colSpan={7} style={{ ...S.td, textAlign: 'center', color: '#555', padding: 24 }}>No schools onboarded yet. Schools will appear here once registered.</td></tr>
+                    <tr><td colSpan={8} style={{ ...S.td, textAlign: 'center', color: '#555', padding: 24 }}>No schools onboarded yet.</td></tr>
                   )}
                   {institutions.map(inst => (
                     <tr key={inst.id}>
@@ -911,14 +922,21 @@ export default function SuperAdminPage() {
                       <td style={S.td}>{inst.board || '—'}</td>
                       <td style={S.td}>{inst.city || '—'}</td>
                       <td style={S.td}>{inst.principal_name || '—'}</td>
-                      <td style={S.td}><span style={{ color: '#E8581C', fontWeight: 700 }}>{inst.student_count ?? 0}</span></td>
-                      <td style={S.td}><span style={{ color: '#3B82F6', fontWeight: 700 }}>{inst.teacher_count ?? 0}</span></td>
+                      <td style={S.td}><span style={{ color: '#E8581C', fontWeight: 700 }}>{inst.max_students ?? '—'}</span></td>
+                      <td style={S.td}>{inst.subscription_plan || 'free'}</td>
                       <td style={S.td}>
                         <span style={{
                           fontSize: 10, padding: '2px 8px', borderRadius: 10,
                           background: inst.is_active !== false ? '#16A34A20' : '#EF444420',
                           color: inst.is_active !== false ? '#16A34A' : '#EF4444',
                         }}>{inst.is_active !== false ? 'Active' : 'Suspended'}</span>
+                      </td>
+                      <td style={S.td}>
+                        <button onClick={() => toggleInstitution(inst)} style={{
+                          ...S.actionBtn,
+                          color: inst.is_active !== false ? '#EF4444' : '#22C55E',
+                          borderColor: inst.is_active !== false ? '#EF444440' : '#22C55E40',
+                        }}>{inst.is_active !== false ? 'Suspend' : 'Activate'}</button>
                       </td>
                     </tr>
                   ))}
@@ -1087,8 +1105,8 @@ export default function SuperAdminPage() {
                     <th style={S.th}>Timestamp</th>
                     <th style={S.th}>Action</th>
                     <th style={S.th}>Resource</th>
-                    <th style={S.th}>Status</th>
-                    <th style={S.th}>User ID</th>
+                    <th style={S.th}>IP</th>
+                    <th style={S.th}>Admin ID</th>
                     <th style={S.th}>Details</th>
                   </tr>
                 </thead>
@@ -1100,15 +1118,9 @@ export default function SuperAdminPage() {
                     <tr key={l.id}>
                       <td style={{ ...S.td, fontSize: 11, whiteSpace: 'nowrap' }}>{new Date(l.created_at).toLocaleString()}</td>
                       <td style={S.td}><code style={{ color: '#E8581C', background: '#E8581C15', padding: '1px 6px', borderRadius: 3 }}>{l.action}</code></td>
-                      <td style={S.td}>{l.resource_type}{l.resource_id ? <code style={{ color: '#888', marginLeft: 4 }}>:{l.resource_id.slice(0, 8)}</code> : ''}</td>
-                      <td style={S.td}>
-                        <span style={{
-                          fontSize: 10, padding: '2px 8px', borderRadius: 10,
-                          background: l.status === 'success' ? '#16A34A18' : l.status === 'denied' ? '#EF444418' : '#F59E0B18',
-                          color: l.status === 'success' ? '#16A34A' : l.status === 'denied' ? '#EF4444' : '#F59E0B',
-                        }}>{l.status || '—'}</span>
-                      </td>
-                      <td style={{ ...S.td, fontSize: 10 }}><code>{l.auth_user_id?.slice(0, 12) || '—'}</code></td>
+                      <td style={S.td}>{l.entity_type}{l.entity_id ? <code style={{ color: '#888', marginLeft: 4 }}>:{l.entity_id.slice(0, 8)}</code> : ''}</td>
+                      <td style={{ ...S.td, fontSize: 10 }}>{l.ip_address || '—'}</td>
+                      <td style={{ ...S.td, fontSize: 10 }}><code>{l.admin_id?.slice(0, 12) || '—'}</code></td>
                       <td style={{ ...S.td, fontSize: 10, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {l.details ? JSON.stringify(l.details).slice(0, 60) : '—'}
                       </td>
