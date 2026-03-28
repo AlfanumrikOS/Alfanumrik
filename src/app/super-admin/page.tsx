@@ -59,6 +59,14 @@ interface ObsData {
   feature_flags: { enabled: number; total: number };
   cache: { size: number; keys: string[] };
 }
+interface BackupRecord {
+  id: string; backup_type: string; status: string; provider: string; coverage: string | null;
+  size_bytes: number | null; completed_at: string | null; verified_at: string | null; notes: string | null; created_at: string;
+}
+interface DeployRecord {
+  id: string; app_version: string; commit_sha: string | null; commit_message: string | null;
+  commit_author: string | null; branch: string | null; environment: string; status: string; deployed_at: string; notes: string | null;
+}
 interface RoleRecord { id: string; name: string; display_name: string; hierarchy_level: number; is_system_role: boolean; description: string; }
 interface UserRoleRecord { id: string; auth_user_id: string; role_id: string; is_active: boolean; created_at: string; roles: { name: string; display_name: string } | null; }
 
@@ -170,6 +178,8 @@ export default function SuperAdminPage() {
   const [supportEmail, setSupportEmail] = useState('');
   const [deployInfo, setDeployInfo] = useState<DeployInfo | null>(null);
   const [obsData, setObsData] = useState<ObsData | null>(null);
+  const [backups, setBackups] = useState<BackupRecord[]>([]);
+  const [deployHistory, setDeployHistory] = useState<DeployRecord[]>([]);
   const [allRoles, setAllRoles] = useState<RoleRecord[]>([]);
   const [userRoles, setUserRoles] = useState<UserRoleRecord[]>([]);
   const [userRolesTotal, setUserRolesTotal] = useState(0);
@@ -218,14 +228,18 @@ export default function SuperAdminPage() {
   const fetchStats = useCallback(async () => {
     setLoading(true);
     try {
-      const [statsRes, deployRes, obsRes] = await Promise.all([
+      const [statsRes, deployRes, obsRes, backupRes, deployHistRes] = await Promise.all([
         fetch('/api/super-admin/stats', { headers: h() }),
         fetch('/api/super-admin/deploy', { headers: h() }),
         fetch('/api/super-admin/observability', { headers: h() }),
+        fetch('/api/super-admin/platform-ops?action=backups', { headers: h() }),
+        fetch('/api/super-admin/platform-ops?action=deployments&limit=5', { headers: h() }),
       ]);
       if (statsRes.ok) setStats(await statsRes.json());
       if (deployRes.ok) setDeployInfo(await deployRes.json());
       if (obsRes.ok) setObsData(await obsRes.json());
+      if (backupRes.ok) { const d = await backupRes.json(); setBackups(d.data || []); }
+      if (deployHistRes.ok) { const d = await deployHistRes.json(); setDeployHistory(d.data || []); }
     } catch { /* */ }
     setLoading(false);
   }, [h]);
@@ -666,6 +680,93 @@ export default function SuperAdminPage() {
                         </ol>
                       </div>
                     </details>
+                  </div>
+                )}
+
+                {/* Backup Status */}
+                <div style={{ marginTop: 16 }}>
+                  <h2 style={S.h2}>Backup & Restore</h2>
+                  {backups.length === 0 ? (
+                    <div style={{ ...S.card, color: '#555', fontSize: 12 }}>No backup records found. Verify via Supabase dashboard.</div>
+                  ) : (
+                    <div style={{ display: 'grid', gap: 10 }}>
+                      {backups.map(b => {
+                        const statusColor = b.status === 'success' ? '#16A34A' : b.status === 'failed' ? '#EF4444' : b.status === 'unverified' ? '#F59E0B' : '#888';
+                        return (
+                          <div key={b.id} style={{ ...S.card, borderLeft: `3px solid ${statusColor}` }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <div>
+                                <span style={{ fontSize: 13, fontWeight: 700, color: statusColor, textTransform: 'capitalize' }}>{b.status}</span>
+                                <span style={{ fontSize: 11, color: '#888', marginLeft: 8 }}>{b.backup_type} — {b.provider}</span>
+                              </div>
+                              <div style={{ fontSize: 10, color: '#555' }}>
+                                {b.completed_at ? new Date(b.completed_at).toLocaleString() : b.verified_at ? `Verified ${new Date(b.verified_at).toLocaleDateString()}` : 'Not verified'}
+                              </div>
+                            </div>
+                            {b.coverage && <div style={{ fontSize: 10, color: '#666', marginTop: 4 }}>{b.coverage}</div>}
+                            {b.notes && <div style={{ fontSize: 10, color: '#555', marginTop: 2, fontStyle: 'italic' }}>{b.notes}</div>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <details style={{ marginTop: 12 }}>
+                    <summary style={{ cursor: 'pointer', fontSize: 12, color: '#888', fontWeight: 600 }}>Restore Checklist</summary>
+                    <div style={{ ...S.card, marginTop: 8 }}>
+                      <ol style={{ margin: 0, paddingLeft: 20, fontSize: 12, color: '#aaa', lineHeight: 2 }}>
+                        <li>Confirm the issue requires restore (not just rollback)</li>
+                        <li>Pause Edge Functions from Supabase dashboard</li>
+                        <li>Go to Supabase → Project Settings → Database → Backups</li>
+                        <li>Select the most recent backup before the issue</li>
+                        <li>Restore to a new branch or apply Point-in-Time Recovery</li>
+                        <li>Verify data integrity on restored state</li>
+                        <li>Re-enable Edge Functions</li>
+                        <li>Update backup_status record via admin Support tools</li>
+                      </ol>
+                    </div>
+                  </details>
+                </div>
+
+                {/* Deployment History */}
+                {deployHistory.length > 0 && (
+                  <div style={{ marginTop: 16 }}>
+                    <h2 style={S.h2}>Recent Deployments</h2>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={S.table}>
+                        <thead>
+                          <tr>
+                            <th style={S.th}>Version</th>
+                            <th style={S.th}>Branch</th>
+                            <th style={S.th}>Env</th>
+                            <th style={S.th}>Status</th>
+                            <th style={S.th}>Commit</th>
+                            <th style={S.th}>Deployed</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {deployHistory.map(d => (
+                            <tr key={d.id}>
+                              <td style={S.td}><span style={{ fontWeight: 700, color: '#E8581C' }}>{d.app_version}</span></td>
+                              <td style={S.td}>{d.branch || '—'}</td>
+                              <td style={S.td}>
+                                <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4,
+                                  background: d.environment === 'production' ? '#16A34A20' : '#F59E0B20',
+                                  color: d.environment === 'production' ? '#16A34A' : '#F59E0B' }}>
+                                  {d.environment}
+                                </span>
+                              </td>
+                              <td style={S.td}>
+                                <span style={{ fontSize: 10, color: d.status === 'success' ? '#16A34A' : d.status === 'failed' ? '#EF4444' : '#F59E0B' }}>
+                                  {d.status}
+                                </span>
+                              </td>
+                              <td style={{ ...S.td, fontSize: 10 }}><code>{(d.commit_sha || '').slice(0, 8)}</code></td>
+                              <td style={{ ...S.td, fontSize: 11 }}>{new Date(d.deployed_at).toLocaleString()}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 )}
               </>

@@ -236,6 +236,13 @@ export function supabaseAdminHeaders(prefer: string = 'count=exact') {
   };
 }
 
+/**
+ * Validate a UUID string to prevent injection in REST URL parameters.
+ */
+export function isValidUUID(str: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+}
+
 export function supabaseAdminUrl(table: string, params: string = ''): string {
   const { url } = getSupabaseConfig();
   return `${url}/rest/v1/${table}${params ? `?${params}` : ''}`;
