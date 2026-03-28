@@ -11,11 +11,23 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(100, Math.max(1, parseInt(params.get('limit') || '25')));
     const offset = (page - 1) * limit;
 
+    // Filters
+    const actionFilter = params.get('action_filter');
+    const entityFilter = params.get('entity_filter');
+    const dateFrom = params.get('date_from');
+    const dateTo = params.get('date_to');
+
+    const filters: string[] = [];
+    if (actionFilter) filters.push(`action=ilike.*${encodeURIComponent(actionFilter)}*`);
+    if (entityFilter) filters.push(`entity_type=eq.${encodeURIComponent(entityFilter)}`);
+    if (dateFrom) filters.push(`created_at=gte.${encodeURIComponent(dateFrom)}`);
+    if (dateTo) filters.push(`created_at=lte.${encodeURIComponent(dateTo)}T23:59:59`);
+
+    const filterStr = filters.length > 0 ? `&${filters.join('&')}` : '';
+
     const res = await fetch(
-      supabaseAdminUrl('admin_audit_log', `select=id,admin_id,action,entity_type,entity_id,details,ip_address,created_at&order=created_at.desc&offset=${offset}&limit=${limit}`),
-      {
-        headers: supabaseAdminHeaders('count=exact'),
-      }
+      supabaseAdminUrl('admin_audit_log', `select=id,admin_id,action,entity_type,entity_id,details,ip_address,created_at&order=created_at.desc&offset=${offset}&limit=${limit}${filterStr}`),
+      { headers: supabaseAdminHeaders('count=exact') }
     );
 
     const data = await res.json();
