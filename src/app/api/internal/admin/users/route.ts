@@ -1,20 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-function checkAuth(request: NextRequest): boolean {
-  const adminKey = request.headers.get('x-admin-secret');
-  const secretKey = process.env.SUPER_ADMIN_SECRET;
-  return !!(secretKey && adminKey && adminKey === secretKey);
-}
+import { authorizeAdmin, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../../lib/admin-auth';
 
 async function supabaseQuery(table: string, params: string) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  const res = await fetch(`${url}/rest/v1/${table}?${params}`, {
-    headers: {
-      'apikey': key,
-      'Authorization': `Bearer ${key}`,
-      'Prefer': 'count=exact',
-    },
+  const res = await fetch(supabaseAdminUrl(table, params), {
+    headers: supabaseAdminHeaders('count=exact'),
   });
   const data = await res.json();
   const range = res.headers.get('content-range');
@@ -23,25 +12,17 @@ async function supabaseQuery(table: string, params: string) {
 }
 
 async function supabaseUpdate(table: string, id: string, updates: Record<string, unknown>) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  const res = await fetch(`${url}/rest/v1/${table}?id=eq.${id}`, {
+  const res = await fetch(supabaseAdminUrl(table, `id=eq.${id}`), {
     method: 'PATCH',
-    headers: {
-      'apikey': key,
-      'Authorization': `Bearer ${key}`,
-      'Content-Type': 'application/json',
-      'Prefer': 'return=minimal',
-    },
+    headers: supabaseAdminHeaders('return=minimal'),
     body: JSON.stringify(updates),
   });
   return res.ok;
 }
 
 export async function GET(request: NextRequest) {
-  if (!checkAuth(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const auth = await authorizeAdmin(request);
+  if (!auth.authorized) return auth.response;
 
   try {
     const params = new URL(request.url).searchParams;
@@ -70,9 +51,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  if (!checkAuth(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const auth = await authorizeAdmin(request);
+  if (!auth.authorized) return auth.response;
 
   try {
     const { user_id, table, updates } = await request.json();

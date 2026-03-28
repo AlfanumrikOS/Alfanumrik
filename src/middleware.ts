@@ -195,31 +195,26 @@ export async function middleware(request: NextRequest) {
     return new NextResponse(null, { status: 404 });
   }
 
-  // ── Layer 2.1: Protect ALL /internal/admin routes (page + API) ──
-  // Server-side auth: secret must match BEFORE page or API renders.
-  // Accepts secret via query param (?secret=xxx) for page access,
-  // or via x-admin-secret header for API calls.
-  if (path.startsWith('/internal/admin') || path.startsWith('/api/internal/admin')) {
-    const secretKey = process.env.SUPER_ADMIN_SECRET;
+  // ── Layer 2.1: Protect ALL /internal/admin routes ──
+  // Requires valid Supabase session. Route handlers perform the
+  // admin_users DB check via authorizeAdmin() for per-user verification.
+  // The /internal/admin/login page is exempt (needs to be accessible to log in).
+  if (
+    (path.startsWith('/internal/admin') || path.startsWith('/api/internal/admin'))
+    && path !== '/internal/admin/login'
+  ) {
+    const hasSession = request.cookies.getAll().some(c => /^sb-.+-auth-token/.test(c.name));
+    const hasBearer = !!request.headers.get('Authorization')?.startsWith('Bearer ');
 
-    // Get secret from header (API calls) or query param (page access)
-    const headerSecret = request.headers.get('x-admin-secret');
-    const querySecret = request.nextUrl.searchParams.get('secret');
-    const providedSecret = headerSecret || querySecret;
-
-    if (!secretKey || !providedSecret || providedSecret !== secretKey) {
-      // Return 401 JSON for API routes, 401 HTML for page
+    if (!hasSession && !hasBearer) {
       if (path.startsWith('/api/')) {
         return new NextResponse(
-          JSON.stringify({ error: 'Unauthorized' }),
+          JSON.stringify({ error: 'Authentication required. Please log in.' }),
           { status: 401, headers: { 'Content-Type': 'application/json' } }
         );
       }
-      // For the page: return a minimal 401 response
-      return new NextResponse(
-        '<html><body style="background:#0f0f0f;color:#e0e0e0;font-family:monospace;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><div style="font-size:48px;margin-bottom:16px">🔐</div><h1 style="font-size:18px;margin-bottom:8px">Access Denied</h1><p style="color:#888;font-size:13px">Invalid or missing admin secret.</p></div></body></html>',
-        { status: 401, headers: { 'Content-Type': 'text/html' } }
-      );
+      // Redirect to admin login page
+      return NextResponse.redirect(new URL('/internal/admin/login', request.url));
     }
 
     // Rate limit: 10 requests/minute for admin routes

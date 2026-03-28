@@ -1,19 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-function checkAuth(request: NextRequest): boolean {
-  const adminKey = request.headers.get('x-admin-secret');
-  const secretKey = process.env.SUPER_ADMIN_SECRET;
-  return !!(secretKey && adminKey && adminKey === secretKey);
-}
+import { authorizeAdmin, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../../lib/admin-auth';
 
 async function fetchAll(table: string, select: string, filter?: string) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
   let queryParams = `select=${select}&order=created_at.desc&limit=5000`;
   if (filter) queryParams += `&${filter}`;
 
-  const res = await fetch(`${url}/rest/v1/${table}?${queryParams}`, {
-    headers: { 'apikey': key, 'Authorization': `Bearer ${key}` },
+  const res = await fetch(supabaseAdminUrl(table, queryParams), {
+    headers: supabaseAdminHeaders(),
   });
   return res.json();
 }
@@ -32,9 +25,8 @@ function toCsv(data: Record<string, unknown>[]): string {
 }
 
 export async function GET(request: NextRequest) {
-  if (!checkAuth(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const auth = await authorizeAdmin(request);
+  if (!auth.authorized) return auth.response;
 
   try {
     const params = new URL(request.url).searchParams;

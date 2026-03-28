@@ -1,29 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { authorizeAdmin, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../../lib/admin-auth';
 
 // Direct Supabase REST API helper — bypasses JS client entirely
 async function supabaseRest(table: string, params: string = '', method: string = 'GET', body?: string) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error('Missing Supabase config');
-
-  const res = await fetch(`${url}/rest/v1/${table}?${params}`, {
+  const res = await fetch(supabaseAdminUrl(table, params), {
     method,
-    headers: {
-      'apikey': key,
-      'Authorization': `Bearer ${key}`,
-      'Content-Type': 'application/json',
-      'Prefer': 'count=exact',
-    },
+    headers: supabaseAdminHeaders('count=exact'),
     ...(body ? { body } : {}),
   });
 
   return res;
-}
-
-function checkAuth(request: NextRequest): boolean {
-  const adminKey = request.headers.get('x-admin-secret');
-  const secretKey = process.env.SUPER_ADMIN_SECRET;
-  return !!(secretKey && adminKey && adminKey === secretKey);
 }
 
 // Build an array of date strings for the last N days (YYYY-MM-DD)
@@ -48,9 +34,8 @@ function countByDate(rows: { created_at: string }[], days: string[]): Record<str
 }
 
 export async function GET(request: NextRequest) {
-  if (!checkAuth(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const auth = await authorizeAdmin(request);
+  if (!auth.authorized) return auth.response;
 
   try {
     const since30d = new Date(Date.now() - 30 * 86400000).toISOString();

@@ -1,32 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-function checkAuth(request: NextRequest): boolean {
-  const adminKey = request.headers.get('x-admin-secret');
-  const secretKey = process.env.SUPER_ADMIN_SECRET;
-  return !!(secretKey && adminKey && adminKey === secretKey);
-}
+import { authorizeAdmin, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../../lib/admin-auth';
 
 export async function GET(request: NextRequest) {
-  if (!checkAuth(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const auth = await authorizeAdmin(request);
+  if (!auth.authorized) return auth.response;
 
   try {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
     const params = new URL(request.url).searchParams;
     const page = Math.max(1, parseInt(params.get('page') || '1'));
     const limit = Math.min(100, Math.max(1, parseInt(params.get('limit') || '25')));
     const offset = (page - 1) * limit;
 
     const res = await fetch(
-      `${url}/rest/v1/admin_audit_log?select=id,admin_id,action,entity_type,entity_id,details,ip_address,created_at&order=created_at.desc&offset=${offset}&limit=${limit}`,
+      supabaseAdminUrl('admin_audit_log', `select=id,admin_id,action,entity_type,entity_id,details,ip_address,created_at&order=created_at.desc&offset=${offset}&limit=${limit}`),
       {
-        headers: {
-          'apikey': key,
-          'Authorization': `Bearer ${key}`,
-          'Prefer': 'count=exact',
-        },
+        headers: supabaseAdminHeaders('count=exact'),
       }
     );
 

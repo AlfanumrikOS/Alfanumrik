@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { createClient } from '@supabase/supabase-js';
 
 /* ═══════════════════════════════════════════════════════════════
    ALFANUMRIK SUPER ADMIN PANEL — Full Control Dashboard
-   Server-side protected via middleware (secret in query param).
+   Protected via Supabase session + admin_users DB verification.
    ═══════════════════════════════════════════════════════════════ */
 
 interface SystemStats {
@@ -141,16 +142,40 @@ export default function SuperAdminPage() {
   const [institutionTotal, setInstitutionTotal] = useState(0);
   const [institutionPage, setInstitutionPage] = useState(1);
 
-  // Get secret from URL — middleware already validated it
-  const [secretKey] = useState(() => {
-    if (typeof window === 'undefined') return '';
-    return new URLSearchParams(window.location.search).get('secret') || '';
-  });
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [adminName, setAdminName] = useState('');
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  );
+
+  // Get Supabase session token for API calls
+  useEffect(() => {
+    const getSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        setAccessToken(session.access_token);
+      } else {
+        window.location.href = '/internal/admin/login';
+      }
+    };
+    getSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: string, session: { access_token: string } | null) => {
+      if (session) {
+        setAccessToken(session.access_token);
+      } else {
+        window.location.href = '/internal/admin/login';
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [supabase]);
 
   const h = useCallback(() => ({
     'Content-Type': 'application/json',
-    'x-admin-secret': secretKey,
-  }), [secretKey]);
+    'Authorization': `Bearer ${accessToken}`,
+  }), [accessToken]);
 
   // ── Data fetchers ──
   const fetchStats = useCallback(async () => {
@@ -306,7 +331,7 @@ export default function SuperAdminPage() {
   };
 
   useEffect(() => {
-    if (!secretKey) return;
+    if (!accessToken) return;
     if (activeTab === 'dashboard') fetchStats();
     if (activeTab === 'users') fetchUsers();
     if (activeTab === 'content') fetchContent();
@@ -315,7 +340,7 @@ export default function SuperAdminPage() {
     if (activeTab === 'support') fetchSupport();
     if (activeTab === 'institutions') fetchInstitutions();
     if (activeTab === 'logs') fetchLogs();
-  }, [secretKey, activeTab, fetchStats, fetchUsers, fetchContent, fetchAnalytics, fetchFlags, fetchSupport, fetchInstitutions, fetchLogs]);
+  }, [accessToken, activeTab, fetchStats, fetchUsers, fetchContent, fetchAnalytics, fetchFlags, fetchSupport, fetchInstitutions, fetchLogs]);
 
   // ── Actions ──
   const toggleUser = async (user: UserRecord) => {
@@ -345,8 +370,8 @@ export default function SuperAdminPage() {
     } catch { setReportStatus('Download failed'); }
   };
 
-  if (!secretKey) {
-    return <div style={S.center}><p style={{ color: '#888' }}>Access: /internal/admin?secret=YOUR_KEY</p></div>;
+  if (!accessToken) {
+    return <div style={S.center}><p style={{ color: '#888' }}>Loading session...</p></div>;
   }
 
   const TABS: { key: Tab; label: string; icon: string }[] = [
@@ -372,7 +397,14 @@ export default function SuperAdminPage() {
             <div style={{ fontSize: 10, color: '#555', letterSpacing: 2, textTransform: 'uppercase' }}>Super Admin Console</div>
           </div>
         </div>
-        <div style={{ fontSize: 10, color: '#444' }}>{new Date().toLocaleString()}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {adminName && <span style={{ fontSize: 11, color: '#888' }}>{adminName}</span>}
+          <span style={{ fontSize: 10, color: '#444' }}>{new Date().toLocaleString()}</span>
+          <button onClick={async () => { await supabase.auth.signOut(); window.location.href = '/internal/admin/login'; }}
+            style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #333', background: 'transparent', color: '#888', fontSize: 10, cursor: 'pointer' }}>
+            Logout
+          </button>
+        </div>
       </header>
 
       {/* ── Tabs ── */}
