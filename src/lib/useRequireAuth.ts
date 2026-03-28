@@ -21,7 +21,7 @@ export function useRequireAuth(requiredRole?: UserRole) {
     if (isLoading) return;
 
     if (!isLoggedIn) {
-      router.replace('/');
+      router.replace('/login');
       return;
     }
 
