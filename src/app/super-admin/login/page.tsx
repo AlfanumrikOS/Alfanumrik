@@ -42,20 +42,14 @@ export default function AdminLoginPage() {
         headers: { 'Authorization': `Bearer ${session.access_token}` },
       });
 
-      if (res.status === 403) {
-        const detail = await res.json().catch(() => ({}));
-        await supabase.auth.signOut();
-        const debugMsg = detail.debug
-          ? ` (userId: ${detail.debug.userId}, email: ${detail.debug.email}, records: ${detail.debug.adminRecordsFound})`
-          : '';
-        setError(`Access denied. This account is not authorized as an administrator.${debugMsg}`);
-        setLoading(false);
-        return;
-      }
-
       if (!res.ok) {
-        const errDetail = await res.json().catch(() => ({}));
-        setError(errDetail.error || 'Verification failed. Please try again.');
+        const detail = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        if (res.status === 403 || res.status === 401) {
+          await supabase.auth.signOut();
+        }
+        // Show the exact backend error + diagnostics
+        const diagStr = detail.diag ? '\n\nDiagnostics: ' + JSON.stringify(detail.diag, null, 2) : '';
+        setError(`${detail.error || 'Verification failed'}${diagStr}`);
         setLoading(false);
         return;
       }
@@ -93,7 +87,8 @@ export default function AdminLoginPage() {
           <div style={{
             padding: '10px 14px', borderRadius: 8, marginBottom: 16,
             background: '#2a1010', border: '1px solid #3a1515',
-            color: '#EF4444', fontSize: 12,
+            color: '#EF4444', fontSize: 11, whiteSpace: 'pre-wrap' as const,
+            maxHeight: 300, overflowY: 'auto' as const, wordBreak: 'break-word' as const,
           }}>
             {error}
           </div>
