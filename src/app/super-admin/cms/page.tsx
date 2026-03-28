@@ -72,7 +72,7 @@ export default function CmsPage() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) setAccessToken(session.access_token);
-      else window.location.href = '/internal/admin/login';
+      else window.location.href = '/super-admin/login';
     });
   }, [supabase]);
 
@@ -82,19 +82,19 @@ export default function CmsPage() {
   }), [accessToken]);
 
   const api = useCallback(async (params: string) => {
-    const res = await fetch(`/api/internal/admin/cms?${params}`, { headers: h() });
+    const res = await fetch(`/api/super-admin/cms?${params}`, { headers: h() });
     if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `HTTP ${res.status}`); }
     return res.json();
   }, [h]);
 
   const apiPost = useCallback(async (action: string, body: Record<string, unknown>) => {
-    const res = await fetch(`/api/internal/admin/cms?action=${action}`, { method: 'POST', headers: h(), body: JSON.stringify(body) });
+    const res = await fetch(`/api/super-admin/cms?action=${action}`, { method: 'POST', headers: h(), body: JSON.stringify(body) });
     if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `HTTP ${res.status}`); }
     return res.json();
   }, [h]);
 
   const apiPatch = useCallback(async (action: string, body: Record<string, unknown>) => {
-    const res = await fetch(`/api/internal/admin/cms?action=${action}`, { method: 'PATCH', headers: h(), body: JSON.stringify(body) });
+    const res = await fetch(`/api/super-admin/cms?action=${action}`, { method: 'PATCH', headers: h(), body: JSON.stringify(body) });
     if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `HTTP ${res.status}`); }
     return res.json();
   }, [h]);
@@ -225,7 +225,7 @@ export default function CmsPage() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <a href="/internal/admin" style={{ ...S.navBtn, textDecoration: 'none' }}>← Admin</a>
+          <a href="/super-admin" style={{ ...S.navBtn, textDecoration: 'none' }}>← Admin</a>
         </div>
       </header>
 

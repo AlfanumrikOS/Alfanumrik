@@ -38,7 +38,7 @@ export default function AdminLoginPage() {
         return;
       }
 
-      const res = await fetch('/api/internal/admin/stats', {
+      const res = await fetch('/api/super-admin/stats', {
         headers: { 'Authorization': `Bearer ${session.access_token}` },
       });
 
@@ -56,7 +56,7 @@ export default function AdminLoginPage() {
       }
 
       // Success — redirect to admin dashboard
-      window.location.href = '/internal/admin';
+      window.location.href = '/super-admin';
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
       setLoading(false);

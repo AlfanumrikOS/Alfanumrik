@@ -21,7 +21,7 @@ import { Redis } from '@upstash/redis';
 // ── Rate limiting: Distributed (Upstash Redis) with in-memory fallback ──
 const RATE_LIMIT_MAX = 60;        // 60 requests per minute per IP
 const RATE_LIMIT_PARENT_MAX = 5;  // 5 parent login attempts per minute per IP
-const RATE_LIMIT_ADMIN_MAX = 10;  // 10 requests per minute for /internal/admin/*
+const RATE_LIMIT_ADMIN_MAX = 10;  // 10 requests per minute for /super-admin/*
 
 // Distributed rate limiter via Upstash Redis (works across all Vercel instances)
 let redisRateLimiter: Ratelimit | null = null;
@@ -188,20 +188,21 @@ export async function middleware(request: NextRequest) {
     path.endsWith('.php') ||
     path.endsWith('.env') ||
     path.startsWith('/.git') ||
-    (path.startsWith('/admin') && !path.startsWith('/internal/admin')) ||
+    (path.startsWith('/admin') && !path.startsWith('/super-admin')) ||
+    path.startsWith('/internal/admin') || // Block old admin route
     path.startsWith('/cgi-bin') ||
     path.includes('..') // Path traversal attempt
   ) {
     return new NextResponse(null, { status: 404 });
   }
 
-  // ── Layer 2.1: Protect ALL /internal/admin routes ──
+  // ── Layer 2.1: Protect ALL /super-admin routes ──
   // Requires valid Supabase session. Route handlers perform the
   // admin_users DB check via authorizeAdmin() for per-user verification.
-  // The /internal/admin/login page is exempt (needs to be accessible to log in).
+  // The /super-admin/login page is exempt (needs to be accessible to log in).
   if (
-    (path.startsWith('/internal/admin') || path.startsWith('/api/internal/admin'))
-    && path !== '/internal/admin/login'
+    (path.startsWith('/super-admin') || path.startsWith('/api/super-admin'))
+    && path !== '/super-admin/login'
   ) {
     const hasSession = request.cookies.getAll().some(c => /^sb-.+-auth-token/.test(c.name));
     const hasBearer = !!request.headers.get('Authorization')?.startsWith('Bearer ');
@@ -213,8 +214,7 @@ export async function middleware(request: NextRequest) {
           { status: 401, headers: { 'Content-Type': 'application/json' } }
         );
       }
-      // Redirect to admin login page
-      return NextResponse.redirect(new URL('/internal/admin/login', request.url));
+      return NextResponse.redirect(new URL('/super-admin/login', request.url));
     }
 
     // Rate limit: 10 requests/minute for admin routes

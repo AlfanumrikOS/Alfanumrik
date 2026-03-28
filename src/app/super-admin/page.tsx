@@ -156,7 +156,7 @@ export default function SuperAdminPage() {
       if (session) {
         setAccessToken(session.access_token);
       } else {
-        window.location.href = '/internal/admin/login';
+        window.location.href = '/super-admin/login';
       }
     };
     getSession();
@@ -165,7 +165,7 @@ export default function SuperAdminPage() {
       if (session) {
         setAccessToken(session.access_token);
       } else {
-        window.location.href = '/internal/admin/login';
+        window.location.href = '/super-admin/login';
       }
     });
 
@@ -181,7 +181,7 @@ export default function SuperAdminPage() {
   const fetchStats = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/internal/admin/stats', { headers: h() });
+      const res = await fetch('/api/super-admin/stats', { headers: h() });
       if (res.ok) setStats(await res.json());
     } catch { /* */ }
     setLoading(false);
@@ -192,7 +192,7 @@ export default function SuperAdminPage() {
     try {
       const p = new URLSearchParams({ role: userRole, page: String(userPage), limit: '25' });
       if (userSearch) p.set('search', userSearch);
-      const res = await fetch(`/api/internal/admin/users?${p}`, { headers: h() });
+      const res = await fetch(`/api/super-admin/users?${p}`, { headers: h() });
       if (res.ok) { const d = await res.json(); setUsers(d.data || []); setUserTotal(d.total || 0); }
     } catch { /* */ }
     setLoading(false);
@@ -202,7 +202,7 @@ export default function SuperAdminPage() {
     setLoading(true);
     try {
       const p = new URLSearchParams({ page: String(logPage), limit: '25' });
-      const res = await fetch(`/api/internal/admin/logs?${p}`, { headers: h() });
+      const res = await fetch(`/api/super-admin/logs?${p}`, { headers: h() });
       if (res.ok) { const d = await res.json(); setLogs(d.data || []); setLogTotal(d.total || 0); }
     } catch { /* */ }
     setLoading(false);
@@ -212,7 +212,7 @@ export default function SuperAdminPage() {
     setLoading(true);
     try {
       const p = new URLSearchParams({ type: contentType, page: String(contentPage), limit: '25' });
-      const res = await fetch(`/api/internal/admin/content?${p}`, { headers: h() });
+      const res = await fetch(`/api/super-admin/content?${p}`, { headers: h() });
       if (res.ok) { const d = await res.json(); setContent(d.data || []); setContentTotal(d.total || 0); }
     } catch { /* */ }
     setLoading(false);
@@ -221,7 +221,7 @@ export default function SuperAdminPage() {
   const fetchAnalytics = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/internal/admin/analytics', { headers: h() });
+      const res = await fetch('/api/super-admin/analytics', { headers: h() });
       if (res.ok) setAnalyticsData(await res.json());
     } catch { /* */ }
     setLoading(false);
@@ -230,14 +230,14 @@ export default function SuperAdminPage() {
   const fetchFlags = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/internal/admin/feature-flags', { headers: h() });
+      const res = await fetch('/api/super-admin/feature-flags', { headers: h() });
       if (res.ok) { const d = await res.json(); setFlags(d.data || []); }
     } catch { /* */ }
     setLoading(false);
   }, [h]);
 
   const toggleFlag = async (flag: FeatureFlag) => {
-    await fetch('/api/internal/admin/feature-flags', {
+    await fetch('/api/super-admin/feature-flags', {
       method: 'PATCH', headers: h(),
       body: JSON.stringify({ id: flag.id, updates: { enabled: !flag.enabled } }),
     });
@@ -246,7 +246,7 @@ export default function SuperAdminPage() {
 
   const createFlag = async () => {
     if (!newFlagName.trim()) return;
-    await fetch('/api/internal/admin/feature-flags', {
+    await fetch('/api/super-admin/feature-flags', {
       method: 'POST', headers: h(),
       body: JSON.stringify({ name: newFlagName.trim(), enabled: false }),
     });
@@ -256,7 +256,7 @@ export default function SuperAdminPage() {
 
   const deleteFlag = async (flag: FeatureFlag) => {
     if (!confirm(`Delete flag "${flag.name}"?`)) return;
-    await fetch('/api/internal/admin/feature-flags', {
+    await fetch('/api/super-admin/feature-flags', {
       method: 'DELETE', headers: h(),
       body: JSON.stringify({ id: flag.id }),
     });
@@ -268,7 +268,7 @@ export default function SuperAdminPage() {
     try {
       const a = action || supportAction;
       const p = new URLSearchParams({ action: a, ...params });
-      const res = await fetch(`/api/internal/admin/support?${p}`, { headers: h() });
+      const res = await fetch(`/api/super-admin/support?${p}`, { headers: h() });
       if (res.ok) {
         const data = await res.json();
         if (a === 'user_activity') setSupportActivityData(data as SupportActivityData);
@@ -281,7 +281,7 @@ export default function SuperAdminPage() {
   const supportPost = async (action: string, body: Record<string, unknown>) => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/internal/admin/support?action=${action}`, {
+      const res = await fetch(`/api/super-admin/support?action=${action}`, {
         method: 'POST', headers: h(), body: JSON.stringify(body),
       });
       const d = await res.json();
@@ -295,14 +295,14 @@ export default function SuperAdminPage() {
     setLoading(true);
     try {
       const p = new URLSearchParams({ page: String(institutionPage), limit: '25' });
-      const res = await fetch(`/api/internal/admin/institutions?${p}`, { headers: h() });
+      const res = await fetch(`/api/super-admin/institutions?${p}`, { headers: h() });
       if (res.ok) { const d = await res.json(); setInstitutions(d.data || []); setInstitutionTotal(d.total || 0); }
     } catch { /* */ }
     setLoading(false);
   }, [h, institutionPage]);
 
   const toggleInstitution = async (inst: InstitutionRecord) => {
-    await fetch('/api/internal/admin/institutions', {
+    await fetch('/api/super-admin/institutions', {
       method: 'PATCH', headers: h(),
       body: JSON.stringify({ id: inst.id, updates: { is_active: !inst.is_active } }),
     });
@@ -312,7 +312,7 @@ export default function SuperAdminPage() {
   const createContent = async () => {
     const typeMap: Record<string, string> = { chapters: 'chapter', topics: 'topic', questions: 'question' };
     try {
-      const res = await fetch('/api/internal/admin/content', {
+      const res = await fetch('/api/super-admin/content', {
         method: 'POST', headers: h(),
         body: JSON.stringify({ type: typeMap[contentType], data: contentForm }),
       });
@@ -323,7 +323,7 @@ export default function SuperAdminPage() {
 
   const toggleContent = async (item: ContentRecord) => {
     const typeMap: Record<string, string> = { chapters: 'chapter', topics: 'topic', questions: 'question' };
-    await fetch('/api/internal/admin/content', {
+    await fetch('/api/super-admin/content', {
       method: 'PATCH', headers: h(),
       body: JSON.stringify({ type: typeMap[contentType], id: item.id, updates: { is_active: !item.is_active } }),
     });
@@ -345,7 +345,7 @@ export default function SuperAdminPage() {
   // ── Actions ──
   const toggleUser = async (user: UserRecord) => {
     const table = user.role === 'teacher' ? 'teachers' : user.role === 'parent' ? 'guardians' : 'students';
-    await fetch('/api/internal/admin/users', {
+    await fetch('/api/super-admin/users', {
       method: 'PATCH', headers: h(),
       body: JSON.stringify({ user_id: user.id, table, updates: { is_active: !user.is_active } }),
     });
@@ -355,7 +355,7 @@ export default function SuperAdminPage() {
   const downloadReport = async (type: string, format: string) => {
     setReportStatus(`Generating ${type} report...`);
     try {
-      const res = await fetch(`/api/internal/admin/reports?type=${type}&format=${format}`, { headers: h() });
+      const res = await fetch(`/api/super-admin/reports?type=${type}&format=${format}`, { headers: h() });
       if (!res.ok) { setReportStatus('Failed to generate report'); return; }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -400,7 +400,7 @@ export default function SuperAdminPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {adminName && <span style={{ fontSize: 11, color: '#888' }}>{adminName}</span>}
           <span style={{ fontSize: 10, color: '#444' }}>{new Date().toLocaleString()}</span>
-          <button onClick={async () => { await supabase.auth.signOut(); window.location.href = '/internal/admin/login'; }}
+          <button onClick={async () => { await supabase.auth.signOut(); window.location.href = '/super-admin/login'; }}
             style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #333', background: 'transparent', color: '#888', fontSize: 10, cursor: 'pointer' }}>
             Logout
           </button>
