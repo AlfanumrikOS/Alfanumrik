@@ -64,17 +64,17 @@ export default function AdminLoginPage() {
 
   return (
     <div style={{
-      minHeight: '100vh', background: '#0a0a0a', color: '#e0e0e0',
+      minHeight: '100vh', background: '#000', color: '#fff',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
     }}>
       <div style={{
         width: '100%', maxWidth: 380, padding: 32,
-        background: '#111', borderRadius: 16, border: '1px solid #1e1e1e',
+        background: '#0a0a0a', borderRadius: 16, border: '1px solid #222',
       }}>
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
           <div style={{ fontSize: 28, marginBottom: 8 }}>🦊</div>
-          <div style={{ fontSize: 18, fontWeight: 800, color: '#E8581C' }}>ALFANUMRIK</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: '#fff' }}>ALFANUMRIK</div>
           <div style={{
             fontSize: 10, color: '#555', letterSpacing: 2.5,
             textTransform: 'uppercase', marginTop: 4,
@@ -86,7 +86,7 @@ export default function AdminLoginPage() {
         {error && (
           <div style={{
             padding: '10px 14px', borderRadius: 8, marginBottom: 16,
-            background: '#2a1010', border: '1px solid #3a1515',
+            background: '#1a0000', border: '1px solid #333',
             color: '#EF4444', fontSize: 11, whiteSpace: 'pre-wrap' as const,
             maxHeight: 300, overflowY: 'auto' as const, wordBreak: 'break-word' as const,
           }}>
@@ -107,8 +107,8 @@ export default function AdminLoginPage() {
               autoFocus
               style={{
                 width: '100%', padding: '10px 14px', borderRadius: 8,
-                border: '1px solid #2a2a2a', background: '#0a0a0a',
-                color: '#e0e0e0', fontSize: 14, outline: 'none',
+                border: '1px solid #333', background: '#000',
+                color: '#fff', fontSize: 14, outline: 'none',
                 boxSizing: 'border-box',
               }}
               placeholder="admin@alfanumrik.com"
@@ -126,8 +126,8 @@ export default function AdminLoginPage() {
               required
               style={{
                 width: '100%', padding: '10px 14px', borderRadius: 8,
-                border: '1px solid #2a2a2a', background: '#0a0a0a',
-                color: '#e0e0e0', fontSize: 14, outline: 'none',
+                border: '1px solid #333', background: '#000',
+                color: '#fff', fontSize: 14, outline: 'none',
                 boxSizing: 'border-box',
               }}
               placeholder="••••••••"
@@ -140,8 +140,8 @@ export default function AdminLoginPage() {
             style={{
               width: '100%', padding: '12px 0', borderRadius: 8,
               border: 'none', cursor: loading ? 'not-allowed' : 'pointer',
-              background: loading ? '#333' : '#E8581C',
-              color: '#fff', fontSize: 14, fontWeight: 700,
+              background: loading ? '#333' : '#fff',
+              color: '#000', fontSize: 14, fontWeight: 700,
               letterSpacing: 0.5,
             }}
           >

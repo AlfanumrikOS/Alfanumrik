@@ -492,43 +492,41 @@ export default function SuperAdminPage() {
   ];
 
   return (
-    <div style={{ minHeight: '100vh', background: '#0a0a0a', color: '#e0e0e0', fontFamily: "'Plus Jakarta Sans', monospace" }}>
+    <div style={{ minHeight: '100vh', background: '#000', color: '#fff', fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" }}>
       {/* ── Header ── */}
-      <header style={{ padding: '14px 20px', borderBottom: '1px solid #1e1e1e', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#111' }}>
+      <header style={{ padding: '12px 20px', borderBottom: '1px solid #222', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#000' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 20 }}>🦊</span>
           <div>
-            <div style={{ fontSize: 15, fontWeight: 800, color: '#E8581C' }}>ALFANUMRIK</div>
-            <div style={{ fontSize: 10, color: '#555', letterSpacing: 2, textTransform: 'uppercase' }}>Super Admin Console</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', letterSpacing: 1 }}>ALFANUMRIK</div>
+            <div style={{ fontSize: 9, color: '#666', letterSpacing: 2, textTransform: 'uppercase' }}>Control Panel</div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {adminName && <span style={{ fontSize: 11, color: '#888' }}>{adminName}</span>}
-          <span style={{ fontSize: 10, color: '#444' }}>{new Date().toLocaleString()}</span>
           <button onClick={async () => { await supabase.auth.signOut(); window.location.href = '/super-admin/login'; }}
-            style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #333', background: 'transparent', color: '#888', fontSize: 10, cursor: 'pointer' }}>
+            style={{ padding: '4px 10px', borderRadius: 4, border: '1px solid #333', background: 'transparent', color: '#888', fontSize: 10, cursor: 'pointer' }}>
             Logout
           </button>
         </div>
       </header>
 
       {/* ── Tabs ── */}
-      <nav style={{ padding: '0 20px', borderBottom: '1px solid #1e1e1e', display: 'flex', gap: 0, background: '#0f0f0f' }}>
+      <nav style={{ padding: '0 20px', borderBottom: '1px solid #222', display: 'flex', gap: 0, background: '#000', overflowX: 'auto' }}>
         {TABS.map(tab => (
           <button key={tab.key} onClick={() => setActiveTab(tab.key)} style={{
-            padding: '12px 18px', fontSize: 12, fontWeight: activeTab === tab.key ? 700 : 400,
-            color: activeTab === tab.key ? '#E8581C' : '#666', background: 'transparent', border: 'none',
-            borderBottom: activeTab === tab.key ? '2px solid #E8581C' : '2px solid transparent',
-            cursor: 'pointer', letterSpacing: 0.5,
+            padding: '10px 16px', fontSize: 11, fontWeight: activeTab === tab.key ? 700 : 400,
+            color: activeTab === tab.key ? '#fff' : '#666', background: 'transparent', border: 'none',
+            borderBottom: activeTab === tab.key ? '2px solid #fff' : '2px solid transparent',
+            cursor: 'pointer', letterSpacing: 0.5, whiteSpace: 'nowrap',
           }}>
-            <span style={{ marginRight: 6 }}>{tab.icon}</span>{tab.label}
+            {tab.label}
           </button>
         ))}
       </nav>
 
       {/* ── Content ── */}
       <main style={{ padding: '20px', maxWidth: 1400, margin: '0 auto' }}>
-        {loading && <div style={{ fontSize: 11, color: '#E8581C', marginBottom: 12 }}>● Loading data...</div>}
+        {loading && <div style={{ fontSize: 11, color: '#888', marginBottom: 12 }}>Loading...</div>}
 
         {/* ═══ DASHBOARD ═══ */}
         {activeTab === 'dashboard' && (
@@ -540,11 +538,11 @@ export default function SuperAdminPage() {
                   <h2 style={S.h2}>Platform Overview</h2>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
                     {[
-                      { label: 'Students', value: stats.totals.students, icon: '🎓', color: '#E8581C' },
+                      { label: 'Students', value: stats.totals.students, icon: '🎓', color: '#fff' },
                       { label: 'Teachers', value: stats.totals.teachers, icon: '👩‍🏫', color: '#2563EB' },
-                      { label: 'Parents', value: stats.totals.parents, icon: '👨‍👩‍👧', color: '#16A34A' },
-                      { label: 'Quiz Sessions', value: stats.totals.quiz_sessions, icon: '⚡', color: '#F59E0B' },
-                      { label: 'Chat Sessions', value: stats.totals.chat_sessions, icon: '🦊', color: '#E8581C' },
+                      { label: 'Parents', value: stats.totals.parents, icon: '👨‍👩‍👧', color: '#aaa' },
+                      { label: 'Quiz Sessions', value: stats.totals.quiz_sessions, icon: '⚡', color: '#aaa' },
+                      { label: 'Chat Sessions', value: stats.totals.chat_sessions, icon: '🦊', color: '#fff' },
                     ].map(s => (
                       <div key={s.label} style={{ ...S.card, borderLeft: `3px solid ${s.color}` }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -565,7 +563,7 @@ export default function SuperAdminPage() {
                       {Object.entries(stats.last_24h).map(([k, v]) => (
                         <div key={k} style={{ ...S.card, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span style={{ fontSize: 12, color: '#aaa', textTransform: 'capitalize' }}>{k.replace(/_/g, ' ')}</span>
-                          <span style={{ fontSize: 20, fontWeight: 800, color: '#22C55E' }}>{v >= 0 ? v : '—'}</span>
+                          <span style={{ fontSize: 20, fontWeight: 800, color: '#fff' }}>{v >= 0 ? v : '—'}</span>
                         </div>
                       ))}
                     </div>
@@ -577,7 +575,7 @@ export default function SuperAdminPage() {
                         {Object.entries(stats.last_7d).map(([k, v]) => (
                           <div key={k} style={{ ...S.card, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <span style={{ fontSize: 12, color: '#aaa', textTransform: 'capitalize' }}>{k.replace(/_/g, ' ')}</span>
-                            <span style={{ fontSize: 20, fontWeight: 800, color: '#3B82F6' }}>{v >= 0 ? v : '—'}</span>
+                            <span style={{ fontSize: 20, fontWeight: 800, color: '#aaa' }}>{v >= 0 ? v : '—'}</span>
                           </div>
                         ))}
                       </div>
@@ -592,7 +590,7 @@ export default function SuperAdminPage() {
                   <button onClick={() => { setActiveTab('users'); setUserRole('teacher'); }} style={S.quickBtn}>View Teachers</button>
                   <button onClick={() => setActiveTab('reports')} style={S.quickBtn}>Download Reports</button>
                   <button onClick={() => setActiveTab('logs')} style={S.quickBtn}>View Audit Logs</button>
-                  <button onClick={fetchStats} style={{ ...S.quickBtn, color: '#22C55E', borderColor: '#22C55E40' }}>↻ Refresh</button>
+                  <button onClick={fetchStats} style={{ ...S.quickBtn, color: '#fff', borderColor: '#444' }}>↻ Refresh</button>
                 </div>
 
                 {/* Observability */}
@@ -600,30 +598,30 @@ export default function SuperAdminPage() {
                   <div style={{ marginTop: 28 }}>
                     <h2 style={S.h2}>Platform Health</h2>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 16 }}>
-                      <div style={{ ...S.card, borderLeft: `3px solid ${obsData.health.status === 'healthy' ? '#16A34A' : '#EF4444'}` }}>
-                        <div style={{ fontSize: 18, fontWeight: 800, color: obsData.health.status === 'healthy' ? '#16A34A' : '#EF4444' }}>
+                      <div style={{ ...S.card, borderLeft: `3px solid ${obsData.health.status === 'healthy' ? '#fff' : '#666'}` }}>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: obsData.health.status === 'healthy' ? '#fff' : '#666' }}>
                           {obsData.health.status === 'healthy' ? '● Healthy' : '● Degraded'}
                         </div>
                         <div style={{ fontSize: 10, color: '#888' }}>System Status</div>
                       </div>
-                      <div style={{ ...S.card, borderLeft: '3px solid #3B82F6' }}>
-                        <div style={{ fontSize: 18, fontWeight: 800, color: '#3B82F6' }}>{obsData.users.active_24h}</div>
+                      <div style={{ ...S.card, borderLeft: '3px solid #333' }}>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: '#aaa' }}>{obsData.users.active_24h}</div>
                         <div style={{ fontSize: 10, color: '#888' }}>Active Today</div>
                       </div>
-                      <div style={{ ...S.card, borderLeft: '3px solid #8B5CF6' }}>
-                        <div style={{ fontSize: 18, fontWeight: 800, color: '#8B5CF6' }}>{obsData.users.active_7d}</div>
+                      <div style={{ ...S.card, borderLeft: '3px solid #333' }}>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: '#aaa' }}>{obsData.users.active_7d}</div>
                         <div style={{ fontSize: 10, color: '#888' }}>Active 7 Days</div>
                       </div>
-                      <div style={{ ...S.card, borderLeft: `3px solid ${obsData.jobs.failed > 0 ? '#EF4444' : '#888'}` }}>
-                        <div style={{ fontSize: 18, fontWeight: 800, color: obsData.jobs.failed > 0 ? '#EF4444' : '#888' }}>{obsData.jobs.failed}</div>
+                      <div style={{ ...S.card, borderLeft: `3px solid ${obsData.jobs.failed > 0 ? '#fff' : '#666'}` }}>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: obsData.jobs.failed > 0 ? '#fff' : '#666' }}>{obsData.jobs.failed}</div>
                         <div style={{ fontSize: 10, color: '#888' }}>Failed Jobs</div>
                       </div>
-                      <div style={{ ...S.card, borderLeft: '3px solid #F59E0B' }}>
-                        <div style={{ fontSize: 18, fontWeight: 800, color: '#F59E0B' }}>{obsData.feature_flags.enabled}/{obsData.feature_flags.total}</div>
+                      <div style={{ ...S.card, borderLeft: '3px solid #333' }}>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: '#aaa' }}>{obsData.feature_flags.enabled}/{obsData.feature_flags.total}</div>
                         <div style={{ fontSize: 10, color: '#888' }}>Flags Enabled</div>
                       </div>
-                      <div style={{ ...S.card, borderLeft: '3px solid #E8581C' }}>
-                        <div style={{ fontSize: 18, fontWeight: 800, color: '#E8581C' }}>{obsData.cache.size}</div>
+                      <div style={{ ...S.card, borderLeft: '3px solid #333' }}>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: '#fff' }}>{obsData.cache.size}</div>
                         <div style={{ fontSize: 10, color: '#888' }}>Cache Entries</div>
                       </div>
                     </div>
@@ -638,11 +636,11 @@ export default function SuperAdminPage() {
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
                         <div>
                           <div style={{ fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: 1 }}>Version</div>
-                          <div style={{ fontSize: 14, fontWeight: 700, color: '#E8581C', marginTop: 2 }}>{deployInfo.app_version}</div>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', marginTop: 2 }}>{deployInfo.app_version}</div>
                         </div>
                         <div>
                           <div style={{ fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: 1 }}>Environment</div>
-                          <div style={{ fontSize: 14, fontWeight: 700, color: deployInfo.environment === 'production' ? '#16A34A' : '#F59E0B', marginTop: 2 }}>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: deployInfo.environment === 'production' ? '#fff' : '#aaa', marginTop: 2 }}>
                             {deployInfo.environment}
                           </div>
                         </div>
@@ -652,7 +650,7 @@ export default function SuperAdminPage() {
                         </div>
                         <div>
                           <div style={{ fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: 1 }}>Commit</div>
-                          <code style={{ fontSize: 11, color: '#3B82F6', marginTop: 2, display: 'block' }}>
+                          <code style={{ fontSize: 11, color: '#aaa', marginTop: 2, display: 'block' }}>
                             {deployInfo.deployment.commit_sha.slice(0, 10)}
                           </code>
                         </div>
@@ -666,7 +664,7 @@ export default function SuperAdminPage() {
                         </div>
                       </div>
                       {deployInfo.deployment.commit_message !== 'unknown' && (
-                        <div style={{ marginTop: 12, padding: '8px 12px', background: '#0a0a0a', borderRadius: 6, fontSize: 11, color: '#888' }}>
+                        <div style={{ marginTop: 12, padding: '8px 12px', background: '#000', borderRadius: 6, fontSize: 11, color: '#888' }}>
                           {deployInfo.deployment.commit_message}
                         </div>
                       )}
@@ -691,7 +689,7 @@ export default function SuperAdminPage() {
                   ) : (
                     <div style={{ display: 'grid', gap: 10 }}>
                       {backups.map(b => {
-                        const statusColor = b.status === 'success' ? '#16A34A' : b.status === 'failed' ? '#EF4444' : b.status === 'unverified' ? '#F59E0B' : '#888';
+                        const statusColor = b.status === 'success' ? '#fff' : b.status === 'failed' ? '#666' : b.status === 'unverified' ? '#aaa' : '#555';
                         return (
                           <div key={b.id} style={{ ...S.card, borderLeft: `3px solid ${statusColor}` }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -746,17 +744,17 @@ export default function SuperAdminPage() {
                         <tbody>
                           {deployHistory.map(d => (
                             <tr key={d.id}>
-                              <td style={S.td}><span style={{ fontWeight: 700, color: '#E8581C' }}>{d.app_version}</span></td>
+                              <td style={S.td}><span style={{ fontWeight: 700, color: '#fff' }}>{d.app_version}</span></td>
                               <td style={S.td}>{d.branch || '—'}</td>
                               <td style={S.td}>
                                 <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4,
-                                  background: d.environment === 'production' ? '#16A34A20' : '#F59E0B20',
-                                  color: d.environment === 'production' ? '#16A34A' : '#F59E0B' }}>
+                                  background: d.environment === 'production' ? '#111' : '#0a0a0a',
+                                  color: d.environment === 'production' ? '#fff' : '#aaa' }}>
                                   {d.environment}
                                 </span>
                               </td>
                               <td style={S.td}>
-                                <span style={{ fontSize: 10, color: d.status === 'success' ? '#16A34A' : d.status === 'failed' ? '#EF4444' : '#F59E0B' }}>
+                                <span style={{ fontSize: 10, color: d.status === 'success' ? '#fff' : d.status === 'failed' ? '#666' : '#aaa' }}>
                                   {d.status}
                                 </span>
                               </td>
@@ -828,11 +826,11 @@ export default function SuperAdminPage() {
                       {userRole === 'student' && (
                         <>
                           <td style={S.td}>{u.grade || '—'}</td>
-                          <td style={S.td}><span style={{ color: '#F59E0B' }}>{u.xp_total ?? 0}</span></td>
+                          <td style={S.td}><span style={{ color: '#aaa' }}>{u.xp_total ?? 0}</span></td>
                           <td style={S.td}>
                             <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4,
-                              background: u.subscription_plan === 'premium' ? '#F59E0B20' : u.subscription_plan === 'basic' ? '#3B82F620' : '#33333380',
-                              color: u.subscription_plan === 'premium' ? '#F59E0B' : u.subscription_plan === 'basic' ? '#3B82F6' : '#888',
+                              background: u.subscription_plan === 'premium' ? '#111' : u.subscription_plan === 'basic' ? '#111' : '#0a0a0a',
+                              color: u.subscription_plan === 'premium' ? '#fff' : u.subscription_plan === 'basic' ? '#aaa' : '#666',
                             }}>{u.subscription_plan || 'free'}</span>
                           </td>
                         </>
@@ -841,16 +839,16 @@ export default function SuperAdminPage() {
                       <td style={S.td}>
                         <span style={{
                           fontSize: 10, padding: '2px 8px', borderRadius: 10,
-                          background: u.is_active !== false ? '#16A34A20' : '#EF444420',
-                          color: u.is_active !== false ? '#16A34A' : '#EF4444',
+                          background: u.is_active !== false ? '#111' : '#0a0a0a',
+                          color: u.is_active !== false ? '#fff' : '#666',
                         }}>{u.is_active !== false ? 'Active' : 'Banned'}</span>
                       </td>
                       <td style={{ ...S.td, fontSize: 11 }}>{new Date(u.created_at).toLocaleDateString()}</td>
                       <td style={S.td}>
                         <button onClick={() => toggleUser(u)} style={{
                           ...S.actionBtn,
-                          color: u.is_active !== false ? '#EF4444' : '#22C55E',
-                          borderColor: u.is_active !== false ? '#EF444440' : '#22C55E40',
+                          color: u.is_active !== false ? '#888' : '#fff',
+                          borderColor: u.is_active !== false ? '#444' : '#444',
                         }}>{u.is_active !== false ? '⛔ Ban' : '✅ Unban'}</button>
                       </td>
                     </tr>
@@ -874,7 +872,7 @@ export default function SuperAdminPage() {
 
             {/* Assign Role */}
             <div style={{ ...S.card, marginBottom: 20 }}>
-              <h3 style={{ fontSize: 13, fontWeight: 700, color: '#3B82F6', marginBottom: 10 }}>Assign Role to User</h3>
+              <h3 style={{ fontSize: 13, fontWeight: 700, color: '#aaa', marginBottom: 10 }}>Assign Role to User</h3>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <input value={assignUserId} onChange={e => setAssignUserId(e.target.value)} placeholder="auth_user_id (UUID)"
                   style={{ ...S.searchInput, flex: 1, minWidth: 200 }} />
@@ -882,7 +880,7 @@ export default function SuperAdminPage() {
                   <option value="">Select role</option>
                   {allRoles.map(r => <option key={r.id} value={r.name}>{r.display_name} ({r.name})</option>)}
                 </select>
-                <button onClick={assignRole} style={{ ...S.quickBtn, background: '#3B82F610', color: '#3B82F6', borderColor: '#3B82F640' }}>Assign</button>
+                <button onClick={assignRole} style={{ ...S.quickBtn, background: '#111', color: '#aaa', borderColor: '#333' }}>Assign</button>
               </div>
             </div>
 
@@ -890,7 +888,7 @@ export default function SuperAdminPage() {
             <h2 style={S.h2}>Available Roles ({allRoles.length})</h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 10, marginBottom: 24 }}>
               {allRoles.map(r => (
-                <div key={r.id} style={{ ...S.card, borderLeft: `3px solid ${r.hierarchy_level >= 90 ? '#EF4444' : r.hierarchy_level >= 50 ? '#3B82F6' : '#888'}` }}>
+                <div key={r.id} style={{ ...S.card, borderLeft: `3px solid ${r.hierarchy_level >= 90 ? '#fff' : r.hierarchy_level >= 50 ? '#aaa' : '#666'}` }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 700, color: '#e0e0e0' }}>{r.display_name}</div>
@@ -899,7 +897,7 @@ export default function SuperAdminPage() {
                     <span style={{ fontSize: 10, color: '#555', background: '#1a1a1a', padding: '2px 6px', borderRadius: 4 }}>Lv {r.hierarchy_level}</span>
                   </div>
                   {r.description && <div style={{ fontSize: 10, color: '#666', marginTop: 4 }}>{r.description}</div>}
-                  {r.is_system_role && <span style={{ fontSize: 9, color: '#F59E0B', marginTop: 4, display: 'inline-block' }}>System Role</span>}
+                  {r.is_system_role && <span style={{ fontSize: 9, color: '#aaa', marginTop: 4, display: 'inline-block' }}>System Role</span>}
                 </div>
               ))}
             </div>
@@ -922,15 +920,15 @@ export default function SuperAdminPage() {
                   {userRoles.map(ur => (
                     <tr key={ur.id}>
                       <td style={{ ...S.td, fontSize: 10 }}><code>{ur.auth_user_id?.slice(0, 12)}...</code></td>
-                      <td style={S.td}><span style={{ color: '#3B82F6', fontWeight: 600 }}>{ur.roles?.display_name || ur.roles?.name || ur.role_id.slice(0, 8)}</span></td>
+                      <td style={S.td}><span style={{ color: '#aaa', fontWeight: 600 }}>{ur.roles?.display_name || ur.roles?.name || ur.role_id.slice(0, 8)}</span></td>
                       <td style={S.td}>
-                        <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: ur.is_active ? '#16A34A20' : '#EF444420', color: ur.is_active ? '#16A34A' : '#EF4444' }}>
+                        <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: ur.is_active ? '#111' : '#0a0a0a', color: ur.is_active ? '#fff' : '#666' }}>
                           {ur.is_active ? 'Active' : 'Inactive'}
                         </span>
                       </td>
                       <td style={{ ...S.td, fontSize: 11 }}>{new Date(ur.created_at).toLocaleDateString()}</td>
                       <td style={S.td}>
-                        <button onClick={() => revokeRole(ur.id)} style={{ ...S.actionBtn, color: '#EF4444', borderColor: '#EF444440', fontSize: 10 }}>Revoke</button>
+                        <button onClick={() => revokeRole(ur.id)} style={{ ...S.actionBtn, color: '#888', borderColor: '#333', fontSize: 10 }}>Revoke</button>
                       </td>
                     </tr>
                   ))}
@@ -953,7 +951,7 @@ export default function SuperAdminPage() {
                 ))}
               </div>
               <button onClick={() => { setShowContentForm(!showContentForm); setContentForm({}); }}
-                style={{ ...S.quickBtn, background: '#16A34A10', color: '#16A34A', borderColor: '#16A34A40' }}>
+                style={{ ...S.quickBtn, background: '#111', color: '#aaa', borderColor: '#333' }}>
                 {showContentForm ? '✕ Cancel' : '+ Add New'}
               </button>
             </div>
@@ -963,7 +961,7 @@ export default function SuperAdminPage() {
             {/* Create Form */}
             {showContentForm && (
               <div style={{ ...S.card, marginBottom: 16 }}>
-                <h3 style={{ fontSize: 13, fontWeight: 700, color: '#16A34A', marginBottom: 12 }}>
+                <h3 style={{ fontSize: 13, fontWeight: 700, color: '#aaa', marginBottom: 12 }}>
                   Add New {contentType === 'chapters' ? 'Chapter' : contentType === 'topics' ? 'Topic' : 'Question'}
                 </h3>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -1017,7 +1015,7 @@ export default function SuperAdminPage() {
                     </div>
                   </>
                 )}
-                <button onClick={createContent} style={{ ...S.quickBtn, marginTop: 12, background: '#16A34A20', color: '#16A34A', borderColor: '#16A34A40' }}>
+                <button onClick={createContent} style={{ ...S.quickBtn, marginTop: 12, background: '#111', color: '#aaa', borderColor: '#333' }}>
                   Save {contentType === 'chapters' ? 'Chapter' : contentType === 'topics' ? 'Topic' : 'Question'}
                 </button>
               </div>
@@ -1067,15 +1065,15 @@ export default function SuperAdminPage() {
                       <td style={S.td}>
                         <span style={{
                           fontSize: 10, padding: '2px 8px', borderRadius: 10,
-                          background: item.is_active !== false ? '#16A34A20' : '#EF444420',
-                          color: item.is_active !== false ? '#16A34A' : '#EF4444',
+                          background: item.is_active !== false ? '#111' : '#0a0a0a',
+                          color: item.is_active !== false ? '#fff' : '#666',
                         }}>{item.is_active !== false ? 'Active' : 'Disabled'}</span>
                       </td>
                       <td style={S.td}>
                         <button onClick={() => toggleContent(item)} style={{
                           ...S.actionBtn,
-                          color: item.is_active !== false ? '#EF4444' : '#22C55E',
-                          borderColor: item.is_active !== false ? '#EF444440' : '#22C55E40',
+                          color: item.is_active !== false ? '#888' : '#fff',
+                          borderColor: item.is_active !== false ? '#444' : '#444',
                         }}>{item.is_active !== false ? 'Disable' : 'Enable'}</button>
                       </td>
                     </tr>
@@ -1101,9 +1099,9 @@ export default function SuperAdminPage() {
                 <h2 style={S.h2}>Content Overview</h2>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 28 }}>
                   {[
-                    { label: 'Chapters', value: analyticsData.content_stats.chapters, icon: '📖', color: '#3B82F6' },
-                    { label: 'Topics', value: analyticsData.content_stats.topics, icon: '📝', color: '#16A34A' },
-                    { label: 'Questions', value: analyticsData.content_stats.questions, icon: '❓', color: '#F59E0B' },
+                    { label: 'Chapters', value: analyticsData.content_stats.chapters, icon: '📖', color: '#aaa' },
+                    { label: 'Topics', value: analyticsData.content_stats.topics, icon: '📝', color: '#aaa' },
+                    { label: 'Questions', value: analyticsData.content_stats.questions, icon: '❓', color: '#aaa' },
                   ].map(s => (
                     <div key={s.label} style={{ ...S.card, borderLeft: `3px solid ${s.color}` }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1119,8 +1117,8 @@ export default function SuperAdminPage() {
                 <h2 style={S.h2}>Student Retention</h2>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 28 }}>
                   {analyticsData.retention.map(r => (
-                    <div key={r.period} style={{ ...S.card, borderLeft: '3px solid #8B5CF6' }}>
-                      <span style={{ fontSize: 28, fontWeight: 800, color: '#8B5CF6' }}>{r.count}</span>
+                    <div key={r.period} style={{ ...S.card, borderLeft: '3px solid #333' }}>
+                      <span style={{ fontSize: 28, fontWeight: 800, color: '#aaa' }}>{r.count}</span>
                       <div style={{ fontSize: 11, color: '#888', marginTop: 4, textTransform: 'uppercase', letterSpacing: 1 }}>Active {r.period}</div>
                     </div>
                   ))}
@@ -1130,7 +1128,7 @@ export default function SuperAdminPage() {
                 <h2 style={S.h2}>Subscription Plans</h2>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 28 }}>
                   {analyticsData.revenue.map(r => {
-                    const planColors: Record<string, string> = { free: '#888', starter_monthly: '#3B82F6', starter_yearly: '#3B82F6', pro_monthly: '#F59E0B', pro_yearly: '#F59E0B', ultimate_monthly: '#E8581C', ultimate_yearly: '#E8581C' };
+                    const planColors: Record<string, string> = { free: '#555', starter_monthly: '#888', starter_yearly: '#888', pro_monthly: '#aaa', pro_yearly: '#aaa', ultimate_monthly: '#fff', ultimate_yearly: '#fff' };
                     return (
                       <div key={r.plan} style={{ ...S.card, borderLeft: `3px solid ${planColors[r.plan] || '#555'}` }}>
                         <span style={{ fontSize: 24, fontWeight: 800, color: planColors[r.plan] || '#888' }}>{r.count}</span>
@@ -1151,9 +1149,9 @@ export default function SuperAdminPage() {
                       <div key={s.subject} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
                         <span style={{ fontSize: 12, color: '#aaa', width: 100, textTransform: 'capitalize' }}>{s.subject}</span>
                         <div style={{ flex: 1, height: 16, background: '#1a1a1a', borderRadius: 4, overflow: 'hidden' }}>
-                          <div style={{ width: `${(s.count / maxCount) * 100}%`, height: '100%', background: '#E8581C', borderRadius: 4 }} />
+                          <div style={{ width: `${(s.count / maxCount) * 100}%`, height: '100%', background: '#fff', borderRadius: 4 }} />
                         </div>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: '#E8581C', width: 40, textAlign: 'right' }}>{s.count}</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: '#fff', width: 40, textAlign: 'right' }}>{s.count}</span>
                       </div>
                     );
                   })}
@@ -1175,11 +1173,11 @@ export default function SuperAdminPage() {
                     <tbody>
                       {analyticsData.top_students.map((s, i) => (
                         <tr key={s.id}>
-                          <td style={S.td}><span style={{ color: i < 3 ? '#F59E0B' : '#888', fontWeight: 700 }}>{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}</span></td>
+                          <td style={S.td}><span style={{ color: i < 3 ? '#fff' : '#666', fontWeight: 700 }}>{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}</span></td>
                           <td style={S.td}><strong>{s.name}</strong></td>
                           <td style={S.td}>{s.grade || '—'}</td>
-                          <td style={S.td}><span style={{ color: '#F59E0B', fontWeight: 700 }}>{s.xp_total}</span></td>
-                          <td style={S.td}><span style={{ color: '#EF4444' }}>{s.streak_days}d</span></td>
+                          <td style={S.td}><span style={{ color: '#aaa', fontWeight: 700 }}>{s.xp_total}</span></td>
+                          <td style={S.td}><span style={{ color: '#888' }}>{s.streak_days}d</span></td>
                         </tr>
                       ))}
                       {analyticsData.top_students.length === 0 && (
@@ -1198,7 +1196,7 @@ export default function SuperAdminPage() {
                       const maxTotal = Math.max(...analyticsData.engagement.map(d => d.signups + d.quizzes + d.chats), 1);
                       return (
                         <div key={day.date} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }} title={`${day.date}: ${day.signups} signups, ${day.quizzes} quizzes, ${day.chats} chats`}>
-                          <div style={{ width: '100%', background: '#E8581C', borderRadius: 2, height: `${(total / maxTotal) * 100}px`, minHeight: total > 0 ? 2 : 0 }} />
+                          <div style={{ width: '100%', background: '#fff', borderRadius: 2, height: `${(total / maxTotal) * 100}px`, minHeight: total > 0 ? 2 : 0 }} />
                         </div>
                       );
                     })}
@@ -1230,7 +1228,7 @@ export default function SuperAdminPage() {
             <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
               <input value={newFlagName} onChange={e => setNewFlagName(e.target.value)} placeholder="New flag name (e.g. foxy_ai_enabled)"
                 style={{ ...S.searchInput, flex: 1 }} onKeyDown={e => e.key === 'Enter' && createFlag()} />
-              <button onClick={createFlag} style={{ ...S.quickBtn, background: '#16A34A10', color: '#16A34A', borderColor: '#16A34A40' }}>+ Add Flag</button>
+              <button onClick={createFlag} style={{ ...S.quickBtn, background: '#111', color: '#aaa', borderColor: '#333' }}>+ Add Flag</button>
             </div>
 
             <div style={{ display: 'grid', gap: 8 }}>
@@ -1241,30 +1239,30 @@ export default function SuperAdminPage() {
                 <div key={flag.id} style={{ ...S.card }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
-                      <code style={{ fontSize: 13, fontWeight: 700, color: flag.enabled ? '#16A34A' : '#888' }}>{flag.name}</code>
+                      <code style={{ fontSize: 13, fontWeight: 700, color: flag.enabled ? '#fff' : '#555' }}>{flag.name}</code>
                       {flag.description && <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>{flag.description}</div>}
                     </div>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                       <button onClick={() => {
                         if (editingFlagId === flag.id) { setEditingFlagId(null); }
                         else { setEditingFlagId(flag.id); setFlagScopeRoles((flag.target_roles || []).join(', ')); setFlagScopeEnvs((flag.target_environments || []).join(', ')); }
-                      }} style={{ ...S.actionBtn, fontSize: 10, color: '#3B82F6', borderColor: '#3B82F640' }}>
+                      }} style={{ ...S.actionBtn, fontSize: 10, color: '#aaa', borderColor: '#333' }}>
                         {editingFlagId === flag.id ? 'Cancel' : 'Scope'}
                       </button>
                       <button onClick={() => toggleFlag(flag)} style={{
                         padding: '6px 16px', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700,
-                        background: flag.enabled ? '#16A34A' : '#333', color: '#fff',
+                        background: flag.enabled ? '#fff' : '#333', color: '#fff',
                       }}>{flag.enabled ? 'ON' : 'OFF'}</button>
-                      <button onClick={() => deleteFlag(flag)} style={{ ...S.actionBtn, color: '#EF4444', borderColor: '#EF444440', fontSize: 10 }}>Del</button>
+                      <button onClick={() => deleteFlag(flag)} style={{ ...S.actionBtn, color: '#888', borderColor: '#333', fontSize: 10 }}>Del</button>
                     </div>
                   </div>
                   {/* Scoping tags */}
                   <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
                     {flag.target_roles && flag.target_roles.length > 0 && flag.target_roles.map(r => (
-                      <span key={r} style={{ fontSize: 9, padding: '1px 6px', borderRadius: 4, background: '#3B82F615', color: '#3B82F6' }}>role:{r}</span>
+                      <span key={r} style={{ fontSize: 9, padding: '1px 6px', borderRadius: 4, background: '#111', color: '#aaa' }}>role:{r}</span>
                     ))}
                     {flag.target_environments && flag.target_environments.length > 0 && flag.target_environments.map(e => (
-                      <span key={e} style={{ fontSize: 9, padding: '1px 6px', borderRadius: 4, background: '#F59E0B15', color: '#F59E0B' }}>env:{e}</span>
+                      <span key={e} style={{ fontSize: 9, padding: '1px 6px', borderRadius: 4, background: '#111', color: '#aaa' }}>env:{e}</span>
                     ))}
                     {(!flag.target_roles || flag.target_roles.length === 0) && (!flag.target_environments || flag.target_environments.length === 0) && (
                       <span style={{ fontSize: 9, color: '#555' }}>Global (all roles, all environments)</span>
@@ -1272,7 +1270,7 @@ export default function SuperAdminPage() {
                   </div>
                   {/* Scoping editor */}
                   {editingFlagId === flag.id && (
-                    <div style={{ marginTop: 10, padding: 10, background: '#0a0a0a', borderRadius: 8 }}>
+                    <div style={{ marginTop: 10, padding: 10, background: '#000', borderRadius: 8 }}>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                         <div>
                           <label style={{ fontSize: 10, color: '#888', display: 'block', marginBottom: 4 }}>Target Roles (comma-separated)</label>
@@ -1285,7 +1283,7 @@ export default function SuperAdminPage() {
                             style={S.searchInput} />
                         </div>
                       </div>
-                      <button onClick={() => saveFlagScoping(flag.id)} style={{ ...S.actionBtn, marginTop: 8, color: '#16A34A', borderColor: '#16A34A40', padding: '6px 16px' }}>
+                      <button onClick={() => saveFlagScoping(flag.id)} style={{ ...S.actionBtn, marginTop: 8, color: '#aaa', borderColor: '#333', padding: '6px 16px' }}>
                         Save Scoping
                       </button>
                     </div>
@@ -1303,9 +1301,9 @@ export default function SuperAdminPage() {
                     <div key={name} style={{ ...S.card, opacity: exists ? 0.5 : 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <code style={{ fontSize: 11, color: '#aaa' }}>{name}</code>
                       {!exists && (
-                        <button onClick={() => { setNewFlagName(name); createFlag(); }} style={{ ...S.actionBtn, color: '#3B82F6', borderColor: '#3B82F640', fontSize: 10 }}>Add</button>
+                        <button onClick={() => { setNewFlagName(name); createFlag(); }} style={{ ...S.actionBtn, color: '#aaa', borderColor: '#333', fontSize: 10 }}>Add</button>
                       )}
-                      {exists && <span style={{ fontSize: 10, color: '#16A34A' }}>Active</span>}
+                      {exists && <span style={{ fontSize: 10, color: '#aaa' }}>Active</span>}
                     </div>
                   );
                 })}
@@ -1347,20 +1345,20 @@ export default function SuperAdminPage() {
                       <td style={S.td}>{inst.board || '—'}</td>
                       <td style={S.td}>{inst.city || '—'}</td>
                       <td style={S.td}>{inst.principal_name || '—'}</td>
-                      <td style={S.td}><span style={{ color: '#E8581C', fontWeight: 700 }}>{inst.max_students ?? '—'}</span></td>
+                      <td style={S.td}><span style={{ color: '#fff', fontWeight: 700 }}>{inst.max_students ?? '—'}</span></td>
                       <td style={S.td}>{inst.subscription_plan || 'free'}</td>
                       <td style={S.td}>
                         <span style={{
                           fontSize: 10, padding: '2px 8px', borderRadius: 10,
-                          background: inst.is_active !== false ? '#16A34A20' : '#EF444420',
-                          color: inst.is_active !== false ? '#16A34A' : '#EF4444',
+                          background: inst.is_active !== false ? '#111' : '#0a0a0a',
+                          color: inst.is_active !== false ? '#fff' : '#666',
                         }}>{inst.is_active !== false ? 'Active' : 'Suspended'}</span>
                       </td>
                       <td style={S.td}>
                         <button onClick={() => toggleInstitution(inst)} style={{
                           ...S.actionBtn,
-                          color: inst.is_active !== false ? '#EF4444' : '#22C55E',
-                          borderColor: inst.is_active !== false ? '#EF444440' : '#22C55E40',
+                          color: inst.is_active !== false ? '#888' : '#fff',
+                          borderColor: inst.is_active !== false ? '#444' : '#444',
                         }}>{inst.is_active !== false ? 'Suspend' : 'Activate'}</button>
                       </td>
                     </tr>
@@ -1385,7 +1383,7 @@ export default function SuperAdminPage() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
               {/* User Activity Lookup */}
               <div style={S.card}>
-                <h3 style={{ fontSize: 13, fontWeight: 700, color: '#E8581C', marginBottom: 10 }}>User Activity Lookup</h3>
+                <h3 style={{ fontSize: 13, fontWeight: 700, color: '#fff', marginBottom: 10 }}>User Activity Lookup</h3>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <input value={supportUserId} onChange={e => setSupportUserId(e.target.value)} placeholder="User ID"
                     style={{ ...S.searchInput, flex: 1 }} />
@@ -1402,34 +1400,34 @@ export default function SuperAdminPage() {
 
               {/* Password Reset */}
               <div style={S.card}>
-                <h3 style={{ fontSize: 13, fontWeight: 700, color: '#3B82F6', marginBottom: 10 }}>Password Reset</h3>
+                <h3 style={{ fontSize: 13, fontWeight: 700, color: '#aaa', marginBottom: 10 }}>Password Reset</h3>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <input value={supportEmail} onChange={e => setSupportEmail(e.target.value)} placeholder="User email"
                     style={{ ...S.searchInput, flex: 1 }} />
                   <button onClick={() => supportPost('reset_password', { email: supportEmail })}
-                    style={{ ...S.quickBtn, color: '#3B82F6', borderColor: '#3B82F640', background: '#3B82F610' }}>Reset</button>
+                    style={{ ...S.quickBtn, color: '#aaa', borderColor: '#333', background: '#111' }}>Reset</button>
                 </div>
               </div>
 
               {/* Resend Invite */}
               <div style={S.card}>
-                <h3 style={{ fontSize: 13, fontWeight: 700, color: '#16A34A', marginBottom: 10 }}>Resend Invite</h3>
+                <h3 style={{ fontSize: 13, fontWeight: 700, color: '#aaa', marginBottom: 10 }}>Resend Invite</h3>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <input value={supportEmail} onChange={e => setSupportEmail(e.target.value)} placeholder="User email"
                     style={{ ...S.searchInput, flex: 1 }} />
                   <button onClick={() => supportPost('resend_invite', { email: supportEmail, type: 'student' })}
-                    style={{ ...S.quickBtn, color: '#16A34A', borderColor: '#16A34A40', background: '#16A34A10' }}>Send</button>
+                    style={{ ...S.quickBtn, color: '#aaa', borderColor: '#333', background: '#111' }}>Send</button>
                 </div>
               </div>
 
               {/* Parent-Student Links */}
               <div style={S.card}>
-                <h3 style={{ fontSize: 13, fontWeight: 700, color: '#F59E0B', marginBottom: 10 }}>Parent-Student Links</h3>
+                <h3 style={{ fontSize: 13, fontWeight: 700, color: '#aaa', marginBottom: 10 }}>Parent-Student Links</h3>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <input value={supportUserId} onChange={e => setSupportUserId(e.target.value)} placeholder="Student ID"
                     style={{ ...S.searchInput, flex: 1 }} />
                   <button onClick={() => fetchSupport('parent_links', { student_id: supportUserId })}
-                    style={{ ...S.quickBtn, color: '#F59E0B', borderColor: '#F59E0B40', background: '#F59E0B10' }}>View</button>
+                    style={{ ...S.quickBtn, color: '#aaa', borderColor: '#333', background: '#111' }}>View</button>
                 </div>
               </div>
             </div>
@@ -1454,9 +1452,9 @@ export default function SuperAdminPage() {
                   <tbody>
                     {supportJobsData.data.map((job, i) => (
                       <tr key={i}>
-                        <td style={S.td}><code style={{ color: '#E8581C' }}>{job.task_type || '—'}</code></td>
+                        <td style={S.td}><code style={{ color: '#fff' }}>{job.task_type || '—'}</code></td>
                         <td style={S.td}>
-                          <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: '#EF444420', color: '#EF4444' }}>
+                          <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: '#111', color: '#888' }}>
                             {job.status || 'failed'}
                           </span>
                         </td>
@@ -1482,7 +1480,7 @@ export default function SuperAdminPage() {
 
             {reportStatus && (
               <div style={{ padding: '8px 14px', borderRadius: 8, background: reportStatus.includes('failed') ? '#2a1010' : '#0a2a0a',
-                color: reportStatus.includes('failed') ? '#EF4444' : '#22C55E', fontSize: 12, marginBottom: 16,
+                color: reportStatus.includes('failed') ? '#888' : '#fff', fontSize: 12, marginBottom: 16,
                 border: `1px solid ${reportStatus.includes('failed') ? '#3a1515' : '#153015'}` }}>
                 {reportStatus}
               </div>
@@ -1506,7 +1504,7 @@ export default function SuperAdminPage() {
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button onClick={() => downloadReport(r.type, 'csv')} style={{ ...S.dlBtn, flex: 1 }}>⬇ CSV</button>
-                    <button onClick={() => downloadReport(r.type, 'json')} style={{ ...S.dlBtn, flex: 1, background: '#1a1a2a', borderColor: '#3B82F640', color: '#3B82F6' }}>⬇ JSON</button>
+                    <button onClick={() => downloadReport(r.type, 'json')} style={{ ...S.dlBtn, flex: 1, background: '#1a1a2a', borderColor: '#333', color: '#aaa' }}>⬇ JSON</button>
                   </div>
                 </div>
               ))}
@@ -1563,7 +1561,7 @@ export default function SuperAdminPage() {
                   {logs.map(l => (
                     <tr key={l.id}>
                       <td style={{ ...S.td, fontSize: 11, whiteSpace: 'nowrap' }}>{new Date(l.created_at).toLocaleString()}</td>
-                      <td style={S.td}><code style={{ color: '#E8581C', background: '#E8581C15', padding: '1px 6px', borderRadius: 3 }}>{l.action}</code></td>
+                      <td style={S.td}><code style={{ color: '#fff', background: '#111', padding: '1px 6px', borderRadius: 3 }}>{l.action}</code></td>
                       <td style={S.td}>{l.entity_type}{l.entity_id ? <code style={{ color: '#888', marginLeft: 4 }}>:{l.entity_id.slice(0, 8)}</code> : ''}</td>
                       <td style={{ ...S.td, fontSize: 10 }}>{l.ip_address || '—'}</td>
                       <td style={{ ...S.td, fontSize: 10 }}><code>{l.admin_id?.slice(0, 12) || '—'}</code></td>
@@ -1588,19 +1586,21 @@ export default function SuperAdminPage() {
   );
 }
 
-/* ─── Styles ─── */
+/* ─── Styles: Strict black & white system ─── */
 const S: Record<string, React.CSSProperties> = {
-  center: { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', color: '#e0e0e0', fontFamily: 'monospace' },
-  h2: { fontSize: 13, fontWeight: 700, color: '#888', textTransform: 'uppercase' as const, letterSpacing: 1.5, marginBottom: 12 },
-  card: { padding: 16, borderRadius: 10, border: '1px solid #1e1e1e', background: '#111' },
-  searchInput: { padding: '8px 14px', borderRadius: 8, border: '1px solid #2a2a2a', background: '#111', color: '#e0e0e0', fontSize: 12, outline: 'none', fontFamily: 'inherit', width: 200 },
-  filterBtn: { padding: '7px 14px', borderRadius: 8, border: '1px solid #2a2a2a', background: '#111', color: '#888', fontSize: 12, cursor: 'pointer' },
-  filterActive: { background: '#E8581C18', color: '#E8581C', borderColor: '#E8581C40' },
-  quickBtn: { padding: '8px 16px', borderRadius: 8, border: '1px solid #E8581C40', background: '#E8581C10', color: '#E8581C', fontSize: 12, fontWeight: 600, cursor: 'pointer' },
-  dlBtn: { padding: '8px 14px', borderRadius: 8, border: '1px solid #16A34A40', background: '#16A34A10', color: '#16A34A', fontSize: 12, fontWeight: 600, cursor: 'pointer' },
+  center: { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000', color: '#fff', fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" },
+  h2: { fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase' as const, letterSpacing: 2, marginBottom: 12 },
+  card: { padding: 16, borderRadius: 6, border: '1px solid #222', background: '#000' },
+  searchInput: { padding: '8px 12px', borderRadius: 4, border: '1px solid #333', background: '#000', color: '#fff', fontSize: 12, outline: 'none', fontFamily: 'inherit', width: 200, boxSizing: 'border-box' as const },
+  select: { padding: '8px 10px', borderRadius: 4, border: '1px solid #333', background: '#000', color: '#fff', fontSize: 12, outline: 'none' },
+  filterBtn: { padding: '7px 14px', borderRadius: 4, border: '1px solid #333', background: '#000', color: '#aaa', fontSize: 12, cursor: 'pointer' },
+  filterActive: { background: '#fff', color: '#000', borderColor: '#fff' },
+  quickBtn: { padding: '8px 16px', borderRadius: 4, border: '1px solid #444', background: '#111', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' },
+  navBtn: { padding: '6px 14px', borderRadius: 4, border: '1px solid #333', background: '#000', color: '#aaa', fontSize: 12, cursor: 'pointer' },
+  dlBtn: { padding: '8px 14px', borderRadius: 4, border: '1px solid #444', background: '#111', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' },
   table: { width: '100%', borderCollapse: 'collapse' as const, fontSize: 12 },
-  th: { textAlign: 'left' as const, padding: '10px 12px', borderBottom: '1px solid #1e1e1e', color: '#555', fontSize: 10, textTransform: 'uppercase' as const, letterSpacing: 1.5 },
-  td: { padding: '10px 12px', borderBottom: '1px solid #141414', color: '#ccc' },
-  actionBtn: { background: 'none', border: '1px solid #333', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 600 },
-  pageBtn: { padding: '7px 16px', borderRadius: 8, border: '1px solid #2a2a2a', background: '#111', color: '#888', fontSize: 12, cursor: 'pointer' },
+  th: { textAlign: 'left' as const, padding: '10px 12px', borderBottom: '1px solid #222', color: '#666', fontSize: 10, textTransform: 'uppercase' as const, letterSpacing: 1.5 },
+  td: { padding: '10px 12px', borderBottom: '1px solid #111', color: '#ccc' },
+  actionBtn: { background: 'none', border: '1px solid #444', borderRadius: 4, padding: '4px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 600, color: '#ccc' },
+  pageBtn: { padding: '7px 16px', borderRadius: 4, border: '1px solid #333', background: '#000', color: '#aaa', fontSize: 12, cursor: 'pointer' },
 };
