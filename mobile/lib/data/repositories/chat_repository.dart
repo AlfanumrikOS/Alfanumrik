@@ -1,14 +1,18 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/network/api_client.dart';
 import '../../core/network/api_result.dart';
 import '../models/chat_message.dart';
 
 class ChatRepository {
   final SupabaseClient _client;
+  final ApiClient _api;
 
   ChatRepository({
     SupabaseClient? client,
-  })  : _client = client ?? Supabase.instance.client;
+    ApiClient? api,
+  })  : _client = client ?? Supabase.instance.client,
+        _api = api ?? ApiClient();
 
   /// Create a new chat session
   Future<ApiResult<ChatSession>> createSession({

@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/errors/app_exception.dart';
 import '../../core/network/api_result.dart';
 import '../../core/cache/cache_manager.dart';
 import '../models/student.dart';

@@ -44,23 +44,14 @@ class ChaptersScreen extends ConsumerWidget {
               ),
             );
           }
-          return RefreshIndicator(
-            color: color,
-            onRefresh: () async {
-              ref.invalidate(chaptersProvider(subjectCode));
-              await Future.delayed(const Duration(milliseconds: 300));
-            },
-            child: ListView.separated(
-            physics: const AlwaysScrollableScrollPhysics(),
+          return ListView.separated(
             padding: const EdgeInsets.all(16),
             itemCount: chapters.length,
             separatorBuilder: (_, __) => const SizedBox(height: 8),
             itemBuilder: (context, index) {
               final ch = chapters[index];
               return GestureDetector(
-                onTap: () => context.go(
-                  '/learn/$subjectCode/${ch.id}?title=${Uri.encodeComponent(ch.title)}',
-                ),
+                onTap: () => context.go('/learn/$subjectCode/${ch.id}'),
                 child: Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
@@ -75,7 +66,7 @@ class ChaptersScreen extends ConsumerWidget {
                         width: 36,
                         height: 36,
                         decoration: BoxDecoration(
-                          color: color.withOpacity(0.1),
+                          color: color.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         alignment: Alignment.center,
@@ -131,7 +122,6 @@ class ChaptersScreen extends ConsumerWidget {
                 ),
               );
             },
-          ),
           );
         },
       ),

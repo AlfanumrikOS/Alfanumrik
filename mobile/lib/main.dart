@@ -5,7 +5,6 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app.dart';
-import 'core/cache/cache_manager.dart';
 import 'core/constants/api_constants.dart';
 
 Future<void> main() async {
@@ -25,7 +24,6 @@ Future<void> main() async {
 
   // Initialize Hive for local caching
   await Hive.initFlutter();
-  await CacheManager().init();
 
   // Initialize Supabase
   await Supabase.initialize(
