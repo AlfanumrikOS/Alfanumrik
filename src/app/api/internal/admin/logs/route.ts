@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
     const offset = (page - 1) * limit;
 
     const res = await fetch(
-      `${url}/rest/v1/audit_logs?select=id,auth_user_id,action,resource_type,resource_id,details,status,created_at&order=created_at.desc&offset=${offset}&limit=${limit}`,
+      `${url}/rest/v1/admin_audit_log?select=id,admin_id,action,entity_type,entity_id,details,ip_address,created_at&order=created_at.desc&offset=${offset}&limit=${limit}`,
       {
         headers: {
           'apikey': key,

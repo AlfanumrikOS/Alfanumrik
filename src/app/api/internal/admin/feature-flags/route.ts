@@ -27,6 +27,21 @@ function supabaseUrl(table: string, params: string = ''): string {
   return `${url}/rest/v1/${table}${params ? `?${params}` : ''}`;
 }
 
+async function logAudit(action: string, entityId: string, details: Record<string, unknown>) {
+  try {
+    await fetch(supabaseUrl('admin_audit_log'), {
+      method: 'POST',
+      headers: supabaseHeaders('return=minimal'),
+      body: JSON.stringify({
+        action,
+        entity_type: 'feature_flag',
+        entity_id: entityId,
+        details,
+      }),
+    });
+  } catch { /* fire and forget */ }
+}
+
 // ---------------------------------------------------------------------------
 // GET  — list all feature flags (with optional search)
 // ---------------------------------------------------------------------------
@@ -161,6 +176,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'No record found with that id.' }, { status: 404 });
     }
 
+    await logAudit('feature_flag.updated', id, { updates: safe });
     return NextResponse.json({ success: true, data: updated });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 });
@@ -198,6 +214,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'No record found with that id.' }, { status: 404 });
     }
 
+    await logAudit('feature_flag.deleted', id, { deleted: deleted[0] });
     return NextResponse.json({ success: true, data: deleted });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 });
