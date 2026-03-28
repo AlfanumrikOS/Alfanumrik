@@ -3,10 +3,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-/* ═══════════════════════════════════════════════════════════════
-   ALFANUMRIK SUPER ADMIN PANEL — Full Control Dashboard
-   Protected via Supabase session + admin_users DB verification.
-   ═══════════════════════════════════════════════════════════════ */
 
 interface SystemStats {
   totals: Record<string, number>;
@@ -527,7 +523,7 @@ export default function SuperAdminPage() {
       <main style={{ padding: '20px', maxWidth: 1400, margin: '0 auto' }}>
         {loading && <div style={{ fontSize: 11, color: '#888', marginBottom: 12 }}>Loading...</div>}
 
-        {/* ═══ DASHBOARD ═══ */}
+        {/* Dashboard */}
         {activeTab === 'dashboard' && (
           <div>
             {stats ? (
@@ -777,7 +773,7 @@ export default function SuperAdminPage() {
           </div>
         )}
 
-        {/* ═══ USERS ═══ */}
+        {/* Users */}
         {activeTab === 'users' && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
@@ -864,7 +860,7 @@ export default function SuperAdminPage() {
           </div>
         )}
 
-        {/* ═══ ROLES ═══ */}
+        {/* Roles */}
         {activeTab === 'roles' && (
           <div>
             <h2 style={S.h2}>Role Management</h2>
@@ -946,7 +942,7 @@ export default function SuperAdminPage() {
           </div>
         )}
 
-        {/* ═══ CONTENT MANAGEMENT ═══ */}
+        {/* Content */}
         {activeTab === 'content' && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
@@ -1098,7 +1094,7 @@ export default function SuperAdminPage() {
           </div>
         )}
 
-        {/* ═══ ANALYTICS ═══ */}
+        {/* Analytics */}
         {activeTab === 'analytics' && (
           <div>
             {analyticsData ? (
@@ -1227,7 +1223,7 @@ export default function SuperAdminPage() {
           </div>
         )}
 
-        {/* ═══ FEATURE FLAGS ═══ */}
+        {/* Feature Flags */}
         {activeTab === 'flags' && (
           <div>
             <h2 style={S.h2}>Feature Flags & Kill Switches</h2>
@@ -1320,7 +1316,7 @@ export default function SuperAdminPage() {
           </div>
         )}
 
-        {/* ═══ INSTITUTIONS ═══ */}
+        {/* Schools */}
         {activeTab === 'institutions' && (
           <div>
             <h2 style={S.h2}>School & Institution Management</h2>
@@ -1383,7 +1379,7 @@ export default function SuperAdminPage() {
           </div>
         )}
 
-        {/* ═══ SUPPORT & OPS ═══ */}
+        {/* Support */}
         {activeTab === 'support' && (
           <div>
             <h2 style={S.h2}>Support & Intervention Tools</h2>
@@ -1480,7 +1476,7 @@ export default function SuperAdminPage() {
           </div>
         )}
 
-        {/* ═══ REPORTS ═══ */}
+        {/* Reports */}
         {activeTab === 'reports' && (
           <div>
             <h2 style={S.h2}>Download Reports</h2>
@@ -1520,7 +1516,7 @@ export default function SuperAdminPage() {
           </div>
         )}
 
-        {/* ═══ AUDIT LOGS ═══ */}
+        {/* Audit Logs */}
         {activeTab === 'logs' && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -1594,7 +1590,7 @@ export default function SuperAdminPage() {
   );
 }
 
-/* ─── Styles: Strict black & white system ─── */
+/* Styles */
 const S: Record<string, React.CSSProperties> = {
   center: { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000', color: '#fff', fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" },
   h2: { fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase' as const, letterSpacing: 2, marginBottom: 12 },

@@ -1,16 +1,7 @@
 import { cacheFetch, CACHE_TTL } from './cache';
 
-/**
- * Feature Flag Runtime Evaluation
- *
- * Evaluates flags with scoping precedence:
- * 1. If flag has target_environments and current env doesn't match → disabled
- * 2. If flag has target_roles and user's role doesn't match → disabled
- * 3. If flag has target_institutions and user's school doesn't match → disabled
- * 4. If all scoping matches (or scoping is empty/global) → use is_enabled
- *
- * Cached for 5 minutes. Cache key includes environment.
- */
+// Scoping precedence: environment → role → institution → global enabled.
+// Empty scoping arrays = applies to all. Cached 5 minutes.
 
 interface FeatureFlagRow {
   flag_name: string;

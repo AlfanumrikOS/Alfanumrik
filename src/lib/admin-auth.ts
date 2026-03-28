@@ -1,12 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-/**
- * Admin Authorization Module
- *
- * Authenticates via Supabase session + admin_users DB verification.
- * Every admin API route must call authorizeAdmin().
- */
-
 export interface AdminAuth {
   authorized: true;
   userId: string;
@@ -29,38 +22,34 @@ function getSupabaseConfig() {
   return { url: url || null, key: key || null };
 }
 
+/**
+ * Verify that the request comes from an authenticated admin user.
+ * Checks Supabase session token, then looks up admin_users table.
+ * Falls back to user's own token if service role query returns empty
+ * (handles misconfigured service role key gracefully).
+ */
 export async function authorizeAdmin(request: NextRequest): Promise<AdminAuthResult> {
   const { url, key } = getSupabaseConfig();
-  const diag: Record<string, unknown> = {
-    supabase_url_present: !!url,
-    service_role_key_present: !!key,
-    service_role_key_length: key ? key.length : 0,
-  };
 
-  // Step 0: Check env vars
   if (!url) {
-    console.error('[authorizeAdmin] FAIL: NEXT_PUBLIC_SUPABASE_URL not set');
-    return { authorized: false, response: NextResponse.json({ error: 'NEXT_PUBLIC_SUPABASE_URL not configured' }, { status: 500 }) };
+    console.error('[admin-auth] SUPABASE_URL not configured');
+    return { authorized: false, response: NextResponse.json({ error: 'Server configuration error' }, { status: 500 }) };
   }
   if (!key) {
-    console.error('[authorizeAdmin] FAIL: SUPABASE_SERVICE_ROLE_KEY not set');
-    return { authorized: false, response: NextResponse.json({ error: 'SUPABASE_SERVICE_ROLE_KEY not configured' }, { status: 500 }) };
+    console.error('[admin-auth] SERVICE_ROLE_KEY not configured');
+    return { authorized: false, response: NextResponse.json({ error: 'Server configuration error' }, { status: 500 }) };
   }
 
   try {
-    // Step 1: Extract access token
+    // Extract token from Authorization header or session cookie
     let accessToken: string | null = null;
     const authHeader = request.headers.get('Authorization');
-    diag.auth_header_present = !!authHeader;
-
     if (authHeader?.startsWith('Bearer ')) {
       accessToken = authHeader.slice(7);
     }
 
     if (!accessToken) {
-      // Try cookie
       const cookieHeader = request.headers.get('Cookie');
-      diag.cookie_header_present = !!cookieHeader;
       if (cookieHeader) {
         const cookies = Object.fromEntries(
           cookieHeader.split(';').map(c => {
@@ -69,7 +58,6 @@ export async function authorizeAdmin(request: NextRequest): Promise<AdminAuthRes
           })
         );
         const authCookieKey = Object.keys(cookies).find(k => /^sb-.+-auth-token/.test(k));
-        diag.auth_cookie_found = !!authCookieKey;
         if (authCookieKey) {
           try {
             const decoded = decodeURIComponent(cookies[authCookieKey]);
@@ -88,92 +76,63 @@ export async function authorizeAdmin(request: NextRequest): Promise<AdminAuthRes
                 const decoded = decodeURIComponent(chunks.join(''));
                 const parsed = JSON.parse(decoded);
                 accessToken = parsed?.access_token || null;
-              } catch { /* not valid */ }
+              } catch { /* invalid cookie data */ }
             }
           }
         }
       }
     }
 
-    diag.access_token_extracted = !!accessToken;
-    diag.access_token_length = accessToken ? accessToken.length : 0;
-
     if (!accessToken) {
-      console.error('[authorizeAdmin] FAIL: No access token found', diag);
-      return { authorized: false, response: NextResponse.json({ error: 'No access token found. Please log in.' }, { status: 401 }) };
+      return { authorized: false, response: NextResponse.json({ error: 'Please log in.' }, { status: 401 }) };
     }
 
-    // Step 2: Verify token with GoTrue
+    // Verify token with Supabase GoTrue
     const userRes = await fetch(`${url}/auth/v1/user`, {
       headers: { 'apikey': key, 'Authorization': `Bearer ${accessToken}` },
     });
-    diag.gotrue_status = userRes.status;
 
     if (!userRes.ok) {
-      const gotrueBody = await userRes.text().catch(() => 'unknown');
-      diag.gotrue_error = gotrueBody.slice(0, 200);
-      console.error('[authorizeAdmin] FAIL: GoTrue rejected token', diag);
-      return { authorized: false, response: NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 }) };
+      return { authorized: false, response: NextResponse.json({ error: 'Session expired. Please log in again.' }, { status: 401 }) };
     }
 
     const userData = await userRes.json();
     const userId = userData.id;
-    diag.user_id = userId;
-    diag.user_email = userData.email;
-
     if (!userId) {
-      console.error('[authorizeAdmin] FAIL: GoTrue returned no user ID', diag);
-      return { authorized: false, response: NextResponse.json({ error: 'GoTrue returned no user ID' }, { status: 401 }) };
+      return { authorized: false, response: NextResponse.json({ error: 'Invalid session.' }, { status: 401 }) };
     }
 
-    // Step 3: Query admin_users with service role key
-    const adminQueryUrl = `${url}/rest/v1/admin_users?select=id,name,email,admin_level&auth_user_id=eq.${userId}&is_active=eq.true&limit=1`;
-    const adminRes = await fetch(adminQueryUrl, {
+    // Look up admin_users table
+    const adminQuery = `${url}/rest/v1/admin_users?select=id,name,email,admin_level&auth_user_id=eq.${userId}&is_active=eq.true&limit=1`;
+    const adminRes = await fetch(adminQuery, {
       headers: { 'apikey': key, 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
     });
-    diag.admin_query_status = adminRes.status;
 
     if (!adminRes.ok) {
-      const adminError = await adminRes.text().catch(() => 'unknown');
-      diag.admin_query_error = adminError.slice(0, 300);
-      console.error('[authorizeAdmin] FAIL: admin_users query HTTP error', diag);
-      return { authorized: false, response: NextResponse.json({ error: `admin_users query failed (HTTP ${adminRes.status})` }, { status: 500 }) };
+      console.error('[admin-auth] admin_users query failed:', adminRes.status);
+      return { authorized: false, response: NextResponse.json({ error: 'Authorization check failed.' }, { status: 500 }) };
     }
 
     let admins = await adminRes.json();
-    diag.admin_query_result_type = typeof admins;
-    diag.admin_query_is_array = Array.isArray(admins);
-    diag.admin_query_length = Array.isArray(admins) ? admins.length : -1;
 
-    // Step 3b: If service role returned empty, retry with user's own token
-    // (handles case where SUPABASE_SERVICE_ROLE_KEY is actually the anon key)
+    // Fallback: retry with user's own token if service role returned empty
     if (Array.isArray(admins) && admins.length === 0) {
-      console.log('[authorizeAdmin] Service role query returned 0 rows, retrying with user token');
-      const retryRes = await fetch(adminQueryUrl, {
+      const retryRes = await fetch(adminQuery, {
         headers: { 'apikey': key, 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
       });
-      diag.retry_status = retryRes.status;
       if (retryRes.ok) {
         const retryData = await retryRes.json();
-        diag.retry_length = Array.isArray(retryData) ? retryData.length : -1;
         if (Array.isArray(retryData) && retryData.length > 0) {
           admins = retryData;
-          diag.resolved_via = 'user_token_retry';
         }
       }
     }
 
     if (!Array.isArray(admins) || admins.length === 0) {
-      console.error('[authorizeAdmin] FAIL: admin_users lookup returned 0 rows', diag);
-      return { authorized: false, response: NextResponse.json({ error: 'Authenticated user is not present in admin_users' }, { status: 403 }) };
+      return { authorized: false, response: NextResponse.json({ error: 'You are not an authorized administrator.' }, { status: 403 }) };
     }
 
-    // Step 4: Success
     const admin = admins[0];
-    diag.admin_id = admin.id;
-    diag.admin_level = admin.admin_level;
-    console.log('[authorizeAdmin] SUCCESS', { userId, email: userData.email, adminLevel: admin.admin_level });
-
     return {
       authorized: true,
       userId,
@@ -183,15 +142,12 @@ export async function authorizeAdmin(request: NextRequest): Promise<AdminAuthRes
       adminLevel: admin.admin_level,
     };
   } catch (err) {
-    diag.exception = err instanceof Error ? err.message : String(err);
-    console.error('[authorizeAdmin] EXCEPTION', diag);
-    return { authorized: false, response: NextResponse.json({ error: 'Authorization exception: ' + (err instanceof Error ? err.message : 'unknown') }, { status: 500 }) };
+    console.error('[admin-auth] Exception:', err instanceof Error ? err.message : err);
+    return { authorized: false, response: NextResponse.json({ error: 'Authorization failed.' }, { status: 500 }) };
   }
 }
 
-/**
- * Log an admin action to the audit trail with real user identity.
- */
+/** Record an admin action to the audit trail. */
 export async function logAdminAudit(
   admin: AdminAuth, action: string, entityType: string, entityId: string,
   details?: Record<string, unknown>, ipAddress?: string
@@ -208,12 +164,12 @@ export async function logAdminAudit(
         ip_address: ipAddress || null,
       }),
     });
-  } catch { /* fire and forget */ }
+  } catch { /* audit is best-effort */ }
 }
 
 export function supabaseAdminHeaders(prefer: string = 'count=exact') {
   const { key } = getSupabaseConfig();
-  if (!key) throw new Error('SUPABASE_SERVICE_ROLE_KEY not configured');
+  if (!key) throw new Error('Service role key not configured');
   return { 'apikey': key, 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json', 'Prefer': prefer };
 }
 
@@ -223,6 +179,6 @@ export function isValidUUID(str: string): boolean {
 
 export function supabaseAdminUrl(table: string, params: string = ''): string {
   const { url } = getSupabaseConfig();
-  if (!url) throw new Error('NEXT_PUBLIC_SUPABASE_URL not configured');
+  if (!url) throw new Error('Supabase URL not configured');
   return `${url}/rest/v1/${table}${params ? `?${params}` : ''}`;
 }
