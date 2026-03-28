@@ -40,11 +40,11 @@ export async function authorizeAdmin(request: NextRequest): Promise<AdminAuthRes
   // Step 0: Check env vars
   if (!url) {
     console.error('[authorizeAdmin] FAIL: NEXT_PUBLIC_SUPABASE_URL not set');
-    return { authorized: false, response: NextResponse.json({ error: 'NEXT_PUBLIC_SUPABASE_URL not configured', diag }, { status: 500 }) };
+    return { authorized: false, response: NextResponse.json({ error: 'NEXT_PUBLIC_SUPABASE_URL not configured' }, { status: 500 }) };
   }
   if (!key) {
     console.error('[authorizeAdmin] FAIL: SUPABASE_SERVICE_ROLE_KEY not set');
-    return { authorized: false, response: NextResponse.json({ error: 'SUPABASE_SERVICE_ROLE_KEY not configured', diag }, { status: 500 }) };
+    return { authorized: false, response: NextResponse.json({ error: 'SUPABASE_SERVICE_ROLE_KEY not configured' }, { status: 500 }) };
   }
 
   try {
@@ -100,7 +100,7 @@ export async function authorizeAdmin(request: NextRequest): Promise<AdminAuthRes
 
     if (!accessToken) {
       console.error('[authorizeAdmin] FAIL: No access token found', diag);
-      return { authorized: false, response: NextResponse.json({ error: 'No access token found. Please log in.', diag }, { status: 401 }) };
+      return { authorized: false, response: NextResponse.json({ error: 'No access token found. Please log in.' }, { status: 401 }) };
     }
 
     // Step 2: Verify token with GoTrue
@@ -113,7 +113,7 @@ export async function authorizeAdmin(request: NextRequest): Promise<AdminAuthRes
       const gotrueBody = await userRes.text().catch(() => 'unknown');
       diag.gotrue_error = gotrueBody.slice(0, 200);
       console.error('[authorizeAdmin] FAIL: GoTrue rejected token', diag);
-      return { authorized: false, response: NextResponse.json({ error: 'Invalid or expired token', diag }, { status: 401 }) };
+      return { authorized: false, response: NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 }) };
     }
 
     const userData = await userRes.json();
@@ -123,7 +123,7 @@ export async function authorizeAdmin(request: NextRequest): Promise<AdminAuthRes
 
     if (!userId) {
       console.error('[authorizeAdmin] FAIL: GoTrue returned no user ID', diag);
-      return { authorized: false, response: NextResponse.json({ error: 'GoTrue returned no user ID', diag }, { status: 401 }) };
+      return { authorized: false, response: NextResponse.json({ error: 'GoTrue returned no user ID' }, { status: 401 }) };
     }
 
     // Step 3: Query admin_users with service role key
@@ -137,7 +137,7 @@ export async function authorizeAdmin(request: NextRequest): Promise<AdminAuthRes
       const adminError = await adminRes.text().catch(() => 'unknown');
       diag.admin_query_error = adminError.slice(0, 300);
       console.error('[authorizeAdmin] FAIL: admin_users query HTTP error', diag);
-      return { authorized: false, response: NextResponse.json({ error: `admin_users query failed (HTTP ${adminRes.status})`, diag }, { status: 500 }) };
+      return { authorized: false, response: NextResponse.json({ error: `admin_users query failed (HTTP ${adminRes.status})` }, { status: 500 }) };
     }
 
     let admins = await adminRes.json();
@@ -165,7 +165,7 @@ export async function authorizeAdmin(request: NextRequest): Promise<AdminAuthRes
 
     if (!Array.isArray(admins) || admins.length === 0) {
       console.error('[authorizeAdmin] FAIL: admin_users lookup returned 0 rows', diag);
-      return { authorized: false, response: NextResponse.json({ error: 'Authenticated user is not present in admin_users', diag }, { status: 403 }) };
+      return { authorized: false, response: NextResponse.json({ error: 'Authenticated user is not present in admin_users' }, { status: 403 }) };
     }
 
     // Step 4: Success
@@ -185,7 +185,7 @@ export async function authorizeAdmin(request: NextRequest): Promise<AdminAuthRes
   } catch (err) {
     diag.exception = err instanceof Error ? err.message : String(err);
     console.error('[authorizeAdmin] EXCEPTION', diag);
-    return { authorized: false, response: NextResponse.json({ error: 'Authorization exception: ' + (err instanceof Error ? err.message : 'unknown'), diag }, { status: 500 }) };
+    return { authorized: false, response: NextResponse.json({ error: 'Authorization exception: ' + (err instanceof Error ? err.message : 'unknown') }, { status: 500 }) };
   }
 }
 

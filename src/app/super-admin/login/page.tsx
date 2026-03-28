@@ -47,9 +47,7 @@ export default function AdminLoginPage() {
         if (res.status === 403 || res.status === 401) {
           await supabase.auth.signOut();
         }
-        // Show the exact backend error + diagnostics
-        const diagStr = detail.diag ? '\n\nDiagnostics: ' + JSON.stringify(detail.diag, null, 2) : '';
-        setError(`${detail.error || 'Verification failed'}${diagStr}`);
+        setError(detail.error || 'Verification failed. Please try again.');
         setLoading(false);
         return;
       }

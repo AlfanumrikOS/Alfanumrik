@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
     const search = params.get('search');
 
     const fields = 'id,flag_name,is_enabled,rollout_percentage,target_grades,target_institutions,target_roles,target_environments,description,created_at,updated_at';
-    const queryParts = [`select=${fields}`, 'order=created_at.desc'];
+    const queryParts = [`select=${fields}`, 'order=created_at.desc', 'limit=100'];
     if (search) queryParts.push(`flag_name=ilike.*${encodeURIComponent(search)}*`);
 
     const res = await fetch(supabaseAdminUrl('feature_flags', queryParts.join('&')), {
