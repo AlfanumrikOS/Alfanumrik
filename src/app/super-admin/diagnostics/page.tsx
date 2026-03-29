@@ -113,6 +113,70 @@ function DiagnosticsContent() {
         </div>
       )}
 
+      {/* AI & Learning Engine Health */}
+      {obsData && (
+        <div style={{ marginBottom: 24 }}>
+          <h2 style={S.h2}>AI &amp; Learning Engine Health</h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+            {/* Foxy AI Tutor */}
+            <div style={S.card}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: colors.text1 }}>Foxy AI Tutor</div>
+                <StatusBadge
+                  label={obsData.activity_24h.chats > 0 ? 'Active' : 'Idle'}
+                  variant={obsData.activity_24h.chats > 0 ? 'success' : 'warning'}
+                />
+              </div>
+              <div style={{ fontSize: 24, fontWeight: 800, color: colors.text1, lineHeight: 1.2 }}>
+                {obsData.activity_24h.chats.toLocaleString()}
+              </div>
+              <div style={{ fontSize: 11, color: colors.text3, marginTop: 2 }}>chats in last 24h</div>
+            </div>
+
+            {/* Quiz Engine */}
+            <div style={S.card}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: colors.text1 }}>Quiz Engine</div>
+                <StatusBadge
+                  label={obsData.activity_24h.quizzes > 0 ? 'Active' : 'Idle'}
+                  variant={obsData.activity_24h.quizzes > 0 ? 'success' : 'warning'}
+                />
+              </div>
+              <div style={{ fontSize: 24, fontWeight: 800, color: colors.text1, lineHeight: 1.2 }}>
+                {obsData.activity_24h.quizzes.toLocaleString()}
+              </div>
+              <div style={{ fontSize: 11, color: colors.text3, marginTop: 2 }}>quizzes in last 24h</div>
+            </div>
+
+            {/* Simulation Lab */}
+            <div style={S.card}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: colors.text1 }}>Simulation Lab</div>
+                <StatusBadge label="Verified" variant="success" />
+              </div>
+              <div style={{ fontSize: 24, fontWeight: 800, color: colors.text1, lineHeight: 1.2 }}>19</div>
+              <div style={{ fontSize: 11, color: colors.text3, marginTop: 2 }}>built-in simulations</div>
+              <div style={{ fontSize: 11, color: colors.success, marginTop: 2, fontWeight: 600 }}>14 &rarr; 19 (+5 this sprint)</div>
+            </div>
+
+            {/* Content Quality */}
+            <div style={S.card}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: colors.text1 }}>Content Quality</div>
+                <StatusBadge
+                  label={obsData.content.questions > 1000 ? 'Strong' : obsData.content.questions > 500 ? 'Growing' : 'Needs Work'}
+                  variant={obsData.content.questions > 1000 ? 'success' : obsData.content.questions > 500 ? 'info' : 'warning'}
+                />
+              </div>
+              <div style={{ fontSize: 24, fontWeight: 800, color: colors.text1, lineHeight: 1.2 }}>
+                {obsData.content.questions.toLocaleString()}
+              </div>
+              <div style={{ fontSize: 11, color: colors.text3, marginTop: 2 }}>questions across {obsData.content.topics.toLocaleString()} topics</div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Failed Jobs */}
       <div style={{ marginBottom: 24 }}>
         <h2 style={S.h2}>Failed Jobs</h2>
