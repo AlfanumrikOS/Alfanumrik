@@ -15,6 +15,8 @@ import { SUBJECT_META, GRADE_SUBJECTS } from '@/lib/constants';
 import { PlanBadge } from '@/components/PlanBadge';
 import QuickActions from '@/components/dashboard/QuickActions';
 import SubjectProgress from '@/components/dashboard/SubjectProgress';
+import DailyChallenge from '@/components/dashboard/DailyChallenge';
+import ComebackHook from '@/components/dashboard/ComebackHook';
 
 const BLOOM_LABELS: Record<string, { icon: string; label: string; labelHi: string }> = {
   remember: { icon: '📖', label: 'Remember', labelHi: 'याद' },
@@ -225,6 +227,16 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* Daily Challenge + Greeting — the first 5-second hook */}
+        {totalXp > 0 && (
+          <DailyChallenge
+            isHi={isHi}
+            studentName={student.name}
+            streak={streak}
+            grade={student.grade}
+          />
+        )}
+
         {/* XP Hero */}
         <Card accent={meta?.color}>
           <div className="flex items-center justify-between mb-3">
@@ -308,6 +320,16 @@ export default function Dashboard() {
             )}
           </div>
         </Card>
+
+        {/* Comeback Hook — contextual pull-back trigger */}
+        <ComebackHook
+          isHi={isHi}
+          lastTopic={nextTopics[0] ? { title: nextTopics[0].title, subject: nextTopics[0].subject || '', progress: Math.round((nextTopics[0].difficulty_level || 0) * 20) } : null}
+          almostMastered={profiles[0] ? { title: profiles[0].subject || 'Topic', mastery: (profiles[0].overall_mastery ?? 0) * 100 } : null}
+          dueReviews={dueCount}
+          streak={streak}
+          quizzesTaken={snapshot?.quizzes_taken ?? 0}
+        />
 
         {/* Error Breakdown */}
         {errorBreakdown && (
