@@ -119,11 +119,21 @@ Summary of mandatory chains:
 | Super-admin pages | frontend | ops, testing |
 
 ## Enforcement Mechanisms
-- **PreToolUse hook** (`guard.sh`): Blocks wrong agents from writing to critical files
-- **PostToolUse hook** (`review-chain.sh`): Injects mandatory review reminders after critical file writes
-- **Gate 5** (orchestrator): Validates all review chains are complete before allowing push
-- **Quality final review**: Rejects if review chains were skipped
-- **Agent prompt rules**: Advisory layer for cases not covered by hooks
+
+### Mechanically Enforced (hooks — cannot be bypassed by agents)
+| Hook | Event | File | What It Enforces |
+|---|---|---|---|
+| Write Guard | PreToolUse (Edit\|Write) | `guard.sh` | 9 blocking + 5 warning rules: agent ownership by file path |
+| Bash Guard | PreToolUse (Bash) | `bash-guard.sh` | Blocks sed/awk/echo bypass of protected files, destructive git ops, secret exposure, warns on direct deploys |
+| Review Chain | PostToolUse (Edit\|Write) | `review-chain.sh` | 20 file patterns → mandatory downstream reviewer reminders |
+| Content Check | PostToolUse (Edit\|Write) | `post-edit-check.sh` | Detects: hardcoded secrets, NEXT_PUBLIC_ secret exposure, console.log in prod, hardcoded XP values, integer grades, missing RLS on new tables, DROP TABLE/COLUMN |
+
+### Advisory (agent prompt rules — followed by discipline, not mechanical force)
+- Orchestrator Gate 5: review chain completion validation
+- Quality veto: code review verdict
+- Agent rejection conditions: per-agent rules
+- Product invariant compliance: P1-P14 checks
+- Regression catalog gap reporting
 
 ## Agent System
 10 agents. Auto-delegation is the default mode. The orchestrator is the default session agent (`settings.json: "agent": "orchestrator"`). Every request goes to the orchestrator, which automatically spawns the minimum required specialist agents.

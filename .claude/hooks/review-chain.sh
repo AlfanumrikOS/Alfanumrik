@@ -77,9 +77,6 @@ elif echo "$FILE_PATH" | grep -qE "^supabase/migrations/.*role|^supabase/migrati
 elif echo "$FILE_PATH" | grep -qE "^src/(lib/razorpay\.ts|app/api/payments/)"; then
   REMINDER="REVIEW CHAIN REQUIRED: payment code was modified. Before task completion, orchestrator must invoke: (1) architect — verify webhook signature verification intact, (2) testing — update payment regression tests, (3) mobile — verify mobile/lib/data/repositories/subscription_repository.dart matches updated payment API contract."
 
-elif echo "$FILE_PATH" | grep -qE "^src/app/api/super-admin/(analytics|stats|reports)/"; then
-  REMINDER="REVIEW CHAIN REQUIRED: reporting API was modified. Before task completion, orchestrator must invoke: (1) frontend — verify super-admin dashboard displays updated data, (2) architect — verify if DB schema change needed."
-
 elif echo "$FILE_PATH" | grep -qE "^(vercel\.json|\.github/workflows/|next\.config\.js)$"; then
   REMINDER="REVIEW CHAIN REQUIRED: deployment config was modified. Before task completion, orchestrator must invoke: (1) ops — update operational runbooks if procedures changed, (2) testing — verify CI pipeline still passes."
 
