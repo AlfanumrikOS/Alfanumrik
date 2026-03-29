@@ -102,13 +102,13 @@ When a critical file is modified, mandatory downstream reviewers must be invoked
 Summary of mandatory chains:
 | Change | Making Agent | Must Review |
 |---|---|---|
-| Grading/XP constants | assessment | testing, ai-engineer, backend, frontend |
+| Grading/XP constants | assessment | testing, ai-engineer, backend, frontend, **mobile** |
 | Learner-state rules | assessment | ai-engineer, frontend, testing |
 | AI tutor behavior | ai-engineer | assessment, testing |
 | RAG/retrieval | ai-engineer | assessment, testing |
 | Quiz generation | ai-engineer | assessment, testing |
 | RBAC/auth | architect | backend, frontend, ops, testing |
-| Payment flow | backend | architect, testing |
+| Payment flow | backend | architect, testing, **mobile** |
 | Deployment config | architect | ops, testing |
 | Anti-cheat thresholds | assessment + architect | backend, testing |
 | Notification types | backend | frontend, ops |
@@ -128,7 +128,7 @@ Summary of mandatory chains:
 ## Agent System
 9 agents. Each domain in the product has exactly one owner.
 
-**Builders**: architect, frontend, backend, assessment, ai-engineer
+**Builders**: architect, frontend, backend, assessment, ai-engineer, mobile
 **Verifiers**: testing, quality
 **Operator**: ops
 **Coordinator**: orchestrator
@@ -167,6 +167,8 @@ Summary of mandatory chains:
 | 28 | UX audit | quality | — | — |
 | 29 | Content QA | assessment | quality | — |
 | 30 | Monitoring / incidents / rollback readiness | ops | architect (infra); quality | — |
+| 31 | Mobile app (Flutter) | mobile | quality; assessment (XP sync) | — |
+| 32 | Mobile-web API contract sync | mobile (verifies) + backend (implements) | quality | — |
 
 ### Reporting Chain
 ```

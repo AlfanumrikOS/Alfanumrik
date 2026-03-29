@@ -19,6 +19,7 @@ When a critical file is modified, specific downstream agents MUST review before 
 | ai-engineer | cme-engine mastery thresholds still reference correct XP_RULES values |
 | frontend | QuizResults.tsx, ProgressSnapshot.tsx use submission response values not recalculated |
 | backend | `atomic_quiz_profile_update()` RPC level formula `FLOOR(xp/500)+1` matches XP_PER_LEVEL |
+| mobile | Update hardcoded XP values in `mobile/lib/data/repositories/quiz_repository.dart` to match |
 
 ### 2. XP / Mastery Constant Changes
 **Trigger files**: `src/lib/xp-rules.ts` (XP_RULES, XP_PER_LEVEL, LEVEL_NAMES, XP_REWARDS)
@@ -29,6 +30,7 @@ When a critical file is modified, specific downstream agents MUST review before 
 | ai-engineer | cme-engine references correct mastery thresholds |
 | backend | Postgres RPC `atomic_quiz_profile_update` level formula in sync |
 | frontend | Level names displayed via `LEVEL_NAMES` constant, not hardcoded |
+| mobile | Update hardcoded XP values, level names, plan limits in mobile repositories |
 
 ### 3. Learner-State Rule Changes
 **Trigger files**: `src/lib/cognitive-engine.ts`, `src/lib/feedback-engine.ts`
@@ -80,6 +82,7 @@ When a critical file is modified, specific downstream agents MUST review before 
 |---|---|
 | architect | Webhook signature verification still intact (P11) |
 | testing | Payment regression tests updated |
+| mobile | `mobile/lib/data/repositories/subscription_repository.dart` matches updated payment API contract |
 
 ### 9. Reporting Schema Changes
 **Trigger files**: `src/app/api/super-admin/analytics/`, `stats/`, `reports/`

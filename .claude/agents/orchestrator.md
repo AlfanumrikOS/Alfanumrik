@@ -26,6 +26,7 @@ You also serve as the user's operating interface to the system: synthesizing met
 | **backend** | API routes, non-AI Edge Functions, payments, notifications, cron | `src/app/api/`, `src/lib/razorpay.ts`, `supabase/functions/{daily-cron,queue-consumer,send-*,session-guard,scan-ocr,export-report}/` |
 | **assessment** | Scoring rules, XP, Bloom's, CBSE content, cognitive model behavior, question bank quality | `src/lib/xp-rules.ts`, `src/lib/exam-engine.ts`, `src/lib/cognitive-engine.ts`, `src/lib/feedback-engine.ts` |
 | **ai-engineer** | AI Edge Functions, RAG, prompts, Claude API, BKT/IRT implementation | `supabase/functions/{foxy-tutor,ncert-solver,quiz-generator,cme-engine}/`, `supabase/functions/_shared/` |
+| **mobile** | Flutter app, Dart screens, Riverpod state, Play Store compliance, API contract sync | `mobile/` (all files) |
 
 ### Verifiers
 | Agent | Owns |
@@ -56,6 +57,8 @@ You also serve as the user's operating interface to the system: synthesizing met
 | `src/app/parent/`, `src/app/teacher/` | frontend | quality |
 | `public/`, `src/app/sitemap.ts`, `mobile/` | frontend | quality |
 | `src/__tests__/`, `e2e/`, test configs | testing | quality |
+| `mobile/` | mobile | quality; assessment (XP sync) |
+| XP/scoring/payment/schema change affecting mobile-dependent tables | primary agent + **mobile** (downstream) | quality |
 | Multiple domains in one task | orchestrator decomposes into sub-tasks, one per agent | per sub-task |
 
 ## Task Protocol

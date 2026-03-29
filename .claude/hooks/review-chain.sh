@@ -39,7 +39,7 @@ REMINDER=""
 # Only the FIRST matching rule fires (early return via if/elif).
 
 if echo "$FILE_PATH" | grep -qE "^src/lib/xp-rules\.ts$"; then
-  REMINDER="REVIEW CHAIN REQUIRED: xp-rules.ts was modified. Before task completion, orchestrator must invoke: (1) testing — update XP calculation assertions, (2) ai-engineer — verify cme-engine mastery thresholds still match, (3) backend — verify atomic_quiz_profile_update RPC level formula matches, (4) frontend — verify scorecard display uses updated constants."
+  REMINDER="REVIEW CHAIN REQUIRED: xp-rules.ts was modified. Before task completion, orchestrator must invoke: (1) testing — update XP calculation assertions, (2) ai-engineer — verify cme-engine mastery thresholds still match, (3) backend — verify atomic_quiz_profile_update RPC level formula matches, (4) frontend — verify scorecard display uses updated constants, (5) mobile — update hardcoded XP values in mobile/lib/data/repositories/quiz_repository.dart to match."
 
 elif echo "$FILE_PATH" | grep -qE "^src/lib/exam-engine\.ts$"; then
   REMINDER="REVIEW CHAIN REQUIRED: exam-engine.ts was modified. Before task completion, orchestrator must invoke: (1) testing — update timing/preset tests, (2) frontend — verify QuizSetup.tsx uses updated presets, (3) ai-engineer — verify quiz-generator difficulty mapping matches."
@@ -51,7 +51,7 @@ elif echo "$FILE_PATH" | grep -qE "^src/lib/feedback-engine\.ts$"; then
   REMINDER="REVIEW CHAIN REQUIRED: feedback-engine.ts was modified. Before task completion, orchestrator must invoke: (1) ai-engineer — verify foxy-tutor feedback alignment, (2) frontend — verify FeedbackOverlay renders correctly, (3) testing — update feedback tests."
 
 elif echo "$FILE_PATH" | grep -qE "^supabase/functions/foxy-tutor/"; then
-  REMINDER="REVIEW CHAIN REQUIRED: foxy-tutor was modified. Before task completion, orchestrator must invoke: (1) assessment — verify curriculum correctness and age-appropriateness, (2) testing — update AI regression tests."
+  REMINDER="REVIEW CHAIN REQUIRED: foxy-tutor was modified. Before task completion, orchestrator must invoke: (1) assessment — verify curriculum correctness and age-appropriateness, (2) testing — update AI regression tests, (3) mobile — verify mobile/lib/data/repositories/chat_repository.dart handles updated response shape."
 
 elif echo "$FILE_PATH" | grep -qE "^supabase/functions/ncert-solver/"; then
   REMINDER="REVIEW CHAIN REQUIRED: ncert-solver was modified. Before task completion, orchestrator must invoke: (1) assessment — verify NCERT solution accuracy, (2) testing — update solver tests."
@@ -68,11 +68,14 @@ elif echo "$FILE_PATH" | grep -qE "^supabase/functions/_shared/"; then
 elif echo "$FILE_PATH" | grep -qE "^src/lib/(rbac|admin-auth)\.ts$|^src/middleware\.ts$"; then
   REMINDER="REVIEW CHAIN REQUIRED: auth/RBAC was modified. Before task completion, orchestrator must invoke: (1) backend — verify API routes use correct permission codes, (2) frontend — verify usePermissions UI gating matches, (3) ops — verify admin panel access unaffected, (4) testing — update RBAC regression tests."
 
+elif echo "$FILE_PATH" | grep -qE "^supabase/migrations/.*(student|chapter|topic|question_bank|quiz|chat|subscription|daily_usage)"; then
+  REMINDER="REVIEW CHAIN REQUIRED: migration modifying a mobile-dependent table was added. Before task completion, orchestrator must invoke: (1) mobile — verify mobile models and repositories match updated schema (tables: students, chapters, topics, question_bank, quiz_attempts, chat_sessions, chat_messages, student_daily_usage, student_subscriptions, student_topic_progress), (2) testing — update schema-dependent tests."
+
 elif echo "$FILE_PATH" | grep -qE "^supabase/migrations/.*role|^supabase/migrations/.*rbac|^supabase/migrations/.*permission"; then
   REMINDER="REVIEW CHAIN REQUIRED: RBAC migration was added. Before task completion, orchestrator must invoke: (1) backend — verify API routes reference new permission codes, (2) frontend — verify client-side permission checks updated, (3) ops — verify admin panel reflects changes, (4) testing — update RBAC tests."
 
 elif echo "$FILE_PATH" | grep -qE "^src/(lib/razorpay\.ts|app/api/payments/)"; then
-  REMINDER="REVIEW CHAIN REQUIRED: payment code was modified. Before task completion, orchestrator must invoke: (1) architect — verify webhook signature verification intact, (2) testing — update payment regression tests."
+  REMINDER="REVIEW CHAIN REQUIRED: payment code was modified. Before task completion, orchestrator must invoke: (1) architect — verify webhook signature verification intact, (2) testing — update payment regression tests, (3) mobile — verify mobile/lib/data/repositories/subscription_repository.dart matches updated payment API contract."
 
 elif echo "$FILE_PATH" | grep -qE "^src/app/api/super-admin/(analytics|stats|reports)/"; then
   REMINDER="REVIEW CHAIN REQUIRED: reporting API was modified. Before task completion, orchestrator must invoke: (1) frontend — verify super-admin dashboard displays updated data, (2) architect — verify if DB schema change needed."

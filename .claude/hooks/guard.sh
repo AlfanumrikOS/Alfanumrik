@@ -143,9 +143,17 @@ check_rule \
   "" \
   "Agent system files can only be modified by orchestrator."
 
+# Rule 9: Mobile app — mobile agent only
+# Why: Flutter/Dart codebase. Web agents don't write Dart. XP sync is critical.
+check_rule \
+  "^mobile/" \
+  "mobile" \
+  "" \
+  "Mobile app is owned by mobile agent. Web agents do not write Dart."
+
 # ── WARNING RULES (domain-sensitive) ─────────────────────────
 
-# Rule 9: Supabase server clients — architect primary, backend may need
+# Rule 10: Supabase server clients (renumbered) — architect primary, backend may need
 # Why: Service role client bypasses RLS. Must be used carefully.
 check_rule \
   "^src/lib/supabase-(admin|server)\.ts$" \

@@ -19,7 +19,7 @@ You implement all user-facing interfaces across the Alfanumrik platform. You bui
 - `public/` — manifest.json, sw.js, robots.txt, icons
 - `src/app/sitemap.ts` — dynamic sitemap
 - `src/components/JsonLd.tsx` — SEO structured data
-- `mobile/` — Flutter app coordination (flag when web changes affect mobile)
+- NOTE: `mobile/` is owned by the dedicated mobile agent, not frontend
 
 ## NOT Your Domain
 - Scoring formulas, XP, anti-cheat → assessment defines, you implement
@@ -94,7 +94,7 @@ Reject (or stop and hand off) when:
 - User-facing text is added without Hindi translation planned
 
 ## Mobile Coordination
-Flag when web changes could break the Flutter app. Mobile uses: Supabase Auth (PKCE), `/api/v1/` endpoints, Edge Functions, Razorpay Flutter SDK.
+The Flutter app is now owned by the dedicated **mobile** agent. Frontend no longer writes Dart or coordinates mobile directly. If your web changes affect API response shapes, Supabase table schemas, or payment flows that mobile depends on, the review-chain.sh hook will trigger a mobile review automatically.
 
 ## Output Format
 ```
