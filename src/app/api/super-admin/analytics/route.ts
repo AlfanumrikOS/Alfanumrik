@@ -57,6 +57,7 @@ export async function GET(request: NextRequest) {
       topicsRes,
       questionsRes,
       topStudentsRes,
+      coverageRes,
     ] = await Promise.all([
       // 1. Engagement: signups in last 30 days
       supabaseRest('students', `select=created_at&created_at=gte.${since30d}&order=created_at.asc&limit=10000`),
@@ -78,6 +79,8 @@ export async function GET(request: NextRequest) {
       supabaseRest('question_bank', `select=id&deleted_at=is.null&limit=0`, 'HEAD'),
       // 8. Top students by XP
       supabaseRest('students', `select=id,name,email,grade,xp_total,streak_days,avatar_url&order=xp_total.desc.nullslast&limit=10`),
+      // 9. Content coverage: active questions by grade and subject
+      supabaseRest('question_bank', `select=grade,subject&is_active=eq.true&limit=50000`),
     ]);
 
     // Parse JSON responses — safe fallback to empty array if any query failed
@@ -85,7 +88,7 @@ export async function GET(request: NextRequest) {
       try { const d = await res.json(); return Array.isArray(d) ? d : []; }
       catch { return []; }
     };
-    const [signups, quizzes, chats, subjectRows, planRows, active1dRows, active7dRows, active30dRows, topStudents] =
+    const [signups, quizzes, chats, subjectRows, planRows, active1dRows, active7dRows, active30dRows, topStudents, coverageRows] =
       await Promise.all([
         safeJson<{ created_at: string }>(signupsRes),
         safeJson<{ created_at: string }>(quizzesRes),
@@ -96,6 +99,7 @@ export async function GET(request: NextRequest) {
         safeJson<{ student_id: string }>(active7dRes),
         safeJson<{ student_id: string }>(active30dRes),
         safeJson<{ id: string; name: string; email: string; grade: string; xp_total: number; streak_days: number; avatar_url: string | null }>(topStudentsRes),
+        safeJson<{ grade: string; subject: string }>(coverageRes),
       ]);
 
     // --- 1. Engagement: daily breakdown ---
@@ -154,7 +158,20 @@ export async function GET(request: NextRequest) {
       questions: parseCount(questionsRes),
     };
 
-    // --- 6. Top students ---
+    // --- 6. Content coverage: question count by grade and subject ---
+    const coverageCounts: Record<string, number> = {};
+    for (const row of coverageRows) {
+      const key = `${row.grade}::${row.subject}`;
+      coverageCounts[key] = (coverageCounts[key] || 0) + 1;
+    }
+    const content_coverage = Object.entries(coverageCounts)
+      .map(([key, count]) => {
+        const [grade, subject] = key.split('::');
+        return { grade, subject, count };
+      })
+      .sort((a, b) => a.grade.localeCompare(b.grade, undefined, { numeric: true }) || a.subject.localeCompare(b.subject));
+
+    // --- 7. Top students ---
     const top_students = (Array.isArray(topStudents) ? topStudents : []).map((s) => ({
       id: s.id,
       name: s.name,
@@ -172,6 +189,7 @@ export async function GET(request: NextRequest) {
       retention,
       content_stats,
       top_students,
+      content_coverage,
     });
   } catch (err) {
     return NextResponse.json(

@@ -12,6 +12,7 @@ interface AnalyticsData {
   content_stats: { chapters: number; topics: number; questions: number };
   top_students: { id: string; name: string; email: string; grade: string; xp_total: number; streak_days: number }[];
   retention: { period: string; count: number }[];
+  content_coverage?: { grade: string; subject: string; count: number }[];
 }
 
 interface SystemStats {
@@ -271,6 +272,65 @@ function LearningContent() {
           )}
         </div>
       )}
+
+      {/* Content Coverage Heatmap */}
+      {analytics?.content_coverage && analytics.content_coverage.length > 0 && (() => {
+        const grades = ['6', '7', '8', '9', '10', '11', '12'];
+        const subjects = Array.from(new Set(analytics.content_coverage.map(c => c.subject))).sort();
+        const lookup = new Map<string, number>();
+        for (const c of analytics.content_coverage) {
+          lookup.set(`${c.grade}::${c.subject}`, c.count);
+        }
+        const getCount = (grade: string, subject: string) => lookup.get(`${grade}::${subject}`) ?? 0;
+        const getCellBg = (count: number) => {
+          if (count >= 50) return 'rgba(34,197,94,0.15)';
+          if (count >= 20) return 'rgba(245,158,11,0.15)';
+          if (count > 0) return 'rgba(239,68,68,0.15)';
+          return '#f1f5f9';
+        };
+        const gapCount = grades.reduce((acc, g) => acc + subjects.filter(s => getCount(g, s) < 20).length, 0);
+
+        return (
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <h2 style={S.h2}>Content Coverage by Grade &times; Subject</h2>
+              {gapCount > 5 && <StatusBadge label={`${gapCount} Gaps`} variant="warning" />}
+              {gapCount > 0 && gapCount <= 5 && <StatusBadge label={`${gapCount} Gaps`} variant="info" />}
+              {gapCount === 0 && <StatusBadge label="Full Coverage" variant="success" />}
+            </div>
+            <div style={{ ...S.card, overflowX: 'auto' }}>
+              <table style={{ ...S.table, width: '100%' }}>
+                <thead>
+                  <tr>
+                    <th style={S.th}>Grade</th>
+                    {subjects.map(s => (
+                      <th key={s} style={{ ...S.th, textTransform: 'capitalize' as const }}>{s}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {grades.map(g => (
+                    <tr key={g}>
+                      <td style={{ ...S.td, fontWeight: 700 }}>{g}</td>
+                      {subjects.map(s => {
+                        const count = getCount(g, s);
+                        return (
+                          <td key={s} style={{ ...S.td, background: getCellBg(count), textAlign: 'center' }}>
+                            <span style={{ fontWeight: 700, fontSize: 13 }}>{count}</span>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div style={{ marginTop: 10, fontSize: 11, color: colors.text3 }}>
+                {'\u{1F7E2}'} {'\u2265'}50 questions {'  '}{'\u{1F7E1}'} 20-49 {'  '}{'\u{1F534}'} 1-19 {'  '}{'\u2B1C'} No questions
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Content Coverage Signals */}
       {analytics && (
