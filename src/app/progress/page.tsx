@@ -6,7 +6,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { getStudentProfiles, getSubjects, getBloomProgression, getLearningVelocity, getKnowledgeGaps, supabase } from '@/lib/supabase';
 import { BLOOM_CONFIG, BLOOM_LEVELS, BLOOM_ORDER, getHighestMasteredBloom, predictMasteryDate } from '@/lib/cognitive-engine';
 import type { BloomLevel, KnowledgeGap, LearningVelocity, CognitiveSessionMetrics } from '@/lib/types';
-import { Card, Badge, ProgressBar, SectionHeader, StatCard, LoadingFoxy, BottomNav, Button } from '@/components/ui';
+import { Card, Badge, ProgressBar, SectionHeader, StatCard, MasteryRing, LoadingFoxy, BottomNav, Button } from '@/components/ui';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 
 /* ── Helpers ── */
@@ -310,64 +310,58 @@ export default function ProgressPage() {
            ══════════════════════════════════════════════════════════ */}
         {activeTab === 'overview' && (
           <>
-            {/* Enhanced Stats Row */}
-            <div className="grid-stats">
-              <StatCard icon="⭐" value={totalXp.toLocaleString()} label="Total XP" color="var(--orange)" />
-              <StatCard icon="🎯" value={`${accuracy}%`} label={isHi ? 'सटीकता' : 'Accuracy'} color="var(--green)" />
-              <StatCard icon="⏱" value={`${totalMinutes}m`} label={isHi ? 'कुल समय' : 'Study Time'} color="var(--teal)" />
-              <StatCard icon="📝" value={totalSessions} label={isHi ? 'सत्र' : 'Sessions'} color="var(--purple)" />
-              <StatCard
-                icon={BLOOM_CONFIG[highestBloom].icon}
-                value={isHi ? BLOOM_CONFIG[highestBloom].labelHi : BLOOM_CONFIG[highestBloom].label}
-                label={isHi ? 'ब्लूम स्तर' : 'Bloom Level'}
-                color={BLOOM_CONFIG[highestBloom].color}
-              />
-              <StatCard
-                icon="🚀"
-                value={avgVelocity > 0 ? `${(avgVelocity * 100).toFixed(1)}` : '---'}
-                label={isHi ? 'गति' : 'Velocity'}
-                color="var(--teal)"
-              />
-            </div>
+            {/* ═══ MASTERY HERO — overall accuracy ring + key stats ═══ */}
+            <Card className="!p-6">
+              <div className="flex items-center gap-5">
+                <MasteryRing value={accuracy} size={80} strokeWidth={6}>
+                  <div className="text-center">
+                    <div className="text-lg font-bold" style={{ color: accuracy >= 70 ? 'var(--green)' : accuracy >= 40 ? 'var(--orange)' : '#DC2626' }}>{accuracy}%</div>
+                  </div>
+                </MasteryRing>
+                <div className="flex-1">
+                  <h2 className="text-base font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+                    {isHi ? 'कुल सटीकता' : 'Overall Accuracy'}
+                  </h2>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-2 text-xs">
+                    <span className="text-[var(--text-3)]">{isHi ? 'कुल XP' : 'Total XP'}</span>
+                    <span className="font-semibold text-right" style={{ color: 'var(--orange)' }}>{totalXp.toLocaleString()}</span>
+                    <span className="text-[var(--text-3)]">{isHi ? 'पढ़ाई का समय' : 'Study Time'}</span>
+                    <span className="font-semibold text-right">{totalMinutes}m</span>
+                    <span className="text-[var(--text-3)]">{isHi ? 'सत्र' : 'Sessions'}</span>
+                    <span className="font-semibold text-right">{totalSessions}</span>
+                  </div>
+                </div>
+              </div>
+            </Card>
 
-            {/* Subject Progress with Bloom Heatmap */}
+            {/* ═══ SUBJECT MASTERY — rings per subject ═══ */}
             <div>
-              <SectionHeader icon="📚">{isHi ? 'विषयवार प्रगति' : 'Subject Progress'}</SectionHeader>
-              <div className="space-y-3">
+              <SectionHeader icon="📚">{isHi ? 'विषयवार महारत' : 'Subject Mastery'}</SectionHeader>
+              <div className="space-y-2">
                 {profiles.map((p) => {
                   const meta = subjects.find((s: any) => s.code === p.subject);
                   const correctPct = p.total_questions_asked > 0
                     ? Math.round((p.total_questions_answered_correctly / p.total_questions_asked) * 100)
                     : 0;
-                  const subjectBloom = bloomBySubject.get(p.subject) ?? [];
 
                   return (
-                    <Card key={p.id} className="!p-4">
-                      <div className="flex items-center gap-3 mb-3">
-                        <span className="text-2xl">{meta?.icon ?? '📚'}</span>
-                        <div className="flex-1">
-                          <div className="font-semibold text-sm md:text-base">{meta?.name ?? p.subject}</div>
-                          <div className="text-xs text-[var(--text-3)]">
-                            Level {p.level} · {p.xp} XP · {p.streak_days}🔥
-                          </div>
+                    <Card key={p.id} className="!p-3 flex items-center gap-3">
+                      <MasteryRing value={correctPct} size={48} strokeWidth={4} color={meta?.color}>
+                        <span className="text-base">{meta?.icon ?? '📚'}</span>
+                      </MasteryRing>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-sm">{meta?.name ?? p.subject}</div>
+                        <div className="text-xs text-[var(--text-3)]">
+                          Lv{p.level} · {p.xp} XP · {correctPct}% {isHi ? 'सटीकता' : 'accuracy'}
                         </div>
                       </div>
-                      <ProgressBar value={correctPct} color={meta?.color} label={isHi ? 'सटीकता' : 'Accuracy'} showPercent height={6} />
-
-                      {/* Bloom Mastery Heatmap */}
-                      {subjectBloom.length > 0 && (
-                        <div className="mt-3">
-                          <div className="text-[10px] text-[var(--text-3)] mb-1 font-medium">
-                            {isHi ? 'ब्लूम स्तर' : 'Bloom Mastery'}
-                          </div>
-                          <BloomHeatmap data={subjectBloom} isHi={isHi} />
-                        </div>
-                      )}
+                      <div className="text-right">
+                        <div className="text-sm font-bold" style={{ color: meta?.color ?? 'var(--orange)' }}>{correctPct}%</div>
+                      </div>
                     </Card>
                   );
                 })}
               </div>
-              {bloomData.length > 0 && <BloomLegend isHi={isHi} />}
             </div>
 
             {/* Mastery Predictions */}

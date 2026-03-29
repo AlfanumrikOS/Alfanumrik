@@ -51,37 +51,47 @@ export function DashboardSkeleton() {
       </div>
 
       <div className="app-container py-5 space-y-4">
-        {/* Stats row */}
-        <div className="grid grid-cols-2 gap-2">
-          {[1, 2, 3, 4].map(i => (
-            <div key={i} className="rounded-xl p-3" style={{ background: 'var(--surface-1)' }}>
-              <Bone width={20} height={20} radius={4} className="mb-2" />
-              <Bone width="60%" height={20} className="mb-1" />
-              <Bone width="40%" height={10} />
-            </div>
-          ))}
+        {/* Foxy Banner skeleton */}
+        <div className="rounded-2xl p-4 flex items-center gap-3" style={{ background: 'linear-gradient(135deg, #FFF7ED, #FEF3E2)' }}>
+          <Bone width={40} height={40} radius={20} />
+          <div className="flex-1 space-y-1.5">
+            <Bone width="80%" height={14} />
+            <Bone width="40%" height={10} />
+          </div>
         </div>
 
-        {/* Action tiles */}
-        <Bone width="40%" height={12} className="mb-2" />
-        <div className="grid grid-cols-3 gap-2">
-          {[1, 2, 3].map(i => (
-            <div key={i} className="rounded-2xl p-4 flex flex-col items-center gap-2" style={{ background: 'var(--surface-1)' }}>
-              <Bone width={32} height={32} radius={8} />
+        {/* Progress snapshot skeleton */}
+        <div className="rounded-2xl p-4" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
+          <div className="flex justify-between mb-3">
+            <Bone width={120} height={28} />
+            <Bone width={60} height={28} radius={12} />
+          </div>
+          <Bone width="100%" height={8} radius={4} className="mb-3" />
+          <div className="flex justify-between">
+            <Bone width={100} height={12} />
+            <Bone width={80} height={12} />
+          </div>
+        </div>
+
+        {/* Quick actions skeleton */}
+        <div className="grid grid-cols-4 gap-2">
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="rounded-2xl p-3 flex flex-col items-center gap-2" style={{ background: 'var(--surface-1)' }}>
+              <Bone width={28} height={28} radius={8} />
               <Bone width="60%" height={10} />
             </div>
           ))}
         </div>
 
-        {/* Subject cards */}
+        {/* Subject cards skeleton */}
         <Bone width="40%" height={12} className="mb-2" />
-        <div className="space-y-2">
-          {[1, 2, 3].map(i => (
-            <div key={i} className="rounded-2xl p-4 flex items-center gap-3" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
-              <Bone width={44} height={44} radius={12} />
-              <div className="flex-1 space-y-1.5">
-                <Bone width="70%" height={14} />
-                <Bone width="100%" height={8} radius={4} />
+        <div className="grid grid-cols-2 gap-2">
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="rounded-xl p-3 flex items-center gap-3" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
+              <Bone width={40} height={40} radius={20} />
+              <div className="flex-1 space-y-1">
+                <Bone width="70%" height={12} />
+                <Bone width="40%" height={10} />
               </div>
             </div>
           ))}

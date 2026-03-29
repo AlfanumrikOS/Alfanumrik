@@ -329,6 +329,8 @@ h1, h2, h3, h4, h5 { font-family: var(--font-display); }
 @keyframes xpRise { 0% { transform: translateY(0); opacity: 1; } to { transform: translateY(-40px); opacity: 0; } }
 @keyframes spin-slow { 0% { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
+@keyframes bounceOnce { 0% { transform: scale(1); } 40% { transform: scale(1.15); } 70% { transform: scale(0.95); } 100% { transform: scale(1); } }
+
 /* ─── Animation Classes ───────────────────────────────────── */
 .animate-slide-up { animation: slideUp 0.4s cubic-bezier(0.4, 0, 0.2, 1) both; }
 .animate-slide-down { animation: slideDown 0.3s ease both; }
@@ -343,6 +345,7 @@ h1, h2, h3, h4, h5 { font-family: var(--font-display); }
 .quiz-correct { animation: correctPop 0.4s ease; }
 .quiz-wrong { animation: shake 0.35s ease; }
 .xp-rise { animation: xpRise 1.2s ease forwards; }
+.animate-bounce-once { animation: bounceOnce 0.5s ease; }
 
 /* ─── Stagger Animations (CSS-only, replaces framer-motion) ── */
 .stagger-hidden .stagger-item {
@@ -387,6 +390,11 @@ h1, h2, h3, h4, h5 { font-family: var(--font-display); }
 }
 .card-hover:active { transform: translateY(0) scale(0.98); }
 .xp-bar { transition: width 1.2s cubic-bezier(0.4, 0, 0.2, 1); }
+
+/* ─── Focus Screen (quiz active, Foxy guided session) ────── */
+.focus-screen .bottom-nav-mobile { display: none !important; }
+.focus-screen .sidebar-nav { display: none !important; }
+.focus-screen { padding-bottom: 0 !important; }
 
 /* ─── Spacing Helpers ─────────────────────────────────────── */
 .pb-nav { padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px)); }

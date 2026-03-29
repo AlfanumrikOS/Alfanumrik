@@ -15,6 +15,8 @@ import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import { RichContent } from '@/components/foxy/RichContent';
 import { ChatInput } from '@/components/foxy/ChatInput';
 import { UpgradeModal } from '@/components/UpgradeModal';
+import FoxySessionStart from '@/components/foxy/FoxySessionStart';
+import FoxySessionComplete from '@/components/foxy/FoxySessionComplete';
 
 /* ══════════════════════════════════════════════════════════════
    SUBJECT CONFIGURATION
@@ -166,6 +168,10 @@ export default function FoxyPage() {
   const [studentSubs, setStudentSubs] = useState<string[]>([]);
   const [showTopicSheet, setShowTopicSheet] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // Session flow: show guided start screen when no messages yet
+  const [showSessionStart, setShowSessionStart] = useState(true);
+  const [showSessionComplete, setShowSessionComplete] = useState(false);
 
   // Error reporting
   const [reportModal, setReportModal] = useState<{ msgId: number; studentMsg: string; foxyMsg: string } | null>(null);
@@ -401,6 +407,55 @@ export default function FoxyPage() {
       <div className="text-center"><div className="text-5xl animate-float mb-3">{FOXY_FACES.idle}</div><p className="text-sm text-[var(--text-3)]">Loading Foxy...</p></div>
     </div>
   );
+
+  // Session complete screen
+  if (showSessionComplete) {
+    return (
+      <FoxySessionComplete
+        isHi={language === 'hi'}
+        xpEarned={xpGained}
+        messagesCount={messages.filter(m => m.role === 'student').length}
+        topicTitle={activeTopic?.title}
+        onContinue={() => { setShowSessionComplete(false); setShowSessionStart(true); setMessages([]); setXpGained(0); setChatSessionId(null); }}
+        onGoHome={() => router.push('/dashboard')}
+      />
+    );
+  }
+
+  // Session start screen — shown when no messages and user hasn't started yet
+  if (showSessionStart && messages.length === 0) {
+    const subjectOptions = (studentSubs.length > 0 ? studentSubs : Object.keys(SUBJECTS))
+      .filter(key => SUBJECTS[key])
+      .map(key => ({ code: key, name: SUBJECTS[key].name, icon: SUBJECTS[key].icon, color: SUBJECTS[key].color }));
+
+    return (
+      <div className="min-h-dvh pb-nav" style={{ background: 'var(--surface-2)' }}>
+        <header className="page-header">
+          <div className="page-header-inner flex items-center gap-3">
+            <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)] text-sm">←</button>
+            <h1 className="text-base font-bold" style={{ fontFamily: 'var(--font-display)' }}>Foxy AI Tutor</h1>
+          </div>
+        </header>
+        <FoxySessionStart
+          isHi={language === 'hi'}
+          subjects={subjectOptions}
+          selectedSubject={activeSubject}
+          onSelectSubject={(code) => { setActiveSubject(code); if (typeof window !== 'undefined') localStorage.setItem('alfanumrik_subject', code); }}
+          onSelectMode={(modeId) => {
+            setSessionMode(modeId);
+            setShowSessionStart(false);
+            // Auto-send first message for non-doubt modes
+            const mode = MODES.find(m => m.id === modeId);
+            if (mode && modeId !== 'doubt') {
+              const prompt = language === 'hi' ? mode.autoPromptHi(activeTopic?.title || '') : mode.autoPrompt(activeTopic?.title || '');
+              if (prompt) setTimeout(() => sendMessage(prompt), 300);
+            }
+          }}
+        />
+        <BottomNav />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-dvh flex flex-col pb-nav" style={{ background: 'var(--surface-2)' }}>
