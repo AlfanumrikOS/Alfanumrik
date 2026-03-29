@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import AdminShell, { useAdmin } from '../_components/AdminShell';
+import { colors, S } from '../_components/admin-styles';
 
 type View = 'overview' | 'topics' | 'questions' | 'versions';
 
@@ -30,15 +31,15 @@ interface CmsStats { topics: number; questions: number; workflow: { published: n
 
 const GRADES = ['6', '7', '8', '9', '10', '11', '12'];
 const STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
-  draft: { bg: '#111', fg: '#aaa' },
-  review: { bg: '#111', fg: '#888' },
-  published: { bg: '#111', fg: '#fff' },
-  archived: { bg: '#0a0a0a', fg: '#6B7280' },
+  draft: { bg: colors.surface, fg: colors.text3 },
+  review: { bg: colors.warningLight, fg: colors.warning },
+  published: { bg: colors.successLight, fg: colors.success },
+  archived: { bg: colors.surface, fg: colors.text3 },
 };
 
-export default function CmsPage() {
+function CmsContent() {
+  const { apiFetch, headers: h } = useAdmin();
   const [view, setView] = useState<View>('overview');
-  const [accessToken, setAccessToken] = useState<string | null>(null);
 
   // Assets
   const [assets, setAssets] = useState<{ id: string; file_name: string; file_type: string; file_size: number | null; storage_path: string; alt_text: string | null; caption: string | null; created_at: string }[]>([]);
@@ -77,39 +78,25 @@ export default function CmsPage() {
   const [versionEntityType, setVersionEntityType] = useState('');
   const [versionEntityId, setVersionEntityId] = useState('');
 
-  const [supabase] = useState(() =>
-    createClient(process.env.NEXT_PUBLIC_SUPABASE_URL || '', process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '')
-  );
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) setAccessToken(session.access_token);
-      else window.location.href = '/super-admin/login';
-    });
-  }, [supabase]);
-
-  const h = useCallback(() => ({
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${accessToken}`,
-  }), [accessToken]);
+  const accessToken = true; // always truthy when inside AdminShell
 
   const api = useCallback(async (params: string) => {
-    const res = await fetch(`/api/super-admin/cms?${params}`, { headers: h() });
+    const res = await apiFetch(`/api/super-admin/cms?${params}`);
     if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `HTTP ${res.status}`); }
     return res.json();
-  }, [h]);
+  }, [apiFetch]);
 
   const apiPost = useCallback(async (action: string, body: Record<string, unknown>) => {
-    const res = await fetch(`/api/super-admin/cms?action=${action}`, { method: 'POST', headers: h(), body: JSON.stringify(body) });
+    const res = await apiFetch(`/api/super-admin/cms?action=${action}`, { method: 'POST', body: JSON.stringify(body) });
     if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `HTTP ${res.status}`); }
     return res.json();
-  }, [h]);
+  }, [apiFetch]);
 
   const apiPatch = useCallback(async (action: string, body: Record<string, unknown>) => {
-    const res = await fetch(`/api/super-admin/cms?action=${action}`, { method: 'PATCH', headers: h(), body: JSON.stringify(body) });
+    const res = await apiFetch(`/api/super-admin/cms?action=${action}`, { method: 'PATCH', body: JSON.stringify(body) });
     if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `HTTP ${res.status}`); }
     return res.json();
-  }, [h]);
+  }, [apiFetch]);
 
   // ── Data loaders ──
   const loadStats = useCallback(async () => {
@@ -237,7 +224,7 @@ export default function CmsPage() {
 
   const loadAssets = async (entityType: string, entityId: string) => {
     try {
-      const res = await fetch(`/api/super-admin/platform-ops?action=assets&entity_type=${entityType}&entity_id=${entityId}`, { headers: h() });
+      const res = await apiFetch(`/api/super-admin/platform-ops?action=assets&entity_type=${entityType}&entity_id=${entityId}`);
       if (res.ok) { const d = await res.json(); setAssets(d.data || []); }
     } catch { /* */ }
     setAssetEntityType(entityType);
@@ -247,8 +234,8 @@ export default function CmsPage() {
   const registerAsset = async () => {
     if (!assetForm.file_name || !assetForm.storage_path) { alert('File name and storage path required'); return; }
     try {
-      await fetch('/api/super-admin/platform-ops?action=register_asset', {
-        method: 'POST', headers: h(),
+      await apiFetch('/api/super-admin/platform-ops?action=register_asset', {
+        method: 'POST',
         body: JSON.stringify({
           entity_type: assetEntityType || 'general',
           entity_id: assetEntityId || null,
@@ -268,16 +255,14 @@ export default function CmsPage() {
   const deleteAsset = async (assetId: string) => {
     if (!confirm('Remove this asset?')) return;
     try {
-      await fetch('/api/super-admin/platform-ops?action=delete_asset', {
-        method: 'POST', headers: h(), body: JSON.stringify({ id: assetId }),
+      await apiFetch('/api/super-admin/platform-ops?action=delete_asset', {
+        method: 'POST', body: JSON.stringify({ id: assetId }),
       });
       if (assetEntityType && assetEntityId) loadAssets(assetEntityType, assetEntityId);
     } catch { alert('Delete failed'); }
   };
 
-  if (!accessToken) return <div style={S.center}><p style={{ color: '#888' }}>Loading...</p></div>;
-
-  const StatusBadge = ({ status }: { status: string }) => {
+  const CmsStatusBadge = ({ status }: { status: string }) => {
     const c = STATUS_COLORS[status] || STATUS_COLORS.draft;
     return <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: c.bg, color: c.fg, fontWeight: 600 }}>{status}</span>;
   };
@@ -294,8 +279,8 @@ export default function CmsPage() {
       <div style={{ display: 'flex', gap: 4 }}>
         {available.map(s => (
           <button key={s} onClick={() => transitionStatus(entityType, entityId, s)}
-            style={{ ...S.actionBtn, color: STATUS_COLORS[s]?.fg || '#888', borderColor: `${STATUS_COLORS[s]?.fg || '#888'}40`, fontSize: 10, padding: '3px 8px' }}>
-            → {s}
+            style={{ ...S.actionBtn, color: STATUS_COLORS[s]?.fg || colors.text3, fontSize: 10, padding: '3px 8px' }}>
+            &rarr; {s}
           </button>
         ))}
       </div>
@@ -303,64 +288,59 @@ export default function CmsPage() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: '#000', color: '#e0e0e0', fontFamily: "'Plus Jakarta Sans', monospace" }}>
+    <div>
       {/* Header */}
-      <header style={{ padding: '14px 20px', borderBottom: '1px solid #222', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#0a0a0a' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 20 }}>📚</span>
-          <div>
-            <div style={{ fontSize: 10, color: '#555', letterSpacing: 2, textTransform: 'uppercase' }}>Content Management</div>
-          </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <div>
+          <h1 style={S.h1}>Content Management</h1>
+          <p style={{ fontSize: 12, color: colors.text3, margin: 0 }}>Topics, questions, versions, and assets</p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <a href="/super-admin" style={{ ...S.navBtn, textDecoration: 'none' }}>← Admin</a>
-        </div>
-      </header>
+      </div>
 
-      {/* Nav */}
-      <nav style={{ padding: '0 20px', borderBottom: '1px solid #222', display: 'flex', gap: 0, background: '#000' }}>
+      {/* Nav Tabs */}
+      <nav style={{ display: 'flex', gap: 0, borderBottom: `2px solid ${colors.border}`, marginBottom: 20 }}>
         {[
-          { key: 'overview' as View, label: 'Overview', icon: '📊' },
-          { key: 'topics' as View, label: 'Topics', icon: '📝' },
-          { key: 'questions' as View, label: 'Questions', icon: '❓' },
-          ...(versionEntityId ? [{ key: 'versions' as View, label: 'Version History', icon: '🕐' }] : []),
+          { key: 'overview' as View, label: 'Overview' },
+          { key: 'topics' as View, label: 'Topics' },
+          { key: 'questions' as View, label: 'Questions' },
+          ...(versionEntityId ? [{ key: 'versions' as View, label: 'Version History' }] : []),
         ].map(tab => (
           <button key={tab.key} onClick={() => { setView(tab.key); setPage(1); }} style={{
-            padding: '12px 18px', fontSize: 12, fontWeight: view === tab.key ? 700 : 400,
-            color: view === tab.key ? '#fff' : '#666', background: 'transparent', border: 'none',
-            borderBottom: view === tab.key ? '2px solid #fff' : '2px solid transparent', cursor: 'pointer',
+            padding: '10px 18px', fontSize: 13, fontWeight: view === tab.key ? 700 : 400,
+            color: view === tab.key ? colors.text1 : colors.text3, background: 'transparent', border: 'none',
+            borderBottom: view === tab.key ? `2px solid ${colors.text1}` : '2px solid transparent', cursor: 'pointer',
+            marginBottom: -2,
           }}>
-            {tab.icon} {tab.label}
+            {tab.label}
           </button>
         ))}
       </nav>
 
-      <main style={{ padding: 20, maxWidth: 1400, margin: '0 auto' }}>
-        {loading && <div style={{ fontSize: 11, color: '#fff', marginBottom: 12 }}>Loading...</div>}
-        {error && <div style={{ padding: '8px 14px', borderRadius: 8, background: '#2a1010', color: '#888', fontSize: 12, marginBottom: 12, border: '1px solid #3a1515' }}>{error} <button onClick={() => setError('')} style={{ color: '#888', background: 'none', border: 'none', cursor: 'pointer', marginLeft: 8 }}>✕</button></div>}
+      {loading && <div style={{ fontSize: 12, color: colors.text3, marginBottom: 12 }}>Loading...</div>}
+      {error && <div style={{ padding: '8px 14px', borderRadius: 8, background: colors.dangerLight, color: colors.danger, fontSize: 12, marginBottom: 12, border: '1px solid #FECACA' }}>{error} <button onClick={() => setError('')} style={{ color: colors.danger, background: 'none', border: 'none', cursor: 'pointer', marginLeft: 8 }}>Close</button></div>}
 
         {/* Overview */}
         {view === 'overview' && stats && (
           <div>
             <h2 style={S.h2}>Content Overview</h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 28 }}>
-              <div style={{ ...S.card, borderLeft: '2px solid #333' }}>
-                <div style={{ fontSize: 28, fontWeight: 800, color: '#fff' }}>{stats.topics}</div>
-                <div style={{ fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: 1 }}>Topics</div>
+              <div style={{ ...S.card, borderLeft: `2px solid ${colors.accent}` }}>
+                <div style={{ fontSize: 28, fontWeight: 800, color: colors.text1 }}>{stats.topics}</div>
+                <div style={{ fontSize: 11, color: colors.text3, textTransform: 'uppercase', letterSpacing: 1 }}>Topics</div>
               </div>
-              <div style={{ ...S.card, borderLeft: '2px solid #333' }}>
-                <div style={{ fontSize: 28, fontWeight: 800, color: '#aaa' }}>{stats.questions}</div>
-                <div style={{ fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: 1 }}>Questions</div>
+              <div style={{ ...S.card, borderLeft: `2px solid ${colors.accent}` }}>
+                <div style={{ fontSize: 28, fontWeight: 800, color: colors.text2 }}>{stats.questions}</div>
+                <div style={{ fontSize: 11, color: colors.text3, textTransform: 'uppercase', letterSpacing: 1 }}>Questions</div>
               </div>
             </div>
 
             <h2 style={S.h2}>Workflow Status (Topics)</h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 28 }}>
               {Object.entries(stats.workflow).map(([status, count]) => (
-                <div key={status} style={{ ...S.card, borderLeft: `3px solid ${STATUS_COLORS[status]?.fg || '#888'}`, cursor: 'pointer' }}
+                <div key={status} style={{ ...S.card, borderLeft: `3px solid ${STATUS_COLORS[status]?.fg || colors.text3}`, cursor: 'pointer' }}
                   onClick={() => { setFilterStatus(status); setView('topics'); }}>
-                  <div style={{ fontSize: 24, fontWeight: 800, color: STATUS_COLORS[status]?.fg || '#888' }}>{count}</div>
-                  <div style={{ fontSize: 11, color: '#888', textTransform: 'capitalize' }}>{status}</div>
+                  <div style={{ fontSize: 24, fontWeight: 800, color: STATUS_COLORS[status]?.fg || colors.text3 }}>{count}</div>
+                  <div style={{ fontSize: 11, color: colors.text3, textTransform: 'capitalize' }}>{status}</div>
                 </div>
               ))}
             </div>
@@ -373,7 +353,7 @@ export default function CmsPage() {
                   <span style={{ fontSize: 20 }}>{s.icon}</span>
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 600 }}>{s.name}</div>
-                    <div style={{ fontSize: 10, color: '#888' }}>{s.code}</div>
+                    <div style={{ fontSize: 10, color: colors.text3 }}>{s.code}</div>
                   </div>
                 </div>
               ))}
@@ -388,7 +368,7 @@ export default function CmsPage() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <h2 style={{ ...S.h2, margin: 0 }}>Curriculum Topics</h2>
                 <button onClick={() => { setShowCreateTopic(!showCreateTopic); setTopicForm({}); }}
-                  style={{ ...S.actionBtn, color: '#aaa', borderColor: '#444', fontSize: 11 }}>
+                  style={{ ...S.actionBtn, color: colors.text2, borderColor: colors.border, fontSize: 11 }}>
                   {showCreateTopic ? '✕ Cancel' : '+ New Topic'}
                 </button>
               </div>
@@ -413,11 +393,11 @@ export default function CmsPage() {
               </div>
             </div>
 
-            <div style={{ fontSize: 11, color: '#555', marginBottom: 8 }}>{topicTotal} topics found</div>
+            <div style={{ fontSize: 11, color: colors.text3, marginBottom: 8 }}>{topicTotal} topics found</div>
 
             {showCreateTopic && (
-              <div style={{ ...S.card, marginBottom: 16, borderLeft: '2px solid #333' }}>
-                <h3 style={{ fontSize: 13, fontWeight: 700, color: '#aaa', marginBottom: 12 }}>Create New Topic</h3>
+              <div style={{ ...S.card, marginBottom: 16, borderLeft: `2px solid ${colors.accent}` }}>
+                <h3 style={{ fontSize: 13, fontWeight: 700, color: colors.text2, marginBottom: 12 }}>Create New Topic</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                   <input placeholder="Title *" value={topicForm.title || ''} onChange={e => setTopicForm(f => ({ ...f, title: e.target.value }))} style={S.searchInput} />
                   <input placeholder="Title (Hindi)" value={topicForm.title_hi || ''} onChange={e => setTopicForm(f => ({ ...f, title_hi: e.target.value }))} style={S.searchInput} />
@@ -447,7 +427,7 @@ export default function CmsPage() {
                 </div>
                 <textarea placeholder="Description" value={topicForm.description || ''} onChange={e => setTopicForm(f => ({ ...f, description: e.target.value }))}
                   style={{ ...S.searchInput, width: '100%', minHeight: 80, marginTop: 10, resize: 'vertical' as const }} />
-                <button onClick={createTopic} style={{ ...S.actionBtn, marginTop: 10, color: '#aaa', borderColor: '#444', padding: '8px 20px' }}>
+                <button onClick={createTopic} style={{ ...S.actionBtn, marginTop: 10, color: colors.text2, borderColor: colors.border, padding: '8px 20px' }}>
                   Create Topic (Draft)
                 </button>
               </div>
@@ -468,22 +448,22 @@ export default function CmsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {topics.length === 0 && <tr><td colSpan={8} style={{ ...S.td, textAlign: 'center', color: '#555', padding: 24 }}>No topics found</td></tr>}
+                  {topics.length === 0 && <tr><td colSpan={8} style={{ ...S.td, textAlign: 'center', color: colors.text3, padding: 24 }}>No topics found</td></tr>}
                   {topics.map(t => (
                     <tr key={t.id}>
                       <td style={S.td}>{t.chapter_number ?? '—'}</td>
                       <td style={S.td}>
                         <strong>{t.title}</strong>
-                        {t.title_hi && <div style={{ fontSize: 10, color: '#888' }}>{t.title_hi}</div>}
+                        {t.title_hi && <div style={{ fontSize: 10, color: colors.text3 }}>{t.title_hi}</div>}
                       </td>
                       <td style={S.td}>{t.grade}</td>
-                      <td style={S.td}><span style={{ fontSize: 10, color: '#aaa' }}>{t.topic_type}</span></td>
-                      <td style={S.td}><StatusBadge status={t.content_status} /></td>
-                      <td style={S.td}><span style={{ fontSize: 10, color: '#aaa' }}>{t.bloom_focus}</span></td>
+                      <td style={S.td}><span style={{ fontSize: 10, color: colors.text2 }}>{t.topic_type}</span></td>
+                      <td style={S.td}><CmsStatusBadge status={t.content_status} /></td>
+                      <td style={S.td}><span style={{ fontSize: 10, color: colors.text2 }}>{t.bloom_focus}</span></td>
                       <td style={S.td}><TransitionButtons entityType="topic" entityId={t.id} currentStatus={t.content_status} /></td>
                       <td style={S.td}>
                         <div style={{ display: 'flex', gap: 4 }}>
-                          <button onClick={() => { loadAssets('topic', t.id); }} style={{ ...S.actionBtn, fontSize: 10, color: '#aaa', borderColor: '#444' }}>Assets</button>
+                          <button onClick={() => { loadAssets('topic', t.id); }} style={{ ...S.actionBtn, fontSize: 10, color: colors.text2, borderColor: colors.border }}>Assets</button>
                           <button onClick={() => openVersions('topic', t.id)} style={{ ...S.actionBtn, fontSize: 10 }}>History</button>
                         </div>
                       </td>
@@ -495,7 +475,7 @@ export default function CmsPage() {
 
             <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'center' }}>
               <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} style={S.pageBtn}>← Prev</button>
-              <span style={{ fontSize: 12, color: '#666', padding: '6px 12px' }}>Page {page} of {Math.max(1, Math.ceil(topicTotal / 25))}</span>
+              <span style={{ fontSize: 12, color: colors.text3, padding: '6px 12px' }}>Page {page} of {Math.max(1, Math.ceil(topicTotal / 25))}</span>
               <button disabled={topics.length < 25} onClick={() => setPage(p => p + 1)} style={S.pageBtn}>Next →</button>
             </div>
           </div>
@@ -508,7 +488,7 @@ export default function CmsPage() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <h2 style={{ ...S.h2, margin: 0 }}>Question Bank</h2>
                 <button onClick={() => { setShowCreateQuestion(!showCreateQuestion); setQuestionForm({}); }}
-                  style={{ ...S.actionBtn, color: '#aaa', borderColor: '#444', fontSize: 11 }}>
+                  style={{ ...S.actionBtn, color: colors.text2, borderColor: colors.border, fontSize: 11 }}>
                   {showCreateQuestion ? '✕ Cancel' : '+ New Question'}
                 </button>
               </div>
@@ -529,11 +509,11 @@ export default function CmsPage() {
               </div>
             </div>
 
-            <div style={{ fontSize: 11, color: '#555', marginBottom: 8 }}>{questionTotal} questions found</div>
+            <div style={{ fontSize: 11, color: colors.text3, marginBottom: 8 }}>{questionTotal} questions found</div>
 
             {showCreateQuestion && (
-              <div style={{ ...S.card, marginBottom: 16, borderLeft: '2px solid #333' }}>
-                <h3 style={{ fontSize: 13, fontWeight: 700, color: '#aaa', marginBottom: 12 }}>Create New Question</h3>
+              <div style={{ ...S.card, marginBottom: 16, borderLeft: `2px solid ${colors.accent}` }}>
+                <h3 style={{ fontSize: 13, fontWeight: 700, color: colors.text2, marginBottom: 12 }}>Create New Question</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                   <select value={questionForm.grade || ''} onChange={e => setQuestionForm(f => ({ ...f, grade: e.target.value }))} style={S.select}>
                     <option value="">Grade *</option>
@@ -575,7 +555,7 @@ export default function CmsPage() {
                   const opts = [questionForm.opt_a || 'A', questionForm.opt_b || 'B', questionForm.opt_c || 'C', questionForm.opt_d || 'D'].filter(Boolean);
                   setQuestionForm(f => ({ ...f, options: JSON.stringify(opts) }));
                   setTimeout(createQuestion, 50);
-                }} style={{ ...S.actionBtn, marginTop: 10, color: '#aaa', borderColor: '#444', padding: '8px 20px' }}>
+                }} style={{ ...S.actionBtn, marginTop: 10, color: colors.text2, borderColor: colors.border, padding: '8px 20px' }}>
                   Create Question (Draft)
                 </button>
               </div>
@@ -596,7 +576,7 @@ export default function CmsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {questions.length === 0 && <tr><td colSpan={8} style={{ ...S.td, textAlign: 'center', color: '#555', padding: 24 }}>No questions found</td></tr>}
+                  {questions.length === 0 && <tr><td colSpan={8} style={{ ...S.td, textAlign: 'center', color: colors.text3, padding: 24 }}>No questions found</td></tr>}
                   {questions.map(q => (
                     <tr key={q.id}>
                       <td style={{ ...S.td, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis' }}>{q.question_text.slice(0, 80)}{q.question_text.length > 80 ? '...' : ''}</td>
@@ -604,11 +584,11 @@ export default function CmsPage() {
                       <td style={S.td}>{q.subject}</td>
                       <td style={S.td}><span style={{ fontSize: 10 }}>{q.question_type || 'mcq'}</span></td>
                       <td style={S.td}>{q.difficulty}</td>
-                      <td style={S.td}><StatusBadge status={q.content_status} /></td>
+                      <td style={S.td}><CmsStatusBadge status={q.content_status} /></td>
                       <td style={S.td}><TransitionButtons entityType="question" entityId={q.id} currentStatus={q.content_status} /></td>
                       <td style={S.td}>
                         <div style={{ display: 'flex', gap: 4 }}>
-                          <button onClick={() => { loadAssets('question', q.id); }} style={{ ...S.actionBtn, fontSize: 10, color: '#aaa', borderColor: '#444' }}>Assets</button>
+                          <button onClick={() => { loadAssets('question', q.id); }} style={{ ...S.actionBtn, fontSize: 10, color: colors.text2, borderColor: colors.border }}>Assets</button>
                           <button onClick={() => openVersions('question', q.id)} style={{ ...S.actionBtn, fontSize: 10 }}>History</button>
                         </div>
                       </td>
@@ -620,7 +600,7 @@ export default function CmsPage() {
 
             <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'center' }}>
               <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} style={S.pageBtn}>← Prev</button>
-              <span style={{ fontSize: 12, color: '#666', padding: '6px 12px' }}>Page {page} of {Math.max(1, Math.ceil(questionTotal / 25))}</span>
+              <span style={{ fontSize: 12, color: colors.text3, padding: '6px 12px' }}>Page {page} of {Math.max(1, Math.ceil(questionTotal / 25))}</span>
               <button disabled={questions.length < 25} onClick={() => setPage(p => p + 1)} style={S.pageBtn}>Next →</button>
             </div>
           </div>
@@ -632,31 +612,31 @@ export default function CmsPage() {
             <h2 style={S.h2}>Version History — {versionEntityType} {versionEntityId.slice(0, 8)}</h2>
             <button onClick={() => setView(versionEntityType === 'topic' ? 'topics' : 'questions')} style={{ ...S.navBtn, marginBottom: 16 }}>← Back to list</button>
 
-            {versions.length === 0 && <div style={{ ...S.card, textAlign: 'center', color: '#555', padding: 24 }}>No versions recorded yet.</div>}
+            {versions.length === 0 && <div style={{ ...S.card, textAlign: 'center', color: colors.text3, padding: 24 }}>No versions recorded yet.</div>}
 
             <div style={{ display: 'grid', gap: 10 }}>
               {versions.map(v => (
                 <div key={v.id} style={{ ...S.card, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>v{v.version_number}</span>
-                      <StatusBadge status={v.status} />
+                      <span style={{ fontSize: 14, fontWeight: 700, color: colors.text1 }}>v{v.version_number}</span>
+                      <CmsStatusBadge status={v.status} />
                     </div>
-                    <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
+                    <div style={{ fontSize: 11, color: colors.text3, marginTop: 4 }}>
                       {v.change_summary || 'No description'}
                     </div>
-                    <div style={{ fontSize: 10, color: '#555', marginTop: 2 }}>
+                    <div style={{ fontSize: 10, color: colors.text3, marginTop: 2 }}>
                       {new Date(v.created_at).toLocaleString()}
                       {v.created_by && <span> · by {v.created_by.slice(0, 8)}</span>}
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button onClick={() => viewVersionDiff(v.id, v.version_number)}
-                      style={{ ...S.actionBtn, color: '#aaa', borderColor: '#444', fontSize: 10 }}>
+                      style={{ ...S.actionBtn, color: colors.text2, borderColor: colors.border, fontSize: 10 }}>
                       View
                     </button>
                     <button onClick={() => rollbackVersion(v.id)}
-                      style={{ ...S.actionBtn, color: '#aaa', borderColor: '#444', fontSize: 10 }}>
+                      style={{ ...S.actionBtn, color: colors.text2, borderColor: colors.border, fontSize: 10 }}>
                       Rollback
                     </button>
                   </div>
@@ -682,11 +662,11 @@ export default function CmsPage() {
                         .sort(([a], [b]) => a.localeCompare(b))
                         .map(([key, val]) => (
                         <tr key={key}>
-                          <td style={{ ...S.td, fontWeight: 600, color: '#aaa', fontSize: 11 }}>{key}</td>
+                          <td style={{ ...S.td, fontWeight: 600, color: colors.text2, fontSize: 11 }}>{key}</td>
                           <td style={{ ...S.td, fontSize: 12, maxWidth: 600, wordBreak: 'break-word' as const }}>
-                            {val === null ? <span style={{ color: '#555' }}>null</span>
-                              : typeof val === 'object' ? <pre style={{ margin: 0, fontSize: 10, color: '#888', whiteSpace: 'pre-wrap' as const }}>{JSON.stringify(val, null, 2)}</pre>
-                              : typeof val === 'boolean' ? <span style={{ color: val ? '#fff' : '#666' }}>{String(val)}</span>
+                            {val === null ? <span style={{ color: colors.text3 }}>null</span>
+                              : typeof val === 'object' ? <pre style={{ margin: 0, fontSize: 10, color: colors.text3, whiteSpace: 'pre-wrap' as const }}>{JSON.stringify(val, null, 2)}</pre>
+                              : typeof val === 'boolean' ? <span style={{ color: val ? colors.success : colors.text3 }}>{String(val)}</span>
                               : String(val)}
                           </td>
                         </tr>
@@ -701,12 +681,12 @@ export default function CmsPage() {
         )}
         {/* Asset Panel */}
         {assetEntityId && (
-          <div style={{ marginTop: 20, padding: 16, background: '#0a0a0a', borderRadius: 10, border: '1px solid #222' }}>
+          <div style={{ marginTop: 20, padding: 16, background: colors.surface, borderRadius: 10, border: `1px solid ${colors.border}` }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <h2 style={{ ...S.h2, margin: 0 }}>Assets — {assetEntityType} {assetEntityId.slice(0, 8)}</h2>
               <div style={{ display: 'flex', gap: 6 }}>
                 <button onClick={() => setShowAssetForm(!showAssetForm)}
-                  style={{ ...S.actionBtn, color: '#aaa', borderColor: '#444', fontSize: 10 }}>
+                  style={{ ...S.actionBtn, color: colors.text2, borderColor: colors.border, fontSize: 10 }}>
                   {showAssetForm ? 'Cancel' : '+ Attach Asset'}
                 </button>
                 <button onClick={() => { setAssetEntityId(''); setAssets([]); }}
@@ -715,7 +695,7 @@ export default function CmsPage() {
             </div>
 
             {showAssetForm && (
-              <div style={{ marginBottom: 12, padding: 12, background: '#000', borderRadius: 8 }}>
+              <div style={{ marginBottom: 12, padding: 12, background: colors.bg, borderRadius: 8 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                   <input placeholder="File name *" value={assetForm.file_name || ''} onChange={e => setAssetForm(f => ({ ...f, file_name: e.target.value }))} style={S.searchInput} />
                   <input placeholder="Storage path * (e.g. cms-media/topics/abc.png)" value={assetForm.storage_path || ''} onChange={e => setAssetForm(f => ({ ...f, storage_path: e.target.value }))} style={S.searchInput} />
@@ -724,12 +704,12 @@ export default function CmsPage() {
                   <input placeholder="Alt text" value={assetForm.alt_text || ''} onChange={e => setAssetForm(f => ({ ...f, alt_text: e.target.value }))} style={S.searchInput} />
                   <input placeholder="Caption" value={assetForm.caption || ''} onChange={e => setAssetForm(f => ({ ...f, caption: e.target.value }))} style={S.searchInput} />
                 </div>
-                <button onClick={registerAsset} style={{ ...S.actionBtn, marginTop: 8, color: '#aaa', borderColor: '#444', padding: '6px 16px' }}>Register Asset</button>
+                <button onClick={registerAsset} style={{ ...S.actionBtn, marginTop: 8, color: colors.text2, borderColor: colors.border, padding: '6px 16px' }}>Register Asset</button>
               </div>
             )}
 
             {assets.length === 0 ? (
-              <div style={{ fontSize: 12, color: '#555' }}>No assets attached. Click "+ Attach Asset" to add one.</div>
+              <div style={{ fontSize: 12, color: colors.text3 }}>No assets attached. Click "+ Attach Asset" to add one.</div>
             ) : (
               <table style={S.table}>
                 <thead>
@@ -753,7 +733,7 @@ export default function CmsPage() {
                       <td style={{ ...S.td, fontSize: 10 }}>{a.alt_text || '—'}</td>
                       <td style={{ ...S.td, fontSize: 10 }}>{new Date(a.created_at).toLocaleDateString()}</td>
                       <td style={S.td}>
-                        <button onClick={() => deleteAsset(a.id)} style={{ ...S.actionBtn, color: '#888', borderColor: '#444', fontSize: 10 }}>Remove</button>
+                        <button onClick={() => deleteAsset(a.id)} style={{ ...S.actionBtn, color: colors.text3, borderColor: colors.border, fontSize: 10 }}>Remove</button>
                       </td>
                     </tr>
                   ))}
@@ -762,21 +742,10 @@ export default function CmsPage() {
             )}
           </div>
         )}
-      </main>
     </div>
   );
 }
 
-const S: Record<string, React.CSSProperties> = {
-  center: { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000', color: '#fff' },
-  h2: { fontSize: 13, fontWeight: 700, color: '#888', textTransform: 'uppercase' as const, letterSpacing: 1.5, marginBottom: 12 },
-  card: { padding: 16, borderRadius: 10, border: '1px solid #222', background: '#0a0a0a' },
-  table: { width: '100%', borderCollapse: 'collapse' as const, fontSize: 12 },
-  th: { textAlign: 'left' as const, padding: '10px 12px', borderBottom: '1px solid #222', color: '#555', fontSize: 10, textTransform: 'uppercase' as const, letterSpacing: 1.5 },
-  td: { padding: '10px 12px', borderBottom: '1px solid #111', color: '#ccc' },
-  actionBtn: { background: 'none', border: '1px solid #333', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 600, color: '#888' },
-  navBtn: { padding: '6px 14px', borderRadius: 8, border: '1px solid #2a2a2a', background: '#0a0a0a', color: '#888', fontSize: 12, cursor: 'pointer' },
-  pageBtn: { padding: '7px 16px', borderRadius: 8, border: '1px solid #2a2a2a', background: '#0a0a0a', color: '#888', fontSize: 12, cursor: 'pointer' },
-  searchInput: { padding: '8px 14px', borderRadius: 8, border: '1px solid #2a2a2a', background: '#0a0a0a', color: '#e0e0e0', fontSize: 12, outline: 'none', width: 180 },
-  select: { padding: '8px 10px', borderRadius: 8, border: '1px solid #2a2a2a', background: '#0a0a0a', color: '#e0e0e0', fontSize: 12, outline: 'none' },
-};
+export default function CmsPage() {
+  return <AdminShell><CmsContent /></AdminShell>;
+}
