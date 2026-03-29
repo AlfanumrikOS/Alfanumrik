@@ -222,17 +222,29 @@ function validateQuestions(questions: any[]): any[] {
     // Reject if fewer than 3 distinct options
     if (new Set(optTexts).size < 3) return false;
 
-    // Reject self-contradicting explanations
+    // Reject self-contradicting or unreliable explanations
     if (q.explanation) {
       const expl = q.explanation.toLowerCase();
       if (expl.includes('does not match any option') ||
           expl.includes('suggesting a possible error') ||
           expl.includes('assuming a typo') ||
-          expl.includes('not listed')) return false;
+          expl.includes('not listed') ||
+          expl.includes('however, the correct') ||
+          expl.includes('this is incorrect') ||
+          expl.includes('none of the options') ||
+          expl.includes('there seems to be') ||
+          expl.includes('closest plausible')) return false;
     }
 
-    // Reject very short explanations (likely no real explanation)
+    // Reject very short or missing explanations
     if (!q.explanation || q.explanation.length < 20) return false;
+
+    // Reject explanations that are just restating the question
+    if (q.explanation && q.question_text) {
+      const explWords = q.explanation.toLowerCase().split(/\s+/);
+      const qWords = q.question_text.toLowerCase().split(/\s+/);
+      if (explWords.length < 8) return false; // too terse to be educational
+    }
 
     // Deduplicate
     const key = q.question_text.trim().toLowerCase();
