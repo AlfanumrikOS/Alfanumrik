@@ -94,7 +94,7 @@ export function useFoxyVoice(options: UseFoxyVoiceOptions): UseFoxyVoiceReturn {
       sessionStreak: m?.session_streak || 0,
       parentGoals: m?.parent_goals || null,
       totalVoiceSessions: m?.total_voice_sessions || 0,
-    } as LearnerMemory & { totalVoiceSessions: number };
+    };
   }, [options]);
 
   // ─── Text-to-Speech ─────────────────────────────────────
