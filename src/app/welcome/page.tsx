@@ -1,22 +1,16 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { FadeIn, StaggerContainer, StaggerItem } from '@/components/landing/Animations';
-
-/* ═══════════════════════════════════════════════════════════════
-   ALFANUMRIK LANDING PAGE — Marketing & Conversion
-   Server component for SEO. All CTAs route to auth at /.
-   ═══════════════════════════════════════════════════════════════ */
 
 export const metadata: Metadata = {
-  title: 'Alfanumrik — CBSE Learning Platform | Understand Better, Score Higher',
+  title: 'Alfanumrik — Adaptive Learning Platform for CBSE Students India',
   description:
-    'Alfanumrik helps CBSE students in Grades 6–12 understand concepts clearly, practice with board-pattern questions, and track real progress. Available in Hindi & English. Start free.',
+    'Alfanumrik is a structured learning system for CBSE students in Grades 6–12. Improve concept clarity, retention, and exam performance with personalized practice and progress tracking.',
   keywords:
-    'CBSE learning platform, study app for students, online learning India, exam preparation CBSE, practice tests CBSE, concept clarity learning, improve marks CBSE, homework help students',
+    'adaptive learning platform India, personalized learning for students, CBSE learning platform, improve student performance, online learning system for schools, exam preparation platform India, concept-based learning, structured learning system, student progress tracking, practice and revision system',
   openGraph: {
-    title: 'Alfanumrik — Understand Better, Score Higher',
+    title: 'Alfanumrik — Structured Learning That Actually Works',
     description:
-      'A structured learning platform for CBSE students. Clear explanations, smart practice, real progress tracking. Grades 6–12, Hindi & English.',
+      'A personalized learning platform for CBSE students. Clear concepts, smart practice, real progress. Grades 6–12 in Hindi & English.',
     url: 'https://alfanumrik.com/welcome',
     locale: 'en_IN',
     type: 'website',
@@ -24,248 +18,147 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Alfanumrik — CBSE Learning Made Clear',
-    description:
-      'Understand concepts, practice smart, track progress. CBSE Grades 6–12 in Hindi & English.',
+    title: 'Alfanumrik — Improve Student Performance in CBSE',
+    description: 'Structured learning, smart practice, real progress tracking. CBSE Grades 6–12.',
   },
   alternates: { canonical: 'https://alfanumrik.com/welcome' },
 };
 
-/* ─── Data ─── */
-
-const FEATURES = [
-  {
-    icon: '🦊',
-    title: 'Foxy — Your Study Buddy',
-    desc: 'Ask any doubt, get clear step-by-step explanations in Hindi or English. Like having a patient friend who explains things your way.',
-  },
-  {
-    icon: '🎯',
-    title: 'Questions That Match Your Level',
-    desc: 'Practice questions adapt to what you know. You\'ll always be challenged — but never overwhelmed.',
-  },
-  {
-    icon: '⚡',
-    title: 'Board-Pattern Practice',
-    desc: 'Practice with real CBSE exam-style questions. Get instant feedback and understand where you went wrong.',
-  },
-  {
-    icon: '📊',
-    title: 'Progress Reports for Parents',
-    desc: 'Parents see clear weekly reports — what your child studied, where they need help, and how they\'re improving.',
-  },
-  {
-    icon: '🏫',
-    title: 'Teacher Dashboard',
-    desc: 'Create classes, assign work, and see how every student is doing — all in one place.',
-  },
-  {
-    icon: '🔬',
-    title: 'Interactive Experiments',
-    desc: 'Physics, chemistry, and math come alive. Drag, play, and experiment with real science simulations.',
-  },
+const NAV_LINKS = [
+  { href: '/product', label: 'Product' },
+  { href: '/pricing', label: 'Pricing' },
+  { href: '/for-schools', label: 'For Schools' },
+  { href: '/demo', label: 'Book Demo' },
 ];
 
-const STEPS_STUDENT = [
-  { icon: '✨', title: 'Sign Up Free', desc: 'Pick your grade and subjects. Takes 30 seconds.' },
-  { icon: '📖', title: 'Learn & Practice', desc: 'Get clear explanations, solve practice questions, and clear your doubts — all in one place.' },
-  { icon: '📈', title: 'See Your Improvement', desc: 'Track which topics you\'ve mastered and where you need more practice. Watch your confidence grow.' },
+const PROBLEMS = [
+  { icon: '😵', title: 'Concepts don\'t stick', desc: 'Students read the chapter, attend the class — and still can\'t answer the exam question. Understanding is shallow because revision never happens at the right time.' },
+  { icon: '🎯', title: 'Practice is random', desc: 'Solving 50 easy questions doesn\'t fix the 5 hard ones you keep getting wrong. Most practice is quantity without direction.' },
+  { icon: '😰', title: 'Exam stress builds silently', desc: 'By the time boards approach, months of unresolved gaps pile up. Students cram, parents worry, teachers repeat — and confidence drops.' },
+  { icon: '👨‍👩‍👧', title: 'Parents can\'t see the real picture', desc: 'Report cards arrive too late. Parents don\'t know which chapter is weak until the marks come. There\'s no visibility into daily learning.' },
 ];
 
-const STEPS_PARENT = [
-  { icon: '🔗', title: 'Connect to Child', desc: "Enter the link code from your child's profile. Instant access to their learning journey." },
-  { icon: '📊', title: 'Review Reports', desc: 'Weekly reports show study time, quiz scores, strengths, and areas needing attention.' },
-  { icon: '🎉', title: 'Stay Involved', desc: 'Get alerts when streaks are at risk. Celebrate milestones together.' },
+const STEPS = [
+  { num: '01', icon: '📖', title: 'Learn', desc: 'Clear, structured concept explanations for every CBSE chapter. In Hindi and English.' },
+  { num: '02', icon: '✏️', title: 'Practice', desc: 'Questions that match your actual level — not too easy, not too hard. Board-exam patterns built in.' },
+  { num: '03', icon: '🔄', title: 'Revise', desc: 'The system brings back what you\'re forgetting — before you forget it. Spaced revision, not last-minute cramming.' },
+  { num: '04', icon: '📋', title: 'Test', desc: 'Structured exams calibrated to your grade, subject, and difficulty. Timed, scored, and analyzed.' },
+  { num: '05', icon: '📈', title: 'Track', desc: 'See exactly what\'s mastered, what\'s weak, and what to do next. Parents and teachers see it too.' },
 ];
 
-const STEPS_TEACHER = [
-  { icon: '🏫', title: 'Create Your Class', desc: 'Add students, assign subjects, and set up your virtual classroom.' },
-  { icon: '📝', title: 'Assign & Track', desc: "Create quizzes and worksheets. Monitor every student's mastery in real-time." },
-  { icon: '📋', title: 'Generate Reports', desc: 'One-click class reports, individual student analytics, and gap identification.' },
-];
-
-const BENEFITS = [
-  { icon: '💡', title: 'Understand, Don\'t Memorize', desc: 'Every concept is explained clearly with examples. Real understanding stays longer than rote learning.' },
-  { icon: '📝', title: 'Practice That Actually Helps', desc: 'Questions match your level and follow CBSE exam patterns. Practice what matters for your exams.' },
-  { icon: '😌', title: 'Less Exam Stress', desc: 'Regular practice and revision builds confidence. Walk into exams knowing you\'ve prepared well.' },
-  { icon: '🏆', title: 'Stay Motivated', desc: 'Earn XP, maintain streaks, and see yourself improve. Learning feels rewarding, not like a chore.' },
-];
-
-const TESTIMONIALS = [
-  {
-    quote: 'The step-by-step explanations actually make sense. My science scores improved from 65 to 88 in two months.',
-    name: 'Priya S.',
-    role: 'Class 10 Student, Delhi',
-    avatar: '🎓',
+const AUDIENCE = {
+  students: {
+    icon: '🎓', color: '#E8581C', title: 'For Students',
+    points: [
+      { title: 'Stop re-reading, start understanding', desc: 'Every concept explained step-by-step until it clicks. Ask doubts anytime in Hindi or English.' },
+      { title: 'Practice that actually prepares you', desc: 'Questions adapt to your level. You work on what you need — not what you already know.' },
+      { title: 'Walk into exams with confidence', desc: 'Regular practice and smart revision means fewer surprises. Your preparation is measurable, not guesswork.' },
+    ],
   },
-  {
-    quote: 'Finally I can see exactly what my daughter is learning and where she needs help. The weekly reports are amazing.',
-    name: 'Rajesh K.',
-    role: 'Parent, Bangalore',
-    avatar: '👨‍👩‍👧',
+  parents: {
+    icon: '👨‍👩‍👧', color: '#16A34A', title: 'For Parents',
+    points: [
+      { title: 'See what your child actually knows', desc: 'Weekly progress reports show which subjects are strong and which topics need attention — not just marks.' },
+      { title: 'Less nagging, more clarity', desc: 'When you can see your child is studying consistently and improving, the daily arguments about screen time disappear.' },
+      { title: 'Confidence that learning is happening', desc: 'You don\'t need to be a subject expert. The system tracks mastery so you know exactly where things stand.' },
+    ],
   },
-  {
-    quote: 'I manage 120 students across 4 sections. The dashboard saves me hours every week on tracking and reporting.',
-    name: 'Meera T.',
-    role: 'Science Teacher, Hyderabad',
-    avatar: '👩‍🏫',
+  teachers: {
+    icon: '👩‍🏫', color: '#2563EB', title: 'For Teachers',
+    points: [
+      { title: 'Stop repeating the same explanations', desc: 'Students who need revision get it automatically. Your class time goes to deeper teaching, not rework.' },
+      { title: 'See every student\'s gaps instantly', desc: 'Know who\'s struggling with which topic before the unit test — not after. Intervene early.' },
+      { title: 'Reports that write themselves', desc: 'Class performance, individual progress, weakness mapping — generated automatically. Save hours every week.' },
+    ],
   },
+  schools: {
+    icon: '🏫', color: '#7C3AED', title: 'For Schools',
+    points: [
+      { title: 'Standardize learning quality across sections', desc: 'Every student gets the same structured system regardless of which section or teacher they\'re assigned.' },
+      { title: 'Measurable performance improvement', desc: 'Track school-wide progress by subject, grade, and teacher. Identify patterns and act before results day.' },
+      { title: 'Board exam readiness at a glance', desc: 'See which cohorts are on track and which need intervention — across the entire school.' },
+    ],
+  },
+};
+
+const RESULTS = [
+  { icon: '🧠', metric: 'Deeper understanding', desc: 'Students build real concept clarity through structured explanations and targeted practice — not surface-level memorization.' },
+  { icon: '📊', metric: 'Measurable progress', desc: 'Every session produces data. Students, parents, and teachers can see exactly what\'s improving and what needs work.' },
+  { icon: '📝', metric: 'Better exam scores', desc: 'When practice is focused, revision is timed correctly, and gaps are fixed early — marks improve as a natural result.' },
+  { icon: '💪', metric: 'Real confidence', desc: 'Confidence doesn\'t come from motivational quotes. It comes from knowing you\'ve practiced the right things enough times.' },
 ];
 
 const FAQS = [
-  {
-    q: 'What is Alfanumrik?',
-    a: 'Alfanumrik is a structured learning platform for CBSE students in Grades 6–12. It helps you understand concepts clearly, practice with exam-pattern questions, and track your real progress — all in Hindi and English.',
-  },
-  {
-    q: 'How is this different from watching YouTube videos?',
-    a: 'Videos are one-size-fits-all. Alfanumrik adapts to what you know. It finds your weak spots, gives you targeted practice, and tracks which topics you\'ve actually mastered — not just watched.',
-  },
-  {
-    q: 'Is it safe for my child?',
-    a: 'Yes. We follow DPDPA (Digital Personal Data Protection Act) compliance, encrypt all data, never show ads, and never sell data. Students under 13 require parental consent.',
-  },
-  {
-    q: 'How do parents track their child\'s progress?',
-    a: 'Parents connect using a simple link code from their child\'s profile. You\'ll see clear weekly reports showing what they studied, quiz scores, strengths, and areas needing attention.',
-  },
-  {
-    q: 'Is Alfanumrik free?',
-    a: 'Yes! The free plan includes 5 study sessions and 5 quizzes per day. Starter, Pro, and Unlimited plans are available for more practice and subjects.',
-  },
-  {
-    q: 'Which boards and grades are supported?',
-    a: 'Currently CBSE Grades 6–12 with 16 subjects including Math, Science, Physics, Chemistry, Biology, English, Hindi, and more. ICSE and State Board support coming soon.',
-  },
+  { q: 'What is Alfanumrik?', a: 'Alfanumrik is a structured learning platform for CBSE students in Grades 6–12. It helps students understand concepts clearly, practice with board-pattern questions, and track real progress — in Hindi and English.' },
+  { q: 'How is this different from watching videos online?', a: 'Videos are passive and one-size-fits-all. Alfanumrik adapts to what each student actually knows, finds their weak spots, gives targeted practice, and tracks which topics are truly mastered — not just watched.' },
+  { q: 'Is it safe for my child?', a: 'Yes. We follow DPDPA compliance, encrypt all data, never show ads, and never sell personal information. Students under 13 require parental consent.' },
+  { q: 'How do parents track progress?', a: 'Parents connect using a simple link code from their child\'s profile. You see clear weekly reports — what they studied, quiz scores, strengths, and areas that need attention.' },
+  { q: 'Is Alfanumrik free?', a: 'The free plan includes 5 study sessions and 5 quizzes per day. Starter, Pro, and Unlimited plans unlock more practice, subjects, and features.' },
+  { q: 'Which boards and grades are supported?', a: 'Currently CBSE Grades 6–12 with 16 subjects including Mathematics, Science, Physics, Chemistry, Biology, English, Hindi, and more.' },
 ];
 
-const TRUST_BADGES = [
-  { icon: '🛡️', label: 'ISO 27001', desc: 'Information Security' },
-  { icon: '🤖', label: 'ISO 42001', desc: 'Technology Management' },
-  { icon: '📋', label: 'ISO 42005', desc: 'Impact Assessment' },
-  { icon: '🔒', label: 'PCI-DSS', desc: 'Payment Security' },
-  { icon: '🇮🇳', label: 'DPIIT', desc: 'Recognised Startup' },
-];
-
-/* ─── Sub-Components ─── */
-
-function CTAButtons({ className = '' }: { className?: string }) {
+function CTAButtons({ center = false }: { center?: boolean }) {
   return (
-    <div className={`flex flex-col sm:flex-row items-center gap-3 ${className}`}>
-      <Link
-        href="/login"
-        className="btn-primary text-sm px-7 py-3.5 rounded-xl font-bold text-white w-full sm:w-auto text-center"
-        style={{ background: 'linear-gradient(135deg, #E8581C, #F5A623)' }}
-      >
+    <div className={`flex flex-col sm:flex-row items-center gap-3 ${center ? 'justify-center' : ''}`}>
+      <Link href="/login" className="text-sm px-7 py-3.5 rounded-xl font-bold text-white w-full sm:w-auto text-center"
+        style={{ background: 'linear-gradient(135deg, #E8581C, #F5A623)' }}>
         Start Learning Free
       </Link>
-      <Link
-        href="/login?role=parent"
-        className="btn-ghost text-sm px-6 py-3.5 rounded-xl font-semibold w-full sm:w-auto text-center"
-        style={{ color: '#16A34A', border: '1.5px solid #16A34A40' }}
-      >
+      <Link href="/login?role=parent" className="text-sm px-6 py-3.5 rounded-xl font-semibold w-full sm:w-auto text-center"
+        style={{ color: '#16A34A', border: '1.5px solid #16A34A40' }}>
         For Parents
       </Link>
-      <Link
-        href="/login?role=teacher"
-        className="btn-ghost text-sm px-6 py-3.5 rounded-xl font-semibold w-full sm:w-auto text-center"
-        style={{ color: '#2563EB', border: '1.5px solid #2563EB40' }}
-      >
+      <Link href="/login?role=teacher" className="text-sm px-6 py-3.5 rounded-xl font-semibold w-full sm:w-auto text-center"
+        style={{ color: '#2563EB', border: '1.5px solid #2563EB40' }}>
         For Teachers
       </Link>
     </div>
   );
 }
 
-function SectionTitle({ badge, title, subtitle }: { badge: string; title: string; subtitle: string }) {
-  return (
-    <div className="text-center mb-8 max-w-2xl mx-auto">
-      <span
-        className="inline-block text-xs font-bold px-3 py-1 rounded-full mb-3"
-        style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}
-      >
-        {badge}
-      </span>
-      <h2
-        className="text-2xl sm:text-3xl font-extrabold mb-3"
-        style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}
-      >
-        {title}
-      </h2>
-      <p className="text-sm sm:text-base" style={{ color: 'var(--text-2)', lineHeight: 1.7 }}>
-        {subtitle}
-      </p>
-    </div>
-  );
-}
-
-/* ─── Main Page ─── */
-
 export default function WelcomePage() {
   return (
     <div style={{ background: 'var(--bg)', color: 'var(--text-1)' }}>
-      {/* ═══ NAVBAR ═══ */}
-      <nav
-        className="sticky top-0 z-50 border-b"
-        style={{
-          background: 'rgba(251,248,244,0.92)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-          borderColor: 'var(--border)',
-        }}
-      >
+      {/* Nav */}
+      <nav className="sticky top-0 z-50 border-b" style={{ background: 'rgba(251,248,244,0.92)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', borderColor: 'var(--border)' }}>
         <div className="max-w-6xl mx-auto px-3 sm:px-6 h-16 flex items-center justify-between">
           <Link href="/welcome" className="flex items-center gap-2">
             <span className="text-2xl">🦊</span>
-            <span className="text-lg font-extrabold gradient-text" style={{ fontFamily: 'var(--font-display)' }}>
-              Alfanumrik
-            </span>
+            <span className="text-lg font-extrabold gradient-text" style={{ fontFamily: 'var(--font-display)' }}>Alfanumrik</span>
           </Link>
           <div className="flex items-center gap-1 sm:gap-3">
-            <Link href="/product" className="hidden sm:inline-block text-xs font-semibold px-3 py-2 rounded-lg" style={{ color: 'var(--text-2)' }}>Product</Link>
-            <Link href="/pricing" className="hidden sm:inline-block text-xs font-semibold px-3 py-2 rounded-lg" style={{ color: 'var(--text-2)' }}>Pricing</Link>
-            <Link href="/for-schools" className="hidden sm:inline-block text-xs font-semibold px-3 py-2 rounded-lg" style={{ color: 'var(--text-2)' }}>For Schools</Link>
-            <Link href="/demo" className="hidden sm:inline-block text-xs font-semibold px-3 py-2 rounded-lg" style={{ color: 'var(--orange)' }}>Book Demo</Link>
+            {NAV_LINKS.map(l => (
+              <Link key={l.href} href={l.href} className="hidden sm:inline-block text-xs font-semibold px-3 py-2 rounded-lg" style={{ color: l.href === '/demo' ? 'var(--orange)' : 'var(--text-2)' }}>{l.label}</Link>
+            ))}
             <Link href="/login" className="hidden sm:inline-block text-sm font-semibold px-4 py-2 rounded-lg" style={{ color: 'var(--text-2)' }}>Log In</Link>
             <Link href="/login" className="text-sm font-bold px-5 py-2.5 rounded-xl text-white" style={{ background: 'var(--orange)' }}>Sign Up Free</Link>
           </div>
         </div>
       </nav>
 
-      {/* ═══ HERO ═══ */}
+      {/* Hero */}
       <section className="relative overflow-hidden">
         <div className="mesh-bg" style={{ position: 'absolute', inset: 0, opacity: 0.5 }} />
         <div className="relative max-w-5xl mx-auto px-4 sm:px-6 pt-8 pb-10 sm:pt-14 sm:pb-18 text-center">
-          <div className="inline-flex items-center gap-2 text-xs font-bold px-4 py-1.5 rounded-full mb-4 animate-slide-up"
+          <div className="inline-flex items-center gap-2 text-xs font-bold px-4 py-1.5 rounded-full mb-4"
             style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)', border: '1px solid rgba(232,88,28,0.15)' }}>
-            <span>🇮🇳</span> Built for Indian Students — CBSE Grades 6–12
+            <span>🇮🇳</span> Adaptive Learning Platform for CBSE Grades 6–12
           </div>
 
-          <h1
-            className="text-2xl sm:text-4xl lg:text-5xl font-extrabold leading-tight mb-4 animate-slide-up"
-            style={{ fontFamily: 'var(--font-display)', animationDelay: '0.05s' }}
-          >
-            Understand Better.<br />
-            <span className="gradient-text">Score Higher.</span>
+          <h1 className="text-2xl sm:text-4xl lg:text-5xl font-extrabold leading-tight mb-4" style={{ fontFamily: 'var(--font-display)' }}>
+            Your child doesn&apos;t need more content.<br />
+            <span className="gradient-text">They need a better system.</span>
           </h1>
 
-          <p
-            className="text-sm sm:text-lg max-w-xl sm:max-w-2xl mx-auto mb-6 animate-slide-up"
-            style={{ color: 'var(--text-2)', lineHeight: 1.7, animationDelay: '0.1s' }}
-          >
-            A structured CBSE learning platform that helps you understand concepts clearly,
-            practice with exam-pattern questions, and track real progress — in Hindi & English.
+          <p className="text-sm sm:text-lg max-w-2xl mx-auto mb-6" style={{ color: 'var(--text-2)', lineHeight: 1.7 }}>
+            Alfanumrik is a structured learning system that fixes how students study —
+            building real concept clarity, consistent revision habits, and measurable exam readiness
+            for CBSE students in Hindi &amp; English.
           </p>
 
-          <div className="animate-slide-up" style={{ animationDelay: '0.15s' }}>
-            <CTAButtons className="justify-center" />
-          </div>
+          <CTAButtons center />
 
-          {/* Stats bar */}
-          <div
-            className="grid grid-cols-4 gap-3 sm:gap-8 max-w-md sm:max-w-none mx-auto mt-10 animate-slide-up"
-            style={{ animationDelay: '0.2s' }}
-          >
+          <div className="grid grid-cols-4 gap-3 sm:gap-8 max-w-md sm:max-w-none mx-auto mt-10">
             {[
               { value: '16', label: 'Subjects' },
               { value: '6–12', label: 'Grades' },
@@ -281,210 +174,26 @@ export default function WelcomePage() {
         </div>
       </section>
 
-      {/* ═══ PRODUCT OVERVIEW ═══ */}
+      {/* Problem */}
       <section className="py-12 sm:py-16" style={{ background: 'var(--surface-1)' }}>
         <div className="max-w-5xl mx-auto px-4 sm:px-6">
-          <SectionTitle
-            badge="WHAT IS ALFANUMRIK"
-            title="An Adaptive Learning OS That Knows You"
-            subtitle="Not a video library. Not a question bank. Alfanumrik is an intelligent system that learns how you learn — and teaches accordingly."
-          />
-
-          <StaggerContainer className="grid sm:grid-cols-3 gap-4 sm:gap-5">
-            {[
-              {
-                icon: '🧠',
-                title: 'Personalized Learning',
-                desc: 'Bayesian mastery tracking identifies what you know and what you need next. Every session is unique to you.',
-                color: '#7C3AED',
-              },
-              {
-                icon: '🦊',
-                title: 'Clear Explanations',
-                desc: 'Foxy explains concepts step-by-step, answers doubts instantly, and adjusts to your level automatically.',
-                color: '#E8581C',
-              },
-              {
-                icon: '📈',
-                title: 'Real-Time Tracking',
-                desc: 'Parents, teachers, and students all see live progress — mastery levels, quiz scores, and study patterns.',
-                color: '#0891B2',
-              },
-            ].map(item => (
-              <StaggerItem key={item.title}>
-              <div
-                className="rounded-2xl p-6 card-hover h-full"
-                style={{
-                  background: 'var(--bg)',
-                  border: '1px solid var(--border)',
-                  boxShadow: '0 2px 12px rgba(0,0,0,0.03)',
-                }}
-              >
-                <div className="flex sm:flex-col items-start sm:items-start gap-3 sm:gap-0">
-                  <div
-                    className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center text-xl sm:text-2xl shrink-0 sm:mb-4"
-                    style={{ background: `${item.color}12` }}
-                  >
-                    {item.icon}
-                  </div>
-                  <div>
-                    <h3 className="text-sm sm:text-base font-bold mb-1 sm:mb-2" style={{ fontFamily: 'var(--font-display)' }}>
-                      {item.title}
-                    </h3>
-                    <p className="text-xs sm:text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>
-                      {item.desc}
-                    </p>
-                  </div>
-                </div>
-              </div>
-              </StaggerItem>
-            ))}
-          </StaggerContainer>
-        </div>
-      </section>
-
-      {/* ═══ KEY FEATURES ═══ */}
-      <section className="py-12 sm:py-16">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6">
-          <SectionTitle
-            badge="FEATURES"
-            title="Everything You Need to Excel"
-            subtitle="From clear explanations to interactive experiments — built for how Indian students actually study."
-          />
-
-          <StaggerContainer className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
-            {FEATURES.map(f => (
-              <StaggerItem key={f.title}>
-                <div
-                  className="rounded-2xl p-5 transition-all hover:shadow-md h-full"
-                  style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
-                >
-                  <div className="flex sm:flex-col items-start gap-3 sm:gap-0">
-                    <div className="text-2xl sm:text-3xl shrink-0 sm:mb-3">{f.icon}</div>
-                    <div>
-                      <h3 className="text-sm font-bold mb-1 sm:mb-1.5" style={{ fontFamily: 'var(--font-display)' }}>
-                        {f.title}
-                      </h3>
-                      <p className="text-xs sm:text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>
-                        {f.desc}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </StaggerItem>
-            ))}
-          </StaggerContainer>
-        </div>
-      </section>
-
-      {/* ═══ HOW IT WORKS ═══ */}
-      <section className="py-12 sm:py-16" style={{ background: 'var(--surface-1)' }}>
-        <div className="max-w-5xl mx-auto px-4 sm:px-6">
-          <SectionTitle
-            badge="HOW IT WORKS"
-            title="Get Started in 3 Simple Steps"
-            subtitle="Whether you're a student, parent, or teacher — getting started takes less than a minute."
-          />
-
-          {/* Student Steps */}
-          <div className="mb-10">
-            <div className="flex items-center justify-center gap-2 mb-5">
-              <span className="text-lg">🎓</span>
-              <h3 className="text-sm font-bold" style={{ color: 'var(--orange)', fontFamily: 'var(--font-display)' }}>
-                For Students
-              </h3>
-            </div>
-            <div className="grid sm:grid-cols-3 gap-3 sm:gap-4">
-              {STEPS_STUDENT.map((s, i) => (
-                <div key={i} className="rounded-2xl p-4 sm:p-5 relative overflow-hidden" style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
-                  <div className="flex sm:flex-col items-start sm:items-center gap-3 sm:gap-0 sm:text-center">
-                    <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center text-xl sm:text-2xl shrink-0 sm:mb-3" style={{ background: 'rgba(232,88,28,0.08)' }}>
-                      {s.icon}
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-bold mb-0.5 sm:mb-1">{s.title}</h4>
-                      <p className="text-xs sm:text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>{s.desc}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+          <div className="text-center mb-8 max-w-2xl mx-auto">
+            <span className="inline-block text-xs font-bold px-3 py-1 rounded-full mb-3" style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}>THE REAL PROBLEM</span>
+            <h2 className="text-2xl sm:text-3xl font-extrabold mb-3" style={{ fontFamily: 'var(--font-display)' }}>
+              Most students study hard. The system they follow is broken.
+            </h2>
+            <p className="text-sm sm:text-base" style={{ color: 'var(--text-2)', lineHeight: 1.7 }}>
+              The issue isn&apos;t effort. It&apos;s that most students have no structured way to identify learning gaps,
+              fix them early, and retain what they&apos;ve studied. Here&apos;s what that looks like:
+            </p>
           </div>
-
-          {/* Parent Steps */}
-          <div className="mb-10">
-            <div className="flex items-center justify-center gap-2 mb-5">
-              <span className="text-lg">👨‍👩‍👧</span>
-              <h3 className="text-sm font-bold" style={{ color: '#16A34A', fontFamily: 'var(--font-display)' }}>
-                For Parents
-              </h3>
-            </div>
-            <div className="grid sm:grid-cols-3 gap-3 sm:gap-4">
-              {STEPS_PARENT.map((s, i) => (
-                <div key={i} className="rounded-2xl p-4 sm:p-5 relative overflow-hidden" style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
-                  <div className="flex sm:flex-col items-start sm:items-center gap-3 sm:gap-0 sm:text-center">
-                    <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center text-xl sm:text-2xl shrink-0 sm:mb-3" style={{ background: 'rgba(22,163,74,0.08)' }}>
-                      {s.icon}
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-bold mb-0.5 sm:mb-1">{s.title}</h4>
-                      <p className="text-xs sm:text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>{s.desc}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Teacher Steps */}
-          <div>
-            <div className="flex items-center justify-center gap-2 mb-5">
-              <span className="text-lg">👩‍🏫</span>
-              <h3 className="text-sm font-bold" style={{ color: '#2563EB', fontFamily: 'var(--font-display)' }}>
-                For Teachers
-              </h3>
-            </div>
-            <div className="grid sm:grid-cols-3 gap-3 sm:gap-4">
-              {STEPS_TEACHER.map((s, i) => (
-                <div key={i} className="rounded-2xl p-4 sm:p-5 relative overflow-hidden" style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
-                  <div className="flex sm:flex-col items-start sm:items-center gap-3 sm:gap-0 sm:text-center">
-                    <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center text-xl sm:text-2xl shrink-0 sm:mb-3" style={{ background: 'rgba(37,99,235,0.08)' }}>
-                      {s.icon}
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-bold mb-0.5 sm:mb-1">{s.title}</h4>
-                      <p className="text-xs sm:text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>{s.desc}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ═══ BENEFITS ═══ */}
-      <section className="py-12 sm:py-16">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6">
-          <SectionTitle
-            badge="WHY ALFANUMRIK"
-            title="Built for How You Actually Learn"
-            subtitle="Backed by cognitive science — Bloom's taxonomy, spaced repetition, and zone of proximal development."
-          />
-
-          <div className="grid sm:grid-cols-2 gap-4 sm:gap-5">
-            {BENEFITS.map(b => (
-              <div
-                key={b.title}
-                className="rounded-2xl p-5 flex gap-4 items-start card-hover"
-                style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
-              >
-                <div className="text-3xl shrink-0">{b.icon}</div>
+          <div className="grid sm:grid-cols-2 gap-4">
+            {PROBLEMS.map(p => (
+              <div key={p.title} className="rounded-2xl p-5 flex gap-4 items-start" style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
+                <div className="text-3xl shrink-0">{p.icon}</div>
                 <div>
-                  <h3 className="text-sm font-bold mb-1" style={{ fontFamily: 'var(--font-display)' }}>
-                    {b.title}
-                  </h3>
-                  <p className="text-sm" style={{ color: 'var(--text-2)' }}>{b.desc}</p>
+                  <h3 className="text-sm font-bold mb-1" style={{ fontFamily: 'var(--font-display)' }}>{p.title}</h3>
+                  <p className="text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>{p.desc}</p>
                 </div>
               </div>
             ))}
@@ -492,216 +201,214 @@ export default function WelcomePage() {
         </div>
       </section>
 
-      {/* ═══ TRUST & CREDIBILITY ═══ */}
-      <section className="py-12 sm:py-16" style={{ background: 'var(--surface-1)' }}>
-        <div className="max-w-5xl mx-auto px-4 sm:px-6">
-          <SectionTitle
-            badge="TRUST & SECURITY"
-            title="Your Data is Safe With Us"
-            subtitle="Enterprise-grade security certifications. DPDPA compliant. No ads. No data selling. Ever."
-          />
-
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
-            {TRUST_BADGES.map(b => (
-              <div
-                key={b.label}
-                className="rounded-2xl px-4 py-3 sm:px-5 sm:py-4 text-center"
-                style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}
-              >
-                <div className="text-2xl mb-1">{b.icon}</div>
-                <div className="text-xs font-bold" style={{ color: 'var(--text-1)' }}>{b.label}</div>
-                <div className="text-[11px]" style={{ color: 'var(--text-3)' }}>{b.desc}</div>
-              </div>
-            ))}
-          </div>
-
-          <p className="text-center text-xs mt-6" style={{ color: 'var(--text-3)' }}>
-            Alfanumrik™ is a trademark of <strong>Cusiosense Learning India Private Limited</strong>
-          </p>
-        </div>
-      </section>
-
-      {/* ═══ TESTIMONIALS ═══ */}
+      {/* Solution */}
       <section className="py-12 sm:py-16">
         <div className="max-w-5xl mx-auto px-4 sm:px-6">
-          <SectionTitle
-            badge="WHAT USERS SAY"
-            title="Trusted by Students, Parents & Teachers"
-            subtitle="Real feedback from the Alfanumrik community across India."
-          />
-
-          <StaggerContainer className="grid sm:grid-cols-3 gap-4 sm:gap-5">
-            {TESTIMONIALS.map(t => (
-              <StaggerItem key={t.name}>
-              <div
-                key={t.name}
-                className="rounded-2xl p-5"
-                style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
-              >
-                <p className="text-sm mb-4 leading-relaxed" style={{ color: 'var(--text-2)' }}>
-                  &ldquo;{t.quote}&rdquo;
-                </p>
-                <div className="flex items-center gap-3">
-                  <div
-                    className="w-10 h-10 rounded-full flex items-center justify-center text-xl"
-                    style={{ background: 'rgba(232,88,28,0.08)' }}
-                  >
-                    {t.avatar}
-                  </div>
-                  <div>
-                    <div className="text-sm font-bold">{t.name}</div>
-                    <div className="text-xs" style={{ color: 'var(--text-3)' }}>{t.role}</div>
-                  </div>
-                </div>
+          <div className="text-center mb-8 max-w-2xl mx-auto">
+            <span className="inline-block text-xs font-bold px-3 py-1 rounded-full mb-3" style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}>THE SOLUTION</span>
+            <h2 className="text-2xl sm:text-3xl font-extrabold mb-3" style={{ fontFamily: 'var(--font-display)' }}>
+              A learning system that finds gaps, fixes them, and proves it worked
+            </h2>
+            <p className="text-sm sm:text-base" style={{ color: 'var(--text-2)', lineHeight: 1.7 }}>
+              Alfanumrik replaces random studying with a structured cycle:
+              understand the concept, practice at the right level, revise before you forget, test under real conditions, and track every step.
+              No guesswork. No content overload. Just a system that improves student performance measurably.
+            </p>
+          </div>
+          <div className="grid sm:grid-cols-3 gap-4">
+            {[
+              { icon: '🧠', title: 'Concept clarity first', desc: 'Every chapter starts with structured explanations — not random videos. Students build understanding before they practice.', color: '#7C3AED' },
+              { icon: '🎯', title: 'Practice that targets weak spots', desc: 'The system identifies what each student doesn\'t know and focuses practice there. No wasted repetition on already-mastered topics.', color: '#E8581C' },
+              { icon: '📈', title: 'Progress everyone can see', desc: 'Students, parents, and teachers all see real-time mastery data. Weekly reports replace monthly surprises.', color: '#0891B2' },
+            ].map(item => (
+              <div key={item.title} className="rounded-2xl p-6" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
+                <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl mb-4" style={{ background: `${item.color}12` }}>{item.icon}</div>
+                <h3 className="text-sm font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>{item.title}</h3>
+                <p className="text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>{item.desc}</p>
               </div>
-              </StaggerItem>
             ))}
-          </StaggerContainer>
+          </div>
         </div>
       </section>
 
-      {/* ═══ FAQ ═══ */}
+      {/* How It Works */}
+      <section className="py-12 sm:py-16" style={{ background: 'var(--surface-1)' }}>
+        <div className="max-w-5xl mx-auto px-4 sm:px-6">
+          <div className="text-center mb-8 max-w-2xl mx-auto">
+            <span className="inline-block text-xs font-bold px-3 py-1 rounded-full mb-3" style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}>HOW IT WORKS</span>
+            <h2 className="text-2xl sm:text-3xl font-extrabold mb-3" style={{ fontFamily: 'var(--font-display)' }}>
+              Five steps. One system. Real improvement.
+            </h2>
+            <p className="text-sm sm:text-base" style={{ color: 'var(--text-2)', lineHeight: 1.7 }}>
+              How to improve student performance in CBSE? Replace random studying with a structured cycle that builds retention and exam readiness.
+            </p>
+          </div>
+          <div className="grid sm:grid-cols-5 gap-3">
+            {STEPS.map(s => (
+              <div key={s.num} className="rounded-2xl p-4 text-center" style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
+                <div className="text-[10px] font-bold mb-1" style={{ color: 'var(--orange)' }}>{s.num}</div>
+                <div className="text-2xl mb-2">{s.icon}</div>
+                <h3 className="text-sm font-bold mb-1" style={{ fontFamily: 'var(--font-display)' }}>{s.title}</h3>
+                <p className="text-xs leading-relaxed" style={{ color: 'var(--text-2)' }}>{s.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Audience Sections */}
+      {(Object.keys(AUDIENCE) as Array<keyof typeof AUDIENCE>).map((key, idx) => {
+        const a = AUDIENCE[key];
+        return (
+          <section key={key} className="py-12 sm:py-16" style={{ background: idx % 2 === 0 ? 'var(--bg)' : 'var(--surface-1)' }}>
+            <div className="max-w-5xl mx-auto px-4 sm:px-6">
+              <div className="flex items-center justify-center gap-2 mb-2">
+                <span className="text-2xl">{a.icon}</span>
+                <h2 className="text-xl sm:text-2xl font-extrabold" style={{ fontFamily: 'var(--font-display)', color: a.color }}>{a.title}</h2>
+              </div>
+              <div className="grid sm:grid-cols-3 gap-4 mt-6">
+                {a.points.map(p => (
+                  <div key={p.title} className="rounded-2xl p-5" style={{ background: idx % 2 === 0 ? 'var(--surface-1)' : 'var(--bg)', border: '1px solid var(--border)' }}>
+                    <h3 className="text-sm font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>{p.title}</h3>
+                    <p className="text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>{p.desc}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+        );
+      })}
+
+      {/* Results */}
+      <section className="py-12 sm:py-16" style={{ background: 'var(--surface-1)' }}>
+        <div className="max-w-5xl mx-auto px-4 sm:px-6">
+          <div className="text-center mb-8 max-w-2xl mx-auto">
+            <span className="inline-block text-xs font-bold px-3 py-1 rounded-full mb-3" style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}>OUTCOMES</span>
+            <h2 className="text-2xl sm:text-3xl font-extrabold mb-3" style={{ fontFamily: 'var(--font-display)' }}>
+              What changes when the system is right
+            </h2>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-4">
+            {RESULTS.map(r => (
+              <div key={r.metric} className="rounded-2xl p-5 flex gap-4 items-start" style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
+                <div className="text-3xl shrink-0">{r.icon}</div>
+                <div>
+                  <h3 className="text-sm font-bold mb-1" style={{ fontFamily: 'var(--font-display)' }}>{r.metric}</h3>
+                  <p className="text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>{r.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Trust */}
+      <section className="py-12 sm:py-16">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 text-center">
+          <span className="inline-block text-xs font-bold px-3 py-1 rounded-full mb-3" style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}>OUR PHILOSOPHY</span>
+          <h2 className="text-2xl sm:text-3xl font-extrabold mb-4" style={{ fontFamily: 'var(--font-display)' }}>
+            Systems over shortcuts
+          </h2>
+          <p className="text-sm sm:text-base mb-6 max-w-2xl mx-auto" style={{ color: 'var(--text-2)', lineHeight: 1.8 }}>
+            There are no hacks to real learning. Alfanumrik doesn&apos;t promise overnight results or magic formulas.
+            It builds a consistent, structured study habit — concept by concept, chapter by chapter — until
+            understanding becomes permanent and exam performance becomes predictable. That&apos;s how the best platform
+            for concept clarity in students actually works. We just made it available to everyone.
+          </p>
+          <div className="flex flex-wrap justify-center gap-4 mt-6">
+            {[
+              { icon: '🛡️', label: 'Data Protected' },
+              { icon: '🇮🇳', label: 'Made in India' },
+              { icon: '🔒', label: 'No Ads Ever' },
+              { icon: '📱', label: 'Hindi & English' },
+            ].map(b => (
+              <div key={b.label} className="rounded-xl px-4 py-2.5 text-xs font-semibold flex items-center gap-2" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
+                <span>{b.icon}</span> {b.label}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ */}
       <section className="py-12 sm:py-16" style={{ background: 'var(--surface-1)' }}>
         <div className="max-w-3xl mx-auto px-4 sm:px-6">
-          <SectionTitle
-            badge="FAQ"
-            title="Frequently Asked Questions"
-            subtitle="Everything you need to know about getting started with Alfanumrik."
-          />
-
-          <FadeIn>
+          <div className="text-center mb-8">
+            <span className="inline-block text-xs font-bold px-3 py-1 rounded-full mb-3" style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}>FAQ</span>
+            <h2 className="text-2xl sm:text-3xl font-extrabold" style={{ fontFamily: 'var(--font-display)' }}>Frequently Asked Questions</h2>
+          </div>
           <div className="space-y-3">
             {FAQS.map(faq => (
-              <details
-                key={faq.q}
-                className="group rounded-2xl"
-                style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}
-              >
-                <summary
-                  className="flex items-center justify-between cursor-pointer px-4 py-3.5 sm:px-5 sm:py-4 text-sm font-semibold list-none"
-                  style={{ color: 'var(--text-1)' }}
-                >
+              <details key={faq.q} className="group rounded-2xl" style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
+                <summary className="flex items-center justify-between cursor-pointer px-4 py-3.5 sm:px-5 sm:py-4 text-sm font-semibold list-none" style={{ color: 'var(--text-1)' }}>
                   {faq.q}
-                  <span
-                    className="text-lg transition-transform duration-200 group-open:rotate-45 shrink-0 ml-3"
-                    style={{ color: 'var(--text-3)' }}
-                  >
-                    +
-                  </span>
+                  <span className="text-lg transition-transform duration-200 group-open:rotate-45 shrink-0 ml-3" style={{ color: 'var(--text-3)' }}>+</span>
                 </summary>
-                <div className="px-4 pb-3.5 sm:px-5 sm:pb-4 text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>
-                  {faq.a}
-                </div>
+                <div className="px-4 pb-3.5 sm:px-5 sm:pb-4 text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>{faq.a}</div>
               </details>
             ))}
           </div>
-          </FadeIn>
         </div>
       </section>
 
-      {/* ═══ FINAL CTA ═══ */}
+      {/* Final CTA */}
       <section className="relative overflow-hidden py-12 sm:py-20">
         <div className="mesh-bg" style={{ position: 'absolute', inset: 0, opacity: 0.4 }} />
         <div className="relative max-w-3xl mx-auto px-4 sm:px-6 text-center">
-          <div className="text-5xl mb-4 animate-float">🦊</div>
-          <h2
-            className="text-2xl sm:text-4xl font-extrabold mb-4"
-            style={{ fontFamily: 'var(--font-display)' }}
-          >
-            Ready to <span className="gradient-text">Learn Smarter</span>?
+          <div className="text-5xl mb-4">🦊</div>
+          <h2 className="text-2xl sm:text-4xl font-extrabold mb-4" style={{ fontFamily: 'var(--font-display)' }}>
+            Every week without a system<br />is a week of <span className="gradient-text">lost progress</span>.
           </h2>
           <p className="text-sm sm:text-base mb-8" style={{ color: 'var(--text-2)', lineHeight: 1.7 }}>
-            Join thousands of Indian students who are learning faster, understanding deeper,
-            and scoring higher with Alfanumrik.
+            Start free. See the difference in how your child studies within the first week.
+            No credit card. No commitment. Just a better way to learn.
           </p>
-          <CTAButtons className="justify-center" />
+          <CTAButtons center />
         </div>
       </section>
 
-      {/* ═══ FOOTER ═══ */}
-      <footer
-        className="py-10 border-t"
-        style={{ background: 'var(--surface-1)', borderColor: 'var(--border)' }}
-      >
+      {/* Footer */}
+      <footer className="py-10 border-t" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)' }}>
         <div className="max-w-5xl mx-auto px-4 sm:px-6">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 sm:gap-8 mb-8">
-            {/* Brand */}
-            <div className="sm:col-span-1">
+            <div>
               <div className="flex items-center gap-2 mb-3">
                 <span className="text-xl">🦊</span>
-                <span className="text-base font-extrabold gradient-text" style={{ fontFamily: 'var(--font-display)' }}>
-                  Alfanumrik
-                </span>
+                <span className="text-base font-extrabold gradient-text" style={{ fontFamily: 'var(--font-display)' }}>Alfanumrik</span>
               </div>
               <p className="text-xs leading-relaxed" style={{ color: 'var(--text-3)' }}>
-                Adaptive Learning OS<br />
-                Cusiosense Learning India Pvt. Ltd.
+                Adaptive Learning Platform<br />Cusiosense Learning India Pvt. Ltd.
               </p>
             </div>
-
-            {/* Product */}
             <div>
-              <h4 className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text-3)' }}>
-                Product
-              </h4>
+              <h4 className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text-3)' }}>Product</h4>
               <div className="space-y-2">
-                {[
-                  { href: '/product', label: 'Product Overview' },
-                  { href: '/for-schools', label: 'For Schools' },
-                  { href: '/for-teachers', label: 'For Teachers' },
-                  { href: '/for-parents', label: 'For Parents' },
-                  { href: '/demo', label: 'Book a Demo' },
-                ].map(link => (
-                  <Link key={link.href} href={link.href} className="block text-sm hover:underline" style={{ color: 'var(--text-2)' }}>
-                    {link.label}
-                  </Link>
+                {[{ href: '/product', label: 'Overview' }, { href: '/for-schools', label: 'For Schools' }, { href: '/pricing', label: 'Pricing' }, { href: '/demo', label: 'Book Demo' }].map(l => (
+                  <Link key={l.href} href={l.href} className="block text-sm hover:underline" style={{ color: 'var(--text-2)' }}>{l.label}</Link>
                 ))}
               </div>
             </div>
-
-            {/* Legal */}
             <div>
-              <h4 className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text-3)' }}>
-                Legal
-              </h4>
+              <h4 className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text-3)' }}>Legal</h4>
               <div className="space-y-2">
-                {[
-                  { href: '/privacy', label: 'Privacy Policy' },
-                  { href: '/terms', label: 'Terms of Service' },
-                  { href: '/security', label: 'Security' },
-                  { href: '/help', label: 'Help Center' },
-                ].map(link => (
-                  <Link key={link.href} href={link.href} className="block text-sm hover:underline" style={{ color: 'var(--text-2)' }}>
-                    {link.label}
-                  </Link>
+                {[{ href: '/privacy', label: 'Privacy Policy' }, { href: '/terms', label: 'Terms' }, { href: '/security', label: 'Security' }, { href: '/help', label: 'Help Center' }].map(l => (
+                  <Link key={l.href} href={l.href} className="block text-sm hover:underline" style={{ color: 'var(--text-2)' }}>{l.label}</Link>
                 ))}
               </div>
             </div>
-
-            {/* Contact */}
             <div>
-              <h4 className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text-3)' }}>
-                Contact
-              </h4>
+              <h4 className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text-3)' }}>Contact</h4>
               <div className="space-y-2 text-sm" style={{ color: 'var(--text-2)' }}>
-                <p><Link href="/contact" className="hover:underline">support@alfanumrik.com</Link></p>
-                <p><Link href="/about" className="hover:underline">About Us</Link></p>
-                <p><Link href="/research" className="hover:underline">Research</Link></p>
+                <p>support@alfanumrik.com</p>
+                <Link href="/about" className="block hover:underline">About Us</Link>
                 <p>India 🇮🇳</p>
               </div>
             </div>
           </div>
-
-          {/* Bottom */}
-          <div
-            className="pt-6 border-t flex flex-col sm:flex-row items-center justify-between gap-3"
-            style={{ borderColor: 'var(--border)' }}
-          >
-            <p className="text-xs" style={{ color: 'var(--text-3)' }}>
-              © {new Date().getFullYear()} Cusiosense Learning India Pvt. Ltd. All rights reserved.
-            </p>
+          <div className="pt-6 border-t flex flex-col sm:flex-row items-center justify-between gap-3" style={{ borderColor: 'var(--border)' }}>
+            <p className="text-xs" style={{ color: 'var(--text-3)' }}>© {new Date().getFullYear()} Cusiosense Learning India Pvt. Ltd. All rights reserved.</p>
             <div className="flex items-center gap-4 text-xs" style={{ color: 'var(--text-3)' }}>
-              <span>🛡️ Safe & Secure</span>
+              <span>🛡️ Safe &amp; Secure</span>
               <span>🇮🇳 Made in India</span>
               <span>🔒 No Ads</span>
             </div>
