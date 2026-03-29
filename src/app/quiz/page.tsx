@@ -437,34 +437,28 @@ export default function QuizPage() {
     const isCorrect = selectedOption === q.correct_answer_index;
 
     return (
-      <div className="mesh-bg min-h-dvh pb-nav flex flex-col">
+      <div className="mesh-bg min-h-dvh flex flex-col focus-screen">
         {/* Emotional feedback overlay */}
         <FeedbackOverlay feedback={activeFeedback} isHi={isHi} />
 
-        {/* Header */}
+        {/* Header — distraction-free: progress + timer only */}
         <header className="page-header" style={{ background: 'rgba(251,248,244,0.92)', backdropFilter: 'blur(20px)', borderColor: 'var(--border)' }}>
           <div className="app-container py-3">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <span className="text-lg">{subMeta?.icon}</span>
-                <span className="text-sm font-semibold" style={{ color: subMeta?.color }}>{subMeta?.name}</span>
+                <span className="text-sm font-semibold" style={{ color: subMeta?.color }}>
+                  {isHi ? `सवाल ${currentIdx + 1}/${questions.length}` : `Q ${currentIdx + 1}/${questions.length}`}
+                </span>
               </div>
               <div className="flex items-center gap-3 text-xs text-[var(--text-3)] font-medium">
                 <span>{correctSoFar}/{responses.length} ✓</span>
-                <span style={{ color: quizMode === 'exam' && timer < 300 ? '#DC2626' : 'var(--orange)', fontWeight: 700, fontFamily: 'var(--font-mono, monospace)' }}>
-                  {quizMode === 'exam' ? `⏱ ${formatTime(timer)}` : formatTime(timer)}
+                <span style={{ color: quizMode === 'exam' && timer < 300 ? '#DC2626' : 'var(--text-3)', fontWeight: 600, fontFamily: 'var(--font-mono, monospace)' }}>
+                  {formatTime(timer)}
                 </span>
               </div>
             </div>
-            <ProgressBar value={progress} color={subMeta?.color} height={5} />
-            <div className="flex justify-between mt-1">
-              <span className="text-[10px] text-[var(--text-3)]">
-                {isHi ? `सवाल ${currentIdx + 1}/${questions.length}` : `Question ${currentIdx + 1} of ${questions.length}`}
-              </span>
-              <span className="text-[10px] text-[var(--text-3)]">
-                {isHi ? `कठिनाई: ${q.difficulty}/5` : `Difficulty: ${q.difficulty}/5`}
-              </span>
-            </div>
+            <ProgressBar value={progress} color={subMeta?.color} height={4} />
           </div>
         </header>
 
@@ -490,7 +484,7 @@ export default function QuizPage() {
                 </span>
               )}
             </div>
-            <div className="text-base md:text-lg font-semibold leading-relaxed" style={{ whiteSpace: 'pre-wrap' }}>
+            <div className="text-lg md:text-xl font-semibold leading-relaxed" style={{ whiteSpace: 'pre-wrap' }}>
               {isHi && q.question_hi ? q.question_hi : q.question_text}
             </div>
           </Card>
