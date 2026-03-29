@@ -173,11 +173,13 @@ export default function NewtonLaws() {
         ctx.fillText(`F=${appliedForce.toFixed(0)}N`, fbdCx + fLen / 2, fbdCy - 10);
       }
 
-      // Friction (left, opposes motion)
-      if (friction > 0 && isRunning) {
-        const fFriction = Math.min(friction * W, appliedForce);
+      // Friction (opposes applied force or motion)
+      if (friction > 0 && (isRunning || appliedForce > 0)) {
+        const maxFriction = friction * W;
+        const fFriction = Math.min(maxFriction, Math.abs(appliedForce));
         const frLen = Math.min(fFriction * scale, 100);
         if (frLen > 2) {
+          // Friction arrow points opposite to applied force direction
           drawArrow(ctx, fbdCx, fbdCy, fbdCx - frLen, fbdCy, '#f59e0b', 2.5);
           ctx.fillStyle = '#f59e0b';
           ctx.textAlign = 'center';
@@ -213,11 +215,21 @@ export default function NewtonLaws() {
       if (isRunning) {
         const block = blockRef.current;
         const W = mass * g;
-        const frictionForce = block.v > 0.01
-          ? friction * W
-          : block.v < -0.01
-            ? -friction * W
-            : Math.abs(appliedForce) > friction * W ? 0 : -appliedForce;
+        const maxStaticFriction = friction * W;
+
+        // Friction opposes motion (kinetic) or prevents motion (static)
+        let frictionForce = 0;
+        if (Math.abs(block.v) > 0.01) {
+          // Kinetic friction: opposes direction of velocity
+          frictionForce = Math.sign(block.v) * friction * W;
+        } else {
+          // Static friction: opposes net applied force, capped at max static
+          if (Math.abs(appliedForce) > maxStaticFriction) {
+            frictionForce = 0; // Static friction overcome — block starts moving
+          } else {
+            frictionForce = appliedForce; // Balances applied force exactly
+          }
+        }
 
         const netForce = appliedForce - frictionForce;
         const a = netForce / mass;
@@ -226,9 +238,10 @@ export default function NewtonLaws() {
         block.v += a * dt;
         block.x += block.v * dt;
 
-        // Clamp position
-        if (block.x > 50) { block.x = 50; block.v = 0; }
-        if (block.x < -50) { block.x = -50; block.v = 0; }
+        // Stop block if velocity crosses zero due to friction (prevents oscillation)
+        if (Math.abs(block.v) < 0.01 && Math.abs(appliedForce) <= maxStaticFriction) {
+          block.v = 0;
+        }
 
         setStats({
           a: block.a,

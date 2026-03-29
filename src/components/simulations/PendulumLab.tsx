@@ -277,9 +277,11 @@ export default function PendulumLab() {
         const angularAccel = -(gravity / length) * Math.sin(s.angle);
         s.angularVelocity += angularAccel * subDt;
 
-        // Damping
+        // Viscous damping: F = -b*v, applied as exponential decay
+        // This is physically correct and frame-rate independent
         if (damping) {
-          s.angularVelocity *= 0.999;
+          const dampingCoeff = 0.15; // light air resistance
+          s.angularVelocity *= Math.exp(-dampingCoeff * subDt);
         }
 
         s.angle += s.angularVelocity * subDt;
