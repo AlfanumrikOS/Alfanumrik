@@ -297,6 +297,8 @@ export function getSessionOpener(memory: LearnerMemory, mode: SessionMode, topic
 }
 
 // ─── Sentiment Detection (simple heuristic) ──────────────
+// DEPRECATED: Use foxy-nlu.ts analyzeUtterance() for proper NLU.
+// Kept as fallback only.
 
 export function detectSentiment(
   studentText: string,

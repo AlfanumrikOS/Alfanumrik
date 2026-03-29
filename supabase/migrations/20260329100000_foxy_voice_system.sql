@@ -130,7 +130,56 @@ CREATE POLICY foxy_voice_service ON foxy_voice_sessions FOR ALL TO service_role 
 CREATE POLICY foxy_config_read ON foxy_voice_config FOR SELECT USING (true);
 CREATE POLICY foxy_config_service ON foxy_voice_config FOR ALL TO service_role USING (true) WITH CHECK (true);
 
--- 4. RPC: Get or create learner memory
+-- 4. RLHF feedback signals — training data from student interactions
+CREATE TABLE IF NOT EXISTS foxy_rlhf_signals (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id uuid REFERENCES foxy_voice_sessions(id),
+  turn_index integer NOT NULL,
+  signal_type text NOT NULL, -- explicit_positive, explicit_negative, implicit_engaged, implicit_disengaged
+  response_type text, -- what Foxy did (explain_concept, ask_question, etc.)
+  modifiers jsonb DEFAULT '[]', -- response modifiers used
+  student_emotion text,
+  student_intent text,
+  context jsonb DEFAULT '{}', -- mode, topic, grade, confidence
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_rlhf_session ON foxy_rlhf_signals(session_id);
+CREATE INDEX IF NOT EXISTS idx_rlhf_type ON foxy_rlhf_signals(signal_type);
+
+-- 5. HITL flags — interactions flagged for human review
+CREATE TABLE IF NOT EXISTS foxy_hitl_flags (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id uuid REFERENCES foxy_voice_sessions(id),
+  turn_index integer NOT NULL,
+  flag_type text NOT NULL, -- low_nlu_confidence, misconception, safety_concern, etc.
+  student_text text,
+  foxy_response text,
+  nlu_result jsonb,
+  dialogue_action jsonb,
+  reason text,
+  priority text NOT NULL DEFAULT 'low', -- low, medium, high, critical
+  status text NOT NULL DEFAULT 'pending', -- pending, reviewed, resolved, dismissed
+  reviewed_by uuid REFERENCES admin_users(id),
+  review_notes text,
+  reviewed_at timestamptz,
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_hitl_priority ON foxy_hitl_flags(priority, status);
+CREATE INDEX IF NOT EXISTS idx_hitl_pending ON foxy_hitl_flags(status) WHERE status = 'pending';
+
+-- RLS for RLHF and HITL
+ALTER TABLE foxy_rlhf_signals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE foxy_hitl_flags ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY rlhf_service ON foxy_rlhf_signals FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY hitl_service ON foxy_hitl_flags FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY hitl_admin_read ON foxy_hitl_flags FOR SELECT USING (
+  EXISTS (SELECT 1 FROM admin_users WHERE auth_user_id = auth.uid())
+);
+
+-- 6. RPC: Get or create learner memory
 CREATE OR REPLACE FUNCTION get_or_create_learner_memory(p_student_id uuid)
 RETURNS foxy_learner_memory LANGUAGE plpgsql SECURITY DEFINER AS $$
 DECLARE
