@@ -192,7 +192,23 @@ export async function getQuizQuestions(subject: string, grade: string, count = 1
 }
 
 /** Filter out broken, duplicate, or template questions before they reach students. */
-function validateQuestions(questions: any[]): any[] {
+interface QuestionRecord {
+  id: string;
+  question_text: string;
+  question_hi: string | null;
+  question_type: string;
+  options: string | string[];
+  correct_answer_index: number;
+  explanation: string | null;
+  explanation_hi: string | null;
+  hint: string | null;
+  difficulty: number;
+  bloom_level: string;
+  chapter_number: number;
+  [key: string]: unknown;
+}
+
+function validateQuestions(questions: QuestionRecord[]): QuestionRecord[] {
   const seen = new Set<string>();
   return questions.filter(q => {
     if (!q.question_text || typeof q.question_text !== 'string') return false;
@@ -274,13 +290,13 @@ export async function submitQuizResults(studentId: string, subject: string, grad
   const total = responses.length;
   const correct = responses.filter(r => r.is_correct).length;
   const scorePct = total > 0 ? Math.round((correct / total) * 100) : 0;
-  const xpEarned = correct * 10 + (scorePct >= 80 ? 20 : 0);
+  const xpEarned = correct * 10 + (scorePct >= 80 ? 20 : 0) + (scorePct === 100 ? 50 : 0);
 
   // 1. Insert quiz session (columns must match DB schema exactly)
   const { data: session, error: sessErr } = await supabase.from('quiz_sessions').insert({
     student_id: studentId, subject, grade, total_questions: total,
     correct_answers: correct, wrong_answers: total - correct,
-    score_percent: scorePct, score: correct * 10,
+    score_percent: scorePct, score: xpEarned,
     time_taken_seconds: time, total_answered: total,
     is_completed: true, completed_at: new Date().toISOString(),
   }).select('id').single();

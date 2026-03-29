@@ -19,14 +19,21 @@ if (!SUPABASE_URL || !SERVICE_KEY) {
 
 const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 
+// Subject codes must match question_bank.subject column (lowercase codes from SUBJECT_META)
 const TARGET_SUBJECTS = [
-  { subject: 'Mathematics', grades: ['6','7','8','9','10','11','12'], minChunks: 100, minQuestions: 100 },
-  { subject: 'Science', grades: ['6','7','8','9','10'], minChunks: 100, minQuestions: 100 },
-  { subject: 'Physics', grades: ['11','12'], minChunks: 100, minQuestions: 50 },
-  { subject: 'Chemistry', grades: ['11','12'], minChunks: 100, minQuestions: 50 },
-  { subject: 'Biology', grades: ['11','12'], minChunks: 50, minQuestions: 50 },
-  { subject: 'English', grades: ['6','7','8','9','10'], minChunks: 20, minQuestions: 30 },
-  { subject: 'Hindi', grades: ['6','7','8','9','10'], minChunks: 20, minQuestions: 30 },
+  { subject: 'math', grades: ['6','7','8','9','10','11','12'], minChunks: 100, minQuestions: 100 },
+  { subject: 'science', grades: ['6','7','8','9','10'], minChunks: 100, minQuestions: 100 },
+  { subject: 'physics', grades: ['11','12'], minChunks: 100, minQuestions: 50 },
+  { subject: 'chemistry', grades: ['11','12'], minChunks: 100, minQuestions: 50 },
+  { subject: 'biology', grades: ['11','12'], minChunks: 50, minQuestions: 50 },
+  { subject: 'english', grades: ['6','7','8','9','10'], minChunks: 20, minQuestions: 30 },
+  { subject: 'hindi', grades: ['6','7','8','9','10'], minChunks: 20, minQuestions: 30 },
+  { subject: 'social_studies', grades: ['6','7','8','9','10'], minChunks: 20, minQuestions: 30 },
+  { subject: 'economics', grades: ['11','12'], minChunks: 20, minQuestions: 30 },
+  { subject: 'accountancy', grades: ['11','12'], minChunks: 20, minQuestions: 30 },
+  { subject: 'business_studies', grades: ['11','12'], minChunks: 20, minQuestions: 30 },
+  { subject: 'political_science', grades: ['11','12'], minChunks: 20, minQuestions: 20 },
+  { subject: 'computer_science', grades: ['11','12'], minChunks: 20, minQuestions: 20 },
 ];
 
 async function main() {

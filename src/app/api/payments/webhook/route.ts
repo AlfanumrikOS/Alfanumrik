@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ received: true, note: 'already_processed' });
     }
 
-    console.log(`Webhook: ${eventType}`, eventId);
+    console.warn(`Webhook: ${eventType}`, eventId);
 
     // ── SUBSCRIPTION EVENTS ─────────────────────────────────
 
