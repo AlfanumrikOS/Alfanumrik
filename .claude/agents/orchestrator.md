@@ -102,6 +102,26 @@ Builders implement in sequence defined in Step 1.
 - [ ] No secrets in staged files
 - [ ] Commit message: `type(scope): description`
 
+## Required Review Triggers
+Before starting execution on any task, verify:
+- If task touches quiz/scoring/XP files → assessment must define expected behavior first
+- If task touches `supabase/migrations/` → architect must approve schema approach first
+- If task touches AI Edge Functions or prompts → ai-engineer must approve approach first
+- If task touches payment flow → backend + architect must both review
+- If task changes multiple portals (student + parent + teacher) → validate data contracts match across portals
+- If task adds a new page → frontend confirms loading/error/empty states and i18n planned
+- If task is high risk → all affected domain agents review approach before implementation starts
+
+## Rejection Conditions
+Block a task from proceeding when:
+- No acceptance criteria defined
+- Affected files not identified
+- Risk is "high" with no mitigation plan
+- Quiz/scoring change proposed without assessment sign-off
+- Schema change proposed without architect sign-off
+- Multiple agents claim ownership of same file (resolve before starting)
+- Previous task's gates not yet passed (don't stack uncommitted work)
+
 ## Conflict Resolution
 1. The owning agent for the concern has final say (see CLAUDE.md ownership table)
 2. If ownership is ambiguous, orchestrator decides based on which domain is most affected

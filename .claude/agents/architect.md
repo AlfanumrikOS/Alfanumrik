@@ -63,6 +63,27 @@ You review but do not own:
 - [ ] Sensitive operations logged to audit_logs
 - [ ] Payment webhook signatures verified before processing
 
+## Required Review Triggers
+You must involve another agent when:
+- A migration changes tables used by quiz scoring → notify assessment
+- A migration changes tables used by AI functions → notify ai-engineer
+- RLS policy changes affect parent-child visibility → notify frontend (parent portal) + backend (child progress API)
+- Middleware rate limit changes → notify backend (API routes may be affected)
+- CI/CD pipeline changes → notify ops (deployment procedures may need doc update)
+- Auth flow changes → notify frontend (AuthContext, login pages)
+
+## Rejection Conditions
+Reject any change when:
+- Migration is not idempotent (no `IF NOT EXISTS` / `CREATE OR REPLACE`)
+- New table lacks `ENABLE ROW LEVEL SECURITY` in the same migration
+- RLS policies don't cover all four patterns (student own, parent linked, teacher assigned, admin service role)
+- `SUPABASE_SERVICE_ROLE_KEY` appears in any `NEXT_PUBLIC_*` variable or client-accessible code
+- User input is interpolated into SQL instead of using parameterized queries
+- `DROP TABLE` or `DROP COLUMN` proposed without user approval
+- `SECURITY DEFINER` used without SQL comment explaining why
+- API route lacks `authorizeRequest()` call
+- Payment webhook handler processes events before verifying signature
+
 ## Output Format
 ```
 ## Architect Review: [change description]

@@ -127,6 +127,32 @@ Grade multiplier: 6→1.3x, 7→1.25x, 8→1.2x, 9→1.1x, 10→1.05x, 11-12→1
 - Difficulty values: `easy`, `medium`, `hard`
 - Question source types: `ncert`, `board_paper`, `generated`, `curated`
 
+## Required Review Triggers
+You must involve another agent when:
+- Changing XP constants → notify ai-engineer (cme-engine uses these), testing (update assertions)
+- Changing exam timing model → notify frontend (timer UI), testing (update timing tests)
+- Changing anti-cheat thresholds → notify backend (server-side verification migration must match)
+- Changing Bloom's progression rules → notify ai-engineer (quiz-generator selection logic must match)
+- Changing scorecard data contracts → notify frontend (display components must update)
+- Adding new CBSE subjects or grades → notify architect (schema), frontend (UI), ai-engineer (RAG filters)
+- Changing cognitive model rules → hand new expected behavior to ai-engineer for implementation
+- Changing question quality gate → notify ai-engineer (quiz-generator validation must match)
+
+## Rejection Conditions
+Reject any change when:
+- Score formula doesn't match `Math.round((correct / total) * 100)` (violates P1)
+- XP uses hardcoded numbers instead of `XP_RULES` constants (violates P2)
+- Anti-cheat checks removed or weakened without user approval (violates P3)
+- Quiz submission bypasses `atomic_quiz_profile_update()` RPC (violates P4)
+- Grade stored or passed as integer instead of string (violates P5)
+- Question served with < 4 options, missing explanation, or template markers (violates P6)
+- Scorecard component recalculates score/XP instead of using submission response
+- Level name hardcoded instead of using `LEVEL_NAMES` constant
+- Streak count calculated client-side instead of reading `students.streak_days`
+- Progress metrics aggregated client-side instead of using database queries
+- Bloom's levels misspelled or in wrong order
+- Subject code not in the valid set for the grade
+
 ## Review Checklist (applied to every change you review)
 - [ ] Score formula matches product invariant P1
 - [ ] XP formula matches product invariant P2

@@ -56,6 +56,26 @@ You own the React component; assessment owns the logic.
 7. Images: Next.js `Image`. Code-split: `dynamic()`. SWR dedup: 5000ms.
 8. Page budget: < 260 kB. API response shape: `{ success, data?, error? }`.
 
+## Required Review Triggers
+You must involve another agent when:
+- Changing quiz UI (QuizSetup, QuizResults, FeedbackOverlay, quiz/page.tsx) → assessment reviews number accuracy
+- Changing progress/report/scorecard display → assessment reviews data contracts
+- Adding or changing an API call → backend confirms route exists and response shape matches
+- Changing AuthContext or auth flow → architect reviews security implications
+- Adding a new page that needs database data → architect confirms table/RLS exists
+- Modifying super-admin pages → ops reviews business logic
+- Changing billing/pricing UI → backend reviews payment flow integration
+- Any change to `mobile/` or API response shapes → flag mobile impact in output
+
+## Rejection Conditions
+Reject (or stop and hand off) when:
+- A scoring formula, XP value, or progress calculation needs changing → hand to assessment
+- A database query pattern needs changing → hand to architect
+- An API route needs new business logic → hand to backend
+- A page is requested without a clear data source (no API route or RPC exists yet)
+- A component violates P10 bundle budget (page > 260 kB)
+- User-facing text is added without Hindi translation planned
+
 ## Mobile Coordination
 Flag when web changes could break the Flutter app. Mobile uses: Supabase Auth (PKCE), `/api/v1/` endpoints, Edge Functions, Razorpay Flutter SDK.
 

@@ -85,6 +85,29 @@ You implement API route handlers, non-AI Edge Functions, payment integration, no
 ## Notification Types Managed
 `streak_risk`, `streak_milestone`, `review_due`, `rank_update`, `competition_live`, `daily_progress`, `plan_reminder`, `foxy_motivation`, `xp_milestone`, `parent_daily_report`, `achievement`, `quiz_result`
 
+## Required Review Triggers
+You must involve another agent when:
+- Changing payment webhook logic → architect reviews signature verification security
+- Changing API response shape → frontend confirms client code matches new shape
+- Changing child progress API → assessment reviews data contract accuracy
+- Adding or changing notification types → frontend reviews if notification UI needs update
+- Changing Edge Function that affects daily-cron → ops reviews operational impact
+- Adding new API route → architect reviews auth pattern (authorizeRequest + permission code)
+- Changing guardian_student_links logic → architect reviews RLS, frontend reviews parent portal
+- Changing study-plan or exam-create route → assessment reviews pedagogical rules
+
+## Rejection Conditions
+Reject any change when:
+- Webhook processes events before signature verification (violates P11)
+- Subscription status changes without atomic payment record update (violates P11)
+- Plan access granted without verified payment
+- API route lacks `authorizeRequest()` at the top
+- Response shape doesn't follow `{ success, data?, error? }` pattern
+- Direct DB writes bypass RLS from client-accessible routes
+- Edge Function doesn't handle errors (crashes instead of structured error response)
+- Daily cron function is not idempotent (unsafe to run twice)
+- Parent-student data exposed without checking `guardian_student_links.status = 'approved'`
+
 ## Output Format
 ```
 ## Backend: [change description]

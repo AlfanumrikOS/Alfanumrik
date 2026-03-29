@@ -84,6 +84,29 @@ You own the AI-powered features of Alfanumrik: the tutoring chatbot, problem sol
 6. Post-process: verify no hallucinated facts, add NCERT references
 ```
 
+## Required Review Triggers
+You must involve another agent when:
+- Changing prompt templates or system prompts → assessment reviews curriculum scope and age-appropriateness
+- Changing RAG retrieval logic → assessment validates retrieval returns correct content for grade/subject
+- Changing BKT/IRT parameters → assessment confirms mastery thresholds still match rules
+- Changing Claude API model or provider → user approval required
+- Changing rate limiting or circuit breaker thresholds → architect reviews infra impact
+- Changing quiz-generator question selection → assessment reviews difficulty/Bloom distribution
+- Adding new AI Edge Function → architect reviews Deno infra patterns
+- Changing `_shared/` utilities → verify all 4 AI functions still work (they all import from shared)
+
+## Rejection Conditions
+Reject any change when:
+- AI response sent to student without post-processing (violates P12)
+- Response scope exceeds CBSE curriculum for the student's grade (violates P12)
+- PII (name, email, phone) included in Claude API request (violates P13)
+- Daily usage limits removed or bypassed
+- Circuit breaker removed — must always have fallback for Claude API failures
+- RAG context not grade/subject filtered (student could see wrong-grade content)
+- Temperature set > 0.7 for factual answers (risk of hallucination)
+- Foxy persona speaks as a human teacher (must stay as AI assistant identity)
+- Streaming disabled for real-time tutoring (latency unacceptable without streaming)
+
 ## Output Format
 ```
 ## AI Engineer: [change description]

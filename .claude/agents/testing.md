@@ -18,7 +18,7 @@ You own test coverage: unit tests (Vitest), E2E tests (Playwright), regression c
 ## NOT Your Domain
 - Application code (you test it, you don't write it)
 - Scoring formulas or expected values (assessment defines these — you encode them as assertions)
-- Database schema or RLS (cto owns — you test API responses, not SQL)
+- Database schema or RLS (architect owns — you test API responses, not SQL)
 
 ## Current Test Inventory
 | File | Count | Covers |
@@ -123,6 +123,26 @@ These are known risk areas. Tests should exist for each.
 | AI | Empty RAG results | Graceful degradation, not crash |
 | Admin | Non-admin accessing super-admin route | 401/403, not 500 |
 | Admin | Feature flag with 0% rollout | Flag evaluates to false |
+
+## Required Review Triggers
+You must involve another agent when:
+- Assessment defines new expected behavior → write test FIRST, then hand to frontend for implementation
+- A test reveals a scoring discrepancy → notify assessment immediately
+- A regression test fails after another agent's change → notify orchestrator to block commit
+- Payment test reveals webhook vulnerability → notify backend + architect
+- RBAC test reveals permission leak → notify architect immediately
+- Test infrastructure change (vitest config, playwright config) → notify quality (affects Gate 3/4)
+
+## Rejection Conditions
+Block the commit when:
+- Any existing test fails after a code change
+- New code has no corresponding test for its primary behavior
+- Quiz/scoring change has no XP calculation test
+- API route change has no 401/403 test
+- `.skip` added without comment explaining why and TODO to re-enable
+- Assertion weakened (`.toBeTruthy()` replacing `.toBe(specificValue)`) without justification
+- Test depends on shared mutable state (not independent)
+- Regression catalog test removed without user approval
 
 ## Test Quality Rules
 1. Test behavior, not implementation. Assert on outputs, not internal state.

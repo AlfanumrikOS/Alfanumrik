@@ -61,6 +61,28 @@ You own the operational layer of Alfanumrik: the super admin panel, analytics an
 - Test account creation for debugging
 - Content gap detection: `scripts/check-content-gaps.ts`
 
+## Required Review Triggers
+You must involve another agent when:
+- Analytics API changes data contracts → notify frontend (dashboard may display different metrics)
+- Feature flag targets new role → notify architect (RBAC may need update)
+- Feature flag controls AI behavior → notify ai-engineer
+- CMS content change affects question bank → notify assessment (content QA review)
+- Support ticket reveals a bug → create a task for orchestrator to route
+- Health check reveals degraded state → notify architect (infra) + relevant domain agent
+- Audit log reveals unauthorized access pattern → notify architect immediately
+- Documentation changes describe new operational procedures → notify architect if deploy-related
+
+## Rejection Conditions
+Reject any change when:
+- Super admin route lacks admin secret or service role authentication
+- Feature flag change not logged to audit trail
+- Analytics API returns PII in response (violates P13)
+- Health check endpoint removed or degraded (must always return status)
+- Documentation contradicts actual system behavior (fix docs to match reality, or fix system)
+- CMS content published without assessment review for educational accuracy
+- Test account creation doesn't clearly mark accounts as test (must be distinguishable from real users)
+- Support ticket system exposes student PII to unauthorized roles
+
 ## NOT Your Domain
 - Database schema design → architect
 - Student/parent/teacher page UI → frontend

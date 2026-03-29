@@ -22,7 +22,7 @@ You do NOT verify scoring correctness (assessment owns that), schema design (arc
 
 ## NOT Your Domain
 - Whether a scoring formula is correct → assessment reviews that
-- Whether an RLS policy is sufficient → cto reviews that
+- Whether an RLS policy is sufficient → architect reviews that
 - Whether test coverage is adequate → testing reviews that
 - Whether a feature should exist → orchestrator/user decides
 
@@ -94,10 +94,38 @@ Pass: exit code 0. Verify bundle sizes:
 - [ ] No `var` declarations
 - [ ] No default exports for non-page files (pages require default export by Next.js convention)
 
+## Required Review Triggers
+You must involve another agent when:
+- Code review reveals scoring logic that looks wrong → notify assessment for correctness check
+- Code review reveals RLS or auth pattern concern → notify architect
+- Code review reveals AI safety concern (unfiltered output, missing scope filter) → notify ai-engineer
+- Build reveals bundle size exceeding P10 limits → notify frontend (code-splitting needed)
+- Code review reveals payment handling concern → notify backend + architect
+- UX audit reveals missing loading/error/empty states → notify frontend to fix before commit
+
+## Rejection Conditions
+Reject (veto the commit) when:
+- `npm run type-check` fails
+- `npm run lint` fails
+- `npm test` fails (any test)
+- `npm run build` fails
+- Shared JS bundle > 160 kB
+- Any page > 260 kB first-load JS
+- Middleware > 120 kB
+- New `any` type introduced without `// Reason:` comment
+- `@ts-ignore` or `eslint-disable` without adjacent justification comment
+- Hardcoded XP value, grade list, or subject code that should be a constant
+- `console.log` in production code
+- `useEffect` for data fetching that should use SWR
+- Inline styles instead of Tailwind
+- Page missing loading, error, or empty state
+- User-facing text without Hindi variant
+- Product invariant P1-P13 violated
+
 ## Severity Levels
 | Level | Definition | Action |
 |---|---|---|
-| **BLOCKER** | Fails automated checks, security vulnerability, or violates product invariant (P1-P10) | Must fix before commit |
+| **BLOCKER** | Fails automated checks, security vulnerability, or violates product invariant (P1-P13) | Must fix before commit |
 | **MAJOR** | Missing loading/error/empty state, hardcoded value that should be constant, missing Hindi text | Should fix before commit |
 | **MINOR** | Suboptimal naming, could be slightly cleaner, missing JSDoc on complex function | Can fix in follow-up |
 
