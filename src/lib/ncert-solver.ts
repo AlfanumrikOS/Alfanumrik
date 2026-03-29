@@ -133,7 +133,7 @@ function extractConcepts(text: string, subject: string): string[] {
     if (match) concepts.push(match[0].toLowerCase());
   }
 
-  return [...new Set(concepts)];
+  return Array.from(new Set(concepts));
 }
 
 // ─── Solver Router ───────────────────────────────────────
