@@ -97,42 +97,84 @@ AI responses (foxy-tutor, ncert-solver) MUST be age-appropriate for grades 6-12.
 No PII in client-side logs or Sentry events. Logger redacts: password, token, email, phone, API keys. Student data accessible only to: the student, their linked parent, their assigned teacher, or admin via service role.
 
 ## Agent System
-9 agents organized in three tiers:
+9 agents. Each domain in the product has exactly one owner.
 
-**Builders** (implement): architect, frontend, backend, assessment, ai-engineer
-**Verifiers** (review): testing, quality
-**Operator** (run): ops
+**Builders**: architect, frontend, backend, assessment, ai-engineer
+**Verifiers**: testing, quality
+**Operator**: ops
+**Coordinator**: orchestrator
 
-Coordinated by: **orchestrator**
+### Domain Ownership (30 domains → 9 agents)
 
-### Ownership Table
-| Concern | Owner | Reviewer |
+| # | Domain | Owner | Reviewer | Approver |
+|---|---|---|---|---|
+| 1 | Founder/CEO decision support | orchestrator (synthesizes metrics for user) | — | user |
+| 2 | Product strategy | orchestrator (surfaces options, user decides) | — | user |
+| 3 | Project management | orchestrator | — | — |
+| 4 | CTO / architecture | architect | quality | user (for breaking changes) |
+| 5 | Backend engineering | backend | architect (auth); quality | — |
+| 6 | Frontend engineering | frontend | quality; assessment (quiz UI) | — |
+| 7 | Full-stack integration | orchestrator (validates contracts in handoffs) | quality | — |
+| 8 | Database engineering | architect | quality | user (for DROP ops) |
+| 9 | Supabase architecture | architect | quality | — |
+| 10 | RBAC and auth | architect | quality | user (for role/perm additions) |
+| 11 | Security and privacy | architect | quality | — |
+| 12 | DevOps | architect | quality | — |
+| 13 | Deployment and release engineering | architect | quality; ops (operational impact) | — |
+| 14 | Testing and QA | testing | quality | — |
+| 15 | Performance and scalability | architect (infra) + quality (code) | — | — |
+| 16 | Analytics and reporting | ops | quality | — |
+| 17 | Super admin reporting system | ops | quality | — |
+| 18 | AI/LLM orchestration | ai-engineer | assessment (correctness); quality | user (model changes) |
+| 19 | Vector embeddings | ai-engineer | quality | — |
+| 20 | RAG pipeline | ai-engineer | assessment (retrieval correctness); quality | — |
+| 21 | Retrieval quality | ai-engineer (implementation) + assessment (validation) | quality | — |
+| 22 | Learning graph / learner state | assessment (rules) + ai-engineer (implementation) | quality | — |
+| 23 | CBSE pedagogy and academic correctness | assessment | quality | user (new subject additions) |
+| 24 | Assessment / grading / progress logic | assessment | testing; quality | user (P1-P6 changes) |
+| 25 | Parent-student mapping | backend (server logic) + frontend (UI) + architect (schema/RLS) | quality | — |
+| 26 | Notifications / communication | backend | quality | — |
+| 27 | Support / grievances / escalation | ops | quality | — |
+| 28 | UX audit | quality | — | — |
+| 29 | Content QA | assessment | quality | — |
+| 30 | Monitoring / incidents / rollback readiness | ops | architect (infra); quality | — |
+
+### Reporting Chain
+```
+User (Founder/CEO)
+  │
+  │  Receives from orchestrator:
+  │  ├─ Product health    (ops: users, DAU/MAU, quiz completion, revenue)
+  │  ├─ System health     (ops: error rate, uptime, health check, latency)
+  │  ├─ Release readiness (quality: gate status, test count, bundle sizes)
+  │  ├─ Risk register     (orchestrator: blockers, high-risk changes pending)
+  │  ├─ Academic integrity (assessment: scoring accuracy, content coverage gaps)
+  │  ├─ AI health         (ai-engineer: API success rate, circuit breaker, RAG quality)
+  │  └─ Support status    (ops: open tickets, resolution time, top issues)
+  │
+  └── orchestrator (synthesizes all agent reports)
+        ├── architect     → schema changes, security assessments, deploy status
+        ├── frontend      → files changed, UI states, i18n, mobile impact
+        ├── backend       → API changes, payment impact, notification changes
+        ├── assessment    → scoring accuracy, grading consistency, content coverage
+        ├── ai-engineer   → AI changes, prompt changes, safety, RAG quality
+        ├── testing       → test results, regression catalog, coverage gaps
+        ├── quality       → checks passed/failed, review findings, UX audit, verdict
+        └── ops           → system metrics, user metrics, revenue, support, flags
+```
+
+### Super Admin Reporting Visibility
+The super admin panel (ops-owned) exposes:
+| Category | Source | Metrics |
 |---|---|---|
-| Database schema, migrations, RLS, RBAC | architect | quality |
-| Middleware, auth infra, deployment, CI/CD, scaling | architect | quality |
-| Student/parent/teacher pages, components, styling | frontend | quality; assessment if quiz-related |
-| Marketing pages, SEO, PWA, mobile coordination | frontend | quality |
-| Client state (AuthContext, SWR), i18n | frontend | quality |
-| API route handlers (/api/v1/, /api/payments/) | backend | architect (auth); quality |
-| Non-AI Edge Functions (email, cron, queue, OCR) | backend | architect (infra); quality |
-| Razorpay payments, webhooks, subscription lifecycle | backend | architect (security); quality |
-| Notification engine, daily cron jobs | backend | quality |
-| Score calculation, XP economy, anti-cheat rules | assessment | testing; quality |
-| Bloom's taxonomy, CBSE content, exam timing rules | assessment | quality |
-| Cognitive model behavior (what it should do) | assessment | ai-engineer (feasibility) |
-| Question bank content quality | assessment | quality |
-| Scorecard data contracts, learner progress mapping | assessment | quality |
-| AI Edge Functions (foxy, ncert, quiz-gen, cme) | ai-engineer | assessment (correctness); quality |
-| RAG pipeline, prompt templates, Claude API usage | ai-engineer | quality |
-| AI rate limiting, circuit breakers, streaming | ai-engineer | architect (infra); quality |
-| Super admin panel (pages + APIs) | ops | quality |
-| Feature flags, health checks, monitoring config | ops | architect (infra); quality |
-| Documentation (docs/), operational runbooks | ops | quality |
-| Support tooling, test account management | ops | quality |
-| Analytics/reporting APIs | ops | quality |
-| Unit tests, E2E tests, regression catalog | testing | quality |
-| Code readability, type safety, architecture conformance | quality | — |
-| Task breakdown, gates, reporting, escalation | orchestrator | — |
+| Product health | ops + assessment | Active users, signups, DAU/MAU, quiz completion, avg score |
+| Learner metrics | assessment + ai-engineer | Topics mastered, Bloom's distribution, knowledge gaps, XP velocity |
+| Revenue | backend + ops | Active subs, MRR, churn, plan distribution, payment failures |
+| System health | architect + ops | Health endpoint, error rate, latency, DB connections, memory |
+| AI health | ai-engineer | Claude API success rate, circuit breaker state, response time, RAG hit rate |
+| Release readiness | quality + testing | Gate status, test count, regression results, bundle sizes |
+| Content coverage | assessment | Questions per subject/grade, gap analysis, Bloom's per topic |
+| Support | ops | Open tickets, resolution time, top issue categories |
 
 ### User Approval Required For
 - Changes to product invariants P1-P13
@@ -140,6 +182,7 @@ Coordinated by: **orchestrator**
 - RBAC role or permission additions
 - Migrations that drop tables or columns
 - AI model or provider changes
+- New CBSE subject additions
 - Changes to the agent system itself
 
 ### Autonomous Decisions (no user approval needed)
@@ -149,6 +192,7 @@ Coordinated by: **orchestrator**
 - Documentation updates
 - Feature flag toggles
 - Performance optimizations within existing architecture
+- Content quality fixes (fixing a wrong answer, improving an explanation)
 
 ## Build Commands
 ```
