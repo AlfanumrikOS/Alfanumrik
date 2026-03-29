@@ -297,6 +297,34 @@ function Dashboard({ guardian, student }: { guardian: any; student: any }) {
         </div>
       </div>
 
+      {/* Plain-Language Summary — trust-building, no jargon */}
+      <div style={{ ...cardStyle, marginBottom: 16, borderLeft: `3px solid ${(s.accuracy || 0) >= 70 ? '#059669' : (s.accuracy || 0) >= 40 ? '#D97706' : '#DC2626'}` }}>
+        <p style={{ fontSize: 15, fontWeight: 600, color: '#F1F5F9', margin: '0 0 6px' }}>
+          {(s.accuracy || 0) >= 70
+            ? `${dash.student?.name || student.name} is doing well! 🌟`
+            : (s.accuracy || 0) >= 40
+            ? `${dash.student?.name || student.name} is making progress, but needs practice.`
+            : `${dash.student?.name || student.name} needs extra support right now.`}
+        </p>
+        <p style={{ fontSize: 13, color: '#94A3B8', margin: 0, lineHeight: 1.5 }}>
+          {(s.streak || 0) >= 3
+            ? `Studying consistently for ${s.streak} days. `
+            : s.streak === 0
+            ? 'Not active today. '
+            : `Started a ${s.streak}-day streak. `}
+          {(s.totalQuizzes || 0) > 0
+            ? `Completed ${s.totalQuizzes} quizzes with ${s.accuracy || 0}% accuracy. `
+            : 'No quizzes taken yet. '}
+          {(s.avgScore || 0) >= 80
+            ? 'Scoring above 80% — great progress!'
+            : (s.avgScore || 0) >= 50
+            ? `Average score is ${s.avgScore}% — room to improve.`
+            : (s.avgScore || 0) > 0
+            ? `Average score is ${s.avgScore}% — consider encouraging more practice.`
+            : ''}
+        </p>
+      </div>
+
       {/* Stats Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginBottom: 16 }}>
         <Stat icon="&#x2B50;" label="XP" value={s.xp || 0} color="#F59E0B" />
@@ -328,9 +356,9 @@ function Dashboard({ guardian, student }: { guardian: any; student: any }) {
       {/* BKT Adaptive Mastery */}
       {dash.bktMastery && dash.bktMastery.total > 0 && (
         <div style={cardStyle}>
-          <h3 style={cardTitle}>Adaptive mastery (BKT engine)</h3>
+          <h3 style={cardTitle}>Learning Progress</h3>
           <MasteryRing levels={dash.bktMastery.levels} total={dash.bktMastery.total} />
-          <p style={{ fontSize: 12, color: '#475569', margin: '10px 0 0' }}>{dash.bktMastery.total} concepts tracked by the Bayesian Knowledge Tracing engine</p>
+          <p style={{ fontSize: 12, color: '#475569', margin: '10px 0 0' }}>{dash.bktMastery.total} concepts being tracked across all subjects</p>
         </div>
       )}
 
