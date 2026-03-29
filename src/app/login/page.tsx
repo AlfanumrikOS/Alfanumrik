@@ -25,13 +25,9 @@ export default function LoginPage() {
     }
   }, [isLoggedIn, isLoading, activeRole, router]);
 
-  if (isLoading) return <LoadingFoxy />;
-
-  // If logged in, the useEffect will redirect — show loading briefly
-  if (isLoggedIn) {
-    router.replace('/dashboard');
-    return <LoadingFoxy />;
-  }
+  // Always show the login form — never block on loading state.
+  // If the user is already logged in, the useEffect redirect will fire.
+  // This prevents the infinite spinner when session is stale/expired.
 
   return (
     <AuthScreen
