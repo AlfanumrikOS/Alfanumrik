@@ -15,9 +15,6 @@ import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import { RichContent } from '@/components/foxy/RichContent';
 import { ChatInput } from '@/components/foxy/ChatInput';
 import { UpgradeModal } from '@/components/UpgradeModal';
-import dynamic from 'next/dynamic';
-
-const VoiceSession = dynamic(() => import('@/components/foxy/VoiceSession'), { ssr: false });
 
 /* ══════════════════════════════════════════════════════════════
    SUBJECT CONFIGURATION
@@ -155,7 +152,6 @@ export default function FoxyPage() {
   const [loading, setLoading] = useState(false);
   const [sessionMode, setSessionMode] = useState('learn');
   const [language, setLanguage] = useState('en');
-  const [showVoice, setShowVoice] = useState(false);
   const [activeTopic, setActiveTopic] = useState<any>(null);
   const [foxyState, setFoxyState] = useState<'idle' | 'thinking' | 'happy'>('idle');
   const [chatSessionId, setChatSessionId] = useState<string | null>(null);
@@ -791,33 +787,7 @@ export default function FoxyPage() {
             <div ref={endRef} />
           </div>
 
-          <div className="flex items-end gap-2">
-            <div className="flex-1">
-              <ChatInput onSubmit={sendMessage} subjectKey={activeSubject} disabled={loading} />
-            </div>
-            <button
-              onClick={() => setShowVoice(true)}
-              className="mb-2 w-11 h-11 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-90"
-              style={{ background: 'linear-gradient(135deg, #E8581C, #F5A623)', boxShadow: '0 4px 12px rgba(232,88,28,0.3)' }}
-              title="Talk to Foxy"
-            >
-              <span className="text-white text-lg">🎙️</span>
-            </button>
-          </div>
-
-          {/* Voice Session Overlay */}
-          {showVoice && student && (
-            <VoiceSession
-              studentId={student.id}
-              studentName={student.name}
-              grade={studentGrade}
-              subject={activeSubject}
-              topic={activeTopic?.title || cfg.name}
-              language={language as 'en' | 'hi' | 'hinglish'}
-              mode={sessionMode === 'quiz' ? 'quiz' : sessionMode === 'revision' ? 'revise' : 'teach'}
-              onClose={() => setShowVoice(false)}
-            />
-          )}
+          <ChatInput onSubmit={sendMessage} subjectKey={activeSubject} disabled={loading} />
         </div>
       </div>
 
