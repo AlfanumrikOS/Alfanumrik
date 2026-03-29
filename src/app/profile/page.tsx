@@ -888,6 +888,12 @@ export default function ProfilePage() {
                   <span className="text-[var(--text-3)]">{isHi ? 'योजना' : 'Plan'}</span>
                   <PlanBadge planCode={student.subscription_plan} size="md" showUpgrade isHi={isHi} />
                 </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[var(--text-3)]">{isHi ? 'बिलिंग' : 'Billing'}</span>
+                  <button onClick={() => router.push('/billing')} className="text-xs font-semibold px-3 py-1 rounded-lg" style={{ color: 'var(--orange)', background: 'rgba(232,88,28,0.08)' }}>
+                    {isHi ? 'प्रबंधित करें' : 'Manage'}
+                  </button>
+                </div>
                 <div className="flex justify-between">
                   <span className="text-[var(--text-3)]">{isHi ? 'स्थिति' : 'Status'}</span>
                   <span className="font-medium" style={{ color: 'var(--green)' }}>{student.account_status ?? 'Active'}</span>
