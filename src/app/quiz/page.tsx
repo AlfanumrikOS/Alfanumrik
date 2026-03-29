@@ -254,10 +254,10 @@ export default function QuizPage() {
     setShowExplanation(true);
     if (qTimerRef.current) clearInterval(qTimerRef.current);
 
-    // Cognitive 2.0: update cognitive load
-    if (quizMode === 'cognitive') {
-      const newCogLoad = updateCognitiveLoad(cogLoad, isCorrect, questionTimer);
-      setCogLoad(newCogLoad);
+    // Cognitive load tracking + reflection prompts
+    const newCogLoad = updateCognitiveLoad(cogLoad, isCorrect, questionTimer);
+    setCogLoad(newCogLoad);
+    if (quizMode === 'cognitive' || quizMode === 'practice') {
       const bloom = (q.bloom_level || 'remember') as BloomLevel;
       const prompt = getReflectionPrompt(isCorrect, newCogLoad.consecutiveErrors, newCogLoad.consecutiveCorrect, bloom);
       setReflection(prompt);
@@ -578,8 +578,8 @@ export default function QuizPage() {
             </div>
           )}
 
-          {/* Cognitive Reflection Prompt */}
-          {isAnswered && quizMode === 'cognitive' && reflection && (
+          {/* Reflection Prompt — shown in cognitive and practice modes */}
+          {isAnswered && (quizMode === 'cognitive' || quizMode === 'practice') && reflection && (
             <div className="rounded-2xl p-4 border" style={{ background: 'rgba(124,58,237,0.05)', borderColor: 'rgba(124,58,237,0.15)' }}>
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-lg">🪞</span>
@@ -593,8 +593,8 @@ export default function QuizPage() {
             </div>
           )}
 
-          {/* Cognitive Pause Alert */}
-          {isAnswered && quizMode === 'cognitive' && cogLoad.shouldPause && (
+          {/* Cognitive Pause Alert — shown when fatigue detected */}
+          {isAnswered && (quizMode === 'cognitive' || quizMode === 'practice') && cogLoad.shouldPause && (
             <div className="rounded-2xl p-4 border" style={{ background: 'rgba(239,68,68,0.06)', borderColor: 'rgba(239,68,68,0.2)' }}>
               <div className="flex items-center gap-2">
                 <span className="text-xl">😮‍💨</span>
