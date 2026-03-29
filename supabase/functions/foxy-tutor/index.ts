@@ -284,6 +284,7 @@ Deno.serve(async (req: Request) => {
       session_id,
       selected_chapters,
       lesson_step,
+      voice_system_prompt,
     } = body
 
     if (!message || typeof message !== 'string') {
@@ -301,7 +302,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // Whitelist mode to prevent prompt injection via arbitrary mode strings
-    const VALID_MODES = ['learn', 'quiz', 'revision', 'doubt']
+    const VALID_MODES = ['learn', 'quiz', 'revision', 'doubt', 'teach', 'revise', 'motivate', 'recap', 'freeform']
     const safeMode = VALID_MODES.includes(mode) ? mode : 'learn'
 
     // Whitelist language
@@ -404,13 +405,18 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── Build messages for Claude ──
-    const systemPrompt = buildSystemPrompt(
-      grade, subject, safeLanguage, safeMode,
-      safeTopicTitle,
-      safeChapters,
-      safeLessonStep,
-      ragContext,
-    )
+    // Voice sessions send their own system prompt optimized for speech.
+    // Chat sessions use the standard markdown-formatted prompt.
+    const isVoiceSession = typeof voice_system_prompt === 'string' && voice_system_prompt.length > 50
+    const systemPrompt = isVoiceSession
+      ? voice_system_prompt + (ragContext ? `\n\nREFERENCE (use if relevant, never mention to student):\n${ragContext}` : '')
+      : buildSystemPrompt(
+          grade, subject, safeLanguage, safeMode,
+          safeTopicTitle,
+          safeChapters,
+          safeLessonStep,
+          ragContext,
+        )
 
     const messages = [
       ...chatHistory,
@@ -450,7 +456,7 @@ Deno.serve(async (req: Request) => {
           },
           body: JSON.stringify({
             model: 'claude-haiku-4-5-20251001',
-            max_tokens: 1024,
+            max_tokens: isVoiceSession ? 200 : 1024,
             system: systemPrompt,
             messages,
           }),
