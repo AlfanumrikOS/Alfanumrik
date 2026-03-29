@@ -66,25 +66,30 @@ export default function VoiceSession({
         {/* Main Area */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 20, gap: 16, overflow: 'auto' }}>
 
-          {/* Permission denied guidance */}
-          {micPermission === 'denied' && (
+          {/* Error state with retry */}
+          {!isSessionActive && error && (
             <div style={{ background: '#FEF2F2', border: '1px solid #FCA5A520', borderRadius: 14, padding: 16, maxWidth: 320, textAlign: 'center' }}>
               <p style={{ fontSize: 13, fontWeight: 600, color: '#DC2626', marginBottom: 8 }}>
-                {isHi ? 'माइक्रोफ़ोन ब्लॉक है' : 'Microphone is blocked'}
+                {isHi ? 'माइक्रोफ़ोन समस्या' : 'Microphone Issue'}
               </p>
-              <p style={{ fontSize: 12, color: '#666', lineHeight: 1.6 }}>
-                {isHi
-                  ? 'एड्रेस बार में 🔒 आइकन पर क्लिक करो → माइक्रोफ़ोन → अनुमति दो → पेज रीफ्रेश करो'
-                  : 'Click the 🔒 icon in address bar → Microphone → Allow → Refresh page'}
+              <p style={{ fontSize: 12, color: '#666', lineHeight: 1.6, marginBottom: 12 }}>
+                {error}
               </p>
-              <button onClick={() => window.location.reload()} style={{ ...primaryBtn, marginTop: 12, fontSize: 12, padding: '8px 16px' }}>
-                {isHi ? 'पेज रीफ्रेश करो' : 'Refresh Page'}
-              </button>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                <button onClick={() => startSession()} style={{ ...primaryBtn, fontSize: 12, padding: '8px 16px' }}>
+                  {isHi ? 'फिर से कोशिश करो' : 'Try Again'}
+                </button>
+                {micPermission === 'denied' && (
+                  <button onClick={() => window.location.reload()} style={{ fontSize: 12, padding: '8px 16px', borderRadius: 14, border: '1px solid var(--border)', background: 'var(--surface-1)', cursor: 'pointer', color: 'var(--text-2)' }}>
+                    {isHi ? 'रीफ्रेश' : 'Refresh'}
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
           {/* Pre-session: show start button */}
-          {!isSessionActive && micPermission !== 'denied' && (
+          {!isSessionActive && !error && (
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: 48, marginBottom: 12 }}>🦊</div>
               <p style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>
@@ -142,8 +147,8 @@ export default function VoiceSession({
             </>
           )}
 
-          {/* Error (non-permission) */}
-          {error && micPermission !== 'denied' && (
+          {/* In-session error (connection issues etc.) */}
+          {isSessionActive && error && (
             <div style={{ fontSize: 12, color: '#EF4444', textAlign: 'center', maxWidth: 280 }}>
               {error}
             </div>
