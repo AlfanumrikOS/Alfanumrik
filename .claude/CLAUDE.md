@@ -264,6 +264,52 @@ The super admin panel (ops-owned) exposes:
 - Performance optimizations within existing architecture
 - Content quality fixes (fixing a wrong answer, improving an explanation)
 
+## Default Autonomous Operating Loop
+
+This is the standard execution cycle. It runs automatically for every `/run` command and should be followed by the orchestrator for any direct request.
+
+```
+┌─ UNDERSTAND ──────────────────────────────────────────┐
+│ Read the request. Identify affected files, domains,   │
+│ product invariants, and risk level.                    │
+├─ CLASSIFY ────────────────────────────────────────────┤
+│ Type: feature | bugfix | audit | architecture |       │
+│       release | scaling | ai-change | reporting       │
+│ Risk: low (auto) | medium (proceed with care) |       │
+│       high (ask user first)                           │
+├─ DELEGATE ────────────────────────────────────────────┤
+│ Background: research, scans, audits (read-only)       │
+│ Foreground: implementation, tests, reviews (write)    │
+│ Parallel: independent agents on different files       │
+├─ GATE ────────────────────────────────────────────────┤
+│ Hooks enforce: ownership, bash safety, content rules  │
+│ Testing verifies: tests pass, catalog gaps reported   │
+│ Quality verifies: type-check, lint, build, review     │
+│ Orchestrator: review chain completeness (P14)         │
+├─ APPROVE (only when required) ────────────────────────┤
+│ Stop for: destructive ops, deploys, invariant changes,│
+│           pricing, AI model, CBSE subjects, DROP ops  │
+│ Auto for: bug fixes, tests, refactors, docs, flags   │
+├─ EXECUTE ─────────────────────────────────────────────┤
+│ Commit with descriptive message. Push to branch.      │
+├─ REPORT ──────────────────────────────────────────────┤
+│ What was done. What passed. What needs attention.     │
+│ Catalog gaps. Risk items. Ready-to-merge status.      │
+└───────────────────────────────────────────────────────┘
+```
+
+### Compact Report Format
+Every task ends with this output. Keep it to this structure — no extra prose.
+```
+## Done: [one sentence]
+Agents: [list who ran]
+Files: [n] changed | Tests: [pass]/[total] | Build: PASS/FAIL
+Catalog: [n]/35 regressions exist | Gaps: [areas]
+Chains: [n] complete, [n] pending
+Approval: not needed | needed for [reason]
+Commit: [hash] on [branch] | ready to merge: YES/NO
+```
+
 ## Build Commands
 ```
 npm run dev          # Local dev server
