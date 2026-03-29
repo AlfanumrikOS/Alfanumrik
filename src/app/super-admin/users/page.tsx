@@ -157,6 +157,7 @@ function UsersContent() {
           <p style={{ fontSize: 13, color: colors.text3, margin: 0 }}>Manage users, roles, and test accounts</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={downloadCSV} style={S.secondaryBtn}>Export CSV</button>
           <button onClick={() => setShowTestForm(!showTestForm)} style={S.primaryBtn}>
             {showTestForm ? 'Cancel' : '+ Test Account'}
           </button>

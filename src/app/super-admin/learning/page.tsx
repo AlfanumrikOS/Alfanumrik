@@ -12,6 +12,7 @@ interface AnalyticsData {
   content_stats: { chapters: number; topics: number; questions: number };
   top_students: { id: string; name: string; email: string; grade: string; xp_total: number; streak_days: number }[];
   retention: { period: string; count: number }[];
+  content_coverage?: { grade: string; subject: string; count: number }[];
 }
 
 interface SystemStats {
@@ -197,6 +198,139 @@ function LearningContent() {
           </div>
         </div>
       )}
+
+      {/* ═══ LEARNING OUTCOMES ═══ */}
+      {analytics && stats && (
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <h2 style={S.h2}>Learning Outcomes &amp; Health</h2>
+            <button
+              onClick={() => {
+                // Export top students as CSV
+                if (!analytics?.top_students?.length) return;
+                const rows = analytics.top_students.map((s, i) => `${i + 1},${s.name},${s.grade},${s.xp_total},${s.streak_days}`);
+                const csv = 'Rank,Name,Grade,XP,Streak\n' + rows.join('\n');
+                const blob = new Blob([csv], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = 'alfanumrik-top-students.csv'; a.click();
+                URL.revokeObjectURL(url);
+              }}
+              style={{ ...S.secondaryBtn, fontSize: 11 }}
+            >
+              📥 Export CSV
+            </button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+            {(() => {
+              const totalStudents = stats.totals?.students || 0;
+              const totalQuizzesAll = stats.totals?.quiz_sessions || 0;
+              const avgQuizzesPerStudent = totalStudents > 0 ? (totalQuizzesAll / totalStudents).toFixed(1) : '0';
+              const topStudents = analytics.top_students || [];
+              const avgXpTop = topStudents.length > 0 ? Math.round(topStudents.reduce((s, t) => s + t.xp_total, 0) / topStudents.length) : 0;
+              const avgStreakTop = topStudents.length > 0 ? Math.round(topStudents.reduce((s, t) => s + t.streak_days, 0) / topStudents.length) : 0;
+              const highXpCount = topStudents.filter(s => s.xp_total > 10000).length;
+              const consistentCount = topStudents.filter(s => s.streak_days > 7).length;
+
+              return [
+                { label: 'Avg Quizzes/Student', value: avgQuizzesPerStudent, color: Number(avgQuizzesPerStudent) > 5 ? colors.success : colors.warning, detail: `${totalQuizzesAll} total across ${totalStudents} students` },
+                { label: 'Avg XP (Top 10)', value: avgXpTop.toLocaleString(), color: colors.accent, detail: `${highXpCount} flagged for high XP review` },
+                { label: 'Avg Streak (Top 10)', value: `${avgStreakTop}d`, color: avgStreakTop > 7 ? colors.success : colors.warning, detail: `${consistentCount} students with 7+ day streaks` },
+                { label: 'Content Coverage', value: `${analytics.content_stats.questions}`, color: analytics.content_stats.questions > 500 ? colors.success : colors.warning, detail: `across ${analytics.content_stats.topics} topics, ${analytics.content_stats.chapters} chapters` },
+              ].map(item => (
+                <div key={item.label} style={{ ...S.card, borderLeft: `3px solid ${item.color}`, padding: '14px 16px' }}>
+                  <div style={{ fontSize: 11, color: colors.text3, marginBottom: 2 }}>{item.label}</div>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: item.color }}>{item.value}</div>
+                  <div style={{ fontSize: 10, color: colors.text3, marginTop: 4 }}>{item.detail}</div>
+                </div>
+              ));
+            })()}
+          </div>
+
+          {/* Subject popularity with quiz count — actionable bar chart */}
+          {analytics.popular_subjects.length > 0 && (
+            <div style={{ marginTop: 16, ...S.card }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: colors.text1, marginBottom: 8 }}>Subject Activity Distribution</div>
+              <div style={{ display: 'grid', gap: 4 }}>
+                {analytics.popular_subjects.slice(0, 8).map(s => {
+                  const maxC = analytics.popular_subjects[0]?.count || 1;
+                  const pct = Math.round((s.count / maxC) * 100);
+                  const isLow = pct < 20;
+                  return (
+                    <div key={s.subject} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 12, color: colors.text2, width: 100, textTransform: 'capitalize', flexShrink: 0 }}>{s.subject}</span>
+                      <div style={{ flex: 1, height: 18, background: colors.surface, borderRadius: 4, overflow: 'hidden', position: 'relative' }}>
+                        <div style={{ width: `${pct}%`, height: '100%', background: isLow ? colors.warning : colors.accent, borderRadius: 4, opacity: 0.7 }} />
+                        <span style={{ position: 'absolute', right: 6, top: 1, fontSize: 10, fontWeight: 600, color: colors.text1 }}>{s.count}</span>
+                      </div>
+                      {isLow && <StatusBadge label="Low" variant="warning" />}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Content Coverage Heatmap */}
+      {analytics?.content_coverage && analytics.content_coverage.length > 0 && (() => {
+        const grades = ['6', '7', '8', '9', '10', '11', '12'];
+        const subjects = Array.from(new Set(analytics.content_coverage.map(c => c.subject))).sort();
+        const lookup = new Map<string, number>();
+        for (const c of analytics.content_coverage) {
+          lookup.set(`${c.grade}::${c.subject}`, c.count);
+        }
+        const getCount = (grade: string, subject: string) => lookup.get(`${grade}::${subject}`) ?? 0;
+        const getCellBg = (count: number) => {
+          if (count >= 50) return 'rgba(34,197,94,0.15)';
+          if (count >= 20) return 'rgba(245,158,11,0.15)';
+          if (count > 0) return 'rgba(239,68,68,0.15)';
+          return '#f1f5f9';
+        };
+        const gapCount = grades.reduce((acc, g) => acc + subjects.filter(s => getCount(g, s) < 20).length, 0);
+
+        return (
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <h2 style={S.h2}>Content Coverage by Grade &times; Subject</h2>
+              {gapCount > 5 && <StatusBadge label={`${gapCount} Gaps`} variant="warning" />}
+              {gapCount > 0 && gapCount <= 5 && <StatusBadge label={`${gapCount} Gaps`} variant="info" />}
+              {gapCount === 0 && <StatusBadge label="Full Coverage" variant="success" />}
+            </div>
+            <div style={{ ...S.card, overflowX: 'auto' }}>
+              <table style={{ ...S.table, width: '100%' }}>
+                <thead>
+                  <tr>
+                    <th style={S.th}>Grade</th>
+                    {subjects.map(s => (
+                      <th key={s} style={{ ...S.th, textTransform: 'capitalize' as const }}>{s}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {grades.map(g => (
+                    <tr key={g}>
+                      <td style={{ ...S.td, fontWeight: 700 }}>{g}</td>
+                      {subjects.map(s => {
+                        const count = getCount(g, s);
+                        return (
+                          <td key={s} style={{ ...S.td, background: getCellBg(count), textAlign: 'center' }}>
+                            <span style={{ fontWeight: 700, fontSize: 13 }}>{count}</span>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div style={{ marginTop: 10, fontSize: 11, color: colors.text3 }}>
+                {'\u{1F7E2}'} {'\u2265'}50 questions {'  '}{'\u{1F7E1}'} 20-49 {'  '}{'\u{1F534}'} 1-19 {'  '}{'\u2B1C'} No questions
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Content Coverage Signals */}
       {analytics && (
