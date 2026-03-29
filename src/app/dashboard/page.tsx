@@ -324,8 +324,8 @@ export default function Dashboard() {
         {/* Comeback Hook — contextual pull-back trigger */}
         <ComebackHook
           isHi={isHi}
-          lastTopic={nextTopics[0] ? { title: nextTopics[0].title, subject: nextTopics[0].subject || '', progress: Math.round((nextTopics[0].difficulty_level || 0) * 20) } : null}
-          almostMastered={profiles[0] ? { title: profiles[0].subject || 'Topic', mastery: (profiles[0].overall_mastery ?? 0) * 100 } : null}
+          lastTopic={nextTopics[0] ? { title: nextTopics[0].title, subject: nextTopics[0].subject_id || '', progress: Math.round((nextTopics[0].difficulty_level || 0) * 20) } : null}
+          almostMastered={profiles[0] ? { title: profiles[0].subject || 'Topic', mastery: profiles[0].total_questions_asked > 0 ? Math.round((profiles[0].total_questions_answered_correctly / profiles[0].total_questions_asked) * 100) : 0 } : null}
           dueReviews={dueCount}
           streak={streak}
           quizzesTaken={snapshot?.quizzes_taken ?? 0}
