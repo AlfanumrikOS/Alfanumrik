@@ -138,6 +138,54 @@ function masteryToDifficulty(mastery: number): number {
   return 3
 }
 
+/**
+ * Map a mastery_level to a minimum Bloom's taxonomy level.
+ * Enforces scaffolded progression: students must demonstrate
+ * lower-level mastery before being tested at higher levels.
+ *
+ * Bloom levels in order: remember, understand, apply, analyze, evaluate, create
+ */
+const BLOOM_LEVELS_ORDERED = ['remember', 'understand', 'apply', 'analyze', 'evaluate', 'create']
+
+function masteryToMinBloomLevel(mastery: number): string {
+  // Low mastery → test recall and understanding first
+  if (mastery < 0.3) return 'remember'
+  // Building → test application
+  if (mastery < 0.5) return 'understand'
+  // Solid → test analysis and application
+  if (mastery < 0.7) return 'apply'
+  // Strong → test higher-order thinking
+  if (mastery < 0.85) return 'analyze'
+  // Near mastery → evaluate and create
+  return 'evaluate'
+}
+
+function getBloomLevelsAtOrAbove(minLevel: string): string[] {
+  const idx = BLOOM_LEVELS_ORDERED.indexOf(minLevel)
+  if (idx < 0) return BLOOM_LEVELS_ORDERED
+  return BLOOM_LEVELS_ORDERED.slice(idx)
+}
+
+/**
+ * Prevent adjacent questions on the same topic.
+ * Simple greedy reordering: if next question is same topic, swap with a later one.
+ */
+function deduplicateAdjacentTopics(questions: QuestionRow[]): QuestionRow[] {
+  const result = [...questions]
+  for (let i = 1; i < result.length; i++) {
+    if (result[i].topic_id && result[i].topic_id === result[i - 1].topic_id) {
+      // Find a question further down with a different topic
+      for (let j = i + 1; j < result.length; j++) {
+        if (result[j].topic_id !== result[i - 1].topic_id) {
+          ;[result[i], result[j]] = [result[j], result[i]]
+          break
+        }
+      }
+    }
+  }
+  return result
+}
+
 // ─── Fetch subject id ─────────────────────────────────────────────────────────
 
 async function resolveSubjectId(
@@ -215,16 +263,33 @@ async function selectAdaptiveQuestions(
     if (questions.length >= count) break
 
     const targetDifficulty = masteryToDifficulty(topic.mastery_level)
+    const minBloom = masteryToMinBloomLevel(topic.mastery_level)
+    const allowedBlooms = getBloomLevelsAtOrAbove(minBloom)
     const need = Math.min(slotsPerTopic, count - questions.length)
 
-    const { data: qs } = await supabase
+    // First try: difficulty + bloom-level targeted
+    let { data: qs } = await supabase
       .from('question_bank')
       .select('*')
       .eq('topic_id', topic.topic_id)
       .eq('difficulty', targetDifficulty)
+      .in('bloom_level', allowedBlooms)
       .eq('is_active', true)
       .not('id', 'in', `(${usedIds.size > 0 ? [...usedIds].join(',') : '00000000-0000-0000-0000-000000000000'})`)
-      .limit(need * 2) // fetch extras so we can shuffle and pick
+      .limit(need * 2)
+
+    // Fallback: if not enough bloom-filtered questions, relax bloom constraint
+    if (!qs || qs.length < need) {
+      const fallback = await supabase
+        .from('question_bank')
+        .select('*')
+        .eq('topic_id', topic.topic_id)
+        .eq('difficulty', targetDifficulty)
+        .eq('is_active', true)
+        .not('id', 'in', `(${usedIds.size > 0 ? [...usedIds].join(',') : '00000000-0000-0000-0000-000000000000'})`)
+        .limit(need * 2)
+      qs = fallback.data ?? qs ?? []
+    }
 
     for (const q of shuffle((qs ?? []) as QuestionRow[]).slice(0, need)) {
       if (!usedIds.has(q.id)) {
@@ -442,16 +507,26 @@ Deno.serve(async (req) => {
       questions = [...questions, ...randomQs]
     }
 
-    // ── Final shuffle so adaptive + random are interleaved ──────────────────
+    // ── Final shuffle + interleave so adaptive + random are mixed ────────────
+    // Also prevent adjacent questions on the same topic for better retention
     shuffle(questions)
+    const interleaved = deduplicateAdjacentTopics(questions)
+
+    // Compute Bloom's taxonomy distribution for the quiz
+    const bloomDistribution: Record<string, number> = {}
+    for (const q of interleaved) {
+      const level = q.bloom_level || 'unknown'
+      bloomDistribution[level] = (bloomDistribution[level] || 0) + 1
+    }
 
     return new Response(
       JSON.stringify({
-        questions,
+        questions: interleaved,
         meta: {
           strategy,
           weak_topics_targeted: weakTopicsTargeted,
-          total_returned: questions.length,
+          total_returned: interleaved.length,
+          bloom_distribution: bloomDistribution,
         },
       }),
       {

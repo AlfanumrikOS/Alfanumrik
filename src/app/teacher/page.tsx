@@ -102,6 +102,75 @@ function AlertsTab({ alerts, onResolve }: { alerts: RiskAlert[]; onResolve: (id:
   );
 }
 
+function InterventionsTab({ alerts, classId, dash }: { alerts: RiskAlert[]; classId: string; dash: any }) {
+  const criticalCount = alerts.filter(a => a.severity === 'critical' || a.severity === 'high').length;
+  const avgMastery = dash?.classes?.[0]?.avg_mastery ?? 0;
+  const studentCount = dash?.stats?.total_students ?? 0;
+  const weakStudents = alerts.length;
+
+  // Generate actionable suggestions based on class state
+  const suggestions: { icon: string; title: string; desc: string; action: string; color: string }[] = [];
+
+  if (criticalCount > 0) {
+    suggestions.push({
+      icon: '🚨',
+      title: `${criticalCount} students need urgent help`,
+      desc: 'These students have critical learning gaps. Consider one-on-one revision or a remedial quiz.',
+      action: 'View at-risk students',
+      color: '#DC2626',
+    });
+  }
+
+  if (avgMastery < 50 && studentCount > 0) {
+    suggestions.push({
+      icon: '📊',
+      title: 'Class mastery below 50%',
+      desc: `Average mastery is ${avgMastery}%. Consider re-teaching the weakest chapters before moving forward.`,
+      action: 'View mastery heatmap',
+      color: '#D97706',
+    });
+  }
+
+  if (weakStudents > 3) {
+    suggestions.push({
+      icon: '📝',
+      title: `${weakStudents} students struggling — assign revision quiz`,
+      desc: 'A targeted revision quiz on weak topics would help these students catch up with the class.',
+      action: 'Create quiz for weak topics',
+      color: '#6366F1',
+    });
+  }
+
+  if (suggestions.length === 0) {
+    suggestions.push({
+      icon: '✅',
+      title: 'Class is on track',
+      desc: 'No urgent interventions needed. Continue with the current teaching plan.',
+      action: '',
+      color: '#059669',
+    });
+  }
+
+  return (
+    <div className="td-card">
+      <div className="td-card-head"><h3>Intervention suggestions</h3><span className="td-badge" style={{ backgroundColor: '#6366F1' }}>AI-powered</span></div>
+      <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {suggestions.map((s, i) => (
+          <div key={i} style={{ backgroundColor: '#1E293B', borderRadius: 8, padding: 14, borderLeft: `3px solid ${s.color}` }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+              <span style={{ fontSize: 20, flexShrink: 0 }}>{s.icon}</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, color: '#F1F5F9', fontSize: 14, marginBottom: 4 }}>{s.title}</div>
+                <p style={{ color: '#94A3B8', fontSize: 13, margin: 0, lineHeight: 1.4 }}>{s.desc}</p>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function PollTab({ classId, teacherId }: { classId: string; teacherId: string }) {
   const [q, setQ] = useState(''); const [opts, setOpts] = useState(['','','','']); const [correctIdx, setCorrectIdx] = useState(0);
   const [poll, setPoll] = useState<any>(null); const [results, setResults] = useState<any>(null); const [loading, setLoading] = useState(false);
@@ -178,7 +247,7 @@ export default function TeacherPage() {
   if (loading) return (<div style={pageStyle}><div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}><div style={{ width: 40, height: 40, border: '3px solid #1E293B', borderTopColor: '#6366F1', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />Loading teacher dashboard...</div><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div>);
 
   const cls = dash?.classes?.[0];
-  const tabs = [{ id: 'heatmap', label: 'Mastery heatmap' }, { id: 'alerts', label: `Alerts${alerts.length ? ` (${alerts.length})` : ''}` }, { id: 'poll', label: 'Classroom response' }];
+  const tabs = [{ id: 'heatmap', label: 'Mastery heatmap' }, { id: 'interventions', label: 'Interventions' }, { id: 'alerts', label: `Alerts${alerts.length ? ` (${alerts.length})` : ''}` }, { id: 'poll', label: 'Classroom response' }];
 
   return (
     <div style={pageStyle}>
@@ -202,6 +271,7 @@ export default function TeacherPage() {
         {tabs.map(t => (<button key={t.id} onClick={() => setTab(t.id)} style={{ padding: '8px 16px', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer', fontWeight: tab === t.id ? 600 : 500, backgroundColor: tab === t.id ? '#6366F1' : 'transparent', color: tab === t.id ? '#fff' : '#64748B' }}>{t.label}</button>))}
       </nav>
       {tab === 'heatmap' && heatmap && <HeatmapTab data={heatmap} />}
+      {tab === 'interventions' && <InterventionsTab alerts={alerts} classId={classId} dash={dash} />}
       {tab === 'alerts' && <AlertsTab alerts={alerts} onResolve={resolveAlert} />}
       {tab === 'poll' && <PollTab classId={classId} teacherId={teacherId} />}
       <BottomNav />

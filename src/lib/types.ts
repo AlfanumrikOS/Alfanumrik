@@ -248,7 +248,7 @@ export interface RiskAlert {
   id: string;
   student_id: string;
   student_name: string;
-  severity: 'high' | 'medium' | 'low';
+  severity: 'critical' | 'high' | 'medium' | 'low';
   title: string;
   description: string;
   recommended_action?: string;

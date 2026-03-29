@@ -15,6 +15,7 @@ import QuickActions from '@/components/dashboard/QuickActions';
 import DailyChallenge from '@/components/dashboard/DailyChallenge';
 import FoxyBannerCard from '@/components/dashboard/FoxyBannerCard';
 import ProgressSnapshot from '@/components/dashboard/ProgressSnapshot';
+import TodaysPlan from '@/components/dashboard/TodaysPlan';
 import OnboardingFlow from '@/components/onboarding/OnboardingFlow';
 
 export default function Dashboard() {
@@ -143,7 +144,17 @@ export default function Dashboard() {
             subjectMeta={meta ? { icon: meta.icon, name: meta.name, color: meta.color } : null}
           />
 
-          {/* ═══ 2. PROGRESS SNAPSHOT — XP, level, streak, mastered ═══ */}
+          {/* ═══ 2. TODAY'S PLAN — actionable daily learning path ═══ */}
+          <TodaysPlan
+            isHi={isHi}
+            dueCount={dueCount}
+            knowledgeGaps={knowledgeGaps}
+            nextTopics={nextTopics}
+            preferredSubject={student.preferred_subject || 'math'}
+            streak={streak}
+          />
+
+          {/* ═══ 3. PROGRESS SNAPSHOT — XP, level, streak, mastered ═══ */}
           <ProgressSnapshot
             totalXp={totalXp}
             streak={streak}
