@@ -1,134 +1,106 @@
 # Skill: CBSE Learning Rules
 
-Use this skill when working with curriculum content, question banks, subject configurations, grade-level logic, or any feature that must align with CBSE/NCERT standards.
+Concrete rules for curriculum content, question banks, subject codes, grade-level logic, and Bloom's taxonomy. Reference when adding questions, changing subject lists, or modifying grade-dependent behavior.
 
-## Grade Structure
+**Owning agent**: assessment.
 
-### Junior (Grades 6-8)
-Subjects: `math`, `science`, `english`, `hindi`, `social_studies`
-- Single `science` subject (Physics + Chemistry + Biology combined)
-- Single `social_studies` subject (History + Geography + Civics + Economics combined)
-- NCERT textbook is the primary source
+## Grade → Subject Mapping
 
-### Secondary (Grades 9-10)
-Subjects: `math`, `science`, `english`, `hindi`, `social_studies`
-- Science still combined but with distinct Physics/Chemistry/Biology chapters
-- Board exam at Grade 10 (CBSE Class X)
-- Board paper questions tagged: `board_year`, `paper_section`, `set_code`
+### Grades 6-8 (Junior)
+| Code | Subject | Category |
+|---|---|---|
+| `math` | Mathematics | stem_calc |
+| `science` | Science (Physics+Chemistry+Biology combined) | stem_concept |
+| `english` | English | language |
+| `hindi` | Hindi | language |
+| `social_studies` | Social Studies (History+Geography+Civics+Economics combined) | humanities |
 
-### Senior Secondary (Grades 11-12)
-Stream-based subject selection:
-- **Science**: `physics`, `chemistry`, `math`/`biology`, `english`
-- **Commerce**: `accountancy`, `business_studies`, `economics`, `math` (optional), `english`
-- **Humanities**: `political_science`, `history_sr`, `geography`, `economics` (optional), `english`
-- Additional: `computer_science`, `coding`
-- Board exam at Grade 12 (CBSE Class XII)
+### Grades 9-10 (Secondary)
+Same codes as 6-8. Science has distinct Physics/Chemistry/Biology chapters but uses single `science` code. Board exams at Grade 10 (CBSE Class X).
 
-## Subject Codes (Source of Truth: `src/lib/exam-engine.ts`)
-```typescript
-const SUBJECT_CATEGORY = {
-  math: 'stem_calc',
-  physics: 'stem_calc',
-  chemistry: 'stem_concept',
-  biology: 'stem_concept',
-  science: 'stem_concept',
-  computer_science: 'stem_calc',
-  coding: 'stem_calc',
-  english: 'language',
-  hindi: 'language',
-  social_studies: 'humanities',
-  economics: 'stem_concept',
-  accountancy: 'stem_calc',
-  business_studies: 'humanities',
-  political_science: 'humanities',
-  history_sr: 'humanities',
-  geography: 'humanities',
-};
-```
+### Grades 11-12 (Senior Secondary)
+| Code | Subject | Category | Stream |
+|---|---|---|---|
+| `physics` | Physics | stem_calc | Science |
+| `chemistry` | Chemistry | stem_concept | Science |
+| `biology` | Biology | stem_concept | Science |
+| `math` | Mathematics | stem_calc | Science/Commerce |
+| `english` | English | language | All |
+| `economics` | Economics | stem_concept | Commerce/Humanities |
+| `accountancy` | Accountancy | stem_calc | Commerce |
+| `business_studies` | Business Studies | humanities | Commerce |
+| `political_science` | Political Science | humanities | Humanities |
+| `history_sr` | History | humanities | Humanities |
+| `geography` | Geography | humanities | Humanities |
+| `computer_science` | Computer Science | stem_calc | Any |
+| `coding` | Coding | stem_calc | Any |
 
-## Grade Format
-- Always stored and passed as **strings**: `"6"`, `"7"`, ..., `"12"`
-- Never use integers in database columns, RPCs, or API parameters
-- Grade display: `"Class 6"` (English) / `"कक्षा 6"` (Hindi)
-- Database column: `grade VARCHAR` or `grade TEXT`, never `INTEGER`
+Board exams at Grade 12 (CBSE Class XII).
 
-## Bloom's Taxonomy Integration
-Questions are tagged with Bloom's levels. Distribution targets by exam type:
+## Grade Format Checklist
+- [ ] Stored as string: `"6"`, `"7"`, ..., `"12"`
+- [ ] Never integer in DB columns, RPCs, API params, or TypeScript types
+- [ ] Display: `"Class 6"` (en) / `"कक्षा 6"` (hi)
+- [ ] DB column type: `TEXT` or `VARCHAR`, never `INTEGER`
+- [ ] Validation: reject values outside `"6"`-`"12"` range
 
-| Exam Type | Remember | Understand | Apply | Analyze | Evaluate | Create |
+## Bloom's Taxonomy Levels
+| Level | Code | Meaning | Typical Question Stem |
+|---|---|---|---|
+| 1 | `remember` | Recall facts | "What is...", "Name the...", "Define..." |
+| 2 | `understand` | Explain concepts | "Explain why...", "Describe...", "What happens when..." |
+| 3 | `apply` | Use in new situations | "Calculate...", "Solve...", "Apply the formula..." |
+| 4 | `analyze` | Break down, compare | "Compare and contrast...", "What is the relationship..." |
+| 5 | `evaluate` | Judge, justify | "Which approach is better and why...", "Evaluate..." |
+| 6 | `create` | Design, construct | "Design an experiment...", "Propose a solution..." |
+
+### Target Distribution by Exam Type
+| Exam Type | remember | understand | apply | analyze | evaluate | create |
 |---|---|---|---|---|---|---|
-| Quick Check | 50% | 40% | 10% | — | — | — |
-| Standard Test | 20% | 30% | 30% | 15% | 5% | — |
+| Quick Check | 50% | 40% | 10% | 0% | 0% | 0% |
+| Standard Test | 20% | 30% | 30% | 15% | 5% | 0% |
 | Challenge | 10% | 15% | 25% | 30% | 15% | 5% |
 | Full Exam | 15% | 20% | 25% | 20% | 15% | 5% |
 
-These are targets, not hard requirements. The question bank may not have enough questions at every level for every topic.
+These are targets. If the question bank lacks coverage at a level, serve what's available.
 
-## Question Bank Rules
-
-### Required Fields
-```sql
-question_text    TEXT NOT NULL,        -- The question stem
-options          JSONB NOT NULL,       -- ["option A", "option B", "option C", "option D"]
-correct_answer_index INTEGER NOT NULL, -- 0, 1, 2, or 3
-explanation      TEXT NOT NULL,        -- Why the correct answer is correct
-difficulty       TEXT NOT NULL,        -- 'easy', 'medium', 'hard'
-bloom_level      TEXT NOT NULL,        -- 'remember' through 'create'
-grade            TEXT NOT NULL,        -- '6' through '12'
-subject          TEXT NOT NULL,        -- valid subject code
-```
+## Question Bank Entry Checklist
+Before inserting any question:
+- [ ] `question_text`: non-empty, no `{{`, `[BLANK]`, `TODO`, `FIXME`
+- [ ] `options`: JSON array, exactly 4 elements, all non-empty strings, all distinct
+- [ ] `correct_answer_index`: integer, 0 ≤ value ≤ 3
+- [ ] `explanation`: non-empty, ≥ 20 characters, educationally useful (not just "Option B is correct")
+- [ ] `difficulty`: one of `easy`, `medium`, `hard`
+- [ ] `bloom_level`: one of `remember`, `understand`, `apply`, `analyze`, `evaluate`, `create`
+- [ ] `grade`: string, `"6"` through `"12"`
+- [ ] `subject`: valid code from the tables above, appropriate for the grade
 
 ### Optional Fields
-```sql
-chapter_number   INTEGER,             -- NCERT chapter number
-topic_id         UUID,                -- links to curriculum_topics
-board_year       INTEGER,             -- if from board paper (2020, 2021, etc.)
-paper_section    TEXT,                 -- 'A', 'B', 'C' (board paper section)
-set_code         TEXT,                 -- board paper set identifier
-source           TEXT,                 -- 'ncert', 'board_paper', 'generated', 'curated'
-```
+- [ ] `chapter_number`: matches NCERT textbook chapter number for that grade+subject
+- [ ] `topic_id`: UUID referencing `curriculum_topics`
+- [ ] `board_year`: integer year if from board paper (e.g., 2024)
+- [ ] `paper_section`: `"A"`, `"B"`, or `"C"` if from board paper
+- [ ] `set_code`: board paper set identifier
+- [ ] `source`: `"ncert"`, `"board_paper"`, `"generated"`, or `"curated"`
 
-### Quality Validation
-Before inserting questions:
-1. `question_text` must not contain template markers (`{{`, `[BLANK]`, `TODO`, `FIXME`)
-2. All 4 options must be distinct (no duplicate options)
-3. Options must be non-empty strings
-4. `explanation` must be at least 20 characters
-5. `bloom_level` must be one of: `remember`, `understand`, `apply`, `analyze`, `evaluate`, `create`
-6. `difficulty` must be one of: `easy`, `medium`, `hard`
-7. `correct_answer_index` must be 0, 1, 2, or 3
+### Difficulty Distribution Target
+- 30% easy
+- 50% medium
+- 20% hard
 
-## Curriculum Topic Structure
-```sql
-curriculum_topics (
-  id UUID PRIMARY KEY,
-  subject_id UUID REFERENCES subjects(id),
-  grade TEXT NOT NULL,
-  title TEXT NOT NULL,           -- "Knowing Our Numbers" (NCERT chapter title)
-  description TEXT,
-  chapter_number INTEGER,       -- Matches NCERT textbook
-  display_order INTEGER
-)
-```
+## Exam Timing Reference
+| Category | Subjects | Easy | Medium | Hard |
+|---|---|---|---|---|
+| stem_calc | math, physics, CS, accountancy, coding | 90s | 150s | 210s |
+| stem_concept | chemistry, biology, science, economics | 75s | 120s | 180s |
+| language | english, hindi | 60s | 90s | 150s |
+| humanities | social_studies, business, polisci, history_sr, geography | 60s | 105s | 165s |
 
-## NEP 2020 Compliance
-The platform tracks competencies aligned with NEP 2020:
-- Foundational Literacy and Numeracy (grades 6-8 emphasis)
-- Competency-based learning progression
-- Formative assessment emphasis (quizzes are formative, not just summative)
-- Multi-disciplinary connections (tracked in `concept_mastery`)
+Grade multiplier: 6→1.3, 7→1.25, 8→1.2, 9→1.1, 10→1.05, 11-12→1.0. Then +10% buffer, round up to 5 minutes.
 
 ## Content Gap Detection
-The script `scripts/check-content-gaps.ts` audits question bank coverage:
-- Minimum questions per subject per grade
+Run `npx tsx scripts/check-content-gaps.ts` to audit:
+- Missing subjects/grades in question bank
+- Chapters with fewer than minimum questions
 - RAG content chunk coverage
-- Identifies missing chapters and topics
-- Run with: `npx tsx scripts/check-content-gaps.ts`
-
-## Rules for Adding CBSE Content
-1. Verify chapter/topic exists in `curriculum_topics` for the grade
-2. Tag questions with correct `chapter_number` matching NCERT textbook
-3. Distribute difficulty: roughly 30% easy, 50% medium, 20% hard
-4. Include board paper questions where available (tag with year/section)
-5. Write explanations that teach, not just state the answer
-6. For math/science: include the solution approach, not just "Option B is correct"
+Requires env vars: `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.

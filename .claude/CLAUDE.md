@@ -1,4 +1,4 @@
-# Alfanumrik Learning OS — Claude Code Project Rules
+# Alfanumrik Learning OS — Non-Negotiable Product Rules
 
 ## What This Is
 Indian K-12 EdTech platform (CBSE grades 6-12). Next.js 14 + Supabase + Razorpay. 219 source files, 160+ SQL migrations, 12 Supabase Edge Functions, Flutter mobile app.
@@ -35,53 +35,65 @@ Indian K-12 EdTech platform (CBSE grades 6-12). Next.js 14 + Supabase + Razorpay
 | Migrations | `supabase/migrations/` |
 | CI/CD | `.github/workflows/ci.yml`, `deploy-production.yml`, `deploy-staging.yml` |
 
-## Non-Negotiable Rules
+## Product Invariants
+These rules cannot be overridden by any agent. Violating any of them is a blocking defect.
 
-### 1. Quiz Integrity
-- Quiz scoring MUST use the `atomic_quiz_profile_update()` RPC. Never update XP/profiles with separate queries.
-- XP values MUST come from `src/lib/xp-rules.ts` constants. Never hardcode XP numbers elsewhere.
-- Minimum 3 seconds per question enforced. Anti-cheat checks (pattern detection, response count validation) must remain.
-- Exam timing uses `calculateExamConfig()` from `src/lib/exam-engine.ts`. Do not invent timing logic.
+### P1: Score Accuracy
+```
+score_percent = Math.round((correct_answers / total_questions) * 100)
+```
+This formula is the single source of truth. It must produce identical results in `submitQuizResults()`, `QuizResults.tsx`, and the `atomic_quiz_profile_update()` RPC. No agent may change it without a product decision from the user.
 
-### 2. CBSE Alignment
-- Grades are strings: `"6"` through `"12"`. Never use integers in the database or RPCs.
-- Subjects use snake_case codes: `math`, `science`, `physics`, `chemistry`, `biology`, `english`, `hindi`, `social_studies`, `economics`, `accountancy`, `business_studies`, `political_science`, `history_sr`, `geography`, `computer_science`, `coding`.
-- Bloom's taxonomy levels: `remember`, `understand`, `apply`, `analyze`, `evaluate`, `create`. The cognitive engine tracks all six.
-- Question bank entries MUST have: `question_text`, `options` (exactly 4), `correct_answer_index` (0-3), `explanation`, `difficulty`, `bloom_level`.
+### P2: XP Economy
+```
+xp_earned = (correct * XP_RULES.quiz_per_correct)
+          + (score_percent >= 80 ? XP_RULES.quiz_high_score_bonus : 0)
+          + (score_percent === 100 ? XP_RULES.quiz_perfect_bonus : 0)
+```
+All XP constants live in `src/lib/xp-rules.ts`. No XP value may be hardcoded anywhere else. Daily quiz cap: 200 XP. Level threshold: 500 XP.
 
-### 3. Database Safety
-- NEVER bypass RLS in client-side code. Service role client (`supabase-admin.ts`) is server-side only.
-- Every new table MUST have RLS enabled with explicit policies before merge.
-- New migrations MUST be idempotent (use `IF NOT EXISTS`, `CREATE OR REPLACE`).
-- Test migrations against the existing 160+ chain. Do not assume a clean database.
+### P3: Anti-Cheat
+Three checks, enforced both client-side and server-side:
+1. Minimum 3 seconds average per question
+2. Not all answers the same index (if >3 questions)
+3. Response count equals question count
 
-### 4. Security
-- RBAC checks: API routes use `authorizeRequest(request, 'permission.code')` from `src/lib/rbac.ts`.
-- Client-side permission checks use `usePermissions()` hook (UI gating only, not security boundary).
-- Super admin routes require `SUPER_ADMIN_SECRET` via header (`x-admin-secret`), never query params in production.
-- Never expose `SUPABASE_SERVICE_ROLE_KEY` to the client.
+### P4: Atomic Quiz Submission
+Quiz results MUST be written via `atomic_quiz_profile_update()` RPC (single Postgres transaction). Separate INSERT + UPDATE is a fallback only, logged as a warning.
 
-### 5. Code Standards
-- TypeScript strict mode. Zero `any` types in new code.
-- All user-facing text must support Hindi (`en`/`hi`). Check `AuthContext.isHi`.
-- No console.log in production code (console.warn and console.error are OK).
-- API routes return consistent shape: `{ success: boolean, data?: T, error?: string }`.
-- New pages must handle loading, error, and empty states.
+### P5: Grade Format
+Grades are strings: `"6"` through `"12"`. Never integers. In database columns, RPCs, API parameters, and TypeScript types.
 
-### 6. Testing Requirements
-- All quiz/scoring changes require unit tests in `src/__tests__/`.
-- API route changes require corresponding test coverage.
-- Run `npm run type-check && npm test` before committing.
-- E2E smoke tests (`e2e/smoke.spec.ts`) must pass.
+### P6: Question Quality
+Every question served to a student must have: non-empty `question_text` (no `{{` or `[BLANK]`), exactly 4 distinct non-empty `options`, `correct_answer_index` 0-3, non-empty `explanation`, valid `difficulty` and `bloom_level`.
 
-### 7. Performance
-- Bundle size: keep shared JS under 160 kB. Individual pages under 260 kB.
-- SWR for client data fetching. No raw `fetch` in components.
-- Images: AVIF/WebP via Next.js Image, remote patterns for Supabase storage.
-- Target: Indian 4G mobile (optimize for 2-5 Mbps).
+### P7: Bilingual UI
+All user-facing text supports Hindi (`hi`) and English (`en`) via `AuthContext.isHi`. Technical terms (CBSE, XP, Bloom's) are not translated.
+
+### P8: RLS Boundary
+Client-side code NEVER bypasses Row Level Security. `supabase-admin.ts` (service role) is server-only. Every new table has RLS enabled with policies in the same migration.
+
+### P9: RBAC Enforcement
+API routes use `authorizeRequest(request, 'permission.code')` from `src/lib/rbac.ts`. Client-side `usePermissions()` is UI convenience only, not a security boundary.
+
+### P10: Bundle Budget
+Shared JS < 160 kB. Individual pages < 260 kB. Middleware < 120 kB. Target: Indian 4G mobile (2-5 Mbps).
 
 ## Agent System
-This repository uses a multi-agent structure. Agent definitions live in `.claude/agents/`. Skills live in `.claude/skills/`. Agents must follow the review gates and output formats defined in their respective files.
+Agent definitions: `.claude/agents/`. Skills: `.claude/skills/`.
+
+**Authority chain**: orchestrator decomposes → specialist agents implement/review → quality verifies conformance → orchestrator approves handoff.
+
+**Ownership rule**: Each concern has exactly one owning agent. If two agents disagree, the owning agent's decision stands. If ownership is unclear, orchestrator decides.
+
+| Concern | Owner | Reviewer |
+|---|---|---|
+| Score calculation, XP, answer correctness, scorecards, progress mapping | assessment | quality (conformance only) |
+| Database schema, RLS, migrations, RBAC, middleware, deployment | cto | quality (conformance only) |
+| Pages, components, API route implementation, styling, state | fullstack | quality, assessment (if quiz-related) |
+| Test coverage, regression catalog, edge cases | testing | quality (conformance only) |
+| Readability, duplication, naming, architecture conformance | quality | — |
+| Task breakdown, review gates, handoffs, conflict resolution | orchestrator | — |
 
 ## Build Commands
 ```
