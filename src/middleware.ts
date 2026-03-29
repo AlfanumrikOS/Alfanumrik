@@ -328,7 +328,7 @@ function addSecurityHeaders(response: NextResponse, request: NextRequest): NextR
   // Permissions policy — restrict sensitive APIs
   response.headers.set(
     'Permissions-Policy',
-    'camera=(), microphone=(self), geolocation=(), payment=(self)'
+    'camera=(), microphone=(), geolocation=(), payment=(self)'
   );
 
   // HSTS — force HTTPS (1 year, include subdomains)
