@@ -32,6 +32,10 @@ const QuadraticGraph = dynamic(() => import('./QuadraticGraph'), { ssr: false })
 const HookesLaw = dynamic(() => import('./HookesLaw'), { ssr: false });
 const LinearGraph = dynamic(() => import('./LinearGraph'), { ssr: false });
 const ChemicalBalancer = dynamic(() => import('./ChemicalBalancer'), { ssr: false });
+const GasLaws = dynamic(() => import('./GasLaws'), { ssr: false });
+const ProbabilityLab = dynamic(() => import('./ProbabilityLab'), { ssr: false });
+const SnellsLaw = dynamic(() => import('./SnellsLaw'), { ssr: false });
+const IntegrationVisualizer = dynamic(() => import('./IntegrationVisualizer'), { ssr: false });
 
 export const BUILT_IN_SIMULATIONS: BuiltInSimulation[] = [
   {
@@ -243,5 +247,61 @@ export const BUILT_IN_SIMULATIONS: BuiltInSimulation[] = [
     conceptTags: ['Chemical Equations', 'Balancing', 'Conservation of Mass', 'Reactions', 'Stoichiometry'],
     foxyTip: 'Start by balancing the atom that appears in the fewest compounds. Save oxygen for last!',
     component: ChemicalBalancer,
+  },
+  {
+    id: 'builtin-gas-laws',
+    title: 'Gas Laws Lab (PV = nRT)',
+    description: 'Explore Boyle\'s and Charles\'s Laws! Change pressure, volume, and temperature to see gas particles respond in real-time.',
+    subject: 'chemistry',
+    grade: ['11'],
+    thumbnailEmoji: '🧪',
+    difficulty: 2,
+    bloomLevel: 'apply',
+    estimatedTimeMinutes: 10,
+    conceptTags: ['Gas Laws', 'Boyle\'s Law', 'Charles\'s Law', 'PV=nRT', 'Ideal Gas', 'States of Matter'],
+    foxyTip: 'In Boyle\'s mode, halve the volume and watch pressure double! That\'s PV = constant.',
+    component: GasLaws,
+  },
+  {
+    id: 'builtin-probability-lab',
+    title: 'Probability Experiment Lab',
+    description: 'Flip coins, roll dice, and discover the Law of Large Numbers! Watch experimental probability converge to theoretical as you increase trials.',
+    subject: 'math',
+    grade: ['10', '11'],
+    thumbnailEmoji: '🎲',
+    difficulty: 1,
+    bloomLevel: 'apply',
+    estimatedTimeMinutes: 8,
+    conceptTags: ['Probability', 'Random Experiment', 'Law of Large Numbers', 'Theoretical Probability', 'Experimental Probability'],
+    foxyTip: 'Roll 1000 dice and watch each number approach 16.7% — that\'s the Law of Large Numbers!',
+    component: ProbabilityLab,
+  },
+  {
+    id: 'builtin-snells-law',
+    title: 'Snell\'s Law — Refraction of Light',
+    description: 'Bend light through different media! Change the angle and materials to discover Snell\'s Law and total internal reflection.',
+    subject: 'physics',
+    grade: ['10', '12'],
+    thumbnailEmoji: '💎',
+    difficulty: 2,
+    bloomLevel: 'apply',
+    estimatedTimeMinutes: 8,
+    conceptTags: ['Refraction', 'Snell\'s Law', 'Total Internal Reflection', 'Refractive Index', 'Critical Angle', 'Light'],
+    foxyTip: 'Set medium 1 to glass and medium 2 to air, then increase the angle past the critical angle to see total internal reflection!',
+    component: SnellsLaw,
+  },
+  {
+    id: 'builtin-integration',
+    title: 'Integration Visualizer',
+    description: 'See how rectangles approximate the area under a curve! Increase rectangles to watch the Riemann sum converge to the exact integral.',
+    subject: 'math',
+    grade: ['12'],
+    thumbnailEmoji: '∫',
+    difficulty: 3,
+    bloomLevel: 'analyze',
+    estimatedTimeMinutes: 10,
+    conceptTags: ['Integration', 'Definite Integral', 'Riemann Sum', 'Area Under Curve', 'Calculus'],
+    foxyTip: 'Start with 5 rectangles, then slide to 100. Watch the error shrink — that\'s why we use integration!',
+    component: IntegrationVisualizer,
   },
 ];
