@@ -5,6 +5,7 @@ import AdminShell, { useAdmin } from '../_components/AdminShell';
 import DataTable, { Column } from '../_components/DataTable';
 import DetailDrawer from '../_components/DetailDrawer';
 import StatusBadge from '../_components/StatusBadge';
+import StatCard from '../_components/StatCard';
 import { colors, S } from '../_components/admin-styles';
 
 interface InstitutionRecord {
@@ -56,11 +57,38 @@ function InstitutionsContent() {
     )},
   ];
 
+  const activeCount = institutions.filter(i => i.is_active !== false).length;
+  const cbseCount = institutions.filter(i => i.board?.toUpperCase().includes('CBSE')).length;
+  const withSubCount = institutions.filter(i => i.subscription_plan && i.subscription_plan !== 'free').length;
+
+  const exportCSV = () => {
+    const header = 'Name,Board,City,State,Principal,Email,Plan,Active';
+    const rows = institutions.map(i =>
+      `"${i.name || ''}","${i.board || ''}","${i.city || ''}","${i.state || ''}","${i.principal_name || ''}","${i.email || ''}","${i.subscription_plan || ''}","${i.is_active ?? ''}"`
+    );
+    const csv = header + '\n' + rows.join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'alfanumrik-institutions.csv'; a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div>
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={S.h1}>Institutions</h1>
-        <p style={{ fontSize: 13, color: colors.text3, margin: 0 }}>Manage onboarded schools, their admins, and subscription status</p>
+      <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <h1 style={S.h1}>Institutions</h1>
+          <p style={{ fontSize: 13, color: colors.text3, margin: 0 }}>Manage onboarded schools, their admins, and subscription status</p>
+        </div>
+        <button onClick={exportCSV} style={S.secondaryBtn}>Export CSV</button>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
+        <StatCard label="Total Institutions" value={total} icon="🏫" accentColor={colors.accent} />
+        <StatCard label="Active" value={activeCount} icon="✅" accentColor={colors.success} />
+        <StatCard label="CBSE Board" value={cbseCount} icon="📋" accentColor={colors.warning} />
+        <StatCard label="With Subscription" value={withSubCount} icon="💳" accentColor={colors.accent} />
       </div>
 
       <div style={{ fontSize: 12, color: colors.text3, marginBottom: 8 }}>{total} schools found</div>
