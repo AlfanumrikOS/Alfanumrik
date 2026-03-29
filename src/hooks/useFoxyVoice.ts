@@ -413,11 +413,13 @@ export function useFoxyVoice(options: UseFoxyVoiceOptions): UseFoxyVoiceReturn {
       await speak(recap);
 
       // Update learner memory
-      await supabase.rpc('update_learner_memory_after_session', {
-        p_student_id: options.studentId,
-        p_session_summary: summary,
-        p_session_mode: state.mode,
-      }).catch(() => {});
+      try {
+        await supabase.rpc('update_learner_memory_after_session', {
+          p_student_id: options.studentId,
+          p_session_summary: summary,
+          p_session_mode: state.mode,
+        });
+      } catch {}
     }
 
     setStatus('idle');
