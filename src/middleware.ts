@@ -143,11 +143,12 @@ export async function middleware(request: NextRequest) {
   }
 
   // ── Layer 0.6: Protected page routes (require Supabase session) ──
-  const PROTECTED_PREFIXES = ['/parent/children', '/parent/reports', '/parent/profile', '/parent/support'];
+  const PROTECTED_PREFIXES = ['/parent/children', '/parent/reports', '/parent/profile', '/parent/support', '/billing', '/dashboard', '/quiz', '/foxy', '/profile', '/study-plan', '/review', '/progress', '/leaderboard', '/notifications', '/scan', '/exams', '/reports', '/simulations'];
   if (PROTECTED_PREFIXES.some(p => path.startsWith(p))) {
     const hasSession = request.cookies.getAll().some(c => /^sb-.+-auth-token/.test(c.name));
     if (!hasSession) {
-      const loginUrl = new URL('/parent', request.url);
+      const isParentRoute = path.startsWith('/parent');
+      const loginUrl = new URL(isParentRoute ? '/parent' : '/login', request.url);
       return NextResponse.redirect(loginUrl);
     }
   }
