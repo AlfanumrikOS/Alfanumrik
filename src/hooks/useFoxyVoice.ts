@@ -91,31 +91,39 @@ export function useFoxyVoice(options: UseFoxyVoiceOptions): UseFoxyVoiceReturn {
 
   const requestMicPermission = useCallback(async (): Promise<boolean> => {
     try {
-      // Check permission state first
-      if (navigator.permissions) {
-        const result = await navigator.permissions.query({ name: 'microphone' as PermissionName });
-        if (result.state === 'denied') {
-          setMicPermission('denied');
-          setError('Microphone access is blocked. Please allow it in your browser settings (click the lock icon in the address bar).');
-          return false;
-        }
+      // Always try getUserMedia directly — this is the only reliable way
+      // to check mic access. navigator.permissions.query() is unreliable:
+      // Chrome caches 'denied' even after user changes site settings.
+      setStatus('requesting_mic');
+      setError(null);
+
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setMicPermission('denied');
+        setError('Your browser does not support microphone access. Please use Chrome.');
+        setStatus('error');
+        return false;
       }
 
-      // Request actual access — this triggers the browser prompt
-      setStatus('requesting_mic');
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // Got permission — stop the stream immediately (we use Web Speech API, not raw audio)
       stream.getTracks().forEach(t => t.stop());
       setMicPermission('granted');
       setStatus('idle');
       return true;
     } catch (err: any) {
-      setMicPermission('denied');
       setStatus('error');
-      if (err.name === 'NotAllowedError') {
-        setError('Microphone permission denied. Click the lock icon in your address bar → Allow microphone.');
+
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setMicPermission('denied');
+        setError('Microphone permission denied. Click the lock icon in your address bar → Site settings → Microphone → Allow, then try again.');
+      } else if (err.name === 'NotFoundError') {
+        setMicPermission('denied');
+        setError('No microphone found. Please connect a microphone and try again.');
+      } else if (err.name === 'NotReadableError' || err.name === 'AbortError') {
+        setMicPermission('prompt');
+        setError('Microphone is in use by another app. Close other apps using the mic and try again.');
       } else {
-        setError('Could not access microphone. Please check your device settings.');
+        setMicPermission('prompt');
+        setError('Could not access microphone. Please check your device settings and try again.');
       }
       return false;
     }
