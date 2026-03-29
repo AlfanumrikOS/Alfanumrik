@@ -1,3 +1,8 @@
+---
+name: release-gates
+description: Sequential pre-push gates including type-check, lint, test, build, domain review, and secrets scan.
+---
+
 # Skill: Release Gates
 
 Sequential gates that must pass before pushing code. Orchestrator enforces the sequence. Quality agent runs Gates 1-4. Domain agents run Gate 5. Orchestrator runs Gate 6.

@@ -1,3 +1,9 @@
+---
+name: architecture
+description: System layers, data flows, database tables, and new feature checklist for the Alfanumrik codebase.
+user-invocable: false
+---
+
 # Skill: Alfanumrik Architecture Reference
 
 Reference for system structure, data flows, and the checklist for adding new features.

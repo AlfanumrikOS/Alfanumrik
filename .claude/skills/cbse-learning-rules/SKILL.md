@@ -1,3 +1,9 @@
+---
+name: cbse-rules
+description: Grade-subject mappings, Bloom's taxonomy targets, question bank entry checklist, and exam timing reference for CBSE content.
+user-invocable: false
+---
+
 # Skill: CBSE Learning Rules
 
 Concrete rules for curriculum content, question banks, subject codes, grade-level logic, and Bloom's taxonomy. Reference when adding questions, changing subject lists, or modifying grade-dependent behavior.

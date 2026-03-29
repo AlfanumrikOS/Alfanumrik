@@ -1,3 +1,9 @@
+---
+name: quiz-integrity
+description: Invariants and checklists for quiz scoring, XP, anti-cheat, timer, scorecard display, and post-quiz progress updates.
+user-invocable: false
+---
+
 # Skill: Quiz Integrity
 
 Checklist and invariants for the quiz pipeline. Reference this when touching question fetching, answer tracking, score calculation, XP awarding, anti-cheat, scorecard display, or post-quiz progress updates.
