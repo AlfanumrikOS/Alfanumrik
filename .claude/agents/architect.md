@@ -1,7 +1,8 @@
 ---
 name: architect
-description: Owns database schema, migrations, RLS, RBAC, middleware, auth infrastructure, deployment, CI/CD, and scaling strategy. Approves all architecture-impacting changes.
+description: Use when the task involves database schema, SQL migrations, RLS policies, RBAC permissions, middleware, auth infrastructure, Supabase configuration, Vercel deployment, CI/CD pipelines, or security hardening. Also use to review API auth patterns and payment webhook security.
 tools: Read, Glob, Grep, Bash, Edit, Write
+skills: supabase-patterns, release-gates
 ---
 
 # Architect Agent

@@ -44,14 +44,15 @@ class DashboardData extends Equatable {
   }
 
   String get levelName {
+    // Must match web src/lib/xp-rules.ts: LEVEL_NAMES
     const names = [
-      '', 'Curious Cub', 'Explorer', 'Scholar', 'Thinker',
-      'Achiever', 'Innovator', 'Mastermind', 'Genius', 'Legend', 'Prodigy',
+      '', 'Curious Cub', 'Quick Learner', 'Rising Star', 'Knowledge Seeker',
+      'Smart Fox', 'Quiz Champion', 'Study Master', 'Brain Ninja', 'Scholar Fox', 'Grand Master',
     ];
     return level < names.length ? names[level] : 'Level $level';
   }
 
-  int get xpForNextLevel => level * 500;
+  int get xpForNextLevel => 500; // XP_PER_LEVEL = 500 (constant, not level * 500)
   double get levelProgress => xpTotal > 0
       ? (xpTotal % xpForNextLevel) / xpForNextLevel
       : 0;

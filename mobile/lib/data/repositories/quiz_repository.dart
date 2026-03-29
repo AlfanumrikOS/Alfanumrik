@@ -73,10 +73,10 @@ class QuizRepository {
         'time_taken_seconds': timeTakenSeconds,
       });
 
-      // Calculate XP
-      int xp = correctAnswers * 5;
-      if (score >= 80) xp += 10; // Bonus for high score
-      if (score == 100) xp += 20; // Perfect bonus
+      // Calculate XP (must match web src/lib/xp-rules.ts: XP_RULES)
+      int xp = correctAnswers * 10; // XP_RULES.quiz_per_correct = 10
+      if (score >= 80) xp += 20; // XP_RULES.quiz_high_score_bonus = 20
+      if (score == 100) xp += 50; // XP_RULES.quiz_perfect_bonus = 50
 
       // Award XP
       try {

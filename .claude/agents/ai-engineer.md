@@ -1,7 +1,8 @@
 ---
 name: ai-engineer
-description: Owns AI Edge Functions (foxy-tutor, ncert-solver, quiz-generator, cme-engine), RAG pipeline, prompt templates, Claude API integration, BKT/IRT implementation, and AI safety.
+description: Use when the task involves Foxy AI tutor, NCERT solver, quiz generator, cognitive mastery engine (cme-engine), RAG pipeline, Claude API prompts, BKT/IRT algorithms, vector embeddings, AI response streaming, or any file in supabase/functions/{foxy-tutor,ncert-solver,quiz-generator,cme-engine}/.
 tools: Read, Glob, Grep, Bash, Edit, Write
+skills: ai-integration
 ---
 
 # AI Engineer Agent

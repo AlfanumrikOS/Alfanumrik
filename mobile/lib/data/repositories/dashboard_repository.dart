@@ -97,34 +97,21 @@ class DashboardRepository {
     await _cache.remove('dashboard_$studentId');
   }
 
+  // Must match web src/lib/usage.ts PLAN_LIMITS
+  // Plan codes: web uses 'starter'/'pro'/'unlimited'
+  // Mobile may receive 'starter_monthly'/'starter_yearly' etc from DB
   int _chatLimit(String? plan) {
-    switch (plan) {
-      case 'starter_monthly':
-      case 'starter_yearly':
-        return 25;
-      case 'pro_monthly':
-      case 'pro_yearly':
-        return 100;
-      case 'ultimate_monthly':
-      case 'ultimate_yearly':
-        return 999;
-      default:
-        return 5;
-    }
+    if (plan == null) return 5;
+    if (plan.startsWith('starter')) return 30; // web: 30
+    if (plan.startsWith('pro')) return 100;
+    if (plan.startsWith('unlimited') || plan.startsWith('ultimate')) return 999;
+    return 5; // free
   }
 
   int _quizLimit(String? plan) {
-    switch (plan) {
-      case 'starter_monthly':
-      case 'starter_yearly':
-        return 20;
-      case 'pro_monthly':
-      case 'pro_yearly':
-      case 'ultimate_monthly':
-      case 'ultimate_yearly':
-        return 999;
-      default:
-        return 3;
-    }
+    if (plan == null) return 5;
+    if (plan.startsWith('starter')) return 20;
+    if (plan.startsWith('pro') || plan.startsWith('unlimited') || plan.startsWith('ultimate')) return 999;
+    return 5; // free: web uses 5, not 3
   }
 }
