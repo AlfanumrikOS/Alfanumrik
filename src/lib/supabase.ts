@@ -195,15 +195,11 @@ export async function getQuizQuestions(subject: string, grade: string, count = 1
 function validateQuestions(questions: any[]): any[] {
   const seen = new Set<string>();
   return questions.filter(q => {
-    // Must have valid structure
     if (!q.question_text || typeof q.question_text !== 'string') return false;
     if (q.question_text.length < 15) return false;
 
-    // Must have exactly 4 options
     const opts = Array.isArray(q.options) ? q.options : [];
     if (opts.length !== 4) return false;
-
-    // Must have valid answer index
     if (q.correct_answer_index < 0 || q.correct_answer_index > 3) return false;
 
     // Reject template/garbage questions
@@ -211,13 +207,34 @@ function validateQuestions(questions: any[]): any[] {
     if (text.includes('unrelated topic')) return false;
     if (text.startsWith('a student studying') && text.includes('should focus on')) return false;
     if (text.startsWith('which of the following best describes the main topic')) return false;
+    if (text.startsWith('why is') && text.includes('important for grade')) return false;
+    if (text.startsWith('the chapter') && text.includes('most closely related to which area')) return false;
+    if (text.startsWith('what is the primary purpose of studying')) return false;
 
-    // Reject options containing "unrelated topic" or identical options
+    // Reject garbage options
     const optTexts = opts.map((o: string) => (o || '').toLowerCase().trim());
-    if (optTexts.some((o: string) => o.includes('unrelated topic'))) return false;
-    if (new Set(optTexts).size < 3) return false; // at least 3 distinct options
+    if (optTexts.some((o: string) =>
+      o.includes('unrelated topic') || o.includes('physical education') ||
+      o.includes('art and craft') || o.includes('music theory') ||
+      o.includes('it is not important') || o.includes('no board exam')
+    )) return false;
 
-    // Deduplicate by question text
+    // Reject if fewer than 3 distinct options
+    if (new Set(optTexts).size < 3) return false;
+
+    // Reject self-contradicting explanations
+    if (q.explanation) {
+      const expl = q.explanation.toLowerCase();
+      if (expl.includes('does not match any option') ||
+          expl.includes('suggesting a possible error') ||
+          expl.includes('assuming a typo') ||
+          expl.includes('not listed')) return false;
+    }
+
+    // Reject very short explanations (likely no real explanation)
+    if (!q.explanation || q.explanation.length < 20) return false;
+
+    // Deduplicate
     const key = q.question_text.trim().toLowerCase();
     if (seen.has(key)) return false;
     seen.add(key);
