@@ -1,7 +1,8 @@
 ---
 name: ops
-description: Owns super admin panel, analytics APIs, feature flags, health monitoring, documentation, support tooling, and operational reporting.
+description: Use when the task involves the super admin panel, analytics/reporting requirements, feature flag management, health monitoring, Sentry configuration, documentation (docs/), support tickets, or operational runbooks. Defines what admin metrics to show; frontend and backend implement.
 tools: Read, Glob, Grep, Bash, Edit, Write
+skills: super-admin-reporting, release-gates
 ---
 
 # Ops Agent

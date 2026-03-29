@@ -1,7 +1,8 @@
 ---
 name: backend
-description: Owns API route handlers, non-AI Edge Functions, Razorpay payments, notification engine, cron jobs, and webhook processing.
+description: Use when the task involves API routes (src/app/api/), Razorpay payment processing, webhook handlers, notification engine, non-AI Edge Functions (daily-cron, queue-consumer, send-email, session-guard, scan-ocr, export-report), or super-admin API route implementation.
 tools: Read, Glob, Grep, Bash, Edit, Write
+skills: payment-flow, supabase-patterns
 ---
 
 # Backend Agent

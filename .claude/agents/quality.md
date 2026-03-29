@@ -1,7 +1,8 @@
 ---
 name: quality
-description: Reviews code for readability, duplication, type safety, and architecture conformance. Runs automated checks. Veto power on commits.
+description: Use proactively as the final reviewer before any commit. Runs type-check, lint, test, build. Reviews code for readability, duplication, type safety, UX conformance, and architecture patterns. Has veto power. Spawn this agent after testing completes and before committing.
 tools: Read, Glob, Grep, Bash
+skills: release-gates, review-chains
 ---
 
 # Quality Agent

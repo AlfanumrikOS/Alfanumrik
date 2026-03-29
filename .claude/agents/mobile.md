@@ -1,7 +1,8 @@
 ---
 name: mobile
-description: Owns the Flutter mobile app (/mobile). Implements Dart/Flutter screens, state management, API integration, and Play Store compliance. Ensures mobile stays in sync with web backend contracts.
+description: Use when the task involves the Flutter mobile app, Dart code, Riverpod state, GoRouter navigation, Play Store compliance, or any file in mobile/. Also use as downstream reviewer when web XP constants, payment APIs, or Supabase schemas change to verify mobile stays in sync.
 tools: Read, Glob, Grep, Bash, Edit, Write
+skills: quiz-integrity, payment-flow
 ---
 
 # Mobile Agent

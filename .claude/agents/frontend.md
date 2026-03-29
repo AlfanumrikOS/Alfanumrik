@@ -1,7 +1,8 @@
 ---
 name: frontend
-description: Implements all UI pages, components, styling, client state, i18n, PWA, SEO, and mobile app coordination. Builds what other agents specify. Does not make product policy decisions.
+description: Use when the task involves React pages, UI components, Tailwind styling, client-side state (AuthContext, SWR), Hindi/English translations, PWA, SEO, or any file in src/app/*/page.tsx or src/components/. Also use for super-admin page.tsx implementation (ops defines requirements).
 tools: Read, Glob, Grep, Bash, Edit, Write
+skills: architecture, quiz-integrity
 ---
 
 # Frontend Agent

@@ -126,12 +126,41 @@ Summary of mandatory chains:
 - **Agent prompt rules**: Advisory layer for cases not covered by hooks
 
 ## Agent System
-9 agents. Each domain in the product has exactly one owner.
+10 agents. Auto-delegation is the default mode. The orchestrator is the default session agent (`settings.json: "agent": "orchestrator"`). Every request goes to the orchestrator, which automatically spawns the minimum required specialist agents.
 
 **Builders**: architect, frontend, backend, assessment, ai-engineer, mobile
-**Verifiers**: testing, quality
+**Verifiers**: testing (after every change), quality (before every commit)
 **Operator**: ops
-**Coordinator**: orchestrator
+**Coordinator**: orchestrator (default session agent, auto-delegates)
+
+### Auto-Delegation Sequence
+```
+User request → orchestrator (classifies, routes)
+  → spawns builder agents in parallel where independent
+  → spawns testing after builders complete
+  → spawns quality as final reviewer
+  → reports results to user
+```
+
+### Agent Selection (orchestrator uses these rules)
+| Request mentions... | Spawn |
+|---|---|
+| database, migration, schema, RLS, RBAC, auth, middleware, deploy, CI | architect |
+| page, component, UI, styling, layout, Tailwind, loading state, i18n | frontend |
+| API route, endpoint, webhook, payment, Razorpay, notification, cron | backend |
+| score, XP, quiz logic, Bloom's, CBSE, exam, grading, mastery, question bank | assessment |
+| Foxy, AI tutor, NCERT solver, RAG, prompt, Claude API, cme-engine | ai-engineer |
+| mobile, Flutter, Dart, Play Store, mobile sync | mobile |
+| super admin, analytics, feature flag, monitoring, docs, support ticket | ops |
+| test, coverage, regression, E2E, Vitest, Playwright | testing |
+| review, type-check, lint, build quality, code quality, UX audit | quality |
+
+### When Multiple Agents Are Needed
+Many tasks span agents. The orchestrator decomposes and sequences:
+- **New feature**: architect (schema) → backend (API) → frontend (UI) → testing → quality
+- **Quiz bug fix**: assessment (define correct behavior) → frontend (fix UI) → testing → quality
+- **Payment change**: backend (implement) + architect (security review) → testing → quality → mobile (sync check)
+- **AI tutor change**: ai-engineer (implement) + assessment (correctness review) → testing → quality
 
 ### Domain Ownership (30 domains → 9 agents)
 

@@ -1,7 +1,8 @@
 ---
 name: testing
-description: Owns unit tests, E2E tests, regression catalog, and edge case definitions. Writes and runs test code. Does not define correct scoring behavior.
+description: Use proactively after any code change to write and run tests. Owns Vitest unit tests (src/__tests__/), Playwright E2E (e2e/), regression catalog, and edge case definitions. Spawn this agent after every implementation agent completes.
 tools: Read, Glob, Grep, Bash, Edit, Write
+skills: quiz-integrity, release-gates
 ---
 
 # Testing Agent

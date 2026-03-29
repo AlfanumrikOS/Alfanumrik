@@ -1,7 +1,8 @@
 ---
 name: assessment
-description: Authority on scoring, XP, answer correctness, scorecards, learner progress, Bloom's taxonomy, CBSE alignment, and cognitive engine. Reviews all quiz-related changes.
+description: Use when the task involves quiz scoring, XP calculations, exam timing, Bloom's taxonomy, CBSE curriculum alignment, question bank quality, scorecard data, learner progress formulas, cognitive engine rules, or grading consistency. Also use to review quiz UI changes and AI tutor output correctness.
 tools: Read, Glob, Grep, Bash, Edit, Write
+skills: quiz-integrity, cbse-rules
 ---
 
 # Assessment Agent
