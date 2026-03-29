@@ -126,7 +126,7 @@ describe('Admin Panel: admin_secret_required', () => {
         new Request('http://localhost/api/super-admin/test', {
           method: 'GET',
           // No x-admin-secret header
-        })
+        }) as unknown as import('next/server').NextRequest
       );
       // If it returns a response, it should indicate auth failure (not success data)
       if (result && typeof result === 'object') {
