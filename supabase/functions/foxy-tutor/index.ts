@@ -131,6 +131,7 @@ function buildSystemPrompt(
   chapters: string | null,
   lessonStep: string | null,
   ragContext: string | null,
+  syllabusContext: string | null = null,
 ): string {
   const lang =
     language === 'hi' ? 'Hindi (Devanagari script)'
@@ -184,10 +185,18 @@ RESPONSE RULES:
 - Never reveal you are Claude or an AI model. You are Foxy the fox tutor.
 - If unsure about any fact, say "Let me check — I want to make sure I give you the correct NCERT answer" rather than guessing.`
 
+  // Inject syllabus graph (formulas, rules, answer patterns)
+  if (syllabusContext) {
+    prompt += `\n\nCBSE SYLLABUS REFERENCE (formulas, rules, answer patterns — AUTHORITATIVE):\n${syllabusContext}`
+  }
+
+  // Inject RAG textbook content
   if (ragContext) {
-    prompt += `\n\nNCERT REFERENCE MATERIAL (THIS IS YOUR PRIMARY SOURCE — base your answer on this):\n${ragContext}\n\nIMPORTANT: The above reference is from the actual NCERT textbook. Your answer MUST be consistent with it. Do not contradict it.`
-  } else {
-    prompt += `\n\nNOTE: No specific NCERT reference was retrieved for this query. Answer based on standard NCERT/CBSE curriculum for Grade ${grade} ${subject}. If you are not confident about a specific fact, formula, or date, say so rather than guessing.`
+    prompt += `\n\nNCERT TEXTBOOK CONTENT (PRIMARY SOURCE — base your answer on this):\n${ragContext}\n\nYour answer MUST be consistent with the above NCERT content. Do not contradict it.`
+  }
+
+  if (!ragContext && !syllabusContext) {
+    prompt += `\n\nNOTE: No NCERT reference retrieved. Answer based on standard NCERT/CBSE curriculum for Grade ${grade} ${subject}. If not confident about a fact, formula, or date, say so rather than guessing.`
   }
 
   return prompt
@@ -216,6 +225,44 @@ async function fetchRAGContext(
       .join('\n\n---\n\n')
   } catch {
     // RAG not available — proceed without context
+    return null
+  }
+}
+
+// ─── Syllabus graph retrieval ──────────────────────────────────
+async function fetchSyllabusContext(
+  supabase: ReturnType<typeof createClient>,
+  query: string,
+  subject: string,
+  grade: string,
+): Promise<string | null> {
+  try {
+    const { data, error } = await supabase.rpc('match_syllabus_concept', {
+      p_query: query,
+      p_subject: subject,
+      p_grade: grade,
+      p_match_count: 2,
+    })
+
+    if (error || !data || data.length === 0) return null
+
+    return data.map((c: any) => {
+      let block = `CONCEPT: ${c.concept} (Ch.${c.chapter_number} ${c.chapter_title})`
+      if (c.formulas && c.formulas.length > 0) {
+        block += '\nFORMULAS: ' + c.formulas.map((f: any) => `${f.name}: ${f.expression}`).join(' | ')
+      }
+      if (c.rules && c.rules.length > 0) {
+        block += '\nRULES: ' + c.rules.map((r: any) => r.rule).join(' | ')
+      }
+      if (c.common_mistakes && c.common_mistakes.length > 0) {
+        block += '\nAVOID: ' + c.common_mistakes.join('; ')
+      }
+      if (c.answer_pattern) {
+        block += '\nANSWER FORMAT: ' + c.answer_pattern
+      }
+      return block
+    }).join('\n\n')
+  } catch {
     return null
   }
 }
@@ -348,8 +395,8 @@ Deno.serve(async (req: Request) => {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
     const today = new Date().toISOString().slice(0, 10)
 
-    // ── Parallel DB lookups (usage, plan, chat history, RAG) ──
-    const [usageResult, studentResult, sessionResult, ragContext] = await Promise.all([
+    // ── Parallel DB lookups (usage, plan, chat history, RAG, syllabus) ──
+    const [usageResult, studentResult, sessionResult, ragContext, syllabusContext] = await Promise.all([
       supabase
         .from('student_daily_usage')
         .select('usage_count')
@@ -366,6 +413,7 @@ Deno.serve(async (req: Request) => {
         ? supabase.from('chat_sessions').select('messages').eq('id', session_id).eq('student_id', student_id).maybeSingle()
         : Promise.resolve({ data: null }),
       fetchRAGContext(supabase, message, subject, grade),
+      fetchSyllabusContext(supabase, message, subject, grade),
     ])
 
     const currentCount = usageResult.data?.usage_count ?? 0
@@ -422,6 +470,7 @@ Deno.serve(async (req: Request) => {
       safeChapters,
       safeLessonStep,
       ragContext,
+      syllabusContext,
     )
 
     const messages = [
