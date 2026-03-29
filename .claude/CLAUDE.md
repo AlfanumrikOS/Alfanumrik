@@ -109,10 +109,14 @@ Summary of mandatory chains:
 | Quiz generation | ai-engineer | assessment, testing |
 | RBAC/auth | architect | backend, frontend, ops, testing |
 | Payment flow | backend | architect, testing |
-| Reporting schema | ops | frontend, architect |
 | Deployment config | architect | ops, testing |
 | Anti-cheat thresholds | assessment + architect | backend, testing |
 | Notification types | backend | frontend, ops |
+| Super-admin reporting APIs | backend (per ops) | frontend, ops, assessment (if learner), testing |
+| CMS workflow | backend (per ops) | assessment, frontend, testing |
+| Admin user/role APIs | backend (per ops/architect) | architect, frontend, testing |
+| Feature flag API | ops or backend | ops, testing |
+| Super-admin pages | frontend | ops, testing |
 
 ## Enforcement Mechanisms
 - **PreToolUse hook** (`guard.sh`): Blocks wrong agents from writing to critical files

@@ -83,6 +83,21 @@ elif echo "$FILE_PATH" | grep -qE "^(vercel\.json|\.github/workflows/|next\.conf
 elif echo "$FILE_PATH" | grep -qE "^supabase/functions/daily-cron/"; then
   REMINDER="REVIEW CHAIN REQUIRED: daily-cron was modified. Before task completion, orchestrator must invoke: (1) frontend — verify notification UI handles any new types, (2) ops — verify monitoring covers updated cron behavior."
 
+elif echo "$FILE_PATH" | grep -qE "^src/app/api/super-admin/(analytics|stats|reports)/"; then
+  REMINDER="REVIEW CHAIN REQUIRED: super-admin reporting API was modified. Before task completion, orchestrator must invoke: (1) frontend — verify admin dashboard renders updated data shape, (2) ops — verify metric definitions still match requirements. If learner metrics changed: (3) assessment — validate metric definition."
+
+elif echo "$FILE_PATH" | grep -qE "^src/app/api/super-admin/cms/"; then
+  REMINDER="REVIEW CHAIN REQUIRED: CMS API was modified. Before task completion, orchestrator must invoke: (1) assessment — verify content workflow doesn't break educational content QA, (2) frontend — verify CMS page handles workflow changes, (3) testing — update CMS workflow tests."
+
+elif echo "$FILE_PATH" | grep -qE "^src/app/api/super-admin/(users|roles)/"; then
+  REMINDER="REVIEW CHAIN REQUIRED: admin user/role API was modified. Before task completion, orchestrator must invoke: (1) architect — verify RBAC permission model intact, (2) frontend — verify admin panel user management UI matches, (3) testing — update admin RBAC tests."
+
+elif echo "$FILE_PATH" | grep -qE "^src/app/api/super-admin/feature-flags/"; then
+  REMINDER="REVIEW CHAIN REQUIRED: feature flag API was modified. Before task completion, orchestrator must invoke: (1) ops — verify flag evaluation logic matches admin UI expectations, (2) testing — update feature flag tests."
+
+elif echo "$FILE_PATH" | grep -qE "^src/app/super-admin/.*/page\.tsx$"; then
+  REMINDER="REVIEW CHAIN REQUIRED: super-admin page was modified. Before task completion, orchestrator must invoke: (1) ops — verify page still shows correct metrics and business logic, (2) testing — verify page renders."
+
 fi
 
 # ── Emit reminder if one was generated ───────────────────────

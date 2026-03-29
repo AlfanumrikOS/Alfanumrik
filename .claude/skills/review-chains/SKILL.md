@@ -113,6 +113,50 @@ When a critical file is modified, specific downstream agents MUST review before 
 | frontend | Notification list page can render new types |
 | ops | Monitoring covers new notification types |
 
+### 13. Super-Admin Reporting API Changes
+**Trigger files**: `src/app/api/super-admin/analytics/`, `stats/`, `reports/`
+**Making agent**: backend (implementation) per ops requirement
+| Reviewer | What They Check |
+|---|---|
+| frontend | Admin dashboard pages render updated data shape |
+| ops | Metric definitions still match requirements |
+| assessment | Learner metric definitions correct (if learner metrics changed) |
+| testing | Response shape assertions updated |
+
+### 14. CMS Workflow Changes
+**Trigger files**: `src/app/api/super-admin/cms/`
+**Making agent**: backend (implementation) per ops requirement
+| Reviewer | What They Check |
+|---|---|
+| assessment | Content workflow doesn't break educational QA (students must not see draft content) |
+| frontend | CMS page handles new workflow states |
+| testing | Workflow transition tests updated |
+
+### 15. Admin User/Role API Changes
+**Trigger files**: `src/app/api/super-admin/users/`, `roles/`
+**Making agent**: backend (implementation) per ops/architect requirement
+| Reviewer | What They Check |
+|---|---|
+| architect | RBAC permission model intact |
+| frontend | Admin panel user management UI matches |
+| testing | Admin RBAC regression tests updated |
+
+### 16. Feature Flag API Changes
+**Trigger files**: `src/app/api/super-admin/feature-flags/`
+**Making agent**: ops or backend
+| Reviewer | What They Check |
+|---|---|
+| ops | Flag evaluation logic matches admin expectations |
+| testing | Feature flag tests updated |
+
+### 17. Super-Admin Page Changes
+**Trigger files**: `src/app/super-admin/*/page.tsx`
+**Making agent**: frontend
+| Reviewer | What They Check |
+|---|---|
+| ops | Page still shows correct metrics and business rules |
+| testing | Page renders correctly |
+
 ## Orchestrator Validation Protocol
 
 At Gate 5, the orchestrator must:

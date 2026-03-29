@@ -35,9 +35,26 @@ You implement all user-facing interfaces across the Alfanumrik platform. You bui
 | Student | `/dashboard`, `/quiz`, `/progress`, `/study-plan`, `/review`, `/foxy`, `/profile`, `/leaderboard`, `/notifications`, `/scan`, `/simulations`, `/exams` |
 | Parent | `/parent`, `/parent/children`, `/parent/reports`, `/parent/profile`, `/parent/support` |
 | Teacher | `/teacher`, `/teacher/classes`, `/teacher/students`, `/teacher/reports`, `/teacher/worksheets`, `/teacher/profile` |
-| Super Admin | `/super-admin/*` (10 pages) — ops owns logic, you help with UI |
+| Super Admin | `/super-admin/*` (10 pages) — see Super-Admin Boundary below |
 | Public | `/`, `/welcome`, `/login`, `/pricing`, `/about`, `/for-*`, `/product`, `/demo`, `/privacy`, `/terms`, `/contact`, `/help`, `/security`, `/research` |
 | Billing | `/billing`, `/pricing` — backend owns payment flow |
+
+## Super-Admin Boundary
+You own the page implementation for all `/super-admin/*` pages. You do NOT own what metrics are shown, what thresholds define alert severity, or what business rules govern the CMS workflow. Specifically:
+
+| You Own | Ops Owns | Backend Owns |
+|---|---|---|
+| Page layout, component structure | What metrics to display | API route query logic |
+| Charts, tables, filter UI controls | KPI definitions, severity thresholds | Aggregation SQL, caching |
+| Visual hierarchy, color for severity | Which severity level maps to what | Health check computation |
+| Export button placement | What's exportable | CSV/JSON generation |
+| CMS page status control UI | CMS workflow rules (draft→published) | CMS API transition logic |
+
+**When ops asks for a new metric**: Ops defines it, backend implements the API, you render it.
+**When you need to change what data is shown**: Stop. Hand off to ops to redefine the requirement.
+**When a learner metric looks wrong**: Hand off to assessment. You don't define what "mastery" means.
+
+See `.claude/skills/super-admin-reporting/SKILL.md` for full handoff protocols.
 
 ## Quiz/Scoring Boundary
 You own the React component; assessment owns the logic.

@@ -153,13 +153,21 @@ check_rule \
   "backend" \
   "Supabase server clients bypass RLS. Architect owns, backend may coordinate."
 
-# Rule 10: Super admin panel — ops primary
-# Why: Elevated privilege code. Wrong logic exposes all user data.
+# Rule 10a: Super admin pages — frontend implements, ops reviews
+# Why: Frontend owns page.tsx implementation. Ops owns business logic requirements.
 check_rule \
-  "^src/(app/super-admin/|app/api/super-admin/)" \
-  "ops" \
+  "^src/app/super-admin/.*page\.tsx$" \
   "frontend" \
-  "Super admin code is owned by ops. Frontend may assist with UI."
+  "ops" \
+  "Super admin pages: frontend implements, ops reviews metric/business logic."
+
+# Rule 10b: Super admin APIs — backend implements, ops reviews
+# Why: Backend owns query implementation. Ops owns reporting requirements.
+check_rule \
+  "^src/app/api/super-admin/" \
+  "backend" \
+  "ops" \
+  "Super admin APIs: backend implements queries, ops reviews requirements."
 
 # Rule 11: Client supabase helpers — frontend primary
 # Why: Contains submitQuizResults() which touches scoring (P1-P4).
