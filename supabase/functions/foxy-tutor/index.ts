@@ -132,6 +132,7 @@ function buildSystemPrompt(
   lessonStep: string | null,
   ragContext: string | null,
   syllabusContext: string | null = null,
+  masteryContext: string | null = null,
 ): string {
   const lang =
     language === 'hi' ? 'Hindi (Devanagari script)'
@@ -184,6 +185,16 @@ RESPONSE RULES:
 - Award XP: 5 for good questions, 10 for correct answers, 15 for explanations.
 - Never reveal you are Claude or an AI model. You are Foxy the fox tutor.
 - If unsure about any fact, say "Let me check — I want to make sure I give you the correct NCERT answer" rather than guessing.`
+
+  // Inject student mastery state (Foxy adapts based on what student knows)
+  if (masteryContext) {
+    prompt += `\n\nSTUDENT MASTERY STATE (adapt your response based on this):\n${masteryContext}
+USE THIS TO:
+- If a concept has low mastery (<0.4): explain from basics, be patient, use simple examples
+- If a concept has medium mastery (0.4-0.7): focus on application and practice
+- If a concept has high mastery (>0.7): challenge with harder questions, skip basics
+- Prioritize weak concepts over strong ones in your teaching`
+  }
 
   // Inject syllabus graph (formulas, rules, answer patterns)
   if (syllabusContext) {
@@ -262,6 +273,42 @@ async function fetchSyllabusContext(
       }
       return block
     }).join('\n\n')
+  } catch {
+    return null
+  }
+}
+
+// ─── Student mastery retrieval ─────────────────────────────────
+async function fetchStudentMastery(
+  supabase: ReturnType<typeof createClient>,
+  studentId: string,
+  subject: string,
+): Promise<string | null> {
+  try {
+    const { data, error } = await supabase
+      .from('concept_mastery')
+      .select('topic_id, mastery_level, total_attempts, correct_attempts, next_review_at')
+      .eq('student_id', studentId)
+      .order('mastery_level', { ascending: true })
+      .limit(10)
+
+    if (error || !data || data.length === 0) return null
+
+    const weak = data.filter((c: any) => parseFloat(c.mastery_level) < 0.4)
+    const medium = data.filter((c: any) => parseFloat(c.mastery_level) >= 0.4 && parseFloat(c.mastery_level) < 0.7)
+    const strong = data.filter((c: any) => parseFloat(c.mastery_level) >= 0.7)
+    const dueReview = data.filter((c: any) => c.next_review_at && new Date(c.next_review_at) <= new Date())
+
+    let summary = `Concepts tracked: ${data.length}`
+    if (weak.length > 0) summary += ` | WEAK (need help): ${weak.length}`
+    if (medium.length > 0) summary += ` | Developing: ${medium.length}`
+    if (strong.length > 0) summary += ` | Strong: ${strong.length}`
+    if (dueReview.length > 0) summary += ` | Due for review: ${dueReview.length}`
+
+    const avgMastery = data.reduce((a: number, c: any) => a + parseFloat(c.mastery_level || '0'), 0) / data.length
+    summary += ` | Average mastery: ${Math.round(avgMastery * 100)}%`
+
+    return summary
   } catch {
     return null
   }
@@ -395,8 +442,8 @@ Deno.serve(async (req: Request) => {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
     const today = new Date().toISOString().slice(0, 10)
 
-    // ── Parallel DB lookups (usage, plan, chat history, RAG, syllabus) ──
-    const [usageResult, studentResult, sessionResult, ragContext, syllabusContext] = await Promise.all([
+    // ── Parallel DB lookups (usage, plan, chat history, RAG, syllabus, mastery) ──
+    const [usageResult, studentResult, sessionResult, ragContext, syllabusContext, masteryContext] = await Promise.all([
       supabase
         .from('student_daily_usage')
         .select('usage_count')
@@ -414,6 +461,7 @@ Deno.serve(async (req: Request) => {
         : Promise.resolve({ data: null }),
       fetchRAGContext(supabase, message, subject, grade),
       fetchSyllabusContext(supabase, message, subject, grade),
+      fetchStudentMastery(supabase, student_id, subject),
     ])
 
     const currentCount = usageResult.data?.usage_count ?? 0
@@ -463,7 +511,7 @@ Deno.serve(async (req: Request) => {
       }))
     }
 
-    // ── Build messages for Claude ──
+    // ── Build messages for Claude (with mastery awareness) ──
     const systemPrompt = buildSystemPrompt(
       grade, subject, safeLanguage, safeMode,
       safeTopicTitle,
@@ -471,6 +519,7 @@ Deno.serve(async (req: Request) => {
       safeLessonStep,
       ragContext,
       syllabusContext,
+      masteryContext,
     )
 
     const messages = [
