@@ -65,7 +65,17 @@ Pass: exit code 0. Verify bundle sizes:
 - [ ] No individual page > 260 kB (largest: /foxy at ~254 kB)
 - [ ] Middleware < 120 kB (currently ~109 kB)
 
-### Check 5: Review Chain Completeness
+### Check 5: Regression Catalog Integrity
+If the change touches a product invariant area, verify the corresponding regression tests exist:
+- [ ] If scoring/XP changed → quiz scoring regression tests exist and pass (currently 0/8 — CRITICAL GAP)
+- [ ] If payment flow changed → payment regression tests exist and pass (currently 0/4 — CRITICAL GAP)
+- [ ] If anti-cheat changed → anti-cheat regression tests are full tests, not just detection checks (currently 0/5 full, 3 partial)
+- [ ] If question quality logic changed → question quality tests exist (currently 0/4 — GAP)
+- [ ] Report catalog gap count in review output: `Catalog: [n]/35 exist, [n] missing for this change area`
+
+**IMPORTANT**: Do NOT claim "all regression tests pass" if the tests don't exist. Report the actual coverage status from the audited catalog in testing.md.
+
+### Check 6: Review Chain Completeness
 Verify the orchestrator's Gate 5 status report:
 - [ ] All files modified in the task are listed
 - [ ] Each file was checked against the review chain matrix (P14)

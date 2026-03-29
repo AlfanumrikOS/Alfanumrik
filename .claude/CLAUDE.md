@@ -13,7 +13,7 @@ Indian K-12 EdTech platform (CBSE grades 6-12). Next.js 14 + Supabase + Razorpay
 | AI | Claude API (Haiku) via Edge Functions: foxy-tutor, ncert-solver, quiz-generator, cme-engine |
 | Payments | Razorpay (INR, monthly recurring + yearly one-time) |
 | Deployment | Vercel (bom1/Mumbai), GitHub Actions CI/CD (3 workflows) |
-| Testing | Vitest (175 tests), Playwright E2E |
+| Testing | Vitest (175 tests), Playwright E2E. **Regression catalog: 4/35 exist (11%).** |
 | Monitoring | Sentry (client/server/edge), Vercel Analytics, structured logging |
 | Mobile | Flutter + Riverpod (/mobile) |
 | Offline | Service worker, localStorage cache, background sync |

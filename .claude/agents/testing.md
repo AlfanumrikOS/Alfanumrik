@@ -33,72 +33,74 @@ You own test coverage: unit tests (Vitest), E2E tests (Playwright), regression c
 | **Total** | 175 | 7 unit files + 1 E2E file |
 
 ## Regression Catalog
-These are the tests that MUST exist and MUST pass. If any are missing, add them.
+35 required tests across 8 categories. **Audited 2026-03-29: 4 exist, 8 partial, 21 missing (11% coverage).**
 
-### Quiz Scoring Regressions
-| Test | Asserts |
-|---|---|
-| `score_percent_basic` | `Math.round((7/10) * 100) === 70` |
-| `score_percent_zero` | 0 correct → 0% |
-| `score_percent_perfect` | all correct → 100% |
-| `score_percent_rounding` | `Math.round((1/3) * 100) === 33`, not 33.33 |
-| `xp_basic` | 7 correct, 70% → `7 * 10 = 70` XP (no bonus) |
-| `xp_high_score` | 8/10 = 80% → `80 + 20 = 100` XP |
-| `xp_perfect` | 10/10 = 100% → `100 + 20 + 50 = 170` XP |
-| `xp_daily_cap` | Multiple quizzes → capped at 200 XP total |
+Status key: `✅` = exists with correct assertion, `⚠️` = partial (tests related logic but not the declared assertion), `❌` = missing entirely.
 
-### Anti-Cheat Regressions
-| Test | Asserts |
-|---|---|
-| `reject_speed_hack` | avg < 3s per question → submission rejected |
-| `flag_same_answer` | all indices identical + >3 questions → flagged |
-| `accept_valid_pattern` | all same index but only 2 questions → not flagged |
-| `reject_count_mismatch` | 10 questions, 8 responses → rejected |
-| `accept_valid_submission` | valid time, varied answers, correct count → accepted |
+### Quiz Scoring Regressions — 0/8 exist (P1, P2 CRITICAL)
+| Test | Asserts | Status | Actual Location |
+|---|---|---|---|
+| `score_percent_basic` | `Math.round((7/10) * 100) === 70` | ❌ | — |
+| `score_percent_zero` | 0 correct → 0% | ❌ | — |
+| `score_percent_perfect` | all correct → 100% | ❌ | — |
+| `score_percent_rounding` | `Math.round((1/3) * 100) === 33`, not 33.33 | ❌ | — |
+| `xp_basic` | 7 correct, 70% → `7 * 10 = 70` XP (no bonus) | ❌ | — |
+| `xp_high_score` | 8/10 = 80% → `80 + 20 = 100` XP | ❌ | — |
+| `xp_perfect` | 10/10 = 100% → `100 + 20 + 50 = 170` XP | ❌ | — |
+| `xp_daily_cap` | Multiple quizzes → capped at 200 XP total | ❌ | — |
 
-### Grade Format Regressions
-| Test | Asserts |
-|---|---|
-| `grade_is_string` | Grade "6" accepted, integer 6 rejected or coerced |
-| `grade_range` | "5" and "13" rejected, "6" through "12" accepted |
+### Anti-Cheat Regressions — 0/5 exist, 3 partial (P3 HIGH)
+| Test | Asserts | Status | Actual Location |
+|---|---|---|---|
+| `reject_speed_hack` | avg < 3s per question → submission rejected | ⚠️ | `security.test.ts:141` (tests detection, not rejection) |
+| `flag_same_answer` | all indices identical + >3 questions → flagged | ⚠️ | `security.test.ts:148` (tests detection, not flagging flow) |
+| `accept_valid_pattern` | all same index but only 2 questions → not flagged | ⚠️ | `security.test.ts:156` (tests non-flagging condition) |
+| `reject_count_mismatch` | 10 questions, 8 responses → rejected | ❌ | — |
+| `accept_valid_submission` | valid time, varied answers, correct count → accepted | ❌ | — |
 
-### RBAC Regressions
-| Test | Asserts |
-|---|---|
-| `student_no_teacher_access` | Student role → 403 on teacher endpoints |
-| `parent_sees_linked_child` | Parent with approved link → sees child progress |
-| `parent_no_unlinked_child` | Parent without link → 403 on child data |
-| `unauthenticated_redirect` | No session → redirect to /login for protected pages |
+### Grade Format Regressions — 0/2 exist, 2 partial (P5 MEDIUM)
+| Test | Asserts | Status | Actual Location |
+|---|---|---|---|
+| `grade_is_string` | Grade "6" accepted, integer 6 rejected or coerced | ⚠️ | `api.test.ts:97-101` (verifies GRADES array is strings, doesn't test rejection) |
+| `grade_range` | "5" and "13" rejected, "6" through "12" accepted | ⚠️ | `api.test.ts:97-101` (verifies valid grades exist, doesn't test invalid rejection) |
 
-### Question Quality Regressions
-| Test | Asserts |
-|---|---|
-| `reject_template_markers` | question_text with `{{` → filtered out |
-| `reject_fewer_than_4_options` | 3 options → filtered out |
-| `reject_duplicate_options` | options with duplicates → filtered out |
-| `reject_missing_explanation` | empty explanation → filtered out |
+### RBAC Regressions — 3/4 exist (BEST COVERED)
+| Test | Asserts | Status | Actual Location |
+|---|---|---|---|
+| `student_no_teacher_access` | Student role → 403 on teacher endpoints | ✅ | `rbac.test.ts:571-578` |
+| `parent_sees_linked_child` | Parent with approved link → sees child progress | ✅ | `rbac.test.ts:431-455` |
+| `parent_no_unlinked_child` | Parent without link → 403 on child data | ✅ | `rbac.test.ts:457-465` |
+| `unauthenticated_redirect` | No session → redirect to /login for protected pages | ⚠️ | `e2e/smoke.spec.ts:69-73` (tests dashboard only, not all protected pages) |
 
-### Payment Regressions
-| Test | Asserts |
-|---|---|
-| `reject_invalid_webhook_signature` | Tampered signature → 401 |
-| `idempotent_webhook` | Same event ID twice → only one DB write |
-| `subscription_status_transitions` | activated → charged → cancelled lifecycle works |
-| `no_access_without_payment` | Plan access requires verified payment record |
+### Question Quality Regressions — 0/4 exist (P6 HIGH)
+| Test | Asserts | Status | Actual Location |
+|---|---|---|---|
+| `reject_template_markers` | question_text with `{{` → filtered out | ❌ | — |
+| `reject_fewer_than_4_options` | 3 options → filtered out | ❌ | — |
+| `reject_duplicate_options` | options with duplicates → filtered out | ❌ | — |
+| `reject_missing_explanation` | empty explanation → filtered out | ❌ | — |
 
-### Auth Flow Regressions
-| Test | Asserts |
-|---|---|
-| `session_refresh_on_request` | Middleware refreshes cookie on every request |
-| `redirect_unauthenticated` | Protected pages redirect to /login |
-| `role_detection_on_login` | Student/parent/teacher role detected from user_metadata |
+### Payment Regressions — 0/4 exist (P11 CRITICAL)
+| Test | Asserts | Status | Actual Location |
+|---|---|---|---|
+| `reject_invalid_webhook_signature` | Tampered signature → 401 | ❌ | — |
+| `idempotent_webhook` | Same event ID twice → only one DB write | ❌ | — |
+| `subscription_status_transitions` | activated → charged → cancelled lifecycle works | ❌ | — |
+| `no_access_without_payment` | Plan access requires verified payment record | ❌ | — |
 
-### Admin Panel Regressions
-| Test | Asserts |
-|---|---|
-| `admin_secret_required` | Super admin routes reject without x-admin-secret |
-| `feature_flag_evaluation` | Flag with target_roles filters correctly |
-| `audit_log_write` | Security actions create audit_logs entries |
+### Auth Flow Regressions — 0/3 exist, 1 partial (HIGH)
+| Test | Asserts | Status | Actual Location |
+|---|---|---|---|
+| `session_refresh_on_request` | Middleware refreshes cookie on every request | ❌ | — |
+| `redirect_unauthenticated` | Protected pages redirect to /login | ⚠️ | `e2e/smoke.spec.ts:69-73` (dashboard only) |
+| `role_detection_on_login` | Student/parent/teacher role detected from user_metadata | ❌ | — |
+
+### Admin Panel Regressions — 1/3 exist, 1 partial (HIGH)
+| Test | Asserts | Status | Actual Location |
+|---|---|---|---|
+| `admin_secret_required` | Super admin routes reject without x-admin-secret | ❌ | — |
+| `feature_flag_evaluation` | Flag with target_roles filters correctly | ⚠️ | `admin-control-plane.test.ts:43-53` (verifies exports, not evaluation logic) |
+| `audit_log_write` | Security actions create audit_logs entries | ✅ | `rbac.test.ts:612-680` (4 thorough audit log tests) |
 
 ## Edge Cases to Cover
 These are known risk areas. Tests should exist for each.
@@ -174,15 +176,16 @@ Block the commit when:
 |---|---|---|---|
 | [name] | [value] | [value] | [analysis] |
 
-### Regression Catalog Status
-- Quiz scoring: [n]/[n] present and passing
-- Anti-cheat: [n]/[n] present and passing
-- Grade format: [n]/[n] present and passing
-- RBAC: [n]/[n] present and passing
-- Question quality: [n]/[n] present and passing
-- Payment: [n]/[n] present and passing
-- Auth flow: [n]/[n] present and passing
-- Admin panel: [n]/[n] present and passing
+### Regression Catalog Status (audited 2026-03-29: 4/35 exist)
+- Quiz scoring: [n]/8 ✅ | [n] ⚠️ | [n] ❌ — **CRITICAL GAP (P1, P2)**
+- Anti-cheat: [n]/5 ✅ | [n] ⚠️ | [n] ❌
+- Grade format: [n]/2 ✅ | [n] ⚠️ | [n] ❌
+- RBAC: [n]/4 ✅ | [n] ⚠️ | [n] ❌
+- Question quality: [n]/4 ✅ | [n] ⚠️ | [n] ❌
+- Payment: [n]/4 ✅ | [n] ⚠️ | [n] ❌ — **CRITICAL GAP (P11)**
+- Auth flow: [n]/3 ✅ | [n] ⚠️ | [n] ❌
+- Admin panel: [n]/3 ✅ | [n] ⚠️ | [n] ❌
+- **Total: [n]/35 ✅ exist | [n] ⚠️ partial | [n] ❌ missing**
 
 ### Missing Coverage
 - [area]: [specific test that should exist but doesn't]
