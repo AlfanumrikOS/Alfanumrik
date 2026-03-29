@@ -50,7 +50,7 @@ Conditional. Required when change touches a domain agent's files.
 - [ ] Scorecard values from server response, not recalculated
 - [ ] Grade format is string (CLAUDE.md P5)
 
-### 5b: CTO Review (if migration/middleware/auth files changed)
+### 5b: Architect Review (if migration/middleware/auth files changed)
 - [ ] Migration is idempotent
 - [ ] RLS enabled on new tables
 - [ ] RLS policies cover student/parent/teacher patterns
@@ -58,7 +58,26 @@ Conditional. Required when change touches a domain agent's files.
 - [ ] No SQL injection vectors
 - [ ] API routes use `authorizeRequest()`
 
-### 5c: Testing Review (if test files changed or new coverage needed)
+### 5c: AI-Engineer Review (if AI Edge Functions/prompts/RAG changed)
+- [ ] AI responses age-appropriate (P12)
+- [ ] No unfiltered LLM output to students
+- [ ] Responses stay within CBSE curriculum scope
+- [ ] Usage limits enforced per plan
+- [ ] Circuit breaker implemented
+- [ ] No PII sent to Claude API
+
+### 5d: Backend Review (if payment flow changed)
+- [ ] Webhook signature verified before processing (P11)
+- [ ] Subscription status change atomic with payment record
+- [ ] No plan access without verified payment
+- [ ] Grace period for past_due
+
+### 5e: Ops Review (if admin panel/monitoring changed)
+- [ ] Admin routes require super admin auth
+- [ ] Feature flag changes logged to audit trail
+- [ ] Documentation updated if operational procedures changed
+
+### 5f: Testing Review (if test files changed or new coverage needed)
 - [ ] Regression catalog tests present and passing
 - [ ] Edge cases from testing agent's catalog covered
 - [ ] No weakened assertions
@@ -84,8 +103,11 @@ git diff --cached --name-only | grep -iE '\.env|secret|credential' && echo "BLOC
 - [ ] Gate 3: tests — PASS ([n]/[n])
 - [ ] Gate 4: build — PASS (shared: [n] kB)
 - [ ] Gate 5a: assessment review — PASS / N/A
-- [ ] Gate 5b: cto review — PASS / N/A
-- [ ] Gate 5c: testing review — PASS / N/A
+- [ ] Gate 5b: architect review — PASS / N/A
+- [ ] Gate 5c: ai-engineer review — PASS / N/A
+- [ ] Gate 5d: backend review (payments) — PASS / N/A
+- [ ] Gate 5e: ops review — PASS / N/A
+- [ ] Gate 5f: testing review — PASS / N/A
 - [ ] Gate 6: pre-push — PASS
 ```
 

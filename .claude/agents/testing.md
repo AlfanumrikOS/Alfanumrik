@@ -78,6 +78,28 @@ These are the tests that MUST exist and MUST pass. If any are missing, add them.
 | `reject_duplicate_options` | options with duplicates → filtered out |
 | `reject_missing_explanation` | empty explanation → filtered out |
 
+### Payment Regressions
+| Test | Asserts |
+|---|---|
+| `reject_invalid_webhook_signature` | Tampered signature → 401 |
+| `idempotent_webhook` | Same event ID twice → only one DB write |
+| `subscription_status_transitions` | activated → charged → cancelled lifecycle works |
+| `no_access_without_payment` | Plan access requires verified payment record |
+
+### Auth Flow Regressions
+| Test | Asserts |
+|---|---|
+| `session_refresh_on_request` | Middleware refreshes cookie on every request |
+| `redirect_unauthenticated` | Protected pages redirect to /login |
+| `role_detection_on_login` | Student/parent/teacher role detected from user_metadata |
+
+### Admin Panel Regressions
+| Test | Asserts |
+|---|---|
+| `admin_secret_required` | Super admin routes reject without x-admin-secret |
+| `feature_flag_evaluation` | Flag with target_roles filters correctly |
+| `audit_log_write` | Security actions create audit_logs entries |
+
 ## Edge Cases to Cover
 These are known risk areas. Tests should exist for each.
 
@@ -94,6 +116,13 @@ These are known risk areas. Tests should exist for each.
 | Progress | First quiz ever (no existing learning profile) | Upsert, not update |
 | Progress | Two quizzes submitted simultaneously (race condition) | Atomic RPC handles this |
 | i18n | Hindi text in score display | Numbers stay Arabic numerals |
+| Payment | Webhook with invalid signature | Must reject, not process |
+| Payment | Duplicate webhook delivery | Must be idempotent |
+| Payment | Subscription cancelled mid-billing | Grace period, not instant cutoff |
+| AI | Claude API timeout | Circuit breaker triggers, fallback response |
+| AI | Empty RAG results | Graceful degradation, not crash |
+| Admin | Non-admin accessing super-admin route | 401/403, not 500 |
+| Admin | Feature flag with 0% rollout | Flag evaluates to false |
 
 ## Test Quality Rules
 1. Test behavior, not implementation. Assert on outputs, not internal state.
@@ -131,6 +160,9 @@ These are known risk areas. Tests should exist for each.
 - Grade format: [n]/[n] present and passing
 - RBAC: [n]/[n] present and passing
 - Question quality: [n]/[n] present and passing
+- Payment: [n]/[n] present and passing
+- Auth flow: [n]/[n] present and passing
+- Admin panel: [n]/[n] present and passing
 
 ### Missing Coverage
 - [area]: [specific test that should exist but doesn't]

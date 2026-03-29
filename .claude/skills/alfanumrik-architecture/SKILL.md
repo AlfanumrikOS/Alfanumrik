@@ -88,19 +88,46 @@ Reference for system structure, data flows, and the checklist for adding new fea
 }
 ```
 
+## Data Flow: Payment
+```
+1. Pricing page           → student selects plan
+2. frontend               → calls /api/payments/subscribe
+3. backend                → creates Razorpay subscription (monthly) or order (yearly)
+4. frontend               → opens Razorpay checkout modal
+5. Razorpay               → sends webhook to /api/payments/webhook
+6. backend                → verifies signature, updates student_subscriptions atomically
+7. frontend               → calls /api/payments/verify as backup confirmation
+```
+**Ownership**: frontend owns steps 1,4,7 (UI). backend owns steps 2,3,5,6 (logic). architect reviews step 6 (security).
+
+## Data Flow: AI Tutoring (Foxy)
+```
+1. Foxy page              → student sends message
+2. frontend               → calls supabase/functions/foxy-tutor
+3. ai-engineer            → extracts grade, subject, topic
+4. ai-engineer            → RAG: query rag_content_chunks for context
+5. ai-engineer            → sends to Claude API with system prompt + context
+6. ai-engineer            → streams response back
+7. frontend               → renders streamed response
+8. backend                → logs interaction, updates usage count
+```
+**Ownership**: frontend owns steps 1,7. ai-engineer owns steps 2-6. backend owns step 8.
+
 ## New Feature Checklist
 1. [ ] Identify which role(s) access it
-2. [ ] Check if new permission code needed → cto adds to `permissions` table
-3. [ ] Design database table/columns → cto writes migration with RLS
-4. [ ] Define business rules (calculations, thresholds) → assessment if learning-related
-5. [ ] Add TypeScript types → fullstack adds to `src/lib/types.ts`
-6. [ ] Add data fetching function → fullstack adds to `src/lib/supabase.ts`
-7. [ ] Create page → fullstack at `src/app/[feature]/page.tsx`
-8. [ ] Create components → fullstack at `src/components/[feature]/`
-9. [ ] Add API route if needed → fullstack implements, cto reviews auth pattern
-10. [ ] Add Hindi translations → fullstack
-11. [ ] Write tests → testing agent
-12. [ ] Run quality gate → quality agent
+2. [ ] Check if new permission code needed → architect adds to `permissions` table
+3. [ ] Design database table/columns → architect writes migration with RLS
+4. [ ] Define business rules → assessment if learning-related, backend if payment-related
+5. [ ] If AI-powered → ai-engineer designs prompt and RAG retrieval
+6. [ ] Add TypeScript types → frontend adds to `src/lib/types.ts`
+7. [ ] Add data fetching function → frontend adds to `src/lib/supabase.ts`
+8. [ ] Create page → frontend at `src/app/[feature]/page.tsx`
+9. [ ] Create components → frontend at `src/components/[feature]/`
+10. [ ] Add API route → backend implements, architect reviews auth pattern
+11. [ ] Add Hindi translations → frontend
+12. [ ] If admin-visible → ops adds to super admin panel
+13. [ ] Write tests → testing
+14. [ ] Run quality gate → quality
 
 ## Key Database Tables
 | Table | Purpose | RLS Owner Pattern |
