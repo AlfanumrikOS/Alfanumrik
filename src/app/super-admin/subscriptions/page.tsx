@@ -83,16 +83,32 @@ function SubscriptionsContent() {
       </div>
 
       {/* KPI Cards */}
-      {analytics && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 24 }}>
-          <StatCard label="Total Students" value={totalSubs} accentColor={colors.accent} />
-          <StatCard label="Paid Plans" value={paidSubs} accentColor={colors.success} />
-          <StatCard label="Free Plan" value={totalSubs - paidSubs} accentColor={colors.text3} />
-          {analytics.revenue.filter(r => r.plan.includes('ultimate')).map(r => (
-            <StatCard key={r.plan} label={r.plan.replace(/_/g, ' ')} value={r.count} accentColor={colors.warning} />
-          ))}
-        </div>
-      )}
+      {analytics && (() => {
+        // Monthly revenue estimation based on plan prices
+        const PLAN_PRICES: Record<string, number> = {
+          starter_monthly: 299, starter_yearly: 200, // ~2399/12
+          pro_monthly: 699, pro_yearly: 467, // ~5599/12
+          ultimate_monthly: 1499, ultimate_yearly: 1000, // ~11999/12
+          unlimited_monthly: 1499, unlimited_yearly: 1000,
+          starter: 299, pro: 699, unlimited: 1499,
+        };
+        const estimatedMRR = analytics.revenue.reduce((sum, r) => {
+          const price = PLAN_PRICES[r.plan] || 0;
+          return sum + r.count * price;
+        }, 0);
+        const conversionRate = totalSubs > 0 ? Math.round((paidSubs / totalSubs) * 100) : 0;
+
+        return (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
+            <StatCard label="Total Students" value={totalSubs} accentColor={colors.accent} />
+            <StatCard label="Paid Plans" value={paidSubs} accentColor={colors.success} />
+            <StatCard label="Free Plan" value={totalSubs - paidSubs} accentColor={colors.text3} />
+            <StatCard label="Conversion Rate" value={`${conversionRate}%`} accentColor={conversionRate >= 5 ? colors.success : colors.warning} />
+            <StatCard label="Est. MRR" value={`₹${estimatedMRR.toLocaleString('en-IN')}`} accentColor={colors.warning} icon="₹" />
+            <StatCard label="Est. ARR" value={`₹${(estimatedMRR * 12).toLocaleString('en-IN')}`} accentColor={colors.accent} />
+          </div>
+        );
+      })()}
 
       {/* Plan Distribution */}
       {analytics && (
