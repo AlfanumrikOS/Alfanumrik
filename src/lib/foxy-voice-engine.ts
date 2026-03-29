@@ -29,6 +29,7 @@ export interface LearnerMemory {
   lastSessionSummary: string | null;
   lastSessionMode: string | null;
   sessionStreak: number;
+  totalVoiceSessions: number;
   parentGoals: string | null;
 }
 
