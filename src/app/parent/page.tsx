@@ -3,6 +3,73 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 
+// ============================================================
+// INTERFACES
+// ============================================================
+interface ParentSession {
+  id: string;
+  name: string;
+}
+
+interface StudentSession {
+  id: string;
+  name: string;
+  grade: string;
+}
+
+interface DashboardStats {
+  xp: number;
+  streak: number;
+  accuracy: number;
+  totalQuizzes: number;
+  minutes: number;
+  totalChats: number;
+  avgScore: number;
+}
+
+interface WeeklyDay {
+  quizzes: number;
+  active: boolean;
+  label: string;
+}
+
+interface WeekSummary {
+  quizzes: number;
+  avgScore: number;
+  activeDays: number;
+}
+
+interface BktMastery {
+  levels: Record<string, number>;
+  total: number;
+}
+
+interface ActiveBurst {
+  type: string;
+  title: string;
+  progress: number;
+  goal: number;
+  xp: number;
+}
+
+interface ParentTip {
+  id: string;
+  title: string;
+  description: string;
+}
+
+interface DashboardData {
+  error?: string;
+  student?: { name: string; grade: string };
+  subject?: string;
+  stats: DashboardStats;
+  dailyActivity?: WeeklyDay[];
+  weekSummary?: WeekSummary;
+  bktMastery?: BktMastery;
+  activeBursts?: ActiveBurst[];
+  insights?: string[];
+}
+
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
@@ -38,7 +105,7 @@ async function storeParentSession(guardian: Record<string, unknown>, student: Re
   sessionStorage.setItem(SESSION_KEY, JSON.stringify({ payload, hmac, nonce }));
 }
 
-async function loadParentSession(): Promise<{ guardian: any; student: any } | null> {
+async function loadParentSession(): Promise<{ guardian: ParentSession; student: StudentSession } | null> {
   try {
     const raw = sessionStorage.getItem(SESSION_KEY);
     if (!raw) return null;
@@ -131,7 +198,7 @@ function isLockedOut(): { locked: boolean; message: string } {
   return { locked: false, message: '' };
 }
 
-function LoginScreen({ onLogin }: { onLogin: (g: any, s: any) => void }) {
+function LoginScreen({ onLogin }: { onLogin: (g: ParentSession, s: StudentSession) => void }) {
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
@@ -203,7 +270,7 @@ function Stat({ label, value, color, icon }: { label: string; value: string | nu
 // ============================================================
 // WEEKLY ACTIVITY CHART
 // ============================================================
-function WeeklyChart({ data }: { data: any[] }) {
+function WeeklyChart({ data }: { data: WeeklyDay[] }) {
   const maxQ = Math.max(...data.map(d => d.quizzes), 1);
   return (
     <div style={cardStyle}>
@@ -246,9 +313,9 @@ function MasteryRing({ levels, total }: { levels: Record<string, number>; total:
 // ============================================================
 // MAIN DASHBOARD
 // ============================================================
-function Dashboard({ guardian, student }: { guardian: any; student: any }) {
-  const [dash, setDash] = useState<any>(null);
-  const [tips, setTips] = useState<any[]>([]);
+function Dashboard({ guardian, student }: { guardian: ParentSession; student: StudentSession }) {
+  const [dash, setDash] = useState<DashboardData | null>(null);
+  const [tips, setTips] = useState<ParentTip[]>([]);
   const [loading, setLoading] = useState(true);
   const [showTips, setShowTips] = useState(false);
 
@@ -366,8 +433,8 @@ function Dashboard({ guardian, student }: { guardian: any; student: any }) {
       {dash.activeBursts && dash.activeBursts.length > 0 && (
         <div style={cardStyle}>
           <h3 style={cardTitle}>Active learning adventures</h3>
-          {dash.activeBursts.map((b: any, i: number) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', borderBottom: i < dash.activeBursts.length - 1 ? '1px solid #1E293B' : 'none' }}>
+          {dash.activeBursts.map((b: ActiveBurst, i: number) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', borderBottom: i < (dash.activeBursts?.length ?? 0) - 1 ? '1px solid #1E293B' : 'none' }}>
               <span style={{ fontSize: 20 }}>{b.type === 'boss_battle' ? '\u2694\uFE0F' : b.type === 'mystery_solve' ? '\uD83D\uDD0D' : '\uD83C\uDFF0'}</span>
               <div style={{ flex: 1 }}>
                 <span style={{ fontSize: 13, fontWeight: 600, color: '#E2E8F0' }}>{b.title}</span>
@@ -400,7 +467,7 @@ function Dashboard({ guardian, student }: { guardian: any; student: any }) {
       </button>
       {showTips && tips.length > 0 && (
         <div style={cardStyle}>
-          {tips.map((tip: any) => (
+          {tips.map((tip: ParentTip) => (
             <div key={tip.id} style={{ padding: '10px 0', borderBottom: '1px solid #1E293B' }}>
               <span style={{ fontSize: 14, fontWeight: 600, color: '#F1F5F9' }}>{tip.title}</span>
               <p style={{ fontSize: 13, color: '#94A3B8', margin: '4px 0 0' }}>{tip.description}</p>
@@ -421,8 +488,8 @@ function Dashboard({ guardian, student }: { guardian: any; student: any }) {
 // ============================================================
 export default function ParentPage() {
   const auth = useAuth();
-  const [guardian, setGuardian] = useState<any>(null);
-  const [student, setStudent] = useState<any>(null);
+  const [guardian, setGuardian] = useState<ParentSession | null>(null);
+  const [student, setStudent] = useState<StudentSession | null>(null);
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {

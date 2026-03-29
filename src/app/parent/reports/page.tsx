@@ -23,7 +23,103 @@ async function hmacSign(payload: string, secret: string): Promise<string> {
   return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function loadParentSession(): Promise<{ guardian: any; student: any } | null> {
+interface ReportParentSession {
+  id: string;
+  name: string;
+}
+
+interface ReportStudentSession {
+  id: string;
+  name: string;
+  grade: string;
+}
+
+interface SubjectData {
+  name: string;
+  mastery?: number;
+  recentScore?: number;
+  topicsMastered?: number;
+  totalTopics?: number;
+  strongTopics?: string[];
+  weakTopics?: string[];
+}
+
+interface DayActivity {
+  quizzes: number;
+  xp: number;
+  label?: string;
+  day?: string;
+  studyTime?: number;
+}
+
+interface ConceptItem {
+  name: string;
+  subject?: string;
+  level: string;
+}
+
+interface QuizRecord {
+  topic?: string;
+  subject?: string;
+  score?: number;
+  date?: string;
+  created_at?: string;
+  timeSpent?: number;
+}
+
+interface InsightItem {
+  text?: string;
+  message?: string;
+}
+
+interface TipItem {
+  icon?: string;
+  title?: string;
+  description?: string;
+  text?: string;
+}
+
+interface ReportStats {
+  overallMastery?: number;
+  accuracy?: number;
+  avgScore?: number;
+  streak?: number;
+  xp?: number;
+  accuracyTrend?: string;
+  trend?: string;
+}
+
+interface ReportData {
+  error?: string;
+  stats?: ReportStats;
+  subjects?: SubjectData[];
+  dailyActivity?: DayActivity[];
+  concepts?: ConceptItem[];
+  bktMastery?: { concepts?: ConceptItem[] };
+  quizHistory?: QuizRecord[];
+  recentQuizzes?: QuizRecord[];
+  insights?: Array<string | InsightItem>;
+  parentTips?: Array<string | TipItem>;
+  tips?: Array<string | TipItem>;
+}
+
+interface MonthlyReportData {
+  conceptMasteryPct?: number;
+  retentionScore?: number;
+  weakChapters?: string[];
+  strongChapters?: string[];
+  predictedScore?: number | string;
+  syllabusCompletionPct?: number;
+  accuracyTrend?: number[];
+  timeEfficiency?: number;
+  studyConsistencyPct?: number;
+  totalStudyMinutes?: number;
+  totalQuestionsAttempted?: number;
+  improvementAreas?: string[];
+  achievements?: string[];
+}
+
+async function loadParentSession(): Promise<{ guardian: ReportParentSession; student: ReportStudentSession } | null> {
   try {
     const raw = sessionStorage.getItem(SESSION_KEY);
     if (!raw) return null;
@@ -177,7 +273,7 @@ function SummaryCard({ icon, label, value, sub, ringColor }: {
 // ============================================================
 // SUBJECT PERFORMANCE CARD
 // ============================================================
-function SubjectCard({ subject }: { subject: any }) {
+function SubjectCard({ subject }: { subject: SubjectData }) {
   const mastery = subject.mastery ?? 0;
   const barColor = mastery >= 80 ? '#16A34A' : mastery >= 50 ? '#D97706' : '#EF4444';
   const subjectColors: Record<string, string> = {
@@ -245,12 +341,12 @@ function SubjectCard({ subject }: { subject: any }) {
 // ============================================================
 // WEEKLY ACTIVITY TIMELINE
 // ============================================================
-function WeeklyTimeline({ days, mostActiveDay }: { days: any[]; mostActiveDay?: string }) {
+function WeeklyTimeline({ days, mostActiveDay }: { days: DayActivity[]; mostActiveDay?: string }) {
   return (
     <div style={cardStyle}>
       <h3 style={cardTitle}>Weekly Activity Timeline</h3>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6 }}>
-        {days.map((day: any, i: number) => {
+        {days.map((day: DayActivity, i: number) => {
           const active = day.quizzes > 0 || day.xp > 0;
           return (
             <div key={i} style={{
@@ -292,7 +388,7 @@ function WeeklyTimeline({ days, mostActiveDay }: { days: any[]; mostActiveDay?: 
 // ============================================================
 // CONCEPT MASTERY MAP
 // ============================================================
-function ConceptMasteryMap({ concepts }: { concepts: any[] }) {
+function ConceptMasteryMap({ concepts }: { concepts: ConceptItem[] }) {
   if (!concepts || concepts.length === 0) {
     return (
       <div style={cardStyle}>
@@ -303,8 +399,8 @@ function ConceptMasteryMap({ concepts }: { concepts: any[] }) {
   }
 
   // Group by subject
-  const grouped: Record<string, any[]> = {};
-  concepts.forEach((c: any) => {
+  const grouped: Record<string, ConceptItem[]> = {};
+  concepts.forEach((c: ConceptItem) => {
     const subj = c.subject || 'General';
     if (!grouped[subj]) grouped[subj] = [];
     grouped[subj].push(c);
@@ -334,7 +430,7 @@ function ConceptMasteryMap({ concepts }: { concepts: any[] }) {
         <div key={subject} style={{ marginBottom: 14 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: '#475569', marginBottom: 6 }}>{subject}</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {items.map((c: any, i: number) => (
+            {items.map((c: ConceptItem, i: number) => (
               <div key={i} style={{
                 backgroundColor: `${getMasteryColor(c.level)}18`,
                 border: `1px solid ${getMasteryColor(c.level)}40`,
@@ -360,7 +456,7 @@ function ConceptMasteryMap({ concepts }: { concepts: any[] }) {
 // ============================================================
 // QUIZ HISTORY
 // ============================================================
-function QuizHistory({ quizzes }: { quizzes: any[] }) {
+function QuizHistory({ quizzes }: { quizzes: QuizRecord[] }) {
   if (!quizzes || quizzes.length === 0) {
     return (
       <div style={cardStyle}>
@@ -374,7 +470,7 @@ function QuizHistory({ quizzes }: { quizzes: any[] }) {
     <div style={cardStyle}>
       <h3 style={cardTitle}>Recent Quiz History</h3>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {quizzes.slice(0, 10).map((q: any, i: number) => {
+        {quizzes.slice(0, 10).map((q: QuizRecord, i: number) => {
           const scoreColor = getScoreColor(q.score ?? 0);
           return (
             <div key={i} style={{
@@ -409,14 +505,14 @@ function QuizHistory({ quizzes }: { quizzes: any[] }) {
 // ============================================================
 // INSIGHTS & RECOMMENDATIONS
 // ============================================================
-function InsightsSection({ insights, tips }: { insights: any[]; tips: any[] }) {
+function InsightsSection({ insights, tips }: { insights: Array<string | InsightItem>; tips: Array<string | TipItem> }) {
   return (
     <div style={cardStyle}>
       <h3 style={cardTitle}>Insights &amp; Recommendations</h3>
 
       {insights && insights.length > 0 ? (
         <div style={{ marginBottom: 16 }}>
-          {insights.map((insight: any, i: number) => (
+          {insights.map((insight: string | InsightItem, i: number) => (
             <div key={i} style={{
               padding: '12px 14px',
               backgroundColor: '#F0FDF4',
@@ -441,14 +537,14 @@ function InsightsSection({ insights, tips }: { insights: any[]; tips: any[] }) {
       <div style={{ marginTop: 8 }}>
         <div style={{ ...sectionHeading, color: '#15803D', fontSize: 13 }}>How to Help at Home</div>
         {tips && tips.length > 0 ? (
-          tips.map((tip: any, i: number) => (
+          tips.map((tip: string | TipItem, i: number) => (
             <div key={i} style={{
               display: 'flex', gap: 10, padding: '10px 0',
               borderBottom: i < tips.length - 1 ? '1px solid #F1F5F9' : 'none',
             }}>
-              <span style={{ fontSize: 16, flexShrink: 0 }}>{tip.icon || '\uD83D\uDCA1'}</span>
+              <span style={{ fontSize: 16, flexShrink: 0 }}>{(typeof tip === 'string' ? undefined : tip.icon) || '\uD83D\uDCA1'}</span>
               <div>
-                <div style={{ fontSize: 14, fontWeight: 600, color: '#1E293B' }}>{tip.title || `Tip ${i + 1}`}</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#1E293B' }}>{(typeof tip === 'string' ? undefined : tip.title) || `Tip ${i + 1}`}</div>
                 <div style={{ fontSize: 13, color: '#64748B', marginTop: 2, lineHeight: 1.5 }}>{typeof tip === 'string' ? tip : tip.description || tip.text || ''}</div>
               </div>
             </div>
@@ -469,7 +565,7 @@ function InsightsSection({ insights, tips }: { insights: any[]; tips: any[] }) {
 // ============================================================
 // PRINT / SHARE SECTION
 // ============================================================
-function PrintShareSection({ studentName, reportData }: { studentName: string; reportData: any }) {
+function PrintShareSection({ studentName, reportData }: { studentName: string; reportData: ReportData | null }) {
   const handlePrint = () => {
     window.print();
   };
@@ -477,7 +573,7 @@ function PrintShareSection({ studentName, reportData }: { studentName: string; r
   const handleWhatsApp = () => {
     const stats = reportData?.stats || {};
     const subjects = reportData?.subjects || [];
-    const subjectSummary = subjects.map((s: any) =>
+    const subjectSummary = subjects.map((s: SubjectData) =>
       `${s.name}: ${s.mastery ?? 0}% mastery`
     ).join('\n');
 
@@ -580,7 +676,7 @@ function MonthlyReportSection({ guardianId, studentId, studentName }: {
 }) {
   const months = useMemo(() => getLastNMonths(REPORT_MONTHS_COUNT), []);
   const [selectedMonth, setSelectedMonth] = useState(months[0]?.value ?? '');
-  const [monthlyData, setMonthlyData] = useState<any>(null);
+  const [monthlyData, setMonthlyData] = useState<MonthlyReportData | null>(null);
   const [monthlyLoading, setMonthlyLoading] = useState(false);
 
   useEffect(() => {
@@ -870,12 +966,12 @@ function ChildSelector({ childList, selectedId, onSelect }: {
 // ============================================================
 export default function ParentReportsPage() {
   const auth = useAuth();
-  const [guardian, setGuardian] = useState<any>(null);
-  const [student, setStudent] = useState<any>(null);
+  const [guardian, setGuardian] = useState<ReportParentSession | null>(null);
+  const [student, setStudent] = useState<ReportStudentSession | null>(null);
   const [children, setChildren] = useState<Array<{ id: string; name: string; grade?: string }>>([]);
   const [checking, setChecking] = useState(true);
   const [loading, setLoading] = useState(true);
-  const [report, setReport] = useState<any>(null);
+  const [report, setReport] = useState<ReportData | null>(null);
   const [error, setError] = useState('');
   const [dateRange, setDateRange] = useState<'week' | 'month' | 'all'>('week');
   const [viewMode, setViewMode] = useState<'weekly' | 'monthly'>('weekly');
@@ -885,7 +981,7 @@ export default function ParentReportsPage() {
   useEffect(() => {
     if (auth.isLoading) return;
 
-    const resolveSession = async (g: any, s: any) => {
+    const resolveSession = async (g: ReportParentSession | null, s: ReportStudentSession | null) => {
       setGuardian(g);
       setStudent(s);
       // Load all children for this guardian
@@ -923,7 +1019,7 @@ export default function ParentReportsPage() {
   // Handle child selection
   const handleSelectChild = (childId: string) => {
     const child = children.find(c => c.id === childId);
-    if (child) setStudent(child);
+    if (child) setStudent({ id: child.id, name: child.name, grade: child.grade || '' });
   };
 
   // Auth guard: redirect if not logged in
@@ -1007,7 +1103,7 @@ export default function ParentReportsPage() {
   let mostActiveDay = '';
   if (dailyActivity.length > 0) {
     let maxXp = 0;
-    dailyActivity.forEach((d: any) => {
+    dailyActivity.forEach((d: DayActivity) => {
       if ((d.xp || 0) > maxXp) {
         maxXp = d.xp || 0;
         mostActiveDay = d.label || d.day || '';
@@ -1016,7 +1112,7 @@ export default function ParentReportsPage() {
   }
 
   // Compute active days count
-  const activeDays = dailyActivity.filter((d: any) => d.quizzes > 0 || d.xp > 0).length;
+  const activeDays = dailyActivity.filter((d: DayActivity) => d.quizzes > 0 || d.xp > 0).length;
 
   // Trend arrow for accuracy
   const accuracyTrend = stats.accuracyTrend || stats.trend || null;
@@ -1184,7 +1280,7 @@ export default function ParentReportsPage() {
             <div style={{ marginBottom: 20 }}>
               <div style={sectionHeading}>Subject Performance</div>
               {subjects.length > 0 ? (
-                subjects.map((subj: any, i: number) => (
+                subjects.map((subj: SubjectData, i: number) => (
                   <SubjectCard key={i} subject={subj} />
                 ))
               ) : (

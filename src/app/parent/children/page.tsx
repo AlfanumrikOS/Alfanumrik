@@ -617,25 +617,59 @@ export default function ParentChildrenPage() {
 // ============================================================
 // NORMALIZE API RESPONSE TO ChildData
 // ============================================================
-function normalizeChild(raw: any): ChildData {
+interface RawSubjectProgress {
+  name?: string;
+  subject?: string;
+  percent?: number;
+  mastery?: number;
+  progress?: number;
+}
+
+interface RawAchievement {
+  title?: string;
+  name?: string;
+  icon?: string;
+  date?: string;
+  earned_at?: string;
+}
+
+interface RawChildResponse {
+  id?: string;
+  name?: string;
+  grade?: string;
+  student?: { id?: string; name?: string; grade?: string; last_active?: string };
+  stats?: Record<string, number>;
+  lastActive?: string;
+  last_active?: string;
+  subjects?: string[];
+  subjectProgress?: RawSubjectProgress[];
+  subject_progress?: RawSubjectProgress[];
+  recentAchievements?: RawAchievement[];
+  recent_achievements?: RawAchievement[];
+  achievements?: RawAchievement[];
+  weekSummary?: string;
+  week_summary?: string;
+}
+
+function normalizeChild(raw: RawChildResponse): ChildData {
   const student = raw.student || raw;
   const stats = raw.stats || {};
   const today = new Date().toISOString().slice(0, 10);
 
   // Determine if active today
-  const lastActiveRaw = raw.lastActive || raw.last_active || student.last_active || null;
+  const lastActiveRaw = raw.lastActive || raw.last_active || (raw.student ? raw.student.last_active : null) || null;
   const activeToday = lastActiveRaw
     ? new Date(lastActiveRaw).toISOString().slice(0, 10) === today
     : (stats.todayQuizzes || stats.today_quizzes || 0) > 0;
 
   // Extract subjects
   const subjects: string[] = raw.subjects
-    || (raw.subjectProgress || raw.subject_progress || []).map((s: any) => s.name || s.subject)
+    || (raw.subjectProgress || raw.subject_progress || []).map((s: RawSubjectProgress) => s.name || s.subject || '')
     || [];
 
   // Extract subject progress
   const subjectProgress: { name: string; percent: number }[] =
-    (raw.subjectProgress || raw.subject_progress || []).map((s: any) => ({
+    (raw.subjectProgress || raw.subject_progress || []).map((s: RawSubjectProgress) => ({
       name: s.name || s.subject || 'Unknown',
       percent: s.percent || s.mastery || s.progress || 0,
     }));
@@ -644,7 +678,7 @@ function normalizeChild(raw: any): ChildData {
   const recentAchievements: RecentAchievement[] =
     (raw.recentAchievements || raw.recent_achievements || raw.achievements || [])
       .slice(0, 3)
-      .map((a: any) => ({
+      .map((a: RawAchievement) => ({
         title: a.title || a.name || 'Achievement',
         icon: a.icon || '\uD83C\uDFC6',
         date: a.date || a.earned_at || '',
