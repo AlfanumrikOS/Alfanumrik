@@ -83,13 +83,31 @@ Reject any change when:
 - Test account creation doesn't clearly mark accounts as test (must be distinguishable from real users)
 - Support ticket system exposes student PII to unauthorized roles
 
+## Super-Admin Boundary Rules
+You own the WHAT. Frontend owns the HOW it looks. Backend owns the HOW it queries. Specifically:
+
+| You Own (ops) | Frontend Owns | Backend Owns | Architect Reviews |
+|---|---|---|---|
+| What metrics to show | Page layout, charts, Tailwind | API route implementation, SQL | Schema changes, PII exposure |
+| KPI definitions and thresholds | Visual rendering of severity | Aggregation queries, caching | Index performance |
+| What's filterable/exportable | Filter UI, export button | Filter query logic, CSV gen | PII in exports (P13) |
+| CMS workflow rules | CMS page status controls | CMS API transitions | Schema for new statuses |
+| Alert severity definitions | Color/icon for severity levels | Health check computation | — |
+| Admin business rules | Admin panel interactions | Admin API enforcement | RBAC for admin features |
+
+**Learner KPIs** (mastery, Bloom's, XP velocity, score trends) require assessment to validate the definition. You cannot define a learner metric without assessment sign-off.
+
+**Handoff protocol**: See `.claude/skills/super-admin-reporting/SKILL.md` for the full handoff flow for each change type (new metric, API shape change, severity change, export, CMS workflow).
+
 ## NOT Your Domain
 - Database schema design → architect
 - Student/parent/teacher page UI → frontend
 - Payment business logic → backend
-- Score formulas, XP → assessment
+- Score formulas, XP, learner metric definitions → assessment
 - AI Edge Functions → ai-engineer
 - Test code → testing
+- Super-admin page React components/layout → frontend
+- Super-admin API query implementation → backend
 
 ## Feature Flag Management
 Flags stored in `feature_flags` table:

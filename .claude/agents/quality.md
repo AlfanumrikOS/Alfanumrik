@@ -65,6 +65,26 @@ Pass: exit code 0. Verify bundle sizes:
 - [ ] No individual page > 260 kB (largest: /foxy at ~254 kB)
 - [ ] Middleware < 120 kB (currently ~109 kB)
 
+### Check 5: Regression Catalog Integrity
+If the change touches a product invariant area, verify the corresponding regression tests exist:
+- [ ] If scoring/XP changed → quiz scoring regression tests exist and pass (currently 0/8 — CRITICAL GAP)
+- [ ] If payment flow changed → payment regression tests exist and pass (currently 0/4 — CRITICAL GAP)
+- [ ] If anti-cheat changed → anti-cheat regression tests are full tests, not just detection checks (currently 0/5 full, 3 partial)
+- [ ] If question quality logic changed → question quality tests exist (currently 0/4 — GAP)
+- [ ] Report catalog gap count in review output: `Catalog: [n]/35 exist, [n] missing for this change area`
+
+**IMPORTANT**: Do NOT claim "all regression tests pass" if the tests don't exist. Report the actual coverage status from the audited catalog in testing.md.
+
+### Check 6: Review Chain Completeness
+Verify the orchestrator's Gate 5 status report:
+- [ ] All files modified in the task are listed
+- [ ] Each file was checked against the review chain matrix (P14)
+- [ ] Every mandatory downstream reviewer was invoked
+- [ ] Every reviewer produced a structured verdict (APPROVE or APPROVE WITH CONDITIONS)
+- [ ] No REJECT verdicts are unresolved
+
+If the orchestrator's status report does not include Gate 5 results, or if any chain is marked incomplete, REJECT with reason: `Review chain incomplete: [chain name] missing [reviewer name]`.
+
 ## Code Review Checklist (manual, applied to every change)
 
 ### Readability
@@ -120,7 +140,10 @@ Reject (veto the commit) when:
 - Inline styles instead of Tailwind
 - Page missing loading, error, or empty state
 - User-facing text without Hindi variant
-- Product invariant P1-P13 violated
+- Product invariant P1-P14 violated
+- Review chain incomplete: orchestrator Gate 5 shows missing mandatory reviewers
+- Review chain skipped: no Gate 5 report in orchestrator status for a task that modified critical files
+- Reviewer REJECT unresolved: a downstream reviewer rejected and the issue was not fixed
 
 ## Severity Levels
 | Level | Definition | Action |

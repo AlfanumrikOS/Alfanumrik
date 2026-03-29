@@ -41,12 +41,26 @@ You implement API route handlers, non-AI Edge Functions, payment integration, no
 - `supabase/functions/scan-ocr/` — worksheet scanning
 - `supabase/functions/export-report/` — PDF report generation
 
+## Super-Admin API Boundary
+You implement the query logic for `src/app/api/super-admin/*` routes. Ops defines WHAT data is needed and WHAT business rules apply. You own HOW the data is queried, cached, and returned.
+
+| You Own | Ops Owns |
+|---|---|
+| SQL queries, aggregation logic | What metrics to compute |
+| Response shape implementation | What fields to include |
+| Caching strategy (TTL, invalidation) | What cache behavior is acceptable |
+| CSV/JSON export generation | What's exportable, row limits |
+| Admin auth verification (`authorizeAdmin`) | Admin access policy |
+
+**When ops requests a new metric**: You implement the API route. Architect reviews if schema changes are needed.
+**When you change an API response shape**: Notify frontend (page may break) and testing (assertions may fail).
+
 ## NOT Your Domain
 - AI Edge Functions (foxy-tutor, ncert-solver, quiz-generator, cme-engine) → ai-engineer
 - Database schema, RLS, migrations → architect
 - Score formulas, XP values, exam timing → assessment
 - UI pages, components → frontend
-- Super admin APIs → ops
+- Super admin reporting definitions and business rules → ops
 - Test authoring → testing
 
 ## Payment Rules (you enforce these)

@@ -13,7 +13,7 @@ Indian K-12 EdTech platform (CBSE grades 6-12). Next.js 14 + Supabase + Razorpay
 | AI | Claude API (Haiku) via Edge Functions: foxy-tutor, ncert-solver, quiz-generator, cme-engine |
 | Payments | Razorpay (INR, monthly recurring + yearly one-time) |
 | Deployment | Vercel (bom1/Mumbai), GitHub Actions CI/CD (3 workflows) |
-| Testing | Vitest (175 tests), Playwright E2E |
+| Testing | Vitest (175 tests), Playwright E2E. **Regression catalog: 4/35 exist (11%).** |
 | Monitoring | Sentry (client/server/edge), Vercel Analytics, structured logging |
 | Mobile | Flutter + Riverpod (/mobile) |
 | Offline | Service worker, localStorage cache, background sync |
@@ -96,10 +96,39 @@ AI responses (foxy-tutor, ncert-solver) MUST be age-appropriate for grades 6-12.
 ### P13: Data Privacy
 No PII in client-side logs or Sentry events. Logger redacts: password, token, email, phone, API keys. Student data accessible only to: the student, their linked parent, their assigned teacher, or admin via service role.
 
+### P14: Review Chain Completeness
+When a critical file is modified, mandatory downstream reviewers must be invoked before the task can be marked complete. The PostToolUse hook (`review-chain.sh`) injects reminders automatically. Orchestrator validates at Gate 5. Quality rejects if chains are incomplete. The full matrix is defined in `.claude/skills/review-chains/SKILL.md`.
+
+Summary of mandatory chains:
+| Change | Making Agent | Must Review |
+|---|---|---|
+| Grading/XP constants | assessment | testing, ai-engineer, backend, frontend, **mobile** |
+| Learner-state rules | assessment | ai-engineer, frontend, testing |
+| AI tutor behavior | ai-engineer | assessment, testing |
+| RAG/retrieval | ai-engineer | assessment, testing |
+| Quiz generation | ai-engineer | assessment, testing |
+| RBAC/auth | architect | backend, frontend, ops, testing |
+| Payment flow | backend | architect, testing, **mobile** |
+| Deployment config | architect | ops, testing |
+| Anti-cheat thresholds | assessment + architect | backend, testing |
+| Notification types | backend | frontend, ops |
+| Super-admin reporting APIs | backend (per ops) | frontend, ops, assessment (if learner), testing |
+| CMS workflow | backend (per ops) | assessment, frontend, testing |
+| Admin user/role APIs | backend (per ops/architect) | architect, frontend, testing |
+| Feature flag API | ops or backend | ops, testing |
+| Super-admin pages | frontend | ops, testing |
+
+## Enforcement Mechanisms
+- **PreToolUse hook** (`guard.sh`): Blocks wrong agents from writing to critical files
+- **PostToolUse hook** (`review-chain.sh`): Injects mandatory review reminders after critical file writes
+- **Gate 5** (orchestrator): Validates all review chains are complete before allowing push
+- **Quality final review**: Rejects if review chains were skipped
+- **Agent prompt rules**: Advisory layer for cases not covered by hooks
+
 ## Agent System
 9 agents. Each domain in the product has exactly one owner.
 
-**Builders**: architect, frontend, backend, assessment, ai-engineer
+**Builders**: architect, frontend, backend, assessment, ai-engineer, mobile
 **Verifiers**: testing, quality
 **Operator**: ops
 **Coordinator**: orchestrator
@@ -138,6 +167,8 @@ No PII in client-side logs or Sentry events. Logger redacts: password, token, em
 | 28 | UX audit | quality | — | — |
 | 29 | Content QA | assessment | quality | — |
 | 30 | Monitoring / incidents / rollback readiness | ops | architect (infra); quality | — |
+| 31 | Mobile app (Flutter) | mobile | quality; assessment (XP sync) | — |
+| 32 | Mobile-web API contract sync | mobile (verifies) + backend (implements) | quality | — |
 
 ### Reporting Chain
 ```

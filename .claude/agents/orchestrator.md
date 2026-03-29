@@ -26,6 +26,7 @@ You also serve as the user's operating interface to the system: synthesizing met
 | **backend** | API routes, non-AI Edge Functions, payments, notifications, cron | `src/app/api/`, `src/lib/razorpay.ts`, `supabase/functions/{daily-cron,queue-consumer,send-*,session-guard,scan-ocr,export-report}/` |
 | **assessment** | Scoring rules, XP, Bloom's, CBSE content, cognitive model behavior, question bank quality | `src/lib/xp-rules.ts`, `src/lib/exam-engine.ts`, `src/lib/cognitive-engine.ts`, `src/lib/feedback-engine.ts` |
 | **ai-engineer** | AI Edge Functions, RAG, prompts, Claude API, BKT/IRT implementation | `supabase/functions/{foxy-tutor,ncert-solver,quiz-generator,cme-engine}/`, `supabase/functions/_shared/` |
+| **mobile** | Flutter app, Dart screens, Riverpod state, Play Store compliance, API contract sync | `mobile/` (all files) |
 
 ### Verifiers
 | Agent | Owns |
@@ -56,6 +57,8 @@ You also serve as the user's operating interface to the system: synthesizing met
 | `src/app/parent/`, `src/app/teacher/` | frontend | quality |
 | `public/`, `src/app/sitemap.ts`, `mobile/` | frontend | quality |
 | `src/__tests__/`, `e2e/`, test configs | testing | quality |
+| `mobile/` | mobile | quality; assessment (XP sync) |
+| XP/scoring/payment/schema change affecting mobile-dependent tables | primary agent + **mobile** (downstream) | quality |
 | Multiple domains in one task | orchestrator decomposes into sub-tasks, one per agent | per sub-task |
 
 ## Task Protocol
@@ -89,12 +92,37 @@ Builders implement in sequence defined in Step 1.
 - [ ] `npm run build` exits 0
 - [ ] Quality agent approved
 
-### Step 5: Gate — Domain Review
-- [ ] Assessment approved (if quiz/scoring/progress changed)
-- [ ] Architect approved (if schema/infra/auth changed)
-- [ ] AI-engineer approved (if AI/RAG/prompt changed)
-- [ ] Ops approved (if admin panel/monitoring changed)
-- [ ] Backend + architect approved (if payment flow changed)
+### Step 5: Gate — Review Chain Validation
+For each file modified in this task, check the review chain matrix (P14 in CLAUDE.md, full matrix in `.claude/skills/review-chains/SKILL.md`). Every mandatory downstream reviewer must be invoked and must produce a structured verdict.
+
+**Validation procedure:**
+1. List all files modified in the task
+2. For each file, look up required reviewers in the matrix
+3. Verify each required reviewer was invoked AND produced APPROVE or APPROVE WITH CONDITIONS
+4. If any reviewer is missing or gave REJECT → this gate FAILS
+
+**Minimum domain reviews (always apply):**
+- [ ] Assessment approved (if quiz/scoring/progress/XP/Bloom files changed)
+- [ ] Architect approved (if schema/migration/auth/deploy files changed)
+- [ ] AI-engineer approved (if AI Edge Function/RAG/prompt files changed)
+- [ ] Ops approved (if admin panel/monitoring/reporting files changed)
+- [ ] Backend + architect approved (if payment flow files changed)
+
+**Chain-specific reviews (apply per P14 matrix):**
+- [ ] Testing invoked for EVERY chain (testing appears in every review chain)
+- [ ] Frontend invoked if scorecard/progress/notification/reporting display affected
+- [ ] Backend invoked if RPC/server-side verification must sync with changed constants
+- [ ] AI-engineer invoked if assessment changed cognitive rules that cme-engine implements
+
+**Gate 5 status report format:**
+```
+### Gate 5: Review Chain Validation
+Files modified:
+  - [file1] → chain: [chain name] → reviewers: [agent1] ✓, [agent2] ✓
+  - [file2] → chain: [chain name] → reviewers: [agent1] ✓, [agent2] ✗ MISSING
+  - [file3] → no chain required
+Status: PASS | FAIL (missing: [list of agent:chain pairs])
+```
 
 ### Step 6: Gate — Pre-Push
 - [ ] Gates 4 and 5 passed
@@ -121,6 +149,9 @@ Block a task from proceeding when:
 - Schema change proposed without architect sign-off
 - Multiple agents claim ownership of same file (resolve before starting)
 - Previous task's gates not yet passed (don't stack uncommitted work)
+- Review chain incomplete: a mandatory downstream reviewer was not invoked (Gate 5 fail)
+- Review chain incomplete: a reviewer gave REJECT and the issue was not addressed
+- PostToolUse hook injected a REVIEW CHAIN REQUIRED reminder that was not acted on
 
 ## Conflict Resolution
 1. The owning agent for the concern has final say (see CLAUDE.md ownership table)

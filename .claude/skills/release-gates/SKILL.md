@@ -28,6 +28,7 @@ npm test
 ```
 - All tests pass (currently 175 across 7 files)
 - No `.skip` without comment and TODO
+- **Regression catalog gap check**: if the change touches a product invariant area, report whether the corresponding regression tests exist. Do NOT claim "regression tests pass" for tests that don't exist. Current catalog status: 4/35 exist (11%). Critical gaps: quiz scoring (0/8), payment (0/4).
 
 ## Gate 4: Build
 ```bash
@@ -100,7 +101,7 @@ git diff --cached --name-only | grep -iE '\.env|secret|credential' && echo "BLOC
 ## Release Gates
 - [ ] Gate 1: type-check — PASS
 - [ ] Gate 2: lint — PASS
-- [ ] Gate 3: tests — PASS ([n]/[n])
+- [ ] Gate 3: tests — PASS ([n]/[n]) | Catalog: [n]/35 exist, gaps: [list areas]
 - [ ] Gate 4: build — PASS (shared: [n] kB)
 - [ ] Gate 5a: assessment review — PASS / N/A
 - [ ] Gate 5b: architect review — PASS / N/A
