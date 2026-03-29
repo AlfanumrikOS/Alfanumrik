@@ -9,6 +9,12 @@ import { Card, Button, ProgressBar, LoadingFoxy } from '@/components/ui';
 import { SUBJECT_META } from '@/lib/constants';
 import QuizSetup from '@/components/quiz/QuizSetup';
 import QuizResults from '@/components/quiz/QuizResults';
+import FeedbackOverlay from '@/components/quiz/FeedbackOverlay';
+import {
+  createFeedbackState, onCorrectAnswer, onWrongAnswer, onSessionComplete,
+  getNearCompletionNudge, playFeedbackSound,
+  type FeedbackState, type FeedbackResult,
+} from '@/lib/feedback-engine';
 import {
   BLOOM_CONFIG,
   initialCognitiveLoad, updateCognitiveLoad, getReflectionPrompt, classifyError,
@@ -59,6 +65,10 @@ export default function QuizPage() {
   // Cognitive 2.0 state
   const [cogLoad, setCogLoad] = useState<CognitiveLoadState>(initialCognitiveLoad());
   const [reflection, setReflection] = useState<ReflectionPrompt | null>(null);
+
+  // Emotional feedback state
+  const [feedbackState] = useState<FeedbackState>(() => createFeedbackState());
+  const [activeFeedback, setActiveFeedback] = useState<FeedbackResult | null>(null);
 
   // Quiz state
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -200,6 +210,18 @@ export default function QuizPage() {
     if (selectedOption === null) return;
     const q = questions[currentIdx];
     const isCorrect = selectedOption === q.correct_answer_index;
+
+    // Emotional feedback — sound + Foxy reaction
+    const fb = isCorrect ? onCorrectAnswer(feedbackState) : onWrongAnswer(feedbackState);
+    playFeedbackSound(fb);
+    setActiveFeedback({ ...fb }); // spread to trigger re-render
+
+    // Near-completion nudge
+    const nudge = getNearCompletionNudge(currentIdx, questions.length);
+    if (nudge && !isCorrect) {
+      // Show nudge as feedback instead if near end and wrong
+      setActiveFeedback({ ...fb, foxyLine: nudge });
+    }
 
     // Classify error type for cognitive analysis
     const avgTime = responses.length > 0
@@ -378,6 +400,10 @@ export default function QuizPage() {
       }
       setLoading(false);
       setScreen('results');
+
+      // Play completion sound
+      const completionFb = onSessionComplete(feedbackState);
+      playFeedbackSound(completionFb);
     }
   };
 
@@ -412,6 +438,9 @@ export default function QuizPage() {
 
     return (
       <div className="mesh-bg min-h-dvh pb-nav flex flex-col">
+        {/* Emotional feedback overlay */}
+        <FeedbackOverlay feedback={activeFeedback} isHi={isHi} />
+
         {/* Header */}
         <header className="page-header" style={{ background: 'rgba(251,248,244,0.92)', backdropFilter: 'blur(20px)', borderColor: 'var(--border)' }}>
           <div className="app-container py-3">
