@@ -812,7 +812,7 @@ export default function FoxyPage() {
               studentName={student.name}
               grade={studentGrade}
               subject={activeSubject}
-              topic={selectedTopic?.title || cfg.name}
+              topic={activeTopic?.title || cfg.name}
               language={language as 'en' | 'hi' | 'hinglish'}
               mode={sessionMode === 'quiz' ? 'quiz' : sessionMode === 'revision' ? 'revise' : 'teach'}
               onClose={() => setShowVoice(false)}
