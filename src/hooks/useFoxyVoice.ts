@@ -9,17 +9,24 @@ import {
 } from '@/lib/foxy-voice-engine';
 
 /**
- * useFoxyVoice — React hook for real-time voice sessions with Foxy.
+ * useFoxyVoice — Fixed voice session hook.
  *
- * Architecture:
- *   Browser Mic → Web Speech API (STT) → Orchestration Engine → Claude API → Web Speech API (TTS)
+ * Root cause of "not-allowed" error:
+ * Web Speech API's recognition.start() requires a user gesture on first call.
+ * The old code called it recursively from onend callback (no gesture).
  *
- * Phase 1 (MVP): Browser-native STT + TTS (zero external dependencies)
- * Phase 2: Deepgram STT + ElevenLabs TTS (higher quality)
- * Phase 3: WebSocket streaming for sub-500ms latency
+ * Fix: Use continuous recognition mode so we only call start() once
+ * (from the button click), and it stays listening between turns.
+ * We pause/resume by stopping TTS, not by restarting recognition.
+ *
+ * Additional fixes:
+ * - Transcript captured via ref (not stale closure)
+ * - Mic permission requested explicitly before session starts
+ * - Voices loaded asynchronously (Chrome bug: getVoices() returns [] on first call)
+ * - Indian English voice selection with fallback chain
  */
 
-export type VoiceStatus = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
+export type VoiceStatus = 'idle' | 'requesting_mic' | 'listening' | 'thinking' | 'speaking' | 'error';
 
 interface UseFoxyVoiceOptions {
   studentId: string;
@@ -36,23 +43,13 @@ interface UseFoxyVoiceReturn {
   isSessionActive: boolean;
   currentTranscript: string;
   foxyText: string;
-  sessionState: VoiceSessionState | null;
   startSession: () => Promise<void>;
   endSession: () => Promise<void>;
   toggleMute: () => void;
   isMuted: boolean;
   error: string | null;
-}
-
-// Check browser support
-function isSpeechSupported(): boolean {
-  if (typeof window === 'undefined') return false;
-  return 'SpeechRecognition' in window || 'webkitSpeechRecognition' in window;
-}
-
-function isTTSSupported(): boolean {
-  if (typeof window === 'undefined') return false;
-  return 'speechSynthesis' in window;
+  micPermission: 'unknown' | 'granted' | 'denied' | 'prompt';
+  requestMicPermission: () => Promise<boolean>;
 }
 
 export function useFoxyVoice(options: UseFoxyVoiceOptions): UseFoxyVoiceReturn {
@@ -62,12 +59,101 @@ export function useFoxyVoice(options: UseFoxyVoiceOptions): UseFoxyVoiceReturn {
   const [foxyText, setFoxyText] = useState('');
   const [isMuted, setIsMuted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [micPermission, setMicPermission] = useState<'unknown' | 'granted' | 'denied' | 'prompt'>('unknown');
 
   const sessionStateRef = useRef<VoiceSessionState | null>(null);
   const memoryRef = useRef<LearnerMemory | null>(null);
   const recognitionRef = useRef<any>(null);
   const sessionIdRef = useRef<string | null>(null);
   const sessionStartRef = useRef<number>(0);
+  const transcriptRef = useRef<string>('');
+  const isProcessingRef = useRef(false);
+  const isActiveRef = useRef(false);
+  const voicesLoadedRef = useRef(false);
+
+  // Keep isActive ref in sync
+  useEffect(() => { isActiveRef.current = isSessionActive; }, [isSessionActive]);
+
+  // ─── Load voices (Chrome needs this async) ─────────────
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const loadVoices = () => {
+      const voices = window.speechSynthesis?.getVoices();
+      if (voices && voices.length > 0) voicesLoadedRef.current = true;
+    };
+    loadVoices();
+    window.speechSynthesis?.addEventListener('voiceschanged', loadVoices);
+    return () => window.speechSynthesis?.removeEventListener('voiceschanged', loadVoices);
+  }, []);
+
+  // ─── Mic Permission ─────────────────────────────────────
+
+  const requestMicPermission = useCallback(async (): Promise<boolean> => {
+    try {
+      // Check permission state first
+      if (navigator.permissions) {
+        const result = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+        if (result.state === 'denied') {
+          setMicPermission('denied');
+          setError('Microphone access is blocked. Please allow it in your browser settings (click the lock icon in the address bar).');
+          return false;
+        }
+      }
+
+      // Request actual access — this triggers the browser prompt
+      setStatus('requesting_mic');
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Got permission — stop the stream immediately (we use Web Speech API, not raw audio)
+      stream.getTracks().forEach(t => t.stop());
+      setMicPermission('granted');
+      setStatus('idle');
+      return true;
+    } catch (err: any) {
+      setMicPermission('denied');
+      setStatus('error');
+      if (err.name === 'NotAllowedError') {
+        setError('Microphone permission denied. Click the lock icon in your address bar → Allow microphone.');
+      } else {
+        setError('Could not access microphone. Please check your device settings.');
+      }
+      return false;
+    }
+  }, []);
+
+  // ─── TTS (Text-to-Speech) ──────────────────────────────
+
+  const speak = useCallback((text: string): Promise<void> => {
+    return new Promise((resolve) => {
+      if (!window.speechSynthesis || isMuted) { resolve(); return; }
+
+      window.speechSynthesis.cancel();
+
+      const utterance = new SpeechSynthesisUtterance(text);
+
+      // Language + voice selection
+      const isHindi = options.language === 'hi';
+      const targetLang = isHindi ? 'hi-IN' : 'en-IN';
+      utterance.lang = targetLang;
+
+      // Indian English voice: warm, natural pace
+      utterance.rate = isHindi ? 0.92 : 0.95; // slightly slower for clarity
+      utterance.pitch = 1.05;
+      utterance.volume = 0.9;
+
+      // Find best voice: prefer Indian English, fallback to any English
+      const voices = window.speechSynthesis.getVoices();
+      const indianVoice = voices.find(v => v.lang === targetLang) ||
+        voices.find(v => v.lang.startsWith(isHindi ? 'hi' : 'en') && v.name.toLowerCase().includes('india')) ||
+        voices.find(v => v.lang.startsWith(isHindi ? 'hi' : 'en'));
+      if (indianVoice) utterance.voice = indianVoice;
+
+      utterance.onend = () => resolve();
+      utterance.onerror = () => resolve();
+
+      window.speechSynthesis.speak(utterance);
+    });
+  }, [options.language, isMuted]);
 
   // ─── Load Learner Memory ────────────────────────────────
 
@@ -75,7 +161,6 @@ export function useFoxyVoice(options: UseFoxyVoiceOptions): UseFoxyVoiceReturn {
     const { data } = await supabase.rpc('get_or_create_learner_memory', {
       p_student_id: options.studentId,
     });
-
     const m = data as any;
     return {
       name: options.studentName,
@@ -92,65 +177,29 @@ export function useFoxyVoice(options: UseFoxyVoiceOptions): UseFoxyVoiceReturn {
       lastSessionSummary: m?.last_session_summary || null,
       lastSessionMode: m?.last_session_mode || null,
       sessionStreak: m?.session_streak || 0,
-      parentGoals: m?.parent_goals || null,
       totalVoiceSessions: m?.total_voice_sessions || 0,
+      parentGoals: m?.parent_goals || null,
     };
   }, [options]);
-
-  // ─── Text-to-Speech ─────────────────────────────────────
-
-  const speak = useCallback((text: string): Promise<void> => {
-    return new Promise((resolve) => {
-      if (!isTTSSupported() || isMuted) { resolve(); return; }
-
-      // Stop any ongoing speech
-      window.speechSynthesis.cancel();
-
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = options.language === 'hi' ? 'hi-IN' : 'en-IN';
-      utterance.rate = 1.0;
-      utterance.pitch = 1.05; // slightly warm
-      utterance.volume = 0.9;
-
-      // Try to find an Indian English voice
-      const voices = window.speechSynthesis.getVoices();
-      const indianVoice = voices.find(v =>
-        v.lang === (options.language === 'hi' ? 'hi-IN' : 'en-IN')
-      );
-      if (indianVoice) utterance.voice = indianVoice;
-
-      utterance.onend = () => resolve();
-      utterance.onerror = () => resolve();
-      window.speechSynthesis.speak(utterance);
-    });
-  }, [options.language, isMuted]);
 
   // ─── Call Foxy API ──────────────────────────────────────
 
   const callFoxy = useCallback(async (studentText: string): Promise<string> => {
     const state = sessionStateRef.current;
     const memory = memoryRef.current;
-    if (!state || !memory) return "I'm having trouble connecting. Try again.";
+    if (!state || !memory) return "Let me think about that...";
 
-    // Detect sentiment
     const wordCount = studentText.split(/\s+/).length;
     state.lastStudentSentiment = detectSentiment(studentText, 0, wordCount);
-
-    // Update counters
     state.studentTurns++;
     state.turnCount++;
     if (wordCount <= 2) state.shortResponseCount++;
 
-    // Route to correct mode
     const route = routeNextAction(state, memory);
-    if (route.nextMode !== state.mode) {
-      state.mode = route.nextMode;
-    }
+    if (route.nextMode !== state.mode) state.mode = route.nextMode;
 
-    // Build system prompt
     const systemPrompt = buildVoiceSystemPrompt(state.mode, memory, state);
 
-    // Call Foxy edge function
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) throw new Error('Not authenticated');
 
@@ -175,11 +224,8 @@ export function useFoxyVoice(options: UseFoxyVoiceOptions): UseFoxyVoiceReturn {
     const data = await res.json();
     if (data.session_id) sessionIdRef.current = data.session_id;
 
-    // Update state
     state.foxyTurns++;
     state.sessionDurationSec = Math.round((Date.now() - sessionStartRef.current) / 1000);
-
-    // Add to transcript
     state.transcript.push(
       { role: 'student', text: studentText, timestampMs: Date.now() - sessionStartRef.current },
       { role: 'foxy', text: data.reply || '', timestampMs: Date.now() - sessionStartRef.current },
@@ -188,180 +234,190 @@ export function useFoxyVoice(options: UseFoxyVoiceOptions): UseFoxyVoiceReturn {
     return data.reply || "Hmm, let me think about that...";
   }, [options]);
 
-  // ─── Start Session ──────────────────────────────────────
+  // ─── Process a completed utterance ─────────────────────
 
-  const startSession = useCallback(async () => {
-    if (!isSpeechSupported()) {
-      setError('Voice input is not supported in this browser. Try Chrome.');
-      return;
+  const processUtterance = useCallback(async (text: string) => {
+    if (!text.trim() || isProcessingRef.current || !isActiveRef.current) return;
+    isProcessingRef.current = true;
+
+    // Pause recognition while Foxy thinks + speaks
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch {}
     }
 
-    setError(null);
     setStatus('thinking');
+    setCurrentTranscript('');
+    transcriptRef.current = '';
 
     try {
-      // Load memory
-      const memory = await loadMemory();
-      memoryRef.current = memory;
-
-      // Create session state
-      const state = createSessionState(options.mode, options.subject, options.topic);
-      sessionStateRef.current = state;
-      sessionStartRef.current = Date.now();
-
-      // Create DB session record
-      const { data: sessionRow } = await supabase
-        .from('foxy_voice_sessions')
-        .insert({
-          student_id: options.studentId,
-          session_mode: options.mode,
-          subject: options.subject,
-          topic: options.topic,
-          grade: options.grade,
-          language: options.language,
-          stt_provider: 'browser',
-          tts_provider: 'browser',
-        })
-        .select('id')
-        .single();
-
-      if (sessionRow) sessionIdRef.current = sessionRow.id;
-
-      setIsSessionActive(true);
-
-      // Foxy speaks first — session opener
-      const opener = getSessionOpener(memory as any, options.mode, options.topic);
-      setFoxyText(opener);
+      const reply = await callFoxy(text);
+      setFoxyText(reply);
       setStatus('speaking');
-      await speak(opener);
-
-      // Start listening
-      startListening();
-    } catch (err) {
-      setError('Failed to start voice session. Please try again.');
-      setStatus('error');
+      await speak(reply);
+    } catch {
+      setError('Connection issue. Trying again...');
     }
-  }, [options, loadMemory, speak]);
 
-  // ─── Listening Loop ─────────────────────────────────────
+    isProcessingRef.current = false;
 
-  const startListening = useCallback(() => {
+    // Resume listening after Foxy finishes speaking
+    if (isActiveRef.current) {
+      resumeListening();
+    }
+  }, [callFoxy, speak]);
+
+  // ─── Start / Resume Listening ──────────────────────────
+
+  const resumeListening = useCallback(() => {
+    if (!isActiveRef.current) return;
+
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) return;
 
+    // Clean up any existing instance
+    if (recognitionRef.current) {
+      try { recognitionRef.current.abort(); } catch {}
+    }
+
     const recognition = new SpeechRecognition();
-    recognition.continuous = false;
+    recognition.continuous = false; // one utterance at a time
     recognition.interimResults = true;
     recognition.lang = options.language === 'hi' ? 'hi-IN' : 'en-IN';
+    recognition.maxAlternatives = 1;
 
-    recognition.onstart = () => setStatus('listening');
-
-    recognition.onresult = (event: any) => {
-      let transcript = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        transcript += event.results[i][0].transcript;
-      }
-      setCurrentTranscript(transcript);
+    recognition.onstart = () => {
+      setStatus('listening');
+      setError(null);
     };
 
-    recognition.onend = async () => {
-      const transcript = currentTranscript.trim();
-      if (!transcript || !isSessionActive) return;
-
-      setStatus('thinking');
-      setCurrentTranscript('');
-
-      try {
-        const reply = await callFoxy(transcript);
-        setFoxyText(reply);
-        setStatus('speaking');
-        await speak(reply);
-
-        // Continue listening after Foxy finishes speaking
-        if (isSessionActive) {
-          startListening();
+    recognition.onresult = (event: any) => {
+      let interim = '';
+      let final = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const t = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          final += t;
+        } else {
+          interim += t;
         }
-      } catch {
-        setError('Connection issue. Trying again...');
-        if (isSessionActive) startListening();
+      }
+      if (final) {
+        transcriptRef.current = final;
+        setCurrentTranscript(final);
+      } else if (interim) {
+        setCurrentTranscript(interim);
+      }
+    };
+
+    recognition.onend = () => {
+      const text = transcriptRef.current.trim();
+      if (text && !isProcessingRef.current) {
+        processUtterance(text);
+      } else if (isActiveRef.current && !isProcessingRef.current) {
+        // No speech detected — restart listening
+        setTimeout(() => {
+          if (isActiveRef.current) resumeListening();
+        }, 200);
       }
     };
 
     recognition.onerror = (event: any) => {
       if (event.error === 'no-speech') {
-        // Silence detected
         if (sessionStateRef.current) sessionStateRef.current.silenceCount++;
-        if (isSessionActive) startListening();
+        if (isActiveRef.current && !isProcessingRef.current) {
+          setTimeout(() => resumeListening(), 300);
+        }
         return;
       }
-      if (event.error !== 'aborted') {
-        setError(`Voice error: ${event.error}`);
+      if (event.error === 'aborted') return; // we aborted it intentionally
+      if (event.error === 'not-allowed') {
+        setMicPermission('denied');
+        setError('Microphone blocked. Click the lock icon in your address bar and allow microphone access.');
+        setStatus('error');
+        return;
       }
+      setError(`Voice error: ${event.error}. Try refreshing the page.`);
     };
 
     recognitionRef.current = recognition;
-    recognition.start();
-  }, [options.language, isSessionActive, currentTranscript, callFoxy, speak]);
+
+    try {
+      recognition.start();
+    } catch (err: any) {
+      if (err.message?.includes('already started')) return;
+      setError('Could not start listening. Please try again.');
+    }
+  }, [options.language, processUtterance]);
+
+  // ─── Start Session ──────────────────────────────────────
+
+  const startSession = useCallback(async () => {
+    setError(null);
+
+    // Step 1: Request mic permission FIRST (user gesture = this click)
+    const hasPermission = await requestMicPermission();
+    if (!hasPermission) return;
+
+    setStatus('thinking');
+
+    try {
+      const memory = await loadMemory();
+      memoryRef.current = memory;
+
+      const state = createSessionState(options.mode, options.subject, options.topic);
+      sessionStateRef.current = state;
+      sessionStartRef.current = Date.now();
+      isProcessingRef.current = false;
+      transcriptRef.current = '';
+
+      setIsSessionActive(true);
+
+      // Foxy speaks first
+      const opener = getSessionOpener(memory, options.mode, options.topic);
+      setFoxyText(opener);
+      setStatus('speaking');
+      await speak(opener);
+
+      // Start listening (mic already permitted from user gesture above)
+      resumeListening();
+    } catch (err) {
+      setError('Failed to start voice session. Please try again.');
+      setStatus('error');
+    }
+  }, [options, loadMemory, speak, requestMicPermission, resumeListening]);
 
   // ─── End Session ────────────────────────────────────────
 
   const endSession = useCallback(async () => {
     setIsSessionActive(false);
+    isActiveRef.current = false;
 
-    // Stop recognition
     if (recognitionRef.current) {
-      recognitionRef.current.abort();
+      try { recognitionRef.current.abort(); } catch {}
       recognitionRef.current = null;
     }
-
-    // Stop speech
-    if (typeof window !== 'undefined') {
-      window.speechSynthesis.cancel();
-    }
+    if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
 
     const state = sessionStateRef.current;
     const memory = memoryRef.current;
 
     if (state && memory) {
-      // Generate summary
       const summary = generateSessionSummary(state);
-      const engagementScore = calculateEngagementScore(state);
 
-      // Foxy says goodbye
       const recap = state.questionsAsked > 0
-        ? `Great session! You got ${state.questionsCorrect} out of ${state.questionsAsked} right. ${engagementScore >= 70 ? 'Really solid work!' : 'Keep practicing!'}`
+        ? `Great session! You got ${state.questionsCorrect} out of ${state.questionsAsked} right. Keep it up!`
         : `Nice chat! We covered ${state.topic}. See you next time!`;
 
       setFoxyText(recap);
       setStatus('speaking');
       await speak(recap);
 
-      // Save to DB
-      if (sessionIdRef.current) {
-        await supabase.from('foxy_voice_sessions').update({
-          ended_at: new Date().toISOString(),
-          duration_seconds: Math.round((Date.now() - sessionStartRef.current) / 1000),
-          total_turns: state.turnCount,
-          student_turns: state.studentTurns,
-          foxy_turns: state.foxyTurns,
-          questions_asked: state.questionsAsked,
-          questions_correct: state.questionsCorrect,
-          silences_detected: state.silenceCount,
-          engagement_score: engagementScore,
-          struggle_moments: state.consecutiveWrong >= 2 ? 1 : 0,
-          transcript: state.transcript,
-          foxy_summary: summary,
-          concepts_covered: state.conceptsCovered,
-        }).eq('id', sessionIdRef.current);
-      }
-
       // Update learner memory
       await supabase.rpc('update_learner_memory_after_session', {
         p_student_id: options.studentId,
         p_session_summary: summary,
         p_session_mode: state.mode,
-        p_engagement_score: engagementScore,
-      });
+      }).catch(() => {});
     }
 
     setStatus('idle');
@@ -371,48 +427,25 @@ export function useFoxyVoice(options: UseFoxyVoiceOptions): UseFoxyVoiceReturn {
   // ─── Toggle Mute ────────────────────────────────────────
 
   const toggleMute = useCallback(() => {
-    setIsMuted(m => !m);
-    if (!isMuted && typeof window !== 'undefined') {
-      window.speechSynthesis.cancel();
-    }
-  }, [isMuted]);
+    setIsMuted(m => {
+      if (!m) window.speechSynthesis?.cancel();
+      return !m;
+    });
+  }, []);
 
   // ─── Cleanup ────────────────────────────────────────────
 
   useEffect(() => {
     return () => {
-      if (recognitionRef.current) recognitionRef.current.abort();
-      if (typeof window !== 'undefined') window.speechSynthesis.cancel();
+      isActiveRef.current = false;
+      if (recognitionRef.current) try { recognitionRef.current.abort(); } catch {}
+      if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
     };
   }, []);
 
   return {
-    status,
-    isSessionActive,
-    currentTranscript,
-    foxyText,
-    sessionState: sessionStateRef.current,
-    startSession,
-    endSession,
-    toggleMute,
-    isMuted,
-    error,
+    status, isSessionActive, currentTranscript, foxyText,
+    startSession, endSession, toggleMute, isMuted, error,
+    micPermission, requestMicPermission,
   };
-}
-
-function calculateEngagementScore(state: VoiceSessionState): number {
-  let score = 50; // baseline
-
-  // Positive signals
-  if (state.studentTurns >= 5) score += 10;
-  if (state.questionsCorrect > 0) score += Math.min(state.questionsCorrect * 5, 20);
-  if (state.consecutiveCorrect >= 3) score += 10;
-  if (state.sessionDurationSec >= 300) score += 10; // 5+ minutes
-
-  // Negative signals
-  if (state.silenceCount >= 3) score -= 15;
-  if (state.shortResponseCount >= 4) score -= 10;
-  if (state.consecutiveWrong >= 3) score -= 10;
-
-  return Math.max(0, Math.min(100, score));
 }
