@@ -96,6 +96,31 @@ AI responses (foxy-tutor, ncert-solver) MUST be age-appropriate for grades 6-12.
 ### P13: Data Privacy
 No PII in client-side logs or Sentry events. Logger redacts: password, token, email, phone, API keys. Student data accessible only to: the student, their linked parent, their assigned teacher, or admin via service role.
 
+### P14: Review Chain Completeness
+When a critical file is modified, mandatory downstream reviewers must be invoked before the task can be marked complete. The PostToolUse hook (`review-chain.sh`) injects reminders automatically. Orchestrator validates at Gate 5. Quality rejects if chains are incomplete. The full matrix is defined in `.claude/skills/review-chains/SKILL.md`.
+
+Summary of mandatory chains:
+| Change | Making Agent | Must Review |
+|---|---|---|
+| Grading/XP constants | assessment | testing, ai-engineer, backend, frontend |
+| Learner-state rules | assessment | ai-engineer, frontend, testing |
+| AI tutor behavior | ai-engineer | assessment, testing |
+| RAG/retrieval | ai-engineer | assessment, testing |
+| Quiz generation | ai-engineer | assessment, testing |
+| RBAC/auth | architect | backend, frontend, ops, testing |
+| Payment flow | backend | architect, testing |
+| Reporting schema | ops | frontend, architect |
+| Deployment config | architect | ops, testing |
+| Anti-cheat thresholds | assessment + architect | backend, testing |
+| Notification types | backend | frontend, ops |
+
+## Enforcement Mechanisms
+- **PreToolUse hook** (`guard.sh`): Blocks wrong agents from writing to critical files
+- **PostToolUse hook** (`review-chain.sh`): Injects mandatory review reminders after critical file writes
+- **Gate 5** (orchestrator): Validates all review chains are complete before allowing push
+- **Quality final review**: Rejects if review chains were skipped
+- **Agent prompt rules**: Advisory layer for cases not covered by hooks
+
 ## Agent System
 9 agents. Each domain in the product has exactly one owner.
 

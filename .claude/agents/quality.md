@@ -65,6 +65,16 @@ Pass: exit code 0. Verify bundle sizes:
 - [ ] No individual page > 260 kB (largest: /foxy at ~254 kB)
 - [ ] Middleware < 120 kB (currently ~109 kB)
 
+### Check 5: Review Chain Completeness
+Verify the orchestrator's Gate 5 status report:
+- [ ] All files modified in the task are listed
+- [ ] Each file was checked against the review chain matrix (P14)
+- [ ] Every mandatory downstream reviewer was invoked
+- [ ] Every reviewer produced a structured verdict (APPROVE or APPROVE WITH CONDITIONS)
+- [ ] No REJECT verdicts are unresolved
+
+If the orchestrator's status report does not include Gate 5 results, or if any chain is marked incomplete, REJECT with reason: `Review chain incomplete: [chain name] missing [reviewer name]`.
+
 ## Code Review Checklist (manual, applied to every change)
 
 ### Readability
@@ -120,7 +130,10 @@ Reject (veto the commit) when:
 - Inline styles instead of Tailwind
 - Page missing loading, error, or empty state
 - User-facing text without Hindi variant
-- Product invariant P1-P13 violated
+- Product invariant P1-P14 violated
+- Review chain incomplete: orchestrator Gate 5 shows missing mandatory reviewers
+- Review chain skipped: no Gate 5 report in orchestrator status for a task that modified critical files
+- Reviewer REJECT unresolved: a downstream reviewer rejected and the issue was not fixed
 
 ## Severity Levels
 | Level | Definition | Action |
