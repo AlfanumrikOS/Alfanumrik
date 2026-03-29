@@ -129,37 +129,58 @@ export function useFoxyVoice(options: UseFoxyVoiceOptions): UseFoxyVoiceReturn {
     }
   }, []);
 
-  // ─── TTS (Text-to-Speech) ──────────────────────────────
+  // ─── TTS (Text-to-Speech) — chunked for natural delivery ─
 
   const speak = useCallback((text: string): Promise<void> => {
-    return new Promise((resolve) => {
+    return new Promise(async (resolve) => {
       if (!window.speechSynthesis || isMuted) { resolve(); return; }
 
       window.speechSynthesis.cancel();
 
-      const utterance = new SpeechSynthesisUtterance(text);
+      // Strip any markdown/formatting that slipped through
+      const clean = text
+        .replace(/\*\*/g, '')
+        .replace(/\*/g, '')
+        .replace(/#{1,6}\s/g, '')
+        .replace(/`[^`]*`/g, (m) => m.replace(/`/g, ''))
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+        .trim();
 
-      // Language + voice selection
+      // Split into natural spoken chunks at sentence boundaries
+      const chunks = clean
+        .split(/(?<=[.!?।])\s+/)
+        .filter(c => c.trim().length > 0);
+
       const isHindi = options.language === 'hi';
+      const isHinglish = options.language === 'hinglish';
+      // Hinglish uses en-IN voice since text is Roman script
       const targetLang = isHindi ? 'hi-IN' : 'en-IN';
-      utterance.lang = targetLang;
 
-      // Indian English voice: warm, natural pace
-      utterance.rate = isHindi ? 0.92 : 0.95; // slightly slower for clarity
-      utterance.pitch = 1.05;
-      utterance.volume = 0.9;
-
-      // Find best voice: prefer Indian English, fallback to any English
       const voices = window.speechSynthesis.getVoices();
-      const indianVoice = voices.find(v => v.lang === targetLang) ||
+      const selectedVoice =
+        voices.find(v => v.lang === targetLang && v.localService) ||
+        voices.find(v => v.lang === targetLang) ||
         voices.find(v => v.lang.startsWith(isHindi ? 'hi' : 'en') && v.name.toLowerCase().includes('india')) ||
         voices.find(v => v.lang.startsWith(isHindi ? 'hi' : 'en'));
-      if (indianVoice) utterance.voice = indianVoice;
 
-      utterance.onend = () => resolve();
-      utterance.onerror = () => resolve();
+      // Speak each chunk sequentially with micro-pauses between
+      for (const chunk of chunks) {
+        await new Promise<void>((next) => {
+          const utterance = new SpeechSynthesisUtterance(chunk);
+          utterance.lang = targetLang;
+          utterance.rate = isHinglish ? 0.93 : isHindi ? 0.90 : 0.95;
+          utterance.pitch = 1.05;
+          utterance.volume = 0.9;
+          if (selectedVoice) utterance.voice = selectedVoice;
+          utterance.onend = () => next();
+          utterance.onerror = () => next();
+          window.speechSynthesis.speak(utterance);
+        });
+        // Natural pause between sentences (200ms)
+        await new Promise(r => setTimeout(r, 200));
+      }
 
-      window.speechSynthesis.speak(utterance);
+      resolve();
     });
   }, [options.language, isMuted]);
 
