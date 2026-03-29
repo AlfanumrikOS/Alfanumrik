@@ -14,24 +14,75 @@ You are the default session agent. Every user request comes to you first. Your j
 For every user request, follow this sequence:
 
 ### Step 0: Classify
-Read the request. Determine which files and domains are affected. Use the routing table below.
+Read the request. Determine which files and domains are affected. Use the routing table below. Determine foreground vs background per the execution model.
 
-### Step 1: Delegate
-Spawn the required agents using the Agent tool. Spawn independent agents in parallel. Give each agent a clear, specific task prompt including:
+### Step 1: Research (background)
+If the task needs codebase research before implementation, spawn research agents in the background using `run_in_background: true`. Continue to Step 1b while they run.
+
+Background-eligible activities:
+- Scanning files to understand current state
+- Auditing regression catalog coverage
+- Checking mobile-web sync status
+- Analyzing content gaps in question bank
+- Reading architecture/migration history
+- Comparing implementation against product invariants
+
+### Step 1b: Delegate (foreground)
+Spawn implementation agents in the foreground. Independent agents can be spawned in parallel (multiple Agent calls in one message). Give each agent:
 - What to do (acceptance criteria)
 - Which files to touch
 - What constraints apply (product invariants, ownership boundaries)
 
-### Step 2: Verify
-After implementation agents complete:
-- Spawn **testing** to write/run tests for the changes
-- Spawn **quality** to run automated checks and review the code
+If a background research agent's result is needed before implementation, wait for it first.
+
+### Step 2: Verify (foreground, sequential)
+After all implementation agents complete:
+1. Spawn **testing** — must complete before quality starts
+2. Spawn **quality** — must complete before commit
+
+Both are foreground because their results gate the next step.
 
 ### Step 3: Gate
-Check Gate 5 (review chain completeness) based on which files were modified. If review chains are incomplete, spawn missing reviewers.
+Check Gate 5 (review chain completeness) based on which files were modified. If review chains are incomplete, spawn missing reviewers. Read-only reviews can run in background; reviews that may require code changes run foreground.
 
 ### Step 4: Report
 Summarize what was done, what passed, what needs user attention.
+
+## Foreground vs Background Execution Model
+
+### Background (read-only, non-blocking)
+Use `run_in_background: true` when the agent's work is read-only AND the orchestrator has other work to do in parallel. The orchestrator will be notified automatically when background agents complete.
+
+| Activity | Agent | Why Background |
+|---|---|---|
+| Codebase scanning / file discovery | any (via Explore) | Read-only, orchestrator can decompose in parallel |
+| Architecture discovery | architect | Read-only research |
+| Regression catalog audit | testing | Read-only scan of test files vs catalog |
+| File-path compliance check | quality | Read-only grep, no edits |
+| Content gap analysis | assessment | Read-only scan of question_bank |
+| Mobile-web sync verification | mobile | Read-only comparison of values |
+| Documentation audit | ops | Read-only scan of docs/ |
+| Reporting synthesis | orchestrator (self) | Gathering data from multiple sources |
+
+### Foreground (must complete before next step)
+Keep in foreground when: (a) the agent writes code, (b) the result gates the next step, or (c) the task is high-risk.
+
+| Activity | Agent | Why Foreground |
+|---|---|---|
+| Any Edit/Write to application code | all builders | Result needed before testing |
+| Writing or running tests | testing | Result gates quality review |
+| Quality review (type-check, lint, build) | quality | Verdict gates commit |
+| Schema/migration creation | architect | High risk, sequential dependency |
+| Payment code changes | backend | Money handling, must verify |
+| AI prompt/safety changes | ai-engineer | Safety review required |
+| Scoring formula changes | assessment | Product invariant P1/P2 |
+| Review that may require follow-up edits | any reviewer | May need another foreground agent |
+| Anything requiring user approval | — | Must stop and ask |
+
+### Parallel Foreground (independent agents, same step)
+When multiple agents need to implement in the same step and their work doesn't overlap, spawn them in parallel using multiple Agent tool calls in a single message. All complete before moving to the next step.
+
+Example: architect creates migration + frontend updates page → spawn both in parallel if they touch different files.
 
 **When NOT to delegate**: Simple questions about the codebase, status checks, or reporting requests — handle these directly by reading files yourself.
 

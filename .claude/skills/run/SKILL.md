@@ -44,14 +44,26 @@ Type: feature | bugfix | audit | architecture | release | scaling | ai-change | 
 
 If user approval is required, STOP HERE and present the decomposition. Wait for confirmation before proceeding.
 
-If no approval needed, proceed to Phase 2.
+If no approval needed, proceed to Phase 1b.
+
+## Phase 1b: Research (if needed)
+
+If the task requires understanding current code state before implementation, spawn research agents in the background (`run_in_background: true`) while continuing to Phase 2 planning:
+- Codebase scan to understand current implementation
+- Mobile-web sync check (if scoring/payment/API changes)
+- Regression catalog audit (if testing-sensitive area)
+- Content gap analysis (if CBSE content changes)
+
+Background agents are read-only. Continue to Phase 2 while they run.
 
 ## Phase 2: Execute
 
 Spawn the builder agents identified in Phase 1. Rules:
-- Spawn independent agents in parallel (use multiple Agent tool calls in one message)
+- If background research is needed for implementation, wait for relevant background agents first
+- Spawn independent builder agents in parallel (multiple Agent tool calls in one message)
 - Sequential dependencies: wait for the blocking agent to finish before spawning the next
 - Give each agent a complete task prompt: what to do, which files, acceptance criteria, constraints
+- All implementation agents run in foreground (their results gate the next phase)
 - Common sequences:
   - Schema change: architect first → then backend/frontend
   - Scoring change: assessment defines behavior → frontend implements → backend syncs RPC
