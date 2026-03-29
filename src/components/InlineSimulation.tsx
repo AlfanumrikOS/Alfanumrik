@@ -65,6 +65,11 @@ const SIMULATION_MAP: Record<string, { id: string; title: string; emoji: string;
     id: 'builtin-bohr-model', title: 'Bohr Atomic Model', emoji: '⚛️',
     tip: 'Click different elements and watch electrons fill the shells!',
   },
+  // Chemistry — Equations
+  'balance|balancing|chemical equation|conservation of mass|stoichiometry|reactant|product': {
+    id: 'builtin-chemical-balancer', title: 'Chemical Equation Balancer', emoji: '⚗️',
+    tip: 'Adjust the coefficients until atoms are equal on both sides!',
+  },
   // Math — Graphs
   'quadratic|parabola|ax2|discriminant|vertex|roots of equation': {
     id: 'builtin-quadratic-graph', title: 'Quadratic Equation Grapher', emoji: '📈',
@@ -93,6 +98,7 @@ const COMPONENTS: Record<string, any> = {
   'builtin-quadratic-graph': dynamic(() => import('@/components/simulations/QuadraticGraph'), { ssr: false }),
   'builtin-hookes-law': dynamic(() => import('@/components/simulations/HookesLaw'), { ssr: false }),
   'builtin-linear-graph': dynamic(() => import('@/components/simulations/LinearGraph'), { ssr: false }),
+  'builtin-chemical-balancer': dynamic(() => import('@/components/simulations/ChemicalBalancer'), { ssr: false }),
 };
 
 /** Find a matching simulation for a given topic/concept text */

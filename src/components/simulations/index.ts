@@ -31,6 +31,7 @@ const BohrModel = dynamic(() => import('./BohrModel'), { ssr: false });
 const QuadraticGraph = dynamic(() => import('./QuadraticGraph'), { ssr: false });
 const HookesLaw = dynamic(() => import('./HookesLaw'), { ssr: false });
 const LinearGraph = dynamic(() => import('./LinearGraph'), { ssr: false });
+const ChemicalBalancer = dynamic(() => import('./ChemicalBalancer'), { ssr: false });
 
 export const BUILT_IN_SIMULATIONS: BuiltInSimulation[] = [
   {
@@ -228,5 +229,19 @@ export const BUILT_IN_SIMULATIONS: BuiltInSimulation[] = [
     conceptTags: ['Linear Equation', 'Slope', 'Intercept', 'Coordinate Geometry', 'Parallel Lines'],
     foxyTip: 'Two lines with the same slope never meet — they are parallel! What if their product of slopes is -1?',
     component: LinearGraph,
+  },
+  {
+    id: 'builtin-chemical-balancer',
+    title: 'Chemical Equation Balancer',
+    description: 'Balance chemical equations by adjusting coefficients! Watch atoms count in real-time and discover the Law of Conservation of Mass.',
+    subject: 'chemistry',
+    grade: ['10'],
+    thumbnailEmoji: '⚗️',
+    difficulty: 2,
+    bloomLevel: 'apply',
+    estimatedTimeMinutes: 8,
+    conceptTags: ['Chemical Equations', 'Balancing', 'Conservation of Mass', 'Reactions', 'Stoichiometry'],
+    foxyTip: 'Start by balancing the atom that appears in the fewest compounds. Save oxygen for last!',
+    component: ChemicalBalancer,
   },
 ];
