@@ -110,13 +110,6 @@ export async function cancelRazorpaySubscription(
   });
 }
 
-/**
- * Fetch a Razorpay Subscription by ID.
- */
-export async function fetchRazorpaySubscription(subscriptionId: string): Promise<RazorpaySubscription> {
-  return rzpFetch<RazorpaySubscription>(`/subscriptions/${subscriptionId}`);
-}
-
 // ─── Orders (for one-time yearly payments) ──────────────────
 
 interface RazorpayOrder {
