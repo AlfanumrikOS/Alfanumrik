@@ -70,6 +70,26 @@ const SIMULATION_MAP: Record<string, { id: string; title: string; emoji: string;
     id: 'builtin-chemical-balancer', title: 'Chemical Equation Balancer', emoji: '⚗️',
     tip: 'Adjust the coefficients until atoms are equal on both sides!',
   },
+  // Chemistry — Gas Laws
+  'gas law|boyle|charles|pv=nrt|ideal gas|pressure volume|states of matter': {
+    id: 'builtin-gas-laws', title: 'Gas Laws Lab (PV = nRT)', emoji: '🧪',
+    tip: 'Halve the volume in Boyle\'s mode — watch pressure double!',
+  },
+  // Physics — Refraction
+  'snell|refraction|refractive index|critical angle|total internal reflection|bending of light': {
+    id: 'builtin-snells-law', title: 'Snell\'s Law — Refraction', emoji: '💎',
+    tip: 'Change the angle and see light bend. Try to trigger total internal reflection!',
+  },
+  // Math — Probability
+  'probability|coin toss|dice|random|large numbers|experimental probability|sample space': {
+    id: 'builtin-probability-lab', title: 'Probability Experiment Lab', emoji: '🎲',
+    tip: 'Roll 1000 dice and watch each outcome approach 1/6!',
+  },
+  // Math — Integration
+  'integration|integral|riemann|area under curve|definite integral|calculus': {
+    id: 'builtin-integration', title: 'Integration Visualizer', emoji: '∫',
+    tip: 'Increase rectangles from 5 to 100 — watch the sum converge to the exact area!',
+  },
   // Math — Graphs
   'quadratic|parabola|ax2|discriminant|vertex|roots of equation': {
     id: 'builtin-quadratic-graph', title: 'Quadratic Equation Grapher', emoji: '📈',
@@ -99,6 +119,10 @@ const COMPONENTS: Record<string, any> = {
   'builtin-hookes-law': dynamic(() => import('@/components/simulations/HookesLaw'), { ssr: false }),
   'builtin-linear-graph': dynamic(() => import('@/components/simulations/LinearGraph'), { ssr: false }),
   'builtin-chemical-balancer': dynamic(() => import('@/components/simulations/ChemicalBalancer'), { ssr: false }),
+  'builtin-gas-laws': dynamic(() => import('@/components/simulations/GasLaws'), { ssr: false }),
+  'builtin-probability-lab': dynamic(() => import('@/components/simulations/ProbabilityLab'), { ssr: false }),
+  'builtin-snells-law': dynamic(() => import('@/components/simulations/SnellsLaw'), { ssr: false }),
+  'builtin-integration': dynamic(() => import('@/components/simulations/IntegrationVisualizer'), { ssr: false }),
 };
 
 /** Find a matching simulation for a given topic/concept text */
