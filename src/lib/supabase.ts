@@ -174,7 +174,7 @@ export async function getQuizQuestions(subject: string, grade: string, count = 1
   if (difficulty != null) params.p_difficulty = difficulty;
   try {
     const { data, error } = await supabase.rpc('get_quiz_questions', params);
-    if (!error && data) return data;
+    if (!error && data) return validateQuestions(data);
   } catch { /* RPC may not exist — fall back */ }
 
   // Direct table query fallback
@@ -183,12 +183,47 @@ export async function getQuizQuestions(subject: string, grade: string, count = 1
     .eq('subject', subject)
     .eq('grade', grade)
     .eq('is_active', true)
-    .limit(Math.min(count, 30));
+    .limit(Math.min(count * 2, 60)); // fetch extra to account for filtered-out bad questions
   if (difficulty != null) query = query.eq('difficulty', difficulty);
   const { data, error } = await query;
   if (error) throw error;
-  // Shuffle client-side since direct query can't ORDER BY random()
-  return (data ?? []).sort(() => Math.random() - 0.5);
+  // Validate, deduplicate, shuffle, and trim to requested count
+  return validateQuestions(data ?? []).sort(() => Math.random() - 0.5).slice(0, count);
+}
+
+/** Filter out broken, duplicate, or template questions before they reach students. */
+function validateQuestions(questions: any[]): any[] {
+  const seen = new Set<string>();
+  return questions.filter(q => {
+    // Must have valid structure
+    if (!q.question_text || typeof q.question_text !== 'string') return false;
+    if (q.question_text.length < 15) return false;
+
+    // Must have exactly 4 options
+    const opts = Array.isArray(q.options) ? q.options : [];
+    if (opts.length !== 4) return false;
+
+    // Must have valid answer index
+    if (q.correct_answer_index < 0 || q.correct_answer_index > 3) return false;
+
+    // Reject template/garbage questions
+    const text = q.question_text.toLowerCase();
+    if (text.includes('unrelated topic')) return false;
+    if (text.startsWith('a student studying') && text.includes('should focus on')) return false;
+    if (text.startsWith('which of the following best describes the main topic')) return false;
+
+    // Reject options containing "unrelated topic" or identical options
+    const optTexts = opts.map((o: string) => (o || '').toLowerCase().trim());
+    if (optTexts.some((o: string) => o.includes('unrelated topic'))) return false;
+    if (new Set(optTexts).size < 3) return false; // at least 3 distinct options
+
+    // Deduplicate by question text
+    const key = q.question_text.trim().toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+
+    return true;
+  });
 }
 
 export async function submitQuizResults(studentId: string, subject: string, grade: string, topic: string, chapter: number, responses: import('./types').QuizResponse[], time: number) {
