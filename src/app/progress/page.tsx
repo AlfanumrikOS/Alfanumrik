@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { getStudentProfiles, getSubjects, getBloomProgression, getLearningVelocity, getKnowledgeGaps, supabase } from '@/lib/supabase';
 import { BLOOM_CONFIG, BLOOM_LEVELS, BLOOM_ORDER, getHighestMasteredBloom, predictMasteryDate } from '@/lib/cognitive-engine';
-import type { BloomLevel, KnowledgeGap, LearningVelocity, CognitiveSessionMetrics } from '@/lib/types';
+import type { BloomLevel, KnowledgeGap, LearningVelocity, CognitiveSessionMetrics, StudentLearningProfile, Subject } from '@/lib/types';
 import { Card, Badge, ProgressBar, SectionHeader, StatCard, MasteryRing, LoadingFoxy, BottomNav, Button } from '@/components/ui';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 
@@ -171,9 +171,9 @@ export default function ProgressPage() {
   const { student, snapshot, isLoggedIn, isLoading, isHi, refreshSnapshot } = useAuth();
   const router = useRouter();
 
-  const [profiles, setProfiles] = useState<any[]>([]);
-  const [subjects, setSubjects] = useState<any[]>([]);
-  const [bloomData, setBloomData] = useState<any[]>([]);
+  const [profiles, setProfiles] = useState<StudentLearningProfile[]>([]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [bloomData, setBloomData] = useState<Record<string, unknown>[]>([]);
   const [velocityData, setVelocityData] = useState<LearningVelocity[]>([]);
   const [knowledgeGaps, setKnowledgeGaps] = useState<KnowledgeGap[]>([]);
   const [sessionMetrics, setSessionMetrics] = useState<CognitiveSessionMetrics[]>([]);
@@ -219,12 +219,11 @@ export default function ProgressPage() {
   const accuracy = totalAsked > 0 ? Math.round((totalCorrect / totalAsked) * 100) : 0;
 
   /* ── Bloom aggregate: transform DB rows into per-level mastery data ── */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- bloom DB rows have dynamic shape
-  const bloomFlattened = bloomData.flatMap((b: any) =>
+  const bloomFlattened = bloomData.flatMap((b: Record<string, unknown>) =>
     BLOOM_LEVELS.map((level) => ({
       bloom_level: level as BloomLevel,
       mastery: Number(b[`${level}_mastery`]) || 0,
-      subject: b.subject ?? 'unknown',
+      subject: (b.subject as string) ?? 'unknown',
     })).filter(item => item.mastery > 0)
   );
   const highestBloom: BloomLevel = bloomFlattened.length > 0
@@ -262,7 +261,7 @@ export default function ProgressPage() {
   );
 
   /* ── Bloom data grouped by subject ── */
-  const bloomBySubject = new Map<string, any[]>();
+  const bloomBySubject = new Map<string, Array<{ bloom_level: BloomLevel; mastery: number; subject: string }>>();
   for (const row of bloomFlattened) {
     const subj = row.subject ?? 'unknown';
     if (!bloomBySubject.has(subj)) bloomBySubject.set(subj, []);

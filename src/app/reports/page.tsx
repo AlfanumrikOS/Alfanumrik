@@ -8,6 +8,29 @@ import { computeMonthlyReportMetrics, type MonthlyReportData, type ExamChapter }
 import { REPORT_MONTHS_COUNT } from '@/lib/constants';
 import { Card, Button, ProgressBar, SectionHeader, StatCard, LoadingFoxy, BottomNav } from '@/components/ui';
 
+/* ── DB Row Types ── */
+interface QuizRow {
+  score_percent?: number;
+  completed_at?: string;
+  subject?: string;
+  total_questions?: number;
+  time_taken_seconds?: number;
+}
+
+interface ProfileRow {
+  total_time_minutes?: number;
+  total_questions_asked?: number;
+  total_questions_answered_correctly?: number;
+}
+
+interface MasteryRow {
+  topic?: string;
+  subject?: string;
+  remember_mastery?: number;
+  understand_mastery?: number;
+  apply_mastery?: number;
+}
+
 /* ── Helpers ── */
 function getLastNMonths(n: number): { label: string; value: string; start: string; end: string }[] {
   const months: { label: string; value: string; start: string; end: string }[] = [];
@@ -143,8 +166,8 @@ export default function MonthlyReportsPage() {
         ]);
 
         const quizList = quizzes ?? [];
-        const scores = quizList.map((q: any) => q.score_percent ?? 0);
-        const quizLabels = quizList.map((q: any, i: number) => ({
+        const scores = quizList.map((q: QuizRow) => q.score_percent ?? 0);
+        const quizLabels = quizList.map((q: QuizRow, i: number) => ({
           label: q.subject ?? `Quiz ${i + 1}`,
           score: q.score_percent ?? 0,
         }));
@@ -157,13 +180,13 @@ export default function MonthlyReportsPage() {
           weekStart.setDate(weekStart.getDate() + w * 7);
           const weekEnd = new Date(weekStart);
           weekEnd.setDate(weekEnd.getDate() + 7);
-          const weekQuizzes = quizList.filter((q: any) => {
-            const d = new Date(q.completed_at);
+          const weekQuizzes = quizList.filter((q: QuizRow) => {
+            const d = new Date(q.completed_at ?? '');
             return d >= weekStart && d < weekEnd;
           });
           if (weekQuizzes.length > 0) {
             weeklyAccuracies.push(
-              weekQuizzes.reduce((a: number, q: any) => a + (q.score_percent ?? 0), 0) / weekQuizzes.length
+              weekQuizzes.reduce((a: number, q: QuizRow) => a + (q.score_percent ?? 0), 0) / weekQuizzes.length
             );
           } else {
             weeklyAccuracies.push(0);
@@ -171,7 +194,7 @@ export default function MonthlyReportsPage() {
         }
 
         // Active days
-        const activeDaysSet = new Set(quizList.map((q: any) => q.completed_at?.substring(0, 10)));
+        const activeDaysSet = new Set(quizList.map((q: QuizRow) => q.completed_at?.substring(0, 10)));
         const activeDaysCount = activeDaysSet.size;
         const endDate = new Date(monthInfo.end);
         const startDate = new Date(monthInfo.start);
@@ -179,10 +202,10 @@ export default function MonthlyReportsPage() {
         setDaysActive(activeDaysCount);
         setDaysTotal(totalDays);
 
-        const totalMinutes = (profiles ?? []).reduce((a: number, p: any) => a + (p.total_time_minutes ?? 0), 0);
-        const totalQuestions = quizList.reduce((a: number, q: any) => a + (q.total_questions ?? 0), 0);
+        const totalMinutes = (profiles ?? []).reduce((a: number, p: ProfileRow) => a + (p.total_time_minutes ?? 0), 0);
+        const totalQuestions = quizList.reduce((a: number, q: QuizRow) => a + (q.total_questions ?? 0), 0);
 
-        const masteries = (masteryRows ?? []).map((m: any) => ({
+        const masteries = (masteryRows ?? []).map((m: MasteryRow) => ({
           mastery: Math.max(m.remember_mastery ?? 0, m.understand_mastery ?? 0, m.apply_mastery ?? 0),
           topic: m.subject ?? 'Unknown',
         }));

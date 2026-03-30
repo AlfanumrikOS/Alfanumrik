@@ -15,7 +15,7 @@ import { supabase } from '@/lib/supabase';
 
 declare global {
   interface Window {
-    Razorpay: any;
+    Razorpay: new (options: Record<string, unknown>) => { open: () => void; on: (event: string, handler: (response: Record<string, unknown>) => void) => void };
   }
 }
 
@@ -199,8 +199,9 @@ export function useCheckout() {
     };
 
     const rzp = new window.Razorpay(options);
-    rzp.on('payment.failed', (response: any) => {
-      setError(response?.error?.description || 'Payment failed. Please try again.');
+    rzp.on('payment.failed', (response: Record<string, unknown>) => {
+      const errorObj = response?.error as Record<string, unknown> | undefined;
+      setError((errorObj?.description as string) || 'Payment failed. Please try again.');
       setStatus('failed');
       setLoading(false);
     });
@@ -280,8 +281,9 @@ export function useCheckout() {
     };
 
     const rzp = new window.Razorpay(options);
-    rzp.on('payment.failed', (response: any) => {
-      setError(response?.error?.description || 'Payment failed. Please try again.');
+    rzp.on('payment.failed', (response: Record<string, unknown>) => {
+      const errorObj = response?.error as Record<string, unknown> | undefined;
+      setError((errorObj?.description as string) || 'Payment failed. Please try again.');
       setStatus('failed');
       setLoading(false);
     });

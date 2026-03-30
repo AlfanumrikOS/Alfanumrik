@@ -15,6 +15,7 @@ import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import { RichContent } from '@/components/foxy/RichContent';
 import { ChatInput } from '@/components/foxy/ChatInput';
 import { UpgradeModal } from '@/components/UpgradeModal';
+import type { Student, CurriculumTopic } from '@/lib/types';
 import FoxySessionStart from '@/components/foxy/FoxySessionStart';
 import FoxySessionComplete from '@/components/foxy/FoxySessionComplete';
 
@@ -67,22 +68,31 @@ function getGradeSubjects(grade: string): string[] {
   return GRADE_SUBJECTS[g] || GRADE_SUBJECTS['9'];
 }
 
+/* -- Mastery row shape from topic_mastery table -- */
+interface TopicMasteryRow {
+  topic_tag?: string;
+  chapter_number?: number | null;
+  mastery_percent?: number;
+  mastery_level?: string;
+  [key: string]: unknown;
+}
+
 /* ══════════════════════════════════════════════════════════════
    API HELPERS — uses shared Supabase client, no hardcoded creds
    ══════════════════════════════════════════════════════════════ */
 
-async function fetchTopics(subjectCode: string, grade: string): Promise<any[]> {
+async function fetchTopics(subjectCode: string, grade: string): Promise<CurriculumTopic[]> {
   const { data: subjectRow } = await supabase.from('subjects').select('id').eq('code', subjectCode).eq('is_active', true).single();
   let query = supabase.from('curriculum_topics').select('*').is('parent_topic_id', null).eq('is_active', true).order('chapter_number').order('display_order').limit(80);
   query = query.or(`grade.eq.Grade ${grade},grade.eq.${grade}`);
   if (subjectRow?.id) query = query.eq('subject_id', subjectRow.id);
   const { data } = await query;
-  return data ?? [];
+  return (data ?? []) as CurriculumTopic[];
 }
 
-async function fetchMastery(studentId: string, subject: string): Promise<any[]> {
+async function fetchMastery(studentId: string, subject: string): Promise<TopicMasteryRow[]> {
   const { data } = await supabase.from('topic_mastery').select('*').eq('student_id', studentId).eq('subject', subject).order('updated_at', { ascending: false }).limit(50);
-  return data ?? [];
+  return (data ?? []) as TopicMasteryRow[];
 }
 
 async function fetchChatHistory(studentId: string) {
@@ -91,7 +101,7 @@ async function fetchChatHistory(studentId: string) {
   return null;
 }
 
-async function callFoxyTutor(params: Record<string, any>) {
+async function callFoxyTutor(params: Record<string, unknown>) {
   try {
     // Get user's JWT for authenticated edge function calls — anon key causes 401
     const { data: { session } } = await supabase.auth.getSession();
@@ -104,7 +114,7 @@ async function callFoxyTutor(params: Record<string, any>) {
     });
     if (!res.ok) {
       // Try to parse JSON body for structured error info (e.g. CHAT_LIMIT code)
-      let errBody: any = null;
+      let errBody: Record<string, unknown> | null = null;
       try { errBody = await res.json(); } catch { /* not JSON */ }
       console.error('Foxy tutor error:', res.status, errBody);
       if (res.status === 401 || res.status === 403) {
@@ -112,7 +122,7 @@ async function callFoxyTutor(params: Record<string, any>) {
       }
       if (res.status === 429 && errBody?.code === 'CHAT_LIMIT') {
         // Signal daily limit reached so the caller can show UpgradeModal
-        return { reply: errBody.reply || `You've used all your messages for today.`, xp_earned: 0, session_id: null, limitReached: true };
+        return { reply: (errBody?.reply as string) || `You've used all your messages for today.`, xp_earned: 0, session_id: null, limitReached: true };
       }
       return { reply: res.status === 429 ? 'Slow down! Wait a moment and try again.' : 'Foxy is taking a short break. Try again!', xp_earned: 0, session_id: null };
     }
@@ -144,17 +154,17 @@ export default function FoxyPage() {
   const router = useRouter();
 
   // Core state
-  const [student, setStudent] = useState<any>(null);
+  const [student, setStudent] = useState<Student | null>(null);
   const [activeSubject, setActiveSubject] = useState('science');
   const [studentGrade, setStudentGrade] = useState('9');
-  const [topics, setTopics] = useState<any[]>([]);
-  const [masteryData, setMasteryData] = useState<any[]>([]);
+  const [topics, setTopics] = useState<CurriculumTopic[]>([]);
+  const [masteryData, setMasteryData] = useState<TopicMasteryRow[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [collapsedAbove, setCollapsedAbove] = useState<number | null>(null); // index above which messages are collapsed
   const [loading, setLoading] = useState(false);
   const [sessionMode, setSessionMode] = useState('learn');
   const [language, setLanguage] = useState('en');
-  const [activeTopic, setActiveTopic] = useState<any>(null);
+  const [activeTopic, setActiveTopic] = useState<CurriculumTopic | null>(null);
   const [foxyState, setFoxyState] = useState<'idle' | 'thinking' | 'happy'>('idle');
   const [chatSessionId, setChatSessionId] = useState<string | null>(null);
   const [xpGained, setXpGained] = useState(0);
@@ -216,7 +226,7 @@ export default function FoxyPage() {
       const hist = await fetchChatHistory(authStudent.id);
       if (hist) {
         setChatSessionId(hist.id);
-        setMessages(hist.messages.map((m: any, i: number) => ({ id: Date.now() + i, role: m.role === 'assistant' ? 'tutor' as const : m.role, content: m.content, timestamp: m.ts || new Date().toISOString(), xp: m.meta?.xp || 0 })));
+        setMessages(hist.messages.map((m: { role: string; content: string; ts?: string; meta?: { xp?: number } }, i: number) => ({ id: Date.now() + i, role: m.role === 'assistant' ? 'tutor' as const : m.role as 'student' | 'tutor', content: m.content, timestamp: m.ts || new Date().toISOString(), xp: m.meta?.xp || 0 })));
       }
     })();
   }, [authStudent]);
@@ -515,7 +525,7 @@ export default function FoxyPage() {
               <div className="flex-1 overflow-y-auto">
                 {topics.map(topic => {
                   const sel = selectedChapters.includes(topic.id);
-                  const mastery = masteryData.find((m: any) => m.topic_tag === topic.title || m.chapter_number === topic.chapter_number);
+                  const mastery = masteryData.find((m) => m.topic_tag === topic.title || m.chapter_number === topic.chapter_number);
                   const lvl = mastery?.mastery_level || 'not_started';
                   const lc = MASTERY_COLORS[lvl] || MASTERY_COLORS.not_started;
                   return (
@@ -668,7 +678,7 @@ export default function FoxyPage() {
             </div>
             <div className="flex-1 overflow-y-auto p-2.5 space-y-2">
               {topics.map(topic => {
-                const mastery = masteryData.find((m: any) => m.topic_tag === topic.title || m.chapter_number === topic.chapter_number);
+                const mastery = masteryData.find((m) => m.topic_tag === topic.title || m.chapter_number === topic.chapter_number);
                 const pct = mastery?.mastery_percent || 0;
                 const lvl = mastery?.mastery_level || 'not_started';
                 const lc = MASTERY_COLORS[lvl] || MASTERY_COLORS.not_started;
@@ -858,7 +868,7 @@ export default function FoxyPage() {
             </div>
             <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-2">
               {topics.map(topic => {
-                const mastery = masteryData.find((m: any) => m.topic_tag === topic.title || m.chapter_number === topic.chapter_number);
+                const mastery = masteryData.find((m) => m.topic_tag === topic.title || m.chapter_number === topic.chapter_number);
                 const pct = mastery?.mastery_percent || 0;
                 const lvl = mastery?.mastery_level || 'not_started';
                 const lc = MASTERY_COLORS[lvl] || MASTERY_COLORS.not_started;

@@ -152,7 +152,7 @@ export async function getDailyUsageSummary(
   const result = {} as Record<Feature, UsageResult>;
 
   for (const f of features) {
-    const row = rows.find((r: any) => r.feature === f);
+    const row = rows.find((r: { feature: string; usage_count?: number }) => r.feature === f);
     const count = row?.usage_count ?? 0;
     const limit = getLimitForPlan(plan, f);
     result[f] = {
