@@ -236,7 +236,7 @@ export default function IntegrationVisualizer() {
       {/* Function selector */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
         {(Object.entries(FUNCTIONS) as [FuncType, typeof FUNCTIONS[FuncType]][]).map(([key, val]) => (
-          <button key={key} onClick={() => setFuncType(key)} style={{ padding: '5px 12px', borderRadius: 6, border: `1px solid ${funcType === key ? '#6366F1' : '#e2e8f0'}`, background: funcType === key ? '#6366F1' : '#fff', color: funcType === key ? '#fff' : '#64748B', fontSize: 11, cursor: 'pointer', fontWeight: funcType === key ? 600 : 400 }}>
+          <button key={key} onClick={() => setFuncType(key)} aria-label={`Select function ${val.name}`} style={{ padding: '5px 12px', borderRadius: 6, border: `1px solid ${funcType === key ? '#6366F1' : '#e2e8f0'}`, background: funcType === key ? '#6366F1' : '#fff', color: funcType === key ? '#fff' : '#64748B', fontSize: 11, cursor: 'pointer', fontWeight: funcType === key ? 600 : 400 }}>
             {val.name}
           </button>
         ))}

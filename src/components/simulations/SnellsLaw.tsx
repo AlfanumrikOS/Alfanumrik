@@ -203,14 +203,14 @@ export default function SnellsLaw() {
       </div>
 
       {/* Canvas */}
-      <canvas ref={canvasRef} style={{ width: '100%', height: 300, borderRadius: 8, border: '1px solid #e2e8f0' }} />
+      <canvas ref={canvasRef} role="img" aria-label="Snell's Law light refraction visualization showing incident and refracted rays at a media boundary" style={{ width: '100%', height: 300, borderRadius: 8, border: '1px solid #e2e8f0' }} />
 
       {/* Controls */}
       <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
         {/* Angle of incidence */}
         <div style={{ padding: '10px 12px', background: '#fffbeb', borderRadius: 8, border: '1px solid #fde68a' }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: '#92400e', marginBottom: 4 }}>🔦 Angle of Incidence (θ₁)</div>
-          <input type="range" min={0} max={89} step={1} value={incidentAngle} onChange={e => setIncidentAngle(Number(e.target.value))} style={{ width: '100%', accentColor: '#f59e0b' }} />
+          <input type="range" min={0} max={89} step={1} value={incidentAngle} onChange={e => setIncidentAngle(Number(e.target.value))} aria-label={`Angle of incidence slider, ${incidentAngle} degrees, range 0 to 89`} style={{ width: '100%', accentColor: '#f59e0b' }} />
           <div style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', textAlign: 'center' }}>{incidentAngle}°</div>
         </div>
 
@@ -218,7 +218,7 @@ export default function SnellsLaw() {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           <div style={{ padding: '8px 12px', background: '#f0f9ff', borderRadius: 8, border: '1px solid #bae6fd' }}>
             <div style={{ fontSize: 10, fontWeight: 600, color: '#0c4a6e', marginBottom: 4 }}>Medium 1 (top)</div>
-            <select value={medium1} onChange={e => setMedium1(e.target.value)} style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13 }}>
+            <select value={medium1} onChange={e => setMedium1(e.target.value)} aria-label="Select medium 1 (top)" style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13 }}>
               {Object.entries(MEDIA).map(([k, v]) => (
                 <option key={k} value={k}>{v.name} (n={v.n})</option>
               ))}
@@ -226,7 +226,7 @@ export default function SnellsLaw() {
           </div>
           <div style={{ padding: '8px 12px', background: '#f5f3ff', borderRadius: 8, border: '1px solid #ddd6fe' }}>
             <div style={{ fontSize: 10, fontWeight: 600, color: '#4c1d95', marginBottom: 4 }}>Medium 2 (bottom)</div>
-            <select value={medium2} onChange={e => setMedium2(e.target.value)} style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13 }}>
+            <select value={medium2} onChange={e => setMedium2(e.target.value)} aria-label="Select medium 2 (bottom)" style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13 }}>
               {Object.entries(MEDIA).map(([k, v]) => (
                 <option key={k} value={k}>{v.name} (n={v.n})</option>
               ))}

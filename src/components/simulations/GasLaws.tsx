@@ -214,35 +214,35 @@ export default function GasLaws() {
           { id: 'charles' as const, label: "Charles's Law", labelHi: 'चार्ल्स नियम', desc: 'V vs T (P adjust)' },
           { id: 'free' as const, label: 'Free Explore', labelHi: 'खुला अन्वेषण', desc: 'Change anything' },
         ]).map(m => (
-          <button key={m.id} onClick={() => setMode(m.id)} style={{ padding: '6px 12px', borderRadius: 6, border: `1px solid ${mode === m.id ? '#6366F1' : '#e2e8f0'}`, background: mode === m.id ? '#6366F1' : '#fff', color: mode === m.id ? '#fff' : '#64748B', fontSize: 11, cursor: 'pointer', fontWeight: mode === m.id ? 600 : 400 }}>
+          <button key={m.id} onClick={() => setMode(m.id)} aria-label={`${m.label}: ${m.desc}`} style={{ padding: '6px 12px', borderRadius: 6, border: `1px solid ${mode === m.id ? '#6366F1' : '#e2e8f0'}`, background: mode === m.id ? '#6366F1' : '#fff', color: mode === m.id ? '#fff' : '#64748B', fontSize: 11, cursor: 'pointer', fontWeight: mode === m.id ? 600 : 400 }}>
             {m.label}
           </button>
         ))}
       </div>
 
       {/* Canvas */}
-      <canvas ref={canvasRef} style={{ width: '100%', height: 280, borderRadius: 8, border: '1px solid #e2e8f0' }} />
+      <canvas ref={canvasRef} role="img" aria-label="Gas particles in a container, showing pressure, volume and temperature relationships" style={{ width: '100%', height: 280, borderRadius: 8, border: '1px solid #e2e8f0' }} />
 
       {/* Controls */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12 }}>
         {/* Temperature */}
         <div style={{ padding: '10px 12px', background: '#fef2f2', borderRadius: 8, border: '1px solid #fecaca' }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: '#991b1b', marginBottom: 4 }}>🌡️ Temperature</div>
-          <input type="range" min={200} max={600} step={10} value={temperature} onChange={e => setTemperature(Number(e.target.value))} disabled={mode === 'boyle'} style={{ width: '100%', accentColor: '#ef4444' }} />
+          <input type="range" min={200} max={600} step={10} value={temperature} onChange={e => setTemperature(Number(e.target.value))} disabled={mode === 'boyle'} aria-label={`Temperature slider, ${temperature} Kelvin, range 200 to 600`} style={{ width: '100%', accentColor: '#ef4444' }} />
           <div style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', textAlign: 'center' }}>{temperature} K <span style={{ fontSize: 10, color: '#64748B' }}>({(temperature - 273).toFixed(0)}°C)</span></div>
         </div>
 
         {/* Volume */}
         <div style={{ padding: '10px 12px', background: '#eff6ff', borderRadius: 8, border: '1px solid #bfdbfe' }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: '#1e40af', marginBottom: 4 }}>📦 Volume</div>
-          <input type="range" min={20} max={100} step={5} value={volume} onChange={e => setVolume(Number(e.target.value))} disabled={mode === 'charles'} style={{ width: '100%', accentColor: '#3b82f6' }} />
+          <input type="range" min={20} max={100} step={5} value={volume} onChange={e => setVolume(Number(e.target.value))} disabled={mode === 'charles'} aria-label={`Volume slider, ${volume} litres, range 20 to 100`} style={{ width: '100%', accentColor: '#3b82f6' }} />
           <div style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', textAlign: 'center' }}>{volume} L</div>
         </div>
 
         {/* Moles */}
         <div style={{ padding: '10px 12px', background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0' }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: '#166534', marginBottom: 4 }}>⚛️ Moles (n)</div>
-          <input type="range" min={0.5} max={3} step={0.5} value={moles} onChange={e => setMoles(Number(e.target.value))} style={{ width: '100%', accentColor: '#22c55e' }} />
+          <input type="range" min={0.5} max={3} step={0.5} value={moles} onChange={e => setMoles(Number(e.target.value))} aria-label={`Moles slider, ${moles} mol, range 0.5 to 3`} style={{ width: '100%', accentColor: '#22c55e' }} />
           <div style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', textAlign: 'center' }}>{moles} mol</div>
         </div>
 
