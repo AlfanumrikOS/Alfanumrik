@@ -8,3 +8,6 @@ supabase/.temp/
 .vercel
 *.tsbuildinfo
 next-env.d.ts
+
+# NCERT books staging (large PDFs, not for git)
+data/ncert-books/
