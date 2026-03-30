@@ -23,6 +23,7 @@ async function nepApi(action: string, params: Record<string, unknown> = {}) {
 
 const BLOOM_COLORS: Record<string, string> = { remember: '#3B82F6', understand: '#6366F1', apply: '#8B5CF6', analyze: '#D97706', evaluate: '#EA580C', create: '#DC2626' };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- HPC API response shape is dynamic
 function BloomBar({ dist }: { dist: any }) {
   const total = (dist?.total || 1);
   return (<div>
@@ -109,6 +110,7 @@ export default function HPCPage() {
 
       <div className="hpc-card"><h3 className="hpc-title">Bloom&apos;s taxonomy distribution</h3><BloomBar dist={hpc.bloom_distribution} /></div>
 
+      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any -- HPC API entries have dynamic nested shape */}
       {Object.entries(subPerf).filter(([,v]: any) => v.concepts_attempted > 0).map(([subject, perf]: any) => (
         <div key={subject} className="hpc-card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -123,6 +125,7 @@ export default function HPCPage() {
         </div>
       ))}
 
+      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any -- HPC API entries have dynamic nested shape */}
       {Object.entries(cbse).filter(([,sections]: any) => Object.values(sections).some((s: any) => s.readiness_pct != null)).map(([subject, sections]: any) => (
         <div key={subject} className="hpc-card">
           <h3 className="hpc-title" style={{ textTransform: 'capitalize' as const }}>CBSE board exam readiness — {subject}</h3>
