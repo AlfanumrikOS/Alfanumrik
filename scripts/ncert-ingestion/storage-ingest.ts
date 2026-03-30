@@ -239,11 +239,12 @@ async function downloadAndParse(file: StorageFile): Promise<string | null> {
   }
 
   try {
+    // pdf-parse v2 API: class-based
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const pdfParseModule = require('pdf-parse');
-    const pdfParse = (typeof pdfParseModule === 'function' ? pdfParseModule : pdfParseModule.default) as (buf: Buffer) => Promise<{ text: string }>;
+    const { PDFParse } = require('pdf-parse');
     const buffer = Buffer.from(await data.arrayBuffer());
-    const parsed = await pdfParse(buffer);
+    const parser = new PDFParse({ data: buffer });
+    const parsed = await parser.getText();
     const text = (parsed.text || '').trim();
 
     if (text.length < MIN_TEXT_LENGTH) {
