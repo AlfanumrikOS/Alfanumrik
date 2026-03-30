@@ -34,7 +34,7 @@ const SUBJECTS: Record<string, { icon: string; color: string }> = {
 const DEFAULT_CONFIG = SUBJECTS.science;
 
 export interface ChatInputProps {
-  onSubmit: (t: string) => void;
+  onSubmit: (t: string, image?: File | null) => void;
   subjectKey: string;
   disabled: boolean;
   subjectConfig?: { color: string; icon: string };
@@ -46,7 +46,10 @@ export const ChatInput = memo(function ChatInput({ onSubmit, subjectKey, disable
   const [symTab, setSymTab] = useState('basic');
   const [pointMode, setPointMode] = useState(false);
   const [pointCount, setPointCount] = useState(1);
+  const [image, setImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const cfg = subjectConfig || SUBJECTS[subjectKey] || DEFAULT_CONFIG;
 
   const insertAt = (s: string) => {
@@ -56,9 +59,22 @@ export const ChatInput = memo(function ChatInput({ onSubmit, subjectKey, disable
     setTimeout(() => { ta.focus(); ta.selectionStart = ta.selectionEnd = start + s.length; }, 0);
   };
 
+  const handleImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { alert('Image must be under 5MB'); return; }
+    setImage(file);
+    const reader = new FileReader();
+    reader.onload = () => setImagePreview(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
   const send = () => {
-    if (!text.trim() || disabled) return;
-    onSubmit(text.trim()); setText(''); setPointCount(1); setPointMode(false);
+    if ((!text.trim() && !image) || disabled) return;
+    onSubmit(text.trim(), image || null);
+    setText(''); setPointCount(1); setPointMode(false);
+    setImage(null); setImagePreview(null);
+    if (fileRef.current) fileRef.current.value = '';
     if (taRef.current) taRef.current.style.height = 'auto';
   };
 
@@ -121,17 +137,34 @@ export const ChatInput = memo(function ChatInput({ onSubmit, subjectKey, disable
           style={{ background: pointMode ? `${cfg.color}15` : 'var(--surface-2)', color: pointMode ? cfg.color : 'var(--text-3)', border: `1px solid ${pointMode ? `${cfg.color}30` : 'var(--border)'}` }}>
           {pointMode ? '1. ON' : '1. Points'}
         </button>
+        <input type="file" ref={fileRef} accept="image/*" capture="environment" onChange={handleImage} className="hidden" />
+        <button onClick={() => fileRef.current?.click()} className="px-2 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95"
+          style={{ background: image ? `${cfg.color}15` : 'var(--surface-2)', color: image ? cfg.color : 'var(--text-3)', border: `1px solid ${image ? `${cfg.color}30` : 'var(--border)'}` }}>
+          {image ? '1 image' : 'Photo'}
+        </button>
         <span className="flex-1" />
         <span className="text-[10px] text-[var(--text-3)] hidden sm:inline">Enter = new line · Ctrl+Enter = send</span>
       </div>
+      {imagePreview && (
+        <div className="px-3 pt-2 flex items-center gap-2">
+          <div className="relative">
+            <img src={imagePreview} alt="Attached" className="w-12 h-12 rounded-lg object-cover border" style={{ borderColor: 'var(--border)' }} />
+            <button onClick={() => { setImage(null); setImagePreview(null); if (fileRef.current) fileRef.current.value = ''; }}
+              className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold bg-red-500 text-white">
+              x
+            </button>
+          </div>
+          <span className="text-xs" style={{ color: 'var(--text-3)' }}>Image attached</span>
+        </div>
+      )}
       <div className="px-3 py-2 flex items-end gap-2" style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 8px), 8px)' }}>
         <textarea ref={taRef} value={text} onChange={autoGrow} onKeyDown={handleKey}
           placeholder={pointMode ? '1. Write your answer point by point...\n(Shift+Enter for next point)' : 'Ask Foxy anything...\nPress Enter for new line, Ctrl+Enter to send'}
           rows={pointMode ? 3 : 2} className="flex-1 min-w-0 text-sm rounded-2xl px-4 py-2.5 resize-none outline-none leading-relaxed"
           style={{ background: 'var(--surface-2)', border: `1.5px solid ${pointMode ? `${cfg.color}40` : 'var(--border)'}`, fontFamily: 'var(--font-body)', maxHeight: 200, minHeight: pointMode ? 80 : 52, overflowWrap: 'break-word', wordBreak: 'break-word' }} />
-        <button onClick={send} disabled={disabled || !text.trim()}
+        <button onClick={send} disabled={disabled || (!text.trim() && !image)}
           className="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-lg font-bold transition-all active:scale-90 disabled:opacity-40"
-          style={{ background: text.trim() ? `linear-gradient(135deg, ${cfg.color}, ${cfg.color}dd)` : 'var(--surface-2)', color: text.trim() ? '#fff' : 'var(--text-3)' }}>
+          style={{ background: (text.trim() || image) ? `linear-gradient(135deg, ${cfg.color}, ${cfg.color}dd)` : 'var(--surface-2)', color: (text.trim() || image) ? '#fff' : 'var(--text-3)' }}>
           {disabled ? '...' : '↑'}
         </button>
       </div>
