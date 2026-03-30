@@ -233,18 +233,18 @@ function LoginScreen({ onLogin }: { onLogin: (g: ParentSession, s: StudentSessio
   };
 
   return (
-    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-slate-200 bg-[#0B1120] min-h-screen flex items-center justify-center">
+    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-screen flex items-center justify-center">
       <div className="max-w-[380px] w-full text-center">
         <div className="text-5xl mb-3">&#x1F9D1;&#x200D;&#x1F393;</div>
-        <h1 className="text-[22px] font-bold text-slate-50 mb-1">Parent Dashboard</h1>
-        <p className="text-sm text-slate-500 mb-6">Enter your child&apos;s link code to view their progress</p>
-        <input className="w-full px-3.5 py-3 bg-slate-800 border border-slate-700 rounded-[10px] text-slate-200 text-[15px] outline-none mb-2.5 box-border" placeholder="Your name" value={name} onChange={e => setName(e.target.value)} aria-label="Your name" autoComplete="name" />
-        <input className="w-full px-3.5 py-3 bg-slate-800 border border-slate-700 rounded-[10px] text-slate-200 text-xl outline-none mb-2.5 box-border tracking-[4px] text-center uppercase" placeholder="LINK CODE" value={code} onChange={e => setCode(e.target.value.toUpperCase())} maxLength={8} onKeyDown={e => e.key === 'Enter' && submit()} aria-label="Child link code" />
+        <h1 className="text-[22px] font-bold text-gray-900 mb-1">Parent Dashboard</h1>
+        <p className="text-sm text-gray-500 mb-6">Enter your child&apos;s link code to view their progress</p>
+        <input className="w-full px-3.5 py-3 bg-orange-50 border border-orange-200 rounded-[10px] text-gray-900 text-[15px] outline-none mb-2.5 box-border" placeholder="Your name" value={name} onChange={e => setName(e.target.value)} aria-label="Your name" autoComplete="name" />
+        <input className="w-full px-3.5 py-3 bg-orange-50 border border-orange-200 rounded-[10px] text-gray-900 text-xl outline-none mb-2.5 box-border tracking-[4px] text-center uppercase" placeholder="LINK CODE" value={code} onChange={e => setCode(e.target.value.toUpperCase())} maxLength={8} onKeyDown={e => e.key === 'Enter' && submit()} aria-label="Child link code" />
         {error && <p className="text-red-500 text-[13px] my-2">{error}</p>}
-        <button onClick={submit} disabled={loading} className={`w-full mt-2 px-5 py-3 bg-indigo-500 text-white border-none rounded-[10px] text-[15px] font-semibold cursor-pointer ${loading ? 'opacity-50' : 'opacity-100'}`}>
+        <button onClick={submit} disabled={loading} className={`w-full mt-2 px-5 py-3 bg-orange-500 text-white border-none rounded-[10px] text-[15px] font-semibold cursor-pointer ${loading ? 'opacity-50' : 'opacity-100'}`}>
           {loading ? 'Connecting...' : 'View Dashboard'}
         </button>
-        <p className="text-xs text-slate-600 mt-4">
+        <p className="text-xs text-gray-500 mt-4">
           Ask your child for the link code from their Alfanumrik profile.
         </p>
       </div>
@@ -257,10 +257,10 @@ function LoginScreen({ onLogin }: { onLogin: (g: ParentSession, s: StudentSessio
 // ============================================================
 function Stat({ label, value, color, icon }: { label: string; value: string | number; color: string; icon: string }) {
   return (
-    <div className="bg-slate-900 rounded-xl px-3.5 py-3 border border-slate-800">
+    <div className="bg-white rounded-xl px-3.5 py-3 border border-orange-200">
       <div className="flex items-center gap-1.5 mb-1">
         <span className="text-sm">{icon}</span>
-        <span className="text-slate-500 text-[11px] uppercase tracking-[0.5px]">{label}</span>
+        <span className="text-gray-500 text-[11px] uppercase tracking-[0.5px]">{label}</span>
       </div>
       <span className="text-[22px] font-bold" style={{ color }}>{value}</span>
     </div>
@@ -273,16 +273,16 @@ function Stat({ label, value, color, icon }: { label: string; value: string | nu
 function WeeklyChart({ data }: { data: WeeklyDay[] }) {
   const maxQ = Math.max(...data.map(d => d.quizzes), 1);
   return (
-    <div className="bg-slate-900 rounded-[14px] px-[18px] py-4 border border-slate-800 mb-3.5">
-      <h3 className="text-[15px] font-semibold text-slate-100 mb-3">This week</h3>
+    <div className="bg-white rounded-[14px] px-[18px] py-4 border border-orange-200 mb-3.5">
+      <h3 className="text-[15px] font-semibold text-gray-900 mb-3">This week</h3>
       <div className="flex items-end gap-2 h-[100px] mt-3">
         {data.map((d, i) => (
           <div key={i} className="flex-1 text-center">
             <div
-              className={`rounded mb-1.5 transition-[height] duration-300 ${d.active ? 'bg-indigo-500' : 'bg-slate-800'}`}
+              className={`rounded mb-1.5 transition-[height] duration-300 ${d.active ? 'bg-orange-500' : 'bg-orange-50'}`}
               style={{ height: Math.max(4, (d.quizzes / maxQ) * 80) }}
             />
-            <span className={`text-[10px] ${d.active ? 'text-slate-200' : 'text-slate-600'}`}>{d.label}</span>
+            <span className={`text-[10px] ${d.active ? 'text-gray-900' : 'text-gray-500'}`}>{d.label}</span>
           </div>
         ))}
       </div>
@@ -294,7 +294,7 @@ function WeeklyChart({ data }: { data: WeeklyDay[] }) {
 // BKT MASTERY RING
 // ============================================================
 function MasteryRing({ levels, total }: { levels: Record<string, number>; total: number }) {
-  if (total === 0) return <p className="text-slate-600 text-[13px] italic">No adaptive data yet.</p>;
+  if (total === 0) return <p className="text-gray-500 text-[13px] italic">No adaptive data yet.</p>;
   const data = [
     { label: 'Mastered', count: levels.mastered || 0, color: '#059669' },
     { label: 'Proficient', count: levels.proficient || 0, color: '#7C3AED' },
@@ -304,9 +304,9 @@ function MasteryRing({ levels, total }: { levels: Record<string, number>; total:
   return (
     <div className="flex gap-3 flex-wrap">
       {data.map(d => (
-        <div key={d.label} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 rounded-lg" style={{ borderLeft: `3px solid ${d.color}` }}>
+        <div key={d.label} className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-50 rounded-lg" style={{ borderLeft: `3px solid ${d.color}` }}>
           <span className="text-lg font-bold" style={{ color: d.color }}>{d.count}</span>
-          <span className="text-xs text-slate-400">{d.label}</span>
+          <span className="text-xs text-gray-500">{d.label}</span>
         </div>
       ))}
     </div>
@@ -337,16 +337,16 @@ function Dashboard({ guardian, student }: { guardian: ParentSession; student: St
   const logout = () => { clearParentSession(); window.location.reload(); };
 
   if (loading) return (
-    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-slate-200 bg-[#0B1120] min-h-screen">
-      <div className="text-center py-20 text-slate-500">
-        <div className="w-10 h-10 border-[3px] border-slate-800 border-t-indigo-500 rounded-full mx-auto mb-4 animate-spin" />
+    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-screen">
+      <div className="text-center py-20 text-gray-500">
+        <div className="w-10 h-10 border-[3px] border-orange-200 border-t-orange-500 rounded-full mx-auto mb-4 animate-spin" />
         Loading {student.name}&apos;s progress...
       </div>
     </div>
   );
 
   if (!dash || dash.error) return (
-    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-slate-200 bg-[#0B1120] min-h-screen">
+    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-screen">
       <div className="text-center py-[60px] text-red-500">{dash?.error || 'Failed to load dashboard'}</div>
     </div>
   );
@@ -356,32 +356,32 @@ function Dashboard({ guardian, student }: { guardian: ParentSession; student: St
   const accuracyColor = (s.accuracy || 0) >= 70 ? 'border-emerald-600' : (s.accuracy || 0) >= 40 ? 'border-amber-600' : 'border-red-600';
 
   return (
-    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-slate-200 bg-[#0B1120] min-h-screen">
+    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-screen">
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
 
       {/* Header */}
-      <div className="flex justify-between items-start mb-5 pb-4 border-b border-slate-800">
+      <div className="flex justify-between items-start mb-5 pb-4 border-b border-orange-200">
         <div>
-          <p className="text-[11px] text-indigo-500 font-semibold uppercase tracking-[1px] mb-1">Parent Dashboard</p>
-          <h1 className="text-[22px] font-bold text-slate-50 m-0">{dash.student?.name || student.name}</h1>
-          <p className="text-sm text-slate-500 mt-1 mb-0">Grade {dash.student?.grade || student.grade} | {dash.subject || 'Science'}</p>
+          <p className="text-[11px] text-orange-500 font-semibold uppercase tracking-[1px] mb-1">Parent Dashboard</p>
+          <h1 className="text-[22px] font-bold text-gray-900 m-0">{dash.student?.name || student.name}</h1>
+          <p className="text-sm text-gray-500 mt-1 mb-0">Grade {dash.student?.grade || student.grade} | {dash.subject || 'Science'}</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={load} className="px-3 py-1.5 bg-transparent text-indigo-500 border border-slate-700 rounded-md text-xs cursor-pointer">Refresh</button>
-          <button onClick={logout} className="px-3 py-1.5 bg-transparent text-slate-400 border border-slate-700 rounded-md text-xs cursor-pointer">Logout</button>
+          <button onClick={load} className="px-3 py-1.5 bg-transparent text-orange-500 border border-orange-200 rounded-md text-xs cursor-pointer">Refresh</button>
+          <button onClick={logout} className="px-3 py-1.5 bg-transparent text-gray-500 border border-orange-200 rounded-md text-xs cursor-pointer">Logout</button>
         </div>
       </div>
 
       {/* Plain-Language Summary — trust-building, no jargon */}
-      <div className={`bg-slate-900 rounded-[14px] px-[18px] py-4 border border-slate-800 mb-4 border-l-[3px] ${accuracyColor}`}>
-        <p className="text-[15px] font-semibold text-slate-100 mb-1.5">
+      <div className={`bg-white rounded-[14px] px-[18px] py-4 border border-orange-200 mb-4 border-l-[3px] ${accuracyColor}`}>
+        <p className="text-[15px] font-semibold text-gray-900 mb-1.5">
           {(s.accuracy || 0) >= 70
             ? `${dash.student?.name || student.name} is doing well! \u{1F31F}`
             : (s.accuracy || 0) >= 40
             ? `${dash.student?.name || student.name} is making progress, but needs practice.`
             : `${dash.student?.name || student.name} needs extra support right now.`}
         </p>
-        <p className="text-[13px] text-slate-400 m-0 leading-relaxed">
+        <p className="text-[13px] text-gray-500 m-0 leading-relaxed">
           {(s.streak || 0) >= 3
             ? `Studying consistently for ${s.streak} days. `
             : s.streak === 0
@@ -419,38 +419,38 @@ function Dashboard({ guardian, student }: { guardian: ParentSession; student: St
 
       {/* Week Summary */}
       {dash.weekSummary && (
-        <div className="bg-slate-900 rounded-[14px] px-5 py-3.5 border border-slate-800 mb-3.5 flex justify-around text-center">
-          <div><span className="text-xl font-bold text-indigo-500">{dash.weekSummary.quizzes}</span><br /><span className="text-[11px] text-slate-500">quizzes this week</span></div>
-          <div className="w-px bg-slate-800" />
-          <div><span className="text-xl font-bold text-emerald-600">{dash.weekSummary.avgScore}%</span><br /><span className="text-[11px] text-slate-500">avg score</span></div>
-          <div className="w-px bg-slate-800" />
-          <div><span className="text-xl font-bold text-amber-600">{dash.weekSummary.activeDays}/7</span><br /><span className="text-[11px] text-slate-500">active days</span></div>
+        <div className="bg-white rounded-[14px] px-5 py-3.5 border border-orange-200 mb-3.5 flex justify-around text-center">
+          <div><span className="text-xl font-bold text-orange-500">{dash.weekSummary.quizzes}</span><br /><span className="text-[11px] text-gray-500">quizzes this week</span></div>
+          <div className="w-px bg-orange-200" />
+          <div><span className="text-xl font-bold text-emerald-600">{dash.weekSummary.avgScore}%</span><br /><span className="text-[11px] text-gray-500">avg score</span></div>
+          <div className="w-px bg-orange-200" />
+          <div><span className="text-xl font-bold text-amber-600">{dash.weekSummary.activeDays}/7</span><br /><span className="text-[11px] text-gray-500">active days</span></div>
         </div>
       )}
 
       {/* BKT Adaptive Mastery */}
       {dash.bktMastery && dash.bktMastery.total > 0 && (
-        <div className="bg-slate-900 rounded-[14px] px-[18px] py-4 border border-slate-800 mb-3.5">
-          <h3 className="text-[15px] font-semibold text-slate-100 mb-3">Learning Progress</h3>
+        <div className="bg-white rounded-[14px] px-[18px] py-4 border border-orange-200 mb-3.5">
+          <h3 className="text-[15px] font-semibold text-gray-900 mb-3">Learning Progress</h3>
           <MasteryRing levels={dash.bktMastery.levels} total={dash.bktMastery.total} />
-          <p className="text-xs text-slate-600 mt-2.5 mb-0">{dash.bktMastery.total} concepts being tracked across all subjects</p>
+          <p className="text-xs text-gray-500 mt-2.5 mb-0">{dash.bktMastery.total} concepts being tracked across all subjects</p>
         </div>
       )}
 
       {/* Active Bursts / Adventures */}
       {dash.activeBursts && dash.activeBursts.length > 0 && (
-        <div className="bg-slate-900 rounded-[14px] px-[18px] py-4 border border-slate-800 mb-3.5">
-          <h3 className="text-[15px] font-semibold text-slate-100 mb-3">Active learning adventures</h3>
+        <div className="bg-white rounded-[14px] px-[18px] py-4 border border-orange-200 mb-3.5">
+          <h3 className="text-[15px] font-semibold text-gray-900 mb-3">Active learning adventures</h3>
           {dash.activeBursts.map((b: ActiveBurst, i: number) => (
-            <div key={i} className={`flex items-center gap-3 py-2 ${i < (dash.activeBursts?.length ?? 0) - 1 ? 'border-b border-slate-800' : ''}`}>
+            <div key={i} className={`flex items-center gap-3 py-2 ${i < (dash.activeBursts?.length ?? 0) - 1 ? 'border-b border-orange-200' : ''}`}>
               <span className="text-xl">{b.type === 'boss_battle' ? '\u2694\uFE0F' : b.type === 'mystery_solve' ? '\uD83D\uDD0D' : '\uD83C\uDFF0'}</span>
               <div className="flex-1">
-                <span className="text-[13px] font-semibold text-slate-200">{b.title}</span>
+                <span className="text-[13px] font-semibold text-gray-900">{b.title}</span>
                 <div className="flex gap-1 mt-1">
-                  <div className="flex-1 h-1.5 bg-slate-800 rounded-sm overflow-hidden">
-                    <div className="h-full bg-indigo-500 rounded-sm" style={{ width: `${Math.round((b.progress / b.goal) * 100)}%` }} />
+                  <div className="flex-1 h-1.5 bg-orange-50 rounded-sm overflow-hidden">
+                    <div className="h-full bg-orange-500 rounded-sm" style={{ width: `${Math.round((b.progress / b.goal) * 100)}%` }} />
                   </div>
-                  <span className="text-[11px] text-slate-400 min-w-[40px]">{b.progress}/{b.goal}</span>
+                  <span className="text-[11px] text-gray-500 min-w-[40px]">{b.progress}/{b.goal}</span>
                 </div>
               </div>
               <span className="text-xs text-amber-500 font-semibold">+{b.xp} XP</span>
@@ -461,30 +461,30 @@ function Dashboard({ guardian, student }: { guardian: ParentSession; student: St
 
       {/* Insights */}
       {dash.insights && dash.insights.length > 0 && (
-        <div className="bg-slate-900 rounded-[14px] px-[18px] py-4 border border-slate-800 mb-3.5">
-          <h3 className="text-[15px] font-semibold text-slate-100 mb-3">Insights for you</h3>
+        <div className="bg-white rounded-[14px] px-[18px] py-4 border border-orange-200 mb-3.5">
+          <h3 className="text-[15px] font-semibold text-gray-900 mb-3">Insights for you</h3>
           {dash.insights.map((insight: string, i: number) => (
-            <p key={i} className="text-[13px] text-slate-300 my-1.5 px-3 py-2 bg-slate-800 rounded-lg leading-relaxed">{insight}</p>
+            <p key={i} className="text-[13px] text-gray-600 my-1.5 px-3 py-2 bg-orange-50 rounded-lg leading-relaxed">{insight}</p>
           ))}
         </div>
       )}
 
       {/* Tips toggle */}
-      <button onClick={() => setShowTips(!showTips)} className="w-full px-4 py-2.5 bg-slate-900 text-indigo-500 border border-slate-800 rounded-[10px] text-[13px] font-semibold cursor-pointer mb-3.5">
+      <button onClick={() => setShowTips(!showTips)} className="w-full px-4 py-2.5 bg-white text-orange-500 border border-orange-200 rounded-[10px] text-[13px] font-semibold cursor-pointer mb-3.5">
         {showTips ? 'Hide' : 'Show'} parenting tips
       </button>
       {showTips && tips.length > 0 && (
-        <div className="bg-slate-900 rounded-[14px] px-[18px] py-4 border border-slate-800 mb-3.5">
+        <div className="bg-white rounded-[14px] px-[18px] py-4 border border-orange-200 mb-3.5">
           {tips.map((tip: ParentTip) => (
-            <div key={tip.id} className="py-2.5 border-b border-slate-800">
-              <span className="text-sm font-semibold text-slate-100">{tip.title}</span>
-              <p className="text-[13px] text-slate-400 mt-1 mb-0">{tip.description}</p>
+            <div key={tip.id} className="py-2.5 border-b border-orange-200">
+              <span className="text-sm font-semibold text-gray-900">{tip.title}</span>
+              <p className="text-[13px] text-gray-500 mt-1 mb-0">{tip.description}</p>
             </div>
           ))}
         </div>
       )}
 
-      <p className="text-center text-[11px] text-slate-600 my-5">
+      <p className="text-center text-[11px] text-gray-500 my-5">
         Alfanumrik Learning OS | Parent Portal | Logged in as {guardian.name}
       </p>
     </div>
@@ -525,8 +525,8 @@ export default function ParentPage() {
   }, [auth.isLoading, auth.guardian]);
 
   if (checking || auth.isLoading) return (
-    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-slate-200 bg-[#0B1120] min-h-screen">
-      <div className="text-center py-20 text-slate-500">Loading...</div>
+    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-screen">
+      <div className="text-center py-20 text-gray-500">Loading...</div>
     </div>
   );
 

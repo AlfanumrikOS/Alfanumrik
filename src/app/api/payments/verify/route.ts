@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
+import { logger } from '@/lib/logger';
 
 /**
  * Payment Verification Route
@@ -22,7 +23,7 @@ export async function POST(request: NextRequest) {
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !supabaseKey || !serviceKey) {
-      console.error('verify: MISSING ENV VARS — SUPABASE_SERVICE_ROLE_KEY:', !!serviceKey, 'URL:', !!supabaseUrl);
+      logger.error('verify: MISSING ENV VARS', { hasServiceKey: !!serviceKey, hasUrl: !!supabaseUrl });
       return NextResponse.json({ error: 'Payment system not configured. Please contact support.' }, { status: 503 });
     }
 
@@ -72,7 +73,7 @@ export async function POST(request: NextRequest) {
     // Verify Razorpay HMAC signature
     const razorpaySecret = process.env.RAZORPAY_KEY_SECRET;
     if (!razorpaySecret) {
-      console.error('verify: MISSING RAZORPAY_KEY_SECRET env var');
+      logger.error('verify: MISSING RAZORPAY_KEY_SECRET env var');
       return NextResponse.json({ error: 'Payment system not configured. Please contact support.' }, { status: 503 });
     }
 
@@ -120,7 +121,7 @@ export async function POST(request: NextRequest) {
 
     // If not found, log details for debugging
     if (!studentId) {
-      console.error('verify: student not found for auth_user_id:', user.id, 'email:', user.email, 'error:', studentErr?.message);
+      logger.error('verify: student not found for auth_user_id', { authUserId: user.id, error: studentErr?.message });
 
       // Fallback: try finding by email (handles cases where auth_user_id changed after re-signup)
       if (user.email) {
@@ -135,13 +136,13 @@ export async function POST(request: NextRequest) {
           studentId = emailRow.id;
           // Fix the stale auth_user_id
           await admin.from('students').update({ auth_user_id: user.id }).eq('id', studentId);
-          console.warn('verify: found student by email, fixed auth_user_id:', studentId);
+          logger.warn('verify: found student by email, fixed auth_user_id', { studentId });
         }
       }
     }
 
     if (!studentId) {
-      console.error('verify: student not found by auth_user_id or email — user:', user.id, user.email);
+      logger.error('verify: student not found by auth_user_id or email', { authUserId: user.id });
       // Still return success since webhook will handle activation
       // Don't alarm the user — their payment IS safe
       return NextResponse.json({
@@ -177,7 +178,7 @@ export async function POST(request: NextRequest) {
       payment_method: 'razorpay',
     });
     if (insertErr && !insertErr.message.includes('duplicate')) {
-      console.error('verify: payment_history insert failed:', insertErr.message);
+      logger.error('verify: payment_history insert failed', { error: insertErr.message });
     }
 
     // Activate subscription via RPC — this is the critical step
@@ -191,7 +192,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (rpcError) {
-      console.error('verify: activate_subscription RPC failed:', rpcError.message);
+      logger.error('verify: activate_subscription RPC failed', { error: rpcError.message });
 
       // Fallback: directly update students table
       const { error: patchError } = await admin
@@ -202,8 +203,8 @@ export async function POST(request: NextRequest) {
       if (patchError) {
         // BOTH RPC and PATCH failed — this is a critical failure
         // DO NOT return success — payment captured but access NOT granted
-        console.error('verify: CRITICAL — both RPC and PATCH failed:', patchError.message);
-        console.error('verify: RECONCILIATION REQUIRED — payment_id:', razorpay_payment_id, 'user:', user.id, 'plan:', plan_code);
+        logger.error('verify: CRITICAL — both RPC and PATCH failed', { error: patchError.message });
+        logger.error('verify: RECONCILIATION REQUIRED', { paymentId: razorpay_payment_id, authUserId: user.id, planCode: plan_code });
 
         return NextResponse.json({
           error: 'Payment received but access update failed. Your payment is safe — our team will activate your plan shortly.',
@@ -221,7 +222,7 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (verify?.subscription_plan !== plan_code) {
-      console.error('verify: post-update check failed — expected:', plan_code, 'got:', verify?.subscription_plan);
+      logger.error('verify: post-update check failed', { expected: plan_code, got: verify?.subscription_plan });
       return NextResponse.json({
         error: 'Payment received but access update is being confirmed. Please refresh the page.',
         payment_id: razorpay_payment_id,
@@ -231,7 +232,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, plan: plan_code });
   } catch (err) {
-    console.error('Verify payment error:', err);
+    logger.error('Verify payment error', { error: err instanceof Error ? err : new Error(String(err)) });
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

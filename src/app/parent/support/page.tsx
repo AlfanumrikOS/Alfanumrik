@@ -67,33 +67,33 @@ const pageStyle: React.CSSProperties = {
   margin: '0 auto',
   padding: '20px 16px 40px',
   fontFamily: "'Plus Jakarta Sans', 'Sora', system-ui, sans-serif",
-  color: '#E2E8F0',
-  backgroundColor: '#0B1120',
+  color: '#1E293B',
+  backgroundColor: '#FFF8F0',
   minHeight: '100vh',
 };
 
 const cardStyle: React.CSSProperties = {
-  backgroundColor: '#0F172A',
+  backgroundColor: '#FFFFFF',
   borderRadius: 14,
   padding: '16px 18px',
-  border: '1px solid #1E3A2F',
+  border: '1px solid #FDBA7433',
   marginBottom: 14,
 };
 
 const sectionTitle: React.CSSProperties = {
   fontSize: 17,
   fontWeight: 700,
-  color: '#F1F5F9',
+  color: '#1E293B',
   margin: '28px 0 14px',
 };
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
   padding: '12px 14px',
-  backgroundColor: '#1E293B',
-  border: '1px solid #334155',
+  backgroundColor: '#FFF8F0',
+  border: '1px solid #FDBA7444',
   borderRadius: 10,
-  color: '#E2E8F0',
+  color: '#1E293B',
   fontSize: 14,
   outline: 'none',
   marginBottom: 10,
@@ -102,7 +102,7 @@ const inputStyle: React.CSSProperties = {
 
 const btnGreen: React.CSSProperties = {
   padding: '12px 20px',
-  background: 'linear-gradient(135deg, #16A34A, #15803D)',
+  background: 'linear-gradient(135deg, #F97316, #EA580C)',
   color: '#fff',
   border: 'none',
   borderRadius: 10,
@@ -123,7 +123,7 @@ function FaqItem({ q, a }: { q: string; a: string }) {
       style={{
         ...cardStyle,
         transition: 'border-color 0.2s',
-        borderColor: open ? '#16A34A' : '#1E3A2F',
+        borderColor: open ? '#F97316' : '#FDBA7433',
       }}
     >
       <button
@@ -143,11 +143,11 @@ function FaqItem({ q, a }: { q: string; a: string }) {
           textAlign: 'left',
         }}
       >
-        <span style={{ fontSize: 14, fontWeight: 600, color: '#F1F5F9', flex: 1 }}>{q}</span>
+        <span style={{ fontSize: 14, fontWeight: 600, color: '#1E293B', flex: 1 }}>{q}</span>
         <span
           style={{
             fontSize: 18,
-            color: '#16A34A',
+            color: '#F97316',
             transition: 'transform 0.3s ease',
             transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
             flexShrink: 0,
@@ -164,7 +164,7 @@ function FaqItem({ q, a }: { q: string; a: string }) {
           opacity: open ? 1 : 0,
         }}
       >
-        <p style={{ fontSize: 13, color: '#94A3B8', lineHeight: 1.6, margin: '12px 0 0' }}>{a}</p>
+        <p style={{ fontSize: 13, color: '#64748B', lineHeight: 1.6, margin: '12px 0 0' }}>{a}</p>
       </div>
     </div>
   );
@@ -190,43 +190,43 @@ function PrivacyModal({ onClose }: { onClose: () => void }) {
     >
       <div
         style={{
-          backgroundColor: '#0F172A',
+          backgroundColor: '#FFFFFF',
           borderRadius: 16,
           padding: '24px 20px',
           maxWidth: 500,
           width: '100%',
           maxHeight: '80vh',
           overflowY: 'auto',
-          border: '1px solid #1E3A2F',
+          border: '1px solid #FDBA7444',
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 style={{ fontSize: 18, fontWeight: 700, color: '#F1F5F9', margin: '0 0 16px' }}>
+        <h3 style={{ fontSize: 18, fontWeight: 700, color: '#1E293B', margin: '0 0 16px' }}>
           🔒 Privacy Policy
         </h3>
-        <div style={{ fontSize: 13, color: '#94A3B8', lineHeight: 1.7 }}>
+        <div style={{ fontSize: 13, color: '#64748B', lineHeight: 1.7 }}>
           <p style={{ marginBottom: 12 }}>
             At Alfanumrik, we take your privacy and your child&apos;s privacy very seriously.
           </p>
           <p style={{ marginBottom: 12 }}>
-            <strong style={{ color: '#E2E8F0' }}>Data Collection:</strong> We collect only the information
+            <strong style={{ color: '#1E293B' }}>Data Collection:</strong> We collect only the information
             necessary to provide personalized learning experiences, including student names, grades,
             quiz responses, and learning progress data.
           </p>
           <p style={{ marginBottom: 12 }}>
-            <strong style={{ color: '#E2E8F0' }}>Data Security:</strong> All personal data is encrypted
+            <strong style={{ color: '#1E293B' }}>Data Security:</strong> All personal data is encrypted
             in transit and at rest. We use industry-standard security measures to protect your information.
           </p>
           <p style={{ marginBottom: 12 }}>
-            <strong style={{ color: '#E2E8F0' }}>No Third-Party Sharing:</strong> We do not sell or share
+            <strong style={{ color: '#1E293B' }}>No Third-Party Sharing:</strong> We do not sell or share
             student data with any third parties for advertising or marketing purposes.
           </p>
           <p style={{ marginBottom: 12 }}>
-            <strong style={{ color: '#E2E8F0' }}>AI Content Safety:</strong> All AI-generated content
+            <strong style={{ color: '#1E293B' }}>AI Content Safety:</strong> All AI-generated content
             is filtered for age-appropriateness and aligned with educational curriculum standards.
           </p>
           <p style={{ marginBottom: 0 }}>
-            <strong style={{ color: '#E2E8F0' }}>Your Rights:</strong> You may request access to, correction
+            <strong style={{ color: '#1E293B' }}>Your Rights:</strong> You may request access to, correction
             of, or deletion of your data at any time by contacting support@alfanumrik.com.
           </p>
         </div>
@@ -261,14 +261,14 @@ function Toast({ message, onDone }: { message: string; onDone: () => void }) {
         bottom: 24,
         left: '50%',
         transform: 'translateX(-50%)',
-        backgroundColor: '#16A34A',
+        backgroundColor: '#F97316',
         color: '#fff',
         padding: '12px 24px',
         borderRadius: 12,
         fontSize: 14,
         fontWeight: 600,
         zIndex: 2000,
-        boxShadow: '0 4px 20px rgba(22,163,74,0.4)',
+        boxShadow: '0 4px 20px rgba(249,115,22,0.4)',
         animation: 'fadeInUp 0.3s ease',
         maxWidth: '90vw',
         textAlign: 'center' as const,
@@ -333,13 +333,13 @@ export default function ParentSupportPage() {
     }
 
     setMessage('');
-    setToast("Your message has been sent! We'll respond within 24 hours.");
+    setToast("Your feedback has been saved. For urgent issues, please email support@alfanumrik.com or call us directly.");
   }, [name, email, category, message]);
 
   if (isLoading || !isLoggedIn) {
     return (
       <div style={{ ...pageStyle, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <p style={{ color: '#64748B', fontSize: 14 }}>Loading...</p>
+        <p style={{ color: '#94A3B8', fontSize: 14 }}>Loading...</p>
       </div>
     );
   }
@@ -357,7 +357,7 @@ export default function ParentSupportPage() {
       {/* Header */}
       <div
         style={{
-          background: 'linear-gradient(135deg, #16A34A, #15803D)',
+          background: 'linear-gradient(135deg, #F97316, #EA580C)',
           borderRadius: 16,
           padding: '28px 22px',
           marginBottom: 24,
@@ -466,7 +466,7 @@ export default function ParentSupportPage() {
           onClick={() => setWhatsappNote(true)}
         >
           <div style={{ fontSize: 24, marginBottom: 6 }}>💬</div>
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#F1F5F9' }}>WhatsApp Support</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#1E293B' }}>WhatsApp Support</span>
           {whatsappNote && (
             <p style={{ fontSize: 11, color: '#F59E0B', margin: '8px 0 0', lineHeight: 1.4 }}>
               Coming soon! We&apos;re setting up WhatsApp support.
@@ -488,7 +488,7 @@ export default function ParentSupportPage() {
             }}
           >
             <div style={{ fontSize: 24, marginBottom: 6 }}>📧</div>
-            <span style={{ fontSize: 13, fontWeight: 600, color: '#F1F5F9' }}>Email Us</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#1E293B' }}>Email Us</span>
             <p style={{ fontSize: 11, color: '#64748B', margin: '4px 0 0' }}>support@alfanumrik.com</p>
           </div>
         </a>
@@ -504,7 +504,7 @@ export default function ParentSupportPage() {
             }}
           >
             <div style={{ fontSize: 24, marginBottom: 6 }}>🐛</div>
-            <span style={{ fontSize: 13, fontWeight: 600, color: '#F1F5F9' }}>Report a Bug</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#1E293B' }}>Report a Bug</span>
           </div>
         </a>
 
@@ -519,7 +519,7 @@ export default function ParentSupportPage() {
           onClick={() => setShowPrivacy(true)}
         >
           <div style={{ fontSize: 24, marginBottom: 6 }}>🔒</div>
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#F1F5F9' }}>Privacy Policy</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#1E293B' }}>Privacy Policy</span>
         </div>
       </div>
 
@@ -534,13 +534,13 @@ export default function ParentSupportPage() {
               alignItems: 'flex-start',
               gap: 10,
               padding: '10px 0',
-              borderBottom: i < tips.length - 1 ? '1px solid #1E293B' : 'none',
+              borderBottom: i < tips.length - 1 ? '1px solid #FDBA7433' : 'none',
             }}
           >
             <span
               style={{
-                backgroundColor: '#16A34A20',
-                color: '#16A34A',
+                backgroundColor: '#F9731620',
+                color: '#F97316',
                 width: 24,
                 height: 24,
                 borderRadius: '50%',
@@ -555,7 +555,7 @@ export default function ParentSupportPage() {
             >
               {i + 1}
             </span>
-            <span style={{ fontSize: 13, color: '#CBD5E1', lineHeight: 1.5 }}>{tip}</span>
+            <span style={{ fontSize: 13, color: '#64748B', lineHeight: 1.5 }}>{tip}</span>
           </div>
         ))}
       </div>

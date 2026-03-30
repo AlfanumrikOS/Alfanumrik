@@ -115,10 +115,10 @@ function MiniProgressBar({ label, percent, color }: { label: string; percent: nu
   return (
     <div style={{ marginBottom: 8 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-        <span style={{ fontSize: 12, color: '#CBD5E1' }}>{label}</span>
+        <span style={{ fontSize: 12, color: '#475569' }}>{label}</span>
         <span style={{ fontSize: 11, color: '#94A3B8' }}>{percent}%</span>
       </div>
-      <div style={{ height: 6, backgroundColor: '#1E293B', borderRadius: 3, overflow: 'hidden' }}>
+      <div style={{ height: 6, backgroundColor: '#F1F5F9', borderRadius: 3, overflow: 'hidden' }}>
         <div style={{
           height: '100%', width: `${Math.min(percent, 100)}%`,
           backgroundColor: color, borderRadius: 3,
@@ -144,13 +144,13 @@ function ChildCard({
 
   return (
     <div style={{
-      backgroundColor: '#0F172A',
+      backgroundColor: '#FFFFFF',
       borderRadius: 16,
-      border: '1px solid #16A34A33',
+      border: '1px solid #FDBA7444',
       marginBottom: 14,
       overflow: 'hidden',
       transition: 'box-shadow 0.3s ease',
-      boxShadow: expanded ? '0 4px 20px #16A34A15' : 'none',
+      boxShadow: expanded ? '0 4px 20px #F9731615' : 'none',
     }}>
       {/* Main card area */}
       <div
@@ -165,7 +165,7 @@ function ChildCard({
           <ChildAvatar name={child.name} />
           <div style={{ flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <h3 style={{ fontSize: 17, fontWeight: 700, color: '#F1F5F9', margin: 0 }}>
+              <h3 style={{ fontSize: 17, fontWeight: 700, color: '#1E293B', margin: 0 }}>
                 {child.name}
               </h3>
               {/* Status dot */}
@@ -209,15 +209,15 @@ function ChildCard({
       <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         padding: '10px 18px',
-        backgroundColor: '#0B1120',
-        borderTop: '1px solid #1E293B',
+        backgroundColor: '#FFF8F0',
+        borderTop: '1px solid #FDBA7433',
       }}>
         <div style={{ display: 'flex', gap: 16 }}>
           <span style={{ fontSize: 12, color: '#94A3B8' }}>
-            Today: <strong style={{ color: '#E2E8F0' }}>{child.todayQuizzes}</strong> quizzes
+            Today: <strong style={{ color: '#1E293B' }}>{child.todayQuizzes}</strong> quizzes
           </span>
           <span style={{ fontSize: 12, color: '#94A3B8' }}>
-            <strong style={{ color: '#E2E8F0' }}>{child.todayMinutes}m</strong> spent
+            <strong style={{ color: '#1E293B' }}>{child.todayMinutes}m</strong> spent
           </span>
         </div>
         <button
@@ -242,7 +242,7 @@ function ChildCard({
         <div style={{
           display: 'flex', flexWrap: 'wrap', gap: 6,
           padding: '10px 18px 12px',
-          borderTop: '1px solid #1E293B',
+          borderTop: '1px solid #FDBA7433',
         }}>
           {child.subjects.map((subj, i) => (
             <span key={subj} style={{
@@ -270,7 +270,7 @@ function ChildCard({
           {/* Subject progress bars */}
           {child.subjectProgress.length > 0 && (
             <div style={{ marginTop: 14 }}>
-              <h4 style={{ fontSize: 13, fontWeight: 600, color: '#F1F5F9', margin: '0 0 10px' }}>
+              <h4 style={{ fontSize: 13, fontWeight: 600, color: '#1E293B', margin: '0 0 10px' }}>
                 Subject Progress
               </h4>
               {child.subjectProgress.map((sp, i) => (
@@ -288,7 +288,7 @@ function ChildCard({
           <div style={{
             display: 'flex', alignItems: 'center', gap: 8,
             padding: '10px 14px', marginTop: 10,
-            backgroundColor: '#1E293B', borderRadius: 10,
+            backgroundColor: '#FFF3E6', borderRadius: 10,
           }}>
             <span style={{ fontSize: 22 }}>&#x1F525;</span>
             <div>
@@ -304,18 +304,18 @@ function ChildCard({
           {/* Recent achievements */}
           {child.recentAchievements.length > 0 && (
             <div style={{ marginTop: 14 }}>
-              <h4 style={{ fontSize: 13, fontWeight: 600, color: '#F1F5F9', margin: '0 0 8px' }}>
+              <h4 style={{ fontSize: 13, fontWeight: 600, color: '#1E293B', margin: '0 0 8px' }}>
                 Recent Achievements
               </h4>
               {child.recentAchievements.slice(0, 3).map((ach, i) => (
                 <div key={i} style={{
                   display: 'flex', alignItems: 'center', gap: 10,
                   padding: '8px 0',
-                  borderBottom: i < Math.min(child.recentAchievements.length, 3) - 1 ? '1px solid #1E293B' : 'none',
+                  borderBottom: i < Math.min(child.recentAchievements.length, 3) - 1 ? '1px solid #FDBA7433' : 'none',
                 }}>
                   <span style={{ fontSize: 18 }}>{ach.icon}</span>
                   <div style={{ flex: 1 }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: '#E2E8F0' }}>{ach.title}</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#1E293B' }}>{ach.title}</span>
                     <p style={{ fontSize: 11, color: '#64748B', margin: '1px 0 0' }}>{ach.date}</p>
                   </div>
                 </div>
@@ -333,7 +333,7 @@ function ChildCard({
               <h4 style={{ fontSize: 12, fontWeight: 600, color: '#16A34A', margin: '0 0 4px' }}>
                 Learning this week
               </h4>
-              <p style={{ fontSize: 13, color: '#CBD5E1', margin: 0, lineHeight: 1.5 }}>
+              <p style={{ fontSize: 13, color: '#475569', margin: 0, lineHeight: 1.5 }}>
                 {child.weekSummary}
               </p>
             </div>
@@ -391,14 +391,14 @@ function LinkChildSection({
 
   return (
     <div style={{
-      backgroundColor: '#0F172A',
+      backgroundColor: '#FFFFFF',
       borderRadius: 16,
-      border: '1px solid #16A34A33',
+      border: '1px solid #FDBA7444',
       padding: compact ? '16px 18px' : '24px 22px',
       marginBottom: 14,
     }}>
       {!compact && (
-        <h3 style={{ fontSize: 16, fontWeight: 700, color: '#F1F5F9', margin: '0 0 4px' }}>
+        <h3 style={{ fontSize: 16, fontWeight: 700, color: '#1E293B', margin: '0 0 4px' }}>
           Link a New Child
         </h3>
       )}
@@ -422,10 +422,10 @@ function LinkChildSection({
           style={{
             flex: 1,
             padding: '12px 14px',
-            backgroundColor: '#1E293B',
-            border: '1px solid #334155',
+            backgroundColor: '#FFF8F0',
+            border: '1px solid #FDBA7444',
             borderRadius: 10,
-            color: '#E2E8F0',
+            color: '#1E293B',
             fontSize: 15,
             letterSpacing: 2,
             textTransform: 'uppercase' as const,
@@ -474,7 +474,7 @@ function NoChildrenState({ guardianId, onLinked }: { guardianId: string; onLinke
   return (
     <div style={{ textAlign: 'center', padding: '40px 0' }}>
       <div style={{ fontSize: 64, marginBottom: 16 }}>&#x1F468;&#x200D;&#x1F469;&#x200D;&#x1F467;</div>
-      <h2 style={{ fontSize: 20, fontWeight: 700, color: '#F1F5F9', margin: '0 0 8px' }}>
+      <h2 style={{ fontSize: 20, fontWeight: 700, color: '#1E293B', margin: '0 0 8px' }}>
         No children linked yet
       </h2>
       <p style={{ fontSize: 14, color: '#94A3B8', margin: '0 0 24px', lineHeight: 1.5 }}>
@@ -547,7 +547,7 @@ export default function ParentChildrenPage() {
         <div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}>
           <div style={{
             width: 40, height: 40,
-            border: '3px solid #1E293B', borderTopColor: '#16A34A',
+            border: '3px solid #FDBA7444', borderTopColor: '#F97316',
             borderRadius: '50%', margin: '0 auto 16px',
             animation: 'spin 0.8s linear infinite',
           }} />
@@ -568,7 +568,7 @@ export default function ParentChildrenPage() {
 
       {/* Header */}
       <div style={{
-        background: 'linear-gradient(135deg, #16A34A, #15803D)',
+        background: 'linear-gradient(135deg, #F97316, #EA580C)',
         borderRadius: 16,
         padding: '24px 22px',
         marginBottom: 20,
@@ -715,7 +715,7 @@ const pageStyle: React.CSSProperties = {
   margin: '0 auto',
   padding: '20px 16px',
   fontFamily: "'Plus Jakarta Sans', 'Sora', system-ui, sans-serif",
-  color: '#E2E8F0',
-  backgroundColor: '#0B1120',
+  color: '#1E293B',
+  backgroundColor: '#FFF8F0',
   minHeight: '100vh',
 };

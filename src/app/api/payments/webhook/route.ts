@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
+import { logger } from '@/lib/logger';
 
 /**
  * Razorpay Webhook Handler — Recurring + One-Time
@@ -36,7 +37,7 @@ export async function POST(request: NextRequest) {
       .digest('hex');
 
     if (expectedSignature !== signature) {
-      console.error('Webhook signature mismatch');
+      logger.error('Webhook signature mismatch');
       return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
     }
 
@@ -65,7 +66,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ received: true, note: 'already_processed' });
     }
 
-    console.warn(`Webhook: ${eventType}`, eventId);
+    logger.info(`Webhook: ${eventType}`, { eventId });
 
     // ── SUBSCRIPTION EVENTS ─────────────────────────────────
 
@@ -78,13 +79,13 @@ export async function POST(request: NextRequest) {
       const rzpSubId = sub.id;
 
       if (!userId) {
-        console.error(`Webhook: ${eventType} missing user_id in notes`);
+        logger.error('Webhook: missing user_id in notes', { eventType });
         return NextResponse.json({ received: true });
       }
 
       const studentRow = await getStudent(admin, userId);
       if (!studentRow) {
-        console.error(`Webhook: student not found for user ${userId}`);
+        logger.error('Webhook: student not found for user', { authUserId: userId });
         return NextResponse.json({ received: true });
       }
 
@@ -149,7 +150,7 @@ export async function POST(request: NextRequest) {
               notes: { source: 'webhook', event: 'subscription.charged', razorpay_subscription_id: rzpSubId },
             }).then(({ error }) => {
               if (error && !error.message.includes('duplicate')) {
-                console.error('Webhook: payment insert error:', error.message);
+                logger.error('Webhook: payment insert error', { error: error.message });
               }
             });
           }
@@ -326,7 +327,7 @@ export async function POST(request: NextRequest) {
             notes: { source: 'webhook', error: payment.error_description },
           }).then(({ error }) => {
             if (error && !error.message.includes('duplicate')) {
-              console.error('Webhook: failed payment insert error:', error.message);
+              logger.error('Webhook: failed payment insert error', { error: error.message });
             }
           });
         }
@@ -335,7 +336,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ received: true });
   } catch (err) {
-    console.error('Webhook error:', err);
+    logger.error('Webhook error', { error: err instanceof Error ? err : new Error(String(err)) });
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
 }
@@ -376,7 +377,7 @@ async function logEvent(admin: SupabaseClient, params: {
     status_after: params.statusAfter,
   }).then(({ error }) => {
     if (error && !error.message.includes('duplicate')) {
-      console.error('Webhook: event log error:', error.message);
+      logger.error('Webhook: event log error', { error: error.message });
     }
   });
 }

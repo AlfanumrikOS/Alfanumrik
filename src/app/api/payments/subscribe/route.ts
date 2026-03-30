@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
 import { createRazorpaySubscription, createRazorpayOrder } from '@/lib/razorpay';
+import { logger } from '@/lib/logger';
 
 /**
  * Subscribe Endpoint
@@ -149,7 +150,7 @@ export async function POST(request: NextRequest) {
       billing_cycle: 'yearly',
     });
   } catch (err) {
-    console.error('Subscribe error:', err);
+    logger.error('Subscribe error', { error: err instanceof Error ? err : new Error(String(err)) });
     return NextResponse.json({ error: 'Payment initialization failed' }, { status: 500 });
   }
 }
