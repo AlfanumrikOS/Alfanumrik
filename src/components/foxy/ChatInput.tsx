@@ -63,8 +63,18 @@ export function ChatInput({ onSubmit, subjectKey, disabled, subjectConfig }: Cha
   };
 
   const handleKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
-    else if (e.key === 'Enter' && e.shiftKey && pointMode) { e.preventDefault(); const n = pointCount + 1; insertAt(`\n${n}. `); setPointCount(n); }
+    // Enter = new line (students write multi-line questions)
+    // Ctrl+Enter or Cmd+Enter = send (intentional action)
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      send();
+    } else if (e.key === 'Enter' && e.shiftKey && pointMode) {
+      e.preventDefault();
+      const n = pointCount + 1;
+      insertAt(`\n${n}. `);
+      setPointCount(n);
+    }
+    // Plain Enter = default textarea behavior (new line)
   };
 
   const togglePoints = () => {
@@ -112,13 +122,13 @@ export function ChatInput({ onSubmit, subjectKey, disabled, subjectConfig }: Cha
           {pointMode ? '1. ON' : '1. Points'}
         </button>
         <span className="flex-1" />
-        <span className="text-[9px] text-[var(--text-3)] hidden sm:inline">Enter = send · Shift+Enter = new line</span>
+        <span className="text-[10px] text-[var(--text-3)] hidden sm:inline">Enter = new line · Ctrl+Enter = send</span>
       </div>
       <div className="px-3 py-2 flex items-end gap-2" style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 8px), 8px)' }}>
         <textarea ref={taRef} value={text} onChange={autoGrow} onKeyDown={handleKey}
-          placeholder={pointMode ? '1. Write your answer point by point...\n(Shift+Enter for next point)' : 'Ask Foxy anything... (Shift+Enter for new line)'}
-          rows={pointMode ? 3 : 1} className="flex-1 min-w-0 text-sm rounded-2xl px-4 py-2.5 resize-none outline-none leading-relaxed"
-          style={{ background: 'var(--surface-2)', border: `1.5px solid ${pointMode ? `${cfg.color}40` : 'var(--border)'}`, fontFamily: 'var(--font-body)', maxHeight: 200, minHeight: pointMode ? 80 : 40, overflowWrap: 'break-word', wordBreak: 'break-word' }} />
+          placeholder={pointMode ? '1. Write your answer point by point...\n(Shift+Enter for next point)' : 'Ask Foxy anything...\nPress Enter for new line, Ctrl+Enter to send'}
+          rows={pointMode ? 3 : 2} className="flex-1 min-w-0 text-sm rounded-2xl px-4 py-2.5 resize-none outline-none leading-relaxed"
+          style={{ background: 'var(--surface-2)', border: `1.5px solid ${pointMode ? `${cfg.color}40` : 'var(--border)'}`, fontFamily: 'var(--font-body)', maxHeight: 200, minHeight: pointMode ? 80 : 52, overflowWrap: 'break-word', wordBreak: 'break-word' }} />
         <button onClick={send} disabled={disabled || !text.trim()}
           className="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-lg font-bold transition-all active:scale-90 disabled:opacity-40"
           style={{ background: text.trim() ? `linear-gradient(135deg, ${cfg.color}, ${cfg.color}dd)` : 'var(--surface-2)', color: text.trim() ? '#fff' : 'var(--text-3)' }}>
