@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, memo } from 'react';
 
 /* ══════════════════════════════════════════════════════════════
    CHAT INPUT COMPONENT
@@ -40,7 +40,7 @@ export interface ChatInputProps {
   subjectConfig?: { color: string; icon: string };
 }
 
-export function ChatInput({ onSubmit, subjectKey, disabled, subjectConfig }: ChatInputProps) {
+export const ChatInput = memo(function ChatInput({ onSubmit, subjectKey, disabled, subjectConfig }: ChatInputProps) {
   const [text, setText] = useState('');
   const [showSymbols, setShowSymbols] = useState(false);
   const [symTab, setSymTab] = useState('basic');
@@ -137,6 +137,6 @@ export function ChatInput({ onSubmit, subjectKey, disabled, subjectConfig }: Cha
       </div>
     </div>
   );
-}
+});
 
 export default ChatInput;

@@ -63,7 +63,7 @@ export function useStudentSnapshot(studentId: string | undefined) {
   return useSWR(
     studentId ? `snapshot/${studentId}` : null,
     () => getStudentSnapshot(studentId!),
-    { ...DEFAULT_CONFIG, refreshInterval: 30000 } // Refresh every 30s for live feel
+    { ...DEFAULT_CONFIG, refreshInterval: 60000 } // Refresh every 60s (was 30s — halves API calls per student)
   );
 }
 
