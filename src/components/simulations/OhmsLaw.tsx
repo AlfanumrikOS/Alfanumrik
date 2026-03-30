@@ -510,6 +510,8 @@ export default function OhmsLaw() {
     >
       <canvas
         ref={canvasRef}
+        role="img"
+        aria-label="Ohm's Law circuit simulation showing voltage, resistance, and current flow with animated electrons"
         style={{
           width: '100%',
           height: 400,
@@ -545,6 +547,7 @@ export default function OhmsLaw() {
             step={0.1}
             value={voltage}
             onChange={(e) => setVoltage(parseFloat(e.target.value))}
+            aria-label={`Voltage slider, ${voltage.toFixed(1)} Volts, range 0 to 12`}
             style={{
               flex: 1,
               accentColor: '#ffaa33',
@@ -573,6 +576,7 @@ export default function OhmsLaw() {
             step={1}
             value={resistance}
             onChange={(e) => setResistance(parseFloat(e.target.value))}
+            aria-label={`Resistance slider, ${resistance.toFixed(0)} Ohms, range 1 to 100`}
             style={{
               flex: 1,
               accentColor: '#ff6633',
@@ -619,6 +623,7 @@ export default function OhmsLaw() {
 
           <button
             onClick={handleReset}
+            aria-label="Reset simulation to default values"
             style={{
               background: 'linear-gradient(135deg, #2a1845 0%, #3a2060 100%)',
               border: '1px solid rgba(160,100,255,0.4)',

@@ -243,13 +243,13 @@ export default function IntegrationVisualizer() {
       </div>
 
       {/* Canvas */}
-      <canvas ref={canvasRef} style={{ width: '100%', height: 280, borderRadius: 8, border: '1px solid #e2e8f0' }} />
+      <canvas ref={canvasRef} role="img" aria-label="Integration visualization showing Riemann sum rectangles approximating the area under a curve" style={{ width: '100%', height: 280, borderRadius: 8, border: '1px solid #e2e8f0' }} />
 
       {/* Controls */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12 }}>
         <div style={{ padding: '10px 12px', background: '#eff6ff', borderRadius: 8, border: '1px solid #bfdbfe' }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: '#1e40af', marginBottom: 4 }}>📊 Rectangles (n)</div>
-          <input type="range" min={1} max={100} step={1} value={rectangles} onChange={e => setRectangles(Number(e.target.value))} style={{ width: '100%', accentColor: '#3b82f6' }} />
+          <input type="range" min={1} max={100} step={1} value={rectangles} onChange={e => setRectangles(Number(e.target.value))} aria-label={`Number of rectangles slider, ${rectangles}, range 1 to 100`} style={{ width: '100%', accentColor: '#3b82f6' }} />
           <div style={{ fontSize: 16, fontWeight: 700, color: '#1e293b', textAlign: 'center' }}>{rectangles}</div>
         </div>
 
@@ -257,7 +257,7 @@ export default function IntegrationVisualizer() {
           <div style={{ fontSize: 11, fontWeight: 600, color: '#166534', marginBottom: 4 }}>📏 Sum Type</div>
           <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
             {(['left', 'mid', 'right'] as const).map(t => (
-              <button key={t} onClick={() => setSumType(t)} style={{ padding: '4px 10px', borderRadius: 4, border: `1px solid ${sumType === t ? '#22c55e' : '#e2e8f0'}`, background: sumType === t ? '#22c55e' : '#fff', color: sumType === t ? '#fff' : '#64748B', fontSize: 11, cursor: 'pointer' }}>
+              <button key={t} onClick={() => setSumType(t)} aria-label={`${t} Riemann sum type`} style={{ padding: '4px 10px', borderRadius: 4, border: `1px solid ${sumType === t ? '#22c55e' : '#e2e8f0'}`, background: sumType === t ? '#22c55e' : '#fff', color: sumType === t ? '#fff' : '#64748B', fontSize: 11, cursor: 'pointer' }}>
                 {t}
               </button>
             ))}
@@ -266,13 +266,13 @@ export default function IntegrationVisualizer() {
 
         <div style={{ padding: '10px 12px', background: '#faf5ff', borderRadius: 8, border: '1px solid #e9d5ff' }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: '#6b21a8', marginBottom: 4 }}>Lower bound (a)</div>
-          <input type="range" min={-2} max={upperBound - 0.5} step={0.5} value={lowerBound} onChange={e => setLowerBound(Number(e.target.value))} style={{ width: '100%', accentColor: '#8b5cf6' }} />
+          <input type="range" min={-2} max={upperBound - 0.5} step={0.5} value={lowerBound} onChange={e => setLowerBound(Number(e.target.value))} aria-label={`Lower bound slider, ${lowerBound}, range -2 to ${upperBound - 0.5}`} style={{ width: '100%', accentColor: '#8b5cf6' }} />
           <div style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', textAlign: 'center' }}>{lowerBound}</div>
         </div>
 
         <div style={{ padding: '10px 12px', background: '#faf5ff', borderRadius: 8, border: '1px solid #e9d5ff' }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: '#6b21a8', marginBottom: 4 }}>Upper bound (b)</div>
-          <input type="range" min={lowerBound + 0.5} max={5} step={0.5} value={upperBound} onChange={e => setUpperBound(Number(e.target.value))} style={{ width: '100%', accentColor: '#8b5cf6' }} />
+          <input type="range" min={lowerBound + 0.5} max={5} step={0.5} value={upperBound} onChange={e => setUpperBound(Number(e.target.value))} aria-label={`Upper bound slider, ${upperBound}, range ${lowerBound + 0.5} to 5`} style={{ width: '100%', accentColor: '#8b5cf6' }} />
           <div style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', textAlign: 'center' }}>{upperBound}</div>
         </div>
       </div>

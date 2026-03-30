@@ -360,6 +360,7 @@ export default function LensRayDiagram() {
           <button
             key={t.value}
             onClick={() => setOptType(t.value)}
+            aria-label={`Select ${t.label} optical element`}
             style={{
               padding: '7px 14px', borderRadius: '10px', border: '1.5px solid',
               borderColor: optType === t.value ? '#6366F1' : '#e0e0e0',
@@ -377,6 +378,8 @@ export default function LensRayDiagram() {
       {/* Canvas */}
       <canvas
         ref={canvasRef}
+        role="img"
+        aria-label="Lens ray diagram showing object, image formation, and light ray paths through a lens"
         width={canvasWidth}
         height={canvasHeight}
         style={{
@@ -403,6 +406,7 @@ export default function LensRayDiagram() {
             type="range" min="2" max="35" step="0.5"
             value={objectDist}
             onChange={e => setObjectDist(parseFloat(e.target.value))}
+            aria-label={`Object distance slider, ${objectDist.toFixed(1)} centimetres, range 2 to 35`}
             style={{ width: '100%', accentColor: '#E8581C' }}
           />
         </div>
@@ -414,6 +418,7 @@ export default function LensRayDiagram() {
             type="range" min="5" max="20" step="1"
             value={focalLength}
             onChange={e => setFocalLength(parseInt(e.target.value))}
+            aria-label={`Focal length slider, ${focalLength} centimetres, range 5 to 20`}
             style={{ width: '100%', accentColor: '#6366F1' }}
           />
         </div>
@@ -487,6 +492,7 @@ export default function LensRayDiagram() {
       {/* Reset */}
       <button
         onClick={() => { setObjectDist(30); setFocalLength(12); setOptType('convex-lens'); }}
+        aria-label="Reset simulation to default values"
         style={{
           marginTop: '14px', padding: '8px 20px', borderRadius: '10px',
           border: '1.5px solid #e0e0e0', background: '#fff', fontSize: '12px',

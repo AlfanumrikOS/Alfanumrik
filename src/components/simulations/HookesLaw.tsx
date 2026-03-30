@@ -323,6 +323,8 @@ export default function HookesLaw() {
     <div style={{ fontFamily: 'system-ui, sans-serif' }}>
       <canvas
         ref={canvasRef}
+        role="img"
+        aria-label="Hooke's Law spring and mass simulation showing spring extension and oscillation"
         style={{ width: '100%', height: 300, borderRadius: 12, border: '1px solid #e2e8f0' }}
       />
 
@@ -355,6 +357,7 @@ export default function HookesLaw() {
           <span>k: <b>{springK} N/m</b></span>
           <input type="range" min={5} max={100} step={5} value={springK}
             onChange={e => { setSpringK(+e.target.value); reset(); }}
+            aria-label={`Spring constant slider, ${springK} Newtons per metre, range 5 to 100`}
             style={{ width: '55%' }}
           />
         </label>
@@ -362,6 +365,7 @@ export default function HookesLaw() {
           <span>Mass: <b>{mass} kg</b></span>
           <input type="range" min={0.5} max={10} step={0.5} value={mass}
             onChange={e => { setMass(+e.target.value); reset(); }}
+            aria-label={`Mass slider, ${mass} kilograms, range 0.5 to 10`}
             style={{ width: '55%' }}
           />
         </label>
@@ -370,6 +374,7 @@ export default function HookesLaw() {
             <span>Pull: <b>{dragOffset.toFixed(1)} m</b></span>
             <input type="range" min={-2} max={3} step={0.1} value={dragOffset}
               onChange={e => setDragOffset(+e.target.value)}
+              aria-label={`Pull offset slider, ${dragOffset.toFixed(1)} metres, range -2 to 3`}
               style={{ width: '55%' }}
             />
           </label>
@@ -379,6 +384,7 @@ export default function HookesLaw() {
       <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
         <button
           onClick={startOscillation}
+          aria-label="Start spring oscillation"
           style={{
             flex: 1, padding: '8px', borderRadius: 8, border: 'none',
             background: '#6366f1', color: '#fff', fontWeight: 600, fontSize: 13, cursor: 'pointer',
@@ -388,6 +394,7 @@ export default function HookesLaw() {
         </button>
         <button
           onClick={() => { setMode('static'); reset(); }}
+          aria-label="Reset simulation"
           style={{
             padding: '8px 16px', borderRadius: 8, border: '1px solid #d4d4d8',
             background: '#fff', fontSize: 13, cursor: 'pointer',

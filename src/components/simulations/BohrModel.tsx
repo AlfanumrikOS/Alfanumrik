@@ -188,6 +188,8 @@ export default function BohrModel() {
     <div style={{ fontFamily: 'system-ui, sans-serif' }}>
       <canvas
         ref={canvasRef}
+        role="img"
+        aria-label="Bohr atomic model visualization showing electron shells and orbits"
         style={{ width: '100%', height: 280, borderRadius: 12, background: '#0f172a' }}
       />
 
@@ -202,6 +204,7 @@ export default function BohrModel() {
           <button
             key={el.z}
             onClick={() => setElementIdx(i)}
+            aria-label={`Select element ${el.symbol}, atomic number ${el.z}`}
             style={{
               padding: '4px 0',
               borderRadius: 6,
@@ -242,11 +245,13 @@ export default function BohrModel() {
           Speed:
           <input type="range" min={0.1} max={3} step={0.1} value={speed}
             onChange={e => setSpeed(+e.target.value)}
+            aria-label={`Electron orbit speed slider, ${speed.toFixed(1)}, range 0.1 to 3`}
             style={{ flex: 1 }}
           />
         </label>
         <button
           onClick={() => setShowLabels(!showLabels)}
+          aria-label={`Toggle shell labels, currently ${showLabels ? 'on' : 'off'}`}
           style={{
             padding: '5px 10px',
             borderRadius: 6,

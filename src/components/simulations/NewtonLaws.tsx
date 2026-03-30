@@ -263,6 +263,8 @@ export default function NewtonLaws() {
     <div style={{ fontFamily: 'system-ui, sans-serif' }}>
       <canvas
         ref={canvasRef}
+        role="img"
+        aria-label="Newton's Laws force and motion simulation showing a block on a surface with applied force, friction, and free body diagram"
         style={{ width: '100%', height: 260, borderRadius: 12, background: '#f0f9ff' }}
       />
 
@@ -299,6 +301,7 @@ export default function NewtonLaws() {
           <span>Applied Force: <b>{appliedForce} N</b></span>
           <input type="range" min={0} max={100} step={1} value={appliedForce}
             onChange={e => setAppliedForce(+e.target.value)}
+            aria-label={`Applied force slider, ${appliedForce} Newtons, range 0 to 100`}
             style={{ width: '55%' }}
           />
         </label>
@@ -306,6 +309,7 @@ export default function NewtonLaws() {
           <span>Mass: <b>{mass} kg</b></span>
           <input type="range" min={1} max={20} step={1} value={mass}
             onChange={e => setMass(+e.target.value)}
+            aria-label={`Mass slider, ${mass} kilograms, range 1 to 20`}
             style={{ width: '55%' }}
           />
         </label>
@@ -313,6 +317,7 @@ export default function NewtonLaws() {
           <span>Friction (μ): <b>{friction.toFixed(2)}</b></span>
           <input type="range" min={0} max={1} step={0.05} value={friction}
             onChange={e => setFriction(+e.target.value)}
+            aria-label={`Friction coefficient slider, ${friction.toFixed(2)}, range 0 to 1`}
             style={{ width: '55%' }}
           />
         </label>
@@ -322,6 +327,7 @@ export default function NewtonLaws() {
       <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
         <button
           onClick={() => setIsRunning(!isRunning)}
+          aria-label={isRunning ? 'Pause simulation' : 'Apply force and start simulation'}
           style={{
             flex: 1,
             padding: '8px 0',
@@ -338,6 +344,7 @@ export default function NewtonLaws() {
         </button>
         <button
           onClick={reset}
+          aria-label="Reset simulation"
           style={{
             padding: '8px 16px',
             borderRadius: 8,
@@ -351,6 +358,7 @@ export default function NewtonLaws() {
         </button>
         <button
           onClick={() => setShowFBD(!showFBD)}
+          aria-label={`Toggle free body diagram, currently ${showFBD ? 'on' : 'off'}`}
           style={{
             padding: '8px 12px',
             borderRadius: 8,
