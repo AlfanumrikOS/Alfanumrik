@@ -240,7 +240,8 @@ async function downloadAndParse(file: StorageFile): Promise<string | null> {
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const pdfParse = require('pdf-parse') as (buf: Buffer) => Promise<{ text: string }>;
+    const pdfParseModule = require('pdf-parse');
+    const pdfParse = (typeof pdfParseModule === 'function' ? pdfParseModule : pdfParseModule.default) as (buf: Buffer) => Promise<{ text: string }>;
     const buffer = Buffer.from(await data.arrayBuffer());
     const parsed = await pdfParse(buffer);
     const text = (parsed.text || '').trim();
