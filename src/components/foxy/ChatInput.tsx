@@ -1,6 +1,31 @@
 'use client';
 
-import { useState, useRef, memo } from 'react';
+import { useState, useRef, memo, useEffect } from 'react';
+
+// Web Speech API types (not in default TS lib)
+interface SpeechRecognitionEvent extends Event {
+  results: SpeechRecognitionResultList;
+}
+interface SpeechRecognitionResultList {
+  length: number;
+  [index: number]: SpeechRecognitionResult;
+}
+interface SpeechRecognitionResult {
+  [index: number]: SpeechRecognitionAlternative;
+}
+interface SpeechRecognitionAlternative {
+  transcript: string;
+}
+interface SpeechRecognition extends EventTarget {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  onerror: ((event: Event) => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+}
 
 /* ══════════════════════════════════════════════════════════════
    CHAT INPUT COMPONENT
@@ -48,9 +73,20 @@ export const ChatInput = memo(function ChatInput({ onSubmit, subjectKey, disable
   const [pointCount, setPointCount] = useState(1);
   const [image, setImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [isListening, setIsListening] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
   const cfg = subjectConfig || SUBJECTS[subjectKey] || DEFAULT_CONFIG;
+
+  // Clean up speech recognition on unmount
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    };
+  }, []);
 
   const insertAt = (s: string) => {
     const ta = taRef.current; if (!ta) return;
@@ -69,8 +105,55 @@ export const ChatInput = memo(function ChatInput({ onSubmit, subjectKey, disable
     reader.readAsDataURL(file);
   };
 
+  const toggleVoice = () => {
+    const w = window as unknown as Record<string, unknown>;
+    const SpeechRecognitionCtor = w.SpeechRecognition || w.webkitSpeechRecognition;
+    if (!SpeechRecognitionCtor) {
+      alert('Voice input is not supported in this browser. Try Chrome or Edge.');
+      return;
+    }
+
+    if (isListening && recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+      return;
+    }
+
+    const recognition = new (SpeechRecognitionCtor as new () => SpeechRecognition)();
+    recognition.lang = 'en-IN';
+    recognition.interimResults = true;
+    recognition.continuous = true;
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      let transcript = '';
+      for (let i = 0; i < event.results.length; i++) {
+        transcript += event.results[i][0].transcript;
+      }
+      setText(transcript);
+      if (taRef.current) {
+        taRef.current.style.height = 'auto';
+        taRef.current.style.height = `${Math.min(taRef.current.scrollHeight, 200)}px`;
+      }
+    };
+
+    recognition.onerror = () => {
+      setIsListening(false);
+      recognitionRef.current = null;
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      recognitionRef.current = null;
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsListening(true);
+  };
+
   const send = () => {
     if ((!text.trim() && !image) || disabled) return;
+    if (recognitionRef.current) { recognitionRef.current.stop(); setIsListening(false); }
     onSubmit(text.trim(), image || null);
     setText(''); setPointCount(1); setPointMode(false);
     setImage(null); setImagePreview(null);
@@ -141,6 +224,10 @@ export const ChatInput = memo(function ChatInput({ onSubmit, subjectKey, disable
         <button onClick={() => fileRef.current?.click()} className="px-2 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95"
           style={{ background: image ? `${cfg.color}15` : 'var(--surface-2)', color: image ? cfg.color : 'var(--text-3)', border: `1px solid ${image ? `${cfg.color}30` : 'var(--border)'}` }}>
           {image ? '1 image' : 'Photo'}
+        </button>
+        <button onClick={toggleVoice} className="px-2 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95"
+          style={{ background: isListening ? '#EF444420' : 'var(--surface-2)', color: isListening ? '#EF4444' : 'var(--text-3)', border: `1px solid ${isListening ? '#EF444440' : 'var(--border)'}` }}>
+          {isListening ? 'Stop' : 'Voice'}
         </button>
         <span className="flex-1" />
         <span className="text-[10px] text-[var(--text-3)] hidden sm:inline">Enter = new line · Ctrl+Enter = send</span>
