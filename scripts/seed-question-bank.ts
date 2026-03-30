@@ -81,7 +81,6 @@ interface QuestionBankRow {
   subject: string;
   grade: string;
   chapter_number: number;
-  chapter_title: string;
   topic: string | null;
   question_text: string;
   question_type: string;
@@ -350,7 +349,6 @@ function toQuestionBankRows(
     subject: topic.subject_code,
     grade: dbGrade,
     chapter_number: topic.chapter_number,
-    chapter_title: topic.title,
     topic: q.tags?.length > 0 ? q.tags[0] : null,
     question_text: q.question_text,
     question_type: 'mcq',
