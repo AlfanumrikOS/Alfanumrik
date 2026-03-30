@@ -22,9 +22,7 @@ async function nepApi(action: string, params: Record<string, unknown> = {}) {
 }
 
 const BLOOM_COLORS: Record<string, string> = { remember: '#3B82F6', understand: '#6366F1', apply: '#8B5CF6', analyze: '#D97706', evaluate: '#EA580C', create: '#DC2626' };
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- HPC API response shape is dynamic
-function BloomBar({ dist }: { dist: any }) {
+function BloomBar({ dist }: { dist: Record<string, number> | null | undefined }) {
   const total = (dist?.total || 1);
   return (<div>
     <div style={{ display: 'flex', height: 24, borderRadius: 6, overflow: 'hidden', marginBottom: 8 }}>
@@ -53,7 +51,7 @@ function BehaviorRating({ value, label }: { value: number|null; label: string })
 export default function HPCPage() {
   const { student, isLoading: authLoading, isLoggedIn } = useAuth();
   const router = useRouter();
-  const [hpc, setHpc] = useState<any>(null);
+  const [hpc, setHpc] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Get student_id from auth session (no more hardcoded IDs)
@@ -77,15 +75,15 @@ export default function HPCPage() {
   }, [studentId]);
 
   if (loading) return (<div style={pageStyle}><div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}><div style={{ width: 40, height: 40, border: '3px solid #1E293B', borderTopColor: '#6366F1', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />Generating Holistic Progress Card...</div><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div>);
-  if (!hpc || hpc.error) return <div style={pageStyle}><div style={{ textAlign: 'center', padding: 60, color: '#EF4444' }}>{hpc?.error || 'Failed to load HPC'}</div></div>;
+  if (!hpc || hpc.error) return <div style={pageStyle}><div style={{ textAlign: 'center', padding: 60, color: '#EF4444' }}>{(hpc?.error as string) || 'Failed to load HPC'}</div></div>;
 
-  const stu = hpc.student;
-  const comp = hpc.competency_levels || {};
-  const subPerf = hpc.subject_performance || {};
-  const behaviors = hpc.learning_behaviors || {};
-  const holistic = hpc.holistic_indicators || {};
-  const cbse = hpc.cbse_readiness || {};
-  const portfolio = hpc.portfolio_highlights || [];
+  const stu = hpc.student as Record<string, unknown> | undefined;
+  const comp = (hpc.competency_levels || {}) as Record<string, Record<string, string>>;
+  const subPerf = (hpc.subject_performance || {}) as Record<string, Record<string, number>>;
+  const behaviors = (hpc.learning_behaviors || {}) as Record<string, number | null>;
+  const holistic = (hpc.holistic_indicators || {}) as Record<string, number | string>;
+  const cbse = (hpc.cbse_readiness || {}) as Record<string, Record<string, Record<string, unknown>>>;
+  const portfolio = (hpc.portfolio_highlights || []) as Array<{ type?: string; description?: string; date?: string }>;
 
   return (
     <div style={pageStyle}>
@@ -99,19 +97,17 @@ export default function HPCPage() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid #1E293B' }}>
         <div>
           <p style={{ fontSize: 11, color: '#6366F1', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: 1, margin: '0 0 4px' }}>NEP 2020 Holistic Progress Card</p>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: '#F8FAFC', margin: 0 }}>{stu?.name || 'Student'}</h1>
-          <p style={{ fontSize: 14, color: '#64748B', margin: '4px 0 0' }}>Grade {stu?.grade} | {stu?.board || 'CBSE'} | {hpc.academic_year} {hpc.term}</p>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: '#F8FAFC', margin: 0 }}>{String(stu?.name || 'Student')}</h1>
+          <p style={{ fontSize: 14, color: '#64748B', margin: '4px 0 0' }}>Grade {String(stu?.grade || "")} | {String(stu?.board || 'CBSE')} | {String(hpc.academic_year || "")} {String(hpc.term || "")}</p>
         </div>
         <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: 36, fontWeight: 700, color: '#6366F1' }}>P{hpc.class_percentile || 50}</div>
+          <div style={{ fontSize: 36, fontWeight: 700, color: '#6366F1' }}>P{String(hpc.class_percentile || 50)}</div>
           <div style={{ fontSize: 11, color: '#64748B' }}>Class percentile</div>
         </div>
       </div>
 
-      <div className="hpc-card"><h3 className="hpc-title">Bloom&apos;s taxonomy distribution</h3><BloomBar dist={hpc.bloom_distribution} /></div>
-
-      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any -- HPC API entries have dynamic nested shape */}
-      {Object.entries(subPerf).filter(([,v]: any) => v.concepts_attempted > 0).map(([subject, perf]: any) => (
+      <div className="hpc-card"><h3 className="hpc-title">Bloom&apos;s taxonomy distribution</h3><BloomBar dist={hpc.bloom_distribution as Record<string, number> | null | undefined} /></div>
+      {Object.entries(subPerf).filter(([, v]) => v.concepts_attempted > 0).map(([subject, perf]) => (
         <div key={subject} className="hpc-card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <h3 className="hpc-title" style={{ margin: 0, textTransform: 'capitalize' as const }}>{subject}</h3>
@@ -124,22 +120,20 @@ export default function HPCPage() {
           </div>
         </div>
       ))}
-
-      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any -- HPC API entries have dynamic nested shape */}
-      {Object.entries(cbse).filter(([,sections]: any) => Object.values(sections).some((s: any) => s.readiness_pct != null)).map(([subject, sections]: any) => (
+      {Object.entries(cbse).filter(([, sections]) => Object.values(sections as Record<string, Record<string, unknown>>).some((s) => s.readiness_pct != null)).map(([subject, sections]) => { const secs = sections as Record<string, Record<string, unknown>>; return (
         <div key={subject} className="hpc-card">
           <h3 className="hpc-title" style={{ textTransform: 'capitalize' as const }}>CBSE board exam readiness — {subject}</h3>
-          {Object.entries(sections).map(([,s]: any) => (
-            <div key={s.section} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0' }}>
-              <span style={{ fontSize: 12, color: '#94A3B8', minWidth: 160, whiteSpace: 'nowrap' }}>{s.section} ({s.marks}m)</span>
+          {Object.entries(secs).map(([, s]) => { const readiness = (s.readiness_pct as number | null) ?? 0; return (
+            <div key={String(s.section)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0' }}>
+              <span style={{ fontSize: 12, color: '#94A3B8', minWidth: 160, whiteSpace: 'nowrap' }}>{String(s.section)} ({String(s.marks)}m)</span>
               <div style={{ flex: 1, height: 8, backgroundColor: '#1E293B', borderRadius: 4, overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${s.readiness_pct || 0}%`, backgroundColor: (s.readiness_pct||0) >= 70 ? '#059669' : (s.readiness_pct||0) >= 40 ? '#D97706' : '#DC2626', borderRadius: 4 }} />
+                <div style={{ height: '100%', width: `${readiness}%`, backgroundColor: readiness >= 70 ? '#059669' : readiness >= 40 ? '#D97706' : '#DC2626', borderRadius: 4 }} />
               </div>
-              <span style={{ fontSize: 13, fontWeight: 600, color: '#E2E8F0', minWidth: 40, textAlign: 'right' }}>{s.readiness_pct ?? '—'}%</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: '#E2E8F0', minWidth: 40, textAlign: 'right' }}>{s.readiness_pct != null ? `${readiness}%` : '—%'}</span>
             </div>
-          ))}
+            ); })}
         </div>
-      ))}
+        ); })}
 
       <div className="hpc-card">
         <h3 className="hpc-title">Learning behaviors (NCF 2023)</h3>
@@ -160,7 +154,7 @@ export default function HPCPage() {
 
       {portfolio.length > 0 && (<div className="hpc-card">
         <h3 className="hpc-title">Portfolio highlights</h3>
-        {portfolio.map((p: any, i: number) => (
+        {portfolio.map((p, i: number) => (
           <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderBottom: i < portfolio.length-1 ? '1px solid #1E293B' : 'none' }}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: p.type === 'mastery' ? '#059669' : '#6366F1', flexShrink: 0 }} />
             <span style={{ fontSize: 13, color: '#E2E8F0', flex: 1 }}>{p.description}</span>
@@ -170,7 +164,7 @@ export default function HPCPage() {
       </div>)}
 
       <p style={{ textAlign: 'center', fontSize: 11, color: '#475569', margin: '20px 0' }}>
-        Generated {new Date(hpc.generated_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })} | Alfanumrik Learning OS | NEP 2020 Compliant
+        Generated {new Date(String(hpc.generated_at || '')).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })} | Alfanumrik Learning OS | NEP 2020 Compliant
       </p>
     </div>
   );
