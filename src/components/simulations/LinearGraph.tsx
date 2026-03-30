@@ -324,6 +324,7 @@ export default function LinearGraph() {
           { label: 'y = ½x - 2', m: 0.5, c: -2 },
         ].map(p => (
           <button key={p.label} onClick={() => { setM1(p.m); setC1(p.c); }}
+            aria-label={`Set line 1 to ${p.label}`}
             style={{
               padding: '4px 8px', borderRadius: 6, border: '1px solid #c7d2fe',
               background: '#eef2ff', color: '#4338ca', fontSize: 10, cursor: 'pointer',

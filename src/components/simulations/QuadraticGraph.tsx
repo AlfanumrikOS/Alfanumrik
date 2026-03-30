@@ -269,6 +269,8 @@ export default function QuadraticGraph() {
 
       <canvas
         ref={canvasRef}
+        role="img"
+        aria-label="Quadratic graph visualization showing a parabola with vertex, roots, and y-intercept"
         style={{ width: '100%', height: 260, borderRadius: 12, border: '1px solid #e7e5e4' }}
       />
 
@@ -316,6 +318,7 @@ export default function QuadraticGraph() {
           <span style={{ color: '#6366f1' }}>a = <b>{a}</b></span>
           <input type="range" min={-5} max={5} step={0.5} value={a}
             onChange={e => setA(+e.target.value)}
+            aria-label={`Coefficient a slider, ${a}, range -5 to 5`}
             style={{ width: '60%' }}
           />
         </label>
@@ -323,6 +326,7 @@ export default function QuadraticGraph() {
           <span style={{ color: '#8b5cf6' }}>b = <b>{b}</b></span>
           <input type="range" min={-10} max={10} step={0.5} value={b}
             onChange={e => setB(+e.target.value)}
+            aria-label={`Coefficient b slider, ${b}, range -10 to 10`}
             style={{ width: '60%' }}
           />
         </label>
@@ -330,6 +334,7 @@ export default function QuadraticGraph() {
           <span style={{ color: '#a855f7' }}>c = <b>{c}</b></span>
           <input type="range" min={-10} max={10} step={0.5} value={c}
             onChange={e => setC(+e.target.value)}
+            aria-label={`Coefficient c slider, ${c}, range -10 to 10`}
             style={{ width: '60%' }}
           />
         </label>
@@ -345,6 +350,7 @@ export default function QuadraticGraph() {
           { label: '2x²−4x+2', a: 2, b: -4, c: 2 },
         ].map(p => (
           <button key={p.label} onClick={() => { setA(p.a); setB(p.b); setC(p.c); }}
+            aria-label={`Set equation to ${p.label}`}
             style={{
               padding: '4px 8px', borderRadius: 6, border: '1px solid #c7d2fe',
               background: '#eef2ff', color: '#4338ca', fontSize: 10, cursor: 'pointer',
