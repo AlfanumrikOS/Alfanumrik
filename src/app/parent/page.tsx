@@ -154,9 +154,9 @@ async function api(action: string, params: Record<string, unknown> = {}) {
 // ============================================================
 // PARENT LOGIN SCREEN
 // ============================================================
-// ── Brute-force protection for parent login ──
+// -- Brute-force protection for parent login --
 // Tuition centers try to brute-force link codes to monitor students
-// they don't own. Progressive lockout: 3 → 5 → 15 → 60 min.
+// they don't own. Progressive lockout: 3 -> 5 -> 15 -> 60 min.
 const LOCKOUT_KEY = 'alf_parent_lockout';
 const MAX_ATTEMPTS_BEFORE_LOCKOUT = 3;
 const LOCKOUT_DURATIONS = [3 * 60_000, 5 * 60_000, 15 * 60_000, 60 * 60_000]; // 3m, 5m, 15m, 1h
@@ -233,18 +233,18 @@ function LoginScreen({ onLogin }: { onLogin: (g: ParentSession, s: StudentSessio
   };
 
   return (
-    <div style={{ ...pageStyle, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ maxWidth: 380, width: '100%', textAlign: 'center' }}>
-        <div style={{ fontSize: 48, marginBottom: 12 }}>&#x1F9D1;&#x200D;&#x1F393;</div>
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: '#F8FAFC', margin: '0 0 4px' }}>Parent Dashboard</h1>
-        <p style={{ fontSize: 14, color: '#64748B', margin: '0 0 24px' }}>Enter your child&apos;s link code to view their progress</p>
-        <input style={inputStyle} placeholder="Your name" value={name} onChange={e => setName(e.target.value)} aria-label="Your name" autoComplete="name" />
-        <input style={{ ...inputStyle, fontSize: 20, letterSpacing: 4, textAlign: 'center', textTransform: 'uppercase' }} placeholder="LINK CODE" value={code} onChange={e => setCode(e.target.value.toUpperCase())} maxLength={8} onKeyDown={e => e.key === 'Enter' && submit()} aria-label="Child link code" />
-        {error && <p style={{ color: '#EF4444', fontSize: 13, margin: '8px 0' }}>{error}</p>}
-        <button onClick={submit} disabled={loading} style={{ ...btnStyle, width: '100%', marginTop: 8, opacity: loading ? 0.5 : 1 }}>
+    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-slate-200 bg-[#0B1120] min-h-screen flex items-center justify-center">
+      <div className="max-w-[380px] w-full text-center">
+        <div className="text-5xl mb-3">&#x1F9D1;&#x200D;&#x1F393;</div>
+        <h1 className="text-[22px] font-bold text-slate-50 mb-1">Parent Dashboard</h1>
+        <p className="text-sm text-slate-500 mb-6">Enter your child&apos;s link code to view their progress</p>
+        <input className="w-full px-3.5 py-3 bg-slate-800 border border-slate-700 rounded-[10px] text-slate-200 text-[15px] outline-none mb-2.5 box-border" placeholder="Your name" value={name} onChange={e => setName(e.target.value)} aria-label="Your name" autoComplete="name" />
+        <input className="w-full px-3.5 py-3 bg-slate-800 border border-slate-700 rounded-[10px] text-slate-200 text-xl outline-none mb-2.5 box-border tracking-[4px] text-center uppercase" placeholder="LINK CODE" value={code} onChange={e => setCode(e.target.value.toUpperCase())} maxLength={8} onKeyDown={e => e.key === 'Enter' && submit()} aria-label="Child link code" />
+        {error && <p className="text-red-500 text-[13px] my-2">{error}</p>}
+        <button onClick={submit} disabled={loading} className={`w-full mt-2 px-5 py-3 bg-indigo-500 text-white border-none rounded-[10px] text-[15px] font-semibold cursor-pointer ${loading ? 'opacity-50' : 'opacity-100'}`}>
           {loading ? 'Connecting...' : 'View Dashboard'}
         </button>
-        <p style={{ fontSize: 12, color: '#475569', marginTop: 16 }}>
+        <p className="text-xs text-slate-600 mt-4">
           Ask your child for the link code from their Alfanumrik profile.
         </p>
       </div>
@@ -257,12 +257,12 @@ function LoginScreen({ onLogin }: { onLogin: (g: ParentSession, s: StudentSessio
 // ============================================================
 function Stat({ label, value, color, icon }: { label: string; value: string | number; color: string; icon: string }) {
   return (
-    <div style={{ backgroundColor: '#0F172A', borderRadius: 12, padding: '12px 14px', border: '1px solid #1E293B' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-        <span style={{ fontSize: 14 }}>{icon}</span>
-        <span style={{ color: '#64748B', fontSize: 11, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>{label}</span>
+    <div className="bg-slate-900 rounded-xl px-3.5 py-3 border border-slate-800">
+      <div className="flex items-center gap-1.5 mb-1">
+        <span className="text-sm">{icon}</span>
+        <span className="text-slate-500 text-[11px] uppercase tracking-[0.5px]">{label}</span>
       </div>
-      <span style={{ color, fontSize: 22, fontWeight: 700 }}>{value}</span>
+      <span className="text-[22px] font-bold" style={{ color }}>{value}</span>
     </div>
   );
 }
@@ -273,13 +273,16 @@ function Stat({ label, value, color, icon }: { label: string; value: string | nu
 function WeeklyChart({ data }: { data: WeeklyDay[] }) {
   const maxQ = Math.max(...data.map(d => d.quizzes), 1);
   return (
-    <div style={cardStyle}>
-      <h3 style={cardTitle}>This week</h3>
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 100, marginTop: 12 }}>
+    <div className="bg-slate-900 rounded-[14px] px-[18px] py-4 border border-slate-800 mb-3.5">
+      <h3 className="text-[15px] font-semibold text-slate-100 mb-3">This week</h3>
+      <div className="flex items-end gap-2 h-[100px] mt-3">
         {data.map((d, i) => (
-          <div key={i} style={{ flex: 1, textAlign: 'center' }}>
-            <div style={{ height: Math.max(4, (d.quizzes / maxQ) * 80), backgroundColor: d.active ? '#6366F1' : '#1E293B', borderRadius: 4, marginBottom: 6, transition: 'height 0.3s' }} />
-            <span style={{ fontSize: 10, color: d.active ? '#E2E8F0' : '#475569' }}>{d.label}</span>
+          <div key={i} className="flex-1 text-center">
+            <div
+              className={`rounded mb-1.5 transition-[height] duration-300 ${d.active ? 'bg-indigo-500' : 'bg-slate-800'}`}
+              style={{ height: Math.max(4, (d.quizzes / maxQ) * 80) }}
+            />
+            <span className={`text-[10px] ${d.active ? 'text-slate-200' : 'text-slate-600'}`}>{d.label}</span>
           </div>
         ))}
       </div>
@@ -291,7 +294,7 @@ function WeeklyChart({ data }: { data: WeeklyDay[] }) {
 // BKT MASTERY RING
 // ============================================================
 function MasteryRing({ levels, total }: { levels: Record<string, number>; total: number }) {
-  if (total === 0) return <p style={{ color: '#475569', fontSize: 13, fontStyle: 'italic' }}>No adaptive data yet.</p>;
+  if (total === 0) return <p className="text-slate-600 text-[13px] italic">No adaptive data yet.</p>;
   const data = [
     { label: 'Mastered', count: levels.mastered || 0, color: '#059669' },
     { label: 'Proficient', count: levels.proficient || 0, color: '#7C3AED' },
@@ -299,11 +302,11 @@ function MasteryRing({ levels, total }: { levels: Record<string, number>; total:
     { label: 'Attempted', count: levels.attempted || 0, color: '#D97706' },
   ].filter(d => d.count > 0);
   return (
-    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+    <div className="flex gap-3 flex-wrap">
       {data.map(d => (
-        <div key={d.label} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', backgroundColor: '#1E293B', borderRadius: 8, borderLeft: `3px solid ${d.color}` }}>
-          <span style={{ fontSize: 18, fontWeight: 700, color: d.color }}>{d.count}</span>
-          <span style={{ fontSize: 12, color: '#94A3B8' }}>{d.label}</span>
+        <div key={d.label} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 rounded-lg" style={{ borderLeft: `3px solid ${d.color}` }}>
+          <span className="text-lg font-bold" style={{ color: d.color }}>{d.count}</span>
+          <span className="text-xs text-slate-400">{d.label}</span>
         </div>
       ))}
     </div>
@@ -334,46 +337,51 @@ function Dashboard({ guardian, student }: { guardian: ParentSession; student: St
   const logout = () => { clearParentSession(); window.location.reload(); };
 
   if (loading) return (
-    <div style={pageStyle}>
-      <div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}>
-        <div style={{ width: 40, height: 40, border: '3px solid #1E293B', borderTopColor: '#6366F1', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />
+    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-slate-200 bg-[#0B1120] min-h-screen">
+      <div className="text-center py-20 text-slate-500">
+        <div className="w-10 h-10 border-[3px] border-slate-800 border-t-indigo-500 rounded-full mx-auto mb-4 animate-spin" />
         Loading {student.name}&apos;s progress...
       </div>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   );
 
-  if (!dash || dash.error) return <div style={pageStyle}><div style={{ textAlign: 'center', padding: 60, color: '#EF4444' }}>{dash?.error || 'Failed to load dashboard'}</div></div>;
+  if (!dash || dash.error) return (
+    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-slate-200 bg-[#0B1120] min-h-screen">
+      <div className="text-center py-[60px] text-red-500">{dash?.error || 'Failed to load dashboard'}</div>
+    </div>
+  );
 
   const s = dash.stats;
 
+  const accuracyColor = (s.accuracy || 0) >= 70 ? 'border-emerald-600' : (s.accuracy || 0) >= 40 ? 'border-amber-600' : 'border-red-600';
+
   return (
-    <div style={pageStyle}>
+    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-slate-200 bg-[#0B1120] min-h-screen">
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
 
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid #1E293B' }}>
+      <div className="flex justify-between items-start mb-5 pb-4 border-b border-slate-800">
         <div>
-          <p style={{ fontSize: 11, color: '#6366F1', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: 1, margin: '0 0 4px' }}>Parent Dashboard</p>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#F8FAFC', margin: 0 }}>{dash.student?.name || student.name}</h1>
-          <p style={{ fontSize: 14, color: '#64748B', margin: '4px 0 0' }}>Grade {dash.student?.grade || student.grade} | {dash.subject || 'Science'}</p>
+          <p className="text-[11px] text-indigo-500 font-semibold uppercase tracking-[1px] mb-1">Parent Dashboard</p>
+          <h1 className="text-[22px] font-bold text-slate-50 m-0">{dash.student?.name || student.name}</h1>
+          <p className="text-sm text-slate-500 mt-1 mb-0">Grade {dash.student?.grade || student.grade} | {dash.subject || 'Science'}</p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={load} style={{ padding: '6px 12px', background: 'transparent', color: '#6366F1', border: '1px solid #334155', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>Refresh</button>
-          <button onClick={logout} style={{ padding: '6px 12px', background: 'transparent', color: '#94A3B8', border: '1px solid #334155', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>Logout</button>
+        <div className="flex gap-2">
+          <button onClick={load} className="px-3 py-1.5 bg-transparent text-indigo-500 border border-slate-700 rounded-md text-xs cursor-pointer">Refresh</button>
+          <button onClick={logout} className="px-3 py-1.5 bg-transparent text-slate-400 border border-slate-700 rounded-md text-xs cursor-pointer">Logout</button>
         </div>
       </div>
 
       {/* Plain-Language Summary — trust-building, no jargon */}
-      <div style={{ ...cardStyle, marginBottom: 16, borderLeft: `3px solid ${(s.accuracy || 0) >= 70 ? '#059669' : (s.accuracy || 0) >= 40 ? '#D97706' : '#DC2626'}` }}>
-        <p style={{ fontSize: 15, fontWeight: 600, color: '#F1F5F9', margin: '0 0 6px' }}>
+      <div className={`bg-slate-900 rounded-[14px] px-[18px] py-4 border border-slate-800 mb-4 border-l-[3px] ${accuracyColor}`}>
+        <p className="text-[15px] font-semibold text-slate-100 mb-1.5">
           {(s.accuracy || 0) >= 70
-            ? `${dash.student?.name || student.name} is doing well! 🌟`
+            ? `${dash.student?.name || student.name} is doing well! \u{1F31F}`
             : (s.accuracy || 0) >= 40
             ? `${dash.student?.name || student.name} is making progress, but needs practice.`
             : `${dash.student?.name || student.name} needs extra support right now.`}
         </p>
-        <p style={{ fontSize: 13, color: '#94A3B8', margin: 0, lineHeight: 1.5 }}>
+        <p className="text-[13px] text-slate-400 m-0 leading-relaxed">
           {(s.streak || 0) >= 3
             ? `Studying consistently for ${s.streak} days. `
             : s.streak === 0
@@ -393,14 +401,14 @@ function Dashboard({ guardian, student }: { guardian: ParentSession; student: St
       </div>
 
       {/* Stats Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginBottom: 16 }}>
+      <div className="grid grid-cols-2 gap-2.5 mb-4">
         <Stat icon="&#x2B50;" label="XP" value={s.xp || 0} color="#F59E0B" />
         <Stat icon="&#x1F525;" label="Streak" value={`${s.streak || 0}d`} color="#EF4444" />
         <Stat icon="&#x1F3AF;" label="Accuracy" value={`${s.accuracy || 0}%`} color="#059669" />
         <Stat icon="&#x1F4DA;" label="Quizzes" value={s.totalQuizzes || 0} color="#6366F1" />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: 10, marginBottom: 16 }}>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(100px,1fr))] gap-2.5 mb-4">
         <Stat icon="&#x23F1;" label="Study time" value={`${s.minutes || 0}m`} color="#8B5CF6" />
         <Stat icon="&#x1F4AC;" label="Foxy chats" value={s.totalChats || 0} color="#EC4899" />
         <Stat icon="&#x1F4CA;" label="Avg score" value={`${s.avgScore || 0}%`} color="#2563EB" />
@@ -411,41 +419,41 @@ function Dashboard({ guardian, student }: { guardian: ParentSession; student: St
 
       {/* Week Summary */}
       {dash.weekSummary && (
-        <div style={{ ...cardStyle, display: 'flex', justifyContent: 'space-around', padding: '14px 20px', textAlign: 'center' }}>
-          <div><span style={{ fontSize: 20, fontWeight: 700, color: '#6366F1' }}>{dash.weekSummary.quizzes}</span><br /><span style={{ fontSize: 11, color: '#64748B' }}>quizzes this week</span></div>
-          <div style={{ width: 1, backgroundColor: '#1E293B' }} />
-          <div><span style={{ fontSize: 20, fontWeight: 700, color: '#059669' }}>{dash.weekSummary.avgScore}%</span><br /><span style={{ fontSize: 11, color: '#64748B' }}>avg score</span></div>
-          <div style={{ width: 1, backgroundColor: '#1E293B' }} />
-          <div><span style={{ fontSize: 20, fontWeight: 700, color: '#D97706' }}>{dash.weekSummary.activeDays}/7</span><br /><span style={{ fontSize: 11, color: '#64748B' }}>active days</span></div>
+        <div className="bg-slate-900 rounded-[14px] px-5 py-3.5 border border-slate-800 mb-3.5 flex justify-around text-center">
+          <div><span className="text-xl font-bold text-indigo-500">{dash.weekSummary.quizzes}</span><br /><span className="text-[11px] text-slate-500">quizzes this week</span></div>
+          <div className="w-px bg-slate-800" />
+          <div><span className="text-xl font-bold text-emerald-600">{dash.weekSummary.avgScore}%</span><br /><span className="text-[11px] text-slate-500">avg score</span></div>
+          <div className="w-px bg-slate-800" />
+          <div><span className="text-xl font-bold text-amber-600">{dash.weekSummary.activeDays}/7</span><br /><span className="text-[11px] text-slate-500">active days</span></div>
         </div>
       )}
 
       {/* BKT Adaptive Mastery */}
       {dash.bktMastery && dash.bktMastery.total > 0 && (
-        <div style={cardStyle}>
-          <h3 style={cardTitle}>Learning Progress</h3>
+        <div className="bg-slate-900 rounded-[14px] px-[18px] py-4 border border-slate-800 mb-3.5">
+          <h3 className="text-[15px] font-semibold text-slate-100 mb-3">Learning Progress</h3>
           <MasteryRing levels={dash.bktMastery.levels} total={dash.bktMastery.total} />
-          <p style={{ fontSize: 12, color: '#475569', margin: '10px 0 0' }}>{dash.bktMastery.total} concepts being tracked across all subjects</p>
+          <p className="text-xs text-slate-600 mt-2.5 mb-0">{dash.bktMastery.total} concepts being tracked across all subjects</p>
         </div>
       )}
 
       {/* Active Bursts / Adventures */}
       {dash.activeBursts && dash.activeBursts.length > 0 && (
-        <div style={cardStyle}>
-          <h3 style={cardTitle}>Active learning adventures</h3>
+        <div className="bg-slate-900 rounded-[14px] px-[18px] py-4 border border-slate-800 mb-3.5">
+          <h3 className="text-[15px] font-semibold text-slate-100 mb-3">Active learning adventures</h3>
           {dash.activeBursts.map((b: ActiveBurst, i: number) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', borderBottom: i < (dash.activeBursts?.length ?? 0) - 1 ? '1px solid #1E293B' : 'none' }}>
-              <span style={{ fontSize: 20 }}>{b.type === 'boss_battle' ? '\u2694\uFE0F' : b.type === 'mystery_solve' ? '\uD83D\uDD0D' : '\uD83C\uDFF0'}</span>
-              <div style={{ flex: 1 }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: '#E2E8F0' }}>{b.title}</span>
-                <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-                  <div style={{ flex: 1, height: 6, backgroundColor: '#1E293B', borderRadius: 3, overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${Math.round((b.progress / b.goal) * 100)}%`, backgroundColor: '#6366F1', borderRadius: 3 }} />
+            <div key={i} className={`flex items-center gap-3 py-2 ${i < (dash.activeBursts?.length ?? 0) - 1 ? 'border-b border-slate-800' : ''}`}>
+              <span className="text-xl">{b.type === 'boss_battle' ? '\u2694\uFE0F' : b.type === 'mystery_solve' ? '\uD83D\uDD0D' : '\uD83C\uDFF0'}</span>
+              <div className="flex-1">
+                <span className="text-[13px] font-semibold text-slate-200">{b.title}</span>
+                <div className="flex gap-1 mt-1">
+                  <div className="flex-1 h-1.5 bg-slate-800 rounded-sm overflow-hidden">
+                    <div className="h-full bg-indigo-500 rounded-sm" style={{ width: `${Math.round((b.progress / b.goal) * 100)}%` }} />
                   </div>
-                  <span style={{ fontSize: 11, color: '#94A3B8', minWidth: 40 }}>{b.progress}/{b.goal}</span>
+                  <span className="text-[11px] text-slate-400 min-w-[40px]">{b.progress}/{b.goal}</span>
                 </div>
               </div>
-              <span style={{ fontSize: 12, color: '#F59E0B', fontWeight: 600 }}>+{b.xp} XP</span>
+              <span className="text-xs text-amber-500 font-semibold">+{b.xp} XP</span>
             </div>
           ))}
         </div>
@@ -453,30 +461,30 @@ function Dashboard({ guardian, student }: { guardian: ParentSession; student: St
 
       {/* Insights */}
       {dash.insights && dash.insights.length > 0 && (
-        <div style={cardStyle}>
-          <h3 style={cardTitle}>Insights for you</h3>
+        <div className="bg-slate-900 rounded-[14px] px-[18px] py-4 border border-slate-800 mb-3.5">
+          <h3 className="text-[15px] font-semibold text-slate-100 mb-3">Insights for you</h3>
           {dash.insights.map((insight: string, i: number) => (
-            <p key={i} style={{ fontSize: 13, color: '#CBD5E1', margin: '6px 0', padding: '8px 12px', backgroundColor: '#1E293B', borderRadius: 8, lineHeight: 1.5 }}>{insight}</p>
+            <p key={i} className="text-[13px] text-slate-300 my-1.5 px-3 py-2 bg-slate-800 rounded-lg leading-relaxed">{insight}</p>
           ))}
         </div>
       )}
 
       {/* Tips toggle */}
-      <button onClick={() => setShowTips(!showTips)} style={{ width: '100%', padding: '10px 16px', backgroundColor: '#0F172A', color: '#6366F1', border: '1px solid #1E293B', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', marginBottom: 14 }}>
+      <button onClick={() => setShowTips(!showTips)} className="w-full px-4 py-2.5 bg-slate-900 text-indigo-500 border border-slate-800 rounded-[10px] text-[13px] font-semibold cursor-pointer mb-3.5">
         {showTips ? 'Hide' : 'Show'} parenting tips
       </button>
       {showTips && tips.length > 0 && (
-        <div style={cardStyle}>
+        <div className="bg-slate-900 rounded-[14px] px-[18px] py-4 border border-slate-800 mb-3.5">
           {tips.map((tip: ParentTip) => (
-            <div key={tip.id} style={{ padding: '10px 0', borderBottom: '1px solid #1E293B' }}>
-              <span style={{ fontSize: 14, fontWeight: 600, color: '#F1F5F9' }}>{tip.title}</span>
-              <p style={{ fontSize: 13, color: '#94A3B8', margin: '4px 0 0' }}>{tip.description}</p>
+            <div key={tip.id} className="py-2.5 border-b border-slate-800">
+              <span className="text-sm font-semibold text-slate-100">{tip.title}</span>
+              <p className="text-[13px] text-slate-400 mt-1 mb-0">{tip.description}</p>
             </div>
           ))}
         </div>
       )}
 
-      <p style={{ textAlign: 'center', fontSize: 11, color: '#475569', margin: '20px 0' }}>
+      <p className="text-center text-[11px] text-slate-600 my-5">
         Alfanumrik Learning OS | Parent Portal | Logged in as {guardian.name}
       </p>
     </div>
@@ -516,7 +524,11 @@ export default function ParentPage() {
     });
   }, [auth.isLoading, auth.guardian]);
 
-  if (checking || auth.isLoading) return <div style={pageStyle}><div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}>Loading...</div></div>;
+  if (checking || auth.isLoading) return (
+    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-slate-200 bg-[#0B1120] min-h-screen">
+      <div className="text-center py-20 text-slate-500">Loading...</div>
+    </div>
+  );
 
   if (!guardian || !student) {
     return <LoginScreen onLogin={(g, s) => { setGuardian(g); setStudent(s); }} />;
@@ -524,12 +536,3 @@ export default function ParentPage() {
 
   return <Dashboard guardian={guardian} student={student} />;
 }
-
-// ============================================================
-// STYLES
-// ============================================================
-const pageStyle: React.CSSProperties = { maxWidth: 600, margin: '0 auto', padding: '20px 16px', fontFamily: "'Plus Jakarta Sans', 'Sora', system-ui, sans-serif", color: '#E2E8F0', backgroundColor: '#0B1120', minHeight: '100vh' };
-const cardStyle: React.CSSProperties = { backgroundColor: '#0F172A', borderRadius: 14, padding: '16px 18px', border: '1px solid #1E293B', marginBottom: 14 };
-const cardTitle: React.CSSProperties = { fontSize: 15, fontWeight: 600, color: '#F1F5F9', margin: '0 0 12px' };
-const inputStyle: React.CSSProperties = { width: '100%', padding: '12px 14px', backgroundColor: '#1E293B', border: '1px solid #334155', borderRadius: 10, color: '#E2E8F0', fontSize: 15, outline: 'none', marginBottom: 10, boxSizing: 'border-box' };
-const btnStyle: React.CSSProperties = { padding: '12px 20px', backgroundColor: '#6366F1', color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 600, cursor: 'pointer' };
