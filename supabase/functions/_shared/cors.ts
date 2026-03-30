@@ -17,9 +17,18 @@ if (Deno.env.get('ENVIRONMENT') !== 'production') {
 
 /** Build CORS headers, validating the request origin. */
 export function getCorsHeaders(requestOrigin?: string | null): Record<string, string> {
-  const origin = requestOrigin && ALLOWED_ORIGINS.some((o) => requestOrigin === o || requestOrigin.endsWith('.vercel.app'))
-    ? requestOrigin
-    : ALLOWED_ORIGINS[0];
+  // Check exact match first, then allow Alfanumrik Vercel preview deployments
+  const isAllowed = requestOrigin && (
+    ALLOWED_ORIGINS.includes(requestOrigin) ||
+    // Allow Vercel preview deployments for this project only
+    (requestOrigin.endsWith('.vercel.app') && (
+      requestOrigin.includes('alfanumrik') ||
+      requestOrigin.includes('alfanumrik-') ||
+      // Vercel preview format: {project}-{hash}-{team}.vercel.app
+      requestOrigin.match(/^https:\/\/alfanumrik[a-z0-9-]*\.vercel\.app$/) !== null
+    ))
+  );
+  const origin = isAllowed ? requestOrigin : ALLOWED_ORIGINS[0];
 
   return {
     'Access-Control-Allow-Origin': origin,

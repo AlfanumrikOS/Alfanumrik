@@ -4,8 +4,49 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
 import { supabaseUrl as SUPABASE_URL, supabaseAnonKey as SUPABASE_ANON } from '@/lib/supabase';
-import type { HeatmapData, HeatmapCell, RiskAlert } from '@/lib/types';
+import type { HeatmapData, HeatmapCell, HeatmapRow, RiskAlert } from '@/lib/types';
 import { BottomNav } from '@/components/ui';
+
+/* ─── Local interfaces for teacher dashboard API data ─── */
+interface HeatmapConcept {
+  id: string;
+  title: string;
+  chapter: number;
+}
+
+interface DashboardClass {
+  id: string;
+  name: string;
+  student_count: number;
+  avg_mastery?: number;
+}
+
+interface DashboardStats {
+  total_students: number;
+  active_alerts: number;
+  critical_alerts: number;
+  active_assignments: number;
+}
+
+interface DashboardTeacher {
+  name: string;
+}
+
+interface DashboardData {
+  teacher?: DashboardTeacher;
+  classes?: DashboardClass[];
+  stats?: DashboardStats;
+}
+
+interface PollData {
+  poll_id: string;
+  question_text?: string;
+  response_count?: number;
+}
+
+interface PollResults {
+  accuracy_pct: number;
+}
 
 async function api(action: string, params: Record<string, unknown> = {}) {
   const res = await fetch(`${SUPABASE_URL}/functions/v1/teacher-dashboard`, {
@@ -48,14 +89,14 @@ function HeatmapTab({ data }: { data: HeatmapData }) {
           <thead><tr>
             <th style={{ padding: '6px 8px', color: '#64748B', fontWeight: 500, fontSize: 10, textAlign: 'left', borderBottom: '1px solid #1E293B', minWidth: 110 }}>Student</th>
             <th style={{ padding: '6px 4px', color: '#64748B', fontWeight: 500, fontSize: 10, textAlign: 'center', borderBottom: '1px solid #1E293B' }}>Avg</th>
-            {concepts.map((c: any, i: number) => <th key={i} style={{ padding: '6px 4px', color: '#64748B', fontWeight: 500, fontSize: 10, textAlign: 'center', borderBottom: '1px solid #1E293B' }} title={c.title}>Ch{c.chapter}</th>)}
+            {concepts.map((c: HeatmapConcept, i: number) => <th key={i} style={{ padding: '6px 4px', color: '#64748B', fontWeight: 500, fontSize: 10, textAlign: 'center', borderBottom: '1px solid #1E293B' }} title={c.title}>Ch{c.chapter}</th>)}
           </tr></thead>
           <tbody>
-            {data.matrix.map((row: any, ri: number) => (
+            {data.matrix.map((row: HeatmapRow, ri: number) => (
               <tr key={ri}>
                 <td style={{ padding: '6px 8px', color: '#E2E8F0', fontWeight: 500, fontSize: 13, whiteSpace: 'nowrap' }}>{row.student_name}</td>
                 <td style={{ padding: '6px 4px', textAlign: 'center', fontWeight: 600, color: '#E2E8F0', fontSize: 13 }}>{row.avg_mastery}%</td>
-                {(row.cells || []).slice(0, 12).map((cell: any, ci: number) => (
+                {(row.cells || []).slice(0, 12).map((cell: HeatmapCell, ci: number) => (
                   <td key={ci} style={{ padding: '5px 3px', textAlign: 'center', cursor: 'pointer' }}
                     onClick={() => setSelected({ student: row.student_name, concept: concepts[ci]?.title, ...cell })}>
                     <span style={{ display: 'inline-block', minWidth: 32, padding: '4px 2px', borderRadius: 4, fontSize: 10, fontWeight: 500, backgroundColor: heatColor(cell.p_know), color: '#fff', opacity: cell.attempts > 0 ? 1 : 0.3 }}>
@@ -84,7 +125,7 @@ function AlertsTab({ alerts, onResolve }: { alerts: RiskAlert[]; onResolve: (id:
     <div className="td-card">
       <div className="td-card-head"><h3>At-risk alerts</h3><span className="td-badge" style={{ backgroundColor: '#DC2626' }}>{alerts.length}</span></div>
       <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {alerts.map((a: any) => { const s = SEV[a.severity] || SEV.medium; return (
+        {alerts.map((a: RiskAlert) => { const s = SEV[a.severity] || SEV.medium; return (
           <div key={a.id} style={{ backgroundColor: '#1E293B', borderRadius: 8, padding: 12, borderLeft: `3px solid ${s.border}` }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
@@ -102,7 +143,7 @@ function AlertsTab({ alerts, onResolve }: { alerts: RiskAlert[]; onResolve: (id:
   );
 }
 
-function InterventionsTab({ alerts, classId, dash }: { alerts: RiskAlert[]; classId: string; dash: any }) {
+function InterventionsTab({ alerts, classId, dash }: { alerts: RiskAlert[]; classId: string; dash: DashboardData | null }) {
   const criticalCount = alerts.filter(a => a.severity === 'critical' || a.severity === 'high').length;
   const avgMastery = dash?.classes?.[0]?.avg_mastery ?? 0;
   const studentCount = dash?.stats?.total_students ?? 0;
@@ -173,7 +214,7 @@ function InterventionsTab({ alerts, classId, dash }: { alerts: RiskAlert[]; clas
 
 function PollTab({ classId, teacherId }: { classId: string; teacherId: string }) {
   const [q, setQ] = useState(''); const [opts, setOpts] = useState(['','','','']); const [correctIdx, setCorrectIdx] = useState(0);
-  const [poll, setPoll] = useState<any>(null); const [results, setResults] = useState<any>(null); const [loading, setLoading] = useState(false);
+  const [poll, setPoll] = useState<PollData | null>(null); const [results, setResults] = useState<PollResults | null>(null); const [loading, setLoading] = useState(false);
   const launch = async () => { if (!q.trim()) return; setLoading(true); const data = await api('launch_poll', { teacher_id: teacherId, class_id: classId, question_text: q, options: opts.filter(o => o.trim()), correct_index: correctIdx, question_type: 'mcq', time_limit: 60 }); setPoll(data); setResults(null); setLoading(false); };
   const close = async () => { if (!poll?.poll_id) return; const data = await api('close_poll', { teacher_id: teacherId, poll_id: poll.poll_id }); setResults(data); setPoll(null); };
   return (
@@ -205,9 +246,9 @@ function PollTab({ classId, teacherId }: { classId: string; teacherId: string })
 export default function TeacherPage() {
   const { teacher, isLoading: authLoading, isLoggedIn, activeRole } = useAuth();
   const router = useRouter();
-  const [dash, setDash] = useState<any>(null); // eslint-disable-line
+  const [dash, setDash] = useState<DashboardData | null>(null);
   const [heatmap, setHeatmap] = useState<HeatmapData | null>(null);
-  const [alerts, setAlerts] = useState<any[]>([]);
+  const [alerts, setAlerts] = useState<RiskAlert[]>([]);
   const [tab, setTab] = useState('heatmap');
   const [loading, setLoading] = useState(true);
 

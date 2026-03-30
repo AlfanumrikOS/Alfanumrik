@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
 import { SUBJECT_META } from '@/lib/constants';
 import { BottomNav } from '@/components/ui';
+import { supabase } from '@/lib/supabase';
 
 const GRADES = ['6', '7', '8', '9', '10', '11', '12'];
 const DIFFICULTIES = ['Easy', 'Medium', 'Hard'] as const;
@@ -83,6 +84,52 @@ const QUESTION_BANK: Record<string, Record<string, GeneratedQuestion[]>> = {
   },
 };
 
+async function fetchQuestionsFromBank(
+  subject: string,
+  grade: string,
+  count: number,
+  difficulty?: string,
+): Promise<GeneratedQuestion[] | null> {
+  try {
+    let query = supabase
+      .from('question_bank')
+      .select('question_text, options, correct_answer_index, explanation, difficulty, bloom_level')
+      .eq('subject', subject)
+      .eq('is_active', true)
+      .limit(count * 2);
+
+    if (grade) query = query.eq('grade', grade);
+    if (difficulty) {
+      const difficultyNum = difficulty === 'easy' ? 1 : difficulty === 'medium' ? 2 : 3;
+      query = query.eq('difficulty', difficultyNum);
+    }
+
+    const { data } = await query;
+    if (!data || data.length === 0) return null;
+
+    // Shuffle and take requested count
+    const shuffled = data.sort(() => Math.random() - 0.5).slice(0, count);
+    return shuffled.map(q => {
+      const opts = Array.isArray(q.options)
+        ? q.options
+        : typeof q.options === 'string'
+          ? JSON.parse(q.options)
+          : [];
+      return {
+        type: 'MCQ',
+        question:
+          q.question_text +
+          '\n' +
+          (opts as string[]).map((o: string, i: number) => `(${String.fromCharCode(97 + i)}) ${o}`).join('  '),
+        answer: opts[q.correct_answer_index] || 'See explanation',
+        explanation: q.explanation || '',
+      };
+    });
+  } catch {
+    return null;
+  }
+}
+
 // Fallback for subjects without a specific bank
 const DEFAULT_BANK: Record<string, GeneratedQuestion[]> = {
   MCQ: [
@@ -114,6 +161,8 @@ export default function TeacherWorksheetsPage() {
   const [selectedTypes, setSelectedTypes] = useState<string[]>(['MCQ', 'Short Answer']);
   const [includeAnswers, setIncludeAnswers] = useState(true);
   const [generated, setGenerated] = useState<GeneratedQuestion[] | null>(null);
+  const [questionSource, setQuestionSource] = useState<'db' | 'fallback' | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [savedList, setSavedList] = useState<SavedWorksheet[]>([]);
   const [isPrintView, setIsPrintView] = useState(false);
 
@@ -132,20 +181,70 @@ export default function TeacherWorksheetsPage() {
     setSelectedTypes(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
   };
 
-  const generateWorksheet = () => {
+  const generateWorksheet = async () => {
     if (selectedTypes.length === 0) return;
-    const bank = QUESTION_BANK[subject] || DEFAULT_BANK;
-    const questions: GeneratedQuestion[] = [];
-    const perType = Math.ceil(questionCount / selectedTypes.length);
+    setIsGenerating(true);
 
-    for (const type of selectedTypes) {
-      const pool = bank[type] || DEFAULT_BANK[type] || [];
-      for (let i = 0; i < perType && questions.length < questionCount; i++) {
-        questions.push(pool[i % pool.length]);
-      }
+    // Try fetching from the real question bank first (MCQ only from DB)
+    const hasMCQ = selectedTypes.includes('MCQ');
+    let dbQuestions: GeneratedQuestion[] | null = null;
+    if (hasMCQ) {
+      dbQuestions = await fetchQuestionsFromBank(
+        subject,
+        grade,
+        questionCount,
+        difficulty.toLowerCase(),
+      );
     }
 
-    setGenerated(questions.slice(0, questionCount));
+    let questions: GeneratedQuestion[];
+    let source: 'db' | 'fallback';
+
+    if (dbQuestions && dbQuestions.length > 0) {
+      // DB returned questions — use them for the MCQ portion
+      source = 'db';
+      const nonMCQTypes = selectedTypes.filter(t => t !== 'MCQ');
+      if (nonMCQTypes.length === 0) {
+        // All MCQ — use DB questions directly
+        questions = dbQuestions.slice(0, questionCount);
+      } else {
+        // Mix DB MCQs with hardcoded non-MCQ types
+        const mcqCount = Math.ceil(questionCount / selectedTypes.length);
+        const remainingCount = questionCount - mcqCount;
+        const mcqSlice = dbQuestions.slice(0, mcqCount);
+
+        const bank = QUESTION_BANK[subject] || DEFAULT_BANK;
+        const otherQuestions: GeneratedQuestion[] = [];
+        const perOtherType = Math.ceil(remainingCount / nonMCQTypes.length);
+
+        for (const type of nonMCQTypes) {
+          const pool = bank[type] || DEFAULT_BANK[type] || [];
+          for (let i = 0; i < perOtherType && otherQuestions.length < remainingCount; i++) {
+            otherQuestions.push(pool[i % pool.length]);
+          }
+        }
+
+        questions = [...mcqSlice, ...otherQuestions].slice(0, questionCount);
+      }
+    } else {
+      // Fallback to hardcoded question bank
+      source = 'fallback';
+      const bank = QUESTION_BANK[subject] || DEFAULT_BANK;
+      questions = [];
+      const perType = Math.ceil(questionCount / selectedTypes.length);
+
+      for (const type of selectedTypes) {
+        const pool = bank[type] || DEFAULT_BANK[type] || [];
+        for (let i = 0; i < perType && questions.length < questionCount; i++) {
+          questions.push(pool[i % pool.length]);
+        }
+      }
+      questions = questions.slice(0, questionCount);
+    }
+
+    setGenerated(questions);
+    setQuestionSource(source);
+    setIsGenerating(false);
 
     const entry: SavedWorksheet = {
       id: Date.now().toString(),
@@ -287,13 +386,13 @@ export default function TeacherWorksheetsPage() {
               </div>
 
               {/* Generate Button */}
-              <button onClick={generateWorksheet} disabled={selectedTypes.length === 0}
+              <button onClick={generateWorksheet} disabled={selectedTypes.length === 0 || isGenerating}
                 style={{
                   width: '100%', padding: '12px', borderRadius: 12, border: 'none',
-                  background: selectedTypes.length > 0 ? 'linear-gradient(135deg, #2563EB, #1D4ED8)' : '#d1d5db',
-                  color: '#fff', fontSize: 14, fontWeight: 700, cursor: selectedTypes.length > 0 ? 'pointer' : 'not-allowed',
+                  background: selectedTypes.length > 0 && !isGenerating ? 'linear-gradient(135deg, #2563EB, #1D4ED8)' : '#d1d5db',
+                  color: '#fff', fontSize: 14, fontWeight: 700, cursor: selectedTypes.length > 0 && !isGenerating ? 'pointer' : 'not-allowed',
                 }}>
-                Generate Worksheet
+                {isGenerating ? 'Generating...' : 'Generate Worksheet'}
               </button>
             </div>
 
@@ -319,8 +418,8 @@ export default function TeacherWorksheetsPage() {
       {generated && (
         <div style={{ padding: '20px', maxWidth: 700, margin: '0 auto' }}>
           {!isPrintView && (
-            <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
-              <button onClick={() => setGenerated(null)} style={{
+            <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button onClick={() => { setGenerated(null); setQuestionSource(null); }} style={{
                 padding: '8px 18px', borderRadius: 10, border: '1px solid #e0e0e0',
                 background: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer', color: '#555',
               }}>
@@ -330,8 +429,22 @@ export default function TeacherWorksheetsPage() {
                 padding: '8px 18px', borderRadius: 10, border: 'none',
                 background: '#2563EB', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer',
               }}>
-                🖨 Print Worksheet
+                Print Worksheet
               </button>
+              {questionSource && (
+                <span style={{
+                  marginLeft: 'auto',
+                  padding: '4px 12px',
+                  borderRadius: 8,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  background: questionSource === 'db' ? '#ECFDF5' : '#FEF3C7',
+                  color: questionSource === 'db' ? '#065F46' : '#92400E',
+                  border: `1px solid ${questionSource === 'db' ? '#A7F3D0' : '#FDE68A'}`,
+                }}>
+                  {questionSource === 'db' ? 'Questions from CBSE bank' : 'Sample questions'}
+                </span>
+              )}
             </div>
           )}
 
