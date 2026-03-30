@@ -102,8 +102,7 @@ const SIMULATION_MAP: Record<string, { id: string; title: string; emoji: string;
 };
 
 // Lazy-load simulation components — each imported directly from its file
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const COMPONENTS: Record<string, any> = {
+const COMPONENTS: Record<string, React.ComponentType<Record<string, unknown>>> = {
   'builtin-ohms-law': dynamic(() => import('@/components/simulations/OhmsLaw'), { ssr: false }),
   'builtin-pendulum': dynamic(() => import('@/components/simulations/PendulumLab'), { ssr: false }),
   'builtin-lens-ray': dynamic(() => import('@/components/simulations/LensRayDiagram'), { ssr: false }),
