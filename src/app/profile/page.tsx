@@ -83,8 +83,9 @@ function ConnectionsCard({ studentId, isHi }: { studentId: string; isHi: boolean
       await studentJoinClass(studentId, classCode.trim().toUpperCase());
       setJoinResult({ ok: true, msg: isHi ? 'कक्षा में शामिल हो गए!' : 'Joined class successfully!' });
       setClassCode('');
-    } catch (e: any) {
-      setJoinResult({ ok: false, msg: e?.message || (isHi ? 'कोड अमान्य है' : 'Invalid class code') });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : (isHi ? 'कोड अमान्य है' : 'Invalid class code');
+      setJoinResult({ ok: false, msg });
     }
     setJoinLoading(false);
   };

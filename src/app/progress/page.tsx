@@ -219,6 +219,7 @@ export default function ProgressPage() {
   const accuracy = totalAsked > 0 ? Math.round((totalCorrect / totalAsked) * 100) : 0;
 
   /* ── Bloom aggregate: transform DB rows into per-level mastery data ── */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- bloom DB rows have dynamic shape
   const bloomFlattened = bloomData.flatMap((b: any) =>
     BLOOM_LEVELS.map((level) => ({
       bloom_level: level as BloomLevel,
@@ -339,7 +340,7 @@ export default function ProgressPage() {
               <SectionHeader icon="📚">{isHi ? 'विषयवार महारत' : 'Subject Mastery'}</SectionHeader>
               <div className="space-y-2">
                 {profiles.map((p) => {
-                  const meta = subjects.find((s: any) => s.code === p.subject);
+                  const meta = subjects.find((s: { code: string }) => s.code === p.subject);
                   const correctPct = p.total_questions_asked > 0
                     ? Math.round((p.total_questions_answered_correctly / p.total_questions_asked) * 100)
                     : 0;
