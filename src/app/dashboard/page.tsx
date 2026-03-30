@@ -40,14 +40,14 @@ export default function Dashboard() {
   const profiles: StudentLearningProfile[] = dashData?.profiles ?? [];
   const dueCount: number = dashData?.due_count ?? 0;
   const unreadCount: number = dashData?.unread_count ?? 0;
-  const knowledgeGaps = (dashData?.knowledge_gaps ?? []).map((g: any) => ({
+  const knowledgeGaps = (dashData?.knowledge_gaps ?? []).map((g: { id: string; target_concept_name: string }) => ({
     id: g.id,
     topic_title: g.target_concept_name,
   }));
-  const upcomingExams = (dashData?.exams ?? []).map((e: any) => {
+  const upcomingExams = (dashData?.exams ?? []).map((e: { exam_date: string; exam_name: string; [key: string]: unknown }) => {
     const daysLeft = Math.max(0, Math.ceil((new Date(e.exam_date).getTime() - Date.now()) / 86400000));
     return { ...e, days_left: daysLeft };
-  }).filter((e: any) => e.days_left <= 14); // Only show exams within 2 weeks
+  }).filter((e: { days_left: number }) => e.days_left <= 14);
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/');
