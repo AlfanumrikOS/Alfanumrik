@@ -284,6 +284,45 @@ h1, h2, h3, h4, h5 { font-family: var(--font-display); }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(232, 88, 28, 0.25); border-radius: 4px; }
 
+/* ─── Range Input (Touch-Friendly for Simulations) ────────── */
+/* Minimum 44px touch target per Apple HIG, 48px per Material */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  background: #e2e8f0;
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--orange, #E8581C);
+  border: 2px solid white;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  cursor: pointer;
+  /* Touch target: 44px clickable area via padding */
+  padding: 10px;
+  box-sizing: content-box;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--orange, #E8581C);
+  border: 2px solid white;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  cursor: pointer;
+}
+/* Respect accentColor when set inline */
+input[type="range"][style*="accentColor"]::-webkit-slider-thumb {
+  background: currentColor;
+}
+
 /* ─── Glass (Light) ───────────────────────────────────────── */
 .glass {
   background: rgba(255, 255, 255, 0.75);
