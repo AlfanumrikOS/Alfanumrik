@@ -128,7 +128,11 @@ export default function SimulationsPage() {
 
   // Filter built-in simulations by subject and grade
   const filteredBuiltIn = BUILT_IN_SIMULATIONS.filter(sim => {
-    const matchSubject = selectedSubject === 'all' || sim.subject === selectedSubject;
+    // For grades 6-10, 'science' encompasses physics + chemistry + biology
+    const scienceFamily = ['physics', 'chemistry', 'biology'];
+    const matchSubject = selectedSubject === 'all'
+      || sim.subject === selectedSubject
+      || (selectedSubject === 'science' && scienceFamily.includes(sim.subject));
     const matchGrade = selectedGrade === 'all' || sim.grade.includes(selectedGrade);
     return matchSubject && matchGrade;
   });
