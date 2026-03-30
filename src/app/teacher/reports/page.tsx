@@ -67,6 +67,91 @@ const spinnerStyle: React.CSSProperties = {
   animation: 'spin 0.8s linear infinite',
 };
 
+/* ─── Interfaces ─── */
+interface OverviewStats {
+  total_students?: number;
+  avg_mastery?: number;
+  avg_accuracy?: number;
+  active_this_week?: number;
+}
+
+interface PerformerEntry {
+  name?: string;
+  student_name?: string;
+  xp?: number;
+  total_xp?: number;
+  mastery?: number;
+  reason?: string;
+}
+
+interface OverviewData {
+  stats?: OverviewStats;
+  mastery_distribution?: Record<string, number>;
+  top_performers?: PerformerEntry[];
+  needs_attention?: PerformerEntry[];
+}
+
+interface StudentListEntry {
+  id?: string;
+  student_id?: string;
+  name?: string;
+  student_name?: string;
+}
+
+interface SubjectMastery {
+  subject?: string;
+  name?: string;
+  mastery?: number;
+  percent?: number;
+  level?: string;
+}
+
+interface StrengthWeaknessItem {
+  topic?: string;
+  name?: string;
+}
+
+interface RecommendationItem {
+  text?: string;
+  message?: string;
+}
+
+interface StudentProfile {
+  xp?: number;
+  total_xp?: number;
+  streak?: number;
+  current_streak?: number;
+  accuracy?: number;
+  avg_accuracy?: number;
+  subjects?: SubjectMastery[];
+  subject_mastery?: SubjectMastery[];
+  strengths?: (string | StrengthWeaknessItem)[];
+  weaknesses?: (string | StrengthWeaknessItem)[];
+  recommendations?: string | (string | RecommendationItem)[];
+  recommendation?: string;
+}
+
+interface WeeklyProgressEntry {
+  label?: string;
+  week?: string;
+  progress?: number;
+  percent?: number;
+  completion?: number;
+}
+
+interface ImprovedStudent {
+  name?: string;
+  student_name?: string;
+  improvement?: number;
+  delta?: number;
+}
+
+interface TrendsData {
+  weekly_progress?: WeeklyProgressEntry[];
+  activity_heatmap?: number[][];
+  most_improved?: ImprovedStudent[];
+}
+
 /* ─── Helpers ─── */
 function getMasteryColor(level: string): string {
   switch (level) {
@@ -97,11 +182,11 @@ function heatCellColor(value: number): string {
 }
 
 /* ─── Tab 1: Class Overview ─── */
-function ClassOverviewTab({ data }: { data: any }) {
+function ClassOverviewTab({ data }: { data: OverviewData | null }) {
   const stats = data?.stats || {};
   const distribution = data?.mastery_distribution || {};
-  const topPerformers: any[] = data?.top_performers || [];
-  const needsAttention: any[] = data?.needs_attention || [];
+  const topPerformers: PerformerEntry[] = data?.top_performers || [];
+  const needsAttention: PerformerEntry[] = data?.needs_attention || [];
 
   const statItems = [
     { label: 'Total Students', value: stats.total_students ?? 0, color: '#2563EB' },
@@ -159,7 +244,7 @@ function ClassOverviewTab({ data }: { data: any }) {
             <p style={{ color: '#475569', fontStyle: 'italic', fontSize: 13 }}>No data available yet.</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {topPerformers.slice(0, 5).map((s: any, i: number) => (
+              {topPerformers.slice(0, 5).map((s: PerformerEntry, i: number) => (
                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', backgroundColor: '#1E293B', borderRadius: 8 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <span style={{ width: 24, height: 24, borderRadius: '50%', backgroundColor: '#2563EB', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>{i + 1}</span>
@@ -178,7 +263,7 @@ function ClassOverviewTab({ data }: { data: any }) {
             <p style={{ color: '#475569', fontStyle: 'italic', fontSize: 13 }}>All students are on track!</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {needsAttention.slice(0, 5).map((s: any, i: number) => (
+              {needsAttention.slice(0, 5).map((s: PerformerEntry, i: number) => (
                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', backgroundColor: '#1E293B', borderRadius: 8, borderLeft: '3px solid #EF4444' }}>
                   <span style={{ fontSize: 14, fontWeight: 500, color: '#E2E8F0' }}>{s.name || s.student_name}</span>
                   <span style={{ fontSize: 12, color: '#EF4444', fontWeight: 600 }}>{s.reason || `${s.mastery ?? 0}% mastery`}</span>
@@ -193,14 +278,14 @@ function ClassOverviewTab({ data }: { data: any }) {
 }
 
 /* ─── Tab 2: Student Analysis ─── */
-function StudentAnalysisTab({ students, teacherId }: { students: any[]; teacherId: string }) {
+function StudentAnalysisTab({ students, teacherId }: { students: StudentListEntry[]; teacherId: string }) {
   const [selectedId, setSelectedId] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
-  const [profile, setProfile] = useState<any>(null);
+  const [profile, setProfile] = useState<StudentProfile | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const filtered = students.filter((s: any) =>
+  const filtered = students.filter((s: StudentListEntry) =>
     (s.name || s.student_name || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -211,8 +296,8 @@ function StudentAnalysisTab({ students, teacherId }: { students: any[]; teacherI
     try {
       const data = await api('get_student_report', { teacher_id: teacherId, student_id: studentId });
       setProfile(data);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load student data');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load student data');
       setProfile(null);
     } finally {
       setLoading(false);
@@ -241,7 +326,7 @@ function StudentAnalysisTab({ students, teacherId }: { students: any[]; teacherI
           style={{ width: '100%', padding: '10px 12px', backgroundColor: '#1E293B', border: '1px solid #334155', borderRadius: 8, color: '#E2E8F0', fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
         >
           <option value="">-- Choose a student --</option>
-          {filtered.map((s: any) => (
+          {filtered.map((s: StudentListEntry) => (
             <option key={s.id || s.student_id} value={s.id || s.student_id}>
               {s.name || s.student_name}
             </option>
@@ -285,7 +370,7 @@ function StudentAnalysisTab({ students, teacherId }: { students: any[]; teacherI
               <p style={{ color: '#475569', fontStyle: 'italic', fontSize: 13 }}>No subject data available.</p>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {(profile.subjects || profile.subject_mastery || []).map((subj: any, i: number) => {
+                {(profile.subjects || profile.subject_mastery || []).map((subj: SubjectMastery, i: number) => {
                   const pct = subj.mastery ?? subj.percent ?? 0;
                   const level = subj.level || (pct >= 80 ? 'mastered' : pct >= 60 ? 'proficient' : pct >= 40 ? 'familiar' : 'developing');
                   return (
@@ -312,7 +397,7 @@ function StudentAnalysisTab({ students, teacherId }: { students: any[]; teacherI
                 <p style={{ color: '#475569', fontStyle: 'italic', fontSize: 13 }}>No strengths identified yet.</p>
               ) : (
                 <ul style={{ margin: 0, paddingLeft: 18, listStyle: 'disc' }}>
-                  {(profile.strengths || []).map((s: any, i: number) => (
+                  {(profile.strengths || []).map((s: string | StrengthWeaknessItem, i: number) => (
                     <li key={i} style={{ color: '#CBD5E1', fontSize: 13, marginBottom: 4 }}>
                       {typeof s === 'string' ? s : s.topic || s.name}
                     </li>
@@ -327,7 +412,7 @@ function StudentAnalysisTab({ students, teacherId }: { students: any[]; teacherI
                 <p style={{ color: '#475569', fontStyle: 'italic', fontSize: 13 }}>No weaknesses identified.</p>
               ) : (
                 <ul style={{ margin: 0, paddingLeft: 18, listStyle: 'disc' }}>
-                  {(profile.weaknesses || []).map((w: any, i: number) => (
+                  {(profile.weaknesses || []).map((w: string | StrengthWeaknessItem, i: number) => (
                     <li key={i} style={{ color: '#CBD5E1', fontSize: 13, marginBottom: 4 }}>
                       {typeof w === 'string' ? w : w.topic || w.name}
                     </li>
@@ -338,24 +423,27 @@ function StudentAnalysisTab({ students, teacherId }: { students: any[]; teacherI
           </div>
 
           {/* Recommendations */}
-          {(profile.recommendations || profile.recommendation) && (
-            <div style={{ ...cardStyle, borderLeft: '3px solid #2563EB' }}>
-              <h3 style={{ fontSize: 15, fontWeight: 600, color: '#2563EB', margin: '0 0 8px' }}>Recommendations</h3>
-              {typeof (profile.recommendations || profile.recommendation) === 'string' ? (
-                <p style={{ color: '#CBD5E1', fontSize: 13, margin: 0, lineHeight: 1.6 }}>
-                  {profile.recommendations || profile.recommendation}
-                </p>
-              ) : (
-                <ul style={{ margin: 0, paddingLeft: 18, listStyle: 'disc' }}>
-                  {(profile.recommendations || []).map((r: any, i: number) => (
-                    <li key={i} style={{ color: '#CBD5E1', fontSize: 13, marginBottom: 4 }}>
-                      {typeof r === 'string' ? r : r.text || r.message}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
+          {(profile.recommendations || profile.recommendation) && (() => {
+            const recs = profile.recommendations || profile.recommendation;
+            return (
+              <div style={{ ...cardStyle, borderLeft: '3px solid #2563EB' }}>
+                <h3 style={{ fontSize: 15, fontWeight: 600, color: '#2563EB', margin: '0 0 8px' }}>Recommendations</h3>
+                {typeof recs === 'string' ? (
+                  <p style={{ color: '#CBD5E1', fontSize: 13, margin: 0, lineHeight: 1.6 }}>
+                    {recs}
+                  </p>
+                ) : (
+                  <ul style={{ margin: 0, paddingLeft: 18, listStyle: 'disc' }}>
+                    {(recs as (string | RecommendationItem)[]).map((r: string | RecommendationItem, i: number) => (
+                      <li key={i} style={{ color: '#CBD5E1', fontSize: 13, marginBottom: 4 }}>
+                        {typeof r === 'string' ? r : r.text || r.message}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -369,10 +457,10 @@ function StudentAnalysisTab({ students, teacherId }: { students: any[]; teacherI
 }
 
 /* ─── Tab 3: Trends ─── */
-function TrendsTab({ data }: { data: any }) {
-  const weeklyProgress: any[] = data?.weekly_progress || [];
-  const activityHeatmap: any[][] = data?.activity_heatmap || [];
-  const mostImproved: any[] = data?.most_improved || [];
+function TrendsTab({ data }: { data: TrendsData | null }) {
+  const weeklyProgress: WeeklyProgressEntry[] = data?.weekly_progress || [];
+  const activityHeatmap: number[][] = data?.activity_heatmap || [];
+  const mostImproved: ImprovedStudent[] = data?.most_improved || [];
 
   const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const weekLabels = ['Week 1', 'Week 2', 'Week 3', 'Week 4'];
@@ -391,7 +479,7 @@ function TrendsTab({ data }: { data: any }) {
           <p style={{ color: '#475569', fontStyle: 'italic', fontSize: 13 }}>No weekly progress data yet.</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {weeklyProgress.slice(0, 4).map((w: any, i: number) => {
+            {weeklyProgress.slice(0, 4).map((w: WeeklyProgressEntry, i: number) => {
               const pct = w.progress ?? w.percent ?? w.completion ?? 0;
               return (
                 <div key={i}>
@@ -468,7 +556,7 @@ function TrendsTab({ data }: { data: any }) {
           <p style={{ color: '#475569', fontStyle: 'italic', fontSize: 13 }}>No improvement data available yet.</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {mostImproved.map((s: any, i: number) => (
+            {mostImproved.map((s: ImprovedStudent, i: number) => (
               <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', backgroundColor: '#1E293B', borderRadius: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <span style={{ width: 28, height: 28, borderRadius: '50%', backgroundColor: '#059669', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>{i + 1}</span>
@@ -492,9 +580,9 @@ export default function TeacherReportsPage() {
   const [tab, setTab] = useState<'overview' | 'student' | 'trends'>('overview');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [overviewData, setOverviewData] = useState<any>(null);
-  const [studentsList, setStudentsList] = useState<any[]>([]);
-  const [trendsData, setTrendsData] = useState<any>(null);
+  const [overviewData, setOverviewData] = useState<OverviewData | null>(null);
+  const [studentsList, setStudentsList] = useState<StudentListEntry[]>([]);
+  const [trendsData, setTrendsData] = useState<TrendsData | null>(null);
 
   const teacherId = teacher?.id || '';
 
@@ -519,8 +607,8 @@ export default function TeacherReportsPage() {
       setOverviewData(overview);
       setStudentsList(students?.students || students || []);
       setTrendsData(trends);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load report data');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load report data');
     } finally {
       setLoading(false);
     }
