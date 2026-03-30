@@ -124,7 +124,7 @@ export default function WelcomePage() {
         <div className="max-w-6xl mx-auto px-3 sm:px-6 h-16 flex items-center justify-between">
           <Link href="/welcome" className="flex items-center gap-2">
             <span className="text-2xl">🦊</span>
-            <span className="text-lg font-extrabold gradient-text" style={{ fontFamily: 'var(--font-display)' }}>Alfanumrik</span>
+            <span className="text-lg font-extrabold gradient-text" style={{ fontFamily: 'var(--font-display)' }}>Alfanumrik™</span>
           </Link>
           <div className="flex items-center gap-1 sm:gap-3">
             {NAV_LINKS.map(l => (
@@ -163,13 +163,41 @@ export default function WelcomePage() {
               { value: '16', label: 'Subjects' },
               { value: '6–12', label: 'Grades' },
               { value: 'हिन्दी+En', label: 'Bilingual' },
-              { value: 'Free', label: 'To Start' },
+              { value: 'DPIIT', label: 'Recognized' },
             ].map(s => (
               <div key={s.label} className="text-center">
                 <div className="text-sm sm:text-xl font-extrabold" style={{ color: 'var(--orange)' }}>{s.value}</div>
                 <div className="text-[10px] sm:text-xs font-medium" style={{ color: 'var(--text-3)' }}>{s.label}</div>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Trust & Recognition */}
+      <section className="py-6 sm:py-8 border-b" style={{ borderColor: 'var(--border)' }}>
+        <div className="max-w-5xl mx-auto px-4 sm:px-6">
+          <div className="flex flex-col items-center gap-4">
+            <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--text-3)' }}>
+              Trusted by Indian Families · Recognized by India
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              {[
+                { label: 'DPIIT Recognized', icon: '🇮🇳' },
+                { label: 'ISO 27001', icon: '🛡️' },
+                { label: 'ISO 42001', icon: '🤖' },
+                { label: 'ISO 42005', icon: '🔍' },
+                { label: 'PCI-DSS', icon: '💳' },
+              ].map(cert => (
+                <span key={cert.label} className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full"
+                  style={{ background: 'var(--surface-2)', color: 'var(--text-2)', border: '1px solid var(--border)' }}>
+                  <span>{cert.icon}</span> {cert.label}
+                </span>
+              ))}
+            </div>
+            <p className="text-[10px]" style={{ color: 'var(--text-3)' }}>
+              Alfanumrik™ is a trademark of Cusiosense Learning India Private Limited · CIN: U58200UP2025PTC238093
+            </p>
           </div>
         </div>
       </section>
@@ -250,6 +278,34 @@ export default function WelcomePage() {
                 <div className="text-2xl mb-2">{s.icon}</div>
                 <h3 className="text-sm font-bold mb-1" style={{ fontFamily: 'var(--font-display)' }}>{s.title}</h3>
                 <p className="text-xs leading-relaxed" style={{ color: 'var(--text-2)' }}>{s.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Product Experience */}
+      <section className="py-12 sm:py-16">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 text-center">
+          <h2 className="text-xl sm:text-3xl font-extrabold mb-3" style={{ fontFamily: 'var(--font-display)' }}>
+            Built for how Indian students <span className="gradient-text">actually study</span>
+          </h2>
+          <p className="text-sm sm:text-base mb-10 max-w-2xl mx-auto" style={{ color: 'var(--text-2)', lineHeight: 1.7 }}>
+            Every feature is designed around CBSE exam patterns, NCERT chapters, and the way Indian students, parents, and teachers work together.
+          </p>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {[
+              { icon: '🦊', title: 'Foxy AI Tutor', desc: 'Ask any doubt in Hindi or English. Get step-by-step explanations grounded in NCERT — not random internet answers.', color: '#E8581C' },
+              { icon: '🔬', title: '19 Interactive Simulations', desc: 'Physics, Chemistry, Math — explore concepts hands-on. From Newton\'s Laws to Chemical Balancing to Integration.', color: '#7C3AED' },
+              { icon: '⚡', title: 'Bloom-Aware Quizzes', desc: 'Questions adapt to your level. Master "remember" before "apply". Board-exam patterns built into every quiz.', color: '#2563EB' },
+              { icon: '📊', title: 'Parent Dashboard', desc: 'See your child\'s progress in plain language. "Doing well" or "needs help" — not confusing graphs.', color: '#16A34A' },
+              { icon: '👩‍🏫', title: 'Teacher Command Center', desc: 'See which students need help. Get AI-powered intervention suggestions. Save hours every week.', color: '#D97706' },
+              { icon: '📋', title: 'Super Admin Control', desc: 'Platform health, learner outcomes, revenue, content gaps — everything an operator needs on one screen.', color: '#0891B2' },
+            ].map(f => (
+              <div key={f.title} className="text-left rounded-2xl p-5" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
+                <div className="text-2xl mb-2">{f.icon}</div>
+                <h3 className="text-sm font-bold mb-1" style={{ color: f.color }}>{f.title}</h3>
+                <p className="text-xs leading-relaxed" style={{ color: 'var(--text-2)' }}>{f.desc}</p>
               </div>
             ))}
           </div>
@@ -408,9 +464,9 @@ export default function WelcomePage() {
           <div className="pt-6 border-t flex flex-col sm:flex-row items-center justify-between gap-3" style={{ borderColor: 'var(--border)' }}>
             <p className="text-xs" style={{ color: 'var(--text-3)' }}>© {new Date().getFullYear()} Cusiosense Learning India Pvt. Ltd. All rights reserved.</p>
             <div className="flex items-center gap-4 text-xs" style={{ color: 'var(--text-3)' }}>
-              <span>🛡️ Safe &amp; Secure</span>
-              <span>🇮🇳 Made in India</span>
-              <span>🔒 No Ads</span>
+              <span>🛡️ ISO 27001 · ISO 42001 · PCI-DSS</span>
+              <span>🇮🇳 DPIIT Recognized Startup</span>
+              <span>Alfanumrik™ · Cusiosense Learning India Pvt. Ltd.</span>
             </div>
           </div>
         </div>
