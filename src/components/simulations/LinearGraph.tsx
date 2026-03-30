@@ -227,6 +227,8 @@ export default function LinearGraph() {
     <div style={{ fontFamily: 'system-ui, sans-serif' }}>
       <canvas
         ref={canvasRef}
+        role="img"
+        aria-label="Linear graph visualization showing straight lines with adjustable slope and intercept"
         style={{ width: '100%', height: 280, borderRadius: 12, border: '1px solid #e7e5e4' }}
       />
 
@@ -269,13 +271,13 @@ export default function LinearGraph() {
         <label style={{ fontSize: 11, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
           <span>slope m = <b>{m1}</b></span>
           <input type="range" min={-5} max={5} step={0.5} value={m1}
-            onChange={e => setM1(+e.target.value)} style={{ width: '55%' }}
+            onChange={e => setM1(+e.target.value)} aria-label={`Line 1 slope slider, ${m1}, range -5 to 5`} style={{ width: '55%' }}
           />
         </label>
         <label style={{ fontSize: 11, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span>intercept c = <b>{c1}</b></span>
           <input type="range" min={-8} max={8} step={0.5} value={c1}
-            onChange={e => setC1(+e.target.value)} style={{ width: '55%' }}
+            onChange={e => setC1(+e.target.value)} aria-label={`Line 1 intercept slider, ${c1}, range -8 to 8`} style={{ width: '55%' }}
           />
         </label>
       </div>
@@ -283,6 +285,7 @@ export default function LinearGraph() {
       {/* Second line toggle + controls */}
       <button
         onClick={() => setShowSecondLine(!showSecondLine)}
+        aria-label={showSecondLine ? 'Hide second line' : 'Show second line for comparison'}
         style={{
           width: '100%', padding: '6px', borderRadius: 8,
           border: `1px solid ${showSecondLine ? '#ef4444' : '#d4d4d8'}`,
@@ -300,13 +303,13 @@ export default function LinearGraph() {
           <label style={{ fontSize: 11, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
             <span>slope m = <b>{m2}</b></span>
             <input type="range" min={-5} max={5} step={0.5} value={m2}
-              onChange={e => setM2(+e.target.value)} style={{ width: '55%' }}
+              onChange={e => setM2(+e.target.value)} aria-label={`Line 2 slope slider, ${m2}, range -5 to 5`} style={{ width: '55%' }}
             />
           </label>
           <label style={{ fontSize: 11, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span>intercept c = <b>{c2}</b></span>
             <input type="range" min={-8} max={8} step={0.5} value={c2}
-              onChange={e => setC2(+e.target.value)} style={{ width: '55%' }}
+              onChange={e => setC2(+e.target.value)} aria-label={`Line 2 intercept slider, ${c2}, range -8 to 8`} style={{ width: '55%' }}
             />
           </label>
         </div>
