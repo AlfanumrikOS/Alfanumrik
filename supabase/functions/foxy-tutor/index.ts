@@ -207,7 +207,12 @@ USE THIS TO:
   }
 
   if (!ragContext && !syllabusContext) {
-    prompt += `\n\nNOTE: No NCERT reference retrieved. Answer based on standard NCERT/CBSE curriculum for Grade ${grade} ${subject}. If not confident about a fact, formula, or date, say so rather than guessing.`
+    prompt += `\n\nNOTE: No NCERT reference material was found for this question in the uploaded textbook content.
+I can only provide verified answers from your NCERT textbook. Please try:
+- Rephrasing your question
+- Selecting the correct chapter
+- Asking about a topic from your syllabus
+I will not guess or make up answers that aren't in your textbook.`
   }
 
   return prompt
@@ -219,6 +224,7 @@ async function fetchRAGContext(
   query: string,
   subject: string,
   grade: string,
+  chapter: string | null = null,
 ): Promise<string | null> {
   try {
     // Try to call the match_rag_chunks RPC if it exists
@@ -227,12 +233,16 @@ async function fetchRAGContext(
       p_subject: subject,
       p_grade: grade,
       match_count: 3,
+      p_chapter: chapter,
     })
 
     if (error || !data || data.length === 0) return null
 
     return data
-      .map((chunk: { content: string; similarity?: number }) => chunk.content)
+      .map((chunk: { content: string; chapter_title?: string; similarity?: number }) => {
+        const header = chunk.chapter_title ? `[Chapter: ${chunk.chapter_title}]\n` : ''
+        return `${header}${chunk.content}`
+      })
       .join('\n\n---\n\n')
   } catch {
     // RAG not available — proceed without context
@@ -442,6 +452,10 @@ Deno.serve(async (req: Request) => {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
     const today = new Date().toISOString().slice(0, 10)
 
+    // Derive single chapter for RAG filtering — pass null if zero or multiple chapters
+    const chapterParts = safeChapters ? safeChapters.split(',').map((c: string) => c.trim()).filter(Boolean) : []
+    const ragChapter = chapterParts.length === 1 ? chapterParts[0] : null
+
     // ── Parallel DB lookups (usage, plan, chat history, RAG, syllabus, mastery) ──
     const [usageResult, studentResult, sessionResult, ragContext, syllabusContext, masteryContext] = await Promise.all([
       supabase
@@ -459,7 +473,7 @@ Deno.serve(async (req: Request) => {
       session_id
         ? supabase.from('chat_sessions').select('messages').eq('id', session_id).eq('student_id', student_id).maybeSingle()
         : Promise.resolve({ data: null }),
-      fetchRAGContext(supabase, message, subject, grade),
+      fetchRAGContext(supabase, message, subject, grade, ragChapter),
       fetchSyllabusContext(supabase, message, subject, grade),
       fetchStudentMastery(supabase, student_id, subject),
     ])

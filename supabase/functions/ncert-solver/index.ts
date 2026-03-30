@@ -176,14 +176,21 @@ async function fetchRAGContext(
   chapter?: string,
 ): Promise<string | null> {
   try {
-    const { data, error } = await supabase.rpc('match_rag_chunks', {
+    const rpcParams: Record<string, unknown> = {
       query_text: query,
       p_subject: subject,
       p_grade: grade,
       match_count: 5, // more context for solver than chat
-    })
+    }
+    if (chapter) {
+      rpcParams.p_chapter = chapter
+    }
+    const { data, error } = await supabase.rpc('match_rag_chunks', rpcParams)
     if (error || !data || data.length === 0) return null
-    return data.map((c: { content: string }) => c.content).join('\n\n---\n\n')
+    return data.map((c: { content: string; chapter_title?: string }) => {
+      const prefix = c.chapter_title ? `[Chapter: ${c.chapter_title}]\n` : ''
+      return `${prefix}${c.content}`
+    }).join('\n\n---\n\n')
   } catch {
     return null
   }
