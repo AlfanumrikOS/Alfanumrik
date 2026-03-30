@@ -713,6 +713,7 @@ const PythagorasTheorem: React.FC = () => {
           <button
             key={key}
             onClick={() => applyPreset(key)}
+            aria-label={`Set triangle to ${key} Pythagorean triple`}
             style={{
               padding: '6px 16px',
               borderRadius: 20,
@@ -735,6 +736,7 @@ const PythagorasTheorem: React.FC = () => {
         <button
           onClick={() => setProofMode((p) => !p)}
           disabled={!isRight}
+          aria-label={proofMode ? 'Stop proof animation' : 'Animate Pythagoras theorem proof'}
           style={{
             padding: '6px 16px',
             borderRadius: 20,
@@ -754,6 +756,8 @@ const PythagorasTheorem: React.FC = () => {
 
       <canvas
         ref={canvasRef}
+        role="img"
+        aria-label="Pythagoras theorem visualization showing a right triangle with squares on each side"
         height={450}
         style={{
           width: '100%',

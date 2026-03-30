@@ -750,6 +750,8 @@ export default function FractionVisualizer() {
       {/* Canvas */}
       <canvas
         ref={canvasRef}
+        role="img"
+        aria-label="Pizza fraction visualizer showing fraction parts as pizza slices"
         style={{ width: '100%', display: 'block', cursor: 'default' }}
       />
 
@@ -760,18 +762,21 @@ export default function FractionVisualizer() {
           <button
             style={modeBtnStyle(mode === 'single')}
             onClick={() => setMode('single')}
+            aria-label="Single fraction mode"
           >
             Single
           </button>
           <button
             style={modeBtnStyle(mode === 'compare')}
             onClick={() => setMode('compare')}
+            aria-label="Compare two fractions mode"
           >
             Compare
           </button>
           <button
             style={modeBtnStyle(mode === 'addition')}
             onClick={() => setMode('addition')}
+            aria-label="Add fractions mode"
           >
             Add
           </button>
@@ -799,6 +804,7 @@ export default function FractionVisualizer() {
               onChange={(e) =>
                 updateFraction1('numerator', parseInt(e.target.value) || 0)
               }
+              aria-label="Fraction 1 numerator number input"
               style={inputStyle}
             />
             <input
@@ -809,6 +815,7 @@ export default function FractionVisualizer() {
               onChange={(e) =>
                 updateFraction1('numerator', parseInt(e.target.value))
               }
+              aria-label={`Fraction 1 numerator slider, ${fraction1.numerator}, range 0 to ${fraction1.denominator}`}
               style={sliderStyle}
             />
           </div>
@@ -823,6 +830,7 @@ export default function FractionVisualizer() {
               onChange={(e) =>
                 updateFraction1('denominator', parseInt(e.target.value) || 1)
               }
+              aria-label="Fraction 1 denominator number input"
               style={inputStyle}
             />
             <input
@@ -833,6 +841,7 @@ export default function FractionVisualizer() {
               onChange={(e) =>
                 updateFraction1('denominator', parseInt(e.target.value))
               }
+              aria-label={`Fraction 1 denominator slider, ${fraction1.denominator}, range 1 to 12`}
               style={sliderStyle}
             />
           </div>
@@ -843,6 +852,7 @@ export default function FractionVisualizer() {
                 key={`p1-${p.label}`}
                 style={presetBtnStyle}
                 onClick={() => applyPreset(p.fraction, 1)}
+                aria-label={`Set fraction 1 to ${p.label}`}
               >
                 {p.label}
               </button>
@@ -871,6 +881,7 @@ export default function FractionVisualizer() {
                 onChange={(e) =>
                   updateFraction2('numerator', parseInt(e.target.value) || 0)
                 }
+                aria-label="Fraction 2 numerator number input"
                 style={inputStyle}
               />
               <input
@@ -881,6 +892,7 @@ export default function FractionVisualizer() {
                 onChange={(e) =>
                   updateFraction2('numerator', parseInt(e.target.value))
                 }
+                aria-label={`Fraction 2 numerator slider, ${fraction2.numerator}, range 0 to ${fraction2.denominator}`}
                 style={sliderStyle}
               />
             </div>
@@ -897,6 +909,7 @@ export default function FractionVisualizer() {
                 onChange={(e) =>
                   updateFraction2('denominator', parseInt(e.target.value) || 1)
                 }
+                aria-label="Fraction 2 denominator number input"
                 style={inputStyle}
               />
               <input
@@ -907,6 +920,7 @@ export default function FractionVisualizer() {
                 onChange={(e) =>
                   updateFraction2('denominator', parseInt(e.target.value))
                 }
+                aria-label={`Fraction 2 denominator slider, ${fraction2.denominator}, range 1 to 12`}
                 style={sliderStyle}
               />
             </div>
@@ -917,6 +931,7 @@ export default function FractionVisualizer() {
                   key={`p2-${p.label}`}
                   style={presetBtnStyle}
                   onClick={() => applyPreset(p.fraction, 2)}
+                  aria-label={`Set fraction 2 to ${p.label}`}
                 >
                   {p.label}
                 </button>

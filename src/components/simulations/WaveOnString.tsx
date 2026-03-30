@@ -429,6 +429,8 @@ export default function WaveOnString() {
       {/* Canvas */}
       <canvas
         ref={canvasRef}
+        role="img"
+        aria-label="Transverse wave on a string simulation showing wave propagation with adjustable amplitude, frequency, and speed"
         style={{ display: 'block', width: '100%', height: `${CANVAS_HEIGHT}px`, cursor: 'crosshair' }}
       />
 
@@ -453,6 +455,7 @@ export default function WaveOnString() {
                 step={s.step}
                 value={s.value}
                 onChange={(e) => setters[i](parseFloat(e.target.value))}
+                aria-label={`${s.label} slider, ${s.value % 1 === 0 ? s.value : s.value.toFixed(1)} ${s.unit}, range ${s.min} to ${s.max}`}
                 style={{
                   width: '100%',
                   height: '6px',
@@ -503,6 +506,7 @@ export default function WaveOnString() {
           />
           <button
             onClick={sendPulse}
+            aria-label="Send a single wave pulse"
             style={{
               padding: '7px 16px',
               borderRadius: '8px',
@@ -520,6 +524,7 @@ export default function WaveOnString() {
           </button>
           <button
             onClick={() => setIsPaused(!isPaused)}
+            aria-label={isPaused ? 'Play wave animation' : 'Pause wave animation'}
             style={{
               padding: '7px 16px',
               borderRadius: '8px',
@@ -537,6 +542,7 @@ export default function WaveOnString() {
           </button>
           <button
             onClick={() => { timeRef.current = 0; setPulseState({ active: false, startTime: 0 }); }}
+            aria-label="Reset wave simulation"
             style={{
               padding: '7px 16px',
               borderRadius: '8px',
@@ -573,6 +579,7 @@ function ToggleButton({
   return (
     <button
       onClick={onClick}
+      aria-label={`Toggle ${label}, currently ${active ? 'on' : 'off'}`}
       style={{
         padding: '7px 16px',
         borderRadius: '8px',

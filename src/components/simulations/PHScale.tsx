@@ -510,6 +510,7 @@ export default function PHScale() {
               className={`substance-btn ${selected?.name === substance.name ? 'active' : ''}`}
               onClick={() => handleSelect(substance)}
               type="button"
+              aria-label={`Select ${substance.name}, pH ${substance.pH}`}
             >
               <span style={{ fontSize: '1.6rem', lineHeight: 1 }}>{substance.emoji}</span>
               <span style={{

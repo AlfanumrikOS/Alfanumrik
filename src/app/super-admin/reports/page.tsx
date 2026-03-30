@@ -7,8 +7,10 @@ import { colors, S } from '../_components/admin-styles';
 function ReportsContent() {
   const { apiFetch } = useAdmin();
   const [status, setStatus] = useState('');
+  const [downloading, setDownloading] = useState<string | null>(null);
 
   const downloadReport = async (type: string, format: string) => {
+    setDownloading(`${type}-${format}`);
     setStatus(`Generating ${type} report...`);
     try {
       const res = await apiFetch(`/api/super-admin/reports?type=${type}&format=${format}`);
@@ -22,6 +24,7 @@ function ReportsContent() {
       setStatus(`${type} report downloaded!`);
       setTimeout(() => setStatus(''), 3000);
     } catch { setStatus('Download failed'); }
+    finally { setDownloading(null); }
   };
 
   const reports = [
@@ -35,6 +38,7 @@ function ReportsContent() {
 
   return (
     <div>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       <div style={{ marginBottom: 24 }}>
         <h1 style={S.h1}>Reports & Exports</h1>
         <p style={{ fontSize: 13, color: colors.text3, margin: 0 }}>Export data as CSV or JSON files. Reports include up to 5,000 rows.</p>
@@ -59,8 +63,30 @@ function ReportsContent() {
               <div style={{ fontSize: 12, color: colors.text3 }}>{r.desc}</div>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={() => downloadReport(r.type, 'csv')} style={{ ...S.dlBtn, flex: 1 }}>Download CSV</button>
-              <button onClick={() => downloadReport(r.type, 'json')} style={{ ...S.secondaryBtn, flex: 1, fontSize: 12 }}>Download JSON</button>
+              <button
+                onClick={() => downloadReport(r.type, 'csv')}
+                disabled={downloading !== null}
+                style={{ ...S.dlBtn, flex: 1, opacity: downloading !== null ? 0.6 : 1, cursor: downloading !== null ? 'not-allowed' : 'pointer' }}
+              >
+                {downloading === `${r.type}-csv` ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ display: 'inline-block', width: 14, height: 14, border: '2px solid currentColor', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                    Downloading...
+                  </span>
+                ) : 'Download CSV'}
+              </button>
+              <button
+                onClick={() => downloadReport(r.type, 'json')}
+                disabled={downloading !== null}
+                style={{ ...S.secondaryBtn, flex: 1, fontSize: 12, opacity: downloading !== null ? 0.6 : 1, cursor: downloading !== null ? 'not-allowed' : 'pointer' }}
+              >
+                {downloading === `${r.type}-json` ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ display: 'inline-block', width: 14, height: 14, border: '2px solid currentColor', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                    Downloading...
+                  </span>
+                ) : 'Download JSON'}
+              </button>
             </div>
           </div>
         ))}

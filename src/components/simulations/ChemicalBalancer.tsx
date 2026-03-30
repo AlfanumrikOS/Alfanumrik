@@ -206,12 +206,12 @@ export default function ChemicalBalancer({ isHi = false }: Props) {
           <div key={`r-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             {i > 0 && <span style={{ fontSize: 16, color: '#94A3B8', margin: '0 2px' }}>+</span>}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-              <button onClick={() => updateCoeff(i, 1)} style={{ width: 24, height: 20, border: '1px solid #e2e8f0', borderRadius: 4, background: '#f8fafc', cursor: 'pointer', fontSize: 12, lineHeight: 1 }}>▲</button>
+              <button onClick={() => updateCoeff(i, 1)} aria-label={`Increase ${comp.formula} coefficient`} style={{ width: 24, height: 20, border: '1px solid #e2e8f0', borderRadius: 4, background: '#f8fafc', cursor: 'pointer', fontSize: 12, lineHeight: 1 }}>▲</button>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', background: '#f1f5f9', borderRadius: 8, minWidth: 50, justifyContent: 'center' }}>
                 <span style={{ fontSize: 18, fontWeight: 700, color: '#1e293b', fontFamily: 'monospace' }}>{coeffs[i]}</span>
                 <span style={{ fontSize: 16, fontWeight: 600 }}>{comp.formula}</span>
               </div>
-              <button onClick={() => updateCoeff(i, -1)} style={{ width: 24, height: 20, border: '1px solid #e2e8f0', borderRadius: 4, background: '#f8fafc', cursor: 'pointer', fontSize: 12, lineHeight: 1 }}>▼</button>
+              <button onClick={() => updateCoeff(i, -1)} aria-label={`Decrease ${comp.formula} coefficient`} style={{ width: 24, height: 20, border: '1px solid #e2e8f0', borderRadius: 4, background: '#f8fafc', cursor: 'pointer', fontSize: 12, lineHeight: 1 }}>▼</button>
             </div>
           </div>
         ))}
@@ -224,12 +224,12 @@ export default function ChemicalBalancer({ isHi = false }: Props) {
             <div key={`p-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
               {i > 0 && <span style={{ fontSize: 16, color: '#94A3B8', margin: '0 2px' }}>+</span>}
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                <button onClick={() => updateCoeff(globalIdx, 1)} style={{ width: 24, height: 20, border: '1px solid #e2e8f0', borderRadius: 4, background: '#f8fafc', cursor: 'pointer', fontSize: 12, lineHeight: 1 }}>▲</button>
+                <button onClick={() => updateCoeff(globalIdx, 1)} aria-label={`Increase ${comp.formula} coefficient`} style={{ width: 24, height: 20, border: '1px solid #e2e8f0', borderRadius: 4, background: '#f8fafc', cursor: 'pointer', fontSize: 12, lineHeight: 1 }}>▲</button>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', background: '#f1f5f9', borderRadius: 8, minWidth: 50, justifyContent: 'center' }}>
                   <span style={{ fontSize: 18, fontWeight: 700, color: '#1e293b', fontFamily: 'monospace' }}>{coeffs[globalIdx]}</span>
                   <span style={{ fontSize: 16, fontWeight: 600 }}>{comp.formula}</span>
                 </div>
-                <button onClick={() => updateCoeff(globalIdx, -1)} style={{ width: 24, height: 20, border: '1px solid #e2e8f0', borderRadius: 4, background: '#f8fafc', cursor: 'pointer', fontSize: 12, lineHeight: 1 }}>▼</button>
+                <button onClick={() => updateCoeff(globalIdx, -1)} aria-label={`Decrease ${comp.formula} coefficient`} style={{ width: 24, height: 20, border: '1px solid #e2e8f0', borderRadius: 4, background: '#f8fafc', cursor: 'pointer', fontSize: 12, lineHeight: 1 }}>▼</button>
               </div>
             </div>
           );
@@ -264,16 +264,16 @@ export default function ChemicalBalancer({ isHi = false }: Props) {
       {/* Status + actions */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
         {!solved && (
-          <button onClick={checkAnswer} disabled={!balanced} style={{ flex: 1, padding: '10px 16px', borderRadius: 8, border: 'none', fontWeight: 600, fontSize: 14, cursor: balanced ? 'pointer' : 'default', background: balanced ? '#22c55e' : '#e2e8f0', color: balanced ? '#fff' : '#94A3B8' }}>
+          <button onClick={checkAnswer} disabled={!balanced} aria-label={isHi ? 'उत्तर जाँचो' : 'Check answer'} style={{ flex: 1, padding: '10px 16px', borderRadius: 8, border: 'none', fontWeight: 600, fontSize: 14, cursor: balanced ? 'pointer' : 'default', background: balanced ? '#22c55e' : '#e2e8f0', color: balanced ? '#fff' : '#94A3B8' }}>
             {isHi ? (balanced ? '✓ जाँचो' : 'अभी संतुलित नहीं') : (balanced ? '✓ Check Answer' : 'Not balanced yet')}
           </button>
         )}
         {solved && (
-          <button onClick={nextEquation} style={{ flex: 1, padding: '10px 16px', borderRadius: 8, border: 'none', fontWeight: 600, fontSize: 14, cursor: 'pointer', background: '#6366F1', color: '#fff' }}>
+          <button onClick={nextEquation} aria-label={isHi ? 'अगला समीकरण' : 'Next equation'} style={{ flex: 1, padding: '10px 16px', borderRadius: 8, border: 'none', fontWeight: 600, fontSize: 14, cursor: 'pointer', background: '#6366F1', color: '#fff' }}>
             {isHi ? '→ अगला समीकरण' : '→ Next Equation'}
           </button>
         )}
-        <button onClick={() => setShowHint(!showHint)} style={{ padding: '10px 16px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', fontSize: 13, cursor: 'pointer', color: '#6366F1' }}>
+        <button onClick={() => setShowHint(!showHint)} aria-label={isHi ? 'संकेत दिखाओ' : 'Show hint'} style={{ padding: '10px 16px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', fontSize: 13, cursor: 'pointer', color: '#6366F1' }}>
           {isHi ? '💡 संकेत' : '💡 Hint'}
         </button>
       </div>
@@ -303,7 +303,7 @@ export default function ChemicalBalancer({ isHi = false }: Props) {
       {/* Equation selector */}
       <div style={{ display: 'flex', gap: 4, marginTop: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
         {EQUATIONS.map((e, i) => (
-          <button key={i} onClick={() => { setEqIdx(i); setCoeffs(Array(e.reactants.length + e.products.length).fill(1)); setShowHint(false); setSolved(false); }} style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${i === eqIdx ? '#6366F1' : '#e2e8f0'}`, background: i === eqIdx ? '#6366F1' : '#fff', color: i === eqIdx ? '#fff' : '#64748B', fontSize: 11, cursor: 'pointer' }}>
+          <button key={i} onClick={() => { setEqIdx(i); setCoeffs(Array(e.reactants.length + e.products.length).fill(1)); setShowHint(false); setSolved(false); }} aria-label={`Equation ${i + 1}: ${e.name}`} style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${i === eqIdx ? '#6366F1' : '#e2e8f0'}`, background: i === eqIdx ? '#6366F1' : '#fff', color: i === eqIdx ? '#fff' : '#64748B', fontSize: 11, cursor: 'pointer' }}>
             {i + 1}
           </button>
         ))}

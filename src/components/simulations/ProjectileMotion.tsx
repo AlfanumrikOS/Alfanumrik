@@ -599,6 +599,8 @@ export default function ProjectileMotion() {
       {/* Canvas */}
       <canvas
         ref={canvasRef}
+        role="img"
+        aria-label="Projectile motion simulation showing trajectory, height, and range of a launched object"
         style={{
           width: '100%',
           height: '400px',
@@ -641,6 +643,7 @@ export default function ProjectileMotion() {
               value={angle}
               onChange={(e) => setAngle(Number(e.target.value))}
               disabled={isFlying}
+              aria-label={`Launch angle slider, ${angle} degrees, range 5 to 85`}
               style={{ width: '100%' }}
             />
           </div>
@@ -665,6 +668,7 @@ export default function ProjectileMotion() {
               value={velocity}
               onChange={(e) => setVelocity(Number(e.target.value))}
               disabled={isFlying}
+              aria-label={`Initial velocity slider, ${velocity} metres per second, range 10 to 50`}
               style={{ width: '100%' }}
             />
           </div>
@@ -675,6 +679,7 @@ export default function ProjectileMotion() {
           <button
             onClick={launch}
             disabled={isFlying}
+            aria-label="Launch projectile"
             style={{
               background: isFlying
                 ? '#ccc'
@@ -703,6 +708,7 @@ export default function ProjectileMotion() {
               }
             }}
             disabled={isFlying}
+            aria-label={compareMode ? 'Turn off compare mode' : 'Enable compare mode to overlay trajectories'}
             style={{
               background: compareMode ? '#6366F1' : '#fff',
               color: compareMode ? '#fff' : '#6366F1',
@@ -720,6 +726,7 @@ export default function ProjectileMotion() {
           <button
             onClick={startChallenge}
             disabled={isFlying}
+            aria-label="Start target challenge"
             style={{
               background: challengeActiveRef.current ? '#E53935' : '#fff',
               color: challengeActiveRef.current ? '#fff' : '#E53935',
@@ -744,6 +751,7 @@ export default function ProjectileMotion() {
               setLiveStats({ height: 0, distance: 0, time: 0, currentV: 0, vx: 0, vy: 0 });
             }}
             disabled={isFlying}
+            aria-label="Reset simulation"
             style={{
               background: '#fff',
               color: '#888',

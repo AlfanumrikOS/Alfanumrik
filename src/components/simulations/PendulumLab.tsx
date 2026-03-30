@@ -450,6 +450,7 @@ export default function PendulumLab() {
         step={stepVal}
         value={value}
         onChange={(e) => onChange(parseFloat(e.target.value))}
+        aria-label={`${label} slider, ${value.toFixed(stepVal < 1 ? 1 : 0)} ${unit}, range ${min} to ${max}`}
         style={{
           width: '100%',
           accentColor: color,
@@ -482,6 +483,8 @@ export default function PendulumLab() {
       >
         <canvas
           ref={canvasRef}
+          role="img"
+          aria-label="Simple pendulum simulation showing oscillation with adjustable length, gravity, and angle"
           width={canvasWidth}
           height={CANVAS_HEIGHT}
           style={{
@@ -651,6 +654,7 @@ export default function PendulumLab() {
         >
           <button
             onClick={resetPendulum}
+            aria-label="Release pendulum from initial angle"
             style={{
               background: 'linear-gradient(135deg, #F5A623, #E8751A)',
               border: 'none',
@@ -688,7 +692,12 @@ export default function PendulumLab() {
             }}
           >
             <div
+              role="switch"
+              aria-checked={damping}
+              aria-label={`Toggle damping, currently ${damping ? 'on' : 'off'}`}
+              tabIndex={0}
               onClick={() => setDamping(!damping)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDamping(!damping); } }}
               style={{
                 width: 40,
                 height: 22,

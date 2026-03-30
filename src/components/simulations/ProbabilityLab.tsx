@@ -123,7 +123,7 @@ export default function ProbabilityLab() {
           { id: 'dice' as Mode, label: '🎲 Dice', desc: 'P(n) = 1/6' },
           { id: 'two-dice' as Mode, label: '🎲🎲 Two Dice', desc: 'Sum distribution' },
         ]).map(m => (
-          <button key={m.id} onClick={() => { setMode(m.id); setTrials([]); }} style={{ padding: '6px 14px', borderRadius: 6, border: `1px solid ${mode === m.id ? '#6366F1' : '#e2e8f0'}`, background: mode === m.id ? '#6366F1' : '#fff', color: mode === m.id ? '#fff' : '#64748B', fontSize: 12, cursor: 'pointer', fontWeight: mode === m.id ? 600 : 400 }}>
+          <button key={m.id} onClick={() => { setMode(m.id); setTrials([]); }} aria-label={`${m.label} mode, ${m.desc}`} style={{ padding: '6px 14px', borderRadius: 6, border: `1px solid ${mode === m.id ? '#6366F1' : '#e2e8f0'}`, background: mode === m.id ? '#6366F1' : '#fff', color: mode === m.id ? '#fff' : '#64748B', fontSize: 12, cursor: 'pointer', fontWeight: mode === m.id ? 600 : 400 }}>
             {m.label}
           </button>
         ))}
@@ -131,19 +131,19 @@ export default function ProbabilityLab() {
 
       {/* Action buttons */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
-        <button onClick={runSingle} disabled={isRunning} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#6366F1', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+        <button onClick={runSingle} disabled={isRunning} aria-label={mode === 'coin' ? 'Flip coin once' : 'Roll dice once'} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#6366F1', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
           {mode === 'coin' ? '🪙 Flip' : '🎲 Roll'}
         </button>
-        <button onClick={() => runMany(10)} disabled={isRunning} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', fontSize: 12, cursor: 'pointer' }}>
+        <button onClick={() => runMany(10)} disabled={isRunning} aria-label={`Run 10 ${mode === 'coin' ? 'flips' : 'rolls'}`} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', fontSize: 12, cursor: 'pointer' }}>
           ×10
         </button>
-        <button onClick={() => runMany(100)} disabled={isRunning} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', fontSize: 12, cursor: 'pointer' }}>
+        <button onClick={() => runMany(100)} disabled={isRunning} aria-label={`Run 100 ${mode === 'coin' ? 'flips' : 'rolls'}`} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', fontSize: 12, cursor: 'pointer' }}>
           ×100
         </button>
-        <button onClick={() => runMany(1000)} disabled={isRunning} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', fontSize: 12, cursor: 'pointer' }}>
+        <button onClick={() => runMany(1000)} disabled={isRunning} aria-label={`Run 1000 ${mode === 'coin' ? 'flips' : 'rolls'}`} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', fontSize: 12, cursor: 'pointer' }}>
           ×1000
         </button>
-        <button onClick={reset} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #fca5a5', background: '#fff', color: '#ef4444', fontSize: 12, cursor: 'pointer' }}>
+        <button onClick={reset} aria-label="Reset all trials" style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #fca5a5', background: '#fff', color: '#ef4444', fontSize: 12, cursor: 'pointer' }}>
           Reset
         </button>
       </div>

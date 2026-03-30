@@ -820,19 +820,19 @@ const TrigCircle: React.FC = () => {
         <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.5)', marginRight: 4 }}>
           Show/Hide:
         </span>
-        <button onClick={() => handleToggle('sinLine')} style={buttonStyle(toggles.sinLine, SIN_COLOR)}>
+        <button onClick={() => handleToggle('sinLine')} aria-label={`Toggle sine line, currently ${toggles.sinLine ? 'on' : 'off'}`} style={buttonStyle(toggles.sinLine, SIN_COLOR)}>
           sin line
         </button>
-        <button onClick={() => handleToggle('cosLine')} style={buttonStyle(toggles.cosLine, COS_COLOR)}>
+        <button onClick={() => handleToggle('cosLine')} aria-label={`Toggle cosine line, currently ${toggles.cosLine ? 'on' : 'off'}`} style={buttonStyle(toggles.cosLine, COS_COLOR)}>
           cos line
         </button>
-        <button onClick={() => handleToggle('tanLine')} style={buttonStyle(toggles.tanLine, TAN_COLOR)}>
+        <button onClick={() => handleToggle('tanLine')} aria-label={`Toggle tangent line, currently ${toggles.tanLine ? 'on' : 'off'}`} style={buttonStyle(toggles.tanLine, TAN_COLOR)}>
           tan line
         </button>
-        <button onClick={() => handleToggle('triangle')} style={buttonStyle(toggles.triangle, 'rgba(255,255,255,0.5)')}>
+        <button onClick={() => handleToggle('triangle')} aria-label={`Toggle triangle overlay, currently ${toggles.triangle ? 'on' : 'off'}`} style={buttonStyle(toggles.triangle, 'rgba(255,255,255,0.5)')}>
           triangle
         </button>
-        <button onClick={() => handleToggle('waveTrace')} style={buttonStyle(toggles.waveTrace, POINT_COLOR)}>
+        <button onClick={() => handleToggle('waveTrace')} aria-label={`Toggle wave trace, currently ${toggles.waveTrace ? 'on' : 'off'}`} style={buttonStyle(toggles.waveTrace, POINT_COLOR)}>
           wave trace
         </button>
       </div>
@@ -840,6 +840,8 @@ const TrigCircle: React.FC = () => {
       {/* Circle canvas */}
       <canvas
         ref={circleCanvasRef}
+        role="img"
+        aria-label="Unit circle showing angle, sine, cosine, and tangent values with interactive point"
         style={{
           width: '100%',
           height: 450,
@@ -929,6 +931,8 @@ const TrigCircle: React.FC = () => {
       {/* Graph canvas */}
       <canvas
         ref={graphCanvasRef}
+        role="img"
+        aria-label="Trigonometric function graph showing sine and cosine wave traces"
         style={{
           width: '100%',
           height: 180,
