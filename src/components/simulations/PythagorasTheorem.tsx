@@ -713,6 +713,7 @@ const PythagorasTheorem: React.FC = () => {
           <button
             key={key}
             onClick={() => applyPreset(key)}
+            aria-label={`Set triangle to ${key} Pythagorean triple`}
             style={{
               padding: '6px 16px',
               borderRadius: 20,
