@@ -81,7 +81,8 @@ interface QuestionBankRow {
   subject: string;
   grade: string;
   chapter_number: number;
-  topic: string | null;
+  topic_id: string | null;
+  tags: string[];
   question_text: string;
   question_type: string;
   options: string[];
@@ -90,6 +91,7 @@ interface QuestionBankRow {
   difficulty: number;
   bloom_level: string;
   is_active: boolean;
+  is_verified: boolean;
   source: string;
   source_version: string;
   content_status: string;
@@ -349,7 +351,8 @@ function toQuestionBankRows(
     subject: topic.subject_code,
     grade: dbGrade,
     chapter_number: topic.chapter_number,
-    topic: q.tags?.length > 0 ? q.tags[0] : null,
+    topic_id: topic.id || null,
+    tags: q.tags || [],
     question_text: q.question_text,
     question_type: 'mcq',
     options: q.options,
@@ -358,6 +361,7 @@ function toQuestionBankRows(
     difficulty: q.difficulty,
     bloom_level: q.bloom_level,
     is_active: true,
+    is_verified: false,
     source: 'ncert_2025',
     source_version: 'ncert_2025',
     content_status: 'published',
