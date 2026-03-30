@@ -65,6 +65,25 @@ const SUBJECT_NORMALIZE: Record<string, string> = {
   'computer science': 'computer_science',
 };
 
+// DB format normalization — rag_content_chunks uses "Grade 10" and "Mathematics"
+const GRADE_TO_DB: Record<string, string> = {
+  '6': 'Grade 6', '7': 'Grade 7', '8': 'Grade 8',
+  '9': 'Grade 9', '10': 'Grade 10', '11': 'Grade 11', '12': 'Grade 12',
+};
+
+const SUBJECT_TO_DB: Record<string, string> = {
+  'math': 'Mathematics', 'science': 'Science',
+  'physics': 'Physics', 'chemistry': 'Chemistry', 'biology': 'Biology',
+  'english': 'English', 'hindi': 'Hindi',
+  'social_studies': 'Social Studies', 'economics': 'Economics',
+  'accountancy': 'Accountancy', 'business_studies': 'Business Studies',
+  'political_science': 'Political Science', 'history_sr': 'History',
+  'geography': 'Geography', 'computer_science': 'Computer Science',
+};
+
+function toDbGrade(g: string): string { return GRADE_TO_DB[g] || `Grade ${g}`; }
+function toDbSubject(s: string): string { return SUBJECT_TO_DB[s] || s; }
+
 // ─── Types ───────────────────────────────────────────────────
 
 interface DiscoveredBook {
@@ -200,17 +219,26 @@ async function parseBook(book: DiscoveredBook): Promise<ExtractedChapter[]> {
 
 async function parsePDF(book: DiscoveredBook): Promise<ExtractedChapter[]> {
   try {
-    // Dynamic import — pdf-parse may not be installed
-    // @ts-expect-error -- pdf-parse has no type declarations, install with: npm install pdf-parse
+    // @ts-expect-error -- pdf-parse has no type declarations
     const pdfParse = (await import('pdf-parse')).default;
     const dataBuffer = fs.readFileSync(book.filePath);
     const data = await pdfParse(dataBuffer);
 
-    // Split by chapter headings
+    const textLen = (data.text || '').trim().length;
+    console.log(`     PDF text extracted: ${textLen} chars, ${data.numpages || '?'} pages`);
+
+    if (textLen < 100) {
+      console.warn(`     ⚠️ Very little text extracted — PDF may be scanned/image-based`);
+      return [];
+    }
+
     return splitIntoChapters(data.text, book);
   } catch (err) {
-    console.error(`  ❌ Failed to parse PDF: ${book.filePath}`, err);
-    console.error(`     Install pdf-parse: npm install pdf-parse`);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`  ❌ Failed to parse PDF: ${book.filePath}`, msg);
+    if (msg.includes('Cannot find module')) {
+      console.error(`     Install pdf-parse: npm install pdf-parse`);
+    }
     return [];
   }
 }
@@ -221,23 +249,36 @@ function parseText(book: DiscoveredBook): ExtractedChapter[] {
 }
 
 function splitIntoChapters(text: string, book: DiscoveredBook): ExtractedChapter[] {
-  // Try to detect chapter boundaries
-  // Common NCERT patterns: "Chapter 1", "CHAPTER 1", "1.", "Unit 1"
-  const chapterRegex = /(?:^|\n)\s*(?:Chapter|CHAPTER|Unit|UNIT)\s+(\d+)\s*[:\.\-—]?\s*(.+?)(?:\n|$)/gm;
+  // Try multiple chapter heading patterns (NCERT uses various formats)
+  const patterns = [
+    /(?:^|\n)\s*(?:Chapter|CHAPTER)\s+(\d+)\s*[:\.\-—]?\s*(.+?)(?:\n|$)/gm,
+    /(?:^|\n)\s*(?:Unit|UNIT)\s+(\d+)\s*[:\.\-—]?\s*(.+?)(?:\n|$)/gm,
+    /(?:^|\n)\s*(\d+)\.\s+([A-Z][A-Za-z\s,'-]+)(?:\n|$)/gm,
+    /(?:^|\n)\s*अध्याय\s+(\d+)\s*[:\.\-—]?\s*(.+?)(?:\n|$)/gm, // Hindi: अध्याय = Chapter
+  ];
 
   const chapters: ExtractedChapter[] = [];
-  const matches = Array.from(text.matchAll(chapterRegex));
+  let matches: RegExpExecArray[] = [];
+
+  for (const regex of patterns) {
+    matches = Array.from(text.matchAll(regex));
+    if (matches.length >= 2) break; // Found chapters with this pattern
+  }
 
   if (matches.length === 0) {
-    // No chapter headings found — treat entire text as one chapter
-    chapters.push({
-      chapterNumber: 1,
-      title: book.bookTitle,
-      text: text.trim(),
-      pageStart: 1,
-      pageEnd: 1,
-      images: [],
-    });
+    // No chapter headings found — split by page breaks or large gaps
+    // Still create a single chapter so content isn't lost
+    if (text.trim().length > 100) {
+      chapters.push({
+        chapterNumber: 1,
+        title: book.bookTitle,
+        text: text.trim(),
+        pageStart: 1,
+        pageEnd: 1,
+        images: [],
+      });
+      console.log(`     ℹ️ No chapter headings detected — created 1 chapter from entire text`);
+    }
     return chapters;
   }
 
@@ -319,11 +360,13 @@ function chunkChapter(chapter: ExtractedChapter, book: DiscoveredBook): ContentC
 // ─── Step 4: Deprecate Old Content ───────────────────────────
 
 async function deprecateOldContent(grade: string, subject: string): Promise<number> {
+  const dbGrade = toDbGrade(grade);
+  const dbSubject = toDbSubject(subject);
   const { error } = await supabase
     .from('rag_content_chunks')
     .update({ is_active: false, updated_at: new Date().toISOString() })
-    .eq('grade', grade)
-    .eq('subject', subject)
+    .eq('grade', dbGrade)
+    .eq('subject', dbSubject)
     .eq('is_active', true);
 
   if (error) {
@@ -335,8 +378,8 @@ async function deprecateOldContent(grade: string, subject: string): Promise<numb
   const { count } = await supabase
     .from('rag_content_chunks')
     .select('*', { count: 'exact', head: true })
-    .eq('grade', grade)
-    .eq('subject', subject)
+    .eq('grade', dbGrade)
+    .eq('subject', dbSubject)
     .eq('is_active', false)
     .eq('source', 'legacy');
 
@@ -351,8 +394,8 @@ async function uploadChunks(chunks: ContentChunk[]): Promise<number> {
   // Batch insert in groups of 50
   for (let i = 0; i < chunks.length; i += 50) {
     const batch = chunks.slice(i, i + 50).map(chunk => ({
-      grade: chunk.grade,
-      subject: chunk.subject,
+      grade: toDbGrade(chunk.grade),
+      subject: toDbSubject(chunk.subject),
       chapter_number: chunk.chapterNumber,
       chapter_title: chunk.chapterTitle,
       section_title: chunk.sectionTitle || null,
