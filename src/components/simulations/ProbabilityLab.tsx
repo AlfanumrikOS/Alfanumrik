@@ -167,11 +167,11 @@ export default function ProbabilityLab() {
 
             return (
               <div key={o} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                <span style={{ fontSize: 9, color: '#64748B' }}>{count}</span>
+                <span style={{ fontSize: 10, color: '#64748B' }}>{count}</span>
                 <div style={{ width: '100%', maxWidth: 36, height: barH, background: color, borderRadius: '4px 4px 0 0', transition: 'height 0.2s', minHeight: count > 0 ? 4 : 0 }} />
                 <span style={{ fontSize: 10, fontWeight: 600, color: '#334155' }}>{o}</span>
                 {total > 0 && (
-                  <span style={{ fontSize: 8, color: Math.abs(actualProb - expProb) < 0.05 ? '#22c55e' : '#f59e0b' }}>
+                  <span style={{ fontSize: 10, color: Math.abs(actualProb - expProb) < 0.05 ? '#22c55e' : '#f59e0b' }}>
                     {(actualProb * 100).toFixed(1)}%
                   </span>
                 )}

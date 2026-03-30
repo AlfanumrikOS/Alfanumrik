@@ -698,8 +698,8 @@ function ControlRoom() {
                   })}
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
-                  <span style={{ fontSize: 9, color: colors.text3 }}>{analytics.engagement[0]?.date}</span>
-                  <span style={{ fontSize: 9, color: colors.text3 }}>{analytics.engagement[analytics.engagement.length - 1]?.date}</span>
+                  <span style={{ fontSize: 10, color: colors.text3 }}>{analytics.engagement[0]?.date}</span>
+                  <span style={{ fontSize: 10, color: colors.text3 }}>{analytics.engagement[analytics.engagement.length - 1]?.date}</span>
                 </div>
               </div>
             </div>

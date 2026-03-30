@@ -257,7 +257,7 @@ export default function LinearGraph() {
             background: relationship === 'Perpendicular' ? '#f0fdf4' : relationship === 'Parallel' ? '#fef3c7' : '#eff6ff',
             border: `1px solid ${relationship === 'Perpendicular' ? '#bbf7d0' : relationship === 'Parallel' ? '#fde68a' : '#bfdbfe'}`,
           }}>
-            <div style={{ fontSize: 9, color: '#64748b' }}>Relation</div>
+            <div style={{ fontSize: 10, color: '#64748b' }}>Relation</div>
             <div style={{ fontWeight: 700, color: '#1e293b', fontSize: 10 }}>{relationship}</div>
           </div>
         )}

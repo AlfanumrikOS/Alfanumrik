@@ -363,9 +363,9 @@ function WeeklyTimeline({ days, mostActiveDay }: { days: DayActivity[]; mostActi
               {active ? (
                 <>
                   <div style={{ fontSize: 16, fontWeight: 800, color: '#1E293B' }}>{day.quizzes}</div>
-                  <div style={{ fontSize: 9, color: '#64748B' }}>quizzes</div>
+                  <div style={{ fontSize: 10, color: '#64748B' }}>quizzes</div>
                   {day.studyTime != null && (
-                    <div style={{ fontSize: 9, color: '#64748B', marginTop: 2 }}>{formatTime(day.studyTime)}</div>
+                    <div style={{ fontSize: 10, color: '#64748B', marginTop: 2 }}>{formatTime(day.studyTime)}</div>
                   )}
                   <div style={{ fontSize: 10, color: '#F59E0B', fontWeight: 600, marginTop: 3 }}>+{day.xp} XP</div>
                 </>
@@ -843,14 +843,14 @@ function MonthlyReportSection({ guardianId, studentId, studentName }: {
                     const h = Math.max(4, (val / 100) * 100);
                     return (
                       <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                        <span style={{ fontSize: 9, fontWeight: 600, color: '#64748B' }}>{Math.round(val)}%</span>
+                        <span style={{ fontSize: 10, fontWeight: 600, color: '#64748B' }}>{Math.round(val)}%</span>
                         <div style={{
                           width: '100%', borderRadius: '4px 4px 0 0',
                           height: `${h}%`,
                           backgroundColor: val >= 70 ? '#16A34A' : val >= 40 ? '#F59E0B' : '#EF4444',
                           transition: 'height 0.4s ease',
                         }} />
-                        <span style={{ fontSize: 9, color: '#94A3B8' }}>W{i + 1}</span>
+                        <span style={{ fontSize: 10, color: '#94A3B8' }}>W{i + 1}</span>
                       </div>
                     );
                   })}

@@ -257,7 +257,7 @@ function StudentCard({
                     }}
                   >
                     <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: accuracyColor(score) }}>{score}%</p>
-                    <p style={{ margin: '2px 0 0', fontSize: 9, color: '#475569' }}>Quiz {i + 1}</p>
+                    <p style={{ margin: '2px 0 0', fontSize: 10, color: '#475569' }}>Quiz {i + 1}</p>
                   </div>
                 ))}
               </div>
