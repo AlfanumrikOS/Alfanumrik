@@ -198,15 +198,14 @@ export async function POST(request: NextRequest) {
           break;
 
         case 'subscription.cancelled':
+          // Do NOT downgrade to free here — student retains access until
+          // current_period_end. The daily-cron job handles expiry.
           await admin.from('student_subscriptions').update({
             status: 'cancelled',
             auto_renew: false,
             cancelled_at: new Date().toISOString(),
-            ended_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           }).eq('student_id', studentRow.id);
-
-          await admin.from('students').update({ subscription_plan: 'free' }).eq('id', studentRow.id);
 
           await logEvent(admin, {
             studentId: studentRow.id,
