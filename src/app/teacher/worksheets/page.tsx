@@ -26,63 +26,7 @@ interface GeneratedQuestion {
   answer?: string;
 }
 
-const QUESTION_BANK: Record<string, Record<string, GeneratedQuestion[]>> = {
-  math: {
-    MCQ: [
-      { type: 'MCQ', question: 'The value of sin 30° is:\n(a) 1/2  (b) √3/2  (c) 1  (d) 0', answer: '(a) 1/2' },
-      { type: 'MCQ', question: 'If x² - 5x + 6 = 0, then x equals:\n(a) 2, 3  (b) -2, -3  (c) 1, 6  (d) -1, -6', answer: '(a) 2, 3' },
-      { type: 'MCQ', question: 'The HCF of 12 and 18 is:\n(a) 2  (b) 3  (c) 6  (d) 36', answer: '(c) 6' },
-      { type: 'MCQ', question: 'The sum of angles of a triangle is:\n(a) 90°  (b) 180°  (c) 270°  (d) 360°', answer: '(b) 180°' },
-      { type: 'MCQ', question: 'The area of a circle with radius 7 cm is:\n(a) 44 cm²  (b) 154 cm²  (c) 22 cm²  (d) 308 cm²', answer: '(b) 154 cm²' },
-    ],
-    'Fill in the Blanks': [
-      { type: 'Fill in the Blanks', question: 'The value of π is approximately _______.', answer: '3.14159 (or 22/7)' },
-      { type: 'Fill in the Blanks', question: 'A quadrilateral with all sides equal and all angles 90° is called a _______.', answer: 'Square' },
-      { type: 'Fill in the Blanks', question: 'The LCM of 4 and 6 is _______.', answer: '12' },
-      { type: 'Fill in the Blanks', question: 'The derivative of x² is _______.', answer: '2x' },
-    ],
-    'Short Answer': [
-      { type: 'Short Answer', question: 'Find the roots of the equation: x² - 7x + 12 = 0', answer: 'x = 3, x = 4' },
-      { type: 'Short Answer', question: 'Calculate the area of a triangle with base 10 cm and height 6 cm.', answer: 'Area = ½ × 10 × 6 = 30 cm²' },
-      { type: 'Short Answer', question: 'If the ratio of two numbers is 3:5 and their sum is 160, find the numbers.', answer: '60 and 100' },
-    ],
-    'True/False': [
-      { type: 'True/False', question: 'The square root of 144 is 14.', answer: 'False (it is 12)' },
-      { type: 'True/False', question: 'Every integer is a rational number.', answer: 'True' },
-      { type: 'True/False', question: 'The diagonals of a rectangle are equal.', answer: 'True' },
-    ],
-    'Match the Following': [
-      { type: 'Match the Following', question: 'Match:\nA. Circle area      1. πr\nB. Circumference    2. πr²\nC. Sphere volume    3. 2πr\nD. Sphere surface   4. 4/3 πr³\n                    5. 4πr²', answer: 'A→2, B→3, C→4, D→5' },
-    ],
-  },
-  science: {
-    MCQ: [
-      { type: 'MCQ', question: 'The SI unit of force is:\n(a) Watt  (b) Joule  (c) Newton  (d) Pascal', answer: '(c) Newton' },
-      { type: 'MCQ', question: 'Photosynthesis takes place in:\n(a) Mitochondria  (b) Chloroplast  (c) Nucleus  (d) Ribosome', answer: '(b) Chloroplast' },
-      { type: 'MCQ', question: 'The pH of pure water is:\n(a) 0  (b) 7  (c) 14  (d) 1', answer: '(b) 7' },
-      { type: 'MCQ', question: 'Which gas is released during photosynthesis?\n(a) CO₂  (b) N₂  (c) O₂  (d) H₂', answer: '(c) O₂' },
-      { type: 'MCQ', question: 'The powerhouse of the cell is:\n(a) Nucleus  (b) Ribosome  (c) Mitochondria  (d) Golgi body', answer: '(c) Mitochondria' },
-    ],
-    'Fill in the Blanks': [
-      { type: 'Fill in the Blanks', question: 'The chemical formula of water is _______.', answer: 'H₂O' },
-      { type: 'Fill in the Blanks', question: 'The speed of light is approximately _______ m/s.', answer: '3 × 10⁸' },
-      { type: 'Fill in the Blanks', question: 'The process of converting sugar into alcohol is called _______.', answer: 'Fermentation' },
-    ],
-    'Short Answer': [
-      { type: 'Short Answer', question: 'What is Newton\'s third law of motion? Give one example.', answer: 'For every action, there is an equal and opposite reaction. E.g., rocket propulsion.' },
-      { type: 'Short Answer', question: 'Differentiate between mitosis and meiosis.', answer: 'Mitosis: 2 identical daughter cells; Meiosis: 4 genetically different cells with half chromosomes.' },
-      { type: 'Short Answer', question: 'What is an acid-base indicator? Name two examples.', answer: 'Substance that shows different colors in acidic and basic solutions. E.g., Litmus, Phenolphthalein.' },
-    ],
-    'True/False': [
-      { type: 'True/False', question: 'Sound travels faster in air than in water.', answer: 'False (sound travels faster in water)' },
-      { type: 'True/False', question: 'All metals are good conductors of electricity.', answer: 'True (with some exceptions like Bismuth)' },
-      { type: 'True/False', question: 'The human body has 206 bones.', answer: 'True' },
-    ],
-    'Match the Following': [
-      { type: 'Match the Following', question: 'Match the vitamin with its deficiency disease:\nA. Vitamin A    1. Scurvy\nB. Vitamin B₁   2. Night blindness\nC. Vitamin C    3. Rickets\nD. Vitamin D    4. Beriberi', answer: 'A→2, B→4, C→1, D→3' },
-    ],
-  },
-};
+// No hardcoded question bank -- questions are fetched from the question_bank table.
 
 async function fetchQuestionsFromBank(
   subject: string,
@@ -95,10 +39,10 @@ async function fetchQuestionsFromBank(
       .from('question_bank')
       .select('question_text, options, correct_answer_index, explanation, difficulty, bloom_level')
       .eq('subject', subject)
+      .eq('grade', grade)
       .eq('is_active', true)
-      .limit(count * 2);
+      .limit(count * 3);
 
-    if (grade) query = query.eq('grade', grade);
     if (difficulty) {
       const difficultyNum = difficulty === 'easy' ? 1 : difficulty === 'medium' ? 2 : 3;
       query = query.eq('difficulty', difficultyNum);
@@ -185,56 +129,65 @@ export default function TeacherWorksheetsPage() {
     if (selectedTypes.length === 0) return;
     setIsGenerating(true);
 
-    // Try fetching from the real question bank first (MCQ only from DB)
-    const hasMCQ = selectedTypes.includes('MCQ');
-    let dbQuestions: GeneratedQuestion[] | null = null;
-    if (hasMCQ) {
-      dbQuestions = await fetchQuestionsFromBank(
-        subject,
-        grade,
-        questionCount,
-        difficulty.toLowerCase(),
-      );
-    }
+    // Fetch questions from the question_bank table
+    const dbQuestions = await fetchQuestionsFromBank(
+      subject,
+      grade,
+      questionCount,
+      difficulty.toLowerCase(),
+    );
 
     let questions: GeneratedQuestion[];
     let source: 'db' | 'fallback';
 
     if (dbQuestions && dbQuestions.length > 0) {
-      // DB returned questions — use them for the MCQ portion
       source = 'db';
+
+      // DB returns MCQ-formatted questions; assign requested types proportionally
+      const hasMCQ = selectedTypes.includes('MCQ');
       const nonMCQTypes = selectedTypes.filter(t => t !== 'MCQ');
-      if (nonMCQTypes.length === 0) {
-        // All MCQ — use DB questions directly
+
+      if (nonMCQTypes.length === 0 || !hasMCQ) {
+        // Only MCQ selected, or only non-MCQ — use DB questions as MCQs
         questions = dbQuestions.slice(0, questionCount);
+        // Re-label if teacher selected only a non-MCQ type
+        if (!hasMCQ && selectedTypes.length === 1) {
+          questions = questions.map(q => ({ ...q, type: selectedTypes[0] }));
+        }
       } else {
-        // Mix DB MCQs with hardcoded non-MCQ types
+        // Mix: allocate MCQ portion from DB, fill non-MCQ types from DB too (re-labelled)
         const mcqCount = Math.ceil(questionCount / selectedTypes.length);
         const remainingCount = questionCount - mcqCount;
         const mcqSlice = dbQuestions.slice(0, mcqCount);
 
-        const bank = QUESTION_BANK[subject] || DEFAULT_BANK;
+        const otherPool = dbQuestions.slice(mcqCount);
         const otherQuestions: GeneratedQuestion[] = [];
         const perOtherType = Math.ceil(remainingCount / nonMCQTypes.length);
+        let poolIdx = 0;
 
         for (const type of nonMCQTypes) {
-          const pool = bank[type] || DEFAULT_BANK[type] || [];
           for (let i = 0; i < perOtherType && otherQuestions.length < remainingCount; i++) {
-            otherQuestions.push(pool[i % pool.length]);
+            if (poolIdx < otherPool.length) {
+              // Use DB question re-labelled as the requested type
+              otherQuestions.push({ ...otherPool[poolIdx], type });
+              poolIdx++;
+            } else {
+              // Exhausted DB pool — use fallback placeholder
+              otherQuestions.push(DEFAULT_BANK[type]?.[0] || { type, question: `${type} question — refer to your textbook.`, answer: '(Refer textbook)' });
+            }
           }
         }
 
         questions = [...mcqSlice, ...otherQuestions].slice(0, questionCount);
       }
     } else {
-      // Fallback to hardcoded question bank
+      // Fallback when the DB returns no questions for this subject/grade
       source = 'fallback';
-      const bank = QUESTION_BANK[subject] || DEFAULT_BANK;
       questions = [];
       const perType = Math.ceil(questionCount / selectedTypes.length);
 
       for (const type of selectedTypes) {
-        const pool = bank[type] || DEFAULT_BANK[type] || [];
+        const pool = DEFAULT_BANK[type] || [];
         for (let i = 0; i < perType && questions.length < questionCount; i++) {
           questions.push(pool[i % pool.length]);
         }

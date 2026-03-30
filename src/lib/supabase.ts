@@ -168,10 +168,11 @@ export async function getDashboardData(studentId: string) {
   return data;
 }
 
-export async function getQuizQuestions(subject: string, grade: string, count = 10, difficulty?: number | null) {
+export async function getQuizQuestions(subject: string, grade: string, count = 10, difficulty?: number | null, chapterNumber?: number | null) {
   // Try RPC first, fall back to direct query
   const params: Record<string, unknown> = { p_subject: subject, p_grade: grade, p_count: count };
   if (difficulty != null) params.p_difficulty = difficulty;
+  if (chapterNumber != null) params.p_chapter_number = chapterNumber;
   try {
     const { data, error } = await supabase.rpc('get_quiz_questions', params);
     if (!error && data) return validateQuestions(data);
@@ -185,6 +186,7 @@ export async function getQuizQuestions(subject: string, grade: string, count = 1
     .eq('is_active', true)
     .limit(Math.min(count * 2, 60)); // fetch extra to account for filtered-out bad questions
   if (difficulty != null) query = query.eq('difficulty', difficulty);
+  if (chapterNumber != null) query = query.eq('chapter_number', chapterNumber);
   const { data, error } = await query;
   if (error) throw error;
   // Validate, deduplicate, shuffle, and trim to requested count
