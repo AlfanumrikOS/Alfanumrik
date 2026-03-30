@@ -136,7 +136,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
             {!collapsed && (
               <div>
                 <div style={{ fontSize: 14, fontWeight: 800, color: colors.text1, letterSpacing: 0.5 }}>ALFANUMRIK</div>
-                <div style={{ fontSize: 9, color: colors.text3, letterSpacing: 2, textTransform: 'uppercase', marginTop: 1 }}>Super Admin</div>
+                <div style={{ fontSize: 10, color: colors.text3, letterSpacing: 2, textTransform: 'uppercase', marginTop: 1 }}>Super Admin</div>
               </div>
             )}
             <button
