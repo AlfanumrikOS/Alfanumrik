@@ -1,6 +1,31 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, memo, useEffect } from 'react';
+
+// Web Speech API types (not in default TS lib)
+interface SpeechRecognitionEvent extends Event {
+  results: SpeechRecognitionResultList;
+}
+interface SpeechRecognitionResultList {
+  length: number;
+  [index: number]: SpeechRecognitionResult;
+}
+interface SpeechRecognitionResult {
+  [index: number]: SpeechRecognitionAlternative;
+}
+interface SpeechRecognitionAlternative {
+  transcript: string;
+}
+interface SpeechRecognition extends EventTarget {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  onerror: ((event: Event) => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+}
 
 /* ══════════════════════════════════════════════════════════════
    CHAT INPUT COMPONENT
@@ -34,20 +59,34 @@ const SUBJECTS: Record<string, { icon: string; color: string }> = {
 const DEFAULT_CONFIG = SUBJECTS.science;
 
 export interface ChatInputProps {
-  onSubmit: (t: string) => void;
+  onSubmit: (t: string, image?: File | null) => void;
   subjectKey: string;
   disabled: boolean;
   subjectConfig?: { color: string; icon: string };
 }
 
-export function ChatInput({ onSubmit, subjectKey, disabled, subjectConfig }: ChatInputProps) {
+export const ChatInput = memo(function ChatInput({ onSubmit, subjectKey, disabled, subjectConfig }: ChatInputProps) {
   const [text, setText] = useState('');
   const [showSymbols, setShowSymbols] = useState(false);
   const [symTab, setSymTab] = useState('basic');
   const [pointMode, setPointMode] = useState(false);
   const [pointCount, setPointCount] = useState(1);
+  const [image, setImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [isListening, setIsListening] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
   const cfg = subjectConfig || SUBJECTS[subjectKey] || DEFAULT_CONFIG;
+
+  // Clean up speech recognition on unmount
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    };
+  }, []);
 
   const insertAt = (s: string) => {
     const ta = taRef.current; if (!ta) return;
@@ -56,15 +95,85 @@ export function ChatInput({ onSubmit, subjectKey, disabled, subjectConfig }: Cha
     setTimeout(() => { ta.focus(); ta.selectionStart = ta.selectionEnd = start + s.length; }, 0);
   };
 
+  const handleImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { alert('Image must be under 5MB'); return; }
+    setImage(file);
+    const reader = new FileReader();
+    reader.onload = () => setImagePreview(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const toggleVoice = () => {
+    const w = window as unknown as Record<string, unknown>;
+    const SpeechRecognitionCtor = w.SpeechRecognition || w.webkitSpeechRecognition;
+    if (!SpeechRecognitionCtor) {
+      alert('Voice input is not supported in this browser. Try Chrome or Edge.');
+      return;
+    }
+
+    if (isListening && recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+      return;
+    }
+
+    const recognition = new (SpeechRecognitionCtor as new () => SpeechRecognition)();
+    recognition.lang = 'en-IN';
+    recognition.interimResults = true;
+    recognition.continuous = true;
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      let transcript = '';
+      for (let i = 0; i < event.results.length; i++) {
+        transcript += event.results[i][0].transcript;
+      }
+      setText(transcript);
+      if (taRef.current) {
+        taRef.current.style.height = 'auto';
+        taRef.current.style.height = `${Math.min(taRef.current.scrollHeight, 200)}px`;
+      }
+    };
+
+    recognition.onerror = () => {
+      setIsListening(false);
+      recognitionRef.current = null;
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      recognitionRef.current = null;
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsListening(true);
+  };
+
   const send = () => {
-    if (!text.trim() || disabled) return;
-    onSubmit(text.trim()); setText(''); setPointCount(1); setPointMode(false);
+    if ((!text.trim() && !image) || disabled) return;
+    if (recognitionRef.current) { recognitionRef.current.stop(); setIsListening(false); }
+    onSubmit(text.trim(), image || null);
+    setText(''); setPointCount(1); setPointMode(false);
+    setImage(null); setImagePreview(null);
+    if (fileRef.current) fileRef.current.value = '';
     if (taRef.current) taRef.current.style.height = 'auto';
   };
 
   const handleKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
-    else if (e.key === 'Enter' && e.shiftKey && pointMode) { e.preventDefault(); const n = pointCount + 1; insertAt(`\n${n}. `); setPointCount(n); }
+    // Enter = new line (students write multi-line questions)
+    // Ctrl+Enter or Cmd+Enter = send (intentional action)
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      send();
+    } else if (e.key === 'Enter' && e.shiftKey && pointMode) {
+      e.preventDefault();
+      const n = pointCount + 1;
+      insertAt(`\n${n}. `);
+      setPointCount(n);
+    }
+    // Plain Enter = default textarea behavior (new line)
   };
 
   const togglePoints = () => {
@@ -111,22 +220,43 @@ export function ChatInput({ onSubmit, subjectKey, disabled, subjectConfig }: Cha
           style={{ background: pointMode ? `${cfg.color}15` : 'var(--surface-2)', color: pointMode ? cfg.color : 'var(--text-3)', border: `1px solid ${pointMode ? `${cfg.color}30` : 'var(--border)'}` }}>
           {pointMode ? '1. ON' : '1. Points'}
         </button>
+        <input type="file" ref={fileRef} accept="image/*" capture="environment" onChange={handleImage} className="hidden" />
+        <button onClick={() => fileRef.current?.click()} className="px-2 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95"
+          style={{ background: image ? `${cfg.color}15` : 'var(--surface-2)', color: image ? cfg.color : 'var(--text-3)', border: `1px solid ${image ? `${cfg.color}30` : 'var(--border)'}` }}>
+          {image ? '1 image' : 'Photo'}
+        </button>
+        <button onClick={toggleVoice} className="px-2 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95"
+          style={{ background: isListening ? '#EF444420' : 'var(--surface-2)', color: isListening ? '#EF4444' : 'var(--text-3)', border: `1px solid ${isListening ? '#EF444440' : 'var(--border)'}` }}>
+          {isListening ? 'Stop' : 'Voice'}
+        </button>
         <span className="flex-1" />
-        <span className="text-[9px] text-[var(--text-3)] hidden sm:inline">Enter = send · Shift+Enter = new line</span>
+        <span className="text-[10px] text-[var(--text-3)] hidden sm:inline">Enter = new line · Ctrl+Enter = send</span>
       </div>
+      {imagePreview && (
+        <div className="px-3 pt-2 flex items-center gap-2">
+          <div className="relative">
+            <img src={imagePreview} alt="Attached" className="w-12 h-12 rounded-lg object-cover border" style={{ borderColor: 'var(--border)' }} />
+            <button onClick={() => { setImage(null); setImagePreview(null); if (fileRef.current) fileRef.current.value = ''; }}
+              className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold bg-red-500 text-white">
+              x
+            </button>
+          </div>
+          <span className="text-xs" style={{ color: 'var(--text-3)' }}>Image attached</span>
+        </div>
+      )}
       <div className="px-3 py-2 flex items-end gap-2" style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 8px), 8px)' }}>
         <textarea ref={taRef} value={text} onChange={autoGrow} onKeyDown={handleKey}
-          placeholder={pointMode ? '1. Write your answer point by point...\n(Shift+Enter for next point)' : 'Ask Foxy anything... (Shift+Enter for new line)'}
-          rows={pointMode ? 3 : 1} className="flex-1 min-w-0 text-sm rounded-2xl px-4 py-2.5 resize-none outline-none leading-relaxed"
-          style={{ background: 'var(--surface-2)', border: `1.5px solid ${pointMode ? `${cfg.color}40` : 'var(--border)'}`, fontFamily: 'var(--font-body)', maxHeight: 200, minHeight: pointMode ? 80 : 40, overflowWrap: 'break-word', wordBreak: 'break-word' }} />
-        <button onClick={send} disabled={disabled || !text.trim()}
+          placeholder={pointMode ? '1. Write your answer point by point...\n(Shift+Enter for next point)' : 'Ask Foxy anything...\nPress Enter for new line, Ctrl+Enter to send'}
+          rows={pointMode ? 3 : 2} className="flex-1 min-w-0 text-sm rounded-2xl px-4 py-2.5 resize-none outline-none leading-relaxed"
+          style={{ background: 'var(--surface-2)', border: `1.5px solid ${pointMode ? `${cfg.color}40` : 'var(--border)'}`, fontFamily: 'var(--font-body)', maxHeight: 200, minHeight: pointMode ? 80 : 52, overflowWrap: 'break-word', wordBreak: 'break-word' }} />
+        <button onClick={send} disabled={disabled || (!text.trim() && !image)}
           className="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-lg font-bold transition-all active:scale-90 disabled:opacity-40"
-          style={{ background: text.trim() ? `linear-gradient(135deg, ${cfg.color}, ${cfg.color}dd)` : 'var(--surface-2)', color: text.trim() ? '#fff' : 'var(--text-3)' }}>
+          style={{ background: (text.trim() || image) ? `linear-gradient(135deg, ${cfg.color}, ${cfg.color}dd)` : 'var(--surface-2)', color: (text.trim() || image) ? '#fff' : 'var(--text-3)' }}>
           {disabled ? '...' : '↑'}
         </button>
       </div>
     </div>
   );
-}
+});
 
 export default ChatInput;

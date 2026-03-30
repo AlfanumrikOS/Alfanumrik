@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase, getSubjects, getFeatureFlags, getNextTopics, generateNotifications } from '@/lib/supabase';
@@ -16,7 +17,12 @@ import DailyChallenge from '@/components/dashboard/DailyChallenge';
 import FoxyBannerCard from '@/components/dashboard/FoxyBannerCard';
 import ProgressSnapshot from '@/components/dashboard/ProgressSnapshot';
 import TodaysPlan from '@/components/dashboard/TodaysPlan';
-import OnboardingFlow from '@/components/onboarding/OnboardingFlow';
+
+// Lazy load OnboardingFlow — only shown to brand new students (XP=0)
+const OnboardingFlow = dynamic(() => import('@/components/onboarding/OnboardingFlow'), {
+  ssr: false,
+  loading: () => <DashboardSkeleton />,
+});
 
 export default function Dashboard() {
   const { student, snapshot, isLoggedIn, isLoading, isHi, refreshSnapshot, activeRole } = useAuth();

@@ -171,24 +171,16 @@ export default function FoxyPage() {
   const [totalXP, setTotalXP] = useState(0);
   const [streakDays, setStreakDays] = useState(0);
 
-  // UI state
-  const [showSubjectDD, setShowSubjectDD] = useState(false);
-  const [showChapterDD, setShowChapterDD] = useState(false);
-  const [selectedChapters, setSelectedChapters] = useState<string[]>([]);
+  // UI state (grouped)
+  const [ui, setUi] = useState<{ subjectDD: boolean; chapterDD: boolean; topicSheet: boolean; sidebar: boolean; selectedChapters: string[] }>({ subjectDD: false, chapterDD: false, topicSheet: false, sidebar: true, selectedChapters: [] });
   const [studentSubs, setStudentSubs] = useState<string[]>([]);
-  const [showTopicSheet, setShowTopicSheet] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Session flow: show guided start screen when no messages yet
   const [showSessionStart, setShowSessionStart] = useState(true);
   const [showSessionComplete, setShowSessionComplete] = useState(false);
 
-  // Error reporting
-  const [reportModal, setReportModal] = useState<{ msgId: number; studentMsg: string; foxyMsg: string } | null>(null);
-  const [reportReason, setReportReason] = useState('wrong_answer');
-  const [reportCorrection, setReportCorrection] = useState('');
-  const [reportSubmitting, setReportSubmitting] = useState(false);
-  const [reportSuccess, setReportSuccess] = useState(false);
+  // Error reporting (grouped)
+  const [report, setReport] = useState<{ modal: { msgId: number; studentMsg: string; foxyMsg: string } | null; reason: string; correction: string; submitting: boolean; success: boolean }>({ modal: null, reason: 'wrong_answer', correction: '', submitting: false, success: false });
 
   const endRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -197,12 +189,8 @@ export default function FoxyPage() {
   const [chatUsage, setChatUsage] = useState<UsageResult | null>(null);
   const [showLimitModal, setShowLimitModal] = useState(false);
 
-  // Lesson flow state
-  const [lessonStep, setLessonStep] = useState<LessonStep>('hook');
-  const [lessonStepsCompleted, setLessonStepsCompleted] = useState<LessonStep[]>([]);
-  const [lessonPrediction, setLessonPrediction] = useState('');
-  const [showPredictionInput, setShowPredictionInput] = useState(false);
-  const [predictionSubmitted, setPredictionSubmitted] = useState(false);
+  // Lesson flow state (grouped)
+  const [lesson, setLesson] = useState<{ step: LessonStep; completed: LessonStep[]; prediction: string; showPrediction: boolean; predictionSubmitted: boolean }>({ step: 'hook', completed: [], prediction: '', showPrediction: false, predictionSubmitted: false });
 
   useEffect(() => { if (!authLoading && !isLoggedIn) router.replace('/'); }, [authLoading, isLoggedIn, router]);
 
@@ -272,9 +260,9 @@ export default function FoxyPage() {
     }
 
     setMessages(p => [...p, { id: Date.now(), role: 'student', content: text, timestamp: new Date().toISOString() }]);
-    setLoading(true); setFoxyState('thinking'); setShowTopicSheet(false);
+    setLoading(true); setFoxyState('thinking'); setUi(p => ({ ...p, topicSheet: false }));
     try {
-      const chapCtx = selectedChapters.length > 0 ? topics.filter(t => selectedChapters.includes(t.id)).map(t => `Ch ${t.chapter_number}: ${t.title}`).join(', ') : null;
+      const chapCtx = ui.selectedChapters.length > 0 ? topics.filter(t => ui.selectedChapters.includes(t.id)).map(t => `Ch ${t.chapter_number}: ${t.title}`).join(', ') : null;
       const resp = await callFoxyTutor({ message: text, student_id: student?.id || '', student_name: student?.name || 'Student', grade: studentGrade, subject: activeSubject, language, mode: sessionMode, topic_id: activeTopic?.id || null, topic_title: activeTopic?.title || null, session_id: chatSessionId, selected_chapters: chapCtx });
       // Server confirmed daily limit reached — show UpgradeModal
       if (resp.limitReached) {
@@ -293,7 +281,7 @@ export default function FoxyPage() {
       setFoxyState('idle');
     }
     setLoading(false);
-  }, [student, studentGrade, activeSubject, language, sessionMode, activeTopic, chatSessionId, selectedChapters, topics]);
+  }, [student, studentGrade, activeSubject, language, sessionMode, activeTopic, chatSessionId, ui.selectedChapters, topics]);
 
   // Feedback: thumbs up/down
   const handleFeedback = useCallback(async (msgId: number, isUp: boolean) => {
@@ -307,23 +295,22 @@ export default function FoxyPage() {
     const idx = messages.findIndex(m => m.id === msgId);
     const studentMsg = idx > 0 ? messages.slice(0, idx).reverse().find(m => m.role === 'student') : null;
     if (!foxyMsg) return;
-    setReportModal({ msgId, studentMsg: studentMsg?.content || '', foxyMsg: foxyMsg.content });
-    setReportReason('wrong_answer'); setReportCorrection(''); setReportSuccess(false);
+    setReport({ modal: { msgId, studentMsg: studentMsg?.content || '', foxyMsg: foxyMsg.content }, reason: 'wrong_answer', correction: '', submitting: false, success: false });
   }, [messages]);
 
   // Submit report
   const submitReport = useCallback(async () => {
-    if (!reportModal) return;
-    setReportSubmitting(true);
+    if (!report.modal) return;
+    setReport(p => ({ ...p, submitting: true }));
     try {
       await supabase.from('ai_response_reports').insert({
         student_id: student?.id || null,
         student_name: student?.name || 'Anonymous',
         session_id: chatSessionId,
-        student_message: reportModal.studentMsg,
-        foxy_response: reportModal.foxyMsg.substring(0, 4000),
-        report_reason: reportReason,
-        student_correction: reportCorrection || null,
+        student_message: report.modal.studentMsg,
+        foxy_response: report.modal.foxyMsg.substring(0, 4000),
+        report_reason: report.reason,
+        student_correction: report.correction || null,
         subject: activeSubject,
         grade: studentGrade,
         topic_title: activeTopic?.title || null,
@@ -331,14 +318,14 @@ export default function FoxyPage() {
         language,
       });
       await supabase.rpc('track_ai_quality', { p_subject: activeSubject, p_is_report: true });
-      setMessages(prev => prev.map(m => m.id === reportModal.msgId ? { ...m, reported: true, feedback: 'down' } : m));
-      setReportSuccess(true);
+      setMessages(prev => prev.map(m => m.id === report.modal!.msgId ? { ...m, reported: true, feedback: 'down' } : m));
+      setReport(p => ({ ...p, success: true }));
     } catch {}
-    setReportSubmitting(false);
-  }, [reportModal, student, chatSessionId, reportReason, reportCorrection, activeSubject, studentGrade, activeTopic, sessionMode, language]);
+    setReport(p => ({ ...p, submitting: false }));
+  }, [report, student, chatSessionId, activeSubject, studentGrade, activeTopic, sessionMode, language]);
 
   const switchSubject = (key: string) => {
-    setActiveSubject(key); setActiveTopic(null); setSelectedChapters([]); setShowSubjectDD(false); setMessages([]); setChatSessionId(null);
+    setActiveSubject(key); setActiveTopic(null); setUi(p => ({ ...p, selectedChapters: [], subjectDD: false })); setMessages([]); setChatSessionId(null);
     if (typeof window !== 'undefined') localStorage.setItem('alfanumrik_subject', key);
     // Auto-set language for language subjects
     if (key === 'hindi') setLanguage('hi');
@@ -350,10 +337,9 @@ export default function FoxyPage() {
     setMessages([]);
     setChatSessionId(null);
     setActiveTopic(null);
-    setSelectedChapters([]);
+    setUi(p => ({ ...p, selectedChapters: [] }));
     setCollapsedAbove(null);
-    setLessonStep('hook');
-    setLessonStepsCompleted([]);
+    setLesson(p => ({ ...p, step: 'hook', completed: [] }));
     setXpGained(0);
   }, []);
 
@@ -369,10 +355,7 @@ export default function FoxyPage() {
     if (modeId === 'doubt') return;
     // Lesson mode: start lesson flow
     if (modeId === 'lesson') {
-      setLessonStep('hook');
-      setLessonStepsCompleted([]);
-      setPredictionSubmitted(false);
-      setShowPredictionInput(false);
+      setLesson(p => ({ ...p, step: 'hook', completed: [], predictionSubmitted: false, showPrediction: false }));
       const topicName = activeTopic?.title || '';
       if (topicName) {
         const prompt = getLessonStepPrompt('hook', topicName, language);
@@ -389,8 +372,8 @@ export default function FoxyPage() {
   // Advance lesson step
   const advanceLessonStep = useCallback(() => {
     const state: LessonState = {
-      currentStep: lessonStep,
-      stepsCompleted: lessonStepsCompleted,
+      currentStep: lesson.step,
+      stepsCompleted: lesson.completed,
       recallScore: null,
       applicationScore: null,
     };
@@ -399,16 +382,13 @@ export default function FoxyPage() {
       setSessionMode('learn');
       return;
     }
-    setLessonStepsCompleted(prev => [...prev, lessonStep]);
-    setLessonStep(next);
-    setPredictionSubmitted(false);
-    setShowPredictionInput(next === 'active_recall');
+    setLesson(p => ({ ...p, completed: [...p.completed, p.step], step: next, predictionSubmitted: false, showPrediction: next === 'active_recall' }));
     const topicName = activeTopic?.title || '';
     if (topicName) {
       const prompt = getLessonStepPrompt(next, topicName, language);
       sendMessage(prompt);
     }
-  }, [lessonStep, lessonStepsCompleted, activeTopic, language, sendMessage]);
+  }, [lesson.step, lesson.completed, activeTopic, language, sendMessage]);
 
   const cfg = SUBJECTS[activeSubject] || SUBJECTS.science;
 
@@ -491,10 +471,10 @@ export default function FoxyPage() {
       <div className="foxy-toolbar" style={{ background: 'var(--surface-1)', borderBottom: '1px solid var(--border)' }}>
         {/* Subject dropdown */}
         <div className="relative">
-          <button onClick={() => { setShowSubjectDD(!showSubjectDD); setShowChapterDD(false); }} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-[0.97]" style={{ background: `${cfg.color}10`, border: `1.5px solid ${cfg.color}30`, color: cfg.color }}>
-            <span className="text-sm">{cfg.icon}</span><span>{cfg.name}</span><span className="text-[10px] ml-0.5 opacity-60">{showSubjectDD ? '▲' : '▼'}</span>
+          <button onClick={() => { setUi(p => ({ ...p, subjectDD: !p.subjectDD, chapterDD: false })); }} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-[0.97]" style={{ background: `${cfg.color}10`, border: `1.5px solid ${cfg.color}30`, color: cfg.color }}>
+            <span className="text-sm">{cfg.icon}</span><span>{cfg.name}</span><span className="text-[10px] ml-0.5 opacity-60">{ui.subjectDD ? '▲' : '▼'}</span>
           </button>
-          {showSubjectDD && (
+          {ui.subjectDD && (
             <div className="absolute top-full left-0 mt-1 z-50 w-[calc(100vw-24px)] sm:w-56 rounded-2xl overflow-hidden shadow-lg" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
               <div className="p-2 text-[10px] font-bold uppercase tracking-wider text-[var(--text-3)] px-3">My Subjects</div>
               {(studentSubs.length > 0 ? studentSubs : Object.keys(SUBJECTS)).map(key => {
@@ -513,23 +493,23 @@ export default function FoxyPage() {
 
         {/* Chapter dropdown */}
         <div className="relative">
-          <button onClick={() => { setShowChapterDD(!showChapterDD); setShowSubjectDD(false); }} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-[0.97]" style={{ background: 'var(--surface-2)', border: '1.5px solid var(--border)', color: 'var(--text-2)' }}>
-            <span className="text-sm">📖</span><span>{selectedChapters.length > 0 ? `${selectedChapters.length} Ch` : `All ${topics.length} Ch`}</span><span className="text-[10px] ml-0.5 opacity-60">{showChapterDD ? '▲' : '▼'}</span>
+          <button onClick={() => { setUi(p => ({ ...p, chapterDD: !p.chapterDD, subjectDD: false })); }} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-[0.97]" style={{ background: 'var(--surface-2)', border: '1.5px solid var(--border)', color: 'var(--text-2)' }}>
+            <span className="text-sm">📖</span><span>{ui.selectedChapters.length > 0 ? `${ui.selectedChapters.length} Ch` : `All ${topics.length} Ch`}</span><span className="text-[10px] ml-0.5 opacity-60">{ui.chapterDD ? '▲' : '▼'}</span>
           </button>
-          {showChapterDD && (
+          {ui.chapterDD && (
             <div className="absolute top-full left-0 mt-1 z-50 w-[calc(100vw-24px)] sm:w-72 max-h-[50vh] rounded-2xl overflow-hidden shadow-lg flex flex-col" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
               <div className="p-2 px-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
                 <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-3)]">{cfg.icon} {cfg.name} Chapters</span>
-                <button onClick={() => setSelectedChapters([])} className="text-[10px] font-semibold" style={{ color: 'var(--orange)' }}>Clear All</button>
+                <button onClick={() => setUi(p => ({ ...p, selectedChapters: [] }))} className="text-[10px] font-semibold" style={{ color: 'var(--orange)' }}>Clear All</button>
               </div>
               <div className="flex-1 overflow-y-auto">
                 {topics.map(topic => {
-                  const sel = selectedChapters.includes(topic.id);
+                  const sel = ui.selectedChapters.includes(topic.id);
                   const mastery = masteryData.find((m) => m.topic_tag === topic.title || m.chapter_number === topic.chapter_number);
                   const lvl = mastery?.mastery_level || 'not_started';
                   const lc = MASTERY_COLORS[lvl] || MASTERY_COLORS.not_started;
                   return (
-                    <button key={topic.id} onClick={() => setSelectedChapters(p => sel ? p.filter(x => x !== topic.id) : [...p, topic.id])} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-all" style={{ background: sel ? `${cfg.color}06` : 'transparent', borderBottom: '1px solid var(--border)' }}>
+                    <button key={topic.id} onClick={() => setUi(p => ({ ...p, selectedChapters: sel ? p.selectedChapters.filter(x => x !== topic.id) : [...p.selectedChapters, topic.id] }))} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-all" style={{ background: sel ? `${cfg.color}06` : 'transparent', borderBottom: '1px solid var(--border)' }}>
                       <div className="w-5 h-5 rounded flex items-center justify-center shrink-0 text-[10px]" style={{ background: sel ? cfg.color : 'var(--surface-2)', color: sel ? '#fff' : 'var(--text-3)', border: sel ? 'none' : '1.5px solid var(--border)' }}>{sel ? '✓' : ''}</div>
                       <div className="flex-1 min-w-0"><div className="text-xs font-semibold truncate" style={{ color: 'var(--text-1)' }}>Ch {topic.chapter_number}: {topic.title}</div></div>
                       <span className="text-[9px] font-bold capitalize px-1.5 py-0.5 rounded" style={{ background: `${lc}15`, color: lc }}>{lvl.replace('_', ' ')}</span>
@@ -537,9 +517,9 @@ export default function FoxyPage() {
                   );
                 })}
               </div>
-              {selectedChapters.length > 0 && (
+              {ui.selectedChapters.length > 0 && (
                 <div className="p-2 px-3" style={{ borderTop: '1px solid var(--border)' }}>
-                  <button onClick={() => { const ch = topics.find(t => selectedChapters.includes(t.id)); if (ch) { setActiveTopic(ch); sendMessage(`Teach me about: ${ch.title} (Chapter ${ch.chapter_number})`); setShowChapterDD(false); } }} className="w-full py-2 rounded-xl text-xs font-bold text-white" style={{ background: cfg.color }}>
+                  <button onClick={() => { const ch = topics.find(t => ui.selectedChapters.includes(t.id)); if (ch) { setActiveTopic(ch); sendMessage(`Teach me about: ${ch.title} (Chapter ${ch.chapter_number})`); setUi(p => ({ ...p, chapterDD: false })); } }} className="w-full py-2 rounded-xl text-xs font-bold text-white" style={{ background: cfg.color }}>
                     Start with Selected
                   </button>
                 </div>
@@ -560,7 +540,7 @@ export default function FoxyPage() {
       </div>
 
       {/* Close dropdowns */}
-      {(showSubjectDD || showChapterDD) && <div className="fixed inset-0 z-40" onClick={() => { setShowSubjectDD(false); setShowChapterDD(false); }} />}
+      {(ui.subjectDD || ui.chapterDD) && <div className="fixed inset-0 z-40" onClick={() => { setUi(p => ({ ...p, subjectDD: false, chapterDD: false })); }} />}
 
       {/* ═══ CONTEXT BAR — shows active topic + new topic button ═══ */}
       {messages.length > 0 && (
@@ -591,8 +571,8 @@ export default function FoxyPage() {
         <div className="px-3 py-2" style={{ background: 'var(--surface-1)', borderBottom: '1px solid var(--border)' }}>
           <div className="flex items-center gap-1 mb-1.5">
             {LESSON_STEPS.map((step, idx) => {
-              const isCompleted = lessonStepsCompleted.includes(step);
-              const isCurrent = step === lessonStep;
+              const isCompleted = lesson.completed.includes(step);
+              const isCurrent = step === lesson.step;
               const stepLabels: Record<string, string> = {
                 hook: '🪝 Hook', visualization: '👁 Visual', guided_examples: '📝 Examples',
                 active_recall: '🧠 Recall', application: '🔧 Apply', spaced_revision: '🔄 Revise',
@@ -612,7 +592,7 @@ export default function FoxyPage() {
           </div>
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-semibold" style={{ color: cfg.color }}>
-              {language === 'hi' ? 'पाठ प्रगति' : 'Lesson Progress'}: {lessonStepsCompleted.length + 1}/{LESSON_STEPS.length}
+              {language === 'hi' ? 'पाठ प्रगति' : 'Lesson Progress'}: {lesson.completed.length + 1}/{LESSON_STEPS.length}
             </span>
             {!loading && messages.length > 0 && (
               <button
@@ -620,14 +600,14 @@ export default function FoxyPage() {
                 className="px-3 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95"
                 style={{ background: `${cfg.color}15`, color: cfg.color, border: `1px solid ${cfg.color}30` }}
               >
-                {lessonStep === 'spaced_revision'
+                {lesson.step === 'spaced_revision'
                   ? (language === 'hi' ? '✓ पूरा हुआ' : '✓ Complete')
                   : (language === 'hi' ? 'अगला चरण →' : 'Next Step →')}
               </button>
             )}
           </div>
           {/* Predict-before-reveal for active recall step */}
-          {showPredictionInput && !predictionSubmitted && (
+          {lesson.showPrediction && !lesson.predictionSubmitted && (
             <div className="mt-2 p-3 rounded-xl" style={{ background: `${cfg.color}06`, border: `1px solid ${cfg.color}20` }}>
               <p className="text-xs font-semibold mb-1.5" style={{ color: cfg.color }}>
                 🧠 {language === 'hi' ? 'पहले अपना अनुमान लिखो:' : 'Write your prediction first:'}
@@ -635,21 +615,20 @@ export default function FoxyPage() {
               <div className="flex gap-2">
                 <input
                   type="text"
-                  value={lessonPrediction}
-                  onChange={e => setLessonPrediction(e.target.value)}
+                  value={lesson.prediction}
+                  onChange={e => setLesson(p => ({ ...p, prediction: e.target.value }))}
                   placeholder={language === 'hi' ? 'तुम्हारा अनुमान...' : 'Your prediction...'}
                   className="flex-1 text-sm rounded-lg px-3 py-2 outline-none"
                   style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
                 />
                 <button
                   onClick={() => {
-                    if (lessonPrediction.trim()) {
-                      setPredictionSubmitted(true);
-                      sendMessage(`My prediction: ${lessonPrediction.trim()}`);
-                      setLessonPrediction('');
+                    if (lesson.prediction.trim()) {
+                      setLesson(p => ({ ...p, predictionSubmitted: true, prediction: '' }));
+                      sendMessage(`My prediction: ${lesson.prediction.trim()}`);
                     }
                   }}
-                  disabled={!lessonPrediction.trim()}
+                  disabled={!lesson.prediction.trim()}
                   className="px-3 py-2 rounded-lg text-xs font-bold text-white disabled:opacity-40"
                   style={{ background: cfg.color }}
                 >
@@ -658,7 +637,7 @@ export default function FoxyPage() {
               </div>
             </div>
           )}
-          {showPredictionInput && predictionSubmitted && (
+          {lesson.showPrediction && lesson.predictionSubmitted && (
             <div className="mt-2 text-[10px] font-semibold" style={{ color: '#16A34A' }}>
               ✓ {language === 'hi' ? 'अनुमान जमा हो गया! Foxy का जवाब देखो।' : 'Prediction submitted! See Foxy\'s answer below.'}
             </div>
@@ -670,11 +649,11 @@ export default function FoxyPage() {
       <SectionErrorBoundary section="Foxy Chat">
       <div className="flex-1 flex overflow-hidden relative">
         {/* Desktop sidebar */}
-        <div className="hidden lg:flex shrink-0 relative" style={{ width: sidebarOpen ? 280 : 0, transition: 'width 0.3s ease' }}>
-          <div className="flex flex-col overflow-hidden border-r" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)', width: 280, position: 'absolute', top: 0, bottom: 0, left: 0, transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)', transition: 'transform 0.3s ease' }}>
+        <div className="hidden lg:flex shrink-0 relative" style={{ width: ui.sidebar ? 280 : 0, transition: 'width 0.3s ease' }}>
+          <div className="flex flex-col overflow-hidden border-r" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)', width: 280, position: 'absolute', top: 0, bottom: 0, left: 0, transform: ui.sidebar ? 'translateX(0)' : 'translateX(-100%)', transition: 'transform 0.3s ease' }}>
             <div className="p-3 text-xs font-bold flex items-center justify-between" style={{ color: cfg.color, borderBottom: '1px solid var(--border)' }}>
               <span>{cfg.icon} {cfg.name} · Gr {studentGrade} ({topics.length})</span>
-              <button onClick={() => setSidebarOpen(false)} className="w-6 h-6 rounded-lg flex items-center justify-center text-[10px] transition-all hover:opacity-70" style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }} title="Collapse">«</button>
+              <button onClick={() => setUi(p => ({ ...p, sidebar: false }))} className="w-6 h-6 rounded-lg flex items-center justify-center text-[10px] transition-all hover:opacity-70" style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }} title="Collapse">«</button>
             </div>
             <div className="flex-1 overflow-y-auto p-2.5 space-y-2">
               {topics.map(topic => {
@@ -695,7 +674,7 @@ export default function FoxyPage() {
             </div>
           </div>
         </div>
-        {!sidebarOpen && <button onClick={() => setSidebarOpen(true)} className="hidden lg:flex shrink-0 w-8 items-center justify-center border-r cursor-pointer transition-all hover:bg-[var(--surface-2)]" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)' }} title="Show chapters"><span className="text-[10px]" style={{ color: 'var(--text-3)' }}>»</span></button>}
+        {!ui.sidebar && <button onClick={() => setUi(p => ({ ...p, sidebar: true }))} className="hidden lg:flex shrink-0 w-8 items-center justify-center border-r cursor-pointer transition-all hover:bg-[var(--surface-2)]" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)' }} title="Show chapters"><span className="text-[10px]" style={{ color: 'var(--text-3)' }}>»</span></button>}
 
         {/* Chat column */}
         <div className="flex-1 flex flex-col min-w-0">
@@ -729,7 +708,7 @@ export default function FoxyPage() {
                   onSelect={sendMessage}
                 />
 
-                <button onClick={() => setShowChapterDD(true)} className="mt-6 px-5 py-2.5 rounded-xl text-sm font-bold" style={{ background: `${cfg.color}10`, color: cfg.color, border: `1.5px solid ${cfg.color}30` }}>{cfg.icon} Browse {topics.length} Chapters</button>
+                <button onClick={() => setUi(p => ({ ...p, chapterDD: true }))} className="mt-6 px-5 py-2.5 rounded-xl text-sm font-bold" style={{ background: `${cfg.color}10`, color: cfg.color, border: `1.5px solid ${cfg.color}30` }}>{cfg.icon} Browse {topics.length} Chapters</button>
               </div>
             )}
 
@@ -778,19 +757,19 @@ export default function FoxyPage() {
             })}
 
             {/* ── Report Error Modal ── */}
-            {reportModal && (
-              <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={(e) => { if (e.target === e.currentTarget) { setReportModal(null); } }}>
+            {report.modal && (
+              <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={(e) => { if (e.target === e.currentTarget) { setReport(p => ({ ...p, modal: null })); } }}>
                 <div className="w-full max-w-md rounded-t-2xl sm:rounded-2xl p-5 max-h-[80vh] overflow-y-auto animate-slide-up" style={{ background: 'var(--surface-1)' }}>
-                  {!reportSuccess ? (<>
+                  {!report.success ? (<>
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-base font-bold" style={{ fontFamily: 'var(--font-display)' }}>⚠️ Report Incorrect Answer</h3>
-                      <button onClick={() => setReportModal(null)} className="text-lg" style={{ color: 'var(--text-3)' }}>✕</button>
+                      <button onClick={() => setReport(p => ({ ...p, modal: null }))} className="text-lg" style={{ color: 'var(--text-3)' }}>✕</button>
                     </div>
 
                     {/* What Foxy said */}
                     <div className="mb-4 p-3 rounded-xl text-xs" style={{ background: '#EF444408', border: '1px solid #EF444420' }}>
                       <div className="font-bold text-[10px] uppercase tracking-wider mb-1" style={{ color: '#EF4444' }}>Foxy&apos;s response:</div>
-                      <div className="leading-relaxed" style={{ color: 'var(--text-2)', maxHeight: 100, overflow: 'hidden' }}>{reportModal.foxyMsg.substring(0, 300)}{reportModal.foxyMsg.length > 300 ? '...' : ''}</div>
+                      <div className="leading-relaxed" style={{ color: 'var(--text-2)', maxHeight: 100, overflow: 'hidden' }}>{report.modal.foxyMsg.substring(0, 300)}{report.modal.foxyMsg.length > 300 ? '...' : ''}</div>
                     </div>
 
                     {/* Reason */}
@@ -798,7 +777,7 @@ export default function FoxyPage() {
                       <label className="text-xs font-semibold mb-2 block" style={{ color: 'var(--text-3)' }}>What&apos;s wrong?</label>
                       <div className="flex flex-wrap gap-1.5">
                         {REPORT_REASONS.map(r => (
-                          <button key={r.value} onClick={() => setReportReason(r.value)} className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all" style={{ background: reportReason === r.value ? '#EF444415' : 'var(--surface-2)', color: reportReason === r.value ? '#EF4444' : 'var(--text-3)', border: `1.5px solid ${reportReason === r.value ? '#EF444440' : 'var(--border)'}` }}>
+                          <button key={r.value} onClick={() => setReport(p => ({ ...p, reason: r.value }))} className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all" style={{ background: report.reason === r.value ? '#EF444415' : 'var(--surface-2)', color: report.reason === r.value ? '#EF4444' : 'var(--text-3)', border: `1.5px solid ${report.reason === r.value ? '#EF444440' : 'var(--border)'}` }}>
                             {language === 'hi' ? r.labelHi : r.label}
                           </button>
                         ))}
@@ -809,8 +788,8 @@ export default function FoxyPage() {
                     <div className="mb-4">
                       <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--text-3)' }}>What should the correct answer be? (optional)</label>
                       <textarea
-                        value={reportCorrection}
-                        onChange={e => setReportCorrection(e.target.value)}
+                        value={report.correction}
+                        onChange={e => setReport(p => ({ ...p, correction: e.target.value }))}
                         placeholder={language === 'hi' ? 'सही उत्तर लिखें...' : 'Type the correct answer here...'}
                         rows={3}
                         className="w-full text-sm rounded-xl px-3 py-2 resize-none outline-none"
@@ -820,9 +799,9 @@ export default function FoxyPage() {
 
                     {/* Submit */}
                     <div className="flex gap-2">
-                      <button onClick={() => setReportModal(null)} className="flex-1 py-2.5 rounded-xl text-xs font-bold" style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }}>Cancel</button>
-                      <button onClick={submitReport} disabled={reportSubmitting} className="flex-1 py-2.5 rounded-xl text-xs font-bold text-white transition-all active:scale-95 disabled:opacity-50" style={{ background: '#EF4444' }}>
-                        {reportSubmitting ? 'Submitting...' : '⚠️ Submit Report'}
+                      <button onClick={() => setReport(p => ({ ...p, modal: null }))} className="flex-1 py-2.5 rounded-xl text-xs font-bold" style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }}>Cancel</button>
+                      <button onClick={submitReport} disabled={report.submitting} className="flex-1 py-2.5 rounded-xl text-xs font-bold text-white transition-all active:scale-95 disabled:opacity-50" style={{ background: '#EF4444' }}>
+                        {report.submitting ? 'Submitting...' : '⚠️ Submit Report'}
                       </button>
                     </div>
                   </>) : (
@@ -832,7 +811,7 @@ export default function FoxyPage() {
                       <p className="text-xs mb-4" style={{ color: 'var(--text-3)' }}>
                         {language === 'hi' ? 'आपकी रिपोर्ट दर्ज हो गई है। हम इसकी जाँच करेंगे और सुधार करेंगे।' : 'Your report has been recorded. Our team will review and fix this.'}
                       </p>
-                      <button onClick={() => setReportModal(null)} className="px-6 py-2 rounded-xl text-xs font-bold text-white" style={{ background: 'var(--orange)' }}>OK</button>
+                      <button onClick={() => setReport(p => ({ ...p, modal: null }))} className="px-6 py-2 rounded-xl text-xs font-bold text-white" style={{ background: 'var(--orange)' }}>OK</button>
                     </div>
                   )}
                 </div>
@@ -857,14 +836,14 @@ export default function FoxyPage() {
       </div>
 
       {/* Mobile topics sheet */}
-      {showTopicSheet && (
+      {ui.topicSheet && (
         <>
-          <div className="fixed inset-0 z-40 lg:hidden" style={{ background: 'rgba(0,0,0,0.3)' }} onClick={() => setShowTopicSheet(false)} />
+          <div className="fixed inset-0 z-40 lg:hidden" style={{ background: 'rgba(0,0,0,0.3)' }} onClick={() => setUi(p => ({ ...p, topicSheet: false }))} />
           <div className="fixed bottom-0 left-0 right-0 z-50 rounded-t-3xl max-h-[75vh] flex flex-col lg:hidden" style={{ background: 'var(--surface-1)', boxShadow: '0 -8px 40px rgba(0,0,0,0.1)' }}>
             <div className="flex justify-center pt-3 pb-1"><div className="w-10 h-1 rounded-full" style={{ background: 'var(--border)' }} /></div>
             <div className="px-4 pb-2 flex items-center justify-between">
               <span className="text-sm font-bold" style={{ color: cfg.color }}>{cfg.icon} {cfg.name} · Gr {studentGrade}</span>
-              <button onClick={() => setShowTopicSheet(false)} className="text-xs text-[var(--text-3)] font-semibold">Close</button>
+              <button onClick={() => setUi(p => ({ ...p, topicSheet: false }))} className="text-xs text-[var(--text-3)] font-semibold">Close</button>
             </div>
             <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-2">
               {topics.map(topic => {
@@ -873,7 +852,7 @@ export default function FoxyPage() {
                 const lvl = mastery?.mastery_level || 'not_started';
                 const lc = MASTERY_COLORS[lvl] || MASTERY_COLORS.not_started;
                 return (
-                  <button key={topic.id} onClick={() => { setActiveTopic(topic); setShowTopicSheet(false); sendMessage(`Teach me about: ${topic.title} (Chapter ${topic.chapter_number})`); }} className="w-full text-left p-3.5 rounded-xl flex items-center gap-3 active:scale-[0.98] transition-all" style={{ background: 'var(--surface-2)', border: `1px solid ${lc}20` }}>
+                  <button key={topic.id} onClick={() => { setActiveTopic(topic); setUi(p => ({ ...p, topicSheet: false })); sendMessage(`Teach me about: ${topic.title} (Chapter ${topic.chapter_number})`); }} className="w-full text-left p-3.5 rounded-xl flex items-center gap-3 active:scale-[0.98] transition-all" style={{ background: 'var(--surface-2)', border: `1px solid ${lc}20` }}>
                     <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0" style={{ background: `${lc}15` }}>{cfg.icon}</div>
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-bold truncate" style={{ color: 'var(--text-1)' }}>Ch {topic.chapter_number}: {topic.title}</div>
