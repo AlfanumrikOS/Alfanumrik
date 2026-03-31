@@ -61,6 +61,7 @@ export default function QuizPage() {
   const [questionCount, setQuestionCount] = useState(10);
   const [examTimeLimit, setExamTimeLimit] = useState(180); // minutes for exam mode
   const [examTimerActive, setExamTimerActive] = useState(false);
+  const [selectedChapter, setSelectedChapter] = useState<number | null>(null);
 
   // Cognitive 2.0 state
   const [cogLoad, setCogLoad] = useState<CognitiveLoadState>(initialCognitiveLoad());
@@ -153,17 +154,20 @@ export default function QuizPage() {
     questionCount: number;
     quizMode: QuizMode;
     examTimeLimit: number;
+    chapterNumber: number | null;
   }) => {
     // When called from QuizSetup, apply the selected options to page state
     const subj = opts?.subject ?? selectedSubject;
     const diff = opts?.difficulty ?? selectedDifficulty;
     const qCount = opts?.questionCount ?? questionCount;
+    const chapter = opts?.chapterNumber ?? selectedChapter;
     if (opts) {
       setSelectedSubject(opts.subject);
       setSelectedDifficulty(opts.difficulty);
       setQuestionCount(opts.questionCount);
       setQuizMode(opts.quizMode);
       setExamTimeLimit(opts.examTimeLimit);
+      setSelectedChapter(opts.chapterNumber);
     }
     if (!subj || !student) return;
     setLoading(true);
@@ -172,7 +176,8 @@ export default function QuizPage() {
         subj,
         student.grade,
         qCount,
-        diff
+        diff,
+        chapter
       );
       const qs = Array.isArray(data) ? data : [];
       if (qs.length === 0) {
@@ -194,7 +199,7 @@ export default function QuizPage() {
       alert(isHi ? 'क्विज़ लोड करने में समस्या हुई। कृपया फिर से कोशिश करें।' : 'Failed to load quiz. Please try again.');
     }
     setLoading(false);
-  }, [selectedSubject, student, questionCount, selectedDifficulty, isHi]);
+  }, [selectedSubject, student, questionCount, selectedDifficulty, selectedChapter, isHi]);
 
   const parseOptions = (opts: string | string[]): string[] => {
     if (Array.isArray(opts)) return opts;

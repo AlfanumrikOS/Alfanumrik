@@ -141,7 +141,7 @@ export const BUILT_IN_SIMULATIONS: BuiltInSimulation[] = [
     title: 'Pizza Fraction Lab',
     description: 'Slice pizzas into fractions! Compare halves, thirds, and quarters visually. Finally understand why 1/3 + 1/4 is not 2/7!',
     subject: 'math',
-    grade: ['5', '6', '7', '8'],
+    grade: ['6', '7', '8'],
     thumbnailEmoji: '🍕',
     difficulty: 1,
     bloomLevel: 'understand',

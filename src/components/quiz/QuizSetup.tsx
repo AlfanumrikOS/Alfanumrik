@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Card, Button, BottomNav } from '@/components/ui';
 import { SUBJECT_META, GRADE_SUBJECTS } from '@/lib/constants';
 import { getExamPresets, calculateExamConfig, type ExamPreset } from '@/lib/exam-engine';
 import { useAuth } from '@/lib/AuthContext';
+import { supabase } from '@/lib/supabase';
 
 type QuizMode = 'practice' | 'cognitive' | 'exam';
 
@@ -28,6 +29,7 @@ interface QuizSetupProps {
     questionCount: number;
     quizMode: QuizMode;
     examTimeLimit: number;
+    chapterNumber: number | null;
   }) => void;
   onGoBack: () => void;
 }
@@ -41,6 +43,51 @@ export default function QuizSetup({ isHi, initialSubject, initialMode, loading, 
   const [selectedDifficulty, setSelectedDifficulty] = useState<number | null>(null);
   const [questionCount, setQuestionCount] = useState(10);
   const [selectedPreset, setSelectedPreset] = useState<string>('standard_test');
+  const [selectedChapter, setSelectedChapter] = useState<number | null>(null);
+  const [chapters, setChapters] = useState<{ chapter_number: number; title: string }[]>([]);
+  const [chaptersLoading, setChaptersLoading] = useState(false);
+
+  // Fetch chapters when subject changes
+  useEffect(() => {
+    setSelectedChapter(null);
+    setChapters([]);
+    if (!selectedSubject) return;
+
+    let cancelled = false;
+    (async () => {
+      setChaptersLoading(true);
+      try {
+        // Look up the subject UUID from the code
+        const { data: subjectRow } = await supabase.from('subjects').select('id').eq('code', selectedSubject).single();
+        if (cancelled || !subjectRow) { setChaptersLoading(false); return; }
+
+        const { data, error } = await supabase
+          .from('curriculum_topics')
+          .select('chapter_number, title')
+          .eq('grade', grade)
+          .eq('subject_id', subjectRow.id)
+          .eq('is_active', true)
+          .order('chapter_number');
+
+        if (!cancelled && !error && data) {
+          // Deduplicate by chapter_number (topics may share chapters)
+          const seen = new Set<number>();
+          const unique: { chapter_number: number; title: string }[] = [];
+          for (const row of data) {
+            if (!seen.has(row.chapter_number)) {
+              seen.add(row.chapter_number);
+              unique.push(row);
+            }
+          }
+          setChapters(unique);
+        }
+      } catch {
+        // Silently fail — chapters are optional
+      }
+      if (!cancelled) setChaptersLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [selectedSubject, grade]);
 
   // Grade-filtered subjects
   const subjects = useMemo(() => {
@@ -76,6 +123,7 @@ export default function QuizSetup({ isHi, initialSubject, initialMode, loading, 
         questionCount: examConfig.questionCount,
         quizMode: 'exam',
         examTimeLimit: examConfig.durationMinutes,
+        chapterNumber: selectedChapter,
       });
     } else {
       // Practice / Cognitive: use manual selections
@@ -85,6 +133,7 @@ export default function QuizSetup({ isHi, initialSubject, initialMode, loading, 
         questionCount,
         quizMode,
         examTimeLimit: 0,
+        chapterNumber: selectedChapter,
       });
     }
   };
@@ -156,6 +205,45 @@ export default function QuizSetup({ isHi, initialSubject, initialMode, loading, 
             ))}
           </div>
         </div>
+
+        {/* Chapter Selector (optional) */}
+        {selectedSubject && chapters.length > 0 && (
+          <div>
+            <p className="text-sm text-[var(--text-3)] mb-3 font-medium">
+              {isHi ? 'अध्याय चुनो (वैकल्पिक)' : 'Choose Chapter (optional)'}
+            </p>
+            <div className="flex gap-2 flex-wrap">
+              <button
+                onClick={() => setSelectedChapter(null)}
+                className="rounded-xl px-4 py-2.5 text-sm font-semibold transition-all"
+                style={{
+                  background: selectedChapter === null ? 'var(--orange)' : 'var(--surface-2)',
+                  color: selectedChapter === null ? '#fff' : 'var(--text-2)',
+                  border: selectedChapter === null ? '1.5px solid var(--orange)' : '1.5px solid transparent',
+                }}
+              >
+                {isHi ? 'सभी अध्याय' : 'All Chapters'}
+              </button>
+              {chapters.map(ch => (
+                <button
+                  key={ch.chapter_number}
+                  onClick={() => setSelectedChapter(ch.chapter_number)}
+                  className="rounded-xl px-4 py-2.5 text-sm font-semibold transition-all text-left"
+                  style={{
+                    background: selectedChapter === ch.chapter_number ? 'var(--orange)' : 'var(--surface-2)',
+                    color: selectedChapter === ch.chapter_number ? '#fff' : 'var(--text-2)',
+                    border: selectedChapter === ch.chapter_number ? '1.5px solid var(--orange)' : '1.5px solid transparent',
+                  }}
+                >
+                  {ch.chapter_number}. {ch.title}
+                </button>
+              ))}
+            </div>
+            {chaptersLoading && (
+              <p className="text-xs text-[var(--text-3)] mt-2">{isHi ? 'अध्याय लोड हो रहे हैं...' : 'Loading chapters...'}</p>
+            )}
+          </div>
+        )}
 
         {/* ─── PRACTICE / COGNITIVE: Difficulty + Question Count ─── */}
         {selectedSubject && quizMode === 'practice' && (
