@@ -206,7 +206,8 @@ export default function ProgressPage() {
       .order('created_at', { ascending: false })
       .limit(10)
       .then(({ data }) => setSessionMetrics((data as CognitiveSessionMetrics[]) ?? []));
-  }, [student?.id, refreshSnapshot]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- depend on student.id to avoid re-running on object reference changes
+  }, [student?.id]);
 
   if (isLoading || !student) return <LoadingFoxy />;
 

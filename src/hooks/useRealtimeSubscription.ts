@@ -30,5 +30,6 @@ export function useRealtimeSubscription(
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- callback refs (onInsert, onUpdate, onDelete) are intentionally excluded to prevent channel reconnection on every render; callers should use stable refs
   }, [table, filter, enabled])
 }

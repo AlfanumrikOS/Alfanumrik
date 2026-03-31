@@ -221,7 +221,7 @@ export default function IntegrationVisualizer() {
     ctx.textAlign = 'center';
     ctx.fillText(`a=${lowerBound}`, aX, h - padding.bottom + 26);
     ctx.fillText(`b=${upperBound}`, bX, h - padding.bottom + 26);
-  }, [canvasWidth, funcType, rectangles, lowerBound, upperBound, sumType, func, dx]);
+  }, [rectangles, lowerBound, upperBound, sumType, func, dx]);
 
   useEffect(() => { draw(); }, [draw]);
 

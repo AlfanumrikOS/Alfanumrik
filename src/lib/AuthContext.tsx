@@ -302,6 +302,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
     setIsLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once on mount; roles.length is internal state set within this callback
   }, []);
 
   const refreshSnapshot = useCallback(async () => {

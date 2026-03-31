@@ -132,6 +132,7 @@ export function useCheckout() {
       onErr?.(msg);
       setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- openOrderCheckout and openSubscriptionCheckout are stable functions defined in this hook's closure
   }, [student, refreshStudent]);
 
   // ─── Subscription checkout (monthly recurring) ─────────────

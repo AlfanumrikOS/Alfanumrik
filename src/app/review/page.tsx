@@ -78,10 +78,12 @@ export default function ReviewPage() {
       setRetentionTests([]);
     }
     setLoading(false);
-  }, [student]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- depend on student.id to avoid re-running on object reference changes
+  }, [student?.id]);
 
   useEffect(() => {
     if (student) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- student?.id is the stable identity; student object reference changes on every render
   }, [student?.id, load]);
 
   // Track which cards have been reviewed in this session to prevent double-rating

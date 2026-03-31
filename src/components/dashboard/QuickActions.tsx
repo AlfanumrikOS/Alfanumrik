@@ -6,6 +6,7 @@ import { SectionHeader, ActionTile } from '@/components/ui';
 const QUICK_ACTIONS = [
   { href: '/quiz', icon: '⚡', label: 'Quiz', labelHi: 'क्विज़', color: '#7C3AED' },
   { href: '/simulations', icon: '🔬', label: 'Lab', labelHi: 'लैब', color: '#0891B2' },
+  { href: '/stem-centre', icon: '🧪', label: 'STEM', labelHi: 'स्टेम', color: '#0F766E' },
   { href: '/review', icon: '🔄', label: 'Revise', labelHi: 'रिव्यू', color: '#0D9488' },
   { href: '/scan', icon: '📷', label: 'Scan', labelHi: 'स्कैन', color: '#059669' },
   { href: '/exams', icon: '📋', label: 'Exams', labelHi: 'परीक्षाएँ', color: '#DC2626' },
@@ -21,7 +22,7 @@ export default function QuickActions({ isHi }: QuickActionsProps) {
   return (
     <div>
       <SectionHeader icon="⚡">{isHi ? 'त्वरित क्रियाएँ' : 'Quick Actions'}</SectionHeader>
-      <div className="grid grid-cols-5 gap-2">
+      <div className="grid grid-cols-3 gap-2">
         {QUICK_ACTIONS.map((a) => (
           <ActionTile
             key={a.href}
