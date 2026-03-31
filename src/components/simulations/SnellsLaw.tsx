@@ -190,7 +190,7 @@ export default function SnellsLaw() {
     ctx.fillStyle = '#334155';
     ctx.fillText(`${MEDIA[medium1].name} (n = ${n1.toFixed(2)})`, 10, 20);
     ctx.fillText(`${MEDIA[medium2].name} (n = ${n2.toFixed(2)})`, 10, h - 10);
-  }, [canvasWidth, incidentAngle, medium1, medium2, n1, n2, isTIR, refractedAngle]);
+  }, [incidentAngle, medium1, medium2, n1, n2, isTIR, refractedAngle]);
 
   useEffect(() => { draw(); }, [draw]);
 

@@ -82,10 +82,12 @@ export default function Dashboard() {
     const rawSelected = (student.selected_subjects || [student.preferred_subject].filter(Boolean)) as string[];
     setSelectedSubjects(rawSelected.filter(s => gradeSubjects.includes(s)));
     generateNotifications(student.id).catch(() => {});
-  }, [student]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- depend on student.id to avoid re-running on object reference changes
+  }, [student?.id]);
 
   useEffect(() => {
     if (student) { loadStaticData(); refreshSnapshot(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- student?.id is the stable identity; student object reference changes on every render
   }, [student?.id, loadStaticData, refreshSnapshot]);
 
   if (isLoading) return <DashboardSkeleton />;

@@ -192,7 +192,7 @@ export default function GasLaws() {
     ctx.fillText('kPa', gaugeX + gaugeW / 2, gaugeY + gaugeH + 26);
 
     animRef.current = requestAnimationFrame(draw);
-  }, [canvasWidth, containerFraction, particleSpeed, pressure, temperature]);
+  }, [containerFraction, particleSpeed, pressure, temperature]);
 
   useEffect(() => {
     animRef.current = requestAnimationFrame(draw);

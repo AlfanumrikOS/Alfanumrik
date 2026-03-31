@@ -57,6 +57,7 @@ export function useSimulations() {
     } finally {
       setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- headers is a stable object defined once per hook instance
   }, []);
 
   const getSimulation = useCallback(async (
@@ -85,6 +86,7 @@ export function useSimulations() {
     } finally {
       setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- headers is a stable object defined once per hook instance
   }, []);
 
   const getChapterSimulations = useCallback(async (
@@ -108,6 +110,7 @@ export function useSimulations() {
     } catch {
       return [];
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- headers is a stable object defined once per hook instance
   }, []);
 
   const trackInteraction = useCallback(async (
@@ -129,6 +132,7 @@ export function useSimulations() {
         })
       });
     } catch { /* silent */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- headers is a stable object defined once per hook instance
   }, []);
 
   return { findSimulations, getSimulation, getChapterSimulations, trackInteraction, loading };
