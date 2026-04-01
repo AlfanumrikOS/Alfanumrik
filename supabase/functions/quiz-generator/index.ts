@@ -7,7 +7,7 @@
  * {
  *   student_id: string        – UUID of the student
  *   subject:    string        – subject code, e.g. "math"
- *   grade:      string        – e.g. "9" or "Grade 9"
+ *   grade:      string        – e.g. "9"
  *   count?:     number        – number of questions (default 10, max 30)
  *   difficulty?: number|null  – 1 | 2 | 3 | null (null = adaptive)
  * }
@@ -312,16 +312,15 @@ async function selectRandomQuestions(
   difficulty: number | null,
   excludeIds: Set<string>,
 ): Promise<QuestionRow[]> {
-  // Normalise grade string: accept "9" or "Grade 9"
-  const gradeNum = grade.replace(/\D/g, '')
-  const gradeLabel = `Grade ${gradeNum}`
+  // P5: grade is plain string "6" through "12"
+  const normalizedGrade = grade.replace(/\D/g, '')
 
   let query = supabase
     .from('question_bank')
     .select('*')
     .eq('subject_id', subjectId)
     .eq('is_active', true)
-    .or(`grade.eq.${gradeNum},grade.eq.${gradeLabel}`)
+    .eq('grade', normalizedGrade)
     .limit(count * 3)
 
   if (difficulty != null) {
