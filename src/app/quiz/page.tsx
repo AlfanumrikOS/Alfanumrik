@@ -688,6 +688,33 @@ export default function QuizPage() {
     );
   }
 
+  // ═══ RESULTS SCREEN — no results (submission failed or no responses) ═══
+  if (screen === 'results' && !results) {
+    return (
+      <div className="mesh-bg min-h-dvh flex flex-col items-center justify-center px-6">
+        <div className="text-center py-12 px-6">
+          <div className="text-5xl mb-4">😕</div>
+          <h3 className="text-lg font-bold mb-1" style={{ fontFamily: 'var(--font-display)' }}>
+            {isHi ? 'नतीजे उपलब्ध नहीं हैं' : 'Results not available'}
+          </h3>
+          <p className="text-sm text-[var(--text-3)] mb-4 max-w-xs mx-auto">
+            {isHi
+              ? 'कुछ गलत हो गया। कृपया दोबारा कोशिश करो।'
+              : 'Something went wrong. Please try again.'}
+          </p>
+          <div className="flex gap-3 justify-center">
+            <Button onClick={() => { setScreen('select'); setQuestions([]); setResponses([]); setResults(null); }}>
+              {isHi ? 'फिर से क्विज़ लो' : 'Try Again'}
+            </Button>
+            <Button variant="ghost" onClick={() => router.push('/dashboard')}>
+              {isHi ? 'होम' : 'Home'}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Fallback loading
   return <LoadingFoxy />;
 }

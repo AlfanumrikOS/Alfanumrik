@@ -21,7 +21,10 @@ export function Card({ children, className = '', accent, onClick, hoverable }: C
   return (
     <div
       onClick={onClick}
-      className={`rounded-2xl p-5 relative overflow-hidden ${hoverable ? 'card-hover cursor-pointer' : ''} ${className}`}
+      onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      className={`rounded-2xl p-5 relative overflow-hidden ${hoverable ? 'card-hover cursor-pointer' : ''} ${onClick ? 'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2' : ''} ${className}`}
       style={{
         background: 'var(--surface-1)',
         border: '1px solid var(--border)',
@@ -66,9 +69,11 @@ export function Button({
     lg: 'text-base px-7 py-4 rounded-2xl',
   };
 
+  const disabledAttr = props.disabled ? { 'aria-disabled': true as const } : {};
+
   if (variant === 'primary') {
     return (
-      <button className={`btn-primary ${sizeMap[size]} ${base} ${className}`} {...props}>
+      <button className={`btn-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2 ${sizeMap[size]} ${base} ${className}`} {...disabledAttr} {...props}>
         {children}
       </button>
     );
@@ -76,7 +81,7 @@ export function Button({
 
   if (variant === 'ghost') {
     return (
-      <button className={`btn-ghost ${sizeMap[size]} ${base} ${className}`} {...props}>
+      <button className={`btn-ghost focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2 ${sizeMap[size]} ${base} ${className}`} {...disabledAttr} {...props}>
         {children}
       </button>
     );
@@ -85,12 +90,13 @@ export function Button({
   // soft variant — colored background
   return (
     <button
-      className={`inline-flex items-center justify-center gap-2 font-semibold transition-all ${sizeMap[size]} ${base} ${className}`}
+      className={`inline-flex items-center justify-center gap-2 font-semibold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2 ${sizeMap[size]} ${base} ${className}`}
       style={{
         background: color ? `${color}12` : 'var(--surface-2)',
         border: `1.5px solid ${color ?? 'var(--border)'}30`,
         color: color ?? 'var(--text-1)',
       }}
+      {...disabledAttr}
       {...props}
     >
       {children}
@@ -205,6 +211,11 @@ export function ProgressBar({ value, color = 'var(--orange)', height = 8, label,
       <div
         className="w-full rounded-full overflow-hidden"
         style={{ height, background: 'var(--surface-2)' }}
+        role="progressbar"
+        aria-valuenow={Math.round(pct)}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={label || `Progress: ${Math.round(pct)}%`}
       >
         <div
           className="h-full rounded-full xp-bar"
@@ -293,7 +304,8 @@ export function ActionTile({ icon, label, color, onClick }: ActionTileProps) {
   return (
     <button
       onClick={onClick}
-      className="rounded-2xl p-3 text-center card-hover flex flex-col items-center gap-1.5"
+      aria-label={label}
+      className="rounded-2xl p-3 text-center card-hover flex flex-col items-center gap-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2"
       style={{
         background: 'var(--surface-1)',
         border: '1px solid var(--border)',
@@ -443,8 +455,8 @@ export function MasteryRing({ value, size = 64, strokeWidth = 5, color, children
   const ringColor = color ?? (pct < 40 ? '#DC2626' : pct < 70 ? 'var(--orange)' : 'var(--green)');
 
   return (
-    <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="ring-fill" style={{ transform: 'rotate(-90deg)' }}>
+    <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }} role="img" aria-label={`Mastery: ${Math.round(pct)}%`}>
+      <svg width={size} height={size} className="ring-fill" style={{ transform: 'rotate(-90deg)' }} aria-hidden="true">
         <circle
           cx={size / 2} cy={size / 2} r={radius}
           fill="none" stroke="var(--surface-2)" strokeWidth={strokeWidth}

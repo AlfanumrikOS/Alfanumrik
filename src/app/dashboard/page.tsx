@@ -16,6 +16,7 @@ import QuickActions from '@/components/dashboard/QuickActions';
 import DailyChallenge from '@/components/dashboard/DailyChallenge';
 import FoxyBannerCard from '@/components/dashboard/FoxyBannerCard';
 import ProgressSnapshot from '@/components/dashboard/ProgressSnapshot';
+import ExamReadiness from '@/components/dashboard/ExamReadiness';
 import TodaysPlan from '@/components/dashboard/TodaysPlan';
 
 // Lazy load OnboardingFlow — only shown to brand new students (XP=0)
@@ -170,7 +171,23 @@ export default function Dashboard() {
             isHi={isHi}
           />
 
-          {/* ═══ 3. DAILY CHALLENGE — compact engagement hook ═══ */}
+          {/* ═══ 3b. EXAM READINESS — predicted board grade ═══ */}
+          {(() => {
+            const totalAsked = profiles.reduce((a, p) => a + (p.total_questions_asked ?? 0), 0);
+            const totalCorrect = profiles.reduce((a, p) => a + (p.total_questions_answered_correctly ?? 0), 0);
+            const totalSessions = profiles.reduce((a, p) => a + (p.total_sessions ?? 0), 0);
+            const accuracy = totalAsked > 0 ? Math.round((totalCorrect / totalAsked) * 100) : 0;
+            return (
+              <ExamReadiness
+                accuracy={accuracy}
+                totalQuizzes={totalSessions}
+                isHi={isHi}
+                grade={student.grade}
+              />
+            );
+          })()}
+
+          {/* ═══ 4. DAILY CHALLENGE — compact engagement hook ═══ */}
           {totalXp > 0 && (
             <DailyChallenge
               isHi={isHi}

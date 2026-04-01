@@ -6,7 +6,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { getStudentProfiles, getSubjects, getBloomProgression, getLearningVelocity, getKnowledgeGaps, supabase } from '@/lib/supabase';
 import { BLOOM_CONFIG, BLOOM_LEVELS, BLOOM_ORDER, getHighestMasteredBloom, predictMasteryDate } from '@/lib/cognitive-engine';
 import type { BloomLevel, KnowledgeGap, LearningVelocity, CognitiveSessionMetrics, StudentLearningProfile, Subject } from '@/lib/types';
-import { Card, Badge, ProgressBar, SectionHeader, StatCard, MasteryRing, LoadingFoxy, BottomNav, Button } from '@/components/ui';
+import { Card, Badge, ProgressBar, SectionHeader, StatCard, MasteryRing, LoadingFoxy, BottomNav, Button, EmptyState } from '@/components/ui';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 
 /* ── Helpers ── */
@@ -549,20 +549,18 @@ export default function ProgressPage() {
 
             {/* Empty state for cognitive tab */}
             {velocityData.length === 0 && gapsBySeverity.length === 0 && sessionMetrics.length === 0 && (
-              <Card className="!p-6 text-center">
-                <div className="text-4xl mb-2">🧠</div>
-                <div className="text-sm font-semibold mb-1">
-                  {isHi ? 'अभी तक कोई विश्लेषण डेटा नहीं' : 'No analysis data yet'}
-                </div>
-                <div className="text-xs text-[var(--text-3)] mb-3">
-                  {isHi
-                    ? 'कुछ quiz दो, फिर यहाँ analytics दिखेगा!'
-                    : 'Take a few quizzes and your cognitive analytics will appear here!'}
-                </div>
-                <Button variant="primary" size="sm" onClick={() => router.push('/dashboard')}>
-                  {isHi ? 'Quiz शुरू करो' : 'Start a Quiz'}
-                </Button>
-              </Card>
+              <EmptyState
+                icon="📈"
+                title={isHi ? 'प्रगति देखने के लिए सीखना शुरू करो' : 'Start learning to see your progress'}
+                description={isHi
+                  ? 'कुछ quiz दो, फिर यहाँ analytics दिखेगा!'
+                  : 'Take a few quizzes and your cognitive analytics will appear here!'}
+                action={
+                  <Button variant="primary" size="sm" onClick={() => router.push('/quiz')}>
+                    {isHi ? 'Quiz शुरू करो' : 'Start a Quiz'}
+                  </Button>
+                }
+              />
             )}
           </>
         )}
