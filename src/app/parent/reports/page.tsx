@@ -1052,7 +1052,7 @@ export default function ParentReportsPage() {
         setReport(res);
       }
     } catch (err) {
-      setError('Could not load report. Please try again later.');
+      setError(isHi ? 'रिपोर्ट लोड नहीं हो सकी। कृपया बाद में फिर कोशिश करें।' : 'Could not load report. Please try again later.');
     }
     setLoading(false);
   }, [guardian, student, dateRange]);
@@ -1253,46 +1253,46 @@ export default function ParentReportsPage() {
           <>
             {/* ── 1. PERFORMANCE SUMMARY CARDS ── */}
             <div style={{ marginBottom: 20 }}>
-              <div style={sectionHeading}>Performance Summary</div>
+              <div style={sectionHeading}>{t(isHi, 'Performance Summary', 'प्रदर्शन सारांश')}</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
                 <SummaryCard
                   icon={'\uD83C\uDFAF'}
-                  label="Overall Mastery"
+                  label={t(isHi, 'Overall Mastery', 'कुल महारत')}
                   value={`${stats.overallMastery ?? stats.accuracy ?? 0}%`}
                   ringColor={getScoreColor(stats.overallMastery ?? stats.accuracy ?? 0)}
                 />
                 <SummaryCard
                   icon={'\uD83D\uDD25'}
-                  label="Consistency"
-                  value={`${stats.streak ?? 0} days`}
-                  sub={`Active ${activeDays} of last 7 days`}
+                  label={t(isHi, 'Consistency', 'नियमितता')}
+                  value={`${stats.streak ?? 0} ${t(isHi, 'days', 'दिन')}`}
+                  sub={t(isHi, `Active ${activeDays} of last 7 days`, `पिछले 7 दिनों में ${activeDays} दिन सक्रिय`)}
                 />
                 <SummaryCard
                   icon={accuracyTrend === 'up' ? '\u2B06\uFE0F' : accuracyTrend === 'down' ? '\u2B07\uFE0F' : '\uD83C\uDFAF'}
-                  label="Accuracy"
+                  label={t(isHi, 'Accuracy', 'सटीकता')}
                   value={`${stats.accuracy ?? stats.avgScore ?? 0}%`}
-                  sub={accuracyTrend === 'up' ? 'Trending up!' : accuracyTrend === 'down' ? 'Needs focus' : undefined}
+                  sub={accuracyTrend === 'up' ? t(isHi, 'Trending up!', 'बढ़ रहा है!') : accuracyTrend === 'down' ? t(isHi, 'Needs focus', 'ध्यान चाहिए') : undefined}
                 />
                 <SummaryCard
                   icon={'\u2728'}
-                  label="XP Earned"
+                  label="XP"
                   value={`${stats.xp ?? 0}`}
-                  sub="Keep it up!"
+                  sub={t(isHi, 'Keep it up!', 'ऐसे ही करते रहो!')}
                 />
               </div>
             </div>
 
             {/* ── 2. SUBJECT-WISE PERFORMANCE ── */}
             <div style={{ marginBottom: 20 }}>
-              <div style={sectionHeading}>Subject Performance</div>
+              <div style={sectionHeading}>{t(isHi, 'Subject Performance', 'विषय प्रदर्शन')}</div>
               {subjects.length > 0 ? (
                 subjects.map((subj: SubjectData, i: number) => (
-                  <SubjectCard key={i} subject={subj} />
+                  <SubjectCard key={i} subject={subj} isHi={isHi} />
                 ))
               ) : (
                 <div style={cardStyle}>
                   <p style={emptyText}>
-                    Your child hasn&apos;t started any subjects yet. Encourage them to explore and take their first quiz!
+                    {t(isHi, "Your child hasn't started any subjects yet. Encourage them to explore and take their first quiz!", 'आपके बच्चे ने अभी तक कोई विषय शुरू नहीं किया है। उन्हें अपनी पहली क्विज़ देने के लिए प्रोत्साहित करें!')}
                   </p>
                 </div>
               )}
@@ -1301,35 +1301,35 @@ export default function ParentReportsPage() {
             {/* ── 3. WEEKLY ACTIVITY TIMELINE ── */}
             {dailyActivity.length > 0 && (
               <div style={{ marginBottom: 20 }}>
-                <div style={sectionHeading}>Weekly Activity</div>
-                <WeeklyTimeline days={dailyActivity} mostActiveDay={mostActiveDay} />
+                <div style={sectionHeading}>{t(isHi, 'Weekly Activity', 'साप्ताहिक गतिविधि')}</div>
+                <WeeklyTimeline days={dailyActivity} mostActiveDay={mostActiveDay} isHi={isHi} />
               </div>
             )}
 
             {/* ── 4. CONCEPT MASTERY MAP ── */}
             <div style={{ marginBottom: 20 }}>
-              <div style={sectionHeading}>Concept Mastery</div>
-              <ConceptMasteryMap concepts={concepts} />
+              <div style={sectionHeading}>{t(isHi, 'Concept Mastery', 'अवधारणा महारत')}</div>
+              <ConceptMasteryMap concepts={concepts} isHi={isHi} />
             </div>
 
             {/* ── 5. QUIZ HISTORY ── */}
             <div style={{ marginBottom: 20 }}>
-              <div style={sectionHeading}>Quiz History</div>
-              <QuizHistory quizzes={quizzes} />
+              <div style={sectionHeading}>{t(isHi, 'Quiz History', 'क्विज़ इतिहास')}</div>
+              <QuizHistory quizzes={quizzes} isHi={isHi} />
             </div>
 
             {/* ── 6. INSIGHTS & RECOMMENDATIONS ── */}
             <div style={{ marginBottom: 20 }}>
-              <div style={sectionHeading}>For You</div>
-              <InsightsSection insights={insights} tips={tips} />
+              <div style={sectionHeading}>{t(isHi, 'For You', 'आपके लिए')}</div>
+              <InsightsSection insights={insights} tips={tips} isHi={isHi} />
             </div>
 
             {/* ── 7. PRINT / SHARE ── */}
-            <PrintShareSection studentName={student.name} reportData={report} />
+            <PrintShareSection studentName={student.name} reportData={report} isHi={isHi} />
 
             {/* Footer */}
             <p style={{ textAlign: 'center', fontSize: 11, color: '#94A3B8', margin: '24px 0 8px' }}>
-              Alfanumrik Learning OS | Learning Report | {student.name}, Grade {student.grade}
+              Alfanumrik Learning OS | {t(isHi, 'Learning Report', 'लर्निंग रिपोर्ट')} | {student.name}, {t(isHi, 'Grade', 'कक्षा')} {student.grade}
             </p>
           </>
         )}
