@@ -52,6 +52,9 @@ const MagneticFieldElectric = dynamic(() => import('./MagneticFieldElectric'), {
 const MeterBridgeLab = dynamic(() => import('./MeterBridgeLab'), { ssr: false });
 const ConvexLensLab = dynamic(() => import('./ConvexLensLab'), { ssr: false });
 const PotentiometerLab = dynamic(() => import('./PotentiometerLab'), { ssr: false });
+const MitosisLab = dynamic(() => import('./MitosisLab'), { ssr: false });
+const PunnettSquareLab = dynamic(() => import('./PunnettSquareLab'), { ssr: false });
+const DNAReplicationLab = dynamic(() => import('./DNAReplicationLab'), { ssr: false });
 
 export const BUILT_IN_SIMULATIONS: BuiltInSimulation[] = [
   {
@@ -543,5 +546,47 @@ export const BUILT_IN_SIMULATIONS: BuiltInSimulation[] = [
     conceptTags: ['Potentiometer', 'EMF', 'Balance Length', 'Null Method', 'Galvanometer', 'Current Electricity'],
     foxyTip: 'At the balance point, no current flows through the galvanometer — that is why the potentiometer measures true EMF without any internal resistance drop!',
     component: PotentiometerLab,
+  },
+  {
+    id: 'builtin-mitosis',
+    title: 'Mitosis — Onion Root Tip',
+    description: 'Watch a cell divide through all stages of mitosis! See chromosomes condense, align, and separate with animated transitions. Click any stage for detailed CBSE descriptions.',
+    subject: 'biology',
+    grade: ['11'],
+    thumbnailEmoji: '\uD83E\uDDEC',
+    difficulty: 2,
+    bloomLevel: 'understand',
+    estimatedTimeMinutes: 10,
+    conceptTags: ['Mitosis', 'Cell Division', 'Chromosomes', 'Prophase', 'Metaphase', 'Anaphase', 'Telophase', 'Cytokinesis'],
+    foxyTip: 'Most cells in an onion root tip squash are in interphase — it is the longest phase! Can you spot the rare anaphase cells? They are the shortest phase.',
+    component: MitosisLab,
+  },
+  {
+    id: 'builtin-punnett-square',
+    title: 'Punnett Square — Mendelian Genetics',
+    description: 'Cross pea plants just like Mendel! Select parent genotypes and watch the Punnett square build with animated gametes. See the classic 3:1 and 9:3:3:1 ratios come alive.',
+    subject: 'biology',
+    grade: ['10', '12'],
+    thumbnailEmoji: '\uD83C\uDF31',
+    difficulty: 2,
+    bloomLevel: 'apply',
+    estimatedTimeMinutes: 10,
+    conceptTags: ['Genetics', 'Punnett Square', 'Monohybrid', 'Dihybrid', 'Mendel', 'Phenotype', 'Genotype', 'Heredity'],
+    foxyTip: 'Try Tt x Tt for the classic 3:1 ratio. Then switch to dihybrid with TtRr x TtRr to see 9:3:3:1 — the most asked ratio in board exams!',
+    component: PunnettSquareLab,
+  },
+  {
+    id: 'builtin-dna-replication',
+    title: 'DNA Replication Lab',
+    description: 'Watch DNA replicate step by step! See helicase unwind the helix, DNA polymerase add bases, Okazaki fragments form, and DNA ligase seal the gaps. Colour-coded A-T and G-C base pairs.',
+    subject: 'biology',
+    grade: ['12'],
+    thumbnailEmoji: '\uD83E\uDDEC',
+    difficulty: 3,
+    bloomLevel: 'understand',
+    estimatedTimeMinutes: 12,
+    conceptTags: ['DNA Replication', 'Helicase', 'DNA Polymerase', 'Okazaki Fragments', 'Semi-conservative', 'Base Pairing', 'Molecular Biology'],
+    foxyTip: 'The leading strand is synthesised continuously but the lagging strand needs Okazaki fragments — DNA polymerase can only work 5\' to 3\'! This is a key board exam concept.',
+    component: DNAReplicationLab,
   },
 ];
