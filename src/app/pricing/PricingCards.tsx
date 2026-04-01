@@ -44,7 +44,7 @@ const PLANS: Plan[] = [
       { label: '2 subjects', included: true },
       { label: 'Progress reports', included: true },
       { label: 'Spaced repetition', included: true },
-      { label: 'Interactive labs', included: false },
+      { label: 'STEM Centre', included: false },
     ],
   },
   {
@@ -66,7 +66,7 @@ const PLANS: Plan[] = [
       { label: '4 subjects', included: true },
       { label: 'Progress reports', included: true },
       { label: 'Spaced repetition', included: true },
-      { label: 'Interactive labs', included: true },
+      { label: 'STEM Centre', included: true },
     ],
   },
   {
@@ -88,7 +88,7 @@ const PLANS: Plan[] = [
       { label: 'All subjects', included: true },
       { label: 'Progress reports', included: true },
       { label: 'Spaced repetition', included: true },
-      { label: 'Interactive labs', included: true },
+      { label: 'STEM Centre', included: true },
     ],
   },
   {
@@ -110,7 +110,7 @@ const PLANS: Plan[] = [
       { label: 'All subjects', included: true },
       { label: 'Progress reports', included: true },
       { label: 'Spaced repetition', included: true },
-      { label: 'Interactive labs', included: true },
+      { label: 'STEM Centre', included: true },
     ],
   },
 ];

@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { BUILT_IN_SIMULATIONS, type BuiltInSimulation } from '@/components/simulations/index';
+import GuidedExperiment from '@/components/stem/GuidedExperiment';
+import { getExperimentForSimulation } from '@/components/stem/experiments';
 
 /* ─── Types ─── */
 interface DbSimulation {
@@ -127,7 +129,7 @@ export default function STEMCentrePage() {
               🔬 {isHi ? 'स्टेम सेंटर' : 'STEM Centre'}
             </h1>
             <p className="text-xs text-gray-500">
-              {isHi ? `कक्षा ${grade} — इंटरैक्टिव लैब्स` : `Grade ${grade} — Interactive Labs`}
+              {isHi ? `कक्षा ${grade} — प्रयोग और सिमुलेशन` : `Grade ${grade} — Experiments & Simulations`}
             </p>
           </div>
           <span className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-full font-medium">
@@ -155,63 +157,101 @@ export default function STEMCentrePage() {
         </div>
 
         {/* Active Lab View */}
-        {activeLab && (
-          <section className="mb-6 bg-white rounded-2xl shadow-lg border border-orange-100 overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 bg-orange-50 border-b border-orange-100">
-              <div>
-                <h2 className="font-bold text-gray-900">
-                  {activeLab.type === 'builtin' ? activeLab.sim.title : activeLab.sim.title}
-                </h2>
-                <p className="text-xs text-gray-500">
-                  {activeLab.type === 'db' && activeLab.sim.topic_title
-                    ? `Ch ${activeLab.sim.chapter_number} — ${activeLab.sim.topic_title}`
-                    : activeLab.type === 'builtin'
-                    ? activeLab.sim.conceptTags.slice(0, 3).join(' · ')
-                    : ''}
-                </p>
-              </div>
-              <button
-                onClick={() => { setActiveLab(null); setObservation(''); }}
-                className="px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-sm font-medium hover:bg-red-100 transition"
-              >
-                {isHi ? 'बंद करें' : 'Close Lab'}
-              </button>
-            </div>
+        {activeLab && (() => {
+          const simId = activeLab.type === 'builtin' ? activeLab.sim.id : activeLab.sim.id;
+          const experiment = getExperimentForSimulation(simId, grade);
+          const simNode = activeLab.type === 'builtin' ? (
+            <Suspense fallback={<div className="text-4xl animate-pulse">🔬</div>}>
+              <activeLab.sim.component />
+            </Suspense>
+          ) : activeLab.sim.widget_code ? (
+            <iframe
+              srcDoc={activeLab.sim.widget_code}
+              className="w-full min-h-[400px] border-0 rounded-lg"
+              sandbox="allow-scripts allow-same-origin"
+              title={activeLab.sim.title}
+            />
+          ) : null;
 
-            <div className="p-4">
-              <div className="bg-gray-50 rounded-xl overflow-hidden min-h-[300px] flex items-center justify-center">
-                {activeLab.type === 'builtin' ? (
-                  <Suspense fallback={<div className="text-4xl animate-pulse">🔬</div>}>
-                    <activeLab.sim.component />
-                  </Suspense>
-                ) : activeLab.sim.widget_code ? (
-                  <iframe
-                    srcDoc={activeLab.sim.widget_code}
-                    className="w-full min-h-[400px] border-0 rounded-lg"
-                    sandbox="allow-scripts allow-same-origin"
-                    title={activeLab.sim.title}
-                  />
-                ) : (
-                  <p className="text-gray-400 text-sm">{isHi ? 'सिमुलेशन उपलब्ध नहीं' : 'Simulation not available'}</p>
-                )}
-              </div>
-
-              {/* Observation prompt */}
-              <div className="mt-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  🦊 {isHi ? 'तुमने क्या देखा? लिखो:' : 'What did you observe? Write it down:'}
-                </label>
-                <textarea
-                  value={observation}
-                  onChange={e => setObservation(e.target.value)}
-                  placeholder={isHi ? 'अपना अवलोकन यहाँ लिखें...' : 'Write your observation here...'}
-                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-orange-300 focus:border-orange-400 outline-none resize-none"
-                  rows={2}
+          /* If a guided experiment exists, use the full 6-step flow */
+          if (experiment && simNode) {
+            return (
+              <section className="mb-6">
+                <GuidedExperiment
+                  title={experiment.title}
+                  titleHi={experiment.titleHi}
+                  chapterRef={experiment.chapterRef}
+                  grade={grade}
+                  subject={experiment.subject}
+                  difficulty={experiment.difficulty}
+                  bloomLevel={experiment.bloomLevel}
+                  estimatedMinutes={experiment.estimatedMinutes}
+                  objective={experiment.objective}
+                  objectiveHi={experiment.objectiveHi}
+                  materials={experiment.materials}
+                  simulation={simNode}
+                  observations={experiment.observations}
+                  dataTable={experiment.dataTable}
+                  conclusionPrompt={experiment.conclusionPrompt}
+                  conclusionPromptHi={experiment.conclusionPromptHi}
+                  quizQuestions={experiment.quizQuestions}
+                  onComplete={(result) => {
+                    console.warn('[STEM] Experiment completed:', experiment.id, result);
+                    setActiveLab(null);
+                    setObservation('');
+                  }}
+                  onClose={() => { setActiveLab(null); setObservation(''); }}
                 />
+              </section>
+            );
+          }
+
+          /* Fallback: simple simulation view (no guided experiment defined) */
+          return (
+            <section className="mb-6 bg-white rounded-2xl shadow-lg border border-orange-100 overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 bg-orange-50 border-b border-orange-100">
+                <div>
+                  <h2 className="font-bold text-gray-900">{activeLab.sim.title}</h2>
+                  <p className="text-xs text-gray-500">
+                    {activeLab.type === 'db' && activeLab.sim.topic_title
+                      ? `Ch ${activeLab.sim.chapter_number} — ${activeLab.sim.topic_title}`
+                      : activeLab.type === 'builtin'
+                      ? activeLab.sim.conceptTags.slice(0, 3).join(' · ')
+                      : ''}
+                  </p>
+                </div>
+                <button
+                  onClick={() => { setActiveLab(null); setObservation(''); }}
+                  className="px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-sm font-medium hover:bg-red-100 transition"
+                >
+                  {isHi ? 'बंद करें' : 'Close Lab'}
+                </button>
               </div>
-            </div>
-          </section>
-        )}
+
+              <div className="p-4">
+                <div className="bg-gray-50 rounded-xl overflow-hidden min-h-[300px] flex items-center justify-center">
+                  {simNode || (
+                    <p className="text-gray-400 text-sm">{isHi ? 'सिमुलेशन उपलब्ध नहीं' : 'Simulation not available'}</p>
+                  )}
+                </div>
+
+                {/* Simple observation prompt */}
+                <div className="mt-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    🦊 {isHi ? 'तुमने क्या देखा? लिखो:' : 'What did you observe? Write it down:'}
+                  </label>
+                  <textarea
+                    value={observation}
+                    onChange={e => setObservation(e.target.value)}
+                    placeholder={isHi ? 'अपना अवलोकन यहाँ लिखें...' : 'Write your observation here...'}
+                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-orange-300 focus:border-orange-400 outline-none resize-none"
+                    rows={2}
+                  />
+                </div>
+              </div>
+            </section>
+          );
+        })()}
 
         {/* Loading State */}
         {loading && (
@@ -248,6 +288,7 @@ export default function STEMCentrePage() {
                 bloomLevel={sim.bloomLevel}
                 timeMin={sim.estimatedTimeMinutes}
                 isActive={activeLab?.type === 'builtin' && activeLab.sim.id === sim.id}
+                hasGuided={!!getExperimentForSimulation(sim.id, grade)}
                 isHi={isHi}
                 onStart={() => { setActiveLab({ type: 'builtin', sim }); setObservation(''); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
               />
@@ -277,10 +318,10 @@ export default function STEMCentrePage() {
 
 /* ─── Lab Card Component ─── */
 function LabCard({
-  emoji, title, chapter, difficulty, bloomLevel, timeMin, isActive, isHi, onStart,
+  emoji, title, chapter, difficulty, bloomLevel, timeMin, isActive, hasGuided, isHi, onStart,
 }: {
   emoji: string; title: string; chapter: string; difficulty: number;
-  bloomLevel: string; timeMin: number; isActive: boolean; isHi: boolean;
+  bloomLevel: string; timeMin: number; isActive: boolean; hasGuided?: boolean; isHi: boolean;
   onStart: () => void;
 }) {
   return (
@@ -308,11 +349,16 @@ function LabCard({
           </span>
         </div>
 
+        {hasGuided && (
+          <span className="inline-block mb-2 text-[10px] px-2 py-0.5 rounded-full bg-orange-50 text-orange-600 font-semibold border border-orange-200">
+            {isHi ? 'गाइडेड प्रयोग' : 'Guided Experiment'}
+          </span>
+        )}
         <button
           onClick={onStart}
           className="w-full py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-sm font-semibold transition-colors active:scale-[0.98]"
         >
-          🧪 {isHi ? 'लैब शुरू करें' : 'Start Lab'}
+          🧪 {hasGuided ? (isHi ? 'प्रयोग शुरू करें' : 'Start Experiment') : (isHi ? 'लैब शुरू करें' : 'Start Lab')}
         </button>
       </div>
     </div>
