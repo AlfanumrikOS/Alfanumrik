@@ -4,13 +4,13 @@ import { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { supabase, getSubjects, getFeatureFlags, getNextTopics, generateNotifications } from '@/lib/supabase';
+import { supabase, getSubjects, getFeatureFlags, getNextTopics, generateNotifications, getCmeNextAction } from '@/lib/supabase';
 import { useDashboardData } from '@/lib/swr';
 import { Card, SectionHeader, SubjectChip, StreakBadge, MasteryRing, SheetModal, BottomNav } from '@/components/ui';
 import TrustFooter from '@/components/TrustFooter';
 import { DashboardSkeleton } from '@/components/Skeleton';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
-import type { StudentLearningProfile, Subject, CurriculumTopic } from '@/lib/types';
+import type { StudentLearningProfile, Subject, CurriculumTopic, CmeAction } from '@/lib/types';
 import { SUBJECT_META, GRADE_SUBJECTS } from '@/lib/constants';
 import QuickActions from '@/components/dashboard/QuickActions';
 import DailyChallenge from '@/components/dashboard/DailyChallenge';
@@ -32,6 +32,7 @@ export default function Dashboard() {
   // Static data (loaded once)
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [nextTopics, setNextTopics] = useState<CurriculumTopic[]>([]);
+  const [cmeAction, setCmeAction] = useState<CmeAction | null>(null);
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
   const [showSubjectPicker, setShowSubjectPicker] = useState(false);
   const [greeting, setGreeting] = useState('');
@@ -90,6 +91,16 @@ export default function Dashboard() {
     if (student) { loadStaticData(); refreshSnapshot(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- student?.id is the stable identity; student object reference changes on every render
   }, [student?.id, loadStaticData, refreshSnapshot]);
+
+  // Non-blocking CME recommendation — fire-and-forget, updates when ready
+  useEffect(() => {
+    if (!student?.id || !student.preferred_subject || !student.grade) return;
+    let cancelled = false;
+    getCmeNextAction(student.id, student.preferred_subject, student.grade)
+      .then((action) => { if (!cancelled && action) setCmeAction(action); })
+      .catch(() => {}); // silently ignore — best-effort
+    return () => { cancelled = true; };
+  }, [student?.id, student?.preferred_subject, student?.grade]);
 
   if (isLoading) return <DashboardSkeleton />;
   if (!student) {
@@ -161,6 +172,7 @@ export default function Dashboard() {
             nextTopics={nextTopics}
             preferredSubject={student.preferred_subject || 'math'}
             streak={streak}
+            cmeAction={cmeAction}
           />
 
           {/* ═══ 3. PROGRESS SNAPSHOT — XP, level, streak, mastered ═══ */}
