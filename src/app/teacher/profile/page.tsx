@@ -7,8 +7,10 @@ import { supabase } from '@/lib/supabase';
 import { SUBJECT_META } from '@/lib/constants';
 import { BottomNav } from '@/components/ui';
 
+const tt = (hi: boolean, en: string, hiText: string) => hi ? hiText : en;
+
 export default function TeacherProfilePage() {
-  const { teacher, isLoggedIn, isLoading: authLoading, activeRole, signOut } = useAuth();
+  const { teacher, isLoggedIn, isLoading: authLoading, activeRole, signOut, isHi } = useAuth();
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState('');
@@ -30,10 +32,10 @@ export default function TeacherProfilePage() {
     const trimmedName = name.trim();
     const trimmedSchool = schoolName.trim();
     if (!trimmedName || trimmedName.length < 2 || trimmedName.length > 100) {
-      setToast('Name must be 2–100 characters'); return;
+      setToast(tt(isHi, 'Name must be 2–100 characters', 'नाम 2–100 अक्षरों का होना चाहिए')); return;
     }
     if (trimmedSchool && trimmedSchool.length > 200) {
-      setToast('School name too long'); return;
+      setToast(tt(isHi, 'School name too long', 'स्कूल का नाम बहुत लंबा है')); return;
     }
     setSaving(true);
     try {
@@ -41,10 +43,10 @@ export default function TeacherProfilePage() {
         name: trimmedName,
         school_name: trimmedSchool,
       }).eq('id', teacher.id);
-      setToast('Profile updated!');
+      setToast(tt(isHi, 'Profile updated!', 'प्रोफ़ाइल अपडेट हो गई!'));
       setEditing(false);
       setTimeout(() => setToast(''), 3000);
-    } catch { setToast('Failed to save'); }
+    } catch { setToast(tt(isHi, 'Failed to save', 'सहेजने में विफल')); }
     setSaving(false);
   };
 
@@ -76,61 +78,61 @@ export default function TeacherProfilePage() {
       <div style={{ padding: '20px' }}>
         {!editing ? (
           <div style={{ background: '#fff', borderRadius: 16, padding: 20, border: '1px solid #e5e7eb' }}>
-            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16, color: '#1a1a1a' }}>Profile Details</div>
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16, color: '#1a1a1a' }}>{tt(isHi, 'Profile Details', 'प्रोफ़ाइल विवरण')}</div>
 
             <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>Name</div>
+              <div style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>{tt(isHi, 'Name', 'नाम')}</div>
               <div style={{ fontSize: 15, color: '#1a1a1a', fontWeight: 500 }}>{teacher?.name || '—'}</div>
             </div>
             <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>School</div>
+              <div style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>{tt(isHi, 'School', 'स्कूल')}</div>
               <div style={{ fontSize: 15, color: '#1a1a1a', fontWeight: 500 }}>{teacher?.school_name || '—'}</div>
             </div>
             <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>Subjects</div>
+              <div style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>{tt(isHi, 'Subjects', 'विषय')}</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {subjectNames.length > 0 ? subjectNames.map((s: string, i: number) => (
                   <span key={i} style={{ fontSize: 12, padding: '4px 10px', borderRadius: 8, background: '#EFF6FF', color: '#2563EB', fontWeight: 500 }}>{s}</span>
-                )) : <span style={{ fontSize: 13, color: '#888' }}>Not set</span>}
+                )) : <span style={{ fontSize: 13, color: '#888' }}>{tt(isHi, 'Not set', 'सेट नहीं')}</span>}
               </div>
             </div>
             <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>Grades</div>
+              <div style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>{tt(isHi, 'Grades', 'कक्षाएँ')}</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {(teacher?.grades_taught || []).length > 0 ? (teacher?.grades_taught || []).map((g: string, i: number) => (
                   <span key={i} style={{ fontSize: 12, padding: '4px 10px', borderRadius: 8, background: '#F0FDF4', color: '#16A34A', fontWeight: 500 }}>Class {g}</span>
-                )) : <span style={{ fontSize: 13, color: '#888' }}>Not set</span>}
+                )) : <span style={{ fontSize: 13, color: '#888' }}>{tt(isHi, 'Not set', 'सेट नहीं')}</span>}
               </div>
             </div>
 
             <button onClick={startEdit} style={{ marginTop: 8, padding: '10px 24px', borderRadius: 10, border: '1.5px solid #2563EB', background: '#fff', color: '#2563EB', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-              Edit Profile
+              {tt(isHi, 'Edit Profile', 'प्रोफ़ाइल संपादित करें')}
             </button>
           </div>
         ) : (
           <div style={{ background: '#fff', borderRadius: 16, padding: 20, border: '1px solid #e5e7eb' }}>
-            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16, color: '#1a1a1a' }}>Edit Profile</div>
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16, color: '#1a1a1a' }}>{tt(isHi, 'Edit Profile', 'प्रोफ़ाइल संपादित करें')}</div>
             <div style={{ marginBottom: 12 }}>
-              <label htmlFor="teacher-name" style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>Name</label>
+              <label htmlFor="teacher-name" style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>{tt(isHi, 'Name', 'नाम')}</label>
               <input id="teacher-name" value={name} onChange={e => setName(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #e0e0e0', fontSize: 14, outline: 'none' }} />
             </div>
             <div style={{ marginBottom: 16 }}>
-              <label htmlFor="teacher-school" style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>School Name</label>
+              <label htmlFor="teacher-school" style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>{tt(isHi, 'School Name', 'स्कूल का नाम')}</label>
               <input id="teacher-school" value={schoolName} onChange={e => setSchoolName(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #e0e0e0', fontSize: 14, outline: 'none' }} />
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={handleSave} disabled={saving} style={{ padding: '10px 24px', borderRadius: 10, border: 'none', background: '#2563EB', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                {saving ? 'Saving...' : 'Save'}
+                {saving ? tt(isHi, 'Saving...', 'सहेज रहे हैं...') : tt(isHi, 'Save', 'सहेजें')}
               </button>
               <button onClick={() => setEditing(false)} style={{ padding: '10px 24px', borderRadius: 10, border: '1.5px solid #e0e0e0', background: '#fff', color: '#555', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                Cancel
+                {tt(isHi, 'Cancel', 'रद्द करें')}
               </button>
             </div>
           </div>
         )}
 
         <button onClick={handleSignOut} style={{ marginTop: 20, width: '100%', padding: '12px', borderRadius: 12, border: '1.5px solid #EF4444', background: '#FEF2F2', color: '#EF4444', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-          Sign Out
+          {tt(isHi, 'Sign Out', 'साइन आउट')}
         </button>
       </div>
       <BottomNav />
