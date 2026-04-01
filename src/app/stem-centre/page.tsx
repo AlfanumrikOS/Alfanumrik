@@ -200,7 +200,7 @@ export default function STEMCentrePage() {
 
         {/* Active Lab View */}
         {activeLab && (() => {
-          const simId = activeLab.type === 'builtin' ? activeLab.sim.id : activeLab.sim.id;
+          const simId = activeLab.sim.id;
           const experiment = getExperimentForSimulation(simId, grade);
           const simNode = activeLab.type === 'builtin' ? (
             <Suspense fallback={<div className="text-4xl animate-pulse">🔬</div>}>
@@ -238,7 +238,6 @@ export default function STEMCentrePage() {
                   conclusionPromptHi={experiment.conclusionPromptHi}
                   quizQuestions={experiment.quizQuestions}
                   onComplete={async (result: ExperimentResult) => {
-                    const simId = activeLab.type === 'builtin' ? activeLab.sim.id : activeLab.sim.id;
                     await saveObservation({
                       type: 'guided',
                       simId,
@@ -300,7 +299,6 @@ export default function STEMCentrePage() {
                   />
                   <button
                     onClick={async () => {
-                      const simId = activeLab!.type === 'builtin' ? activeLab!.sim.id : activeLab!.sim.id;
                       const subj = activeLab!.type === 'builtin'
                         ? (activeLab!.sim as BuiltInSimulation).subject
                         : ((activeLab!.sim as DbSimulation).subject_code || 'science');
