@@ -49,6 +49,9 @@ const AcidBaseIndicator = dynamic(() => import('./AcidBaseIndicator'), { ssr: fa
 const RefractionLab = dynamic(() => import('./RefractionLab'), { ssr: false });
 const RespirationLab = dynamic(() => import('./RespirationLab'), { ssr: false });
 const MagneticFieldElectric = dynamic(() => import('./MagneticFieldElectric'), { ssr: false });
+const MeterBridgeLab = dynamic(() => import('./MeterBridgeLab'), { ssr: false });
+const ConvexLensLab = dynamic(() => import('./ConvexLensLab'), { ssr: false });
+const PotentiometerLab = dynamic(() => import('./PotentiometerLab'), { ssr: false });
 
 export const BUILT_IN_SIMULATIONS: BuiltInSimulation[] = [
   {
