@@ -31,6 +31,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Security audit: only high/critical vulns fail.
+      # TODO: Set continue-on-error to false once `npm audit` passes clean
+      # with --audit-level=high (i.e., all high/critical vulns are resolved).
+      - name: Security audit
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
       - name: Lint
         run: npm run lint
 
