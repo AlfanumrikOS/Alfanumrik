@@ -142,6 +142,175 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
+
+    // Handle bulk "create-set" action — creates student, teacher, and parent demo accounts
+    if (body.action === 'create-set') {
+      const config = getSupabaseConfig();
+      if (!config) {
+        return NextResponse.json({ success: false, error: 'Server configuration error' }, { status: 500 });
+      }
+
+      const timestamp = Date.now();
+      const demoSet = [
+        { role: 'student', name: 'Demo Student', email: `demo.student.${timestamp}@alfanumrik.demo`, persona: 'average' },
+        { role: 'teacher', name: 'Demo Teacher', email: `demo.teacher.${timestamp}@alfanumrik.demo`, persona: 'average' },
+        { role: 'parent', name: 'Demo Parent', email: `demo.parent.${timestamp}@alfanumrik.demo`, persona: 'average' },
+      ];
+
+      const results = [];
+
+      for (const item of demoSet) {
+        const password = generatePassword();
+        const table = roleToTable(item.role);
+
+        // 1. Create auth user
+        const createUserRes = await fetch(`${config.url}/auth/v1/admin/users`, {
+          method: 'POST',
+          headers: {
+            'apikey': config.key,
+            'Authorization': `Bearer ${config.key}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            email: item.email,
+            password,
+            email_confirm: true,
+            user_metadata: { name: item.name, role: item.role, is_demo_account: true, persona: item.persona },
+          }),
+        });
+
+        if (!createUserRes.ok) continue;
+        const authUser = await createUserRes.json();
+        const authUserId = authUser.id;
+
+        // 2. Build profile data
+        const profileData: Record<string, unknown> = {
+          auth_user_id: authUserId,
+          name: item.name,
+          email: item.email,
+          is_active: true,
+          is_demo_user: true,
+        };
+
+        if (item.role === 'student') {
+          profileData.grade = 'Grade 10';
+          profileData.board = 'CBSE';
+          profileData.subscription_plan = 'unlimited';
+          profileData.account_status = 'demo';
+          profileData.xp_total = 0;
+          profileData.streak_days = 0;
+          profileData.preferred_language = 'en';
+          profileData.preferred_subject = 'Mathematics';
+        } else if (item.role === 'teacher') {
+          profileData.school_name = 'Demo School - Delhi Public School';
+          profileData.subjects_taught = ['Mathematics', 'Science'];
+          profileData.grades_taught = ['Grade 10', 'Grade 11', 'Grade 12'];
+          profileData.board = 'CBSE';
+          profileData.preferred_language = 'en';
+          profileData.is_verified = true;
+          profileData.onboarding_completed = true;
+        } else {
+          profileData.phone = '+919876543210';
+          profileData.relationship = 'parent';
+          profileData.preferred_language = 'en';
+          profileData.onboarding_completed = true;
+        }
+
+        // 3. Create profile
+        const profileRes = await fetch(supabaseAdminUrl(table), {
+          method: 'POST',
+          headers: supabaseAdminHeaders('return=representation'),
+          body: JSON.stringify(profileData),
+        });
+
+        if (!profileRes.ok) {
+          // Clean up auth user on failure
+          await fetch(`${config.url}/auth/v1/admin/users/${authUserId}`, {
+            method: 'DELETE',
+            headers: { 'apikey': config.key, 'Authorization': `Bearer ${config.key}` },
+          });
+          continue;
+        }
+
+        const profileRows = await profileRes.json();
+        const profileId = Array.isArray(profileRows) && profileRows.length > 0 ? profileRows[0].id : null;
+
+        // 4. Auto-link parent to the first active demo student
+        let studentInviteCode: string | null = null;
+        if (item.role === 'parent' && profileId) {
+          const demoStudentRes = await fetch(
+            supabaseAdminUrl('students', 'select=id,invite_code,name&is_demo_user=eq.true&is_active=eq.true&limit=1'),
+            { method: 'GET', headers: supabaseAdminHeaders() }
+          );
+          if (demoStudentRes.ok) {
+            const demoStudents = await demoStudentRes.json();
+            if (Array.isArray(demoStudents) && demoStudents.length > 0) {
+              const demoStudent = demoStudents[0];
+              studentInviteCode = demoStudent.invite_code;
+              await fetch(supabaseAdminUrl('guardian_student_links'), {
+                method: 'POST',
+                headers: supabaseAdminHeaders('return=minimal'),
+                body: JSON.stringify({
+                  guardian_id: profileId,
+                  student_id: demoStudent.id,
+                  status: 'active',
+                  permission_level: 'view',
+                  is_verified: true,
+                  linked_at: new Date().toISOString(),
+                  initiated_by: 'admin',
+                  approved_by: 'admin',
+                  approved_at: new Date().toISOString(),
+                }),
+              });
+            }
+          }
+        }
+
+        // 5. Create demo_accounts record
+        const demoAccountRes = await fetch(supabaseAdminUrl('demo_accounts'), {
+          method: 'POST',
+          headers: supabaseAdminHeaders('return=representation'),
+          body: JSON.stringify({
+            auth_user_id: authUserId,
+            role: item.role,
+            persona: item.persona,
+            display_name: item.name,
+            email: item.email,
+            is_active: true,
+          }),
+        });
+
+        const demoAccountRows = demoAccountRes.ok ? await demoAccountRes.json() : [];
+        const demoAccountId = Array.isArray(demoAccountRows) && demoAccountRows.length > 0 ? demoAccountRows[0].id : null;
+
+        // 6. Seed demo data for student accounts
+        if (demoAccountId && item.role === 'student') {
+          await seedDemoData(authUserId, item.role, item.persona, demoAccountId);
+        }
+
+        results.push({
+          demo_account_id: demoAccountId,
+          profile_id: profileId,
+          auth_user_id: authUserId,
+          email: item.email,
+          password,
+          name: item.name,
+          role: item.role,
+          persona: item.persona,
+          ...(item.role === 'parent' && studentInviteCode ? {
+            student_invite_code: studentInviteCode,
+            login_instructions: 'Parent portal uses link code, not email/password. Go to /parent and enter the student invite code.',
+          } : {}),
+        });
+      }
+
+      // Audit log
+      const ipAddress = request.headers.get('x-forwarded-for') || undefined;
+      await logAdminAudit(auth, 'create_demo_set', 'demo_accounts', 'bulk', { count: results.length }, ipAddress);
+
+      return NextResponse.json({ success: true, data: results });
+    }
+
     const { role, persona, name, email } = body as {
       role?: string;
       persona?: string;
@@ -374,6 +543,53 @@ export async function PUT(request: NextRequest) {
 
   try {
     const body = await request.json();
+
+    // Handle bulk "reset-all" action — resets all active demo accounts
+    if (body.action === 'reset-all') {
+      const config = getSupabaseConfig();
+      if (!config) {
+        return NextResponse.json({ success: false, error: 'Server configuration error' }, { status: 500 });
+      }
+
+      // Fetch all active demo accounts
+      const allRes = await fetch(
+        supabaseAdminUrl('demo_accounts', 'select=id,role,persona,auth_user_id&is_active=eq.true'),
+        { method: 'GET', headers: supabaseAdminHeaders() }
+      );
+
+      if (!allRes.ok) {
+        return NextResponse.json({ success: false, error: 'Failed to fetch demo accounts' }, { status: 500 });
+      }
+
+      const allAccounts = await allRes.json();
+      const resetResults = [];
+
+      for (const account of (allAccounts || [])) {
+        // Call reset RPC for each account
+        const rpcRes = await fetch(`${config.url}/rest/v1/rpc/reset_demo_account`, {
+          method: 'POST',
+          headers: supabaseAdminHeaders('return=representation'),
+          body: JSON.stringify({ p_demo_account_id: account.id }),
+        });
+
+        // Clear old seed data
+        await fetch(
+          supabaseAdminUrl('demo_seed_data', `demo_account_id=eq.${account.id}`),
+          { method: 'DELETE', headers: supabaseAdminHeaders('return=minimal') }
+        );
+
+        // Re-seed with existing persona
+        await seedDemoData(account.auth_user_id, account.role, account.persona || 'average', account.id);
+
+        resetResults.push({ id: account.id, role: account.role, reset: rpcRes.ok });
+      }
+
+      const ipAddress = request.headers.get('x-forwarded-for') || undefined;
+      await logAdminAudit(auth, 'reset_all_demo_accounts', 'demo_accounts', 'bulk', { count: resetResults.length }, ipAddress);
+
+      return NextResponse.json({ success: true, data: { reset_count: resetResults.length, results: resetResults } });
+    }
+
     const { id, action } = body as { id?: string; action?: string };
 
     if (!id || !isValidUUID(id)) {
