@@ -95,12 +95,19 @@ export function useReviewCards(studentId: string | undefined, limit = 20) {
   );
 }
 
-/* ── Leaderboard ── */
+/* ── Leaderboard (via CDN-cached API route, not direct Supabase) ── */
 export function useLeaderboard(period = 'weekly', limit = 50) {
   return useSWR(
     `leaderboard/${period}/${limit}`,
-    () => getLeaderboard(period, limit),
-    { ...DEFAULT_CONFIG, refreshInterval: 300000 } // Refresh every 5 min — leaderboard is same data for all users
+    async () => {
+      // Use server API route with CDN caching (s-maxage=60) instead of direct
+      // Supabase query. At 50K users this reduces DB load from 10K req/min to 1/min.
+      const res = await fetch(`/api/v1/leaderboard?period=${period}&limit=${limit}`);
+      if (!res.ok) throw new Error('Leaderboard fetch failed');
+      const json = await res.json();
+      return json.data ?? [];
+    },
+    { ...DEFAULT_CONFIG, refreshInterval: 300000 } // 5 min client polling + 60s CDN cache
   );
 }
 
