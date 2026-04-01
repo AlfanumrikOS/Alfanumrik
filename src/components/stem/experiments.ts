@@ -1,12 +1,15 @@
 /**
  * STEM Centre — Guided Experiment Definitions
- * CBSE-aligned experiments that wrap built-in simulations with structured observations,
- * data recording, and viva quizzes.
  *
- * Owner: frontend (content accuracy reviewed by assessment)
+ * Each experiment wraps a built-in simulation (or a future DB simulation)
+ * with structured observations, data recording, and viva-style quiz questions.
+ *
+ * Grade format: string "6"–"12" (Product Invariant P5).
+ * Hindi translations are manual, not machine-translated.
  */
 
 /* ─── Types ─── */
+
 export interface ObservationDef {
   prompt: string;
   promptHi: string;
@@ -25,11 +28,11 @@ export interface VivaQuestion {
 
 export interface ExperimentDefinition {
   id: string;
-  simulationId: string;
+  simulationId: string; // matches BuiltInSimulation.id or DB sim ID
   title: string;
   titleHi: string;
   chapterRef: string;
-  grades: string[];
+  grades: string[]; // e.g., ["8", "9", "10"]
   subject: string;
   difficulty: number;
   bloomLevel: string;
@@ -45,384 +48,604 @@ export interface ExperimentDefinition {
 }
 
 /* ─── Experiment Definitions ─── */
+
 export const GUIDED_EXPERIMENTS: ExperimentDefinition[] = [
   /* ──────────── 1. Ohm's Law ──────────── */
   {
     id: 'exp-ohms-law',
     simulationId: 'builtin-ohms-law',
-    title: "Ohm's Law — V = IR",
-    titleHi: 'ओम का नियम — V = IR',
-    chapterRef: 'Ch 12: Electricity',
+    title: "Ohm's Law: Voltage, Current & Resistance",
+    titleHi: 'ओम का नियम: वोल्टेज, धारा और प्रतिरोध',
+    chapterRef: 'Class 10 Science Ch 12 — Electricity',
     grades: ['10', '11', '12'],
     subject: 'physics',
     difficulty: 2,
     bloomLevel: 'apply',
-    estimatedMinutes: 12,
+    estimatedMinutes: 15,
     objective:
-      'Verify Ohm\'s Law by varying voltage and resistance in a circuit, recording current values, and plotting V-I characteristics.',
+      "Verify Ohm's Law by varying voltage across a fixed resistor and measuring current. Establish the linear relationship V = IR and plot the V-I graph.",
     objectiveHi:
-      'परिपथ में वोल्टेज और प्रतिरोध बदलकर ओम के नियम की पुष्टि करें, धारा के मान रिकॉर्ड करें और V-I ग्राफ़ बनाएं।',
-    materials: ['Ammeter', 'Voltmeter', 'Resistor (fixed)', 'Battery', 'Connecting wires'],
+      'एक निश्चित प्रतिरोध पर वोल्टेज बदलकर धारा मापें और ओम के नियम V = IR को सत्यापित करें। V-I ग्राफ़ बनाएँ।',
+    materials: [
+      'Ammeter',
+      'Voltmeter',
+      'Rheostat',
+      'Resistor (known value)',
+      'Battery / Power supply',
+      'Connecting wires',
+      'Key (switch)',
+    ],
     observations: [
       {
-        prompt: 'What happens to current when you increase voltage (keeping resistance fixed)?',
-        promptHi: 'जब आप वोल्टेज बढ़ाते हैं (प्रतिरोध स्थिर रखते हुए) तो धारा पर क्या प्रभाव पड़ता है?',
+        prompt:
+          'What happens to current when you increase voltage while keeping resistance constant?',
+        promptHi:
+          'जब प्रतिरोध स्थिर रखते हुए वोल्टेज बढ़ाते हैं तो धारा पर क्या प्रभाव पड़ता है?',
         type: 'select',
-        options: ['Current increases', 'Current decreases', 'Current stays same'],
-        expectedHint: 'Current is directly proportional to voltage (I = V/R)',
+        options: [
+          'Current increases',
+          'Current decreases',
+          'Current stays the same',
+          'Current becomes zero',
+        ],
+        expectedHint:
+          'Current increases proportionally with voltage (V = IR).',
       },
       {
-        prompt: 'What happens to current when you increase resistance (keeping voltage fixed)?',
-        promptHi: 'जब आप प्रतिरोध बढ़ाते हैं (वोल्टेज स्थिर रखते हुए) तो धारा पर क्या प्रभाव पड़ता है?',
-        type: 'select',
-        options: ['Current increases', 'Current decreases', 'Current stays same'],
-        expectedHint: 'Current is inversely proportional to resistance (I = V/R)',
-      },
-      {
-        prompt: 'Write the relationship you observe between V, I, and R.',
-        promptHi: 'V, I और R के बीच जो संबंध आपने देखा, वह लिखें।',
+        prompt:
+          'What is the mathematical relationship between V and I for a fixed resistance?',
+        promptHi:
+          'निश्चित प्रतिरोध के लिए V और I के बीच गणितीय संबंध क्या है?',
         type: 'text',
-        expectedHint: 'V = I × R (Ohm\'s Law)',
+        expectedHint:
+          'V = IR, i.e., voltage is directly proportional to current.',
+      },
+      {
+        prompt:
+          'If you double the resistance while keeping voltage constant, what happens to the current?',
+        promptHi:
+          'यदि वोल्टेज स्थिर रखते हुए प्रतिरोध दोगुना कर दें तो धारा पर क्या प्रभाव होगा?',
+        type: 'select',
+        options: [
+          'Current doubles',
+          'Current halves',
+          'Current stays the same',
+          'Current becomes zero',
+        ],
+        expectedHint: 'Current becomes half (I = V/R).',
+      },
+      {
+        prompt:
+          'Record the slope of the V-I graph. What does it represent?',
+        promptHi:
+          'V-I ग्राफ़ का ढलान (slope) नोट करें। यह किसे दर्शाता है?',
+        type: 'text',
+        expectedHint: 'The slope of V vs I graph equals the resistance (R).',
       },
     ],
     dataTable: {
-      columns: ['Voltage (V)', 'Resistance (Ω)', 'Current (A)', 'V/I ratio'],
+      columns: [
+        'S.No.',
+        'Voltage (V)',
+        'Current (A)',
+        'Resistance R = V/I (Ω)',
+      ],
       rows: 5,
     },
     conclusionPrompt:
-      'Based on your data, state Ohm\'s Law in your own words. Is the V-I relationship linear? What does the slope represent?',
+      "Based on your observations and the data table, state Ohm's Law in your own words. Was the V-I graph a straight line? What does the slope represent?",
     conclusionPromptHi:
-      'अपने डेटा के आधार पर ओम का नियम अपने शब्दों में लिखें। क्या V-I संबंध रैखिक है? ढलान क्या दर्शाती है?',
+      'अपने प्रेक्षणों और डेटा तालिका के आधार पर ओम का नियम अपने शब्दों में लिखें। क्या V-I ग्राफ़ एक सरल रेखा था? ढलान क्या दर्शाता है?',
     quizQuestions: [
       {
-        question: 'If V = 12V and R = 4Ω, what is the current?',
-        questionHi: 'यदि V = 12V और R = 4Ω है, तो धारा कितनी होगी?',
-        options: ['2 A', '3 A', '4 A', '48 A'],
+        question:
+          'A resistor of 5 Ω is connected to a 10 V battery. What is the current flowing through it?',
+        questionHi:
+          '5 Ω का प्रतिरोध 10 V की बैटरी से जुड़ा है। इसमें प्रवाहित धारा कितनी होगी?',
+        options: ['0.5 A', '2 A', '50 A', '15 A'],
         correctIndex: 1,
-        explanation: 'I = V/R = 12/4 = 3 A',
+        explanation: "Using Ohm's Law: I = V/R = 10/5 = 2 A.",
       },
       {
         question: 'The V-I graph for an ohmic conductor is:',
-        questionHi: 'ओमीय चालक के लिए V-I ग्राफ़ होता है:',
-        options: ['A straight line through origin', 'A curve', 'A horizontal line', 'A vertical line'],
+        questionHi: 'ओमीय चालक का V-I ग्राफ़ होता है:',
+        options: [
+          'A straight line passing through the origin',
+          'A curve',
+          'A horizontal line',
+          'A vertical line',
+        ],
         correctIndex: 0,
-        explanation: 'For an ohmic conductor, V is directly proportional to I, giving a straight line through the origin. The slope equals resistance.',
+        explanation:
+          'For an ohmic conductor, V is directly proportional to I, giving a straight line through the origin with slope = R.',
       },
       {
-        question: 'Doubling the resistance while keeping voltage constant will:',
-        questionHi: 'वोल्टेज स्थिर रखते हुए प्रतिरोध दोगुना करने पर:',
-        options: ['Double the current', 'Halve the current', 'No change in current', 'Quadruple the current'],
+        question:
+          'If the resistance in a circuit is doubled and voltage is kept the same, the current will:',
+        questionHi:
+          'यदि परिपथ में प्रतिरोध दोगुना कर दिया जाए और वोल्टेज वही रहे, तो धारा:',
+        options: ['Double', 'Become half', 'Remain the same', 'Become zero'],
         correctIndex: 1,
-        explanation: 'I = V/R. If R doubles, I becomes half (inversely proportional).',
+        explanation: 'I = V/R. If R doubles, I becomes half.',
       },
     ],
   },
 
-  /* ──────────── 2. pH Scale ──────────── */
+  /* ──────────── 2. Photosynthesis ──────────── */
+  {
+    id: 'exp-photosynthesis',
+    simulationId: 'builtin-photosynthesis',
+    title: 'Photosynthesis: Light, CO\u2082 and Glucose',
+    titleHi: 'प्रकाश संश्लेषण: प्रकाश, CO\u2082 और ग्लूकोज़',
+    chapterRef:
+      'Class 7 Science Ch 1 — Nutrition in Plants / Class 10 Science Ch 6 — Life Processes',
+    grades: ['7', '8', '9', '10'],
+    subject: 'biology',
+    difficulty: 2,
+    bloomLevel: 'understand',
+    estimatedMinutes: 12,
+    objective:
+      'Explore how light intensity, CO\u2082 concentration, and water availability affect the rate of photosynthesis and glucose production.',
+    objectiveHi:
+      'जानें कि प्रकाश की तीव्रता, CO\u2082 की सांद्रता और जल की उपलब्धता प्रकाश संश्लेषण की दर और ग्लूकोज़ उत्पादन को कैसे प्रभावित करती है।',
+    materials: [
+      'Hydrilla plant (aquatic)',
+      'Beaker with water',
+      'Funnel',
+      'Test tube',
+      'Sodium bicarbonate (NaHCO\u2083)',
+      'Light source',
+    ],
+    observations: [
+      {
+        prompt:
+          'Which input — light, CO\u2082, or water — increases glucose production the most when doubled?',
+        promptHi:
+          'कौन सा कारक — प्रकाश, CO\u2082 या जल — दोगुना करने पर ग्लूकोज़ उत्पादन सबसे अधिक बढ़ाता है?',
+        type: 'select',
+        options: ['Light', 'CO\u2082', 'Water', 'All equally'],
+        expectedHint:
+          'Light is typically the limiting factor at normal CO\u2082 levels.',
+      },
+      {
+        prompt:
+          'What happens to glucose output when light is removed completely?',
+        promptHi:
+          'जब प्रकाश पूरी तरह हटा दिया जाए तो ग्लूकोज़ उत्पादन पर क्या प्रभाव होता है?',
+        type: 'select',
+        options: [
+          'Glucose production stops',
+          'Glucose production continues at half rate',
+          'Glucose increases',
+          'No effect',
+        ],
+        expectedHint:
+          'Photosynthesis requires light energy; without it, the light reactions cannot occur.',
+      },
+      {
+        prompt:
+          'What gas is released as a byproduct? How can you test for it?',
+        promptHi:
+          'उपोत्पाद के रूप में कौन सी गैस निकलती है? इसकी जाँच कैसे करेंगे?',
+        type: 'text',
+        expectedHint:
+          'Oxygen (O\u2082) is released. It can be tested with a glowing splint which relights.',
+      },
+      {
+        prompt:
+          'Write the balanced chemical equation for photosynthesis.',
+        promptHi:
+          'प्रकाश संश्लेषण का संतुलित रासायनिक समीकरण लिखें।',
+        type: 'text',
+        expectedHint:
+          '6CO\u2082 + 6H\u2082O \u2192 C\u2086H\u2081\u2082O\u2086 + 6O\u2082 (in the presence of sunlight and chlorophyll).',
+      },
+    ],
+    conclusionPrompt:
+      'Summarise which factors affect the rate of photosynthesis and explain why light is often the limiting factor in nature.',
+    conclusionPromptHi:
+      'संक्षेप में बताएँ कि कौन से कारक प्रकाश संश्लेषण की दर को प्रभावित करते हैं और प्रकृति में प्रकाश अक्सर सीमाकारी कारक क्यों होता है।',
+    quizQuestions: [
+      {
+        question:
+          'The correct balanced equation for photosynthesis is:',
+        questionHi:
+          'प्रकाश संश्लेषण का सही संतुलित समीकरण है:',
+        options: [
+          '6CO\u2082 + 6H\u2082O \u2192 C\u2086H\u2081\u2082O\u2086 + 6O\u2082',
+          'C\u2086H\u2081\u2082O\u2086 + 6O\u2082 \u2192 6CO\u2082 + 6H\u2082O',
+          'CO\u2082 + H\u2082O \u2192 CH\u2082O + O\u2082',
+          '6CO\u2082 + 6H\u2082O \u2192 C\u2086H\u2081\u2082O\u2086 + 12O\u2082',
+        ],
+        correctIndex: 0,
+        explanation:
+          '6CO\u2082 + 6H\u2082O \u2192 C\u2086H\u2081\u2082O\u2086 + 6O\u2082 is the standard simplified equation used in CBSE.',
+      },
+      {
+        question:
+          'Which pigment in leaves absorbs sunlight for photosynthesis?',
+        questionHi:
+          'पत्तियों में कौन सा वर्णक प्रकाश संश्लेषण के लिए सूर्य का प्रकाश अवशोषित करता है?',
+        options: ['Haemoglobin', 'Chlorophyll', 'Melanin', 'Carotene'],
+        correctIndex: 1,
+        explanation:
+          'Chlorophyll (found in chloroplasts) absorbs mainly red and blue light, reflecting green.',
+      },
+      {
+        question:
+          'Photosynthesis occurs in which part of the plant cell?',
+        questionHi:
+          'प्रकाश संश्लेषण पादप कोशिका के किस भाग में होता है?',
+        options: ['Mitochondria', 'Chloroplast', 'Nucleus', 'Ribosome'],
+        correctIndex: 1,
+        explanation:
+          'Chloroplasts contain chlorophyll and are the site of photosynthesis. Mitochondria are for cellular respiration.',
+      },
+    ],
+  },
+
+  /* ──────────── 3. Acid-Base pH Scale ──────────── */
   {
     id: 'exp-ph-scale',
     simulationId: 'builtin-ph-scale',
     title: 'Acids, Bases & the pH Scale',
-    titleHi: 'अम्ल, क्षार और pH स्केल',
-    chapterRef: 'Ch 2: Acids, Bases and Salts',
+    titleHi: 'अम्ल, क्षार और pH पैमाना',
+    chapterRef: 'Class 10 Science Ch 2 — Acids, Bases and Salts',
     grades: ['7', '8', '9', '10'],
     subject: 'chemistry',
     difficulty: 1,
     bloomLevel: 'understand',
-    estimatedMinutes: 10,
+    estimatedMinutes: 12,
     objective:
-      'Classify common substances as acidic, basic, or neutral using the pH scale, and observe indicator colour changes.',
+      'Classify common substances as acidic, basic, or neutral using the pH scale. Observe indicator colour changes and understand neutralisation.',
     objectiveHi:
-      'pH स्केल का उपयोग करके सामान्य पदार्थों को अम्लीय, क्षारीय या उदासीन के रूप में वर्गीकृत करें और सूचक के रंग परिवर्तन देखें।',
+      'pH पैमाने का उपयोग करके सामान्य पदार्थों को अम्लीय, क्षारीय या उदासीन के रूप में वर्गीकृत करें। सूचक के रंग परिवर्तन और उदासीनीकरण को समझें।',
+    materials: [
+      'pH paper / Universal indicator',
+      'Test tubes',
+      'Dropper',
+      'Dilute HCl',
+      'Dilute NaOH',
+      'Lemon juice',
+      'Baking soda solution',
+      'Distilled water',
+    ],
     observations: [
       {
-        prompt: 'What is the pH of lemon juice? Is it acidic or basic?',
-        promptHi: 'नींबू के रस का pH कितना है? क्या यह अम्लीय है या क्षारीय?',
+        prompt:
+          'What colour does the indicator show at pH 1 (strong acid) vs pH 14 (strong base)?',
+        promptHi:
+          'pH 1 (प्रबल अम्ल) और pH 14 (प्रबल क्षार) पर सूचक किस रंग का दिखता है?',
         type: 'text',
-        expectedHint: 'pH around 2 — strongly acidic',
+        expectedHint: 'pH 1 \u2192 red; pH 14 \u2192 dark blue/violet.',
       },
       {
-        prompt: 'What pH value is considered neutral?',
-        promptHi: 'कौन सा pH मान उदासीन माना जाता है?',
+        prompt: 'What is the pH of a neutral substance?',
+        promptHi: 'उदासीन पदार्थ का pH कितना होता है?',
         type: 'number',
-        expectedHint: 'pH 7 is neutral (pure water)',
+        expectedHint: 'pH 7 is neutral (pure water).',
       },
       {
-        prompt: 'What colour does litmus paper turn in an acid?',
-        promptHi: 'अम्ल में लिटमस पत्र किस रंग का हो जाता है?',
+        prompt:
+          'Arrange these in order of increasing pH: lemon juice, blood, stomach acid, soap solution.',
+        promptHi:
+          'इन्हें बढ़ते pH के क्रम में लिखें: नींबू का रस, रक्त, पेट का अम्ल, साबुन का घोल।',
+        type: 'text',
+        expectedHint:
+          'Stomach acid (~1.5) < Lemon juice (~2.5) < Blood (~7.4) < Soap solution (~9\u201310).',
+      },
+      {
+        prompt:
+          'What happens to pH when you add a base to an acidic solution gradually?',
+        promptHi:
+          'जब अम्लीय विलयन में धीरे-धीरे क्षार मिलाया जाता है तो pH पर क्या प्रभाव पड़ता है?',
         type: 'select',
-        options: ['Red', 'Blue', 'Green', 'No change'],
-        expectedHint: 'Blue litmus turns red in acid',
+        options: [
+          'pH increases',
+          'pH decreases',
+          'pH stays the same',
+          'pH oscillates',
+        ],
+        expectedHint:
+          'pH increases as the solution becomes less acidic, passes through 7 (neutralisation), then becomes basic.',
       },
     ],
     dataTable: {
-      columns: ['Substance', 'pH Value', 'Acidic / Basic / Neutral', 'Indicator Colour'],
-      rows: 5,
+      columns: [
+        'S.No.',
+        'Solution',
+        'pH Value',
+        'Indicator Colour',
+        'Acidic / Basic / Neutral',
+      ],
+      rows: 4,
     },
     conclusionPrompt:
-      'Summarise the pH ranges for acids, bases, and neutral substances. Why is pH important in daily life?',
+      'Explain what the pH scale measures. Why is it important that our blood maintains a pH close to 7.4?',
     conclusionPromptHi:
-      'अम्ल, क्षार और उदासीन पदार्थों की pH सीमा का सारांश लिखें। दैनिक जीवन में pH क्यों महत्वपूर्ण है?',
+      'बताएँ कि pH पैमाना क्या मापता है। हमारे रक्त का pH 7.4 के आसपास बना रहना क्यों ज़रूरी है?',
     quizQuestions: [
       {
-        question: 'Which pH range indicates a strong acid?',
-        questionHi: 'कौन सी pH सीमा प्रबल अम्ल दर्शाती है?',
-        options: ['0–3', '5–7', '7–9', '11–14'],
-        correctIndex: 0,
-        explanation: 'pH 0-3 indicates strong acids. Lower pH = stronger acid.',
+        question: 'Which of the following has the lowest pH?',
+        questionHi: 'निम्नलिखित में से किसका pH सबसे कम है?',
+        options: [
+          'Pure water',
+          'Lemon juice',
+          'Blood',
+          'Baking soda solution',
+        ],
+        correctIndex: 1,
+        explanation:
+          'Lemon juice has a pH of about 2.5, which is the most acidic option listed.',
       },
       {
-        question: 'What is the pH of pure water?',
-        questionHi: 'शुद्ध पानी का pH कितना होता है?',
-        options: ['0', '5', '7', '14'],
+        question: 'A solution with pH = 7 is:',
+        questionHi: 'pH = 7 वाला विलयन होता है:',
+        options: [
+          'Strongly acidic',
+          'Weakly acidic',
+          'Neutral',
+          'Strongly basic',
+        ],
         correctIndex: 2,
-        explanation: 'Pure water is neutral with pH = 7.',
+        explanation:
+          'pH 7 is neutral \u2014 neither acidic nor basic. Pure water at 25\u00b0C has pH 7.',
       },
       {
-        question: 'Baking soda (sodium bicarbonate) is:',
-        questionHi: 'बेकिंग सोडा (सोडियम बाइकार्बोनेट) है:',
-        options: ['Strongly acidic', 'Weakly acidic', 'Neutral', 'Mildly basic'],
-        correctIndex: 3,
-        explanation: 'Baking soda has pH ~8.3, making it mildly basic (alkaline).',
+        question:
+          'When an acid reacts with a base, the reaction is called:',
+        questionHi:
+          'जब अम्ल क्षार से अभिक्रिया करता है, तो इस अभिक्रिया को कहते हैं:',
+        options: [
+          'Oxidation',
+          'Neutralisation',
+          'Decomposition',
+          'Displacement',
+        ],
+        correctIndex: 1,
+        explanation:
+          'Acid + Base \u2192 Salt + Water. This is a neutralisation reaction.',
       },
     ],
   },
 
-  /* ──────────── 3. Linear Equations ──────────── */
+  /* ──────────── 4. Linear Equations: y = mx + c ──────────── */
   {
-    id: 'exp-linear-graph',
+    id: 'exp-linear-equations',
     simulationId: 'builtin-linear-graph',
-    title: 'Linear Equations — y = mx + c',
-    titleHi: 'रैखिक समीकरण — y = mx + c',
-    chapterRef: 'Ch 4: Linear Equations in Two Variables',
+    title: 'Linear Equations: Slope & Intercept',
+    titleHi: 'रैखिक समीकरण: ढलान और अंतःखंड',
+    chapterRef: 'Class 9 Maths Ch 4 — Linear Equations in Two Variables',
     grades: ['8', '9', '10'],
     subject: 'math',
     difficulty: 1,
     bloomLevel: 'understand',
-    estimatedMinutes: 10,
+    estimatedMinutes: 12,
     objective:
-      'Explore how slope (m) and y-intercept (c) affect the graph of a linear equation. Compare parallel and intersecting lines.',
+      'Explore how the slope (m) and y-intercept (c) control the graph of y = mx + c. Understand what parallel and perpendicular lines look like.',
     objectiveHi:
-      'ढलान (m) और y-अंतःखंड (c) रैखिक समीकरण के ग्राफ़ को कैसे प्रभावित करते हैं, यह जानें। समानांतर और प्रतिच्छेदी रेखाओं की तुलना करें।',
+      'जानें कि ढलान (m) और y-अंतःखंड (c) रैखिक समीकरण y = mx + c के ग्राफ़ को कैसे नियंत्रित करते हैं। समांतर और लम्बवत रेखाओं को पहचानें।',
     observations: [
       {
-        prompt: 'What does "m" (slope) control in the graph?',
-        promptHi: '"m" (ढलान) ग्राफ़ में क्या नियंत्रित करता है?',
+        prompt:
+          'What does the value of m (slope) control in the graph?',
+        promptHi:
+          'ग्राफ़ में m (ढलान) का मान किसे नियंत्रित करता है?',
         type: 'select',
-        options: ['Steepness / angle of line', 'Where line crosses y-axis', 'Length of line', 'Colour of line'],
-        expectedHint: 'm controls the steepness — larger |m| = steeper line',
+        options: [
+          'Steepness and direction of the line',
+          'Where the line crosses the y-axis',
+          'The length of the line',
+          'The colour of the line',
+        ],
+        expectedHint:
+          'm controls how steep the line is and whether it goes up (positive) or down (negative).',
       },
       {
-        prompt: 'What does "c" (y-intercept) control?',
-        promptHi: '"c" (y-अंतःखंड) क्या नियंत्रित करता है?',
+        prompt: 'What does the value of c (y-intercept) control?',
+        promptHi: 'c (y-अंतःखंड) का मान किसे नियंत्रित करता है?',
         type: 'select',
-        options: ['Steepness of line', 'Where line crosses y-axis', 'Where line crosses x-axis', 'Line thickness'],
-        expectedHint: 'c shifts the line up/down — it\'s where the line crosses the y-axis',
+        options: [
+          'Steepness of the line',
+          'Where the line crosses the y-axis',
+          'Where the line crosses the x-axis',
+          'The slope of the line',
+        ],
+        expectedHint:
+          "c tells you where the line crosses the y-axis (the point (0, c)).",
       },
       {
-        prompt: 'Set two lines with the same slope but different intercepts. What do you observe?',
-        promptHi: 'दो रेखाओं को एक ही ढलान लेकिन अलग-अलग अंतःखंड से सेट करें। आप क्या देखते हैं?',
+        prompt:
+          'Set m = 0. What kind of line do you get? What is its equation?',
+        promptHi:
+          'm = 0 रखें। कैसी रेखा बनती है? इसका समीकरण क्या है?',
         type: 'text',
-        expectedHint: 'Lines with same slope are parallel — they never meet!',
+        expectedHint: 'A horizontal line: y = c.',
+      },
+      {
+        prompt:
+          'Graph y = 2x + 1 and y = 2x \u2212 3. What do you notice about these two lines?',
+        promptHi:
+          'y = 2x + 1 और y = 2x \u2212 3 का ग्राफ़ बनाएँ। इन दोनों रेखाओं में क्या समानता है?',
+        type: 'text',
+        expectedHint:
+          'They are parallel \u2014 same slope (m = 2) but different y-intercepts.',
       },
     ],
     conclusionPrompt:
-      'Explain in your own words what slope and y-intercept mean. When are two lines parallel? When do they intersect?',
+      'Explain in your own words how m and c together determine the position and direction of a straight line on the coordinate plane.',
     conclusionPromptHi:
-      'अपने शब्दों में बताएं कि ढलान और y-अंतःखंड का क्या अर्थ है। दो रेखाएं कब समानांतर होती हैं? कब प्रतिच्छेद करती हैं?',
+      'अपने शब्दों में बताएँ कि m और c मिलकर निर्देशांक तल पर सरल रेखा की स्थिति और दिशा कैसे निर्धारित करते हैं।',
     quizQuestions: [
       {
-        question: 'What is the slope of the line y = 3x + 5?',
-        questionHi: 'रेखा y = 3x + 5 का ढलान क्या है?',
-        options: ['5', '3', '8', '15'],
+        question: 'What is the slope of the line y = \u22123x + 5?',
+        questionHi: 'रेखा y = \u22123x + 5 का ढलान (slope) कितना है?',
+        options: ['5', '\u22123', '3', '\u22125'],
         correctIndex: 1,
-        explanation: 'In y = mx + c, m is the slope. Here m = 3.',
+        explanation:
+          'In y = mx + c, the coefficient of x is the slope. Here m = \u22123.',
       },
       {
-        question: 'Two lines y = 2x + 1 and y = 2x - 3 are:',
-        questionHi: 'दो रेखाएं y = 2x + 1 और y = 2x - 3 हैं:',
-        options: ['Intersecting', 'Parallel', 'Perpendicular', 'Same line'],
+        question:
+          'Two lines y = 4x + 1 and y = 4x \u2212 7 are:',
+        questionHi:
+          'दो रेखाएँ y = 4x + 1 और y = 4x \u2212 7 हैं:',
+        options: [
+          'Perpendicular',
+          'Parallel',
+          'Intersecting at origin',
+          'The same line',
+        ],
         correctIndex: 1,
-        explanation: 'Both have slope m = 2 but different intercepts, so they are parallel.',
+        explanation:
+          'Both lines have the same slope (m = 4) but different intercepts, so they are parallel and never intersect.',
       },
       {
-        question: 'The y-intercept of y = -4x + 7 is:',
-        questionHi: 'y = -4x + 7 का y-अंतःखंड है:',
-        options: ['-4', '4', '7', '-7'],
-        correctIndex: 2,
-        explanation: 'The y-intercept is the value of c in y = mx + c. Here c = 7, so the line crosses the y-axis at (0, 7).',
+        question:
+          'The y-intercept of the line y = 7x \u2212 2 is:',
+        questionHi:
+          'रेखा y = 7x \u2212 2 का y-अंतःखंड है:',
+        options: ['7', '\u22122', '2', '\u22127'],
+        correctIndex: 1,
+        explanation:
+          'The y-intercept is the value of c in y = mx + c. Here c = \u22122, meaning the line crosses the y-axis at (0, \u22122).',
       },
     ],
   },
 
-  /* ──────────── 4. Newton's Laws ──────────── */
+  /* ──────────── 5. Human Heart & Double Circulation ──────────── */
   {
-    id: 'exp-newton-laws',
-    simulationId: 'builtin-newton-laws',
-    title: "Newton's Second Law — F = ma",
-    titleHi: 'न्यूटन का दूसरा नियम — F = ma',
-    chapterRef: 'Ch 9: Force and Laws of Motion',
-    grades: ['9', '10', '11'],
-    subject: 'physics',
+    id: 'exp-human-heart',
+    simulationId: 'builtin-human-heart',
+    title: 'The Human Heart & Double Circulation',
+    titleHi: 'मानव हृदय और दोहरा परिसंचरण',
+    chapterRef: 'Class 10 Science Ch 6 — Life Processes',
+    grades: ['10', '11', '12'],
+    subject: 'biology',
     difficulty: 2,
-    bloomLevel: 'apply',
-    estimatedMinutes: 12,
+    bloomLevel: 'understand',
+    estimatedMinutes: 15,
     objective:
-      'Investigate how force and mass affect acceleration. Verify F = ma by collecting data and observing free body diagrams.',
+      'Trace the path of blood through the four chambers of the heart. Understand why humans have double circulation (pulmonary + systemic) and the role of valves.',
     objectiveHi:
-      'जांचें कि बल और द्रव्यमान त्वरण को कैसे प्रभावित करते हैं। डेटा एकत्र करके और मुक्त पिंड आरेख देखकर F = ma की पुष्टि करें।',
-    materials: ['Block', 'Spring balance (force meter)', 'Surface with adjustable friction'],
+      'हृदय के चार कक्षों से होकर रक्त के मार्ग का पता लगाएँ। समझें कि मनुष्यों में दोहरा परिसंचरण (फुफ्फुसीय + दैहिक) क्यों होता है और वाल्वों की भूमिका क्या है।',
+    materials: [
+      'Heart model or chart',
+      'Colour pencils (red and blue)',
+      'Diagram sheet',
+    ],
     observations: [
       {
-        prompt: 'Double the force with the same mass. What happens to acceleration?',
-        promptHi: 'समान द्रव्यमान के साथ बल दोगुना करें। त्वरण पर क्या प्रभाव पड़ता है?',
-        type: 'select',
-        options: ['Acceleration doubles', 'Acceleration halves', 'No change', 'Acceleration quadruples'],
-        expectedHint: 'a = F/m — doubling F doubles a',
-      },
-      {
-        prompt: 'Double the mass with the same force. What happens to acceleration?',
-        promptHi: 'समान बल के साथ द्रव्यमान दोगुना करें। त्वरण पर क्या प्रभाव पड़ता है?',
-        type: 'select',
-        options: ['Acceleration doubles', 'Acceleration halves', 'No change', 'Acceleration quadruples'],
-        expectedHint: 'a = F/m — doubling m halves a',
-      },
-      {
-        prompt: 'What effect does friction have on the net force?',
-        promptHi: 'घर्षण का नेट बल पर क्या प्रभाव होता है?',
+        prompt:
+          'Trace the complete path of blood starting from the right atrium. List the four chambers in order.',
+        promptHi:
+          'दाएँ आलिंद से शुरू करते हुए रक्त का पूरा मार्ग बताएँ। चारों कक्षों को क्रम में लिखें।',
         type: 'text',
-        expectedHint: 'Friction opposes motion, reducing net force and hence acceleration',
+        expectedHint:
+          'Right atrium \u2192 Right ventricle \u2192 Lungs (oxygenation) \u2192 Left atrium \u2192 Left ventricle \u2192 Body.',
+      },
+      {
+        prompt: 'Which chamber pumps blood to the lungs?',
+        promptHi: 'कौन सा कक्ष फेफड़ों को रक्त भेजता है?',
+        type: 'select',
+        options: [
+          'Right atrium',
+          'Right ventricle',
+          'Left atrium',
+          'Left ventricle',
+        ],
+        expectedHint:
+          'The right ventricle pumps deoxygenated blood to the lungs via the pulmonary artery.',
+      },
+      {
+        prompt:
+          'Why is the wall of the left ventricle thicker than the right ventricle?',
+        promptHi:
+          'बाएँ निलय की दीवार दाएँ निलय से मोटी क्यों होती है?',
+        type: 'text',
+        expectedHint:
+          'The left ventricle pumps blood to the entire body (systemic circulation), requiring more force than pumping to the nearby lungs.',
+      },
+      {
+        prompt: 'What is the function of valves in the heart?',
+        promptHi: 'हृदय में वाल्वों (कपाटों) का क्या कार्य है?',
+        type: 'text',
+        expectedHint:
+          'Valves prevent the backflow of blood, ensuring one-directional flow through the heart.',
       },
     ],
-    dataTable: {
-      columns: ['Force (N)', 'Mass (kg)', 'Acceleration (m/s²)', 'F/a ratio'],
-      rows: 5,
-    },
     conclusionPrompt:
-      'State Newton\'s Second Law. How does the F/a ratio compare to mass in your data table?',
+      'Explain why double circulation is necessary in mammals. What advantage does separating oxygenated and deoxygenated blood provide?',
     conclusionPromptHi:
-      'न्यूटन का दूसरा नियम लिखें। आपकी डेटा तालिका में F/a अनुपात की तुलना द्रव्यमान से कैसे होती है?',
+      'स्तनधारियों में दोहरा परिसंचरण क्यों आवश्यक है? ऑक्सीजनयुक्त और ऑक्सीजनरहित रक्त को अलग रखने से क्या लाभ है, समझाएँ।',
     quizQuestions: [
       {
-        question: 'A 5 kg block is pushed with 20 N force. What is its acceleration?',
-        questionHi: '5 kg के ब्लॉक पर 20 N का बल लगाया जाता है। इसका त्वरण कितना होगा?',
-        options: ['2 m/s²', '4 m/s²', '100 m/s²', '0.25 m/s²'],
+        question:
+          'Which blood vessel carries oxygenated blood from the lungs to the heart?',
+        questionHi:
+          'कौन सी रक्त वाहिका फेफड़ों से ऑक्सीजनयुक्त रक्त हृदय तक ले जाती है?',
+        options: [
+          'Pulmonary artery',
+          'Pulmonary vein',
+          'Aorta',
+          'Vena cava',
+        ],
         correctIndex: 1,
-        explanation: 'a = F/m = 20/5 = 4 m/s²',
+        explanation:
+          'The pulmonary vein carries oxygenated blood from the lungs to the left atrium. This is the only vein that carries oxygenated blood.',
       },
       {
-        question: 'Newton\'s First Law is also called:',
-        questionHi: 'न्यूटन के प्रथम नियम को यह भी कहते हैं:',
-        options: ['Law of acceleration', 'Law of inertia', 'Law of action-reaction', 'Law of gravitation'],
+        question:
+          'Double circulation means blood passes through the heart ___ time(s) in one complete cycle.',
+        questionHi:
+          'दोहरे परिसंचरण का अर्थ है कि एक पूर्ण चक्र में रक्त हृदय से ___ बार गुज़रता है।',
+        options: ['One', 'Two', 'Three', 'Four'],
         correctIndex: 1,
-        explanation: 'Newton\'s First Law states that a body continues in its state of rest or uniform motion unless acted upon by an external force — this is the Law of Inertia.',
+        explanation:
+          'In double circulation, blood passes through the heart twice: once for pulmonary circulation (heart \u2192 lungs \u2192 heart) and once for systemic circulation (heart \u2192 body \u2192 heart).',
       },
       {
-        question: 'If F = ma, then the SI unit of force is:',
-        questionHi: 'यदि F = ma है, तो बल का SI मात्रक है:',
-        options: ['kg', 'm/s²', 'Newton (kg·m/s²)', 'Joule'],
-        correctIndex: 2,
-        explanation: 'Force = mass × acceleration. SI unit: kg × m/s² = Newton (N).',
-      },
-    ],
-  },
-
-  /* ──────────── 5. Pendulum — Period & Gravity ──────────── */
-  {
-    id: 'exp-pendulum',
-    simulationId: 'builtin-pendulum',
-    title: 'Simple Pendulum — What Controls the Period?',
-    titleHi: 'सरल लोलक — आवर्तकाल किससे नियंत्रित होता है?',
-    chapterRef: 'Ch 11: Sound (Oscillations)',
-    grades: ['9', '10', '11'],
-    subject: 'physics',
-    difficulty: 2,
-    bloomLevel: 'analyze',
-    estimatedMinutes: 12,
-    objective:
-      'Determine which factors (length, mass, angle, gravity) affect the time period of a simple pendulum by systematic experimentation.',
-    objectiveHi:
-      'व्यवस्थित प्रयोग द्वारा ज्ञात करें कि कौन से कारक (लंबाई, द्रव्यमान, कोण, गुरुत्व) सरल लोलक के आवर्तकाल को प्रभावित करते हैं।',
-    materials: ['Pendulum bob', 'String (variable length)', 'Stopwatch', 'Protractor'],
-    observations: [
-      {
-        prompt: 'Change only the length. Does the period increase or decrease with longer string?',
-        promptHi: 'केवल लंबाई बदलें। लंबी डोरी से आवर्तकाल बढ़ता है या घटता है?',
-        type: 'select',
-        options: ['Period increases', 'Period decreases', 'No change'],
-        expectedHint: 'T = 2π√(L/g) — longer L → longer period',
-      },
-      {
-        prompt: 'Change only the angle (small angles). Does the period change?',
-        promptHi: 'केवल कोण बदलें (छोटे कोणों पर)। क्या आवर्तकाल बदलता है?',
-        type: 'select',
-        options: ['Period increases a lot', 'Period decreases a lot', 'Almost no change for small angles'],
-        expectedHint: 'For small angles (<15°), the period is nearly independent of amplitude',
-      },
-      {
-        prompt: 'Record the period for 3 different lengths (measure 10 swings, divide by 10).',
-        promptHi: '3 अलग-अलग लंबाइयों के लिए आवर्तकाल रिकॉर्ड करें (10 दोलन मापें, 10 से भाग दें)।',
-        type: 'text',
-        expectedHint: 'E.g., L=25cm → T≈1.0s, L=50cm → T≈1.4s, L=100cm → T≈2.0s',
-      },
-    ],
-    dataTable: {
-      columns: ['Length (cm)', 'Time for 10 swings (s)', 'Period T (s)', 'T² (s²)'],
-      rows: 5,
-    },
-    conclusionPrompt:
-      'Plot T² vs L. What shape is the graph? What does this tell you about the relationship between period and length?',
-    conclusionPromptHi:
-      'T² बनाम L का ग्राफ़ बनाएं। ग्राफ़ किस आकार का है? यह आवर्तकाल और लंबाई के संबंध के बारे में क्या बताता है?',
-    quizQuestions: [
-      {
-        question: 'The period of a simple pendulum depends on:',
-        questionHi: 'सरल लोलक का आवर्तकाल किस पर निर्भर करता है?',
-        options: ['Mass of bob', 'Amplitude (small angles)', 'Length and gravity', 'Colour of bob'],
-        correctIndex: 2,
-        explanation: 'T = 2π√(L/g). Period depends only on length and gravitational acceleration, not mass or small-angle amplitude.',
-      },
-      {
-        question: 'If the length is made 4 times longer, the period becomes:',
-        questionHi: 'यदि लंबाई 4 गुनी कर दी जाए, तो आवर्तकाल हो जाता है:',
-        options: ['4 times', '2 times', '½ times', '16 times'],
+        question:
+          'The muscular wall between the left and right sides of the heart is called the:',
+        questionHi:
+          'हृदय के बाएँ और दाएँ भाग के बीच की मांसपेशीय दीवार को कहते हैं:',
+        options: ['Pericardium', 'Septum', 'Valve', 'Ventricle'],
         correctIndex: 1,
-        explanation: 'T ∝ √L. If L becomes 4L, T becomes √4 = 2 times the original period.',
-      },
-      {
-        question: 'On the Moon (g = 1.6 m/s²), a pendulum\'s period will:',
-        questionHi: 'चंद्रमा पर (g = 1.6 m/s²), लोलक का आवर्तकाल:',
-        options: ['Decrease', 'Stay the same', 'Increase', 'Become zero'],
-        correctIndex: 2,
-        explanation: 'T = 2π√(L/g). Lower g → larger T. The pendulum swings slower on the Moon.',
+        explanation:
+          'The septum is the thick muscular wall that separates the left and right halves of the heart, preventing mixing of oxygenated and deoxygenated blood.',
       },
     ],
   },
 ];
 
-/* ─── Helper ─── */
+/* ─── Helpers ─── */
 
 /**
  * Find a guided experiment definition matching a simulation ID and grade.
- * Returns undefined if no experiment exists for that sim+grade combo.
+ * If no exact grade match exists, returns the first experiment for that simulation.
+ * Returns undefined if no experiment exists for the simulation.
  */
 export function getExperimentForSimulation(
-  simulationId: string,
-  grade: string
+  simId: string,
+  grade: string,
 ): ExperimentDefinition | undefined {
-  return GUIDED_EXPERIMENTS.find(
-    exp => exp.simulationId === simulationId && exp.grades.includes(grade)
+  const matches = GUIDED_EXPERIMENTS.filter(
+    (exp) => exp.simulationId === simId,
   );
+  if (matches.length === 0) return undefined;
+
+  const gradeMatch = matches.find((exp) => exp.grades.includes(grade));
+  return gradeMatch ?? matches[0];
 }
 
 /**
- * Get all experiments available for a specific grade and (optionally) subject.
+ * Get all experiments available for a specific grade and optionally a subject.
  */
 export function getExperimentsForGrade(
   grade: string,
-  subject?: string
+  subject?: string,
 ): ExperimentDefinition[] {
-  return GUIDED_EXPERIMENTS.filter(exp => {
+  return GUIDED_EXPERIMENTS.filter((exp) => {
     if (!exp.grades.includes(grade)) return false;
     if (subject && subject !== 'all' && exp.subject !== subject) return false;
     return true;
