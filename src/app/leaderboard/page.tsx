@@ -320,9 +320,9 @@ export default function LeaderboardPage() {
             ) : competitions.length === 0 ? (
               <div className="text-center py-12">
                 <div className="text-5xl mb-4">🎯</div>
-                <h3 className="text-lg font-bold mb-2">{isHi ? 'जल्द आ रहा है!' : 'Coming Soon!'}</h3>
+                <h3 className="text-lg font-bold mb-2">{isHi ? 'अभी कोई प्रतियोगिता नहीं' : 'No competitions right now'}</h3>
                 <p className="text-sm text-[var(--text-3)] max-w-xs mx-auto">
-                  {isHi ? 'ओलंपियाड और प्रतियोगिताएँ जल्द शुरू होंगी।' : 'Olympiads and competitions are starting soon.'}
+                  {isHi ? 'प्रैक्टिस करते रहो — जब प्रतियोगिताएँ शुरू होंगी तो यहाँ दिखाई देंगी।' : 'Keep practicing — competitions will be announced here when they go live.'}
                 </p>
               </div>
             ) : (

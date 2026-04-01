@@ -63,7 +63,7 @@ export default function ParentProfilePage() {
       </div>
 
       {toast && (
-        <div role="alert" style={{ margin: '16px 20px 0', padding: '10px 16px', borderRadius: 10, background: '#D1FAE5', color: '#059669', fontSize: 13, fontWeight: 600, textAlign: 'center' }}>
+        <div role="alert" style={{ margin: '16px 20px 0', padding: '10px 16px', borderRadius: 10, background: toast.includes('Failed') || toast.includes('must be') || toast.includes('valid') ? '#FEE2E2' : '#D1FAE5', color: toast.includes('Failed') || toast.includes('must be') || toast.includes('valid') ? '#DC2626' : '#059669', fontSize: 13, fontWeight: 600, textAlign: 'center' }}>
           {toast}
         </div>
       )}

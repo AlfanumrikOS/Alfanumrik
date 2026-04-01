@@ -45,25 +45,36 @@ export default function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   const router = useRouter();
   const [step, setStep] = useState(0);
   const [selectedGoal, setSelectedGoal] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(false);
 
   const gradeKey = (student?.grade || '9').replace('Grade ', '').trim();
   const gradeSubjects = GRADE_SUBJECTS[gradeKey] || GRADE_SUBJECTS['9'];
 
   const saveAndFinish = async (route: string) => {
     if (!student) return;
-    // Save onboarding response
-    if (selectedGoal) {
-      await supabase.from('onboarding_responses').insert({
-        student_id: student.id,
-        question_type: 'academic_goal',
-        response_value: selectedGoal,
-      }).then(() => {});
+    setSaving(true);
+    setSaveError(false);
+    try {
+      // Save onboarding response (non-blocking — goal is optional data)
+      if (selectedGoal) {
+        await supabase.from('onboarding_responses').insert({
+          student_id: student.id,
+          question_type: 'academic_goal',
+          response_value: selectedGoal,
+        }).then(() => {});
+      }
+      // Mark onboarding complete
+      const { error } = await supabase.from('students').update({ onboarding_completed: true }).eq('id', student.id);
+      if (error) throw error;
+      if (typeof window !== 'undefined') localStorage.setItem('alfanumrik_onboarded', 'true');
+      onComplete();
+      router.push(route);
+    } catch (e) {
+      console.error('Onboarding save error:', e);
+      setSaveError(true);
+      setSaving(false);
     }
-    // Mark onboarding complete
-    await supabase.from('students').update({ onboarding_completed: true }).eq('id', student.id);
-    if (typeof window !== 'undefined') localStorage.setItem('alfanumrik_onboarded', 'true');
-    onComplete();
-    router.push(route);
   };
 
   const firstName = student?.name?.split(' ')[0] || '';
@@ -131,6 +142,12 @@ export default function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
             >
               {isHi ? 'आगे बढ़ो' : 'Continue'}
             </Button>
+            <button
+              onClick={() => setStep(0)}
+              className="w-full mt-3 text-sm text-[var(--text-3)] py-2 transition-colors"
+            >
+              {isHi ? '← वापस जाओ' : '← Go back'}
+            </button>
           </div>
         )}
 
@@ -147,14 +164,30 @@ export default function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
                 : "Take a quick quiz so I know where you stand. Or just start talking to me!"}
             </p>
 
+            {saveError && (
+              <div className="mt-4 p-3 rounded-xl text-center" style={{ background: 'rgba(220,38,38,0.06)', border: '1px solid rgba(220,38,38,0.15)' }}>
+                <p className="text-xs text-[#DC2626] font-medium">
+                  {isHi ? 'कुछ गलत हो गया। फिर से कोशिश करो।' : 'Something went wrong. Please try again.'}
+                </p>
+              </div>
+            )}
+
             <div className="mt-6 space-y-3">
-              <Button variant="primary" size="lg" fullWidth onClick={() => saveAndFinish('/quiz')}>
-                ⚡ {isHi ? 'पहला क्विज़ लो' : 'Take First Quiz'}
+              <Button variant="primary" size="lg" fullWidth onClick={() => saveAndFinish('/quiz')} disabled={saving}>
+                {saving ? (isHi ? 'सेव हो रहा...' : 'Saving...') : (
+                  <>{isHi ? '⚡ पहला क्विज़ लो' : '⚡ Take First Quiz'}</>
+                )}
               </Button>
-              <Button variant="ghost" size="md" fullWidth onClick={() => saveAndFinish('/foxy')}>
-                🦊 {isHi ? 'Foxy से बात करो' : 'Talk to Foxy'}
+              <Button variant="ghost" size="md" fullWidth onClick={() => saveAndFinish('/foxy')} disabled={saving}>
+                {isHi ? '🦊 Foxy से बात करो' : '🦊 Talk to Foxy'}
               </Button>
             </div>
+            <button
+              onClick={() => setStep(1)}
+              className="w-full mt-3 text-sm text-[var(--text-3)] py-2 transition-colors"
+            >
+              {isHi ? '← वापस जाओ' : '← Go back'}
+            </button>
           </div>
         )}
       </div>
