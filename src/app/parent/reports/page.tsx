@@ -11,6 +11,8 @@ const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const SESSION_KEY = 'alfanumrik_parent_session';
 const SESSION_TTL_MS = 4 * 60 * 60 * 1000;
 
+const t = (isHi: boolean, en: string, hi: string) => isHi ? hi : en;
+
 // ============================================================
 // SESSION HELPERS (mirrors parent/page.tsx)
 // ============================================================
@@ -165,13 +167,13 @@ function getMasteryColor(level: string): string {
   }
 }
 
-function getMasteryLabel(level: string): string {
+function getMasteryLabel(level: string, isHi = false): string {
   switch (level) {
-    case 'mastered': return 'Mastered';
-    case 'proficient': return 'Proficient';
-    case 'familiar': return 'Familiar';
-    case 'developing': return 'Developing';
-    default: return 'Not Started';
+    case 'mastered': return t(isHi, 'Mastered', 'माहिर');
+    case 'proficient': return t(isHi, 'Proficient', 'कुशल');
+    case 'familiar': return t(isHi, 'Familiar', 'परिचित');
+    case 'developing': return t(isHi, 'Developing', 'विकासशील');
+    default: return t(isHi, 'Not Started', 'शुरू नहीं हुआ');
   }
 }
 
@@ -189,7 +191,8 @@ function formatTime(seconds: number): string {
   return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
 }
 
-const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const dayNamesEn = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const dayNamesHi = ['रवि', 'सोम', 'मंगल', 'बुध', 'गुरु', 'शुक्र', 'शनि'];
 
 // ============================================================
 // STYLES
@@ -243,7 +246,7 @@ const emptyText: React.CSSProperties = {
 // ============================================================
 function SummaryCard({ icon, label, value, sub, ringColor }: {
   icon: string; label: string; value: string; sub?: string; ringColor?: string;
-}) {
+  }) {
   return (
     <div style={{
       backgroundColor: '#FFFFFF',
@@ -273,7 +276,7 @@ function SummaryCard({ icon, label, value, sub, ringColor }: {
 // ============================================================
 // SUBJECT PERFORMANCE CARD
 // ============================================================
-function SubjectCard({ subject }: { subject: SubjectData }) {
+function SubjectCard({ subject, isHi = false }: { subject: SubjectData; isHi?: boolean }) {
   const mastery = subject.mastery ?? 0;
   const barColor = mastery >= 80 ? '#16A34A' : mastery >= 50 ? '#D97706' : '#EF4444';
   const subjectColors: Record<string, string> = {
@@ -300,7 +303,7 @@ function SubjectCard({ subject }: { subject: SubjectData }) {
             backgroundColor: `${getScoreColor(subject.recentScore)}15`,
             padding: '3px 10px', borderRadius: 20,
           }}>
-            Last quiz: {subject.recentScore}%
+            {t(isHi, 'Last quiz', 'पिछली क्विज़')}: {subject.recentScore}%
           </span>
         )}
       </div>
@@ -308,7 +311,7 @@ function SubjectCard({ subject }: { subject: SubjectData }) {
       {/* Mastery bar */}
       <div style={{ marginBottom: 10 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-          <span style={{ fontSize: 12, color: '#64748B' }}>Mastery</span>
+          <span style={{ fontSize: 12, color: '#64748B' }}>{t(isHi, 'Mastery', 'महारत')}</span>
           <span style={{ fontSize: 13, fontWeight: 700, color: barColor }}>{mastery}%</span>
         </div>
         <div style={{ height: 10, backgroundColor: '#F1F5F9', borderRadius: 5, overflow: 'hidden' }}>
@@ -319,19 +322,19 @@ function SubjectCard({ subject }: { subject: SubjectData }) {
       {/* Topics count */}
       {subject.topicsMastered != null && subject.totalTopics != null && (
         <div style={{ fontSize: 13, color: '#475569', marginBottom: 8 }}>
-          {subject.topicsMastered} of {subject.totalTopics} topics mastered
+          {t(isHi, `${subject.topicsMastered} of ${subject.totalTopics} topics mastered`, `${subject.totalTopics} में से ${subject.topicsMastered} विषय पूरे`)}
         </div>
       )}
 
       {/* Strong / Weak topics */}
       {subject.strongTopics && subject.strongTopics.length > 0 && (
         <div style={{ fontSize: 13, color: '#16A34A', marginBottom: 4 }}>
-          Strong in: {subject.strongTopics.join(', ')}
+          {t(isHi, 'Strong in', 'मजबूत')}: {subject.strongTopics.join(', ')}
         </div>
       )}
       {subject.weakTopics && subject.weakTopics.length > 0 && (
         <div style={{ fontSize: 13, color: '#D97706' }}>
-          Needs practice: {subject.weakTopics.join(', ')}
+          {t(isHi, 'Needs practice', 'अभ्यास चाहिए')}: {subject.weakTopics.join(', ')}
         </div>
       )}
     </div>
@@ -341,10 +344,11 @@ function SubjectCard({ subject }: { subject: SubjectData }) {
 // ============================================================
 // WEEKLY ACTIVITY TIMELINE
 // ============================================================
-function WeeklyTimeline({ days, mostActiveDay }: { days: DayActivity[]; mostActiveDay?: string }) {
+function WeeklyTimeline({ days, mostActiveDay, isHi = false }: { days: DayActivity[]; mostActiveDay?: string; isHi?: boolean }) {
+  const dayNames = isHi ? dayNamesHi : dayNamesEn;
   return (
     <div style={cardStyle}>
-      <h3 style={cardTitle}>Weekly Activity Timeline</h3>
+      <h3 style={cardTitle}>{t(isHi, 'Weekly Activity Timeline', 'साप्ताहिक गतिविधि')}</h3>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6 }}>
         {days.map((day: DayActivity, i: number) => {
           const active = day.quizzes > 0 || day.xp > 0;
@@ -363,14 +367,14 @@ function WeeklyTimeline({ days, mostActiveDay }: { days: DayActivity[]; mostActi
               {active ? (
                 <>
                   <div style={{ fontSize: 16, fontWeight: 800, color: '#1E293B' }}>{day.quizzes}</div>
-                  <div style={{ fontSize: 10, color: '#64748B' }}>quizzes</div>
+                  <div style={{ fontSize: 10, color: '#64748B' }}>{t(isHi, 'quizzes', 'क्विज़')}</div>
                   {day.studyTime != null && (
                     <div style={{ fontSize: 10, color: '#64748B', marginTop: 2 }}>{formatTime(day.studyTime)}</div>
                   )}
                   <div style={{ fontSize: 10, color: '#F59E0B', fontWeight: 600, marginTop: 3 }}>+{day.xp} XP</div>
                 </>
               ) : (
-                <div style={{ fontSize: 10, color: '#CBD5E1', marginTop: 8 }}>Rest day</div>
+                <div style={{ fontSize: 10, color: '#CBD5E1', marginTop: 8 }}>{t(isHi, 'Rest day', 'आराम का दिन')}</div>
               )}
             </div>
           );
@@ -378,7 +382,7 @@ function WeeklyTimeline({ days, mostActiveDay }: { days: DayActivity[]; mostActi
       </div>
       {mostActiveDay && (
         <div style={{ fontSize: 13, color: '#16A34A', marginTop: 12, textAlign: 'center', fontWeight: 600 }}>
-          Your child was most active on {mostActiveDay}!
+          {t(isHi, `Your child was most active on ${mostActiveDay}!`, `आपका बच्चा ${mostActiveDay} को सबसे ज़्यादा सक्रिय था!`)}
         </div>
       )}
     </div>
@@ -388,12 +392,12 @@ function WeeklyTimeline({ days, mostActiveDay }: { days: DayActivity[]; mostActi
 // ============================================================
 // CONCEPT MASTERY MAP
 // ============================================================
-function ConceptMasteryMap({ concepts }: { concepts: ConceptItem[] }) {
+function ConceptMasteryMap({ concepts, isHi = false }: { concepts: ConceptItem[]; isHi?: boolean }) {
   if (!concepts || concepts.length === 0) {
     return (
       <div style={cardStyle}>
-        <h3 style={cardTitle}>Concept Mastery Map</h3>
-        <p style={emptyText}>Your child hasn&apos;t started exploring concepts yet. Encourage them to take a few quizzes to see their mastery map grow!</p>
+        <h3 style={cardTitle}>{t(isHi, 'Concept Mastery Map', 'अवधारणा महारत मानचित्र')}</h3>
+        <p style={emptyText}>{t(isHi, "Your child hasn't started exploring concepts yet. Encourage them to take a few quizzes to see their mastery map grow!", 'आपके बच्चे ने अभी तक अवधारणाएँ नहीं शुरू की हैं। उन्हें कुछ क्विज़ लेने के लिए प्रोत्साहित करें!')}</p>
       </div>
     );
   }
@@ -408,16 +412,16 @@ function ConceptMasteryMap({ concepts }: { concepts: ConceptItem[] }) {
 
   return (
     <div style={cardStyle}>
-      <h3 style={cardTitle}>Concept Mastery Map</h3>
+      <h3 style={cardTitle}>{t(isHi, 'Concept Mastery Map', 'अवधारणा महारत मानचित्र')}</h3>
 
       {/* Legend */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>
         {[
-          { label: 'Mastered', color: '#16A34A' },
-          { label: 'Proficient', color: '#7C3AED' },
-          { label: 'Familiar', color: '#2563EB' },
-          { label: 'Developing', color: '#D97706' },
-          { label: 'Not Started', color: '#CBD5E1' },
+          { label: t(isHi, 'Mastered', 'माहिर'), color: '#16A34A' },
+          { label: t(isHi, 'Proficient', 'कुशल'), color: '#7C3AED' },
+          { label: t(isHi, 'Familiar', 'परिचित'), color: '#2563EB' },
+          { label: t(isHi, 'Developing', 'विकासशील'), color: '#D97706' },
+          { label: t(isHi, 'Not Started', 'शुरू नहीं हुआ'), color: '#CBD5E1' },
         ].map(l => (
           <div key={l.label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <div style={{ width: 12, height: 12, borderRadius: 3, backgroundColor: l.color }} />
@@ -442,7 +446,7 @@ function ConceptMasteryMap({ concepts }: { concepts: ConceptItem[] }) {
               }}>
                 {c.name}
                 <span style={{ fontSize: 10, opacity: 0.7, marginLeft: 4 }}>
-                  {getMasteryLabel(c.level)}
+                  {getMasteryLabel(c.level, isHi)}
                 </span>
               </div>
             ))}
@@ -456,19 +460,19 @@ function ConceptMasteryMap({ concepts }: { concepts: ConceptItem[] }) {
 // ============================================================
 // QUIZ HISTORY
 // ============================================================
-function QuizHistory({ quizzes }: { quizzes: QuizRecord[] }) {
+function QuizHistory({ quizzes, isHi = false }: { quizzes: QuizRecord[]; isHi?: boolean }) {
   if (!quizzes || quizzes.length === 0) {
     return (
       <div style={cardStyle}>
-        <h3 style={cardTitle}>Recent Quiz History</h3>
-        <p style={emptyText}>No quizzes completed yet. When your child takes quizzes, their results will appear here!</p>
+        <h3 style={cardTitle}>{t(isHi, 'Recent Quiz History', 'हाल की क्विज़')}</h3>
+        <p style={emptyText}>{t(isHi, 'No quizzes completed yet. When your child takes quizzes, their results will appear here!', 'अभी तक कोई क्विज़ पूरी नहीं हुई। जब आपका बच्चा क्विज़ देगा, तो परिणाम यहाँ दिखेंगे!')}</p>
       </div>
     );
   }
 
   return (
     <div style={cardStyle}>
-      <h3 style={cardTitle}>Recent Quiz History</h3>
+      <h3 style={cardTitle}>{t(isHi, 'Recent Quiz History', 'हाल की क्विज़')}</h3>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {quizzes.slice(0, 10).map((q: QuizRecord, i: number) => {
           const scoreColor = getScoreColor(q.score ?? 0);
@@ -505,10 +509,10 @@ function QuizHistory({ quizzes }: { quizzes: QuizRecord[] }) {
 // ============================================================
 // INSIGHTS & RECOMMENDATIONS
 // ============================================================
-function InsightsSection({ insights, tips }: { insights: Array<string | InsightItem>; tips: Array<string | TipItem> }) {
+function InsightsSection({ insights, tips, isHi = false }: { insights: Array<string | InsightItem>; tips: Array<string | TipItem>; isHi?: boolean }) {
   return (
     <div style={cardStyle}>
-      <h3 style={cardTitle}>Insights &amp; Recommendations</h3>
+      <h3 style={cardTitle}>{t(isHi, 'Insights & Recommendations', 'जानकारी और सुझाव')}</h3>
 
       {insights && insights.length > 0 ? (
         <div style={{ marginBottom: 16 }}>
@@ -529,13 +533,13 @@ function InsightsSection({ insights, tips }: { insights: Array<string | InsightI
         </div>
       ) : (
         <p style={{ ...emptyText, textAlign: 'left', padding: '0 0 12px' }}>
-          Keep encouraging your child to practice! Insights will appear as they make progress.
+          {t(isHi, 'Keep encouraging your child to practice! Insights will appear as they make progress.', 'अपने बच्चे को अभ्यास के लिए प्रोत्साहित करें! प्रगति के साथ जानकारी यहाँ दिखेगी।')}
         </p>
       )}
 
       {/* How to Help at Home */}
       <div style={{ marginTop: 8 }}>
-        <div style={{ ...sectionHeading, color: '#15803D', fontSize: 13 }}>How to Help at Home</div>
+        <div style={{ ...sectionHeading, color: '#15803D', fontSize: 13 }}>{t(isHi, 'How to Help at Home', 'घर पर कैसे मदद करें')}</div>
         {tips && tips.length > 0 ? (
           tips.map((tip: string | TipItem, i: number) => (
             <div key={i} style={{
@@ -551,10 +555,10 @@ function InsightsSection({ insights, tips }: { insights: Array<string | InsightI
           ))
         ) : (
           <div style={{ fontSize: 13, color: '#64748B', lineHeight: 1.6 }}>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}><span>\uD83D\uDCDA</span><span>Set aside 15-20 minutes daily for focused learning time.</span></div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}><span>\uD83C\uDFC6</span><span>Celebrate small wins and streaks to keep motivation high.</span></div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}><span>\uD83D\uDDE3\uFE0F</span><span>Ask your child to explain what they learned today - teaching reinforces learning.</span></div>
-            <div style={{ display: 'flex', gap: 8 }}><span>\uD83C\uDF1F</span><span>Focus on progress, not perfection. Every attempt is a step forward!</span></div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}><span>\uD83D\uDCDA</span><span>{t(isHi, 'Set aside 15-20 minutes daily for focused learning time.', 'हर दिन 15-20 मिनट पढ़ाई के लिए अलग रखें।')}</span></div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}><span>\uD83C\uDFC6</span><span>{t(isHi, 'Celebrate small wins and streaks to keep motivation high.', 'छोटी सफलताओं को मनाएँ और प्रेरणा बनाए रखें।')}</span></div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}><span>\uD83D\uDDE3\uFE0F</span><span>{t(isHi, 'Ask your child to explain what they learned today - teaching reinforces learning.', 'अपने बच्चे से पूछें कि आज उन्होंने क्या सीखा - सिखाने से सीखना मजबूत होता है।')}</span></div>
+            <div style={{ display: 'flex', gap: 8 }}><span>\uD83C\uDF1F</span><span>{t(isHi, 'Focus on progress, not perfection. Every attempt is a step forward!', 'प्रगति पर ध्यान दें, पूर्णता पर नहीं। हर प्रयास एक कदम आगे है!')}</span></div>
           </div>
         )}
       </div>
@@ -565,7 +569,7 @@ function InsightsSection({ insights, tips }: { insights: Array<string | InsightI
 // ============================================================
 // PRINT / SHARE SECTION
 // ============================================================
-function PrintShareSection({ studentName, reportData }: { studentName: string; reportData: ReportData | null }) {
+function PrintShareSection({ studentName, reportData, isHi = false }: { studentName: string; reportData: ReportData | null; isHi?: boolean }) {
   const handlePrint = () => {
     window.print();
   };
@@ -596,21 +600,21 @@ function PrintShareSection({ studentName, reportData }: { studentName: string; r
 
   return (
     <div style={{ ...cardStyle, textAlign: 'center' }} className="no-print">
-      <h3 style={{ ...cardTitle, textAlign: 'center' }}>Share This Report</h3>
+      <h3 style={{ ...cardTitle, textAlign: 'center' }}>{t(isHi, 'Share This Report', 'यह रिपोर्ट साझा करें')}</h3>
       <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
         <button onClick={handlePrint} style={{
           padding: '12px 24px', backgroundColor: '#16A34A', color: '#fff',
           border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700,
           cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
         }}>
-          <span>\uD83D\uDDA8\uFE0F</span> Print Report
+          <span>\uD83D\uDDA8\uFE0F</span> {t(isHi, 'Print Report', 'रिपोर्ट प्रिंट करें')}
         </button>
         <button onClick={handleWhatsApp} style={{
           padding: '12px 24px', backgroundColor: '#25D366', color: '#fff',
           border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700,
           cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
         }}>
-          <span>\uD83D\uDCF1</span> Share via WhatsApp
+          <span>\uD83D\uDCF1</span> {t(isHi, 'Share via WhatsApp', 'WhatsApp पर साझा करें')}
         </button>
       </div>
     </div>
@@ -671,8 +675,8 @@ function CircularProgressRing({ value, size = 72, color = '#16A34A', label }: {
 // ============================================================
 // MONTHLY REPORT SECTION (Parent read-only view)
 // ============================================================
-function MonthlyReportSection({ guardianId, studentId, studentName }: {
-  guardianId: string; studentId: string; studentName: string;
+function MonthlyReportSection({ guardianId, studentId, studentName, isHi = false }: {
+  guardianId: string; studentId: string; studentName: string; isHi?: boolean;
 }) {
   const months = useMemo(() => getLastNMonths(REPORT_MONTHS_COUNT), []);
   const [selectedMonth, setSelectedMonth] = useState(months[0]?.value ?? '');
@@ -708,7 +712,7 @@ function MonthlyReportSection({ guardianId, studentId, studentName }: {
 
   return (
     <div style={{ marginBottom: 20 }}>
-      <div style={sectionHeading}>Monthly Report</div>
+      <div style={sectionHeading}>{t(isHi, 'Monthly Report', 'मासिक रिपोर्ट')}</div>
 
       {/* Month selector pills */}
       <div className="no-print" style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 8, marginBottom: 12 }}>
@@ -737,14 +741,14 @@ function MonthlyReportSection({ guardianId, studentId, studentName }: {
       {monthlyLoading && (
         <div style={{ ...cardStyle, textAlign: 'center', padding: 40 }}>
           <div style={{ width: 32, height: 32, border: '3px solid #E2E8F0', borderTopColor: '#16A34A', borderRadius: '50%', margin: '0 auto 12px', animation: 'spin 0.8s linear infinite' }} />
-          <span style={{ fontSize: 13, color: '#64748B' }}>Loading monthly report...</span>
+          <span style={{ fontSize: 13, color: '#64748B' }}>{t(isHi, 'Loading monthly report...', 'मासिक रिपोर्ट लोड हो रही है...')}</span>
         </div>
       )}
 
       {!monthlyLoading && !monthlyData && (
         <div style={{ ...cardStyle, textAlign: 'center', padding: 30 }}>
           <div style={{ fontSize: 32, marginBottom: 8 }}>{'\uD83D\uDCCA'}</div>
-          <p style={{ fontSize: 14, color: '#64748B' }}>No monthly report available for this period.</p>
+          <p style={{ fontSize: 14, color: '#64748B' }}>{t(isHi, 'No monthly report available for this period.', 'इस अवधि के लिए कोई मासिक रिपोर्ट उपलब्ध नहीं है।')}</p>
         </div>
       )}
 
@@ -752,17 +756,17 @@ function MonthlyReportSection({ guardianId, studentId, studentName }: {
         <>
           {/* Learning Metrics */}
           <div style={cardStyle}>
-            <h3 style={cardTitle}>Learning Metrics</h3>
+            <h3 style={cardTitle}>{t(isHi, 'Learning Metrics', 'सीखने के आँकड़े')}</h3>
             <div style={{ display: 'flex', justifyContent: 'space-around', marginBottom: 16 }}>
               <CircularProgressRing
                 value={monthlyData.conceptMasteryPct ?? 0}
                 color="#16A34A"
-                label="Concept Mastery"
+                label={t(isHi, 'Concept Mastery', 'अवधारणा महारत')}
               />
               <CircularProgressRing
                 value={monthlyData.retentionScore ?? 0}
                 color="#0891B2"
-                label="7-Day Retention"
+                label={t(isHi, '7-Day Retention', '7-दिन याददाश्त')}
               />
             </div>
 
@@ -776,7 +780,7 @@ function MonthlyReportSection({ guardianId, studentId, studentName }: {
                 border: '1px solid #FECACA',
               }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: '#DC2626', marginBottom: 6 }}>
-                  {'\u26A0\uFE0F'} Needs Attention
+                  {'\u26A0\uFE0F'} {t(isHi, 'Needs Attention', 'ध्यान देने की ज़रूरत')}
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {monthlyData.weakChapters.map((ch: string, i: number) => (
@@ -799,7 +803,7 @@ function MonthlyReportSection({ guardianId, studentId, studentName }: {
                 border: '1px solid #BBF7D0',
               }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: '#16A34A', marginBottom: 6 }}>
-                  {'\u2705'} Strong In
+                  {'\u2705'} {t(isHi, 'Strong In', 'मजबूत')}
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {monthlyData.strongChapters.map((ch: string, i: number) => (
@@ -817,17 +821,17 @@ function MonthlyReportSection({ guardianId, studentId, studentName }: {
 
           {/* Performance & Exam Readiness */}
           <div style={cardStyle}>
-            <h3 style={cardTitle}>Performance & Exam Readiness</h3>
+            <h3 style={cardTitle}>{t(isHi, 'Performance & Exam Readiness', 'प्रदर्शन और परीक्षा तैयारी')}</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginBottom: 12 }}>
               <div style={{ textAlign: 'center', padding: 12, backgroundColor: '#F8FAFC', borderRadius: 12 }}>
-                <div style={{ fontSize: 10, color: '#64748B', textTransform: 'uppercase' as const }}>Predicted Score</div>
+                <div style={{ fontSize: 10, color: '#64748B', textTransform: 'uppercase' as const }}>{t(isHi, 'Predicted Score', 'अनुमानित अंक')}</div>
                 <div style={{ fontSize: 22, fontWeight: 800, color: '#E8581C' }}>
                   {monthlyData.predictedScore ?? '--'}
                 </div>
                 <div style={{ fontSize: 10, color: '#94A3B8' }}>/80</div>
               </div>
               <div style={{ textAlign: 'center', padding: 12, backgroundColor: '#F8FAFC', borderRadius: 12 }}>
-                <div style={{ fontSize: 10, color: '#64748B', textTransform: 'uppercase' as const }}>Syllabus Done</div>
+                <div style={{ fontSize: 10, color: '#64748B', textTransform: 'uppercase' as const }}>{t(isHi, 'Syllabus Done', 'पाठ्यक्रम पूरा')}</div>
                 <div style={{ fontSize: 22, fontWeight: 800, color: '#0891B2' }}>
                   {monthlyData.syllabusCompletionPct ?? 0}%
                 </div>
@@ -837,7 +841,7 @@ function MonthlyReportSection({ guardianId, studentId, studentName }: {
             {/* Accuracy trend bars */}
             {monthlyData.accuracyTrend && monthlyData.accuracyTrend.length > 0 && (
               <div style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 6 }}>Weekly Accuracy</div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 6 }}>{t(isHi, 'Weekly Accuracy', 'साप्ताहिक सटीकता')}</div>
                 <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 60 }}>
                   {monthlyData.accuracyTrend.map((val: number, i: number) => {
                     const h = Math.max(4, (val / 100) * 100);
@@ -859,25 +863,25 @@ function MonthlyReportSection({ guardianId, studentId, studentName }: {
             )}
 
             <div style={{ fontSize: 13, color: '#475569' }}>
-              Time Efficiency: <strong>{(monthlyData.timeEfficiency ?? 0).toFixed(2)} questions/min</strong>
+              {t(isHi, 'Time Efficiency', 'समय दक्षता')}: <strong>{(monthlyData.timeEfficiency ?? 0).toFixed(2)} {t(isHi, 'questions/min', 'प्रश्न/मिनट')}</strong>
             </div>
           </div>
 
           {/* Study Consistency */}
           <div style={cardStyle}>
-            <h3 style={cardTitle}>Study Consistency</h3>
+            <h3 style={cardTitle}>{t(isHi, 'Study Consistency', 'अध्ययन नियमितता')}</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 10 }}>
               <div style={{ textAlign: 'center', padding: 10, backgroundColor: '#F8FAFC', borderRadius: 10 }}>
                 <div style={{ fontSize: 18, fontWeight: 800, color: '#16A34A' }}>{monthlyData.studyConsistencyPct ?? 0}%</div>
-                <div style={{ fontSize: 10, color: '#64748B' }}>Consistency</div>
+                <div style={{ fontSize: 10, color: '#64748B' }}>{t(isHi, 'Consistency', 'नियमितता')}</div>
               </div>
               <div style={{ textAlign: 'center', padding: 10, backgroundColor: '#F8FAFC', borderRadius: 10 }}>
                 <div style={{ fontSize: 18, fontWeight: 800, color: '#0891B2' }}>{monthlyData.totalStudyMinutes ?? 0}m</div>
-                <div style={{ fontSize: 10, color: '#64748B' }}>Study Time</div>
+                <div style={{ fontSize: 10, color: '#64748B' }}>{t(isHi, 'Study Time', 'अध्ययन समय')}</div>
               </div>
               <div style={{ textAlign: 'center', padding: 10, backgroundColor: '#F8FAFC', borderRadius: 10 }}>
                 <div style={{ fontSize: 18, fontWeight: 800, color: '#7C3AED' }}>{monthlyData.totalQuestionsAttempted ?? 0}</div>
-                <div style={{ fontSize: 10, color: '#64748B' }}>Questions</div>
+                <div style={{ fontSize: 10, color: '#64748B' }}>{t(isHi, 'Questions', 'प्रश्न')}</div>
               </div>
             </div>
           </div>
@@ -886,7 +890,7 @@ function MonthlyReportSection({ guardianId, studentId, studentName }: {
           {((monthlyData.improvementAreas && monthlyData.improvementAreas.length > 0) ||
             (monthlyData.achievements && monthlyData.achievements.length > 0)) && (
             <div style={cardStyle}>
-              <h3 style={cardTitle}>Improvements & Achievements</h3>
+              <h3 style={cardTitle}>{t(isHi, 'Improvements & Achievements', 'सुधार और उपलब्धियाँ')}</h3>
               {monthlyData.achievements && monthlyData.achievements.length > 0 && (
                 <div style={{ marginBottom: 10 }}>
                   {monthlyData.achievements.map((a: string, i: number) => (
@@ -917,7 +921,7 @@ function MonthlyReportSection({ guardianId, studentId, studentName }: {
               border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700,
               cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8,
             }}>
-              {'\uD83D\uDDA8\uFE0F'} Download PDF
+              {'\uD83D\uDDA8\uFE0F'} {t(isHi, 'Download PDF', 'PDF डाउनलोड करें')}
             </button>
           </div>
         </>
@@ -966,6 +970,7 @@ function ChildSelector({ childList, selectedId, onSelect }: {
 // ============================================================
 export default function ParentReportsPage() {
   const auth = useAuth();
+  const isHi = auth.isHi ?? false;
   const [guardian, setGuardian] = useState<ReportParentSession | null>(null);
   const [student, setStudent] = useState<ReportStudentSession | null>(null);
   const [children, setChildren] = useState<Array<{ id: string; name: string; grade?: string }>>([]);
@@ -1047,7 +1052,7 @@ export default function ParentReportsPage() {
         setReport(res);
       }
     } catch (err) {
-      setError('Could not load report. Please try again later.');
+      setError(isHi ? 'रिपोर्ट लोड नहीं हो सकी। कृपया बाद में फिर कोशिश करें।' : 'Could not load report. Please try again later.');
     }
     setLoading(false);
   }, [guardian, student, dateRange]);
@@ -1076,7 +1081,7 @@ export default function ParentReportsPage() {
         <style>{printStyles}</style>
         <div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}>
           <div style={{ width: 40, height: 40, border: '3px solid #E2E8F0', borderTopColor: '#16A34A', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />
-          Loading...
+          {t(isHi, 'Loading...', 'लोड हो रहा है...')}
         </div>
       </div>
     );
@@ -1086,7 +1091,7 @@ export default function ParentReportsPage() {
     return (
       <div style={pageStyle}>
         <style>{printStyles}</style>
-        <div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}>Redirecting...</div>
+        <div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}>{t(isHi, 'Redirecting...', 'रीडायरेक्ट हो रहा है...')}</div>
       </div>
     );
   }
@@ -1132,17 +1137,17 @@ export default function ParentReportsPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
             <h1 style={{ fontSize: 24, fontWeight: 800, margin: '0 0 6px', color: '#FFFFFF' }}>
-              {'\uD83D\uDCCA'} Learning Report
+              {'\uD83D\uDCCA'} {t(isHi, 'Learning Report', 'लर्निंग रिपोर्ट')}
             </h1>
             <div style={{ fontSize: 16, fontWeight: 600, opacity: 0.95 }}>{student.name}</div>
-            <div style={{ fontSize: 13, opacity: 0.8, marginTop: 2 }}>Grade {student.grade}</div>
+            <div style={{ fontSize: 13, opacity: 0.8, marginTop: 2 }}>{t(isHi, 'Grade', 'कक्षा')} {student.grade}</div>
           </div>
           <a href="/parent" className="no-print" style={{
             padding: '8px 14px', backgroundColor: 'rgba(255,255,255,0.2)',
             color: '#fff', border: 'none', borderRadius: 8,
             fontSize: 12, fontWeight: 600, cursor: 'pointer', textDecoration: 'none',
           }}>
-            {'\u2190'} Dashboard
+            {'\u2190'} {t(isHi, 'Dashboard', 'डैशबोर्ड')}
           </a>
         </div>
 
@@ -1159,7 +1164,7 @@ export default function ParentReportsPage() {
               cursor: 'pointer', transition: 'all 0.2s',
             }}
           >
-            Weekly / Range
+            {t(isHi, 'Weekly / Range', 'साप्ताहिक / अवधि')}
           </button>
           <button
             onClick={() => setViewMode('monthly')}
@@ -1172,7 +1177,7 @@ export default function ParentReportsPage() {
               cursor: 'pointer', transition: 'all 0.2s',
             }}
           >
-            Monthly Report
+            {t(isHi, 'Monthly Report', 'मासिक रिपोर्ट')}
           </button>
         </div>
 
@@ -1180,9 +1185,9 @@ export default function ParentReportsPage() {
         {viewMode === 'weekly' && (
           <div className="no-print" style={{ display: 'flex', gap: 8 }}>
             {([
-              { key: 'week' as const, label: 'This Week' },
-              { key: 'month' as const, label: 'This Month' },
-              { key: 'all' as const, label: 'All Time' },
+              { key: 'week' as const, label: t(isHi, 'This Week', 'इस सप्ताह') },
+              { key: 'month' as const, label: t(isHi, 'This Month', 'इस महीने') },
+              { key: 'all' as const, label: t(isHi, 'All Time', 'सभी समय') },
             ]).map(opt => (
               <button
                 key={opt.key}
@@ -1220,6 +1225,7 @@ export default function ParentReportsPage() {
             guardianId={guardian.id}
             studentId={student.id}
             studentName={student.name}
+            isHi={isHi}
           />
         )}
 
@@ -1227,7 +1233,7 @@ export default function ParentReportsPage() {
         {viewMode === 'weekly' && loading && (
           <div style={{ textAlign: 'center', padding: 60, color: '#64748B' }}>
             <div style={{ width: 36, height: 36, border: '3px solid #E2E8F0', borderTopColor: '#16A34A', borderRadius: '50%', margin: '0 auto 14px', animation: 'spin 0.8s linear infinite' }} />
-            Loading {student.name}&apos;s report...
+            {t(isHi, `Loading ${student.name}'s report...`, `${student.name} की रिपोर्ट लोड हो रही है...`)}
           </div>
         )}
 
@@ -1239,7 +1245,7 @@ export default function ParentReportsPage() {
               marginTop: 12, padding: '8px 20px', backgroundColor: '#16A34A',
               color: '#fff', border: 'none', borderRadius: 8, fontSize: 13,
               fontWeight: 600, cursor: 'pointer',
-            }}>Try Again</button>
+            }}>{t(isHi, 'Try Again', 'फिर से कोशिश करें')}</button>
           </div>
         )}
 
@@ -1247,46 +1253,46 @@ export default function ParentReportsPage() {
           <>
             {/* ── 1. PERFORMANCE SUMMARY CARDS ── */}
             <div style={{ marginBottom: 20 }}>
-              <div style={sectionHeading}>Performance Summary</div>
+              <div style={sectionHeading}>{t(isHi, 'Performance Summary', 'प्रदर्शन सारांश')}</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
                 <SummaryCard
                   icon={'\uD83C\uDFAF'}
-                  label="Overall Mastery"
+                  label={t(isHi, 'Overall Mastery', 'कुल महारत')}
                   value={`${stats.overallMastery ?? stats.accuracy ?? 0}%`}
                   ringColor={getScoreColor(stats.overallMastery ?? stats.accuracy ?? 0)}
                 />
                 <SummaryCard
                   icon={'\uD83D\uDD25'}
-                  label="Consistency"
-                  value={`${stats.streak ?? 0} days`}
-                  sub={`Active ${activeDays} of last 7 days`}
+                  label={t(isHi, 'Consistency', 'नियमितता')}
+                  value={`${stats.streak ?? 0} ${t(isHi, 'days', 'दिन')}`}
+                  sub={t(isHi, `Active ${activeDays} of last 7 days`, `पिछले 7 दिनों में ${activeDays} दिन सक्रिय`)}
                 />
                 <SummaryCard
                   icon={accuracyTrend === 'up' ? '\u2B06\uFE0F' : accuracyTrend === 'down' ? '\u2B07\uFE0F' : '\uD83C\uDFAF'}
-                  label="Accuracy"
+                  label={t(isHi, 'Accuracy', 'सटीकता')}
                   value={`${stats.accuracy ?? stats.avgScore ?? 0}%`}
-                  sub={accuracyTrend === 'up' ? 'Trending up!' : accuracyTrend === 'down' ? 'Needs focus' : undefined}
+                  sub={accuracyTrend === 'up' ? t(isHi, 'Trending up!', 'बढ़ रहा है!') : accuracyTrend === 'down' ? t(isHi, 'Needs focus', 'ध्यान चाहिए') : undefined}
                 />
                 <SummaryCard
                   icon={'\u2728'}
-                  label="XP Earned"
+                  label="XP"
                   value={`${stats.xp ?? 0}`}
-                  sub="Keep it up!"
+                  sub={t(isHi, 'Keep it up!', 'ऐसे ही करते रहो!')}
                 />
               </div>
             </div>
 
             {/* ── 2. SUBJECT-WISE PERFORMANCE ── */}
             <div style={{ marginBottom: 20 }}>
-              <div style={sectionHeading}>Subject Performance</div>
+              <div style={sectionHeading}>{t(isHi, 'Subject Performance', 'विषय प्रदर्शन')}</div>
               {subjects.length > 0 ? (
                 subjects.map((subj: SubjectData, i: number) => (
-                  <SubjectCard key={i} subject={subj} />
+                  <SubjectCard key={i} subject={subj} isHi={isHi} />
                 ))
               ) : (
                 <div style={cardStyle}>
                   <p style={emptyText}>
-                    Your child hasn&apos;t started any subjects yet. Encourage them to explore and take their first quiz!
+                    {t(isHi, "Your child hasn't started any subjects yet. Encourage them to explore and take their first quiz!", 'आपके बच्चे ने अभी तक कोई विषय शुरू नहीं किया है। उन्हें अपनी पहली क्विज़ देने के लिए प्रोत्साहित करें!')}
                   </p>
                 </div>
               )}
@@ -1295,35 +1301,35 @@ export default function ParentReportsPage() {
             {/* ── 3. WEEKLY ACTIVITY TIMELINE ── */}
             {dailyActivity.length > 0 && (
               <div style={{ marginBottom: 20 }}>
-                <div style={sectionHeading}>Weekly Activity</div>
-                <WeeklyTimeline days={dailyActivity} mostActiveDay={mostActiveDay} />
+                <div style={sectionHeading}>{t(isHi, 'Weekly Activity', 'साप्ताहिक गतिविधि')}</div>
+                <WeeklyTimeline days={dailyActivity} mostActiveDay={mostActiveDay} isHi={isHi} />
               </div>
             )}
 
             {/* ── 4. CONCEPT MASTERY MAP ── */}
             <div style={{ marginBottom: 20 }}>
-              <div style={sectionHeading}>Concept Mastery</div>
-              <ConceptMasteryMap concepts={concepts} />
+              <div style={sectionHeading}>{t(isHi, 'Concept Mastery', 'अवधारणा महारत')}</div>
+              <ConceptMasteryMap concepts={concepts} isHi={isHi} />
             </div>
 
             {/* ── 5. QUIZ HISTORY ── */}
             <div style={{ marginBottom: 20 }}>
-              <div style={sectionHeading}>Quiz History</div>
-              <QuizHistory quizzes={quizzes} />
+              <div style={sectionHeading}>{t(isHi, 'Quiz History', 'क्विज़ इतिहास')}</div>
+              <QuizHistory quizzes={quizzes} isHi={isHi} />
             </div>
 
             {/* ── 6. INSIGHTS & RECOMMENDATIONS ── */}
             <div style={{ marginBottom: 20 }}>
-              <div style={sectionHeading}>For You</div>
-              <InsightsSection insights={insights} tips={tips} />
+              <div style={sectionHeading}>{t(isHi, 'For You', 'आपके लिए')}</div>
+              <InsightsSection insights={insights} tips={tips} isHi={isHi} />
             </div>
 
             {/* ── 7. PRINT / SHARE ── */}
-            <PrintShareSection studentName={student.name} reportData={report} />
+            <PrintShareSection studentName={student.name} reportData={report} isHi={isHi} />
 
             {/* Footer */}
             <p style={{ textAlign: 'center', fontSize: 11, color: '#94A3B8', margin: '24px 0 8px' }}>
-              Alfanumrik Learning OS | Learning Report | {student.name}, Grade {student.grade}
+              Alfanumrik Learning OS | {t(isHi, 'Learning Report', 'लर्निंग रिपोर्ट')} | {student.name}, {t(isHi, 'Grade', 'कक्षा')} {student.grade}
             </p>
           </>
         )}
