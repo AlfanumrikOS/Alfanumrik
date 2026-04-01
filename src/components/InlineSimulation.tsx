@@ -99,6 +99,15 @@ const SIMULATION_MAP: Record<string, { id: string; title: string; emoji: string;
     id: 'builtin-linear-graph', title: 'Linear Equation Grapher', emoji: '📊',
     tip: 'Change the slope and see the line rotate. Add a second line to find the intersection!',
   },
+  // Biology
+  'photosynthesis|chlorophyll|chloroplast|glucose|stomata|light reaction|6co2': {
+    id: 'builtin-photosynthesis', title: 'Photosynthesis Lab', emoji: '\uD83C\uDF31',
+    tip: 'Reduce light to 0% and watch glucose production stop. Then try high light but low CO\u2082!',
+  },
+  'heart|double circulation|atrium|ventricle|pulmonary|systemic|heartbeat|cardiac': {
+    id: 'builtin-human-heart', title: 'Human Heart & Double Circulation', emoji: '\u2764\uFE0F',
+    tip: 'Watch how blood passes through the heart twice — once to the lungs, once to the body!',
+  },
 };
 
 // Lazy-load simulation components — each imported directly from its file
@@ -122,6 +131,8 @@ const COMPONENTS: Record<string, React.ComponentType<Record<string, unknown>>> =
   'builtin-probability-lab': dynamic(() => import('@/components/simulations/ProbabilityLab'), { ssr: false }),
   'builtin-snells-law': dynamic(() => import('@/components/simulations/SnellsLaw'), { ssr: false }),
   'builtin-integration': dynamic(() => import('@/components/simulations/IntegrationVisualizer'), { ssr: false }),
+  'builtin-photosynthesis': dynamic(() => import('@/components/simulations/PhotosynthesisLab'), { ssr: false }),
+  'builtin-human-heart': dynamic(() => import('@/components/simulations/HumanHeartLab'), { ssr: false }),
 };
 
 /** Find a matching simulation for a given topic/concept text */
