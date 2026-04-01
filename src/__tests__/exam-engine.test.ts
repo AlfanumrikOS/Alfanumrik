@@ -48,11 +48,32 @@ describe('Subject Categories', () => {
     expect(SUBJECT_CATEGORY['social_studies']).toBe('humanities');
     expect(SUBJECT_CATEGORY['political_science']).toBe('humanities');
   });
+
+  it('all subjects have a valid category assigned', () => {
+    const validCategories = ['stem_calc', 'stem_concept', 'language', 'humanities'];
+    for (const [, category] of Object.entries(SUBJECT_CATEGORY)) {
+      expect(validCategories).toContain(category);
+    }
+  });
+
+  it('covers all expected CBSE subjects', () => {
+    const expectedSubjects = [
+      'math', 'physics', 'chemistry', 'biology', 'science',
+      'computer_science', 'coding', 'english', 'hindi',
+      'social_studies', 'economics', 'accountancy',
+      'business_studies', 'political_science', 'history_sr', 'geography',
+    ];
+    for (const subject of expectedSubjects) {
+      expect(SUBJECT_CATEGORY[subject]).toBeDefined();
+    }
+  });
 });
 
-// ─── Grade Time Multipliers ──────────────────────────────────
+// ─── Grade Time Multipliers (P5 compliance) ─────────────────
 
 describe('Grade Time Multipliers', () => {
+  const validGrades = ['6', '7', '8', '9', '10', '11', '12'];
+
   it('grade "6" gets the highest multiplier (1.3)', () => {
     expect(GRADE_TIME_MULTIPLIER['6']).toBe(1.3);
   });
@@ -63,10 +84,9 @@ describe('Grade Time Multipliers', () => {
   });
 
   it('multipliers decrease with grade level', () => {
-    const grades = ['6', '7', '8', '9', '10', '11', '12'];
-    for (let i = 0; i < grades.length - 1; i++) {
-      const current = GRADE_TIME_MULTIPLIER[grades[i]];
-      const next = GRADE_TIME_MULTIPLIER[grades[i + 1]];
+    for (let i = 0; i < validGrades.length - 1; i++) {
+      const current = GRADE_TIME_MULTIPLIER[validGrades[i]];
+      const next = GRADE_TIME_MULTIPLIER[validGrades[i + 1]];
       expect(current).toBeGreaterThanOrEqual(next);
     }
   });
@@ -75,6 +95,81 @@ describe('Grade Time Multipliers', () => {
     for (let g = 6; g <= 12; g++) {
       expect(GRADE_TIME_MULTIPLIER[String(g)]).toBeDefined();
       expect(GRADE_TIME_MULTIPLIER[String(g)]).toBeGreaterThan(0);
+    }
+  });
+
+  it('keys are strings not integers (P5 compliance)', () => {
+    const keys = Object.keys(GRADE_TIME_MULTIPLIER);
+    for (const key of keys) {
+      expect(typeof key).toBe('string');
+    }
+    expect(keys).toEqual(expect.arrayContaining(validGrades));
+    expect(keys).toHaveLength(7);
+  });
+
+  it('all multipliers are >= 1.0 (no student gets less than base time)', () => {
+    for (const grade of validGrades) {
+      expect(GRADE_TIME_MULTIPLIER[grade]).toBeGreaterThanOrEqual(1.0);
+    }
+  });
+
+  it('younger grades (6-8) have strictly higher multipliers than older grades (11-12)', () => {
+    const juniorMin = Math.min(
+      GRADE_TIME_MULTIPLIER['6'],
+      GRADE_TIME_MULTIPLIER['7'],
+      GRADE_TIME_MULTIPLIER['8'],
+    );
+    const seniorMax = Math.max(
+      GRADE_TIME_MULTIPLIER['11'],
+      GRADE_TIME_MULTIPLIER['12'],
+    );
+    expect(juniorMin).toBeGreaterThan(seniorMax);
+  });
+});
+
+// ─── Time Per Question Constants ─────────────────────────────
+
+describe('Time per question constants', () => {
+  const categories = ['stem_calc', 'stem_concept', 'language', 'humanities'] as const;
+  const difficulties = ['easy', 'medium', 'hard'] as const;
+
+  it('all four subject categories exist', () => {
+    for (const cat of categories) {
+      expect(TIME_PER_QUESTION[cat]).toBeDefined();
+    }
+  });
+
+  it('each category has easy, medium, hard, and mixed values', () => {
+    for (const cat of categories) {
+      for (const diff of [...difficulties, 'mixed' as const]) {
+        expect(TIME_PER_QUESTION[cat][diff]).toBeDefined();
+        expect(typeof TIME_PER_QUESTION[cat][diff]).toBe('number');
+      }
+    }
+  });
+
+  it('all time values are positive', () => {
+    for (const cat of categories) {
+      for (const diff of difficulties) {
+        expect(TIME_PER_QUESTION[cat][diff]).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('hard > medium > easy for each category', () => {
+    for (const cat of categories) {
+      expect(TIME_PER_QUESTION[cat].hard).toBeGreaterThan(TIME_PER_QUESTION[cat].medium);
+      expect(TIME_PER_QUESTION[cat].medium).toBeGreaterThan(TIME_PER_QUESTION[cat].easy);
+    }
+  });
+
+  it('stem_calc has the highest time values (calculation-heavy)', () => {
+    for (const diff of difficulties) {
+      for (const cat of ['stem_concept', 'language', 'humanities'] as const) {
+        expect(TIME_PER_QUESTION.stem_calc[diff]).toBeGreaterThanOrEqual(
+          TIME_PER_QUESTION[cat][diff],
+        );
+      }
     }
   });
 });
@@ -116,6 +211,22 @@ describe('Exam Presets', () => {
     const fullExam = presets.find(p => p.id === 'full_exam')!;
     expect(fullExam.questionCount).toBe(25);
     expect(fullExam.label).toBe('Board Practice');
+  });
+
+  it('full_exam for junior grades is labeled "Full Exam" (not Board Practice)', () => {
+    const presets = getExamPresets('7', 'science');
+    const fullExam = presets.find(p => p.id === 'full_exam');
+    expect(fullExam?.label).toBe('Full Exam');
+  });
+
+  it('every preset has positive integer questionCount', () => {
+    for (const grade of ['6', '9', '12']) {
+      const presets = getExamPresets(grade, 'math');
+      for (const preset of presets) {
+        expect(preset.questionCount).toBeGreaterThan(0);
+        expect(Number.isInteger(preset.questionCount)).toBe(true);
+      }
+    }
   });
 
   it('every preset has bilingual labels', () => {
