@@ -1,7 +1,7 @@
 # Alfanumrik Learning OS — Non-Negotiable Product Rules
 
 ## What This Is
-Indian K-12 EdTech platform (CBSE grades 6-12). Next.js 14 + Supabase + Razorpay. 219 source files, 160+ SQL migrations, 12 Supabase Edge Functions, Flutter mobile app. Serves students, parents, teachers, and administrators.
+Indian K-12 EdTech platform (CBSE grades 6-12). Next.js 14 + Supabase + Razorpay. 219 source files, 188 SQL migrations, 15 Supabase Edge Functions, Flutter mobile app. Serves students, parents, teachers, and administrators.
 
 ## Architecture Quick Reference
 | Layer | Technology |
@@ -13,7 +13,7 @@ Indian K-12 EdTech platform (CBSE grades 6-12). Next.js 14 + Supabase + Razorpay
 | AI | Claude API (Haiku) via Edge Functions: foxy-tutor, ncert-solver, quiz-generator, cme-engine |
 | Payments | Razorpay (INR, monthly recurring + yearly one-time) |
 | Deployment | Vercel (bom1/Mumbai), GitHub Actions CI/CD (3 workflows) |
-| Testing | Vitest (175 tests), Playwright E2E. **Regression catalog: 4/35 exist (11%).** |
+| Testing | Vitest (633 tests, 24 files), Playwright E2E (4 specs). **Regression catalog: 35/35 (100%).** |
 | Monitoring | Sentry (client/server/edge), Vercel Analytics, structured logging |
 | Mobile | Flutter + Riverpod (/mobile) |
 | Offline | Service worker, localStorage cache, background sync |
