@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { getStudentNotifications, supabase } from '@/lib/supabase';
-import { Card, Button, LoadingFoxy, BottomNav } from '@/components/ui';
+import { Card, Button, LoadingFoxy, BottomNav, EmptyState } from '@/components/ui';
 
 const TYPE_CONFIG: Record<string, { icon: string; color: string; label: string; labelHi: string }> = {
   streak_risk: { icon: '🔥', color: '#DC2626', label: 'Streak Alert', labelHi: 'स्ट्रीक अलर्ट' },
@@ -142,18 +142,16 @@ export default function NotificationsPage() {
             <p className="text-sm text-[var(--text-3)]">{isHi ? 'लोड हो रहा है...' : 'Loading notifications...'}</p>
           </div>
         ) : notifications.length === 0 ? (
-          <div className="text-center py-16">
-            <div className="text-5xl mb-4">🦊</div>
-            <h3 className="text-lg font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
-              {isHi ? 'कोई नई सूचना नहीं' : 'All caught up!'}
-            </h3>
-            <p className="text-sm text-[var(--text-3)] max-w-xs mx-auto mb-4">
-              {isHi ? 'Foxy तुम्हें updates भेजता रहेगा — quiz दो, streak बनाओ!' : 'Foxy will send you updates — take quizzes, build your streak!'}
-            </p>
-            <Button onClick={() => router.push('/quiz')}>
-              ⚡ {isHi ? 'क्विज़ शुरू करो' : 'Start a Quiz'}
-            </Button>
-          </div>
+          <EmptyState
+            icon="🔔"
+            title={isHi ? 'अभी तक कोई सूचना नहीं' : 'No notifications yet'}
+            description={isHi ? 'क्विज़ लो और हम तुम्हें अपडेट करते रहेंगे' : 'Start quizzing and we\'ll keep you updated'}
+            action={
+              <Button onClick={() => router.push('/quiz')}>
+                ⚡ {isHi ? 'क्विज़ शुरू करो' : 'Start a Quiz'}
+              </Button>
+            }
+          />
         ) : (
           groups.map(group => (
             <div key={group.label}>

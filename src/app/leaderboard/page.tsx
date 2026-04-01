@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { getLeaderboard, getCompetitions, joinCompetition, getCompetitionLeaderboard, getHallOfFame, supabase } from '@/lib/supabase';
-import { Card, Button, SectionHeader, LoadingFoxy, BottomNav, Avatar } from '@/components/ui';
+import { Card, Button, SectionHeader, LoadingFoxy, BottomNav, Avatar, EmptyState } from '@/components/ui';
 import type { LeaderboardEntry } from '@/lib/types';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 
@@ -252,18 +252,16 @@ export default function LeaderboardPage() {
                 <p className="text-sm text-[var(--text-3)]">{isHi ? 'लोड हो रहा है...' : 'Loading rankings...'}</p>
               </div>
             ) : entries.length === 0 ? (
-              <div className="text-center py-12">
-                <div className="text-5xl mb-4">📊</div>
-                <h3 className="text-lg font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
-                  {isHi ? 'अभी कोई डेटा नहीं' : 'No rankings yet'}
-                </h3>
-                <p className="text-sm text-[var(--text-3)] max-w-xs mx-auto mb-4">
-                  {isHi ? 'क्विज़ खेलो और XP कमाओ!' : 'Take quizzes and earn XP to climb the ranks!'}
-                </p>
-                <Button onClick={() => router.push('/quiz')}>
-                  {isHi ? 'क्विज़ शुरू करो' : 'Start a Quiz'} ⚡
-                </Button>
-              </div>
+              <EmptyState
+                icon="🏆"
+                title={isHi ? 'अभी कोई रैंकिंग नहीं' : 'No rankings yet'}
+                description={isHi ? 'क्विज़ खेलो और XP कमाओ — रैंकिंग में ऊपर चढ़ो!' : 'Take quizzes and earn XP to climb the ranks!'}
+                action={
+                  <Button onClick={() => router.push('/quiz')}>
+                    {isHi ? 'क्विज़ शुरू करो' : 'Start a Quiz'} ⚡
+                  </Button>
+                }
+              />
             ) : (
               <>
                 <SectionHeader icon="📊">
