@@ -4,6 +4,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 
 // ============================================================
+// BILINGUAL HELPERS (P7)
+// ============================================================
+const t = (isHi: boolean, en: string, hi: string) => isHi ? hi : en;
+
+// ============================================================
 // INTERFACES
 // ============================================================
 interface ParentSession {
@@ -198,14 +203,14 @@ function isLockedOut(): { locked: boolean; message: string } {
   return { locked: false, message: '' };
 }
 
-function LoginScreen({ onLogin }: { onLogin: (g: ParentSession, s: StudentSession) => void }) {
+function LoginScreen({ onLogin, isHi }: { onLogin: (g: ParentSession, s: StudentSession) => void; isHi: boolean }) {
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const submit = async () => {
-    if (!code.trim()) { setError('Please enter link code'); return; }
+    if (!code.trim()) { setError(t(isHi, 'Please enter link code', 'कृपया लिंक कोड दर्ज करें')); return; }
 
     // Check lockout before attempting
     const lockout = isLockedOut();
@@ -236,16 +241,16 @@ function LoginScreen({ onLogin }: { onLogin: (g: ParentSession, s: StudentSessio
     <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-screen flex items-center justify-center">
       <div className="max-w-[380px] w-full text-center">
         <div className="text-5xl mb-3">&#x1F9D1;&#x200D;&#x1F393;</div>
-        <h1 className="text-[22px] font-bold text-gray-900 mb-1">Parent Dashboard</h1>
-        <p className="text-sm text-gray-500 mb-6">Enter your child&apos;s link code to view their progress</p>
-        <input className="w-full px-3.5 py-3 bg-orange-50 border border-orange-200 rounded-[10px] text-gray-900 text-[15px] outline-none mb-2.5 box-border" placeholder="Your name" value={name} onChange={e => setName(e.target.value)} aria-label="Your name" autoComplete="name" />
-        <input className="w-full px-3.5 py-3 bg-orange-50 border border-orange-200 rounded-[10px] text-gray-900 text-xl outline-none mb-2.5 box-border tracking-[4px] text-center uppercase" placeholder="LINK CODE" value={code} onChange={e => setCode(e.target.value.toUpperCase())} maxLength={8} onKeyDown={e => e.key === 'Enter' && submit()} aria-label="Child link code" />
+        <h1 className="text-[22px] font-bold text-gray-900 mb-1">{t(isHi, 'Parent Dashboard', 'अभिभावक डैशबोर्ड')}</h1>
+        <p className="text-sm text-gray-500 mb-6">{t(isHi, "Enter your child's link code to view their progress", 'अपने बच्चे की प्रगति देखने के लिए लिंक कोड दर्ज करें')}</p>
+        <input className="w-full px-3.5 py-3 bg-orange-50 border border-orange-200 rounded-[10px] text-gray-900 text-[15px] outline-none mb-2.5 box-border" placeholder={t(isHi, 'Your name', 'आपका नाम')} value={name} onChange={e => setName(e.target.value)} aria-label={t(isHi, 'Your name', 'आपका नाम')} autoComplete="name" />
+        <input className="w-full px-3.5 py-3 bg-orange-50 border border-orange-200 rounded-[10px] text-gray-900 text-xl outline-none mb-2.5 box-border tracking-[4px] text-center uppercase" placeholder={t(isHi, 'LINK CODE', 'लिंक कोड')} value={code} onChange={e => setCode(e.target.value.toUpperCase())} maxLength={8} onKeyDown={e => e.key === 'Enter' && submit()} aria-label={t(isHi, 'Child link code', 'बच्चे का लिंक कोड')} />
         {error && <p className="text-red-500 text-[13px] my-2">{error}</p>}
         <button onClick={submit} disabled={loading} className={`w-full mt-2 px-5 py-3 bg-orange-500 text-white border-none rounded-[10px] text-[15px] font-semibold cursor-pointer ${loading ? 'opacity-50' : 'opacity-100'}`}>
-          {loading ? 'Connecting...' : 'View Dashboard'}
+          {loading ? t(isHi, 'Connecting...', 'कनेक्ट हो रहा है...') : t(isHi, 'View Dashboard', 'डैशबोर्ड देखें')}
         </button>
         <p className="text-xs text-gray-500 mt-4">
-          Ask your child for the link code from their Alfanumrik profile.
+          {t(isHi, "Ask your child for the link code from their Alfanumrik profile.", 'अपने बच्चे से उनकी Alfanumrik प्रोफ़ाइल से लिंक कोड मांगें।')}
         </p>
       </div>
     </div>
@@ -316,7 +321,7 @@ function MasteryRing({ levels, total }: { levels: Record<string, number>; total:
 // ============================================================
 // MAIN DASHBOARD
 // ============================================================
-function Dashboard({ guardian, student }: { guardian: ParentSession; student: StudentSession }) {
+function Dashboard({ guardian, student, isHi }: { guardian: ParentSession; student: StudentSession; isHi: boolean }) {
   const [dash, setDash] = useState<DashboardData | null>(null);
   const [tips, setTips] = useState<ParentTip[]>([]);
   const [loading, setLoading] = useState(true);
@@ -340,14 +345,14 @@ function Dashboard({ guardian, student }: { guardian: ParentSession; student: St
     <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-screen">
       <div className="text-center py-20 text-gray-500">
         <div className="w-10 h-10 border-[3px] border-orange-200 border-t-orange-500 rounded-full mx-auto mb-4 animate-spin" />
-        Loading {student.name}&apos;s progress...
+        {t(isHi, `Loading ${student.name}'s progress...`, `${student.name} की प्रगति लोड हो रही है...`)}
       </div>
     </div>
   );
 
   if (!dash || dash.error) return (
     <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-screen">
-      <div className="text-center py-[60px] text-red-500">{dash?.error || 'Failed to load dashboard'}</div>
+      <div className="text-center py-[60px] text-red-500">{dash?.error || t(isHi, 'Failed to load dashboard', 'डैशबोर्ड लोड करने में विफल')}</div>
     </div>
   );
 
@@ -530,9 +535,11 @@ export default function ParentPage() {
     </div>
   );
 
+  const isHi = auth.isHi ?? false;
+
   if (!guardian || !student) {
-    return <LoginScreen onLogin={(g, s) => { setGuardian(g); setStudent(s); }} />;
+    return <LoginScreen onLogin={(g, s) => { setGuardian(g); setStudent(s); }} isHi={isHi} />;
   }
 
-  return <Dashboard guardian={guardian} student={student} />;
+  return <Dashboard guardian={guardian} student={student} isHi={isHi} />;
 }

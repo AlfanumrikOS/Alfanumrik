@@ -200,14 +200,12 @@ async function countExistingQuestions(
   grade: string,
   chapterNumber: number
 ): Promise<number> {
-  // question_bank uses "Grade X" for grade and subject codes like "math"
-  const dbGrade = `Grade ${grade}`;
-
+  // question_bank uses P5 grade format: plain string "6" through "12"
   const { count, error } = await supabase
     .from('question_bank')
     .select('*', { count: 'exact', head: true })
     .eq('subject', subjectCode)
-    .eq('grade', dbGrade)
+    .eq('grade', grade)
     .eq('chapter_number', chapterNumber)
     .eq('is_active', true);
 
@@ -345,11 +343,10 @@ function toQuestionBankRows(
   questions: GeneratedQuestion[],
   topic: CurriculumTopic
 ): QuestionBankRow[] {
-  const dbGrade = `Grade ${topic.grade}`;
-
+  // P5: grade is plain string "6" through "12"
   return questions.map((q) => ({
     subject: topic.subject_code,
-    grade: dbGrade,
+    grade: topic.grade,
     chapter_number: topic.chapter_number,
     topic_id: topic.id || null,
     tags: q.tags || [],
