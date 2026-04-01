@@ -1,6 +1,28 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
+function WelcomeJsonLd({ faqs }: { faqs: { q: string; a: string }[] }) {
+  const faqSchema = {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: faqs.map((faq) => ({
+      '@type': 'Question',
+      name: faq.q,
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: faq.a,
+      },
+    })),
+  };
+
+  return (
+    <script
+      type="application/ld+json"
+      dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }}
+    />
+  );
+}
+
 export const metadata: Metadata = {
   title: 'Alfanumrik — Adaptive Learning Platform for CBSE Students India',
   description:
@@ -119,6 +141,7 @@ function CTAButtons({ center = false }: { center?: boolean }) {
 export default function WelcomePage() {
   return (
     <div style={{ background: 'var(--bg)', color: 'var(--text-1)' }}>
+      <WelcomeJsonLd faqs={FAQS} />
       {/* Nav */}
       <nav className="sticky top-0 z-50 border-b" style={{ background: 'rgba(251,248,244,0.92)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', borderColor: 'var(--border)' }}>
         <div className="max-w-6xl mx-auto px-3 sm:px-6 h-16 flex items-center justify-between">
@@ -184,10 +207,10 @@ export default function WelcomePage() {
             <div className="flex flex-wrap items-center justify-center gap-3">
               {[
                 { label: 'DPIIT Recognized', icon: '🇮🇳' },
-                { label: 'ISO 27001', icon: '🛡️' },
-                { label: 'ISO 42001', icon: '🤖' },
-                { label: 'ISO 42005', icon: '🔍' },
-                { label: 'PCI-DSS', icon: '💳' },
+                { label: 'DPDPA Compliant', icon: '🛡️' },
+                { label: 'Data Encrypted', icon: '🔒' },
+                { label: 'NCERT Aligned', icon: '📚' },
+                { label: 'No Ads. Ever.', icon: '🚫' },
               ].map(cert => (
                 <span key={cert.label} className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full"
                   style={{ background: 'var(--surface-2)', color: 'var(--text-2)', border: '1px solid var(--border)' }}>
@@ -284,8 +307,244 @@ export default function WelcomePage() {
         </div>
       </section>
 
-      {/* Product Experience */}
+      {/* See It In Action — Interactive Product Showcase */}
       <section className="py-12 sm:py-16">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6">
+          <div className="text-center mb-8 max-w-2xl mx-auto">
+            <span className="inline-block text-xs font-bold px-3 py-1 rounded-full mb-3" style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}>SEE IT IN ACTION</span>
+            <h2 className="text-2xl sm:text-3xl font-extrabold mb-3" style={{ fontFamily: 'var(--font-display)' }}>
+              See Alfanumrik in Action
+            </h2>
+            <p className="text-sm sm:text-base" style={{ color: 'var(--text-2)', lineHeight: 1.7 }}>
+              This is what learning looks like inside the platform. Real features, real interface — not stock photos.
+            </p>
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-5">
+            {/* Card 1: Foxy AI Tutor */}
+            <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--bg)', border: '1px solid var(--border)', boxShadow: '0 4px 24px rgba(0,0,0,0.06)' }}>
+              <div className="px-4 py-3 flex items-center gap-2 border-b" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)' }}>
+                <span className="text-lg">🦊</span>
+                <span className="text-sm font-bold" style={{ fontFamily: 'var(--font-display)', color: 'var(--orange)' }}>Foxy AI Tutor</span>
+                <div className="ml-auto flex gap-1">
+                  {['Learn', 'Practice', 'Quiz'].map((mode, i) => (
+                    <span key={mode} className="text-[10px] font-semibold px-2.5 py-1 rounded-full" style={{
+                      background: i === 0 ? 'var(--orange)' : 'var(--surface-2)',
+                      color: i === 0 ? '#fff' : 'var(--text-3)',
+                    }}>{mode}</span>
+                  ))}
+                </div>
+              </div>
+              <div className="p-4 space-y-3">
+                {/* Student message */}
+                <div className="flex justify-end">
+                  <div className="rounded-2xl rounded-br-md px-3.5 py-2.5 max-w-[80%] text-xs leading-relaxed" style={{ background: 'var(--surface-2)', color: 'var(--text-1)' }}>
+                    Explain photosynthesis step by step
+                  </div>
+                </div>
+                {/* Foxy response */}
+                <div className="flex gap-2 items-start">
+                  <div className="w-7 h-7 rounded-full flex items-center justify-center text-sm shrink-0" style={{ background: 'rgba(232,88,28,0.1)' }}>🦊</div>
+                  <div className="rounded-2xl rounded-bl-md px-3.5 py-2.5 max-w-[85%] text-xs leading-relaxed" style={{ background: 'var(--surface-1)', color: 'var(--text-1)' }}>
+                    <p className="mb-2"><span className="font-bold">Photosynthesis</span> is how plants make food using sunlight. Here are the steps:</p>
+                    <p className="mb-1"><span className="font-semibold" style={{ color: 'var(--orange)' }}>Step 1:</span> Light is absorbed by chlorophyll in leaves</p>
+                    <p className="mb-1"><span className="font-semibold" style={{ color: 'var(--orange)' }}>Step 2:</span> Water molecules are split (photolysis)</p>
+                    <p className="mb-2"><span className="font-semibold" style={{ color: 'var(--orange)' }}>Step 3:</span> CO₂ is fixed into glucose</p>
+                    <div className="inline-block text-[10px] font-mono px-2 py-0.5 rounded" style={{ background: 'rgba(124,58,237,0.08)', color: '#7C3AED' }}>
+                      6CO₂ + 6H₂O → C₆H₁₂O₆ + 6O₂
+                    </div>
+                    <p className="mt-2" style={{ color: 'var(--text-2)' }}>Can you tell me which organelle contains chlorophyll?</p>
+                  </div>
+                </div>
+                {/* Typing indicator */}
+                <div className="flex items-center gap-1.5 pl-9">
+                  <div className="flex gap-0.5">
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--text-3)', opacity: 0.5 }} />
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--text-3)', opacity: 0.35 }} />
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--text-3)', opacity: 0.2 }} />
+                  </div>
+                  <span className="text-[10px]" style={{ color: 'var(--text-3)' }}>Type your answer...</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 2: Smart Quiz */}
+            <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--bg)', border: '1px solid var(--border)', boxShadow: '0 4px 24px rgba(0,0,0,0.06)' }}>
+              <div className="px-4 py-3 flex items-center justify-between border-b" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)' }}>
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">⚡</span>
+                  <span className="text-sm font-bold" style={{ fontFamily: 'var(--font-display)', color: '#2563EB' }}>Smart Quiz</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: 'rgba(124,58,237,0.08)', color: '#7C3AED' }}>Apply</span>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}>Medium</span>
+                </div>
+              </div>
+              <div className="p-4 space-y-3">
+                {/* Progress bar */}
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] font-semibold" style={{ color: 'var(--text-3)' }}>Question 7 of 10</span>
+                  <span className="text-[10px] font-bold" style={{ color: 'var(--orange)' }}>7/10</span>
+                </div>
+                <div className="w-full h-1.5 rounded-full" style={{ background: 'var(--surface-2)' }}>
+                  <div className="h-full rounded-full" style={{ width: '70%', background: 'linear-gradient(90deg, #E8581C, #F5A623)' }} />
+                </div>
+
+                {/* Question */}
+                <p className="text-xs font-semibold leading-relaxed mt-2" style={{ color: 'var(--text-1)' }}>
+                  Which of the following is the correct product of photosynthesis?
+                </p>
+
+                {/* Options */}
+                <div className="space-y-2 mt-2">
+                  {[
+                    { label: 'A', text: 'Carbon dioxide and water', state: 'default' },
+                    { label: 'B', text: 'Glucose and oxygen', state: 'correct' },
+                    { label: 'C', text: 'Starch and nitrogen', state: 'default' },
+                    { label: 'D', text: 'Protein and hydrogen', state: 'default' },
+                  ].map(opt => (
+                    <div key={opt.label} className="flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-xs" style={{
+                      background: opt.state === 'correct' ? 'rgba(22,163,74,0.08)' : 'var(--surface-1)',
+                      border: opt.state === 'correct' ? '1.5px solid rgba(22,163,74,0.4)' : '1px solid var(--border)',
+                      color: opt.state === 'correct' ? '#16A34A' : 'var(--text-1)',
+                      fontWeight: opt.state === 'correct' ? 600 : 400,
+                    }}>
+                      <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0" style={{
+                        background: opt.state === 'correct' ? '#16A34A' : 'var(--surface-2)',
+                        color: opt.state === 'correct' ? '#fff' : 'var(--text-3)',
+                      }}>{opt.state === 'correct' ? '✓' : opt.label}</span>
+                      {opt.text}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Card 3: Progress Dashboard */}
+            <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--bg)', border: '1px solid var(--border)', boxShadow: '0 4px 24px rgba(0,0,0,0.06)' }}>
+              <div className="px-4 py-3 flex items-center gap-2 border-b" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)' }}>
+                <span className="text-lg">📈</span>
+                <span className="text-sm font-bold" style={{ fontFamily: 'var(--font-display)', color: '#7C3AED' }}>Progress Dashboard</span>
+              </div>
+              <div className="p-4 space-y-4">
+                {/* XP / Streak / Level row */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="rounded-xl p-2.5 text-center" style={{ background: 'rgba(232,88,28,0.06)', border: '1px solid rgba(232,88,28,0.12)' }}>
+                    <div className="text-base font-extrabold" style={{ color: 'var(--orange)' }}>1,240</div>
+                    <div className="text-[10px] font-medium" style={{ color: 'var(--text-3)' }}>Total XP</div>
+                  </div>
+                  <div className="rounded-xl p-2.5 text-center" style={{ background: 'rgba(232,88,28,0.06)', border: '1px solid rgba(232,88,28,0.12)' }}>
+                    <div className="text-base font-extrabold" style={{ color: 'var(--orange)' }}>7</div>
+                    <div className="text-[10px] font-medium" style={{ color: 'var(--text-3)' }}>Day Streak</div>
+                  </div>
+                  <div className="rounded-xl p-2.5 text-center" style={{ background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.12)' }}>
+                    <div className="text-base font-extrabold" style={{ color: '#7C3AED' }}>Lv 3</div>
+                    <div className="text-[10px] font-medium" style={{ color: 'var(--text-3)' }}>Explorer</div>
+                  </div>
+                </div>
+
+                {/* Subject mastery rings */}
+                <div>
+                  <div className="text-[10px] font-semibold mb-2" style={{ color: 'var(--text-3)' }}>Subject Mastery</div>
+                  <div className="flex items-center gap-4">
+                    {[
+                      { subject: 'Maths', pct: 78, color: '#E8581C' },
+                      { subject: 'Science', pct: 65, color: '#16A34A' },
+                      { subject: 'English', pct: 89, color: '#2563EB' },
+                    ].map(s => (
+                      <div key={s.subject} className="flex flex-col items-center gap-1">
+                        <div className="relative w-12 h-12">
+                          <svg viewBox="0 0 36 36" className="w-12 h-12 -rotate-90">
+                            <circle cx="18" cy="18" r="15.5" fill="none" strokeWidth="3" style={{ stroke: 'var(--surface-2)' }} />
+                            <circle cx="18" cy="18" r="15.5" fill="none" strokeWidth="3" strokeLinecap="round"
+                              strokeDasharray={`${s.pct} ${100 - s.pct}`}
+                              style={{ stroke: s.color }} />
+                          </svg>
+                          <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold" style={{ color: s.color }}>{s.pct}%</span>
+                        </div>
+                        <span className="text-[10px] font-medium" style={{ color: 'var(--text-2)' }}>{s.subject}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Bloom heatmap bar */}
+                <div>
+                  <div className="text-[10px] font-semibold mb-1.5" style={{ color: 'var(--text-3)' }}>Bloom&apos;s Progression</div>
+                  <div className="flex gap-0.5 rounded-lg overflow-hidden h-4">
+                    {[
+                      { level: 'Remember', width: '30%', color: '#16A34A' },
+                      { level: 'Understand', width: '25%', color: '#2563EB' },
+                      { level: 'Apply', width: '20%', color: '#7C3AED' },
+                      { level: 'Analyse', width: '15%', color: '#E8581C' },
+                      { level: 'Evaluate', width: '10%', color: '#D97706' },
+                    ].map(b => (
+                      <div key={b.level} className="h-full flex items-center justify-center text-[8px] font-bold text-white" style={{ width: b.width, background: b.color }}>
+                        {b.width !== '10%' ? b.level.slice(0, 3) : ''}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 4: Parent View */}
+            <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--bg)', border: '1px solid var(--border)', boxShadow: '0 4px 24px rgba(0,0,0,0.06)' }}>
+              <div className="px-4 py-3 flex items-center gap-2 border-b" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)' }}>
+                <span className="text-lg">👨‍👩‍👧</span>
+                <span className="text-sm font-bold" style={{ fontFamily: 'var(--font-display)', color: '#16A34A' }}>Parent View</span>
+              </div>
+              <div className="p-4 space-y-3">
+                {/* Child info */}
+                <div className="flex items-center gap-3 rounded-xl p-3" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
+                  <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold" style={{ background: 'rgba(22,163,74,0.1)', color: '#16A34A' }}>A</div>
+                  <div>
+                    <div className="text-xs font-bold" style={{ color: 'var(--text-1)' }}>Aarav Sharma</div>
+                    <div className="text-[10px]" style={{ color: 'var(--text-3)' }}>Class 8 · CBSE</div>
+                  </div>
+                  <div className="ml-auto text-right">
+                    <div className="text-[10px] font-semibold" style={{ color: '#16A34A' }}>Active today</div>
+                  </div>
+                </div>
+
+                {/* Weekly summary */}
+                <div className="rounded-xl p-3" style={{ background: 'rgba(22,163,74,0.04)', border: '1px solid rgba(22,163,74,0.12)' }}>
+                  <div className="text-[10px] font-semibold mb-2" style={{ color: '#16A34A' }}>This Week</div>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div>
+                      <div className="text-sm font-extrabold" style={{ color: 'var(--text-1)' }}>5</div>
+                      <div className="text-[10px]" style={{ color: 'var(--text-3)' }}>Quizzes</div>
+                    </div>
+                    <div>
+                      <div className="text-sm font-extrabold" style={{ color: 'var(--text-1)' }}>82%</div>
+                      <div className="text-[10px]" style={{ color: 'var(--text-3)' }}>Avg Score</div>
+                    </div>
+                    <div>
+                      <div className="text-sm font-extrabold" style={{ color: 'var(--text-1)' }}>45m</div>
+                      <div className="text-[10px]" style={{ color: 'var(--text-3)' }}>Study Time</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Strengths / Weaknesses */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="rounded-xl p-2.5" style={{ background: 'rgba(22,163,74,0.04)', border: '1px solid rgba(22,163,74,0.12)' }}>
+                    <div className="text-[10px] font-semibold mb-1" style={{ color: '#16A34A' }}>Strong</div>
+                    <div className="text-[10px] leading-relaxed" style={{ color: 'var(--text-2)' }}>Algebra, Photosynthesis, Grammar</div>
+                  </div>
+                  <div className="rounded-xl p-2.5" style={{ background: 'rgba(232,88,28,0.04)', border: '1px solid rgba(232,88,28,0.12)' }}>
+                    <div className="text-[10px] font-semibold mb-1" style={{ color: 'var(--orange)' }}>Needs Work</div>
+                    <div className="text-[10px] leading-relaxed" style={{ color: 'var(--text-2)' }}>Geometry, Chemical Reactions</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Product Experience */}
+      <section className="py-12 sm:py-16" style={{ background: 'var(--surface-1)' }}>
         <div className="max-w-5xl mx-auto px-4 sm:px-6 text-center">
           <h2 className="text-xl sm:text-3xl font-extrabold mb-3" style={{ fontFamily: 'var(--font-display)' }}>
             Built for how Indian students <span className="gradient-text">actually study</span>
@@ -464,7 +723,7 @@ export default function WelcomePage() {
           <div className="pt-6 border-t flex flex-col sm:flex-row items-center justify-between gap-3" style={{ borderColor: 'var(--border)' }}>
             <p className="text-xs" style={{ color: 'var(--text-3)' }}>© {new Date().getFullYear()} Cusiosense Learning India Pvt. Ltd. All rights reserved.</p>
             <div className="flex items-center gap-4 text-xs" style={{ color: 'var(--text-3)' }}>
-              <span>🛡️ ISO 27001 · ISO 42001 · PCI-DSS</span>
+              <span>🛡️ DPDPA Compliant · Data Encrypted · No Ads</span>
               <span>🇮🇳 DPIIT Recognized Startup</span>
               <span>Alfanumrik™ · Cusiosense Learning India Pvt. Ltd.</span>
             </div>

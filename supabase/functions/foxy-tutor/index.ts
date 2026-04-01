@@ -111,6 +111,68 @@ setInterval(() => {
   }
 }, 120_000)
 
+// ─── Input safety filter (P12: age-appropriate content) ───────
+// Fast regex/keyword check to block clearly inappropriate inputs.
+// Conservative: only blocks obviously harmful content outside educational scope.
+// Does NOT block legitimate academic topics (e.g., "chemical reactions", "reproduction in plants").
+interface SafetyResult {
+  safe: boolean
+  category?: string
+}
+
+function checkInputSafety(message: string): SafetyResult {
+  // Normalize: lowercase, collapse whitespace, strip common obfuscation
+  const normalized = message
+    .toLowerCase()
+    .replace(/[\s_\-.*+]+/g, ' ')  // collapse separators
+    .replace(/[0@][o0]/gi, 'oo')   // basic leet-speak normalization
+    .trim()
+
+  // Each category has patterns that are clearly outside educational scope.
+  // Patterns are designed to avoid false positives with legitimate CBSE topics
+  // (e.g., "drug" alone is fine for pharmacy/biology context).
+  const SAFETY_PATTERNS: Array<{ category: string; pattern: RegExp }> = [
+    // Violence / weapons — but not "nuclear weapons in history" or "chemical weapons treaty"
+    {
+      category: 'violence',
+      pattern: /\b(how to (make|build|create) (a )?(bomb|weapon|gun|explosive)|kill (someone|people|myself|yourself)|murder (someone|people)|school shoot|mass shoot|terrorist attack|how to hurt)\b/,
+    },
+    // Sexual content — but not "sexual reproduction" (biology)
+    {
+      category: 'sexual_content',
+      pattern: /\b(porn|pornograph|sex video|nude photo|naked (photo|pic|image|video)|sexting|hookup|onlyfans|xxx rated)\b/,
+    },
+    // Self-harm
+    {
+      category: 'self_harm',
+      pattern: /\b(how to (commit suicide|kill myself|end my life|cut myself|hurt myself)|suicide method|want to die|ways to die)\b/,
+    },
+    // Drug / substance abuse — but not "drugs and medicines" (biology/chemistry)
+    {
+      category: 'substance_abuse',
+      pattern: /\b(how to (make|cook|brew|grow) (meth|cocaine|heroin|weed|drugs|lsd)|buy (drugs|weed|cocaine|meth)|get (high|drunk|stoned) (fast|easily|quickly))\b/,
+    },
+    // Hate speech
+    {
+      category: 'hate_speech',
+      pattern: /\b(hate (all )?(muslims|hindus|christians|jews|blacks|whites|dalits)|kill (all )?(muslims|hindus|christians|jews|blacks|whites)|ethnic cleansing|racial supremacy|white power|genocide is good)\b/,
+    },
+    // Personal information harvesting
+    {
+      category: 'pii_request',
+      pattern: /\b(give me (the )?(phone|mobile|address|email|password|aadhaar|aadhar) (number |of )|hack (into|someone|account)|stalk (someone|person)|find (someone|person).{0,20}(address|location|phone))\b/,
+    },
+  ]
+
+  for (const { category, pattern } of SAFETY_PATTERNS) {
+    if (pattern.test(normalized)) {
+      return { safe: false, category }
+    }
+  }
+
+  return { safe: true }
+}
+
 // ─── Usage limits by plan ──────────────────────────────────────
 const PLAN_LIMITS: Record<string, number> = {
   free: 5,
@@ -207,14 +269,49 @@ USE THIS TO:
   }
 
   if (!ragContext && !syllabusContext) {
-    prompt += `\n\nNOTE: No specific NCERT textbook content or syllabus reference was found for this question.
-However, you are a knowledgeable CBSE tutor. You may still help the student using your general knowledge of the CBSE curriculum for Class ${grade} ${subject}, but you MUST:
-1. Clearly state: "I don't have the exact NCERT reference for this, but based on the CBSE curriculum..."
-2. Keep your answer strictly within the CBSE syllabus scope for Class ${grade}
-3. Recommend the student verify your answer from their NCERT textbook
-4. If the topic is clearly outside the CBSE syllabus for this grade, say so and suggest the correct grade/subject
-5. Never fabricate specific page numbers, exercise numbers, or NCERT quotes
-Do NOT refuse to help — provide your best curriculum-aligned response with the disclaimer.`
+    // Subject-specific safety rules to prevent confident-sounding wrong teaching
+    const subjectLower = subject.toLowerCase()
+    let subjectSafetyRule = ''
+    if (['math', 'mathematics'].includes(subjectLower)) {
+      subjectSafetyRule = `\nSUBJECT-SPECIFIC SAFETY (Math): Do NOT provide formulas not in NCERT for Class ${grade}. If you are unsure of the exact formula or method taught at this grade level, explicitly say so. Never present an advanced formula as if it is part of this grade's syllabus.`
+    } else if (['science', 'physics', 'chemistry'].includes(subjectLower)) {
+      subjectSafetyRule = `\nSUBJECT-SPECIFIC SAFETY (Science): Do NOT state specific numerical values, constants, or experimental results unless you are CERTAIN they match NCERT for Class ${grade}. If unsure about a specific value or constant, say "Please verify the exact value from your NCERT textbook."`
+    } else if (['history', 'social studies', 'social science', 'geography', 'civics', 'economics', 'political science'].includes(subjectLower)) {
+      subjectSafetyRule = `\nSUBJECT-SPECIFIC SAFETY (Social Studies): Do NOT state specific dates, events, names, or historical claims unless you are CERTAIN they match NCERT for Class ${grade}. If unsure about a specific date or fact, say "Please verify the exact details from your NCERT textbook."`
+    }
+
+    const disclaimerBadge = language === 'hi'
+      ? '⚠️ **NCERT संदर्भ नहीं मिला** — यह उत्तर सामान्य CBSE पाठ्यक्रम ज्ञान पर आधारित है। कृपया अपनी पाठ्यपुस्तक से सत्यापित करें।'
+      : '⚠️ **No NCERT reference found** — This answer is based on general CBSE curriculum knowledge. Please verify from your textbook.'
+
+    const openingLine = language === 'hi'
+      ? '📚 मेरे पास इसके लिए सटीक NCERT पृष्ठ नहीं है, लेकिन CBSE कक्षा ' + grade + ' ' + subject + ' पाठ्यक्रम के आधार पर मुझे यह पता है...'
+      : '📚 I don\'t have the exact NCERT page for this, but here\'s what I know from the CBSE Class ' + grade + ' ' + subject + ' curriculum...'
+
+    prompt += `\n\n⚠️ NO-REFERENCE SAFETY MODE (CRITICAL — follow ALL rules below):
+No specific NCERT textbook content or syllabus reference was found for this question.
+You may still help the student using your general knowledge of the CBSE curriculum for Class ${grade} ${subject}, but you MUST follow these rules STRICTLY:
+
+1. You MUST begin your response with this EXACT disclaimer badge on its own line:
+   "${disclaimerBadge}"
+
+2. You MUST follow the disclaimer badge with this opening line:
+   "${openingLine}"
+
+3. Keep your answer strictly within the CBSE syllabus scope for Class ${grade}
+4. Recommend the student verify your answer from their NCERT textbook
+5. If the topic is clearly outside the CBSE syllabus for this grade, say so and suggest the correct grade/subject
+6. Never fabricate specific page numbers, exercise numbers, or NCERT quotes
+${subjectSafetyRule}
+
+CONFIDENCE RATING (MANDATORY — include at the END of your response):
+You MUST rate your confidence in a clearly visible block:
+- **Confidence: HIGH** — Standard curriculum knowledge, very likely correct
+- **Confidence: MEDIUM** — Likely correct but student should verify from textbook
+- **Confidence: LOW** — Not sure about grade-specific details. "I recommend asking your teacher to confirm this."
+If your confidence is LOW, you MUST explicitly recommend the student ask their teacher.
+
+Do NOT refuse to help — provide your best curriculum-aligned response with ALL the above safety markers.`
   }
 
   return prompt
@@ -444,6 +541,35 @@ Deno.serve(async (req: Request) => {
     const safeName = student_name
       ? student_name.replace(/<[^>]*>/g, '').replace(/[{}`]/g, '').slice(0, 100)
       : null
+
+    // ── Input safety check (P12: age-appropriate content) ──
+    // Fast keyword-based filter to block clearly inappropriate inputs
+    // BEFORE rate limit so blocked messages don't consume usage quota.
+    // Conservative: only blocks obviously off-topic harmful content.
+    const inputSafetyResult = checkInputSafety(message)
+    if (!inputSafetyResult.safe) {
+      // Log blocked input for monitoring (redact actual content for privacy P13)
+      console.warn(
+        `[INPUT_SAFETY] Blocked message from student. Category: ${inputSafetyResult.category}. ` +
+        `Length: ${message.length}. Grade: ${grade}. Subject: ${subject}.`
+      )
+
+      const safeReply = safeLanguage === 'hi'
+        ? '🦊 अरे! इसमें मैं मदद नहीं कर सकता। मैं तुम्हारा CBSE स्टडी बडी हूँ — मुझसे गणित, विज्ञान, अंग्रेज़ी, या अपने किसी भी विषय के बारे में पूछो! क्या सीखना चाहोगे?'
+        : '🦊 Hey! That\'s not something I can help with. I\'m your CBSE study buddy — ask me about Math, Science, English, or any of your school subjects! What would you like to learn?'
+
+      return jsonResponse(
+        {
+          reply: safeReply,
+          xp_earned: 0,
+          session_id: session_id || null,
+          blocked: true,
+        },
+        200,
+        {},
+        origin,
+      )
+    }
 
     // ── Rate limit ──
     if (!checkRateLimit(student_id)) {

@@ -69,9 +69,10 @@ Deno.serve(async (req) => {
 
     // ── Step 4: Generate solution ──
     const gradeStyle = getGradeStyle(grade)
+    const solverSystemPrompt = buildSolverSystemPrompt(parsed, ragContext)
     const solverPrompt = buildSolverPrompt(parsed, route, ragContext, gradeStyle)
 
-    const solutionRaw = await callClaude(solverPrompt, route.maxResponseTokens)
+    const solutionRaw = await callClaude(solverPrompt, route.maxResponseTokens, solverSystemPrompt)
 
     let solution: any
     try {
@@ -86,8 +87,9 @@ Deno.serve(async (req) => {
     let verification = { passed: true, confidence: 0.7, issues: [] as string[] }
 
     if (route.requiresVerification && solution.answer) {
+      const verifySystemPrompt = buildVerificationSystemPrompt(parsed)
       const verifyPrompt = buildVerificationPrompt(parsed, JSON.stringify(solution))
-      const verifyRaw = await callClaude(verifyPrompt, 300)
+      const verifyRaw = await callClaude(verifyPrompt, 300, verifySystemPrompt)
 
       try {
         const verifyMatch = verifyRaw.match(/\{[\s\S]*\}/)
@@ -138,7 +140,7 @@ Deno.serve(async (req) => {
 
 // ─── Claude API Call ─────────────────────────────────────
 
-async function callClaude(prompt: string, maxTokens: number): Promise<string> {
+async function callClaude(prompt: string, maxTokens: number, systemPrompt: string): Promise<string> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 25000)
 
@@ -153,7 +155,7 @@ async function callClaude(prompt: string, maxTokens: number): Promise<string> {
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: maxTokens,
-        system: 'You are an NCERT/CBSE answer verification and solving engine. Always output valid JSON. Be precise and curriculum-aligned.',
+        system: systemPrompt,
         messages: [{ role: 'user', content: prompt }],
       }),
       signal: controller.signal,
@@ -254,6 +256,72 @@ function getGradeStyle(grade: string): string {
   return 'Use precise academic language. Focus on board-exam depth.'
 }
 
+function buildSolverSystemPrompt(parsed: ParsedQuestion, ragContext: string | null): string {
+  const { grade, subject } = parsed
+  const subjectLower = subject.toLowerCase()
+
+  let subjectSafetyRule = ''
+  if (['math', 'mathematics'].includes(subjectLower)) {
+    subjectSafetyRule = `\nSUBJECT-SPECIFIC RULE (Math): Do NOT use formulas, theorems, or methods not taught in NCERT for Class ${grade}. For example, do not use L'Hopital's rule in Class 11, or integration by parts in Class 11 if it is a Class 12 topic. If you are unsure whether a method is in the NCERT syllabus for this grade, explicitly say so.`
+  } else if (['physics', 'chemistry', 'science', 'biology'].includes(subjectLower)) {
+    subjectSafetyRule = `\nSUBJECT-SPECIFIC RULE (Science): Do NOT state specific numerical values, constants, or experimental results unless you are CERTAIN they match NCERT for Class ${grade}. Use only the formulas and derivations presented in NCERT. If unsure about a specific value or constant, say "Please verify the exact value from your NCERT textbook."`
+  } else if (['history', 'geography', 'civics', 'economics', 'social science', 'political science'].includes(subjectLower)) {
+    subjectSafetyRule = `\nSUBJECT-SPECIFIC RULE (Social Studies): Do NOT state specific dates, events, names, or historical claims unless you are CERTAIN they match NCERT for Class ${grade}. If unsure about a specific date or fact, say "Please verify from your NCERT textbook."`
+  }
+
+  let prompt = `You are a CBSE Class ${grade} ${subject} problem-solving engine that strictly follows NCERT.
+
+CORE RULES — FOLLOW WITHOUT EXCEPTION:
+- You MUST solve this problem using ONLY methods, formulas, and concepts taught in the NCERT textbook for Class ${grade} ${subject}.
+- Do NOT use advanced methods, shortcuts, or concepts not covered in NCERT for this grade.
+- Do NOT invent facts, formulas, dates, or definitions not in NCERT.
+- NEVER contradict NCERT. If your knowledge differs from NCERT, follow NCERT.
+- If you are not confident in your answer, you MUST say so explicitly rather than guessing.
+- If unsure about any fact, say "This should be verified against the NCERT textbook" rather than presenting uncertain information as fact.
+- Always output valid JSON.
+${subjectSafetyRule}`
+
+  if (ragContext) {
+    prompt += `
+
+NCERT REFERENCE MATERIAL (PRIMARY SOURCE — base your solution on this):
+---
+${ragContext}
+---
+Your solution MUST be consistent with the above NCERT content. Do not contradict it. If the answer can be directly derived from this material, use it as the authoritative source.`
+  } else {
+    prompt += `
+
+WARNING: No NCERT reference material was found for this question.
+You may still solve using your general knowledge of the CBSE Class ${grade} ${subject} curriculum, but you MUST:
+1. Use ONLY standard methods taught at this grade level
+2. NOT fabricate specific NCERT page numbers, exercise numbers, or textbook quotes
+3. Add a note in your explanation: "This solution should be verified against the NCERT textbook"
+4. If you are uncertain about the correct method or answer, say so explicitly
+5. Set your confidence appropriately — do not express high confidence without NCERT backing`
+  }
+
+  return prompt
+}
+
+function buildVerificationSystemPrompt(parsed: ParsedQuestion): string {
+  const { grade, subject } = parsed
+  return `You are a CBSE Class ${grade} ${subject} answer verification engine.
+
+Your job is to rigorously verify a proposed solution against NCERT standards.
+
+VERIFICATION CHECKLIST — check ALL of the following:
+1. Does this solution use ONLY methods taught in NCERT for Class ${grade} ${subject}? Flag any advanced methods not in the syllabus.
+2. Are all formulas and values consistent with NCERT for this grade? Check for incorrect constants, wrong formula application.
+3. Is the answer format appropriate for a CBSE board exam? (proper units, significant figures, marks-appropriate depth)
+4. Are the steps logically correct and complete? Check for arithmetic errors, sign errors, unit conversion errors.
+5. Does the explanation match what NCERT teaches, or does it introduce concepts from a different grade level?
+
+If ANY check fails, set "passed" to false and list the specific issues.
+If the solution uses a method not in NCERT for this grade, flag it even if the final answer is numerically correct.
+Always output valid JSON.`
+}
+
 function buildSolverPrompt(parsed: ParsedQuestion, _route: any, ragContext: string | null, gradeStyle: string): string {
   const { type, originalText, marks, options } = parsed
   const formatRules = type === 'mcq'
@@ -263,29 +331,43 @@ function buildSolverPrompt(parsed: ParsedQuestion, _route: any, ragContext: stri
     : ''
   const marksGuide = marks <= 1 ? '1-2 sentences.' : marks <= 3 ? '3-5 sentences with concept.' : 'Detailed with definition, explanation, example.'
 
-  return `Solve this CBSE question precisely.
+  const noRagWarning = ragContext
+    ? ''
+    : '\nIMPORTANT: No NCERT reference material was retrieved. Include a note in your explanation that the student should verify this answer from their NCERT textbook.'
+
+  return `Solve this CBSE Class ${parsed.grade} ${parsed.subject} question.
 QUESTION: ${originalText}
 MARKS: ${marks} | TYPE: ${type}
 ${formatRules}
-${ragContext ? `\nNCERT REFERENCE:\n${ragContext}` : ''}
+${noRagWarning}
 
-RULES: Follow NCERT exactly. ${marksGuide} ${gradeStyle}
+RULES: ${marksGuide} ${gradeStyle} Use ONLY NCERT-prescribed methods for this grade.
 
 Output JSON: {"answer":"...","steps":["..."],"concept":"...","explanation":"...","common_mistake":"...","formula_used":"..."}`
 }
 
 function buildVerificationPrompt(parsed: ParsedQuestion, proposedAnswer: string): string {
-  return `VERIFY this CBSE answer.
+  return `VERIFY this CBSE Class ${parsed.grade} ${parsed.subject} answer.
+
 QUESTION: ${parsed.originalText}
 ${parsed.options.length > 0 ? `OPTIONS: ${parsed.options.map((o, i) => `${String.fromCharCode(65 + i)}) ${o}`).join(' | ')}` : ''}
-PROPOSED: ${proposedAnswer}
-${parsed.hasNumerical ? 'RECOMPUTE all calculations independently. Check units.' : 'Check key concepts against NCERT.'}
-Output JSON: {"passed":boolean,"confidence":0-1,"correct_answer":"...","errors_found":["..."]}`
+
+PROPOSED SOLUTION: ${proposedAnswer}
+
+VERIFICATION TASKS:
+1. ${parsed.hasNumerical ? 'RECOMPUTE all calculations independently from scratch. Check units, significant figures, and sign.' : 'Check all key concepts, facts, and definitions against NCERT for Class ' + parsed.grade + '.'}
+2. Does this solution use ONLY methods taught in NCERT for Class ${parsed.grade}? If it uses advanced methods, flag this.
+3. Are all formulas and values consistent with NCERT for this grade?
+4. Is the answer format appropriate for a CBSE board exam worth ${parsed.marks} mark(s)?
+5. If any step is uncertain or potentially incorrect, flag it.
+
+Output JSON: {"passed":boolean,"confidence":0-1,"correct_answer":"...","errors_found":["..."],"recomputed_result":"..."}`
 }
 
 function estimateConfidence(solver: string, verified: boolean, hasRAG: boolean): number {
   let c = solver === 'deterministic' ? 0.9 : solver === 'rule_based' ? 0.8 : solver === 'hybrid' ? 0.75 : 0.65
   if (hasRAG) c += 0.1
+  else c -= 0.15 // Lower confidence when no NCERT reference material available
   if (verified) c += 0.05
   else c -= 0.15
   return Math.max(0, Math.min(1, c))

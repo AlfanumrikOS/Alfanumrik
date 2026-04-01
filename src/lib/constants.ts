@@ -66,6 +66,7 @@ export const ROLE_CONFIG = {
     homePath: '/dashboard',
     nav: [
       { href: '/dashboard', icon: '⬡', label: 'Home', labelHi: 'होम' },
+      { href: '/learn', icon: '📚', label: 'Chapters', labelHi: 'अध्याय' },
       { href: '/foxy', icon: '🦊', label: 'Foxy', labelHi: 'फॉक्सी' },
       { href: '/stem-centre', icon: '🔬', label: 'STEM Centre', labelHi: 'स्टेम सेंटर' },
       { href: '/quiz', icon: '⚡', label: 'Quiz', labelHi: 'क्विज़' },

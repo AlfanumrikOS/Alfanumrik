@@ -1,7 +1,9 @@
 User-agent: *
 Allow: /
 Disallow: /api/
+Disallow: /super-admin/
 Disallow: /admin/
+Disallow: /auth/
 Disallow: /teacher/
 Disallow: /parent/
 
