@@ -40,7 +40,7 @@ export default function JsonLd() {
       'AI-powered adaptive learning platform for CBSE students. Foxy AI Tutor teaches in Hindi and English with Bayesian mastery tracking, spaced repetition, and gamified learning. Grades 6-12.',
     educationalLevel: ['Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'],
     inLanguage: ['en', 'hi'],
-    isAccessibleForFree: false,
+    isAccessibleForFree: true,
     audience: {
       '@type': 'EducationalAudience',
       educationalRole: 'student',

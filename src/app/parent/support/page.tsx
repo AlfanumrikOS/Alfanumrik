@@ -291,7 +291,6 @@ export default function ParentSupportPage() {
   const [message, setMessage] = useState('');
   const [toast, setToast] = useState('');
   const [showPrivacy, setShowPrivacy] = useState(false);
-  const [whatsappNote, setWhatsappNote] = useState(false);
 
   // Pre-fill from guardian profile
   useEffect(() => {
@@ -455,23 +454,19 @@ export default function ParentSupportPage() {
       {/* Section 3: Quick Links */}
       <h2 style={sectionTitle}>🔗 Quick Links</h2>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        {/* WhatsApp Support */}
+        {/* Email Support Note */}
         <div
           style={{
             ...cardStyle,
             textAlign: 'center' as const,
-            cursor: 'pointer',
             marginBottom: 0,
           }}
-          onClick={() => setWhatsappNote(true)}
         >
-          <div style={{ fontSize: 24, marginBottom: 6 }}>💬</div>
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#1E293B' }}>WhatsApp Support</span>
-          {whatsappNote && (
-            <p style={{ fontSize: 11, color: '#F59E0B', margin: '8px 0 0', lineHeight: 1.4 }}>
-              Coming soon! We&apos;re setting up WhatsApp support.
-            </p>
-          )}
+          <div style={{ fontSize: 24, marginBottom: 6 }}>📧</div>
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#1E293B' }}>Need Help?</span>
+          <p style={{ fontSize: 11, color: '#64748B', margin: '8px 0 0', lineHeight: 1.4 }}>
+            For urgent queries, please use the email form above. We typically respond within 24 hours.
+          </p>
         </div>
 
         {/* Email Us */}

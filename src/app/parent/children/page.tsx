@@ -351,10 +351,12 @@ function LinkChildSection({
   guardianId,
   onLinked,
   compact,
+  isHi = false,
 }: {
   guardianId: string;
   onLinked: () => void;
   compact?: boolean;
+  isHi?: boolean;
 }) {
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
@@ -362,7 +364,7 @@ function LinkChildSection({
 
   const handleLink = async () => {
     if (!code.trim()) {
-      setMessage({ type: 'error', text: 'Please enter a link code.' });
+      setMessage({ type: 'error', text: t(isHi, 'Please enter a link code.', 'कृपया एक लिंक कोड दर्ज करें।') });
       return;
     }
     setLoading(true);
@@ -376,7 +378,7 @@ function LinkChildSection({
       if (data && typeof data === 'object' && 'error' in data) {
         setMessage({ type: 'error', text: (data as { error: string }).error });
       } else {
-        setMessage({ type: 'success', text: 'Child linked successfully!' });
+        setMessage({ type: 'success', text: t(isHi, 'Child linked successfully!', 'बच्चा सफलतापूर्वक जुड़ गया!') });
         setCode('');
         setTimeout(() => {
           setMessage(null);
@@ -384,7 +386,7 @@ function LinkChildSection({
         }, 1500);
       }
     } catch {
-      setMessage({ type: 'error', text: 'Invalid code or already linked. Please check and try again.' });
+      setMessage({ type: 'error', text: t(isHi, 'Invalid code or already linked. Please check and try again.', 'अमान्य कोड या पहले से जुड़ा हुआ। कृपया जाँच करें और पुनः प्रयास करें।') });
     }
     setLoading(false);
   };
@@ -399,7 +401,7 @@ function LinkChildSection({
     }}>
       {!compact && (
         <h3 style={{ fontSize: 16, fontWeight: 700, color: '#1E293B', margin: '0 0 4px' }}>
-          Link a New Child
+          {t(isHi, 'Link a New Child', 'नया बच्चा जोड़ें')}
         </h3>
       )}
       <p style={{
@@ -407,14 +409,14 @@ function LinkChildSection({
         lineHeight: 1.5,
       }}>
         {compact
-          ? 'Enter your child\'s link code to connect and start tracking their progress.'
-          : 'Ask your child\'s teacher for the link code, or find it in your child\'s profile page under Settings.'}
+          ? t(isHi, "Enter your child's link code to connect and start tracking their progress.", 'अपने बच्चे का लिंक कोड दर्ज करें और उनकी प्रगति ट्रैक करना शुरू करें।')
+          : t(isHi, "Ask your child's teacher for the link code, or find it in your child's profile page under Settings.", 'लिंक कोड के लिए अपने बच्चे के शिक्षक से पूछें, या इसे बच्चे के प्रोफ़ाइल पेज में सेटिंग्स के तहत खोजें।')}
       </p>
 
       <div style={{ display: 'flex', gap: 8 }}>
         <input
           type="text"
-          placeholder="Enter your child's link code"
+          placeholder={t(isHi, "Enter your child's link code", 'अपने बच्चे का लिंक कोड दर्ज करें')}
           value={code}
           onChange={(e) => setCode(e.target.value.toUpperCase())}
           onKeyDown={(e) => e.key === 'Enter' && handleLink()}
@@ -450,7 +452,7 @@ function LinkChildSection({
             minWidth: 100,
           }}
         >
-          {loading ? 'Linking...' : 'Link Child'}
+          {loading ? t(isHi, 'Linking...', 'जोड़ रहे हैं...') : t(isHi, 'Link Child', 'बच्चा जोड़ें')}
         </button>
       </div>
 
@@ -470,17 +472,17 @@ function LinkChildSection({
 // ============================================================
 // NO CHILDREN STATE
 // ============================================================
-function NoChildrenState({ guardianId, onLinked }: { guardianId: string; onLinked: () => void }) {
+function NoChildrenState({ guardianId, onLinked, isHi }: { guardianId: string; onLinked: () => void; isHi: boolean }) {
   return (
     <div style={{ textAlign: 'center', padding: '40px 0' }}>
       <div style={{ fontSize: 64, marginBottom: 16 }}>&#x1F468;&#x200D;&#x1F469;&#x200D;&#x1F467;</div>
       <h2 style={{ fontSize: 20, fontWeight: 700, color: '#1E293B', margin: '0 0 8px' }}>
-        No children linked yet
+        {t(isHi, 'No children linked yet', 'अभी तक कोई बच्चा जुड़ा नहीं है')}
       </h2>
       <p style={{ fontSize: 14, color: '#94A3B8', margin: '0 0 24px', lineHeight: 1.5 }}>
-        Enter your child&apos;s link code to connect<br />and start tracking their progress.
+        {t(isHi, "Enter your child's link code to connect and start tracking their progress.", 'अपने बच्चे का लिंक कोड दर्ज करें और उनकी प्रगति ट्रैक करना शुरू करें।')}
       </p>
-      <LinkChildSection guardianId={guardianId} onLinked={onLinked} compact />
+      <LinkChildSection guardianId={guardianId} onLinked={onLinked} compact isHi={isHi} />
     </div>
   );
 }
@@ -488,8 +490,10 @@ function NoChildrenState({ guardianId, onLinked }: { guardianId: string; onLinke
 // ============================================================
 // MAIN PAGE
 // ============================================================
+const t = (isHi: boolean, en: string, hi: string) => isHi ? hi : en;
+
 export default function ParentChildrenPage() {
-  const { guardian, isLoading: authLoading, isLoggedIn } = useAuth();
+  const { guardian, isLoading: authLoading, isLoggedIn, isHi } = useAuth();
 
   const [children, setChildren] = useState<ChildData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -551,7 +555,7 @@ export default function ParentChildrenPage() {
             borderRadius: '50%', margin: '0 auto 16px',
             animation: 'spin 0.8s linear infinite',
           }} />
-          Loading children...
+          {t(isHi, 'Loading children...', 'बच्चे लोड हो रहे हैं...')}
         </div>
       </div>
     );
@@ -574,16 +578,16 @@ export default function ParentChildrenPage() {
         marginBottom: 20,
       }}>
         <h1 style={{ fontSize: 24, fontWeight: 700, color: '#fff', margin: '0 0 4px' }}>
-          &#x1F467; My Children
+          &#x1F467; {t(isHi, 'My Children', 'मेरे बच्चे')}
         </h1>
         <p style={{ fontSize: 14, color: '#BBF7D0', margin: 0 }}>
-          Monitor your children&apos;s learning journey
+          {t(isHi, "Monitor your children's learning journey", 'अपने बच्चों की सीखने की यात्रा पर नज़र रखें')}
         </p>
       </div>
 
       {/* Children list or empty state */}
       {children.length === 0 ? (
-        <NoChildrenState guardianId={guardian.id} onLinked={fetchChildren} />
+        <NoChildrenState guardianId={guardian.id} onLinked={fetchChildren} isHi={isHi} />
       ) : (
         <>
           {children.map((child) => (
@@ -600,14 +604,14 @@ export default function ParentChildrenPage() {
 
           {/* Link new child section */}
           <div style={{ marginTop: 8 }}>
-            <LinkChildSection guardianId={guardian.id} onLinked={fetchChildren} />
+            <LinkChildSection guardianId={guardian.id} onLinked={fetchChildren} isHi={isHi} />
           </div>
         </>
       )}
 
       {/* Footer */}
       <p style={{ textAlign: 'center', fontSize: 11, color: '#475569', margin: '24px 0 12px' }}>
-        Alfanumrik Learning OS | Parent Portal
+        Alfanumrik Learning OS | {t(isHi, 'Parent Portal', 'अभिभावक पोर्टल')}
       </p>
       <BottomNav />
     </div>

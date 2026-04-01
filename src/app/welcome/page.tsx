@@ -85,10 +85,10 @@ const AUDIENCE = {
 };
 
 const RESULTS = [
-  { icon: '🧠', metric: 'Deeper understanding', metricHi: 'गहरी समझ', desc: 'Students build real concept clarity through structured explanations and targeted practice — not surface-level memorization.', descHi: 'छात्र संरचित व्याख्या और लक्षित प्रैक्टिस से असली कॉन्सेप्ट क्लैरिटी बनाते हैं — ऊपरी रटाई से नहीं।' },
-  { icon: '📊', metric: 'Measurable progress', metricHi: 'मापने योग्य प्रगति', desc: 'Every session produces data. Students, parents, and teachers can see exactly what\'s improving and what needs work.', descHi: 'हर सेशन से डेटा मिलता है। छात्र, माता-पिता और शिक्षक देख सकते हैं कि क्या सुधर रहा है और कहाँ काम करना है।' },
-  { icon: '📝', metric: 'Better exam scores', metricHi: 'बेहतर परीक्षा अंक', desc: 'When practice is focused, revision is timed correctly, and gaps are fixed early — marks improve as a natural result.', descHi: 'जब प्रैक्टिस केंद्रित हो, रिवीज़न सही समय पर हो, और कमियाँ जल्दी दूर हों — तो नंबर अपने आप बढ़ते हैं।' },
-  { icon: '💪', metric: 'Real confidence', metricHi: 'असली आत्मविश्वास', desc: 'Confidence doesn\'t come from motivational quotes. It comes from knowing you\'ve practiced the right things enough times.', descHi: 'आत्मविश्वास प्रेरणादायक कोट्स से नहीं आता। ये इस जानकारी से आता है कि आपने सही चीज़ें काफी बार प्रैक्टिस की हैं।' },
+  { icon: '🧠', metric: 'Concept clarity, not memorization', metricHi: 'रटाई नहीं, कॉन्सेप्ट क्लैरिटी', desc: 'Every topic is taught step-by-step with NCERT-grounded explanations. Foxy adapts to what the student already knows — skipping basics for strong topics and going deeper on weak ones.', descHi: 'हर टॉपिक NCERT-आधारित व्याख्या के साथ स्टेप-बाय-स्टेप पढ़ाया जाता है। Foxy छात्र की मौजूदा समझ के अनुसार ढलता है — मज़बूत टॉपिक की बेसिक्स छोड़कर कमज़ोर टॉपिक पर गहराई से जाता है।' },
+  { icon: '📊', metric: 'Progress you can actually see', metricHi: 'प्रगति जो सच में दिखे', desc: 'Every quiz, every Foxy session, every revision generates real data. Students, parents, and teachers see subject-wise mastery, Bloom\'s progression, and weekly improvement — not just marks.', descHi: 'हर क्विज़, हर Foxy सेशन, हर रिवीज़न से असली डेटा बनता है। छात्र, माता-पिता और शिक्षक विषय-वार mastery, Bloom\'s प्रगति और साप्ताहिक सुधार देखते हैं — सिर्फ नंबर नहीं।' },
+  { icon: '📝', metric: 'Practice aligned to board exams', metricHi: 'बोर्ड परीक्षा के अनुरूप अभ्यास', desc: 'Questions follow CBSE board patterns and cover all Bloom\'s taxonomy levels — from remembering definitions to applying concepts to analyzing problems. Timed, scored, and analyzed after every attempt.', descHi: 'सवाल CBSE बोर्ड पैटर्न का पालन करते हैं और Bloom\'s के सभी स्तरों को कवर करते हैं — परिभाषाएँ याद करने से लेकर कॉन्सेप्ट लागू करने और समस्याओं का विश्लेषण करने तक। हर प्रयास के बाद समयबद्ध, अंकित और विश्लेषित।' },
+  { icon: '💪', metric: 'Revision that prevents forgetting', metricHi: 'रिवीज़न जो भूलने से रोके', desc: 'The spaced repetition engine brings back concepts at the right time — before the student forgets them. No last-minute cramming. Knowledge moves from short-term to long-term memory.', descHi: 'स्पेस्ड रिपिटिशन इंजन कॉन्सेप्ट सही समय पर वापस लाता है — छात्र के भूलने से पहले। कोई लास्ट-मिनट रटाई नहीं। ज्ञान शॉर्ट-टर्म से लॉन्ग-टर्म मेमोरी में जाता है।' },
 ];
 
 const FAQS = [
@@ -612,6 +612,71 @@ function WelcomeContent() {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* What's Available Today */}
+      <section className="py-12 sm:py-16">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6">
+          <div className="text-center mb-8 max-w-2xl mx-auto">
+            <span className="inline-block text-xs font-bold px-3 py-1 rounded-full mb-3" style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}>{t('TRANSPARENCY', 'पारदर्शिता')}</span>
+            <h2 className="text-2xl sm:text-3xl font-extrabold mb-3" style={{ fontFamily: 'var(--font-display)' }}>
+              {t('What\'s live today', 'आज क्या उपलब्ध है')}
+            </h2>
+            <p className="text-sm sm:text-base" style={{ color: 'var(--text-2)', lineHeight: 1.7 }}>
+              {t('We believe in honesty. Here\'s exactly what you get when you sign up today.', 'हम ईमानदारी में विश्वास करते हैं। यहाँ बिल्कुल वो है जो आज साइन अप करने पर आपको मिलता है।')}
+            </p>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div className="rounded-2xl p-6" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
+              <div className="flex items-center gap-2 mb-4">
+                <span className="text-lg">✅</span>
+                <h3 className="text-base font-bold" style={{ fontFamily: 'var(--font-display)', color: '#16A34A' }}>{t('Live Now', 'अभी उपलब्ध')}</h3>
+              </div>
+              <ul className="space-y-2.5">
+                {[
+                  { en: 'AI Tutor (Foxy) — 16 subjects, Hindi + English', hi: 'AI ट्यूटर (Foxy) — 16 विषय, हिन्दी + अंग्रेज़ी' },
+                  { en: 'Adaptive quizzes with Bloom\'s taxonomy', hi: 'Bloom\'s टैक्सोनॉमी के साथ अडैप्टिव क्विज़' },
+                  { en: 'Spaced repetition for revision', hi: 'रिवीज़न के लिए स्पेस्ड रिपिटिशन' },
+                  { en: 'STEM Centre with 19 interactive simulations', hi: '19 इंटरैक्टिव सिमुलेशन के साथ STEM सेंटर' },
+                  { en: 'Progress tracking with mastery data', hi: 'mastery डेटा के साथ प्रगति ट्रैकिंग' },
+                  { en: 'Parent dashboard with weekly reports', hi: 'साप्ताहिक रिपोर्ट के साथ पैरेंट डैशबोर्ड' },
+                  { en: 'Teacher portal with class management', hi: 'क्लास मैनेजमेंट के साथ टीचर पोर्टल' },
+                  { en: 'Study plans and exam preparation', hi: 'स्टडी प्लान और परीक्षा की तैयारी' },
+                  { en: 'OCR scan for assignments and papers', hi: 'असाइनमेंट और पेपर के लिए OCR स्कैन' },
+                  { en: 'Leaderboard and XP gamification', hi: 'लीडरबोर्ड और XP गेमिफिकेशन' },
+                ].map(item => (
+                  <li key={item.en} className="flex items-start gap-2 text-sm" style={{ color: 'var(--text-2)' }}>
+                    <span className="text-green-600 shrink-0 mt-0.5">✓</span>
+                    {isHi ? item.hi : item.en}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="rounded-2xl p-6" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
+              <div className="flex items-center gap-2 mb-4">
+                <span className="text-lg">🚧</span>
+                <h3 className="text-base font-bold" style={{ fontFamily: 'var(--font-display)', color: 'var(--orange)' }}>{t('Coming Next', 'जल्द आ रहा है')}</h3>
+              </div>
+              <ul className="space-y-2.5">
+                {[
+                  { en: 'Olympiad competitions and challenges', hi: 'ओलंपियाड प्रतियोगिताएँ और चैलेंज' },
+                  { en: 'WhatsApp notifications for parents', hi: 'माता-पिता के लिए WhatsApp नोटिफिकेशन' },
+                  { en: 'School-wide institutional dashboard', hi: 'स्कूल-व्यापी संस्थागत डैशबोर्ड' },
+                  { en: 'More regional language support', hi: 'और क्षेत्रीय भाषा समर्थन' },
+                  { en: 'Offline mode for low-connectivity areas', hi: 'कम कनेक्टिविटी वाले क्षेत्रों के लिए ऑफलाइन मोड' },
+                ].map(item => (
+                  <li key={item.en} className="flex items-start gap-2 text-sm" style={{ color: 'var(--text-2)' }}>
+                    <span className="shrink-0 mt-0.5" style={{ color: 'var(--orange)' }}>→</span>
+                    {isHi ? item.hi : item.en}
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs mt-4 pt-3 border-t" style={{ color: 'var(--text-3)', borderColor: 'var(--border)' }}>
+                {t('We ship improvements every week. Follow our progress.', 'हम हर हफ्ते सुधार करते हैं। हमारी प्रगति फॉलो करें।')}
+              </p>
+            </div>
           </div>
         </div>
       </section>

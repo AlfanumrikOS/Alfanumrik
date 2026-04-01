@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useCheckout } from '@/hooks/useCheckout';
 import { useAuth } from '@/lib/AuthContext';
 import { SubscriptionConfirm } from '@/components/SubscriptionConfirm';
+import { useLang } from '@/components/landing/LangToggle';
 
 /* ─── Plan Data ─── */
 
@@ -12,14 +13,17 @@ interface Plan {
   name: string;
   code: string;
   tagline: string;
+  taglineHi: string;
   monthlyPrice: string;
   yearlyPrice: string;
   monthlyPriceNum: number;
   yearlyPriceNum: number;
   yearlySaving: string;
+  yearlySavingHi: string;
   popular: boolean;
-  features: { label: string; included: boolean }[];
+  features: { label: string; labelHi: string; included: boolean }[];
   cta: string;
+  ctaHi: string;
   href: string;
   free: boolean;
 }
@@ -29,88 +33,100 @@ const PLANS: Plan[] = [
     name: 'Explorer',
     code: 'free',
     tagline: 'Get started with Foxy for free',
+    taglineHi: 'Foxy के साथ मुफ़्त शुरू करें',
     monthlyPrice: 'Free',
     yearlyPrice: 'Free',
     monthlyPriceNum: 0,
     yearlyPriceNum: 0,
     yearlySaving: '',
+    yearlySavingHi: '',
     popular: false,
     free: true,
     cta: 'Start Free',
+    ctaHi: 'मुफ़्त शुरू करें',
     href: '/login',
     features: [
-      { label: '5 Foxy chats / day', included: true },
-      { label: '5 quizzes / day', included: true },
-      { label: '2 subjects', included: true },
-      { label: 'Progress reports', included: true },
-      { label: 'Spaced repetition', included: true },
-      { label: 'STEM Centre', included: false },
+      { label: '5 Foxy chats / day', labelHi: '5 Foxy चैट / दिन', included: true },
+      { label: '5 quizzes / day', labelHi: '5 क्विज़ / दिन', included: true },
+      { label: '2 subjects', labelHi: '2 विषय', included: true },
+      { label: 'Progress reports', labelHi: 'प्रगति रिपोर्ट', included: true },
+      { label: 'Spaced repetition', labelHi: 'स्पेस्ड रिपीटिशन', included: true },
+      { label: 'STEM Centre', labelHi: 'STEM सेंटर', included: false },
     ],
   },
   {
     name: 'Starter',
     code: 'starter',
     tagline: 'More chats, more subjects',
+    taglineHi: 'ज़्यादा चैट, ज़्यादा विषय',
     monthlyPrice: '\u20B9299',
     yearlyPrice: '\u20B92,399',
     monthlyPriceNum: 299,
     yearlyPriceNum: 2399,
     yearlySaving: 'Save 33%',
+    yearlySavingHi: '33% बचाएँ',
     popular: false,
     free: false,
     cta: 'Get Started',
+    ctaHi: 'शुरू करें',
     href: '/login',
     features: [
-      { label: '30 Foxy chats / day', included: true },
-      { label: '20 quizzes / day', included: true },
-      { label: '4 subjects', included: true },
-      { label: 'Progress reports', included: true },
-      { label: 'Spaced repetition', included: true },
-      { label: 'STEM Centre', included: true },
+      { label: '30 Foxy chats / day', labelHi: '30 Foxy चैट / दिन', included: true },
+      { label: '20 quizzes / day', labelHi: '20 क्विज़ / दिन', included: true },
+      { label: '4 subjects', labelHi: '4 विषय', included: true },
+      { label: 'Progress reports', labelHi: 'प्रगति रिपोर्ट', included: true },
+      { label: 'Spaced repetition', labelHi: 'स्पेस्ड रिपीटिशन', included: true },
+      { label: 'STEM Centre', labelHi: 'STEM सेंटर', included: true },
     ],
   },
   {
     name: 'Pro',
     code: 'pro',
     tagline: 'The complete learning experience',
+    taglineHi: 'संपूर्ण सीखने का अनुभव',
     monthlyPrice: '\u20B9699',
     yearlyPrice: '\u20B95,599',
     monthlyPriceNum: 699,
     yearlyPriceNum: 5599,
     yearlySaving: 'Save 33%',
+    yearlySavingHi: '33% बचाएँ',
     popular: true,
     free: false,
     cta: 'Get Started',
+    ctaHi: 'शुरू करें',
     href: '/login',
     features: [
-      { label: '100 Foxy chats / day', included: true },
-      { label: 'Unlimited quizzes', included: true },
-      { label: 'All subjects', included: true },
-      { label: 'Progress reports', included: true },
-      { label: 'Spaced repetition', included: true },
-      { label: 'STEM Centre', included: true },
+      { label: '100 Foxy chats / day', labelHi: '100 Foxy चैट / दिन', included: true },
+      { label: 'Unlimited quizzes', labelHi: 'असीमित क्विज़', included: true },
+      { label: 'All subjects', labelHi: 'सभी विषय', included: true },
+      { label: 'Progress reports', labelHi: 'प्रगति रिपोर्ट', included: true },
+      { label: 'Spaced repetition', labelHi: 'स्पेस्ड रिपीटिशन', included: true },
+      { label: 'STEM Centre', labelHi: 'STEM सेंटर', included: true },
     ],
   },
   {
     name: 'Unlimited',
     code: 'unlimited',
     tagline: 'No limits, maximum results',
+    taglineHi: 'कोई सीमा नहीं, अधिकतम परिणाम',
     monthlyPrice: '\u20B91,499',
     yearlyPrice: '\u20B911,999',
     monthlyPriceNum: 1499,
     yearlyPriceNum: 11999,
     yearlySaving: 'Save 33%',
+    yearlySavingHi: '33% बचाएँ',
     popular: false,
     free: false,
     cta: 'Get Started',
+    ctaHi: 'शुरू करें',
     href: '/login',
     features: [
-      { label: 'Unlimited Foxy chats', included: true },
-      { label: 'Unlimited quizzes', included: true },
-      { label: 'All subjects', included: true },
-      { label: 'Progress reports', included: true },
-      { label: 'Spaced repetition', included: true },
-      { label: 'STEM Centre', included: true },
+      { label: 'Unlimited Foxy chats', labelHi: 'असीमित Foxy चैट', included: true },
+      { label: 'Unlimited quizzes', labelHi: 'असीमित क्विज़', included: true },
+      { label: 'All subjects', labelHi: 'सभी विषय', included: true },
+      { label: 'Progress reports', labelHi: 'प्रगति रिपोर्ट', included: true },
+      { label: 'Spaced repetition', labelHi: 'स्पेस्ड रिपीटिशन', included: true },
+      { label: 'STEM Centre', labelHi: 'STEM सेंटर', included: true },
     ],
   },
 ];
@@ -123,17 +139,18 @@ export function PricingCards() {
   const { checkout, loading: checkoutLoading } = useCheckout();
   const [successPlan, setSuccessPlan] = useState<string | null>(null);
   const [confirmPlan, setConfirmPlan] = useState<Plan | null>(null);
+  const { t } = useLang();
 
   return (
     <section style={{ padding: '0 16px 64px', maxWidth: 1100, margin: '0 auto' }}>
       {/* Toggle */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginBottom: 40 }}>
         <span style={{ fontSize: 14, fontWeight: annual ? 500 : 700, color: annual ? 'var(--text-3, #888)' : 'var(--text-1, #1a1a1a)' }}>
-          Monthly
+          {t('Monthly', 'मासिक')}
         </span>
         <button
           onClick={() => setAnnual(!annual)}
-          aria-label={annual ? 'Switch to monthly billing' : 'Switch to annual billing'}
+          aria-label={annual ? t('Switch to monthly billing', 'मासिक बिलिंग पर जाएँ') : t('Switch to annual billing', 'वार्षिक बिलिंग पर जाएँ')}
           style={{
             position: 'relative',
             width: 52,
@@ -161,14 +178,14 @@ export function PricingCards() {
           />
         </button>
         <span style={{ fontSize: 14, fontWeight: annual ? 700 : 500, color: annual ? 'var(--text-1, #1a1a1a)' : 'var(--text-3, #888)' }}>
-          Annual
+          {t('Annual', 'वार्षिक')}
         </span>
         {annual && (
           <span style={{
             fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 999,
             background: 'rgba(22,163,74,0.1)', color: 'var(--green, #16A34A)',
           }}>
-            Save 33%
+            {t('Save 33%', '33% बचाएँ')}
           </span>
         )}
       </div>
@@ -204,7 +221,7 @@ export function PricingCards() {
                   fontFamily: 'var(--font-display)',
                   whiteSpace: 'nowrap',
                 }}>
-                  Most Popular
+                  {t('Most Popular', 'सबसे लोकप्रिय')}
                 </div>
               )}
 
@@ -213,24 +230,24 @@ export function PricingCards() {
                 {plan.name}
               </h3>
               <p style={{ fontSize: 13, color: 'var(--text-3, #888)', marginBottom: 16, lineHeight: 1.5 }}>
-                {plan.tagline}
+                {t(plan.tagline, plan.taglineHi)}
               </p>
 
               {/* Price */}
               <div style={{ marginBottom: 20 }}>
                 <span style={{ fontSize: 32, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text-1, #1a1a1a)' }}>
-                  {plan.free ? 'Free' : annual ? plan.yearlyPrice : plan.monthlyPrice}
+                  {plan.free ? t('Free', 'मुफ़्त') : annual ? plan.yearlyPrice : plan.monthlyPrice}
                 </span>
                 {!plan.free && (
                   <span style={{ fontSize: 14, color: 'var(--text-3, #888)', marginLeft: 4 }}>
-                    /{annual ? 'yr' : 'mo'}
+                    /{annual ? t('yr', 'वर्ष') : t('mo', 'माह')}
                   </span>
                 )}
                 {annual && plan.yearlySaving && (
                   <div style={{
                     fontSize: 12, fontWeight: 700, color: 'var(--green, #16A34A)', marginTop: 4,
                   }}>
-                    {plan.yearlySaving}
+                    {t(plan.yearlySaving, plan.yearlySavingHi)}
                   </div>
                 )}
               </div>
@@ -243,7 +260,7 @@ export function PricingCards() {
                   background: isPopular ? 'var(--orange, #E8581C)' : plan.free ? 'var(--surface-2, #F5F0EA)' : 'var(--text-1, #1a1a1a)',
                   color: plan.free ? 'var(--text-1, #1a1a1a)' : '#fff', marginBottom: 24, transition: 'opacity 0.15s',
                 }}>
-                  {plan.cta}
+                  {t(plan.cta, plan.ctaHi)}
                 </Link>
               ) : (
                 <button
@@ -257,7 +274,11 @@ export function PricingCards() {
                     color: '#fff', marginBottom: 24, transition: 'opacity 0.15s', opacity: checkoutLoading ? 0.6 : 1,
                   }}
                 >
-                  {successPlan === plan.name.toLowerCase() ? '✓ Upgraded!' : checkoutLoading ? 'Processing...' : plan.cta}
+                  {successPlan === plan.name.toLowerCase()
+                    ? t('Upgraded!', 'अपग्रेड हो गया!')
+                    : checkoutLoading
+                      ? t('Processing...', 'प्रोसेसिंग...')
+                      : t(plan.cta, plan.ctaHi)}
                 </button>
               )}
 
@@ -275,7 +296,7 @@ export function PricingCards() {
                       {f.included ? '\u2713' : '\u2715'}
                     </span>
                     <span style={{ color: f.included ? 'var(--text-2, #444)' : 'var(--text-3, #888)' }}>
-                      {f.label}
+                      {t(f.label, f.labelHi)}
                     </span>
                   </li>
                 ))}

@@ -195,8 +195,7 @@ export default function STEMCentrePage() {
                   conclusionPrompt={experiment.conclusionPrompt}
                   conclusionPromptHi={experiment.conclusionPromptHi}
                   quizQuestions={experiment.quizQuestions}
-                  onComplete={(result) => {
-                    console.warn('[STEM] Experiment completed:', experiment.id, result);
+                  onComplete={() => {
                     setActiveLab(null);
                     setObservation('');
                   }}

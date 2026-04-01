@@ -112,12 +112,16 @@ export default function QuizPage() {
     if (mode === 'exam') { setQuizMode('exam'); setInitialMode('exam'); }
   }, []);
 
+  // Track whether exam auto-submit has fired (prevents double-submit)
+  const examAutoSubmittedRef = useRef(false);
+
   // Global timer (counts up for practice/cognitive, starts from limit for exam)
   useEffect(() => {
     if (screen === 'quiz') {
       if (quizMode === 'exam' && !examTimerActive) {
         setTimer(examTimeLimit * 60); // set to limit in seconds
         setExamTimerActive(true);
+        examAutoSubmittedRef.current = false;
       }
       timerRef.current = setInterval(() => {
         setTimer(t => {
@@ -137,6 +141,15 @@ export default function QuizPage() {
     setExamTimerActive(false);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [screen, quizMode, examTimeLimit, examTimerActive]);
+
+  // Exam auto-submit: when timer reaches 0, trigger submission
+  useEffect(() => {
+    if (screen === 'quiz' && quizMode === 'exam' && timer === 0 && examTimerActive && !examAutoSubmittedRef.current) {
+      examAutoSubmittedRef.current = true;
+      nextQuestion();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only fire on timer reaching 0
+  }, [timer, screen, quizMode, examTimerActive]);
 
   // Per-question timer
   useEffect(() => {
@@ -650,6 +663,8 @@ export default function QuizPage() {
                   onClick={confirmAnswer}
                   color={subMeta?.color}
                   size="md"
+                  disabled={selectedOption === null}
+                  style={selectedOption === null ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
                 >
                   {selectedOption !== null
                     ? (isHi ? 'जवाब जमा करो' : 'Submit Answer')
@@ -710,6 +725,20 @@ export default function QuizPage() {
               {isHi ? 'होम' : 'Home'}
             </Button>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Submission in progress (screen === 'feedback')
+  if (screen === 'feedback') {
+    return (
+      <div className="mesh-bg min-h-dvh flex flex-col items-center justify-center px-6">
+        <div className="text-center">
+          <LoadingFoxy />
+          <p className="text-sm text-[var(--text-2)] mt-4 font-medium">
+            {isHi ? 'नतीजे तैयार हो रहे हैं...' : 'Preparing your results...'}
+          </p>
         </div>
       </div>
     );
