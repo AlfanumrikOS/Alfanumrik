@@ -111,6 +111,68 @@ setInterval(() => {
   }
 }, 120_000)
 
+// ─── Input safety filter (P12: age-appropriate content) ───────
+// Fast regex/keyword check to block clearly inappropriate inputs.
+// Conservative: only blocks obviously harmful content outside educational scope.
+// Does NOT block legitimate academic topics (e.g., "chemical reactions", "reproduction in plants").
+interface SafetyResult {
+  safe: boolean
+  category?: string
+}
+
+function checkInputSafety(message: string): SafetyResult {
+  // Normalize: lowercase, collapse whitespace, strip common obfuscation
+  const normalized = message
+    .toLowerCase()
+    .replace(/[\s_\-.*+]+/g, ' ')  // collapse separators
+    .replace(/[0@][o0]/gi, 'oo')   // basic leet-speak normalization
+    .trim()
+
+  // Each category has patterns that are clearly outside educational scope.
+  // Patterns are designed to avoid false positives with legitimate CBSE topics
+  // (e.g., "drug" alone is fine for pharmacy/biology context).
+  const SAFETY_PATTERNS: Array<{ category: string; pattern: RegExp }> = [
+    // Violence / weapons — but not "nuclear weapons in history" or "chemical weapons treaty"
+    {
+      category: 'violence',
+      pattern: /\b(how to (make|build|create) (a )?(bomb|weapon|gun|explosive)|kill (someone|people|myself|yourself)|murder (someone|people)|school shoot|mass shoot|terrorist attack|how to hurt)\b/,
+    },
+    // Sexual content — but not "sexual reproduction" (biology)
+    {
+      category: 'sexual_content',
+      pattern: /\b(porn|pornograph|sex video|nude photo|naked (photo|pic|image|video)|sexting|hookup|onlyfans|xxx rated)\b/,
+    },
+    // Self-harm
+    {
+      category: 'self_harm',
+      pattern: /\b(how to (commit suicide|kill myself|end my life|cut myself|hurt myself)|suicide method|want to die|ways to die)\b/,
+    },
+    // Drug / substance abuse — but not "drugs and medicines" (biology/chemistry)
+    {
+      category: 'substance_abuse',
+      pattern: /\b(how to (make|cook|brew|grow) (meth|cocaine|heroin|weed|drugs|lsd)|buy (drugs|weed|cocaine|meth)|get (high|drunk|stoned) (fast|easily|quickly))\b/,
+    },
+    // Hate speech
+    {
+      category: 'hate_speech',
+      pattern: /\b(hate (all )?(muslims|hindus|christians|jews|blacks|whites|dalits)|kill (all )?(muslims|hindus|christians|jews|blacks|whites)|ethnic cleansing|racial supremacy|white power|genocide is good)\b/,
+    },
+    // Personal information harvesting
+    {
+      category: 'pii_request',
+      pattern: /\b(give me (the )?(phone|mobile|address|email|password|aadhaar|aadhar) (number |of )|hack (into|someone|account)|stalk (someone|person)|find (someone|person).{0,20}(address|location|phone))\b/,
+    },
+  ]
+
+  for (const { category, pattern } of SAFETY_PATTERNS) {
+    if (pattern.test(normalized)) {
+      return { safe: false, category }
+    }
+  }
+
+  return { safe: true }
+}
+
 // ─── Usage limits by plan ──────────────────────────────────────
 const PLAN_LIMITS: Record<string, number> = {
   free: 5,
@@ -479,6 +541,35 @@ Deno.serve(async (req: Request) => {
     const safeName = student_name
       ? student_name.replace(/<[^>]*>/g, '').replace(/[{}`]/g, '').slice(0, 100)
       : null
+
+    // ── Input safety check (P12: age-appropriate content) ──
+    // Fast keyword-based filter to block clearly inappropriate inputs
+    // BEFORE rate limit so blocked messages don't consume usage quota.
+    // Conservative: only blocks obviously off-topic harmful content.
+    const inputSafetyResult = checkInputSafety(message)
+    if (!inputSafetyResult.safe) {
+      // Log blocked input for monitoring (redact actual content for privacy P13)
+      console.warn(
+        `[INPUT_SAFETY] Blocked message from student. Category: ${inputSafetyResult.category}. ` +
+        `Length: ${message.length}. Grade: ${grade}. Subject: ${subject}.`
+      )
+
+      const safeReply = safeLanguage === 'hi'
+        ? '🦊 अरे! इसमें मैं मदद नहीं कर सकता। मैं तुम्हारा CBSE स्टडी बडी हूँ — मुझसे गणित, विज्ञान, अंग्रेज़ी, या अपने किसी भी विषय के बारे में पूछो! क्या सीखना चाहोगे?'
+        : '🦊 Hey! That\'s not something I can help with. I\'m your CBSE study buddy — ask me about Math, Science, English, or any of your school subjects! What would you like to learn?'
+
+      return jsonResponse(
+        {
+          reply: safeReply,
+          xp_earned: 0,
+          session_id: session_id || null,
+          blocked: true,
+        },
+        200,
+        {},
+        origin,
+      )
+    }
 
     // ── Rate limit ──
     if (!checkRateLimit(student_id)) {
