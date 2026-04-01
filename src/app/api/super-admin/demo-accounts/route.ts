@@ -210,7 +210,7 @@ export async function POST(request: NextRequest) {
     };
 
     if (role === 'student') {
-      profileData.grade = '10'; // P5: grade must be string
+      profileData.grade = 'Grade 10'; // P5: grade must be string, "Grade X" format
       profileData.board = 'CBSE';
       profileData.subscription_plan = 'unlimited';
       profileData.account_status = 'demo';
@@ -221,7 +221,7 @@ export async function POST(request: NextRequest) {
     } else if (role === 'teacher') {
       profileData.school_name = 'Demo School - Delhi Public School';
       profileData.subjects_taught = ['Mathematics', 'Science'];
-      profileData.grades_taught = ['10', '11', '12'];
+      profileData.grades_taught = ['Grade 10', 'Grade 11', 'Grade 12'];
       profileData.board = 'CBSE';
       profileData.preferred_language = 'en';
       profileData.is_verified = true;
