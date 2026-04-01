@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { BUILT_IN_SIMULATIONS, type BuiltInSimulation } from '@/components/simulations/index';
 import GuidedExperiment from '@/components/stem/GuidedExperiment';
+import type { ExperimentResult } from '@/components/stem/GuidedExperiment';
 import { getExperimentForSimulation } from '@/components/stem/experiments';
 
 /* ─── Types ─── */
@@ -66,8 +67,47 @@ export default function STEMCentrePage() {
   const [loading, setLoading] = useState(true);
   const [activeLab, setActiveLab] = useState<ActiveLab | null>(null);
   const [observation, setObservation] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   const grade = student?.grade || '10';
+
+  const saveObservation = useCallback(async (params: {
+    type: 'simple' | 'guided';
+    simId: string;
+    experimentId?: string;
+    observationText?: string;
+    result?: ExperimentResult;
+    subject: string;
+  }) => {
+    if (!student?.id) return false;
+    setSaving(true);
+    setSaveError('');
+    const { error } = await supabase.from('experiment_observations').insert({
+      student_id: student.id,
+      simulation_id: params.simId,
+      experiment_id: params.experimentId || null,
+      observation_type: params.type,
+      observation_text: params.type === 'simple' ? params.observationText : null,
+      structured_observations: params.result?.observations || null,
+      data_entries: params.result?.dataEntries || null,
+      conclusion: params.result?.conclusion || null,
+      quiz_score: params.result?.quizScore ?? null,
+      total_questions: params.result?.totalQuestions ?? null,
+      time_spent_seconds: params.result?.timeSpent ?? 0,
+      grade,
+      subject: params.subject,
+    });
+    setSaving(false);
+    if (error) {
+      setSaveError(isHi ? 'सहेजने में त्रुटि हुई' : 'Failed to save observation');
+      return false;
+    }
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 3000);
+    return true;
+  }, [student?.id, grade, isHi]);
   const availableSubjects = getSubjectsForGrade(grade);
   const tabs = SUBJECT_TABS.filter(t => availableSubjects.includes(t.code));
 
@@ -160,7 +200,7 @@ export default function STEMCentrePage() {
 
         {/* Active Lab View */}
         {activeLab && (() => {
-          const simId = activeLab.type === 'builtin' ? activeLab.sim.id : activeLab.sim.id;
+          const simId = activeLab.sim.id;
           const experiment = getExperimentForSimulation(simId, grade);
           const simNode = activeLab.type === 'builtin' ? (
             <Suspense fallback={<div className="text-4xl animate-pulse">🔬</div>}>
@@ -197,9 +237,18 @@ export default function STEMCentrePage() {
                   conclusionPrompt={experiment.conclusionPrompt}
                   conclusionPromptHi={experiment.conclusionPromptHi}
                   quizQuestions={experiment.quizQuestions}
-                  onComplete={() => {
-                    setActiveLab(null);
-                    setObservation('');
+                  onComplete={async (result: ExperimentResult) => {
+                    await saveObservation({
+                      type: 'guided',
+                      simId,
+                      experimentId: experiment.id,
+                      result,
+                      subject: experiment.subject,
+                    });
+                    setTimeout(() => {
+                      setActiveLab(null);
+                      setObservation('');
+                    }, 2000);
                   }}
                   onClose={() => { setActiveLab(null); setObservation(''); }}
                 />
@@ -236,7 +285,7 @@ export default function STEMCentrePage() {
                   )}
                 </div>
 
-                {/* Simple observation prompt */}
+                {/* Observation prompt with save */}
                 <div className="mt-4">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     🦊 {isHi ? 'तुमने क्या देखा? लिखो:' : 'What did you observe? Write it down:'}
@@ -248,11 +297,50 @@ export default function STEMCentrePage() {
                     className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-orange-300 focus:border-orange-400 outline-none resize-none"
                     rows={2}
                   />
+                  <button
+                    onClick={async () => {
+                      const subj = activeLab!.type === 'builtin'
+                        ? (activeLab!.sim as BuiltInSimulation).subject
+                        : ((activeLab!.sim as DbSimulation).subject_code || 'science');
+                      const ok = await saveObservation({
+                        type: 'simple',
+                        simId,
+                        observationText: observation,
+                        subject: subj,
+                      });
+                      if (ok) setObservation('');
+                    }}
+                    disabled={!observation.trim() || saving}
+                    className="mt-2 w-full py-2.5 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-xl text-sm font-semibold transition-colors active:scale-[0.98] min-h-[44px]"
+                  >
+                    {saving
+                      ? (isHi ? 'सहेज रहे हैं...' : 'Saving...')
+                      : (isHi ? '💾 अवलोकन सहेजें' : '💾 Save Observation')}
+                  </button>
+                  {saveSuccess && (
+                    <p className="mt-2 text-sm text-green-600 font-medium text-center">
+                      {isHi ? '✅ अवलोकन सफलतापूर्वक सहेजा गया!' : '✅ Observation saved successfully!'}
+                    </p>
+                  )}
+                  {saveError && (
+                    <p className="mt-2 text-sm text-red-600 font-medium text-center">{saveError}</p>
+                  )}
                 </div>
               </div>
             </section>
           );
         })()}
+
+        {saveSuccess && !activeLab && (
+          <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-2xl text-center">
+            <p className="text-green-700 font-semibold text-sm">
+              {isHi ? '🎉 प्रयोग सफलतापूर्वक सहेजा गया!' : '🎉 Experiment saved successfully!'}
+            </p>
+            <p className="text-green-600 text-xs mt-1">
+              {isHi ? 'आपके अवलोकन और निष्कर्ष रिकॉर्ड हो गए हैं।' : 'Your observations and conclusions have been recorded.'}
+            </p>
+          </div>
+        )}
 
         {/* Loading State */}
         {loading && (
