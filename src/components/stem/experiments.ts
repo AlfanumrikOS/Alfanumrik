@@ -616,6 +616,483 @@ export const GUIDED_EXPERIMENTS: ExperimentDefinition[] = [
       },
     ],
   },
+
+  /* ──────────── 6. Electric Circuit Builder ──────────── */
+  {
+    id: 'exp-electric-circuit-basic',
+    simulationId: 'builtin-electric-circuit-basic',
+    title: 'Electric Circuits: Open, Closed & Components',
+    titleHi: 'विद्युत परिपथ: खुला, बंद और घटक',
+    chapterRef: 'Class 6 Science Ch 12 — Electricity and Circuits',
+    grades: ['6', '7', '8'],
+    subject: 'physics',
+    difficulty: 1,
+    bloomLevel: 'understand',
+    estimatedMinutes: 10,
+    objective:
+      'Build simple electric circuits to understand the difference between open and closed circuits. Identify conductors and insulators by testing materials.',
+    objectiveHi:
+      'सरल विद्युत परिपथ बनाकर खुले और बंद परिपथ का अंतर समझें। विभिन्न पदार्थों की जाँच करके चालक और कुचालक पहचानें।',
+    materials: [
+      'Battery (cell)',
+      'Bulb',
+      'Connecting wires',
+      'Switch',
+      'Various materials (iron nail, rubber band, plastic spoon, coin)',
+    ],
+    observations: [
+      {
+        prompt: 'What happens to the bulb when the switch is closed (ON)?',
+        promptHi: 'जब स्विच बंद (ON) किया जाता है तो बल्ब पर क्या प्रभाव पड़ता है?',
+        type: 'select',
+        options: ['Bulb glows', 'Bulb does not glow', 'Bulb breaks', 'Nothing happens'],
+        expectedHint: 'When the switch is closed, the circuit is complete and current flows, making the bulb glow.',
+      },
+      {
+        prompt: 'What is the difference between an open and a closed circuit?',
+        promptHi: 'खुले और बंद परिपथ में क्या अंतर है?',
+        type: 'text',
+        expectedHint: 'In a closed circuit, the path is complete and current flows. In an open circuit, there is a gap and current cannot flow.',
+      },
+      {
+        prompt: 'Which of these materials allows electricity to pass through: iron nail, rubber band, plastic spoon, coin?',
+        promptHi: 'इनमें से कौन सा पदार्थ विद्युत को गुज़रने देता है: लोहे की कील, रबर बैंड, प्लास्टिक चम्मच, सिक्का?',
+        type: 'text',
+        expectedHint: 'Iron nail and coin are conductors (metals allow electricity to pass). Rubber and plastic are insulators.',
+      },
+    ],
+    conclusionPrompt:
+      'Explain why a circuit must be closed for a bulb to glow. Give two examples of conductors and two examples of insulators from your daily life.',
+    conclusionPromptHi:
+      'समझाएँ कि बल्ब जलने के लिए परिपथ का बंद होना क्यों ज़रूरी है। अपने दैनिक जीवन से दो चालकों और दो कुचालकों के उदाहरण दें।',
+    quizQuestions: [
+      {
+        question: 'In which type of circuit does the bulb glow?',
+        questionHi: 'किस प्रकार के परिपथ में बल्ब जलता है?',
+        options: ['Open circuit', 'Closed circuit', 'Both', 'Neither'],
+        correctIndex: 1,
+        explanation: 'A bulb glows only in a closed (complete) circuit where current can flow continuously from the battery through the bulb and back.',
+      },
+      {
+        question: 'Which of the following is an insulator?',
+        questionHi: 'निम्नलिखित में से कौन कुचालक है?',
+        options: ['Copper wire', 'Iron nail', 'Rubber eraser', 'Aluminium foil'],
+        correctIndex: 2,
+        explanation: 'Rubber is an insulator — it does not allow electric current to pass through. Copper, iron, and aluminium are all conductors (metals).',
+      },
+      {
+        question: 'What is the function of a switch in a circuit?',
+        questionHi: 'परिपथ में स्विच का क्या कार्य है?',
+        options: ['It increases current', 'It stores electricity', 'It opens or closes the circuit', 'It generates electricity'],
+        correctIndex: 2,
+        explanation: 'A switch is used to open (break) or close (complete) an electric circuit, controlling whether current flows or not.',
+      },
+    ],
+  },
+
+  /* ──────────── 7. Cell Structure Explorer ──────────── */
+  {
+    id: 'exp-cell-structure',
+    simulationId: 'builtin-cell-structure',
+    title: 'Cell Structure: Plant vs Animal Cells',
+    titleHi: 'कोशिका संरचना: पादप और जंतु कोशिका',
+    chapterRef: 'Class 8 Science Ch 8 — Cell: Structure and Functions',
+    grades: ['6', '7', '8'],
+    subject: 'biology',
+    difficulty: 1,
+    bloomLevel: 'remember',
+    estimatedMinutes: 10,
+    objective:
+      'Identify the main parts of a cell — cell membrane, nucleus, cytoplasm — and compare plant and animal cells to find their differences.',
+    objectiveHi:
+      'कोशिका के मुख्य भागों — कोशिका झिल्ली, केंद्रक, कोशिकाद्रव्य — को पहचानें और पादप व जंतु कोशिकाओं की तुलना करें।',
+    materials: [
+      'Microscope (virtual)',
+      'Onion peel slide',
+      'Cheek cell slide',
+      'Iodine / Methylene blue stain',
+    ],
+    observations: [
+      {
+        prompt: 'Name three organelles found in both plant and animal cells.',
+        promptHi: 'तीन ऐसे कोशिकांग बताएँ जो पादप और जंतु दोनों कोशिकाओं में पाए जाते हैं।',
+        type: 'text',
+        expectedHint: 'Cell membrane, nucleus, and cytoplasm are found in both plant and animal cells.',
+      },
+      {
+        prompt: 'Which structure is present in plant cells but absent in animal cells?',
+        promptHi: 'कौन सी संरचना पादप कोशिका में होती है लेकिन जंतु कोशिका में नहीं?',
+        type: 'select',
+        options: ['Cell wall', 'Nucleus', 'Cytoplasm', 'Cell membrane'],
+        expectedHint: 'Cell wall is present only in plant cells. It provides rigidity and shape to the plant cell.',
+      },
+      {
+        prompt: 'What is the function of the nucleus?',
+        promptHi: 'केंद्रक (nucleus) का क्या कार्य है?',
+        type: 'text',
+        expectedHint: 'The nucleus controls all cell activities and contains genetic material (DNA) that carries instructions for the cell.',
+      },
+      {
+        prompt: 'Do plant cells have chloroplasts? What is their function?',
+        promptHi: 'क्या पादप कोशिकाओं में हरितलवक (chloroplast) होते हैं? उनका क्या कार्य है?',
+        type: 'text',
+        expectedHint: 'Yes, plant cells have chloroplasts which contain chlorophyll and carry out photosynthesis (making food from sunlight).',
+      },
+    ],
+    conclusionPrompt:
+      'List three differences between plant and animal cells. Why do plant cells need a cell wall but animal cells do not?',
+    conclusionPromptHi:
+      'पादप और जंतु कोशिकाओं के बीच तीन अंतर लिखें। पादप कोशिकाओं को कोशिका भित्ति की आवश्यकता क्यों होती है लेकिन जंतु कोशिकाओं को नहीं?',
+    quizQuestions: [
+      {
+        question: 'The outermost covering of an animal cell is the:',
+        questionHi: 'जंतु कोशिका का सबसे बाहरी आवरण है:',
+        options: ['Cell wall', 'Cell membrane', 'Nucleus', 'Cytoplasm'],
+        correctIndex: 1,
+        explanation: 'Animal cells do not have a cell wall. Their outermost boundary is the cell membrane (plasma membrane), which is thin and flexible.',
+      },
+      {
+        question: 'Which organelle is called the "powerhouse of the cell"?',
+        questionHi: 'किस कोशिकांग को "कोशिका का पावरहाउस" कहा जाता है?',
+        options: ['Nucleus', 'Chloroplast', 'Mitochondria', 'Ribosome'],
+        correctIndex: 2,
+        explanation: 'Mitochondria break down food (glucose) to release energy (ATP) for the cell, which is why they are called the powerhouse of the cell.',
+      },
+      {
+        question: 'Chloroplasts are found in:',
+        questionHi: 'हरितलवक (Chloroplast) पाए जाते हैं:',
+        options: ['Only animal cells', 'Only plant cells', 'Both plant and animal cells', 'Neither'],
+        correctIndex: 1,
+        explanation: 'Chloroplasts are found only in plant cells. They contain chlorophyll and carry out photosynthesis. Animal cells cannot make their own food.',
+      },
+    ],
+  },
+
+  /* ──────────── 8. Light Reflection Lab ──────────── */
+  {
+    id: 'exp-light-reflection',
+    simulationId: 'builtin-light-reflection',
+    title: 'Light Reflection: Laws & Mirror Images',
+    titleHi: 'प्रकाश परावर्तन: नियम और दर्पण प्रतिबिम्ब',
+    chapterRef: 'Class 8 Science Ch 16 — Light',
+    grades: ['6', '7', '8'],
+    subject: 'physics',
+    difficulty: 1,
+    bloomLevel: 'understand',
+    estimatedMinutes: 10,
+    objective:
+      'Explore how light reflects off a mirror. Verify the law of reflection: the angle of incidence equals the angle of reflection.',
+    objectiveHi:
+      'जानें कि प्रकाश दर्पण से कैसे परावर्तित होता है। परावर्तन का नियम सत्यापित करें: आपतन कोण = परावर्तन कोण।',
+    materials: ['Plane mirror', 'Torch / light source', 'Protractor', 'White paper sheet', 'Pins'],
+    observations: [
+      {
+        prompt: 'When you shine light at a mirror at 30\u00b0 to the normal, at what angle does the reflected ray leave?',
+        promptHi: 'जब आप दर्पण पर अभिलम्ब से 30\u00b0 पर प्रकाश डालते हैं, तो परावर्तित किरण किस कोण पर निकलती है?',
+        type: 'number',
+        expectedHint: 'The reflected ray leaves at 30\u00b0 to the normal. Angle of incidence = Angle of reflection.',
+      },
+      {
+        prompt: 'The incident ray, reflected ray, and the normal all lie in the same _____.',
+        promptHi: 'आपतित किरण, परावर्तित किरण और अभिलम्ब सभी एक ही _____ में होते हैं।',
+        type: 'select',
+        options: ['Plane', 'Line', 'Circle', 'Curve'],
+        expectedHint: 'They all lie in the same plane. This is the second law of reflection.',
+      },
+      {
+        prompt: 'What happens to the angle of reflection when you increase the angle of incidence?',
+        promptHi: 'जब आपतन कोण बढ़ाया जाता है तो परावर्तन कोण पर क्या प्रभाव पड़ता है?',
+        type: 'select',
+        options: ['It increases equally', 'It decreases', 'It stays the same', 'It becomes zero'],
+        expectedHint: 'The angle of reflection increases equally — it always equals the angle of incidence.',
+      },
+    ],
+    dataTable: {
+      columns: ['S.No.', 'Angle of Incidence (\u00b0)', 'Angle of Reflection (\u00b0)', 'Equal? (Yes/No)'],
+      rows: 4,
+    },
+    conclusionPrompt:
+      'State the two laws of reflection in your own words. Why is the normal line important when measuring angles of reflection?',
+    conclusionPromptHi:
+      'परावर्तन के दो नियम अपने शब्दों में लिखें। परावर्तन कोण मापते समय अभिलम्ब रेखा क्यों महत्वपूर्ण है?',
+    quizQuestions: [
+      {
+        question: 'The angle of incidence is measured between the:',
+        questionHi: 'आपतन कोण मापा जाता है:',
+        options: ['Incident ray and mirror surface', 'Incident ray and normal', 'Reflected ray and mirror', 'Two reflected rays'],
+        correctIndex: 1,
+        explanation: 'The angle of incidence is the angle between the incident ray and the normal (perpendicular to the mirror surface at the point of incidence).',
+      },
+      {
+        question: 'If the angle of incidence is 45\u00b0, the angle of reflection is:',
+        questionHi: 'यदि आपतन कोण 45\u00b0 है, तो परावर्तन कोण होगा:',
+        options: ['0\u00b0', '45\u00b0', '90\u00b0', '135\u00b0'],
+        correctIndex: 1,
+        explanation: 'By the law of reflection, the angle of reflection always equals the angle of incidence. So it is 45\u00b0.',
+      },
+    ],
+  },
+
+  /* ──────────── 9. Magnetic Field Lines ──────────── */
+  {
+    id: 'exp-magnet-field-lines',
+    simulationId: 'builtin-magnet-field-lines',
+    title: 'Magnets: Poles, Field Lines & Attraction',
+    titleHi: 'चुम्बक: ध्रुव, क्षेत्र रेखाएँ और आकर्षण',
+    chapterRef: 'Class 6 Science Ch 13 — Fun with Magnets',
+    grades: ['6', '7', '8'],
+    subject: 'physics',
+    difficulty: 1,
+    bloomLevel: 'understand',
+    estimatedMinutes: 10,
+    objective:
+      'Observe the pattern of magnetic field lines around a bar magnet. Understand attraction and repulsion between magnetic poles.',
+    objectiveHi:
+      'एक छड़ चुम्बक के चारों ओर चुम्बकीय क्षेत्र रेखाओं का पैटर्न देखें। चुम्बकीय ध्रुवों के बीच आकर्षण और प्रतिकर्षण को समझें।',
+    materials: ['Bar magnet', 'Iron filings', 'White paper', 'Compass needle', 'Second bar magnet'],
+    observations: [
+      {
+        prompt: 'Where are the field lines closest together — near the poles or in the middle?',
+        promptHi: 'क्षेत्र रेखाएँ कहाँ सबसे पास-पास हैं — ध्रुवों के पास या बीच में?',
+        type: 'select',
+        options: ['Near the poles', 'In the middle', 'Same everywhere', 'No pattern visible'],
+        expectedHint: 'Field lines are most concentrated (closest together) near the poles, where the magnetic field is strongest.',
+      },
+      {
+        prompt: 'What happens when you bring two north poles close to each other?',
+        promptHi: 'जब दो उत्तरी ध्रुव एक-दूसरे के पास लाए जाते हैं तो क्या होता है?',
+        type: 'select',
+        options: ['They attract', 'They repel', 'Nothing happens', 'They stick together'],
+        expectedHint: 'Like poles (N-N or S-S) repel each other. Unlike poles (N-S) attract each other.',
+      },
+      {
+        prompt: 'Do the field lines ever cross each other?',
+        promptHi: 'क्या क्षेत्र रेखाएँ कभी एक-दूसरे को काटती हैं?',
+        type: 'select',
+        options: ['Yes, always', 'No, never', 'Only near poles', 'Only far from magnet'],
+        expectedHint: 'Magnetic field lines never cross. If they did, it would mean two directions at one point, which is impossible.',
+      },
+    ],
+    conclusionPrompt:
+      'Describe the pattern of field lines around a bar magnet. Explain the rule for attraction and repulsion between magnetic poles.',
+    conclusionPromptHi:
+      'एक छड़ चुम्बक के चारों ओर क्षेत्र रेखाओं के पैटर्न का वर्णन करें। चुम्बकीय ध्रुवों के बीच आकर्षण और प्रतिकर्षण के नियम को समझाएँ।',
+    quizQuestions: [
+      {
+        question: 'Magnetic field lines emerge from:',
+        questionHi: 'चुम्बकीय क्षेत्र रेखाएँ निकलती हैं:',
+        options: ['South pole to north pole (outside)', 'North pole to south pole (outside)', 'Both poles equally outward', 'The middle of the magnet'],
+        correctIndex: 1,
+        explanation: 'Outside the magnet, field lines go from North pole to South pole. Inside the magnet, they go from South to North, forming closed loops.',
+      },
+      {
+        question: 'Which of the following is true about magnetic poles?',
+        questionHi: 'चुम्बकीय ध्रुवों के बारे में कौन सा कथन सत्य है?',
+        options: ['Like poles attract', 'Unlike poles repel', 'Like poles repel and unlike poles attract', 'Magnets have only one pole'],
+        correctIndex: 2,
+        explanation: 'Like poles (N-N or S-S) repel each other, while unlike poles (N-S) attract. Every magnet always has two poles.',
+      },
+    ],
+  },
+
+  /* ──────────── 10. Pizza Fraction Lab ──────────── */
+  {
+    id: 'exp-fractions',
+    simulationId: 'builtin-fractions',
+    title: 'Fractions: Parts of a Whole',
+    titleHi: 'भिन्न: एक पूरे के भाग',
+    chapterRef: 'Class 6 Math Ch 7 — Fractions',
+    grades: ['6', '7', '8'],
+    subject: 'math',
+    difficulty: 1,
+    bloomLevel: 'apply',
+    estimatedMinutes: 10,
+    objective:
+      'Understand proper and improper fractions using pizza slices. Compare fractions and find equivalent fractions visually.',
+    objectiveHi:
+      'पिज़्ज़ा स्लाइस का उपयोग करके उचित और अनुचित भिन्नों को समझें। भिन्नों की तुलना करें और दृश्य रूप से समतुल्य भिन्न खोजें।',
+    observations: [
+      {
+        prompt: 'If a pizza is cut into 8 equal slices and you eat 3, what fraction did you eat?',
+        promptHi: 'यदि एक पिज़्ज़ा को 8 बराबर टुकड़ों में काटा जाए और आप 3 खाएँ, तो आपने कितना भाग खाया?',
+        type: 'text',
+        expectedHint: 'You ate 3/8 (three-eighths) of the pizza. The denominator (8) is total parts, numerator (3) is parts taken.',
+      },
+      {
+        prompt: 'Which is larger: 1/2 or 1/4? How can you tell from the visualization?',
+        promptHi: '1/2 और 1/4 में कौन बड़ा है? चित्र से आप कैसे बता सकते हैं?',
+        type: 'text',
+        expectedHint: '1/2 is larger. In the visualization, half the pizza (1/2) covers more area than a quarter (1/4). When denominators differ, larger denominator means smaller pieces.',
+      },
+      {
+        prompt: 'Find a fraction equivalent to 2/4. What do you notice?',
+        promptHi: '2/4 के समतुल्य एक भिन्न खोजें। आपने क्या देखा?',
+        type: 'text',
+        expectedHint: '2/4 = 1/2. Both cover the same amount of the pizza. Equivalent fractions represent the same value.',
+      },
+      {
+        prompt: 'Is 5/3 a proper or improper fraction? What does it mean visually?',
+        promptHi: '5/3 उचित भिन्न है या अनुचित? इसका दृश्य अर्थ क्या है?',
+        type: 'select',
+        options: ['Proper (less than 1)', 'Improper (more than 1)', 'Neither', 'Cannot tell'],
+        expectedHint: '5/3 is improper (numerator > denominator). Visually it means more than one whole pizza — 1 full pizza + 2/3 of another.',
+      },
+    ],
+    conclusionPrompt:
+      'Explain the difference between proper and improper fractions. How do you find equivalent fractions?',
+    conclusionPromptHi:
+      'उचित और अनुचित भिन्नों के बीच अंतर समझाएँ। समतुल्य भिन्न कैसे खोजते हैं?',
+    quizQuestions: [
+      {
+        question: 'Which of these is an improper fraction?',
+        questionHi: 'इनमें से कौन अनुचित भिन्न है?',
+        options: ['2/5', '3/7', '7/4', '1/3'],
+        correctIndex: 2,
+        explanation: '7/4 is improper because the numerator (7) is greater than the denominator (4). This means the value is more than 1 whole.',
+      },
+      {
+        question: 'Which fraction is equivalent to 3/6?',
+        questionHi: '3/6 के समतुल्य भिन्न कौन सी है?',
+        options: ['2/3', '1/2', '3/4', '2/6'],
+        correctIndex: 1,
+        explanation: '3/6 = 1/2 (divide both numerator and denominator by 3). Both represent exactly half.',
+      },
+      {
+        question: 'Arrange in ascending order: 1/4, 1/2, 3/4',
+        questionHi: 'आरोही क्रम में लिखें: 1/4, 1/2, 3/4',
+        options: ['3/4, 1/2, 1/4', '1/4, 1/2, 3/4', '1/2, 1/4, 3/4', '1/4, 3/4, 1/2'],
+        correctIndex: 1,
+        explanation: '1/4 (0.25) < 1/2 (0.5) < 3/4 (0.75). Same denominator family — more parts taken means larger fraction.',
+      },
+    ],
+  },
+
+  /* ──────────── 11. Angle Explorer ──────────── */
+  {
+    id: 'exp-angle-explorer',
+    simulationId: 'builtin-angle-explorer',
+    title: 'Angles: Types & Measurement',
+    titleHi: 'कोण: प्रकार और मापन',
+    chapterRef: 'Class 6 Math Ch 5 — Understanding Elementary Shapes',
+    grades: ['6', '7'],
+    subject: 'math',
+    difficulty: 1,
+    bloomLevel: 'understand',
+    estimatedMinutes: 10,
+    objective:
+      'Identify and classify angles as acute, right, obtuse, straight, and reflex. Measure angles using a protractor and understand their properties.',
+    objectiveHi:
+      'कोणों को न्यूनकोण, समकोण, अधिककोण, ऋजुकोण और प्रतिवर्ती कोण के रूप में पहचानें और वर्गीकृत करें। चाँदे से कोण मापना सीखें।',
+    observations: [
+      {
+        prompt: 'Set the angle to exactly 90\u00b0. What type of angle is this?',
+        promptHi: 'कोण को ठीक 90\u00b0 पर सेट करें। यह कौन सा कोण है?',
+        type: 'select',
+        options: ['Acute angle', 'Right angle', 'Obtuse angle', 'Straight angle'],
+        expectedHint: 'A 90\u00b0 angle is a right angle. It looks like the corner of a book or a door frame.',
+      },
+      {
+        prompt: 'What is the range of an acute angle?',
+        promptHi: 'न्यूनकोण की सीमा क्या है?',
+        type: 'select',
+        options: ['0\u00b0 to 90\u00b0', '90\u00b0 to 180\u00b0', '180\u00b0 to 360\u00b0', 'Exactly 180\u00b0'],
+        expectedHint: 'An acute angle is greater than 0\u00b0 and less than 90\u00b0.',
+      },
+      {
+        prompt: 'Set an angle greater than 180\u00b0. What is this type of angle called?',
+        promptHi: '180\u00b0 से अधिक का कोण सेट करें। इस प्रकार के कोण को क्या कहते हैं?',
+        type: 'text',
+        expectedHint: 'An angle greater than 180\u00b0 but less than 360\u00b0 is called a reflex angle.',
+      },
+    ],
+    conclusionPrompt:
+      'List all five types of angles with their degree ranges. Give one real-life example of each type.',
+    conclusionPromptHi:
+      'सभी पाँच प्रकार के कोणों को उनकी डिग्री सीमा के साथ लिखें। प्रत्येक प्रकार का एक वास्तविक जीवन का उदाहरण दें।',
+    quizQuestions: [
+      {
+        question: 'An angle of 135\u00b0 is classified as:',
+        questionHi: '135\u00b0 का कोण वर्गीकृत होता है:',
+        options: ['Acute', 'Right', 'Obtuse', 'Reflex'],
+        correctIndex: 2,
+        explanation: '135\u00b0 is between 90\u00b0 and 180\u00b0, so it is an obtuse angle.',
+      },
+      {
+        question: 'A straight angle measures:',
+        questionHi: 'ऋजुकोण (straight angle) का माप होता है:',
+        options: ['90\u00b0', '180\u00b0', '270\u00b0', '360\u00b0'],
+        correctIndex: 1,
+        explanation: 'A straight angle is exactly 180\u00b0 — it looks like a straight line.',
+      },
+      {
+        question: 'How many right angles make a complete turn (360\u00b0)?',
+        questionHi: 'एक पूर्ण चक्कर (360\u00b0) में कितने समकोण होते हैं?',
+        options: ['2', '3', '4', '6'],
+        correctIndex: 2,
+        explanation: '360\u00b0 \u00f7 90\u00b0 = 4. So four right angles make a complete turn.',
+      },
+    ],
+  },
+
+  /* ──────────── 12. Symmetry Explorer ──────────── */
+  {
+    id: 'exp-symmetry-explorer',
+    simulationId: 'builtin-symmetry-explorer',
+    title: 'Symmetry: Lines & Rotational',
+    titleHi: 'सममिति: रेखा और घूर्णी',
+    chapterRef: 'Class 6 Math Ch 13 — Symmetry',
+    grades: ['6', '7'],
+    subject: 'math',
+    difficulty: 1,
+    bloomLevel: 'understand',
+    estimatedMinutes: 10,
+    objective:
+      'Identify lines of symmetry in shapes and letters. Understand the difference between line symmetry and rotational symmetry.',
+    objectiveHi:
+      'आकृतियों और अक्षरों में सममिति रेखाएँ पहचानें। रेखा सममिति और घूर्णी सममिति के बीच अंतर समझें।',
+    observations: [
+      {
+        prompt: 'How many lines of symmetry does a square have?',
+        promptHi: 'एक वर्ग में कितनी सममिति रेखाएँ होती हैं?',
+        type: 'number',
+        expectedHint: 'A square has 4 lines of symmetry: 2 through opposite sides and 2 through opposite corners (diagonals).',
+      },
+      {
+        prompt: 'Does the letter "A" have a line of symmetry? If yes, is it horizontal or vertical?',
+        promptHi: 'क्या अक्षर "A" में सममिति रेखा है? यदि हाँ, तो क्षैतिज या ऊर्ध्वाधर?',
+        type: 'select',
+        options: ['No line of symmetry', 'Vertical line of symmetry', 'Horizontal line of symmetry', 'Both vertical and horizontal'],
+        expectedHint: 'The letter A has one vertical line of symmetry — the left and right halves are mirror images.',
+      },
+      {
+        prompt: 'How many lines of symmetry does a circle have?',
+        promptHi: 'एक वृत्त में कितनी सममिति रेखाएँ होती हैं?',
+        type: 'select',
+        options: ['0', '1', '4', 'Infinite'],
+        expectedHint: 'A circle has infinite lines of symmetry — any diameter divides it into two equal halves.',
+      },
+    ],
+    conclusionPrompt:
+      'Explain what a line of symmetry is. Why does a rectangle have 2 lines of symmetry but a square has 4?',
+    conclusionPromptHi:
+      'समझाएँ कि सममिति रेखा क्या होती है। एक आयत में 2 सममिति रेखाएँ क्यों होती हैं जबकि वर्ग में 4?',
+    quizQuestions: [
+      {
+        question: 'How many lines of symmetry does an equilateral triangle have?',
+        questionHi: 'एक समबाहु त्रिभुज में कितनी सममिति रेखाएँ होती हैं?',
+        options: ['1', '2', '3', '6'],
+        correctIndex: 2,
+        explanation: 'An equilateral triangle has 3 lines of symmetry — one from each vertex to the midpoint of the opposite side.',
+      },
+      {
+        question: 'Which of these letters has NO line of symmetry?',
+        questionHi: 'इनमें से किस अक्षर में कोई सममिति रेखा नहीं है?',
+        options: ['A', 'O', 'F', 'H'],
+        correctIndex: 2,
+        explanation: 'The letter F has no line of symmetry. A has vertical symmetry, O has infinite, and H has both vertical and horizontal.',
+      },
+    ],
+  },
 ];
 
 /* ─── Helpers ─── */
