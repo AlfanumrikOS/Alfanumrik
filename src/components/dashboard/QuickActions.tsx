@@ -20,7 +20,7 @@ export default function QuickActions({ isHi }: QuickActionsProps) {
   const router = useRouter();
 
   return (
-    <div>
+    <nav aria-label={isHi ? 'त्वरित क्रियाएँ' : 'Quick Actions'}>
       <SectionHeader icon="⚡">{isHi ? 'त्वरित क्रियाएँ' : 'Quick Actions'}</SectionHeader>
       <div className="grid grid-cols-3 gap-2">
         {QUICK_ACTIONS.map((a) => (
@@ -33,6 +33,6 @@ export default function QuickActions({ isHi }: QuickActionsProps) {
           />
         ))}
       </div>
-    </div>
+    </nav>
   );
 }

@@ -142,7 +142,7 @@ export default function QuizSetup({ isHi, initialSubject, initialMode, loading, 
     <div className="mesh-bg min-h-dvh pb-nav">
       <header className="page-header">
         <div className="page-header-inner flex items-center gap-3">
-          <button onClick={onGoBack} className="text-[var(--text-3)]">&larr;</button>
+          <button onClick={onGoBack} className="text-[var(--text-3)]" aria-label={isHi ? 'वापस जाओ' : 'Go back'}>&larr;</button>
           <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
             {isHi ? 'क्विज़ शुरू करो' : 'Start a Quiz'}
           </h1>
@@ -154,7 +154,7 @@ export default function QuizSetup({ isHi, initialSubject, initialMode, loading, 
           <p className="text-sm text-[var(--text-3)] mb-3 font-medium">
             {isHi ? 'मोड चुनो' : 'Choose Mode'}
           </p>
-          <div className="flex gap-3">
+          <div className="flex gap-3" role="radiogroup" aria-label={isHi ? 'क्विज़ मोड' : 'Quiz mode'}>
             {([
               { id: 'practice' as QuizMode, icon: '✏️', label: 'Practice', labelHi: 'अभ्यास', desc: 'Choose your own difficulty', descHi: 'अपनी कठिनाई चुनो', color: '#F5A623' },
               { id: 'cognitive' as QuizMode, icon: '🧠', label: 'Smart', labelHi: 'स्मार्ट', desc: 'AI picks the right level', descHi: 'AI सही स्तर चुनता है', color: '#7C3AED' },
@@ -163,6 +163,9 @@ export default function QuizSetup({ isHi, initialSubject, initialMode, loading, 
               <button
                 key={m.id}
                 onClick={() => setQuizMode(m.id)}
+                role="radio"
+                aria-checked={quizMode === m.id}
+                aria-label={isHi ? m.labelHi : m.label}
                 className="flex-1 rounded-2xl p-4 text-left transition-all active:scale-95"
                 style={{
                   background: quizMode === m.id ? `${m.color}12` : 'var(--surface-1)',
@@ -190,6 +193,8 @@ export default function QuizSetup({ isHi, initialSubject, initialMode, loading, 
               <button
                 key={s.code}
                 onClick={() => setSelectedSubject(s.code)}
+                aria-label={`${isHi ? 'विषय' : 'Subject'}: ${s.name}`}
+                aria-pressed={selectedSubject === s.code}
                 className="rounded-2xl p-4 text-center transition-all active:scale-95"
                 style={{
                   background: selectedSubject === s.code ? `${s.color}12` : 'var(--surface-1)',
@@ -256,6 +261,7 @@ export default function QuizSetup({ isHi, initialSubject, initialMode, loading, 
                 <button
                   key={String(d.id)}
                   onClick={() => setSelectedDifficulty(d.id)}
+                  aria-pressed={selectedDifficulty === d.id}
                   className="rounded-xl px-4 py-2.5 text-sm font-semibold transition-all"
                   style={{
                     background: selectedDifficulty === d.id ? 'var(--orange)' : 'var(--surface-2)',
@@ -280,6 +286,8 @@ export default function QuizSetup({ isHi, initialSubject, initialMode, loading, 
                 <button
                   key={n}
                   onClick={() => setQuestionCount(n)}
+                  aria-pressed={questionCount === n}
+                  aria-label={`${n} ${isHi ? 'सवाल' : 'questions'}`}
                   className="rounded-xl px-5 py-2.5 text-sm font-bold transition-all"
                   style={{
                     background: questionCount === n ? 'var(--orange)' : 'var(--surface-2)',
