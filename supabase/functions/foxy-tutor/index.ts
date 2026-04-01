@@ -207,12 +207,14 @@ USE THIS TO:
   }
 
   if (!ragContext && !syllabusContext) {
-    prompt += `\n\nNOTE: No NCERT reference material was found for this question in the uploaded textbook content.
-I can only provide verified answers from your NCERT textbook. Please try:
-- Rephrasing your question
-- Selecting the correct chapter
-- Asking about a topic from your syllabus
-I will not guess or make up answers that aren't in your textbook.`
+    prompt += `\n\nNOTE: No specific NCERT textbook content or syllabus reference was found for this question.
+However, you are a knowledgeable CBSE tutor. You may still help the student using your general knowledge of the CBSE curriculum for Class ${grade} ${subject}, but you MUST:
+1. Clearly state: "I don't have the exact NCERT reference for this, but based on the CBSE curriculum..."
+2. Keep your answer strictly within the CBSE syllabus scope for Class ${grade}
+3. Recommend the student verify your answer from their NCERT textbook
+4. If the topic is clearly outside the CBSE syllabus for this grade, say so and suggest the correct grade/subject
+5. Never fabricate specific page numbers, exercise numbers, or NCERT quotes
+Do NOT refuse to help — provide your best curriculum-aligned response with the disclaimer.`
   }
 
   return prompt
@@ -523,6 +525,16 @@ Deno.serve(async (req: Request) => {
         role: m.role === 'student' ? 'user' : 'assistant',
         content: m.content,
       }))
+    }
+
+    // ── Log content gaps (fire-and-forget) ──
+    if (!ragContext && !syllabusContext) {
+      supabase.rpc('upsert_content_gap', {
+        p_subject: subject,
+        p_grade: grade,
+        p_query: message.slice(0, 200),
+        p_topic_title: safeTopicTitle || 'unknown',
+      }).then(() => {}).catch(() => {})
     }
 
     // ── Build messages for Claude (with mastery awareness) ──

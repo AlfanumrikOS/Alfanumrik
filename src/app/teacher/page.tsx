@@ -7,6 +7,11 @@ import { supabaseUrl as SUPABASE_URL, supabaseAnonKey as SUPABASE_ANON } from '@
 import type { HeatmapData, HeatmapCell, HeatmapRow, RiskAlert } from '@/lib/types';
 import { BottomNav } from '@/components/ui';
 
+// ============================================================
+// BILINGUAL HELPERS (P7)
+// ============================================================
+const tt = (isHi: boolean, en: string, hi: string) => isHi ? hi : en;
+
 /* ─── Local interfaces for teacher dashboard API data ─── */
 interface HeatmapConcept {
   id: string;
@@ -244,7 +249,7 @@ function PollTab({ classId, teacherId }: { classId: string; teacherId: string })
 }
 
 export default function TeacherPage() {
-  const { teacher, isLoading: authLoading, isLoggedIn, activeRole } = useAuth();
+  const { teacher, isLoading: authLoading, isLoggedIn, activeRole, isHi } = useAuth();
   const router = useRouter();
   const [dash, setDash] = useState<DashboardData | null>(null);
   const [heatmap, setHeatmap] = useState<HeatmapData | null>(null);
@@ -289,36 +294,131 @@ export default function TeacherPage() {
     <div className="max-w-[960px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-slate-200 bg-[#0B1120] min-h-screen">
       <div className="text-center py-20 text-slate-500">
         <div className="w-10 h-10 border-[3px] border-slate-800 border-t-indigo-500 rounded-full mx-auto mb-4 animate-spin" />
-        Loading teacher dashboard...
+        {tt(isHi, 'Loading teacher dashboard...', 'शिक्षक डैशबोर्ड लोड हो रहा है...')}
       </div>
     </div>
   );
 
+  // Empty state: no classes
+  if (!dash?.classes?.length) return (
+    <div className="max-w-[960px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-slate-200 bg-[#0B1120] min-h-screen">
+      <div className="text-center py-20">
+        <div className="text-5xl mb-4">&#x1F3EB;</div>
+        <h2 className="text-xl font-bold text-slate-100 mb-2">{tt(isHi, 'Welcome to your dashboard!', 'आपके डैशबोर्ड में स्वागत है!')}</h2>
+        <p className="text-sm text-slate-500 mb-5 max-w-[360px] mx-auto">
+          {tt(isHi,
+            'Create your first class to start tracking student progress. Share the class code with students to get started.',
+            'छात्रों की प्रगति ट्रैक करने के लिए अपनी पहली कक्षा बनाएं। शुरू करने के लिए छात्रों के साथ कक्षा कोड साझा करें।'
+          )}
+        </p>
+        <button onClick={() => router.push('/teacher/classes')} className="py-2.5 px-6 bg-indigo-500 text-white border-none rounded-lg text-sm font-semibold cursor-pointer">
+          {tt(isHi, 'Create a Class', 'कक्षा बनाएं')}
+        </button>
+      </div>
+      <BottomNav />
+    </div>
+  );
+
   const cls = dash?.classes?.[0];
-  const tabs = [{ id: 'heatmap', label: 'Mastery heatmap' }, { id: 'interventions', label: 'Interventions' }, { id: 'alerts', label: `Alerts${alerts.length ? ` (${alerts.length})` : ''}` }, { id: 'poll', label: 'Classroom response' }];
+  const criticalAlerts = alerts.filter(a => a.severity === 'critical' || a.severity === 'high');
+  const tabs = [
+    { id: 'heatmap', label: tt(isHi, 'Mastery heatmap', 'मास्टरी हीटमैप') },
+    { id: 'interventions', label: tt(isHi, 'Interventions', 'हस्तक्षेप') },
+    { id: 'alerts', label: `${tt(isHi, 'Alerts', 'अलर्ट')}${alerts.length ? ` (${alerts.length})` : ''}` },
+    { id: 'poll', label: tt(isHi, 'Classroom response', 'कक्षा प्रतिक्रिया') },
+  ];
 
   return (
     <div className="max-w-[960px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-slate-200 bg-[#0B1120] min-h-screen">
       <style>{`.td-card{background:#0F172A;border-radius:14px;padding:18px 20px;border:1px solid #1E293B} .td-card-head{display:flex;justify-content:space-between;align-items:center} .td-card-head h3{font-size:16px;font-weight:600;color:#F1F5F9;margin:0} .td-badge{font-size:11px;font-weight:600;padding:3px 10px;border-radius:99px;background:#1E293B;color:#94A3B8} .td-input{width:100%;padding:10px 12px;background:#1E293B;border:1px solid #334155;border-radius:8px;color:#E2E8F0;font-size:14px;outline:none;box-sizing:border-box;margin-bottom:8px} .td-btn-primary{padding:10px 20px;background:#6366F1;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;width:100%} .td-btn-primary:disabled{opacity:0.5;cursor:default}`}</style>
       <header className="flex justify-between items-start mb-5 pb-4 border-b border-slate-800">
         <div>
-          <h1 className="text-2xl font-bold text-slate-50 m-0">{dash?.teacher?.name || 'Teacher Dashboard'}</h1>
-          <p className="text-sm text-slate-500 mt-1">{cls?.name || 'Class 9-A'} ({cls?.student_count || 0} students){cls?.avg_mastery != null && <span className="text-indigo-500 ml-2">Avg mastery: {cls.avg_mastery}%</span>}</p>
+          <h1 className="text-2xl font-bold text-slate-50 m-0">{dash?.teacher?.name || tt(isHi, 'Teacher Dashboard', 'शिक्षक डैशबोर्ड')}</h1>
+          <p className="text-sm text-slate-500 mt-1">{cls?.name || 'Class 9-A'} ({cls?.student_count || 0} {tt(isHi, 'students', 'छात्र')}){cls?.avg_mastery != null && <span className="text-indigo-500 ml-2">{tt(isHi, 'Avg mastery', 'औसत मास्टरी')}: {cls.avg_mastery}%</span>}</p>
         </div>
-        <button onClick={load} className="py-2 px-4 bg-transparent text-indigo-500 border border-indigo-500 rounded-lg text-[13px] font-medium cursor-pointer">Refresh</button>
+        <button onClick={load} className="py-2 px-4 bg-transparent text-indigo-500 border border-indigo-500 rounded-lg text-[13px] font-medium cursor-pointer">{tt(isHi, 'Refresh', 'रिफ्रेश')}</button>
       </header>
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(100px,1fr))] gap-3 mb-5">
-        {[{ label: 'Students', val: dash?.stats?.total_students || 0, color: 'text-indigo-500' }, { label: 'Alerts', val: dash?.stats?.active_alerts || 0, color: (dash?.stats?.critical_alerts || 0) > 0 ? 'text-red-600' : 'text-amber-600' }, { label: 'Assignments', val: dash?.stats?.active_assignments || 0, color: 'text-emerald-600' }].map((s,i) => (
+
+      {/* Stats Grid */}
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(100px,1fr))] gap-3 mb-4">
+        {[
+          { label: tt(isHi, 'Students', 'छात्र'), val: dash?.stats?.total_students || 0, color: 'text-indigo-500' },
+          { label: tt(isHi, 'Alerts', 'अलर्ट'), val: dash?.stats?.active_alerts || 0, color: (dash?.stats?.critical_alerts || 0) > 0 ? 'text-red-600' : 'text-amber-600' },
+          { label: tt(isHi, 'Assignments', 'असाइनमेंट'), val: dash?.stats?.active_assignments || 0, color: 'text-emerald-600' },
+        ].map((s,i) => (
           <div key={i} className="bg-slate-900 rounded-xl py-3.5 px-4 border border-slate-800">
             <p className="text-slate-500 text-[11px] m-0 uppercase tracking-wide">{s.label}</p>
             <p className={`${s.color} text-[26px] font-bold mt-1`}>{s.val}</p>
           </div>
         ))}
       </div>
-      <nav className="flex gap-1 p-1 bg-slate-900 rounded-[10px] border border-slate-800 mb-4">
-        {tabs.map(t => (<button key={t.id} onClick={() => setTab(t.id)} className={`py-2 px-4 border-none rounded-lg text-[13px] cursor-pointer ${tab === t.id ? 'font-semibold bg-indigo-500 text-white' : 'font-medium bg-transparent text-slate-500'}`}>{t.label}</button>))}
+
+      {/* Struggling Students Banner — at-a-glance alert for teachers */}
+      {criticalAlerts.length > 0 && (
+        <div className="bg-slate-900 rounded-[14px] px-5 py-4 border border-red-900/50 mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-[15px] font-semibold text-red-400 m-0">
+              {tt(isHi,
+                `${criticalAlerts.length} student${criticalAlerts.length > 1 ? 's' : ''} need${criticalAlerts.length === 1 ? 's' : ''} help`,
+                `${criticalAlerts.length} छात्र${criticalAlerts.length > 1 ? 'ों' : ''} को मदद चाहिए`
+              )}
+            </h3>
+            <button onClick={() => setTab('alerts')} className="text-xs text-indigo-400 bg-transparent border border-indigo-500/30 rounded-md px-3 py-1 cursor-pointer">
+              {tt(isHi, 'View all', 'सभी देखें')}
+            </button>
+          </div>
+          <div className="flex flex-col gap-2">
+            {criticalAlerts.slice(0, 3).map((a) => {
+              const sev = SEV[a.severity] || SEV.medium;
+              return (
+                <div key={a.id} className={`flex items-center gap-3 bg-slate-800/60 rounded-lg py-2.5 px-3 border-l-[3px] ${sev.border}`}>
+                  <span className={`text-[10px] font-bold py-0.5 px-2 rounded ${sev.bg} text-white uppercase shrink-0`}>{a.severity}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] font-medium text-slate-200 m-0 truncate">{a.title}</p>
+                    {a.recommended_action && <p className="text-[11px] text-indigo-400 m-0 mt-0.5 truncate">{a.recommended_action}</p>}
+                  </div>
+                  <button onClick={() => resolveAlert(a.id)} className="text-[11px] text-slate-400 bg-transparent border border-slate-700 rounded px-2 py-0.5 cursor-pointer shrink-0">
+                    {tt(isHi, 'Resolve', 'हल करें')}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+          {criticalAlerts.length > 3 && (
+            <p className="text-xs text-slate-500 mt-2 m-0">
+              {tt(isHi,
+                `+ ${criticalAlerts.length - 3} more alert${criticalAlerts.length - 3 > 1 ? 's' : ''}`,
+                `+ ${criticalAlerts.length - 3} और अलर्ट`
+              )}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* No alerts — all clear */}
+      {alerts.length === 0 && (dash?.stats?.total_students || 0) > 0 && (
+        <div className="bg-slate-900 rounded-[14px] px-5 py-3.5 border border-emerald-900/30 mb-4 flex items-center gap-3">
+          <span className="text-emerald-500 text-lg">&#x2713;</span>
+          <p className="text-[13px] text-emerald-400 m-0 font-medium">
+            {tt(isHi, 'All students are on track. No urgent issues detected.', 'सभी छात्र सही दिशा में हैं। कोई तत्काल समस्या नहीं मिली।')}
+          </p>
+        </div>
+      )}
+
+      {/* Tabs */}
+      <nav className="flex gap-1 p-1 bg-slate-900 rounded-[10px] border border-slate-800 mb-4 overflow-x-auto">
+        {tabs.map(tb => (<button key={tb.id} onClick={() => setTab(tb.id)} className={`py-2 px-4 border-none rounded-lg text-[13px] cursor-pointer whitespace-nowrap ${tab === tb.id ? 'font-semibold bg-indigo-500 text-white' : 'font-medium bg-transparent text-slate-500'}`}>{tb.label}</button>))}
       </nav>
       {tab === 'heatmap' && heatmap && <HeatmapTab data={heatmap} />}
+      {tab === 'heatmap' && !heatmap && (
+        <div className="td-card">
+          <div className="text-center py-8 text-slate-500">
+            <div className="text-3xl mb-3">&#x1F4CA;</div>
+            <p className="text-[14px] font-medium text-slate-400 mb-1">{tt(isHi, 'No mastery data yet', 'अभी तक कोई मास्टरी डेटा नहीं')}</p>
+            <p className="text-[13px] text-slate-600">{tt(isHi, 'Students need to complete quizzes before mastery data appears here.', 'यहाँ मास्टरी डेटा दिखने के लिए छात्रों को क्विज़ पूरी करनी होगी।')}</p>
+          </div>
+        </div>
+      )}
       {tab === 'interventions' && <InterventionsTab alerts={alerts} classId={classId} dash={dash} />}
       {tab === 'alerts' && <AlertsTab alerts={alerts} onResolve={resolveAlert} />}
       {tab === 'poll' && <PollTab classId={classId} teacherId={teacherId} />}

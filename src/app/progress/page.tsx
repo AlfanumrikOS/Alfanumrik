@@ -311,94 +311,138 @@ export default function ProgressPage() {
            ══════════════════════════════════════════════════════════ */}
         {activeTab === 'overview' && (
           <>
-            {/* ═══ MASTERY HERO — overall accuracy ring + key stats ═══ */}
-            <Card className="!p-6">
-              <div className="flex items-center gap-5">
-                <MasteryRing value={accuracy} size={80} strokeWidth={6}>
-                  <div className="text-center">
-                    <div className="text-lg font-bold" style={{ color: accuracy >= 70 ? 'var(--green)' : accuracy >= 40 ? 'var(--orange)' : '#DC2626' }}>{accuracy}%</div>
+            {/* ═══ EMPTY STATE — show when student has zero quiz history ═══ */}
+            {totalSessions === 0 ? (
+              <Card className="!p-6 text-center">
+                <div className="text-5xl mb-3">📊</div>
+                <h2 className="text-lg font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
+                  {isHi ? 'तुम्हारी प्रगति यहाँ दिखेगी' : 'Your progress will show up here'}
+                </h2>
+                <p className="text-sm text-[var(--text-2)] max-w-xs mx-auto leading-relaxed mb-2">
+                  {isHi
+                    ? 'पहला क्विज़ लो और Foxy तुम्हारी सटीकता, XP, और विषय-वार महारत track करेगा।'
+                    : 'Take your first quiz and Foxy will track your accuracy, XP, and subject-wise mastery.'}
+                </p>
+                <div className="flex flex-col items-center gap-3 mt-4 rounded-xl p-4" style={{ background: 'var(--surface-2)' }}>
+                  <div className="flex items-center gap-4 text-xs text-[var(--text-3)]">
+                    <span>🎯 {isHi ? 'सटीकता' : 'Accuracy'}</span>
+                    <span>🔥 {isHi ? 'स्ट्रीक' : 'Streak'}</span>
+                    <span>🧠 {isHi ? 'Bloom विश्लेषण' : "Bloom's Analysis"}</span>
                   </div>
-                </MasteryRing>
-                <div className="flex-1">
-                  <h2 className="text-base font-bold" style={{ fontFamily: 'var(--font-display)' }}>
-                    {isHi ? 'कुल सटीकता' : 'Overall Accuracy'}
-                  </h2>
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-2 text-xs">
-                    <span className="text-[var(--text-3)]">{isHi ? 'कुल XP' : 'Total XP'}</span>
-                    <span className="font-semibold text-right" style={{ color: 'var(--orange)' }}>{totalXp.toLocaleString()}</span>
-                    <span className="text-[var(--text-3)]">{isHi ? 'पढ़ाई का समय' : 'Study Time'}</span>
-                    <span className="font-semibold text-right">{totalMinutes}m</span>
-                    <span className="text-[var(--text-3)]">{isHi ? 'सत्र' : 'Sessions'}</span>
-                    <span className="font-semibold text-right">{totalSessions}</span>
-                  </div>
+                  <p className="text-xs text-[var(--text-3)]">
+                    {isHi ? 'ये सब 1 क्विज़ के बाद unlock होगा' : 'All unlocked after just 1 quiz'}
+                  </p>
                 </div>
-              </div>
-            </Card>
-
-            {/* ═══ SUBJECT MASTERY — rings per subject ═══ */}
-            <div>
-              <SectionHeader icon="📚">{isHi ? 'विषयवार महारत' : 'Subject Mastery'}</SectionHeader>
-              <div className="space-y-2">
-                {profiles.map((p) => {
-                  const meta = subjects.find((s: { code: string }) => s.code === p.subject);
-                  const correctPct = p.total_questions_asked > 0
-                    ? Math.round((p.total_questions_answered_correctly / p.total_questions_asked) * 100)
-                    : 0;
-
-                  return (
-                    <Card key={p.id} className="!p-3 flex items-center gap-3">
-                      <MasteryRing value={correctPct} size={48} strokeWidth={4} color={meta?.color}>
-                        <span className="text-base">{meta?.icon ?? '📚'}</span>
-                      </MasteryRing>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-sm">{meta?.name ?? p.subject}</div>
-                        <div className="text-xs text-[var(--text-3)]">
-                          Lv{p.level} · {p.xp} XP · {correctPct}% {isHi ? 'सटीकता' : 'accuracy'}
-                        </div>
+                <div className="flex gap-3 mt-5 justify-center">
+                  <Button variant="primary" size="md" onClick={() => router.push('/quiz')}>
+                    {isHi ? 'पहला क्विज़ लो' : 'Take First Quiz'}
+                  </Button>
+                  <Button variant="ghost" size="md" onClick={() => router.push('/foxy')}>
+                    {isHi ? 'Foxy से सीखो' : 'Learn with Foxy'}
+                  </Button>
+                </div>
+              </Card>
+            ) : (
+              <>
+                {/* ═══ MASTERY HERO — overall accuracy ring + key stats ═══ */}
+                <Card className="!p-6">
+                  <div className="flex items-center gap-5">
+                    <MasteryRing value={accuracy} size={80} strokeWidth={6}>
+                      <div className="text-center">
+                        <div className="text-lg font-bold" style={{ color: accuracy >= 70 ? 'var(--green)' : accuracy >= 40 ? 'var(--orange)' : '#DC2626' }}>{accuracy}%</div>
                       </div>
-                      <div className="text-right">
-                        <div className="text-sm font-bold" style={{ color: meta?.color ?? 'var(--orange)' }}>{correctPct}%</div>
+                    </MasteryRing>
+                    <div className="flex-1">
+                      <h2 className="text-base font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+                        {isHi ? 'कुल सटीकता' : 'Overall Accuracy'}
+                      </h2>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-2 text-xs">
+                        <span className="text-[var(--text-3)]">{isHi ? 'कुल XP' : 'Total XP'}</span>
+                        <span className="font-semibold text-right" style={{ color: 'var(--orange)' }}>{totalXp.toLocaleString()}</span>
+                        <span className="text-[var(--text-3)]">{isHi ? 'पढ़ाई का समय' : 'Study Time'}</span>
+                        <span className="font-semibold text-right">{totalMinutes}m</span>
+                        <span className="text-[var(--text-3)]">{isHi ? 'सत्र' : 'Sessions'}</span>
+                        <span className="font-semibold text-right">{totalSessions}</span>
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+
+                {/* ═══ SUBJECT MASTERY — rings per subject ═══ */}
+                <div>
+                  <SectionHeader icon="📚">{isHi ? 'विषयवार महारत' : 'Subject Mastery'}</SectionHeader>
+                  {profiles.length === 0 ? (
+                    <Card className="!p-4 text-center">
+                      <div className="text-2xl mb-1">📚</div>
+                      <div className="text-sm text-[var(--text-3)]">
+                        {isHi ? 'और quiz दो ताकि विषयवार प्रगति दिखे' : 'Take more quizzes to see subject-wise progress'}
                       </div>
                     </Card>
-                  );
-                })}
-              </div>
-            </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {profiles.map((p) => {
+                        const meta = subjects.find((s: { code: string }) => s.code === p.subject);
+                        const correctPct = p.total_questions_asked > 0
+                          ? Math.round((p.total_questions_answered_correctly / p.total_questions_asked) * 100)
+                          : 0;
 
-            {/* Mastery Predictions */}
-            {weakestTopics.length > 0 && (
-              <div>
-                <SectionHeader icon="🔮">{isHi ? 'महारत की भविष्यवाणी' : 'Mastery Predictions'}</SectionHeader>
-                <div className="space-y-2">
-                  {weakestTopics.map((v) => {
-                    const rate = v.weekly_mastery_rate ?? 0;
-                    const predicted = v.predicted_mastery_date
-                      ? new Date(v.predicted_mastery_date)
-                      : predictMasteryDate(rate, rate);
-
-                    return (
-                      <Card key={v.id} className="!p-3">
-                        <div className="flex items-center gap-3">
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-semibold truncate">{v.subject}</div>
-                            <div className="text-[11px] text-[var(--text-3)]">
-                              {isHi ? 'गति' : 'Rate'}: {(rate * 100).toFixed(1)}%/wk
+                        return (
+                          <Card key={p.id} className="!p-3 flex items-center gap-3">
+                            <MasteryRing value={correctPct} size={48} strokeWidth={4} color={meta?.color}>
+                              <span className="text-base">{meta?.icon ?? '📚'}</span>
+                            </MasteryRing>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-semibold text-sm">{meta?.name ?? p.subject}</div>
+                              <div className="text-xs text-[var(--text-3)]">
+                                Lv{p.level} · {p.xp} XP · {correctPct}% {isHi ? 'सटीकता' : 'accuracy'}
+                              </div>
                             </div>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-[10px] text-[var(--text-3)]">
-                              {isHi ? 'अनुमानित तिथि' : 'Predicted by'}
+                            <div className="text-right">
+                              <div className="text-sm font-bold" style={{ color: meta?.color ?? 'var(--orange)' }}>{correctPct}%</div>
                             </div>
-                            <div className="text-xs font-semibold" style={{ color: 'var(--teal)' }}>
-                              {predicted ? formatDate(predicted) : (isHi ? 'अनिश्चित' : 'Uncertain')}
-                            </div>
-                          </div>
-                        </div>
-                      </Card>
-                    );
-                  })}
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              </div>
+
+                {/* Mastery Predictions */}
+                {weakestTopics.length > 0 && (
+                  <div>
+                    <SectionHeader icon="🔮">{isHi ? 'महारत की भविष्यवाणी' : 'Mastery Predictions'}</SectionHeader>
+                    <div className="space-y-2">
+                      {weakestTopics.map((v) => {
+                        const rate = v.weekly_mastery_rate ?? 0;
+                        const predicted = v.predicted_mastery_date
+                          ? new Date(v.predicted_mastery_date)
+                          : predictMasteryDate(rate, rate);
+
+                        return (
+                          <Card key={v.id} className="!p-3">
+                            <div className="flex items-center gap-3">
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-semibold truncate">{v.subject}</div>
+                                <div className="text-[11px] text-[var(--text-3)]">
+                                  {isHi ? 'गति' : 'Rate'}: {(rate * 100).toFixed(1)}%/wk
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-[10px] text-[var(--text-3)]">
+                                  {isHi ? 'अनुमानित तिथि' : 'Predicted by'}
+                                </div>
+                                <div className="text-xs font-semibold" style={{ color: 'var(--teal)' }}>
+                                  {predicted ? formatDate(predicted) : (isHi ? 'अनिश्चित' : 'Uncertain')}
+                                </div>
+                              </div>
+                            </div>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </>
         )}

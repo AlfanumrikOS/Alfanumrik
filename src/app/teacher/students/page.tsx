@@ -110,16 +110,48 @@ function StudentCard({
   const strengths = student.strengths || [];
   const improvements = student.improvements || [];
 
+  // Determine if student is struggling
+  const isStruggling = student.mastery < 30 || student.accuracy < 30;
+  const needsAttention = !isStruggling && (student.mastery < 50 || student.accuracy < 50);
+
   return (
     <div
       style={{
         backgroundColor: '#0F172A',
         borderRadius: 14,
-        border: '1px solid #1E293B',
+        border: isStruggling ? '1px solid #DC262666' : needsAttention ? '1px solid #D9770644' : '1px solid #1E293B',
         overflow: 'hidden',
         transition: 'all 0.3s ease',
+        position: 'relative',
       }}
     >
+      {/* Struggling student indicator */}
+      {isStruggling && (
+        <div style={{
+          backgroundColor: '#DC262620',
+          borderBottom: '1px solid #DC262633',
+          padding: '6px 18px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+        }}>
+          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4, backgroundColor: '#DC2626', color: '#fff', textTransform: 'uppercase' }}>Needs help</span>
+          <span style={{ fontSize: 11, color: '#FCA5A5' }}>Low mastery and accuracy — consider targeted revision</span>
+        </div>
+      )}
+      {needsAttention && !isStruggling && (
+        <div style={{
+          backgroundColor: '#D9770615',
+          borderBottom: '1px solid #D9770633',
+          padding: '6px 18px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+        }}>
+          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4, backgroundColor: '#D97706', color: '#fff', textTransform: 'uppercase' }}>At risk</span>
+          <span style={{ fontSize: 11, color: '#FCD34D' }}>Below average — monitor closely</span>
+        </div>
+      )}
       {/* Card Header */}
       <div style={{ padding: '16px 18px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
@@ -129,7 +161,7 @@ function StudentCard({
               width: 44,
               height: 44,
               borderRadius: '50%',
-              backgroundColor: avatarColor(student.name),
+              backgroundColor: isStruggling ? '#DC2626' : avatarColor(student.name),
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -365,6 +397,7 @@ export default function TeacherStudentsPage() {
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [selectedClass, setSelectedClass] = useState('all');
+  const [filterStruggling, setFilterStruggling] = useState(false);
 
   const teacherId = teacher?.id || '';
 
@@ -449,12 +482,22 @@ export default function TeacherStudentsPage() {
     load();
   }, [load]);
 
-  // Filter students
-  const filtered = allStudents.filter((s) => {
-    const matchesSearch = !search || s.name.toLowerCase().includes(search.toLowerCase());
-    const matchesClass = selectedClass === 'all' || true; // All students shown when 'all'
-    return matchesSearch && matchesClass;
-  });
+  // Filter and sort students — struggling students first when filter is active
+  const filtered = allStudents
+    .filter((s) => {
+      const matchesSearch = !search || s.name.toLowerCase().includes(search.toLowerCase());
+      const matchesClass = selectedClass === 'all' || true; // All students shown when 'all'
+      const matchesStruggling = !filterStruggling || s.mastery < 50 || s.accuracy < 50;
+      return matchesSearch && matchesClass && matchesStruggling;
+    })
+    .sort((a, b) => {
+      // Always sort struggling students to top
+      const aStruggling = a.mastery < 30 || a.accuracy < 30 ? 2 : (a.mastery < 50 || a.accuracy < 50 ? 1 : 0);
+      const bStruggling = b.mastery < 30 || b.accuracy < 30 ? 2 : (b.mastery < 50 || b.accuracy < 50 ? 1 : 0);
+      return bStruggling - aStruggling;
+    });
+
+  const strugglingCount = allStudents.filter(s => s.mastery < 50 || s.accuracy < 50).length;
 
   // Loading state
   if (authLoading || (loading && !error)) {
@@ -592,6 +635,66 @@ export default function TeacherStudentsPage() {
               </option>
             ))}
           </select>
+
+          {/* Struggling filter */}
+          {strugglingCount > 0 && (
+            <button
+              onClick={() => setFilterStruggling(!filterStruggling)}
+              style={{
+                padding: '11px 16px',
+                backgroundColor: filterStruggling ? '#DC2626' : '#0F172A',
+                border: filterStruggling ? '1px solid #DC2626' : '1px solid #DC262666',
+                borderRadius: 10,
+                color: filterStruggling ? '#fff' : '#FCA5A5',
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                fontFamily: "'Sora', system-ui, sans-serif",
+              }}
+            >
+              {filterStruggling ? `Showing ${filtered.length} struggling` : `Needs help (${strugglingCount})`}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Struggling students summary */}
+      {strugglingCount > 0 && !filterStruggling && allStudents.length > 0 && (
+        <div style={{
+          backgroundColor: '#0F172A',
+          borderRadius: 14,
+          border: '1px solid #DC262633',
+          padding: '14px 18px',
+          marginBottom: 16,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 4, backgroundColor: '#DC2626', color: '#fff', textTransform: 'uppercase' }}>
+              Alert
+            </span>
+            <span style={{ fontSize: 14, color: '#FCA5A5' }}>
+              <strong>{strugglingCount}</strong> out of {allStudents.length} student{allStudents.length > 1 ? 's' : ''} {strugglingCount > 1 ? 'are' : 'is'} below 50% mastery or accuracy
+            </span>
+          </div>
+          <button
+            onClick={() => setFilterStruggling(true)}
+            style={{
+              padding: '6px 14px',
+              backgroundColor: 'transparent',
+              color: '#60A5FA',
+              border: '1px solid #2563EB',
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 500,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Show only
+          </button>
         </div>
       )}
 

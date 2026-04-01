@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { GRADES, GRADE_SUBJECTS, getSubjectsForGrade } from '@/lib/constants';
 
+/** P5-compliant grade validator: only "6" through "12" as plain strings. */
+function isValidP5Grade(grade: unknown): boolean {
+  return typeof grade === 'string' && /^(6|7|8|9|10|11|12)$/.test(grade);
+}
+
 /**
  * Grade Format Regression Tests — P5 (Grade Format)
  *
@@ -98,6 +103,54 @@ describe('P5: GRADE_SUBJECTS uses string keys', () => {
     // that we never store under numeric keys
     const keys = Object.keys(GRADE_SUBJECTS);
     expect(keys.every(k => k === String(k))).toBe(true);
+  });
+});
+
+// ─── P5: isValidP5Grade validator ────────────────────────────────────────────
+
+describe('P5: isValidP5Grade validator', () => {
+  it('accepts all valid grades "6" through "12"', () => {
+    for (const g of ['6', '7', '8', '9', '10', '11', '12']) {
+      expect(isValidP5Grade(g)).toBe(true);
+    }
+  });
+
+  it('rejects "Grade 10" format (prefixed)', () => {
+    expect(isValidP5Grade('Grade 10')).toBe(false);
+    expect(isValidP5Grade('Grade 6')).toBe(false);
+    expect(isValidP5Grade('Grade 12')).toBe(false);
+  });
+
+  it('rejects "grade 10" format (lowercase prefixed)', () => {
+    expect(isValidP5Grade('grade 10')).toBe(false);
+  });
+
+  it('rejects integer types', () => {
+    expect(isValidP5Grade(6)).toBe(false);
+    expect(isValidP5Grade(10)).toBe(false);
+    expect(isValidP5Grade(12)).toBe(false);
+  });
+
+  it('rejects null and undefined', () => {
+    expect(isValidP5Grade(null)).toBe(false);
+    expect(isValidP5Grade(undefined)).toBe(false);
+  });
+
+  it('rejects empty string', () => {
+    expect(isValidP5Grade('')).toBe(false);
+  });
+
+  it('rejects out-of-range string grades', () => {
+    expect(isValidP5Grade('0')).toBe(false);
+    expect(isValidP5Grade('5')).toBe(false);
+    expect(isValidP5Grade('13')).toBe(false);
+    expect(isValidP5Grade('99')).toBe(false);
+  });
+
+  it('rejects padded grades', () => {
+    expect(isValidP5Grade(' 6')).toBe(false);
+    expect(isValidP5Grade('6 ')).toBe(false);
+    expect(isValidP5Grade('06')).toBe(false);
   });
 });
 
