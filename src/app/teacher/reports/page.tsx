@@ -5,6 +5,11 @@ import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
 import { BottomNav } from '@/components/ui';
 
+// ============================================================
+// BILINGUAL HELPERS (P7)
+// ============================================================
+const tt = (isHi: boolean, en: string, hi: string) => isHi ? hi : en;
+
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
@@ -163,13 +168,13 @@ function getMasteryColor(level: string): string {
   }
 }
 
-function getMasteryLabel(level: string): string {
+function getMasteryLabel(level: string, isHi: boolean): string {
   switch (level) {
-    case 'mastered': return 'Mastered';
-    case 'proficient': return 'Proficient';
-    case 'familiar': return 'Familiar';
-    case 'developing': return 'Developing';
-    default: return 'Not Started';
+    case 'mastered': return tt(isHi, 'Mastered', 'माहिर');
+    case 'proficient': return tt(isHi, 'Proficient', 'कुशल');
+    case 'familiar': return tt(isHi, 'Familiar', 'परिचित');
+    case 'developing': return tt(isHi, 'Developing', 'विकासशील');
+    default: return tt(isHi, 'Not Started', 'शुरू नहीं हुआ');
   }
 }
 
@@ -182,25 +187,25 @@ function heatCellColor(value: number): string {
 }
 
 /* ─── Tab 1: Class Overview ─── */
-function ClassOverviewTab({ data }: { data: OverviewData | null }) {
+function ClassOverviewTab({ data, isHi }: { data: OverviewData | null; isHi: boolean }) {
   const stats = data?.stats || {};
   const distribution = data?.mastery_distribution || {};
   const topPerformers: PerformerEntry[] = data?.top_performers || [];
   const needsAttention: PerformerEntry[] = data?.needs_attention || [];
 
   const statItems = [
-    { label: 'Total Students', value: stats.total_students ?? 0, color: '#2563EB' },
-    { label: 'Average Mastery', value: `${stats.avg_mastery ?? 0}%`, color: '#7C3AED' },
-    { label: 'Average Accuracy', value: `${stats.avg_accuracy ?? 0}%`, color: '#059669' },
-    { label: 'Active This Week', value: stats.active_this_week ?? 0, color: '#D97706' },
+    { label: tt(isHi, 'Total Students', 'कुल छात्र'), value: stats.total_students ?? 0, color: '#2563EB' },
+    { label: tt(isHi, 'Average Mastery', 'औसत मास्टरी'), value: `${stats.avg_mastery ?? 0}%`, color: '#7C3AED' },
+    { label: tt(isHi, 'Average Accuracy', 'औसत सटीकता'), value: `${stats.avg_accuracy ?? 0}%`, color: '#059669' },
+    { label: tt(isHi, 'Active This Week', 'इस सप्ताह सक्रिय'), value: stats.active_this_week ?? 0, color: '#D97706' },
   ];
 
   const masteryLevels = [
-    { key: 'mastered', label: 'Mastered', color: '#16A34A' },
-    { key: 'proficient', label: 'Proficient', color: '#7C3AED' },
-    { key: 'familiar', label: 'Familiar', color: '#2563EB' },
-    { key: 'developing', label: 'Developing', color: '#D97706' },
-    { key: 'not_started', label: 'Not Started', color: '#64748B' },
+    { key: 'mastered', label: tt(isHi, 'Mastered', 'माहिर'), color: '#16A34A' },
+    { key: 'proficient', label: tt(isHi, 'Proficient', 'कुशल'), color: '#7C3AED' },
+    { key: 'familiar', label: tt(isHi, 'Familiar', 'परिचित'), color: '#2563EB' },
+    { key: 'developing', label: tt(isHi, 'Developing', 'विकासशील'), color: '#D97706' },
+    { key: 'not_started', label: tt(isHi, 'Not Started', 'शुरू नहीं हुआ'), color: '#64748B' },
   ];
 
   return (
@@ -217,7 +222,7 @@ function ClassOverviewTab({ data }: { data: OverviewData | null }) {
 
       {/* Mastery Distribution */}
       <div style={cardStyle}>
-        <h3 style={{ fontSize: 16, fontWeight: 600, color: '#F1F5F9', margin: '0 0 14px' }}>Mastery Distribution</h3>
+        <h3 style={{ fontSize: 16, fontWeight: 600, color: '#F1F5F9', margin: '0 0 14px' }}>{tt(isHi, 'Mastery Distribution', 'मास्टरी वितरण')}</h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {masteryLevels.map((lvl) => {
             const pct = distribution[lvl.key] ?? 0;
@@ -239,9 +244,9 @@ function ClassOverviewTab({ data }: { data: OverviewData | null }) {
       {/* Top Performers & Needs Attention */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
         <div style={cardStyle}>
-          <h3 style={{ fontSize: 16, fontWeight: 600, color: '#F1F5F9', margin: '0 0 12px' }}>Top 5 Performers</h3>
+          <h3 style={{ fontSize: 16, fontWeight: 600, color: '#F1F5F9', margin: '0 0 12px' }}>{tt(isHi, 'Top 5 Performers', 'शीर्ष 5 प्रदर्शक')}</h3>
           {topPerformers.length === 0 ? (
-            <p style={{ color: '#475569', fontStyle: 'italic', fontSize: 13 }}>No data available yet.</p>
+            <p style={{ color: '#475569', fontStyle: 'italic', fontSize: 13 }}>{tt(isHi, 'No data available yet.', 'अभी तक कोई डेटा उपलब्ध नहीं।')}</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {topPerformers.slice(0, 5).map((s: PerformerEntry, i: number) => (
@@ -258,9 +263,9 @@ function ClassOverviewTab({ data }: { data: OverviewData | null }) {
         </div>
 
         <div style={cardStyle}>
-          <h3 style={{ fontSize: 16, fontWeight: 600, color: '#F1F5F9', margin: '0 0 12px' }}>Needs Attention</h3>
+          <h3 style={{ fontSize: 16, fontWeight: 600, color: '#F1F5F9', margin: '0 0 12px' }}>{tt(isHi, 'Needs Attention', 'ध्यान देने योग्य')}</h3>
           {needsAttention.length === 0 ? (
-            <p style={{ color: '#475569', fontStyle: 'italic', fontSize: 13 }}>All students are on track!</p>
+            <p style={{ color: '#475569', fontStyle: 'italic', fontSize: 13 }}>{tt(isHi, 'All students are on track!', 'सभी छात्र सही दिशा में हैं!')}</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {needsAttention.slice(0, 5).map((s: PerformerEntry, i: number) => (
@@ -278,7 +283,7 @@ function ClassOverviewTab({ data }: { data: OverviewData | null }) {
 }
 
 /* ─── Tab 2: Student Analysis ─── */
-function StudentAnalysisTab({ students, teacherId }: { students: StudentListEntry[]; teacherId: string }) {
+function StudentAnalysisTab({ students, teacherId, isHi }: { students: StudentListEntry[]; teacherId: string; isHi: boolean }) {
   const [selectedId, setSelectedId] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [profile, setProfile] = useState<StudentProfile | null>(null);
@@ -312,10 +317,10 @@ function StudentAnalysisTab({ students, teacherId }: { students: StudentListEntr
     <div>
       {/* Search & Select */}
       <div style={cardStyle}>
-        <h3 style={{ fontSize: 16, fontWeight: 600, color: '#F1F5F9', margin: '0 0 12px' }}>Select Student</h3>
+        <h3 style={{ fontSize: 16, fontWeight: 600, color: '#F1F5F9', margin: '0 0 12px' }}>{tt(isHi, 'Select Student', 'छात्र चुनें')}</h3>
         <input
           type="text"
-          placeholder="Search students..."
+          placeholder={tt(isHi, 'Search students...', 'छात्र खोजें...')}
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           style={{ width: '100%', padding: '10px 12px', backgroundColor: '#1E293B', border: '1px solid #334155', borderRadius: 8, color: '#E2E8F0', fontSize: 14, outline: 'none', boxSizing: 'border-box', marginBottom: 8 }}
@@ -325,7 +330,7 @@ function StudentAnalysisTab({ students, teacherId }: { students: StudentListEntr
           onChange={(e) => setSelectedId(e.target.value)}
           style={{ width: '100%', padding: '10px 12px', backgroundColor: '#1E293B', border: '1px solid #334155', borderRadius: 8, color: '#E2E8F0', fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
         >
-          <option value="">-- Choose a student --</option>
+          <option value="">{tt(isHi, '-- Choose a student --', '-- छात्र चुनें --')}</option>
           {filtered.map((s: StudentListEntry) => (
             <option key={s.id || s.student_id} value={s.id || s.student_id}>
               {s.name || s.student_name}
@@ -337,7 +342,7 @@ function StudentAnalysisTab({ students, teacherId }: { students: StudentListEntr
       {loading && (
         <div style={{ textAlign: 'center', padding: 40, color: '#64748B' }}>
           <div style={spinnerStyle} />
-          Loading student data...
+          {tt(isHi, 'Loading student data...', 'छात्र डेटा लोड हो रहा है...')}
         </div>
       )}
 
@@ -352,9 +357,9 @@ function StudentAnalysisTab({ students, teacherId }: { students: StudentListEntr
           {/* Performance Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 16 }}>
             {[
-              { label: 'Total XP', value: profile.xp ?? profile.total_xp ?? 0, color: '#2563EB' },
-              { label: 'Streak', value: `${profile.streak ?? profile.current_streak ?? 0} days`, color: '#D97706' },
-              { label: 'Accuracy', value: `${profile.accuracy ?? profile.avg_accuracy ?? 0}%`, color: '#059669' },
+              { label: tt(isHi, 'Total XP', 'कुल XP'), value: profile.xp ?? profile.total_xp ?? 0, color: '#2563EB' },
+              { label: tt(isHi, 'Streak', 'स्ट्रीक'), value: `${profile.streak ?? profile.current_streak ?? 0} ${tt(isHi, 'days', 'दिन')}`, color: '#D97706' },
+              { label: tt(isHi, 'Accuracy', 'सटीकता'), value: `${profile.accuracy ?? profile.avg_accuracy ?? 0}%`, color: '#059669' },
             ].map((s, i) => (
               <div key={i} style={statCardStyle}>
                 <p style={{ color: '#64748B', fontSize: 11, margin: 0, textTransform: 'uppercase', letterSpacing: 0.5 }}>{s.label}</p>
@@ -365,9 +370,9 @@ function StudentAnalysisTab({ students, teacherId }: { students: StudentListEntr
 
           {/* Subject-wise Mastery */}
           <div style={cardStyle}>
-            <h3 style={{ fontSize: 16, fontWeight: 600, color: '#F1F5F9', margin: '0 0 14px' }}>Subject-wise Mastery</h3>
+            <h3 style={{ fontSize: 16, fontWeight: 600, color: '#F1F5F9', margin: '0 0 14px' }}>{tt(isHi, 'Subject-wise Mastery', 'विषयवार मास्टरी')}</h3>
             {(profile.subjects || profile.subject_mastery || []).length === 0 ? (
-              <p style={{ color: '#475569', fontStyle: 'italic', fontSize: 13 }}>No subject data available.</p>
+              <p style={{ color: '#475569', fontStyle: 'italic', fontSize: 13 }}>{tt(isHi, 'No subject data available.', 'कोई विषय डेटा उपलब्ध नहीं।')}</p>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {(profile.subjects || profile.subject_mastery || []).map((subj: SubjectMastery, i: number) => {
@@ -377,7 +382,7 @@ function StudentAnalysisTab({ students, teacherId }: { students: StudentListEntr
                     <div key={i}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                         <span style={{ fontSize: 13, color: '#CBD5E1', fontWeight: 500 }}>{subj.subject || subj.name}</span>
-                        <span style={{ fontSize: 12, color: getMasteryColor(level), fontWeight: 600 }}>{getMasteryLabel(level)} ({pct}%)</span>
+                        <span style={{ fontSize: 12, color: getMasteryColor(level), fontWeight: 600 }}>{getMasteryLabel(level, isHi)} ({pct}%)</span>
                       </div>
                       <div style={{ height: 8, backgroundColor: '#1E293B', borderRadius: 6, overflow: 'hidden' }}>
                         <div style={{ height: '100%', width: `${Math.min(pct, 100)}%`, backgroundColor: getMasteryColor(level), borderRadius: 6, transition: 'width 0.5s ease' }} />
@@ -392,9 +397,9 @@ function StudentAnalysisTab({ students, teacherId }: { students: StudentListEntr
           {/* Strengths & Weaknesses */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16, marginBottom: 16 }}>
             <div style={cardStyle}>
-              <h3 style={{ fontSize: 15, fontWeight: 600, color: '#16A34A', margin: '0 0 10px' }}>Strengths</h3>
+              <h3 style={{ fontSize: 15, fontWeight: 600, color: '#16A34A', margin: '0 0 10px' }}>{tt(isHi, 'Strengths', 'मज़बूत पक्ष')}</h3>
               {(profile.strengths || []).length === 0 ? (
-                <p style={{ color: '#475569', fontStyle: 'italic', fontSize: 13 }}>No strengths identified yet.</p>
+                <p style={{ color: '#475569', fontStyle: 'italic', fontSize: 13 }}>{tt(isHi, 'No strengths identified yet.', 'अभी तक कोई मज़बूत पक्ष पहचाना नहीं गया।')}</p>
               ) : (
                 <ul style={{ margin: 0, paddingLeft: 18, listStyle: 'disc' }}>
                   {(profile.strengths || []).map((s: string | StrengthWeaknessItem, i: number) => (
@@ -407,9 +412,9 @@ function StudentAnalysisTab({ students, teacherId }: { students: StudentListEntr
             </div>
 
             <div style={cardStyle}>
-              <h3 style={{ fontSize: 15, fontWeight: 600, color: '#EF4444', margin: '0 0 10px' }}>Weaknesses</h3>
+              <h3 style={{ fontSize: 15, fontWeight: 600, color: '#EF4444', margin: '0 0 10px' }}>{tt(isHi, 'Weaknesses', 'कमज़ोर पक्ष')}</h3>
               {(profile.weaknesses || []).length === 0 ? (
-                <p style={{ color: '#475569', fontStyle: 'italic', fontSize: 13 }}>No weaknesses identified.</p>
+                <p style={{ color: '#475569', fontStyle: 'italic', fontSize: 13 }}>{tt(isHi, 'No weaknesses identified.', 'कोई कमज़ोर पक्ष नहीं पहचाना गया।')}</p>
               ) : (
                 <ul style={{ margin: 0, paddingLeft: 18, listStyle: 'disc' }}>
                   {(profile.weaknesses || []).map((w: string | StrengthWeaknessItem, i: number) => (
@@ -427,7 +432,7 @@ function StudentAnalysisTab({ students, teacherId }: { students: StudentListEntr
             const recs = profile.recommendations || profile.recommendation;
             return (
               <div style={{ ...cardStyle, borderLeft: '3px solid #2563EB' }}>
-                <h3 style={{ fontSize: 15, fontWeight: 600, color: '#2563EB', margin: '0 0 8px' }}>Recommendations</h3>
+                <h3 style={{ fontSize: 15, fontWeight: 600, color: '#2563EB', margin: '0 0 8px' }}>{tt(isHi, 'Recommendations', 'सुझाव')}</h3>
                 {typeof recs === 'string' ? (
                   <p style={{ color: '#CBD5E1', fontSize: 13, margin: 0, lineHeight: 1.6 }}>
                     {recs}
@@ -449,7 +454,7 @@ function StudentAnalysisTab({ students, teacherId }: { students: StudentListEntr
 
       {!loading && !error && !profile && selectedId === '' && (
         <div style={{ textAlign: 'center', padding: 40, color: '#475569', fontStyle: 'italic' }}>
-          Select a student above to view their detailed analysis.
+          {tt(isHi, 'Select a student above to view their detailed analysis.', 'विस्तृत विश्लेषण देखने के लिए ऊपर छात्र चुनें।')}
         </div>
       )}
     </div>
@@ -457,13 +462,17 @@ function StudentAnalysisTab({ students, teacherId }: { students: StudentListEntr
 }
 
 /* ─── Tab 3: Trends ─── */
-function TrendsTab({ data }: { data: TrendsData | null }) {
+function TrendsTab({ data, isHi }: { data: TrendsData | null; isHi: boolean }) {
   const weeklyProgress: WeeklyProgressEntry[] = data?.weekly_progress || [];
   const activityHeatmap: number[][] = data?.activity_heatmap || [];
   const mostImproved: ImprovedStudent[] = data?.most_improved || [];
 
-  const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  const weekLabels = ['Week 1', 'Week 2', 'Week 3', 'Week 4'];
+  const dayLabels = isHi
+    ? ['सोम', 'मंगल', 'बुध', 'गुरु', 'शुक्र', 'शनि', 'रवि']
+    : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const weekLabels = isHi
+    ? ['सप्ताह 1', 'सप्ताह 2', 'सप्ताह 3', 'सप्ताह 4']
+    : ['Week 1', 'Week 2', 'Week 3', 'Week 4'];
 
   // Build a 7x4 grid: if API doesn't supply it, generate placeholder
   const heatmapGrid: number[][] = activityHeatmap.length > 0
@@ -474,9 +483,9 @@ function TrendsTab({ data }: { data: TrendsData | null }) {
     <div>
       {/* Weekly Progress */}
       <div style={cardStyle}>
-        <h3 style={{ fontSize: 16, fontWeight: 600, color: '#F1F5F9', margin: '0 0 14px' }}>Weekly Progress</h3>
+        <h3 style={{ fontSize: 16, fontWeight: 600, color: '#F1F5F9', margin: '0 0 14px' }}>{tt(isHi, 'Weekly Progress', 'साप्ताहिक प्रगति')}</h3>
         {weeklyProgress.length === 0 ? (
-          <p style={{ color: '#475569', fontStyle: 'italic', fontSize: 13 }}>No weekly progress data yet.</p>
+          <p style={{ color: '#475569', fontStyle: 'italic', fontSize: 13 }}>{tt(isHi, 'No weekly progress data yet.', 'अभी तक कोई साप्ताहिक प्रगति डेटा नहीं।')}</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {weeklyProgress.slice(0, 4).map((w: WeeklyProgressEntry, i: number) => {
@@ -484,7 +493,7 @@ function TrendsTab({ data }: { data: TrendsData | null }) {
               return (
                 <div key={i}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <span style={{ fontSize: 13, color: '#CBD5E1', fontWeight: 500 }}>{w.label || w.week || `Week ${i + 1}`}</span>
+                    <span style={{ fontSize: 13, color: '#CBD5E1', fontWeight: 500 }}>{w.label || w.week || (isHi ? `सप्ताह ${i + 1}` : `Week ${i + 1}`)}</span>
                     <span style={{ fontSize: 13, color: '#94A3B8' }}>{pct}%</span>
                   </div>
                   <div style={{ height: 12, backgroundColor: '#1E293B', borderRadius: 6, overflow: 'hidden' }}>
@@ -499,7 +508,7 @@ function TrendsTab({ data }: { data: TrendsData | null }) {
 
       {/* Activity Heatmap */}
       <div style={cardStyle}>
-        <h3 style={{ fontSize: 16, fontWeight: 600, color: '#F1F5F9', margin: '0 0 14px' }}>Activity Heatmap</h3>
+        <h3 style={{ fontSize: 16, fontWeight: 600, color: '#F1F5F9', margin: '0 0 14px' }}>{tt(isHi, 'Activity Heatmap', 'गतिविधि हीटमैप')}</h3>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ borderCollapse: 'separate', borderSpacing: 4 }}>
             <thead>
@@ -513,7 +522,7 @@ function TrendsTab({ data }: { data: TrendsData | null }) {
             <tbody>
               {heatmapGrid.map((row, wi) => (
                 <tr key={wi}>
-                  <td style={{ color: '#64748B', fontSize: 11, fontWeight: 500, paddingRight: 8 }}>{weekLabels[wi] || `Wk ${wi + 1}`}</td>
+                  <td style={{ color: '#64748B', fontSize: 11, fontWeight: 500, paddingRight: 8 }}>{weekLabels[wi] || (isHi ? `स. ${wi + 1}` : `Wk ${wi + 1}`)}</td>
                   {row.map((val: number, di: number) => (
                     <td key={di}>
                       <div
@@ -529,7 +538,7 @@ function TrendsTab({ data }: { data: TrendsData | null }) {
                           fontWeight: 600,
                           color: val > 0 ? '#fff' : '#334155',
                         }}
-                        title={`${dayLabels[di]}, ${weekLabels[wi]}: ${val} activities`}
+                        title={`${dayLabels[di]}, ${weekLabels[wi]}: ${val} ${tt(isHi, 'activities', 'गतिविधियां')}`}
                       >
                         {val > 0 ? val : ''}
                       </div>
@@ -541,19 +550,19 @@ function TrendsTab({ data }: { data: TrendsData | null }) {
           </table>
         </div>
         <div style={{ display: 'flex', gap: 12, marginTop: 10, fontSize: 11, color: '#64748B', alignItems: 'center' }}>
-          <span>Less</span>
+          <span>{tt(isHi, 'Less', 'कम')}</span>
           {[0, 1, 3, 5, 8].map((v) => (
             <div key={v} style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: heatCellColor(v) }} />
           ))}
-          <span>More</span>
+          <span>{tt(isHi, 'More', 'अधिक')}</span>
         </div>
       </div>
 
       {/* Most Improved */}
       <div style={cardStyle}>
-        <h3 style={{ fontSize: 16, fontWeight: 600, color: '#F1F5F9', margin: '0 0 12px' }}>Most Improved Students</h3>
+        <h3 style={{ fontSize: 16, fontWeight: 600, color: '#F1F5F9', margin: '0 0 12px' }}>{tt(isHi, 'Most Improved Students', 'सबसे अधिक सुधार वाले छात्र')}</h3>
         {mostImproved.length === 0 ? (
-          <p style={{ color: '#475569', fontStyle: 'italic', fontSize: 13 }}>No improvement data available yet.</p>
+          <p style={{ color: '#475569', fontStyle: 'italic', fontSize: 13 }}>{tt(isHi, 'No improvement data available yet.', 'अभी तक कोई सुधार डेटा उपलब्ध नहीं।')}</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {mostImproved.map((s: ImprovedStudent, i: number) => (
@@ -574,7 +583,7 @@ function TrendsTab({ data }: { data: TrendsData | null }) {
 
 /* ─── Main Page ─── */
 export default function TeacherReportsPage() {
-  const { teacher, isLoading: authLoading, isLoggedIn, activeRole } = useAuth();
+  const { teacher, isLoading: authLoading, isLoggedIn, activeRole, isHi } = useAuth();
   const router = useRouter();
 
   const [tab, setTab] = useState<'overview' | 'student' | 'trends'>('overview');
@@ -623,16 +632,16 @@ export default function TeacherReportsPage() {
         <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
         <div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}>
           <div style={spinnerStyle} />
-          Loading reports...
+          {tt(isHi, 'Loading reports...', 'रिपोर्ट लोड हो रही हैं...')}
         </div>
       </div>
     );
   }
 
   const tabs = [
-    { id: 'overview' as const, label: 'Class Overview' },
-    { id: 'student' as const, label: 'Student Analysis' },
-    { id: 'trends' as const, label: 'Trends' },
+    { id: 'overview' as const, label: tt(isHi, 'Class Overview', 'कक्षा अवलोकन') },
+    { id: 'student' as const, label: tt(isHi, 'Student Analysis', 'छात्र विश्लेषण') },
+    { id: 'trends' as const, label: tt(isHi, 'Trends', 'रुझान') },
   ];
 
   return (
@@ -642,16 +651,16 @@ export default function TeacherReportsPage() {
       {/* Header */}
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid #1E293B' }}>
         <div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: '#F8FAFC', margin: 0 }}>Performance Reports</h1>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: '#F8FAFC', margin: 0 }}>{tt(isHi, 'Performance Reports', 'प्रदर्शन रिपोर्ट')}</h1>
           <p style={{ fontSize: 14, color: '#64748B', margin: '4px 0 0' }}>
-            Student performance analytics and insights
+            {tt(isHi, 'Student performance analytics and insights', 'छात्र प्रदर्शन विश्लेषण और जानकारी')}
           </p>
         </div>
         <button
           onClick={loadData}
           style={{ padding: '8px 16px', background: 'transparent', color: '#2563EB', border: '1px solid #2563EB', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
         >
-          Refresh
+          {tt(isHi, 'Refresh', 'रिफ्रेश')}
         </button>
       </header>
 
@@ -663,7 +672,7 @@ export default function TeacherReportsPage() {
             onClick={loadData}
             style={{ display: 'block', margin: '10px auto 0', padding: '6px 16px', backgroundColor: '#2563EB', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, cursor: 'pointer' }}
           >
-            Retry
+            {tt(isHi, 'Retry', 'पुनः प्रयास')}
           </button>
         </div>
       )}
@@ -693,9 +702,9 @@ export default function TeacherReportsPage() {
       </div>
 
       {/* Tab Content */}
-      {tab === 'overview' && <ClassOverviewTab data={overviewData} />}
-      {tab === 'student' && <StudentAnalysisTab students={studentsList} teacherId={teacherId} />}
-      {tab === 'trends' && <TrendsTab data={trendsData} />}
+      {tab === 'overview' && <ClassOverviewTab data={overviewData} isHi={isHi} />}
+      {tab === 'student' && <StudentAnalysisTab students={studentsList} teacherId={teacherId} isHi={isHi} />}
+      {tab === 'trends' && <TrendsTab data={trendsData} isHi={isHi} />}
       <BottomNav />
     </div>
   );

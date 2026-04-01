@@ -6,6 +6,11 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { BottomNav } from '@/components/ui';
 
+// ============================================================
+// BILINGUAL HELPERS (P7)
+// ============================================================
+const tt = (isHi: boolean, en: string, hi: string) => isHi ? hi : en;
+
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
@@ -69,9 +74,11 @@ function accuracyColor(pct: number): string {
 function StudentCard({
   student,
   teacherId,
+  isHi,
 }: {
   student: StudentData;
   teacherId: string;
+  isHi: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [note, setNote] = useState('');
@@ -135,8 +142,8 @@ function StudentCard({
           alignItems: 'center',
           gap: 6,
         }}>
-          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4, backgroundColor: '#DC2626', color: '#fff', textTransform: 'uppercase' }}>Needs help</span>
-          <span style={{ fontSize: 11, color: '#FCA5A5' }}>Low mastery and accuracy — consider targeted revision</span>
+          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4, backgroundColor: '#DC2626', color: '#fff', textTransform: 'uppercase' }}>{tt(isHi, 'Needs help', 'मदद चाहिए')}</span>
+          <span style={{ fontSize: 11, color: '#FCA5A5' }}>{tt(isHi, 'Low mastery and accuracy — consider targeted revision', 'कम मास्टरी और सटीकता — लक्षित रिवीज़न पर विचार करें')}</span>
         </div>
       )}
       {needsAttention && !isStruggling && (
@@ -148,8 +155,8 @@ function StudentCard({
           alignItems: 'center',
           gap: 6,
         }}>
-          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4, backgroundColor: '#D97706', color: '#fff', textTransform: 'uppercase' }}>At risk</span>
-          <span style={{ fontSize: 11, color: '#FCD34D' }}>Below average — monitor closely</span>
+          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4, backgroundColor: '#D97706', color: '#fff', textTransform: 'uppercase' }}>{tt(isHi, 'At risk', 'जोखिम में')}</span>
+          <span style={{ fontSize: 11, color: '#FCD34D' }}>{tt(isHi, 'Below average — monitor closely', 'औसत से नीचे — ध्यान से देखें')}</span>
         </div>
       )}
       {/* Card Header */}
@@ -178,7 +185,7 @@ function StudentCard({
               {student.name}
             </h3>
             <p style={{ margin: '2px 0 0', fontSize: 12, color: '#64748B' }}>
-              Grade {student.grade}
+              {tt(isHi, 'Grade', 'कक्षा')} {student.grade}
             </p>
           </div>
         </div>
@@ -190,18 +197,18 @@ function StudentCard({
             <p style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 700, color: '#6366F1' }}>{student.xp.toLocaleString()}</p>
           </div>
           <div style={{ backgroundColor: '#1E293B', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
-            <p style={{ margin: 0, fontSize: 10, color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.5 }}>Streak</p>
+            <p style={{ margin: 0, fontSize: 10, color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.5 }}>{tt(isHi, 'Streak', 'स्ट्रीक')}</p>
             <p style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 700, color: '#F59E0B' }}>{student.streak}d</p>
           </div>
           <div style={{ backgroundColor: '#1E293B', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
-            <p style={{ margin: 0, fontSize: 10, color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.5 }}>Mastery</p>
+            <p style={{ margin: 0, fontSize: 10, color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.5 }}>{tt(isHi, 'Mastery', 'मास्टरी')}</p>
             <p style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 700, color: '#2563EB' }}>{student.mastery}%</p>
           </div>
         </div>
 
         {/* Accuracy */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-          <span style={{ fontSize: 12, color: '#94A3B8' }}>Accuracy:</span>
+          <span style={{ fontSize: 12, color: '#94A3B8' }}>{tt(isHi, 'Accuracy', 'सटीकता')}:</span>
           <span style={{ fontSize: 14, fontWeight: 700, color: accuracyColor(student.accuracy) }}>{student.accuracy}%</span>
         </div>
 
@@ -235,7 +242,7 @@ function StudentCard({
             transition: 'all 0.2s ease',
           }}
         >
-          {expanded ? 'Hide Details' : 'View Details'}
+          {expanded ? tt(isHi, 'Hide Details', 'विवरण छुपाएं') : tt(isHi, 'View Details', 'विवरण देखें')}
         </button>
       </div>
 
@@ -249,7 +256,7 @@ function StudentCard({
       >
         <div style={{ padding: '0 18px 18px', borderTop: '1px solid #1E293B' }}>
           {/* Subject Breakdown */}
-          <h4 style={{ fontSize: 13, fontWeight: 600, color: '#E2E8F0', margin: '14px 0 10px' }}>Subject Breakdown</h4>
+          <h4 style={{ fontSize: 13, fontWeight: 600, color: '#E2E8F0', margin: '14px 0 10px' }}>{tt(isHi, 'Subject Breakdown', 'विषयवार विवरण')}</h4>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {subjects.map((subj) => (
               <div key={subj.name}>
@@ -275,7 +282,7 @@ function StudentCard({
           {/* Recent Quiz Scores */}
           {recentScores.length > 0 && (
             <>
-              <h4 style={{ fontSize: 13, fontWeight: 600, color: '#E2E8F0', margin: '14px 0 10px' }}>Recent Quiz Scores</h4>
+              <h4 style={{ fontSize: 13, fontWeight: 600, color: '#E2E8F0', margin: '14px 0 10px' }}>{tt(isHi, 'Recent Quiz Scores', 'हाल की क्विज़ स्कोर')}</h4>
               <div style={{ display: 'flex', gap: 6 }}>
                 {recentScores.slice(-5).map((score, i) => (
                   <div
@@ -289,7 +296,7 @@ function StudentCard({
                     }}
                   >
                     <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: accuracyColor(score) }}>{score}%</p>
-                    <p style={{ margin: '2px 0 0', fontSize: 10, color: '#475569' }}>Quiz {i + 1}</p>
+                    <p style={{ margin: '2px 0 0', fontSize: 10, color: '#475569' }}>{tt(isHi, `Quiz ${i + 1}`, `क्विज़ ${i + 1}`)}</p>
                   </div>
                 ))}
               </div>
@@ -299,7 +306,7 @@ function StudentCard({
           {/* Strengths & Improvements */}
           {strengths.length > 0 && (
             <>
-              <h4 style={{ fontSize: 13, fontWeight: 600, color: '#059669', margin: '14px 0 8px' }}>Strengths</h4>
+              <h4 style={{ fontSize: 13, fontWeight: 600, color: '#059669', margin: '14px 0 8px' }}>{tt(isHi, 'Strengths', 'मज़बूत पक्ष')}</h4>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {strengths.map((s, i) => (
                   <span key={i} style={{ fontSize: 11, padding: '4px 10px', backgroundColor: '#064E3B', color: '#6EE7B7', borderRadius: 99 }}>{s}</span>
@@ -309,7 +316,7 @@ function StudentCard({
           )}
           {improvements.length > 0 && (
             <>
-              <h4 style={{ fontSize: 13, fontWeight: 600, color: '#D97706', margin: '14px 0 8px' }}>Areas for Improvement</h4>
+              <h4 style={{ fontSize: 13, fontWeight: 600, color: '#D97706', margin: '14px 0 8px' }}>{tt(isHi, 'Areas for Improvement', 'सुधार के क्षेत्र')}</h4>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {improvements.map((s, i) => (
                   <span key={i} style={{ fontSize: 11, padding: '4px 10px', backgroundColor: '#78350F', color: '#FCD34D', borderRadius: 99 }}>{s}</span>
@@ -319,11 +326,11 @@ function StudentCard({
           )}
 
           {/* Teacher Note */}
-          <h4 style={{ fontSize: 13, fontWeight: 600, color: '#E2E8F0', margin: '14px 0 8px' }}>Teacher Note</h4>
+          <h4 style={{ fontSize: 13, fontWeight: 600, color: '#E2E8F0', margin: '14px 0 8px' }}>{tt(isHi, 'Teacher Note', 'शिक्षक नोट')}</h4>
           <textarea
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="Add a note about this student..."
+            placeholder={tt(isHi, 'Add a note about this student...', 'इस छात्र के बारे में नोट जोड़ें...')}
             style={{
               width: '100%',
               minHeight: 60,
@@ -341,11 +348,11 @@ function StudentCard({
           />
 
           {/* Custom Goal */}
-          <h4 style={{ fontSize: 13, fontWeight: 600, color: '#E2E8F0', margin: '12px 0 8px' }}>Custom Goal</h4>
+          <h4 style={{ fontSize: 13, fontWeight: 600, color: '#E2E8F0', margin: '12px 0 8px' }}>{tt(isHi, 'Custom Goal', 'कस्टम लक्ष्य')}</h4>
           <input
             value={goal}
             onChange={(e) => setGoal(e.target.value)}
-            placeholder="Set a custom goal for this student..."
+            placeholder={tt(isHi, 'Set a custom goal for this student...', 'इस छात्र के लिए कस्टम लक्ष्य सेट करें...')}
             style={{
               width: '100%',
               padding: '10px 12px',
@@ -378,7 +385,7 @@ function StudentCard({
               transition: 'background-color 0.3s ease',
             }}
           >
-            {saving ? 'Saving...' : saved ? 'Saved!' : 'Save Note & Goal'}
+            {saving ? tt(isHi, 'Saving...', 'सहेज रहे हैं...') : saved ? tt(isHi, 'Saved!', 'सहेज लिया!') : tt(isHi, 'Save Note & Goal', 'नोट और लक्ष्य सहेजें')}
           </button>
         </div>
       </div>
@@ -388,7 +395,7 @@ function StudentCard({
 
 /* ─── Main Page ─── */
 export default function TeacherStudentsPage() {
-  const { teacher, isLoading: authLoading, isLoggedIn, activeRole } = useAuth();
+  const { teacher, isLoading: authLoading, isLoggedIn, activeRole, isHi } = useAuth();
   const router = useRouter();
 
   const [classes, setClasses] = useState<ClassData[]>([]);
@@ -515,7 +522,7 @@ export default function TeacherStudentsPage() {
               animation: 'spin 0.8s linear infinite',
             }}
           />
-          Loading students...
+          {tt(isHi, 'Loading students...', 'छात्र लोड हो रहे हैं...')}
         </div>
         <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       </div>
@@ -536,10 +543,13 @@ export default function TeacherStudentsPage() {
         }}
       >
         <h1 style={{ margin: 0, fontSize: 26, fontWeight: 700, color: '#fff' }}>
-          {'👨‍🎓'} My Students
+          {'👨‍🎓'} {tt(isHi, 'My Students', 'मेरे छात्र')}
         </h1>
         <p style={{ margin: '6px 0 0', fontSize: 14, color: 'rgba(255,255,255,0.75)' }}>
-          {allStudents.length} student{allStudents.length !== 1 ? 's' : ''} across {classes.length} class{classes.length !== 1 ? 'es' : ''}
+          {tt(isHi,
+            `${allStudents.length} student${allStudents.length !== 1 ? 's' : ''} across ${classes.length} class${classes.length !== 1 ? 'es' : ''}`,
+            `${classes.length} कक्षाओं में ${allStudents.length} छात्र`
+          )}
         </p>
       </header>
 
@@ -571,7 +581,7 @@ export default function TeacherStudentsPage() {
               cursor: 'pointer',
             }}
           >
-            Retry
+            {tt(isHi, 'Retry', 'पुनः प्रयास')}
           </button>
         </div>
       )}
@@ -592,7 +602,7 @@ export default function TeacherStudentsPage() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search students by name..."
+              placeholder={tt(isHi, 'Search students by name...', 'नाम से छात्र खोजें...')}
               style={{
                 width: '100%',
                 padding: '11px 14px 11px 38px',
@@ -628,7 +638,7 @@ export default function TeacherStudentsPage() {
               fontFamily: "'Sora', system-ui, sans-serif",
             }}
           >
-            <option value="all">All Classes</option>
+            <option value="all">{tt(isHi, 'All Classes', 'सभी कक्षाएं')}</option>
             {classes.map((cls) => (
               <option key={cls.id} value={cls.id}>
                 {cls.name} ({cls.student_count})
@@ -653,7 +663,10 @@ export default function TeacherStudentsPage() {
                 fontFamily: "'Sora', system-ui, sans-serif",
               }}
             >
-              {filterStruggling ? `Showing ${filtered.length} struggling` : `Needs help (${strugglingCount})`}
+              {filterStruggling
+                ? tt(isHi, `Showing ${filtered.length} struggling`, `${filtered.length} कमज़ोर छात्र दिखा रहे हैं`)
+                : tt(isHi, `Needs help (${strugglingCount})`, `मदद चाहिए (${strugglingCount})`)
+              }
             </button>
           )}
         </div>
@@ -673,10 +686,13 @@ export default function TeacherStudentsPage() {
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 4, backgroundColor: '#DC2626', color: '#fff', textTransform: 'uppercase' }}>
-              Alert
+              {tt(isHi, 'Alert', 'अलर्ट')}
             </span>
             <span style={{ fontSize: 14, color: '#FCA5A5' }}>
-              <strong>{strugglingCount}</strong> out of {allStudents.length} student{allStudents.length > 1 ? 's' : ''} {strugglingCount > 1 ? 'are' : 'is'} below 50% mastery or accuracy
+              <strong>{strugglingCount}</strong> {tt(isHi,
+                `out of ${allStudents.length} student${allStudents.length > 1 ? 's' : ''} ${strugglingCount > 1 ? 'are' : 'is'} below 50% mastery or accuracy`,
+                `/ ${allStudents.length} छात्र 50% से कम मास्टरी या सटीकता पर हैं`
+              )}
             </span>
           </div>
           <button
@@ -693,7 +709,7 @@ export default function TeacherStudentsPage() {
               whiteSpace: 'nowrap',
             }}
           >
-            Show only
+            {tt(isHi, 'Show only', 'केवल दिखाएं')}
           </button>
         </div>
       )}
@@ -710,9 +726,9 @@ export default function TeacherStudentsPage() {
           }}
         >
           <div style={{ fontSize: 48, marginBottom: 16 }}>{'📚'}</div>
-          <h2 style={{ margin: '0 0 8px', fontSize: 20, fontWeight: 600, color: '#F1F5F9' }}>No Classes Yet</h2>
+          <h2 style={{ margin: '0 0 8px', fontSize: 20, fontWeight: 600, color: '#F1F5F9' }}>{tt(isHi, 'No Classes Yet', 'अभी तक कोई कक्षा नहीं')}</h2>
           <p style={{ margin: 0, fontSize: 14, color: '#64748B', maxWidth: 400, marginLeft: 'auto', marginRight: 'auto' }}>
-            Create a class from the Dashboard to start tracking students.
+            {tt(isHi, 'Create a class from the Dashboard to start tracking students.', 'छात्रों को ट्रैक करने के लिए डैशबोर्ड से कक्षा बनाएं।')}
           </p>
           <button
             onClick={() => router.push('/teacher')}
@@ -728,7 +744,7 @@ export default function TeacherStudentsPage() {
               cursor: 'pointer',
             }}
           >
-            Go to Dashboard
+            {tt(isHi, 'Go to Dashboard', 'डैशबोर्ड पर जाएं')}
           </button>
         </div>
       )}
@@ -744,9 +760,9 @@ export default function TeacherStudentsPage() {
           }}
         >
           <div style={{ fontSize: 48, marginBottom: 16 }}>{'👋'}</div>
-          <h2 style={{ margin: '0 0 8px', fontSize: 20, fontWeight: 600, color: '#F1F5F9' }}>No Students Yet</h2>
+          <h2 style={{ margin: '0 0 8px', fontSize: 20, fontWeight: 600, color: '#F1F5F9' }}>{tt(isHi, 'No Students Yet', 'अभी तक कोई छात्र नहीं')}</h2>
           <p style={{ margin: 0, fontSize: 14, color: '#64748B', maxWidth: 400, marginLeft: 'auto', marginRight: 'auto' }}>
-            No students have joined this class yet. Share the class code!
+            {tt(isHi, 'No students have joined this class yet. Share the class code!', 'अभी तक कोई छात्र इस कक्षा में शामिल नहीं हुआ। कक्षा कोड साझा करें!')}
           </p>
         </div>
       )}
@@ -763,7 +779,7 @@ export default function TeacherStudentsPage() {
           }}
         >
           <p style={{ margin: 0, fontSize: 14, color: '#64748B' }}>
-            No students match &quot;{search}&quot;
+            {tt(isHi, `No students match "${search}"`, `"${search}" से कोई छात्र नहीं मिला`)}
           </p>
         </div>
       )}
@@ -778,7 +794,7 @@ export default function TeacherStudentsPage() {
           }}
         >
           {filtered.map((student) => (
-            <StudentCard key={student.id} student={student} teacherId={teacherId} />
+            <StudentCard key={student.id} student={student} teacherId={teacherId} isHi={isHi} />
           ))}
         </div>
       )}
