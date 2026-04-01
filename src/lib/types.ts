@@ -89,6 +89,14 @@ export interface CurriculumTopic {
   topic_type: string | null;
 }
 
+export interface CmeAction {
+  type: 'remediate' | 'revise' | 're_teach' | 'teach' | 'practice' | 'challenge' | 'exam_prep';
+  concept_id: string | null;
+  title: string;
+  reason: string;
+  difficulty: number;
+}
+
 export interface FeatureFlag {
   id: string;
   flag_name: string;

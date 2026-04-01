@@ -413,6 +413,46 @@ export async function getReviewCards(studentId: string, limit = 10) {
 
 export const sendToFoxy = chatWithFoxy;
 
+/* ── CME Engine: get next learning action ── */
+export async function getCmeNextAction(
+  studentId: string,
+  subject: string,
+  grade: string
+): Promise<import('./types').CmeAction | null> {
+  try {
+    // Resolve subject code → subject_id (UUID)
+    const { data: subjectRow } = await supabase
+      .from('subjects')
+      .select('id')
+      .eq('code', subject)
+      .single();
+    if (!subjectRow) return null;
+
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token || supabaseAnonKey;
+
+    const res = await fetchWithTimeout(`${supabaseUrl}/functions/v1/cme-engine`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        action: 'get_next_action',
+        subject_id: subjectRow.id,
+      }),
+    }, 8000); // 8s timeout — best-effort, non-blocking
+
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.error || !data.type) return null;
+    return data as import('./types').CmeAction;
+  } catch {
+    // Silently fail — CME is best-effort enhancement
+    return null;
+  }
+}
+
 
 /* ═══ ROLE & CLASS RPCs ═══ */
 
