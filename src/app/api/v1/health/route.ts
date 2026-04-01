@@ -10,81 +10,94 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
  * - Post-deployment verification
  * - Incident diagnostics
  *
- * Returns:
- *  200 — all systems healthy
- *  503 — one or more dependencies degraded
+ * Always returns HTTP 200 so load balancers don't remove the instance.
+ * The `status` field indicates actual health:
+ *   "healthy"   — all checks pass
+ *   "degraded"  — one check failed (app can serve cached content)
+ *   "unhealthy" — all checks failed
  */
-export async function GET() {
+
+const PROCESS_START = Date.now();
+const CHECK_TIMEOUT_MS = 3_000;
+
+/** Run a promise with a timeout. Rejects if the promise doesn't resolve in time. */
+function withTimeout<T>(promise: PromiseLike<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`Timed out after ${ms}ms`)), ms);
+    Promise.resolve(promise)
+      .then((val) => { clearTimeout(timer); resolve(val); })
+      .catch((err: unknown) => { clearTimeout(timer); reject(err); });
+  });
+}
+
+async function checkDatabase(): Promise<{ status: 'ok' | 'error'; latency_ms: number; error?: string }> {
   const start = Date.now();
-  const checks: Record<string, { status: 'ok' | 'degraded' | 'down'; latencyMs: number; error?: string }> = {};
-
-  // ── Check 1: Supabase Database ──
   try {
-    const dbStart = Date.now();
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-    if (!supabaseUrl || !supabaseKey) {
-      checks.database = { status: 'down', latencyMs: 0, error: 'Missing env vars' };
-    } else {
-      const { error } = await supabaseAdmin.from('curriculum_topics').select('id').limit(1);
-      const latencyMs = Date.now() - dbStart;
-
-      if (error) {
-        checks.database = { status: 'degraded', latencyMs, error: error.message };
-      } else if (latencyMs > 2000) {
-        checks.database = { status: 'degraded', latencyMs, error: 'Slow response' };
-      } else {
-        checks.database = { status: 'ok', latencyMs };
-      }
+    const result = await withTimeout(
+      supabaseAdmin.from('curriculum_topics').select('id').limit(1),
+      CHECK_TIMEOUT_MS,
+    );
+    const latency_ms = Date.now() - start;
+    if (result.error) {
+      return { status: 'error', latency_ms, error: result.error.message };
     }
+    return { status: 'ok', latency_ms };
   } catch (e) {
-    checks.database = { status: 'down', latencyMs: Date.now() - start, error: String(e) };
+    return { status: 'error', latency_ms: Date.now() - start, error: String(e) };
   }
+}
 
-  // ── Check 2: Environment Variables ──
-  const requiredEnvVars = ['NEXT_PUBLIC_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_ANON_KEY'];
-  const missingEnvVars = requiredEnvVars.filter(k => !process.env[k]);
-
-  checks.environment = missingEnvVars.length === 0
-    ? { status: 'ok', latencyMs: 0 }
-    : { status: 'down', latencyMs: 0, error: `Missing: ${missingEnvVars.join(', ')}` };
-
-  // ── Check 3: Memory Usage ──
-  if (typeof process.memoryUsage === 'function') {
-    const mem = process.memoryUsage();
-    const heapUsedMB = Math.round(mem.heapUsed / 1024 / 1024);
-    const heapTotalMB = Math.round(mem.heapTotal / 1024 / 1024);
-    const usagePercent = Math.round((mem.heapUsed / mem.heapTotal) * 100);
-
-    checks.memory = {
-      status: usagePercent > 90 ? 'degraded' : 'ok',
-      latencyMs: 0,
-      ...(usagePercent > 90 ? { error: `${usagePercent}% heap used (${heapUsedMB}/${heapTotalMB}MB)` } : {}),
-    };
+async function checkAuth(): Promise<{ status: 'ok' | 'error'; error?: string }> {
+  try {
+    // Use admin auth API to verify the auth service is responsive.
+    // listUsers with a limit of 1 is lightweight and confirms auth service connectivity.
+    const { error } = await withTimeout(
+      supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1 }),
+      CHECK_TIMEOUT_MS
+    );
+    if (error) {
+      return { status: 'error', error: error.message };
+    }
+    return { status: 'ok' };
+  } catch (e) {
+    return { status: 'error', error: String(e) };
   }
+}
 
-  // ── Overall Status ──
-  const allStatuses = Object.values(checks).map(c => c.status);
-  const overallStatus = allStatuses.includes('down')
-    ? 'down'
-    : allStatuses.includes('degraded')
-      ? 'degraded'
-      : 'ok';
+export async function GET() {
+  const [database, auth] = await Promise.all([
+    checkDatabase(),
+    checkAuth(),
+  ]);
+
+  const checks = { database, auth };
+
+  const dbOk = database.status === 'ok';
+  const authOk = auth.status === 'ok';
+
+  let status: 'healthy' | 'degraded' | 'unhealthy';
+  if (dbOk && authOk) {
+    status = 'healthy';
+  } else if (!dbOk && !authOk) {
+    status = 'unhealthy';
+  } else {
+    status = 'degraded';
+  }
 
   const response = {
-    status: overallStatus,
+    status,
+    version: '2.0.0',
     timestamp: new Date().toISOString(),
-    totalLatencyMs: Date.now() - start,
-    version: process.env.npm_package_version || '2.0.0',
     checks,
+    uptime_seconds: Math.floor((Date.now() - PROCESS_START) / 1000),
   };
 
+  // Always return HTTP 200 so load balancers don't remove the instance.
+  // The status field communicates actual health to monitoring tools.
   return NextResponse.json(response, {
-    status: overallStatus === 'ok' ? 200 : 503,
+    status: 200,
     headers: {
       'Cache-Control': 'no-store, max-age=0',
-      'Content-Type': 'application/json',
     },
   });
 }

@@ -12,6 +12,7 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "analyze": "ANALYZE=true next build",
+    "test:coverage": "vitest run --coverage",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
