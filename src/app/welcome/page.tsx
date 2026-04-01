@@ -1,5 +1,7 @@
-import type { Metadata } from 'next';
+'use client';
+
 import Link from 'next/link';
+import { LangProvider, LangToggle, useLang } from '@/components/landing/LangToggle';
 
 function WelcomeJsonLd({ faqs }: { faqs: { q: string; a: string }[] }) {
   const faqSchema = {
@@ -23,49 +25,28 @@ function WelcomeJsonLd({ faqs }: { faqs: { q: string; a: string }[] }) {
   );
 }
 
-export const metadata: Metadata = {
-  title: 'Alfanumrik — Adaptive Learning Platform for CBSE Students India',
-  description:
-    'Alfanumrik is a structured learning system for CBSE students in Grades 6–12. Improve concept clarity, retention, and exam performance with personalized practice and progress tracking.',
-  keywords:
-    'adaptive learning platform India, personalized learning for students, CBSE learning platform, improve student performance, online learning system for schools, exam preparation platform India, concept-based learning, structured learning system, student progress tracking, practice and revision system',
-  openGraph: {
-    title: 'Alfanumrik — Structured Learning That Actually Works',
-    description:
-      'A personalized learning platform for CBSE students. Clear concepts, smart practice, real progress. Grades 6–12 in Hindi & English.',
-    url: 'https://alfanumrik.com/welcome',
-    locale: 'en_IN',
-    type: 'website',
-    siteName: 'Alfanumrik',
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'Alfanumrik — Improve Student Performance in CBSE',
-    description: 'Structured learning, smart practice, real progress tracking. CBSE Grades 6–12.',
-  },
-  alternates: { canonical: 'https://alfanumrik.com/welcome' },
-};
+// SEO metadata is in layout.tsx (Server Component) for SSR indexing
 
 const NAV_LINKS = [
-  { href: '/product', label: 'Product' },
-  { href: '/pricing', label: 'Pricing' },
-  { href: '/for-schools', label: 'For Schools' },
-  { href: '/demo', label: 'Book Demo' },
+  { href: '/product', label: 'Product', labelHi: 'उत्पाद' },
+  { href: '/pricing', label: 'Pricing', labelHi: 'मूल्य' },
+  { href: '/for-schools', label: 'For Schools', labelHi: 'स्कूलों के लिए' },
+  { href: '/demo', label: 'Book Demo', labelHi: 'डेमो बुक करें' },
 ];
 
 const PROBLEMS = [
-  { icon: '😵', title: 'Concepts don\'t stick', desc: 'Students read the chapter, attend the class — and still can\'t answer the exam question. Understanding is shallow because revision never happens at the right time.' },
-  { icon: '🎯', title: 'Practice is random', desc: 'Solving 50 easy questions doesn\'t fix the 5 hard ones you keep getting wrong. Most practice is quantity without direction.' },
-  { icon: '😰', title: 'Exam stress builds silently', desc: 'By the time boards approach, months of unresolved gaps pile up. Students cram, parents worry, teachers repeat — and confidence drops.' },
-  { icon: '👨‍👩‍👧', title: 'Parents can\'t see the real picture', desc: 'Report cards arrive too late. Parents don\'t know which chapter is weak until the marks come. There\'s no visibility into daily learning.' },
+  { icon: '😵', title: 'Concepts don\'t stick', titleHi: 'कॉन्सेप्ट याद नहीं रहते', desc: 'Students read the chapter, attend the class — and still can\'t answer the exam question. Understanding is shallow because revision never happens at the right time.', descHi: 'बच्चे चैप्टर पढ़ते हैं, क्लास अटेंड करते हैं — फिर भी एग्ज़ाम में जवाब नहीं दे पाते। समझ कमज़ोर रहती है क्योंकि रिवीज़न सही समय पर नहीं होता।' },
+  { icon: '🎯', title: 'Practice is random', titleHi: 'प्रैक्टिस बेतरतीब है', desc: 'Solving 50 easy questions doesn\'t fix the 5 hard ones you keep getting wrong. Most practice is quantity without direction.', descHi: '50 आसान सवाल हल करने से वो 5 कठिन सवाल ठीक नहीं होते जो बार-बार गलत होते हैं। ज़्यादातर प्रैक्टिस मात्रा है, दिशा नहीं।' },
+  { icon: '😰', title: 'Exam stress builds silently', titleHi: 'परीक्षा का तनाव चुपचाप बढ़ता है', desc: 'By the time boards approach, months of unresolved gaps pile up. Students cram, parents worry, teachers repeat — and confidence drops.', descHi: 'जब तक बोर्ड नज़दीक आते हैं, महीनों की अनसुलझी कमियाँ जमा हो जाती हैं। बच्चे रटते हैं, माता-पिता चिंतित होते हैं — और आत्मविश्वास गिरता है।' },
+  { icon: '👨‍👩‍👧', title: 'Parents can\'t see the real picture', titleHi: 'माता-पिता को असली तस्वीर नहीं दिखती', desc: 'Report cards arrive too late. Parents don\'t know which chapter is weak until the marks come. There\'s no visibility into daily learning.', descHi: 'रिपोर्ट कार्ड बहुत देर से आते हैं। माता-पिता को पता नहीं चलता कि कौन सा चैप्टर कमज़ोर है जब तक नंबर नहीं आते। रोज़ की पढ़ाई में कोई visibility नहीं।' },
 ];
 
 const STEPS = [
-  { num: '01', icon: '📖', title: 'Learn', desc: 'Clear, structured concept explanations for every CBSE chapter. In Hindi and English.' },
-  { num: '02', icon: '✏️', title: 'Practice', desc: 'Questions that match your actual level — not too easy, not too hard. Board-exam patterns built in.' },
-  { num: '03', icon: '🔄', title: 'Revise', desc: 'The system brings back what you\'re forgetting — before you forget it. Spaced revision, not last-minute cramming.' },
-  { num: '04', icon: '📋', title: 'Test', desc: 'Structured exams calibrated to your grade, subject, and difficulty. Timed, scored, and analyzed.' },
-  { num: '05', icon: '📈', title: 'Track', desc: 'See exactly what\'s mastered, what\'s weak, and what to do next. Parents and teachers see it too.' },
+  { num: '01', icon: '📖', title: 'Learn', titleHi: 'सीखो', desc: 'Clear, structured concept explanations for every CBSE chapter. In Hindi and English.', descHi: 'हर CBSE चैप्टर की स्पष्ट, संरचित कॉन्सेप्ट व्याख्या। हिन्दी और अंग्रेज़ी में।' },
+  { num: '02', icon: '✏️', title: 'Practice', titleHi: 'अभ्यास', desc: 'Questions that match your actual level — not too easy, not too hard. Board-exam patterns built in.', descHi: 'सवाल जो आपके स्तर के अनुसार हों — न बहुत आसान, न बहुत कठिन। बोर्ड परीक्षा पैटर्न शामिल।' },
+  { num: '03', icon: '🔄', title: 'Revise', titleHi: 'रिवीज़', desc: 'The system brings back what you\'re forgetting — before you forget it. Spaced revision, not last-minute cramming.', descHi: 'सिस्टम वो वापस लाता है जो भूल रहे हो — भूलने से पहले। स्पेस्ड रिवीज़न, लास्ट-मिनट रटाई नहीं।' },
+  { num: '04', icon: '📋', title: 'Test', titleHi: 'परीक्षा', desc: 'Structured exams calibrated to your grade, subject, and difficulty. Timed, scored, and analyzed.', descHi: 'आपकी कक्षा, विषय और कठिनाई के अनुसार संरचित परीक्षा। समयबद्ध, अंकित और विश्लेषित।' },
+  { num: '05', icon: '📈', title: 'Track', titleHi: 'ट्रैक', desc: 'See exactly what\'s mastered, what\'s weak, and what to do next. Parents and teachers see it too.', descHi: 'देखो क्या महारत हासिल है, क्या कमज़ोर है, और आगे क्या करना है। माता-पिता और शिक्षक भी देख सकते हैं।' },
 ];
 
 const AUDIENCE = {
@@ -120,25 +101,35 @@ const FAQS = [
 ];
 
 function CTAButtons({ center = false }: { center?: boolean }) {
+  const { t } = useLang();
   return (
     <div className={`flex flex-col sm:flex-row items-center gap-3 ${center ? 'justify-center' : ''}`}>
       <Link href="/login" className="text-sm px-7 py-3.5 rounded-xl font-bold text-white w-full sm:w-auto text-center"
         style={{ background: 'linear-gradient(135deg, #E8581C, #F5A623)' }}>
-        Start Learning Free
+        {t('Start Learning Free', 'मुफ्त सीखना शुरू करें')}
       </Link>
       <Link href="/login?role=parent" className="text-sm px-6 py-3.5 rounded-xl font-semibold w-full sm:w-auto text-center"
         style={{ color: '#16A34A', border: '1.5px solid #16A34A40' }}>
-        For Parents
+        {t('For Parents', 'माता-पिता के लिए')}
       </Link>
       <Link href="/login?role=teacher" className="text-sm px-6 py-3.5 rounded-xl font-semibold w-full sm:w-auto text-center"
         style={{ color: '#2563EB', border: '1.5px solid #2563EB40' }}>
-        For Teachers
+        {t('For Teachers', 'शिक्षकों के लिए')}
       </Link>
     </div>
   );
 }
 
 export default function WelcomePage() {
+  return (
+    <LangProvider>
+      <WelcomeContent />
+    </LangProvider>
+  );
+}
+
+function WelcomeContent() {
+  const { isHi, t } = useLang();
   return (
     <div style={{ background: 'var(--bg)', color: 'var(--text-1)' }}>
       <WelcomeJsonLd faqs={FAQS} />
@@ -151,10 +142,11 @@ export default function WelcomePage() {
           </Link>
           <div className="flex items-center gap-1 sm:gap-3">
             {NAV_LINKS.map(l => (
-              <Link key={l.href} href={l.href} className="hidden sm:inline-block text-xs font-semibold px-3 py-2 rounded-lg" style={{ color: l.href === '/demo' ? 'var(--orange)' : 'var(--text-2)' }}>{l.label}</Link>
+              <Link key={l.href} href={l.href} className="hidden sm:inline-block text-xs font-semibold px-3 py-2 rounded-lg" style={{ color: l.href === '/demo' ? 'var(--orange)' : 'var(--text-2)' }}>{isHi ? l.labelHi : l.label}</Link>
             ))}
-            <Link href="/login" className="hidden sm:inline-block text-sm font-semibold px-4 py-2 rounded-lg" style={{ color: 'var(--text-2)' }}>Log In</Link>
-            <Link href="/login" className="text-sm font-bold px-5 py-2.5 rounded-xl text-white" style={{ background: 'var(--orange)' }}>Sign Up Free</Link>
+            <LangToggle />
+            <Link href="/login" className="hidden sm:inline-block text-sm font-semibold px-4 py-2 rounded-lg" style={{ color: 'var(--text-2)' }}>{t('Log In', 'लॉग इन')}</Link>
+            <Link href="/login" className="text-sm font-bold px-5 py-2.5 rounded-xl text-white" style={{ background: 'var(--orange)' }}>{t('Sign Up Free', 'मुफ्त साइन अप')}</Link>
           </div>
         </div>
       </nav>
@@ -169,14 +161,15 @@ export default function WelcomePage() {
           </div>
 
           <h1 className="text-2xl sm:text-4xl lg:text-5xl font-extrabold leading-tight mb-4" style={{ fontFamily: 'var(--font-display)' }}>
-            Your child doesn&apos;t need more content.<br />
-            <span className="gradient-text">They need a better system.</span>
+            {t('Your child doesn\'t need more content.', 'आपके बच्चे को और कंटेंट नहीं चाहिए।')}<br />
+            <span className="gradient-text">{t('They need a better system.', 'उन्हें एक बेहतर सिस्टम चाहिए।')}</span>
           </h1>
 
           <p className="text-sm sm:text-lg max-w-2xl mx-auto mb-6" style={{ color: 'var(--text-2)', lineHeight: 1.7 }}>
-            Alfanumrik is a structured learning system that fixes how students study —
-            building real concept clarity, consistent revision habits, and measurable exam readiness
-            for CBSE students in Hindi &amp; English.
+            {t(
+              'Alfanumrik is a structured learning system that fixes how students study — building real concept clarity, consistent revision habits, and measurable exam readiness for CBSE students in Hindi & English.',
+              'Alfanumrik एक संरचित शिक्षा प्रणाली है जो बच्चों की पढ़ाई का तरीका सुधारती है — असली कॉन्सेप्ट क्लैरिटी, नियमित रिवीज़न की आदत, और CBSE छात्रों के लिए मापने योग्य परीक्षा तैयारी — हिन्दी और अंग्रेज़ी में।'
+            )}
           </p>
 
           <CTAButtons center />
@@ -229,13 +222,15 @@ export default function WelcomePage() {
       <section className="py-12 sm:py-16" style={{ background: 'var(--surface-1)' }}>
         <div className="max-w-5xl mx-auto px-4 sm:px-6">
           <div className="text-center mb-8 max-w-2xl mx-auto">
-            <span className="inline-block text-xs font-bold px-3 py-1 rounded-full mb-3" style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}>THE REAL PROBLEM</span>
+            <span className="inline-block text-xs font-bold px-3 py-1 rounded-full mb-3" style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}>{t('THE REAL PROBLEM', 'असली समस्या')}</span>
             <h2 className="text-2xl sm:text-3xl font-extrabold mb-3" style={{ fontFamily: 'var(--font-display)' }}>
-              Most students study hard. The system they follow is broken.
+              {t('Most students study hard. The system they follow is broken.', 'ज़्यादातर बच्चे मेहनत करते हैं। जो सिस्टम वो फॉलो करते हैं, वो टूटा हुआ है।')}
             </h2>
             <p className="text-sm sm:text-base" style={{ color: 'var(--text-2)', lineHeight: 1.7 }}>
-              The issue isn&apos;t effort. It&apos;s that most students have no structured way to identify learning gaps,
-              fix them early, and retain what they&apos;ve studied. Here&apos;s what that looks like:
+              {t(
+                'The issue isn\'t effort. It\'s that most students have no structured way to identify learning gaps, fix them early, and retain what they\'ve studied. Here\'s what that looks like:',
+                'समस्या मेहनत की नहीं है। बात ये है कि ज़्यादातर बच्चों के पास सीखने की कमियों को पहचानने, जल्दी ठीक करने, और जो पढ़ा है उसे याद रखने का कोई संरचित तरीका नहीं है।'
+              )}
             </p>
           </div>
           <div className="grid sm:grid-cols-2 gap-4">
@@ -243,8 +238,8 @@ export default function WelcomePage() {
               <div key={p.title} className="rounded-2xl p-5 flex gap-4 items-start" style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
                 <div className="text-3xl shrink-0">{p.icon}</div>
                 <div>
-                  <h3 className="text-sm font-bold mb-1" style={{ fontFamily: 'var(--font-display)' }}>{p.title}</h3>
-                  <p className="text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>{p.desc}</p>
+                  <h3 className="text-sm font-bold mb-1" style={{ fontFamily: 'var(--font-display)' }}>{isHi ? p.titleHi : p.title}</h3>
+                  <p className="text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>{isHi ? p.descHi : p.desc}</p>
                 </div>
               </div>
             ))}
@@ -286,12 +281,12 @@ export default function WelcomePage() {
       <section className="py-12 sm:py-16" style={{ background: 'var(--surface-1)' }}>
         <div className="max-w-5xl mx-auto px-4 sm:px-6">
           <div className="text-center mb-8 max-w-2xl mx-auto">
-            <span className="inline-block text-xs font-bold px-3 py-1 rounded-full mb-3" style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}>HOW IT WORKS</span>
+            <span className="inline-block text-xs font-bold px-3 py-1 rounded-full mb-3" style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}>{t('HOW IT WORKS', 'कैसे काम करता है')}</span>
             <h2 className="text-2xl sm:text-3xl font-extrabold mb-3" style={{ fontFamily: 'var(--font-display)' }}>
-              Five steps. One system. Real improvement.
+              {t('Five steps. One system. Real improvement.', 'पाँच कदम। एक सिस्टम। असली सुधार।')}
             </h2>
             <p className="text-sm sm:text-base" style={{ color: 'var(--text-2)', lineHeight: 1.7 }}>
-              How to improve student performance in CBSE? Replace random studying with a structured cycle that builds retention and exam readiness.
+              {t('How to improve student performance in CBSE? Replace random studying with a structured cycle that builds retention and exam readiness.', 'CBSE में बच्चों का प्रदर्शन कैसे सुधारें? बेतरतीब पढ़ाई को एक संरचित चक्र से बदलें जो याददाश्त और परीक्षा तैयारी बनाए।')}
             </p>
           </div>
           <div className="grid sm:grid-cols-5 gap-3">
@@ -299,8 +294,8 @@ export default function WelcomePage() {
               <div key={s.num} className="rounded-2xl p-4 text-center" style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
                 <div className="text-[10px] font-bold mb-1" style={{ color: 'var(--orange)' }}>{s.num}</div>
                 <div className="text-2xl mb-2">{s.icon}</div>
-                <h3 className="text-sm font-bold mb-1" style={{ fontFamily: 'var(--font-display)' }}>{s.title}</h3>
-                <p className="text-xs leading-relaxed" style={{ color: 'var(--text-2)' }}>{s.desc}</p>
+                <h3 className="text-sm font-bold mb-1" style={{ fontFamily: 'var(--font-display)' }}>{isHi ? s.titleHi : s.title}</h3>
+                <p className="text-xs leading-relaxed" style={{ color: 'var(--text-2)' }}>{isHi ? s.descHi : s.desc}</p>
               </div>
             ))}
           </div>
@@ -672,11 +667,13 @@ export default function WelcomePage() {
         <div className="relative max-w-3xl mx-auto px-4 sm:px-6 text-center">
           <div className="text-5xl mb-4">🦊</div>
           <h2 className="text-2xl sm:text-4xl font-extrabold mb-4" style={{ fontFamily: 'var(--font-display)' }}>
-            Every week without a system<br />is a week of <span className="gradient-text">lost progress</span>.
+            {t('Every week without a system', 'बिना सिस्टम के हर हफ्ता')}<br />{t('is a week of ', 'एक हफ्ता है ')}<span className="gradient-text">{t('lost progress', 'खोई हुई प्रगति')}</span>{t('.', ' का।')}
           </h2>
           <p className="text-sm sm:text-base mb-8" style={{ color: 'var(--text-2)', lineHeight: 1.7 }}>
-            Start free. See the difference in how your child studies within the first week.
-            No credit card. No commitment. Just a better way to learn.
+            {t(
+              'Start free. See the difference in how your child studies within the first week. No credit card. No commitment. Just a better way to learn.',
+              'मुफ्त शुरू करें। पहले हफ्ते में ही फर्क देखें कि आपका बच्चा कैसे पढ़ता है। कोई क्रेडिट कार्ड नहीं। कोई बंधन नहीं। बस सीखने का एक बेहतर तरीका।'
+            )}
           </p>
           <CTAButtons center />
         </div>
