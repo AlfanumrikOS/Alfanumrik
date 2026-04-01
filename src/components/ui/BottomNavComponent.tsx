@@ -21,8 +21,7 @@ const CORE_TABS = [
 ];
 
 const MORE_ITEMS = [
-  { href: '/simulations', icon: '🔬', label: 'Interactive Lab', labelHi: 'इंटरैक्टिव लैब' },
-  { href: '/stem-centre', icon: '🧪', label: 'STEM Centre', labelHi: 'स्टेम सेंटर' },
+  { href: '/stem-centre', icon: '🔬', label: 'STEM Centre', labelHi: 'स्टेम सेंटर' },
   { href: '/leaderboard', icon: '🏆', label: 'Rankings & Compete', labelHi: 'रैंकिंग और प्रतियोगिता' },
   { href: '/progress', icon: '📈', label: 'My Progress', labelHi: 'मेरी प्रगति' },
   { href: '/review', icon: '🔄', label: 'Flashcard Review', labelHi: 'फ्लैशकार्ड रिव्यू' },
@@ -42,8 +41,7 @@ const SIDEBAR_SECTIONS = [
     title: 'Study', titleHi: 'पढ़ाई',
     items: [
       { href: '/study-plan', icon: '📚', label: 'Study Plan', labelHi: 'अध्ययन योजना' },
-      { href: '/simulations', icon: '🔬', label: 'Interactive Lab', labelHi: 'इंटरैक्टिव लैब' },
-      { href: '/stem-centre', icon: '🧪', label: 'STEM Centre', labelHi: 'स्टेम सेंटर' },
+      { href: '/stem-centre', icon: '🔬', label: 'STEM Centre', labelHi: 'स्टेम सेंटर' },
       { href: '/quiz', icon: '⚡', label: 'Quiz', labelHi: 'क्विज़' },
       { href: '/review', icon: '🔄', label: 'Flashcard Review', labelHi: 'फ्लैशकार्ड रिव्यू' },
     ],
