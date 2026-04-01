@@ -7,6 +7,11 @@ import { supabase } from '@/lib/supabase';
 import { SUBJECT_META } from '@/lib/constants';
 import { BottomNav } from '@/components/ui';
 
+// ============================================================
+// BILINGUAL HELPERS (P7)
+// ============================================================
+const tt = (isHi: boolean, en: string, hi: string) => isHi ? hi : en;
+
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
@@ -53,7 +58,7 @@ const pageStyle: React.CSSProperties = {
 };
 
 export default function TeacherClassesPage() {
-  const { teacher, isLoading: authLoading, isLoggedIn, activeRole } = useAuth();
+  const { teacher, isLoading: authLoading, isLoggedIn, activeRole, isHi } = useAuth();
   const router = useRouter();
 
   const [classes, setClasses] = useState<ClassData[]>([]);
@@ -100,11 +105,11 @@ export default function TeacherClassesPage() {
     const name = formName.trim();
     if (!name) return;
     if (name.length < 2 || name.length > 100) {
-      showToast('Class name must be 2–100 characters');
+      showToast(tt(isHi, 'Class name must be 2–100 characters', 'कक्षा का नाम 2–100 अक्षरों का होना चाहिए'));
       return;
     }
     if (!/^[a-zA-Z0-9\s\-_().]+$/.test(name)) {
-      showToast('Class name contains invalid characters');
+      showToast(tt(isHi, 'Class name contains invalid characters', 'कक्षा के नाम में अमान्य अक्षर हैं'));
       return;
     }
     setCreating(true);
@@ -121,7 +126,7 @@ export default function TeacherClassesPage() {
       setFormGrade('9');
       setFormSection('');
       setFormSubject('math');
-      showToast('Class created successfully!');
+      showToast(tt(isHi, 'Class created successfully!', 'कक्षा सफलतापूर्वक बनाई गई!'));
       await loadClasses();
     } catch (e: unknown) {
       showToast(e instanceof Error ? e.message : 'Failed to create class');
@@ -147,17 +152,17 @@ export default function TeacherClassesPage() {
   };
 
   const formatTime = (ts?: string) => {
-    if (!ts) return 'No activity yet';
+    if (!ts) return tt(isHi, 'No activity yet', 'अभी तक कोई गतिविधि नहीं');
     const d = new Date(ts);
     const now = new Date();
     const diff = now.getTime() - d.getTime();
     const mins = Math.floor(diff / 60000);
-    if (mins < 1) return 'Just now';
-    if (mins < 60) return `${mins}m ago`;
+    if (mins < 1) return tt(isHi, 'Just now', 'अभी');
+    if (mins < 60) return tt(isHi, `${mins}m ago`, `${mins} मि. पहले`);
     const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return `${hrs}h ago`;
+    if (hrs < 24) return tt(isHi, `${hrs}h ago`, `${hrs} घं. पहले`);
     const days = Math.floor(hrs / 24);
-    return `${days}d ago`;
+    return tt(isHi, `${days}d ago`, `${days} दिन पहले`);
   };
 
   const getSubjectMeta = (code?: string) => SUBJECT_META.find(s => s.code === code);
@@ -168,7 +173,7 @@ export default function TeacherClassesPage() {
       <div style={pageStyle}>
         <div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}>
           <div style={{ width: 40, height: 40, border: '3px solid #1E293B', borderTopColor: '#2563EB', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />
-          Loading classes...
+          {tt(isHi, 'Loading classes...', 'कक्षाएं लोड हो रही हैं...')}
         </div>
         <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       </div>
@@ -194,10 +199,10 @@ export default function TeacherClassesPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <h1 style={{ fontSize: 26, fontWeight: 700, color: '#fff', margin: 0 }}>
-              <span role="img" aria-label="school">🏫</span> My Classes
+              <span role="img" aria-label="school">🏫</span> {tt(isHi, 'My Classes', 'मेरी कक्षाएं')}
             </h1>
             <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.75)', margin: '6px 0 0' }}>
-              Manage your classes, students, and assignments
+              {tt(isHi, 'Manage your classes, students, and assignments', 'अपनी कक्षाओं, छात्रों और असाइनमेंट का प्रबंधन करें')}
             </p>
           </div>
           <button
@@ -214,7 +219,7 @@ export default function TeacherClassesPage() {
               backdropFilter: 'blur(4px)',
             }}
           >
-            Refresh
+            {tt(isHi, 'Refresh', 'रिफ्रेश')}
           </button>
         </div>
       </div>
@@ -232,7 +237,7 @@ export default function TeacherClassesPage() {
         }}>
           {error}
           <button onClick={loadClasses} style={{ marginLeft: 12, color: '#60A5FA', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, textDecoration: 'underline' }}>
-            Retry
+            {tt(isHi, 'Retry', 'पुनः प्रयास')}
           </button>
         </div>
       )}
@@ -248,10 +253,10 @@ export default function TeacherClassesPage() {
         }}>
           <div style={{ fontSize: 64, marginBottom: 16 }}>🏫</div>
           <h2 style={{ fontSize: 22, fontWeight: 700, color: '#F1F5F9', margin: '0 0 8px' }}>
-            You haven&apos;t created any classes yet
+            {tt(isHi, 'You haven\'t created any classes yet', 'आपने अभी तक कोई कक्षा नहीं बनाई')}
           </h2>
           <p style={{ fontSize: 15, color: '#64748B', margin: '0 0 24px', maxWidth: 400, marginLeft: 'auto', marginRight: 'auto' }}>
-            Create your first class and share the class code with your students so they can join.
+            {tt(isHi, 'Create your first class and share the class code with your students so they can join.', 'अपनी पहली कक्षा बनाएं और छात्रों के साथ कक्षा कोड साझा करें ताकि वे जुड़ सकें।')}
           </p>
           <button
             onClick={() => setShowModal(true)}
@@ -266,7 +271,7 @@ export default function TeacherClassesPage() {
               cursor: 'pointer',
             }}
           >
-            Create Your First Class
+            {tt(isHi, 'Create Your First Class', 'अपनी पहली कक्षा बनाएं')}
           </button>
         </div>
       )}
@@ -328,7 +333,7 @@ export default function TeacherClassesPage() {
                         </h3>
                       </div>
                       <p style={{ fontSize: 13, color: '#64748B', margin: '4px 0 0' }}>
-                        Grade {cls.grade}{cls.section ? ` - Section ${cls.section}` : ''}
+                        {tt(isHi, 'Grade', 'कक्षा')} {cls.grade}{cls.section ? ` - ${tt(isHi, 'Section', 'सेक्शन')} ${cls.section}` : ''}
                         {subj ? ` · ${subj.name}` : ''}
                       </p>
                     </div>
@@ -361,14 +366,14 @@ export default function TeacherClassesPage() {
                       ))}
                     </div>
                     <span style={{ fontSize: 13, color: '#94A3B8', fontWeight: 500 }}>
-                      {cls.student_count} student{cls.student_count !== 1 ? 's' : ''}
+                      {cls.student_count} {tt(isHi, cls.student_count !== 1 ? 'students' : 'student', 'छात्र')}
                     </span>
                   </div>
 
                   {/* Average mastery bar */}
                   <div style={{ marginTop: 12 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                      <span style={{ fontSize: 12, color: '#64748B' }}>Average Mastery</span>
+                      <span style={{ fontSize: 12, color: '#64748B' }}>{tt(isHi, 'Average Mastery', 'औसत मास्टरी')}</span>
                       <span style={{ fontSize: 13, fontWeight: 600, color: cls.average_mastery >= 70 ? '#059669' : cls.average_mastery >= 40 ? '#D97706' : '#94A3B8' }}>
                         {cls.average_mastery ?? 0}%
                       </span>
@@ -399,7 +404,7 @@ export default function TeacherClassesPage() {
                     padding: '8px 12px',
                   }}>
                     <div>
-                      <span style={{ fontSize: 11, color: '#64748B', display: 'block' }}>Class Code</span>
+                      <span style={{ fontSize: 11, color: '#64748B', display: 'block' }}>{tt(isHi, 'Class Code', 'कक्षा कोड')}</span>
                       <span style={{ fontSize: 16, fontWeight: 700, color: '#60A5FA', fontFamily: 'monospace', letterSpacing: 1.5 }}>
                         {cls.class_code}
                       </span>
@@ -419,7 +424,7 @@ export default function TeacherClassesPage() {
                         animation: isCopied ? 'copyPop 0.3s ease' : undefined,
                       }}
                     >
-                      {isCopied ? 'Copied!' : 'Copy'}
+                      {isCopied ? tt(isHi, 'Copied!', 'कॉपी हो गया!') : tt(isHi, 'Copy', 'कॉपी')}
                     </button>
                   </div>
 
@@ -438,7 +443,7 @@ export default function TeacherClassesPage() {
                         cursor: 'pointer',
                       }}
                     >
-                      {isExpanded ? 'Collapse' : 'View Students'}
+                      {isExpanded ? tt(isHi, 'Collapse', 'छोटा करें') : tt(isHi, 'View Students', 'छात्र देखें')}
                     </button>
                     <button
                       onClick={() => router.push(`/teacher/assignments?class=${cls.id}`)}
@@ -453,7 +458,7 @@ export default function TeacherClassesPage() {
                         cursor: 'pointer',
                       }}
                     >
-                      Create Assignment
+                      {tt(isHi, 'Create Assignment', 'असाइनमेंट बनाएं')}
                     </button>
                     <button
                       onClick={() => router.push(`/teacher/reports?class=${cls.id}`)}
@@ -468,7 +473,7 @@ export default function TeacherClassesPage() {
                         cursor: 'pointer',
                       }}
                     >
-                      View Reports
+                      {tt(isHi, 'View Reports', 'रिपोर्ट देखें')}
                     </button>
                   </div>
                 </div>
@@ -485,11 +490,11 @@ export default function TeacherClassesPage() {
                       {/* Students list */}
                       <div>
                         <h4 style={{ fontSize: 14, fontWeight: 600, color: '#F1F5F9', margin: '0 0 10px' }}>
-                          Students ({cls.student_count})
+                          {tt(isHi, 'Students', 'छात्र')} ({cls.student_count})
                         </h4>
                         {(!cls.students || cls.students.length === 0) ? (
                           <p style={{ fontSize: 13, color: '#64748B', fontStyle: 'italic' }}>
-                            No students have joined yet. Share the class code.
+                            {tt(isHi, 'No students have joined yet. Share the class code.', 'अभी तक कोई छात्र नहीं जुड़ा। कक्षा कोड साझा करें।')}
                           </p>
                         ) : (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 220, overflowY: 'auto' }}>
@@ -517,11 +522,11 @@ export default function TeacherClassesPage() {
                       {/* Assignments list */}
                       <div>
                         <h4 style={{ fontSize: 14, fontWeight: 600, color: '#F1F5F9', margin: '0 0 10px' }}>
-                          Assignments
+                          {tt(isHi, 'Assignments', 'असाइनमेंट')}
                         </h4>
                         {(!cls.assignments || cls.assignments.length === 0) ? (
                           <p style={{ fontSize: 13, color: '#64748B', fontStyle: 'italic' }}>
-                            No assignments created for this class.
+                            {tt(isHi, 'No assignments created for this class.', 'इस कक्षा के लिए कोई असाइनमेंट नहीं बनाया गया।')}
                           </p>
                         ) : (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 220, overflowY: 'auto' }}>
@@ -569,7 +574,7 @@ export default function TeacherClassesPage() {
                           cursor: 'pointer',
                         }}
                       >
-                        {isCopied ? 'Copied!' : `Share Class Code: ${cls.class_code}`}
+                        {isCopied ? tt(isHi, 'Copied!', 'कॉपी हो गया!') : tt(isHi, `Share Class Code: ${cls.class_code}`, `कक्षा कोड साझा करें: ${cls.class_code}`)}
                       </button>
                     </div>
                   </div>
@@ -611,7 +616,7 @@ export default function TeacherClassesPage() {
           e.currentTarget.style.transform = 'scale(1)';
           e.currentTarget.style.boxShadow = '0 4px 20px rgba(37,99,235,0.4)';
         }}
-        title="Create New Class"
+        title={tt(isHi, 'Create New Class', 'नई कक्षा बनाएं')}
       >
         +
       </button>
@@ -643,15 +648,15 @@ export default function TeacherClassesPage() {
             animation: 'fadeIn 0.25s ease',
           }}>
             <h2 style={{ fontSize: 20, fontWeight: 700, color: '#F1F5F9', margin: '0 0 20px' }}>
-              Create New Class
+              {tt(isHi, 'Create New Class', 'नई कक्षा बनाएं')}
             </h2>
 
             {/* Class Name */}
             <label style={{ display: 'block', marginBottom: 14 }}>
-              <span style={{ fontSize: 13, color: '#94A3B8', display: 'block', marginBottom: 4 }}>Class Name</span>
+              <span style={{ fontSize: 13, color: '#94A3B8', display: 'block', marginBottom: 4 }}>{tt(isHi, 'Class Name', 'कक्षा का नाम')}</span>
               <input
                 type="text"
-                placeholder="e.g. 10-A Science"
+                placeholder={tt(isHi, 'e.g. 10-A Science', 'जैसे 10-A विज्ञान')}
                 value={formName}
                 onChange={(e) => setFormName(e.target.value)}
                 style={{
@@ -670,7 +675,7 @@ export default function TeacherClassesPage() {
 
             {/* Grade */}
             <label style={{ display: 'block', marginBottom: 14 }}>
-              <span style={{ fontSize: 13, color: '#94A3B8', display: 'block', marginBottom: 4 }}>Grade</span>
+              <span style={{ fontSize: 13, color: '#94A3B8', display: 'block', marginBottom: 4 }}>{tt(isHi, 'Grade', 'कक्षा')}</span>
               <select
                 value={formGrade}
                 onChange={(e) => setFormGrade(e.target.value)}
@@ -688,14 +693,14 @@ export default function TeacherClassesPage() {
                 }}
               >
                 {GRADES.map(g => (
-                  <option key={g} value={g}>Grade {g}</option>
+                  <option key={g} value={g}>{tt(isHi, `Grade ${g}`, `कक्षा ${g}`)}</option>
                 ))}
               </select>
             </label>
 
             {/* Section */}
             <label style={{ display: 'block', marginBottom: 14 }}>
-              <span style={{ fontSize: 13, color: '#94A3B8', display: 'block', marginBottom: 4 }}>Section (optional)</span>
+              <span style={{ fontSize: 13, color: '#94A3B8', display: 'block', marginBottom: 4 }}>{tt(isHi, 'Section (optional)', 'सेक्शन (वैकल्पिक)')}</span>
               <select
                 value={formSection}
                 onChange={(e) => setFormSection(e.target.value)}
@@ -713,14 +718,14 @@ export default function TeacherClassesPage() {
                 }}
               >
                 {SECTIONS.map(s => (
-                  <option key={s} value={s}>{s || '— None —'}</option>
+                  <option key={s} value={s}>{s || tt(isHi, '— None —', '— कोई नहीं —')}</option>
                 ))}
               </select>
             </label>
 
             {/* Subject */}
             <label style={{ display: 'block', marginBottom: 20 }}>
-              <span style={{ fontSize: 13, color: '#94A3B8', display: 'block', marginBottom: 4 }}>Subject</span>
+              <span style={{ fontSize: 13, color: '#94A3B8', display: 'block', marginBottom: 4 }}>{tt(isHi, 'Subject', 'विषय')}</span>
               <select
                 value={formSubject}
                 onChange={(e) => setFormSubject(e.target.value)}
@@ -759,7 +764,7 @@ export default function TeacherClassesPage() {
                   cursor: 'pointer',
                 }}
               >
-                Cancel
+                {tt(isHi, 'Cancel', 'रद्द करें')}
               </button>
               <button
                 onClick={handleCreateClass}
@@ -779,7 +784,7 @@ export default function TeacherClassesPage() {
                   opacity: creating || !formName.trim() ? 0.5 : 1,
                 }}
               >
-                {creating ? 'Creating...' : 'Create Class'}
+                {creating ? tt(isHi, 'Creating...', 'बना रहे हैं...') : tt(isHi, 'Create Class', 'कक्षा बनाएं')}
               </button>
             </div>
           </div>

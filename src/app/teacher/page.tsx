@@ -82,18 +82,18 @@ const SEV: Record<string, { bg: string; border: string }> = {
   low: { bg: 'bg-blue-600', border: 'border-blue-500' },
 };
 
-function HeatmapTab({ data }: { data: HeatmapData }) {
+function HeatmapTab({ data, isHi }: { data: HeatmapData; isHi: boolean }) {
   const [selected, setSelected] = useState<(HeatmapCell & { student: string; concept: string }) | null>(null);
-  if (!data?.matrix?.length) return <div className="p-10 text-center text-slate-600 italic">No mastery data yet — students need to start practicing.</div>;
+  if (!data?.matrix?.length) return <div className="p-10 text-center text-slate-600 italic">{tt(isHi, 'No mastery data yet — students need to start practicing.', 'अभी तक कोई मास्टरी डेटा नहीं — छात्रों को अभ्यास शुरू करना होगा।')}</div>;
   const concepts = (data.concepts || []).slice(0, 12);
   return (
     <div className="td-card">
-      <div className="td-card-head"><h3>Mastery heatmap</h3><span className="td-badge">{data.student_count} students × {data.concept_count} concepts</span></div>
+      <div className="td-card-head"><h3>{tt(isHi, 'Mastery heatmap', 'मास्टरी हीटमैप')}</h3><span className="td-badge">{data.student_count} {tt(isHi, 'students', 'छात्र')} × {data.concept_count} {tt(isHi, 'concepts', 'अवधारणाएं')}</span></div>
       <div className="overflow-x-auto mt-3.5">
         <table className="border-collapse w-full text-xs">
           <thead><tr>
-            <th className="px-2 py-1.5 text-slate-500 font-medium text-[10px] text-left border-b border-slate-800 min-w-[110px]">Student</th>
-            <th className="px-1 py-1.5 text-slate-500 font-medium text-[10px] text-center border-b border-slate-800">Avg</th>
+            <th className="px-2 py-1.5 text-slate-500 font-medium text-[10px] text-left border-b border-slate-800 min-w-[110px]">{tt(isHi, 'Student', 'छात्र')}</th>
+            <th className="px-1 py-1.5 text-slate-500 font-medium text-[10px] text-center border-b border-slate-800">{tt(isHi, 'Avg', 'औसत')}</th>
             {concepts.map((c: HeatmapConcept, i: number) => <th key={i} className="px-1 py-1.5 text-slate-500 font-medium text-[10px] text-center border-b border-slate-800" title={c.title}>Ch{c.chapter}</th>)}
           </tr></thead>
           <tbody>
@@ -124,11 +124,11 @@ function HeatmapTab({ data }: { data: HeatmapData }) {
   );
 }
 
-function AlertsTab({ alerts, onResolve }: { alerts: RiskAlert[]; onResolve: (id: string) => void }) {
-  if (!alerts?.length) return <div className="td-card"><div className="td-card-head"><h3>At-risk alerts</h3></div><div className="p-[30px] text-center text-slate-600 italic">No at-risk students detected.</div></div>;
+function AlertsTab({ alerts, onResolve, isHi }: { alerts: RiskAlert[]; onResolve: (id: string) => void; isHi: boolean }) {
+  if (!alerts?.length) return <div className="td-card"><div className="td-card-head"><h3>{tt(isHi, 'At-risk alerts', 'जोखिम अलर्ट')}</h3></div><div className="p-[30px] text-center text-slate-600 italic">{tt(isHi, 'No at-risk students detected.', 'कोई जोखिम वाले छात्र नहीं मिले।')}</div></div>;
   return (
     <div className="td-card">
-      <div className="td-card-head"><h3>At-risk alerts</h3><span className="td-badge bg-red-600">{alerts.length}</span></div>
+      <div className="td-card-head"><h3>{tt(isHi, 'At-risk alerts', 'जोखिम अलर्ट')}</h3><span className="td-badge bg-red-600">{alerts.length}</span></div>
       <div className="mt-3 flex flex-col gap-2.5">
         {alerts.map((a: RiskAlert) => { const s = SEV[a.severity] || SEV.medium; return (
           <div key={a.id} className={`bg-slate-800 rounded-lg p-3 border-l-[3px] ${s.border}`}>
@@ -137,10 +137,10 @@ function AlertsTab({ alerts, onResolve }: { alerts: RiskAlert[]; onResolve: (id:
                 <span className={`text-[10px] font-bold py-0.5 px-2 rounded ${s.bg} text-white uppercase`}>{a.severity}</span>
                 <span className="ml-2 font-semibold text-slate-100 text-sm">{a.title}</span>
               </div>
-              <button onClick={() => onResolve(a.id)} className="py-1 px-2.5 bg-transparent text-slate-400 border border-slate-700 rounded-md text-[11px] cursor-pointer">Resolve</button>
+              <button onClick={() => onResolve(a.id)} className="py-1 px-2.5 bg-transparent text-slate-400 border border-slate-700 rounded-md text-[11px] cursor-pointer">{tt(isHi, 'Resolve', 'हल करें')}</button>
             </div>
             <p className="text-slate-400 text-[13px] my-1.5">{a.description}</p>
-            {a.recommended_action && <p className="text-indigo-500 text-xs m-0 italic">Action: {a.recommended_action}</p>}
+            {a.recommended_action && <p className="text-indigo-500 text-xs m-0 italic">{tt(isHi, 'Action', 'कार्रवाई')}: {a.recommended_action}</p>}
           </div>
         ); })}
       </div>
@@ -148,7 +148,7 @@ function AlertsTab({ alerts, onResolve }: { alerts: RiskAlert[]; onResolve: (id:
   );
 }
 
-function InterventionsTab({ alerts, classId, dash }: { alerts: RiskAlert[]; classId: string; dash: DashboardData | null }) {
+function InterventionsTab({ alerts, classId, dash, isHi }: { alerts: RiskAlert[]; classId: string; dash: DashboardData | null; isHi: boolean }) {
   const criticalCount = alerts.filter(a => a.severity === 'critical' || a.severity === 'high').length;
   const avgMastery = dash?.classes?.[0]?.avg_mastery ?? 0;
   const studentCount = dash?.stats?.total_students ?? 0;
@@ -160,9 +160,9 @@ function InterventionsTab({ alerts, classId, dash }: { alerts: RiskAlert[]; clas
   if (criticalCount > 0) {
     suggestions.push({
       icon: '🚨',
-      title: `${criticalCount} students need urgent help`,
-      desc: 'These students have critical learning gaps. Consider one-on-one revision or a remedial quiz.',
-      action: 'View at-risk students',
+      title: tt(isHi, `${criticalCount} students need urgent help`, `${criticalCount} छात्रों को तत्काल मदद चाहिए`),
+      desc: tt(isHi, 'These students have critical learning gaps. Consider one-on-one revision or a remedial quiz.', 'इन छात्रों में गंभीर सीखने की कमियां हैं। एक-एक करके रिवीज़न या उपचारात्मक क्विज़ पर विचार करें।'),
+      action: tt(isHi, 'View at-risk students', 'जोखिम वाले छात्र देखें'),
       color: 'border-red-600',
     });
   }
@@ -170,9 +170,9 @@ function InterventionsTab({ alerts, classId, dash }: { alerts: RiskAlert[]; clas
   if (avgMastery < 50 && studentCount > 0) {
     suggestions.push({
       icon: '📊',
-      title: 'Class mastery below 50%',
-      desc: `Average mastery is ${avgMastery}%. Consider re-teaching the weakest chapters before moving forward.`,
-      action: 'View mastery heatmap',
+      title: tt(isHi, 'Class mastery below 50%', 'कक्षा मास्टरी 50% से कम'),
+      desc: tt(isHi, `Average mastery is ${avgMastery}%. Consider re-teaching the weakest chapters before moving forward.`, `औसत मास्टरी ${avgMastery}% है। आगे बढ़ने से पहले कमज़ोर अध्यायों को दोबारा पढ़ाने पर विचार करें।`),
+      action: tt(isHi, 'View mastery heatmap', 'मास्टरी हीटमैप देखें'),
       color: 'border-amber-600',
     });
   }
@@ -180,9 +180,9 @@ function InterventionsTab({ alerts, classId, dash }: { alerts: RiskAlert[]; clas
   if (weakStudents > 3) {
     suggestions.push({
       icon: '📝',
-      title: `${weakStudents} students struggling — assign revision quiz`,
-      desc: 'A targeted revision quiz on weak topics would help these students catch up with the class.',
-      action: 'Create quiz for weak topics',
+      title: tt(isHi, `${weakStudents} students struggling — assign revision quiz`, `${weakStudents} छात्र कठिनाई में — रिवीज़न क्विज़ दें`),
+      desc: tt(isHi, 'A targeted revision quiz on weak topics would help these students catch up with the class.', 'कमज़ोर विषयों पर लक्षित रिवीज़न क्विज़ इन छात्रों को कक्षा के साथ चलने में मदद करेगी।'),
+      action: tt(isHi, 'Create quiz for weak topics', 'कमज़ोर विषयों के लिए क्विज़ बनाएं'),
       color: 'border-indigo-500',
     });
   }
@@ -190,8 +190,8 @@ function InterventionsTab({ alerts, classId, dash }: { alerts: RiskAlert[]; clas
   if (suggestions.length === 0) {
     suggestions.push({
       icon: '✅',
-      title: 'Class is on track',
-      desc: 'No urgent interventions needed. Continue with the current teaching plan.',
+      title: tt(isHi, 'Class is on track', 'कक्षा सही दिशा में है'),
+      desc: tt(isHi, 'No urgent interventions needed. Continue with the current teaching plan.', 'कोई तत्काल हस्तक्षेप आवश्यक नहीं। वर्तमान शिक्षण योजना जारी रखें।'),
       action: '',
       color: 'border-emerald-600',
     });
@@ -199,7 +199,7 @@ function InterventionsTab({ alerts, classId, dash }: { alerts: RiskAlert[]; clas
 
   return (
     <div className="td-card">
-      <div className="td-card-head"><h3>Intervention suggestions</h3><span className="td-badge bg-indigo-500">{/* eslint-disable-next-line react/jsx-no-comment-textnodes */}AI-powered</span></div>
+      <div className="td-card-head"><h3>{tt(isHi, 'Intervention suggestions', 'हस्तक्षेप सुझाव')}</h3><span className="td-badge bg-indigo-500">{/* eslint-disable-next-line react/jsx-no-comment-textnodes */}{tt(isHi, 'AI-powered', 'AI-संचालित')}</span></div>
       <div className="mt-3 flex flex-col gap-2.5">
         {suggestions.map((s, i) => (
           <div key={i} className={`bg-slate-800 rounded-lg p-3.5 border-l-[3px] ${s.color}`}>
@@ -217,32 +217,32 @@ function InterventionsTab({ alerts, classId, dash }: { alerts: RiskAlert[]; clas
   );
 }
 
-function PollTab({ classId, teacherId }: { classId: string; teacherId: string }) {
+function PollTab({ classId, teacherId, isHi }: { classId: string; teacherId: string; isHi: boolean }) {
   const [q, setQ] = useState(''); const [opts, setOpts] = useState(['','','','']); const [correctIdx, setCorrectIdx] = useState(0);
   const [poll, setPoll] = useState<PollData | null>(null); const [results, setResults] = useState<PollResults | null>(null); const [loading, setLoading] = useState(false);
   const launch = async () => { if (!q.trim()) return; setLoading(true); const data = await api('launch_poll', { teacher_id: teacherId, class_id: classId, question_text: q, options: opts.filter(o => o.trim()), correct_index: correctIdx, question_type: 'mcq', time_limit: 60 }); setPoll(data); setResults(null); setLoading(false); };
   const close = async () => { if (!poll?.poll_id) return; const data = await api('close_poll', { teacher_id: teacherId, poll_id: poll.poll_id }); setResults(data); setPoll(null); };
   return (
     <div className="td-card">
-      <div className="td-card-head"><h3>Classroom response</h3>{poll && <span className="td-badge bg-emerald-600">LIVE</span>}</div>
+      <div className="td-card-head"><h3>{tt(isHi, 'Classroom response', 'कक्षा प्रतिक्रिया')}</h3>{poll && <span className="td-badge bg-emerald-600">LIVE</span>}</div>
       {!poll && !results && (<div className="mt-3.5">
-        <input className="td-input" placeholder="Type your question..." value={q} onChange={e => setQ(e.target.value)} />
+        <input className="td-input" placeholder={tt(isHi, 'Type your question...', 'अपना प्रश्न लिखें...')} value={q} onChange={e => setQ(e.target.value)} />
         <div className="grid grid-cols-2 gap-2 my-2.5">
           {opts.map((o, i) => (<div key={i} className="flex gap-1.5 items-center">
             <input type="radio" name="c" checked={correctIdx === i} onChange={() => setCorrectIdx(i)} className="accent-indigo-500" />
-            <input className="td-input !m-0 flex-1" placeholder={`Option ${String.fromCharCode(65+i)}`} value={o} onChange={e => { const n=[...opts]; n[i]=e.target.value; setOpts(n); }} />
+            <input className="td-input !m-0 flex-1" placeholder={`${tt(isHi, 'Option', 'विकल्प')} ${String.fromCharCode(65+i)}`} value={o} onChange={e => { const n=[...opts]; n[i]=e.target.value; setOpts(n); }} />
           </div>))}
         </div>
-        <button className="td-btn-primary" onClick={launch} disabled={loading}>{loading ? 'Launching...' : 'Launch to class'}</button>
+        <button className="td-btn-primary" onClick={launch} disabled={loading}>{loading ? tt(isHi, 'Launching...', 'लॉन्च हो रहा है...') : tt(isHi, 'Launch to class', 'कक्षा में लॉन्च करें')}</button>
       </div>)}
       {poll && !results && (<div className="mt-3.5 bg-slate-800 rounded-lg p-3.5">
         <p className="text-slate-100 text-[15px] font-semibold mb-2">{poll.question_text || q}</p>
-        <p className="text-indigo-500 text-2xl font-bold my-2">{poll.response_count ?? 0} responded</p>
-        <button className="td-btn-primary !bg-red-600 mt-2.5" onClick={close}>Close poll</button>
+        <p className="text-indigo-500 text-2xl font-bold my-2">{poll.response_count ?? 0} {tt(isHi, 'responded', 'ने जवाब दिया')}</p>
+        <button className="td-btn-primary !bg-red-600 mt-2.5" onClick={close}>{tt(isHi, 'Close poll', 'पोल बंद करें')}</button>
       </div>)}
       {results && (<div className="mt-3.5 bg-slate-800 rounded-lg p-3.5">
-        <span className="text-emerald-600 font-bold text-lg">{results.accuracy_pct}% correct</span>
-        <button onClick={() => { setResults(null); setQ(''); setOpts(['','','','']); }} className="ml-3 py-1 px-2.5 bg-transparent text-indigo-500 border border-indigo-500 rounded-md text-xs cursor-pointer">New question</button>
+        <span className="text-emerald-600 font-bold text-lg">{results.accuracy_pct}% {tt(isHi, 'correct', 'सही')}</span>
+        <button onClick={() => { setResults(null); setQ(''); setOpts(['','','','']); }} className="ml-3 py-1 px-2.5 bg-transparent text-indigo-500 border border-indigo-500 rounded-md text-xs cursor-pointer">{tt(isHi, 'New question', 'नया प्रश्न')}</button>
       </div>)}
     </div>
   );
@@ -409,7 +409,7 @@ export default function TeacherPage() {
       <nav className="flex gap-1 p-1 bg-slate-900 rounded-[10px] border border-slate-800 mb-4 overflow-x-auto">
         {tabs.map(tb => (<button key={tb.id} onClick={() => setTab(tb.id)} className={`py-2 px-4 border-none rounded-lg text-[13px] cursor-pointer whitespace-nowrap ${tab === tb.id ? 'font-semibold bg-indigo-500 text-white' : 'font-medium bg-transparent text-slate-500'}`}>{tb.label}</button>))}
       </nav>
-      {tab === 'heatmap' && heatmap && <HeatmapTab data={heatmap} />}
+      {tab === 'heatmap' && heatmap && <HeatmapTab data={heatmap} isHi={isHi} />}
       {tab === 'heatmap' && !heatmap && (
         <div className="td-card">
           <div className="text-center py-8 text-slate-500">
@@ -419,9 +419,9 @@ export default function TeacherPage() {
           </div>
         </div>
       )}
-      {tab === 'interventions' && <InterventionsTab alerts={alerts} classId={classId} dash={dash} />}
-      {tab === 'alerts' && <AlertsTab alerts={alerts} onResolve={resolveAlert} />}
-      {tab === 'poll' && <PollTab classId={classId} teacherId={teacherId} />}
+      {tab === 'interventions' && <InterventionsTab alerts={alerts} classId={classId} dash={dash} isHi={isHi} />}
+      {tab === 'alerts' && <AlertsTab alerts={alerts} onResolve={resolveAlert} isHi={isHi} />}
+      {tab === 'poll' && <PollTab classId={classId} teacherId={teacherId} isHi={isHi} />}
       <BottomNav />
     </div>
   );
