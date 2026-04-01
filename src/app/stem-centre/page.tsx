@@ -38,6 +38,8 @@ const SUBJECT_TABS = [
   { code: 'physics', en: 'Physics', hi: 'भौतिकी', emoji: '⚡' },
   { code: 'chemistry', en: 'Chemistry', hi: 'रसायन', emoji: '🧪' },
   { code: 'biology', en: 'Biology', hi: 'जीव विज्ञान', emoji: '🧬' },
+  { code: 'coding', en: 'Coding', hi: 'कोडिंग', emoji: '</>' },
+  { code: 'computer_science', en: 'CS', hi: 'कम्प्यूटर', emoji: '💻' },
 ];
 
 const DIFFICULTY_LABEL: Record<number, string> = { 1: 'Easy', 2: 'Medium', 3: 'Hard', 4: 'Advanced', 5: 'Expert' };
@@ -50,9 +52,9 @@ const BLOOM_COLOR: Record<string, string> = {
 
 function getSubjectsForGrade(grade: string): string[] {
   const g = parseInt(grade, 10);
-  if (g >= 6 && g <= 8) return ['all', 'math', 'science'];
-  if (g >= 9 && g <= 10) return ['all', 'math', 'science', 'physics', 'chemistry', 'biology'];
-  return ['all', 'math', 'physics', 'chemistry', 'biology'];
+  if (g >= 6 && g <= 8) return ['all', 'math', 'science', 'coding'];
+  if (g >= 9 && g <= 10) return ['all', 'math', 'science', 'physics', 'chemistry', 'biology', 'computer_science'];
+  return ['all', 'math', 'physics', 'chemistry', 'biology', 'computer_science'];
 }
 
 /* ─── Page ─── */
