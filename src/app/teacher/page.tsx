@@ -7,6 +7,11 @@ import { supabaseUrl as SUPABASE_URL, supabaseAnonKey as SUPABASE_ANON } from '@
 import type { HeatmapData, HeatmapCell, HeatmapRow, RiskAlert } from '@/lib/types';
 import { BottomNav } from '@/components/ui';
 
+// ============================================================
+// BILINGUAL HELPERS (P7)
+// ============================================================
+const tt = (isHi: boolean, en: string, hi: string) => isHi ? hi : en;
+
 /* ─── Local interfaces for teacher dashboard API data ─── */
 interface HeatmapConcept {
   id: string;
@@ -244,7 +249,7 @@ function PollTab({ classId, teacherId }: { classId: string; teacherId: string })
 }
 
 export default function TeacherPage() {
-  const { teacher, isLoading: authLoading, isLoggedIn, activeRole } = useAuth();
+  const { teacher, isLoading: authLoading, isLoggedIn, activeRole, isHi } = useAuth();
   const router = useRouter();
   const [dash, setDash] = useState<DashboardData | null>(null);
   const [heatmap, setHeatmap] = useState<HeatmapData | null>(null);

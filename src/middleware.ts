@@ -345,6 +345,6 @@ function addSecurityHeaders(response: NextResponse, request: NextRequest): NextR
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|manifest.json|sw.js|icons/).*)',
+    '/((?!_next/static|_next/image|favicon\\.ico|favicon\\.svg|apple-touch-icon\\.svg|icon-.*\\.svg|manifest\\.json|sw\\.js|icons/|robots\\.txt).*)',
   ],
 };
