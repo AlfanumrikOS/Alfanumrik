@@ -207,14 +207,49 @@ USE THIS TO:
   }
 
   if (!ragContext && !syllabusContext) {
-    prompt += `\n\nNOTE: No specific NCERT textbook content or syllabus reference was found for this question.
-However, you are a knowledgeable CBSE tutor. You may still help the student using your general knowledge of the CBSE curriculum for Class ${grade} ${subject}, but you MUST:
-1. Clearly state: "I don't have the exact NCERT reference for this, but based on the CBSE curriculum..."
-2. Keep your answer strictly within the CBSE syllabus scope for Class ${grade}
-3. Recommend the student verify your answer from their NCERT textbook
-4. If the topic is clearly outside the CBSE syllabus for this grade, say so and suggest the correct grade/subject
-5. Never fabricate specific page numbers, exercise numbers, or NCERT quotes
-Do NOT refuse to help — provide your best curriculum-aligned response with the disclaimer.`
+    // Subject-specific safety rules to prevent confident-sounding wrong teaching
+    const subjectLower = subject.toLowerCase()
+    let subjectSafetyRule = ''
+    if (['math', 'mathematics'].includes(subjectLower)) {
+      subjectSafetyRule = `\nSUBJECT-SPECIFIC SAFETY (Math): Do NOT provide formulas not in NCERT for Class ${grade}. If you are unsure of the exact formula or method taught at this grade level, explicitly say so. Never present an advanced formula as if it is part of this grade's syllabus.`
+    } else if (['science', 'physics', 'chemistry'].includes(subjectLower)) {
+      subjectSafetyRule = `\nSUBJECT-SPECIFIC SAFETY (Science): Do NOT state specific numerical values, constants, or experimental results unless you are CERTAIN they match NCERT for Class ${grade}. If unsure about a specific value or constant, say "Please verify the exact value from your NCERT textbook."`
+    } else if (['history', 'social studies', 'social science', 'geography', 'civics', 'economics', 'political science'].includes(subjectLower)) {
+      subjectSafetyRule = `\nSUBJECT-SPECIFIC SAFETY (Social Studies): Do NOT state specific dates, events, names, or historical claims unless you are CERTAIN they match NCERT for Class ${grade}. If unsure about a specific date or fact, say "Please verify the exact details from your NCERT textbook."`
+    }
+
+    const disclaimerBadge = language === 'hi'
+      ? '⚠️ **NCERT संदर्भ नहीं मिला** — यह उत्तर सामान्य CBSE पाठ्यक्रम ज्ञान पर आधारित है। कृपया अपनी पाठ्यपुस्तक से सत्यापित करें।'
+      : '⚠️ **No NCERT reference found** — This answer is based on general CBSE curriculum knowledge. Please verify from your textbook.'
+
+    const openingLine = language === 'hi'
+      ? '📚 मेरे पास इसके लिए सटीक NCERT पृष्ठ नहीं है, लेकिन CBSE कक्षा ' + grade + ' ' + subject + ' पाठ्यक्रम के आधार पर मुझे यह पता है...'
+      : '📚 I don\'t have the exact NCERT page for this, but here\'s what I know from the CBSE Class ' + grade + ' ' + subject + ' curriculum...'
+
+    prompt += `\n\n⚠️ NO-REFERENCE SAFETY MODE (CRITICAL — follow ALL rules below):
+No specific NCERT textbook content or syllabus reference was found for this question.
+You may still help the student using your general knowledge of the CBSE curriculum for Class ${grade} ${subject}, but you MUST follow these rules STRICTLY:
+
+1. You MUST begin your response with this EXACT disclaimer badge on its own line:
+   "${disclaimerBadge}"
+
+2. You MUST follow the disclaimer badge with this opening line:
+   "${openingLine}"
+
+3. Keep your answer strictly within the CBSE syllabus scope for Class ${grade}
+4. Recommend the student verify your answer from their NCERT textbook
+5. If the topic is clearly outside the CBSE syllabus for this grade, say so and suggest the correct grade/subject
+6. Never fabricate specific page numbers, exercise numbers, or NCERT quotes
+${subjectSafetyRule}
+
+CONFIDENCE RATING (MANDATORY — include at the END of your response):
+You MUST rate your confidence in a clearly visible block:
+- **Confidence: HIGH** — Standard curriculum knowledge, very likely correct
+- **Confidence: MEDIUM** — Likely correct but student should verify from textbook
+- **Confidence: LOW** — Not sure about grade-specific details. "I recommend asking your teacher to confirm this."
+If your confidence is LOW, you MUST explicitly recommend the student ask their teacher.
+
+Do NOT refuse to help — provide your best curriculum-aligned response with ALL the above safety markers.`
   }
 
   return prompt

@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { SectionHeader, ActionTile } from '@/components/ui';
 
 const QUICK_ACTIONS = [
+  { href: '/learn', icon: '📖', label: 'Chapters', labelHi: 'अध्याय', color: '#2563EB' },
   { href: '/quiz', icon: '⚡', label: 'Quiz', labelHi: 'क्विज़', color: '#7C3AED' },
   { href: '/stem-centre', icon: '🔬', label: 'STEM Centre', labelHi: 'स्टेम सेंटर', color: '#0891B2' },
   { href: '/review', icon: '🔄', label: 'Revise', labelHi: 'रिव्यू', color: '#0D9488' },

@@ -1,5 +1,23 @@
 export default function JsonLd() {
-  const structuredData = {
+  const organizationData = {
+    '@context': 'https://schema.org',
+    '@type': ['Organization', 'EducationalOrganization'],
+    '@id': 'https://alfanumrik.com/#organization',
+    name: 'Cusiosense Learning India Private Limited',
+    alternateName: 'Alfanumrik',
+    url: 'https://alfanumrik.com',
+    logo: 'https://alfanumrik.com/favicon.svg',
+    description:
+      'DPIIT-recognized Indian EdTech company building adaptive learning systems for CBSE students in Grades 6-12.',
+    foundingDate: '2025',
+    address: {
+      '@type': 'PostalAddress',
+      addressCountry: 'IN',
+    },
+    sameAs: [],
+  };
+
+  const webAppData = {
     '@context': 'https://schema.org',
     '@type': 'WebApplication',
     name: 'Alfanumrik',
@@ -14,10 +32,9 @@ export default function JsonLd() {
       description: 'Adaptive learning platform for CBSE students — free trial available',
       availability: 'https://schema.org/InStock',
     },
-    author: {
+    provider: {
       '@type': 'Organization',
-      name: 'Cusiosense Learning India Private Limited',
-      url: 'https://alfanumrik.com',
+      '@id': 'https://alfanumrik.com/#organization',
     },
     description:
       'AI-powered adaptive learning platform for CBSE students. Foxy AI Tutor teaches in Hindi and English with Bayesian mastery tracking, spaced repetition, and gamified learning. Grades 6-12.',
@@ -43,9 +60,15 @@ export default function JsonLd() {
   };
 
   return (
-    <script
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
-    />
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationData) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(webAppData) }}
+      />
+    </>
   );
 }

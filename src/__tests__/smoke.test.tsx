@@ -56,12 +56,17 @@ describe('Smoke tests', () => {
     const { default: JsonLd } = await import('@/components/JsonLd');
     const { render } = await import('@testing-library/react');
     const { container } = render(JsonLd());
-    const script = container.querySelector('script[type="application/ld+json"]');
-    expect(script).toBeDefined();
-    const data = JSON.parse(script!.textContent || '{}');
-    expect(data['@type']).toBe('WebApplication');
-    expect(data.name).toBe('Alfanumrik');
-    expect(data.applicationCategory).toBe('EducationalApplication');
+    const scripts = container.querySelectorAll('script[type="application/ld+json"]');
+    expect(scripts.length).toBeGreaterThanOrEqual(2);
+    // First script: Organization
+    const orgData = JSON.parse(scripts[0]!.textContent || '{}');
+    expect(orgData['@type']).toContain('Organization');
+    expect(orgData.name).toBe('Cusiosense Learning India Private Limited');
+    // Second script: WebApplication
+    const appData = JSON.parse(scripts[1]!.textContent || '{}');
+    expect(appData['@type']).toBe('WebApplication');
+    expect(appData.name).toBe('Alfanumrik');
+    expect(appData.applicationCategory).toBe('EducationalApplication');
   });
 
   it('SimulationCard renders with memo', async () => {

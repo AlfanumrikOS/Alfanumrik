@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
+import { supabase } from '@/lib/supabase';
 
 // ============================================================
 // BILINGUAL HELPERS (P7)
@@ -75,9 +76,6 @@ interface DashboardData {
   insights?: string[];
 }
 
-const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-
 // Session expiry: 4 hours in milliseconds
 const SESSION_TTL_MS = 4 * 60 * 60 * 1000;
 const SESSION_KEY = 'alfanumrik_parent_session';
@@ -144,16 +142,13 @@ function clearParentSession() {
 }
 
 async function api(action: string, params: Record<string, unknown> = {}) {
-  const res = await fetch(`${SB_URL}/functions/v1/parent-portal`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', apikey: SB_KEY },
-    body: JSON.stringify({ action, ...params }),
+  const { data, error } = await supabase.functions.invoke('parent-portal', {
+    body: { action, ...params },
   });
-  if (!res.ok) {
-    const errorText = await res.text().catch(() => 'Unknown error');
-    throw new Error(`API error ${res.status}: ${errorText}`);
+  if (error) {
+    throw new Error(`API error: ${error.message || 'Unknown error'}`);
   }
-  return res.json();
+  return data;
 }
 
 // ============================================================

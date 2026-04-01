@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { SUPABASE_URL, SUPABASE_ANON_KEY, GRADE_SUBJECTS } from '@/lib/constants';
+import { SUPABASE_URL, SUPABASE_ANON_KEY, GRADE_SUBJECTS, SUBJECT_META } from '@/lib/constants';
 import { BottomNav } from '@/components/ui';
 import { LESSON_STEPS, getLessonStepPrompt, getNextLessonStep, type LessonStep, type LessonState } from '@/lib/cognitive-engine';
 import { checkDailyUsage, clearUsageCache, type UsageResult } from '@/lib/usage';
@@ -20,7 +20,7 @@ import FoxySessionStart from '@/components/foxy/FoxySessionStart';
 import FoxySessionComplete from '@/components/foxy/FoxySessionComplete';
 
 /* ══════════════════════════════════════════════════════════════
-   SUBJECT CONFIGURATION
+   SUBJECT CONFIGURATION — derived from canonical SUBJECT_META
    ══════════════════════════════════════════════════════════════ */
 
 interface SubjectConfig {
@@ -29,17 +29,9 @@ interface SubjectConfig {
   color: string;
 }
 
-const SUBJECTS: Record<string, SubjectConfig> = {
-  math: { name: 'Mathematics', icon: '∑', color: '#3B82F6' },
-  science: { name: 'Science', icon: '⚛', color: '#10B981' },
-  english: { name: 'English', icon: 'Aa', color: '#8B5CF6' },
-  hindi: { name: 'Hindi', icon: 'अ', color: '#F59E0B' },
-  physics: { name: 'Physics', icon: '⚡', color: '#EF4444' },
-  chemistry: { name: 'Chemistry', icon: '⚗', color: '#06B6D4' },
-  biology: { name: 'Biology', icon: '⚕', color: '#22C55E' },
-  social_studies: { name: 'Social Studies', icon: '🌍', color: '#D97706' },
-  coding: { name: 'Coding', icon: '💻', color: '#6366F1' },
-};
+const SUBJECTS: Record<string, SubjectConfig> = Object.fromEntries(
+  SUBJECT_META.map(s => [s.code, { name: s.name, icon: s.icon, color: s.color }])
+);
 
 const LANGS = [
   { code: 'en', label: 'EN' },
