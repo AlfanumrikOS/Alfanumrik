@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { LangProvider, LangToggle, useLang } from '@/components/landing/LangToggle';
 
-function WelcomeJsonLd({ faqs }: { faqs: { q: string; a: string }[] }) {
+function WelcomeJsonLd({ faqs }: { faqs: { q: string; qHi?: string; a: string; aHi?: string }[] }) {
   const faqSchema = {
     '@context': 'https://schema.org',
     '@type': 'FAQPage',
@@ -51,53 +51,53 @@ const STEPS = [
 
 const AUDIENCE = {
   students: {
-    icon: '🎓', color: '#E8581C', title: 'For Students',
+    icon: '🎓', color: '#E8581C', title: 'For Students', titleHi: 'छात्रों के लिए',
     points: [
-      { title: 'Stop re-reading, start understanding', desc: 'Every concept explained step-by-step until it clicks. Ask doubts anytime in Hindi or English.' },
-      { title: 'Practice that actually prepares you', desc: 'Questions adapt to your level. You work on what you need — not what you already know.' },
-      { title: 'Walk into exams with confidence', desc: 'Regular practice and smart revision means fewer surprises. Your preparation is measurable, not guesswork.' },
+      { title: 'Stop re-reading, start understanding', titleHi: 'बार-बार पढ़ना बंद करो, समझना शुरू करो', desc: 'Every concept explained step-by-step until it clicks. Ask doubts anytime in Hindi or English.', descHi: 'हर कॉन्सेप्ट स्टेप-बाय-स्टेप समझाया जाता है जब तक समझ न आ जाए। कभी भी हिन्दी या अंग्रेज़ी में सवाल पूछो।' },
+      { title: 'Practice that actually prepares you', titleHi: 'प्रैक्टिस जो सच में तैयार करे', desc: 'Questions adapt to your level. You work on what you need — not what you already know.', descHi: 'सवाल आपके स्तर के अनुसार बदलते हैं। आप वही करते हो जो ज़रूरी है — वो नहीं जो पहले से आता है।' },
+      { title: 'Walk into exams with confidence', titleHi: 'परीक्षा में आत्मविश्वास से जाओ', desc: 'Regular practice and smart revision means fewer surprises. Your preparation is measurable, not guesswork.', descHi: 'नियमित प्रैक्टिस और स्मार्ट रिवीज़न का मतलब कम सरप्राइज़। आपकी तैयारी मापने योग्य है, अंदाज़ा नहीं।' },
     ],
   },
   parents: {
-    icon: '👨‍👩‍👧', color: '#16A34A', title: 'For Parents',
+    icon: '👨‍👩‍👧', color: '#16A34A', title: 'For Parents', titleHi: 'माता-पिता के लिए',
     points: [
-      { title: 'See what your child actually knows', desc: 'Weekly progress reports show which subjects are strong and which topics need attention — not just marks.' },
-      { title: 'Less nagging, more clarity', desc: 'When you can see your child is studying consistently and improving, the daily arguments about screen time disappear.' },
-      { title: 'Confidence that learning is happening', desc: 'You don\'t need to be a subject expert. The system tracks mastery so you know exactly where things stand.' },
+      { title: 'See what your child actually knows', titleHi: 'देखें कि आपका बच्चा वास्तव में क्या जानता है', desc: 'Weekly progress reports show which subjects are strong and which topics need attention — not just marks.', descHi: 'साप्ताहिक प्रोग्रेस रिपोर्ट दिखाती है कि कौन से विषय मज़बूत हैं और किन टॉपिक्स पर ध्यान देना है — सिर्फ नंबर नहीं।' },
+      { title: 'Less nagging, more clarity', titleHi: 'कम टोकाटाकी, ज़्यादा स्पष्टता', desc: 'When you can see your child is studying consistently and improving, the daily arguments about screen time disappear.', descHi: 'जब आप देख सकते हैं कि बच्चा नियमित पढ़ रहा है और सुधार कर रहा है, तो स्क्रीन टाइम को लेकर रोज़ की बहस खत्म हो जाती है।' },
+      { title: 'Confidence that learning is happening', titleHi: 'भरोसा कि पढ़ाई हो रही है', desc: 'You don\'t need to be a subject expert. The system tracks mastery so you know exactly where things stand.', descHi: 'आपको विषय विशेषज्ञ होने की ज़रूरत नहीं। सिस्टम mastery ट्रैक करता है ताकि आपको पता रहे कि स्थिति क्या है।' },
     ],
   },
   teachers: {
-    icon: '👩‍🏫', color: '#2563EB', title: 'For Teachers',
+    icon: '👩‍🏫', color: '#2563EB', title: 'For Teachers', titleHi: 'शिक्षकों के लिए',
     points: [
-      { title: 'Stop repeating the same explanations', desc: 'Students who need revision get it automatically. Your class time goes to deeper teaching, not rework.' },
-      { title: 'See every student\'s gaps instantly', desc: 'Know who\'s struggling with which topic before the unit test — not after. Intervene early.' },
-      { title: 'Reports that write themselves', desc: 'Class performance, individual progress, weakness mapping — generated automatically. Save hours every week.' },
+      { title: 'Stop repeating the same explanations', titleHi: 'एक ही बात बार-बार समझाना बंद करें', desc: 'Students who need revision get it automatically. Your class time goes to deeper teaching, not rework.', descHi: 'जिन छात्रों को रिवीज़न चाहिए उन्हें अपने आप मिलता है। आपका क्लास टाइम गहरी पढ़ाई में लगता है, दोहराव में नहीं।' },
+      { title: 'See every student\'s gaps instantly', titleHi: 'हर छात्र की कमज़ोरी तुरंत देखें', desc: 'Know who\'s struggling with which topic before the unit test — not after. Intervene early.', descHi: 'यूनिट टेस्ट से पहले जानें कि कौन किस टॉपिक में कमज़ोर है — बाद में नहीं। जल्दी हस्तक्षेप करें।' },
+      { title: 'Reports that write themselves', titleHi: 'रिपोर्ट्स जो खुद बन जाती हैं', desc: 'Class performance, individual progress, weakness mapping — generated automatically. Save hours every week.', descHi: 'क्लास परफॉर्मेंस, व्यक्तिगत प्रोग्रेस, कमज़ोरी मैपिंग — सब अपने आप बनता है। हर हफ्ते घंटों की बचत।' },
     ],
   },
   schools: {
-    icon: '🏫', color: '#7C3AED', title: 'For Schools',
+    icon: '🏫', color: '#7C3AED', title: 'For Schools', titleHi: 'स्कूलों के लिए',
     points: [
-      { title: 'Standardize learning quality across sections', desc: 'Every student gets the same structured system regardless of which section or teacher they\'re assigned.' },
-      { title: 'Measurable performance improvement', desc: 'Track school-wide progress by subject, grade, and teacher. Identify patterns and act before results day.' },
-      { title: 'Board exam readiness at a glance', desc: 'See which cohorts are on track and which need intervention — across the entire school.' },
+      { title: 'Standardize learning quality across sections', titleHi: 'सभी सेक्शन में शिक्षा की गुणवत्ता एक जैसी करें', desc: 'Every student gets the same structured system regardless of which section or teacher they\'re assigned.', descHi: 'हर छात्र को एक जैसा संरचित सिस्टम मिलता है, चाहे कोई भी सेक्शन या शिक्षक हो।' },
+      { title: 'Measurable performance improvement', titleHi: 'मापने योग्य प्रदर्शन सुधार', desc: 'Track school-wide progress by subject, grade, and teacher. Identify patterns and act before results day.', descHi: 'विषय, कक्षा और शिक्षक के अनुसार पूरे स्कूल की प्रगति ट्रैक करें। पैटर्न पहचानें और रिज़ल्ट से पहले कार्रवाई करें।' },
+      { title: 'Board exam readiness at a glance', titleHi: 'बोर्ड परीक्षा की तैयारी एक नज़र में', desc: 'See which cohorts are on track and which need intervention — across the entire school.', descHi: 'देखें कौन से बैच सही राह पर हैं और किन्हें मदद चाहिए — पूरे स्कूल में।' },
     ],
   },
 };
 
 const RESULTS = [
-  { icon: '🧠', metric: 'Deeper understanding', desc: 'Students build real concept clarity through structured explanations and targeted practice — not surface-level memorization.' },
-  { icon: '📊', metric: 'Measurable progress', desc: 'Every session produces data. Students, parents, and teachers can see exactly what\'s improving and what needs work.' },
-  { icon: '📝', metric: 'Better exam scores', desc: 'When practice is focused, revision is timed correctly, and gaps are fixed early — marks improve as a natural result.' },
-  { icon: '💪', metric: 'Real confidence', desc: 'Confidence doesn\'t come from motivational quotes. It comes from knowing you\'ve practiced the right things enough times.' },
+  { icon: '🧠', metric: 'Deeper understanding', metricHi: 'गहरी समझ', desc: 'Students build real concept clarity through structured explanations and targeted practice — not surface-level memorization.', descHi: 'छात्र संरचित व्याख्या और लक्षित प्रैक्टिस से असली कॉन्सेप्ट क्लैरिटी बनाते हैं — ऊपरी रटाई से नहीं।' },
+  { icon: '📊', metric: 'Measurable progress', metricHi: 'मापने योग्य प्रगति', desc: 'Every session produces data. Students, parents, and teachers can see exactly what\'s improving and what needs work.', descHi: 'हर सेशन से डेटा मिलता है। छात्र, माता-पिता और शिक्षक देख सकते हैं कि क्या सुधर रहा है और कहाँ काम करना है।' },
+  { icon: '📝', metric: 'Better exam scores', metricHi: 'बेहतर परीक्षा अंक', desc: 'When practice is focused, revision is timed correctly, and gaps are fixed early — marks improve as a natural result.', descHi: 'जब प्रैक्टिस केंद्रित हो, रिवीज़न सही समय पर हो, और कमियाँ जल्दी दूर हों — तो नंबर अपने आप बढ़ते हैं।' },
+  { icon: '💪', metric: 'Real confidence', metricHi: 'असली आत्मविश्वास', desc: 'Confidence doesn\'t come from motivational quotes. It comes from knowing you\'ve practiced the right things enough times.', descHi: 'आत्मविश्वास प्रेरणादायक कोट्स से नहीं आता। ये इस जानकारी से आता है कि आपने सही चीज़ें काफी बार प्रैक्टिस की हैं।' },
 ];
 
 const FAQS = [
-  { q: 'What is Alfanumrik?', a: 'Alfanumrik is a structured learning platform for CBSE students in Grades 6–12. It helps students understand concepts clearly, practice with board-pattern questions, and track real progress — in Hindi and English.' },
-  { q: 'How is this different from watching videos online?', a: 'Videos are passive and one-size-fits-all. Alfanumrik adapts to what each student actually knows, finds their weak spots, gives targeted practice, and tracks which topics are truly mastered — not just watched.' },
-  { q: 'Is it safe for my child?', a: 'Yes. We follow DPDPA compliance, encrypt all data, never show ads, and never sell personal information. Students under 13 require parental consent.' },
-  { q: 'How do parents track progress?', a: 'Parents connect using a simple link code from their child\'s profile. You see clear weekly reports — what they studied, quiz scores, strengths, and areas that need attention.' },
-  { q: 'Is Alfanumrik free?', a: 'The free plan includes 5 study sessions and 5 quizzes per day. Starter, Pro, and Unlimited plans unlock more practice, subjects, and features.' },
-  { q: 'Which boards and grades are supported?', a: 'Currently CBSE Grades 6–12 with 16 subjects including Mathematics, Science, Physics, Chemistry, Biology, English, Hindi, and more.' },
+  { q: 'What is Alfanumrik?', qHi: 'Alfanumrik क्या है?', a: 'Alfanumrik is a structured learning platform for CBSE students in Grades 6–12. It helps students understand concepts clearly, practice with board-pattern questions, and track real progress — in Hindi and English.', aHi: 'Alfanumrik CBSE कक्षा 6–12 के छात्रों के लिए एक संरचित शिक्षा प्लेटफ़ॉर्म है। यह छात्रों को कॉन्सेप्ट स्पष्ट रूप से समझने, बोर्ड पैटर्न के सवालों से प्रैक्टिस करने, और असली प्रगति ट्रैक करने में मदद करता है — हिन्दी और अंग्रेज़ी में।' },
+  { q: 'How is this different from watching videos online?', qHi: 'यह ऑनलाइन वीडियो देखने से कैसे अलग है?', a: 'Videos are passive and one-size-fits-all. Alfanumrik adapts to what each student actually knows, finds their weak spots, gives targeted practice, and tracks which topics are truly mastered — not just watched.', aHi: 'वीडियो passive हैं और सबके लिए एक जैसे। Alfanumrik हर छात्र की असली समझ के अनुसार ढलता है, कमज़ोर जगहें खोजता है, लक्षित प्रैक्टिस देता है, और ट्रैक करता है कि कौन से टॉपिक सच में समझ आ गए हैं — सिर्फ देखे नहीं गए।' },
+  { q: 'Is it safe for my child?', qHi: 'क्या यह मेरे बच्चे के लिए सुरक्षित है?', a: 'Yes. We follow DPDPA compliance, encrypt all data, never show ads, and never sell personal information. Students under 13 require parental consent.', aHi: 'हाँ। हम DPDPA अनुपालन करते हैं, सारा डेटा एन्क्रिप्ट करते हैं, कभी विज्ञापन नहीं दिखाते, और कभी व्यक्तिगत जानकारी नहीं बेचते। 13 साल से कम उम्र के छात्रों के लिए माता-पिता की सहमति ज़रूरी है।' },
+  { q: 'How do parents track progress?', qHi: 'माता-पिता प्रगति कैसे ट्रैक करते हैं?', a: 'Parents connect using a simple link code from their child\'s profile. You see clear weekly reports — what they studied, quiz scores, strengths, and areas that need attention.', aHi: 'माता-पिता बच्चे की प्रोफ़ाइल से एक सिंपल लिंक कोड से जुड़ते हैं। आपको स्पष्ट साप्ताहिक रिपोर्ट दिखती है — क्या पढ़ा, क्विज़ स्कोर, ताकत, और जिन क्षेत्रों पर ध्यान देना है।' },
+  { q: 'Is Alfanumrik free?', qHi: 'क्या Alfanumrik मुफ्त है?', a: 'The free plan includes 5 study sessions and 5 quizzes per day. Starter, Pro, and Unlimited plans unlock more practice, subjects, and features.', aHi: 'फ्री प्लान में रोज़ 5 स्टडी सेशन और 5 क्विज़ शामिल हैं। Starter, Pro, और Unlimited प्लान से ज़्यादा प्रैक्टिस, विषय, और फ़ीचर्स मिलते हैं।' },
+  { q: 'Which boards and grades are supported?', qHi: 'कौन से बोर्ड और कक्षाएँ उपलब्ध हैं?', a: 'Currently CBSE Grades 6–12 with 16 subjects including Mathematics, Science, Physics, Chemistry, Biology, English, Hindi, and more.', aHi: 'फिलहाल CBSE कक्षा 6–12 में 16 विषय उपलब्ध हैं जिनमें गणित, विज्ञान, भौतिकी, रसायन विज्ञान, जीव विज्ञान, अंग्रेज़ी, हिन्दी, और बहुत कुछ शामिल है।' },
 ];
 
 function CTAButtons({ center = false }: { center?: boolean }) {
@@ -157,7 +157,7 @@ function WelcomeContent() {
         <div className="relative max-w-5xl mx-auto px-4 sm:px-6 pt-8 pb-10 sm:pt-14 sm:pb-18 text-center">
           <div className="inline-flex items-center gap-2 text-xs font-bold px-4 py-1.5 rounded-full mb-4"
             style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)', border: '1px solid rgba(232,88,28,0.15)' }}>
-            <span>🇮🇳</span> Adaptive Learning Platform for CBSE Grades 6–12
+            <span>🇮🇳</span> {t('Adaptive Learning Platform for CBSE Grades 6–12', 'CBSE कक्षा 6–12 के लिए अडैप्टिव लर्निंग प्लेटफ़ॉर्म')}
           </div>
 
           <h1 className="text-2xl sm:text-4xl lg:text-5xl font-extrabold leading-tight mb-4" style={{ fontFamily: 'var(--font-display)' }}>
@@ -176,14 +176,14 @@ function WelcomeContent() {
 
           <div className="grid grid-cols-4 gap-3 sm:gap-8 max-w-md sm:max-w-none mx-auto mt-10">
             {[
-              { value: '16', label: 'Subjects' },
-              { value: '6–12', label: 'Grades' },
-              { value: 'हिन्दी+En', label: 'Bilingual' },
-              { value: 'DPIIT', label: 'Recognized' },
+              { value: '16', label: 'Subjects', labelHi: 'विषय' },
+              { value: '6–12', label: 'Grades', labelHi: 'कक्षाएँ' },
+              { value: 'हिन्दी+En', label: 'Bilingual', labelHi: 'द्विभाषी' },
+              { value: 'DPIIT', label: 'Recognized', labelHi: 'मान्यता प्राप्त' },
             ].map(s => (
               <div key={s.label} className="text-center">
                 <div className="text-sm sm:text-xl font-extrabold" style={{ color: 'var(--orange)' }}>{s.value}</div>
-                <div className="text-[10px] sm:text-xs font-medium" style={{ color: 'var(--text-3)' }}>{s.label}</div>
+                <div className="text-[10px] sm:text-xs font-medium" style={{ color: 'var(--text-3)' }}>{isHi ? s.labelHi : s.label}</div>
               </div>
             ))}
           </div>
@@ -195,19 +195,19 @@ function WelcomeContent() {
         <div className="max-w-5xl mx-auto px-4 sm:px-6">
           <div className="flex flex-col items-center gap-4">
             <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--text-3)' }}>
-              Trusted by Indian Families · Recognized by India
+              {t('Trusted by Indian Families · Recognized by India', 'भारतीय परिवारों का भरोसा · भारत द्वारा मान्यता प्राप्त')}
             </p>
             <div className="flex flex-wrap items-center justify-center gap-3">
               {[
-                { label: 'DPIIT Recognized', icon: '🇮🇳' },
-                { label: 'DPDPA Compliant', icon: '🛡️' },
-                { label: 'Data Encrypted', icon: '🔒' },
-                { label: 'NCERT Aligned', icon: '📚' },
-                { label: 'No Ads. Ever.', icon: '🚫' },
+                { label: 'DPIIT Recognized', labelHi: 'DPIIT मान्यता प्राप्त', icon: '🇮🇳' },
+                { label: 'DPDPA Compliant', labelHi: 'DPDPA अनुपालित', icon: '🛡️' },
+                { label: 'Data Encrypted', labelHi: 'डेटा एन्क्रिप्टेड', icon: '🔒' },
+                { label: 'NCERT Aligned', labelHi: 'NCERT के अनुरूप', icon: '📚' },
+                { label: 'No Ads. Ever.', labelHi: 'कभी विज्ञापन नहीं।', icon: '🚫' },
               ].map(cert => (
                 <span key={cert.label} className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full"
                   style={{ background: 'var(--surface-2)', color: 'var(--text-2)', border: '1px solid var(--border)' }}>
-                  <span>{cert.icon}</span> {cert.label}
+                  <span>{cert.icon}</span> {isHi ? cert.labelHi : cert.label}
                 </span>
               ))}
             </div>
@@ -251,26 +251,27 @@ function WelcomeContent() {
       <section className="py-12 sm:py-16">
         <div className="max-w-5xl mx-auto px-4 sm:px-6">
           <div className="text-center mb-8 max-w-2xl mx-auto">
-            <span className="inline-block text-xs font-bold px-3 py-1 rounded-full mb-3" style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}>THE SOLUTION</span>
+            <span className="inline-block text-xs font-bold px-3 py-1 rounded-full mb-3" style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}>{t('THE SOLUTION', 'समाधान')}</span>
             <h2 className="text-2xl sm:text-3xl font-extrabold mb-3" style={{ fontFamily: 'var(--font-display)' }}>
-              A learning system that finds gaps, fixes them, and proves it worked
+              {t('A learning system that finds gaps, fixes them, and proves it worked', 'एक शिक्षा प्रणाली जो कमियाँ खोजती है, उन्हें दूर करती है, और साबित करती है कि काम हुआ')}
             </h2>
             <p className="text-sm sm:text-base" style={{ color: 'var(--text-2)', lineHeight: 1.7 }}>
-              Alfanumrik replaces random studying with a structured cycle:
-              understand the concept, practice at the right level, revise before you forget, test under real conditions, and track every step.
-              No guesswork. No content overload. Just a system that improves student performance measurably.
+              {t(
+                'Alfanumrik replaces random studying with a structured cycle: understand the concept, practice at the right level, revise before you forget, test under real conditions, and track every step. No guesswork. No content overload. Just a system that improves student performance measurably.',
+                'Alfanumrik बेतरतीब पढ़ाई को एक संरचित चक्र से बदलता है: कॉन्सेप्ट समझो, सही स्तर पर प्रैक्टिस करो, भूलने से पहले रिवीज़ करो, असली परिस्थितियों में टेस्ट दो, और हर कदम ट्रैक करो। कोई अंदाज़ा नहीं। कंटेंट की भरमार नहीं। बस एक सिस्टम जो बच्चों का प्रदर्शन मापने योग्य तरीके से सुधारता है।'
+              )}
             </p>
           </div>
           <div className="grid sm:grid-cols-3 gap-4">
             {[
-              { icon: '🧠', title: 'Concept clarity first', desc: 'Every chapter starts with structured explanations — not random videos. Students build understanding before they practice.', color: '#7C3AED' },
-              { icon: '🎯', title: 'Practice that targets weak spots', desc: 'The system identifies what each student doesn\'t know and focuses practice there. No wasted repetition on already-mastered topics.', color: '#E8581C' },
-              { icon: '📈', title: 'Progress everyone can see', desc: 'Students, parents, and teachers all see real-time mastery data. Weekly reports replace monthly surprises.', color: '#0891B2' },
+              { icon: '🧠', title: 'Concept clarity first', titleHi: 'पहले कॉन्सेप्ट क्लैरिटी', desc: 'Every chapter starts with structured explanations — not random videos. Students build understanding before they practice.', descHi: 'हर चैप्टर संरचित व्याख्या से शुरू होता है — रैंडम वीडियो से नहीं। बच्चे प्रैक्टिस से पहले समझ बनाते हैं।', color: '#7C3AED' },
+              { icon: '🎯', title: 'Practice that targets weak spots', titleHi: 'कमज़ोर जगहों पर केंद्रित प्रैक्टिस', desc: 'The system identifies what each student doesn\'t know and focuses practice there. No wasted repetition on already-mastered topics.', descHi: 'सिस्टम पहचानता है कि हर छात्र को क्या नहीं आता और वहीं प्रैक्टिस कराता है। पहले से आने वाले टॉपिक पर बेकार दोहराव नहीं।', color: '#E8581C' },
+              { icon: '📈', title: 'Progress everyone can see', titleHi: 'प्रगति जो सबको दिखे', desc: 'Students, parents, and teachers all see real-time mastery data. Weekly reports replace monthly surprises.', descHi: 'छात्र, माता-पिता और शिक्षक — सभी रियल-टाइम mastery डेटा देख सकते हैं। साप्ताहिक रिपोर्ट मासिक सरप्राइज़ की जगह लेती है।', color: '#0891B2' },
             ].map(item => (
               <div key={item.title} className="rounded-2xl p-6" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
                 <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl mb-4" style={{ background: `${item.color}12` }}>{item.icon}</div>
-                <h3 className="text-sm font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>{item.title}</h3>
-                <p className="text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>{item.desc}</p>
+                <h3 className="text-sm font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>{isHi ? item.titleHi : item.title}</h3>
+                <p className="text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>{isHi ? item.descHi : item.desc}</p>
               </div>
             ))}
           </div>
@@ -306,12 +307,12 @@ function WelcomeContent() {
       <section className="py-12 sm:py-16">
         <div className="max-w-5xl mx-auto px-4 sm:px-6">
           <div className="text-center mb-8 max-w-2xl mx-auto">
-            <span className="inline-block text-xs font-bold px-3 py-1 rounded-full mb-3" style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}>SEE IT IN ACTION</span>
+            <span className="inline-block text-xs font-bold px-3 py-1 rounded-full mb-3" style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}>{t('SEE IT IN ACTION', 'देखें कैसे काम करता है')}</span>
             <h2 className="text-2xl sm:text-3xl font-extrabold mb-3" style={{ fontFamily: 'var(--font-display)' }}>
-              See Alfanumrik in Action
+              {t('See Alfanumrik in Action', 'Alfanumrik को काम करते देखें')}
             </h2>
             <p className="text-sm sm:text-base" style={{ color: 'var(--text-2)', lineHeight: 1.7 }}>
-              This is what learning looks like inside the platform. Real features, real interface — not stock photos.
+              {t('This is what learning looks like inside the platform. Real features, real interface — not stock photos.', 'प्लेटफ़ॉर्म के अंदर पढ़ाई ऐसी दिखती है। असली फ़ीचर्स, असली इंटरफ़ेस — स्टॉक फ़ोटो नहीं।')}
             </p>
           </div>
 
@@ -542,24 +543,27 @@ function WelcomeContent() {
       <section className="py-12 sm:py-16" style={{ background: 'var(--surface-1)' }}>
         <div className="max-w-5xl mx-auto px-4 sm:px-6 text-center">
           <h2 className="text-xl sm:text-3xl font-extrabold mb-3" style={{ fontFamily: 'var(--font-display)' }}>
-            Built for how Indian students <span className="gradient-text">actually study</span>
+            {t('Built for how Indian students ', 'भारतीय छात्र जैसे ')}<span className="gradient-text">{t('actually study', 'असल में पढ़ते हैं')}</span>{t('', ', वैसे ही बनाया गया')}
           </h2>
           <p className="text-sm sm:text-base mb-10 max-w-2xl mx-auto" style={{ color: 'var(--text-2)', lineHeight: 1.7 }}>
-            Every feature is designed around CBSE exam patterns, NCERT chapters, and the way Indian students, parents, and teachers work together.
+            {t(
+              'Every feature is designed around CBSE exam patterns, NCERT chapters, and the way Indian students, parents, and teachers work together.',
+              'हर फ़ीचर CBSE परीक्षा पैटर्न, NCERT चैप्टर्स, और भारतीय छात्रों, माता-पिता और शिक्षकों के साथ मिलकर काम करने के तरीके को ध्यान में रखकर बनाया गया है।'
+            )}
           </p>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {[
-              { icon: '🦊', title: 'Foxy AI Tutor', desc: 'Ask any doubt in Hindi or English. Get step-by-step explanations grounded in NCERT — not random internet answers.', color: '#E8581C' },
-              { icon: '🔬', title: '19 Interactive Simulations', desc: 'Physics, Chemistry, Math — explore concepts hands-on. From Newton\'s Laws to Chemical Balancing to Integration.', color: '#7C3AED' },
-              { icon: '⚡', title: 'Bloom-Aware Quizzes', desc: 'Questions adapt to your level. Master "remember" before "apply". Board-exam patterns built into every quiz.', color: '#2563EB' },
-              { icon: '📊', title: 'Parent Dashboard', desc: 'See your child\'s progress in plain language. "Doing well" or "needs help" — not confusing graphs.', color: '#16A34A' },
-              { icon: '👩‍🏫', title: 'Teacher Command Center', desc: 'See which students need help. Get AI-powered intervention suggestions. Save hours every week.', color: '#D97706' },
-              { icon: '📋', title: 'Super Admin Control', desc: 'Platform health, learner outcomes, revenue, content gaps — everything an operator needs on one screen.', color: '#0891B2' },
+              { icon: '🦊', title: 'Foxy AI Tutor', titleHi: 'Foxy AI ट्यूटर', desc: 'Ask any doubt in Hindi or English. Get step-by-step explanations grounded in NCERT — not random internet answers.', descHi: 'कोई भी सवाल हिन्दी या अंग्रेज़ी में पूछो। NCERT पर आधारित स्टेप-बाय-स्टेप जवाब पाओ — रैंडम इंटरनेट जवाब नहीं।', color: '#E8581C' },
+              { icon: '🔬', title: '19 Interactive Simulations', titleHi: '19 इंटरैक्टिव सिमुलेशन', desc: 'Physics, Chemistry, Math — explore concepts hands-on. From Newton\'s Laws to Chemical Balancing to Integration.', descHi: 'भौतिकी, रसायन, गणित — कॉन्सेप्ट हाथों-हाथ समझो। न्यूटन के नियमों से लेकर रासायनिक संतुलन और इंटीग्रेशन तक।', color: '#7C3AED' },
+              { icon: '⚡', title: 'Bloom-Aware Quizzes', titleHi: 'Bloom\'s-आधारित क्विज़', desc: 'Questions adapt to your level. Master "remember" before "apply". Board-exam patterns built into every quiz.', descHi: 'सवाल आपके स्तर के अनुसार बदलते हैं। पहले "याद करो" फिर "लागू करो"। हर क्विज़ में बोर्ड परीक्षा पैटर्न शामिल।', color: '#2563EB' },
+              { icon: '📊', title: 'Parent Dashboard', titleHi: 'पैरेंट डैशबोर्ड', desc: 'See your child\'s progress in plain language. "Doing well" or "needs help" — not confusing graphs.', descHi: 'अपने बच्चे की प्रगति सरल भाषा में देखें। "अच्छा कर रहा है" या "मदद चाहिए" — भ्रमित करने वाले ग्राफ नहीं।', color: '#16A34A' },
+              { icon: '👩‍🏫', title: 'Teacher Command Center', titleHi: 'टीचर कमांड सेंटर', desc: 'See which students need help. Get AI-powered intervention suggestions. Save hours every week.', descHi: 'देखें किन छात्रों को मदद चाहिए। AI-संचालित हस्तक्षेप सुझाव पाएँ। हर हफ्ते घंटों की बचत।', color: '#D97706' },
+              { icon: '📋', title: 'Super Admin Control', titleHi: 'सुपर एडमिन कंट्रोल', desc: 'Platform health, learner outcomes, revenue, content gaps — everything an operator needs on one screen.', descHi: 'प्लेटफ़ॉर्म स्वास्थ्य, शिक्षा परिणाम, राजस्व, कंटेंट की कमी — सब कुछ एक स्क्रीन पर।', color: '#0891B2' },
             ].map(f => (
               <div key={f.title} className="text-left rounded-2xl p-5" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
                 <div className="text-2xl mb-2">{f.icon}</div>
-                <h3 className="text-sm font-bold mb-1" style={{ color: f.color }}>{f.title}</h3>
-                <p className="text-xs leading-relaxed" style={{ color: 'var(--text-2)' }}>{f.desc}</p>
+                <h3 className="text-sm font-bold mb-1" style={{ color: f.color }}>{isHi ? f.titleHi : f.title}</h3>
+                <p className="text-xs leading-relaxed" style={{ color: 'var(--text-2)' }}>{isHi ? f.descHi : f.desc}</p>
               </div>
             ))}
           </div>
@@ -574,13 +578,13 @@ function WelcomeContent() {
             <div className="max-w-5xl mx-auto px-4 sm:px-6">
               <div className="flex items-center justify-center gap-2 mb-2">
                 <span className="text-2xl">{a.icon}</span>
-                <h2 className="text-xl sm:text-2xl font-extrabold" style={{ fontFamily: 'var(--font-display)', color: a.color }}>{a.title}</h2>
+                <h2 className="text-xl sm:text-2xl font-extrabold" style={{ fontFamily: 'var(--font-display)', color: a.color }}>{isHi ? a.titleHi : a.title}</h2>
               </div>
               <div className="grid sm:grid-cols-3 gap-4 mt-6">
                 {a.points.map(p => (
                   <div key={p.title} className="rounded-2xl p-5" style={{ background: idx % 2 === 0 ? 'var(--surface-1)' : 'var(--bg)', border: '1px solid var(--border)' }}>
-                    <h3 className="text-sm font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>{p.title}</h3>
-                    <p className="text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>{p.desc}</p>
+                    <h3 className="text-sm font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>{isHi ? p.titleHi : p.title}</h3>
+                    <p className="text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>{isHi ? p.descHi : p.desc}</p>
                   </div>
                 ))}
               </div>
@@ -593,9 +597,9 @@ function WelcomeContent() {
       <section className="py-12 sm:py-16" style={{ background: 'var(--surface-1)' }}>
         <div className="max-w-5xl mx-auto px-4 sm:px-6">
           <div className="text-center mb-8 max-w-2xl mx-auto">
-            <span className="inline-block text-xs font-bold px-3 py-1 rounded-full mb-3" style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}>OUTCOMES</span>
+            <span className="inline-block text-xs font-bold px-3 py-1 rounded-full mb-3" style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}>{t('OUTCOMES', 'परिणाम')}</span>
             <h2 className="text-2xl sm:text-3xl font-extrabold mb-3" style={{ fontFamily: 'var(--font-display)' }}>
-              What changes when the system is right
+              {t('What changes when the system is right', 'जब सिस्टम सही हो तो क्या बदलता है')}
             </h2>
           </div>
           <div className="grid sm:grid-cols-2 gap-4">
@@ -603,8 +607,8 @@ function WelcomeContent() {
               <div key={r.metric} className="rounded-2xl p-5 flex gap-4 items-start" style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
                 <div className="text-3xl shrink-0">{r.icon}</div>
                 <div>
-                  <h3 className="text-sm font-bold mb-1" style={{ fontFamily: 'var(--font-display)' }}>{r.metric}</h3>
-                  <p className="text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>{r.desc}</p>
+                  <h3 className="text-sm font-bold mb-1" style={{ fontFamily: 'var(--font-display)' }}>{isHi ? r.metricHi : r.metric}</h3>
+                  <p className="text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>{isHi ? r.descHi : r.desc}</p>
                 </div>
               </div>
             ))}
@@ -615,25 +619,25 @@ function WelcomeContent() {
       {/* Trust */}
       <section className="py-12 sm:py-16">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 text-center">
-          <span className="inline-block text-xs font-bold px-3 py-1 rounded-full mb-3" style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}>OUR PHILOSOPHY</span>
+          <span className="inline-block text-xs font-bold px-3 py-1 rounded-full mb-3" style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}>{t('OUR PHILOSOPHY', 'हमारा सिद्धांत')}</span>
           <h2 className="text-2xl sm:text-3xl font-extrabold mb-4" style={{ fontFamily: 'var(--font-display)' }}>
-            Systems over shortcuts
+            {t('Systems over shortcuts', 'शॉर्टकट नहीं, सिस्टम')}
           </h2>
           <p className="text-sm sm:text-base mb-6 max-w-2xl mx-auto" style={{ color: 'var(--text-2)', lineHeight: 1.8 }}>
-            There are no hacks to real learning. Alfanumrik doesn&apos;t promise overnight results or magic formulas.
-            It builds a consistent, structured study habit — concept by concept, chapter by chapter — until
-            understanding becomes permanent and exam performance becomes predictable. That&apos;s how the best platform
-            for concept clarity in students actually works. We just made it available to everyone.
+            {t(
+              'There are no hacks to real learning. Alfanumrik doesn\'t promise overnight results or magic formulas. It builds a consistent, structured study habit — concept by concept, chapter by chapter — until understanding becomes permanent and exam performance becomes predictable. That\'s how the best platform for concept clarity in students actually works. We just made it available to everyone.',
+              'असली सीखने में कोई शॉर्टकट नहीं होता। Alfanumrik रातोंरात नतीजों या जादुई फ़ॉर्मूले का वादा नहीं करता। यह एक नियमित, संरचित पढ़ाई की आदत बनाता है — कॉन्सेप्ट दर कॉन्सेप्ट, चैप्टर दर चैप्टर — जब तक समझ स्थायी न हो जाए और परीक्षा का प्रदर्शन अनुमानित न हो जाए। छात्रों में कॉन्सेप्ट क्लैरिटी का सबसे अच्छा प्लेटफ़ॉर्म ऐसे ही काम करता है। हमने बस इसे सबके लिए उपलब्ध कर दिया।'
+            )}
           </p>
           <div className="flex flex-wrap justify-center gap-4 mt-6">
             {[
-              { icon: '🛡️', label: 'Data Protected' },
-              { icon: '🇮🇳', label: 'Made in India' },
-              { icon: '🔒', label: 'No Ads Ever' },
-              { icon: '📱', label: 'Hindi & English' },
+              { icon: '🛡️', label: 'Data Protected', labelHi: 'डेटा सुरक्षित' },
+              { icon: '🇮🇳', label: 'Made in India', labelHi: 'भारत में बना' },
+              { icon: '🔒', label: 'No Ads Ever', labelHi: 'कभी विज्ञापन नहीं' },
+              { icon: '📱', label: 'Hindi & English', labelHi: 'हिन्दी और अंग्रेज़ी' },
             ].map(b => (
               <div key={b.label} className="rounded-xl px-4 py-2.5 text-xs font-semibold flex items-center gap-2" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
-                <span>{b.icon}</span> {b.label}
+                <span>{b.icon}</span> {isHi ? b.labelHi : b.label}
               </div>
             ))}
           </div>
@@ -644,17 +648,17 @@ function WelcomeContent() {
       <section className="py-12 sm:py-16" style={{ background: 'var(--surface-1)' }}>
         <div className="max-w-3xl mx-auto px-4 sm:px-6">
           <div className="text-center mb-8">
-            <span className="inline-block text-xs font-bold px-3 py-1 rounded-full mb-3" style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}>FAQ</span>
-            <h2 className="text-2xl sm:text-3xl font-extrabold" style={{ fontFamily: 'var(--font-display)' }}>Frequently Asked Questions</h2>
+            <span className="inline-block text-xs font-bold px-3 py-1 rounded-full mb-3" style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}>{t('FAQ', 'अक्सर पूछे जाने वाले सवाल')}</span>
+            <h2 className="text-2xl sm:text-3xl font-extrabold" style={{ fontFamily: 'var(--font-display)' }}>{t('Frequently Asked Questions', 'अक्सर पूछे जाने वाले सवाल')}</h2>
           </div>
           <div className="space-y-3">
             {FAQS.map(faq => (
               <details key={faq.q} className="group rounded-2xl" style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
                 <summary className="flex items-center justify-between cursor-pointer px-4 py-3.5 sm:px-5 sm:py-4 text-sm font-semibold list-none" style={{ color: 'var(--text-1)' }}>
-                  {faq.q}
+                  {isHi ? faq.qHi : faq.q}
                   <span className="text-lg transition-transform duration-200 group-open:rotate-45 shrink-0 ml-3" style={{ color: 'var(--text-3)' }}>+</span>
                 </summary>
-                <div className="px-4 pb-3.5 sm:px-5 sm:pb-4 text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>{faq.a}</div>
+                <div className="px-4 pb-3.5 sm:px-5 sm:pb-4 text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>{isHi ? faq.aHi : faq.a}</div>
               </details>
             ))}
           </div>
@@ -689,39 +693,39 @@ function WelcomeContent() {
                 <span className="text-base font-extrabold gradient-text" style={{ fontFamily: 'var(--font-display)' }}>Alfanumrik</span>
               </div>
               <p className="text-xs leading-relaxed" style={{ color: 'var(--text-3)' }}>
-                Adaptive Learning Platform<br />Cusiosense Learning India Pvt. Ltd.
+                {t('Adaptive Learning Platform', 'अडैप्टिव लर्निंग प्लेटफ़ॉर्म')}<br />Cusiosense Learning India Pvt. Ltd.
               </p>
             </div>
             <div>
-              <h4 className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text-3)' }}>Product</h4>
+              <h4 className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text-3)' }}>{t('Product', 'उत्पाद')}</h4>
               <div className="space-y-2">
-                {[{ href: '/product', label: 'Overview' }, { href: '/for-schools', label: 'For Schools' }, { href: '/pricing', label: 'Pricing' }, { href: '/demo', label: 'Book Demo' }].map(l => (
-                  <Link key={l.href} href={l.href} className="block text-sm hover:underline" style={{ color: 'var(--text-2)' }}>{l.label}</Link>
+                {[{ href: '/product', label: 'Overview', labelHi: 'अवलोकन' }, { href: '/for-schools', label: 'For Schools', labelHi: 'स्कूलों के लिए' }, { href: '/pricing', label: 'Pricing', labelHi: 'मूल्य' }, { href: '/demo', label: 'Book Demo', labelHi: 'डेमो बुक करें' }].map(l => (
+                  <Link key={l.href} href={l.href} className="block text-sm hover:underline" style={{ color: 'var(--text-2)' }}>{isHi ? l.labelHi : l.label}</Link>
                 ))}
               </div>
             </div>
             <div>
-              <h4 className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text-3)' }}>Legal</h4>
+              <h4 className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text-3)' }}>{t('Legal', 'कानूनी')}</h4>
               <div className="space-y-2">
-                {[{ href: '/privacy', label: 'Privacy Policy' }, { href: '/terms', label: 'Terms' }, { href: '/security', label: 'Security' }, { href: '/help', label: 'Help Center' }].map(l => (
-                  <Link key={l.href} href={l.href} className="block text-sm hover:underline" style={{ color: 'var(--text-2)' }}>{l.label}</Link>
+                {[{ href: '/privacy', label: 'Privacy Policy', labelHi: 'गोपनीयता नीति' }, { href: '/terms', label: 'Terms', labelHi: 'शर्तें' }, { href: '/security', label: 'Security', labelHi: 'सुरक्षा' }, { href: '/help', label: 'Help Center', labelHi: 'सहायता केंद्र' }].map(l => (
+                  <Link key={l.href} href={l.href} className="block text-sm hover:underline" style={{ color: 'var(--text-2)' }}>{isHi ? l.labelHi : l.label}</Link>
                 ))}
               </div>
             </div>
             <div>
-              <h4 className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text-3)' }}>Contact</h4>
+              <h4 className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text-3)' }}>{t('Contact', 'संपर्क')}</h4>
               <div className="space-y-2 text-sm" style={{ color: 'var(--text-2)' }}>
                 <p>support@alfanumrik.com</p>
-                <Link href="/about" className="block hover:underline">About Us</Link>
-                <p>India 🇮🇳</p>
+                <Link href="/about" className="block hover:underline">{t('About Us', 'हमारे बारे में')}</Link>
+                <p>{t('India', 'भारत')} 🇮🇳</p>
               </div>
             </div>
           </div>
           <div className="pt-6 border-t flex flex-col sm:flex-row items-center justify-between gap-3" style={{ borderColor: 'var(--border)' }}>
-            <p className="text-xs" style={{ color: 'var(--text-3)' }}>© {new Date().getFullYear()} Cusiosense Learning India Pvt. Ltd. All rights reserved.</p>
+            <p className="text-xs" style={{ color: 'var(--text-3)' }}>© {new Date().getFullYear()} Cusiosense Learning India Pvt. Ltd. {t('All rights reserved.', 'सर्वाधिकार सुरक्षित।')}</p>
             <div className="flex items-center gap-4 text-xs" style={{ color: 'var(--text-3)' }}>
-              <span>🛡️ DPDPA Compliant · Data Encrypted · No Ads</span>
-              <span>🇮🇳 DPIIT Recognized Startup</span>
+              <span>🛡️ {t('DPDPA Compliant · Data Encrypted · No Ads', 'DPDPA अनुपालित · डेटा एन्क्रिप्टेड · कोई विज्ञापन नहीं')}</span>
+              <span>🇮🇳 {t('DPIIT Recognized Startup', 'DPIIT मान्यता प्राप्त स्टार्टअप')}</span>
               <span>Alfanumrik™ · Cusiosense Learning India Pvt. Ltd.</span>
             </div>
           </div>
