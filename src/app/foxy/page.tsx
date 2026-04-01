@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { SUPABASE_URL, SUPABASE_ANON_KEY, GRADE_SUBJECTS, SUBJECT_META } from '@/lib/constants';
@@ -144,6 +144,15 @@ const REPORT_REASONS = [
 export default function FoxyPage() {
   const { student: authStudent, isLoggedIn, isLoading: authLoading } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // URL deep-link params (from /learn page or quiz deep-link)
+  const urlTopic = searchParams.get('topic');
+  const urlSubject = searchParams.get('subject');
+  const urlMode = searchParams.get('mode');
+  const urlChapter = searchParams.get('chapter');
+  const hasUrlParams = !!(urlTopic || urlSubject || urlMode);
+  const urlAutoSentRef = useRef(false);
 
   // Core state
   const [student, setStudent] = useState<Student | null>(null);
@@ -200,16 +209,28 @@ export default function FoxyPage() {
     const grade = (authStudent.grade || '9').replace('Grade ', ''); setStudentGrade(grade);
     setLanguage(authStudent.preferred_language || 'en');
     const saved = typeof window !== 'undefined' ? localStorage.getItem('alfanumrik_subject') : null;
-    setActiveSubject(saved || authStudent.preferred_subject || 'science');
+    // URL subject param takes priority over saved/default
+    const subjectFromUrl = urlSubject && SUBJECTS[urlSubject] ? urlSubject : null;
+    setActiveSubject(subjectFromUrl || saved || authStudent.preferred_subject || 'science');
     setStudentSubs((authStudent.selected_subjects && authStudent.selected_subjects.length > 1) ? (authStudent.selected_subjects as string[]) : getGradeSubjects(grade));
-    (async () => {
-      const hist = await fetchChatHistory(authStudent.id);
-      if (hist) {
-        setChatSessionId(hist.id);
-        setMessages(hist.messages.map((m: { role: string; content: string; ts?: string; meta?: { xp?: number } }, i: number) => ({ id: Date.now() + i, role: m.role === 'assistant' ? 'tutor' as const : m.role as 'student' | 'tutor', content: m.content, timestamp: m.ts || new Date().toISOString(), xp: m.meta?.xp || 0 })));
-      }
-    })();
-  }, [authStudent]);
+    // URL mode param override
+    const validModes = MODES.map(m => m.id);
+    if (urlMode && validModes.includes(urlMode)) {
+      setSessionMode(urlMode);
+    }
+    // When deep-linking with URL params, skip chat history restore to start fresh
+    if (hasUrlParams) {
+      // Don't load previous chat history — start a clean session for the linked topic
+    } else {
+      (async () => {
+        const hist = await fetchChatHistory(authStudent.id);
+        if (hist) {
+          setChatSessionId(hist.id);
+          setMessages(hist.messages.map((m: { role: string; content: string; ts?: string; meta?: { xp?: number } }, i: number) => ({ id: Date.now() + i, role: m.role === 'assistant' ? 'tutor' as const : m.role as 'student' | 'tutor', content: m.content, timestamp: m.ts || new Date().toISOString(), xp: m.meta?.xp || 0 })));
+        }
+      })();
+    }
+  }, [authStudent, urlSubject, urlMode, hasUrlParams]);
 
   // Load topics on subject/grade change
   useEffect(() => {
@@ -274,6 +295,56 @@ export default function FoxyPage() {
     }
     setLoading(false);
   }, [student, studentGrade, activeSubject, language, sessionMode, activeTopic, chatSessionId, ui.selectedChapters, topics]);
+
+  // URL deep-link auto-initialization: when topics load and URL params are present,
+  // match the topic, set active state, skip session start, and auto-send first message
+  useEffect(() => {
+    if (!hasUrlParams || urlAutoSentRef.current || !student) return;
+    // Wait for topics to load when we have a topic param
+    if (urlTopic && topics.length === 0) return;
+
+    // Match URL topic to a loaded CurriculumTopic (case-insensitive)
+    let matchedTopic: CurriculumTopic | null = null;
+    if (urlTopic && topics.length > 0) {
+      const topicLower = urlTopic.toLowerCase();
+      matchedTopic = topics.find(t => t.title.toLowerCase() === topicLower)
+        || topics.find(t => t.title.toLowerCase().includes(topicLower))
+        || null;
+    }
+
+    // Set active topic if matched
+    if (matchedTopic) {
+      setActiveTopic(matchedTopic);
+    }
+
+    // Handle chapter param — set selected chapters for context
+    if (urlChapter && topics.length > 0) {
+      const chapterNum = parseInt(urlChapter, 10);
+      if (!isNaN(chapterNum)) {
+        const chapterTopic = topics.find(t => t.chapter_number === chapterNum);
+        if (chapterTopic) {
+          setUi(p => ({ ...p, selectedChapters: [chapterTopic.id] }));
+        }
+      }
+    }
+
+    // Skip session start screen and auto-send first message
+    urlAutoSentRef.current = true;
+    setShowSessionStart(false);
+
+    // Build the auto-prompt based on mode and topic
+    const topicName = matchedTopic?.title || urlTopic || '';
+    const modeId = sessionMode;
+    const mode = MODES.find(m => m.id === modeId);
+
+    if (topicName && mode && modeId !== 'doubt') {
+      const prompt = language === 'hi' ? mode.autoPromptHi(topicName) : mode.autoPrompt(topicName);
+      if (prompt) {
+        // Delay to let state updates (activeTopic, selectedChapters) propagate
+        setTimeout(() => sendMessage(prompt), 400);
+      }
+    }
+  }, [hasUrlParams, urlTopic, urlChapter, topics, student, sessionMode, language, sendMessage]);
 
   // Feedback: thumbs up/down
   const handleFeedback = useCallback(async (msgId: number, isUp: boolean) => {

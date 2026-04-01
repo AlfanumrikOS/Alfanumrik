@@ -10,6 +10,12 @@
  * 4. Focus revalidation: refresh data when student comes back to tab
  *
  * This is Alfanumrik's equivalent of Khan Academy's data fetching layer.
+ *
+ * Caching strategy:
+ * - Snapshot: revalidate on focus + after mutations, no polling
+ * - Leaderboard: poll every 5 min (same data for all users)
+ * - Dashboard: revalidate on mount only (mutations trigger manual refresh)
+ * - All hooks: 10s deduping interval to prevent request storms
  */
 
 import useSWR, { SWRConfiguration } from 'swr';
@@ -28,9 +34,9 @@ import {
 
 // Default SWR config optimized for Indian mobile networks
 const DEFAULT_CONFIG: SWRConfiguration = {
-  revalidateOnFocus: true,          // Refresh when student returns to tab
+  revalidateOnFocus: false,         // Disabled by default; enabled per-hook where needed
   revalidateOnReconnect: true,      // Refresh when phone gets signal back
-  dedupingInterval: 5000,           // Dedupe requests within 5s
+  dedupingInterval: 10000,          // 10s dedup to prevent request storms at scale
   errorRetryCount: 3,               // Retry failed requests 3 times
   errorRetryInterval: 2000,         // 2s between retries
   keepPreviousData: true,           // Show stale data while loading new
@@ -39,7 +45,6 @@ const DEFAULT_CONFIG: SWRConfiguration = {
 // Longer cache for relatively static data
 const STATIC_CONFIG: SWRConfiguration = {
   ...DEFAULT_CONFIG,
-  revalidateOnFocus: false,
   dedupingInterval: 60000,          // Dedupe for 1 min
   refreshInterval: 5 * 60 * 1000,  // Refresh every 5 min
 };
@@ -63,7 +68,7 @@ export function useStudentSnapshot(studentId: string | undefined) {
   return useSWR(
     studentId ? `snapshot/${studentId}` : null,
     () => getStudentSnapshot(studentId!),
-    { ...DEFAULT_CONFIG, refreshInterval: 60000 } // Refresh every 60s (was 30s — halves API calls per student)
+    { ...DEFAULT_CONFIG, revalidateOnFocus: true } // No polling; refreshed via invalidateSnapshot() after mutations
   );
 }
 
@@ -95,7 +100,7 @@ export function useLeaderboard(period = 'weekly', limit = 50) {
   return useSWR(
     `leaderboard/${period}/${limit}`,
     () => getLeaderboard(period, limit),
-    { ...DEFAULT_CONFIG, refreshInterval: 60000 } // Refresh every min
+    { ...DEFAULT_CONFIG, refreshInterval: 300000 } // Refresh every 5 min — leaderboard is same data for all users
   );
 }
 
