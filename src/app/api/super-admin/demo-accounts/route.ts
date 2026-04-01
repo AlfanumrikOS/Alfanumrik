@@ -256,6 +256,40 @@ export async function POST(request: NextRequest) {
     const profileRows = await profileRes.json();
     const profileId = Array.isArray(profileRows) && profileRows.length > 0 ? profileRows[0].id : null;
 
+    // 2b. For parent accounts, auto-link to an existing demo student
+    let studentInviteCode: string | null = null;
+    if (role === 'parent' && profileId) {
+      const demoStudentRes = await fetch(
+        supabaseAdminUrl('students', 'select=id,invite_code,name&is_demo_user=eq.true&is_active=eq.true&limit=1'),
+        { method: 'GET', headers: supabaseAdminHeaders() }
+      );
+
+      if (demoStudentRes.ok) {
+        const demoStudents = await demoStudentRes.json();
+        if (Array.isArray(demoStudents) && demoStudents.length > 0) {
+          const demoStudent = demoStudents[0];
+          studentInviteCode = demoStudent.invite_code;
+
+          // Create guardian_student_links record
+          await fetch(supabaseAdminUrl('guardian_student_links'), {
+            method: 'POST',
+            headers: supabaseAdminHeaders('return=minimal'),
+            body: JSON.stringify({
+              guardian_id: profileId,
+              student_id: demoStudent.id,
+              status: 'active',
+              permission_level: 'view',
+              is_verified: true,
+              linked_at: new Date().toISOString(),
+              initiated_by: 'admin',
+              approved_by: 'admin',
+              approved_at: new Date().toISOString(),
+            }),
+          });
+        }
+      }
+    }
+
     // 3. Create demo_accounts record
     const demoAccountRes = await fetch(supabaseAdminUrl('demo_accounts'), {
       method: 'POST',
@@ -316,6 +350,10 @@ export async function POST(request: NextRequest) {
         password,
         role,
         persona: effectivePersona,
+        ...(role === 'parent' && studentInviteCode ? {
+          student_invite_code: studentInviteCode,
+          login_instructions: 'Parent portal uses link code, not email/password. Go to /parent and enter the student invite code.',
+        } : {}),
       },
     });
   } catch (err) {
