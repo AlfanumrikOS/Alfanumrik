@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl, isValidUUID, type AdminAuth } from '../../../../lib/admin-auth';
 import { cacheFetch, cacheInvalidatePrefix, CACHE_TTL } from '../../../../lib/cache';
+import { validateBody, zUuid, zGrade } from '../../../../lib/validation';
+import { z } from 'zod';
 
 /**
  * CMS API — Full content management for Super Admin
@@ -84,6 +86,7 @@ export async function GET(request: NextRequest) {
       const grade = params.get('grade') || '10';
       const subjectId = params.get('subject_id');
       if (!subjectId) return NextResponse.json({ error: 'subject_id required' }, { status: 400 });
+      if (!isValidUUID(subjectId)) return NextResponse.json({ error: 'subject_id must be a valid UUID' }, { status: 400 });
 
       const fields = 'id,title,title_hi,parent_topic_id,chapter_number,display_order,topic_type,content_status,is_active,difficulty_level,bloom_focus,tags,created_at,updated_at';
       const r = await supabaseGet('curriculum_topics',
@@ -147,6 +150,8 @@ export async function GET(request: NextRequest) {
       const entityType = params.get('entity_type');
       const entityId = params.get('entity_id');
       if (!entityType || !entityId) return NextResponse.json({ error: 'entity_type and entity_id required' }, { status: 400 });
+      if (!['topic', 'question'].includes(entityType)) return NextResponse.json({ error: 'entity_type must be topic or question' }, { status: 400 });
+      if (!isValidUUID(entityId)) return NextResponse.json({ error: 'entity_id must be a valid UUID' }, { status: 400 });
 
       const r = await supabaseGet('cms_item_versions',
         `select=id,version_number,status,change_summary,created_by,reviewed_by,published_by,created_at,reviewed_at,published_at&entity_type=eq.${entityType}&entity_id=eq.${entityId}&order=version_number.desc`
@@ -158,6 +163,7 @@ export async function GET(request: NextRequest) {
     if (action === 'version_detail') {
       const versionId = params.get('version_id');
       if (!versionId) return NextResponse.json({ error: 'version_id required' }, { status: 400 });
+      if (!isValidUUID(versionId)) return NextResponse.json({ error: 'version_id must be a valid UUID' }, { status: 400 });
 
       const r = await supabaseGet('cms_item_versions',
         `select=*&id=eq.${versionId}&limit=1`
@@ -184,6 +190,29 @@ export async function POST(request: NextRequest) {
 
     // ── Create topic ──
     if (action === 'create_topic') {
+      const createTopicSchema = z.object({
+        title: z.string().min(1, 'Title is required').max(500),
+        title_hi: z.string().max(500).optional(),
+        description: z.string().max(5000).optional(),
+        grade: zGrade,
+        subject_id: zUuid,
+        parent_topic_id: zUuid.nullable().optional(),
+        chapter_number: z.number().int().min(1).max(100).optional(),
+        display_order: z.number().int().min(0).max(1000).optional(),
+        topic_type: z.string().max(50).optional(),
+        difficulty_level: z.enum(['easy', 'medium', 'hard']).optional(),
+        bloom_focus: z.string().max(50).optional(),
+        tags: z.array(z.string().max(100)).max(20).optional(),
+        board: z.string().max(50).optional(),
+        estimated_minutes: z.number().int().min(1).max(600).optional(),
+        learning_objectives: z.array(z.string().max(500)).max(20).optional(),
+        key_concepts: z.array(z.string().max(500)).max(20).optional(),
+        ncert_page_range: z.string().max(50).optional(),
+      });
+
+      const topicValidation = validateBody(createTopicSchema, body);
+      if (!topicValidation.success) return topicValidation.error;
+
       const ALLOWED = ['title', 'title_hi', 'description', 'grade', 'subject_id', 'parent_topic_id', 'chapter_number', 'display_order', 'topic_type', 'difficulty_level', 'bloom_focus', 'tags', 'board', 'estimated_minutes', 'learning_objectives', 'key_concepts', 'ncert_page_range'];
       const safe: Record<string, unknown> = {
         content_status: 'draft',
@@ -191,11 +220,8 @@ export async function POST(request: NextRequest) {
         updated_by: auth.userId,
         updated_at: new Date().toISOString(),
       };
-      for (const [k, v] of Object.entries(body)) {
+      for (const [k, v] of Object.entries(topicValidation.data)) {
         if (ALLOWED.includes(k) && v !== undefined && v !== '') safe[k] = v;
-      }
-      if (!safe.title || !safe.grade || !safe.subject_id) {
-        return NextResponse.json({ error: 'title, grade, and subject_id are required' }, { status: 400 });
       }
 
       const r = await supabasePost('curriculum_topics', safe);
@@ -211,6 +237,35 @@ export async function POST(request: NextRequest) {
 
     // ── Create question ──
     if (action === 'create_question') {
+      const createQuestionSchema = z.object({
+        question_text: z.string().min(1, 'Question text is required').max(5000),
+        question_hi: z.string().max(5000).optional(),
+        question_type: z.string().max(50).optional(),
+        options: z.array(z.string().min(1).max(2000)).min(2).max(6),
+        correct_answer_index: z.number().int().min(0).max(5).optional(),
+        correct_answer_text: z.string().max(2000).optional(),
+        explanation: z.string().max(5000).optional(),
+        explanation_hi: z.string().max(5000).optional(),
+        hint: z.string().max(2000).optional(),
+        difficulty: z.enum(['easy', 'medium', 'hard']).optional(),
+        bloom_level: z.string().max(50).optional(),
+        grade: zGrade,
+        subject: z.string().min(1, 'Subject is required').max(100),
+        topic_id: zUuid.optional(),
+        chapter_number: z.number().int().min(1).max(100).optional(),
+        tags: z.array(z.string().max(100)).max(20).optional(),
+        marks: z.number().int().min(1).max(100).optional(),
+        cbse_question_type: z.string().max(100).optional(),
+        time_estimate_seconds: z.number().int().min(1).max(3600).optional(),
+        solution_steps: z.array(z.string().max(2000)).max(20).optional(),
+        hint_level_1: z.string().max(2000).optional(),
+        hint_level_2: z.string().max(2000).optional(),
+        hint_level_3: z.string().max(2000).optional(),
+      });
+
+      const questionValidation = validateBody(createQuestionSchema, body);
+      if (!questionValidation.success) return questionValidation.error;
+
       const ALLOWED = ['question_text', 'question_hi', 'question_type', 'options', 'correct_answer_index', 'correct_answer_text', 'explanation', 'explanation_hi', 'hint', 'difficulty', 'bloom_level', 'grade', 'subject', 'topic_id', 'chapter_number', 'tags', 'marks', 'cbse_question_type', 'time_estimate_seconds', 'solution_steps', 'hint_level_1', 'hint_level_2', 'hint_level_3'];
       const safe: Record<string, unknown> = {
         content_status: 'draft',
@@ -219,11 +274,8 @@ export async function POST(request: NextRequest) {
         updated_at: new Date().toISOString(),
         is_active: true,
       };
-      for (const [k, v] of Object.entries(body)) {
+      for (const [k, v] of Object.entries(questionValidation.data)) {
         if (ALLOWED.includes(k) && v !== undefined && v !== '') safe[k] = v;
-      }
-      if (!safe.question_text || !safe.grade || !safe.subject || !safe.options) {
-        return NextResponse.json({ error: 'question_text, grade, subject, and options are required' }, { status: 400 });
       }
 
       const r = await supabasePost('question_bank', safe);
@@ -238,10 +290,15 @@ export async function POST(request: NextRequest) {
 
     // ── Transition content status ──
     if (action === 'transition') {
-      const { entity_type, entity_id, new_status, notes } = body;
-      if (!entity_type || !entity_id || !new_status) {
-        return NextResponse.json({ error: 'entity_type, entity_id, and new_status required' }, { status: 400 });
-      }
+      const transitionSchema = z.object({
+        entity_type: z.enum(['topic', 'question']),
+        entity_id: zUuid,
+        new_status: z.enum(['draft', 'review', 'published', 'archived']),
+        notes: z.string().max(1000).optional(),
+      });
+      const transitionValidation = validateBody(transitionSchema, body);
+      if (!transitionValidation.success) return transitionValidation.error;
+      const { entity_type, entity_id, new_status, notes } = transitionValidation.data;
 
       const table = entity_type === 'topic' ? 'curriculum_topics' : entity_type === 'question' ? 'question_bank' : null;
       if (!table) return NextResponse.json({ error: 'entity_type must be topic or question' }, { status: 400 });
@@ -271,10 +328,14 @@ export async function POST(request: NextRequest) {
 
     // ── Create version snapshot manually ──
     if (action === 'create_version') {
-      const { entity_type, entity_id, change_summary } = body;
-      if (!entity_type || !entity_id) {
-        return NextResponse.json({ error: 'entity_type and entity_id required' }, { status: 400 });
-      }
+      const versionSchema = z.object({
+        entity_type: z.enum(['topic', 'question']),
+        entity_id: zUuid,
+        change_summary: z.string().max(1000).optional(),
+      });
+      const versionValidation = validateBody(versionSchema, body);
+      if (!versionValidation.success) return versionValidation.error;
+      const { entity_type, entity_id, change_summary } = versionValidation.data;
 
       // Fetch current state
       const table = entity_type === 'topic' ? 'curriculum_topics' : entity_type === 'question' ? 'question_bank' : null;
@@ -337,10 +398,14 @@ export async function POST(request: NextRequest) {
 
     // ── Bulk status transition ──
     if (action === 'bulk_transition') {
-      const { entity_type, entity_ids, new_status } = body;
-      if (!entity_type || !Array.isArray(entity_ids) || !new_status) {
-        return NextResponse.json({ error: 'entity_type, entity_ids[], and new_status required' }, { status: 400 });
-      }
+      const bulkSchema = z.object({
+        entity_type: z.enum(['topic', 'question']),
+        entity_ids: z.array(zUuid).min(1, 'At least one entity ID required').max(100, 'Maximum 100 entities per bulk operation'),
+        new_status: z.enum(['draft', 'review', 'published', 'archived']),
+      });
+      const bulkValidation = validateBody(bulkSchema, body);
+      if (!bulkValidation.success) return bulkValidation.error;
+      const { entity_type, entity_ids, new_status } = bulkValidation.data;
 
       const table = entity_type === 'topic' ? 'curriculum_topics' : entity_type === 'question' ? 'question_bank' : null;
       if (!table) return NextResponse.json({ error: 'entity_type must be topic or question' }, { status: 400 });
@@ -380,8 +445,32 @@ export async function PATCH(request: NextRequest) {
     const body = await request.json();
 
     if (action === 'update_topic') {
-      const { id, updates } = body;
-      if (!id || !updates) return NextResponse.json({ error: 'id and updates required' }, { status: 400 });
+      const updateTopicSchema = z.object({
+        id: zUuid,
+        updates: z.object({
+          title: z.string().min(1).max(500).optional(),
+          title_hi: z.string().max(500).optional(),
+          description: z.string().max(5000).optional(),
+          grade: zGrade.optional(),
+          subject_id: zUuid.optional(),
+          parent_topic_id: zUuid.nullable().optional(),
+          chapter_number: z.number().int().min(1).max(100).optional(),
+          display_order: z.number().int().min(0).max(1000).optional(),
+          topic_type: z.string().max(50).optional(),
+          difficulty_level: z.enum(['easy', 'medium', 'hard']).optional(),
+          bloom_focus: z.string().max(50).optional(),
+          tags: z.array(z.string().max(100)).max(20).optional(),
+          board: z.string().max(50).optional(),
+          estimated_minutes: z.number().int().min(1).max(600).optional(),
+          learning_objectives: z.array(z.string().max(500)).max(20).optional(),
+          key_concepts: z.array(z.string().max(500)).max(20).optional(),
+          ncert_page_range: z.string().max(50).optional(),
+          is_active: z.boolean().optional(),
+        }).refine(obj => Object.keys(obj).length > 0, { message: 'At least one update field is required' }),
+      });
+      const updateValidation = validateBody(updateTopicSchema, body);
+      if (!updateValidation.success) return updateValidation.error;
+      const { id, updates } = updateValidation.data;
 
       // Snapshot before update
       const before = await supabaseGet('curriculum_topics', `select=*&id=eq.${id}&limit=1`);
@@ -403,8 +492,36 @@ export async function PATCH(request: NextRequest) {
     }
 
     if (action === 'update_question') {
-      const { id, updates } = body;
-      if (!id || !updates) return NextResponse.json({ error: 'id and updates required' }, { status: 400 });
+      const updateQuestionSchema = z.object({
+        id: zUuid,
+        updates: z.object({
+          question_text: z.string().min(1).max(5000).optional(),
+          question_hi: z.string().max(5000).optional(),
+          question_type: z.string().max(50).optional(),
+          options: z.array(z.string().min(1).max(2000)).min(2).max(6).optional(),
+          correct_answer_index: z.number().int().min(0).max(5).optional(),
+          correct_answer_text: z.string().max(2000).optional(),
+          explanation: z.string().max(5000).optional(),
+          explanation_hi: z.string().max(5000).optional(),
+          hint: z.string().max(2000).optional(),
+          difficulty: z.enum(['easy', 'medium', 'hard']).optional(),
+          bloom_level: z.string().max(50).optional(),
+          grade: zGrade.optional(),
+          subject: z.string().min(1).max(100).optional(),
+          topic_id: zUuid.optional(),
+          chapter_number: z.number().int().min(1).max(100).optional(),
+          tags: z.array(z.string().max(100)).max(20).optional(),
+          marks: z.number().int().min(1).max(100).optional(),
+          cbse_question_type: z.string().max(100).optional(),
+          time_estimate_seconds: z.number().int().min(1).max(3600).optional(),
+          solution_steps: z.array(z.string().max(2000)).max(20).optional(),
+          is_active: z.boolean().optional(),
+          is_verified: z.boolean().optional(),
+        }).refine(obj => Object.keys(obj).length > 0, { message: 'At least one update field is required' }),
+      });
+      const updateQValidation = validateBody(updateQuestionSchema, body);
+      if (!updateQValidation.success) return updateQValidation.error;
+      const { id, updates } = updateQValidation.data;
 
       // Snapshot before update
       const before = await supabaseGet('question_bank', `select=*&id=eq.${id}&limit=1`);

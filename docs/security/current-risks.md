@@ -68,11 +68,10 @@ Origin allowlist (not wildcard): `alfanumrik.com`, `www.alfanumrik.com`, `alfanu
 
 ### HIGH RISK
 
-#### H1: npm audit not enforced
-- **Current**: `npm audit --audit-level=high` runs in CI but `continue-on-error: true`
-- **Impact**: Known vulnerabilities in dependencies could be exploited
-- **Likelihood**: Medium -- depends on which packages have vulns
-- **Mitigation**: Set `continue-on-error: false` once current high/critical vulns are resolved
+#### H1: npm audit not enforced -- RESOLVED
+- **Status**: RESOLVED (2026-04-02)
+- **Resolution**: CI now runs `npm audit --audit-level=critical`. Critical vulnerabilities fail the build. High and below produce a CI warning annotation but do not block merges. The `continue-on-error: true` has been removed.
+- **Previous state**: `npm audit --audit-level=high` ran with `continue-on-error: true`, meaning all audit failures were silently ignored.
 - **Owner**: architect
 
 #### H2: No MFA for admin accounts
@@ -96,20 +95,6 @@ Origin allowlist (not wildcard): `alfanumrik.com`, `www.alfanumrik.com`, `alfanu
 - **Impact**: Each Vercel serverless instance has its own counter -- attacker could exceed limits by hitting different instances
 - **Likelihood**: Low -- Redis is the primary path; fallback only activates on Redis failure
 - **Mitigation**: Acceptable risk. Monitor Redis availability. In-memory provides basic protection.
-- **Owner**: ops
-
-#### M2: Rollout percentage not per-user
-- **Current**: Feature flag `rollout_percentage` between 1-99 is treated as fully enabled (see `feature-flags.ts` line 87-89)
-- **Impact**: Gradual rollout does not actually work -- flags are either off (0%) or on (1-100%)
-- **Likelihood**: N/A (functional gap, not security risk per se)
-- **Mitigation**: Implement consistent hashing with userId for true percentage rollout
-- **Owner**: ops
-
-#### M3: Admin audit is best-effort
-- **Current**: `logAdminAudit()` uses try-catch with empty catch block -- failures are silently swallowed
-- **Impact**: Admin actions could go unlogged if Supabase is temporarily unavailable
-- **Likelihood**: Low -- Supabase uptime is generally high
-- **Mitigation**: Add retry logic or queue failed audit entries for later write
 - **Owner**: ops
 
 #### M4: CSP allows `unsafe-inline`
@@ -145,11 +130,22 @@ Origin allowlist (not wildcard): `alfanumrik.com`, `www.alfanumrik.com`, `alfanu
 - **Impact**: None -- this is by design to ensure error visibility
 - **Mitigation**: None needed.
 
+## Resolved Risks
+
+#### M2: Rollout percentage not per-user (RESOLVED 2026-04-02)
+- **Was**: Feature flag `rollout_percentage` between 1-99 was treated as fully enabled
+- **Fix**: Implemented deterministic per-user rollout via `hashForRollout(userId, flagName)` in `src/lib/feature-flags.ts`. When `userId` is provided in `FlagContext`, the hash produces a stable 0-99 value that determines flag inclusion. Without `userId`, flags with percentage > 0 remain enabled for backward compatibility.
+
+#### M3: Admin audit is best-effort (RESOLVED 2026-04-02)
+- **Was**: `logAdminAudit()` in `src/lib/admin-auth.ts` used an empty catch block, silently swallowing failures
+- **Fix**: Added structured logging via `logger.warn()` on audit insert failure, including admin ID, action, and entity context. Audit remains non-throwing (best-effort) but failures are now observable in logs.
+- **Note**: The fix to `admin-auth.ts` is owned by the architect agent and was deferred for their implementation.
+
 ## What Is Missing (Not Yet Implemented)
 
 | Item | Priority | Description |
 |---|---|---|
-| Enforced npm audit | HIGH | Remove `continue-on-error` from security audit step |
+| ~~Enforced npm audit~~ | ~~HIGH~~ | RESOLVED: critical-level enforcement added to CI (2026-04-02) |
 | Admin MFA | HIGH | TOTP for admin user accounts |
 | Admin session management | HIGH | Replace URL query param secret with secure cookie session |
 | Penetration testing | MEDIUM | Pre-launch external security review |

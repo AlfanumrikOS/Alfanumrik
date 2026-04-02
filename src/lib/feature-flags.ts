@@ -16,6 +16,21 @@ interface FlagContext {
   role?: string;           // 'student' | 'teacher' | 'parent' | etc.
   environment?: string;    // 'production' | 'staging' | 'development'
   institutionId?: string;  // school UUID
+  userId?: string;         // user UUID for deterministic per-user rollout
+}
+
+/**
+ * Deterministic hash for per-user feature flag rollout.
+ * Given the same userId + flagName, always returns the same number 0-99.
+ * Different userId values distribute roughly uniformly across 0-99.
+ */
+export function hashForRollout(userId: string, flagName: string): number {
+  let hash = 0;
+  const str = `${userId}:${flagName}`;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash) % 100;
 }
 
 let _flagCache: FeatureFlagRow[] | null = null;
@@ -90,13 +105,16 @@ export async function isFeatureEnabled(
     if (!context.institutionId || !flag.target_institutions.includes(context.institutionId)) return false;
   }
 
-  // Rollout percentage (deterministic by flagName hash — stable per-user)
+  // Rollout percentage: deterministic per-user using consistent hashing.
+  // 0% → always false. 100% or null → always true.
+  // 1-99% with userId → hash(userId, flagName) determines inclusion.
+  // 1-99% without userId → treated as enabled (backward compat).
   if (flag.rollout_percentage !== null && flag.rollout_percentage < 100) {
-    // For now, rollout_percentage applies globally. Per-user rollout
-    // would need a userId param and consistent hashing.
     if (flag.rollout_percentage <= 0) return false;
-    // Between 1-99: currently treated as enabled (full per-user rollout
-    // requires userId + hash, deferred until needed)
+    if (context.userId) {
+      return hashForRollout(context.userId, flagName) < flag.rollout_percentage;
+    }
+    // No userId provided: treat any percentage > 0 as enabled for backward compatibility
   }
 
   return true;

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { errorReportSchema, validateBody } from '@/lib/validation';
 
 /**
  * POST /api/error-report
@@ -54,14 +55,19 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const body = await request.text();
+    const rawText = await request.text();
 
     // Limit payload size (50 KB max)
-    if (body.length > 50_000) {
+    if (rawText.length > 50_000) {
       return NextResponse.json({ error: 'Payload too large' }, { status: 413 });
     }
 
-    const data = JSON.parse(body);
+    const rawData = JSON.parse(rawText);
+
+    // Validate input shape with Zod
+    const validation = validateBody(errorReportSchema, rawData);
+    if (!validation.success) return validation.error;
+    const data = validation.data;
 
     // Sanitize log inputs to prevent log injection attacks.
     // Strip control characters that could corrupt log parsers.

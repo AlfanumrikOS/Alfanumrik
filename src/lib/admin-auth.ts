@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 
 export interface AdminAuth {
   authorized: true;
@@ -32,11 +33,11 @@ export async function authorizeAdmin(request: NextRequest): Promise<AdminAuthRes
   const { url, key } = getSupabaseConfig();
 
   if (!url) {
-    console.error('[admin-auth] SUPABASE_URL not configured');
+    logger.error('admin_auth_config_missing', { detail: 'SUPABASE_URL not configured' });
     return { authorized: false, response: NextResponse.json({ error: 'Server configuration error' }, { status: 500 }) };
   }
   if (!key) {
-    console.error('[admin-auth] SERVICE_ROLE_KEY not configured');
+    logger.error('admin_auth_config_missing', { detail: 'SERVICE_ROLE_KEY not configured' });
     return { authorized: false, response: NextResponse.json({ error: 'Server configuration error' }, { status: 500 }) };
   }
 
@@ -109,7 +110,7 @@ export async function authorizeAdmin(request: NextRequest): Promise<AdminAuthRes
     });
 
     if (!adminRes.ok) {
-      console.error('[admin-auth] admin_users query failed:', adminRes.status);
+      logger.error('admin_auth_lookup_failed', { status: adminRes.status });
       return { authorized: false, response: NextResponse.json({ error: 'Authorization check failed.', code: 'ADMIN_LOOKUP_FAILED' }, { status: 500 }) };
     }
 
@@ -142,7 +143,7 @@ export async function authorizeAdmin(request: NextRequest): Promise<AdminAuthRes
       adminLevel: admin.admin_level,
     };
   } catch (err) {
-    console.error('[admin-auth] Exception:', err instanceof Error ? err.message : err);
+    logger.error('admin_auth_exception', { error: err instanceof Error ? err : new Error(String(err)) });
     return { authorized: false, response: NextResponse.json({ error: 'Authorization failed.', code: 'ADMIN_AUTH_EXCEPTION' }, { status: 500 }) };
   }
 }
@@ -164,7 +165,18 @@ export async function logAdminAudit(
         ip_address: ipAddress || null,
       }),
     });
-  } catch { /* audit is best-effort */ }
+  } catch (e) {
+    // Audit is best-effort (non-throwing), but failures MUST be logged
+    // so we can detect if the audit trail has gaps.
+    logger.error('admin_audit_log_failed', {
+      error: e instanceof Error ? e : new Error(String(e)),
+      route: 'admin-auth',
+      action,
+      entityType,
+      entityId,
+      adminId: admin.userId,
+    });
+  }
 }
 
 export function supabaseAdminHeaders(prefer: string = 'count=exact') {
