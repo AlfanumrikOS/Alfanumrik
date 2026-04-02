@@ -32,6 +32,7 @@ const NAV_ITEMS: { href: string; label: string; icon: string }[] = [
   { href: '/super-admin/reports', label: 'Reports', icon: '⊏' },
   { href: '/super-admin/logs', label: 'Audit Logs', icon: '⊙' },
   { href: '/super-admin/support', label: 'Support Center', icon: '⊛' },
+  { href: '/super-admin/demo', label: 'Demo Accounts', icon: '⊜' },
 ];
 
 export default function AdminShell({ children }: { children: React.ReactNode }) {

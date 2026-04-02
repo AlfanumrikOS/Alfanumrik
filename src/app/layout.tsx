@@ -6,6 +6,7 @@ import RegisterSW from '@/lib/RegisterSW';
 import CookieConsent from '@/components/CookieConsent';
 import JsonLd from '@/components/JsonLd';
 import NetworkStatus from '@/components/NetworkStatus';
+import DemoModeWrapper from '@/components/DemoModeWrapper';
 
 export const metadata: Metadata = {
   title: {
@@ -83,6 +84,7 @@ export default function RootLayout({
           <ErrorBoundary>
             <div id="main-content" className="app-shell">{children}</div>
           </ErrorBoundary>
+          <DemoModeWrapper />
           <RegisterSW />
           <CookieConsent />
         </AuthProvider>
