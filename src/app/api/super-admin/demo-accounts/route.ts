@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl, isValidUUID } from '../../../../lib/admin-auth';
+import { isValidGrade, isValidEmail, validateBody, zUuid } from '../../../../lib/validation';
+import { z } from 'zod';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -314,28 +316,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, data: results });
     }
 
-    const { role, persona, name, email } = body as {
-      role?: string;
-      persona?: string;
-      name?: string;
-      email?: string;
-    };
+    // Validate single demo account creation with Zod
+    const demoAccountSchema = z.object({
+      role: z.enum(['student', 'teacher', 'parent']),
+      name: z.string().min(1, 'Name is required').max(200),
+      email: z.string().email('Valid email is required').max(254),
+      persona: z.enum(['weak', 'average', 'high_performer']).optional(),
+      grade: z.string().regex(/^(6|7|8|9|10|11|12)$/, 'Grade must be a string from "6" through "12"').optional(),
+    });
 
-    // Validate required fields
-    if (!role || !name || !email) {
-      return NextResponse.json({ success: false, error: 'role, name, and email are required' }, { status: 400 });
-    }
+    const validation = validateBody(demoAccountSchema, body);
+    if (!validation.success) return validation.error;
 
-    const validRoles = ['student', 'teacher', 'parent'];
-    if (!validRoles.includes(role)) {
-      return NextResponse.json(
-        { success: false, error: `Invalid role. Must be one of: ${validRoles.join(', ')}` },
-        { status: 400 }
-      );
-    }
-
-    const validPersonas = ['weak', 'average', 'high_performer'];
-    const effectivePersona = persona && validPersonas.includes(persona) ? persona : 'average';
+    const { role, name, email, persona, grade: requestedGrade } = validation.data;
+    const effectivePersona = persona || 'average';
 
     const config = getSupabaseConfig();
     if (!config) {
@@ -382,7 +376,7 @@ export async function POST(request: NextRequest) {
 
     if (role === 'student') {
       profileData.is_active = true;
-      profileData.grade = '10'; // P5: grade must be string "6" through "12"
+      profileData.grade = requestedGrade || '10'; // P5: grade must be string "6" through "12"
       profileData.board = 'CBSE';
       profileData.subscription_plan = 'unlimited';
       profileData.account_status = 'demo';

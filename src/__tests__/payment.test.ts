@@ -1,5 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import crypto from 'crypto';
+import {
+  paymentSubscribeSchema,
+  paymentVerifySchema,
+  paymentCancelSchema,
+  errorReportSchema,
+  validateBody,
+} from '@/lib/validation';
 
 /**
  * Payment Regression Tests
@@ -218,5 +225,185 @@ describe('Plan Code Consistency', () => {
     expect(PLANS.starter.tier).toBe(1);
     expect(PLANS.pro.tier).toBe(2);
     expect(PLANS.unlimited.tier).toBe(3);
+  });
+});
+
+// ─── Zod Input Validation (P11 hardening) ───────────────────
+
+describe('Payment Subscribe Validation (Zod)', () => {
+  it('rejects invalid plan codes', () => {
+    const result = paymentSubscribeSchema.safeParse({ plan_code: 'diamond', billing_cycle: 'monthly' });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects invalid billing cycles', () => {
+    const result = paymentSubscribeSchema.safeParse({ plan_code: 'pro', billing_cycle: 'weekly' });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects missing required fields', () => {
+    expect(paymentSubscribeSchema.safeParse({}).success).toBe(false);
+    expect(paymentSubscribeSchema.safeParse({ plan_code: 'pro' }).success).toBe(false);
+    expect(paymentSubscribeSchema.safeParse({ billing_cycle: 'monthly' }).success).toBe(false);
+  });
+
+  it('rejects numeric or boolean plan_code', () => {
+    expect(paymentSubscribeSchema.safeParse({ plan_code: 123, billing_cycle: 'monthly' }).success).toBe(false);
+    expect(paymentSubscribeSchema.safeParse({ plan_code: true, billing_cycle: 'yearly' }).success).toBe(false);
+  });
+
+  it('accepts valid subscription requests', () => {
+    expect(paymentSubscribeSchema.safeParse({ plan_code: 'starter', billing_cycle: 'monthly' }).success).toBe(true);
+    expect(paymentSubscribeSchema.safeParse({ plan_code: 'pro', billing_cycle: 'yearly' }).success).toBe(true);
+    expect(paymentSubscribeSchema.safeParse({ plan_code: 'unlimited', billing_cycle: 'monthly' }).success).toBe(true);
+    expect(paymentSubscribeSchema.safeParse({ plan_code: 'free', billing_cycle: 'monthly' }).success).toBe(true);
+  });
+
+  it('strips extra fields from body', () => {
+    const result = paymentSubscribeSchema.safeParse({
+      plan_code: 'pro',
+      billing_cycle: 'monthly',
+      amount: 99999, // should not affect validation
+    });
+    expect(result.success).toBe(true);
+  });
+});
+
+describe('Payment Verify Validation (Zod)', () => {
+  it('rejects missing razorpay_payment_id', () => {
+    const result = paymentVerifySchema.safeParse({
+      razorpay_signature: 'abc123',
+      plan_code: 'pro',
+      billing_cycle: 'monthly',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects payment_id not starting with pay_', () => {
+    const result = paymentVerifySchema.safeParse({
+      razorpay_payment_id: 'order_123',
+      razorpay_signature: 'abc123',
+      plan_code: 'pro',
+      billing_cycle: 'monthly',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects missing signature', () => {
+    const result = paymentVerifySchema.safeParse({
+      razorpay_payment_id: 'pay_123',
+      plan_code: 'pro',
+      billing_cycle: 'monthly',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts valid verify payload (subscription type)', () => {
+    const result = paymentVerifySchema.safeParse({
+      razorpay_payment_id: 'pay_abc123',
+      razorpay_signature: 'deadbeef',
+      razorpay_subscription_id: 'sub_xyz',
+      plan_code: 'pro',
+      billing_cycle: 'monthly',
+      type: 'subscription',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts valid verify payload (order type)', () => {
+    const result = paymentVerifySchema.safeParse({
+      razorpay_payment_id: 'pay_abc123',
+      razorpay_signature: 'deadbeef',
+      razorpay_order_id: 'order_xyz',
+      plan_code: 'starter',
+      billing_cycle: 'yearly',
+      type: 'order',
+    });
+    expect(result.success).toBe(true);
+  });
+});
+
+describe('Payment Cancel Validation (Zod)', () => {
+  it('accepts empty body with defaults', () => {
+    const result = paymentCancelSchema.safeParse({});
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.immediate).toBe(false);
+    }
+  });
+
+  it('rejects reason exceeding 500 chars', () => {
+    const result = paymentCancelSchema.safeParse({ reason: 'x'.repeat(501) });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts valid cancel with reason', () => {
+    const result = paymentCancelSchema.safeParse({ immediate: true, reason: 'Too expensive' });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects non-boolean immediate', () => {
+    const result = paymentCancelSchema.safeParse({ immediate: 'yes' });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('Error Report Validation (Zod)', () => {
+  it('rejects empty body', () => {
+    expect(errorReportSchema.safeParse({}).success).toBe(false);
+  });
+
+  it('rejects message exceeding 2000 chars', () => {
+    expect(errorReportSchema.safeParse({ message: 'x'.repeat(2001) }).success).toBe(false);
+  });
+
+  it('accepts valid error report', () => {
+    const result = errorReportSchema.safeParse({
+      message: 'Something went wrong',
+      stack: 'Error: Something went wrong\n    at foo.js:1:1',
+      url: 'https://alfanumrik.com/quiz',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects invalid url format', () => {
+    const result = errorReportSchema.safeParse({
+      message: 'Error',
+      url: 'not-a-url',
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('validateBody helper', () => {
+  it('returns success with parsed data on valid input', () => {
+    const result = validateBody(paymentSubscribeSchema, { plan_code: 'pro', billing_cycle: 'monthly' });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.plan_code).toBe('pro');
+      expect(result.data.billing_cycle).toBe('monthly');
+    }
+  });
+
+  it('returns error Response on invalid input', () => {
+    const result = validateBody(paymentSubscribeSchema, { plan_code: 'invalid' });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toBeInstanceOf(Response);
+      expect(result.error.status).toBe(400);
+    }
+  });
+
+  it('error response contains structured validation details', async () => {
+    const result = validateBody(paymentSubscribeSchema, {});
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const body = await result.error.json();
+      expect(body.success).toBe(false);
+      expect(body.error).toBe('Validation failed');
+      expect(body.code).toBe('VALIDATION_ERROR');
+      expect(Array.isArray(body.details)).toBe(true);
+      expect(body.details.length).toBeGreaterThan(0);
+    }
   });
 });

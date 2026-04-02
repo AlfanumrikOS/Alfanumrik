@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../lib/admin-auth';
+import { validateBody, zUuid, zGrade } from '../../../../lib/validation';
+import { z } from 'zod';
 
 export async function GET(request: NextRequest) {
   const auth = await authorizeAdmin(request);
@@ -8,9 +10,16 @@ export async function GET(request: NextRequest) {
   try {
     const params = new URL(request.url).searchParams;
     const role = params.get('role') || 'student';
-    const page = Math.max(1, parseInt(params.get('page') || '1'));
-    const limit = Math.min(100, parseInt(params.get('limit') || '25'));
+    const validRoles = ['student', 'teacher', 'guardian', 'parent'];
+    if (!validRoles.includes(role)) {
+      return NextResponse.json({ error: 'Invalid role. Must be one of: student, teacher, guardian, parent' }, { status: 400 });
+    }
+    const page = Math.max(1, parseInt(params.get('page') || '1') || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(params.get('limit') || '25') || 25));
     const search = params.get('search');
+    if (search && search.length > 200) {
+      return NextResponse.json({ error: 'Search query too long (max 200 characters)' }, { status: 400 });
+    }
     const offset = (page - 1) * limit;
 
     const table = role === 'teacher' ? 'teachers' : role === 'guardian' || role === 'parent' ? 'guardians' : 'students';
@@ -36,15 +45,25 @@ export async function PATCH(request: NextRequest) {
   if (!auth.authorized) return auth.response;
 
   try {
-    const { user_id, table, updates } = await request.json();
-    if (!user_id || !table || !updates) {
-      return NextResponse.json({ error: 'Missing fields' }, { status: 400 });
-    }
+    const body = await request.json();
 
-    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!UUID_RE.test(user_id)) {
-      return NextResponse.json({ error: 'Invalid user ID format' }, { status: 400 });
-    }
+    // Validate patch payload with Zod
+    const userPatchSchema = z.object({
+      user_id: zUuid,
+      table: z.enum(['students', 'teachers', 'guardians']),
+      updates: z.object({
+        is_active: z.boolean().optional(),
+        account_status: z.enum(['active', 'demo', 'suspended', 'inactive']).optional(),
+        subscription_plan: z.enum(['free', 'starter', 'pro', 'unlimited']).optional(),
+        grade: zGrade.optional(),
+        board: z.string().min(1).max(50).optional(),
+      }).refine(obj => Object.keys(obj).length > 0, { message: 'At least one update field is required' }),
+    });
+
+    const validation = validateBody(userPatchSchema, body);
+    if (!validation.success) return validation.error;
+
+    const { user_id, table, updates } = validation.data;
 
     const allowedFields: Record<string, string[]> = {
       students: ['is_active', 'account_status', 'subscription_plan', 'grade', 'board'],
@@ -52,13 +71,11 @@ export async function PATCH(request: NextRequest) {
       guardians: ['is_active'],
     };
 
-    if (!allowedFields[table]) return NextResponse.json({ error: 'Invalid table' }, { status: 400 });
-
     const safe: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(updates)) {
       if (allowedFields[table].includes(k)) safe[k] = v;
     }
-    if (Object.keys(safe).length === 0) return NextResponse.json({ error: 'No valid fields' }, { status: 400 });
+    if (Object.keys(safe).length === 0) return NextResponse.json({ error: 'No valid fields for this table' }, { status: 400 });
 
     const res = await fetch(supabaseAdminUrl(table, `id=eq.${user_id}`), {
       method: 'PATCH', headers: supabaseAdminHeaders('return=minimal'), body: JSON.stringify(safe),
