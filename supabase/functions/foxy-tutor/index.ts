@@ -593,11 +593,9 @@ Deno.serve(async (req: Request) => {
         .eq('feature', 'foxy_chat')
         .eq('usage_date', today)
         .maybeSingle(),
-      supabase
-        .from('students')
-        .select('subscription_plan')
-        .eq('id', student_id)
-        .maybeSingle(),
+      // Use check_entitlement RPC (reads from student_subscriptions, the authoritative source)
+      // to prevent split-brain where payment captured but students.subscription_plan not updated (P11).
+      supabase.rpc('check_entitlement', { p_student_id: student_id }),
       session_id
         ? supabase.from('chat_sessions').select('messages').eq('id', session_id).eq('student_id', student_id).maybeSingle()
         : Promise.resolve({ data: null }),
@@ -607,7 +605,11 @@ Deno.serve(async (req: Request) => {
     ])
 
     const currentCount = usageResult.data?.usage_count ?? 0
-    const plan = studentResult.data?.subscription_plan || 'free'
+    // check_entitlement returns TABLE from student_subscriptions (authoritative).
+    // Supabase JS returns {data: [{...}]} for table-returning RPCs.
+    // Fall back to 'free' if no subscription record or subscription inactive/expired.
+    const entitlement = Array.isArray(studentResult.data) ? studentResult.data[0] : studentResult.data
+    const plan = (entitlement?.has_access ? entitlement?.plan_code : null) || 'free'
     const limit = PLAN_LIMITS[plan] ?? PLAN_LIMITS.free
 
     // ── Usage enforcement (server-side, authoritative) ──
