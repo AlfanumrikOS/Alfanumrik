@@ -19,9 +19,9 @@ import { Redis } from '@upstash/redis';
  * ═══════════════════════════════════════════════════════════════ */
 
 // ── Rate limiting: Distributed (Upstash Redis) with in-memory fallback ──
-const RATE_LIMIT_MAX = 60;        // 60 requests per minute per IP
-const RATE_LIMIT_PARENT_MAX = 5;  // 5 parent login attempts per minute per IP
-const RATE_LIMIT_ADMIN_MAX = 10;  // 10 requests per minute for /internal/admin/*
+const RATE_LIMIT_MAX = 200;       // 200 requests per minute per IP
+const RATE_LIMIT_PARENT_MAX = 20; // 20 parent login attempts per minute per IP
+const RATE_LIMIT_ADMIN_MAX = 60;  // 60 requests per minute for /internal/admin/*
 
 // Distributed rate limiter via Upstash Redis (works across all Vercel instances)
 let redisRateLimiter: Ratelimit | null = null;
