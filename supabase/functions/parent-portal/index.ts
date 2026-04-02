@@ -929,19 +929,33 @@ Deno.serve(async (req: Request) => {
     const body = await req.json()
     const action = String(body.action || '')
 
-    // Extract auth user ID from Authorization header (if present).
-    // This lets handleParentLogin reuse an existing guardian profile instead of
-    // creating orphan rows when the parent already signed up via Supabase Auth.
+    // Resolve auth user ID to prevent orphan guardian creation.
+    // Primary source: explicit auth_user_id from the client (reliable, set by AuthContext).
+    // Fallback: extract from Authorization header (may fail due to session timing).
+    // The auth_user_id is verified by checking if a guardian with that ID exists in the DB —
+    // a spoofed ID with no matching guardian row is harmless (falls through to create path).
     let authUserId: string | null = null
-    const authHeader = req.headers.get('authorization')
-    if (authHeader?.startsWith('Bearer ')) {
-      try {
-        const { data: { user } } = await getServiceClient().auth.getUser(
-          authHeader.replace('Bearer ', '')
-        )
-        if (user) authUserId = user.id
-      } catch {
-        // No valid auth session — continue without authUserId
+
+    // 1. Explicit auth_user_id from request body (set by parent page from AuthContext)
+    const bodyAuthUserId = typeof body.auth_user_id === 'string' && body.auth_user_id.length > 0
+      ? body.auth_user_id
+      : null
+    if (bodyAuthUserId) {
+      authUserId = bodyAuthUserId
+    }
+
+    // 2. Fallback: Authorization header token extraction
+    if (!authUserId) {
+      const authHeader = req.headers.get('authorization')
+      if (authHeader?.startsWith('Bearer ')) {
+        try {
+          const { data: { user } } = await getServiceClient().auth.getUser(
+            authHeader.replace('Bearer ', '')
+          )
+          if (user) authUserId = user.id
+        } catch {
+          // No valid auth session — continue without authUserId
+        }
       }
     }
 

@@ -198,7 +198,7 @@ function isLockedOut(): { locked: boolean; message: string } {
   return { locked: false, message: '' };
 }
 
-function LoginScreen({ onLogin, isHi }: { onLogin: (g: ParentSession, s: StudentSession) => void; isHi: boolean }) {
+function LoginScreen({ onLogin, isHi, authUserId }: { onLogin: (g: ParentSession, s: StudentSession) => void; isHi: boolean; authUserId?: string | null }) {
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
@@ -213,7 +213,10 @@ function LoginScreen({ onLogin, isHi }: { onLogin: (g: ParentSession, s: Student
 
     setLoading(true); setError('');
     try {
-      const res = await api('parent_login', { link_code: code, parent_name: name || 'Parent' });
+      // Pass auth_user_id explicitly so the edge function can find the existing
+      // guardian profile from Supabase auth signup — eliminates orphan guardians
+      // even if the Authorization header token extraction fails.
+      const res = await api('parent_login', { link_code: code, parent_name: name || 'Parent', auth_user_id: authUserId || null });
       setLoading(false);
       if (res.error) {
         // Record failed attempt for lockout
@@ -634,7 +637,7 @@ export default function ParentPage() {
   const isHi = auth.isHi ?? false;
 
   if (!guardian || !student) {
-    return <LoginScreen onLogin={(g, s) => { setGuardian(g); setStudent(s); }} isHi={isHi} />;
+    return <LoginScreen onLogin={(g, s) => { setGuardian(g); setStudent(s); }} isHi={isHi} authUserId={auth.authUserId} />;
   }
 
   return <Dashboard guardian={guardian} student={student} isHi={isHi} />;
