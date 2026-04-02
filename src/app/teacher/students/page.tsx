@@ -542,6 +542,12 @@ export default function TeacherStudentsPage() {
           marginBottom: 24,
         }}
       >
+        <button
+          onClick={() => router.push('/teacher')}
+          style={{ background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 6, padding: '4px 10px', color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginBottom: 8, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+        >
+          &larr; {tt(isHi, 'डैशबोर्ड', 'Dashboard')}
+        </button>
         <h1 style={{ margin: 0, fontSize: 26, fontWeight: 700, color: '#fff' }}>
           {'👨‍🎓'} {tt(isHi, 'My Students', 'मेरे छात्र')}
         </h1>

@@ -61,12 +61,20 @@ export default function TeacherProfilePage() {
 
   return (
     <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 100 }}>
-      <div style={{ background: 'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)', padding: '32px 20px 28px', color: '#fff', textAlign: 'center' }}>
-        <div style={{ width: 72, height: 72, borderRadius: '50%', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 36, margin: '0 auto 12px' }}>
-          {teacher?.name?.[0]?.toUpperCase() || '👩‍🏫'}
+      <div style={{ background: 'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)', padding: '32px 20px 28px', color: '#fff', position: 'relative' }}>
+        <button
+          onClick={() => router.push('/teacher')}
+          style={{ position: 'absolute', top: 16, left: 16, background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, padding: '6px 12px', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+        >
+          &larr; {tt(isHi, 'Dashboard', 'डैशबोर्ड')}
+        </button>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ width: 72, height: 72, borderRadius: '50%', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 36, margin: '0 auto 12px' }}>
+            {teacher?.name?.[0]?.toUpperCase() || '👩‍🏫'}
+          </div>
+          <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>{teacher?.name || (isHi ? 'शिक्षक' : 'Teacher')}</h1>
+          <p style={{ fontSize: 13, opacity: 0.8, marginTop: 4 }}>{teacher?.school_name || 'Alfanumrik Educator'}</p>
         </div>
-        <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>{teacher?.name || 'Teacher'}</h1>
-        <p style={{ fontSize: 13, opacity: 0.8, marginTop: 4 }}>{teacher?.school_name || 'Alfanumrik Educator'}</p>
       </div>
 
       {toast && (
@@ -130,6 +138,18 @@ export default function TeacherProfilePage() {
             </div>
           </div>
         )}
+
+        {/* Quick links */}
+        <div style={{ marginTop: 20, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <button onClick={() => router.push('/teacher/classes')} style={{ padding: '14px', borderRadius: 12, border: '1px solid #e5e7eb', background: '#fff', cursor: 'pointer', textAlign: 'center' }}>
+            <div style={{ fontSize: 24, marginBottom: 4 }}>🏫</div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>{tt(isHi, 'Classes', 'कक्षाएँ')}</div>
+          </button>
+          <button onClick={() => router.push('/teacher/reports')} style={{ padding: '14px', borderRadius: 12, border: '1px solid #e5e7eb', background: '#fff', cursor: 'pointer', textAlign: 'center' }}>
+            <div style={{ fontSize: 24, marginBottom: 4 }}>📊</div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>{tt(isHi, 'Reports', 'रिपोर्ट')}</div>
+          </button>
+        </div>
 
         <button onClick={handleSignOut} style={{ marginTop: 20, width: '100%', padding: '12px', borderRadius: 12, border: '1.5px solid #EF4444', background: '#FEF2F2', color: '#EF4444', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
           {tt(isHi, 'Sign Out', 'साइन आउट')}

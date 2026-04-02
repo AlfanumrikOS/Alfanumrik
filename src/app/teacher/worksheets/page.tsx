@@ -245,10 +245,18 @@ export default function TeacherWorksheetsPage() {
       {!isPrintView && (
         <>
           {/* Header */}
-          <div style={{ background: 'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)', padding: '32px 20px 28px', color: '#fff', textAlign: 'center' }}>
-            <div style={{ fontSize: 36, marginBottom: 8 }}>📝</div>
-            <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, fontFamily: 'Sora, sans-serif' }}>{tt(isHi, 'Worksheet Generator', 'वर्कशीट जनरेटर')}</h1>
-            <p style={{ fontSize: 13, opacity: 0.8, marginTop: 6 }}>{tt(isHi, 'Create printable worksheets for your students', 'अपने छात्रों के लिए प्रिंट योग्य वर्कशीट बनाएं')}</p>
+          <div style={{ background: 'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)', padding: '32px 20px 28px', color: '#fff', position: 'relative' }}>
+            <button
+              onClick={() => router.push('/teacher')}
+              style={{ position: 'absolute', top: 16, left: 16, background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, padding: '6px 12px', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+            >
+              &larr; {tt(isHi, 'डैशबोर्ड', 'Dashboard')}
+            </button>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 36, marginBottom: 8 }}>📝</div>
+              <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, fontFamily: 'Sora, sans-serif' }}>{tt(isHi, 'Worksheet Generator', 'वर्कशीट जनरेटर')}</h1>
+              <p style={{ fontSize: 13, opacity: 0.8, marginTop: 6 }}>{tt(isHi, 'Create printable worksheets for your students', 'अपने छात्रों के लिए प्रिंट योग्य वर्कशीट बनाएं')}</p>
+            </div>
           </div>
 
           {/* Form */}
