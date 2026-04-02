@@ -112,7 +112,7 @@ export default function MonthlyReportsPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!isLoading && !isLoggedIn) router.replace('/');
+    if (!isLoading && !isLoggedIn) router.replace('/login');
   }, [isLoading, isLoggedIn, router]);
 
   /* ── Fetch report data ── */

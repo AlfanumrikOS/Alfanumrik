@@ -66,7 +66,7 @@ export default function LearnPage() {
 
   // Redirect if not logged in
   useEffect(() => {
-    if (!authLoading && !isLoggedIn) router.replace('/');
+    if (!authLoading && !isLoggedIn) router.replace('/login');
   }, [authLoading, isLoggedIn, router]);
 
   // Grade subjects

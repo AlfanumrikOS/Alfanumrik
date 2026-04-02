@@ -121,7 +121,7 @@ export default function STEMCentrePage() {
 
   // Auth redirect
   useEffect(() => {
-    if (!authLoading && !isLoggedIn) router.replace('/');
+    if (!authLoading && !isLoggedIn) router.replace('/login');
   }, [authLoading, isLoggedIn, router]);
 
   // Fetch DB simulations

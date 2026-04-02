@@ -16,7 +16,7 @@ export default function ParentProfilePage() {
   const [toast, setToast] = useState('');
 
   if (authLoading) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc' }}><div style={{ fontSize: 48 }}>👨‍👩‍👧</div></div>;
-  if (!isLoggedIn || (activeRole !== 'guardian' && !guardian)) { router.replace('/'); return null; }
+  if (!isLoggedIn || (activeRole !== 'guardian' && !guardian)) { router.replace('/login'); return null; }
 
   const startEdit = () => {
     setName(guardian?.name || '');
@@ -49,7 +49,7 @@ export default function ParentProfilePage() {
 
   const handleSignOut = async () => {
     await signOut();
-    router.replace('/');
+    router.replace('/login');
   };
 
   const tp = (en: string, hi: string) => isHi ? hi : en;

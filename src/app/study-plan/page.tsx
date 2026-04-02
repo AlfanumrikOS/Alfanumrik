@@ -95,7 +95,7 @@ export default function StudyPlanPage() {
   const [criticalGaps, setCriticalGaps] = useState<Array<{ id: string; topic_title?: string; description: string; description_hi?: string }>>([]);
 
   useEffect(() => {
-    if (!isLoading && !isLoggedIn) router.replace('/');
+    if (!isLoading && !isLoggedIn) router.replace('/login');
   }, [isLoading, isLoggedIn, router]);
 
   const load = useCallback(async () => {

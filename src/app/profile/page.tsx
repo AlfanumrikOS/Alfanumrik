@@ -204,7 +204,7 @@ export default function ProfilePage() {
   const [editParentPhone, setEditParentPhone] = useState('');
 
   useEffect(() => {
-    if (!isLoading && !isLoggedIn) router.replace('/');
+    if (!isLoading && !isLoggedIn) router.replace('/login');
   }, [isLoading, isLoggedIn, router]);
 
   // Populate edit form from student data
@@ -395,7 +395,7 @@ export default function ProfilePage() {
 
   const handleSignOut = async () => {
     await signOut();
-    router.replace('/');
+    router.replace('/login');
   };
 
   /* ── GDPR: Export personal data as JSON ── */
@@ -454,7 +454,7 @@ export default function ProfilePage() {
       const { error } = await supabase.rpc('delete_student_account', { p_student_id: student.id });
       if (error) throw error;
       await signOut();
-      router.replace('/');
+      router.replace('/login');
     } catch (e) {
       console.error('Delete error:', e);
       alert(isHi ? 'खाता हटाने में त्रुटि। सपोर्ट से संपर्क करें।' : 'Error deleting account. Please contact support.');

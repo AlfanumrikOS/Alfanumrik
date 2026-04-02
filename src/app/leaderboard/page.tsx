@@ -55,7 +55,7 @@ export default function LeaderboardPage() {
   const [compLeaderboard, setCompLeaderboard] = useState<RPCRecord[]>([]);
 
   useEffect(() => {
-    if (!isLoading && !isLoggedIn) router.replace('/');
+    if (!isLoading && !isLoggedIn) router.replace('/login');
   }, [isLoading, isLoggedIn, router]);
 
   // Load rankings

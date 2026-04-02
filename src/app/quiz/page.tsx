@@ -97,7 +97,7 @@ export default function QuizPage() {
   } | null>(null);
 
   useEffect(() => {
-    if (!isLoading && !isLoggedIn) router.replace('/');
+    if (!isLoading && !isLoggedIn) router.replace('/login');
     if (!isLoading && isLoggedIn && !student && activeRole !== 'student') {
       router.replace(activeRole === 'teacher' ? '/teacher' : activeRole === 'guardian' ? '/parent' : '/');
     }

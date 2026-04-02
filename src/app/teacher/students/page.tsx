@@ -411,7 +411,7 @@ export default function TeacherStudentsPage() {
   // Auth guard
   useEffect(() => {
     if (!authLoading && (!isLoggedIn || (activeRole !== 'teacher' && !teacher))) {
-      router.replace('/');
+      router.replace('/login');
     }
   }, [authLoading, isLoggedIn, activeRole, teacher, router]);
 
