@@ -46,19 +46,16 @@ export default function LoginPage() {
   // Role-aware onSuccess handler: after login, navigate to the correct portal.
   // We use the roleParam hint from the URL since activeRole may not be updated yet.
   const handleSuccess = useCallback(() => {
-    router.refresh();
-    // Use redirect param if available, otherwise role-based destination.
-    // The roleParam from URL is a hint for the initial redirect;
-    // the useEffect above will correct if activeRole differs after auth loads.
-    if (redirectTo && redirectTo.startsWith('/')) {
-      router.replace(redirectTo);
-    } else {
-      const destination = roleParam === 'teacher' ? '/teacher'
+    // Use hard navigation (full page reload) to ensure auth cookies are
+    // properly recognized by middleware. Next.js client-side router.refresh()
+    // + router.replace() can race/hang in Next.js 16 with Turbopack.
+    const destination = redirectTo && redirectTo.startsWith('/')
+      ? redirectTo
+      : roleParam === 'teacher' ? '/teacher'
         : roleParam === 'parent' ? '/parent'
         : '/dashboard';
-      router.replace(destination);
-    }
-  }, [router, roleParam, redirectTo]);
+    window.location.href = destination;
+  }, [roleParam, redirectTo]);
 
   // Always show the login form — never block on loading state.
   // If the user is already logged in, the useEffect redirect will fire.
