@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { track } from '@/lib/analytics';
@@ -9,8 +10,13 @@ import { XP_RULES } from '@/lib/xp-rules';
 import { Card, Button, ProgressBar, LoadingFoxy } from '@/components/ui';
 import { SUBJECT_META } from '@/lib/constants';
 import QuizSetup from '@/components/quiz/QuizSetup';
-import QuizResults from '@/components/quiz/QuizResults';
 import FeedbackOverlay from '@/components/quiz/FeedbackOverlay';
+
+// Lazy-load QuizResults — only shown after quiz completion (results screen)
+const QuizResults = dynamic(() => import('@/components/quiz/QuizResults'), {
+  ssr: false,
+  loading: () => <LoadingFoxy />,
+});
 import {
   createFeedbackState, onCorrectAnswer, onWrongAnswer, onSessionComplete,
   getNearCompletionNudge, playFeedbackSound,

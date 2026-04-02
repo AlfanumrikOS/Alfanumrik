@@ -6,6 +6,7 @@ import StatCard from '../_components/StatCard';
 import StatusBadge from '../_components/StatusBadge';
 import DetailDrawer from '../_components/DetailDrawer';
 import { colors, S } from '../_components/admin-styles';
+import { PRICING, yearlyPerMonth } from '@/lib/plans';
 
 interface UserRecord {
   id: string; auth_user_id: string; name: string; email: string; role: string;
@@ -84,13 +85,19 @@ function SubscriptionsContent() {
 
       {/* KPI Cards */}
       {analytics && (() => {
-        // Monthly revenue estimation based on plan prices
+        // Monthly revenue estimation using centralized PRICING from @/lib/plans
         const PLAN_PRICES: Record<string, number> = {
-          starter_monthly: 299, starter_yearly: 200, // ~2399/12
-          pro_monthly: 699, pro_yearly: 467, // ~5599/12
-          ultimate_monthly: 1499, ultimate_yearly: 1000, // ~11999/12
-          unlimited_monthly: 1499, unlimited_yearly: 1000,
-          starter: 299, pro: 699, unlimited: 1499,
+          starter_monthly: PRICING.starter.monthly,
+          starter_yearly: yearlyPerMonth(PRICING.starter.yearly),
+          pro_monthly: PRICING.pro.monthly,
+          pro_yearly: yearlyPerMonth(PRICING.pro.yearly),
+          ultimate_monthly: PRICING.unlimited.monthly,
+          ultimate_yearly: yearlyPerMonth(PRICING.unlimited.yearly),
+          unlimited_monthly: PRICING.unlimited.monthly,
+          unlimited_yearly: yearlyPerMonth(PRICING.unlimited.yearly),
+          starter: PRICING.starter.monthly,
+          pro: PRICING.pro.monthly,
+          unlimited: PRICING.unlimited.monthly,
         };
         const estimatedMRR = analytics.revenue.reduce((sum, r) => {
           const price = PLAN_PRICES[r.plan] || 0;
