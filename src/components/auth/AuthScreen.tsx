@@ -4,9 +4,10 @@ import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { SUPABASE_URL, SUPABASE_ANON_KEY, SUBJECT_META } from '@/lib/constants';
 import { validatePassword } from '@/lib/sanitize';
+import { VALID_GRADES, VALID_BOARDS } from '@/lib/identity';
 
-const AUTH_GRADES = ['6', '7', '8', '9', '10', '11', '12'];
-const AUTH_BOARDS = ['CBSE', 'ICSE', 'State Board', 'IB', 'Other'];
+const AUTH_GRADES = VALID_GRADES;
+const AUTH_BOARDS = VALID_BOARDS;
 
 interface AuthScreenProps {
   onSuccess: () => void;
@@ -49,7 +50,7 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
   const TEACHER_SUBJECTS = SUBJECT_META.filter(s =>
     ['math', 'science', 'physics', 'chemistry', 'biology', 'english', 'hindi'].includes(s.code)
   );
-  const TEACHER_GRADES = ['6', '7', '8', '9', '10', '11', '12'];
+  const TEACHER_GRADES = VALID_GRADES;
 
   const toggleSubject = (code: string) => {
     setSubjectsTaught(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);

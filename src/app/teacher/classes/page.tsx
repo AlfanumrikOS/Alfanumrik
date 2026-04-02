@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { SUBJECT_META } from '@/lib/constants';
+import { VALID_GRADES } from '@/lib/identity';
 import { BottomNav } from '@/components/ui';
 
 // ============================================================
@@ -43,7 +44,7 @@ interface ClassData {
 }
 
 const SECTIONS = ['', 'A', 'B', 'C', 'D', 'E'];
-const GRADES = ['6', '7', '8', '9', '10', '11', '12'];
+const GRADES = VALID_GRADES;
 
 const AVATAR_COLORS = ['#6366F1', '#2563EB', '#0891B2', '#059669', '#D97706', '#DC2626'];
 

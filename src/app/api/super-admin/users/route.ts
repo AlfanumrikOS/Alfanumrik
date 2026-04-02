@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../lib/admin-auth';
 import { validateBody, zUuid, zGrade } from '../../../../lib/validation';
 import { z } from 'zod';
+import { VALID_ROLES, ROLE_ALIASES } from '@/lib/identity';
 
 export async function GET(request: NextRequest) {
   const auth = await authorizeAdmin(request);
@@ -10,9 +11,8 @@ export async function GET(request: NextRequest) {
   try {
     const params = new URL(request.url).searchParams;
     const role = params.get('role') || 'student';
-    const validRoles = ['student', 'teacher', 'guardian', 'parent'];
-    if (!validRoles.includes(role)) {
-      return NextResponse.json({ error: 'Invalid role. Must be one of: student, teacher, guardian, parent' }, { status: 400 });
+    if (!(role in ROLE_ALIASES)) {
+      return NextResponse.json({ error: `Invalid role. Must be one of: ${[...VALID_ROLES, 'guardian'].join(', ')}` }, { status: 400 });
     }
     const page = Math.max(1, parseInt(params.get('page') || '1') || 1);
     const limit = Math.min(100, Math.max(1, parseInt(params.get('limit') || '25') || 25));

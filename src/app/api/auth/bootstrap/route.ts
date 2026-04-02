@@ -25,6 +25,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { sanitizeText } from '@/lib/sanitize';
+import { logIdentityEvent, extractAuditContext } from '@/lib/identity/audit';
 import {
   VALID_BOARDS,
   isValidRole,
@@ -166,21 +167,8 @@ export async function POST(request: NextRequest) {
 
     if (rpcError) {
       // Log the failure (best-effort)
-      const ipAddress =
-        request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null;
-      const userAgent = request.headers.get('user-agent') || null;
-
-      try {
-        await admin
-          .from('auth_audit_log')
-          .insert({
-            auth_user_id: user.id,
-            event_type: 'bootstrap_failure',
-            ip_address: ipAddress,
-            user_agent: userAgent,
-            metadata: { error: rpcError.message, role, name },
-          });
-      } catch { /* audit log is best-effort */ }
+      const auditCtx = extractAuditContext(request, admin, user.id);
+      await logIdentityEvent(auditCtx, 'bootstrap_failure', { error: rpcError.message, role, name });
 
       console.error('[Bootstrap] RPC failed:', rpcError.message, {
         userId: user.id,
@@ -199,24 +187,12 @@ export async function POST(request: NextRequest) {
     }
 
     // 4. Log success (best-effort)
-    const ipAddress =
-      request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null;
-    const userAgent = request.headers.get('user-agent') || null;
-
-    try {
-      await admin
-        .from('auth_audit_log')
-        .insert({
-          auth_user_id: user.id,
-          event_type:
-            result?.status === 'already_completed'
-              ? 'bootstrap_idempotent'
-              : 'bootstrap_success',
-          ip_address: ipAddress,
-          user_agent: userAgent,
-          metadata: { role, profile_id: result?.profile_id },
-        });
-    } catch { /* audit log is best-effort */ }
+    const auditCtx = extractAuditContext(request, admin, user.id);
+    await logIdentityEvent(
+      auditCtx,
+      result?.status === 'already_completed' ? 'bootstrap_idempotent' : 'bootstrap_success',
+      { role, profile_id: result?.profile_id }
+    );
 
     // 5. Determine redirect destination based on role
     const destination = getRoleDestination(role);

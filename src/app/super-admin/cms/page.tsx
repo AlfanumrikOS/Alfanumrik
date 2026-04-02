@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
 import { colors, S } from '../_components/admin-styles';
+import { VALID_GRADES } from '@/lib/identity';
 
 type View = 'overview' | 'topics' | 'questions' | 'versions';
 
@@ -29,7 +30,7 @@ interface Version {
 }
 interface CmsStats { topics: number; questions: number; workflow: { published: number; draft: number; review: number; archived: number; }; }
 
-const GRADES = ['6', '7', '8', '9', '10', '11', '12'];
+const GRADES = VALID_GRADES;
 const STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
   draft: { bg: colors.surface, fg: colors.text3 },
   review: { bg: colors.warningLight, fg: colors.warning },

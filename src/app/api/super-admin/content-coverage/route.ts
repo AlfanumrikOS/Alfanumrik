@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAdmin, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../lib/admin-auth';
+import { VALID_GRADES } from '@/lib/identity';
 
 /**
  * GET /api/super-admin/content-coverage
@@ -212,7 +213,7 @@ export async function GET(request: NextRequest) {
       : 0;
 
     // --- Build grade breakdown (grades "6" through "12") ---
-    const GRADES = ['6', '7', '8', '9', '10', '11', '12'];
+    const GRADES = VALID_GRADES;
     const byGrade = GRADES
       .filter((g) => gradeQuestions[g] || gradeTopics[g])
       .map((g) => ({
