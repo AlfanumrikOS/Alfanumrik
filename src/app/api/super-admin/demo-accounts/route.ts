@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl, isValidUUID } from '../../../../lib/admin-auth';
-import { isValidGrade, isValidEmail, validateBody, zUuid } from '../../../../lib/validation';
+import { validateBody } from '../../../../lib/validation';
 import { z } from 'zod';
 
 // ---------------------------------------------------------------------------
