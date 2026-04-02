@@ -8,6 +8,8 @@ import { BUILT_IN_SIMULATIONS, type BuiltInSimulation } from '@/components/simul
 import GuidedExperiment from '@/components/stem/GuidedExperiment';
 import type { ExperimentResult } from '@/components/stem/GuidedExperiment';
 import { getExperimentForSimulation } from '@/components/stem/experiments';
+import { isPremium } from '@/lib/plans';
+import Link from 'next/link';
 
 /* ─── Types ─── */
 interface DbSimulation {
@@ -156,6 +158,64 @@ export default function STEMCentrePage() {
         <div className="text-center">
           <div className="text-5xl animate-pulse mb-3">🔬</div>
           <p className="text-gray-500 text-sm">{isHi ? 'लोड हो रहा है...' : 'Loading...'}</p>
+        </div>
+      </div>
+    );
+  }
+
+  /* ─── Plan Gate: STEM Centre requires Starter+ ─── */
+  if (student && !isPremium(student.subscription_plan)) {
+    return (
+      <div className="min-h-screen bg-[#FFF8F0] flex items-center justify-center px-4">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-lg border border-orange-100 p-6 text-center">
+          <div className="text-5xl mb-4">🔬</div>
+          <h1 className="text-xl font-bold text-gray-900 font-[Sora] mb-2">
+            {isHi ? 'स्टेम सेंटर' : 'STEM Centre'}
+          </h1>
+          <p className="text-sm text-gray-600 mb-4">
+            {isHi
+              ? 'इंटरैक्टिव लैब्स, सिमुलेशन और गाइडेड प्रयोगों के साथ विज्ञान और गणित को जीवंत बनाएं।'
+              : 'Bring science and math to life with interactive labs, simulations, and guided experiments.'}
+          </p>
+
+          <div className="bg-orange-50 rounded-xl p-4 mb-5 text-left">
+            <p className="text-xs font-semibold text-orange-700 mb-2">
+              {isHi ? 'स्टेम सेंटर में शामिल है:' : 'STEM Centre includes:'}
+            </p>
+            <ul className="space-y-1.5">
+              {[
+                { en: 'Interactive physics, chemistry & biology simulations', hi: 'इंटरैक्टिव भौतिकी, रसायन और जीव विज्ञान सिमुलेशन' },
+                { en: 'Guided experiments with observations & conclusions', hi: 'अवलोकन और निष्कर्ष के साथ गाइडेड प्रयोग' },
+                { en: 'Math & coding labs aligned to CBSE curriculum', hi: 'CBSE पाठ्यक्रम के अनुसार गणित और कोडिंग लैब्स' },
+                { en: 'Save your experiment observations', hi: 'अपने प्रयोग के अवलोकन सहेजें' },
+              ].map((item, i) => (
+                <li key={i} className="flex items-start gap-2 text-xs text-gray-700">
+                  <span className="text-orange-500 mt-0.5 flex-shrink-0">&#10003;</span>
+                  {isHi ? item.hi : item.en}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <p className="text-xs text-gray-500 mb-4">
+            {isHi
+              ? 'स्टेम सेंटर Starter योजना और उससे ऊपर के लिए उपलब्ध है।'
+              : 'STEM Centre is available on the Starter plan and above.'}
+          </p>
+
+          <Link
+            href="/pricing"
+            className="inline-block w-full py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-sm font-semibold transition-colors active:scale-[0.98] min-h-[44px]"
+          >
+            {isHi ? 'योजनाएं देखें' : 'View Plans'}
+          </Link>
+
+          <button
+            onClick={() => router.push('/dashboard')}
+            className="mt-3 text-xs text-gray-400 hover:text-gray-600 font-medium min-h-[44px]"
+          >
+            {isHi ? 'डैशबोर्ड पर वापस जाएं' : 'Back to Dashboard'}
+          </button>
         </div>
       </div>
     );
