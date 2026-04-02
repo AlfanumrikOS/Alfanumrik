@@ -6,6 +6,7 @@ import { clearAllCache } from './swr';
 import type { Student, StudentSnapshot } from './types';
 
 /* ─── Role Types ─── */
+// Note: 'guardian' is the DB role name; maps to 'parent' via ROLE_ALIASES in identity/constants.ts
 export type UserRole = 'student' | 'teacher' | 'guardian' | 'none';
 
 interface TeacherProfile {
@@ -407,7 +408,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         roles,
         activeRole,
         setActiveRole,
-        isLoggedIn: roles.length > 0 || !!authUserId,
+        isLoggedIn: roles.length > 0,
         isLoading,
         isHi: language === 'hi',
         isDemoUser: student?.account_status === 'demo',

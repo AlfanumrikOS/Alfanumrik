@@ -150,12 +150,10 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
             if (!bootstrapRes.ok) {
               const errData = await bootstrapRes.json().catch(() => ({}));
               console.error('[Signup] Bootstrap failed:', errData);
-              // Show error but don't block — AuthContext fallback will handle
+              // Show error and let the user retry — do NOT call onSuccess
+              // since the profile was not created and redirecting would cause issues
               setError(errData.error || 'Profile setup failed. Please try logging in again.');
               setLoading(false);
-              // Still call onSuccess since auth identity exists
-              // The AuthContext fallback will create the profile
-              onSuccess();
               return;
             }
           } catch (bootstrapErr) {
