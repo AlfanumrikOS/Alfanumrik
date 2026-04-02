@@ -41,9 +41,7 @@ export default function LoginPage() {
     router.refresh();
     const destination = redirectTo && redirectTo.startsWith('/')
       ? redirectTo
-      : roleParam === 'teacher' ? '/teacher'
-        : roleParam === 'parent' ? '/parent'
-        : '/dashboard';
+      : getRoleDestination(roleParam || 'student');
     router.replace(destination);
   }, [router, roleParam, redirectTo]);
 
