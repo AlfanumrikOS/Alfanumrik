@@ -6,13 +6,14 @@ import { useRouter } from 'next/navigation';
 import { SUBJECT_META } from '@/lib/constants';
 import { BottomNav } from '@/components/ui';
 import { supabase } from '@/lib/supabase';
+import { VALID_GRADES } from '@/lib/identity';
 
 // ============================================================
 // BILINGUAL HELPERS (P7)
 // ============================================================
 const tt = (isHi: boolean, en: string, hi: string) => isHi ? hi : en;
 
-const GRADES = ['6', '7', '8', '9', '10', '11', '12'];
+const GRADES = VALID_GRADES;
 const DIFFICULTIES = ['Easy', 'Medium', 'Hard'] as const;
 const Q_TYPES = ['MCQ', 'Fill in the Blanks', 'Short Answer', 'True/False', 'Match the Following'] as const;
 

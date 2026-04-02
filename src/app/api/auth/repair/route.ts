@@ -12,8 +12,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { authorizeRequest } from '@/lib/rbac';
-
-const VALID_ROLES = ['student', 'teacher', 'parent'];
+import { VALID_ROLES, isValidRole } from '@/lib/identity';
+import { logIdentityEvent } from '@/lib/identity/audit';
 
 export async function POST(request: NextRequest) {
   try {
@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (force_role && !VALID_ROLES.includes(force_role)) {
+    if (force_role && !isValidRole(force_role)) {
       return NextResponse.json(
         {
           success: false,
@@ -78,16 +78,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Audit log (best-effort)
-    try {
-      await admin
-        .from('auth_audit_log')
-        .insert({
-          auth_user_id,
-          event_type: 'admin_repair',
-          metadata: { repaired_by: auth.userId, result: data },
-        });
-    } catch { /* audit is best-effort */ }
+    // Audit log via centralized identity audit module (best-effort)
+    await logIdentityEvent(
+      { supabase: admin, authUserId: auth_user_id },
+      'admin_repair',
+      { repaired_by: auth.userId, result: data }
+    );
 
     return NextResponse.json({
       success: true,

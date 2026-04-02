@@ -5,6 +5,7 @@ import AdminShell, { useAdmin } from '../_components/AdminShell';
 import StatCard from '../_components/StatCard';
 import StatusBadge from '../_components/StatusBadge';
 import { colors, S } from '../_components/admin-styles';
+import { VALID_GRADES } from '@/lib/identity';
 
 interface AnalyticsData {
   engagement: { date: string; signups: number; quizzes: number; chats: number }[];
@@ -275,7 +276,7 @@ function LearningContent() {
 
       {/* Content Coverage Heatmap */}
       {analytics?.content_coverage && analytics.content_coverage.length > 0 && (() => {
-        const grades = ['6', '7', '8', '9', '10', '11', '12'];
+        const grades = VALID_GRADES;
         const subjects = Array.from(new Set(analytics.content_coverage.map(c => c.subject))).sort();
         const lookup = new Map<string, number>();
         for (const c of analytics.content_coverage) {
