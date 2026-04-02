@@ -198,9 +198,9 @@ function isLockedOut(): { locked: boolean; message: string } {
   return { locked: false, message: '' };
 }
 
-function LoginScreen({ onLogin, isHi, authUserId }: { onLogin: (g: ParentSession, s: StudentSession) => void; isHi: boolean; authUserId?: string | null }) {
+function LoginScreen({ onLogin, isHi, authUserId, prefillName }: { onLogin: (g: ParentSession, s: StudentSession) => void; isHi: boolean; authUserId?: string | null; prefillName?: string }) {
   const [code, setCode] = useState('');
-  const [name, setName] = useState('');
+  const [name, setName] = useState(prefillName || '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -241,7 +241,13 @@ function LoginScreen({ onLogin, isHi, authUserId }: { onLogin: (g: ParentSession
         <div className="text-5xl mb-3">&#x1F9D1;&#x200D;&#x1F393;</div>
         <h1 className="text-[22px] font-bold text-gray-900 mb-1">{t(isHi, 'Parent Dashboard', 'अभिभावक डैशबोर्ड')}</h1>
         <p className="text-sm text-gray-500 mb-6">{t(isHi, "Enter your child's link code to view their progress", 'अपने बच्चे की प्रगति देखने के लिए लिंक कोड दर्ज करें')}</p>
-        <input className="w-full px-3.5 py-3 bg-orange-50 border border-orange-200 rounded-[10px] text-gray-900 text-[15px] outline-none mb-2.5 box-border" placeholder={t(isHi, 'Your name', 'आपका नाम')} value={name} onChange={e => setName(e.target.value)} aria-label={t(isHi, 'Your name', 'आपका नाम')} autoComplete="name" />
+        {prefillName ? (
+          <p className="text-sm text-gray-700 mb-3 font-medium">
+            {t(isHi, `Welcome, ${prefillName}!`, `स्वागत है, ${prefillName}!`)} {t(isHi, "Enter your child's link code to continue.", 'जारी रखने के लिए अपने बच्चे का लिंक कोड दर्ज करें।')}
+          </p>
+        ) : (
+          <input className="w-full px-3.5 py-3 bg-orange-50 border border-orange-200 rounded-[10px] text-gray-900 text-[15px] outline-none mb-2.5 box-border" placeholder={t(isHi, 'Your name', 'आपका नाम')} value={name} onChange={e => setName(e.target.value)} aria-label={t(isHi, 'Your name', 'आपका नाम')} autoComplete="name" />
+        )}
         <input className="w-full px-3.5 py-3 bg-orange-50 border border-orange-200 rounded-[10px] text-gray-900 text-xl outline-none mb-2.5 box-border tracking-[4px] text-center uppercase" placeholder={t(isHi, 'LINK CODE', 'लिंक कोड')} value={code} onChange={e => setCode(e.target.value.toUpperCase())} maxLength={8} onKeyDown={e => e.key === 'Enter' && submit()} aria-label={t(isHi, 'Child link code', 'बच्चे का लिंक कोड')} />
         {error && <p className="text-red-500 text-[13px] my-2">{error}</p>}
         <button onClick={submit} disabled={loading} className={`w-full mt-2 px-5 py-3 bg-orange-500 text-white border-none rounded-[10px] text-[15px] font-semibold cursor-pointer ${loading ? 'opacity-50' : 'opacity-100'}`}>
@@ -637,7 +643,9 @@ export default function ParentPage() {
   const isHi = auth.isHi ?? false;
 
   if (!guardian || !student) {
-    return <LoginScreen onLogin={(g, s) => { setGuardian(g); setStudent(s); }} isHi={isHi} authUserId={auth.authUserId} />;
+    // If guardian profile exists from signup, pre-fill name
+    const prefillName = auth.guardian?.name || '';
+    return <LoginScreen onLogin={(g, s) => { setGuardian(g); setStudent(s); }} isHi={isHi} authUserId={auth.authUserId} prefillName={prefillName || undefined} />;
   }
 
   return <Dashboard guardian={guardian} student={student} isHi={isHi} />;

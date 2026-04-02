@@ -148,9 +148,9 @@ export async function GET(request: NextRequest) {
 
     // Code exchange failed — redirect to login with error
     console.error('[Auth Callback] Code exchange failed:', error.message);
-    return NextResponse.redirect(`${origin}/?error=auth_callback_failed`);
+    return NextResponse.redirect(`${origin}/login?error=auth_callback_failed`);
   }
 
   // No code provided — redirect to login
-  return NextResponse.redirect(`${origin}/`);
+  return NextResponse.redirect(`${origin}/login`);
 }

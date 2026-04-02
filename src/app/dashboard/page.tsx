@@ -36,10 +36,16 @@ export default function Dashboard() {
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
   const [showSubjectPicker, setShowSubjectPicker] = useState(false);
   const [greeting, setGreeting] = useState('');
-  const [onboardingDone, setOnboardingDone] = useState(() => {
-    if (typeof window !== 'undefined') return localStorage.getItem('alfanumrik_onboarded') === 'true';
-    return false;
-  });
+  const [onboardingDone, setOnboardingDone] = useState(false);
+
+  // Sync onboarding state from student profile (database-authoritative, not localStorage)
+  useEffect(() => {
+    if (student) {
+      const done = !!(student as Record<string, unknown>).onboarding_completed ||
+                   (typeof window !== 'undefined' && localStorage.getItem('alfanumrik_onboarded') === 'true');
+      setOnboardingDone(done);
+    }
+  }, [student]);
 
   // SWR: auto-caching, dedup, background revalidation
   const { data: dashData } = useDashboardData(student?.id);
@@ -58,7 +64,7 @@ export default function Dashboard() {
   }).filter((e: { days_left: number }) => e.days_left <= 14);
 
   useEffect(() => {
-    if (!isLoading && !isLoggedIn) router.replace('/');
+    if (!isLoading && !isLoggedIn) router.replace('/login');
     if (!isLoading && isLoggedIn && activeRole === 'teacher') router.replace('/teacher');
     if (!isLoading && isLoggedIn && activeRole === 'guardian') router.replace('/parent');
   }, [isLoading, isLoggedIn, activeRole, router]);
@@ -105,7 +111,7 @@ export default function Dashboard() {
   if (isLoading) return <DashboardSkeleton />;
   if (!student) {
     if (activeRole === 'teacher' || activeRole === 'guardian') return <DashboardSkeleton />;
-    router.replace('/');
+    router.replace('/login');
     return <DashboardSkeleton />;
   }
 

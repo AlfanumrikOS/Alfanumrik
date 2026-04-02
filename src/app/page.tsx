@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 
 /**
@@ -15,8 +15,16 @@ import { useAuth } from '@/lib/AuthContext';
 export default function RootPage() {
   const { isLoggedIn, isLoading, activeRole } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   useEffect(() => {
+    // Handle error redirects from auth callbacks
+    const error = searchParams.get('error');
+    if (error) {
+      router.replace(`/login?error=${encodeURIComponent(error)}`);
+      return;
+    }
+
     if (isLoading) return;
 
     if (!isLoggedIn) {
@@ -36,7 +44,7 @@ export default function RootPage() {
         router.replace('/dashboard');
         break;
     }
-  }, [isLoggedIn, isLoading, activeRole, router]);
+  }, [isLoggedIn, isLoading, activeRole, router, searchParams]);
 
   return (
     <div style={{
