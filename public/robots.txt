@@ -2,9 +2,12 @@ User-agent: *
 Allow: /
 Disallow: /api/
 Disallow: /super-admin/
-Disallow: /admin/
-Disallow: /auth/
-Disallow: /teacher/
+Disallow: /internal/
+Disallow: /dashboard
+Disallow: /quiz
+Disallow: /profile
+Disallow: /billing
 Disallow: /parent/
+Disallow: /teacher/
 
 Sitemap: https://alfanumrik.com/sitemap.xml

@@ -97,7 +97,7 @@ describe('Webhook Signature Verification (P11)', () => {
 // ── RPC Fallback ─────────────────────────────────────────
 
 describe('Webhook RPC Fallback Pattern', () => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // eslint-disable-next-line -- mock admin client with chainable methods for testing
   let mockAdmin: { rpc: any; from: any };
 
   beforeEach(() => {

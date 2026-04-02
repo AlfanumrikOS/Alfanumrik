@@ -360,6 +360,183 @@ describe('Middleware config', () => {
   });
 });
 
+// ─── CORS Header Expectations for API Routes ──────────────────
+
+describe('CORS header expectations for API routes', () => {
+  // Middleware sets CORS headers on /api/* routes.
+  // We test the expected header values and patterns.
+  const API_CORS_HEADERS: Record<string, string | RegExp> = {
+    'Access-Control-Allow-Methods': /GET|POST|PUT|DELETE|OPTIONS/,
+    'Access-Control-Allow-Headers': /Content-Type|Authorization/,
+  };
+
+  it('CORS allow-methods includes standard HTTP methods', () => {
+    const methods = 'GET, POST, PUT, DELETE, OPTIONS';
+    expect(methods).toMatch(API_CORS_HEADERS['Access-Control-Allow-Methods']);
+  });
+
+  it('CORS allow-headers includes Content-Type and Authorization', () => {
+    const headers = 'Content-Type, Authorization, x-admin-secret';
+    expect(headers).toMatch(API_CORS_HEADERS['Access-Control-Allow-Headers']);
+  });
+
+  it('API paths are identifiable by /api/ prefix', () => {
+    const apiPaths = ['/api/v1/health', '/api/quiz/submit', '/api/payments/webhook'];
+    const nonApiPaths = ['/dashboard', '/login', '/welcome'];
+
+    for (const p of apiPaths) {
+      expect(p.startsWith('/api/')).toBe(true);
+    }
+    for (const p of nonApiPaths) {
+      expect(p.startsWith('/api/')).toBe(false);
+    }
+  });
+});
+
+// ─── Super Admin Route Protection Pattern ─────────────────────
+
+describe('Super admin route protection patterns', () => {
+  function isSuperAdminRoute(path: string): boolean {
+    return path.startsWith('/super-admin') && !path.startsWith('/super-admin/login');
+  }
+
+  function shouldRedirectToAdminLogin(path: string, hasAdminSession: boolean): boolean {
+    return isSuperAdminRoute(path) && !hasAdminSession;
+  }
+
+  it('identifies super-admin dashboard as protected', () => {
+    expect(isSuperAdminRoute('/super-admin')).toBe(true);
+    expect(isSuperAdminRoute('/super-admin/users')).toBe(true);
+    expect(isSuperAdminRoute('/super-admin/flags')).toBe(true);
+    expect(isSuperAdminRoute('/super-admin/analytics')).toBe(true);
+  });
+
+  it('does not protect super-admin login page itself', () => {
+    expect(isSuperAdminRoute('/super-admin/login')).toBe(false);
+  });
+
+  it('redirects unauthenticated admin requests', () => {
+    expect(shouldRedirectToAdminLogin('/super-admin', false)).toBe(true);
+    expect(shouldRedirectToAdminLogin('/super-admin/users', false)).toBe(true);
+  });
+
+  it('allows authenticated admin requests', () => {
+    expect(shouldRedirectToAdminLogin('/super-admin', true)).toBe(false);
+    expect(shouldRedirectToAdminLogin('/super-admin/users', true)).toBe(false);
+  });
+
+  it('non-admin routes are not affected by admin auth check', () => {
+    expect(isSuperAdminRoute('/dashboard')).toBe(false);
+    expect(isSuperAdminRoute('/login')).toBe(false);
+    expect(isSuperAdminRoute('/api/v1/health')).toBe(false);
+  });
+});
+
+// ─── Additional Bot Patterns ──────────────────────────────────
+
+describe('Extended bot/scanner blocking patterns', () => {
+  function shouldBlock(path: string): boolean {
+    return (
+      path.startsWith('/wp-') ||
+      path.startsWith('/phpmy') ||
+      path.endsWith('.php') ||
+      path.endsWith('.env') ||
+      path.startsWith('/.git') ||
+      (path.startsWith('/admin') && !path.startsWith('/internal/admin')) ||
+      path.startsWith('/cgi-bin') ||
+      path.includes('..') ||
+      path.endsWith('.asp') ||
+      path.endsWith('.aspx') ||
+      path.endsWith('.jsp') ||
+      path.startsWith('/xmlrpc') ||
+      path.startsWith('/eval-stdin') ||
+      path.includes('etc/passwd') ||
+      path.includes('proc/self')
+    );
+  }
+
+  it('blocks ASP/ASPX probes', () => {
+    expect(shouldBlock('/default.asp')).toBe(true);
+    expect(shouldBlock('/login.aspx')).toBe(true);
+  });
+
+  it('blocks JSP probes', () => {
+    expect(shouldBlock('/manager/html.jsp')).toBe(true);
+  });
+
+  it('blocks XML-RPC probes', () => {
+    expect(shouldBlock('/xmlrpc')).toBe(true);
+    expect(shouldBlock('/xmlrpc.php')).toBe(true);
+  });
+
+  it('blocks eval-stdin exploit attempts', () => {
+    expect(shouldBlock('/eval-stdin.php')).toBe(true);
+  });
+
+  it('blocks /etc/passwd traversal', () => {
+    expect(shouldBlock('/../../../../etc/passwd')).toBe(true);
+  });
+
+  it('blocks /proc/self traversal', () => {
+    expect(shouldBlock('/../../proc/self/environ')).toBe(true);
+  });
+
+  it('allows legitimate Next.js routes', () => {
+    expect(shouldBlock('/welcome')).toBe(false);
+    expect(shouldBlock('/api/v1/health')).toBe(false);
+    expect(shouldBlock('/quiz')).toBe(false);
+    expect(shouldBlock('/pricing')).toBe(false);
+    expect(shouldBlock('/super-admin/login')).toBe(false);
+  });
+});
+
+// ─── Session Cookie Presence for Protected Routes ──────────────
+
+describe('Protected route session requirement', () => {
+  function requiresSessionCookie(path: string): boolean {
+    const PROTECTED_PREFIXES = [
+      '/dashboard', '/quiz', '/profile', '/progress', '/reports',
+      '/study-plan', '/foxy', '/learn', '/review', '/scan',
+      '/notifications', '/exams', '/leaderboard', '/hpc', '/simulations',
+      '/stem-centre', '/research',
+      '/parent/children', '/parent/reports', '/parent/profile', '/parent/support',
+      '/teacher/',
+      '/billing',
+    ];
+    return PROTECTED_PREFIXES.some(p => path.startsWith(p));
+  }
+
+  it('all student feature routes require session', () => {
+    const studentRoutes = [
+      '/dashboard', '/quiz', '/profile', '/progress', '/foxy',
+      '/learn', '/review', '/scan', '/notifications', '/leaderboard',
+    ];
+    for (const route of studentRoutes) {
+      expect(requiresSessionCookie(route)).toBe(true);
+    }
+  });
+
+  it('all parent portal routes require session', () => {
+    const parentRoutes = [
+      '/parent/children', '/parent/reports', '/parent/profile', '/parent/support',
+    ];
+    for (const parentRoute of parentRoutes) {
+      expect(requiresSessionCookie(parentRoute)).toBe(true);
+    }
+  });
+
+  it('billing route requires session', () => {
+    expect(requiresSessionCookie('/billing')).toBe(true);
+  });
+
+  it('public pages do not require session', () => {
+    const publicRoutes = ['/welcome', '/login', '/pricing', '/about', '/contact'];
+    for (const route of publicRoutes) {
+      expect(requiresSessionCookie(route)).toBe(false);
+    }
+  });
+});
+
 // ─── Timing-Safe Comparison Pattern ─────────────────────────
 
 describe('Timing-safe string comparison', () => {

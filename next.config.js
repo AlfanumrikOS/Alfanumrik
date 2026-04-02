@@ -1,9 +1,29 @@
 // Validate required env vars for production deployments (not during local dev)
 if (process.env.NODE_ENV === 'production' && process.env.VERCEL) {
-  const required = ['NEXT_PUBLIC_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_ANON_KEY'];
+  const required = [
+    // Supabase
+    'NEXT_PUBLIC_SUPABASE_URL',
+    'NEXT_PUBLIC_SUPABASE_ANON_KEY',
+    'SUPABASE_SERVICE_ROLE_KEY',
+    // Razorpay
+    'RAZORPAY_KEY_ID',
+    'RAZORPAY_KEY_SECRET',
+    'RAZORPAY_WEBHOOK_SECRET',
+    // Admin
+    'SUPER_ADMIN_SECRET',
+  ];
+  const optional = [
+    'UPSTASH_REDIS_REST_URL',
+    'UPSTASH_REDIS_REST_TOKEN',
+    'NEXT_PUBLIC_SENTRY_DSN',
+  ];
   const missing = required.filter(k => !process.env[k]);
   if (missing.length > 0) {
     throw new Error(`Missing required env vars: ${missing.join(', ')}`);
+  }
+  const missingOptional = optional.filter(k => !process.env[k]);
+  if (missingOptional.length > 0) {
+    console.warn(`[env] Optional env vars not set (using fallbacks): ${missingOptional.join(', ')}`);
   }
 }
 

@@ -238,4 +238,111 @@ describe('Response Format Consistency', () => {
     const body = await apiError('fail').json();
     expect(body.data).toBeUndefined();
   });
+
+  it('every error helper returns application/json content-type', () => {
+    const helpers = [
+      apiBadRequest('test'),
+      apiUnauthorized(),
+      apiForbidden(),
+      apiNotFound(),
+      apiConflict('test'),
+      apiRateLimit(),
+      apiInternalError(),
+    ];
+    for (const response of helpers) {
+      expect(response.headers.get('content-type')).toContain('application/json');
+    }
+  });
+});
+
+// ─── Protected Endpoint Response Patterns ──────────────────────────────────
+
+describe('Protected endpoint response patterns', () => {
+  it('unauthorized response has WWW-Authenticate-friendly structure', async () => {
+    const response = apiUnauthorized();
+    expect(response.status).toBe(401);
+    const body = await response.json();
+    expect(body.error).toBeDefined();
+    expect(body.code).toBe('AUTH_REQUIRED');
+    // Must not leak internal details
+    expect(body.details).toBeUndefined();
+  });
+
+  it('forbidden response distinguishes from unauthorized', async () => {
+    const unauth = apiUnauthorized();
+    const forbidden = apiForbidden();
+    expect(unauth.status).toBe(401);
+    expect(forbidden.status).toBe(403);
+    const unauthBody = await unauth.json();
+    const forbiddenBody = await forbidden.json();
+    expect(unauthBody.code).toBe('AUTH_REQUIRED');
+    expect(forbiddenBody.code).toBe('FORBIDDEN');
+  });
+
+  it('rate limit response returns 429 with descriptive message', async () => {
+    const response = apiRateLimit();
+    expect(response.status).toBe(429);
+    const body = await response.json();
+    expect(body.error).toBe('Too many requests');
+    expect(body.code).toBe('RATE_LIMITED');
+  });
+
+  it('internal error never exposes stack traces or internal details', async () => {
+    const response = apiInternalError('DB_CONNECTION_FAILED');
+    const body = await response.json();
+    // Message must be generic
+    expect(body.error).toBe('Internal server error');
+    // Code can be specific for internal logging but message stays safe
+    expect(body.error).not.toContain('DB_CONNECTION');
+    expect(body.error).not.toContain('stack');
+    expect(body.error).not.toContain('trace');
+    expect(body.details).toBeUndefined();
+  });
+});
+
+// ─── API Route Security Expectations ───────────────────────────────────────
+
+describe('API route security expectations', () => {
+  it('bad request includes validation details when provided', async () => {
+    const response = apiBadRequest(
+      'Invalid grade',
+      'GRADE_INVALID',
+      { field: 'grade', expected: '"6"-"12"', received: 5 }
+    );
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.code).toBe('GRADE_INVALID');
+    expect(body.details).toEqual({ field: 'grade', expected: '"6"-"12"', received: 5 });
+  });
+
+  it('conflict response for duplicate resources', async () => {
+    const response = apiConflict('Email already registered');
+    expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body.error).toBe('Email already registered');
+    expect(body.code).toBe('CONFLICT');
+  });
+
+  it('error responses use consistent shape across all status codes', async () => {
+    const codes: Array<{ fn: () => ReturnType<typeof apiError>; status: number }> = [
+      { fn: () => apiBadRequest('bad'), status: 400 },
+      { fn: () => apiUnauthorized(), status: 401 },
+      { fn: () => apiForbidden(), status: 403 },
+      { fn: () => apiNotFound(), status: 404 },
+      { fn: () => apiConflict('dup'), status: 409 },
+      { fn: () => apiRateLimit(), status: 429 },
+      { fn: () => apiInternalError(), status: 500 },
+    ];
+
+    for (const { fn, status } of codes) {
+      const response = fn();
+      expect(response.status).toBe(status);
+      const body = await response.json();
+      // All error responses must have 'error' string and 'code' string
+      expect(typeof body.error).toBe('string');
+      expect(typeof body.code).toBe('string');
+      // None should have 'data'
+      expect(body.data).toBeUndefined();
+    }
+  });
 });
