@@ -18,6 +18,10 @@ export default function LoginPage() {
     : 'student';
 
   useEffect(() => {
+    // Don't redirect if user explicitly wants to switch accounts
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('switch') === 'true') return;
+
     if (!isLoading && isLoggedIn) {
       if (activeRole === 'teacher') router.replace('/teacher');
       else if (activeRole === 'guardian') router.replace('/parent');
