@@ -20,6 +20,8 @@ interface CreatedCredentials {
   password: string;
   name: string;
   role: string;
+  student_invite_code?: string;
+  login_instructions?: string;
 }
 
 function DemoContent() {
@@ -80,8 +82,15 @@ function DemoContent() {
       });
       if (res.ok) {
         const d = await res.json();
-        if (d.data?.credentials) {
-          setCredentials(Array.isArray(d.data.credentials) ? d.data.credentials : [d.data.credentials]);
+        if (d.success && d.data) {
+          setCredentials([{
+            email: d.data.email,
+            password: d.data.password,
+            name: formName.trim(),
+            role: d.data.role,
+            student_invite_code: d.data.student_invite_code,
+            login_instructions: d.data.login_instructions,
+          }]);
         }
         setFormName('');
         setFormEmail('');
@@ -161,8 +170,16 @@ function DemoContent() {
       });
       if (res.ok) {
         const d = await res.json();
-        if (d.data?.credentials) {
-          setCredentials(Array.isArray(d.data.credentials) ? d.data.credentials : [d.data.credentials]);
+        if (d.success && d.data) {
+          const items = Array.isArray(d.data) ? d.data : [d.data];
+          setCredentials(items.map((item: Record<string, string>) => ({
+            email: item.email,
+            password: item.password,
+            name: item.name || item.role,
+            role: item.role,
+            student_invite_code: item.student_invite_code,
+            login_instructions: item.login_instructions,
+          })));
         }
         fetchAccounts();
       }
@@ -347,6 +364,19 @@ function DemoContent() {
                 <div style={{ fontSize: 12, color: colors.text2 }}>
                   Password: <code style={{ color: colors.text1 }}>{cred.password}</code>
                 </div>
+                {cred.student_invite_code && (
+                  <>
+                    <div style={{ fontSize: 12, color: colors.accent, marginTop: 6, fontWeight: 600 }}>
+                      Parent Portal Login
+                    </div>
+                    <div style={{ fontSize: 12, color: colors.text2, marginTop: 2 }}>
+                      Link Code: <code style={{ color: colors.text1, fontWeight: 700 }}>{cred.student_invite_code}</code>
+                    </div>
+                    <div style={{ fontSize: 11, color: colors.text3, marginTop: 2 }}>
+                      {cred.login_instructions || 'Go to /parent and enter the link code (not email/password).'}
+                    </div>
+                  </>
+                )}
               </div>
             ))}
             <button onClick={() => setCredentials(null)} style={{ ...S.primaryBtn, marginTop: 12, width: '100%' }}>

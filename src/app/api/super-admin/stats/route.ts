@@ -20,15 +20,15 @@ export async function GET(request: NextRequest) {
 
     const [students, teachers, parents, quizzes, chats,
            rStudents, rQuizzes, rChats, weekStudents, weekQuizzes] = await Promise.all([
-      countRows('students', 'is_demo_user=eq.false'),
-      countRows('teachers', 'is_demo_user=eq.false'),
-      countRows('guardians', 'is_demo_user=eq.false'),
+      countRows('students', 'is_demo=eq.false'),
+      countRows('teachers', 'is_demo=eq.false'),
+      countRows('guardians', 'is_demo=eq.false'),
       countRows('quiz_sessions'),
       countRows('chat_sessions'),
-      countRows('students', `is_demo_user=eq.false&created_at=gte.${since24h}`),
+      countRows('students', `is_demo=eq.false&created_at=gte.${since24h}`),
       countRows('quiz_sessions', `created_at=gte.${since24h}`),
       countRows('chat_sessions', `created_at=gte.${since24h}`),
-      countRows('students', `is_demo_user=eq.false&created_at=gte.${since7d}`),
+      countRows('students', `is_demo=eq.false&created_at=gte.${since7d}`),
       countRows('quiz_sessions', `created_at=gte.${since7d}`),
     ]);
 
