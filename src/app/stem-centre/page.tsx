@@ -1,15 +1,21 @@
 'use client';
 
 import { useState, useEffect, useCallback, Suspense } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { BUILT_IN_SIMULATIONS, type BuiltInSimulation } from '@/components/simulations/index';
-import GuidedExperiment from '@/components/stem/GuidedExperiment';
 import type { ExperimentResult } from '@/components/stem/GuidedExperiment';
 import { getExperimentForSimulation } from '@/components/stem/experiments';
 import { isPremium } from '@/lib/plans';
 import Link from 'next/link';
+
+// Lazy-load GuidedExperiment — only rendered when a lab with a guided experiment is active
+const GuidedExperiment = dynamic(() => import('@/components/stem/GuidedExperiment'), {
+  ssr: false,
+  loading: () => <div className="p-8 text-center animate-pulse text-2xl">🔬</div>,
+});
 
 /* ─── Types ─── */
 interface DbSimulation {
