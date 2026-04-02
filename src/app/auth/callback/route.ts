@@ -36,69 +36,80 @@ export async function GET(request: NextRequest) {
         return NextResponse.redirect(`${origin}/auth/reset`);
       }
       if (type === 'signup') {
-        // Email confirmation — send welcome email then redirect to dashboard
-        // Fire-and-forget: fetch user metadata and trigger welcome email
+        // Email confirmation — bootstrap profile (if not already done) then redirect
+        // This handles the case where signup required email confirmation before
+        // a session was available, so the client-side bootstrap couldn't run.
+        //
+        // WARNING: Do not remove the bootstrap call — it's the safety net for
+        // users who confirmed their email after the session expired.
+        let redirectRole = 'student';
         try {
           const { data: { user } } = await supabase.auth.getUser();
           if (user) {
             const meta = user.user_metadata || {};
             const email = user.email || '';
             const name = meta.name || email.split('@')[0];
+            redirectRole = meta.role || 'student';
 
-            // Determine role from profile tables
+            // Check if profile already exists (bootstrap may have run during signup)
+            const { data: existingStudent } = await supabase.from('students').select('id').eq('auth_user_id', user.id).single();
+            const { data: existingTeacher } = await supabase.from('teachers').select('id').eq('auth_user_id', user.id).single();
+            const { data: existingGuardian } = await supabase.from('guardians').select('id').eq('auth_user_id', user.id).single();
+
+            const hasProfile = !!(existingStudent || existingTeacher || existingGuardian);
+
+            if (!hasProfile) {
+              // No profile exists — run server bootstrap via admin client
+              try {
+                const { getSupabaseAdmin } = await import('@/lib/supabase-admin');
+                const admin = getSupabaseAdmin();
+                await admin.rpc('bootstrap_user_profile', {
+                  p_auth_user_id: user.id,
+                  p_role: redirectRole,
+                  p_name: name,
+                  p_email: email,
+                  p_grade: meta.grade || '9',
+                  p_board: meta.board || 'CBSE',
+                  p_school_name: meta.school_name || null,
+                  p_subjects_taught: null,
+                  p_grades_taught: null,
+                  p_phone: null,
+                  p_link_code: null,
+                });
+              } catch (bootstrapErr) {
+                console.error('[Auth Callback] Bootstrap failed:', bootstrapErr);
+                // Non-fatal — AuthContext fallback will retry
+              }
+            } else {
+              // Detect actual role from existing profile
+              if (existingTeacher) redirectRole = 'teacher';
+              else if (existingGuardian) redirectRole = 'parent';
+              else redirectRole = 'student';
+            }
+
+            // Fire-and-forget welcome email
             const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
             const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
             const { data: session } = await supabase.auth.getSession();
             const token = session?.session?.access_token;
-
             if (token && supabaseUrl) {
-              // Check which profile exists to determine role
-              const { data: studentData } = await supabase.from('students').select('grade, board').eq('auth_user_id', user.id).single();
-              const { data: teacherData } = await supabase.from('teachers').select('school_name').eq('auth_user_id', user.id).single();
-              const { data: guardianData } = await supabase.from('guardians').select('id').eq('auth_user_id', user.id).single();
-
-              let role = 'student';
-              const payload: Record<string, string> = { name, email };
-              if (studentData) {
-                role = 'student';
-                payload.grade = studentData.grade?.replace('Grade ', '') || '';
-                payload.board = studentData.board || '';
-              } else if (teacherData) {
-                role = 'teacher';
-                payload.school_name = teacherData.school_name || '';
-              } else if (guardianData) {
-                role = 'parent';
-              }
-              payload.role = role;
-
+              const payload: Record<string, string> = { name, email, role: redirectRole };
+              if (meta.grade) payload.grade = meta.grade;
+              if (meta.board) payload.board = meta.board;
               fetch(`${supabaseUrl}/functions/v1/send-welcome-email`, {
                 method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${token}`,
-                  'apikey': supabaseAnonKey,
-                },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`, 'apikey': supabaseAnonKey },
                 body: JSON.stringify(payload),
-              }).catch(() => {}); // Best-effort, don't block redirect
+              }).catch(() => {}); // Best-effort
             }
           }
         } catch {
-          // Welcome email is best-effort — never block signup confirmation
+          // Bootstrap/email errors are non-fatal — always redirect
         }
+
         // Redirect based on role
-        try {
-          const { data: { user: u2 } } = await supabase.auth.getUser();
-          if (u2) {
-            const metaRole = u2.user_metadata?.role;
-            if (metaRole === 'teacher') return NextResponse.redirect(`${origin}/teacher`);
-            if (metaRole === 'parent') return NextResponse.redirect(`${origin}/parent`);
-            // Check DB tables as fallback
-            const { data: gd } = await supabase.from('guardians').select('id').eq('auth_user_id', u2.id).single();
-            if (gd) return NextResponse.redirect(`${origin}/parent`);
-            const { data: td } = await supabase.from('teachers').select('id').eq('auth_user_id', u2.id).single();
-            if (td) return NextResponse.redirect(`${origin}/teacher`);
-          }
-        } catch { /* fallback to /dashboard */ }
+        if (redirectRole === 'teacher') return NextResponse.redirect(`${origin}/teacher`);
+        if (redirectRole === 'parent') return NextResponse.redirect(`${origin}/parent`);
         return NextResponse.redirect(`${origin}/dashboard`);
       }
       // Default: redirect to the `next` param or dashboard

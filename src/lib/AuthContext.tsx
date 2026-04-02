@@ -249,33 +249,62 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setActiveRoleState(detectedPrimary);
         } else {
           // User is authenticated but has no profile yet.
-          // Auto-create profile from auth metadata (handles failed signup inserts).
+          // Call server bootstrap to create profile from auth metadata.
           const metaRole = user.user_metadata?.role as string | undefined;
           const metaName = user.user_metadata?.name as string || user.email?.split('@')[0] || 'Student';
-          const metaGrade = user.user_metadata?.grade as string || '6';
+          const metaGrade = user.user_metadata?.grade as string || '9';
           const metaBoard = user.user_metadata?.board as string || 'CBSE';
 
           try {
-            if (!metaRole || metaRole === 'student') {
-              const { data: newStudent } = await supabase.from('students').insert({
-                auth_user_id: user.id, name: metaName, email: user.email,
-                grade: metaGrade.startsWith('Grade') ? metaGrade : `Grade ${metaGrade}`,
-                board: metaBoard, preferred_language: 'en', account_status: 'active',
-              }).select('*').single();
-              if (newStudent) { setStudent(newStudent as Student); setRoles(['student']); setActiveRoleState('student'); }
-            } else if (metaRole === 'teacher') {
-              const { data: newTeacher } = await supabase.from('teachers').insert({
-                auth_user_id: user.id, name: metaName, email: user.email || '',
-              }).select('id, name, school_name, subjects_taught, grades_taught, email, phone').single();
-              if (newTeacher) { setTeacher(newTeacher as TeacherProfile); setRoles(['teacher']); setActiveRoleState('teacher'); }
-            } else if (metaRole === 'parent') {
-              const { data: newGuardian } = await supabase.from('guardians').insert({
-                auth_user_id: user.id, name: metaName, email: user.email,
-              }).select('id, name, email, phone').single();
-              if (newGuardian) { setGuardian(newGuardian as GuardianProfile); setRoles(['guardian']); setActiveRoleState('guardian'); }
+            const bootstrapRes = await fetch('/api/auth/bootstrap', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                role: metaRole === 'teacher' ? 'teacher' : metaRole === 'parent' ? 'parent' : 'student',
+                name: metaName,
+                grade: metaGrade,
+                board: metaBoard,
+              }),
+            });
+
+            if (bootstrapRes.ok) {
+              // Re-fetch to get the newly created profile
+              const { data: newStudentData } = await supabase
+                .from('students')
+                .select('*')
+                .eq('auth_user_id', user.id)
+                .single();
+              if (newStudentData) {
+                setStudent(newStudentData as Student);
+                setRoles(['student']);
+                setActiveRoleState('student');
+              } else {
+                // Check teacher/guardian
+                const { data: newTeacherData } = await supabase
+                  .from('teachers')
+                  .select('id, name, school_name, subjects_taught, grades_taught, email, phone')
+                  .eq('auth_user_id', user.id)
+                  .single();
+                if (newTeacherData) {
+                  setTeacher(newTeacherData as TeacherProfile);
+                  setRoles(['teacher']);
+                  setActiveRoleState('teacher');
+                } else {
+                  const { data: newGuardianData } = await supabase
+                    .from('guardians')
+                    .select('id, name, email, phone')
+                    .eq('auth_user_id', user.id)
+                    .single();
+                  if (newGuardianData) {
+                    setGuardian(newGuardianData as GuardianProfile);
+                    setRoles(['guardian']);
+                    setActiveRoleState('guardian');
+                  }
+                }
+              }
             }
-          } catch (profileErr) {
-            console.warn('Auto-create profile failed:', profileErr);
+          } catch (bootstrapErr) {
+            console.warn('[Auth] Server bootstrap failed, using metadata fallback:', bootstrapErr);
           }
 
           // Final fallback if insert also failed
