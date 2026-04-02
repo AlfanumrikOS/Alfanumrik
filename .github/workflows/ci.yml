@@ -116,6 +116,24 @@ jobs:
         run: npx vitest run --reporter=verbose --coverage || npm test -- --reporter=verbose
         continue-on-error: false
 
+      # R15 fix: Explicit auth/identity test gate.
+      # Auth tests MUST pass independently — a failure here blocks the entire CI.
+      # This ensures unrelated test changes don't mask auth regressions.
+      - name: Auth & Identity test gate
+        run: |
+          echo "## Auth & Identity Test Gate" >> $GITHUB_STEP_SUMMARY
+          npx vitest run src/__tests__/auth-*.test.ts src/__tests__/identity-*.test.ts --reporter=verbose 2>&1 | tee /tmp/auth-test-output.txt
+          AUTH_EXIT=$?
+          PASS_COUNT=$(grep -c '✓' /tmp/auth-test-output.txt || echo "0")
+          echo "| Auth tests passed | $PASS_COUNT |" >> $GITHUB_STEP_SUMMARY
+          if [ "$AUTH_EXIT" != "0" ]; then
+            echo "BLOCKED: Auth/identity tests failed. This is a blocking gate."
+            echo "| Status | FAILED |" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          else
+            echo "| Status | PASSED |" >> $GITHUB_STEP_SUMMARY
+          fi
+
       - name: Coverage report
         if: always()
         run: |

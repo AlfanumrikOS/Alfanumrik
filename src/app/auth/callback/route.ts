@@ -18,6 +18,7 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
+import { getRoleDestination, validateRedirectTarget } from '@/lib/identity';
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl;
@@ -121,9 +122,7 @@ export async function GET(request: NextRequest) {
         }
 
         // Redirect based on role
-        if (redirectRole === 'teacher') return NextResponse.redirect(`${origin}/teacher`);
-        if (redirectRole === 'parent') return NextResponse.redirect(`${origin}/parent`);
-        return NextResponse.redirect(`${origin}/dashboard`);
+        return NextResponse.redirect(`${origin}${getRoleDestination(redirectRole)}`);
       }
       // Default: redirect to the `next` param or dashboard
       // Validate `next` to prevent open redirect attacks:
@@ -131,15 +130,7 @@ export async function GET(request: NextRequest) {
       // - Must not contain protocol-relative URLs (//), encoded slashes (%2f),
       //   backslashes, or javascript: URIs
       // - Only use trusted x-forwarded-host from Vercel (not arbitrary proxies)
-      const SAFE_NEXT_PATTERN = /^\/[a-zA-Z0-9\-_/?.=&]+$/;
-      const safeNext = (
-        next.startsWith('/') &&
-        !next.startsWith('//') &&
-        !next.includes('\\') &&
-        !next.toLowerCase().includes('%2f') &&
-        !next.toLowerCase().includes('javascript:') &&
-        SAFE_NEXT_PATTERN.test(next)
-      ) ? next : '/dashboard';
+      const safeNext = validateRedirectTarget(next, '/dashboard');
 
       // Only trust Vercel's forwarded host header (x-vercel-forwarded-host),
       // not the generic x-forwarded-host which can be spoofed by proxies
