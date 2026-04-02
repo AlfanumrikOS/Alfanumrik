@@ -12,6 +12,7 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
+import { validateRedirectTarget } from '@/lib/identity';
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl;
@@ -33,15 +34,7 @@ export async function GET(request: NextRequest) {
   // Validate `next` to prevent open redirect attacks — same rules as /auth/callback.
   // Must start with exactly one /, no protocol-relative URLs, no backslashes,
   // no encoded slashes, no javascript: URIs.
-  const SAFE_NEXT_PATTERN = /^\/[a-zA-Z0-9\-_/?.=&]+$/;
-  const safeNext = (
-    next.startsWith('/') &&
-    !next.startsWith('//') &&
-    !next.includes('\\') &&
-    !next.toLowerCase().includes('%2f') &&
-    !next.toLowerCase().includes('javascript:') &&
-    SAFE_NEXT_PATTERN.test(next)
-  ) ? next : '/dashboard';
+  const safeNext = validateRedirectTarget(next, '/dashboard');
 
   if (token_hash && type) {
     const supabase = await createSupabaseServerClient();

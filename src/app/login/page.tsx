@@ -4,17 +4,7 @@ import { useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { AuthScreen } from '@/components/auth/AuthScreen';
-
-/**
- * Returns the correct post-login destination based on user role.
- */
-function getRoleDestination(role: string): string {
-  switch (role) {
-    case 'teacher': return '/teacher';
-    case 'guardian': return '/parent';
-    default: return '/dashboard';
-  }
-}
+import { getRoleDestination } from '@/lib/identity';
 
 export default function LoginPage() {
   const { isLoggedIn, isLoading, activeRole } = useAuth();

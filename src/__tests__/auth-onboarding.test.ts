@@ -502,7 +502,7 @@ describe('AuthContext bootstrap fallback', () => {
 
   it('uses email prefix as name fallback when metadata.name is missing', async () => {
     const user = {
-      user_metadata: { role: 'student' },
+      user_metadata: { role: 'student' } as Record<string, string>,
       email: 'aarav.sharma@example.com',
     };
 

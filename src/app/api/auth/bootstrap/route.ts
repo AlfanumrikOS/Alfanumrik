@@ -25,12 +25,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { sanitizeText } from '@/lib/sanitize';
-
-const VALID_ROLES = ['student', 'teacher', 'parent'] as const;
-type ValidRole = typeof VALID_ROLES[number];
-
-const VALID_GRADES = ['6', '7', '8', '9', '10', '11', '12'];
-const VALID_BOARDS = ['CBSE', 'ICSE', 'State Board', 'IB', 'Other'];
+import {
+  VALID_BOARDS,
+  isValidRole,
+  isValidGrade,
+  isValidBoard,
+  normalizeGrade,
+  getRoleDestination,
+  type ValidRole,
+} from '@/lib/identity';
 
 export async function POST(request: NextRequest) {
   try {
@@ -63,7 +66,7 @@ export async function POST(request: NextRequest) {
     const name =
       typeof body.name === 'string' ? sanitizeText(body.name.trim()) : '';
 
-    if (!role || !VALID_ROLES.includes(role as ValidRole)) {
+    if (!role || !isValidRole(role)) {
       return NextResponse.json(
         {
           success: false,
@@ -87,12 +90,10 @@ export async function POST(request: NextRequest) {
 
     // Role-specific validation
     if (role === 'student') {
-      // P5: Grades must be strings "6"-"12". Coerce numbers to strings for robustness.
-      const rawGrade = body.grade;
-      const grade = typeof rawGrade === 'string' ? rawGrade
-                  : typeof rawGrade === 'number' ? String(rawGrade)
-                  : '9';
-      if (!VALID_GRADES.includes(grade)) {
+      // P5: Grades must be strings "6"-"12". Validate raw input, then normalizeGrade coerces numbers to strings.
+      // Coerce number to string for validation (matching normalizeGrade logic), but reject truly invalid values.
+      const rawGrade = typeof body.grade === 'number' ? String(body.grade) : body.grade;
+      if (rawGrade !== undefined && !isValidGrade(rawGrade)) {
         return NextResponse.json(
           {
             success: false,
@@ -104,7 +105,7 @@ export async function POST(request: NextRequest) {
       }
 
       const board = typeof body.board === 'string' ? body.board : 'CBSE';
-      if (!VALID_BOARDS.includes(board)) {
+      if (!isValidBoard(board)) {
         return NextResponse.json(
           {
             success: false,
@@ -120,7 +121,7 @@ export async function POST(request: NextRequest) {
       const gradesTought = body.grades_taught;
       if (Array.isArray(gradesTought)) {
         const allValid = gradesTought.every(
-          (g) => typeof g === 'string' && VALID_GRADES.includes(g)
+          (g) => isValidGrade(g)
         );
         if (!allValid) {
           return NextResponse.json(
@@ -145,7 +146,7 @@ export async function POST(request: NextRequest) {
         p_role: role,
         p_name: name,
         p_email: user.email || '',
-        p_grade: role === 'student' ? String(body.grade || '9') : null,
+        p_grade: role === 'student' ? normalizeGrade(body.grade) : null,
         p_board: role === 'student' ? String(body.board || 'CBSE') : null,
         p_school_name:
           role === 'teacher' ? ((body.school_name as string) || '') : null,
@@ -218,12 +219,7 @@ export async function POST(request: NextRequest) {
     } catch { /* audit log is best-effort */ }
 
     // 5. Determine redirect destination based on role
-    const destination =
-      role === 'teacher'
-        ? '/teacher'
-        : role === 'parent'
-          ? '/parent'
-          : '/dashboard';
+    const destination = getRoleDestination(role);
 
     return NextResponse.json({
       success: true,

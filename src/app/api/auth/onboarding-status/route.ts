@@ -9,6 +9,7 @@
 
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
+import { resolveIdentity } from '@/lib/identity/onboarding';
 
 export async function GET() {
   try {
@@ -25,68 +26,24 @@ export async function GET() {
       );
     }
 
-    // Check onboarding state
-    const { data: onboarding } = await supabase
-      .from('onboarding_state')
-      .select(
-        'step, intended_role, profile_id, error_message, created_at, completed_at'
-      )
-      .eq('auth_user_id', user.id)
-      .single();
-
-    // Check if profiles exist (fallback if onboarding_state is missing)
-    const [
-      { data: studentData },
-      { data: teacherData },
-      { data: guardianData },
-    ] = await Promise.all([
-      supabase
-        .from('students')
-        .select('id, name, grade')
-        .eq('auth_user_id', user.id)
-        .single(),
-      supabase
-        .from('teachers')
-        .select('id, name')
-        .eq('auth_user_id', user.id)
-        .single(),
-      supabase
-        .from('guardians')
-        .select('id, name')
-        .eq('auth_user_id', user.id)
-        .single(),
-    ]);
-
-    const hasProfile = !!(studentData || teacherData || guardianData);
-    const detectedRole = teacherData
-      ? 'teacher'
-      : guardianData
-        ? 'parent'
-        : studentData
-          ? 'student'
-          : null;
+    // Use centralized identity resolution (single source of truth)
+    const identity = await resolveIdentity(supabase, user.id);
 
     return NextResponse.json({
       success: true,
       data: {
         status: 'authenticated',
-        onboarding: onboarding
+        onboarding: identity.onboarding
           ? {
-              step: onboarding.step,
-              role: onboarding.intended_role,
-              completed: onboarding.step === 'completed',
-              error: onboarding.error_message,
+              step: identity.onboarding.step,
+              role: identity.onboarding.intended_role,
+              completed: identity.onboarding.step === 'completed',
+              error: identity.onboarding.error_message,
             }
           : null,
-        has_profile: hasProfile,
-        detected_role: hasProfile ? detectedRole : null,
-        profile: studentData
-          ? { type: 'student', ...studentData }
-          : teacherData
-            ? { type: 'teacher', ...teacherData }
-            : guardianData
-              ? { type: 'guardian', ...guardianData }
-              : null,
+        has_profile: identity.hasProfile,
+        detected_role: identity.hasProfile ? identity.detectedRole : null,
+        profile: identity.profile,
       },
     });
   } catch (error) {
