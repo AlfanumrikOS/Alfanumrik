@@ -247,6 +247,12 @@ function LoginScreen({ onLogin, isHi }: { onLogin: (g: ParentSession, s: Student
         <p className="text-xs text-gray-500 mt-4">
           {t(isHi, "Ask your child for the link code from their Alfanumrik profile.", 'अपने बच्चे से उनकी Alfanumrik प्रोफ़ाइल से लिंक कोड मांगें।')}
         </p>
+        <p className="text-xs text-gray-400 mt-3">
+          {t(isHi, 'Student or Teacher?', 'छात्र या शिक्षक?')}{' '}
+          <a href="/login" className="text-orange-500 font-medium hover:underline">
+            {t(isHi, 'Login here \u2192', 'यहाँ लॉगिन करें \u2192')}
+          </a>
+        </p>
       </div>
     </div>
   );

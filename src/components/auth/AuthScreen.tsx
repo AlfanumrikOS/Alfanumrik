@@ -451,6 +451,10 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
               <span style={{ color: 'var(--text-3)' }}>Already have an account? <button onClick={() => { setMode('login'); setError(''); setSuccess(''); }} className="font-bold" style={{ color: activeRoleColor }}>Log In</button></span>
             )}
           </div>
+
+          <p className="text-center text-xs mt-3" style={{ color: '#9CA3AF' }}>
+            Parent? <a href="/parent" style={{ color: '#E8581C', fontWeight: 500 }}>Go to Parent Portal &rarr;</a>
+          </p>
         </div>
 
         {/* Trust signals */}
