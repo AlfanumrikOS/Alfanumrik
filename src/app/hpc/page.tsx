@@ -59,7 +59,7 @@ export default function HPCPage() {
 
   useEffect(() => {
     if (!authLoading && !isLoggedIn) {
-      router.replace('/');
+      router.replace('/login');
     }
   }, [authLoading, isLoggedIn, router]);
 

@@ -68,7 +68,7 @@ export default function ExamsPage() {
   const [loadingChapters, setLoadingChapters] = useState(false);
 
   useEffect(() => {
-    if (!isLoading && !isLoggedIn) router.replace('/');
+    if (!isLoading && !isLoggedIn) router.replace('/login');
   }, [isLoading, isLoggedIn, router]);
 
   /* ─── Load exams ─── */

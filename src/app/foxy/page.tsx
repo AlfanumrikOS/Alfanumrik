@@ -193,7 +193,7 @@ export default function FoxyPage() {
   // Lesson flow state (grouped)
   const [lesson, setLesson] = useState<{ step: LessonStep; completed: LessonStep[]; prediction: string; showPrediction: boolean; predictionSubmitted: boolean }>({ step: 'hook', completed: [], prediction: '', showPrediction: false, predictionSubmitted: false });
 
-  useEffect(() => { if (!authLoading && !isLoggedIn) router.replace('/'); }, [authLoading, isLoggedIn, router]);
+  useEffect(() => { if (!authLoading && !isLoggedIn) router.replace('/login'); }, [authLoading, isLoggedIn, router]);
 
   // Fetch usage stats on mount and after student loads
   useEffect(() => {

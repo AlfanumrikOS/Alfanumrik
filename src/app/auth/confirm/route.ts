@@ -109,9 +109,9 @@ export async function GET(request: NextRequest) {
     }
 
     console.error('[Auth Confirm] Token verification failed:', error.message);
-    return NextResponse.redirect(`${origin}/?error=verification_failed`);
+    return NextResponse.redirect(`${origin}/login?error=verification_failed`);
   }
 
   // No token — redirect to login
-  return NextResponse.redirect(`${origin}/`);
+  return NextResponse.redirect(`${origin}/login`);
 }

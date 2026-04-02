@@ -181,7 +181,7 @@ export default function ProgressPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'cognitive'>('overview');
 
   useEffect(() => {
-    if (!isLoading && !isLoggedIn) router.replace('/');
+    if (!isLoading && !isLoggedIn) router.replace('/login');
   }, [isLoading, isLoggedIn, router]);
 
   useEffect(() => {

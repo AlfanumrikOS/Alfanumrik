@@ -19,7 +19,7 @@ export default function TeacherProfilePage() {
   const [toast, setToast] = useState('');
 
   if (authLoading) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc' }}><div style={{ fontSize: 48 }}>👩‍🏫</div></div>;
-  if (!isLoggedIn || (activeRole !== 'teacher' && !teacher)) { router.replace('/'); return null; }
+  if (!isLoggedIn || (activeRole !== 'teacher' && !teacher)) { router.replace('/login'); return null; }
 
   const startEdit = () => {
     setName(teacher?.name || '');
@@ -52,7 +52,7 @@ export default function TeacherProfilePage() {
 
   const handleSignOut = async () => {
     await signOut();
-    router.replace('/');
+    router.replace('/login');
   };
 
   const subjectNames = (teacher?.subjects_taught || []).map(

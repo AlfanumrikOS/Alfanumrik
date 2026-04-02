@@ -131,7 +131,7 @@ export default function TeacherWorksheetsPage() {
   const [isPrintView, setIsPrintView] = useState(false);
 
   useEffect(() => {
-    if (!authLoading && (!isLoggedIn || (activeRole !== 'teacher' && !teacher))) router.replace('/');
+    if (!authLoading && (!isLoggedIn || (activeRole !== 'teacher' && !teacher))) router.replace('/login');
   }, [authLoading, isLoggedIn, activeRole, teacher, router]);
 
   useEffect(() => {

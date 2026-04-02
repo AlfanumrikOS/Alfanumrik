@@ -50,7 +50,7 @@ export default function ReviewPage() {
   const [retentionTests, setRetentionTests] = useState<RetentionTest[]>([]);
 
   useEffect(() => {
-    if (!isLoading && !isLoggedIn) router.replace('/');
+    if (!isLoading && !isLoggedIn) router.replace('/login');
   }, [isLoading, isLoggedIn, router]);
 
   const load = useCallback(async () => {

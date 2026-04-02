@@ -62,7 +62,7 @@ export default function ScanPage() {
   const [loadingRecent, setLoadingRecent] = useState(true);
 
   useEffect(() => {
-    if (!isLoading && !isLoggedIn) router.replace('/');
+    if (!isLoading && !isLoggedIn) router.replace('/login');
   }, [isLoading, isLoggedIn, router]);
 
   /* ─── Load recent uploads ─── */
