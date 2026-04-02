@@ -18,19 +18,46 @@ export default function ResetPasswordPage() {
   const [hasSession, setHasSession] = useState(false);
 
   useEffect(() => {
-    // Supabase automatically handles the token exchange from the email link
-    // When user clicks the reset link, they land here with a valid session
+    // The session may arrive via multiple paths:
+    // 1. URL hash tokens (set by /auth/confirm or /auth/callback) — detectSessionInUrl picks these up
+    // 2. localStorage (if SDK already stored a session)
+    // 3. Network call to Supabase (if cookies are set by middleware)
     const checkSession = async () => {
+      // Method 1: Check if client SDK already has a session (from localStorage)
       const { data: { session } } = await supabase.auth.getSession();
-      setHasSession(!!session);
-      setChecking(false);
-    };
-
-    // Listen for auth state change (SIGNED_IN from the reset link)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') {
+      if (session) {
         setHasSession(true);
         setChecking(false);
+        return;
+      }
+
+      // Method 2: Try to get user via network call (authenticates using token if available)
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          setHasSession(true);
+          setChecking(false);
+          return;
+        }
+      } catch {
+        // getUser failed — no session available via this method
+      }
+
+      // No session found yet — wait briefly for onAuthStateChange to fire
+      // (detectSessionInUrl processes the URL hash asynchronously)
+      setTimeout(() => {
+        setChecking(false);
+      }, 2000);
+    };
+
+    // Listen for auth state change — INITIAL_SESSION fires when detectSessionInUrl
+    // processes the hash tokens, PASSWORD_RECOVERY and SIGNED_IN cover other paths
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        if (session) {
+          setHasSession(true);
+          setChecking(false);
+        }
       }
     });
 
