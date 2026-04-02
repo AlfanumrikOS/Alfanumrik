@@ -22,6 +22,16 @@ let _flagCache: FeatureFlagRow[] | null = null;
 let _flagCacheExpiry = 0;
 
 /**
+ * Invalidate the in-memory flag cache so that the next evaluation
+ * re-fetches from Supabase. Call this after admin mutations to
+ * feature_flags so toggles take effect immediately.
+ */
+export function invalidateFlagCache(): void {
+  _flagCache = null;
+  _flagCacheExpiry = 0;
+}
+
+/**
  * Load all flags from Supabase (server-side, uses service role).
  * Cached for 5 minutes.
  */

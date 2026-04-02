@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { authorizeRequest, logAudit } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { isValidUUID } from '@/lib/sanitize';
 
 /**
  * GET /api/v1/class/:id/analytics — View class-level analytics
@@ -16,6 +17,13 @@ export async function GET(
 ) {
   try {
     const { id: classId } = await params;
+
+    if (!isValidUUID(classId)) {
+      return NextResponse.json(
+        { error: 'Invalid class ID format', code: 'BAD_REQUEST' },
+        { status: 400 }
+      );
+    }
 
     const auth = await authorizeRequest(request, 'class.view_analytics');
     if (!auth.authorized) return auth.errorResponse!;

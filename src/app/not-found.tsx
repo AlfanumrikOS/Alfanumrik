@@ -7,12 +7,14 @@ export default function NotFound() {
     <div style={pageStyle}>
       <div style={containerStyle}>
         <div style={iconContainerStyle}>
-          <span style={iconStyle} role="img" aria-label="404 error">404</span>
+          <span style={foxyStyle} role="img" aria-label="Foxy mascot">🦊</span>
+          <span style={codeStyle}>404</span>
         </div>
 
         <h1 style={headingStyle}>Page Not Found</h1>
         <p style={descriptionStyle}>
-          We couldn&apos;t find the page you&apos;re looking for. It might have been moved or deleted.
+          Foxy couldn&apos;t find the page you&apos;re looking for.
+          It might have been moved or doesn&apos;t exist.
         </p>
 
         <div style={suggestionsStyle}>
@@ -24,15 +26,19 @@ export default function NotFound() {
           </ul>
         </div>
 
-        <Link href="/dashboard" aria-label="Go back to dashboard">
+        <Link href="/dashboard" aria-label="Go back to dashboard" style={{ textDecoration: 'none' }}>
           <button style={buttonStyle}>
             Back to Dashboard
           </button>
         </Link>
 
         <nav style={alternativeLinksStyle} aria-label="Additional navigation">
-          <Link href="/" style={linkStyle}>
+          <Link href="/welcome" style={linkStyle}>
             Home
+          </Link>
+          <span style={separatorStyle} aria-hidden="true">&bull;</span>
+          <Link href="/help" style={linkStyle}>
+            Help
           </Link>
           <span style={separatorStyle} aria-hidden="true">&bull;</span>
           <a href="mailto:support@alfanumrik.com" style={linkStyle}>
@@ -54,20 +60,21 @@ const pageStyle: React.CSSProperties = {
   justifyContent: 'center',
   padding: '20px 16px',
   fontFamily: "'Plus Jakarta Sans', 'Sora', system-ui, sans-serif",
-  backgroundColor: '#0B1120',
-  color: '#E2E8F0',
+  backgroundColor: 'var(--bg, #FBF8F4)',
+  color: 'var(--text-1, #1a1a1a)',
 };
 
 const containerStyle: React.CSSProperties = { maxWidth: 500, textAlign: 'center' };
-const iconContainerStyle: React.CSSProperties = { marginBottom: 32, animation: 'float 3s ease-in-out infinite' };
-const iconStyle: React.CSSProperties = { fontSize: 80, fontWeight: 700, color: '#6366F1', display: 'block', lineHeight: 1 };
-const headingStyle: React.CSSProperties = { fontSize: 32, fontWeight: 700, color: '#F1F5F9', margin: '0 0 12px' };
-const descriptionStyle: React.CSSProperties = { fontSize: 15, color: '#94A3B8', margin: '0 0 24px', lineHeight: 1.6 };
-const suggestionsStyle: React.CSSProperties = { backgroundColor: '#0F172A', border: '1px solid #1E293B', borderRadius: 12, padding: '16px 18px', marginBottom: 24, textAlign: 'left' };
-const suggestionTitleStyle: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.5, margin: '0 0 10px' };
+const iconContainerStyle: React.CSSProperties = { marginBottom: 24, animation: 'float 3s ease-in-out infinite' };
+const foxyStyle: React.CSSProperties = { fontSize: 64, display: 'block', lineHeight: 1 };
+const codeStyle: React.CSSProperties = { fontSize: 48, fontWeight: 800, color: 'var(--orange, #E8581C)', display: 'block', lineHeight: 1, marginTop: 8, fontFamily: "'Sora', system-ui, sans-serif" };
+const headingStyle: React.CSSProperties = { fontSize: 24, fontWeight: 700, color: 'var(--text-1, #1a1a1a)', margin: '0 0 12px', fontFamily: "'Sora', system-ui, sans-serif" };
+const descriptionStyle: React.CSSProperties = { fontSize: 15, color: 'var(--text-2, #555)', margin: '0 0 24px', lineHeight: 1.6 };
+const suggestionsStyle: React.CSSProperties = { backgroundColor: 'var(--surface-1, #fff)', border: '1px solid var(--border, #e5e0d8)', borderRadius: 16, padding: '16px 20px', marginBottom: 24, textAlign: 'left' };
+const suggestionTitleStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: 'var(--text-3, #888)', textTransform: 'uppercase', letterSpacing: 0.5, margin: '0 0 10px' };
 const listStyle: React.CSSProperties = { listStyle: 'none', padding: 0, margin: 0 };
-const listItemStyle: React.CSSProperties = { fontSize: 13, color: '#CBD5E1', padding: '6px 0', lineHeight: 1.5 };
-const buttonStyle: React.CSSProperties = { display: 'inline-block', width: '100%', padding: '12px 20px', backgroundColor: '#6366F1', color: '#FFFFFF', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 600, cursor: 'pointer', textDecoration: 'none', transition: 'all 0.3s ease', marginBottom: 16 };
+const listItemStyle: React.CSSProperties = { fontSize: 14, color: 'var(--text-2, #555)', padding: '6px 0', lineHeight: 1.5 };
+const buttonStyle: React.CSSProperties = { display: 'inline-block', width: '100%', padding: '14px 20px', background: 'linear-gradient(135deg, #E8581C, #F5A623)', color: '#FFFFFF', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 600, cursor: 'pointer', textDecoration: 'none', transition: 'all 0.2s ease', marginBottom: 16 };
 const alternativeLinksStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 };
-const linkStyle: React.CSSProperties = { fontSize: 13, color: '#6366F1', textDecoration: 'none', fontWeight: 500 };
-const separatorStyle: React.CSSProperties = { color: '#334155' };
+const linkStyle: React.CSSProperties = { fontSize: 13, color: 'var(--orange, #E8581C)', textDecoration: 'none', fontWeight: 500 };
+const separatorStyle: React.CSSProperties = { color: 'var(--border, #e5e0d8)' };

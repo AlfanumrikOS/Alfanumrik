@@ -5,19 +5,38 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 
 /**
- * Root page — redirects to the correct destination:
- * - Authenticated → /dashboard
+ * Root page — role-aware redirect:
+ * - Student → /dashboard
+ * - Teacher → /teacher
+ * - Parent/Guardian → /parent
+ * - Admin → /super-admin
  * - Unauthenticated → /welcome (handled by middleware, this is fallback)
  */
 export default function RootPage() {
-  const { isLoggedIn, isLoading } = useAuth();
+  const { isLoggedIn, isLoading, activeRole } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (!isLoading) {
-      router.replace(isLoggedIn ? '/dashboard' : '/welcome');
+    if (isLoading) return;
+
+    if (!isLoggedIn) {
+      router.replace('/welcome');
+      return;
     }
-  }, [isLoggedIn, isLoading, router]);
+
+    // Role-aware destination
+    switch (activeRole) {
+      case 'teacher':
+        router.replace('/teacher');
+        break;
+      case 'guardian':
+        router.replace('/parent');
+        break;
+      default:
+        router.replace('/dashboard');
+        break;
+    }
+  }, [isLoggedIn, isLoading, activeRole, router]);
 
   return (
     <div style={{

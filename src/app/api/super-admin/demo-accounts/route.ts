@@ -194,7 +194,7 @@ export async function POST(request: NextRequest) {
 
         if (item.role === 'student') {
           profileData.is_active = true;
-          profileData.grade = 'Grade 10';
+          profileData.grade = '10';
           profileData.board = 'CBSE';
           profileData.subscription_plan = 'unlimited';
           profileData.account_status = 'demo';
@@ -206,7 +206,7 @@ export async function POST(request: NextRequest) {
           profileData.is_active = true;
           profileData.school_name = 'Demo School - Delhi Public School';
           profileData.subjects_taught = ['Mathematics', 'Science'];
-          profileData.grades_taught = ['Grade 10', 'Grade 11', 'Grade 12'];
+          profileData.grades_taught = ['10', '11', '12'];
           profileData.board = 'CBSE';
           profileData.preferred_language = 'en';
           profileData.is_verified = true;
@@ -382,7 +382,7 @@ export async function POST(request: NextRequest) {
 
     if (role === 'student') {
       profileData.is_active = true;
-      profileData.grade = 'Grade 10'; // P5: grade must be string, "Grade X" format
+      profileData.grade = '10'; // P5: grade must be string "6" through "12"
       profileData.board = 'CBSE';
       profileData.subscription_plan = 'unlimited';
       profileData.account_status = 'demo';
@@ -394,7 +394,7 @@ export async function POST(request: NextRequest) {
       profileData.is_active = true;
       profileData.school_name = 'Demo School - Delhi Public School';
       profileData.subjects_taught = ['Mathematics', 'Science'];
-      profileData.grades_taught = ['Grade 10', 'Grade 11', 'Grade 12'];
+      profileData.grades_taught = ['10', '11', '12'];
       profileData.board = 'CBSE';
       profileData.preferred_language = 'en';
       profileData.is_verified = true;

@@ -10,7 +10,7 @@ export default function TermsPage() {
   return (
     <div style={pageStyle}>
       <div style={containerStyle}>
-        <Link href="/dashboard" style={backLink}>&larr; Back</Link>
+        <Link href="/welcome" style={backLink}>&larr; Back</Link>
         <h1 style={h1}>Terms of Service</h1>
         <p style={updated}>Last updated: March 2026</p>
 

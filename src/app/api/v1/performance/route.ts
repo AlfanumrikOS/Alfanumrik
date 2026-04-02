@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { authorizeRequest, logAudit, canAccessStudent } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { isValidUUID } from '@/lib/sanitize';
 
 /**
  * GET /api/v1/performance — View performance data
@@ -20,6 +21,12 @@ export async function GET(request: Request) {
 
     // If a specific student_id is requested, verify access
     const requestedStudentId = url.searchParams.get('student_id');
+    if (requestedStudentId && !isValidUUID(requestedStudentId)) {
+      return NextResponse.json(
+        { error: 'Invalid student_id format', code: 'BAD_REQUEST' },
+        { status: 400 }
+      );
+    }
     if (requestedStudentId && requestedStudentId !== auth.studentId) {
       if (!auth.userId) {
         return NextResponse.json(

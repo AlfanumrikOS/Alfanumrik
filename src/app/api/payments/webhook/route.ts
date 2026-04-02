@@ -36,9 +36,12 @@ export async function POST(request: NextRequest) {
       .update(body)
       .digest('hex');
 
-    if (expectedSignature !== signature) {
+    // Use timing-safe comparison to prevent timing attacks on signature verification
+    const sigBuffer = Buffer.from(signature, 'hex');
+    const expectedBuffer = Buffer.from(expectedSignature, 'hex');
+    if (sigBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(sigBuffer, expectedBuffer)) {
       logger.error('Webhook signature mismatch');
-      return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
     }
 
     const event = JSON.parse(body);

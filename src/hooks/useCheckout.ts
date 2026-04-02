@@ -92,7 +92,8 @@ export function useCheckout() {
         return;
       }
 
-      const data = await res.json();
+      const resBody = await res.json();
+      const data = resBody.data ?? resBody; // support { success, data } envelope
       setStatus('checkout_open');
 
       if (data.type === 'subscription') {
@@ -180,6 +181,11 @@ export function useCheckout() {
             await refreshStudent();
             setStatus('success');
             params.onSuccess?.(params.planCode);
+          } else if (verifyRes.status === 202 || data.status === 'activation_pending' || data.status === 'pending_confirmation') {
+            // Payment captured, activation in progress via webhook
+            await refreshStudent();
+            setStatus('success');
+            params.onSuccess?.(params.planCode);
           } else {
             setError(data.error || 'Verification failed. Your payment is safe — plan will activate shortly.');
             setStatus('failed');
@@ -258,7 +264,7 @@ export function useCheckout() {
             await refreshStudent();
             setStatus('success');
             params.onSuccess?.(params.planCode);
-          } else if (verifyRes.status === 202 || data.status === 'pending_confirmation') {
+          } else if (verifyRes.status === 202 || data.status === 'pending_confirmation' || data.status === 'activation_pending') {
             await refreshStudent();
             setStatus('success');
             params.onSuccess?.(params.planCode);

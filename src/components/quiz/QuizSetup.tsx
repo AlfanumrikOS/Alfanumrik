@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { Card, Button, BottomNav } from '@/components/ui';
 import { SUBJECT_META, GRADE_SUBJECTS } from '@/lib/constants';
 import { getExamPresets, calculateExamConfig, type ExamPreset } from '@/lib/exam-engine';
+import { XP_RULES } from '@/lib/xp-rules';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 
@@ -424,8 +425,8 @@ export default function QuizSetup({ isHi, initialSubject, initialMode, loading, 
             <span className="text-2xl">💡</span>
             <div className="text-xs text-[var(--text-3)] leading-relaxed">
               {isHi
-                ? 'हर सही जवाब पर 10 XP मिलता है। 80%+ स्कोर पर बोनस 20 XP!'
-                : 'Earn 10 XP per correct answer. Score 80%+ for a bonus 20 XP!'}
+                ? `हर सही जवाब पर ${XP_RULES.quiz_per_correct} XP मिलता है। 80%+ स्कोर पर बोनस ${XP_RULES.quiz_high_score_bonus} XP!`
+                : `Earn ${XP_RULES.quiz_per_correct} XP per correct answer. Score 80%+ for a bonus ${XP_RULES.quiz_high_score_bonus} XP!`}
             </div>
           </div>
         </Card>

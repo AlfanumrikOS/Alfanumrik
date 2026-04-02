@@ -84,7 +84,7 @@ export async function authorizeAdmin(request: NextRequest): Promise<AdminAuthRes
     }
 
     if (!accessToken) {
-      return { authorized: false, response: NextResponse.json({ error: 'Please log in.' }, { status: 401 }) };
+      return { authorized: false, response: NextResponse.json({ error: 'Please log in.', code: 'ADMIN_NO_TOKEN' }, { status: 401 }) };
     }
 
     // Verify token with Supabase GoTrue
@@ -93,13 +93,13 @@ export async function authorizeAdmin(request: NextRequest): Promise<AdminAuthRes
     });
 
     if (!userRes.ok) {
-      return { authorized: false, response: NextResponse.json({ error: 'Session expired. Please log in again.' }, { status: 401 }) };
+      return { authorized: false, response: NextResponse.json({ error: 'Session expired. Please log in again.', code: 'ADMIN_SESSION_EXPIRED' }, { status: 401 }) };
     }
 
     const userData = await userRes.json();
     const userId = userData.id;
     if (!userId) {
-      return { authorized: false, response: NextResponse.json({ error: 'Invalid session.' }, { status: 401 }) };
+      return { authorized: false, response: NextResponse.json({ error: 'Invalid session.', code: 'ADMIN_INVALID_SESSION' }, { status: 401 }) };
     }
 
     // Look up admin_users table
@@ -110,7 +110,7 @@ export async function authorizeAdmin(request: NextRequest): Promise<AdminAuthRes
 
     if (!adminRes.ok) {
       console.error('[admin-auth] admin_users query failed:', adminRes.status);
-      return { authorized: false, response: NextResponse.json({ error: 'Authorization check failed.' }, { status: 500 }) };
+      return { authorized: false, response: NextResponse.json({ error: 'Authorization check failed.', code: 'ADMIN_LOOKUP_FAILED' }, { status: 500 }) };
     }
 
     let admins = await adminRes.json();
@@ -129,7 +129,7 @@ export async function authorizeAdmin(request: NextRequest): Promise<AdminAuthRes
     }
 
     if (!Array.isArray(admins) || admins.length === 0) {
-      return { authorized: false, response: NextResponse.json({ error: 'You are not an authorized administrator.' }, { status: 403 }) };
+      return { authorized: false, response: NextResponse.json({ error: 'You are not an authorized administrator.', code: 'ADMIN_NOT_FOUND' }, { status: 403 }) };
     }
 
     const admin = admins[0];
@@ -143,7 +143,7 @@ export async function authorizeAdmin(request: NextRequest): Promise<AdminAuthRes
     };
   } catch (err) {
     console.error('[admin-auth] Exception:', err instanceof Error ? err.message : err);
-    return { authorized: false, response: NextResponse.json({ error: 'Authorization failed.' }, { status: 500 }) };
+    return { authorized: false, response: NextResponse.json({ error: 'Authorization failed.', code: 'ADMIN_AUTH_EXCEPTION' }, { status: 500 }) };
   }
 }
 

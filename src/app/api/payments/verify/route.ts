@@ -88,8 +88,11 @@ export async function POST(request: NextRequest) {
       .update(signaturePayload)
       .digest('hex');
 
-    if (expectedSignature !== razorpay_signature) {
-      return NextResponse.json({ error: 'Invalid payment signature' }, { status: 400 });
+    // Use timing-safe comparison to prevent timing attacks on signature verification
+    const sigBuffer = Buffer.from(razorpay_signature, 'hex');
+    const expectedBuffer = Buffer.from(expectedSignature, 'hex');
+    if (sigBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(sigBuffer, expectedBuffer)) {
+      return NextResponse.json({ error: 'Invalid payment signature' }, { status: 401 });
     }
 
     // Use Supabase admin client (service_role) for all DB operations
@@ -143,14 +146,14 @@ export async function POST(request: NextRequest) {
 
     if (!studentId) {
       logger.error('verify: student not found by auth_user_id or email', { authUserId: user.id });
-      // Still return success since webhook will handle activation
-      // Don't alarm the user — their payment IS safe
+      // Do NOT return success:true — no entitlement was granted (P11).
+      // The webhook will handle activation when it arrives.
       return NextResponse.json({
-        success: true,
-        plan: plan_code,
-        note: 'activation_via_webhook',
-        message: 'Payment verified. Your plan is being activated.',
-      });
+        success: false,
+        error: 'Payment verified but account setup is completing. Your plan will activate within a few minutes.',
+        payment_id: razorpay_payment_id,
+        status: 'activation_pending',
+      }, { status: 202 });
     }
 
     // Get amount from subscription_plans (source of truth)
@@ -193,25 +196,17 @@ export async function POST(request: NextRequest) {
 
     if (rpcError) {
       logger.error('verify: activate_subscription RPC failed', { error: rpcError.message });
+      // Do NOT fall back to patching students table alone — that creates split-brain
+      // where students.subscription_plan says 'pro' but student_subscriptions is stale.
+      // Instead, rely on the webhook for activation and tell the user to wait.
+      logger.error('verify: RECONCILIATION REQUIRED', { paymentId: razorpay_payment_id, authUserId: user.id, planCode: plan_code });
 
-      // Fallback: directly update students table
-      const { error: patchError } = await admin
-        .from('students')
-        .update({ subscription_plan: plan_code })
-        .eq('auth_user_id', user.id);
-
-      if (patchError) {
-        // BOTH RPC and PATCH failed — this is a critical failure
-        // DO NOT return success — payment captured but access NOT granted
-        logger.error('verify: CRITICAL — both RPC and PATCH failed', { error: patchError.message });
-        logger.error('verify: RECONCILIATION REQUIRED', { paymentId: razorpay_payment_id, authUserId: user.id, planCode: plan_code });
-
-        return NextResponse.json({
-          error: 'Payment received but access update failed. Your payment is safe — our team will activate your plan shortly.',
-          payment_id: razorpay_payment_id,
-          status: 'reconciliation_required',
-        }, { status: 503 });
-      }
+      return NextResponse.json({
+        success: false,
+        error: 'Payment received but access update is in progress. Your payment is safe — your plan will activate shortly.',
+        payment_id: razorpay_payment_id,
+        status: 'reconciliation_required',
+      }, { status: 503 });
     }
 
     // Verify the update actually took effect by reading back

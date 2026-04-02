@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authorizeAdmin, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../lib/admin-auth';
+import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../lib/admin-auth';
 
 async function fetchAll(table: string, select: string, filter?: string) {
   let queryParams = `select=${select}&order=created_at.desc&limit=5000`;
@@ -64,8 +64,8 @@ export async function GET(request: NextRequest) {
         select = 'id,student_id,subject,grade,message_count,is_active,created_at,updated_at';
         break;
       case 'audit':
-        table = 'audit_logs';
-        select = 'id,auth_user_id,action,resource_type,resource_id,status,ip_address,created_at';
+        table = 'admin_audit_log';
+        select = 'id,admin_id,action,entity_type,entity_id,details,ip_address,created_at';
         break;
       default:
         return NextResponse.json({ error: 'Invalid report type' }, { status: 400 });
@@ -77,6 +77,11 @@ export async function GET(request: NextRequest) {
     const data = await fetchAll(table, select, filter || undefined);
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     const filename = `alfanumrik-${type}-${timestamp}`;
+
+    // Audit log: track all data exports for compliance
+    await logAdminAudit(auth, 'report.exported', 'reports', type, {
+      format, row_count: Array.isArray(data) ? data.length : 0, from: from || null, to: to || null,
+    });
 
     if (format === 'json') {
       return new NextResponse(JSON.stringify({ report: type, generated_at: new Date().toISOString(), count: data.length, data }, null, 2), {

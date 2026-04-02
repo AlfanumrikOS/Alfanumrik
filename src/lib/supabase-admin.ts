@@ -14,11 +14,15 @@
  */
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { validateServerEnv } from '@/lib/env';
 
 let _adminClient: SupabaseClient | null = null;
 
 export function getSupabaseAdmin(): SupabaseClient {
   if (_adminClient) return _adminClient;
+
+  // Validate all server env vars (including the NEXT_PUBLIC_ leak check)
+  validateServerEnv();
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
