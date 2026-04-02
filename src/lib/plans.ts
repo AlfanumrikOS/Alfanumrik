@@ -87,6 +87,26 @@ export const PLANS: Record<string, PlanConfig> = {
   },
 };
 
+/**
+ * Centralized pricing — single source of truth for all UI components.
+ * Imported by PricingCards, UpgradeModal, and super-admin analytics.
+ */
+export const PRICING = {
+  starter: { monthly: 299, yearly: 2399 },
+  pro: { monthly: 699, yearly: 5599 },
+  unlimited: { monthly: 1499, yearly: 11999 },
+} as const;
+
+/** Helper: format INR price with comma separator */
+export function formatINR(amount: number): string {
+  return `\u20B9${amount.toLocaleString('en-IN')}`;
+}
+
+/** Helper: monthly equivalent of yearly price (rounded) */
+export function yearlyPerMonth(yearlyPrice: number): number {
+  return Math.round(yearlyPrice / 12);
+}
+
 /** Get plan config from DB plan code. Falls back to free plan. */
 export function getPlanConfig(planCode: string | null | undefined): PlanConfig {
   return PLANS[planCode || 'free'] || PLANS.free;

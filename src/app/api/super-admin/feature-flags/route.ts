@@ -120,6 +120,11 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Missing "id" or "updates".' }, { status: 400 });
     }
 
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!UUID_RE.test(id)) {
+      return NextResponse.json({ error: 'Invalid flag ID format' }, { status: 400 });
+    }
+
     // Map friendly names to DB columns
     const FIELD_MAP: Record<string, string> = {
       enabled: 'is_enabled',
@@ -187,6 +192,11 @@ export async function DELETE(request: NextRequest) {
   try {
     const { id } = await request.json();
     if (!id) return NextResponse.json({ error: 'Missing "id".' }, { status: 400 });
+
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!UUID_RE.test(id)) {
+      return NextResponse.json({ error: 'Invalid flag ID format' }, { status: 400 });
+    }
 
     const res = await fetch(supabaseAdminUrl('feature_flags', `id=eq.${encodeURIComponent(id)}`), {
       method: 'DELETE',
