@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { track } from '@/lib/analytics';
-import { getQuizQuestions, submitQuizResults, saveCognitiveMetrics, saveQuestionResponses, supabase } from '@/lib/supabase';
+import { getQuizQuestionsV2, submitQuizResults, saveCognitiveMetrics, saveQuestionResponses, supabase, updateChapterProgress } from '@/lib/supabase';
 import { XP_RULES } from '@/lib/xp-rules';
 import { Card, Button, ProgressBar, LoadingFoxy } from '@/components/ui';
 import { SUBJECT_META } from '@/lib/constants';
@@ -192,12 +192,15 @@ export default function QuizPage() {
     if (!subj || !student) return;
     setLoading(true);
     try {
-      const data = await getQuizQuestions(
+      const diffModeMap: Record<string, string> = { '1': 'easy', '2': 'medium', '3': 'hard' };
+      const diffMode = diff != null ? (diffModeMap[String(diff)] || 'mixed') : (opts?.quizMode === 'cognitive' ? 'progressive' : 'mixed');
+      const data = await getQuizQuestionsV2(
         subj,
         student.grade,
         qCount,
-        diff,
-        chapter
+        diffMode,
+        chapter,
+        ['mcq']
       );
       const qs = Array.isArray(data) ? data : [];
       if (qs.length === 0) {
@@ -367,6 +370,11 @@ export default function QuizPage() {
         );
         setResults(res);
         refreshSnapshot();
+
+        // Update chapter progress after quiz
+        if (chapter) {
+          updateChapterProgress(selectedSubject!, student!.grade, chapter).catch(() => {});
+        }
 
         // Save cognitive metrics for this session (fire-and-forget)
         if (quizMode === 'cognitive' && res?.session_id) {
