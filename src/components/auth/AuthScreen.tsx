@@ -118,52 +118,51 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
       });
       if (authError) { setError(authError.message); setLoading(false); return; }
       if (authData.user) {
-        let profileError: string | null = null;
-
-        if (roleTab === 'student') {
-          const { error: insErr } = await supabase.from('students').insert({
-            auth_user_id: authData.user.id,
-            name: name.trim(),
-            email: email.trim(),
-            grade: `Grade ${grade}`,
-            board,
-            preferred_language: 'en',
-            account_status: 'active',
-          });
-          if (insErr) profileError = insErr.message;
-        } else if (roleTab === 'teacher') {
-          const { error: insErr } = await supabase.from('teachers').insert({
-            auth_user_id: authData.user.id,
-            name: name.trim(),
-            email: email.trim(),
-            school_name: schoolName.trim(),
-            subjects_taught: subjectsTaught,
-            grades_taught: gradesTaught,
-          });
-          if (insErr) profileError = insErr.message;
-        } else if (roleTab === 'parent') {
-          const { data: guardianData, error: insErr } = await supabase.from('guardians').insert({
-            auth_user_id: authData.user.id,
-            name: name.trim(),
-            email: email.trim(),
-            phone: phone.trim() || null,
-          }).select('id').single();
-          if (insErr) profileError = insErr.message;
-
-          if (linkCode.trim() && guardianData) {
-            await supabase.rpc('link_guardian_to_student_via_code', {
-              p_guardian_id: guardianData.id,
-              p_invite_code: linkCode.trim(),
-            });
-          }
-        }
-
-        if (profileError) {
-          console.error(`[Signup] Profile insert failed for ${roleTab}:`, profileError);
-        }
-
         const session = authData.session;
+
         if (session) {
+          // Session exists — bootstrap profile via server
+          try {
+            const bootstrapPayload: Record<string, unknown> = {
+              role: roleTab,
+              name: name.trim(),
+            };
+
+            if (roleTab === 'student') {
+              bootstrapPayload.grade = grade;
+              bootstrapPayload.board = board;
+            } else if (roleTab === 'teacher') {
+              bootstrapPayload.school_name = schoolName.trim();
+              bootstrapPayload.subjects_taught = subjectsTaught;
+              bootstrapPayload.grades_taught = gradesTaught;
+            } else if (roleTab === 'parent') {
+              bootstrapPayload.phone = phone.trim() || null;
+              bootstrapPayload.link_code = linkCode.trim() || null;
+            }
+
+            const bootstrapRes = await fetch('/api/auth/bootstrap', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(bootstrapPayload),
+            });
+
+            if (!bootstrapRes.ok) {
+              const errData = await bootstrapRes.json().catch(() => ({}));
+              console.error('[Signup] Bootstrap failed:', errData);
+              // Show error but don't block — AuthContext fallback will handle
+              setError(errData.error || 'Profile setup failed. Please try logging in again.');
+              setLoading(false);
+              // Still call onSuccess since auth identity exists
+              // The AuthContext fallback will create the profile
+              onSuccess();
+              return;
+            }
+          } catch (bootstrapErr) {
+            console.error('[Signup] Bootstrap error:', bootstrapErr);
+            // Non-fatal — proceed with onSuccess, AuthContext will handle
+          }
+
+          // Fire-and-forget welcome email
           const welcomePayload: Record<string, string> = { role: roleTab, name: name.trim(), email: email.trim() };
           if (roleTab === 'student') { welcomePayload.grade = grade; welcomePayload.board = board; }
           if (roleTab === 'teacher') { welcomePayload.school_name = schoolName.trim(); }
@@ -172,10 +171,10 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}`, 'apikey': SUPABASE_ANON_KEY },
             body: JSON.stringify(welcomePayload),
           }).catch(() => {});
+
           onSuccess();
         } else {
-          // No session returned — email confirmation required
-          // User will receive a Mailgun-sent confirmation email
+          // No session — email confirmation required
           setPendingEmail(email.trim());
           setMode('check-email');
           setSuccess('');
