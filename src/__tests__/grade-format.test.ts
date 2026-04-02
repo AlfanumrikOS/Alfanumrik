@@ -53,12 +53,10 @@ describe('P5: Grade Format - Type Enforcement', () => {
   });
 
   it('rejects integer 6 (wrong type)', () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((GRADES as unknown as unknown[]).includes(6)).toBe(false);
   });
 
   it('rejects integer 12 (wrong type)', () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((GRADES as unknown as unknown[]).includes(12)).toBe(false);
   });
 

@@ -123,6 +123,15 @@ export default function Dashboard() {
 
   return (
     <div className="mesh-bg min-h-dvh pb-nav">
+      {/* ═══ DEMO MODE INDICATOR ═══ */}
+      {student?.is_demo && (
+        <div className="bg-amber-50 border-b border-amber-200 px-4 py-1.5 text-center">
+          <span className="text-xs font-medium text-amber-700">
+            {isHi ? '🔶 डेमो मोड — यह एक प्रदर्शन खाता है' : '🔶 Demo Mode — This is a demonstration account'}
+          </span>
+        </div>
+      )}
+
       {/* ═══ HEADER — compact: greeting, streak, notifications ═══ */}
       <header className="page-header">
         <div className="page-header-inner flex items-center justify-between">
