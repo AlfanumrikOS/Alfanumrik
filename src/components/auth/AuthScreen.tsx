@@ -73,9 +73,6 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
       const { error: authError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
       if (authError) { setError(authError.message); setLoading(false); return; }
       onSuccess();
-      // Safety: if navigation hasn't happened after 5s, reset loading
-      // (onSuccess does window.location.href which triggers full reload)
-      setTimeout(() => setLoading(false), 5000);
     } catch { setError('Connection error. Please try again.'); setLoading(false); }
   };
 
@@ -176,9 +173,6 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
             body: JSON.stringify(welcomePayload),
           }).catch(() => {});
           onSuccess();
-          // Safety: if navigation hasn't happened after 5s, reset loading
-          // (onSuccess does window.location.href which triggers full reload)
-          setTimeout(() => setLoading(false), 5000);
         } else {
           // No session returned — email confirmation required
           // User will receive a Mailgun-sent confirmation email

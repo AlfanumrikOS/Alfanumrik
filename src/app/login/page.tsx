@@ -46,10 +46,9 @@ export default function LoginPage() {
   // Role-aware onSuccess handler: after login, navigate to the correct portal.
   // We use the roleParam hint from the URL since activeRole may not be updated yet.
   const handleSuccess = useCallback(() => {
-    // Client-side navigation preserves the in-memory Supabase session.
-    // DO NOT use window.location.href (full reload loses localStorage session
-    // before middleware cookies are set).
-    // DO NOT use router.refresh() (hangs in Next.js 16 with Turbopack).
+    // After successful auth, trigger a client-side refresh then navigate.
+    // AuthContext's onAuthStateChange will detect the new session.
+    router.refresh();
     const destination = redirectTo && redirectTo.startsWith('/')
       ? redirectTo
       : roleParam === 'teacher' ? '/teacher'
