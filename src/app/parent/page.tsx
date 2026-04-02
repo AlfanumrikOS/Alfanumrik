@@ -249,10 +249,19 @@ function LoginScreen({ onLogin, isHi }: { onLogin: (g: ParentSession, s: Student
         </p>
         <p className="text-xs text-gray-400 mt-3">
           {t(isHi, 'Student or Teacher?', 'छात्र या शिक्षक?')}{' '}
-          <a href="/login" className="text-orange-500 font-medium hover:underline">
+          <a href="/login?switch=true" className="text-orange-500 font-medium hover:underline">
             {t(isHi, 'Login here \u2192', 'यहाँ लॉगिन करें \u2192')}
           </a>
         </p>
+        <button
+          onClick={async () => {
+            await supabase.auth.signOut();
+            window.location.href = '/login';
+          }}
+          className="text-xs text-gray-400 mt-2 hover:text-gray-600 underline bg-transparent border-none cursor-pointer"
+        >
+          {t(isHi, 'Sign out & switch account', 'साइन आउट करें और अकाउंट बदलें')}
+        </button>
       </div>
     </div>
   );
