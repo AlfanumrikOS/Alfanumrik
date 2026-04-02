@@ -41,7 +41,7 @@ export default function Dashboard() {
   // Sync onboarding state from student profile (database-authoritative, not localStorage)
   useEffect(() => {
     if (student) {
-      const done = !!(student as Record<string, unknown>).onboarding_completed ||
+      const done = !!student.onboarding_completed ||
                    (typeof window !== 'undefined' && localStorage.getItem('alfanumrik_onboarded') === 'true');
       setOnboardingDone(done);
     }
