@@ -3,6 +3,7 @@ import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
 import { createRazorpaySubscription, createRazorpayOrder } from '@/lib/razorpay';
 import { logger } from '@/lib/logger';
+import { paymentSubscribeSchema, validateBody } from '@/lib/validation';
 
 /**
  * Subscribe Endpoint
@@ -45,13 +46,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { plan_code, billing_cycle } = await request.json();
+    const rawBody = await request.json();
+    const validation = validateBody(paymentSubscribeSchema, rawBody);
+    if (!validation.success) return validation.error;
+    const { plan_code, billing_cycle } = validation.data;
 
-    if (!plan_code || !['starter', 'pro', 'unlimited'].includes(plan_code)) {
-      return NextResponse.json({ error: 'Invalid plan' }, { status: 400 });
-    }
-    if (!billing_cycle || !['monthly', 'yearly'].includes(billing_cycle)) {
-      return NextResponse.json({ error: 'Invalid billing cycle' }, { status: 400 });
+    // Zod allows 'free' as a valid plan_code, but subscribing to free is not permitted
+    if (plan_code === 'free') {
+      return NextResponse.json({ error: 'Cannot subscribe to the free plan' }, { status: 400 });
     }
 
     const admin = createClient(supabaseUrl, serviceKey, {

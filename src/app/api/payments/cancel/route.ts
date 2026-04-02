@@ -3,6 +3,7 @@ import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
 import { cancelRazorpaySubscription } from '@/lib/razorpay';
 import { logger } from '@/lib/logger';
+import { paymentCancelSchema, validateBody } from '@/lib/validation';
 
 /**
  * Cancel Subscription Endpoint
@@ -42,9 +43,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const body = await request.json();
-    const immediate = body.immediate === true;
-    const reason = typeof body.reason === 'string' ? body.reason.slice(0, 500) : null;
+    const rawBody = await request.json();
+    const validation = validateBody(paymentCancelSchema, rawBody);
+    if (!validation.success) return validation.error;
+    const { immediate = false, reason = null } = validation.data;
 
     const admin = createClient(supabaseUrl, serviceKey, {
       auth: { persistSession: false, autoRefreshToken: false },

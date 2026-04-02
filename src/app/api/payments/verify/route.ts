@@ -3,6 +3,7 @@ import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
 import { logger } from '@/lib/logger';
+import { paymentVerifySchema, validateBody } from '@/lib/validation';
 
 /**
  * Payment Verification Route
@@ -49,26 +50,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const body = await request.json();
+    const rawBody = await request.json();
+    const validation = validateBody(paymentVerifySchema, rawBody);
+    if (!validation.success) return validation.error;
     const {
       razorpay_order_id, razorpay_payment_id, razorpay_signature,
       razorpay_subscription_id,
       plan_code, billing_cycle, type,
-    } = body;
-
-    // Input validation
-    if (!razorpay_payment_id || typeof razorpay_payment_id !== 'string' || !razorpay_payment_id.startsWith('pay_')) {
-      return NextResponse.json({ error: 'Invalid payment ID' }, { status: 400 });
-    }
-    if (!razorpay_signature || typeof razorpay_signature !== 'string') {
-      return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
-    }
-    if (!plan_code || !['starter', 'pro', 'unlimited'].includes(plan_code)) {
-      return NextResponse.json({ error: 'Invalid plan' }, { status: 400 });
-    }
-    if (!billing_cycle || !['monthly', 'yearly'].includes(billing_cycle)) {
-      return NextResponse.json({ error: 'Invalid billing cycle' }, { status: 400 });
-    }
+    } = validation.data;
 
     // Verify Razorpay HMAC signature
     const razorpaySecret = process.env.RAZORPAY_KEY_SECRET;

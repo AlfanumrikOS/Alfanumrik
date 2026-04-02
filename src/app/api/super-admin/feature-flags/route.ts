@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../lib/admin-auth';
 import { invalidateFlagCache } from '../../../../lib/feature-flags';
+import { featureFlagSchema, validateBody, zUuid } from '../../../../lib/validation';
+import { z } from 'zod';
 
 /**
  * Feature Flags API — supports global, per-institution, per-role, per-environment scoping.
@@ -61,11 +63,19 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { name, enabled, description, target_institutions, target_roles, target_environments } = body;
 
-    if (!name || typeof name !== 'string') {
-      return NextResponse.json({ error: 'Missing or invalid "name".' }, { status: 400 });
-    }
+    // Validate with Zod schema — structured 400 errors for invalid input
+    const createSchema = featureFlagSchema.extend({
+      // POST uses 'name' in body, map to flag_name for validation
+      name: z.string().min(1).max(100).regex(/^[a-z_]+$/, 'Flag name must be lowercase with underscores only'),
+      enabled: z.boolean().optional(),
+      description: z.string().max(500).nullable().optional(),
+    }).omit({ flag_name: true, is_enabled: true });
+
+    const validation = validateBody(createSchema, body);
+    if (!validation.success) return validation.error;
+
+    const { name, enabled, description, target_institutions, target_roles, target_environments } = validation.data;
 
     // Check uniqueness
     const checkRes = await fetch(supabaseAdminUrl('feature_flags', `select=id&flag_name=eq.${encodeURIComponent(name)}&limit=1`), {
@@ -115,15 +125,27 @@ export async function PATCH(request: NextRequest) {
   if (!auth.authorized) return auth.response;
 
   try {
-    const { id, updates } = await request.json();
-    if (!id || !updates || typeof updates !== 'object') {
-      return NextResponse.json({ error: 'Missing "id" or "updates".' }, { status: 400 });
-    }
+    const body = await request.json();
 
-    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!UUID_RE.test(id)) {
-      return NextResponse.json({ error: 'Invalid flag ID format' }, { status: 400 });
-    }
+    // Validate patch payload structure
+    const patchSchema = z.object({
+      id: zUuid,
+      updates: z.object({
+        enabled: z.boolean().optional(),
+        name: z.string().min(1).max(100).regex(/^[a-z_]+$/, 'Flag name must be lowercase with underscores only').optional(),
+        description: z.string().max(500).nullable().optional(),
+        rollout_percentage: z.number().int().min(0).max(100).nullable().optional(),
+        target_grades: z.array(z.string()).nullable().optional(),
+        target_institutions: z.array(zUuid).nullable().optional(),
+        target_roles: z.array(z.string()).nullable().optional(),
+        target_environments: z.array(z.string()).nullable().optional(),
+      }).refine(obj => Object.keys(obj).length > 0, { message: 'At least one field must be provided in updates' }),
+    });
+
+    const validation = validateBody(patchSchema, body);
+    if (!validation.success) return validation.error;
+
+    const { id, updates } = validation.data;
 
     // Map friendly names to DB columns
     const FIELD_MAP: Record<string, string> = {
@@ -190,13 +212,13 @@ export async function DELETE(request: NextRequest) {
   if (!auth.authorized) return auth.response;
 
   try {
-    const { id } = await request.json();
-    if (!id) return NextResponse.json({ error: 'Missing "id".' }, { status: 400 });
+    const body = await request.json();
 
-    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!UUID_RE.test(id)) {
-      return NextResponse.json({ error: 'Invalid flag ID format' }, { status: 400 });
-    }
+    const deleteSchema = z.object({ id: zUuid });
+    const validation = validateBody(deleteSchema, body);
+    if (!validation.success) return validation.error;
+
+    const { id } = validation.data;
 
     const res = await fetch(supabaseAdminUrl('feature_flags', `id=eq.${encodeURIComponent(id)}`), {
       method: 'DELETE',

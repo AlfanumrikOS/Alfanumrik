@@ -135,6 +135,21 @@ export const paymentSubscribeSchema = z.object({
   billing_cycle: zBillingCycle,
 });
 
+export const paymentVerifySchema = z.object({
+  razorpay_payment_id: z.string().min(1).startsWith('pay_'),
+  razorpay_signature: z.string().min(1),
+  razorpay_order_id: z.string().optional(),
+  razorpay_subscription_id: z.string().optional(),
+  plan_code: zPlanCode,
+  billing_cycle: zBillingCycle,
+  type: z.enum(['subscription', 'order']).optional(),
+});
+
+export const paymentCancelSchema = z.object({
+  immediate: z.boolean().optional().default(false),
+  reason: z.string().max(500).optional(),
+});
+
 // ── Feature Flag ────────────────────────────────────────
 
 export const featureFlagSchema = z.object({
