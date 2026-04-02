@@ -6,6 +6,7 @@ import { useCheckout } from '@/hooks/useCheckout';
 import { useAuth } from '@/lib/AuthContext';
 import { SubscriptionConfirm } from '@/components/SubscriptionConfirm';
 import { useLang } from '@/components/landing/LangToggle';
+import { PRICING, formatINR } from '@/lib/plans';
 
 /* ─── Plan Data ─── */
 
@@ -14,10 +15,6 @@ interface Plan {
   code: string;
   tagline: string;
   taglineHi: string;
-  monthlyPrice: string;
-  yearlyPrice: string;
-  monthlyPriceNum: number;
-  yearlyPriceNum: number;
   yearlySaving: string;
   yearlySavingHi: string;
   popular: boolean;
@@ -28,16 +25,24 @@ interface Plan {
   free: boolean;
 }
 
+/** Derive display prices from centralized PRICING config */
+function getPlanPrices(code: string) {
+  if (code === 'free') return { monthlyPrice: 'Free', yearlyPrice: 'Free', monthlyPriceNum: 0, yearlyPriceNum: 0 };
+  const p = PRICING[code as keyof typeof PRICING];
+  return {
+    monthlyPrice: formatINR(p.monthly),
+    yearlyPrice: formatINR(p.yearly),
+    monthlyPriceNum: p.monthly,
+    yearlyPriceNum: p.yearly,
+  };
+}
+
 const PLANS: Plan[] = [
   {
     name: 'Explorer',
     code: 'free',
     tagline: 'Get started with Foxy for free',
     taglineHi: 'Foxy के साथ मुफ़्त शुरू करें',
-    monthlyPrice: 'Free',
-    yearlyPrice: 'Free',
-    monthlyPriceNum: 0,
-    yearlyPriceNum: 0,
     yearlySaving: '',
     yearlySavingHi: '',
     popular: false,
@@ -59,10 +64,6 @@ const PLANS: Plan[] = [
     code: 'starter',
     tagline: 'More chats, more subjects',
     taglineHi: 'ज़्यादा चैट, ज़्यादा विषय',
-    monthlyPrice: '\u20B9299',
-    yearlyPrice: '\u20B92,399',
-    monthlyPriceNum: 299,
-    yearlyPriceNum: 2399,
     yearlySaving: 'Save 33%',
     yearlySavingHi: '33% बचाएँ',
     popular: false,
@@ -84,10 +85,6 @@ const PLANS: Plan[] = [
     code: 'pro',
     tagline: 'The complete learning experience',
     taglineHi: 'संपूर्ण सीखने का अनुभव',
-    monthlyPrice: '\u20B9699',
-    yearlyPrice: '\u20B95,599',
-    monthlyPriceNum: 699,
-    yearlyPriceNum: 5599,
     yearlySaving: 'Save 33%',
     yearlySavingHi: '33% बचाएँ',
     popular: true,
@@ -109,10 +106,6 @@ const PLANS: Plan[] = [
     code: 'unlimited',
     tagline: 'No limits, maximum results',
     taglineHi: 'कोई सीमा नहीं, अधिकतम परिणाम',
-    monthlyPrice: '\u20B91,499',
-    yearlyPrice: '\u20B911,999',
-    monthlyPriceNum: 1499,
-    yearlyPriceNum: 11999,
     yearlySaving: 'Save 33%',
     yearlySavingHi: '33% बचाएँ',
     popular: false,
@@ -235,21 +228,26 @@ export function PricingCards() {
 
               {/* Price */}
               <div style={{ marginBottom: 20 }}>
-                <span style={{ fontSize: 32, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text-1, #1a1a1a)' }}>
-                  {plan.free ? t('Free', 'मुफ़्त') : annual ? plan.yearlyPrice : plan.monthlyPrice}
-                </span>
-                {!plan.free && (
-                  <span style={{ fontSize: 14, color: 'var(--text-3, #888)', marginLeft: 4 }}>
-                    /{annual ? t('yr', 'वर्ष') : t('mo', 'माह')}
-                  </span>
-                )}
-                {annual && plan.yearlySaving && (
-                  <div style={{
-                    fontSize: 12, fontWeight: 700, color: 'var(--green, #16A34A)', marginTop: 4,
-                  }}>
-                    {t(plan.yearlySaving, plan.yearlySavingHi)}
-                  </div>
-                )}
+                {(() => {
+                  const prices = getPlanPrices(plan.code);
+                  return <>
+                    <span style={{ fontSize: 32, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text-1, #1a1a1a)' }}>
+                      {plan.free ? t('Free', 'मुफ़्त') : annual ? prices.yearlyPrice : prices.monthlyPrice}
+                    </span>
+                    {!plan.free && (
+                      <span style={{ fontSize: 14, color: 'var(--text-3, #888)', marginLeft: 4 }}>
+                        /{annual ? t('yr', 'वर्ष') : t('mo', 'माह')}
+                      </span>
+                    )}
+                    {annual && plan.yearlySaving && (
+                      <div style={{
+                        fontSize: 12, fontWeight: 700, color: 'var(--green, #16A34A)', marginTop: 4,
+                      }}>
+                        {t(plan.yearlySaving, plan.yearlySavingHi)}
+                      </div>
+                    )}
+                  </>;
+                })()}
               </div>
 
               {/* CTA Button — checkout for logged-in users, login for guests */}
@@ -311,8 +309,8 @@ export function PricingCards() {
         isOpen={!!confirmPlan}
         planName={confirmPlan?.name || ''}
         planCode={confirmPlan?.code || ''}
-        priceMonthly={confirmPlan?.monthlyPriceNum || 0}
-        priceYearly={confirmPlan?.yearlyPriceNum || 0}
+        priceMonthly={confirmPlan ? getPlanPrices(confirmPlan.code).monthlyPriceNum : 0}
+        priceYearly={confirmPlan ? getPlanPrices(confirmPlan.code).yearlyPriceNum : 0}
         billingCycle={annual ? 'yearly' : 'monthly'}
         loading={checkoutLoading}
         onCancel={() => setConfirmPlan(null)}

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useCheckout } from '@/hooks/useCheckout';
 import { SubscriptionConfirm } from '@/components/SubscriptionConfirm';
+import { PRICING, formatINR, yearlyPerMonth } from '@/lib/plans';
 import Link from 'next/link';
 
 interface UpgradeModalProps {
@@ -13,18 +14,10 @@ interface UpgradeModalProps {
   onUpgradeSuccess?: () => void;
 }
 
-const PRICE_MAP: Record<string, { monthly: number; yearly: number }> = {
-  starter: { monthly: 299, yearly: 2399 },
-  pro: { monthly: 699, yearly: 5599 },
-  unlimited: { monthly: 1499, yearly: 11999 },
-};
-
 const PLANS = [
   {
     code: 'starter' as const,
     name: 'Starter',
-    price: '₹299',
-    priceYearly: '₹200',
     chats: 30,
     quizzes: 20,
     color: '#E8581C',
@@ -32,20 +25,16 @@ const PLANS = [
   {
     code: 'pro' as const,
     name: 'Pro',
-    price: '₹699',
-    priceYearly: '₹467',
     chats: 100,
-    quizzes: '∞',
+    quizzes: '∞' as const,
     highlight: true,
     color: '#7C3AED',
   },
   {
     code: 'unlimited' as const,
     name: 'Unlimited',
-    price: '₹1,499',
-    priceYearly: '₹1,000',
-    chats: '∞',
-    quizzes: '∞',
+    chats: '∞' as const,
+    quizzes: '∞' as const,
     color: '#0891B2',
   },
 ];
@@ -123,11 +112,14 @@ export function UpgradeModal({ isOpen, onClose, feature, currentLimit, onUpgrade
                   {plan.highlight && <span className="text-[9px] font-bold px-2 py-0.5 rounded-full text-white" style={{ background: plan.color }}>POPULAR</span>}
                 </div>
                 <div className="text-lg font-extrabold mt-0.5" style={{ color: plan.color }}>
-                  {billingCycle === 'yearly' ? plan.priceYearly : plan.price}<span className="text-xs font-normal" style={{ color: 'var(--text-3)' }}>/mo</span>
+                  {billingCycle === 'yearly'
+                    ? formatINR(yearlyPerMonth(PRICING[plan.code].yearly))
+                    : formatINR(PRICING[plan.code].monthly)}
+                  <span className="text-xs font-normal" style={{ color: 'var(--text-3)' }}>/mo</span>
                 </div>
                 {billingCycle === 'yearly' && (
-                  <div className="text-[10px]" style={{ color: 'var(--text-3)' }}>
-                    Billed as {plan.code === 'starter' ? '₹2,399' : plan.code === 'pro' ? '₹5,599' : '₹11,999'}/year
+                  <div className="text-[10px] font-semibold" style={{ color: 'var(--text-2)' }}>
+                    Billed as {formatINR(PRICING[plan.code].yearly)}/year
                   </div>
                 )}
                 <div className="text-[10px] mt-1" style={{ color: 'var(--text-3)' }}>
@@ -169,8 +161,8 @@ export function UpgradeModal({ isOpen, onClose, feature, currentLimit, onUpgrade
         isOpen={!!confirmPlan}
         planName={confirmPlan?.name || ''}
         planCode={confirmPlan?.code || ''}
-        priceMonthly={PRICE_MAP[confirmPlan?.code || '']?.monthly || 0}
-        priceYearly={PRICE_MAP[confirmPlan?.code || '']?.yearly || 0}
+        priceMonthly={confirmPlan ? PRICING[confirmPlan.code].monthly : 0}
+        priceYearly={confirmPlan ? PRICING[confirmPlan.code].yearly : 0}
         billingCycle={billingCycle}
         loading={loading}
         onCancel={() => setConfirmPlan(null)}

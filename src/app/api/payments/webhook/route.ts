@@ -110,14 +110,38 @@ export async function POST(request: NextRequest) {
           });
           break;
 
-        case 'subscription.activated':
+        case 'subscription.activated': {
           // First charge succeeded — activate entitlement
-          await admin.rpc('activate_subscription', {
+          const activatePlan = planCode || currentSub?.plan_code || 'starter';
+          const { error: activateRpcErr } = await admin.rpc('activate_subscription', {
             p_auth_user_id: userId,
-            p_plan_code: planCode || currentSub?.plan_code || 'starter',
+            p_plan_code: activatePlan,
             p_billing_cycle: 'monthly',
             p_razorpay_subscription_id: rzpSubId,
           });
+
+          if (activateRpcErr) {
+            // RPC failed — fall back to direct PATCH so the student is not left without access.
+            // Payment was already captured by Razorpay, so we MUST grant entitlement (P11).
+            logger.error('Webhook: activate_subscription RPC failed, using fallback', {
+              error: activateRpcErr.message, studentId: studentRow.id, planCode: activatePlan,
+            });
+            await admin.from('students').update({
+              subscription_plan: activatePlan,
+            }).eq('id', studentRow.id);
+
+            await admin.from('student_subscriptions').upsert({
+              student_id: studentRow.id,
+              plan_code: activatePlan,
+              status: 'active',
+              billing_cycle: 'monthly',
+              razorpay_subscription_id: rzpSubId,
+              current_period_start: new Date().toISOString(),
+              current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+              auto_renew: true,
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'student_id' });
+          }
 
           await logEvent(admin, {
             studentId: studentRow.id,
@@ -127,6 +151,7 @@ export async function POST(request: NextRequest) {
             statusAfter: 'active',
           });
           break;
+        }
 
         case 'subscription.charged':
           // Recurring renewal succeeded — extend period
@@ -291,13 +316,37 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      await admin.rpc('activate_subscription', {
+      const { error: captureRpcErr } = await admin.rpc('activate_subscription', {
         p_auth_user_id: userId,
         p_plan_code: planCode,
         p_billing_cycle: billingCycle,
         p_razorpay_payment_id: paymentId,
         p_razorpay_order_id: payment.order_id,
       });
+
+      if (captureRpcErr) {
+        // RPC failed — fall back to direct PATCH so the student is not left without access.
+        // Payment was already captured by Razorpay, so we MUST grant entitlement (P11).
+        logger.error('Webhook: activate_subscription RPC failed for payment.captured, using fallback', {
+          error: captureRpcErr.message, studentId: studentRow.id, planCode,
+        });
+        await admin.from('students').update({
+          subscription_plan: planCode,
+        }).eq('id', studentRow.id);
+
+        const periodMs = billingCycle === 'yearly' ? 365 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000;
+        await admin.from('student_subscriptions').upsert({
+          student_id: studentRow.id,
+          plan_code: planCode,
+          status: 'active',
+          billing_cycle: billingCycle,
+          razorpay_order_id: payment.order_id,
+          current_period_start: new Date().toISOString(),
+          current_period_end: new Date(Date.now() + periodMs).toISOString(),
+          auto_renew: billingCycle === 'monthly',
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'student_id' });
+      }
 
       await logEvent(admin, {
         studentId: studentRow.id,
