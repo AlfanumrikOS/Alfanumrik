@@ -12,7 +12,7 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
-import { validateRedirectTarget } from '@/lib/identity';
+import { getRoleDestination, validateRedirectTarget } from '@/lib/identity';
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl;
@@ -58,6 +58,53 @@ export async function GET(request: NextRequest) {
         }
         return NextResponse.redirect(`${origin}/auth/reset`);
       }
+      if (type === 'signup') {
+        // Email confirmation for signup — bootstrap profile if needed, same as /auth/callback
+        let redirectRole = 'student';
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            const meta = user.user_metadata || {};
+            const email = user.email || '';
+            const name = meta.name || email.split('@')[0];
+            redirectRole = meta.role || 'student';
+
+            const { data: existingStudent } = await supabase.from('students').select('id').eq('auth_user_id', user.id).single();
+            const { data: existingTeacher } = await supabase.from('teachers').select('id').eq('auth_user_id', user.id).single();
+            const { data: existingGuardian } = await supabase.from('guardians').select('id').eq('auth_user_id', user.id).single();
+            const hasProfile = !!(existingStudent || existingTeacher || existingGuardian);
+
+            if (!hasProfile) {
+              try {
+                const { getSupabaseAdmin } = await import('@/lib/supabase-admin');
+                const admin = getSupabaseAdmin();
+                await admin.rpc('bootstrap_user_profile', {
+                  p_auth_user_id: user.id,
+                  p_role: redirectRole,
+                  p_name: name,
+                  p_email: email,
+                  p_grade: meta.grade || '9',
+                  p_board: meta.board || 'CBSE',
+                  p_school_name: meta.school_name || null,
+                  p_subjects_taught: null,
+                  p_grades_taught: null,
+                  p_phone: null,
+                  p_link_code: null,
+                });
+              } catch (bootstrapErr) {
+                console.error('[Auth Confirm] Bootstrap failed:', bootstrapErr);
+              }
+            } else {
+              if (existingTeacher) redirectRole = 'teacher';
+              else if (existingGuardian) redirectRole = 'parent';
+              else redirectRole = 'student';
+            }
+          }
+        } catch { /* Non-fatal */ }
+
+        return NextResponse.redirect(`${origin}${getRoleDestination(redirectRole)}`);
+      }
+
       return NextResponse.redirect(`${origin}${safeNext}`);
     }
 

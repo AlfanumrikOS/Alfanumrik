@@ -23,7 +23,7 @@ export default function LoginPage() {
     const params = new URLSearchParams(window.location.search);
     if (params.get('switch') === 'true') return;
 
-    if (!isLoading && isLoggedIn) {
+    if (!isLoading && isLoggedIn && activeRole !== 'none') {
       // If there's a redirect param, use it (for deep-link returns)
       if (redirectTo && redirectTo.startsWith('/')) {
         router.replace(redirectTo);
