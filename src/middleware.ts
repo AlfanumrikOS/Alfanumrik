@@ -190,38 +190,22 @@ export async function middleware(request: NextRequest) {
     await supabase.auth.getUser();
   }
 
-  // ── Layer 0.6: Protected page routes (require Supabase session) ──
-  // All routes that require authentication. Unauthenticated visitors are
-  // redirected to the appropriate login page before the page renders.
-  // Runs AFTER session refresh so that renewed cookies are visible.
+  // ── Layer 0.6: Protected page routes (require Supabase session cookie) ──
+  // Only protect routes where server-side cookie check is reliable.
+  // Student routes (/dashboard, /quiz, etc.) use client-side useAuth()
+  // because the Supabase JS client stores sessions in localStorage,
+  // NOT cookies. Middleware cookie checks block legitimate users who
+  // just logged in (session in memory, cookies not yet set).
   const PROTECTED_PREFIXES = [
-    '/dashboard', '/quiz', '/profile', '/progress', '/reports',
-    '/study-plan', '/foxy', '/learn', '/review', '/scan',
-    '/notifications', '/exams', '/leaderboard', '/hpc', '/simulations',
-    '/stem-centre', '/research',
     '/parent/children', '/parent/reports', '/parent/profile', '/parent/support',
-    '/teacher/',
     '/billing',
   ];
-  const SUPER_ADMIN_PAGE_PREFIX = '/super-admin';
   if (PROTECTED_PREFIXES.some(p => path.startsWith(p))) {
-    const hasSession = request.cookies.getAll().some(c => /^sb-.+-auth-token/.test(c.name));
+    const hasSession = request.cookies.getAll().some(c => /^sb-.+-auth-token/.test(c.name) || c.name.includes('auth-token'));
     if (!hasSession) {
       const isParentRoute = path.startsWith('/parent');
-      const isTeacherRoute = path.startsWith('/teacher');
-      const loginUrl = new URL(
-        isParentRoute ? '/parent' : isTeacherRoute ? '/login?role=teacher' : '/login',
-        request.url,
-      );
+      const loginUrl = new URL(isParentRoute ? '/parent' : '/login', request.url);
       return NextResponse.redirect(loginUrl);
-    }
-  }
-  // Super admin pages require both a session and admin verification (done at the API layer).
-  // Redirect unauthenticated visitors to the super-admin login page.
-  if (path.startsWith(SUPER_ADMIN_PAGE_PREFIX) && !path.startsWith('/super-admin/login')) {
-    const hasSession = request.cookies.getAll().some(c => /^sb-.+-auth-token/.test(c.name));
-    if (!hasSession) {
-      return NextResponse.redirect(new URL('/super-admin/login', request.url));
     }
   }
 
