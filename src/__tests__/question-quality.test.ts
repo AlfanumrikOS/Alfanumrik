@@ -119,7 +119,6 @@ describe('P6: Exactly 4 Options Required', () => {
 
   it('rejects undefined options', () => {
     const q = validQuestion();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (q as any).options = undefined;
     expect(validateQuestion(q)).toBe(false);
   });
@@ -190,7 +189,6 @@ describe('P6: correct_answer_index is 0-3', () => {
 
   it('rejects undefined correct_answer_index', () => {
     const q = validQuestion();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (q as any).correct_answer_index = undefined;
     expect(validateQuestion(q)).toBe(false);
   });
