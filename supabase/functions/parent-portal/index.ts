@@ -31,7 +31,8 @@ function getServiceClient() {
  */
 async function handleParentLogin(
   body: Record<string, unknown>,
-  origin: string | null
+  origin: string | null,
+  authUserId: string | null = null
 ): Promise<Response> {
   const linkCode = String(body.link_code || '').trim().toUpperCase()
   const parentName = String(body.parent_name || 'Parent')
@@ -62,7 +63,57 @@ async function handleParentLogin(
   }
 
   // 2. Find or create guardian
-  // Check if there's already a guardian linked to this student
+  let guardianId: string
+  let guardianName: string
+
+  // 2a. If caller is authenticated, check for an existing guardian profile by auth_user_id.
+  //     This prevents creating orphan guardian rows when the parent already signed up via auth.
+  if (authUserId) {
+    const { data: authGuardian } = await supabase
+      .from('guardians')
+      .select('id, name')
+      .eq('auth_user_id', authUserId)
+      .limit(1)
+      .maybeSingle()
+
+    if (authGuardian) {
+      guardianId = authGuardian.id
+      guardianName = authGuardian.name || parentName
+
+      // Ensure a link exists between this guardian and the student
+      const { data: existingAuthLink } = await supabase
+        .from('guardian_student_links')
+        .select('id')
+        .eq('guardian_id', guardianId)
+        .eq('student_id', student.id)
+        .limit(1)
+        .maybeSingle()
+
+      if (!existingAuthLink) {
+        await supabase.from('guardian_student_links').insert({
+          guardian_id: guardianId,
+          student_id: student.id,
+          status: 'active',
+          link_code: linkCode,
+          is_verified: true,
+          linked_at: new Date().toISOString(),
+          initiated_by: 'parent_login',
+        })
+      }
+
+      return jsonResponse(
+        {
+          guardian: { id: guardianId, name: guardianName },
+          student: { id: student.id, name: student.name, grade: student.grade },
+        },
+        200,
+        {},
+        origin
+      )
+    }
+  }
+
+  // 2b. Check if there's already a guardian linked to this student
   const { data: existingLink } = await supabase
     .from('guardian_student_links')
     .select('guardian_id, guardians(id, name, email)')
@@ -71,19 +122,21 @@ async function handleParentLogin(
     .limit(1)
     .maybeSingle()
 
-  let guardianId: string
-  let guardianName: string
-
   if (existingLink?.guardian_id) {
     // Use existing guardian
     guardianId = existingLink.guardian_id
     const g = existingLink.guardians as unknown as { id: string; name: string } | null
     guardianName = g?.name || parentName
   } else {
-    // Create new guardian and link
+    // Create new guardian and link — set auth_user_id if the caller is authenticated
+    const guardianInsert: Record<string, unknown> = { name: parentName, relationship: 'parent' }
+    if (authUserId) {
+      guardianInsert.auth_user_id = authUserId
+    }
+
     const { data: newGuardian, error: guardianErr } = await supabase
       .from('guardians')
-      .insert({ name: parentName, relationship: 'parent' })
+      .insert(guardianInsert)
       .select('id, name')
       .single()
 
@@ -876,9 +929,25 @@ Deno.serve(async (req: Request) => {
     const body = await req.json()
     const action = String(body.action || '')
 
+    // Extract auth user ID from Authorization header (if present).
+    // This lets handleParentLogin reuse an existing guardian profile instead of
+    // creating orphan rows when the parent already signed up via Supabase Auth.
+    let authUserId: string | null = null
+    const authHeader = req.headers.get('authorization')
+    if (authHeader?.startsWith('Bearer ')) {
+      try {
+        const { data: { user } } = await getServiceClient().auth.getUser(
+          authHeader.replace('Bearer ', '')
+        )
+        if (user) authUserId = user.id
+      } catch {
+        // No valid auth session — continue without authUserId
+      }
+    }
+
     switch (action) {
       case 'parent_login':
-        return await handleParentLogin(body, origin)
+        return await handleParentLogin(body, origin, authUserId)
 
       case 'get_child_dashboard':
         return await handleGetChildDashboard(body, origin)

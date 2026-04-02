@@ -37,27 +37,33 @@ function ConnectionsCard({ studentId, isHi }: { studentId: string; isHi: boolean
   const [joinResult, setJoinResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [copied, setCopied] = useState(false);
 
-  // Fetch or generate parent link code
+  // Fetch parent link code — read from students.invite_code (auto-generated at row
+  // insertion and used by the parent-portal edge function for lookups).
   const fetchLinkCode = useCallback(async () => {
     setLoadingCode(true);
     try {
-      // Try to get existing link code
-      const { data: existing } = await supabase
-        .from('guardian_student_links')
+      // Primary source: the auto-generated invite_code on the students table
+      const { data: studentData } = await supabase
+        .from('students')
         .select('invite_code')
-        .eq('student_id', studentId)
-        .not('invite_code', 'is', null)
-        .limit(1)
+        .eq('id', studentId)
         .single();
 
-      if (existing?.invite_code) {
-        setLinkCode(existing.invite_code);
+      if (studentData?.invite_code) {
+        setLinkCode(studentData.invite_code);
       } else {
-        // Generate a new link code via RPC
-        const { data, error } = await supabase.rpc('generate_parent_link_code', {
-          p_student_id: studentId,
-        });
-        if (!error && data) setLinkCode(data);
+        // Fallback: check guardian_student_links for an existing code
+        const { data: existing } = await supabase
+          .from('guardian_student_links')
+          .select('invite_code')
+          .eq('student_id', studentId)
+          .not('invite_code', 'is', null)
+          .limit(1)
+          .single();
+
+        if (existing?.invite_code) {
+          setLinkCode(existing.invite_code);
+        }
       }
     } catch {
       // Silently fail — feature may not be available
