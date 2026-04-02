@@ -43,17 +43,17 @@ export async function GET(request: NextRequest) {
       case 'students':
         table = 'students';
         select = 'id,name,email,grade,board,xp_total,streak_days,is_active,account_status,subscription_plan,preferred_language,created_at';
-        filter += `${filter ? '&' : ''}is_demo_user=eq.false`;
+        filter += `${filter ? '&' : ''}is_demo=eq.false`;
         break;
       case 'teachers':
         table = 'teachers';
         select = 'id,name,email,school_name,is_active,created_at';
-        filter += `${filter ? '&' : ''}is_demo_user=eq.false`;
+        filter += `${filter ? '&' : ''}is_demo=eq.false`;
         break;
       case 'parents':
         table = 'guardians';
         select = 'id,name,email,phone,created_at';
-        filter += `${filter ? '&' : ''}is_demo_user=eq.false`;
+        filter += `${filter ? '&' : ''}is_demo=eq.false`;
         break;
       case 'quizzes':
         table = 'quiz_sessions';

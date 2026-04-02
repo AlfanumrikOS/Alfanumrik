@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
       coverageRes,
     ] = await Promise.all([
       // 1. Engagement: signups in last 30 days
-      supabaseRest('students', `select=created_at&created_at=gte.${since30d}&is_demo_user=eq.false&order=created_at.asc&limit=10000`),
+      supabaseRest('students', `select=created_at&created_at=gte.${since30d}&is_demo=eq.false&order=created_at.asc&limit=10000`),
       // 2. Engagement: quizzes in last 30 days
       supabaseRest('quiz_sessions', `select=created_at&created_at=gte.${since30d}&order=created_at.asc&limit=10000`),
       // 3. Engagement: chats in last 30 days
@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
       // 4. Popular subjects: all quiz sessions with subject
       supabaseRest('quiz_sessions', `select=subject&limit=50000`),
       // 5. Revenue: subscription plan breakdown
-      supabaseRest('students', `select=subscription_plan&is_demo_user=eq.false&limit=50000`),
+      supabaseRest('students', `select=subscription_plan&is_demo=eq.false&limit=50000`),
       // 6. Retention: active in last 1d (using quiz or chat activity)
       supabaseRest('quiz_sessions', `select=student_id&created_at=gte.${since1d}&limit=50000`),
       supabaseRest('quiz_sessions', `select=student_id&created_at=gte.${since7d}&limit=50000`),
@@ -78,7 +78,7 @@ export async function GET(request: NextRequest) {
       supabaseRest('curriculum_topics', `select=id&deleted_at=is.null&limit=0`, 'HEAD'),
       supabaseRest('question_bank', `select=id&deleted_at=is.null&limit=0`, 'HEAD'),
       // 8. Top students by XP
-      supabaseRest('students', `select=id,name,email,grade,xp_total,streak_days,avatar_url&is_demo_user=eq.false&order=xp_total.desc.nullslast&limit=10`),
+      supabaseRest('students', `select=id,name,email,grade,xp_total,streak_days,avatar_url&is_demo=eq.false&order=xp_total.desc.nullslast&limit=10`),
       // 9. Content coverage: active questions by grade and subject
       supabaseRest('question_bank', `select=grade,subject&is_active=eq.true&limit=50000`),
     ]);

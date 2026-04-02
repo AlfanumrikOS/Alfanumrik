@@ -99,7 +99,7 @@ export async function GET(request: NextRequest) {
         const table = roleToTable(account.role as string);
         const authUserId = account.auth_user_id as string;
 
-        let profileFields = 'id,name,email,is_active,is_demo_user';
+        let profileFields = 'id,name,email,is_active,is_demo';
         if (table === 'students') {
           profileFields += ',grade,board,subscription_plan,xp_total,streak_days,account_status,last_active';
         } else if (table === 'teachers') {
@@ -189,7 +189,7 @@ export async function POST(request: NextRequest) {
           name: item.name,
           email: item.email,
           is_active: true,
-          is_demo_user: true,
+          is_demo: true,
         };
 
         if (item.role === 'student') {
@@ -239,7 +239,7 @@ export async function POST(request: NextRequest) {
         let studentInviteCode: string | null = null;
         if (item.role === 'parent' && profileId) {
           const demoStudentRes = await fetch(
-            supabaseAdminUrl('students', 'select=id,invite_code,name&is_demo_user=eq.true&is_active=eq.true&limit=1'),
+            supabaseAdminUrl('students', 'select=id,invite_code,name&is_demo=eq.true&is_active=eq.true&limit=1'),
             { method: 'GET', headers: supabaseAdminHeaders() }
           );
           if (demoStudentRes.ok) {
@@ -375,7 +375,7 @@ export async function POST(request: NextRequest) {
       name,
       email,
       is_active: true,
-      is_demo_user: true,
+      is_demo: true,
     };
 
     if (role === 'student') {
@@ -429,7 +429,7 @@ export async function POST(request: NextRequest) {
     let studentInviteCode: string | null = null;
     if (role === 'parent' && profileId) {
       const demoStudentRes = await fetch(
-        supabaseAdminUrl('students', 'select=id,invite_code,name&is_demo_user=eq.true&is_active=eq.true&limit=1'),
+        supabaseAdminUrl('students', 'select=id,invite_code,name&is_demo=eq.true&is_active=eq.true&limit=1'),
         { method: 'GET', headers: supabaseAdminHeaders() }
       );
 
@@ -752,13 +752,13 @@ export async function DELETE(request: NextRequest) {
     const authUserId = account.auth_user_id;
     const ipAddress = request.headers.get('x-forwarded-for') || undefined;
 
-    // 1. Set is_demo_user = false on the profile row first
+    // 1. Set is_demo = false on the profile row first
     await fetch(
       supabaseAdminUrl(table, `auth_user_id=eq.${authUserId}`),
       {
         method: 'PATCH',
         headers: supabaseAdminHeaders('return=minimal'),
-        body: JSON.stringify({ is_demo_user: false }),
+        body: JSON.stringify({ is_demo: false }),
       }
     );
 
