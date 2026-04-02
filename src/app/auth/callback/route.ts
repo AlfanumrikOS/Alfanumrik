@@ -32,7 +32,20 @@ export async function GET(request: NextRequest) {
     if (!error) {
       // Determine where to redirect based on the auth action type
       if (type === 'recovery') {
-        // Password reset — redirect to the reset form
+        // Password reset — pass session tokens via URL hash so the client-side
+        // Supabase SDK picks them up via detectSessionInUrl. Without this, the
+        // session lives only in server-side cookies and the browser client
+        // (which uses localStorage) sees no session → "Invalid or Expired Link".
+        const { data: { session: recoverySession } } = await supabase.auth.getSession();
+        if (recoverySession) {
+          const hashParams = new URLSearchParams({
+            access_token: recoverySession.access_token,
+            refresh_token: recoverySession.refresh_token,
+            token_type: 'bearer',
+            type: 'recovery',
+          });
+          return NextResponse.redirect(`${origin}/auth/reset#${hashParams.toString()}`);
+        }
         return NextResponse.redirect(`${origin}/auth/reset`);
       }
       if (type === 'signup') {
