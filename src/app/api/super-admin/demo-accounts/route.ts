@@ -99,12 +99,13 @@ export async function GET(request: NextRequest) {
         const table = roleToTable(account.role as string);
         const authUserId = account.auth_user_id as string;
 
-        let profileFields = 'id,name,email,is_active,is_demo';
+        let profileFields = 'id,name,email,is_demo';
         if (table === 'students') {
-          profileFields += ',grade,board,subscription_plan,xp_total,streak_days,account_status,last_active';
+          profileFields += ',is_active,grade,board,subscription_plan,xp_total,streak_days,account_status,last_active';
         } else if (table === 'teachers') {
-          profileFields += ',school_name,subjects_taught,grades_taught';
+          profileFields += ',is_active,school_name,subjects_taught,grades_taught';
         } else {
+          // guardians table does NOT have is_active column
           profileFields += ',phone,relationship';
         }
 
@@ -188,11 +189,11 @@ export async function POST(request: NextRequest) {
           auth_user_id: authUserId,
           name: item.name,
           email: item.email,
-          is_active: true,
           is_demo: true,
         };
 
         if (item.role === 'student') {
+          profileData.is_active = true;
           profileData.grade = 'Grade 10';
           profileData.board = 'CBSE';
           profileData.subscription_plan = 'unlimited';
@@ -202,6 +203,7 @@ export async function POST(request: NextRequest) {
           profileData.preferred_language = 'en';
           profileData.preferred_subject = 'Mathematics';
         } else if (item.role === 'teacher') {
+          profileData.is_active = true;
           profileData.school_name = 'Demo School - Delhi Public School';
           profileData.subjects_taught = ['Mathematics', 'Science'];
           profileData.grades_taught = ['Grade 10', 'Grade 11', 'Grade 12'];
@@ -210,6 +212,7 @@ export async function POST(request: NextRequest) {
           profileData.is_verified = true;
           profileData.onboarding_completed = true;
         } else {
+          // guardians table does NOT have is_active column
           profileData.phone = '+919876543210';
           profileData.relationship = 'parent';
           profileData.preferred_language = 'en';
@@ -374,11 +377,11 @@ export async function POST(request: NextRequest) {
       auth_user_id: authUserId,
       name,
       email,
-      is_active: true,
       is_demo: true,
     };
 
     if (role === 'student') {
+      profileData.is_active = true;
       profileData.grade = 'Grade 10'; // P5: grade must be string, "Grade X" format
       profileData.board = 'CBSE';
       profileData.subscription_plan = 'unlimited';
@@ -388,6 +391,7 @@ export async function POST(request: NextRequest) {
       profileData.preferred_language = 'en';
       profileData.preferred_subject = 'Mathematics';
     } else if (role === 'teacher') {
+      profileData.is_active = true;
       profileData.school_name = 'Demo School - Delhi Public School';
       profileData.subjects_taught = ['Mathematics', 'Science'];
       profileData.grades_taught = ['Grade 10', 'Grade 11', 'Grade 12'];
@@ -396,7 +400,7 @@ export async function POST(request: NextRequest) {
       profileData.is_verified = true;
       profileData.onboarding_completed = true;
     } else {
-      // parent (guardian)
+      // parent (guardian) — guardians table does NOT have is_active column
       profileData.phone = '+919876543210';
       profileData.relationship = 'parent';
       profileData.preferred_language = 'en';

@@ -51,17 +51,20 @@ export async function POST(request: NextRequest) {
       auth_user_id: authUserId,
       name,
       email,
-      is_active: true,
     };
 
     if (role === 'student') {
+      profileData.is_active = true;
       profileData.grade = 'Grade 10';
       profileData.board = 'CBSE';
       profileData.subscription_plan = 'free';
       profileData.xp_total = 0;
       profileData.streak_days = 0;
       profileData.account_status = 'test';
+    } else if (role === 'teacher') {
+      profileData.is_active = true;
     }
+    // parent role maps to guardians table which does NOT have is_active column
 
     const profileRes = await fetch(supabaseAdminUrl(table), {
       method: 'POST',
