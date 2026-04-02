@@ -1,6 +1,7 @@
 'use client';
 
 import { Component, type ReactNode } from 'react';
+import * as Sentry from '@sentry/nextjs';
 
 interface Props {
   children: ReactNode;
@@ -27,7 +28,12 @@ export class SectionErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    console.error(`[SectionError:${this.props.section || 'unknown'}]`, error, info.componentStack?.slice(0, 300));
+    Sentry.captureException(error, {
+      tags: { boundary: 'section-error', section: this.props.section || 'unknown' },
+      contexts: {
+        react: { componentStack: info.componentStack?.slice(0, 300) },
+      },
+    });
   }
 
   render() {
@@ -42,19 +48,29 @@ export class SectionErrorBoundary extends Component<Props, State> {
             textAlign: 'center',
           }}
         >
-          <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0 }}>
-            {this.props.section ? `${this.props.section} couldn't load.` : 'This section couldn\'t load.'}
-            {' '}
-            <button
-              onClick={() => this.setState({ hasError: false })}
-              style={{
-                background: 'none', border: 'none', color: 'var(--orange, #E8581C)',
-                fontWeight: 600, cursor: 'pointer', fontSize: 13,
-              }}
-            >
-              Try again
-            </button>
-          </p>
+          {(() => {
+            const isHi = typeof window !== 'undefined' && (
+              localStorage.getItem('alfanumrik_lang') === 'hi' ||
+              navigator.language?.startsWith('hi')
+            );
+            return (
+              <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0 }}>
+                {this.props.section
+                  ? (isHi ? `${this.props.section} लोड नहीं हो सका।` : `${this.props.section} couldn't load.`)
+                  : (isHi ? 'यह सेक्शन लोड नहीं हो सका।' : 'This section couldn\'t load.')}
+                {' '}
+                <button
+                  onClick={() => this.setState({ hasError: false })}
+                  style={{
+                    background: 'none', border: 'none', color: 'var(--orange, #E8581C)',
+                    fontWeight: 600, cursor: 'pointer', fontSize: 13,
+                  }}
+                >
+                  {isHi ? 'फिर से कोशिश करो' : 'Try again'}
+                </button>
+              </p>
+            );
+          })()}
         </div>
       );
     }

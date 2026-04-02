@@ -15,12 +15,22 @@ import crypto from 'crypto';
 describe('Payment Webhook Signature (P11)', () => {
   const WEBHOOK_SECRET = 'test_webhook_secret_123';
 
+  /**
+   * Timing-safe signature verification — mirrors production code in
+   * webhook/route.ts and verify/route.ts. Uses crypto.timingSafeEqual
+   * to prevent timing attacks on HMAC comparison.
+   */
   function verifySignature(body: string, signature: string, secret: string): boolean {
     const expected = crypto
       .createHmac('sha256', secret)
       .update(body)
       .digest('hex');
-    return expected === signature;
+
+    // Timing-safe comparison (matches production implementation)
+    const sigBuffer = Buffer.from(signature, 'hex');
+    const expectedBuffer = Buffer.from(expected, 'hex');
+    if (sigBuffer.length !== expectedBuffer.length) return false;
+    return crypto.timingSafeEqual(sigBuffer, expectedBuffer);
   }
 
   function createValidSignature(body: string): string {
@@ -53,6 +63,12 @@ describe('Payment Webhook Signature (P11)', () => {
     const sigForOriginal = createValidSignature(originalBody);
     // Signature for original body should NOT match tampered body
     expect(verifySignature(tamperedBody, sigForOriginal, WEBHOOK_SECRET)).toBe(false);
+  });
+
+  it('reject_wrong_length_signature: different hex length rejected before comparison', () => {
+    const body = JSON.stringify({ event: 'payment.captured' });
+    // Valid HMAC-SHA256 hex is 64 chars; this is 16 chars
+    expect(verifySignature(body, 'deadbeef12345678', WEBHOOK_SECRET)).toBe(false);
   });
 });
 

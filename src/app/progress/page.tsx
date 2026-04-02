@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useAuth } from '@/lib/AuthContext';
 import { getStudentProfiles, getSubjects, getBloomProgression, getLearningVelocity, getKnowledgeGaps, supabase } from '@/lib/supabase';
 import { BLOOM_CONFIG, BLOOM_LEVELS, BLOOM_ORDER, getHighestMasteredBloom, predictMasteryDate } from '@/lib/cognitive-engine';
@@ -443,6 +444,24 @@ export default function ProgressPage() {
                   </div>
                 )}
               </>
+            )}
+
+            {/* ═══ NEP Holistic Progress Card link ═══ */}
+            {totalSessions > 0 && (
+              <Link href="/hpc" className="block">
+                <Card className="!p-4 flex items-center gap-3 hover:shadow-md transition-shadow">
+                  <span className="text-2xl">📋</span>
+                  <div className="flex-1">
+                    <div className="text-sm font-semibold" style={{ fontFamily: 'var(--font-display)' }}>
+                      {isHi ? 'NEP समग्र प्रगति कार्ड' : 'NEP Holistic Progress Card'}
+                    </div>
+                    <div className="text-xs text-[var(--text-3)]">
+                      {isHi ? 'Bloom, दक्षता, और CBSE तैयारी देखें' : 'View Bloom\'s, competencies, and CBSE readiness'}
+                    </div>
+                  </div>
+                  <span className="text-[var(--text-3)]" aria-hidden="true">&rarr;</span>
+                </Card>
+              </Link>
             )}
           </>
         )}

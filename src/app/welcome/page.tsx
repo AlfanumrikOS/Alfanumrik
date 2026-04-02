@@ -782,6 +782,7 @@ function WelcomeContent() {
               <div className="space-y-2 text-sm" style={{ color: 'var(--text-2)' }}>
                 <p>support@alfanumrik.com</p>
                 <Link href="/about" className="block hover:underline">{t('About Us', 'हमारे बारे में')}</Link>
+                <Link href="/research" className="block hover:underline">{t('Research', 'शोध')}</Link>
                 <p>{t('India', 'भारत')} 🇮🇳</p>
               </div>
             </div>

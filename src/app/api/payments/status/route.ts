@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
+import { logger } from '@/lib/logger';
 
 /**
  * Subscription Status Endpoint
@@ -119,7 +120,7 @@ export async function GET(request: NextRequest) {
       renewal_attempts: sub.renewal_attempts,
     });
   } catch (err) {
-    console.error('Status error:', err);
+    logger.error('Status error', { error: err instanceof Error ? err : new Error(String(err)) });
     return NextResponse.json({ error: 'Failed to fetch status' }, { status: 500 });
   }
 }

@@ -29,6 +29,9 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${baseUrl}/exams`, lastModified: new Date(), changeFrequency: 'daily', priority: 0.6 },
     { url: `${baseUrl}/scan`, lastModified: new Date(), changeFrequency: 'weekly', priority: 0.5 },
 
+    // Research & methodology (public SEO page)
+    { url: `${baseUrl}/research`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.7 },
+
     // Legal / policy pages
     { url: `${baseUrl}/privacy`, lastModified: new Date(), changeFrequency: 'yearly', priority: 0.3 },
     { url: `${baseUrl}/terms`, lastModified: new Date(), changeFrequency: 'yearly', priority: 0.3 },

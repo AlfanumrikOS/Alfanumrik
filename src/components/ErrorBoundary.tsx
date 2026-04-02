@@ -1,6 +1,7 @@
 'use client';
 
 import { Component, type ReactNode } from 'react';
+import * as Sentry from '@sentry/nextjs';
 
 interface Props {
   children: ReactNode;
@@ -23,27 +24,23 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('ErrorBoundary caught:', error, errorInfo);
-
-    // Production error reporting hook — replace with Sentry/LogRocket when available
-    if (process.env.NODE_ENV === 'production' && typeof window !== 'undefined') {
-      try {
-        const payload = {
-          message: error.message,
-          stack: error.stack?.slice(0, 1000),
-          componentStack: errorInfo.componentStack?.slice(0, 500),
-          url: window.location.href,
-          timestamp: new Date().toISOString(),
-        };
-        // Fire-and-forget to analytics endpoint
-        navigator.sendBeacon?.('/api/error-report', JSON.stringify(payload));
-      } catch { /* don't throw in error handler */ }
-    }
+    // Report to Sentry with component stack context
+    Sentry.captureException(error, {
+      tags: { boundary: 'component-error' },
+      contexts: {
+        react: { componentStack: errorInfo.componentStack?.slice(0, 500) },
+      },
+    });
   }
 
   render() {
     if (this.state.hasError) {
       if (this.props.fallback) return this.props.fallback;
+
+      const isHi = typeof window !== 'undefined' && (
+        localStorage.getItem('alfanumrik_lang') === 'hi' ||
+        navigator.language?.startsWith('hi')
+      );
 
       return (
         <div style={{
@@ -51,12 +48,14 @@ export class ErrorBoundary extends Component<Props, State> {
           minHeight: '60vh', padding: '40px 20px', textAlign: 'center',
           fontFamily: "'Plus Jakarta Sans', 'Sora', system-ui, sans-serif",
         }}>
-          <span style={{ fontSize: 48, marginBottom: 16 }}>🦊</span>
+          <span style={{ fontSize: 48, marginBottom: 16 }}>&#x1F98A;</span>
           <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-1)', margin: '0 0 8px' }}>
-            Oops! Something went wrong
+            {isHi ? 'कुछ गलत हो गया' : 'Oops! Something went wrong'}
           </h2>
           <p style={{ fontSize: 14, color: 'var(--text-3)', margin: '0 0 20px', maxWidth: 400 }}>
-            Foxy ran into a problem. Please try refreshing the page.
+            {isHi
+              ? 'Foxy को एक समस्या हुई। कृपया पेज रिफ्रेश करें।'
+              : 'Foxy ran into a problem. Please try refreshing the page.'}
           </p>
           <button
             onClick={() => {
@@ -68,7 +67,7 @@ export class ErrorBoundary extends Component<Props, State> {
               border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer',
             }}
           >
-            Refresh Page
+            {isHi ? 'पेज रिफ्रेश करो' : 'Refresh Page'}
           </button>
           {process.env.NODE_ENV === 'development' && this.state.error && (
             <pre style={{

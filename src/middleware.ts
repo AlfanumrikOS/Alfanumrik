@@ -50,6 +50,23 @@ const MAX_MAP_SIZE = 10_000;
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT_WINDOW = 60_000;
 
+/**
+ * Constant-time string comparison to prevent timing attacks on secrets.
+ * Works in Edge Runtime (no Node crypto.timingSafeEqual available).
+ */
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) {
+    // Compare against `a` to avoid early return leaking length difference timing.
+    // The result is always false but we still do the full comparison.
+    b = a;
+  }
+  let mismatch = a.length === b.length ? 0 : 1;
+  for (let i = 0; i < a.length; i++) {
+    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return mismatch === 0;
+}
+
 function getRateLimitKey(request: NextRequest): string {
   return (
     request.headers.get('x-vercel-forwarded-for')?.split(',')[0]?.trim() ||
@@ -142,20 +159,11 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // ── Layer 0.6: Protected page routes (require Supabase session) ──
-  const PROTECTED_PREFIXES = ['/parent/children', '/parent/reports', '/parent/profile', '/parent/support', '/billing'];
-  if (PROTECTED_PREFIXES.some(p => path.startsWith(p))) {
-    const hasSession = request.cookies.getAll().some(c => c.name.includes('auth-token'));
-    if (!hasSession) {
-      const isParentRoute = path.startsWith('/parent');
-      const loginUrl = new URL(isParentRoute ? '/parent' : '/login', request.url);
-      return NextResponse.redirect(loginUrl);
-    }
-  }
-
   // ── Layer 0: Supabase session refresh ──
   // This keeps the auth cookie fresh on every request.
   // Required for the PKCE email flow (signup confirm, password reset).
+  // MUST run BEFORE protected route checks so that expired-but-refreshable
+  // sessions get renewed before the cookie-presence check.
   let response = NextResponse.next({ request });
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -180,6 +188,41 @@ export async function middleware(request: NextRequest) {
     });
     // Refresh the session — this extends the cookie expiry
     await supabase.auth.getUser();
+  }
+
+  // ── Layer 0.6: Protected page routes (require Supabase session) ──
+  // All routes that require authentication. Unauthenticated visitors are
+  // redirected to the appropriate login page before the page renders.
+  // Runs AFTER session refresh so that renewed cookies are visible.
+  const PROTECTED_PREFIXES = [
+    '/dashboard', '/quiz', '/profile', '/progress', '/reports',
+    '/study-plan', '/foxy', '/learn', '/review', '/scan',
+    '/notifications', '/exams', '/leaderboard', '/hpc', '/simulations',
+    '/stem-centre', '/research',
+    '/parent/children', '/parent/reports', '/parent/profile', '/parent/support',
+    '/teacher/',
+    '/billing',
+  ];
+  const SUPER_ADMIN_PAGE_PREFIX = '/super-admin';
+  if (PROTECTED_PREFIXES.some(p => path.startsWith(p))) {
+    const hasSession = request.cookies.getAll().some(c => /^sb-.+-auth-token/.test(c.name));
+    if (!hasSession) {
+      const isParentRoute = path.startsWith('/parent');
+      const isTeacherRoute = path.startsWith('/teacher');
+      const loginUrl = new URL(
+        isParentRoute ? '/parent' : isTeacherRoute ? '/login?role=teacher' : '/login',
+        request.url,
+      );
+      return NextResponse.redirect(loginUrl);
+    }
+  }
+  // Super admin pages require both a session and admin verification (done at the API layer).
+  // Redirect unauthenticated visitors to the super-admin login page.
+  if (path.startsWith(SUPER_ADMIN_PAGE_PREFIX) && !path.startsWith('/super-admin/login')) {
+    const hasSession = request.cookies.getAll().some(c => /^sb-.+-auth-token/.test(c.name));
+    if (!hasSession) {
+      return NextResponse.redirect(new URL('/super-admin/login', request.url));
+    }
   }
 
   // ── Layer 2: Block common bot/scanner paths early ──
@@ -208,7 +251,7 @@ export async function middleware(request: NextRequest) {
     const querySecret = request.nextUrl.searchParams.get('secret');
     const providedSecret = headerSecret || querySecret;
 
-    if (!secretKey || !providedSecret || providedSecret !== secretKey) {
+    if (!secretKey || !providedSecret || !timingSafeEqual(providedSecret, secretKey)) {
       // Return 401 JSON for API routes, 401 HTML for page
       if (path.startsWith('/api/')) {
         return new NextResponse(

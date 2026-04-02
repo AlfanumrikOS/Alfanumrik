@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
 import { cancelRazorpaySubscription } from '@/lib/razorpay';
+import { logger } from '@/lib/logger';
 
 /**
  * Cancel Subscription Endpoint
@@ -66,8 +67,8 @@ export async function POST(request: NextRequest) {
       .eq('student_id', studentRow.id)
       .single();
 
-    if (!sub || sub.status === 'cancelled' || sub.status === 'expired' || sub.plan_code === 'free') {
-      return NextResponse.json({ error: 'No active subscription to cancel' }, { status: 400 });
+    if (!sub || sub.status === 'cancelled' || sub.status === 'expired' || sub.status === 'halted' || sub.plan_code === 'free') {
+      return NextResponse.json({ success: false, error: 'No active subscription to cancel' }, { status: 400 });
     }
 
     // Cancel on Razorpay if recurring
@@ -75,7 +76,7 @@ export async function POST(request: NextRequest) {
       try {
         await cancelRazorpaySubscription(sub.razorpay_subscription_id, !immediate);
       } catch (err) {
-        console.error('Razorpay cancel failed:', err);
+        logger.error('Razorpay cancel failed', { error: err instanceof Error ? err : new Error(String(err)) });
         // Continue with local cancellation even if Razorpay call fails
       }
     }
@@ -145,7 +146,7 @@ export async function POST(request: NextRequest) {
       message: `Auto-renewal cancelled. You'll keep access until ${new Date(sub.current_period_end).toLocaleDateString('en-IN')}.`,
     });
   } catch (err) {
-    console.error('Cancel error:', err);
+    logger.error('Cancel error', { error: err instanceof Error ? err : new Error(String(err)) });
     return NextResponse.json({ error: 'Cancellation failed' }, { status: 500 });
   }
 }

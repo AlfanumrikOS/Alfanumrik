@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { BottomNav } from '@/components/ui';
 
@@ -284,6 +285,7 @@ function Toast({ message, onDone }: { message: string; onDone: () => void }) {
 // ============================================================
 export default function ParentSupportPage() {
   const { isLoggedIn, isLoading, guardian } = useAuth();
+  const router = useRouter();
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -361,8 +363,15 @@ export default function ParentSupportPage() {
           padding: '28px 22px',
           marginBottom: 24,
           textAlign: 'center' as const,
+          position: 'relative' as const,
         }}
       >
+        <button
+          onClick={() => router.push('/parent')}
+          style={{ position: 'absolute', top: 16, left: 16, background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, padding: '6px 12px', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+        >
+          &larr; Dashboard
+        </button>
         <div style={{ fontSize: 36, marginBottom: 8 }}>💬</div>
         <h1 style={{ fontSize: 24, fontWeight: 800, color: '#fff', margin: '0 0 6px' }}>
           Help &amp; Support

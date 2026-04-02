@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { authorizeRequest, logAudit } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { isValidUUID } from '@/lib/sanitize';
 
 /**
  * GET /api/v1/admin/roles — List all roles with their permissions
@@ -156,6 +157,13 @@ export async function PATCH(request: Request) {
     if (!body.role_id || !Array.isArray(body.permissions)) {
       return NextResponse.json(
         { error: 'role_id and permissions array are required' },
+        { status: 400 }
+      );
+    }
+
+    if (!isValidUUID(body.role_id)) {
+      return NextResponse.json(
+        { error: 'Invalid role_id format', code: 'BAD_REQUEST' },
         { status: 400 }
       );
     }

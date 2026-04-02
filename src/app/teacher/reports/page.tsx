@@ -651,6 +651,12 @@ export default function TeacherReportsPage() {
       {/* Header */}
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid #1E293B' }}>
         <div>
+          <button
+            onClick={() => router.push('/teacher')}
+            style={{ background: 'rgba(37,99,235,0.15)', border: 'none', borderRadius: 6, padding: '4px 10px', color: '#60A5FA', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginBottom: 8, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+          >
+            &larr; {tt(isHi, 'डैशबोर्ड', 'Dashboard')}
+          </button>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: '#F8FAFC', margin: 0 }}>{tt(isHi, 'Performance Reports', 'प्रदर्शन रिपोर्ट')}</h1>
           <p style={{ fontSize: 14, color: '#64748B', margin: '4px 0 0' }}>
             {tt(isHi, 'Student performance analytics and insights', 'छात्र प्रदर्शन विश्लेषण और जानकारी')}

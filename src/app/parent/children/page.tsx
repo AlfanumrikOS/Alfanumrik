@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { BottomNav } from '@/components/ui';
@@ -494,6 +495,7 @@ const t = (isHi: boolean, en: string, hi: string) => isHi ? hi : en;
 
 export default function ParentChildrenPage() {
   const { guardian, isLoading: authLoading, isLoggedIn, isHi } = useAuth();
+  const router = useRouter();
 
   const [children, setChildren] = useState<ChildData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -576,7 +578,14 @@ export default function ParentChildrenPage() {
         borderRadius: 16,
         padding: '24px 22px',
         marginBottom: 20,
+        position: 'relative',
       }}>
+        <button
+          onClick={() => router.push('/parent')}
+          style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 6, padding: '4px 10px', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginBottom: 8, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+        >
+          &larr; {t(isHi, 'Dashboard', 'डैशबोर्ड')}
+        </button>
         <h1 style={{ fontSize: 24, fontWeight: 700, color: '#fff', margin: '0 0 4px' }}>
           &#x1F467; {t(isHi, 'My Children', 'मेरे बच्चे')}
         </h1>

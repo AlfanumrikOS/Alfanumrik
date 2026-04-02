@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { track } from '@/lib/analytics';
 import { getQuizQuestions, submitQuizResults, saveCognitiveMetrics, saveQuestionResponses, supabase } from '@/lib/supabase';
+import { XP_RULES } from '@/lib/xp-rules';
 import { Card, Button, ProgressBar, LoadingFoxy } from '@/components/ui';
 import { SUBJECT_META } from '@/lib/constants';
 import QuizSetup from '@/components/quiz/QuizSetup';
@@ -307,26 +308,45 @@ export default function QuizPage() {
           });
         }
 
-        // ── ANTI-CHEAT: Client-side validation before submission ──
-        // 1. Minimum time: 3 seconds per question (bots submit instantly)
-        const minTime = allResponses.length * 3;
-        if (timer < minTime) {
-          console.warn(`[AntiCheat] Quiz completed too fast: ${timer}s for ${allResponses.length} questions (min: ${minTime}s)`);
-          // Still submit, but the DB trigger will flag it as suspicious
+        // ── ANTI-CHEAT: Client-side validation before submission (P3) ──
+        // 1. Minimum time: 3 seconds avg per question (bots submit instantly) — REJECT
+        const avgTimePerQ = allResponses.length > 0 ? timer / allResponses.length : 0;
+        if (avgTimePerQ < 3) {
+          console.warn(`[AntiCheat] Quiz completed too fast: ${timer}s for ${allResponses.length} questions (avg ${avgTimePerQ.toFixed(1)}s < 3s)`);
+          setResults({
+            total: allResponses.length,
+            correct: allResponses.filter(r => r.is_correct).length,
+            score_percent: 0,
+            xp_earned: 0,
+            session_id: '',
+          });
+          setLoading(false);
+          setScreen('results');
+          return;
         }
 
-        // 2. Detect impossible response patterns
-        // If ALL answers are option 0 (or any single option), flag it
+        // 2. Detect impossible response patterns — FLAG (warn but still submit)
+        // If ALL answers are the same index and >3 questions, flag as suspicious
         const optionCounts = [0, 0, 0, 0];
         allResponses.forEach(r => { if (r.selected_option >= 0 && r.selected_option < 4) optionCounts[r.selected_option]++; });
         const maxSameOption = Math.max(...optionCounts);
-        if (allResponses.length >= 5 && maxSameOption === allResponses.length) {
+        if (allResponses.length > 3 && maxSameOption === allResponses.length) {
           console.warn(`[AntiCheat] All answers were option ${optionCounts.indexOf(maxSameOption)} — pattern gaming`);
         }
 
-        // 3. Verify response count matches question count
+        // 3. Verify response count matches question count — REJECT
         if (allResponses.length !== questions.length) {
           console.warn(`[AntiCheat] Response count (${allResponses.length}) != question count (${questions.length})`);
+          setResults({
+            total: questions.length,
+            correct: 0,
+            score_percent: 0,
+            xp_earned: 0,
+            session_id: '',
+          });
+          setLoading(false);
+          setScreen('results');
+          return;
         }
 
         const subMeta = SUBJECT_META.find(s => s.code === selectedSubject);
@@ -588,7 +608,7 @@ export default function QuizPage() {
                     ? (isHi ? 'शाबाश! सही जवाब!' : 'Correct! Well done!')
                     : (isHi ? 'गलत जवाब' : 'Incorrect')}
                 </span>
-                {isCorrect && <span className="ml-auto text-xs font-bold" style={{ color: 'var(--orange)' }}>+10 XP</span>}
+                {isCorrect && <span className="ml-auto text-xs font-bold" style={{ color: 'var(--orange)' }}>+{XP_RULES.quiz_per_correct} XP</span>}
               </div>
               <p className="text-sm leading-relaxed text-[var(--text-2)]">
                 {isHi && q.explanation_hi ? q.explanation_hi : q.explanation || (isHi ? 'कोई व्याख्या उपलब्ध नहीं' : 'No explanation available')}

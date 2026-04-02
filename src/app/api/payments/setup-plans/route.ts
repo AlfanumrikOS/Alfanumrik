@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { createRazorpayPlan } from '@/lib/razorpay';
+import { logger } from '@/lib/logger';
 
 /**
  * Setup Razorpay Plans — Admin only
@@ -79,7 +80,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ results });
   } catch (err) {
-    console.error('Setup plans error:', err);
+    logger.error('Setup plans error', { error: err instanceof Error ? err : new Error(String(err)) });
     return NextResponse.json({ error: 'Setup failed' }, { status: 500 });
   }
 }

@@ -10,10 +10,17 @@ export default function Loading() {
       fontFamily: "'Plus Jakarta Sans', 'Sora', system-ui, sans-serif",
     }}>
       <div style={{
-        width: 56,
-        height: 56,
+        fontSize: 48,
+        marginBottom: 16,
+        animation: 'foxyBounce 1.2s ease-in-out infinite',
+      }}>
+        🦊
+      </div>
+      <div style={{
+        width: 48,
+        height: 48,
         borderRadius: '50%',
-        border: '4px solid var(--surface-2, #f0ebe4)',
+        border: '3px solid var(--surface-2, #f0ebe4)',
         borderTopColor: 'var(--orange, #E8581C)',
         animation: 'spin 0.8s linear infinite',
       }} />
@@ -23,9 +30,12 @@ export default function Loading() {
         color: 'var(--text-3, #888)',
         fontWeight: 500,
       }}>
-        Loading...
+        Loading Alfanumrik...
       </p>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      <style>{`
+        @keyframes spin{to{transform:rotate(360deg)}}
+        @keyframes foxyBounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+      `}</style>
     </div>
   );
 }

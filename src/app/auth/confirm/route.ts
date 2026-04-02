@@ -30,6 +30,19 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // Validate `next` to prevent open redirect attacks — same rules as /auth/callback.
+  // Must start with exactly one /, no protocol-relative URLs, no backslashes,
+  // no encoded slashes, no javascript: URIs.
+  const SAFE_NEXT_PATTERN = /^\/[a-zA-Z0-9\-_/?.=&]+$/;
+  const safeNext = (
+    next.startsWith('/') &&
+    !next.startsWith('//') &&
+    !next.includes('\\') &&
+    !next.toLowerCase().includes('%2f') &&
+    !next.toLowerCase().includes('javascript:') &&
+    SAFE_NEXT_PATTERN.test(next)
+  ) ? next : '/dashboard';
+
   if (token_hash && type) {
     const supabase = await createSupabaseServerClient();
     const { error } = await supabase.auth.verifyOtp({ token_hash, type });
@@ -38,7 +51,7 @@ export async function GET(request: NextRequest) {
       if (type === 'recovery') {
         return NextResponse.redirect(`${origin}/auth/reset`);
       }
-      return NextResponse.redirect(`${origin}${next}`);
+      return NextResponse.redirect(`${origin}${safeNext}`);
     }
 
     console.error('[Auth Confirm] Token verification failed:', error.message);

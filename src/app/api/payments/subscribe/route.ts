@@ -118,12 +118,15 @@ export async function POST(request: NextRequest) {
       });
 
       return NextResponse.json({
-        type: 'subscription',
-        subscription_id: subscription.id,
-        key: razorpayKeyId,
-        plan_code,
-        billing_cycle: 'monthly',
-        price_inr: plan.price_monthly,
+        success: true,
+        data: {
+          type: 'subscription',
+          subscription_id: subscription.id,
+          key: razorpayKeyId,
+          plan_code,
+          billing_cycle: 'monthly',
+          price_inr: plan.price_monthly,
+        },
       });
     }
 
@@ -140,14 +143,17 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json({
-      type: 'order',
-      order_id: order.id,
-      amount: order.amount, // paisa — required by Razorpay checkout widget
-      price_inr: plan.price_yearly,
-      currency: order.currency,
-      key: razorpayKeyId,
-      plan_code,
-      billing_cycle: 'yearly',
+      success: true,
+      data: {
+        type: 'order',
+        order_id: order.id,
+        amount: order.amount, // paisa — required by Razorpay checkout widget
+        price_inr: plan.price_yearly,
+        currency: order.currency,
+        key: razorpayKeyId,
+        plan_code,
+        billing_cycle: 'yearly',
+      },
     });
   } catch (err) {
     logger.error('Subscribe error', { error: err instanceof Error ? err : new Error(String(err)) });

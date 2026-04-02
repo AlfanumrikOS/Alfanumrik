@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
+import { authorizeRequest } from '@/lib/rbac';
 
 /**
  * GET /api/v1/leaderboard?period=weekly&limit=20
@@ -17,6 +18,11 @@ import { getSupabaseAdmin } from '@/lib/supabase-admin';
  */
 
 export async function GET(request: NextRequest) {
+  // Defense in depth: middleware blocks unauthenticated /api/v1/ requests,
+  // but verify here too since this route exposes student PII (names, schools).
+  const auth = await authorizeRequest(request);
+  if (!auth.authorized) return auth.errorResponse!;
+
   const { searchParams } = new URL(request.url);
   const period = searchParams.get('period') || 'weekly';
   const limitStr = searchParams.get('limit') || '20';

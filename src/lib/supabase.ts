@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { XP_RULES } from './xp-rules';
 
 export const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 export const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -220,6 +221,9 @@ function validateQuestions(questions: QuestionRecord[]): QuestionRecord[] {
     if (opts.length !== 4) return false;
     if (q.correct_answer_index < 0 || q.correct_answer_index > 3) return false;
 
+    // Reject template markers (P6: no {{ or [BLANK])
+    if (q.question_text.includes('{{') || q.question_text.includes('[BLANK]')) return false;
+
     // Reject template/garbage questions
     const text = q.question_text.toLowerCase();
     if (text.includes('unrelated topic')) return false;
@@ -292,7 +296,7 @@ export async function submitQuizResults(studentId: string, subject: string, grad
   const total = responses.length;
   const correct = responses.filter(r => r.is_correct).length;
   const scorePct = total > 0 ? Math.round((correct / total) * 100) : 0;
-  const xpEarned = correct * 10 + (scorePct >= 80 ? 20 : 0) + (scorePct === 100 ? 50 : 0);
+  const xpEarned = correct * XP_RULES.quiz_per_correct + (scorePct >= 80 ? XP_RULES.quiz_high_score_bonus : 0) + (scorePct === 100 ? XP_RULES.quiz_perfect_bonus : 0);
 
   // 1. Insert quiz session (columns must match DB schema exactly)
   const { data: session, error: sessErr } = await supabase.from('quiz_sessions').insert({

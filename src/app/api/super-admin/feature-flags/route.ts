@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../lib/admin-auth';
+import { invalidateFlagCache } from '../../../../lib/feature-flags';
 
 /**
  * Feature Flags API — supports global, per-institution, per-role, per-environment scoping.
@@ -101,6 +102,7 @@ export async function POST(request: NextRequest) {
     const created = await res.json();
     const flagId = Array.isArray(created) ? created[0]?.id : created?.id;
     await logAdminAudit(auth, 'feature_flag.created', 'feature_flags', flagId || '', { name, enabled });
+    invalidateFlagCache();
     return NextResponse.json({ success: true, data: created }, { status: 201 });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 });
@@ -140,6 +142,18 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'No valid fields to update.' }, { status: 400 });
     }
 
+    // Fetch previous state for audit trail
+    let previousState: Record<string, unknown> | null = null;
+    try {
+      const prevRes = await fetch(supabaseAdminUrl('feature_flags', `select=flag_name,is_enabled,rollout_percentage,target_roles,target_environments,target_institutions,description&id=eq.${encodeURIComponent(id)}&limit=1`), {
+        headers: supabaseAdminHeaders(),
+      });
+      if (prevRes.ok) {
+        const prevData = await prevRes.json();
+        if (Array.isArray(prevData) && prevData.length > 0) previousState = prevData[0];
+      }
+    } catch { /* best-effort: audit still proceeds without previous state */ }
+
     const res = await fetch(supabaseAdminUrl('feature_flags', `id=eq.${encodeURIComponent(id)}`), {
       method: 'PATCH',
       headers: supabaseAdminHeaders('return=representation'),
@@ -153,7 +167,12 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Flag not found.' }, { status: 404 });
     }
 
-    await logAdminAudit(auth, 'feature_flag.updated', 'feature_flags', id, { updates });
+    await logAdminAudit(auth, 'feature_flag.updated', 'feature_flags', id, {
+      updates,
+      previous_state: previousState,
+      flag_name: previousState?.flag_name || null,
+    });
+    invalidateFlagCache();
     return NextResponse.json({ success: true, data: updated });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 });
@@ -182,6 +201,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     await logAdminAudit(auth, 'feature_flag.deleted', 'feature_flags', id, { deleted: deleted[0] });
+    invalidateFlagCache();
     return NextResponse.json({ success: true });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 });

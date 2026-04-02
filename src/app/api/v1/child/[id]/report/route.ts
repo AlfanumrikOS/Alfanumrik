@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { authorizeRequest, logAudit } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { isValidUUID } from '@/lib/sanitize';
 
 /**
  * GET /api/v1/child/:id/report — Download child monthly report
@@ -17,6 +18,13 @@ export async function GET(
 ) {
   try {
     const { id: childId } = await params;
+
+    if (!isValidUUID(childId)) {
+      return NextResponse.json(
+        { error: 'Invalid child ID format', code: 'BAD_REQUEST' },
+        { status: 400 }
+      );
+    }
 
     const auth = await authorizeRequest(request, 'child.download_report', {
       resourceCheck: { type: 'student', id: childId },
