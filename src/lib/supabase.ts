@@ -733,3 +733,185 @@ export async function getTopicDiagrams(subject: string, grade: string, chapterNu
   if (error) console.error('getTopicDiagrams:', error.message);
   return data ?? [];
 }
+
+
+/* ═══ QUIZ V2 & NCERT COVERAGE APIs ═══ */
+
+/** Helper: resolve current student ID from auth session */
+async function resolveStudentId(): Promise<string> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const { data: student } = await supabase
+    .from('students')
+    .select('id')
+    .eq('auth_user_id', user.id)
+    .single();
+  if (!student) throw new Error('Student not found');
+
+  return student.id;
+}
+
+/* ── Quiz Questions V2 (adaptive, multi-type) ── */
+export async function getQuizQuestionsV2(
+  subject: string,
+  grade: string,
+  count: number = 10,
+  difficultyMode: string = 'mixed',
+  chapterNumber: number | null = null,
+  questionTypes: string[] = ['mcq']
+) {
+  const studentId = await resolveStudentId();
+
+  try {
+    const { data, error } = await supabase.rpc('select_quiz_questions_v2', {
+      p_student_id: studentId,
+      p_subject: subject,
+      p_grade: grade,
+      p_chapter_number: chapterNumber,
+      p_count: count,
+      p_difficulty_mode: difficultyMode,
+      p_question_types: questionTypes,
+    });
+    if (!error && data) {
+      const questions = typeof data === 'string' ? JSON.parse(data) : data;
+      return Array.isArray(questions) ? questions : [];
+    }
+    console.warn('select_quiz_questions_v2 failed, falling back:', error?.message);
+  } catch (e) {
+    console.warn('select_quiz_questions_v2 RPC error, falling back:', e);
+  }
+
+  // Fallback to v1
+  const diffMap: Record<string, number | null> = { easy: 1, medium: 2, hard: 3, mixed: null, progressive: null };
+  return getQuizQuestions(subject, grade, count, diffMap[difficultyMode] ?? null, chapterNumber);
+}
+
+/* ── Chapter Progress (per-chapter mastery tracking) ── */
+export async function getChapterProgress(subject: string, grade: string) {
+  try {
+    const studentId = await resolveStudentId();
+    const { data, error } = await supabase.rpc('get_chapter_progress', {
+      p_student_id: studentId,
+      p_subject: subject,
+      p_grade: grade,
+    });
+    if (!error && data) return Array.isArray(data) ? data : [];
+    console.warn('get_chapter_progress failed:', error?.message);
+  } catch (e) {
+    console.warn('get_chapter_progress RPC error:', e);
+  }
+  return [];
+}
+
+/* ── Update Chapter Progress (fire-and-forget after quiz) ── */
+export async function updateChapterProgress(subject: string, grade: string, chapterNumber: number) {
+  try {
+    const studentId = await resolveStudentId();
+    const { error } = await supabase.rpc('update_chapter_progress', {
+      p_student_id: studentId,
+      p_subject: subject,
+      p_grade: grade,
+      p_chapter_number: chapterNumber,
+    });
+    if (error) console.warn('update_chapter_progress failed:', error.message);
+  } catch (e) {
+    console.warn('update_chapter_progress RPC error:', e);
+  }
+}
+
+/* ── Generate Exam Paper (structured exam from template) ── */
+export async function generateExamPaper(
+  subject: string,
+  grade: string,
+  chapters: number[],
+  templateId: string | null = null
+) {
+  try {
+    const studentId = await resolveStudentId();
+    const { data, error } = await supabase.rpc('generate_exam_paper', {
+      p_student_id: studentId,
+      p_subject: subject,
+      p_grade: grade,
+      p_chapters: chapters,
+      p_template_id: templateId,
+    });
+    if (error) throw error;
+    return data;
+  } catch (e) {
+    console.error('generateExamPaper:', e);
+    throw e;
+  }
+}
+
+/* ── NCERT Coverage Report ── */
+export async function getNCERTCoverageReport(grade: string, subject?: string) {
+  try {
+    const studentId = await resolveStudentId();
+    const { data, error } = await supabase.rpc('get_ncert_coverage_report', {
+      p_student_id: studentId,
+      p_grade: grade,
+      p_subject: subject ?? null,
+    });
+    if (!error && data) return data;
+    console.warn('get_ncert_coverage_report failed:', error?.message);
+  } catch (e) {
+    console.warn('get_ncert_coverage_report RPC error:', e);
+  }
+  return null;
+}
+
+/* ── Question History Stats (seen vs total for a chapter) ── */
+export async function getQuestionHistoryStats(
+  subject: string,
+  grade: string,
+  chapterNumber?: number | null
+) {
+  try {
+    const studentId = await resolveStudentId();
+
+    // Total questions available
+    let totalQuery = supabase.from('question_bank')
+      .select('*', { count: 'exact', head: true })
+      .eq('subject', subject)
+      .eq('grade', grade)
+      .eq('is_active', true);
+    if (chapterNumber != null) totalQuery = totalQuery.eq('chapter_number', chapterNumber);
+
+    // Fetch question IDs for this subject/grade/chapter, then count
+    // how many the student has already answered via question_responses
+    let questionIdsQuery = supabase.from('question_bank')
+      .select('id')
+      .eq('subject', subject)
+      .eq('grade', grade)
+      .eq('is_active', true);
+    if (chapterNumber != null) questionIdsQuery = questionIdsQuery.eq('chapter_number', chapterNumber);
+
+    const [totalResult, questionIdsResult] = await Promise.all([
+      totalQuery,
+      questionIdsQuery,
+    ]);
+
+    const totalCount = totalResult.count ?? 0;
+    const questionIds = (questionIdsResult.data ?? []).map(q => q.id);
+
+    let seenCount = 0;
+    if (questionIds.length > 0) {
+      const { count } = await supabase.from('question_responses')
+        .select('question_id', { count: 'exact', head: true })
+        .eq('student_id', studentId)
+        .in('question_id', questionIds);
+      seenCount = count ?? 0;
+    }
+
+    return {
+      total_questions: totalCount,
+      seen_questions: seenCount,
+      unseen_questions: totalCount - seenCount,
+      coverage_percent: totalCount > 0 ? Math.round((seenCount / totalCount) * 100) : 0,
+    };
+  } catch (e) {
+    console.error('getQuestionHistoryStats:', e);
+    return { total_questions: 0, seen_questions: 0, unseen_questions: 0, coverage_percent: 0 };
+  }
+}
