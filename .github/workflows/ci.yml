@@ -112,6 +112,12 @@ jobs:
       - name: Type check
         run: npm run type-check
 
+      - name: Run auth/onboarding regression tests (gate)
+        run: |
+          echo "## Auth/Onboarding Regression Gate" >> $GITHUB_STEP_SUMMARY
+          npx vitest run src/__tests__/auth-bootstrap.test.ts src/__tests__/auth-onboarding.test.ts src/__tests__/auth-middleware.test.ts --reporter=verbose
+          echo "| Auth gate | PASS |" >> $GITHUB_STEP_SUMMARY
+
       - name: Run tests with coverage
         run: npx vitest run --reporter=verbose --coverage || npm test -- --reporter=verbose
         continue-on-error: false
