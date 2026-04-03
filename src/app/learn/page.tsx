@@ -397,6 +397,31 @@ export default function LearnPage() {
                           borderColor: `${subjectMeta?.color || 'var(--orange)'}30`,
                         }}
                       >
+                        {/* Open Chapter Detail Page */}
+                        <button
+                          onClick={() =>
+                            router.push(
+                              `/learn/${selectedSubject}/${chapter.chapter_number}`
+                            )
+                          }
+                          className="w-full rounded-xl p-3 flex items-center gap-3 transition-all active:scale-[0.98]"
+                          style={{
+                            background: 'linear-gradient(135deg, #FFF7ED, #FEF3E2)',
+                            border: '1px solid rgba(232,88,28,0.15)',
+                          }}
+                        >
+                          <span className="text-lg">📖</span>
+                          <div className="flex-1 text-left">
+                            <div className="text-sm font-semibold" style={{ color: 'var(--orange)' }}>
+                              {isHi ? 'अध्याय खोलें' : 'Open Chapter'}
+                            </div>
+                            <div className="text-[10px] text-[var(--text-3)]">
+                              {isHi ? 'सीखें • प्रश्न-उत्तर • क्विज़ • फॉक्सी' : 'Learn • Q&A • Quiz • Foxy'}
+                            </div>
+                          </div>
+                          <span className="text-sm" style={{ color: 'var(--orange)' }}>&#x203A;</span>
+                        </button>
+
                         {chapter.topics.map(topic => {
                           const topicMastery = getTopicMastery(topic.id);
                           const tColor = getMasteryColor(topicMastery);
