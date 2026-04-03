@@ -93,6 +93,24 @@ interface DbConcept {
   estimated_minutes: number;
 }
 
+interface ConceptEngineResponse {
+  success: boolean;
+  error?: string;
+  data: {
+    chapter_title: string;
+    grade: string;
+    subject: string;
+    chapter_number: number;
+    concepts: DbConcept[];
+    content_chunks: RAGChunk[];
+    diagram_chunks: RAGChunk[];
+    qa_chunks: RAGQuestion[];
+    legacy_questions: QAQuestion[];
+    source: string;
+    total_chunks: number;
+  };
+}
+
 type TabId = 'learn' | 'qa' | 'quiz' | 'foxy';
 
 /* ── Source type labels ── */
@@ -145,7 +163,7 @@ export default function ChapterDetailPage() {
     if (!authLoading && !isLoggedIn) router.replace('/login');
   }, [authLoading, isLoggedIn, router]);
 
-  // Load chapter data
+  // Load chapter data — single Concept Engine API call
   const loadData = useCallback(async () => {
     if (!student?.grade || !subjectCode || !chapterNumber) return;
     setLoading(true);
@@ -154,52 +172,27 @@ export default function ChapterDetailPage() {
     try {
       const grade = (student.grade || '9').replace('Grade ', '').trim();
 
-      // RAG-first: load content, diagrams, Q&A from RAG + structured concepts as supplement
-      const [contentRes, diagramRes, ragQaRes, conceptsRes, legacyQaRes] = await Promise.all([
-        // RAG content chunks (primary learning content)
-        supabase.rpc('get_chapter_rag_content', {
-          p_grade: grade,
-          p_subject: subjectCode,
-          p_chapter_number: chapterNumber,
-          p_content_type: 'content',
-        }),
-        // RAG diagram chunks
-        supabase.rpc('get_chapter_rag_content', {
-          p_grade: grade,
-          p_subject: subjectCode,
-          p_chapter_number: chapterNumber,
-          p_content_type: 'diagram',
-        }),
-        // RAG Q&A chunks (NCERT questions embedded)
-        supabase.rpc('get_chapter_qa_from_rag', {
-          p_grade: grade,
-          p_subject: subjectCode,
-          p_chapter_number: chapterNumber,
-        }),
-        // Structured concepts (supplementary, not primary)
-        supabase.rpc('get_chapter_concepts', {
-          p_grade: grade,
-          p_subject: subjectCode,
-          p_chapter_number: chapterNumber,
-        }),
-        // Legacy Q&A fallback (question_bank-based)
-        supabase.rpc('get_chapter_qa', {
-          p_grade: grade,
-          p_subject: subjectCode,
-          p_chapter_number: chapterNumber,
-        }),
-      ]);
+      // Single Concept Engine call replaces 5 separate RPC calls
+      const res = await fetch(
+        `/api/concept-engine?action=chapter&grade=${encodeURIComponent(grade)}&subject=${encodeURIComponent(subjectCode)}&chapter=${encodeURIComponent(String(chapterNumber))}`
+      );
+      const json = await res.json() as ConceptEngineResponse;
 
-      if (contentRes.error) console.error('RAG content error:', contentRes.error.message);
-      if (diagramRes.error) console.error('RAG diagram error:', diagramRes.error.message);
-      if (ragQaRes.error) console.error('RAG Q&A error:', ragQaRes.error.message);
-      if (conceptsRes.error) console.error('Concepts error:', conceptsRes.error.message);
-
-      setChunks((contentRes.data as RAGChunk[]) ?? []);
-      setRagDiagrams((diagramRes.data as RAGChunk[]) ?? []);
-      setRagQuestions((ragQaRes.data as RAGQuestion[]) ?? []);
-      setDbConcepts((conceptsRes.data as DbConcept[]) ?? []);
-      setQuestions((legacyQaRes.data as QAQuestion[]) ?? []);
+      if (!res.ok || !json.success) {
+        console.error('Concept Engine error:', json.error || res.statusText);
+        setError(isHi ? 'अध्याय लोड नहीं हो पाया' : 'Could not load chapter');
+        setChunks([]);
+        setRagDiagrams([]);
+        setRagQuestions([]);
+        setDbConcepts([]);
+        setQuestions([]);
+      } else {
+        setDbConcepts(json.data.concepts || []);
+        setChunks(json.data.content_chunks || []);
+        setRagDiagrams(json.data.diagram_chunks || []);
+        setRagQuestions(json.data.qa_chunks || []);
+        setQuestions(json.data.legacy_questions || []);
+      }
     } catch (e) {
       console.error('Load chapter error:', e);
       setError(isHi ? 'अध्याय लोड नहीं हो पाया' : 'Could not load chapter');
@@ -376,10 +369,10 @@ export default function ChapterDetailPage() {
           />
         )}
         {!loading && activeTab === 'quiz' && (
-          <QuizTab subjectCode={subjectCode} chapterNumber={chapterNumber} isHi={isHi} router={router} />
+          <QuizTab subjectCode={subjectCode} chapterNumber={chapterNumber} isHi={isHi} router={router} ragQuestionCount={ragQuestions.length} />
         )}
         {!loading && activeTab === 'foxy' && (
-          <FoxyTab chapterTitle={chapterTitle} subjectCode={subjectCode} isHi={isHi} router={router} />
+          <FoxyTab chapterTitle={chapterTitle} subjectCode={subjectCode} chapterNumber={chapterNumber} isHi={isHi} router={router} />
         )}
       </main>
 
@@ -1168,9 +1161,9 @@ function safeParseOptions(opts: unknown): string[] {
 
 /* ═══ QUIZ TAB ═══ */
 function QuizTab({
-  subjectCode, chapterNumber, isHi, router,
+  subjectCode, chapterNumber, isHi, router, ragQuestionCount,
 }: {
-  subjectCode: string; chapterNumber: number; isHi: boolean; router: ReturnType<typeof useRouter>;
+  subjectCode: string; chapterNumber: number; isHi: boolean; router: ReturnType<typeof useRouter>; ragQuestionCount: number;
 }) {
   const quizOptions = [
     { count: 5, label: 'Quick Quiz', labelHi: 'त्वरित क्विज़', desc: '~5 min', icon: '⚡' },
@@ -1189,6 +1182,13 @@ function QuizTab({
           {isHi
             ? 'इस अध्याय के प्रश्नों से अभ्यास करें। प्रश्न दोहराए नहीं जाएंगे।'
             : 'Practice with questions from this chapter. Questions won\'t repeat until you\'ve seen 80% of the pool.'}
+        </p>
+        <p className="text-xs text-blue-600 mt-1">
+          {ragQuestionCount > 0
+            ? (isHi
+                ? `${ragQuestionCount} NCERT प्रश्न RAG से उपलब्ध`
+                : `${ragQuestionCount} NCERT questions available from RAG`)
+            : (isHi ? 'प्रश्न बैंक से प्रश्न' : 'Questions from question bank')}
         </p>
       </div>
 
@@ -1215,9 +1215,9 @@ function QuizTab({
 
 /* ═══ FOXY TAB ═══ */
 function FoxyTab({
-  chapterTitle, subjectCode, isHi, router,
+  chapterTitle, subjectCode, chapterNumber, isHi, router,
 }: {
-  chapterTitle: string; subjectCode: string; isHi: boolean; router: ReturnType<typeof useRouter>;
+  chapterTitle: string; subjectCode: string; chapterNumber: number; isHi: boolean; router: ReturnType<typeof useRouter>;
 }) {
   const suggestions = [
     { text: isHi ? 'इस अध्याय की मुख्य अवधारणाएं समझाइए' : 'Explain the key concepts of this chapter', mode: 'learn' },
@@ -1256,6 +1256,7 @@ function FoxyTab({
                 chapter: chapterTitle,
                 mode: s.mode,
                 message: s.text,
+                chapter_number: String(chapterNumber),
               });
               router.push(`/foxy?${params.toString()}`);
             }}
@@ -1271,6 +1272,7 @@ function FoxyTab({
           const params = new URLSearchParams({
             subject: subjectCode,
             chapter: chapterTitle,
+            chapter_number: String(chapterNumber),
           });
           router.push(`/foxy?${params.toString()}`);
         }}
