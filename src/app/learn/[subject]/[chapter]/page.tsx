@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -68,16 +68,6 @@ interface QAQuestion {
   options: string[] | string | null;
   correct_answer_index: number;
   explanation: string | null;
-}
-
-interface MediaItem {
-  id: string;
-  caption: string | null;
-  alt_text: string | null;
-  media_type: string;
-  storage_url: string | null;
-  page_number: number | null;
-  source_book: string | null;
 }
 
 interface DbConcept {
@@ -412,7 +402,6 @@ interface ConceptBlock {
   formula: string | null;
   diagramRefs: string[];
   embeddedDiagrams: EmbeddedDiagram[];
-  matchedMedia: MediaItem[];
   practiceQ: QAQuestion | null;
   learningObjective?: string;
   commonMistakes?: string[];
@@ -463,7 +452,6 @@ function dbConceptsToBlocks(concepts: DbConcept[], ragDiagrams: RAGChunk[]): Con
       embeddedDiagrams: matchedDiagrams
         .filter((d: RAGChunk) => d.media_url)
         .map((d: RAGChunk) => ({ url: d.media_url!, description: d.media_description || d.chunk_text.slice(0, 100) || '', type: 'diagram' })),
-      matchedMedia: [] as MediaItem[],
       practiceQ: c.practice_question ? {
         question_id: c.concept_id,
         question_text: c.practice_question,
@@ -490,44 +478,6 @@ function dbConceptsToBlocks(concepts: DbConcept[], ragDiagrams: RAGChunk[]): Con
       examTips: c.exam_tips || [],
     };
   });
-}
-
-/** Find actual media records matching diagram reference labels.
- *  Normalizes both ref and caption for flexible matching (Figure 1.1 / Fig. 1.1 / fig 1.1).
- *  Returns at most 3 matched media per concept to avoid flooding the UI. */
-function findMediaForRefs(refs: string[], media: MediaItem[]): MediaItem[] {
-  if (refs.length === 0 || media.length === 0) return [];
-
-  const normalize = (s: string) => s.toLowerCase().replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
-  // "Figure 1.1" → "figure 1.1", also generate variants: "fig. 1.1", "fig 1.1"
-  const refVariants = (ref: string): string[] => {
-    const n = normalize(ref);
-    const variants = [n];
-    if (n.startsWith('figure')) {
-      const num = n.replace(/^figure\s*/, '');
-      variants.push(`fig. ${num}`, `fig ${num}`);
-    } else if (n.startsWith('fig.')) {
-      const num = n.replace(/^fig\.\s*/, '');
-      variants.push(`figure ${num}`, `fig ${num}`);
-    } else if (n.startsWith('fig ')) {
-      const num = n.replace(/^fig\s+/, '');
-      variants.push(`figure ${num}`, `fig. ${num}`);
-    }
-    return variants;
-  };
-
-  const matched: MediaItem[] = [];
-  for (const ref of refs) {
-    if (matched.length >= 3) break;
-    const variants = refVariants(ref);
-    const found = media.find(m => {
-      if (!m.caption) return false;
-      const cap = normalize(m.caption);
-      return variants.some(v => cap.includes(v) || v.includes(cap));
-    });
-    if (found && !matched.includes(found)) matched.push(found);
-  }
-  return matched;
 }
 
 /* ═══ LEARN TAB — CONCEPT CARDS (one at a time) ═══ */
@@ -613,11 +563,31 @@ function LearnTab({ dbConcepts, chunks, ragDiagrams, questions, isHi, activeConc
     }
 
     return (
-      <div className="text-center py-12">
-        <p className="text-4xl mb-3">📖</p>
-        <p className="text-gray-500 text-sm">
-          {isHi ? 'इस अध्याय की सामग्री जल्द ही उपलब्ध होगी' : 'Content for this chapter will be available soon'}
+      <div className="text-center py-12 space-y-4">
+        <p className="text-4xl mb-1">📖</p>
+        <p className="text-gray-600 text-sm font-medium">
+          {isHi ? 'इस अध्याय की सामग्री तैयार की जा रही है' : 'Content is being prepared for this chapter'}
         </p>
+        <p className="text-gray-400 text-xs">
+          {isHi ? 'तब तक फॉक्सी से पूछें या क्विज़ आज़माएं' : 'Meanwhile, ask Foxy or try a quiz'}
+        </p>
+        <div className="flex gap-3 justify-center pt-2">
+          <button
+            onClick={() => {
+              const p = new URLSearchParams({ subject: subjectCode, chapter: chapterTitle, mode: 'learn' });
+              router.push(`/foxy?${p.toString()}`);
+            }}
+            className="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 transition-colors"
+          >
+            {isHi ? '🦊 फॉक्सी से पूछें' : '🦊 Ask Foxy'}
+          </button>
+          <button
+            onClick={() => router.push(`/quiz?subject=${subjectCode}&chapter=${chapterNumber}&count=5`)}
+            className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
+          >
+            {isHi ? '🧠 क्विज़ आज़माएं' : '🧠 Try Quiz'}
+          </button>
+        </div>
       </div>
     );
   }
@@ -770,45 +740,21 @@ function LearnTab({ dbConcepts, chunks, ragDiagrams, questions, isHi, activeConc
           </div>
         )}
 
-        {/* Matched Media from content_media table — fallback diagrams */}
-        {(concept.matchedMedia && concept.matchedMedia.length > 0) ? (
-          <div className="px-4 py-2.5 bg-purple-50 border-b border-purple-100">
-            <h3 className="text-[10px] uppercase font-semibold text-purple-500 mb-2 tracking-wide">
-              {isHi ? 'चित्र' : 'Diagrams'}
-            </h3>
-            <div className="space-y-2">
-              {concept.matchedMedia.map((m, i) => (
-                <div key={i} className="bg-white rounded-lg border border-purple-200 overflow-hidden">
-                  {m.storage_url ? (
-                    <img src={m.storage_url} alt={m.alt_text || m.caption || 'Diagram'} className="w-full" loading="lazy" />
-                  ) : (
-                    <div className="p-3 text-center">
-                      <span className="text-2xl">📊</span>
-                      <p className="text-xs text-purple-600 mt-1 font-medium">{m.caption}</p>
-                      {m.alt_text && <p className="text-[10px] text-gray-500 mt-0.5">{m.alt_text}</p>}
-                    </div>
-                  )}
-                  {m.caption && m.storage_url && (
-                    <p className="text-[10px] text-purple-600 px-2 py-1 bg-purple-50">{m.caption}</p>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : concept.diagramRefs.length > 0 ? (
+        {/* Referenced Diagrams — shown as labels when no embedded diagrams exist */}
+        {concept.embeddedDiagrams.length === 0 && concept.diagramRefs.length > 0 && (
           <div className="px-4 py-2.5 bg-purple-50 border-b border-purple-100">
             <h3 className="text-[10px] uppercase font-semibold text-purple-500 mb-1.5 tracking-wide">
               {isHi ? 'संदर्भित चित्र' : 'Referenced Diagrams'}
             </h3>
             <div className="flex flex-wrap gap-2">
-              {concept.diagramRefs.map((ref, i) => (
+              {concept.diagramRefs.slice(0, 2).map((ref, i) => (
                 <span key={i} className="text-xs bg-white border border-purple-200 rounded-lg px-2.5 py-1 text-purple-700">
                   📊 {ref}
                 </span>
               ))}
             </div>
           </div>
-        ) : null}
+        )}
 
         {/* Common Mistakes */}
         {concept.commonMistakes && concept.commonMistakes.length > 0 && (
