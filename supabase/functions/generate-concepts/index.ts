@@ -80,12 +80,50 @@ function slugify(text: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Grade / Subject normalisation
+// rag_content_chunks stores "Grade 10" / "Mathematics"
+// chapter_concepts, question_bank store "10" / "math"
+// ---------------------------------------------------------------------------
+
+function normalizeGrade(raw: string): string {
+  // "Grade 10" → "10"
+  return raw.replace(/^Grade\s+/i, '').trim()
+}
+
+const SUBJECT_MAP: Record<string, string> = {
+  'mathematics': 'math',
+  'science': 'science',
+  'physics': 'physics',
+  'chemistry': 'chemistry',
+  'biology': 'biology',
+  'english': 'english',
+  'hindi': 'hindi',
+  'sanskrit': 'sanskrit',
+  'social studies': 'social_studies',
+  'computer science': 'computer_science',
+  'informatics practices': 'informatics_practices',
+  'history': 'history',
+  'geography': 'geography',
+  'economics': 'economics',
+  'political science': 'political_science',
+  'accountancy': 'accountancy',
+  'business studies': 'business_studies',
+}
+
+function normalizeSubject(raw: string): string {
+  const key = raw.toLowerCase().trim()
+  return SUBJECT_MAP[key] ?? key.replace(/\s+/g, '_')
+}
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 interface ChapterInfo {
-  grade: string
-  subject: string
+  ragGrade: string    // "Grade 10" — used for get_chapter_rag_content RPC
+  ragSubject: string  // "Mathematics" — used for get_chapter_rag_content RPC
+  grade: string       // "10" — used for chapter_concepts / question_bank insert
+  subject: string     // "math" — used for chapter_concepts / question_bank insert
   chapter_number: number
   chapter_title: string
 }
@@ -126,44 +164,56 @@ async function fetchChaptersWithoutConcepts(
   subject?: string,
   limit?: number,
 ): Promise<ChapterInfo[]> {
-  // Get distinct chapters from rag_content_chunks
+  // Fetch ALL rows from rag_content_chunks — must override Supabase default 1000-row limit.
+  // 10,372 rows / 542 distinct chapters as of 2025; 20000 is a safe ceiling.
   let chapterQuery = supabase
     .from('rag_content_chunks')
     .select('grade, subject, chapter_number, chapter_title')
     .order('grade', { ascending: true })
     .order('subject', { ascending: true })
     .order('chapter_number', { ascending: true })
+    .limit(20000)
 
-  if (grade) chapterQuery = chapterQuery.eq('grade', grade)
-  if (subject) chapterQuery = chapterQuery.eq('subject', subject)
+  // Caller may pass already-normalised grade/subject; also accept raw "Grade N" format
+  if (grade) {
+    const ng = normalizeGrade(grade)
+    chapterQuery = chapterQuery.or(`grade.eq.Grade ${ng},grade.eq.${ng}`)
+  }
+  if (subject) {
+    const ns = normalizeSubject(subject)
+    // Match both normalised ("math") and raw ("Mathematics") spellings
+    const rawKey = Object.entries(SUBJECT_MAP).find(([, v]) => v === ns)?.[0] ?? ns
+    const rawSubject = rawKey.charAt(0).toUpperCase() + rawKey.slice(1)
+    chapterQuery = chapterQuery.or(`subject.eq.${rawSubject},subject.eq.${ns}`)
+  }
 
   const { data: allChunks, error: chunkErr } = await chapterQuery
 
   if (chunkErr || !allChunks) return []
 
-  // Deduplicate to get distinct chapters
+  // Deduplicate to get distinct chapters; normalise grade/subject for DB operations
   const chapterMap = new Map<string, ChapterInfo>()
   for (const row of allChunks) {
-    const key = `${row.grade}|${row.subject}|${row.chapter_number}`
+    const normGrade = normalizeGrade(row.grade)
+    const normSubject = normalizeSubject(row.subject)
+    const key = `${normGrade}|${normSubject}|${row.chapter_number}`
     if (!chapterMap.has(key)) {
       chapterMap.set(key, {
-        grade: row.grade,
-        subject: row.subject,
+        ragGrade: row.grade,      // keep raw for RAG RPC
+        ragSubject: row.subject,  // keep raw for RAG RPC
+        grade: normGrade,
+        subject: normSubject,
         chapter_number: row.chapter_number,
         chapter_title: row.chapter_title || `Chapter ${row.chapter_number}`,
       })
     }
   }
 
-  // Get chapters that already have concepts
-  let conceptQuery = supabase
+  // Get chapters that already have concepts — chapter_concepts uses normalised format
+  const { data: existingConcepts } = await supabase
     .from('chapter_concepts')
     .select('grade, subject, chapter_number')
-
-  if (grade) conceptQuery = conceptQuery.eq('grade', grade)
-  if (subject) conceptQuery = conceptQuery.eq('subject', subject)
-
-  const { data: existingConcepts } = await conceptQuery
+    .limit(20000)
 
   const existingSet = new Set(
     (existingConcepts || []).map(
@@ -172,7 +222,7 @@ async function fetchChaptersWithoutConcepts(
     ),
   )
 
-  // Filter to chapters without concepts
+  // Filter to chapters without concepts (compare using normalised keys)
   const missing: ChapterInfo[] = []
   for (const [key, chapter] of chapterMap) {
     if (!existingSet.has(key)) {
@@ -431,26 +481,29 @@ function parseConceptsResponse(raw: string): GeneratedConcept[] | null {
 async function handleGet(origin: string | null): Promise<Response> {
   const supabase = getSupabaseAdmin()
 
-  // Count distinct chapters in rag_content_chunks
+  // Count distinct chapters in rag_content_chunks — must override default 1000-row limit
   const { data: allChunks, error: chunkErr } = await supabase
     .from('rag_content_chunks')
     .select('grade, subject, chapter_number')
+    .limit(20000)
 
   if (chunkErr) {
     return errorResponse(`DB error: ${chunkErr.message}`, 500, origin)
   }
 
+  // Normalise to match chapter_concepts format ("Grade 10"→"10", "Mathematics"→"math")
   const totalChapters = new Set(
     (allChunks || []).map(
       (r: { grade: string; subject: string; chapter_number: number }) =>
-        `${r.grade}|${r.subject}|${r.chapter_number}`,
+        `${normalizeGrade(r.grade)}|${normalizeSubject(r.subject)}|${r.chapter_number}`,
     ),
   )
 
-  // Count chapters with concepts
+  // Count chapters with concepts — already in normalised format
   const { data: conceptChapters, error: conceptErr } = await supabase
     .from('chapter_concepts')
     .select('grade, subject, chapter_number')
+    .limit(20000)
 
   if (conceptErr) {
     return errorResponse(`DB error: ${conceptErr.message}`, 500, origin)
@@ -600,11 +653,11 @@ async function handlePost(req: Request, origin: string | null): Promise<Response
     processed++
 
     try {
-      // Step 1: Fetch RAG chunks
+      // Step 1: Fetch RAG chunks — RPC expects raw "Grade N" / "Mathematics" format
       const ragChunks = await fetchRAGChunks(
         supabase,
-        chapter.grade,
-        chapter.subject,
+        chapter.ragGrade,
+        chapter.ragSubject,
         chapter.chapter_number,
       )
 
