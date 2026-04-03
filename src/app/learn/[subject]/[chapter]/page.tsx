@@ -659,13 +659,20 @@ function QATab({
   reviewedCount: number;
   isHi: boolean;
 }) {
-  const filters = [
+  // Only show filters that have at least 1 question
+  const sourceCounts: Record<string, number> = {};
+  for (const q of questions) {
+    sourceCounts[q.source_type] = (sourceCounts[q.source_type] || 0) + 1;
+  }
+  const allFilters = [
     { id: 'all', label: 'All', labelHi: 'सभी' },
     { id: 'ncert_exercise', label: 'Exercise', labelHi: 'अभ्यास' },
     { id: 'ncert_intext', label: 'In-Text', labelHi: 'पाठ में' },
     { id: 'cbse_style', label: 'CBSE Style', labelHi: 'CBSE शैली' },
     { id: 'practice', label: 'Practice', labelHi: 'अभ्यास' },
   ];
+  // Show "All" always + only filters that have questions
+  const filters = allFilters.filter(f => f.id === 'all' || (sourceCounts[f.id] || 0) > 0);
 
   if (allCount === 0) {
     return (
