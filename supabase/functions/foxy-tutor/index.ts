@@ -31,6 +31,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
+import { generateEmbedding } from '../_shared/embeddings.ts'
 
 // ─── Environment ────────────────────────────────────────────────
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY') || ''
@@ -265,7 +266,9 @@ USE THIS TO:
 
   // Inject RAG textbook content
   if (ragContext) {
-    prompt += `\n\nNCERT TEXTBOOK CONTENT (PRIMARY SOURCE — base your answer on this):\n${ragContext}\n\nYour answer MUST be consistent with the above NCERT content. Do not contradict it.`
+    prompt += `\n\n=== NCERT REFERENCE MATERIAL (Grade ${grade}, ${subject}) ===\n${ragContext}\n=== END REFERENCE ===
+
+You MUST answer ONLY based on the NCERT content provided above. If the context doesn't contain relevant information, say 'This topic isn't in my current NCERT materials for your grade. Let me help with what I do know about ${subject}.' NEVER make up information. Do not contradict the reference material.`
   }
 
   if (!ragContext && !syllabusContext) {
@@ -317,7 +320,7 @@ Do NOT refuse to help — provide your best curriculum-aligned response with ALL
   return prompt
 }
 
-// ─── RAG retrieval (best-effort) ───────────────────────────────
+// ─── RAG retrieval (best-effort, with vector search) ──────────
 async function fetchRAGContext(
   supabase: ReturnType<typeof createClient>,
   query: string,
@@ -326,14 +329,31 @@ async function fetchRAGContext(
   chapter: string | null = null,
 ): Promise<string | null> {
   try {
-    // Try to call the match_rag_chunks RPC if it exists
-    const { data, error } = await supabase.rpc('match_rag_chunks', {
+    // Attempt to generate a query embedding for vector-based retrieval.
+    // If embedding generation fails (API key missing, provider down, etc.),
+    // fall back to keyword-only search (current behavior).
+    let queryEmbedding: number[] | null = null
+    try {
+      queryEmbedding = await generateEmbedding(query)
+    } catch (embeddingErr) {
+      // Embedding unavailable — proceed with keyword-only search
+      console.warn('Embedding generation failed, falling back to keyword search:', embeddingErr instanceof Error ? embeddingErr.message : String(embeddingErr))
+    }
+
+    const rpcParams: Record<string, unknown> = {
       query_text: query,
       p_subject: subject,
       p_grade: grade,
-      match_count: 3,
+      match_count: 5,
       p_chapter: chapter,
-    })
+    }
+
+    // Pass embedding as JSON string when available (Supabase casts to vector type)
+    if (queryEmbedding) {
+      rpcParams.query_embedding = JSON.stringify(queryEmbedding)
+    }
+
+    const { data, error } = await supabase.rpc('match_rag_chunks', rpcParams)
 
     if (error || !data || data.length === 0) return null
 
