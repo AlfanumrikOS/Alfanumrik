@@ -316,9 +316,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   }
                 }
               }
+            } else {
+              // Bootstrap returned an error status — log for diagnostics.
+              // Student will be redirected to /login where they can try again.
+              // This surfaces the failure instead of silently dropping it.
+              let errDetail = `HTTP ${bootstrapRes.status}`;
+              try {
+                const errBody = await bootstrapRes.json();
+                errDetail = errBody?.error || errDetail;
+              } catch { /* ignore parse errors */ }
+              console.error('[Auth] Bootstrap API returned error:', errDetail, '— user will be redirected to login');
             }
           } catch (bootstrapErr) {
-            console.warn('[Auth] Server bootstrap failed:', bootstrapErr);
+            console.warn('[Auth] Server bootstrap failed (network/runtime error):', bootstrapErr);
           }
 
           // No final fallback — if no profile was created, hasProfile stays false

@@ -178,8 +178,8 @@ export default function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
                   <>{isHi ? '🦊 Foxy से शुरू करो' : '🦊 Start with Foxy'}</>
                 )}
               </Button>
-              <Button variant="ghost" size="md" fullWidth onClick={() => saveAndFinish('/foxy')} disabled={saving}>
-                {isHi ? '🦊 Foxy से बात करो' : '🦊 Talk to Foxy'}
+              <Button variant="ghost" size="md" fullWidth onClick={() => saveAndFinish('/dashboard')} disabled={saving}>
+                {isHi ? '📚 डैशबोर्ड पर जाओ' : '📚 Go to Dashboard'}
               </Button>
             </div>
             <button
