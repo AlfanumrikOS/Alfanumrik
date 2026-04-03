@@ -375,10 +375,10 @@ async function handleGetQuestions(
     p_student_id: studentId,
     p_subject: subject,
     p_grade: grade,
-    p_chapter: chapter,
+    p_chapter_number: chapter,
     p_count: count,
-    p_difficulty: difficulty,
-    p_types: types,
+    p_difficulty_mode: difficulty,
+    p_question_types: types,
   });
 
   if (error) {
