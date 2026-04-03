@@ -179,19 +179,50 @@ export async function getQuizQuestions(subject: string, grade: string, count = 1
     if (!error && data) return validateQuestions(data);
   } catch { /* RPC may not exist — fall back */ }
 
-  // Direct table query fallback
+  // Fetch seen question IDs for dedup (best-effort, ignore errors)
+  const seenIds = new Set<string>();
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: studentRow } = await supabase
+        .from('students')
+        .select('id')
+        .eq('auth_user_id', user.id)
+        .maybeSingle();
+      if (studentRow) {
+        let historyQuery = supabase
+          .from('user_question_history')
+          .select('question_id')
+          .eq('student_id', studentRow.id)
+          .eq('subject', subject)
+          .eq('grade', grade);
+        if (chapterNumber != null) historyQuery = historyQuery.eq('chapter_number', chapterNumber);
+        const { data: historyData } = await historyQuery.limit(500);
+        if (historyData) historyData.forEach(h => seenIds.add(h.question_id));
+      }
+    }
+  } catch { /* History fetch failed — proceed without dedup */ }
+
+  // Direct table query fallback — fetch more to ensure enough unseen questions
+  const fetchLimit = Math.min(count * 4, 120);
   let query = supabase.from('question_bank')
     .select('id, question_text, question_hi, question_type, options, correct_answer_index, explanation, explanation_hi, hint, difficulty, bloom_level, chapter_number')
     .eq('subject', subject)
     .eq('grade', grade)
     .eq('is_active', true)
-    .limit(Math.min(count * 2, 60)); // fetch extra to account for filtered-out bad questions
+    .limit(fetchLimit);
   if (difficulty != null) query = query.eq('difficulty', difficulty);
   if (chapterNumber != null) query = query.eq('chapter_number', chapterNumber);
   const { data, error } = await query;
   if (error) throw error;
-  // Validate, deduplicate, shuffle, and trim to requested count
-  return validateQuestions(data ?? []).sort(() => Math.random() - 0.5).slice(0, count);
+
+  // Validate, deduplicate, prefer unseen questions, shuffle, and trim to count
+  const validated = validateQuestions(data ?? []);
+  const unseen = validated.filter(q => !seenIds.has(q.id));
+  const seen = validated.filter(q => seenIds.has(q.id));
+  // Prioritize unseen, then backfill with seen if pool is too small
+  const pool = [...unseen.sort(() => Math.random() - 0.5), ...seen.sort(() => Math.random() - 0.5)];
+  return pool.slice(0, count);
 }
 
 /** Filter out broken, duplicate, or template questions before they reach students. */
