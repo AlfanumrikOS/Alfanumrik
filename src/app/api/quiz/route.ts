@@ -370,8 +370,9 @@ async function handleGetQuestions(
     );
   }
 
-  // Call the v2 RPC for non-repetition and concept balancing
-  const { data, error } = await supabaseAdmin.rpc('select_quiz_questions_v2', {
+  // Call the RAG RPC for non-repetition, concept balancing, and vector similarity
+  // p_query_embedding is null for now — will be populated when client-side generates embeddings
+  const { data, error } = await supabaseAdmin.rpc('select_quiz_questions_rag', {
     p_student_id: studentId,
     p_subject: subject,
     p_grade: grade,
@@ -379,6 +380,7 @@ async function handleGetQuestions(
     p_count: count,
     p_difficulty_mode: difficulty,
     p_question_types: types,
+    p_query_embedding: null,
   });
 
   if (error) {

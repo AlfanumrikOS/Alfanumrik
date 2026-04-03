@@ -752,7 +752,7 @@ async function resolveStudentId(): Promise<string> {
   return student.id;
 }
 
-/* ── Quiz Questions V2 (adaptive, multi-type) ── */
+/* ── Quiz Questions via RAG (Voyage embeddings) ── */
 export async function getQuizQuestionsV2(
   subject: string,
   grade: string,
@@ -763,6 +763,47 @@ export async function getQuizQuestionsV2(
 ) {
   const studentId = await resolveStudentId();
 
+  // Generate a query embedding for RAG-based retrieval
+  // Context string captures what the student is studying for semantic matching
+  let queryEmbedding: string | null = null;
+  try {
+    const queryContext = `Grade ${grade} ${subject}${chapterNumber ? ` Chapter ${chapterNumber}` : ''} ${difficultyMode} quiz questions`;
+    const response = await fetch('/api/embedding', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: queryContext }),
+    });
+    if (response.ok) {
+      const data = await response.json();
+      if (data.embedding && Array.isArray(data.embedding)) {
+        queryEmbedding = JSON.stringify(data.embedding);
+      }
+    }
+  } catch {
+    // Embedding generation failed — RAG RPC will gracefully fall back to random selection
+  }
+
+  try {
+    const { data, error } = await supabase.rpc('select_quiz_questions_rag', {
+      p_student_id: studentId,
+      p_subject: subject,
+      p_grade: grade,
+      p_chapter_number: chapterNumber,
+      p_count: count,
+      p_difficulty_mode: difficultyMode,
+      p_question_types: questionTypes,
+      p_query_embedding: queryEmbedding,
+    });
+    if (!error && data) {
+      const questions = typeof data === 'string' ? JSON.parse(data) : data;
+      return Array.isArray(questions) ? questions : [];
+    }
+    console.warn('select_quiz_questions_rag failed, falling back:', error?.message);
+  } catch (e) {
+    console.warn('select_quiz_questions_rag RPC error, falling back:', e);
+  }
+
+  // Fallback: try the v2 RPC (non-RAG)
   try {
     const { data, error } = await supabase.rpc('select_quiz_questions_v2', {
       p_student_id: studentId,
