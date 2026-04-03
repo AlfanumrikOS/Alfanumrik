@@ -379,141 +379,6 @@ interface ConceptBlock {
   examTips?: string[];
 }
 
-/** Split RAG chunks into concept blocks. Each block ~2-4 chunks grouped by section headings. */
-function buildConceptBlocks(chunks: RAGChunk[], questions: QAQuestion[], media: MediaItem[]): ConceptBlock[] {
-  if (chunks.length === 0) return [];
-  const blocks: ConceptBlock[] = [];
-  let buf: RAGChunk[] = [];
-  let curTitle = '';
-
-  // Detect headings in chunk text (NCERT sections like "1.1 ...", "2.3.1 ...", or ALL-CAPS lines)
-  const headingRe = /^(?:\d+[\.\d]*\s+[A-Z]|[A-Z][A-Z\s]{4,})/m;
-
-  const flush = () => {
-    if (buf.length === 0) return;
-    const raw = buf.map(c => c.chunk_text).join('\n');
-    // Extract first sentence-like line as title if none
-    const title = curTitle || extractTitle(raw);
-    // Trim explanation to ~400 chars, clean
-    const explanation = trimExplanation(raw, title);
-    // Find example (lines with "Example", "e.g.", "For instance", numbered steps)
-    const example = extractExample(raw);
-    // Find formula (lines with =, →, expressions)
-    const formula = extractFormula(raw);
-    // Match diagram refs from content_media
-    const diagramRefs = matchDiagrams(raw, media);
-    // Pick one practice question for this concept
-    const practiceQ = pickPracticeQuestion(title, questions, blocks.length);
-
-    const matchedMedia = findMediaForRefs(diagramRefs, media);
-    // Extract embedded diagrams from RAG chunks that have media_url
-    const embeddedDiagrams: EmbeddedDiagram[] = buf
-      .filter(c => c.media_url)
-      .map(c => ({ url: c.media_url!, description: c.media_description || c.chunk_text.slice(0, 100), type: c.media_type || 'diagram' }));
-    blocks.push({ title, explanation, example, formula, diagramRefs, matchedMedia, embeddedDiagrams, practiceQ });
-    buf = [];
-    curTitle = '';
-  };
-
-  for (const chunk of chunks) {
-    const text = chunk.chunk_text || '';
-    const match = text.match(headingRe);
-    // Start new block if heading found and buffer has content
-    if (match && buf.length >= 2) {
-      flush();
-      curTitle = match[0].trim().replace(/\s+/g, ' ').slice(0, 80);
-    }
-    buf.push(chunk);
-    // Also flush if buffer gets large (4+ chunks per concept)
-    if (buf.length >= 4) flush();
-  }
-  flush();
-
-  // If we only got 1 giant block, split it into ~3 equal parts
-  if (blocks.length === 1 && chunks.length >= 6) {
-    const perBlock = Math.ceil(chunks.length / 3);
-    const split: ConceptBlock[] = [];
-    for (let i = 0; i < chunks.length; i += perBlock) {
-      const slice = chunks.slice(i, i + perBlock);
-      const raw = slice.map(c => c.chunk_text).join('\n');
-      const dRefs = matchDiagrams(raw, media);
-      const eDiagrams: EmbeddedDiagram[] = slice
-        .filter(c => c.media_url)
-        .map(c => ({ url: c.media_url!, description: c.media_description || '', type: c.media_type || 'diagram' }));
-      split.push({
-        title: extractTitle(raw),
-        explanation: trimExplanation(raw, ''),
-        example: extractExample(raw),
-        formula: extractFormula(raw),
-        diagramRefs: dRefs,
-        matchedMedia: findMediaForRefs(dRefs, media),
-        embeddedDiagrams: eDiagrams,
-        practiceQ: pickPracticeQuestion('', questions, split.length),
-      });
-    }
-    return split;
-  }
-
-  return blocks;
-}
-
-function extractTitle(raw: string): string {
-  // Try numbered section heading
-  const m = raw.match(/^(\d+[\.\d]*\s+[^\n]{5,60})/m);
-  if (m) return m[1].trim();
-  // Try first line if short
-  const first = raw.split('\n').find(l => l.trim().length > 5 && l.trim().length < 80);
-  return first?.trim() || 'Concept';
-}
-
-function trimExplanation(raw: string, title: string): string {
-  // Remove the title line, then take first ~400 chars of meaningful text
-  let text = raw.replace(title, '').trim();
-  // Remove very short lines (page numbers, headers)
-  const lines = text.split('\n').filter(l => l.trim().length > 20);
-  text = lines.slice(0, 6).join('\n');
-  if (text.length > 500) text = text.slice(0, 497) + '...';
-  return text || raw.slice(0, 300);
-}
-
-function extractExample(raw: string): string | null {
-  // Look for "Example", "For example", "e.g.", activity descriptions
-  const m = raw.match(/(?:Example|For example|e\.g\.|Activity \d|For instance|Consider)[^\n]*(?:\n[^\n]{10,}){0,3}/i);
-  if (m && m[0].length > 30) return m[0].trim().slice(0, 400);
-  return null;
-}
-
-function extractFormula(raw: string): string | null {
-  // Look for lines with = or → that look like formulas
-  const lines = raw.split('\n');
-  for (const line of lines) {
-    const t = line.trim();
-    if (t.length > 8 && t.length < 120 && (/[=→⟶]/.test(t) || /\b[A-Z][a-z]?\d*\s*[+→]/.test(t))) {
-      // Skip if it's a normal sentence
-      if (t.split(' ').length > 12) continue;
-      return t;
-    }
-  }
-  return null;
-}
-
-function matchDiagrams(raw: string, media: MediaItem[]): string[] {
-  const refs: string[] = [];
-  const pattern = /(?:Figure|Fig\.|Table|Activity|Diagram)\s*\d+[\.\d]*/gi;
-  let m;
-  while ((m = pattern.exec(raw)) !== null) {
-    const ref = m[0].trim();
-    if (!refs.includes(ref)) refs.push(ref);
-  }
-  return refs.slice(0, 3); // max 3 per concept
-}
-
-function pickPracticeQuestion(title: string, questions: QAQuestion[], index: number): QAQuestion | null {
-  if (questions.length === 0) return null;
-  // Cycle through questions by index so each concept gets a different one
-  return questions[index % questions.length] || null;
-}
-
 /** Convert DB chapter_concepts into ConceptBlocks with real media lookups */
 function dbConceptsToBlocks(concepts: DbConcept[], media: MediaItem[]): ConceptBlock[] {
   return concepts.map((c, i) => {
@@ -557,16 +422,39 @@ function dbConceptsToBlocks(concepts: DbConcept[], media: MediaItem[]): ConceptB
   });
 }
 
-/** Find actual media records matching diagram reference labels */
+/** Find actual media records matching diagram reference labels.
+ *  Normalizes both ref and caption for flexible matching (Figure 1.1 / Fig. 1.1 / fig 1.1).
+ *  Returns at most 3 matched media per concept to avoid flooding the UI. */
 function findMediaForRefs(refs: string[], media: MediaItem[]): MediaItem[] {
   if (refs.length === 0 || media.length === 0) return [];
+
+  const normalize = (s: string) => s.toLowerCase().replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+  // "Figure 1.1" → "figure 1.1", also generate variants: "fig. 1.1", "fig 1.1"
+  const refVariants = (ref: string): string[] => {
+    const n = normalize(ref);
+    const variants = [n];
+    if (n.startsWith('figure')) {
+      const num = n.replace(/^figure\s*/, '');
+      variants.push(`fig. ${num}`, `fig ${num}`);
+    } else if (n.startsWith('fig.')) {
+      const num = n.replace(/^fig\.\s*/, '');
+      variants.push(`figure ${num}`, `fig ${num}`);
+    } else if (n.startsWith('fig ')) {
+      const num = n.replace(/^fig\s+/, '');
+      variants.push(`figure ${num}`, `fig. ${num}`);
+    }
+    return variants;
+  };
+
   const matched: MediaItem[] = [];
   for (const ref of refs) {
-    const refLower = ref.toLowerCase();
-    const found = media.find(m =>
-      m.caption?.toLowerCase().includes(refLower) ||
-      refLower.includes(m.caption?.toLowerCase() || '___')
-    );
+    if (matched.length >= 3) break;
+    const variants = refVariants(ref);
+    const found = media.find(m => {
+      if (!m.caption) return false;
+      const cap = normalize(m.caption);
+      return variants.some(v => cap.includes(v) || v.includes(cap));
+    });
     if (found && !matched.includes(found)) matched.push(found);
   }
   return matched;
@@ -584,11 +472,11 @@ function LearnTab({ dbConcepts, chunks, questions, media, isHi, activeConcept, s
   const [practiceRevealed, setPracticeRevealed] = useState(false);
   const [conceptStartTime, setConceptStartTime] = useState(Date.now());
 
-  // Use DB concepts if available, otherwise fall back to RAG chunk parsing
+  // Use DB concepts — no regex fallback; concepts must come from generate-concepts pipeline
   const concepts = useMemo(() => {
     if (dbConcepts.length > 0) return dbConceptsToBlocks(dbConcepts, media);
-    return buildConceptBlocks(chunks, questions, media);
-  }, [dbConcepts, chunks, questions, media]);
+    return []; // No regex fallback — concepts must be generated via generate-concepts pipeline
+  }, [dbConcepts, media]);
 
   // Reset practice state and track time when concept changes
   useEffect(() => {
@@ -608,6 +496,52 @@ function LearnTab({ dbConcepts, chunks, questions, media, isHi, activeConcept, s
   };
 
   if (concepts.length === 0) {
+    if (chunks.length > 0) {
+      // Chunks exist but structured concepts not yet generated
+      return (
+        <div className="space-y-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-center">
+            <p className="text-3xl mb-2">📖</p>
+            <p className="text-sm font-medium text-amber-800">
+              {isHi ? 'अध्याय सामग्री उपलब्ध है' : 'Chapter content is available'}
+            </p>
+            <p className="text-xs text-amber-600 mt-1">
+              {isHi
+                ? 'संरचित अवधारणाएं तैयार की जा रही हैं। तब तक नीचे पूर्वावलोकन देखें या फॉक्सी से पूछें।'
+                : 'Structured concepts are being prepared. Preview content below or ask Foxy.'}
+            </p>
+          </div>
+
+          {/* RAG chunk previews */}
+          <div className="space-y-2 max-h-80 overflow-y-auto">
+            {chunks.slice(0, 8).map((chunk, i) => (
+              <div key={chunk.chunk_id || i} className="bg-white rounded-lg border border-gray-200 p-3">
+                <p className="text-xs text-gray-600 leading-relaxed">
+                  {chunk.chunk_text.slice(0, 100).trim()}{chunk.chunk_text.length > 100 ? '...' : ''}
+                </p>
+                {chunk.topic && (
+                  <span className="inline-block mt-1.5 text-[10px] bg-gray-100 text-gray-500 rounded px-1.5 py-0.5">
+                    {chunk.topic}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Ask Foxy button */}
+          <button
+            onClick={() => {
+              const p = new URLSearchParams({ subject: subjectCode, chapter: chapterTitle, mode: 'learn' });
+              router.push(`/foxy?${p.toString()}`);
+            }}
+            className="w-full bg-orange-500 text-white rounded-lg py-3 text-sm font-medium hover:bg-orange-600 transition-colors"
+          >
+            {isHi ? '🦊 इस अध्याय के बारे में फॉक्सी से पूछें' : '🦊 Ask Foxy about this chapter'}
+          </button>
+        </div>
+      );
+    }
+
     return (
       <div className="text-center py-12">
         <p className="text-4xl mb-3">📖</p>
@@ -625,6 +559,26 @@ function LearnTab({ dbConcepts, chunks, questions, media, isHi, activeConcept, s
 
   return (
     <div className="space-y-3">
+      {/* ── Concept navigator pills ── */}
+      {total > 1 && (
+        <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-hide">
+          {concepts.map((c, i) => (
+            <button
+              key={i}
+              onClick={() => setActiveConcept(i)}
+              className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                i === activeConcept
+                  ? 'bg-orange-500 text-white'
+                  : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              <span className="font-bold">{i + 1}</span>
+              <span className="truncate max-w-[20ch]">{c.title.length > 20 ? c.title.slice(0, 20) + '...' : c.title}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* ── Progress dots ── */}
       <div className="flex items-center justify-between">
         <div className="flex gap-1.5">
@@ -642,6 +596,32 @@ function LearnTab({ dbConcepts, chunks, questions, media, isHi, activeConcept, s
           {activeConcept + 1}/{total}
         </span>
       </div>
+
+      {/* ── Chapter overview card (shown on first concept) ── */}
+      {isFirst && (
+        <div className="bg-gradient-to-br from-gray-50 to-orange-50 rounded-xl border border-gray-200 p-4">
+          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+            {isHi ? 'अध्याय अवलोकन' : 'Chapter Overview'}
+          </h3>
+          <p className="text-sm font-bold text-gray-900 leading-snug">{chapterTitle}</p>
+          <p className="text-xs text-gray-500 mt-1">
+            {isHi ? `कक्षा ${grade}` : `Class ${grade}`} &bull; {subjectDisplay}
+          </p>
+          <div className="flex gap-3 mt-2.5">
+            <span className="text-xs text-gray-600">
+              {concepts.length} {isHi ? 'अवधारणाएं' : 'concepts'}
+            </span>
+            <span className="text-xs text-gray-600">
+              {questions.length} {isHi ? 'प्रश्न-उत्तर उपलब्ध' : 'Q&A available'}
+            </span>
+          </div>
+          <div className="mt-2.5 border-t border-gray-200 pt-2">
+            <span className="text-[10px] font-semibold text-green-700 bg-green-100 px-2 py-0.5 rounded-full">
+              NCERT 2025
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* ── CONCEPT CARD ── */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">

@@ -31,7 +31,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
-import { generateEmbedding } from '../_shared/embeddings.ts'
+import { fetchRAGContext } from '../_shared/rag-retrieval.ts'
 
 // ─── Environment ────────────────────────────────────────────────
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY') || ''
@@ -318,55 +318,6 @@ Do NOT refuse to help — provide your best curriculum-aligned response with ALL
   }
 
   return prompt
-}
-
-// ─── RAG retrieval (best-effort, with vector search) ──────────
-async function fetchRAGContext(
-  supabase: ReturnType<typeof createClient>,
-  query: string,
-  subject: string,
-  grade: string,
-  chapter: string | null = null,
-): Promise<string | null> {
-  try {
-    // Attempt to generate a query embedding for vector-based retrieval.
-    // If embedding generation fails (API key missing, provider down, etc.),
-    // fall back to keyword-only search (current behavior).
-    let queryEmbedding: number[] | null = null
-    try {
-      queryEmbedding = await generateEmbedding(query)
-    } catch (embeddingErr) {
-      // Embedding unavailable — proceed with keyword-only search
-      console.warn('Embedding generation failed, falling back to keyword search:', embeddingErr instanceof Error ? embeddingErr.message : String(embeddingErr))
-    }
-
-    const rpcParams: Record<string, unknown> = {
-      query_text: query,
-      p_subject: subject,
-      p_grade: grade,
-      match_count: 5,
-      p_chapter: chapter,
-    }
-
-    // Pass embedding as JSON string when available (Supabase casts to vector type)
-    if (queryEmbedding) {
-      rpcParams.query_embedding = JSON.stringify(queryEmbedding)
-    }
-
-    const { data, error } = await supabase.rpc('match_rag_chunks', rpcParams)
-
-    if (error || !data || data.length === 0) return null
-
-    return data
-      .map((chunk: { content: string; chapter_title?: string; similarity?: number }) => {
-        const header = chunk.chapter_title ? `[Chapter: ${chunk.chapter_title}]\n` : ''
-        return `${header}${chunk.content}`
-      })
-      .join('\n\n---\n\n')
-  } catch {
-    // RAG not available — proceed without context
-    return null
-  }
 }
 
 // ─── Syllabus graph retrieval ──────────────────────────────────
