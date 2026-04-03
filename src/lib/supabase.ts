@@ -800,6 +800,7 @@ export async function getQuizQuestionsV2(
   // student mastery, RAG Q&A from NCERT content, and question_bank —
   // all in one call. It handles interleaving, Bloom's distribution,
   // weak-topic targeting, and AI generation for pool deficits internally.
+  let edgeFunctionQuestions: unknown[] | null = null;
   try {
     const { data: funcData, error: funcError } = await supabase.functions.invoke('quiz-generator', {
       body: {
@@ -814,11 +815,19 @@ export async function getQuizQuestionsV2(
 
     if (!funcError && funcData?.questions) {
       const questions = Array.isArray(funcData.questions) ? funcData.questions : [];
-      if (questions.length > 0) {
+      if (questions.length >= count) {
+        // Edge function returned the full requested count — use it directly
         return questions;
       }
+      if (questions.length > 0) {
+        // Partial results — try RPCs for full count, keep these as fallback
+        console.warn(`quiz-generator returned ${questions.length}/${count} questions, trying RPCs for full count`);
+        edgeFunctionQuestions = questions;
+      }
     }
-    console.warn('quiz-generator returned no questions, falling back to RPC');
+    if (!edgeFunctionQuestions) {
+      console.warn('quiz-generator returned no questions, falling back to RPC');
+    }
   } catch (e) {
     console.warn('quiz-generator Edge Function failed, falling back to RPC:', e);
   }
@@ -865,7 +874,13 @@ export async function getQuizQuestionsV2(
   }
 
   // ── FALLBACK 3: direct question_bank query (v1) ──
-  return getQuizQuestions(subject, grade, count, diffMap[difficultyMode] ?? null, chapterNumber);
+  const v1Questions = await getQuizQuestions(subject, grade, count, diffMap[difficultyMode] ?? null, chapterNumber);
+  // If edge function had partial results and v1 returned fewer, use the edge function's results
+  // (they have dedup/history tracking already applied)
+  if (edgeFunctionQuestions && edgeFunctionQuestions.length > v1Questions.length) {
+    return edgeFunctionQuestions;
+  }
+  return v1Questions;
 }
 
 /* ── Update Chapter Progress (fire-and-forget after quiz) ── */
