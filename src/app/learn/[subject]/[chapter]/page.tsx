@@ -156,17 +156,17 @@ export default function ChapterDetailPage() {
   // Filtered Q&A questions
   const filteredQuestions = useMemo(() => {
     if (qaFilter === 'all') return questions;
-    return questions.filter(q => q.source_type === qaFilter);
+    return questions.filter((q: QAQuestion) => q.source_type === qaFilter);
   }, [questions, qaFilter]);
 
   // Toggle question expansion
   const toggleQuestion = (id: string) => {
-    setExpandedQ(prev => {
+    setExpandedQ((prev: Set<string>) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else {
         next.add(id);
-        setReviewedQs(r => new Set(r).add(id));
+        setReviewedQs((r: Set<string>) => new Set(r).add(id));
       }
       return next;
     });
