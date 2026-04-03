@@ -964,6 +964,8 @@ Deno.serve(async (req: Request) => {
         reply,
         xp_earned: xpEarned,
         session_id: activeSessionId,
+        // Include CME concept recommendation so the UI can display the teaching focus
+        ...(cmeAction ? { cme_action: cmeAction } : {}),
       },
       200,
       {},
