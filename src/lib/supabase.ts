@@ -915,3 +915,98 @@ export async function getQuestionHistoryStats(
     return { total_questions: 0, seen_questions: 0, unseen_questions: 0, coverage_percent: 0 };
   }
 }
+
+
+/* ═══ CHAPTER CONTENT & Q&A APIs ═══ */
+
+/**
+ * Fetch RAG content chunks for a chapter.
+ * RAG table uses "Grade 7" format, so we convert from "7".
+ */
+export async function getChapterContent(grade: string, subject: string, chapterNumber: number) {
+  const ragGrade = `Grade ${grade}`;
+  const { data, error } = await supabase.rpc('get_chapter_rag_content', {
+    p_grade: ragGrade,
+    p_subject: subject,
+    p_chapter_number: chapterNumber,
+  });
+  if (error) throw error;
+  return data ?? [];
+}
+
+/**
+ * Fetch Q&A questions for a chapter.
+ * Optional source_type filter (e.g. 'ncert_exercise', 'ncert_intext').
+ */
+export async function getChapterQA(grade: string, subject: string, chapterNumber: number, sourceType?: string) {
+  const params: Record<string, unknown> = {
+    p_grade: grade,
+    p_subject: subject,
+    p_chapter_number: chapterNumber,
+  };
+  if (sourceType) {
+    params.p_source_type = sourceType;
+  }
+  const { data, error } = await supabase.rpc('get_chapter_qa', params);
+  if (error) throw error;
+  return data ?? [];
+}
+
+/**
+ * Fetch combined chapter overview: content chunks + questions + media.
+ * Runs all three queries in parallel for fast initial page load.
+ */
+export async function getChapterOverview(grade: string, subject: string, chapterNumber: number) {
+  const ragGrade = `Grade ${grade}`;
+
+  const [contentResult, qaResult, mediaResult] = await Promise.all([
+    supabase.rpc('get_chapter_rag_content', {
+      p_grade: ragGrade,
+      p_subject: subject,
+      p_chapter_number: chapterNumber,
+    }),
+    supabase.rpc('get_chapter_qa', {
+      p_grade: grade,
+      p_subject: subject,
+      p_chapter_number: chapterNumber,
+    }),
+    supabase
+      .from('content_media')
+      .select('*')
+      .eq('grade', grade)
+      .eq('subject', subject)
+      .eq('chapter_number', chapterNumber)
+      .eq('is_active', true),
+  ]);
+
+  if (contentResult.error) console.error('getChapterOverview content:', contentResult.error.message);
+  if (qaResult.error) console.error('getChapterOverview qa:', qaResult.error.message);
+  if (mediaResult.error) console.error('getChapterOverview media:', mediaResult.error.message);
+
+  const chunks = contentResult.data ?? [];
+  const questions = qaResult.data ?? [];
+  const media = mediaResult.data ?? [];
+
+  return {
+    chunks,
+    questions,
+    media,
+    chapter_title: Array.isArray(chunks) && chunks.length > 0 ? chunks[0].chapter_title : '',
+  };
+}
+
+/**
+ * Fetch content_media (diagrams, images) for a chapter.
+ * May return empty array if no media is uploaded yet.
+ */
+export async function getChapterMedia(grade: string, subject: string, chapterNumber: number) {
+  const { data, error } = await supabase
+    .from('content_media')
+    .select('*')
+    .eq('grade', grade)
+    .eq('subject', subject)
+    .eq('chapter_number', chapterNumber)
+    .eq('is_active', true);
+  if (error) throw error;
+  return data ?? [];
+}
