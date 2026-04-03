@@ -26,14 +26,19 @@ export async function fetchRAGContext(
   grade: string,
   chapter?: string | null,
   contentType?: string | null,
+  concept?: string | null,
 ): Promise<string | null> {
   try {
+    // When a CME-recommended concept is provided, prepend it to the query so
+    // vector search preferentially retrieves chunks for that specific concept.
+    const effectiveQuery = concept ? `${concept}: ${query}` : query
+
     // Attempt to generate a query embedding for vector-based retrieval.
     // If embedding generation fails (API key missing, provider down, etc.),
     // fall back to keyword-only search.
     let queryEmbedding: number[] | null = null
     try {
-      queryEmbedding = await generateEmbedding(query)
+      queryEmbedding = await generateEmbedding(effectiveQuery)
     } catch (embeddingErr) {
       // Embedding unavailable — proceed with keyword-only search
       console.warn(
@@ -43,7 +48,7 @@ export async function fetchRAGContext(
     }
 
     const rpcParams: Record<string, unknown> = {
-      query_text: query,
+      query_text: effectiveQuery,
       p_subject: subject,
       p_grade: grade,
       match_count: 5,
