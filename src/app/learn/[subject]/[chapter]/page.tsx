@@ -26,6 +26,9 @@ interface RAGChunk {
   chapter_title: string;
   chunk_index: number | null;
   page_number: number | null;
+  media_url: string | null;
+  media_type: string | null;
+  media_description: string | null;
 }
 
 interface QAQuestion {
@@ -343,6 +346,12 @@ export default function ChapterDetailPage() {
 }
 
 /* ═══ CONCEPT BLOCK TYPE ═══ */
+interface EmbeddedDiagram {
+  url: string;
+  description: string | null;
+  type: string;
+}
+
 interface ConceptBlock {
   title: string;
   explanation: string;
@@ -350,6 +359,7 @@ interface ConceptBlock {
   formula: string | null;
   diagramRefs: string[];
   matchedMedia?: MediaItem[];
+  embeddedDiagrams: EmbeddedDiagram[]; // Diagrams from RAG chunks with media_url
   practiceQ: QAQuestion | null;
   learningObjective?: string;
   commonMistakes?: string[];
@@ -383,7 +393,11 @@ function buildConceptBlocks(chunks: RAGChunk[], questions: QAQuestion[], media: 
     const practiceQ = pickPracticeQuestion(title, questions, blocks.length);
 
     const matchedMedia = findMediaForRefs(diagramRefs, media);
-    blocks.push({ title, explanation, example, formula, diagramRefs, matchedMedia, practiceQ });
+    // Extract embedded diagrams from RAG chunks that have media_url
+    const embeddedDiagrams: EmbeddedDiagram[] = buf
+      .filter(c => c.media_url)
+      .map(c => ({ url: c.media_url!, description: c.media_description || c.chunk_text.slice(0, 100), type: c.media_type || 'diagram' }));
+    blocks.push({ title, explanation, example, formula, diagramRefs, matchedMedia, embeddedDiagrams, practiceQ });
     buf = [];
     curTitle = '';
   };
@@ -410,6 +424,9 @@ function buildConceptBlocks(chunks: RAGChunk[], questions: QAQuestion[], media: 
       const slice = chunks.slice(i, i + perBlock);
       const raw = slice.map(c => c.chunk_text).join('\n');
       const dRefs = matchDiagrams(raw, media);
+      const eDiagrams: EmbeddedDiagram[] = slice
+        .filter(c => c.media_url)
+        .map(c => ({ url: c.media_url!, description: c.media_description || '', type: c.media_type || 'diagram' }));
       split.push({
         title: extractTitle(raw),
         explanation: trimExplanation(raw, ''),
@@ -417,6 +434,7 @@ function buildConceptBlocks(chunks: RAGChunk[], questions: QAQuestion[], media: 
         formula: extractFormula(raw),
         diagramRefs: dRefs,
         matchedMedia: findMediaForRefs(dRefs, media),
+        embeddedDiagrams: eDiagrams,
         practiceQ: pickPracticeQuestion('', questions, split.length),
       });
     }
@@ -495,6 +513,9 @@ function dbConceptsToBlocks(concepts: DbConcept[], media: MediaItem[]): ConceptB
       formula: c.key_formula || null,
       diagramRefs: (c.diagram_refs || []) as string[],
       matchedMedia,
+      embeddedDiagrams: matchedMedia
+        .filter(m => m.storage_url)
+        .map(m => ({ url: m.storage_url!, description: m.alt_text || m.caption || '', type: 'diagram' })),
       practiceQ: c.practice_question ? {
         question_id: c.concept_id,
         question_text: c.practice_question,
@@ -653,7 +674,39 @@ function LearnTab({ dbConcepts, chunks, questions, media, isHi, activeConcept, s
           </div>
         )}
 
-        {/* Diagrams — render actual images from content_media, or badges if no image */}
+        {/* Embedded Diagrams — from RAG chunks with media_url (first-class Voyage-indexed content) */}
+        {concept.embeddedDiagrams.length > 0 && (
+          <div className="px-4 py-3 border-b border-gray-100">
+            {concept.embeddedDiagrams.map((d, i) => (
+              <div key={i} className="mb-2">
+                {d.url.endsWith('.pdf') ? (
+                  <div className="bg-purple-50 rounded-lg border border-purple-200 p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-purple-600">📄</span>
+                      <span className="text-xs font-semibold text-purple-700">{isHi ? 'NCERT आरेख' : 'NCERT Diagram'}</span>
+                    </div>
+                    {d.description && <p className="text-xs text-purple-600 mb-2">{d.description}</p>}
+                    <a
+                      href={d.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-xs font-medium text-purple-700 bg-white border border-purple-300 rounded-lg px-3 py-1.5 hover:bg-purple-50"
+                    >
+                      {isHi ? 'पाठ्यपुस्तक में देखें' : 'View in textbook'} ↗
+                    </a>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-gray-200 overflow-hidden">
+                    <img src={d.url} alt={d.description || 'Diagram'} className="w-full" loading="lazy" />
+                    {d.description && <p className="text-[10px] text-gray-500 px-2 py-1 bg-gray-50">{d.description}</p>}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Matched Media from content_media table — fallback diagrams */}
         {(concept.matchedMedia && concept.matchedMedia.length > 0) ? (
           <div className="px-4 py-2.5 bg-purple-50 border-b border-purple-100">
             <h3 className="text-[10px] uppercase font-semibold text-purple-500 mb-2 tracking-wide">
