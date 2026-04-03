@@ -228,11 +228,18 @@ export default function QuizPage() {
         setLoading(false);
         return;
       }
-      setQuestions(qs);
-      // Warn if fewer questions than requested
+      // If we still have fewer questions than requested after all fallbacks,
+      // proceed with what we have but log the gap
       if (qs.length < qCount) {
-        logger.warn('quiz_pool_insufficient', { requested: qCount, available: qs.length, subject: subj, grade: student.grade, chapter });
+        logger.warn('quiz_pool_insufficient', {
+          requested: qCount,
+          available: qs.length,
+          subject: subj,
+          grade: student.grade,
+          chapter,
+        });
       }
+      setQuestions(qs);
       setCurrentIdx(0);
       setResponses([]);
       setSelectedOption(null);
