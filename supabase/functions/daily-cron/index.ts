@@ -9,6 +9,7 @@
  *   2. Recalculate leaderboard rankings (top students by XP per grade)
  *   3. Generate daily parent digest notifications
  *   4. Clean up expired/stale tasks from task_queue
+ *   5. Purge expired study_payload_cache entries (24h TTL)
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -251,6 +252,25 @@ async function cleanupTaskQueue(supabase: ReturnType<typeof createClient>): Prom
   return (completedCount ?? 0) + (failedCount ?? 0)
 }
 
+// ─── Step 5: Purge expired study_payload_cache entries ────────────────────
+
+/**
+ * Purge expired study_payload_cache entries.
+ * Rows have a 24-hour TTL set at insert time via expires_at.
+ * Returns the count of rows deleted.
+ */
+async function purgeExpiredStudyCache(
+  supabase: ReturnType<typeof createClient>,
+): Promise<number> {
+  const { count, error } = await supabase
+    .from('study_payload_cache')
+    .delete({ count: 'exact' })
+    .lt('expires_at', new Date().toISOString())
+
+  if (error) throw new Error(`purgeExpiredStudyCache: ${error.message}`)
+  return count ?? 0
+}
+
 // ─── Main handler ─────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -296,6 +316,7 @@ Deno.serve(async (req) => {
       ['leaderboard_entries_updated', () => recalculateLeaderboards(supabase)],
       ['parent_digests_sent', () => generateParentDigests(supabase)],
       ['task_queue_rows_deleted', () => cleanupTaskQueue(supabase)],
+      ['study_cache_entries_purged', () => purgeExpiredStudyCache(supabase)],
     ]
 
     const settled = await Promise.allSettled(steps.map(([, fn]) => fn()))
