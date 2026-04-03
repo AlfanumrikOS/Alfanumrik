@@ -86,7 +86,7 @@ CREATE INDEX IF NOT EXISTS idx_qb_source_type
   ON question_bank(source_type);
 
 CREATE INDEX IF NOT EXISTS idx_qb_chapter_subject_grade
-  ON question_bank(subject_id, grade, chapter_number);
+  ON question_bank(subject, grade, chapter_number);
 
 
 -- ============================================================================
@@ -296,7 +296,6 @@ SECURITY DEFINER
 SET search_path = 'public'
 AS $$
 DECLARE
-  v_subject_id UUID;
   v_grade TEXT;
 BEGIN
   -- Normalize grade to P5 TEXT format ("6"-"12")
@@ -305,18 +304,6 @@ BEGIN
     WHEN p_grade ILIKE 'grade%' THEN regexp_replace(p_grade, '[^0-9]', '', 'g')
     ELSE p_grade
   END;
-
-  -- Look up subject_id from subject code/name via subjects table
-  SELECT s.id INTO v_subject_id
-  FROM subjects s
-  WHERE lower(s.code) = lower(trim(p_subject))
-     OR lower(s.name) = lower(trim(p_subject))
-  LIMIT 1;
-
-  IF v_subject_id IS NULL THEN
-    -- Return empty set if subject not found
-    RETURN;
-  END IF;
 
   RETURN QUERY
   SELECT
@@ -342,7 +329,7 @@ BEGIN
   FROM question_bank qb
   WHERE qb.is_active = true
     AND qb.grade = v_grade
-    AND qb.subject_id = v_subject_id
+    AND qb.subject = p_subject
     AND qb.chapter_number = p_chapter_number
     AND (p_source_type IS NULL OR qb.source_type = p_source_type)
   ORDER BY
