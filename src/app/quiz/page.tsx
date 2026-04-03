@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { track } from '@/lib/analytics';
+import { logger } from '@/lib/logger';
 import { getQuizQuestionsV2, submitQuizResults, saveCognitiveMetrics, saveQuestionResponses, supabase, updateChapterProgress } from '@/lib/supabase';
 import { XP_RULES } from '@/lib/xp-rules';
 import { Card, Button, ProgressBar, LoadingFoxy } from '@/components/ui';
@@ -54,6 +55,7 @@ interface Response {
   error_type?: ErrorType;
 }
 
+const VALID_QUIZ_COUNTS = [5, 10, 15, 20] as const;
 const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
 
 export default function QuizPage() {
@@ -122,7 +124,7 @@ export default function QuizPage() {
     const countParam = params.get('count');
     if (countParam) {
       const c = parseInt(countParam, 10);
-      if ([5, 10, 15, 20].includes(c)) {
+      if ((VALID_QUIZ_COUNTS as readonly number[]).includes(c)) {
         setQuestionCount(c);
         setInitialCount(c);
       }
@@ -229,7 +231,7 @@ export default function QuizPage() {
       setQuestions(qs);
       // Warn if fewer questions than requested
       if (qs.length < qCount) {
-        console.warn(`[QuizPool] Requested ${qCount} questions but only ${qs.length} available for ${subj}/${student.grade}${chapter ? `/ch${chapter}` : ''}`);
+        logger.warn('quiz_pool_insufficient', { requested: qCount, available: qs.length, subject: subj, grade: student.grade, chapter });
       }
       setCurrentIdx(0);
       setResponses([]);
