@@ -32,7 +32,7 @@ interface Props {
  * 1. Fix a knowledge gap (highest priority — links to Foxy)
  * 2. Review due cards (if any — links to /review)
  * 3. Continue next topic (links to Foxy learn mode)
- * 4. Take a quiz (links to /quiz)
+ * 4. Take a quiz (links to /foxy)
  *
  * This replaces the passive stats-only dashboard with an action-oriented
  * daily learning path that Indian students can follow like a tuition schedule.
