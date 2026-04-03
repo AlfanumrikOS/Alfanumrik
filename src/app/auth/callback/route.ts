@@ -90,12 +90,23 @@ export async function GET(request: NextRequest) {
                   p_phone: null,
                   p_link_code: null,
                 });
+                // Re-query after bootstrap to confirm actual role from the DB.
+                // This handles the case where user_metadata.role is missing
+                // (e.g., teacher invited via link without role set in meta).
+                // Only override redirectRole if DB confirms a specific profile —
+                // if queries return null (network blip, test mock, etc.) we keep
+                // the meta.role value that was already set above.
+                const { data: postBootstrapTeacher } = await supabase.from('teachers').select('id').eq('auth_user_id', user.id).single();
+                const { data: postBootstrapGuardian } = await supabase.from('guardians').select('id').eq('auth_user_id', user.id).single();
+                if (postBootstrapTeacher) redirectRole = 'teacher';
+                else if (postBootstrapGuardian) redirectRole = 'parent';
+                // else: keep redirectRole as meta.role (already set at line above try block)
               } catch (bootstrapErr) {
                 console.error('[Auth Callback] Bootstrap failed:', bootstrapErr);
-                // Non-fatal — AuthContext fallback will retry
+                // Non-fatal — AuthContext fallback will retry, role stays as meta.role
               }
             } else {
-              // Detect actual role from existing profile
+              // Detect actual role from existing profile (pre-bootstrap queries)
               if (existingTeacher) redirectRole = 'teacher';
               else if (existingGuardian) redirectRole = 'parent';
               else redirectRole = 'student';

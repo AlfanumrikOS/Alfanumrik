@@ -38,12 +38,18 @@ export default function Dashboard() {
   const [greeting, setGreeting] = useState('');
   const [onboardingDone, setOnboardingDone] = useState(false);
 
-  // Sync onboarding state from student profile (database-authoritative, not localStorage)
+  // Sync onboarding state — DB column is the authoritative source of truth.
+  // localStorage is used ONLY as an optimistic hint to avoid flash while the
+  // student record is still loading. The DB value always wins when available.
   useEffect(() => {
     if (student) {
-      const done = !!student.onboarding_completed ||
-                   (typeof window !== 'undefined' && localStorage.getItem('alfanumrik_onboarded') === 'true');
-      setOnboardingDone(done);
+      // DB is authoritative: if onboarding_completed is set, we are done.
+      // We deliberately do NOT allow localStorage to override a DB false value
+      // to prevent trivial bypass via DevTools.
+      setOnboardingDone(!!student.onboarding_completed);
+    } else if (!student && typeof window !== 'undefined') {
+      // Student not yet loaded — use localStorage as optimistic hint only
+      setOnboardingDone(localStorage.getItem('alfanumrik_onboarded') === 'true');
     }
   }, [student]);
 

@@ -76,6 +76,10 @@ export async function GET(
       mastery: mastery.data || [],
       velocity: velocity.data || [],
       active_study_plan: studyPlan.data || null,
+    }, {
+      headers: {
+        'Cache-Control': 'private, max-age=30, stale-while-revalidate=60',
+      },
     });
   } catch (err) {
     logger.error('child_progress_failed', { error: err instanceof Error ? err : new Error(String(err)), route: '/api/v1/child/[id]/progress' });

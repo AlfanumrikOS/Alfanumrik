@@ -89,6 +89,10 @@ export async function GET(request: Request) {
       quizzes: quizzes.data || [],
       mastery: mastery.data || [],
       velocity: velocity.data || [],
+    }, {
+      headers: {
+        'Cache-Control': 'private, max-age=30, stale-while-revalidate=60',
+      },
     });
   } catch (err) {
     logger.error('performance_view_failed', { error: err instanceof Error ? err : new Error(String(err)), route: '/api/v1/performance' });

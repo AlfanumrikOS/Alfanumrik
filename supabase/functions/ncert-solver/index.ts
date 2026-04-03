@@ -29,6 +29,45 @@ const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY') || ''
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
 
+// ─── Circuit breaker for Claude API ─────────────────────────────
+// Prevents cascade failures when Claude API is degraded.
+// Trips after 5 consecutive failures, reopens after 60 seconds
+// (half-open: allows 1 test request before fully closing).
+const circuitBreaker = {
+  failures: 0,
+  lastFailureAt: 0,
+  state: 'closed' as 'closed' | 'open' | 'half-open',
+  FAILURE_THRESHOLD: 5,
+  RESET_TIMEOUT: 60_000, // 60 seconds
+
+  canRequest(): boolean {
+    if (this.state === 'closed') return true
+    if (this.state === 'open') {
+      // Check if reset timeout has elapsed
+      if (Date.now() - this.lastFailureAt > this.RESET_TIMEOUT) {
+        this.state = 'half-open'
+        return true // Allow one test request
+      }
+      return false
+    }
+    // half-open: already allowed one request, block further until result
+    return false
+  },
+
+  recordSuccess(): void {
+    this.failures = 0
+    this.state = 'closed'
+  },
+
+  recordFailure(): void {
+    this.failures++
+    this.lastFailureAt = Date.now()
+    if (this.failures >= this.FAILURE_THRESHOLD) {
+      this.state = 'open'
+    }
+  },
+}
+
 Deno.serve(async (req) => {
   const origin = req.headers.get('origin') || ''
   if (req.method === 'OPTIONS') {
@@ -57,6 +96,16 @@ Deno.serve(async (req) => {
 
     if (!question || !subject || !grade) {
       return errorResponse('question, subject, and grade are required', 400, origin)
+    }
+
+    // ── Circuit breaker check ──
+    if (!circuitBreaker.canRequest()) {
+      console.warn('ncert-solver: circuit breaker OPEN — returning 503')
+      return jsonResponse(
+        { error: 'Service temporarily unavailable, please try again shortly' },
+        503,
+        origin,
+      )
     }
 
     // ── Step 1: Parse question ──
@@ -162,8 +211,22 @@ async function callClaude(prompt: string, maxTokens: number, systemPrompt: strin
       signal: controller.signal,
     })
 
+    if (!res.ok) {
+      circuitBreaker.recordFailure()
+      console.error(`ncert-solver: Claude API non-2xx response ${res.status}`)
+      throw new Error(`Claude API error: ${res.status}`)
+    }
+
     const data = await res.json()
+    circuitBreaker.recordSuccess()
     return data.content?.[0]?.text || ''
+  } catch (err) {
+    // Record failure for aborts (timeout) and network errors; avoid double-counting
+    // non-2xx paths that already called recordFailure() above.
+    if (!(err instanceof Error && err.message.startsWith('Claude API error:'))) {
+      circuitBreaker.recordFailure()
+    }
+    throw err
   } finally {
     clearTimeout(timeout)
   }

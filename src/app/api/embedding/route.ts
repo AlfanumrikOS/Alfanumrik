@@ -1,9 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createSupabaseServerClient } from '@/lib/supabase-server';
 
 const VOYAGE_API_KEY = process.env.VOYAGE_API_KEY;
 const VOYAGE_ENDPOINT = 'https://api.voyageai.com/v1/embeddings';
 
 export async function POST(request: NextRequest) {
+  // Auth guard: only authenticated users may call Voyage API via this proxy.
+  // Prevents external callers from burning Voyage quota.
+  const supabase = await createSupabaseServerClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const { text } = await request.json();
 
@@ -12,7 +21,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!VOYAGE_API_KEY) {
-      // No API key — return null embedding, RPC will use random fallback
+      // No API key — return null embedding, RPC will use keyword-only fallback
       return NextResponse.json({ embedding: null });
     }
 
