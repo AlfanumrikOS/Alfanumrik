@@ -567,7 +567,7 @@ function LearnTab({ dbConcepts, chunks, questions, media, isHi, activeConcept, s
     const timeSpent = (Date.now() - conceptStartTime) / 1000;
     if (timeSpent >= 15 && studentId) {
       // Fire-and-forget XP award for real study
-      supabase.rpc('add_xp', { p_student_id: studentId, p_xp: 5, p_source: `learn_${subjectCode}` }).catch(() => {});
+      void supabase.rpc('add_xp', { p_student_id: studentId, p_xp: 5, p_source: `learn_${subjectCode}` }).then(() => {});
     }
     setActiveConcept(next);
   };
