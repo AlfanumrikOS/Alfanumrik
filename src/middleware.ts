@@ -159,6 +159,16 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  // ── Early exit: monitoring endpoints bypass session refresh and rate limiting ──
+  // Health/status endpoints are hit by uptime monitors at high frequency.
+  // Running getUser() and rate-limit checks for these causes false throttling
+  // and unnecessary Supabase auth load. Security headers still applied.
+  // Static assets are already excluded via the matcher config below.
+  if (path === '/api/v1/health' || path === '/api/v1/status') {
+    const monitorResponse = NextResponse.next({ request });
+    return addSecurityHeaders(monitorResponse, request);
+  }
+
   // ── Layer 0: Supabase session refresh ──
   // This keeps the auth cookie fresh on every request.
   // Required for the PKCE email flow (signup confirm, password reset).
