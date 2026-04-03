@@ -106,6 +106,8 @@ export default function QuizPage() {
   // Check URL params for pre-selected subject/mode (passed as initial values to QuizSetup)
   const [initialSubject, setInitialSubject] = useState<string | null>(null);
   const [initialMode, setInitialMode] = useState<QuizMode>('cognitive');
+  const [initialCount, setInitialCount] = useState<number>(10);
+  const [initialChapter, setInitialChapter] = useState<number | null>(null);
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
@@ -117,6 +119,22 @@ export default function QuizPage() {
     const mode = params.get('mode');
     if (mode === 'cognitive') { setQuizMode('cognitive'); setInitialMode('cognitive'); }
     if (mode === 'exam') { setQuizMode('exam'); setInitialMode('exam'); }
+    const countParam = params.get('count');
+    if (countParam) {
+      const c = parseInt(countParam, 10);
+      if ([5, 10, 15, 20].includes(c)) {
+        setQuestionCount(c);
+        setInitialCount(c);
+      }
+    }
+    const chapterParam = params.get('chapter');
+    if (chapterParam) {
+      const ch = parseInt(chapterParam, 10);
+      if (!isNaN(ch) && ch > 0) {
+        setSelectedChapter(ch);
+        setInitialChapter(ch);
+      }
+    }
   }, []);
 
   // Track whether exam auto-submit has fired (prevents double-submit)
@@ -209,6 +227,10 @@ export default function QuizPage() {
         return;
       }
       setQuestions(qs);
+      // Warn if fewer questions than requested
+      if (qs.length < qCount) {
+        console.warn(`[QuizPool] Requested ${qCount} questions but only ${qs.length} available for ${subj}/${student.grade}${chapter ? `/ch${chapter}` : ''}`);
+      }
       setCurrentIdx(0);
       setResponses([]);
       setSelectedOption(null);
@@ -476,6 +498,8 @@ export default function QuizPage() {
         isHi={isHi}
         initialSubject={initialSubject}
         initialMode={initialMode}
+        initialCount={initialCount}
+        initialChapter={initialChapter}
         loading={loading}
         onStart={startQuiz}
         onGoBack={() => router.push('/dashboard')}

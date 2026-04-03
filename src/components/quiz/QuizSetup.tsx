@@ -23,6 +23,8 @@ interface QuizSetupProps {
   isHi: boolean;
   initialSubject: string | null;
   initialMode: QuizMode;
+  initialCount?: number;
+  initialChapter?: number | null;
   loading: boolean;
   onStart: (opts: {
     subject: string;
@@ -35,16 +37,16 @@ interface QuizSetupProps {
   onGoBack: () => void;
 }
 
-export default function QuizSetup({ isHi, initialSubject, initialMode, loading, onStart, onGoBack }: QuizSetupProps) {
+export default function QuizSetup({ isHi, initialSubject, initialMode, initialCount, initialChapter, loading, onStart, onGoBack }: QuizSetupProps) {
   const { student } = useAuth();
   const grade = student?.grade || '9';
 
   const [quizMode, setQuizMode] = useState<QuizMode>(initialMode);
   const [selectedSubject, setSelectedSubject] = useState<string | null>(initialSubject);
   const [selectedDifficulty, setSelectedDifficulty] = useState<number | null>(null);
-  const [questionCount, setQuestionCount] = useState(10);
+  const [questionCount, setQuestionCount] = useState(initialCount ?? 10);
   const [selectedPreset, setSelectedPreset] = useState<string>('standard_test');
-  const [selectedChapter, setSelectedChapter] = useState<number | null>(null);
+  const [selectedChapter, setSelectedChapter] = useState<number | null>(initialChapter ?? null);
   const [chapters, setChapters] = useState<{ chapter_number: number; title: string }[]>([]);
   const [chaptersLoading, setChaptersLoading] = useState(false);
 
