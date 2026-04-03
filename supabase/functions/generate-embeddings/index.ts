@@ -27,7 +27,7 @@ import { generateEmbeddings, getEmbeddingModel } from '../_shared/embeddings.ts'
 
 const MAX_BATCH_SIZE = 100
 const DEFAULT_BATCH_SIZE = 50
-const MAX_EXECUTION_MS = 540_000 // 9 minutes (leave 1min buffer for 10min Edge Function limit)
+const MAX_EXECUTION_MS = 120_000 // 2 minutes (stay under Supabase 150s gateway timeout)
 const INTER_BATCH_DELAY_MS = 200 // throttle between batches to avoid API rate limits
 
 // ---------------------------------------------------------------------------
