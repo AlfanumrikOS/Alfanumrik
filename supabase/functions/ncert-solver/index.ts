@@ -23,7 +23,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
-import { generateEmbedding } from '../_shared/embeddings.ts'
+import { fetchRAGContext } from '../_shared/rag-retrieval.ts'
 
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY') || ''
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
@@ -166,53 +166,6 @@ async function callClaude(prompt: string, maxTokens: number, systemPrompt: strin
     return data.content?.[0]?.text || ''
   } finally {
     clearTimeout(timeout)
-  }
-}
-
-// ─── RAG Retrieval ───────────────────────────────────────
-
-async function fetchRAGContext(
-  supabase: ReturnType<typeof createClient>,
-  query: string,
-  subject: string,
-  grade: string,
-  chapter?: string,
-): Promise<string | null> {
-  try {
-    // Attempt to generate a query embedding for vector-based retrieval.
-    // If embedding generation fails (API key missing, provider down, etc.),
-    // fall back to keyword-only search (current behavior).
-    let queryEmbedding: number[] | null = null
-    try {
-      queryEmbedding = await generateEmbedding(query)
-    } catch (embeddingErr) {
-      // Embedding unavailable — proceed with keyword-only search
-      console.warn('Embedding generation failed, falling back to keyword search:', embeddingErr instanceof Error ? embeddingErr.message : String(embeddingErr))
-    }
-
-    const rpcParams: Record<string, unknown> = {
-      query_text: query,
-      p_subject: subject,
-      p_grade: grade,
-      match_count: 5,
-    }
-    if (chapter) {
-      rpcParams.p_chapter = chapter
-    }
-
-    // Pass embedding as JSON string when available (Supabase casts to vector type)
-    if (queryEmbedding) {
-      rpcParams.query_embedding = JSON.stringify(queryEmbedding)
-    }
-
-    const { data, error } = await supabase.rpc('match_rag_chunks', rpcParams)
-    if (error || !data || data.length === 0) return null
-    return data.map((c: { content: string; chapter_title?: string }) => {
-      const prefix = c.chapter_title ? `[Chapter: ${c.chapter_title}]\n` : ''
-      return `${prefix}${c.content}`
-    }).join('\n\n---\n\n')
-  } catch {
-    return null
   }
 }
 
