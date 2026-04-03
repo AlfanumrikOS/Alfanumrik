@@ -25,6 +25,7 @@
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders, getCorsHeaders } from '../_shared/cors.ts'
+import { retrieveChunks } from '../_shared/retrieval.ts'
 
 // ─── In-memory rate limiter (first line of defence) ─────────────────────────
 // NOTE: This Map is per-isolate and will reset on cold starts. It provides fast
@@ -390,8 +391,11 @@ async function selectRandomQuestions(
 // ─── RAG Q&A question source ─────────────────────────────────────────────────
 
 /**
- * Fetch quiz-ready questions from RAG Q&A chunks.
- * These are NCERT questions extracted and Voyage-embedded in rag_content_chunks.
+ * Fetch quiz-ready questions from RAG Q&A chunks via the unified retrieval module.
+ *
+ * Uses retrieveChunks() with contentType: 'qa' so all callers go through the same
+ * match_rag_chunks_v2 path (with automatic fallback to match_rag_chunks), vector
+ * search, and retrieval trace logging.
  */
 async function selectRAGQuestions(
   supabase: SupabaseClient,
@@ -400,65 +404,50 @@ async function selectRAGQuestions(
   chapterNumber: number | null,
   count: number,
   excludeIds: Set<string>,
+  requestingUserId?: string,
 ): Promise<QuestionRow[]> {
-  // Normalize grade to "Grade X" format for rag_content_chunks
-  const ragGrade = grade.replace(/\D/g, '')
-  const ragGradeFormatted = `Grade ${ragGrade}`
+  // retrieveChunks expects the raw grade string ("9") and subject code ("math") —
+  // match_rag_chunks_v2 handles normalisation internally via the RPC.
+  const result = await retrieveChunks({
+    supabase,
+    query: subject, // topic-level query; vector search is filtered by chapter + subject
+    grade,
+    subject,
+    chapterNumber: chapterNumber ?? undefined,
+    contentType: 'qa',
+    matchCount: count * 3, // over-fetch so we can filter + shuffle below
+    caller: 'quiz-generator',
+    userId: requestingUserId,
+    logTrace: true,
+  })
 
-  // Normalize subject for rag_content_chunks (uses display names like "Science")
-  const subjectMap: Record<string, string> = {
-    math: 'Mathematics', mathematics: 'Mathematics', science: 'Science',
-    physics: 'Physics', chemistry: 'Chemistry', biology: 'Biology',
-    english: 'English', hindi: 'Hindi', sanskrit: 'Sanskrit',
-    social_studies: 'Social Studies', computer_science: 'Computer Science',
-    informatics_practices: 'Informatics Practices',
-    economics: 'Economics', accountancy: 'Accountancy',
-    political_science: 'Political Science', history: 'History', geography: 'Geography',
-  }
-  const ragSubject = subjectMap[subject.toLowerCase()] || subject
+  if (result.error || result.chunks.length === 0) return []
 
-  let query = supabase
-    .from('rag_content_chunks')
-    .select('id, question_text, answer_text, question_type, bloom_level, marks_expected, chapter_number, topic, concept')
-    .eq('content_type', 'qa')
-    .eq('is_active', true)
-    .eq('grade', ragGradeFormatted)
-    .eq('subject', ragSubject)
-
-  if (chapterNumber != null) {
-    query = query.eq('chapter_number', chapterNumber)
-  }
-
-  const { data, error } = await query.limit(count * 3)
-
-  if (error || !data || data.length === 0) return []
-
-  // Convert RAG Q&A chunks to QuestionRow format for quiz compatibility
-  // Only include questions that have answer_text (needed for quiz)
+  // Convert RetrievedChunk Q&A fields → QuestionRow format for quiz compatibility.
+  // Only include chunks that have a non-trivial question text (needed for quiz display).
   const questions: QuestionRow[] = []
-  for (const chunk of data) {
-    if (!chunk.question_text || excludeIds.has(chunk.id)) continue
+  for (const chunk of result.chunks) {
+    if (!chunk.questionText || excludeIds.has(chunk.id)) continue
 
-    // RAG Q&A may not have MCQ options — generate simple true/false or short answer format
-    // For now, only include chunks that look like they could be quiz questions
-    const qText = chunk.question_text as string
+    const qText = chunk.questionText
     if (qText.length < 10) continue // Skip very short fragments
 
+    const marks = chunk.marksExpected ?? 2
     questions.push({
       id: chunk.id,
       question_text: qText,
       question_hi: null,
-      question_type: (chunk.question_type as string) || 'short_answer',
-      options: '[]', // RAG Q&A doesn't have MCQ options by default
+      question_type: chunk.questionType ?? 'short_answer',
+      options: '[]', // RAG Q&A chunks do not carry MCQ options
       correct_answer_index: 0,
-      explanation: (chunk.answer_text as string) || null,
+      explanation: chunk.answerText ?? null,
       explanation_hi: null,
       hint: null,
-      difficulty: (chunk.marks_expected as number) <= 2 ? 1 : (chunk.marks_expected as number) >= 5 ? 3 : 2,
-      bloom_level: (chunk.bloom_level as string) || 'understand',
-      chapter_number: (chunk.chapter_number as number) || 0,
-      topic: (chunk.topic as string) || null,
-      concept_tag: (chunk.concept as string) || null,
+      difficulty: marks <= 2 ? 1 : marks >= 5 ? 3 : 2,
+      bloom_level: chunk.bloomLevel ?? 'understand',
+      chapter_number: chunk.chapterNumber ?? 0,
+      topic: chunk.topic ?? null,
+      concept_tag: chunk.concept ?? null,
       subject: null,
     })
   }
@@ -740,19 +729,23 @@ Deno.serve(async (req) => {
     if (questions.length < count) {
       const usedIds = new Set([...seenIds, ...questions.map((q) => q.id)])
 
-      // Try RAG Q&A source (NCERT embedded questions)
-      if (chapterNumber != null) {
-        const ragQs = await selectRAGQuestions(
-          supabase, grade, subject, chapterNumber, count - questions.length, usedIds
-        )
-        for (const q of ragQs) {
-          if (questions.length >= count) break
-          if (!usedIds.has(q.id)) {
-            questions.push(q)
-            usedIds.add(q.id)
-          }
-        }
-      }
+      // RAG Q&A source (NCERT exercise / intext questions — short_answer type).
+      // NOTE: RAG Q&A chunks do not have MCQ options (options: [], correct_answer_index: 0).
+      // Mixing them into an MCQ quiz pool violates P6 (4 distinct options required).
+      // This path is reserved for a future non-MCQ study/Q&A quiz mode.
+      // TODO(ai-engineer): re-enable when request body includes question_mode !== 'mcq'.
+      // if (chapterNumber != null) {
+      //   const ragQs = await selectRAGQuestions(
+      //     supabase, grade, subject, chapterNumber, count - questions.length, usedIds, user.id
+      //   )
+      //   for (const q of ragQs) {
+      //     if (questions.length >= count) break
+      //     if (!usedIds.has(q.id)) {
+      //       questions.push(q)
+      //       usedIds.add(q.id)
+      //     }
+      //   }
+      // }
 
       // Fill remaining from question_bank (existing random fallback)
       if (questions.length < count) {
