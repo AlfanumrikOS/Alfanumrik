@@ -60,6 +60,29 @@ interface MediaItem {
   source_book: string | null;
 }
 
+interface DbConcept {
+  concept_id: string;
+  concept_number: number;
+  title: string;
+  title_hi: string | null;
+  learning_objective: string;
+  explanation: string;
+  key_formula: string | null;
+  example_title: string | null;
+  example_content: string | null;
+  common_mistakes: string[] | null;
+  exam_tips: string[] | null;
+  diagram_refs: string[] | null;
+  diagram_description: string | null;
+  practice_question: string | null;
+  practice_options: string[] | null;
+  practice_correct_index: number | null;
+  practice_explanation: string | null;
+  difficulty: number;
+  bloom_level: string;
+  estimated_minutes: number;
+}
+
 type TabId = 'learn' | 'qa' | 'quiz' | 'foxy';
 
 /* ── Source type labels ── */
@@ -91,6 +114,7 @@ export default function ChapterDetailPage() {
 
   const [activeTab, setActiveTab] = useState<TabId>('learn');
   const [chunks, setChunks] = useState<RAGChunk[]>([]);
+  const [dbConcepts, setDbConcepts] = useState<DbConcept[]>([]);
   const [questions, setQuestions] = useState<QAQuestion[]>([]);
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -99,6 +123,7 @@ export default function ChapterDetailPage() {
   const [expandedQ, setExpandedQ] = useState<Set<string>>(new Set());
   const [reviewedQs, setReviewedQs] = useState<Set<string>>(new Set());
   const [activeConcept, setActiveConcept] = useState(0);
+  const [studyStartTime] = useState(Date.now()); // Track study duration for XP
 
   const subjectDisplay = SUBJECT_DISPLAY[subjectCode] || subjectCode;
   const subjectMeta = SUBJECT_META.find(s => s.code === subjectCode);
@@ -118,7 +143,13 @@ export default function ChapterDetailPage() {
     try {
       const grade = (student.grade || '9').replace('Grade ', '').trim();
 
-      const [contentRes, qaRes, mediaRes] = await Promise.all([
+      // Load structured concepts (DB), RAG chunks (fallback), Q&A, and media in parallel
+      const [conceptsRes, contentRes, qaRes, mediaRes] = await Promise.all([
+        supabase.rpc('get_chapter_concepts', {
+          p_grade: grade,
+          p_subject: subjectCode,
+          p_chapter_number: chapterNumber,
+        }),
         supabase.rpc('get_chapter_rag_content', {
           p_grade: grade,
           p_subject: subjectCode,
@@ -139,9 +170,11 @@ export default function ChapterDetailPage() {
           .order('page_number'),
       ]);
 
+      if (conceptsRes.error) console.error('Concepts error:', conceptsRes.error.message);
       if (contentRes.error) console.error('Content error:', contentRes.error.message);
       if (qaRes.error) console.error('QA error:', qaRes.error.message);
 
+      setDbConcepts((conceptsRes.data as DbConcept[]) ?? []);
       setChunks((contentRes.data as RAGChunk[]) ?? []);
       setQuestions((qaRes.data as QAQuestion[]) ?? []);
       setMedia((mediaRes.data as MediaItem[]) ?? []);
@@ -270,6 +303,7 @@ export default function ChapterDetailPage() {
 
         {!loading && activeTab === 'learn' && (
           <LearnTab
+            dbConcepts={dbConcepts}
             chunks={chunks}
             questions={questions}
             media={media}
@@ -279,6 +313,8 @@ export default function ChapterDetailPage() {
             subjectCode={subjectCode}
             chapterTitle={chapterTitle}
             router={router}
+            studentId={student?.id}
+            studyStartTime={studyStartTime}
           />
         )}
         {!loading && activeTab === 'qa' && (
@@ -313,7 +349,11 @@ interface ConceptBlock {
   example: string | null;
   formula: string | null;
   diagramRefs: string[];
+  matchedMedia?: MediaItem[];
   practiceQ: QAQuestion | null;
+  learningObjective?: string;
+  commonMistakes?: string[];
+  examTips?: string[];
 }
 
 /** Split RAG chunks into concept blocks. Each block ~2-4 chunks grouped by section headings. */
@@ -342,7 +382,8 @@ function buildConceptBlocks(chunks: RAGChunk[], questions: QAQuestion[], media: 
     // Pick one practice question for this concept
     const practiceQ = pickPracticeQuestion(title, questions, blocks.length);
 
-    blocks.push({ title, explanation, example, formula, diagramRefs, practiceQ });
+    const matchedMedia = findMediaForRefs(diagramRefs, media);
+    blocks.push({ title, explanation, example, formula, diagramRefs, matchedMedia, practiceQ });
     buf = [];
     curTitle = '';
   };
@@ -368,12 +409,14 @@ function buildConceptBlocks(chunks: RAGChunk[], questions: QAQuestion[], media: 
     for (let i = 0; i < chunks.length; i += perBlock) {
       const slice = chunks.slice(i, i + perBlock);
       const raw = slice.map(c => c.chunk_text).join('\n');
+      const dRefs = matchDiagrams(raw, media);
       split.push({
         title: extractTitle(raw),
         explanation: trimExplanation(raw, ''),
         example: extractExample(raw),
         formula: extractFormula(raw),
-        diagramRefs: matchDiagrams(raw, media),
+        diagramRefs: dRefs,
+        matchedMedia: findMediaForRefs(dRefs, media),
         practiceQ: pickPracticeQuestion('', questions, split.length),
       });
     }
@@ -440,19 +483,94 @@ function pickPracticeQuestion(title: string, questions: QAQuestion[], index: num
   return questions[index % questions.length] || null;
 }
 
+/** Convert DB chapter_concepts into ConceptBlocks with real media lookups */
+function dbConceptsToBlocks(concepts: DbConcept[], media: MediaItem[]): ConceptBlock[] {
+  return concepts.map((c, i) => {
+    // Match diagram refs to actual content_media records
+    const matchedMedia = findMediaForRefs(c.diagram_refs || [], media);
+    return {
+      title: c.title,
+      explanation: c.explanation,
+      example: c.example_content || null,
+      formula: c.key_formula || null,
+      diagramRefs: (c.diagram_refs || []) as string[],
+      matchedMedia,
+      practiceQ: c.practice_question ? {
+        question_id: c.concept_id,
+        question_text: c.practice_question,
+        question_text_hi: null,
+        question_type: 'mcq',
+        source_type: 'practice',
+        answer_text: c.practice_explanation || null,
+        answer_text_hi: null,
+        answer_methodology: null,
+        marks_expected: 1,
+        board_relevance: null,
+        board_relevance_note: null,
+        ncert_exercise: null,
+        ncert_page: null,
+        is_ncert: true,
+        difficulty: c.difficulty,
+        bloom_level: c.bloom_level,
+        options: c.practice_options || null,
+        correct_answer_index: c.practice_correct_index ?? 0,
+        explanation: c.practice_explanation || null,
+      } as QAQuestion : null,
+      learningObjective: c.learning_objective,
+      commonMistakes: c.common_mistakes || [],
+      examTips: c.exam_tips || [],
+    };
+  });
+}
+
+/** Find actual media records matching diagram reference labels */
+function findMediaForRefs(refs: string[], media: MediaItem[]): MediaItem[] {
+  if (refs.length === 0 || media.length === 0) return [];
+  const matched: MediaItem[] = [];
+  for (const ref of refs) {
+    const refLower = ref.toLowerCase();
+    const found = media.find(m =>
+      m.caption?.toLowerCase().includes(refLower) ||
+      refLower.includes(m.caption?.toLowerCase() || '___')
+    );
+    if (found && !matched.includes(found)) matched.push(found);
+  }
+  return matched;
+}
+
 /* ═══ LEARN TAB — CONCEPT CARDS (one at a time) ═══ */
-function LearnTab({ chunks, questions, media, isHi, activeConcept, setActiveConcept, subjectCode, chapterTitle, router }: {
-  chunks: RAGChunk[]; questions: QAQuestion[]; media: MediaItem[]; isHi: boolean;
+function LearnTab({ dbConcepts, chunks, questions, media, isHi, activeConcept, setActiveConcept, subjectCode, chapterTitle, router, studentId, studyStartTime }: {
+  dbConcepts: DbConcept[]; chunks: RAGChunk[]; questions: QAQuestion[]; media: MediaItem[]; isHi: boolean;
   activeConcept: number; setActiveConcept: (n: number) => void;
   subjectCode: string; chapterTitle: string; router: ReturnType<typeof useRouter>;
+  studentId?: string; studyStartTime: number;
 }) {
   const [practiceAnswer, setPracticeAnswer] = useState<number | null>(null);
   const [practiceRevealed, setPracticeRevealed] = useState(false);
+  const [conceptStartTime, setConceptStartTime] = useState(Date.now());
 
-  const concepts = useMemo(() => buildConceptBlocks(chunks, questions, media), [chunks, questions, media]);
+  // Use DB concepts if available, otherwise fall back to RAG chunk parsing
+  const concepts = useMemo(() => {
+    if (dbConcepts.length > 0) return dbConceptsToBlocks(dbConcepts, media);
+    return buildConceptBlocks(chunks, questions, media);
+  }, [dbConcepts, chunks, questions, media]);
 
-  // Reset practice state when concept changes
-  useEffect(() => { setPracticeAnswer(null); setPracticeRevealed(false); }, [activeConcept]);
+  // Reset practice state and track time when concept changes
+  useEffect(() => {
+    setPracticeAnswer(null);
+    setPracticeRevealed(false);
+    setConceptStartTime(Date.now());
+  }, [activeConcept]);
+
+  // Award XP when moving to next concept IF student spent ≥15 seconds (real study)
+  const handleNextConcept = (next: number) => {
+    const timeSpent = (Date.now() - conceptStartTime) / 1000;
+    if (timeSpent >= 15 && studentId) {
+      // Fire-and-forget XP award for real study
+      supabase.rpc('add_xp', { p_student_id: studentId, p_xp: 5, p_source: `learn_${subjectCode}` }).catch(() => {});
+    }
+    setActiveConcept(next);
+  };
 
   if (concepts.length === 0) {
     return (
@@ -503,6 +621,16 @@ function LearnTab({ chunks, questions, media, isHi, activeConcept, setActiveConc
           </div>
         </div>
 
+        {/* Learning Objective (if from DB concepts) */}
+        {concept.learningObjective && (
+          <div className="px-4 py-2.5 bg-indigo-50 border-b border-indigo-100">
+            <h3 className="text-[10px] uppercase font-semibold text-indigo-500 mb-1 tracking-wide">
+              {isHi ? 'सीखने का उद्देश्य' : 'Learning Objective'}
+            </h3>
+            <p className="text-sm text-indigo-800">{concept.learningObjective}</p>
+          </div>
+        )}
+
         {/* Explanation */}
         <div className="px-4 py-3 border-b border-gray-100">
           <h3 className="text-[10px] uppercase font-semibold text-gray-400 mb-1.5 tracking-wide">
@@ -525,11 +653,35 @@ function LearnTab({ chunks, questions, media, isHi, activeConcept, setActiveConc
           </div>
         )}
 
-        {/* Diagram refs */}
-        {concept.diagramRefs.length > 0 && (
+        {/* Diagrams — render actual images from content_media, or badges if no image */}
+        {(concept.matchedMedia && concept.matchedMedia.length > 0) ? (
+          <div className="px-4 py-2.5 bg-purple-50 border-b border-purple-100">
+            <h3 className="text-[10px] uppercase font-semibold text-purple-500 mb-2 tracking-wide">
+              {isHi ? 'चित्र' : 'Diagrams'}
+            </h3>
+            <div className="space-y-2">
+              {concept.matchedMedia.map((m, i) => (
+                <div key={i} className="bg-white rounded-lg border border-purple-200 overflow-hidden">
+                  {m.storage_url ? (
+                    <img src={m.storage_url} alt={m.alt_text || m.caption || 'Diagram'} className="w-full" loading="lazy" />
+                  ) : (
+                    <div className="p-3 text-center">
+                      <span className="text-2xl">📊</span>
+                      <p className="text-xs text-purple-600 mt-1 font-medium">{m.caption}</p>
+                      {m.alt_text && <p className="text-[10px] text-gray-500 mt-0.5">{m.alt_text}</p>}
+                    </div>
+                  )}
+                  {m.caption && m.storage_url && (
+                    <p className="text-[10px] text-purple-600 px-2 py-1 bg-purple-50">{m.caption}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : concept.diagramRefs.length > 0 ? (
           <div className="px-4 py-2.5 bg-purple-50 border-b border-purple-100">
             <h3 className="text-[10px] uppercase font-semibold text-purple-500 mb-1.5 tracking-wide">
-              {isHi ? 'चित्र' : 'Diagrams'}
+              {isHi ? 'संदर्भित चित्र' : 'Referenced Diagrams'}
             </h3>
             <div className="flex flex-wrap gap-2">
               {concept.diagramRefs.map((ref, i) => (
@@ -538,6 +690,40 @@ function LearnTab({ chunks, questions, media, isHi, activeConcept, setActiveConc
                 </span>
               ))}
             </div>
+          </div>
+        ) : null}
+
+        {/* Common Mistakes */}
+        {concept.commonMistakes && concept.commonMistakes.length > 0 && (
+          <div className="px-4 py-2.5 bg-red-50 border-b border-red-100">
+            <h3 className="text-[10px] uppercase font-semibold text-red-500 mb-1.5 tracking-wide">
+              {isHi ? '⚠️ सामान्य गलतियाँ' : '⚠️ Common Mistakes'}
+            </h3>
+            <ul className="space-y-1">
+              {concept.commonMistakes.map((m, i) => (
+                <li key={i} className="text-xs text-red-700 flex gap-1.5">
+                  <span className="text-red-400 mt-0.5">•</span>
+                  <span>{typeof m === 'string' ? m : String(m)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Exam Tips */}
+        {concept.examTips && concept.examTips.length > 0 && (
+          <div className="px-4 py-2.5 bg-amber-50 border-b border-amber-100">
+            <h3 className="text-[10px] uppercase font-semibold text-amber-600 mb-1.5 tracking-wide">
+              {isHi ? '🎯 परीक्षा टिप्स' : '🎯 Exam Tips'}
+            </h3>
+            <ul className="space-y-1">
+              {concept.examTips.map((t, i) => (
+                <li key={i} className="text-xs text-amber-700 flex gap-1.5">
+                  <span className="text-amber-400 mt-0.5">★</span>
+                  <span>{typeof t === 'string' ? t : String(t)}</span>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
 
@@ -620,7 +806,7 @@ function LearnTab({ chunks, questions, media, isHi, activeConcept, setActiveConc
       {/* ── Navigation buttons ── */}
       <div className="flex gap-3">
         <button
-          onClick={() => setActiveConcept(Math.max(0, activeConcept - 1))}
+          onClick={() => handleNextConcept(Math.max(0, activeConcept - 1))}
           disabled={isFirst}
           className={`flex-1 py-2.5 rounded-lg text-sm font-medium border transition-all ${
             isFirst
@@ -631,7 +817,7 @@ function LearnTab({ chunks, questions, media, isHi, activeConcept, setActiveConc
           {isHi ? '← पिछला' : '← Previous'}
         </button>
         <button
-          onClick={() => setActiveConcept(Math.min(total - 1, activeConcept + 1))}
+          onClick={() => handleNextConcept(Math.min(total - 1, activeConcept + 1))}
           disabled={isLast}
           className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-all ${
             isLast
