@@ -752,7 +752,7 @@ async function resolveStudentId(): Promise<string> {
   return student.id;
 }
 
-/* ── Quiz Questions via RAG (Voyage embeddings) ── */
+/* ── Quiz Questions — CME-driven with dynamic generation fallback ── */
 export async function getQuizQuestionsV2(
   subject: string,
   grade: string,
@@ -763,27 +763,29 @@ export async function getQuizQuestionsV2(
 ) {
   const studentId = await resolveStudentId();
 
-  // Generate a query embedding for RAG-based retrieval
-  // Context string captures what the student is studying for semantic matching
-  let queryEmbedding: string | null = null;
-  try {
-    const queryContext = `Grade ${grade} ${subject}${chapterNumber ? ` Chapter ${chapterNumber}` : ''} ${difficultyMode} quiz questions`;
-    const response = await fetch('/api/embedding', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: queryContext }),
-    });
-    if (response.ok) {
-      const data = await response.json();
-      if (data.embedding && Array.isArray(data.embedding)) {
-        queryEmbedding = JSON.stringify(data.embedding);
-      }
-    }
-  } catch {
-    // Embedding generation failed — RAG RPC will gracefully fall back to random selection
-  }
+  // Step 1: Try to fetch from question_bank via RPC
+  let questions: any[] = [];
 
   try {
+    // Generate query embedding for RAG-based retrieval
+    let queryEmbedding: string | null = null;
+    try {
+      const queryContext = `Grade ${grade} ${subject}${chapterNumber ? ` Chapter ${chapterNumber}` : ''} ${difficultyMode} quiz questions`;
+      const response = await fetch('/api/embedding', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: queryContext }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.embedding && Array.isArray(data.embedding)) {
+          queryEmbedding = JSON.stringify(data.embedding);
+        }
+      }
+    } catch {
+      // Embedding generation failed — continue without it
+    }
+
     const { data, error } = await supabase.rpc('select_quiz_questions_rag', {
       p_student_id: studentId,
       p_subject: subject,
@@ -795,37 +797,134 @@ export async function getQuizQuestionsV2(
       p_query_embedding: queryEmbedding,
     });
     if (!error && data) {
-      const questions = typeof data === 'string' ? JSON.parse(data) : data;
-      return Array.isArray(questions) ? questions : [];
+      const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+      questions = Array.isArray(parsed) ? parsed : [];
     }
-    console.warn('select_quiz_questions_rag failed, falling back:', error?.message);
-  } catch (e) {
-    console.warn('select_quiz_questions_rag RPC error, falling back:', e);
+  } catch {
+    // RPC failed — questions stays empty
   }
 
-  // Fallback: try the v2 RPC (non-RAG)
+  // Fallback to v2 RPC if RAG returned nothing
+  if (questions.length === 0) {
+    try {
+      const { data, error } = await supabase.rpc('select_quiz_questions_v2', {
+        p_student_id: studentId,
+        p_subject: subject,
+        p_grade: grade,
+        p_chapter_number: chapterNumber,
+        p_count: count,
+        p_difficulty_mode: difficultyMode,
+        p_question_types: questionTypes,
+      });
+      if (!error && data) {
+        const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+        questions = Array.isArray(parsed) ? parsed : [];
+      }
+    } catch {
+      // v2 also failed
+    }
+  }
+
+  // Fallback to v1 if still empty
+  if (questions.length === 0) {
+    try {
+      const diffMap: Record<string, number | null> = { easy: 1, medium: 2, hard: 3, mixed: null, progressive: null };
+      questions = await getQuizQuestions(subject, grade, count, diffMap[difficultyMode] ?? null, chapterNumber);
+    } catch {
+      // v1 also failed
+    }
+  }
+
+  // Step 2: If we have fewer questions than requested, generate more dynamically
+  if (questions.length < count && questions.length > 0) {
+    const deficit = count - questions.length;
+    try {
+      const generated = await generateDynamicQuestions(
+        subject,
+        grade,
+        chapterNumber,
+        deficit,
+        difficultyMode,
+        questions.map((q: any) => q.id) // exclude already-fetched question IDs
+      );
+      questions = [...questions, ...generated];
+    } catch (e) {
+      console.warn('Dynamic question generation failed:', e);
+      // Continue with whatever we have
+    }
+  }
+
+  // Step 3: If STILL empty after all attempts, return empty
+  return questions;
+}
+
+/**
+ * Generate additional quiz questions dynamically when the question pool is insufficient.
+ * Uses broader pool fetch first, then quiz-generator Edge Function as fallback.
+ */
+async function generateDynamicQuestions(
+  subject: string,
+  grade: string,
+  chapterNumber: number | null,
+  count: number,
+  difficultyMode: string,
+  excludeIds: string[]
+): Promise<any[]> {
+  // First try: fetch more from question_bank without chapter filter (broader pool)
+  if (chapterNumber !== null) {
+    try {
+      const studentId = await resolveStudentId();
+      const { data, error } = await supabase.rpc('select_quiz_questions_v2', {
+        p_student_id: studentId,
+        p_subject: subject,
+        p_grade: grade,
+        p_chapter_number: null, // no chapter filter — pull from entire subject
+        p_count: count,
+        p_difficulty_mode: difficultyMode,
+        p_question_types: ['mcq'],
+      });
+      if (!error && data) {
+        const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+        const additional = Array.isArray(parsed) ? parsed : [];
+        // Filter out already-included questions
+        const filtered = additional.filter(
+          (q: any) => !excludeIds.includes(q.id)
+        );
+        if (filtered.length >= count) {
+          return filtered.slice(0, count);
+        }
+        // If we got some but not enough, return what we have
+        if (filtered.length > 0) {
+          return filtered;
+        }
+      }
+    } catch {
+      // Broader fetch failed
+    }
+  }
+
+  // Second try: call quiz-generator Edge Function for on-the-fly generation
   try {
-    const { data, error } = await supabase.rpc('select_quiz_questions_v2', {
-      p_student_id: studentId,
-      p_subject: subject,
-      p_grade: grade,
-      p_chapter_number: chapterNumber,
-      p_count: count,
-      p_difficulty_mode: difficultyMode,
-      p_question_types: questionTypes,
+    const { data: funcData, error: funcError } = await supabase.functions.invoke('quiz-generator', {
+      body: {
+        subject,
+        grade,
+        chapter_number: chapterNumber,
+        count,
+        difficulty: difficultyMode,
+        question_types: ['mcq'],
+        exclude_ids: excludeIds,
+      },
     });
-    if (!error && data) {
-      const questions = typeof data === 'string' ? JSON.parse(data) : data;
-      return Array.isArray(questions) ? questions : [];
+
+    if (!funcError && funcData?.questions) {
+      return Array.isArray(funcData.questions) ? funcData.questions : [];
     }
-    console.warn('select_quiz_questions_v2 failed, falling back:', error?.message);
-  } catch (e) {
-    console.warn('select_quiz_questions_v2 RPC error, falling back:', e);
+  } catch {
+    // Edge Function call failed
   }
 
-  // Fallback to v1
-  const diffMap: Record<string, number | null> = { easy: 1, medium: 2, hard: 3, mixed: null, progressive: null };
-  return getQuizQuestions(subject, grade, count, diffMap[difficultyMode] ?? null, chapterNumber);
+  return [];
 }
 
 /* ── Update Chapter Progress (fire-and-forget after quiz) ── */
