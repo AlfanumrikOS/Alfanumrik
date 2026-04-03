@@ -35,7 +35,7 @@ const MAX_BATCH_SIZE = 10
 const MAX_EXECUTION_MS = 120_000 // 2 minutes
 const INTER_CHAPTER_DELAY_MS = 1_000 // 1s delay between chapters (Claude calls are heavy)
 const CLAUDE_TIMEOUT_MS = 60_000 // 60s per chapter — extraction is heavier than single-question answers
-const MIN_EXISTING_QUESTIONS = 10 // skip chapters that already have > this many questions
+const MIN_EXISTING_QUESTIONS = 25 // skip chapters that already have > this many questions
 
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY') || ''
 

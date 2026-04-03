@@ -25,9 +25,9 @@ const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 
 const CLAUDE_MODEL = 'claude-sonnet-4-20250514';
 const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
-const QUESTIONS_PER_CHAPTER = 5;
-const MIN_EXISTING_QUESTIONS = 5; // Skip chapters with this many+ questions
-const MAX_RAG_CHUNKS_PER_CHAPTER = 3;
+const QUESTIONS_PER_CHAPTER = 25; // Must exceed max quiz length (20) for pool variety
+const MIN_EXISTING_QUESTIONS = 25; // Skip chapters with this many+ questions
+const MAX_RAG_CHUNKS_PER_CHAPTER = 8; // More context = better question variety
 const DELAY_BETWEEN_CALLS_MS = 2000;
 const BATCH_INSERT_SIZE = 10;
 
@@ -229,16 +229,18 @@ function buildPrompt(
   const combinedContent = chunkTexts.join('\n\n---\n\n');
 
   return `You are an NCERT question generator for CBSE students.
-Based on the following textbook content from ${subject} Grade ${grade}, Chapter ${chapterNumber}: ${chapterTitle}, generate exactly 5 multiple-choice questions.
+Based on the following textbook content from ${subject} Grade ${grade}, Chapter ${chapterNumber}: ${chapterTitle}, generate exactly 25 multiple-choice questions.
 
 RULES:
 - Questions must be directly based on the provided textbook content
 - Each question must have exactly 4 options (A, B, C, D)
 - Only one correct answer per question
 - Include a clear explanation referencing the textbook
-- Vary difficulty: 2 easy (bloom: remember), 2 medium (bloom: understand), 1 hard (bloom: apply)
+- Vary difficulty: 8 easy (bloom: remember), 9 medium (bloom: understand), 5 hard (bloom: apply), 3 hard (bloom: analyze)
 - Questions must be appropriate for Grade ${grade} students
 - Use NCERT terminology exactly as in the textbook
+- Cover different sections and concepts from the chapter — do not repeat similar questions
+- Ensure questions test distinct knowledge points
 
 TEXTBOOK CONTENT:
 ${combinedContent}
@@ -265,7 +267,7 @@ async function callClaude(prompt: string): Promise<GeneratedQuestion[]> {
     },
     body: JSON.stringify({
       model: CLAUDE_MODEL,
-      max_tokens: 4096,
+      max_tokens: 16384,
       messages: [
         {
           role: 'user',
@@ -307,7 +309,7 @@ async function callClaude(prompt: string): Promise<GeneratedQuestion[]> {
     if (typeof q.correct_answer_index !== 'number' || q.correct_answer_index < 0 || q.correct_answer_index > 3) return false;
     if (!q.explanation || q.explanation.trim().length === 0) return false;
     if (typeof q.difficulty !== 'number' || q.difficulty < 1 || q.difficulty > 3) return false;
-    if (!['remember', 'understand', 'apply'].includes(q.bloom_level)) return false;
+    if (!['remember', 'understand', 'apply', 'analyze', 'evaluate', 'create'].includes(q.bloom_level)) return false;
     // Check for template placeholders (P6)
     if (q.question_text.includes('{{') || q.question_text.includes('[BLANK]')) return false;
     // Check all 4 options are distinct
