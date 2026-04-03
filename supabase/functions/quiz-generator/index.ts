@@ -86,6 +86,7 @@ interface RequestBody {
   grade: string
   count?: number
   difficulty?: number | null
+  chapter_number?: number | null
 }
 
 interface ConceptMasteryRow {
@@ -334,6 +335,84 @@ async function selectRandomQuestions(
   return shuffle(pool).slice(0, count)
 }
 
+// ─── RAG Q&A question source ─────────────────────────────────────────────────
+
+/**
+ * Fetch quiz-ready questions from RAG Q&A chunks.
+ * These are NCERT questions extracted and Voyage-embedded in rag_content_chunks.
+ */
+async function selectRAGQuestions(
+  supabase: SupabaseClient,
+  grade: string,
+  subject: string,
+  chapterNumber: number | null,
+  count: number,
+  excludeIds: Set<string>,
+): Promise<QuestionRow[]> {
+  // Normalize grade to "Grade X" format for rag_content_chunks
+  const ragGrade = grade.replace(/\D/g, '')
+  const ragGradeFormatted = `Grade ${ragGrade}`
+
+  // Normalize subject for rag_content_chunks (uses display names like "Science")
+  const subjectMap: Record<string, string> = {
+    math: 'Mathematics', mathematics: 'Mathematics', science: 'Science',
+    physics: 'Physics', chemistry: 'Chemistry', biology: 'Biology',
+    english: 'English', hindi: 'Hindi', sanskrit: 'Sanskrit',
+    social_studies: 'Social Studies', computer_science: 'Computer Science',
+    informatics_practices: 'Informatics Practices',
+    economics: 'Economics', accountancy: 'Accountancy',
+    political_science: 'Political Science', history: 'History', geography: 'Geography',
+  }
+  const ragSubject = subjectMap[subject.toLowerCase()] || subject
+
+  let query = supabase
+    .from('rag_content_chunks')
+    .select('id, question_text, answer_text, question_type, bloom_level, marks_expected, chapter_number, topic, concept')
+    .eq('content_type', 'qa')
+    .eq('is_active', true)
+    .eq('grade', ragGradeFormatted)
+    .eq('subject', ragSubject)
+
+  if (chapterNumber != null) {
+    query = query.eq('chapter_number', chapterNumber)
+  }
+
+  const { data, error } = await query.limit(count * 3)
+
+  if (error || !data || data.length === 0) return []
+
+  // Convert RAG Q&A chunks to QuestionRow format for quiz compatibility
+  // Only include questions that have answer_text (needed for quiz)
+  const questions: QuestionRow[] = []
+  for (const chunk of data) {
+    if (!chunk.question_text || excludeIds.has(chunk.id)) continue
+
+    // RAG Q&A may not have MCQ options — generate simple true/false or short answer format
+    // For now, only include chunks that look like they could be quiz questions
+    const qText = chunk.question_text as string
+    if (qText.length < 10) continue // Skip very short fragments
+
+    questions.push({
+      id: chunk.id,
+      question_text: qText,
+      question_hi: null,
+      question_type: (chunk.question_type as string) || 'short_answer',
+      options: '[]', // RAG Q&A doesn't have MCQ options by default
+      correct_answer_index: 0,
+      explanation: (chunk.answer_text as string) || null,
+      explanation_hi: null,
+      hint: null,
+      difficulty: (chunk.marks_expected as number) <= 2 ? 1 : (chunk.marks_expected as number) >= 5 ? 3 : 2,
+      bloom_level: (chunk.bloom_level as string) || 'understand',
+      chapter_number: (chunk.chapter_number as number) || 0,
+      topic_id: null,
+      subject_id: null,
+    })
+  }
+
+  return shuffle(questions).slice(0, count)
+}
+
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -387,6 +466,7 @@ Deno.serve(async (req) => {
     }
 
     const { student_id, subject, grade, count: rawCount, difficulty = null } = body
+    const chapterNumber = body.chapter_number ?? null
 
     if (!student_id) {
       return new Response(JSON.stringify({ error: 'student_id is required' }), {
@@ -488,22 +568,39 @@ Deno.serve(async (req) => {
       weakTopicsTargeted = adaptive.weakTopicsTargeted
     }
 
-    // ── Fill remaining slots with random questions (or full random if no mastery data) ──
+    // ── Fill from RAG Q&A first, then random question_bank ──
     if (questions.length < count) {
-      if (questions.length === 0) strategy = 'random'
-
       const usedIds = new Set(questions.map((q) => q.id))
-      const remaining = count - questions.length
 
-      const randomQs = await selectRandomQuestions(
-        supabase,
-        subjectId,
-        grade,
-        remaining,
-        difficulty,
-        usedIds,
-      )
-      questions = [...questions, ...randomQs]
+      // Try RAG Q&A source (NCERT embedded questions)
+      if (chapterNumber != null) {
+        const ragQs = await selectRAGQuestions(
+          supabase, grade, subject, chapterNumber, count - questions.length, usedIds
+        )
+        for (const q of ragQs) {
+          if (questions.length >= count) break
+          if (!usedIds.has(q.id)) {
+            questions.push(q)
+            usedIds.add(q.id)
+          }
+        }
+      }
+
+      // Fill remaining from question_bank (existing random fallback)
+      if (questions.length < count) {
+        if (questions.length === 0) strategy = 'random'
+        const remaining = count - questions.length
+
+        const randomQs = await selectRandomQuestions(
+          supabase,
+          subjectId,
+          grade,
+          remaining,
+          difficulty,
+          usedIds,
+        )
+        questions = [...questions, ...randomQs]
+      }
     }
 
     // ── Final shuffle + interleave so adaptive + random are mixed ────────────
