@@ -23,6 +23,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
+import { generateEmbedding } from '../_shared/embeddings.ts'
 
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY') || ''
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
@@ -178,15 +179,32 @@ async function fetchRAGContext(
   chapter?: string,
 ): Promise<string | null> {
   try {
+    // Attempt to generate a query embedding for vector-based retrieval.
+    // If embedding generation fails (API key missing, provider down, etc.),
+    // fall back to keyword-only search (current behavior).
+    let queryEmbedding: number[] | null = null
+    try {
+      queryEmbedding = await generateEmbedding(query)
+    } catch (embeddingErr) {
+      // Embedding unavailable — proceed with keyword-only search
+      console.warn('Embedding generation failed, falling back to keyword search:', embeddingErr instanceof Error ? embeddingErr.message : String(embeddingErr))
+    }
+
     const rpcParams: Record<string, unknown> = {
       query_text: query,
       p_subject: subject,
       p_grade: grade,
-      match_count: 5, // more context for solver than chat
+      match_count: 5,
     }
     if (chapter) {
       rpcParams.p_chapter = chapter
     }
+
+    // Pass embedding as JSON string when available (Supabase casts to vector type)
+    if (queryEmbedding) {
+      rpcParams.query_embedding = JSON.stringify(queryEmbedding)
+    }
+
     const { data, error } = await supabase.rpc('match_rag_chunks', rpcParams)
     if (error || !data || data.length === 0) return null
     return data.map((c: { content: string; chapter_title?: string }) => {
@@ -284,11 +302,11 @@ ${subjectSafetyRule}`
   if (ragContext) {
     prompt += `
 
-NCERT REFERENCE MATERIAL (PRIMARY SOURCE — base your solution on this):
----
+=== NCERT REFERENCE MATERIAL (Grade ${grade}, ${subject}) ===
 ${ragContext}
----
-Your solution MUST be consistent with the above NCERT content. Do not contradict it. If the answer can be directly derived from this material, use it as the authoritative source.`
+=== END REFERENCE ===
+
+You MUST answer ONLY based on the NCERT content provided above. If the context doesn't contain relevant information, say so explicitly and set your confidence lower. NEVER make up information not present in the reference material. Your solution MUST be consistent with the above NCERT content. Do not contradict it. If the answer can be directly derived from this material, use it as the authoritative source.`
   } else {
     prompt += `
 
