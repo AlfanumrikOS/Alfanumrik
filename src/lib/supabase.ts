@@ -179,19 +179,50 @@ export async function getQuizQuestions(subject: string, grade: string, count = 1
     if (!error && data) return validateQuestions(data);
   } catch { /* RPC may not exist — fall back */ }
 
-  // Direct table query fallback
+  // Fetch seen question IDs for dedup (best-effort, ignore errors)
+  const seenIds = new Set<string>();
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: studentRow } = await supabase
+        .from('students')
+        .select('id')
+        .eq('auth_user_id', user.id)
+        .maybeSingle();
+      if (studentRow) {
+        let historyQuery = supabase
+          .from('user_question_history')
+          .select('question_id')
+          .eq('student_id', studentRow.id)
+          .eq('subject', subject)
+          .eq('grade', grade);
+        if (chapterNumber != null) historyQuery = historyQuery.eq('chapter_number', chapterNumber);
+        const { data: historyData } = await historyQuery.limit(500);
+        if (historyData) historyData.forEach(h => seenIds.add(h.question_id));
+      }
+    }
+  } catch { /* History fetch failed — proceed without dedup */ }
+
+  // Direct table query fallback — fetch more to ensure enough unseen questions
+  const fetchLimit = Math.min(count * 4, 120);
   let query = supabase.from('question_bank')
     .select('id, question_text, question_hi, question_type, options, correct_answer_index, explanation, explanation_hi, hint, difficulty, bloom_level, chapter_number')
     .eq('subject', subject)
     .eq('grade', grade)
     .eq('is_active', true)
-    .limit(Math.min(count * 2, 60)); // fetch extra to account for filtered-out bad questions
+    .limit(fetchLimit);
   if (difficulty != null) query = query.eq('difficulty', difficulty);
   if (chapterNumber != null) query = query.eq('chapter_number', chapterNumber);
   const { data, error } = await query;
   if (error) throw error;
-  // Validate, deduplicate, shuffle, and trim to requested count
-  return validateQuestions(data ?? []).sort(() => Math.random() - 0.5).slice(0, count);
+
+  // Validate, deduplicate, prefer unseen questions, shuffle, and trim to count
+  const validated = validateQuestions(data ?? []);
+  const unseen = validated.filter(q => !seenIds.has(q.id));
+  const seen = validated.filter(q => seenIds.has(q.id));
+  // Prioritize unseen, then backfill with seen if pool is too small
+  const pool = [...unseen.sort(() => Math.random() - 0.5), ...seen.sort(() => Math.random() - 0.5)];
+  return pool.slice(0, count);
 }
 
 /** Filter out broken, duplicate, or template questions before they reach students. */
@@ -769,6 +800,7 @@ export async function getQuizQuestionsV2(
   // student mastery, RAG Q&A from NCERT content, and question_bank —
   // all in one call. It handles interleaving, Bloom's distribution,
   // weak-topic targeting, and AI generation for pool deficits internally.
+  let edgeFunctionQuestions: unknown[] | null = null;
   try {
     const { data: funcData, error: funcError } = await supabase.functions.invoke('quiz-generator', {
       body: {
@@ -783,11 +815,19 @@ export async function getQuizQuestionsV2(
 
     if (!funcError && funcData?.questions) {
       const questions = Array.isArray(funcData.questions) ? funcData.questions : [];
-      if (questions.length > 0) {
+      if (questions.length >= count) {
+        // Edge function returned the full requested count — use it directly
         return questions;
       }
+      if (questions.length > 0) {
+        // Partial results — try RPCs for full count, keep these as fallback
+        console.warn(`quiz-generator returned ${questions.length}/${count} questions, trying RPCs for full count`);
+        edgeFunctionQuestions = questions;
+      }
     }
-    console.warn('quiz-generator returned no questions, falling back to RPC');
+    if (!edgeFunctionQuestions) {
+      console.warn('quiz-generator returned no questions, falling back to RPC');
+    }
   } catch (e) {
     console.warn('quiz-generator Edge Function failed, falling back to RPC:', e);
   }
@@ -834,7 +874,13 @@ export async function getQuizQuestionsV2(
   }
 
   // ── FALLBACK 3: direct question_bank query (v1) ──
-  return getQuizQuestions(subject, grade, count, diffMap[difficultyMode] ?? null, chapterNumber);
+  const v1Questions = await getQuizQuestions(subject, grade, count, diffMap[difficultyMode] ?? null, chapterNumber);
+  // If edge function had partial results and v1 returned fewer, use the edge function's results
+  // (they have dedup/history tracking already applied)
+  if (edgeFunctionQuestions && edgeFunctionQuestions.length > v1Questions.length) {
+    return edgeFunctionQuestions;
+  }
+  return v1Questions;
 }
 
 /* ── Update Chapter Progress (fire-and-forget after quiz) ── */

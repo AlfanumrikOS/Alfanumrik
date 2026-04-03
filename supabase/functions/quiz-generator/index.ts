@@ -93,6 +93,11 @@ interface ConceptMasteryRow {
   topic_id: string
   mastery_level: number
   next_review_at: string | null
+  curriculum_topics: {
+    subject_id: string
+    chapter_number: number | null
+    concept_tag: string | null
+  }
 }
 
 interface QuestionRow {
@@ -108,8 +113,9 @@ interface QuestionRow {
   difficulty: number
   bloom_level: string
   chapter_number: number
-  topic_id: string | null
-  subject_id: string | null
+  topic: string | null
+  concept_tag: string | null
+  subject: string | null
 }
 
 interface SubjectRow {
@@ -174,10 +180,10 @@ function getBloomLevelsAtOrAbove(minLevel: string): string[] {
 function deduplicateAdjacentTopics(questions: QuestionRow[]): QuestionRow[] {
   const result = [...questions]
   for (let i = 1; i < result.length; i++) {
-    if (result[i].topic_id && result[i].topic_id === result[i - 1].topic_id) {
+    if (result[i].topic && result[i].topic === result[i - 1].topic) {
       // Find a question further down with a different topic
       for (let j = i + 1; j < result.length; j++) {
-        if (result[j].topic_id !== result[i - 1].topic_id) {
+        if (result[j].topic !== result[i - 1].topic) {
           ;[result[i], result[j]] = [result[j], result[i]]
           break
         }
@@ -218,19 +224,23 @@ async function selectAdaptiveQuestions(
   supabase: SupabaseClient,
   studentId: string,
   subjectId: string,
+  subjectCode: string,
   grade: string,
   count: number,
+  excludeIds: Set<string>,
 ): Promise<{ questions: QuestionRow[]; weakTopicsTargeted: number }> {
   const now = new Date().toISOString()
 
-  // 1. Fetch the student's mastery for topics in this subject
+  // 1. Fetch the student's mastery for topics in this subject.
+  //    Include curriculum_topics.chapter_number and concept_tag so we can
+  //    query question_bank (which has no topic_id column).
   const { data: masteryRows, error: masteryError } = await supabase
     .from('concept_mastery')
     .select(`
       topic_id,
       mastery_level,
       next_review_at,
-      curriculum_topics!inner(subject_id)
+      curriculum_topics!inner(subject_id, chapter_number, concept_tag)
     `)
     .eq('student_id', studentId)
     .eq('curriculum_topics.subject_id', subjectId)
@@ -254,7 +264,7 @@ async function selectAdaptiveQuestions(
   })
 
   const questions: QuestionRow[] = []
-  const usedIds = new Set<string>()
+  const usedIds = new Set<string>(excludeIds)
 
   // Allocate slots per weak topic
   const slotsPerTopic = Math.max(1, Math.floor(count / Math.max(prioritised.length, 1)))
@@ -263,33 +273,73 @@ async function selectAdaptiveQuestions(
   for (const topic of targetTopics) {
     if (questions.length >= count) break
 
+    const chapterNum = topic.curriculum_topics?.chapter_number
+    const conceptTag = topic.curriculum_topics?.concept_tag
     const targetDifficulty = masteryToDifficulty(topic.mastery_level)
     const minBloom = masteryToMinBloomLevel(topic.mastery_level)
     const allowedBlooms = getBloomLevelsAtOrAbove(minBloom)
     const need = Math.min(slotsPerTopic, count - questions.length)
 
-    // First try: difficulty + bloom-level targeted
-    let { data: qs } = await supabase
+    // Build exclusion list for Supabase .not('id','in',...) filter
+    const exclusionList = usedIds.size > 0
+      ? [...usedIds].join(',')
+      : '00000000-0000-0000-0000-000000000000'
+
+    // Query question_bank by chapter_number + subject (TEXT code) + grade.
+    // question_bank has no topic_id column — we match via chapter_number
+    // and optionally concept_tag.
+    let baseQuery = supabase
       .from('question_bank')
       .select('*')
-      .eq('topic_id', topic.topic_id)
+      .eq('subject', subjectCode)
+      .eq('grade', grade)
+      .eq('is_active', true)
+      .not('id', 'in', `(${exclusionList})`)
+
+    if (chapterNum != null) {
+      baseQuery = baseQuery.eq('chapter_number', chapterNum)
+    }
+
+    // First try: difficulty + bloom-level targeted + concept_tag
+    let query = baseQuery
       .eq('difficulty', targetDifficulty)
       .in('bloom_level', allowedBlooms)
-      .eq('is_active', true)
-      .not('id', 'in', `(${usedIds.size > 0 ? [...usedIds].join(',') : '00000000-0000-0000-0000-000000000000'})`)
-      .limit(need * 2)
+    if (conceptTag) {
+      query = query.eq('concept_tag', conceptTag)
+    }
+    let { data: qs } = await query.limit(need * 2)
 
-    // Fallback: if not enough bloom-filtered questions, relax bloom constraint
-    if (!qs || qs.length < need) {
-      const fallback = await supabase
+    // Fallback 1: relax concept_tag if not enough
+    if ((!qs || qs.length < need) && conceptTag) {
+      const fb1 = await supabase
         .from('question_bank')
         .select('*')
-        .eq('topic_id', topic.topic_id)
-        .eq('difficulty', targetDifficulty)
+        .eq('subject', subjectCode)
+        .eq('grade', grade)
         .eq('is_active', true)
-        .not('id', 'in', `(${usedIds.size > 0 ? [...usedIds].join(',') : '00000000-0000-0000-0000-000000000000'})`)
+        .not('id', 'in', `(${exclusionList})`)
+        .eq('chapter_number', chapterNum!)
+        .eq('difficulty', targetDifficulty)
+        .in('bloom_level', allowedBlooms)
         .limit(need * 2)
-      qs = fallback.data ?? qs ?? []
+      qs = fb1.data ?? qs ?? []
+    }
+
+    // Fallback 2: relax bloom constraint
+    if (!qs || qs.length < need) {
+      let fb2Query = supabase
+        .from('question_bank')
+        .select('*')
+        .eq('subject', subjectCode)
+        .eq('grade', grade)
+        .eq('is_active', true)
+        .not('id', 'in', `(${exclusionList})`)
+        .eq('difficulty', targetDifficulty)
+      if (chapterNum != null) {
+        fb2Query = fb2Query.eq('chapter_number', chapterNum)
+      }
+      const fb2 = await fb2Query.limit(need * 2)
+      qs = fb2.data ?? qs ?? []
     }
 
     for (const q of shuffle((qs ?? []) as QuestionRow[]).slice(0, need)) {
@@ -307,25 +357,27 @@ async function selectAdaptiveQuestions(
 
 async function selectRandomQuestions(
   supabase: SupabaseClient,
-  subjectId: string,
+  subjectCode: string,
   grade: string,
   count: number,
   difficulty: number | null,
   excludeIds: Set<string>,
+  chapterNumber: number | null = null,
 ): Promise<QuestionRow[]> {
   // P5: grade is plain string "6" through "12"
-  const normalizedGrade = grade.replace(/\D/g, '')
-
   let query = supabase
     .from('question_bank')
     .select('*')
-    .eq('subject_id', subjectId)
+    .eq('subject', subjectCode)
     .eq('is_active', true)
-    .eq('grade', normalizedGrade)
+    .eq('grade', grade)
     .limit(count * 3)
 
   if (difficulty != null) {
     query = query.eq('difficulty', difficulty)
+  }
+  if (chapterNumber != null) {
+    query = query.eq('chapter_number', chapterNumber)
   }
 
   const { data: qs, error } = await query
@@ -405,12 +457,109 @@ async function selectRAGQuestions(
       difficulty: (chunk.marks_expected as number) <= 2 ? 1 : (chunk.marks_expected as number) >= 5 ? 3 : 2,
       bloom_level: (chunk.bloom_level as string) || 'understand',
       chapter_number: (chunk.chapter_number as number) || 0,
-      topic_id: null,
-      subject_id: null,
+      topic: (chunk.topic as string) || null,
+      concept_tag: (chunk.concept as string) || null,
+      subject: null,
     })
   }
 
   return shuffle(questions).slice(0, count)
+}
+
+// ─── Question history (dedup + 80% pool reset) ──────────────────────────────
+
+/**
+ * Fetch IDs of questions this student has already seen for this scope.
+ */
+async function fetchSeenQuestionIds(
+  supabase: SupabaseClient,
+  studentId: string,
+  subject: string,
+  grade: string,
+  chapterNumber: number | null,
+): Promise<Set<string>> {
+  let query = supabase
+    .from('user_question_history')
+    .select('question_id')
+    .eq('student_id', studentId)
+    .eq('subject', subject)
+    .eq('grade', grade)
+  if (chapterNumber != null) query = query.eq('chapter_number', chapterNumber)
+  const { data, error } = await query.limit(500)
+  if (error) {
+    console.warn(`fetchSeenQuestionIds: ${error.message}`)
+    return new Set()
+  }
+  return new Set((data ?? []).map((r: { question_id: string }) => r.question_id))
+}
+
+/**
+ * If the student has seen >= 80% of the available pool, reset their history
+ * for this scope so questions can repeat.
+ */
+async function checkAndResetHistory(
+  supabase: SupabaseClient,
+  studentId: string,
+  subject: string,
+  grade: string,
+  chapterNumber: number | null,
+  totalPool: number,
+): Promise<void> {
+  let countQuery = supabase
+    .from('user_question_history')
+    .select('*', { count: 'exact', head: true })
+    .eq('student_id', studentId)
+    .eq('subject', subject)
+    .eq('grade', grade)
+  if (chapterNumber != null) countQuery = countQuery.eq('chapter_number', chapterNumber)
+  const { count: seenCount, error } = await countQuery
+
+  if (error) {
+    console.warn(`checkAndResetHistory count: ${error.message}`)
+    return
+  }
+
+  if (totalPool > 0 && (seenCount ?? 0) / totalPool >= 0.80) {
+    let deleteQuery = supabase
+      .from('user_question_history')
+      .delete()
+      .eq('student_id', studentId)
+      .eq('subject', subject)
+      .eq('grade', grade)
+    if (chapterNumber != null) deleteQuery = deleteQuery.eq('chapter_number', chapterNumber)
+    const { error: delError } = await deleteQuery
+    if (delError) console.warn(`checkAndResetHistory delete: ${delError.message}`)
+  }
+}
+
+/**
+ * Record questions shown to the student for future dedup.
+ * Uses upsert so re-shown questions increment times_shown.
+ */
+async function recordShownQuestions(
+  supabase: SupabaseClient,
+  studentId: string,
+  subject: string,
+  grade: string,
+  questions: QuestionRow[],
+): Promise<void> {
+  if (questions.length === 0) return
+  const now = new Date().toISOString()
+  const rows = questions.map((q) => ({
+    student_id: studentId,
+    question_id: q.id,
+    subject,
+    grade,
+    chapter_number: q.chapter_number || null,
+    first_shown_at: now,
+    last_shown_at: now,
+    times_shown: 1,
+  }))
+  const { error } = await supabase.from('user_question_history').upsert(rows, {
+    onConflict: 'student_id,question_id',
+    ignoreDuplicates: false,
+  })
+  if (error) console.warn(`recordShownQuestions: ${error.message}`)
 }
 
 // ─── Main handler ─────────────────────────────────────────────────────────────
@@ -551,6 +700,23 @@ Deno.serve(async (req) => {
       )
     }
 
+    // ── Question history: pool reset + fetch seen IDs ───────────────────────
+    // Count total available questions for this scope
+    let poolCountQuery = supabase
+      .from('question_bank')
+      .select('*', { count: 'exact', head: true })
+      .eq('subject', subject)
+      .eq('grade', grade)
+      .eq('is_active', true)
+    if (chapterNumber != null) poolCountQuery = poolCountQuery.eq('chapter_number', chapterNumber)
+    const { count: totalPool } = await poolCountQuery
+
+    // Reset history if student has seen >= 80% of pool
+    await checkAndResetHistory(supabase, student_id, subject, grade, chapterNumber, totalPool ?? 0)
+
+    // Fetch already-seen question IDs for dedup
+    const seenIds = await fetchSeenQuestionIds(supabase, student_id, subject, grade, chapterNumber)
+
     // ── Attempt adaptive selection (skip if caller forced a difficulty) ─────
     let questions: QuestionRow[] = []
     let weakTopicsTargeted = 0
@@ -561,8 +727,10 @@ Deno.serve(async (req) => {
         supabase,
         student_id,
         subjectId,
+        subject,
         grade,
         count,
+        seenIds,
       )
       questions = adaptive.questions
       weakTopicsTargeted = adaptive.weakTopicsTargeted
@@ -570,7 +738,7 @@ Deno.serve(async (req) => {
 
     // ── Fill from RAG Q&A first, then random question_bank ──
     if (questions.length < count) {
-      const usedIds = new Set(questions.map((q) => q.id))
+      const usedIds = new Set([...seenIds, ...questions.map((q) => q.id)])
 
       // Try RAG Q&A source (NCERT embedded questions)
       if (chapterNumber != null) {
@@ -593,15 +761,19 @@ Deno.serve(async (req) => {
 
         const randomQs = await selectRandomQuestions(
           supabase,
-          subjectId,
+          subject,
           grade,
           remaining,
           difficulty,
           usedIds,
+          chapterNumber,
         )
         questions = [...questions, ...randomQs]
       }
     }
+
+    // ── Record shown questions for future dedup ──────────────────────────────
+    await recordShownQuestions(supabase, student_id, subject, grade, questions)
 
     // ── Final shuffle + interleave so adaptive + random are mixed ────────────
     // Also prevent adjacent questions on the same topic for better retention
