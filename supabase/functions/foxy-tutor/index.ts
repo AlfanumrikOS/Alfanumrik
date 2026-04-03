@@ -184,6 +184,65 @@ const PLAN_LIMITS: Record<string, number> = {
   unlimited: 999999,
 }
 
+// ─── CME integration helpers ───────────────────────────────────
+
+/** Call CME to get the recommended next concept for this student. Fire-and-forget safe. */
+async function fetchCMENextAction(studentId: string, subjectId: string): Promise<{
+  type: string;
+  concept_id: string;
+  title: string;
+  reason: string;
+  difficulty: number;
+} | null> {
+  try {
+    const cmeUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/cme-engine`;
+    const res = await fetch(cmeUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+        'apikey': Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      },
+      body: JSON.stringify({ action: 'get_next_action', student_id: studentId, subject_id: subjectId }),
+      signal: AbortSignal.timeout(3000), // 3s max — don't block chat
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.type ? data : null;
+  } catch {
+    return null; // CME failure must never break Foxy
+  }
+}
+
+/** Record student response in CME — fire-and-forget, never awaited. */
+function recordCMEResponse(
+  studentId: string,
+  conceptId: string,
+  correct: boolean,
+  responseTimeMs: number,
+  difficulty: number,
+): void {
+  const cmeUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/cme-engine`;
+  fetch(cmeUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+      'apikey': Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+    },
+    body: JSON.stringify({
+      action: 'record_response',
+      student_id: studentId,
+      concept_id: conceptId,
+      correct,
+      difficulty,
+      response_time_ms: responseTimeMs,
+      student_answer: '',
+      correct_answer: '',
+    }),
+  }).catch(() => {}); // intentional fire-and-forget
+}
+
 // ─── System prompt ─────────────────────────────────────────────
 function buildSystemPrompt(
   grade: string,
@@ -196,6 +255,7 @@ function buildSystemPrompt(
   ragContext: string | null,
   syllabusContext: string | null = null,
   masteryContext: string | null = null,
+  cmeAction?: { type: string; concept_id: string; title: string; reason: string; difficulty: number } | null,
 ): string {
   const lang =
     language === 'hi' ? 'Hindi (Devanagari script)'
@@ -257,6 +317,16 @@ USE THIS TO:
 - If a concept has medium mastery (0.4-0.7): focus on application and practice
 - If a concept has high mastery (>0.7): challenge with harder questions, skip basics
 - Prioritize weak concepts over strong ones in your teaching`
+  }
+
+  // Inject CME-recommended concept focus
+  if (cmeAction) {
+    prompt += `\n\n## Current Teaching Focus (CME Recommendation)
+Concept to teach: "${cmeAction.title}"
+Teaching mode: ${cmeAction.type} (${cmeAction.reason})
+Target difficulty: ${cmeAction.difficulty}/5
+
+You MUST ground your response in this specific concept. Use the NCERT content provided above as your primary reference for this concept. Structure your explanation around "${cmeAction.title}" specifically — do not drift to adjacent topics unless explicitly asked.`
   }
 
   // Inject syllabus graph (formulas, rules, answer patterns)
@@ -450,6 +520,8 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    const requestStartTime = Date.now()
+
     // ── Verify JWT and resolve student_id from auth ──
     const authResult = await verifyAndGetStudentId(req)
     if ('error' in authResult) {
@@ -555,8 +627,11 @@ Deno.serve(async (req: Request) => {
     const chapterParts = safeChapters ? safeChapters.split(',').map((c: string) => c.trim()).filter(Boolean) : []
     const ragChapter = chapterParts.length === 1 ? chapterParts[0] : null
 
-    // ── Parallel DB lookups (usage, plan, chat history, RAG, syllabus, mastery) ──
-    const [usageResult, studentResult, sessionResult, ragContext, syllabusContext, masteryContext] = await Promise.all([
+    // ── Parallel DB lookups (usage, plan, chat history, RAG, syllabus, mastery, CME) ──
+    // CME fetch runs in parallel — 3s timeout ensures it never stalls chat.
+    const cmeActionPromise = fetchCMENextAction(student_id, subject)
+
+    const [usageResult, studentResult, sessionResult, ragContextRaw, syllabusContext, masteryContext] = await Promise.all([
       supabase
         .from('student_daily_usage')
         .select('usage_count')
@@ -574,6 +649,15 @@ Deno.serve(async (req: Request) => {
       fetchSyllabusContext(supabase, message, subject, grade),
       fetchStudentMastery(supabase, student_id, subject),
     ])
+
+    // Resolve CME (may have already settled while the DB queries ran)
+    const cmeAction = await cmeActionPromise
+
+    // Re-fetch RAG with concept scope when CME provided a concept title.
+    // If CME returned null, ragContextRaw is already the correct result.
+    const ragContext = cmeAction?.title
+      ? await fetchRAGContext(supabase, message, subject, grade, ragChapter, null, cmeAction.title)
+      : ragContextRaw
 
     const currentCount = usageResult.data?.usage_count ?? 0
     // check_entitlement returns TABLE from student_subscriptions (authoritative).
@@ -636,7 +720,7 @@ Deno.serve(async (req: Request) => {
       }).then(() => {}).catch(() => {})
     }
 
-    // ── Build messages for Claude (with mastery awareness) ──
+    // ── Build messages for Claude (with mastery awareness + CME focus) ──
     const systemPrompt = buildSystemPrompt(
       grade, subject, safeLanguage, safeMode,
       safeTopicTitle,
@@ -645,6 +729,7 @@ Deno.serve(async (req: Request) => {
       ragContext,
       syllabusContext,
       masteryContext,
+      cmeAction,
     )
 
     const messages = [
@@ -755,6 +840,17 @@ Deno.serve(async (req: Request) => {
 
     const claudeData = await claudeRes.json()
     const reply = claudeData.content?.[0]?.text || 'Hmm, let me think about that...'
+
+    // ── Record interaction in CME (fire-and-forget — never blocks response) ──
+    if (cmeAction?.concept_id && student_id) {
+      recordCMEResponse(
+        student_id,
+        cmeAction.concept_id,
+        true, // Foxy chat = learning interaction, treat as positive signal
+        Date.now() - requestStartTime,
+        cmeAction.difficulty ?? 2,
+      )
+    }
 
     // ── Determine XP based on study quality ──
     // Award XP only for substantive study interactions, not mere clicks.
@@ -868,6 +964,8 @@ Deno.serve(async (req: Request) => {
         reply,
         xp_earned: xpEarned,
         session_id: activeSessionId,
+        // Include CME concept recommendation so the UI can display the teaching focus
+        ...(cmeAction ? { cme_action: cmeAction } : {}),
       },
       200,
       {},

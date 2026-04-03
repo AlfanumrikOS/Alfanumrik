@@ -69,6 +69,15 @@ interface TopicMasteryRow {
   [key: string]: unknown;
 }
 
+/* -- CME action returned by foxy-tutor edge function -- */
+interface CMEAction {
+  type: 'teach' | 'practice' | 'remediate' | 'revise' | 're_teach' | 'challenge' | 'exam_prep';
+  concept_id: string;
+  title: string;
+  reason: string;
+  difficulty: number;
+}
+
 /* ══════════════════════════════════════════════════════════════
    API HELPERS — uses shared Supabase client, no hardcoded creds
    ══════════════════════════════════════════════════════════════ */
@@ -119,7 +128,7 @@ async function callFoxyTutor(params: Record<string, unknown>) {
       return { reply: res.status === 429 ? 'Slow down! Wait a moment and try again.' : 'Foxy is taking a short break. Try again!', xp_earned: 0, session_id: null };
     }
     const data = await res.json();
-    return { reply: data.reply || data.response || data.message || 'Let me think...', xp_earned: data.xp_earned || 0, session_id: data.session_id || null };
+    return { reply: data.reply || data.response || data.message || 'Let me think...', xp_earned: data.xp_earned || 0, session_id: data.session_id || null, cme_action: data.cme_action || null };
   } catch {
     return { reply: 'Connection issue. Check your network and try again!', xp_earned: 0, session_id: null };
   }
@@ -192,6 +201,9 @@ export default function FoxyPage() {
 
   // Lesson flow state (grouped)
   const [lesson, setLesson] = useState<{ step: LessonStep; completed: LessonStep[]; prediction: string; showPrediction: boolean; predictionSubmitted: boolean }>({ step: 'hook', completed: [], prediction: '', showPrediction: false, predictionSubmitted: false });
+
+  // CME concept action — populated from foxy-tutor API response once backend deploys
+  const [cmeAction, setCmeAction] = useState<CMEAction | null>(null);
 
   useEffect(() => { if (!authLoading && !isLoggedIn) router.replace('/login'); }, [authLoading, isLoggedIn, router]);
 
@@ -288,6 +300,7 @@ export default function FoxyPage() {
       setMessages(p => [...p, { id: Date.now() + 1, role: 'tutor', content: resp.reply, timestamp: new Date().toISOString(), xp: resp.xp_earned }]);
       if (resp.xp_earned > 0) setXpGained(p => p + resp.xp_earned);
       if (resp.session_id) setChatSessionId(resp.session_id);
+      if (resp.cme_action) setCmeAction(resp.cme_action as CMEAction);
       setFoxyState('happy'); setTimeout(() => setFoxyState('idle'), 2000);
     } catch {
       setMessages(p => [...p, { id: Date.now() + 1, role: 'tutor', content: 'Oops! Please try again.', timestamp: new Date().toISOString() }]);
@@ -607,25 +620,65 @@ export default function FoxyPage() {
 
       {/* ═══ CONTEXT BAR — shows active topic + new topic button ═══ */}
       {messages.length > 0 && (
-        <div className="px-3 py-2 flex items-center justify-between gap-2" style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
-          <div className="flex items-center gap-2 min-w-0 flex-1">
-            <span className="text-sm">{cfg.icon}</span>
-            <div className="min-w-0">
-              <div className="text-[11px] font-bold truncate" style={{ color: 'var(--text-1)' }}>
-                {activeTopic ? `Ch ${activeTopic.chapter_number}: ${activeTopic.title}` : cfg.name}
-              </div>
-              <div className="text-[9px] font-medium" style={{ color: cfg.color }}>
-                {MODES.find(m => m.id === sessionMode)?.emoji} {MODES.find(m => m.id === sessionMode)?.label} · {messages.length} messages
+        <div className="px-3 py-2 flex flex-col gap-1.5" style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <span className="text-sm">{cfg.icon}</span>
+              <div className="min-w-0">
+                <div className="text-[11px] font-bold truncate" style={{ color: 'var(--text-1)' }}>
+                  {activeTopic ? `Ch ${activeTopic.chapter_number}: ${activeTopic.title}` : cfg.name}
+                </div>
+                <div className="text-[9px] font-medium" style={{ color: cfg.color }}>
+                  {MODES.find(m => m.id === sessionMode)?.emoji} {MODES.find(m => m.id === sessionMode)?.label} · {messages.length} messages
+                </div>
               </div>
             </div>
+            <button
+              onClick={startNewTopic}
+              className="shrink-0 text-[10px] font-bold px-3 py-1.5 rounded-lg transition-all active:scale-95"
+              style={{ background: 'var(--surface-2)', color: 'var(--text-3)', border: '1px solid var(--border)' }}
+            >
+              + New Topic
+            </button>
           </div>
-          <button
-            onClick={startNewTopic}
-            className="shrink-0 text-[10px] font-bold px-3 py-1.5 rounded-lg transition-all active:scale-95"
-            style={{ background: 'var(--surface-2)', color: 'var(--text-3)', border: '1px solid var(--border)' }}
-          >
-            + New Topic
-          </button>
+
+          {/* CME concept indicator — visible once backend returns cme_action */}
+          {cmeAction && (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs"
+              style={{ background: 'rgba(232,88,28,0.06)', border: '1px solid rgba(232,88,28,0.1)' }}>
+              <span style={{ color: 'var(--orange)' }}>
+                {cmeAction.type === 'remediate' ? '🔧' :
+                 cmeAction.type === 'revise' ? '🔄' :
+                 cmeAction.type === 'practice' ? '✏️' :
+                 cmeAction.type === 'challenge' ? '⚡' :
+                 cmeAction.type === 'exam_prep' ? '📋' : '📖'}
+              </span>
+              <span className="font-medium truncate" style={{ color: 'var(--text-1)' }}>
+                {cmeAction.title}
+              </span>
+              <span
+                className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wide"
+                style={{
+                  background: cmeAction.type === 'remediate' ? 'rgba(239,68,68,0.1)' :
+                              cmeAction.type === 'revise' ? 'rgba(245,158,11,0.1)' :
+                              'rgba(232,88,28,0.1)',
+                  color: cmeAction.type === 'remediate' ? '#EF4444' :
+                         cmeAction.type === 'revise' ? '#F59E0B' :
+                         'var(--orange)',
+                }}
+              >
+                {language === 'hi'
+                  ? (cmeAction.type === 'teach' ? 'सिखाना' :
+                     cmeAction.type === 'practice' ? 'अभ्यास' :
+                     cmeAction.type === 'remediate' ? 'सुधार' :
+                     cmeAction.type === 'revise' ? 'दोहराना' :
+                     cmeAction.type === 're_teach' ? 'फिर सिखाना' :
+                     cmeAction.type === 'challenge' ? 'चुनौती' :
+                     'परीक्षा तैयारी')
+                  : cmeAction.type.replace('_', ' ')}
+              </span>
+            </div>
+          )}
         </div>
       )}
 
