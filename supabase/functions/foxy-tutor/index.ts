@@ -805,11 +805,36 @@ Deno.serve(async (req: Request) => {
     const claudeData = await claudeRes.json()
     const reply = claudeData.content?.[0]?.text || 'Hmm, let me think about that...'
 
-    // ── Determine XP ──
-    // Fixed XP per interaction to prevent inflation via keyword stuffing.
-    // Quality-based XP should be determined by analyzing the AI response,
-    // not the student's input (which is fully client-controlled).
-    const xpEarned = 5
+    // ── Determine XP based on study quality ──
+    // Award XP only for substantive study interactions, not mere clicks.
+    // Cap at 50 XP per session to prevent spam farming.
+    let xpEarned = 0
+    const msgTrimmed = message.trim()
+    const msgLen = msgTrimmed.length
+    const rawSessionMsgs = Array.isArray(sessionResult.data?.messages) ? sessionResult.data.messages : []
+    const sessionMsgCount = rawSessionMsgs.length
+    const isSubstantive = msgLen > 30 && !/^(hi|hello|ok|yes|no|thanks|bye|hm+)\s*$/i.test(msgTrimmed)
+
+    // First message in session: 0 XP (just starting)
+    // Substantive question (>30 chars, not a greeting): 5 XP
+    if (sessionMsgCount > 0 && isSubstantive) {
+      xpEarned = 5
+    }
+
+    // Milestone bonus: 5+ substantive student messages in session (10+ raw = 5 student+assistant pairs)
+    if (sessionMsgCount >= 10 && isSubstantive) {
+      xpEarned += 5
+    }
+
+    // Session XP cap: max 50 XP per session
+    const sessionXpSoFar = rawSessionMsgs
+      .filter((m: { role: string }) => m.role === 'assistant')
+      .reduce((sum: number, m: { meta?: { xp?: number } }) => sum + ((m as any).meta?.xp || 0), 0)
+    if (sessionXpSoFar >= 50) {
+      xpEarned = 0
+    } else if (sessionXpSoFar + xpEarned > 50) {
+      xpEarned = 50 - sessionXpSoFar
+    }
 
     // ── Persist chat session ──
     const now = new Date().toISOString()
