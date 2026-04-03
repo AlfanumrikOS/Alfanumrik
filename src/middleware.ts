@@ -53,16 +53,15 @@ const RATE_LIMIT_WINDOW = 60_000;
 /**
  * Constant-time string comparison to prevent timing attacks on secrets.
  * Works in Edge Runtime (no Node crypto.timingSafeEqual available).
+ * Returns false immediately (but in constant time) when lengths differ.
  */
 function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) {
-    // Compare against `a` to avoid early return leaking length difference timing.
-    // The result is always false but we still do the full comparison.
-    b = a;
-  }
+  // Pre-flag mismatch when lengths differ so result is always false in that case.
+  // Still iterate the full length to prevent timing leaks on length differences.
   let mismatch = a.length === b.length ? 0 : 1;
-  for (let i = 0; i < a.length; i++) {
-    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  const len = Math.max(a.length, b.length);
+  for (let i = 0; i < len; i++) {
+    mismatch |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
   }
   return mismatch === 0;
 }
