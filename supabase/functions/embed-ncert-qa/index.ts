@@ -30,7 +30,7 @@ import { generateEmbedding, getEmbeddingModel } from '../_shared/embeddings.ts'
 // ---------------------------------------------------------------------------
 
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY') || ''
-const CLAUDE_MODEL = 'claude-haiku-4-20250414'
+const CLAUDE_MODEL = 'claude-haiku-4-5-20251001'
 const MAX_CONTENT_CHARS = 6000 // ~1500 tokens of source text per Claude call
 const MAX_BATCH_SIZE = 10
 const DEFAULT_BATCH_SIZE = 3
