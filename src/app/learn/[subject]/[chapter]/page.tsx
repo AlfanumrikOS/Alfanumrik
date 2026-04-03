@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -249,10 +249,20 @@ export default function ChapterDetailPage() {
                   {loading ? (isHi ? 'लोड हो रहा है...' : 'Loading...') : chapterTitle}
                 </h1>
               </div>
-              <p className="text-xs text-gray-500">
-                {isHi ? `कक्षा ${student?.grade || ''} • ${subjectDisplay}` : `Class ${student?.grade || ''} • ${subjectDisplay}`}
-                {' • '}Ch. {chapterNumber}
-              </p>
+              <div className="flex items-center gap-2 mt-0.5">
+                <p className="text-xs text-gray-500">
+                  {isHi ? `कक्षा ${student?.grade || ''} • ${subjectDisplay}` : `Class ${student?.grade || ''} • ${subjectDisplay}`}
+                  {' • '}Ch. {chapterNumber}
+                </p>
+                <span className="text-[9px] font-semibold bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">
+                  NCERT 2025
+                </span>
+                {!loading && dbConcepts.length > 0 && (
+                  <span className="text-[9px] font-medium bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full">
+                    {dbConcepts.length} {isHi ? 'अवधारणाएं' : 'concepts'}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
@@ -314,7 +324,10 @@ export default function ChapterDetailPage() {
             activeConcept={activeConcept}
             setActiveConcept={setActiveConcept}
             subjectCode={subjectCode}
+            subjectDisplay={subjectDisplay}
+            grade={student?.grade || ''}
             chapterTitle={chapterTitle}
+            chapterNumber={chapterNumber}
             router={router}
             studentId={student?.id}
             studyStartTime={studyStartTime}
@@ -359,7 +372,7 @@ interface ConceptBlock {
   formula: string | null;
   diagramRefs: string[];
   matchedMedia?: MediaItem[];
-  embeddedDiagrams: EmbeddedDiagram[]; // Diagrams from RAG chunks with media_url
+  embeddedDiagrams: EmbeddedDiagram[];
   practiceQ: QAQuestion | null;
   learningObjective?: string;
   commonMistakes?: string[];
@@ -560,10 +573,11 @@ function findMediaForRefs(refs: string[], media: MediaItem[]): MediaItem[] {
 }
 
 /* ═══ LEARN TAB — CONCEPT CARDS (one at a time) ═══ */
-function LearnTab({ dbConcepts, chunks, questions, media, isHi, activeConcept, setActiveConcept, subjectCode, chapterTitle, router, studentId, studyStartTime }: {
+function LearnTab({ dbConcepts, chunks, questions, media, isHi, activeConcept, setActiveConcept, subjectCode, subjectDisplay, grade, chapterTitle, chapterNumber, router, studentId, studyStartTime }: {
   dbConcepts: DbConcept[]; chunks: RAGChunk[]; questions: QAQuestion[]; media: MediaItem[]; isHi: boolean;
   activeConcept: number; setActiveConcept: (n: number) => void;
-  subjectCode: string; chapterTitle: string; router: ReturnType<typeof useRouter>;
+  subjectCode: string; subjectDisplay: string; grade: string; chapterTitle: string; chapterNumber: number;
+  router: ReturnType<typeof useRouter>;
   studentId?: string; studyStartTime: number;
 }) {
   const [practiceAnswer, setPracticeAnswer] = useState<number | null>(null);

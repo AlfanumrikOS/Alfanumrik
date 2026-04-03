@@ -22,7 +22,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
-import { generateEmbedding } from '../_shared/embeddings.ts'
+import { fetchRAGContext } from '../_shared/rag-retrieval.ts'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -97,57 +97,6 @@ interface GeneratedAnswer {
   answer_text: string
   answer_methodology: AnswerMethodology
   marks_expected: number
-}
-
-// ---------------------------------------------------------------------------
-// RAG Retrieval
-// ---------------------------------------------------------------------------
-
-async function fetchRAGContext(
-  supabase: ReturnType<typeof createClient>,
-  questionText: string,
-  subject: string,
-  grade: string,
-  chapterNumber?: number | null,
-): Promise<string | null> {
-  try {
-    let queryEmbedding: number[] | null = null
-    try {
-      queryEmbedding = await generateEmbedding(questionText)
-    } catch (embeddingErr) {
-      console.warn(
-        '[generate-answers] Embedding generation failed, falling back to keyword search:',
-        embeddingErr instanceof Error ? embeddingErr.message : String(embeddingErr),
-      )
-    }
-
-    const rpcParams: Record<string, unknown> = {
-      query_text: questionText,
-      p_subject: subject,
-      p_grade: grade,
-      match_count: 5,
-    }
-
-    if (chapterNumber) {
-      rpcParams.p_chapter = String(chapterNumber)
-    }
-
-    if (queryEmbedding) {
-      rpcParams.query_embedding = JSON.stringify(queryEmbedding)
-    }
-
-    const { data, error } = await supabase.rpc('match_rag_chunks', rpcParams)
-    if (error || !data || data.length === 0) return null
-
-    return data
-      .map((c: { content: string; chapter_title?: string }) => {
-        const prefix = c.chapter_title ? `[Chapter: ${c.chapter_title}]\n` : ''
-        return `${prefix}${c.content}`
-      })
-      .join('\n\n---\n\n')
-  } catch {
-    return null
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -538,7 +487,7 @@ async function handlePost(req: Request, origin: string | null): Promise<Response
         question.question_text,
         question.subject,
         question.grade,
-        question.chapter_number,
+        question.chapter_number ? String(question.chapter_number) : null,
       )
 
       // Step 2: Build prompts
