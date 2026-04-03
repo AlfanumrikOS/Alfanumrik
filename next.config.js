@@ -48,6 +48,15 @@ const nextConfig = {
       { protocol: 'https', hostname: '*.supabase.co' },
     ],
   },
+  async redirects() {
+    return [
+      {
+        source: '/quiz',
+        destination: '/foxy',
+        permanent: false,
+      },
+    ];
+  },
   async headers() {
     return [
       {

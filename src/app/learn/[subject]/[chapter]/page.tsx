@@ -575,10 +575,10 @@ function LearnTab({ dbConcepts, chunks, ragDiagrams, questions, isHi, activeConc
             {isHi ? '🦊 फॉक्सी से पूछें' : '🦊 Ask Foxy'}
           </button>
           <button
-            onClick={() => router.push(`/quiz?subject=${subjectCode}&chapter=${chapterNumber}`)}
+            onClick={() => router.push('/foxy')}
             className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
           >
-            {isHi ? '🧠 क्विज़ आज़माएं' : '🧠 Try Quiz'}
+            {isHi ? '🦊 Foxy से पूछें' : '🦊 Ask Foxy'}
           </button>
         </div>
       </div>
@@ -1196,7 +1196,7 @@ function QuizTab({
         {quizOptions.map(opt => (
           <button
             key={opt.count}
-            onClick={() => router.push(`/quiz?subject=${subjectCode}&chapter=${chapterNumber}&count=${opt.count}`)}
+            onClick={() => router.push('/foxy')}
             className="bg-white rounded-lg border border-gray-200 p-4 text-left hover:border-orange-300 hover:shadow-sm transition-all"
           >
             <span className="text-2xl">{opt.icon}</span>

@@ -32,7 +32,7 @@ interface Props {
  * 1. Fix a knowledge gap (highest priority — links to Foxy)
  * 2. Review due cards (if any — links to /review)
  * 3. Continue next topic (links to Foxy learn mode)
- * 4. Take a quiz (links to /quiz)
+ * 4. Take a quiz (links to /foxy)
  *
  * This replaces the passive stats-only dashboard with an action-oriented
  * daily learning path that Indian students can follow like a tuition schedule.
@@ -158,7 +158,7 @@ export default function TodaysPlan({ isHi, dueCount, knowledgeGaps, nextTopics, 
     icon: '⚡',
     label: isHi ? 'आज का क्विज़ लो' : 'Take today\'s quiz',
     sublabel: isHi ? '10 सवाल, 10 मिनट' : '10 questions, 10 minutes',
-    action: () => router.push(`/quiz?subject=${preferredSubject}`),
+    action: () => router.push('/quiz'),
     urgency: 'low',
   });
 
