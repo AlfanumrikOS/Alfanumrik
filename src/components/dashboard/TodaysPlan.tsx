@@ -158,7 +158,7 @@ export default function TodaysPlan({ isHi, dueCount, knowledgeGaps, nextTopics, 
     icon: '⚡',
     label: isHi ? 'आज का क्विज़ लो' : 'Take today\'s quiz',
     sublabel: isHi ? '10 सवाल, 10 मिनट' : '10 questions, 10 minutes',
-    action: () => router.push('/foxy'),
+    action: () => router.push('/quiz'),
     urgency: 'low',
   });
 

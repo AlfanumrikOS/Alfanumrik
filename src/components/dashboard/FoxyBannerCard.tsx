@@ -40,7 +40,7 @@ export default function FoxyBannerCard({
       <FoxyBanner
         message={isHi ? `${streak} दिन की स्ट्रीक बचाओ! 1 क्विज़ लो` : `Save your ${streak}-day streak! Take a quick quiz`}
         actionLabel={isHi ? 'क्विज़ लो' : 'Take Quiz'}
-        onAction={() => router.push('/foxy')}
+        onAction={() => router.push('/quiz?mode=practice')}
         accent="#EF4444"
       />
     );

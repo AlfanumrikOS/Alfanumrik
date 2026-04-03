@@ -92,7 +92,7 @@ export default function DailyChallenge({ isHi, studentName, streak, grade }: Dai
 
       {/* Daily Challenge Card — the hook */}
       <button
-        onClick={() => router.push('/foxy')}
+        onClick={() => router.push('/quiz?mode=practice&challenge=daily')}
         className="w-full text-left rounded-2xl p-4 transition-all active:scale-[0.98]"
         style={{
           background: 'linear-gradient(135deg, #1a120810, #E8581C08)',
