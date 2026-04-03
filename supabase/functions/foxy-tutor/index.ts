@@ -31,7 +31,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
-import { fetchRAGContext } from '../_shared/rag-retrieval.ts'
+import { retrieveChunks } from '../_shared/retrieval.ts'
 
 // ─── Environment ────────────────────────────────────────────────
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY') || ''
@@ -627,11 +627,13 @@ Deno.serve(async (req: Request) => {
     const chapterParts = safeChapters ? safeChapters.split(',').map((c: string) => c.trim()).filter(Boolean) : []
     const ragChapter = chapterParts.length === 1 ? chapterParts[0] : null
 
-    // ── Parallel DB lookups (usage, plan, chat history, RAG, syllabus, mastery, CME) ──
-    // CME fetch runs in parallel — 3s timeout ensures it never stalls chat.
+    // ── Parallel DB lookups (usage, plan, chat history, syllabus, mastery, CME) ──
+    // RAG retrieval runs after CME resolves so we can pass the concept scope in one
+    // call (avoids the previous two-fetch pattern). CME has a 3s timeout so it
+    // never stalls the other DB queries.
     const cmeActionPromise = fetchCMENextAction(student_id, subject)
 
-    const [usageResult, studentResult, sessionResult, ragContextRaw, syllabusContext, masteryContext] = await Promise.all([
+    const [usageResult, studentResult, sessionResult, syllabusContext, masteryContext] = await Promise.all([
       supabase
         .from('student_daily_usage')
         .select('usage_count')
@@ -645,7 +647,6 @@ Deno.serve(async (req: Request) => {
       session_id
         ? supabase.from('chat_sessions').select('messages').eq('id', session_id).eq('student_id', student_id).maybeSingle()
         : Promise.resolve({ data: null }),
-      fetchRAGContext(supabase, message, subject, grade, ragChapter),
       fetchSyllabusContext(supabase, message, subject, grade),
       fetchStudentMastery(supabase, student_id, subject),
     ])
@@ -653,11 +654,23 @@ Deno.serve(async (req: Request) => {
     // Resolve CME (may have already settled while the DB queries ran)
     const cmeAction = await cmeActionPromise
 
-    // Re-fetch RAG with concept scope when CME provided a concept title.
-    // If CME returned null, ragContextRaw is already the correct result.
-    const ragContext = cmeAction?.title
-      ? await fetchRAGContext(supabase, message, subject, grade, ragChapter, null, cmeAction.title)
-      : ragContextRaw
+    // ── Single RAG retrieval with full context (userId + sessionId for trace logging) ──
+    // Use reranking for best quality. Pass the CME concept title when available so
+    // vector search preferentially retrieves chunks for that specific concept.
+    // chapterNumber is preferred; fall back to text-based chapter filter for legacy callers.
+    const ragResult = await retrieveChunks({
+      supabase,
+      query: message,
+      grade,
+      subject,
+      chapterText: ragChapter ?? undefined,
+      concept: cmeAction?.title ?? undefined,
+      useReranking: true,
+      caller: 'foxy-tutor',
+      userId: student_id,
+      sessionId: session_id ?? undefined,
+    })
+    const ragContext = ragResult.contextText || null
 
     const currentCount = usageResult.data?.usage_count ?? 0
     // check_entitlement returns TABLE from student_subscriptions (authoritative).
