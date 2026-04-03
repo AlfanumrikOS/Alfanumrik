@@ -372,8 +372,8 @@ export default function QuizPage() {
         refreshSnapshot();
 
         // Update chapter progress after quiz
-        if (chapter) {
-          updateChapterProgress(selectedSubject!, student!.grade, chapter).catch(() => {});
+        if (selectedChapter) {
+          updateChapterProgress(selectedSubject!, student!.grade, selectedChapter).catch(() => {});
         }
 
         // Save cognitive metrics for this session (fire-and-forget)
