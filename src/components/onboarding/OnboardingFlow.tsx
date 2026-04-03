@@ -173,9 +173,9 @@ export default function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
             )}
 
             <div className="mt-6 space-y-3">
-              <Button variant="primary" size="lg" fullWidth onClick={() => saveAndFinish('/quiz')} disabled={saving}>
+              <Button variant="primary" size="lg" fullWidth onClick={() => saveAndFinish('/foxy')} disabled={saving}>
                 {saving ? (isHi ? 'सेव हो रहा...' : 'Saving...') : (
-                  <>{isHi ? '⚡ पहला क्विज़ लो' : '⚡ Take First Quiz'}</>
+                  <>{isHi ? '🦊 Foxy से शुरू करो' : '🦊 Start with Foxy'}</>
                 )}
               </Button>
               <Button variant="ghost" size="md" fullWidth onClick={() => saveAndFinish('/foxy')} disabled={saving}>

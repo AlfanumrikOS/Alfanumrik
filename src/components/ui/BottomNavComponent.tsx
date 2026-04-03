@@ -16,7 +16,7 @@ const CORE_TABS = [
   { href: '/dashboard', icon: '🏠', activeIcon: '🏠', label: 'Home', labelHi: 'होम' },
   { href: '/learn', icon: '📚', activeIcon: '📚', label: 'Learn', labelHi: 'सीखो' },
   { href: '/foxy', icon: '🦊', activeIcon: '🦊', label: 'Foxy', labelHi: 'फॉक्सी', isFab: true },
-  { href: '/quiz', icon: '⚡', activeIcon: '⚡', label: 'Quiz', labelHi: 'क्विज़' },
+  { href: '/progress', icon: '📈', activeIcon: '📈', label: 'Progress', labelHi: 'प्रगति' },
   { href: '/profile', icon: '👤', activeIcon: '👤', label: 'Me', labelHi: 'मैं' },
 ];
 
@@ -44,7 +44,6 @@ const SIDEBAR_SECTIONS = [
       { href: '/learn', icon: '📚', label: 'Chapters', labelHi: 'अध्याय' },
       { href: '/study-plan', icon: '📅', label: 'Study Plan', labelHi: 'अध्ययन योजना' },
       { href: '/stem-centre', icon: '🔬', label: 'STEM Centre', labelHi: 'स्टेम सेंटर' },
-      { href: '/quiz', icon: '⚡', label: 'Quiz', labelHi: 'क्विज़' },
       { href: '/review', icon: '🔄', label: 'Flashcard Review', labelHi: 'फ्लैशकार्ड रिव्यू' },
     ],
   },

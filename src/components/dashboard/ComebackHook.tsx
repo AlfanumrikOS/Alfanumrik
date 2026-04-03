@@ -26,7 +26,7 @@ export default function ComebackHook({ isHi, lastTopic, almostMastered, dueRevie
   // Priority 1: Streak at risk (most urgent emotional trigger)
   if (streak > 0 && streak <= 2) {
     return (
-      <button onClick={() => router.push('/quiz?mode=practice')} className="w-full text-left rounded-xl p-3 flex items-center gap-3 transition-all active:scale-[0.98]"
+      <button onClick={() => router.push('/foxy')} className="w-full text-left rounded-xl p-3 flex items-center gap-3 transition-all active:scale-[0.98]"
         style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)' }}>
         <span className="text-xl">🔥</span>
         <div className="flex-1">
@@ -46,7 +46,7 @@ export default function ComebackHook({ isHi, lastTopic, almostMastered, dueRevie
   if (almostMastered && almostMastered.mastery >= 70 && almostMastered.mastery < 95) {
     const pct = Math.round(almostMastered.mastery);
     return (
-      <button onClick={() => router.push('/quiz?mode=cognitive')} className="w-full text-left rounded-xl p-3 flex items-center gap-3 transition-all active:scale-[0.98]"
+      <button onClick={() => router.push('/foxy')} className="w-full text-left rounded-xl p-3 flex items-center gap-3 transition-all active:scale-[0.98]"
         style={{ background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.15)' }}>
         <span className="text-xl">🎯</span>
         <div className="flex-1">
