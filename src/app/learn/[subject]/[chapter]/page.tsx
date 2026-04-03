@@ -98,6 +98,7 @@ export default function ChapterDetailPage() {
   const [qaFilter, setQaFilter] = useState<string>('all');
   const [expandedQ, setExpandedQ] = useState<Set<string>>(new Set());
   const [reviewedQs, setReviewedQs] = useState<Set<string>>(new Set());
+  const [activeConcept, setActiveConcept] = useState(0);
 
   const subjectDisplay = SUBJECT_DISPLAY[subjectCode] || subjectCode;
   const subjectMeta = SUBJECT_META.find(s => s.code === subjectCode);
@@ -267,7 +268,19 @@ export default function ChapterDetailPage() {
           </div>
         )}
 
-        {!loading && activeTab === 'learn' && <LearnTab chunks={chunks} media={media} isHi={isHi} />}
+        {!loading && activeTab === 'learn' && (
+          <LearnTab
+            chunks={chunks}
+            questions={questions}
+            media={media}
+            isHi={isHi}
+            activeConcept={activeConcept}
+            setActiveConcept={setActiveConcept}
+            subjectCode={subjectCode}
+            chapterTitle={chapterTitle}
+            router={router}
+          />
+        )}
         {!loading && activeTab === 'qa' && (
           <QATab
             questions={filteredQuestions}
@@ -293,9 +306,155 @@ export default function ChapterDetailPage() {
   );
 }
 
-/* ═══ LEARN TAB ═══ */
-function LearnTab({ chunks, media, isHi }: { chunks: RAGChunk[]; media: MediaItem[]; isHi: boolean }) {
-  if (chunks.length === 0) {
+/* ═══ CONCEPT BLOCK TYPE ═══ */
+interface ConceptBlock {
+  title: string;
+  explanation: string;
+  example: string | null;
+  formula: string | null;
+  diagramRefs: string[];
+  practiceQ: QAQuestion | null;
+}
+
+/** Split RAG chunks into concept blocks. Each block ~2-4 chunks grouped by section headings. */
+function buildConceptBlocks(chunks: RAGChunk[], questions: QAQuestion[], media: MediaItem[]): ConceptBlock[] {
+  if (chunks.length === 0) return [];
+  const blocks: ConceptBlock[] = [];
+  let buf: RAGChunk[] = [];
+  let curTitle = '';
+
+  // Detect headings in chunk text (NCERT sections like "1.1 ...", "2.3.1 ...", or ALL-CAPS lines)
+  const headingRe = /^(?:\d+[\.\d]*\s+[A-Z]|[A-Z][A-Z\s]{4,})/m;
+
+  const flush = () => {
+    if (buf.length === 0) return;
+    const raw = buf.map(c => c.chunk_text).join('\n');
+    // Extract first sentence-like line as title if none
+    const title = curTitle || extractTitle(raw);
+    // Trim explanation to ~400 chars, clean
+    const explanation = trimExplanation(raw, title);
+    // Find example (lines with "Example", "e.g.", "For instance", numbered steps)
+    const example = extractExample(raw);
+    // Find formula (lines with =, →, expressions)
+    const formula = extractFormula(raw);
+    // Match diagram refs from content_media
+    const diagramRefs = matchDiagrams(raw, media);
+    // Pick one practice question for this concept
+    const practiceQ = pickPracticeQuestion(title, questions, blocks.length);
+
+    blocks.push({ title, explanation, example, formula, diagramRefs, practiceQ });
+    buf = [];
+    curTitle = '';
+  };
+
+  for (const chunk of chunks) {
+    const text = chunk.chunk_text || '';
+    const match = text.match(headingRe);
+    // Start new block if heading found and buffer has content
+    if (match && buf.length >= 2) {
+      flush();
+      curTitle = match[0].trim().replace(/\s+/g, ' ').slice(0, 80);
+    }
+    buf.push(chunk);
+    // Also flush if buffer gets large (4+ chunks per concept)
+    if (buf.length >= 4) flush();
+  }
+  flush();
+
+  // If we only got 1 giant block, split it into ~3 equal parts
+  if (blocks.length === 1 && chunks.length >= 6) {
+    const perBlock = Math.ceil(chunks.length / 3);
+    const split: ConceptBlock[] = [];
+    for (let i = 0; i < chunks.length; i += perBlock) {
+      const slice = chunks.slice(i, i + perBlock);
+      const raw = slice.map(c => c.chunk_text).join('\n');
+      split.push({
+        title: extractTitle(raw),
+        explanation: trimExplanation(raw, ''),
+        example: extractExample(raw),
+        formula: extractFormula(raw),
+        diagramRefs: matchDiagrams(raw, media),
+        practiceQ: pickPracticeQuestion('', questions, split.length),
+      });
+    }
+    return split;
+  }
+
+  return blocks;
+}
+
+function extractTitle(raw: string): string {
+  // Try numbered section heading
+  const m = raw.match(/^(\d+[\.\d]*\s+[^\n]{5,60})/m);
+  if (m) return m[1].trim();
+  // Try first line if short
+  const first = raw.split('\n').find(l => l.trim().length > 5 && l.trim().length < 80);
+  return first?.trim() || 'Concept';
+}
+
+function trimExplanation(raw: string, title: string): string {
+  // Remove the title line, then take first ~400 chars of meaningful text
+  let text = raw.replace(title, '').trim();
+  // Remove very short lines (page numbers, headers)
+  const lines = text.split('\n').filter(l => l.trim().length > 20);
+  text = lines.slice(0, 6).join('\n');
+  if (text.length > 500) text = text.slice(0, 497) + '...';
+  return text || raw.slice(0, 300);
+}
+
+function extractExample(raw: string): string | null {
+  // Look for "Example", "For example", "e.g.", activity descriptions
+  const m = raw.match(/(?:Example|For example|e\.g\.|Activity \d|For instance|Consider)[^\n]*(?:\n[^\n]{10,}){0,3}/i);
+  if (m && m[0].length > 30) return m[0].trim().slice(0, 400);
+  return null;
+}
+
+function extractFormula(raw: string): string | null {
+  // Look for lines with = or → that look like formulas
+  const lines = raw.split('\n');
+  for (const line of lines) {
+    const t = line.trim();
+    if (t.length > 8 && t.length < 120 && (/[=→⟶]/.test(t) || /\b[A-Z][a-z]?\d*\s*[+→]/.test(t))) {
+      // Skip if it's a normal sentence
+      if (t.split(' ').length > 12) continue;
+      return t;
+    }
+  }
+  return null;
+}
+
+function matchDiagrams(raw: string, media: MediaItem[]): string[] {
+  const refs: string[] = [];
+  const pattern = /(?:Figure|Fig\.|Table|Activity|Diagram)\s*\d+[\.\d]*/gi;
+  let m;
+  while ((m = pattern.exec(raw)) !== null) {
+    const ref = m[0].trim();
+    if (!refs.includes(ref)) refs.push(ref);
+  }
+  return refs.slice(0, 3); // max 3 per concept
+}
+
+function pickPracticeQuestion(title: string, questions: QAQuestion[], index: number): QAQuestion | null {
+  if (questions.length === 0) return null;
+  // Cycle through questions by index so each concept gets a different one
+  return questions[index % questions.length] || null;
+}
+
+/* ═══ LEARN TAB — CONCEPT CARDS (one at a time) ═══ */
+function LearnTab({ chunks, questions, media, isHi, activeConcept, setActiveConcept, subjectCode, chapterTitle, router }: {
+  chunks: RAGChunk[]; questions: QAQuestion[]; media: MediaItem[]; isHi: boolean;
+  activeConcept: number; setActiveConcept: (n: number) => void;
+  subjectCode: string; chapterTitle: string; router: ReturnType<typeof useRouter>;
+}) {
+  const [practiceAnswer, setPracticeAnswer] = useState<number | null>(null);
+  const [practiceRevealed, setPracticeRevealed] = useState(false);
+
+  const concepts = useMemo(() => buildConceptBlocks(chunks, questions, media), [chunks, questions, media]);
+
+  // Reset practice state when concept changes
+  useEffect(() => { setPracticeAnswer(null); setPracticeRevealed(false); }, [activeConcept]);
+
+  if (concepts.length === 0) {
     return (
       <div className="text-center py-12">
         <p className="text-4xl mb-3">📖</p>
@@ -306,89 +465,185 @@ function LearnTab({ chunks, media, isHi }: { chunks: RAGChunk[]; media: MediaIte
     );
   }
 
-  // Group chunks by topic if available, otherwise render sequentially
-  const grouped = groupChunksByTopic(chunks);
+  const concept = concepts[activeConcept] || concepts[0];
+  const total = concepts.length;
+  const isFirst = activeConcept === 0;
+  const isLast = activeConcept === total - 1;
 
   return (
-    <div className="space-y-4">
-      {/* Chapter overview from first chunk */}
-      {chunks.length > 0 && (
-        <div className="bg-gradient-to-r from-orange-50 to-amber-50 rounded-lg p-4 border border-orange-100">
-          <h2 className="text-sm font-semibold text-orange-800 mb-1">
-            {isHi ? '📖 अध्याय सामग्री' : '📖 Chapter Content'}
-          </h2>
-          <p className="text-xs text-orange-600">
-            {isHi
-              ? `${chunks.length} खंड • NCERT पाठ्यपुस्तक से`
-              : `${chunks.length} sections • From NCERT textbook`}
+    <div className="space-y-3">
+      {/* ── Progress dots ── */}
+      <div className="flex items-center justify-between">
+        <div className="flex gap-1.5">
+          {concepts.map((_, i) => (
+            <button
+              key={i}
+              onClick={() => setActiveConcept(i)}
+              className={`w-2 h-2 rounded-full transition-all ${
+                i === activeConcept ? 'bg-orange-500 w-4' : i < activeConcept ? 'bg-orange-300' : 'bg-gray-200'
+              }`}
+            />
+          ))}
+        </div>
+        <span className="text-[10px] text-gray-400 font-medium">
+          {activeConcept + 1}/{total}
+        </span>
+      </div>
+
+      {/* ── CONCEPT CARD ── */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+
+        {/* Title bar */}
+        <div className="bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-3">
+          <div className="flex items-center gap-2">
+            <span className="bg-white/20 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+              {activeConcept + 1}
+            </span>
+            <h2 className="text-sm font-bold text-white leading-tight">{concept.title}</h2>
+          </div>
+        </div>
+
+        {/* Explanation */}
+        <div className="px-4 py-3 border-b border-gray-100">
+          <h3 className="text-[10px] uppercase font-semibold text-gray-400 mb-1.5 tracking-wide">
+            {isHi ? 'समझें' : 'Understand'}
+          </h3>
+          <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+            {concept.explanation}
           </p>
         </div>
-      )}
 
-      {/* Media / Diagrams section */}
-      {media.length > 0 && (
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">
-            {isHi ? '🖼️ चित्र और आरेख' : '🖼️ Diagrams & Figures'}
-          </h3>
-          <div className="grid grid-cols-2 gap-3">
-            {media.map(m => (
-              <div key={m.id} className="border rounded-lg overflow-hidden">
-                {m.storage_url ? (
-                  <img src={m.storage_url} alt={m.alt_text || m.caption || 'Diagram'} className="w-full" loading="lazy" />
-                ) : (
-                  <div className="bg-gray-100 p-3 text-center text-xs text-gray-500">
-                    {isHi ? 'चित्र उपलब्ध नहीं' : 'Image not available'}
-                  </div>
-                )}
-                {m.caption && (
-                  <p className="text-xs text-gray-600 p-2">{m.caption}</p>
-                )}
-              </div>
-            ))}
+        {/* Formula (if exists) */}
+        {concept.formula && (
+          <div className="px-4 py-2.5 bg-blue-50 border-b border-blue-100">
+            <h3 className="text-[10px] uppercase font-semibold text-blue-500 mb-1 tracking-wide">
+              {isHi ? 'सूत्र' : 'Formula'}
+            </h3>
+            <p className="text-sm font-mono text-blue-800 bg-white/60 rounded px-3 py-1.5 inline-block">
+              {concept.formula}
+            </p>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Content chunks */}
-      {grouped.map((group, gi) => (
-        <div key={gi} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-          {group.topic && (
-            <div className="bg-gray-50 px-4 py-2 border-b border-gray-100">
-              <h3 className="text-sm font-semibold text-gray-700">{group.topic}</h3>
+        {/* Diagram refs */}
+        {concept.diagramRefs.length > 0 && (
+          <div className="px-4 py-2.5 bg-purple-50 border-b border-purple-100">
+            <h3 className="text-[10px] uppercase font-semibold text-purple-500 mb-1.5 tracking-wide">
+              {isHi ? 'चित्र' : 'Diagrams'}
+            </h3>
+            <div className="flex flex-wrap gap-2">
+              {concept.diagramRefs.map((ref, i) => (
+                <span key={i} className="text-xs bg-white border border-purple-200 rounded-lg px-2.5 py-1 text-purple-700">
+                  📊 {ref}
+                </span>
+              ))}
             </div>
-          )}
-          <div className="p-4 space-y-3">
-            {group.chunks.map((chunk) => (
-              <div key={chunk.chunk_id} className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
-                {chunk.chunk_text}
-              </div>
-            ))}
           </div>
+        )}
+
+        {/* Example */}
+        {concept.example && (
+          <div className="px-4 py-3 bg-green-50 border-b border-green-100">
+            <h3 className="text-[10px] uppercase font-semibold text-green-600 mb-1.5 tracking-wide">
+              {isHi ? 'उदाहरण' : 'Example'}
+            </h3>
+            <p className="text-sm text-green-800 leading-relaxed whitespace-pre-wrap">
+              {concept.example}
+            </p>
+          </div>
+        )}
+
+        {/* Practice Question */}
+        {concept.practiceQ && (
+          <div className="px-4 py-3 bg-amber-50">
+            <h3 className="text-[10px] uppercase font-semibold text-amber-600 mb-2 tracking-wide">
+              {isHi ? 'अभ्यास' : 'Quick Check'}
+            </h3>
+            <p className="text-sm font-medium text-gray-800 mb-2">{concept.practiceQ.question_text}</p>
+            {concept.practiceQ.options && (
+              <div className="space-y-1.5">
+                {safeParseOptions(concept.practiceQ.options).map((opt: string, oi: number) => {
+                  const isCorrect = oi === concept.practiceQ!.correct_answer_index;
+                  const isSelected = practiceAnswer === oi;
+                  const showResult = practiceRevealed;
+                  return (
+                    <button
+                      key={oi}
+                      onClick={() => {
+                        if (!practiceRevealed) {
+                          setPracticeAnswer(oi);
+                          setPracticeRevealed(true);
+                        }
+                      }}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-sm border transition-all ${
+                        showResult && isCorrect
+                          ? 'bg-green-100 border-green-400 text-green-800 font-medium'
+                          : showResult && isSelected && !isCorrect
+                          ? 'bg-red-50 border-red-300 text-red-700'
+                          : isSelected
+                          ? 'bg-orange-50 border-orange-300'
+                          : 'bg-white border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <span className="font-mono text-xs mr-2">{String.fromCharCode(65 + oi)})</span>
+                      {opt}
+                      {showResult && isCorrect && <span className="float-right text-green-600">✓</span>}
+                      {showResult && isSelected && !isCorrect && <span className="float-right text-red-500">✗</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {practiceRevealed && concept.practiceQ.explanation && (
+              <p className="text-xs text-gray-600 mt-2 bg-white rounded p-2 border border-gray-100">
+                {concept.practiceQ.explanation}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Foxy hook */}
+        <div className="px-4 py-2.5 border-t border-gray-100">
+          <button
+            onClick={() => {
+              const p = new URLSearchParams({ subject: subjectCode, chapter: chapterTitle, mode: 'doubt', message: `Explain "${concept.title}" in simple words` });
+              router.push(`/foxy?${p.toString()}`);
+            }}
+            className="flex items-center gap-2 text-xs text-orange-600 hover:text-orange-700 font-medium"
+          >
+            <span>🦊</span>
+            {isHi ? 'फॉक्सी से यह समझें' : 'Ask Foxy to explain this'}
+          </button>
         </div>
-      ))}
+      </div>
+
+      {/* ── Navigation buttons ── */}
+      <div className="flex gap-3">
+        <button
+          onClick={() => setActiveConcept(Math.max(0, activeConcept - 1))}
+          disabled={isFirst}
+          className={`flex-1 py-2.5 rounded-lg text-sm font-medium border transition-all ${
+            isFirst
+              ? 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed'
+              : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300 active:scale-[0.98]'
+          }`}
+        >
+          {isHi ? '← पिछला' : '← Previous'}
+        </button>
+        <button
+          onClick={() => setActiveConcept(Math.min(total - 1, activeConcept + 1))}
+          disabled={isLast}
+          className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-all ${
+            isLast
+              ? 'bg-gray-50 text-gray-300 border border-gray-100 cursor-not-allowed'
+              : 'bg-orange-500 text-white hover:bg-orange-600 active:scale-[0.98]'
+          }`}
+        >
+          {isHi ? 'अगला →' : 'Next →'}
+        </button>
+      </div>
     </div>
   );
-}
-
-function groupChunksByTopic(chunks: RAGChunk[]): { topic: string | null; chunks: RAGChunk[] }[] {
-  const groups: { topic: string | null; chunks: RAGChunk[] }[] = [];
-  let currentTopic: string | null = null;
-  let currentGroup: RAGChunk[] = [];
-
-  for (const chunk of chunks) {
-    const topic = chunk.topic || chunk.concept || null;
-    if (topic !== currentTopic && currentGroup.length > 0) {
-      groups.push({ topic: currentTopic, chunks: currentGroup });
-      currentGroup = [];
-    }
-    currentTopic = topic;
-    currentGroup.push(chunk);
-  }
-  if (currentGroup.length > 0) {
-    groups.push({ topic: currentTopic, chunks: currentGroup });
-  }
-  return groups;
 }
 
 /* ═══ Q&A TAB ═══ */
