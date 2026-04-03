@@ -25,6 +25,7 @@ export async function fetchRAGContext(
   subject: string,
   grade: string,
   chapter?: string | null,
+  contentType?: string | null,
 ): Promise<string | null> {
   try {
     // Attempt to generate a query embedding for vector-based retrieval.
@@ -50,6 +51,11 @@ export async function fetchRAGContext(
 
     if (chapter) {
       rpcParams.p_chapter = chapter
+    }
+
+    // Filter by content category (content, diagram, qa) when specified
+    if (contentType) {
+      rpcParams.p_content_type = contentType
     }
 
     // Pass embedding as JSON string when available (Supabase casts to vector type)

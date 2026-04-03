@@ -29,6 +29,23 @@ interface RAGChunk {
   media_url: string | null;
   media_type: string | null;
   media_description: string | null;
+  content_type: string | null;
+}
+
+interface RAGQuestion {
+  chunk_id: string;
+  question_text: string | null;
+  answer_text: string | null;
+  question_type: string | null;
+  ncert_exercise: string | null;
+  marks_expected: number | null;
+  bloom_level: string | null;
+  chunk_text: string;
+  topic: string | null;
+  concept: string | null;
+  chapter_title: string | null;
+  media_url: string | null;
+  page_number: number | null;
 }
 
 interface QAQuestion {
@@ -119,7 +136,8 @@ export default function ChapterDetailPage() {
   const [chunks, setChunks] = useState<RAGChunk[]>([]);
   const [dbConcepts, setDbConcepts] = useState<DbConcept[]>([]);
   const [questions, setQuestions] = useState<QAQuestion[]>([]);
-  const [media, setMedia] = useState<MediaItem[]>([]);
+  const [ragDiagrams, setRagDiagrams] = useState<RAGChunk[]>([]);
+  const [ragQuestions, setRagQuestions] = useState<RAGQuestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [qaFilter, setQaFilter] = useState<string>('all');
@@ -146,55 +164,75 @@ export default function ChapterDetailPage() {
     try {
       const grade = (student.grade || '9').replace('Grade ', '').trim();
 
-      // Load structured concepts (DB), RAG chunks (fallback), Q&A, and media in parallel
-      const [conceptsRes, contentRes, qaRes, mediaRes] = await Promise.all([
+      // RAG-first: load content, diagrams, Q&A from RAG + structured concepts as supplement
+      const [contentRes, diagramRes, ragQaRes, conceptsRes, legacyQaRes] = await Promise.all([
+        // RAG content chunks (primary learning content)
+        supabase.rpc('get_chapter_rag_content', {
+          p_grade: grade,
+          p_subject: subjectCode,
+          p_chapter_number: chapterNumber,
+          p_content_type: 'content',
+        }),
+        // RAG diagram chunks
+        supabase.rpc('get_chapter_rag_content', {
+          p_grade: grade,
+          p_subject: subjectCode,
+          p_chapter_number: chapterNumber,
+          p_content_type: 'diagram',
+        }),
+        // RAG Q&A chunks (NCERT questions embedded)
+        supabase.rpc('get_chapter_qa_from_rag', {
+          p_grade: grade,
+          p_subject: subjectCode,
+          p_chapter_number: chapterNumber,
+        }),
+        // Structured concepts (supplementary, not primary)
         supabase.rpc('get_chapter_concepts', {
           p_grade: grade,
           p_subject: subjectCode,
           p_chapter_number: chapterNumber,
         }),
-        supabase.rpc('get_chapter_rag_content', {
-          p_grade: grade,
-          p_subject: subjectCode,
-          p_chapter_number: chapterNumber,
-        }),
+        // Legacy Q&A fallback (question_bank-based)
         supabase.rpc('get_chapter_qa', {
           p_grade: grade,
           p_subject: subjectCode,
           p_chapter_number: chapterNumber,
         }),
-        supabase
-          .from('content_media')
-          .select('id, caption, alt_text, media_type, storage_url, page_number, source_book')
-          .eq('grade', `Grade ${grade}`)
-          .eq('subject', subjectDisplay)
-          .eq('chapter_number', chapterNumber)
-          .eq('is_active', true)
-          .order('page_number'),
       ]);
 
+      if (contentRes.error) console.error('RAG content error:', contentRes.error.message);
+      if (diagramRes.error) console.error('RAG diagram error:', diagramRes.error.message);
+      if (ragQaRes.error) console.error('RAG Q&A error:', ragQaRes.error.message);
       if (conceptsRes.error) console.error('Concepts error:', conceptsRes.error.message);
-      if (contentRes.error) console.error('Content error:', contentRes.error.message);
-      if (qaRes.error) console.error('QA error:', qaRes.error.message);
 
-      setDbConcepts((conceptsRes.data as DbConcept[]) ?? []);
       setChunks((contentRes.data as RAGChunk[]) ?? []);
-      setQuestions((qaRes.data as QAQuestion[]) ?? []);
-      setMedia((mediaRes.data as MediaItem[]) ?? []);
+      setRagDiagrams((diagramRes.data as RAGChunk[]) ?? []);
+      setRagQuestions((ragQaRes.data as RAGQuestion[]) ?? []);
+      setDbConcepts((conceptsRes.data as DbConcept[]) ?? []);
+      setQuestions((legacyQaRes.data as QAQuestion[]) ?? []);
     } catch (e) {
       console.error('Load chapter error:', e);
       setError(isHi ? 'अध्याय लोड नहीं हो पाया' : 'Could not load chapter');
     }
     setLoading(false);
-  }, [student, subjectCode, chapterNumber, subjectDisplay, isHi]);
+  }, [student, subjectCode, chapterNumber, isHi]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Filtered Q&A questions
+  // Use RAG Q&A as primary, fall back to legacy questions if RAG is empty
+  const useRagQa = ragQuestions.length > 0;
+
+  // Filtered Q&A questions (legacy path)
   const filteredQuestions = useMemo(() => {
     if (qaFilter === 'all') return questions;
     return questions.filter((q: QAQuestion) => q.source_type === qaFilter);
   }, [questions, qaFilter]);
+
+  // Filtered RAG Q&A
+  const filteredRagQuestions = useMemo(() => {
+    if (qaFilter === 'all') return ragQuestions;
+    return ragQuestions.filter((q: RAGQuestion) => q.question_type === qaFilter);
+  }, [ragQuestions, qaFilter]);
 
   // Toggle question expansion
   const toggleQuestion = (id: string) => {
@@ -280,9 +318,9 @@ export default function ChapterDetailPage() {
               >
                 <span className="mr-1">{tab.icon}</span>
                 {isHi ? tab.labelHi : tab.label}
-                {tab.id === 'qa' && questions.length > 0 && (
+                {tab.id === 'qa' && (useRagQa ? ragQuestions.length : questions.length) > 0 && (
                   <span className="ml-1 text-[10px] bg-gray-200 rounded-full px-1.5">
-                    {questions.length}
+                    {useRagQa ? ragQuestions.length : questions.length}
                   </span>
                 )}
               </button>
@@ -318,8 +356,8 @@ export default function ChapterDetailPage() {
           <LearnTab
             dbConcepts={dbConcepts}
             chunks={chunks}
+            ragDiagrams={ragDiagrams}
             questions={questions}
-            media={media}
             isHi={isHi}
             activeConcept={activeConcept}
             setActiveConcept={setActiveConcept}
@@ -335,14 +373,16 @@ export default function ChapterDetailPage() {
         )}
         {!loading && activeTab === 'qa' && (
           <QATab
-            questions={filteredQuestions}
-            allCount={questions.length}
+            questions={useRagQa ? [] : filteredQuestions}
+            ragQuestions={useRagQa ? filteredRagQuestions : []}
+            allCount={useRagQa ? ragQuestions.length : questions.length}
             filter={qaFilter}
             onFilterChange={setQaFilter}
             expanded={expandedQ}
             onToggle={toggleQuestion}
             reviewedCount={reviewedQs.size}
             isHi={isHi}
+            useRagQa={useRagQa}
           />
         )}
         {!loading && activeTab === 'quiz' && (
@@ -371,29 +411,59 @@ interface ConceptBlock {
   example: string | null;
   formula: string | null;
   diagramRefs: string[];
-  matchedMedia?: MediaItem[];
   embeddedDiagrams: EmbeddedDiagram[];
+  matchedMedia: MediaItem[];
   practiceQ: QAQuestion | null;
   learningObjective?: string;
   commonMistakes?: string[];
   examTips?: string[];
 }
 
-/** Convert DB chapter_concepts into ConceptBlocks with real media lookups */
-function dbConceptsToBlocks(concepts: DbConcept[], media: MediaItem[]): ConceptBlock[] {
-  return concepts.map((c, i) => {
-    // Match diagram refs to actual content_media records
-    const matchedMedia = findMediaForRefs(c.diagram_refs || [], media);
+/** Match RAG diagram chunks to a concept by topic/concept name or page proximity.
+ *  Returns at most 3 matches, prioritizing topic match over page proximity. */
+function findRagDiagramsForConcept(concept: DbConcept, diagrams: RAGChunk[]): RAGChunk[] {
+  if (diagrams.length === 0) return [];
+
+  const normalize = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+  const conceptTitle = normalize(concept.title);
+
+  // Score each diagram for relevance to this concept
+  const scored = diagrams.map(d => {
+    let score = 0;
+    // Topic or concept field matches the concept title
+    if (d.topic && normalize(d.topic).includes(conceptTitle)) score += 10;
+    if (d.concept && normalize(d.concept).includes(conceptTitle)) score += 10;
+    // Concept title mentioned in diagram description or chunk text
+    if (d.media_description && normalize(d.media_description).includes(conceptTitle)) score += 5;
+    if (normalize(d.chunk_text).includes(conceptTitle)) score += 3;
+    // Reverse: concept title contains the diagram topic
+    if (d.topic && conceptTitle.includes(normalize(d.topic))) score += 4;
+    return { diagram: d, score };
+  });
+
+  // Return top matches with score > 0, max 3
+  return scored
+    .filter(s => s.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3)
+    .map(s => s.diagram);
+}
+
+/** Convert DB chapter_concepts into ConceptBlocks with RAG diagram matching */
+function dbConceptsToBlocks(concepts: DbConcept[], ragDiagrams: RAGChunk[]): ConceptBlock[] {
+  return concepts.map((c) => {
+    // Match RAG diagram chunks by topic/concept proximity or page number
+    const matchedDiagrams = findRagDiagramsForConcept(c, ragDiagrams);
     return {
       title: c.title,
       explanation: c.explanation,
       example: c.example_content || null,
       formula: c.key_formula || null,
       diagramRefs: (c.diagram_refs || []) as string[],
-      matchedMedia,
-      embeddedDiagrams: matchedMedia
-        .filter(m => m.storage_url)
-        .map(m => ({ url: m.storage_url!, description: m.alt_text || m.caption || '', type: 'diagram' })),
+      embeddedDiagrams: matchedDiagrams
+        .filter((d: RAGChunk) => d.media_url)
+        .map((d: RAGChunk) => ({ url: d.media_url!, description: d.media_description || d.chunk_text.slice(0, 100) || '', type: 'diagram' })),
+      matchedMedia: [] as MediaItem[],
       practiceQ: c.practice_question ? {
         question_id: c.concept_id,
         question_text: c.practice_question,
@@ -461,8 +531,8 @@ function findMediaForRefs(refs: string[], media: MediaItem[]): MediaItem[] {
 }
 
 /* ═══ LEARN TAB — CONCEPT CARDS (one at a time) ═══ */
-function LearnTab({ dbConcepts, chunks, questions, media, isHi, activeConcept, setActiveConcept, subjectCode, subjectDisplay, grade, chapterTitle, chapterNumber, router, studentId, studyStartTime }: {
-  dbConcepts: DbConcept[]; chunks: RAGChunk[]; questions: QAQuestion[]; media: MediaItem[]; isHi: boolean;
+function LearnTab({ dbConcepts, chunks, ragDiagrams, questions, isHi, activeConcept, setActiveConcept, subjectCode, subjectDisplay, grade, chapterTitle, chapterNumber, router, studentId, studyStartTime }: {
+  dbConcepts: DbConcept[]; chunks: RAGChunk[]; ragDiagrams: RAGChunk[]; questions: QAQuestion[]; isHi: boolean;
   activeConcept: number; setActiveConcept: (n: number) => void;
   subjectCode: string; subjectDisplay: string; grade: string; chapterTitle: string; chapterNumber: number;
   router: ReturnType<typeof useRouter>;
@@ -474,9 +544,9 @@ function LearnTab({ dbConcepts, chunks, questions, media, isHi, activeConcept, s
 
   // Use DB concepts — no regex fallback; concepts must come from generate-concepts pipeline
   const concepts = useMemo(() => {
-    if (dbConcepts.length > 0) return dbConceptsToBlocks(dbConcepts, media);
+    if (dbConcepts.length > 0) return dbConceptsToBlocks(dbConcepts, ragDiagrams);
     return []; // No regex fallback — concepts must be generated via generate-concepts pipeline
-  }, [dbConcepts, media]);
+  }, [dbConcepts, ragDiagrams]);
 
   // Reset practice state and track time when concept changes
   useEffect(() => {
@@ -881,9 +951,10 @@ function LearnTab({ dbConcepts, chunks, questions, media, isHi, activeConcept, s
 
 /* ═══ Q&A TAB ═══ */
 function QATab({
-  questions, allCount, filter, onFilterChange, expanded, onToggle, reviewedCount, isHi,
+  questions, ragQuestions, allCount, filter, onFilterChange, expanded, onToggle, reviewedCount, isHi, useRagQa,
 }: {
   questions: QAQuestion[];
+  ragQuestions: RAGQuestion[];
   allCount: number;
   filter: string;
   onFilterChange: (f: string) => void;
@@ -891,11 +962,19 @@ function QATab({
   onToggle: (id: string) => void;
   reviewedCount: number;
   isHi: boolean;
+  useRagQa: boolean;
 }) {
   // Only show filters that have at least 1 question
   const sourceCounts: Record<string, number> = {};
-  for (const q of questions) {
-    sourceCounts[q.source_type] = (sourceCounts[q.source_type] || 0) + 1;
+  if (useRagQa) {
+    for (const q of ragQuestions) {
+      const key = q.question_type || 'practice';
+      sourceCounts[key] = (sourceCounts[key] || 0) + 1;
+    }
+  } else {
+    for (const q of questions) {
+      sourceCounts[q.source_type] = (sourceCounts[q.source_type] || 0) + 1;
+    }
   }
   const allFilters = [
     { id: 'all', label: 'All', labelHi: 'सभी' },
@@ -957,7 +1036,67 @@ function QATab({
 
       {/* Questions list */}
       <div className="space-y-3">
-        {questions.map((q, qi) => {
+        {useRagQa ? ragQuestions.map((q, qi) => {
+          const isExpanded = expanded.has(q.chunk_id);
+          const srcInfo = SOURCE_LABELS[q.question_type || 'practice'] || SOURCE_LABELS.practice;
+
+          return (
+            <div key={q.chunk_id} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+              <button
+                onClick={() => onToggle(q.chunk_id)}
+                className="w-full text-left p-4 hover:bg-gray-50 transition-colors"
+              >
+                <div className="flex items-start gap-3">
+                  <span className="text-xs text-gray-400 font-mono mt-0.5">{qi + 1}.</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-gray-800 font-medium leading-snug">
+                      {q.question_text || q.chunk_text.slice(0, 200)}
+                    </p>
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium ${srcInfo.color}`}>
+                        {srcInfo.icon} {isHi ? srcInfo.labelHi : srcInfo.label}
+                        {q.ncert_exercise && ` (${q.ncert_exercise})`}
+                      </span>
+                      {q.marks_expected && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-600">
+                          {q.marks_expected} {isHi ? 'अंक' : 'marks'}
+                        </span>
+                      )}
+                      {q.bloom_level && (
+                        <span className="text-[10px] text-gray-400 capitalize">{q.bloom_level}</span>
+                      )}
+                    </div>
+                  </div>
+                  <svg
+                    className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                    fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </button>
+              {isExpanded && (
+                <div className="border-t border-gray-100 bg-gray-50 p-4">
+                  {q.answer_text && (
+                    <div className="mb-3">
+                      <h4 className="text-xs font-semibold text-gray-500 uppercase mb-1">
+                        {isHi ? 'उत्तर' : 'Answer'}
+                      </h4>
+                      <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+                        {q.answer_text}
+                      </div>
+                    </div>
+                  )}
+                  {q.topic && (
+                    <span className="inline-block text-[10px] bg-blue-50 text-blue-600 rounded px-2 py-0.5">
+                      {q.topic}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        }) : questions.map((q, qi) => {
           const isExpanded = expanded.has(q.question_id);
           const srcInfo = SOURCE_LABELS[q.source_type] || SOURCE_LABELS.practice;
           const boardInfo = q.board_relevance ? BOARD_LABELS[q.board_relevance] : null;
