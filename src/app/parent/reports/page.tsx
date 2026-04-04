@@ -779,14 +779,14 @@ function MonthlyReportSection({ guardianId, studentId, studentName, isHi = false
                 marginBottom: 10,
                 border: '1px solid #FECACA',
               }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#DC2626', marginBottom: 6 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--danger)', marginBottom: 6 }}>
                   {'\u26A0\uFE0F'} {t(isHi, 'Needs Attention', 'ध्यान देने की ज़रूरत')}
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {monthlyData.weakChapters.map((ch: string, i: number) => (
                     <span key={i} style={{
                       fontSize: 11, padding: '3px 10px', borderRadius: 12,
-                      backgroundColor: '#FEE2E2', color: '#DC2626', fontWeight: 600,
+                      backgroundColor: 'var(--danger-light)', color: 'var(--danger)', fontWeight: 600,
                     }}>
                       {ch}
                     </span>

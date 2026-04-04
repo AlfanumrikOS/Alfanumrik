@@ -6,5 +6,5 @@ export const metadata: Metadata = {
 };
 
 export default function ParentLayout({ children }: { children: React.ReactNode }) {
-  return children;
+  return <div className="parent-portal">{children}</div>;
 }
