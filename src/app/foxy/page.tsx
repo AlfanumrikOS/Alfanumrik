@@ -897,7 +897,7 @@ export default function FoxyPage() {
               <div className="flex gap-2.5 items-center mb-4">
                 <div className="w-8 h-8 rounded-full flex items-center justify-center text-base shrink-0" style={{ background: 'linear-gradient(135deg, #E8590C, #F59E0B)', animation: 'pulse 1s infinite' }}>{FOXY_FACES.thinking}</div>
                 <div className="px-4 py-3 rounded-2xl rounded-bl-sm flex items-center gap-1.5" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
-                  {[0, 1, 2].map(i => <div key={i} className="w-2 h-2 rounded-full" style={{ background: cfg.color, animation: `pulse 1s infinite ${i * 0.2}s`, opacity: 0.5 }} />)}
+                  {[0, 1, 2].map(i => <div key={i} className="w-2 h-2 rounded-full typing-dot" style={{ background: cfg.color, opacity: 0.6 }} />)}
                   <span className="text-xs text-[var(--text-3)] ml-1.5">Foxy is thinking...</span>
                 </div>
               </div>

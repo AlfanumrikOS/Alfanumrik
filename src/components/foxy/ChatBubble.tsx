@@ -40,7 +40,7 @@ export function ChatBubble({
   const time = new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   return (
-    <div className="mb-4 w-full animate-fade-in">
+    <div className="mb-4 w-full animate-slide-up">
       {/* Header row */}
       <div className="flex items-center gap-2 mb-1.5">
         {isTutor ? (
@@ -84,7 +84,7 @@ export function ChatBubble({
           background: isTutor ? 'var(--surface-1)' : `${color}08`,
           color: 'var(--text-1)',
           border: isTutor
-            ? reported ? '1.5px solid #EF444440' : '1px solid var(--border)'
+            ? reported ? '1.5px solid color-mix(in srgb, var(--danger) 25%, transparent)' : '1px solid var(--border)'
             : `1.5px solid ${color}20`,
         }}
       >
@@ -101,9 +101,9 @@ export function ChatBubble({
             aria-pressed={feedback === 'up'}
             className="px-2 py-1 rounded-lg text-[11px] transition-all active:scale-90"
             style={{
-              background: feedback === 'up' ? '#16A34A18' : 'transparent',
-              color: feedback === 'up' ? '#16A34A' : 'var(--text-3)',
-              border: feedback === 'up' ? '1px solid #16A34A30' : '1px solid transparent',
+              background: feedback === 'up' ? 'color-mix(in srgb, var(--success) 10%, transparent)' : 'transparent',
+              color: feedback === 'up' ? 'var(--success)' : 'var(--text-3)',
+              border: feedback === 'up' ? '1px solid color-mix(in srgb, var(--success) 20%, transparent)' : '1px solid transparent',
             }}
           >
             👍
@@ -116,9 +116,9 @@ export function ChatBubble({
             aria-pressed={feedback === 'down'}
             className="px-2 py-1 rounded-lg text-[11px] transition-all active:scale-90"
             style={{
-              background: feedback === 'down' ? '#EF444418' : 'transparent',
-              color: feedback === 'down' ? '#EF4444' : 'var(--text-3)',
-              border: feedback === 'down' ? '1px solid #EF444430' : '1px solid transparent',
+              background: feedback === 'down' ? 'color-mix(in srgb, var(--danger) 10%, transparent)' : 'transparent',
+              color: feedback === 'down' ? 'var(--danger)' : 'var(--text-3)',
+              border: feedback === 'down' ? '1px solid color-mix(in srgb, var(--danger) 20%, transparent)' : '1px solid transparent',
             }}
           >
             👎
@@ -135,7 +135,7 @@ export function ChatBubble({
               ⚠️ Report
             </button>
           ) : (
-            <span className="px-2 py-1 text-[10px] font-semibold" style={{ color: '#EF4444' }}>
+            <span className="px-2 py-1 text-[10px] font-semibold" style={{ color: 'var(--danger)' }}>
               ✓ Reported
             </span>
           )}

@@ -12,8 +12,8 @@ import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 
 /* ── Helpers ── */
 const SEVERITY_COLORS: Record<string, string> = {
-  critical: '#DC2626',
-  high: '#F59E0B',
+  critical: 'var(--mastery-low)',
+  high: 'var(--mastery-mid)',
   medium: '#3B82F6',
   low: '#6B7280',
 };
@@ -125,7 +125,7 @@ function SessionMetricCard({ session, isHi }: { session: CognitiveSessionMetrics
         </span>
         <div className="flex items-center gap-2">
           {session.fatigue_detected && (
-            <Badge color="#EF4444" size="sm">{isHi ? 'थकान' : 'Low Energy'}</Badge>
+            <Badge color="var(--mastery-low)" size="sm">{isHi ? 'थकान' : 'Low Energy'}</Badge>
           )}
           {dur != null && (
             <span className="text-[10px] text-[var(--text-3)]">{dur}m</span>
@@ -145,7 +145,7 @@ function SessionMetricCard({ session, isHi }: { session: CognitiveSessionMetrics
               className="h-full rounded-full"
               style={{
                 width: `${zpdAcc}%`,
-                background: zpdAcc >= 70 ? 'var(--green)' : zpdAcc >= 40 ? 'var(--orange)' : '#EF4444',
+                background: zpdAcc >= 70 ? 'var(--mastery-high)' : zpdAcc >= 40 ? 'var(--mastery-mid)' : 'var(--mastery-low)',
               }}
             />
           </div>
@@ -155,9 +155,9 @@ function SessionMetricCard({ session, isHi }: { session: CognitiveSessionMetrics
       {/* ZPD Distribution */}
       {(session.questions_in_zpd ?? 0) + (session.questions_too_easy ?? 0) + (session.questions_too_hard ?? 0) > 0 && (
         <div className="flex gap-0.5">
-          {session.questions_in_zpd ? <div className="rounded-sm text-center text-[9px] font-bold text-white px-1" style={{ background: '#16A34A', minWidth: 16 }} title={`In ZPD: ${session.questions_in_zpd}`}>{session.questions_in_zpd}</div> : null}
+          {session.questions_in_zpd ? <div className="rounded-sm text-center text-[9px] font-bold text-white px-1" style={{ background: 'var(--mastery-high)', minWidth: 16 }} title={`In ZPD: ${session.questions_in_zpd}`}>{session.questions_in_zpd}</div> : null}
           {session.questions_too_easy ? <div className="rounded-sm text-center text-[9px] font-bold text-white px-1" style={{ background: '#3B82F6', minWidth: 16 }} title={`Too Easy: ${session.questions_too_easy}`}>{session.questions_too_easy}</div> : null}
-          {session.questions_too_hard ? <div className="rounded-sm text-center text-[9px] font-bold text-white px-1" style={{ background: '#EF4444', minWidth: 16 }} title={`Too Hard: ${session.questions_too_hard}`}>{session.questions_too_hard}</div> : null}
+          {session.questions_too_hard ? <div className="rounded-sm text-center text-[9px] font-bold text-white px-1" style={{ background: 'var(--mastery-low)', minWidth: 16 }} title={`Too Hard: ${session.questions_too_hard}`}>{session.questions_too_hard}</div> : null}
         </div>
       )}
     </Card>
@@ -346,11 +346,11 @@ export default function ProgressPage() {
             ) : (
               <>
                 {/* ═══ MASTERY HERO — overall accuracy ring + key stats ═══ */}
-                <Card className="!p-6">
+                <Card className="!p-6 animate-slide-up">
                   <div className="flex items-center gap-5">
                     <MasteryRing value={accuracy} size={80} strokeWidth={6}>
                       <div className="text-center">
-                        <div className="text-lg font-bold" style={{ color: accuracy >= 70 ? 'var(--green)' : accuracy >= 40 ? 'var(--orange)' : '#DC2626' }}>{accuracy}%</div>
+                        <div className="text-lg font-bold" style={{ color: accuracy >= 70 ? 'var(--mastery-high)' : accuracy >= 40 ? 'var(--mastery-mid)' : 'var(--mastery-low)' }}>{accuracy}%</div>
                       </div>
                     </MasteryRing>
                     <div className="flex-1">

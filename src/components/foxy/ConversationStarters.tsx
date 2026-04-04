@@ -97,7 +97,8 @@ export function ConversationStarters({ subject, language, topicTitle, onSelect }
         <button
           key={i}
           onClick={() => onSelect(language === 'hi' ? s.textHi : s.text)}
-          className="foxy-starter-chip"
+          className="foxy-starter-chip animate-slide-up"
+          style={{ animationDelay: `${i * 60}ms` }}
           aria-label={language === 'hi' ? s.textHi : s.text}
         >
           <span className="mr-1" aria-hidden="true">{s.icon}</span>

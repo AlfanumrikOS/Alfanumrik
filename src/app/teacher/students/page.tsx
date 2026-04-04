@@ -56,7 +56,7 @@ interface ClassData {
 }
 
 /* ─── Helpers ─── */
-const AVATAR_COLORS = ['#2563EB', '#7C3AED', '#059669', '#D97706', '#DC2626', '#0891B2', '#DB2777', '#4F46E5'];
+const AVATAR_COLORS = ['#2563EB', '#7C3AED', '#059669', '#D97706', '#F43F5E', '#0891B2', '#DB2777', '#4F46E5'];
 
 function avatarColor(name: string): string {
   let hash = 0;
@@ -67,7 +67,7 @@ function avatarColor(name: string): string {
 function accuracyColor(pct: number): string {
   if (pct > 80) return '#059669';
   if (pct >= 50) return '#D97706';
-  return '#DC2626';
+  return 'var(--mastery-low)';
 }
 
 /* ─── Student Card ─── */
@@ -126,7 +126,7 @@ function StudentCard({
       style={{
         backgroundColor: '#0F172A',
         borderRadius: 14,
-        border: isStruggling ? '1px solid #DC262666' : needsAttention ? '1px solid #D9770644' : '1px solid #1E293B',
+        border: isStruggling ? '1px solid color-mix(in srgb, var(--mastery-low) 40%, transparent)' : needsAttention ? '1px solid #D9770644' : '1px solid #1E293B',
         overflow: 'hidden',
         transition: 'all 0.3s ease',
         position: 'relative',
@@ -135,14 +135,14 @@ function StudentCard({
       {/* Struggling student indicator */}
       {isStruggling && (
         <div style={{
-          backgroundColor: '#DC262620',
-          borderBottom: '1px solid #DC262633',
+          backgroundColor: 'color-mix(in srgb, var(--mastery-low) 12%, transparent)',
+          borderBottom: '1px solid color-mix(in srgb, var(--mastery-low) 20%, transparent)',
           padding: '6px 18px',
           display: 'flex',
           alignItems: 'center',
           gap: 6,
         }}>
-          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4, backgroundColor: '#DC2626', color: '#fff', textTransform: 'uppercase' }}>{tt(isHi, 'Needs help', 'मदद चाहिए')}</span>
+          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4, backgroundColor: 'var(--mastery-low)', color: '#fff', textTransform: 'uppercase' }}>{tt(isHi, 'Needs help', 'मदद चाहिए')}</span>
           <span style={{ fontSize: 11, color: '#FCA5A5' }}>{tt(isHi, 'Low mastery and accuracy — consider targeted revision', 'कम मास्टरी और सटीकता — लक्षित रिवीज़न पर विचार करें')}</span>
         </div>
       )}
@@ -168,7 +168,7 @@ function StudentCard({
               width: 44,
               height: 44,
               borderRadius: '50%',
-              backgroundColor: isStruggling ? '#DC2626' : avatarColor(student.name),
+              backgroundColor: isStruggling ? 'var(--mastery-low)' : avatarColor(student.name),
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -564,7 +564,7 @@ export default function TeacherStudentsPage() {
         <div
           style={{
             backgroundColor: '#1C1017',
-            border: '1px solid #DC2626',
+            border: '1px solid var(--danger)',
             borderRadius: 10,
             padding: '14px 18px',
             marginBottom: 16,
@@ -578,7 +578,7 @@ export default function TeacherStudentsPage() {
             onClick={load}
             style={{
               padding: '6px 14px',
-              backgroundColor: '#DC2626',
+              backgroundColor: 'var(--mastery-low)',
               color: '#fff',
               border: 'none',
               borderRadius: 6,
@@ -658,8 +658,8 @@ export default function TeacherStudentsPage() {
               onClick={() => setFilterStruggling(!filterStruggling)}
               style={{
                 padding: '11px 16px',
-                backgroundColor: filterStruggling ? '#DC2626' : '#0F172A',
-                border: filterStruggling ? '1px solid #DC2626' : '1px solid #DC262666',
+                backgroundColor: filterStruggling ? 'var(--mastery-low)' : '#0F172A',
+                border: filterStruggling ? '1px solid var(--mastery-low)' : '1px solid color-mix(in srgb, var(--mastery-low) 40%, transparent)',
                 borderRadius: 10,
                 color: filterStruggling ? '#fff' : '#FCA5A5',
                 fontSize: 13,
@@ -683,7 +683,7 @@ export default function TeacherStudentsPage() {
         <div style={{
           backgroundColor: '#0F172A',
           borderRadius: 14,
-          border: '1px solid #DC262633',
+          border: '1px solid color-mix(in srgb, var(--mastery-low) 20%, transparent)',
           padding: '14px 18px',
           marginBottom: 16,
           display: 'flex',
@@ -691,7 +691,7 @@ export default function TeacherStudentsPage() {
           justifyContent: 'space-between',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 4, backgroundColor: '#DC2626', color: '#fff', textTransform: 'uppercase' }}>
+            <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 4, backgroundColor: 'var(--mastery-low)', color: '#fff', textTransform: 'uppercase' }}>
               {tt(isHi, 'Alert', 'अलर्ट')}
             </span>
             <span style={{ fontSize: 14, color: '#FCA5A5' }}>

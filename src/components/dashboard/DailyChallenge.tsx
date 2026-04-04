@@ -67,10 +67,10 @@ export default function DailyChallenge({ isHi, studentName, streak, grade }: Dai
 
   if (completed) {
     return (
-      <div className="rounded-2xl p-4 flex items-center gap-3" style={{ background: 'rgba(22,163,74,0.06)', border: '1px solid rgba(22,163,74,0.15)' }}>
+      <div className="rounded-2xl p-4 flex items-center gap-3" style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.15)' }}>
         <span className="text-2xl">✅</span>
         <div>
-          <div className="text-sm font-bold" style={{ color: '#16A34A' }}>
+          <div className="text-sm font-bold" style={{ color: 'var(--success)' }}>
             {isHi ? 'आज का चैलेंज पूरा!' : 'Daily challenge complete!'}
           </div>
           <div className="text-xs text-[var(--text-3)]">
