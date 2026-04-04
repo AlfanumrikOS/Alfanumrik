@@ -18,9 +18,10 @@ interface QuizSetupProps {
   isHi: boolean;
   initialSubject: string | null;
   initialMode: QuizMode;
+  initialCount?: number;
   initialChapter?: number | null;
   loading: boolean;
-  studentGrade: string;
+  studentGrade?: string;
   onStart: (opts: {
     subject: string;
     difficulty: number | null;
@@ -36,16 +37,17 @@ export default function QuizSetup({
   isHi,
   initialSubject,
   initialMode,
+  initialCount,
   initialChapter = null,
   loading,
-  studentGrade,
+  studentGrade = '',
   onStart,
   onGoBack,
 }: QuizSetupProps) {
   const [quizMode, setQuizMode] = useState<QuizMode>(initialMode);
   const [selectedSubject, setSelectedSubject] = useState<string | null>(initialSubject);
   const [selectedDifficulty, setSelectedDifficulty] = useState<number | null>(null);
-  const [questionCount, setQuestionCount] = useState(10);
+  const [questionCount, setQuestionCount] = useState(initialCount ?? 10);
   const [examTimeLimit, setExamTimeLimit] = useState(180);
   const [selectedChapter, setSelectedChapter] = useState<number | null>(initialChapter);
   // Quick-start: when subject + chapter are pre-filled from context (e.g. from chapter page),
