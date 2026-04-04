@@ -186,7 +186,7 @@ export default function Dashboard() {
               {unreadCount > 0 && (
                 <span
                   className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-white"
-                  style={{ background: '#DC2626', fontSize: 10, lineHeight: 1 }}
+                  style={{ background: 'var(--danger)', fontSize: 10, lineHeight: 1 }}
                 >
                   {unreadCount > 9 ? '9+' : unreadCount}
                 </span>
@@ -587,7 +587,7 @@ export default function Dashboard() {
                         </div>
                       </div>
                       <div className="text-right flex-shrink-0">
-                        <div className="text-lg font-bold" style={{ color: isUrgent ? '#DC2626' : 'var(--orange)', fontFamily: 'var(--font-display)' }}>
+                        <div className="text-lg font-bold" style={{ color: isUrgent ? 'var(--danger)' : 'var(--orange)', fontFamily: 'var(--font-display)' }}>
                           {exam.days_left}
                         </div>
                         <div className="text-[10px] text-[var(--text-3)]">{isHi ? 'दिन' : 'days'}</div>
@@ -625,12 +625,12 @@ export default function Dashboard() {
 
         {/* Knowledge Gaps Alert */}
         {knowledgeGaps.length > 0 && showGapsAlert && (
-          <div className="rounded-2xl p-4 relative" style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)' }}>
+          <div className="rounded-2xl p-4 relative" style={{ background: 'var(--danger-light)', border: '1px solid rgba(244,63,94,0.15)' }}>
             <button onClick={() => setShowGapsAlert(false)} className="absolute top-2 right-3 text-[var(--text-3)] text-sm">✕</button>
             <div className="flex items-start gap-3">
               <span className="text-2xl">🔍</span>
               <div className="flex-1">
-                <div className="font-semibold text-sm" style={{ color: '#DC2626' }}>
+                <div className="font-semibold text-sm" style={{ color: 'var(--danger)' }}>
                   {knowledgeGaps.length} {isHi ? 'ज्ञान अंतराल पाए गए' : 'knowledge gaps found'}
                 </div>
                 <div className="text-xs text-[var(--text-3)] mt-1 space-y-0.5">
