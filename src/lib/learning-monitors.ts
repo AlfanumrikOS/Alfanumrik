@@ -20,6 +20,7 @@
 
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { XP_RULES } from '@/lib/xp-rules';
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -290,7 +291,7 @@ async function monitorFoxyContentSync(config: MonitorConfig): Promise<MonitorRes
 // ── Monitor 4: XP Inflation ─────────────────────────────────────
 
 /**
- * Check quiz_sessions for students hitting the daily XP cap (200)
+ * Check quiz_sessions for students hitting the daily XP cap (XP_RULES.quiz_daily_cap)
  * every day for 7+ consecutive days. Count such students vs total active.
  */
 async function monitorXpInflation(config: MonitorConfig): Promise<MonitorResult> {
@@ -329,10 +330,10 @@ async function monitorXpInflation(config: MonitorConfig): Promise<MonitorResult>
       studentDayXp[studentId][day] = (studentDayXp[studentId][day] || 0) + xp;
     }
 
-    // Count students who hit 200 XP cap on 7+ distinct days
+    // Count students who hit XP cap on 7+ distinct days
     let capHitters = 0;
     for (const [, dayMap] of Object.entries(studentDayXp)) {
-      const daysAtCap = Object.values(dayMap).filter((xp) => xp >= 200).length;
+      const daysAtCap = Object.values(dayMap).filter((xp) => xp >= XP_RULES.quiz_daily_cap).length;
       if (daysAtCap >= 7) capHitters++;
     }
 
