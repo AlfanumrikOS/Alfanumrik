@@ -23,25 +23,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Max 500 records per bulk action' }, { status: 400 });
     }
 
-    let affected = 0;
-
     switch (action) {
       case 'suspend': {
-        const { count } = await supabase
+        const { error } = await supabase
           .from('students')
           .update({ is_active: false, account_status: 'suspended' })
-          .in('id', ids)
-          .select('id', { count: 'exact', head: true });
-        affected = count ?? 0;
+          .in('id', ids);
+        if (error) throw error;
         break;
       }
       case 'restore': {
-        const { count } = await supabase
+        const { error } = await supabase
           .from('students')
           .update({ is_active: true, account_status: 'active' })
-          .in('id', ids)
-          .select('id', { count: 'exact', head: true });
-        affected = count ?? 0;
+          .in('id', ids);
+        if (error) throw error;
         break;
       }
       case 'upgrade_plan': {
@@ -49,21 +45,19 @@ export async function POST(request: NextRequest) {
         if (!['free', 'basic', 'premium'].includes(plan)) {
           return NextResponse.json({ error: 'Invalid plan' }, { status: 400 });
         }
-        const { count } = await supabase
+        const { error } = await supabase
           .from('students')
           .update({ subscription_plan: plan })
-          .in('id', ids)
-          .select('id', { count: 'exact', head: true });
-        affected = count ?? 0;
+          .in('id', ids);
+        if (error) throw error;
         break;
       }
       case 'downgrade_plan': {
-        const { count } = await supabase
+        const { error } = await supabase
           .from('students')
           .update({ subscription_plan: 'free' })
-          .in('id', ids)
-          .select('id', { count: 'exact', head: true });
-        affected = count ?? 0;
+          .in('id', ids);
+        if (error) throw error;
         break;
       }
       default:
@@ -73,11 +67,11 @@ export async function POST(request: NextRequest) {
     await logAdminAction({
       action: `bulk_${action}`,
       entity_type: 'students',
-      details: { ids_count: ids.length, affected, ...extras },
+      details: { ids_count: ids.length, ...extras },
       ip,
     });
 
-    return NextResponse.json({ success: true, action, affected });
+    return NextResponse.json({ success: true, action, affected: ids.length });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 });
   }
