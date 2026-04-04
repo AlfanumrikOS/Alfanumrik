@@ -175,6 +175,31 @@ function getBloomLevelsAtOrAbove(minLevel: string): string[] {
 }
 
 /**
+ * Map a mastery_level to a maximum allowed Bloom's taxonomy level (ceiling).
+ * Students with low mastery are capped at lower-order Bloom levels to enforce
+ * scaffolded progression:
+ *   mastery < 0.3  → only 'remember', 'understand'
+ *   mastery < 0.5  → up to 'apply'
+ *   mastery < 0.7  → up to 'analyze'
+ *   mastery < 0.85 → up to 'evaluate'
+ *   else           → all levels allowed
+ */
+function masteryToMaxBloomLevel(mastery: number): string {
+  if (mastery < 0.3) return 'understand'
+  if (mastery < 0.5) return 'apply'
+  if (mastery < 0.7) return 'analyze'
+  if (mastery < 0.85) return 'evaluate'
+  return 'create'
+}
+
+/** Return all Bloom levels from 'remember' up to and including the given maxLevel. */
+function getBloomLevelsUpTo(maxLevel: string): string[] {
+  const idx = BLOOM_LEVELS_ORDERED.indexOf(maxLevel)
+  if (idx < 0) return BLOOM_LEVELS_ORDERED
+  return BLOOM_LEVELS_ORDERED.slice(0, idx + 1)
+}
+
+/**
  * Prevent adjacent questions on the same topic.
  * Simple greedy reordering: if next question is same topic, swap with a later one.
  */
@@ -212,6 +237,140 @@ async function resolveSubjectId(
     return null
   }
   return (data as SubjectRow | null)?.id ?? null
+}
+
+// ─── Due review question selection (spaced repetition) ───────────────────────
+
+/**
+ * Fetch questions for concepts that are due for spaced-repetition review.
+ * Queries concept_mastery WHERE next_review_at <= now(), ordered by lowest
+ * current retention first (highest priority for review).
+ *
+ * Returns up to `maxCount` questions (caller should pass ~50% of total count).
+ * Each returned question is tagged with `_source: 'review'` for metadata.
+ */
+async function fetchDueReviewQuestions(
+  supabase: SupabaseClient,
+  studentId: string,
+  subjectId: string,
+  subjectCode: string,
+  grade: string,
+  maxCount: number,
+  excludeIds: Set<string>,
+): Promise<{ questions: QuestionRow[]; reviewTopicCount: number }> {
+  if (maxCount <= 0) return { questions: [], reviewTopicCount: 0 }
+
+  const now = new Date().toISOString()
+
+  // 1. Find concepts due for review, ordered by lowest retention (most urgent).
+  //    current_retention may be NULL for topics that haven't decayed yet — treat
+  //    those as lowest priority within the due set (NULLS LAST in ascending).
+  const { data: dueRows, error: dueError } = await supabase
+    .from('concept_mastery')
+    .select(`
+      topic_id,
+      mastery_level,
+      current_retention,
+      next_review_at,
+      curriculum_topics!inner(subject_id, chapter_number, concept_tag)
+    `)
+    .eq('student_id', studentId)
+    .eq('curriculum_topics.subject_id', subjectId)
+    .lte('next_review_at', now)
+    .order('current_retention', { ascending: true, nullsFirst: true })
+    .limit(15)
+
+  if (dueError) {
+    console.warn(`fetchDueReviewQuestions mastery fetch: ${dueError.message}`)
+    return { questions: [], reviewTopicCount: 0 }
+  }
+
+  const dueTopics = (dueRows ?? []) as (ConceptMasteryRow & { current_retention: number | null })[]
+  if (dueTopics.length === 0) return { questions: [], reviewTopicCount: 0 }
+
+  const questions: QuestionRow[] = []
+  const usedIds = new Set<string>(excludeIds)
+
+  // Allocate slots per due topic
+  const slotsPerTopic = Math.max(1, Math.floor(maxCount / Math.max(dueTopics.length, 1)))
+  const targetTopics = dueTopics.slice(0, Math.ceil(maxCount / slotsPerTopic))
+
+  for (const topic of targetTopics) {
+    if (questions.length >= maxCount) break
+
+    const chapterNum = topic.curriculum_topics?.chapter_number
+    const conceptTag = topic.curriculum_topics?.concept_tag
+    const targetDifficulty = masteryToDifficulty(topic.mastery_level)
+    // Enforce Bloom ceiling for review questions too
+    const maxBloom = masteryToMaxBloomLevel(topic.mastery_level)
+    const allowedBlooms = getBloomLevelsUpTo(maxBloom)
+    const need = Math.min(slotsPerTopic, maxCount - questions.length)
+
+    const exclusionList = usedIds.size > 0
+      ? [...usedIds].join(',')
+      : '00000000-0000-0000-0000-000000000000'
+
+    let query = supabase
+      .from('question_bank')
+      .select('*')
+      .eq('subject', subjectCode)
+      .eq('grade', grade)
+      .eq('is_active', true)
+      .not('id', 'in', `(${exclusionList})`)
+      .eq('difficulty', targetDifficulty)
+      .in('bloom_level', allowedBlooms)
+
+    if (chapterNum != null) {
+      query = query.eq('chapter_number', chapterNum)
+    }
+    if (conceptTag) {
+      query = query.eq('concept_tag', conceptTag)
+    }
+
+    let { data: qs } = await query.limit(need * 2)
+
+    // Fallback: relax concept_tag
+    if ((!qs || qs.length < need) && conceptTag && chapterNum != null) {
+      const fb = await supabase
+        .from('question_bank')
+        .select('*')
+        .eq('subject', subjectCode)
+        .eq('grade', grade)
+        .eq('is_active', true)
+        .not('id', 'in', `(${exclusionList})`)
+        .eq('chapter_number', chapterNum)
+        .eq('difficulty', targetDifficulty)
+        .in('bloom_level', allowedBlooms)
+        .limit(need * 2)
+      qs = fb.data ?? qs ?? []
+    }
+
+    // Fallback: relax bloom constraint
+    if (!qs || qs.length < need) {
+      let fb2Query = supabase
+        .from('question_bank')
+        .select('*')
+        .eq('subject', subjectCode)
+        .eq('grade', grade)
+        .eq('is_active', true)
+        .not('id', 'in', `(${exclusionList})`)
+        .eq('difficulty', targetDifficulty)
+      if (chapterNum != null) {
+        fb2Query = fb2Query.eq('chapter_number', chapterNum)
+      }
+      const fb2 = await fb2Query.limit(need * 2)
+      qs = fb2.data ?? qs ?? []
+    }
+
+    for (const q of shuffle((qs ?? []) as QuestionRow[]).slice(0, need)) {
+      if (!usedIds.has(q.id)) {
+        questions.push(q)
+        usedIds.add(q.id)
+      }
+    }
+  }
+
+  return { questions, reviewTopicCount: targetTopics.length }
 }
 
 // ─── Adaptive question selection ──────────────────────────────────────────────
@@ -277,8 +436,10 @@ async function selectAdaptiveQuestions(
     const chapterNum = topic.curriculum_topics?.chapter_number
     const conceptTag = topic.curriculum_topics?.concept_tag
     const targetDifficulty = masteryToDifficulty(topic.mastery_level)
-    const minBloom = masteryToMinBloomLevel(topic.mastery_level)
-    const allowedBlooms = getBloomLevelsAtOrAbove(minBloom)
+    // Use ceiling-based Bloom enforcement: students with low mastery
+    // are capped at lower-order levels (scaffolded progression)
+    const maxBloom = masteryToMaxBloomLevel(topic.mastery_level)
+    const allowedBlooms = getBloomLevelsUpTo(maxBloom)
     const need = Math.min(slotsPerTopic, count - questions.length)
 
     // Build exclusion list for Supabase .not('id','in',...) filter
@@ -706,28 +867,58 @@ Deno.serve(async (req) => {
     // Fetch already-seen question IDs for dedup
     const seenIds = await fetchSeenQuestionIds(supabase, student_id, subject, grade, chapterNumber)
 
-    // ── Attempt adaptive selection (skip if caller forced a difficulty) ─────
-    let questions: QuestionRow[] = []
+    // ── Step 1: Fetch due review questions (spaced repetition) ───────────────
+    // Review questions fill up to 50% of the requested count.
+    // Only used when difficulty is not forced (adaptive mode).
+    let reviewQuestions: QuestionRow[] = []
+    let reviewTopicCount = 0
+
+    if (difficulty == null) {
+      const reviewSlots = Math.floor(count * 0.5)
+      const review = await fetchDueReviewQuestions(
+        supabase,
+        student_id,
+        subjectId,
+        subject,
+        grade,
+        reviewSlots,
+        seenIds,
+      )
+      reviewQuestions = review.questions
+      reviewTopicCount = review.reviewTopicCount
+    }
+
+    // Track IDs already selected by review to avoid duplicates in adaptive/random
+    const reviewIds = new Set(reviewQuestions.map((q) => q.id))
+    const usedAfterReview = new Set([...seenIds, ...reviewIds])
+
+    // ── Step 2: Adaptive selection for remaining slots ─────────────────────────
+    let adaptiveQuestions: QuestionRow[] = []
     let weakTopicsTargeted = 0
     let strategy: 'adaptive' | 'random' = 'adaptive'
 
-    if (difficulty == null) {
+    const adaptiveSlots = count - reviewQuestions.length
+
+    if (difficulty == null && adaptiveSlots > 0) {
       const adaptive = await selectAdaptiveQuestions(
         supabase,
         student_id,
         subjectId,
         subject,
         grade,
-        count,
-        seenIds,
+        adaptiveSlots,
+        usedAfterReview,
       )
-      questions = adaptive.questions
+      adaptiveQuestions = adaptive.questions
       weakTopicsTargeted = adaptive.weakTopicsTargeted
     }
 
-    // ── Fill from RAG Q&A first, then random question_bank ──
+    // Merge review + adaptive
+    let questions: QuestionRow[] = [...reviewQuestions, ...adaptiveQuestions]
+
+    // ── Step 3: Fill remaining from random question_bank ──────────────────────
     if (questions.length < count) {
-      const usedIds = new Set([...seenIds, ...questions.map((q) => q.id)])
+      const usedIds = new Set([...usedAfterReview, ...adaptiveQuestions.map((q) => q.id)])
 
       // RAG Q&A source (NCERT exercise / intext questions — short_answer type).
       // NOTE: RAG Q&A chunks do not have MCQ options (options: [], correct_answer_index: 0).
@@ -749,7 +940,7 @@ Deno.serve(async (req) => {
 
       // Fill remaining from question_bank (existing random fallback)
       if (questions.length < count) {
-        if (questions.length === 0) strategy = 'random'
+        if (questions.length === 0 && reviewQuestions.length === 0) strategy = 'random'
         const remaining = count - questions.length
 
         const randomQs = await selectRandomQuestions(
@@ -768,7 +959,7 @@ Deno.serve(async (req) => {
     // ── Record shown questions for future dedup ──────────────────────────────
     await recordShownQuestions(supabase, student_id, subject, grade, questions)
 
-    // ── Final shuffle + interleave so adaptive + random are mixed ────────────
+    // ── Final shuffle + interleave so review + adaptive + random are mixed ───
     // Also prevent adjacent questions on the same topic for better retention
     shuffle(questions)
     const interleaved = deduplicateAdjacentTopics(questions)
@@ -780,6 +971,15 @@ Deno.serve(async (req) => {
       bloomDistribution[level] = (bloomDistribution[level] || 0) + 1
     }
 
+    // Compute source counts for response metadata
+    const reviewCount = reviewQuestions.length
+    const adaptiveCount = adaptiveQuestions.length
+    const randomCount = interleaved.length - reviewCount - adaptiveCount
+
+    // Tag review question IDs in the response so the client can display
+    // review indicators (e.g. "Revision question") without changing QuestionRow shape
+    const reviewQuestionIds = [...reviewIds]
+
     return new Response(
       JSON.stringify({
         questions: interleaved,
@@ -788,6 +988,11 @@ Deno.serve(async (req) => {
           weak_topics_targeted: weakTopicsTargeted,
           total_returned: interleaved.length,
           bloom_distribution: bloomDistribution,
+          review_count: reviewCount,
+          adaptive_count: adaptiveCount,
+          random_count: randomCount,
+          review_topic_count: reviewTopicCount,
+          review_question_ids: reviewQuestionIds,
         },
       }),
       {
