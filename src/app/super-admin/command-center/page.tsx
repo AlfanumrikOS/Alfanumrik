@@ -53,6 +53,20 @@ interface Recommendation {
   [key: string]: unknown;
 }
 
+interface QAGateCheck {
+  name: string;
+  passed: boolean;
+  duration_ms?: number;
+  details?: string;
+  tests_passed?: number;
+  tests_total?: number;
+}
+
+interface QAGateResults {
+  passed: boolean;
+  checks: QAGateCheck[];
+}
+
 interface Execution {
   id: string;
   recommendation_id: string;
@@ -62,7 +76,16 @@ interface Execution {
   started_at: string;
   completed_at: string | null;
   staging_url: string | null;
+  test_results?: QAGateResults;
   [key: string]: unknown;
+}
+
+interface MonitorResult {
+  name: string;
+  value: number;
+  threshold: number;
+  breached: boolean;
+  trend: 'improving' | 'degrading' | 'stable';
 }
 
 interface LearningQuality {
@@ -209,6 +232,16 @@ function CommandCenterContent() {
   const [learning, setLearning] = useState<LearningQuality | null>(null);
   const [learningLoading, setLearningLoading] = useState(false);
 
+  // Pipeline action loading states (keyed by execution_id)
+  const [pipelineActionLoading, setPipelineActionLoading] = useState<Record<string, string>>({});
+
+  // Monitor results
+  const [monitorResults, setMonitorResults] = useState<MonitorResult[]>([]);
+  const [monitorsLoading, setMonitorsLoading] = useState(false);
+
+  // Mode persistence loading
+  const [modeLoading, setModeLoading] = useState(false);
+
   // Filters (Issues tab)
   const [filterStatus, setFilterStatus] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
@@ -217,9 +250,10 @@ function CommandCenterContent() {
   // Drawer
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerTitle, setDrawerTitle] = useState('');
-  const [drawerContent, setDrawerContent] = useState<'issue-detail' | 'issue-create' | 'rec-detail'>('issue-detail');
+  const [drawerContent, setDrawerContent] = useState<'issue-detail' | 'issue-create' | 'rec-detail' | 'exec-detail'>('issue-detail');
   const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null);
   const [selectedRec, setSelectedRec] = useState<Recommendation | null>(null);
+  const [selectedExec, setSelectedExec] = useState<Execution | null>(null);
 
   // Create issue form
   const [createForm, setCreateForm] = useState({
@@ -384,6 +418,112 @@ function CommandCenterContent() {
     }
   };
 
+  /* ---- Pipeline actions ---- */
+
+  const handleQAGate = async (executionId: string) => {
+    setPipelineActionLoading(prev => ({ ...prev, [executionId]: 'qa-gate' }));
+    try {
+      const res = await apiFetch('/api/super-admin/improvement/qa-gate', {
+        method: 'POST',
+        body: JSON.stringify({ execution_id: executionId }),
+      });
+      if (!res.ok) throw new Error('QA gate failed');
+      fetchExecutions();
+    } catch {
+      // silent
+    } finally {
+      setPipelineActionLoading(prev => { const n = { ...prev }; delete n[executionId]; return n; });
+    }
+  };
+
+  const handleStage = async (executionId: string) => {
+    setPipelineActionLoading(prev => ({ ...prev, [executionId]: 'stage' }));
+    try {
+      const res = await apiFetch('/api/super-admin/improvement/staging', {
+        method: 'POST',
+        body: JSON.stringify({ execution_id: executionId }),
+      });
+      if (!res.ok) throw new Error('Staging failed');
+      fetchExecutions();
+    } catch {
+      // silent
+    } finally {
+      setPipelineActionLoading(prev => { const n = { ...prev }; delete n[executionId]; return n; });
+    }
+  };
+
+  const handleDeploy = async (executionId: string) => {
+    setPipelineActionLoading(prev => ({ ...prev, [executionId]: 'deploy' }));
+    try {
+      const res = await apiFetch('/api/super-admin/improvement/deploy', {
+        method: 'POST',
+        body: JSON.stringify({ execution_id: executionId }),
+      });
+      if (!res.ok) throw new Error('Deploy failed');
+      fetchExecutions();
+    } catch {
+      // silent
+    } finally {
+      setPipelineActionLoading(prev => { const n = { ...prev }; delete n[executionId]; return n; });
+    }
+  };
+
+  const handleRollback = async (executionId: string) => {
+    const reason = window.prompt('Enter rollback reason:');
+    if (!reason) return;
+    setPipelineActionLoading(prev => ({ ...prev, [executionId]: 'rollback' }));
+    try {
+      const res = await apiFetch('/api/super-admin/improvement/deploy', {
+        method: 'PATCH',
+        body: JSON.stringify({ execution_id: executionId, rollback_reason: reason }),
+      });
+      if (!res.ok) throw new Error('Rollback failed');
+      fetchExecutions();
+    } catch {
+      // silent
+    } finally {
+      setPipelineActionLoading(prev => { const n = { ...prev }; delete n[executionId]; return n; });
+    }
+  };
+
+  /* ---- Learning monitors ---- */
+
+  const handleRunMonitors = async () => {
+    setMonitorsLoading(true);
+    try {
+      const res = await apiFetch('/api/super-admin/improvement/learning-monitors', {
+        method: 'POST',
+      });
+      if (!res.ok) throw new Error('Monitor run failed');
+      const json = await res.json();
+      setMonitorResults(json.data?.results || json.results || []);
+    } catch {
+      setMonitorResults([]);
+    } finally {
+      setMonitorsLoading(false);
+    }
+  };
+
+  /* ---- Mode persistence ---- */
+
+  const handleModeChange = async (newMode: string) => {
+    setModeLoading(true);
+    const prevMode = mode;
+    setMode(newMode);
+    try {
+      await apiFetch('/api/super-admin/feature-flags', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          flags: { improvement_loop_mode: newMode },
+        }),
+      });
+    } catch {
+      setMode(prevMode);
+    } finally {
+      setModeLoading(false);
+    }
+  };
+
   /* ---- Drawer openers ---- */
 
   const openIssueDetail = (issue: Issue) => {
@@ -403,6 +543,13 @@ function CommandCenterContent() {
     setSelectedRec(rec);
     setDrawerContent('rec-detail');
     setDrawerTitle('Recommendation Details');
+    setDrawerOpen(true);
+  };
+
+  const openExecDetail = (exec: Execution) => {
+    setSelectedExec(exec);
+    setDrawerContent('exec-detail');
+    setDrawerTitle('Execution Details');
     setDrawerOpen(true);
   };
 
@@ -474,6 +621,43 @@ function CommandCenterContent() {
           View
         </a>
       ) : '\u2014',
+    },
+    {
+      key: 'id', label: 'Actions',
+      render: (r) => {
+        const busy = pipelineActionLoading[r.id];
+        const btnStyle = (disabled: boolean): React.CSSProperties => ({
+          ...S.secondaryBtn,
+          fontSize: 11,
+          padding: '4px 10px',
+          opacity: disabled ? 0.5 : 1,
+          pointerEvents: disabled ? 'none' : 'auto',
+        });
+        return (
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }} onClick={e => e.stopPropagation()}>
+            {(r.status === 'pending') && (
+              <button style={btnStyle(!!busy)} onClick={() => handleStage(r.id)}>
+                {busy === 'stage' ? 'Staging...' : 'Stage'}
+              </button>
+            )}
+            {(r.status === 'staging' || r.status === 'pending') && (
+              <button style={btnStyle(!!busy)} onClick={() => handleQAGate(r.id)}>
+                {busy === 'qa-gate' ? 'Running...' : 'Run QA Gate'}
+              </button>
+            )}
+            {r.status === 'approved' && (
+              <button style={{ ...btnStyle(!!busy), background: colors.success, color: '#fff', borderColor: colors.success }} onClick={() => handleDeploy(r.id)}>
+                {busy === 'deploy' ? 'Deploying...' : 'Deploy'}
+              </button>
+            )}
+            {r.status === 'deployed' && (
+              <button style={{ ...btnStyle(!!busy), background: colors.danger, color: '#fff', borderColor: colors.danger }} onClick={() => handleRollback(r.id)}>
+                {busy === 'rollback' ? 'Rolling back...' : 'Rollback'}
+              </button>
+            )}
+          </div>
+        );
+      },
     },
   ];
 
@@ -734,6 +918,89 @@ function CommandCenterContent() {
       );
     }
 
+    if (drawerContent === 'exec-detail' && selectedExec) {
+      const exec = selectedExec;
+      const fieldStyle: React.CSSProperties = { marginBottom: 14 };
+      const labelStyle: React.CSSProperties = { fontSize: 11, color: colors.text3, fontWeight: 600, marginBottom: 3, textTransform: 'uppercase', letterSpacing: 0.8 };
+      const valStyle: React.CSSProperties = { fontSize: 13, color: colors.text1 };
+      const qa = exec.test_results;
+      return (
+        <div>
+          <div style={fieldStyle}>
+            <div style={labelStyle}>Recommendation</div>
+            <div style={valStyle}>{exec.recommendation_text || '\u2014'}</div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+            <div>
+              <div style={labelStyle}>Type</div>
+              <div style={valStyle}>{exec.type}</div>
+            </div>
+            <div>
+              <div style={labelStyle}>Status</div>
+              <StatusBadge label={exec.status.replace(/_/g, ' ')} variant={execStatusBadge[exec.status] || 'neutral'} />
+            </div>
+            <div>
+              <div style={labelStyle}>Started</div>
+              <div style={valStyle}>{fmtDate(exec.started_at)}</div>
+            </div>
+            <div>
+              <div style={labelStyle}>Completed</div>
+              <div style={valStyle}>{fmtDate(exec.completed_at)}</div>
+            </div>
+          </div>
+          {exec.staging_url && (
+            <div style={fieldStyle}>
+              <div style={labelStyle}>Staging URL</div>
+              <a href={exec.staging_url} target="_blank" rel="noopener noreferrer" style={{ color: colors.accent, fontSize: 13 }}>
+                {exec.staging_url}
+              </a>
+            </div>
+          )}
+          {qa && (
+            <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 14, marginTop: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <span style={labelStyle}>QA Gate Results</span>
+                <StatusBadge label={qa.passed ? 'PASSED' : 'FAILED'} variant={qa.passed ? 'success' : 'danger'} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {(qa.checks || []).map((check, idx) => (
+                  <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: colors.surface, borderRadius: 6 }}>
+                    <span style={{ fontSize: 13, color: colors.text1, fontWeight: 600 }}>{check.name}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {check.tests_passed !== undefined && check.tests_total !== undefined && (
+                        <span style={{ fontSize: 11, color: colors.text2 }}>{check.tests_passed}/{check.tests_total} passed</span>
+                      )}
+                      {check.duration_ms !== undefined && (
+                        <span style={{ fontSize: 11, color: colors.text3 }}>{(check.duration_ms / 1000).toFixed(1)}s</span>
+                      )}
+                      <StatusBadge label={check.passed ? 'PASS' : 'FAIL'} variant={check.passed ? 'success' : 'danger'} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 14, marginTop: 14, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {exec.status === 'pending' && (
+              <>
+                <button style={S.secondaryBtn} disabled={!!pipelineActionLoading[exec.id]} onClick={() => { handleStage(exec.id); setDrawerOpen(false); }}>Stage</button>
+                <button style={S.secondaryBtn} disabled={!!pipelineActionLoading[exec.id]} onClick={() => { handleQAGate(exec.id); setDrawerOpen(false); }}>Run QA Gate</button>
+              </>
+            )}
+            {exec.status === 'staging' && (
+              <button style={S.secondaryBtn} disabled={!!pipelineActionLoading[exec.id]} onClick={() => { handleQAGate(exec.id); setDrawerOpen(false); }}>Run QA Gate</button>
+            )}
+            {exec.status === 'approved' && (
+              <button style={{ ...S.primaryBtn, background: colors.success }} disabled={!!pipelineActionLoading[exec.id]} onClick={() => { handleDeploy(exec.id); setDrawerOpen(false); }}>Deploy</button>
+            )}
+            {exec.status === 'deployed' && (
+              <button style={S.dangerBtn} disabled={!!pipelineActionLoading[exec.id]} onClick={() => { handleRollback(exec.id); setDrawerOpen(false); }}>Rollback</button>
+            )}
+          </div>
+        </div>
+      );
+    }
+
     return null;
   };
 
@@ -855,6 +1122,7 @@ function CommandCenterContent() {
             columns={execColumns}
             data={executions}
             keyField="id"
+            onRowClick={openExecDetail}
             loading={execLoading}
             emptyMessage="No executions in the pipeline"
           />
@@ -905,6 +1173,51 @@ function CommandCenterContent() {
               <div style={{ ...S.card }}>
                 <h2 style={S.h2}>Bloom&apos;s Distribution</h2>
                 {renderBloomsBar()}
+              </div>
+
+              {/* Monitor Results Section */}
+              <div style={{ ...S.card, marginTop: 24 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                  <h2 style={{ ...S.h2, marginBottom: 0 }}>Learning Monitors</h2>
+                  <button
+                    style={{ ...S.primaryBtn, opacity: monitorsLoading ? 0.5 : 1 }}
+                    disabled={monitorsLoading}
+                    onClick={handleRunMonitors}
+                  >
+                    {monitorsLoading ? 'Running...' : 'Run Monitors'}
+                  </button>
+                </div>
+                {monitorResults.length > 0 ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+                    {monitorResults.map((m, idx) => (
+                      <div key={idx} style={{ ...S.card, background: colors.surface }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: colors.text1, marginBottom: 8 }}>{m.name}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                          <span style={{ fontSize: 12, color: colors.text2 }}>
+                            Value: <strong style={{ color: colors.text1 }}>{m.value.toFixed(1)}%</strong>
+                          </span>
+                          <span style={{ fontSize: 12, color: colors.text2 }}>
+                            Threshold: <strong style={{ color: colors.text1 }}>{m.threshold.toFixed(1)}%</strong>
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <StatusBadge label={m.breached ? 'Breached' : 'OK'} variant={m.breached ? 'danger' : 'success'} />
+                          <span style={{
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: m.trend === 'improving' ? colors.success : m.trend === 'degrading' ? colors.danger : colors.text3,
+                          }}>
+                            {m.trend === 'improving' ? '\u2191' : m.trend === 'degrading' ? '\u2193' : '\u2192'} {m.trend}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ textAlign: 'center', padding: 20, color: colors.text3, fontSize: 13 }}>
+                    Click &quot;Run Monitors&quot; to check learning quality thresholds
+                  </div>
+                )}
               </div>
             </>
           )}
