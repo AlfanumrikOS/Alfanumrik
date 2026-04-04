@@ -46,7 +46,7 @@ interface ClassData {
 const SECTIONS = ['', 'A', 'B', 'C', 'D', 'E'];
 const GRADES = VALID_GRADES;
 
-const AVATAR_COLORS = ['#6366F1', '#2563EB', '#0891B2', '#059669', '#D97706', '#DC2626'];
+const AVATAR_COLORS = ['#6366F1', '#2563EB', '#0891B2', '#059669', '#D97706', '#F43F5E'];
 
 const pageStyle: React.CSSProperties = {
   maxWidth: 1100,
@@ -234,8 +234,8 @@ export default function TeacherClassesPage() {
       {/* Error state */}
       {error && (
         <div style={{
-          backgroundColor: 'rgba(220,38,38,0.1)',
-          border: '1px solid #DC2626',
+          backgroundColor: 'color-mix(in srgb, var(--danger) 10%, transparent)',
+          border: '1px solid var(--danger)',
           borderRadius: 10,
           padding: '12px 16px',
           marginBottom: 16,
@@ -805,7 +805,7 @@ export default function TeacherClassesPage() {
           bottom: 96,
           left: '50%',
           transform: 'translateX(-50%)',
-          backgroundColor: toast.includes('Failed') || toast.includes('error') ? '#DC2626' : '#059669',
+          backgroundColor: toast.includes('Failed') || toast.includes('error') ? 'var(--danger)' : '#059669',
           color: '#fff',
           padding: '10px 24px',
           borderRadius: 10,
