@@ -289,33 +289,83 @@ function UserDrawer({ student, secret, onClose, onRefresh }: {
   const [detail, setDetail] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState('');
+  const [actionMsg, setActionMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
-  useEffect(() => {
+  // Entitlement Inspector state — initialised from current plan
+  const [selectedPlan, setSelectedPlan] = useState(student.subscription_plan || 'free');
+  const [planLoading, setPlanLoading] = useState(false);
+  const [planMsg, setPlanMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const fetchDetail = () => {
+    setLoading(true);
     fetch(`/api/internal/admin/users/${student.id}`, { headers: adminHeaders(secret) })
       .then(r => r.ok ? r.json() : null)
       .then(setDetail)
       .finally(() => setLoading(false));
-  }, [student.id, secret]);
+  };
 
+  useEffect(() => { fetchDetail(); }, [student.id, secret]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Generic action (suspend/restore/reset_streak/reset_xp) — closes drawer, refreshes list
   const doAction = async (action: string, extras?: Record<string, unknown>) => {
     setActionLoading(action);
-    await fetch(`/api/internal/admin/users/${student.id}`, {
-      method: 'PATCH',
-      headers: adminHeaders(secret),
-      body: JSON.stringify({ action, ...extras }),
-    });
+    setActionMsg(null);
+    try {
+      const res = await fetch(`/api/internal/admin/users/${student.id}`, {
+        method: 'PATCH',
+        headers: adminHeaders(secret),
+        body: JSON.stringify({ action, ...extras }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setActionMsg({ ok: false, text: json.error || 'Action failed' });
+      } else {
+        onRefresh();
+        onClose();
+      }
+    } catch {
+      setActionMsg({ ok: false, text: 'Network error' });
+    }
     setActionLoading('');
-    onRefresh();
-    onClose();
   };
+
+  // Entitlement override — keeps drawer open, refreshes detail inline
+  const applyPlanOverride = async () => {
+    setPlanLoading(true);
+    setPlanMsg(null);
+    try {
+      const res = await fetch(`/api/internal/admin/users/${student.id}`, {
+        method: 'PATCH',
+        headers: adminHeaders(secret),
+        body: JSON.stringify({ action: 'upgrade_plan', plan: selectedPlan }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setPlanMsg({ ok: false, text: json.error || 'Override failed' });
+      } else {
+        setPlanMsg({ ok: true, text: `Plan set to "${selectedPlan}" — override applied` });
+        onRefresh(); // refresh user list in background
+        fetchDetail(); // reload drawer detail
+      }
+    } catch {
+      setPlanMsg({ ok: false, text: 'Network error' });
+    }
+    setPlanLoading(false);
+  };
+
+  const planColor = (p: string) => p === 'premium' ? C.yellow : p === 'basic' ? C.blue : C.text3;
+  const currentPlan = student.subscription_plan || 'free';
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 100, display: 'flex', justifyContent: 'flex-end' }} onClick={onClose}>
-      <div style={{ width: 420, background: C.bg2, borderLeft: `1px solid ${C.border}`, height: '100%', overflowY: 'auto', padding: 20 }} onClick={e => e.stopPropagation()}>
+      <div style={{ width: 460, background: C.bg2, borderLeft: `1px solid ${C.border}`, height: '100%', overflowY: 'auto', padding: 20 }} onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
           <div>
             <div style={{ fontSize: 16, fontWeight: 700 }}>{student.name || '—'}</div>
             <div style={{ fontSize: 11, color: C.text3 }}>{student.email}</div>
+            <div style={{ marginTop: 4 }}><span style={S.badge(planColor(currentPlan))}>{currentPlan.toUpperCase()}</span></div>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: C.text2, fontSize: 18, cursor: 'pointer' }}>✕</button>
         </div>
@@ -331,19 +381,73 @@ function UserDrawer({ student, secret, onClose, onRefresh }: {
           {[
             ['Grade', student.grade || '—'],
             ['Board', student.board || '—'],
-            ['Plan', student.subscription_plan || 'free'],
             ['Status', student.is_active ? 'Active' : 'Suspended'],
             ['Joined', new Date(student.created_at).toLocaleDateString()],
+            ['ID', student.id],
           ].map(([k, v]) => (
             <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: `1px solid ${C.border}` }}>
               <span style={{ color: C.text3, fontSize: 11 }}>{k}</span>
-              <span style={{ fontWeight: 600, fontSize: 11 }}>{v}</span>
+              <span style={{ fontWeight: 600, fontSize: 11, color: k === 'ID' ? C.text3 : C.text1, fontFamily: k === 'ID' ? 'monospace' : 'inherit' }}>{v}</span>
             </div>
           ))}
         </div>
 
-        {/* Actions */}
-        <div style={{ ...S.h2, marginBottom: 10 }}>Actions</div>
+        {/* ── Entitlement Inspector ── */}
+        <div style={{ ...S.card, marginBottom: 16, borderTop: `2px solid ${C.yellow}` }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.yellow, textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 12 }}>
+            Entitlement Inspector
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            <span style={{ fontSize: 11, color: C.text3 }}>Current Plan</span>
+            <span style={{ ...S.badge(planColor(currentPlan)), fontSize: 12, padding: '4px 12px' }}>{currentPlan.toUpperCase()}</span>
+          </div>
+
+          <div style={{ fontSize: 11, color: C.text3, marginBottom: 6 }}>Override Plan</div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <select
+              value={selectedPlan}
+              onChange={e => { setSelectedPlan(e.target.value); setPlanMsg(null); }}
+              style={{ ...S.select, flex: 1, fontWeight: 600 }}
+              disabled={planLoading}
+            >
+              <option value="free">Free</option>
+              <option value="basic">Basic</option>
+              <option value="premium">Premium</option>
+            </select>
+            <button
+              onClick={applyPlanOverride}
+              disabled={planLoading || selectedPlan === currentPlan}
+              style={{
+                padding: '7px 16px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: planLoading || selectedPlan === currentPlan ? 'not-allowed' : 'pointer',
+                background: selectedPlan === currentPlan ? `${C.text3}18` : `${C.yellow}20`,
+                color: selectedPlan === currentPlan ? C.text3 : C.yellow,
+                border: `1px solid ${selectedPlan === currentPlan ? C.text3 : C.yellow}40`,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {planLoading ? 'Applying…' : selectedPlan === currentPlan ? 'No change' : `Set ${selectedPlan}`}
+            </button>
+          </div>
+
+          {planMsg && (
+            <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, background: planMsg.ok ? `${C.green}15` : `${C.red}15`, color: planMsg.ok ? C.green : C.red, border: `1px solid ${planMsg.ok ? C.green : C.red}30` }}>
+              {planMsg.ok ? '✓ ' : '✗ '}{planMsg.text}
+            </div>
+          )}
+
+          <div style={{ marginTop: 10, fontSize: 10, color: C.text3 }}>
+            Override takes effect immediately. No payment required. Bypasses billing system.
+          </div>
+        </div>
+
+        {/* Account Actions */}
+        <div style={{ ...S.h2, marginBottom: 10 }}>Account Actions</div>
+        {actionMsg && (
+          <div style={{ marginBottom: 10, padding: '8px 12px', borderRadius: 6, fontSize: 11, background: actionMsg.ok ? `${C.green}15` : `${C.red}15`, color: actionMsg.ok ? C.green : C.red }}>
+            {actionMsg.text}
+          </div>
+        )}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
           {student.is_active ? (
             <button onClick={() => doAction('suspend')} style={S.btnDanger} disabled={!!actionLoading}>
@@ -354,20 +458,17 @@ function UserDrawer({ student, secret, onClose, onRefresh }: {
               {actionLoading === 'restore' ? '...' : '✅ Restore'}
             </button>
           )}
-          <button onClick={() => doAction('upgrade_plan', { plan: 'premium' })} style={S.btn(C.yellow)} disabled={!!actionLoading}>
-            {actionLoading === 'upgrade_plan' ? '...' : '⭐ Upgrade Premium'}
-          </button>
           <button onClick={() => doAction('reset_streak')} style={S.btn(C.blue)} disabled={!!actionLoading}>
-            🔄 Reset Streak
+            {actionLoading === 'reset_streak' ? '...' : '🔄 Reset Streak'}
           </button>
           <button onClick={() => doAction('reset_xp')} style={S.btn(C.purple)} disabled={!!actionLoading}>
-            🎯 Reset XP
+            {actionLoading === 'reset_xp' ? '...' : '🎯 Reset XP'}
           </button>
         </div>
 
         {/* Recent activity */}
         {loading ? (
-          <div style={{ color: C.text3, fontSize: 11 }}>Loading activity...</div>
+          <div style={{ color: C.text3, fontSize: 11 }}>Loading activity…</div>
         ) : detail ? (
           <>
             <div style={S.h2}>Recent Quizzes</div>
@@ -375,10 +476,21 @@ function UserDrawer({ student, secret, onClose, onRefresh }: {
               {((detail.recent_quizzes as Array<Record<string, unknown>>) || []).slice(0, 5).map((q, i) => (
                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: `1px solid ${C.border}`, fontSize: 11 }}>
                   <span style={{ color: C.text2 }}>{q.subject as string}</span>
-                  <span style={{ color: C.orange, fontWeight: 600 }}>{q.score_percent as number ?? 0}%</span>
+                  <span style={{ color: C.orange, fontWeight: 600 }}>{(q.score_percent as number) ?? 0}%</span>
                 </div>
               ))}
-              {(detail.recent_quizzes as unknown[])?.length === 0 && <div style={{ color: C.text3, fontSize: 11 }}>No quizzes yet</div>}
+              {((detail.recent_quizzes as unknown[]) || []).length === 0 && <div style={{ color: C.text3, fontSize: 11 }}>No quizzes yet</div>}
+            </div>
+
+            <div style={S.h2}>Top Mastery</div>
+            <div style={{ marginBottom: 14 }}>
+              {((detail.top_mastery as Array<Record<string, unknown>>) || []).slice(0, 5).map((m, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: `1px solid ${C.border}`, fontSize: 11 }}>
+                  <span style={{ color: C.text2 }}>{m.subject as string}</span>
+                  <span style={{ color: C.green, fontWeight: 600 }}>{Math.round((m.mastery_score as number) ?? 0)}%</span>
+                </div>
+              ))}
+              {((detail.top_mastery as unknown[]) || []).length === 0 && <div style={{ color: C.text3, fontSize: 11 }}>No mastery data</div>}
             </div>
           </>
         ) : null}
