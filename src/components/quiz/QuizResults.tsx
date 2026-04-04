@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, Button, StatCard, BottomNav } from '@/components/ui';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
@@ -71,6 +71,12 @@ export default function QuizResults({
   onGoHome,
 }: QuizResultsProps) {
   const router = useRouter();
+  const [expandedQuestion, setExpandedQuestion] = useState<number | null>(null);
+
+  const parseOptions = (opts: string | string[]): string[] => {
+    if (Array.isArray(opts)) return opts;
+    try { return JSON.parse(opts); } catch { return []; }
+  };
 
   // Play completion sound on mount
   useEffect(() => {
@@ -216,37 +222,130 @@ export default function QuizResults({
             {questions.map((question, idx) => {
               const resp = responses[idx];
               const correct = resp?.is_correct;
+              const isExpanded = expandedQuestion === idx;
+              const opts = parseOptions(question.options);
+              const correctAnswerText = opts[question.correct_answer_index] || '';
+              const questionText = isHi && question.question_hi ? question.question_hi : question.question_text;
+              const explanation = isHi && question.explanation_hi ? question.explanation_hi : question.explanation;
+
               return (
                 <div
                   key={question.id}
-                  className="rounded-xl p-3 flex items-center gap-3"
+                  className="rounded-xl overflow-hidden"
                   style={{
                     background: correct ? 'rgba(22,163,74,0.06)' : 'rgba(220,38,38,0.04)',
                     border: `1px solid ${correct ? 'rgba(22,163,74,0.15)' : 'rgba(220,38,38,0.12)'}`,
                   }}
                 >
-                  <span
-                    className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
-                    style={{
-                      background: correct ? '#16A34A' : '#DC2626',
-                      color: '#fff',
-                    }}
+                  {/* Compact row — tappable for wrong answers */}
+                  <div
+                    className={`p-3 flex items-center gap-3${!correct ? ' cursor-pointer active:opacity-80' : ''}`}
+                    onClick={!correct ? () => setExpandedQuestion(isExpanded ? null : idx) : undefined}
+                    role={!correct ? 'button' : undefined}
+                    tabIndex={!correct ? 0 : undefined}
+                    onKeyDown={!correct ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedQuestion(isExpanded ? null : idx); } } : undefined}
+                    aria-expanded={!correct ? isExpanded : undefined}
                   >
-                    {correct ? '✓' : '✗'}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs font-medium truncate" style={{ color: 'var(--text-2)' }}>
-                      {question.question_text.substring(0, 80)}{question.question_text.length > 80 ? '...' : ''}
-                    </div>
-                    {!correct && (
-                      <div className="text-[10px] text-[var(--text-3)] mt-0.5">
-                        {isHi ? 'सही:' : 'Correct:'} {OPTION_LETTERS[question.correct_answer_index]}
+                    <span
+                      className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
+                      style={{
+                        background: correct ? '#16A34A' : '#DC2626',
+                        color: '#fff',
+                      }}
+                    >
+                      {correct ? '✓' : '✗'}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-medium truncate" style={{ color: 'var(--text-2)' }}>
+                        {questionText.substring(0, 80)}{questionText.length > 80 ? '...' : ''}
                       </div>
-                    )}
+                      {!correct && !isExpanded && (
+                        <div className="text-[10px] text-[var(--text-3)] mt-0.5">
+                          {isHi ? 'सही:' : 'Correct:'} {OPTION_LETTERS[question.correct_answer_index]}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <span className="text-[10px] text-[var(--text-3)]">
+                        {resp?.time_spent || 0}s
+                      </span>
+                      {!correct && (
+                        <span
+                          className="text-[10px] text-[var(--text-3)] transition-transform duration-200"
+                          style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}
+                        >
+                          ▼
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <span className="text-[10px] text-[var(--text-3)] flex-shrink-0">
-                    {resp?.time_spent || 0}s
-                  </span>
+
+                  {/* Expanded detail for wrong answers */}
+                  {!correct && isExpanded && (
+                    <div className="px-3 pb-3 pt-0 space-y-2.5 border-t" style={{ borderColor: 'rgba(220,38,38,0.12)' }}>
+                      {/* Full question text */}
+                      <div className="pt-2.5">
+                        <p className="text-[10px] font-semibold text-[var(--text-3)] uppercase tracking-wide mb-1">
+                          {isHi ? 'पूरा सवाल' : 'Full Question'}
+                        </p>
+                        <p className="text-xs text-[var(--text-2)] leading-relaxed">
+                          {questionText}
+                        </p>
+                      </div>
+
+                      {/* Your answer vs correct answer */}
+                      <div className="flex gap-2">
+                        <div className="flex-1 rounded-lg p-2" style={{ background: 'rgba(220,38,38,0.08)' }}>
+                          <p className="text-[10px] font-semibold text-[#DC2626] mb-0.5">
+                            {isHi ? 'तुम्हारा जवाब' : 'Your Answer'}
+                          </p>
+                          <p className="text-xs text-[var(--text-2)]">
+                            {OPTION_LETTERS[resp?.selected_option ?? 0]}. {opts[resp?.selected_option ?? 0] || '—'}
+                          </p>
+                        </div>
+                        <div className="flex-1 rounded-lg p-2" style={{ background: 'rgba(22,163,74,0.08)' }}>
+                          <p className="text-[10px] font-semibold text-[#16A34A] mb-0.5">
+                            {isHi ? 'सही जवाब' : 'Correct Answer'}
+                          </p>
+                          <p className="text-xs text-[var(--text-2)]">
+                            {OPTION_LETTERS[question.correct_answer_index]}. {correctAnswerText}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Explanation */}
+                      {explanation && (
+                        <div className="rounded-lg p-2" style={{ background: 'rgba(139,92,246,0.06)' }}>
+                          <p className="text-[10px] font-semibold text-[#8B5CF6] mb-0.5">
+                            {isHi ? 'व्याख्या' : 'Explanation'}
+                          </p>
+                          <p className="text-xs text-[var(--text-2)] leading-relaxed">
+                            {explanation}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Ask Foxy button */}
+                      <button
+                        className="w-full rounded-lg py-2 px-3 flex items-center justify-center gap-2 text-xs font-semibold transition-colors"
+                        style={{
+                          background: 'var(--orange)',
+                          color: '#fff',
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const subjectParam = selectedSubject || '';
+                          const msg = encodeURIComponent(
+                            `Explain why the answer to "${questionText.substring(0, 120)}" is "${correctAnswerText}"`
+                          );
+                          router.push(`/foxy?subject=${subjectParam}&mode=doubt&message=${msg}`);
+                        }}
+                      >
+                        <span>🦊</span>
+                        {isHi ? 'Foxy से पूछो' : 'Ask Foxy'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })}

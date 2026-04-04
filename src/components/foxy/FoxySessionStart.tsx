@@ -15,13 +15,13 @@ interface SessionMode {
   labelHi: string;
   desc: string;
   descHi: string;
+  color: string;
 }
 
-const SESSION_MODES: SessionMode[] = [
-  { id: 'learn', emoji: '📖', label: 'Learn', labelHi: 'सीखो', desc: 'Step-by-step concept teaching', descHi: 'कदम-दर-कदम कॉन्सेप्ट सीखो' },
-  { id: 'practice', emoji: '✏️', label: 'Practice', labelHi: 'अभ्यास', desc: 'Solve problems with guidance', descHi: 'मदद के साथ सवाल हल करो' },
-  { id: 'quiz', emoji: '⚡', label: 'Quiz', labelHi: 'क्विज़', desc: 'Test your understanding', descHi: 'अपनी समझ परखो' },
-  { id: 'doubt', emoji: '❓', label: 'Ask Doubt', labelHi: 'डाउट पूछो', desc: 'Ask anything you don\'t understand', descHi: 'जो नहीं समझ आया वो पूछो' },
+const PRIMARY_MODES: SessionMode[] = [
+  { id: 'learn', emoji: '📖', label: 'Teach me', labelHi: 'मुझे सिखाओ', desc: 'Explain a concept step by step', descHi: 'एक concept step by step समझाओ', color: '#2563EB' },
+  { id: 'doubt', emoji: '✏️', label: 'Help me solve', labelHi: 'हल करने में मदद करो', desc: 'I\'m stuck on a problem', descHi: 'एक सवाल में अटक गया हूँ', color: '#7C3AED' },
+  { id: 'quiz', emoji: '⚡', label: 'Test me', labelHi: 'मेरा टेस्ट लो', desc: 'Quick quiz to check what I know', descHi: 'जो आता है उसका टेस्ट लो', color: '#F59E0B' },
 ];
 
 interface SubjectOption {
@@ -97,26 +97,42 @@ export default function FoxySessionStart({
         </button>
       )}
 
-      {/* Mode cards */}
+      {/* Primary mode cards */}
       <div className="w-full max-w-sm mt-5 space-y-2">
-        {SESSION_MODES.map((mode) => (
+        {PRIMARY_MODES.map((mode) => (
           <button
             key={mode.id}
             onClick={() => onSelectMode(mode.id)}
             className="w-full p-4 rounded-xl text-left flex items-center gap-3 transition-all active:scale-[0.98]"
             style={{
-              background: 'var(--surface-1)',
-              border: '1px solid var(--border)',
+              background: `${mode.color}08`,
+              border: `1.5px solid ${mode.color}30`,
             }}
           >
             <span className="text-2xl">{mode.emoji}</span>
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold">{isHi ? mode.labelHi : mode.label}</div>
+              <div className="text-sm font-semibold" style={{ color: mode.color }}>{isHi ? mode.labelHi : mode.label}</div>
               <div className="text-xs text-[var(--text-3)] mt-0.5">{isHi ? mode.descHi : mode.desc}</div>
             </div>
-            <span className="text-[var(--text-3)]">→</span>
+            <span style={{ color: mode.color }}>→</span>
           </button>
         ))}
+      </div>
+
+      {/* Secondary mode links */}
+      <div className="flex justify-center gap-4 mt-3">
+        <button
+          onClick={() => onSelectMode('revision')}
+          className="text-xs text-gray-500 hover:text-gray-700 transition-colors"
+        >
+          🔄 {isHi ? 'रिवीज़न' : 'Revision'}
+        </button>
+        <button
+          onClick={() => onSelectMode('notes')}
+          className="text-xs text-gray-500 hover:text-gray-700 transition-colors"
+        >
+          📝 {isHi ? 'नोट्स बनाओ' : 'Make Notes'}
+        </button>
       </div>
     </div>
   );

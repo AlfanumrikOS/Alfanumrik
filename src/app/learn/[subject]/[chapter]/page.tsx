@@ -501,6 +501,21 @@ function LearnTab({ dbConcepts, chunks, ragDiagrams, questions, isHi, activeConc
     setConceptStartTime(Date.now());
   }, [activeConcept]);
 
+  // Save last-studied position to localStorage for "Continue where you left off"
+  useEffect(() => {
+    if (subjectCode && chapterNumber && concepts.length > 0) {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('alfanumrik_last_studied', JSON.stringify({
+          subject: subjectCode,
+          chapter: chapterNumber,
+          chapterTitle,
+          concept: activeConcept,
+          timestamp: Date.now(),
+        }));
+      }
+    }
+  }, [subjectCode, chapterNumber, activeConcept, chapterTitle, concepts.length]);
+
   // Award XP when moving to next concept IF student spent ≥15 seconds (real study)
   const handleNextConcept = (next: number) => {
     const timeSpent = (Date.now() - conceptStartTime) / 1000;
@@ -509,6 +524,16 @@ function LearnTab({ dbConcepts, chunks, ragDiagrams, questions, isHi, activeConc
       void supabase.rpc('add_xp', { p_student_id: studentId, p_xp: 5, p_source: `learn_${subjectCode}` }).then(() => {});
     }
     setActiveConcept(next);
+    // Persist position for "Continue where you left off"
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('alfanumrik_last_studied', JSON.stringify({
+        subject: subjectCode,
+        chapter: chapterNumber,
+        chapterTitle,
+        concept: next,
+        timestamp: Date.now(),
+      }));
+    }
   };
 
   if (concepts.length === 0) {
@@ -646,7 +671,7 @@ function LearnTab({ dbConcepts, chunks, ragDiagrams, questions, isHi, activeConc
         </div>
         {(() => {
           const remainingConcepts = concepts.slice(activeConcept);
-          const remainingMin = remainingConcepts.reduce((sum, c) => sum + (c.estimated_minutes || 3), 0);
+          const remainingMin = remainingConcepts.reduce((sum: number, c: { estimated_minutes?: number }) => sum + (c.estimated_minutes || 3), 0);
           return remainingMin > 0 ? (
             <p className="text-[10px] text-gray-400 text-right">
               {isHi ? `~${remainingMin} मिनट शेष` : `~${remainingMin} min remaining`}
