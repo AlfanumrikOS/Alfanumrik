@@ -49,6 +49,7 @@ interface AuthState {
   isLoggedIn: boolean;
   isLoading: boolean;
   isHi: boolean;
+  isDemoUser: boolean;
 
   // Language
   language: string;
@@ -72,6 +73,7 @@ const AuthContext = createContext<AuthState>({
   isLoggedIn: false,
   isLoading: true,
   isHi: false,
+  isDemoUser: false,
   language: 'en',
   setLanguage: () => {},
   refreshStudent: async () => {},
@@ -379,6 +381,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoggedIn: roles.length > 0 || !!authUserId,
         isLoading,
         isHi: language === 'hi',
+        isDemoUser: false,
         language,
         setLanguage,
         refreshStudent: fetchUser,
