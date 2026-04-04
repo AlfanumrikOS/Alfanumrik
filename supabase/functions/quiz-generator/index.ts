@@ -82,12 +82,30 @@ async function checkRateLimitDb(studentId: string, supabase: SupabaseClient): Pr
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface RequestBody {
+  action?: 'generate' | 'next_question'
   student_id: string
   subject: string
   grade: string
   count?: number
   difficulty?: number | null
   chapter_number?: number | null
+}
+
+interface NextQuestionRequestBody {
+  action: 'next_question'
+  student_id: string
+  subject: string
+  grade: string
+  session_id: string
+  responses_so_far: ResponseSoFar[]
+  exclude_ids: string[]
+  chapter_number?: number | null
+}
+
+interface ResponseSoFar {
+  question_id: string
+  is_correct: boolean
+  time_spent: number
 }
 
 interface ConceptMasteryRow {
@@ -710,6 +728,203 @@ async function recordShownQuestions(
     ignoreDuplicates: false,
   })
   if (error) console.warn(`recordShownQuestions: ${error.message}`)
+}
+
+// ─── Mid-quiz adaptive difficulty adjustment ─────────────────────────────────
+
+/**
+ * Analyze responses so far and compute the next target difficulty + Bloom ceiling.
+ *
+ * Rules (assessment-defined, ai-engineer-implemented):
+ *   - 3+ consecutive correct → increase difficulty by 1 (max 3)
+ *   - 2+ consecutive wrong  → decrease difficulty by 1 (min 1)
+ *   - Avg time < 5s on correct answers → increase difficulty (too easy)
+ *   - Avg time > 45s → decrease difficulty (struggling)
+ *   - Bloom ceiling derived from running mastery estimate
+ */
+function computeAdaptiveDifficulty(
+  responses: ResponseSoFar[],
+): {
+  adjustedDifficulty: number
+  reason: string
+  bloomCeiling: string
+  runningScore: string
+} {
+  if (responses.length === 0) {
+    return {
+      adjustedDifficulty: 1,
+      reason: 'no responses yet',
+      bloomCeiling: 'understand',
+      runningScore: '0/0 (0%)',
+    }
+  }
+
+  const correctCount = responses.filter((r) => r.is_correct).length
+  const totalCount = responses.length
+  const scorePercent = Math.round((correctCount / totalCount) * 100)
+  const runningScore = `${correctCount}/${totalCount} (${scorePercent}%)`
+
+  // Compute current effective difficulty from recent questions' implied difficulty.
+  // Start at difficulty 2 (medium) as the baseline.
+  let currentDifficulty = 2
+
+  // ── Streak detection ───────────────────────────────────────────────────────
+  let consecutiveCorrect = 0
+  let consecutiveWrong = 0
+
+  // Walk from most recent backwards to find current streak
+  for (let i = responses.length - 1; i >= 0; i--) {
+    if (responses[i].is_correct) {
+      if (consecutiveWrong > 0) break
+      consecutiveCorrect++
+    } else {
+      if (consecutiveCorrect > 0) break
+      consecutiveWrong++
+    }
+  }
+
+  let reason = 'maintaining current difficulty'
+
+  // ── Time-based adjustment ──────────────────────────────────────────────────
+  // Only look at recent correct answers for "too easy" detection
+  const recentCorrect = responses.filter((r) => r.is_correct).slice(-5)
+  const avgCorrectTime =
+    recentCorrect.length > 0
+      ? recentCorrect.reduce((sum, r) => sum + r.time_spent, 0) / recentCorrect.length
+      : 15 // neutral default
+
+  const avgOverallTime =
+    responses.reduce((sum, r) => sum + r.time_spent, 0) / responses.length
+
+  // ── Apply rules (priority order) ───────────────────────────────────────────
+  if (consecutiveCorrect >= 3) {
+    currentDifficulty = Math.min(3, currentDifficulty + 1)
+    reason = `${consecutiveCorrect} consecutive correct answers`
+  } else if (consecutiveWrong >= 2) {
+    currentDifficulty = Math.max(1, currentDifficulty - 1)
+    reason = `${consecutiveWrong} consecutive wrong answers`
+  } else if (avgCorrectTime < 5 && recentCorrect.length >= 2) {
+    // Answering correctly very fast → too easy
+    currentDifficulty = Math.min(3, currentDifficulty + 1)
+    reason = `fast correct answers (avg ${avgCorrectTime.toFixed(1)}s)`
+  } else if (avgOverallTime > 45) {
+    // Taking too long overall → struggling
+    currentDifficulty = Math.max(1, currentDifficulty - 1)
+    reason = `slow average response time (${avgOverallTime.toFixed(1)}s)`
+  }
+
+  // ── Bloom ceiling from running mastery estimate ────────────────────────────
+  // Use scorePercent as a proxy for mastery in this session
+  const masteryEstimate = scorePercent / 100
+  const bloomCeiling = masteryToMaxBloomLevel(masteryEstimate)
+
+  return { adjustedDifficulty: currentDifficulty, reason, bloomCeiling, runningScore }
+}
+
+/**
+ * Handle `action: 'next_question'` — fetch a single question at the
+ * adaptively-adjusted difficulty for mid-quiz flow.
+ */
+async function handleNextQuestion(
+  supabase: SupabaseClient,
+  body: NextQuestionRequestBody,
+): Promise<Response> {
+  const { student_id, subject, grade, responses_so_far, exclude_ids, chapter_number } = body
+  const chapterNumber = chapter_number ?? null
+
+  // Compute adaptive difficulty
+  const { adjustedDifficulty, reason, bloomCeiling, runningScore } =
+    computeAdaptiveDifficulty(responses_so_far)
+
+  const allowedBlooms = getBloomLevelsUpTo(bloomCeiling)
+  const excludeSet = new Set(exclude_ids ?? [])
+
+  // Build exclusion list for Supabase filter
+  const exclusionList =
+    excludeSet.size > 0
+      ? [...excludeSet].join(',')
+      : '00000000-0000-0000-0000-000000000000'
+
+  // ── Primary query: exact difficulty + Bloom ceiling ────────────────────────
+  let query = supabase
+    .from('question_bank')
+    .select('*')
+    .eq('subject', subject)
+    .eq('grade', grade)
+    .eq('is_active', true)
+    .not('id', 'in', `(${exclusionList})`)
+    .eq('difficulty', adjustedDifficulty)
+    .in('bloom_level', allowedBlooms)
+
+  if (chapterNumber != null) {
+    query = query.eq('chapter_number', chapterNumber)
+  }
+
+  let { data: candidates } = await query.limit(10)
+
+  // ── Fallback 1: relax Bloom constraint ─────────────────────────────────────
+  if (!candidates || candidates.length === 0) {
+    let fb1 = supabase
+      .from('question_bank')
+      .select('*')
+      .eq('subject', subject)
+      .eq('grade', grade)
+      .eq('is_active', true)
+      .not('id', 'in', `(${exclusionList})`)
+      .eq('difficulty', adjustedDifficulty)
+    if (chapterNumber != null) fb1 = fb1.eq('chapter_number', chapterNumber)
+    const { data: fb1Data } = await fb1.limit(10)
+    candidates = fb1Data ?? []
+  }
+
+  // ── Fallback 2: relax difficulty (adjacent levels) ─────────────────────────
+  if (!candidates || candidates.length === 0) {
+    const adjacentDifficulties = [
+      adjustedDifficulty - 1,
+      adjustedDifficulty + 1,
+    ].filter((d) => d >= 1 && d <= 3)
+
+    let fb2 = supabase
+      .from('question_bank')
+      .select('*')
+      .eq('subject', subject)
+      .eq('grade', grade)
+      .eq('is_active', true)
+      .not('id', 'in', `(${exclusionList})`)
+      .in('difficulty', adjacentDifficulties)
+    if (chapterNumber != null) fb2 = fb2.eq('chapter_number', chapterNumber)
+    const { data: fb2Data } = await fb2.limit(10)
+    candidates = fb2Data ?? []
+  }
+
+  if (!candidates || candidates.length === 0) {
+    return new Response(
+      JSON.stringify({
+        error: 'No questions available at the adjusted difficulty',
+        meta: { adjustedDifficulty, reason, runningScore, bloomCeiling },
+      }),
+      { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    )
+  }
+
+  // Pick one random question from candidates
+  const selected = candidates[Math.floor(Math.random() * candidates.length)] as QuestionRow
+
+  // Record shown question for future dedup
+  await recordShownQuestions(supabase, student_id, subject, grade, [selected])
+
+  return new Response(
+    JSON.stringify({
+      question: selected,
+      meta: {
+        adjusted_difficulty: adjustedDifficulty,
+        reason,
+        running_score: runningScore,
+        bloom_ceiling: bloomCeiling,
+      },
+    }),
+    { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+  )
 }
 
 // ─── Main handler ─────────────────────────────────────────────────────────────

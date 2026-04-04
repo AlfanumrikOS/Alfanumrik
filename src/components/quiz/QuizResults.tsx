@@ -10,6 +10,8 @@ import {
   type BloomLevel, type CognitiveLoadState,
 } from '@/lib/cognitive-engine';
 import { shareResult, quizShareMessage } from '@/lib/share';
+import NextActionCard from '@/components/quiz/NextActionCard';
+import CelebrationOverlay from '@/components/quiz/CelebrationOverlay';
 import type { ErrorType } from '@/lib/cognitive-engine';
 
 interface Question {
@@ -44,6 +46,9 @@ interface QuizResultsProps {
     score_percent: number;
     xp_earned: number;
     session_id: string;
+    cme_next_action?: string;
+    cme_next_concept_id?: string;
+    cme_reason?: string;
   };
   questions: Question[];
   responses: Response[];
@@ -72,6 +77,7 @@ export default function QuizResults({
 }: QuizResultsProps) {
   const router = useRouter();
   const [expandedCorrect, setExpandedCorrect] = useState<Set<number>>(new Set());
+  const [showCelebration, setShowCelebration] = useState(true);
 
   const parseOptions = (opts: string | string[]): string[] => {
     if (Array.isArray(opts)) return opts;
@@ -99,6 +105,15 @@ export default function QuizResults({
 
   return (
     <div className="mesh-bg min-h-dvh pb-nav">
+     {/* Celebration overlay — auto-dismisses after 3s */}
+     {showCelebration && (
+       <CelebrationOverlay
+         scorePercent={pct}
+         xpEarned={results.xp_earned}
+         isHi={isHi}
+         onDismiss={() => setShowCelebration(false)}
+       />
+     )}
      <SectionErrorBoundary section="Quiz Results">
       <header className="page-header">
         <div className="page-header-inner flex items-center gap-3">
@@ -130,6 +145,25 @@ export default function QuizResults({
           <StatCard icon="✨" value={`+${results.xp_earned}`} label="XP" color="var(--orange)" />
           <StatCard icon="⏱" value={formatTime(timer)} label={isHi ? 'समय' : 'Time'} color="var(--teal)" />
         </div>
+
+        {/* CME Next Action Recommendation */}
+        {results.cme_next_action && (
+          <NextActionCard
+            action={results.cme_next_action as 'teach' | 'practice' | 'challenge' | 'revise' | 'remediate' | 'exam_prep'}
+            conceptId={results.cme_next_concept_id || null}
+            reason={results.cme_reason || ''}
+            isHi={isHi}
+            onAction={(action, conceptId) => {
+              const mode = action === 'teach' ? 'learn'
+                : action === 'revise' ? 'revision'
+                : action === 'remediate' ? 'doubt'
+                : action === 'exam_prep' ? 'quiz'
+                : action === 'practice' ? 'quiz'
+                : 'quiz'; // challenge
+              router.push(`/foxy?mode=${mode}${conceptId ? `&topic_id=${conceptId}` : ''}`);
+            }}
+          />
+        )}
 
         {/* Error Classification Breakdown */}
         {responses.some(r => !r.is_correct) && (

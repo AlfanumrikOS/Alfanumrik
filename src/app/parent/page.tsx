@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
+import WeeklyReport from '@/components/parent/WeeklyReport';
 
 // ============================================================
 // BILINGUAL HELPERS (P7)
@@ -532,6 +533,9 @@ function Dashboard({ guardian, student, isHi }: { guardian: ParentSession; stude
           <div><span className="text-xl font-bold text-amber-600">{dash.weekSummary.activeDays}/7</span><br /><span className="text-[11px] text-gray-500">{t(isHi, 'active days', 'सक्रिय दिन')}</span></div>
         </div>
       )}
+
+      {/* AI Weekly Report */}
+      <WeeklyReport studentId={student.id} guardianId={guardian.id} isHi={isHi} />
 
       {/* BKT Adaptive Mastery */}
       {dash.bktMastery && dash.bktMastery.total > 0 && (

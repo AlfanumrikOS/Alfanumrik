@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
+import confetti from 'canvas-confetti';
 import { FoxyAvatar } from '@/components/ui';
 
 interface CelebrationOverlayProps {
@@ -8,23 +9,38 @@ interface CelebrationOverlayProps {
   xpEarned: number;
   isHi: boolean;
   onDismiss: () => void;
-  /** Optional CME next-action recommendation, e.g. "Practice Trigonometry" */
-  cmeRecommendation?: string | null;
 }
 
+/**
+ * Full-screen celebration overlay after quiz completion.
+ * Uses canvas-confetti (~6KB gzip) for particle effects.
+ *
+ * Tiers:
+ * - Perfect (100%): Gold+purple confetti from both sides + sparkle emoji
+ * - High (>=80%): Gold confetti burst + "Outstanding!"
+ * - Good (60-79%): Silver confetti + "Great job!"
+ * - Below 60: No confetti, encouraging message
+ *
+ * XP count-up animation uses requestAnimationFrame.
+ * Auto-dismisses after 3s or on tap.
+ */
 export default function CelebrationOverlay({
   scorePercent,
   xpEarned,
   isHi,
   onDismiss,
-  cmeRecommendation,
 }: CelebrationOverlayProps) {
+  const [displayXP, setDisplayXP] = useState(0);
   const [displayScore, setDisplayScore] = useState(0);
   const [phase, setPhase] = useState<'enter' | 'visible' | 'exit'>('enter');
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const countRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const scoreRafRef = useRef<number | null>(null);
 
-  // Grade badge
+  const isPerfect = scorePercent === 100;
+  const isHigh = scorePercent >= 80;
+  const isGood = scorePercent >= 60;
+
   const grade =
     scorePercent >= 90 ? 'A+' :
     scorePercent >= 80 ? 'A' :
@@ -37,53 +53,133 @@ export default function CelebrationOverlay({
     scorePercent >= 60 ? 'var(--teal)' :
     scorePercent >= 40 ? 'var(--orange)' : 'var(--red)';
 
-  // Motivational message
-  const message =
-    scorePercent >= 80
-      ? (isHi ? 'शानदार!' : 'Amazing!')
-      : scorePercent >= 60
-        ? (isHi ? 'अच्छा किया!' : 'Good job!')
-        : (isHi ? 'जारी रखो!' : 'Keep going!');
+  const message = isPerfect
+    ? (isHi ? 'PERFECT!' : 'PERFECT!')
+    : isHigh
+      ? (isHi ? '\u0936\u093E\u0928\u0926\u093E\u0930!' : 'Outstanding!')
+      : isGood
+        ? (isHi ? '\u0905\u091A\u094D\u091B\u093E \u0915\u093F\u092F\u093E!' : 'Great job!')
+        : (isHi ? '\u091C\u093E\u0930\u0940 \u0930\u0916\u094B!' : 'Keep going!');
 
-  const messageEmoji =
-    scorePercent >= 80 ? '🎉' : scorePercent >= 60 ? '💪' : '🦊';
+  const messageEmoji = isPerfect ? '\u{1F31F}' : isHigh ? '\u{1F3C6}' : isGood ? '\u{1F44D}' : '\u{1F9CA}';
 
-  // Count-up animation for score
+  // ── Fire canvas-confetti ──
+  const fireConfetti = useCallback(() => {
+    if (typeof window === 'undefined') return;
+
+    const goldColors = ['#FFD700', '#FFA500', '#FF8C00', '#E8581C'];
+    const silverColors = ['#C0C0C0', '#A0A0A0', '#B8B8B8', '#D4D4D4'];
+
+    if (isPerfect) {
+      // Center burst
+      confetti({
+        particleCount: 100,
+        spread: 80,
+        origin: { y: 0.55 },
+        colors: [...goldColors, '#7C3AED', '#FF6B6B'],
+        disableForReducedMotion: true,
+      });
+      // Side bursts after a short delay
+      setTimeout(() => {
+        confetti({
+          particleCount: 60,
+          angle: 60,
+          spread: 55,
+          origin: { x: 0, y: 0.6 },
+          colors: goldColors,
+          disableForReducedMotion: true,
+        });
+        confetti({
+          particleCount: 60,
+          angle: 120,
+          spread: 55,
+          origin: { x: 1, y: 0.6 },
+          colors: goldColors,
+          disableForReducedMotion: true,
+        });
+      }, 300);
+    } else if (isHigh) {
+      confetti({
+        particleCount: 80,
+        spread: 70,
+        origin: { y: 0.6 },
+        colors: goldColors,
+        disableForReducedMotion: true,
+      });
+    } else if (isGood) {
+      confetti({
+        particleCount: 40,
+        spread: 60,
+        origin: { y: 0.6 },
+        colors: silverColors,
+        disableForReducedMotion: true,
+      });
+    }
+  }, [isPerfect, isHigh, isGood]);
+
+  // ── Score count-up animation ──
   useEffect(() => {
-    const duration = 1200; // ms
-    const steps = 30;
-    const increment = scorePercent / steps;
-    let current = 0;
-    let step = 0;
+    if (scorePercent <= 0) return;
+    const duration = 1200;
+    const start = performance.now();
 
-    countRef.current = setInterval(() => {
-      step++;
-      current = Math.min(Math.round(increment * step), scorePercent);
-      setDisplayScore(current);
-      if (step >= steps) {
-        if (countRef.current) clearInterval(countRef.current);
+    function animate(now: number) {
+      const elapsed = now - start;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - (1 - progress) * (1 - progress); // ease-out quad
+      setDisplayScore(Math.round(eased * scorePercent));
+      if (progress < 1) {
+        scoreRafRef.current = requestAnimationFrame(animate);
       }
-    }, duration / steps);
-
-    return () => { if (countRef.current) clearInterval(countRef.current); };
+    }
+    scoreRafRef.current = requestAnimationFrame(animate);
+    return () => { if (scoreRafRef.current) cancelAnimationFrame(scoreRafRef.current); };
   }, [scorePercent]);
 
-  // Phase transitions
+  // ── XP count-up animation (starts after score finishes) ──
   useEffect(() => {
-    // Enter -> visible after a brief moment
-    const enterTimer = setTimeout(() => setPhase('visible'), 100);
+    if (xpEarned <= 0) return;
+    const delay = 1300; // start after score count-up
+    const duration = 800;
+    const t = setTimeout(() => {
+      const start = performance.now();
+      function animate(now: number) {
+        const elapsed = now - start;
+        const progress = Math.min(elapsed / duration, 1);
+        const eased = 1 - (1 - progress) * (1 - progress);
+        setDisplayXP(Math.round(eased * xpEarned));
+        if (progress < 1) {
+          rafRef.current = requestAnimationFrame(animate);
+        }
+      }
+      rafRef.current = requestAnimationFrame(animate);
+    }, delay);
+    return () => {
+      clearTimeout(t);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, [xpEarned]);
 
-    // Auto-dismiss after 3 seconds
+  // ── Phase transitions + confetti trigger ──
+  useEffect(() => {
+    const enterTimer = setTimeout(() => {
+      setPhase('visible');
+      fireConfetti();
+      // Play XP sound
+      import('@/lib/sounds').then(({ playSound }) => playSound('xp')).catch(() => {});
+    }, 100);
+
+    // Auto-dismiss after 3s
     timerRef.current = setTimeout(() => {
       setPhase('exit');
-      setTimeout(onDismiss, 400); // allow exit animation
+      setTimeout(onDismiss, 400);
     }, 3000);
 
     return () => {
       clearTimeout(enterTimer);
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [onDismiss]);
+  }, [onDismiss, fireConfetti]);
 
   const handleDismiss = () => {
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -103,21 +199,8 @@ export default function CelebrationOverlay({
       }}
       onClick={handleDismiss}
       role="dialog"
-      aria-label={isHi ? 'क्विज़ पूरा हुआ' : 'Quiz completed'}
+      aria-label={isHi ? '\u0915\u094D\u0935\u093F\u091C\u093C \u092A\u0942\u0930\u093E \u0939\u0941\u0906' : 'Quiz completed'}
     >
-      {/* Confetti burst ring */}
-      {scorePercent >= 60 && (
-        <div
-          className="absolute animate-confetti rounded-full"
-          style={{
-            width: 280,
-            height: 280,
-            border: `3px solid ${gradeColor}`,
-            opacity: 0,
-          }}
-        />
-      )}
-
       {/* Foxy mascot */}
       <div
         className="mb-4"
@@ -131,10 +214,7 @@ export default function CelebrationOverlay({
       </div>
 
       {/* Score percentage — count-up */}
-      <div
-        className="animate-count-up"
-        style={{ animationDelay: '0.2s' }}
-      >
+      <div className="animate-count-up" style={{ animationDelay: '0.2s' }}>
         <div
           className="text-7xl font-bold tabular-nums"
           style={{
@@ -148,9 +228,7 @@ export default function CelebrationOverlay({
       </div>
 
       {/* Grade badge */}
-      <div
-        className="animate-grade-reveal mt-3"
-      >
+      <div className="animate-grade-reveal mt-3">
         <span
           className="inline-flex items-center justify-center text-2xl font-bold rounded-full"
           style={{
@@ -179,40 +257,18 @@ export default function CelebrationOverlay({
         {message} {messageEmoji}
       </p>
 
-      {/* XP earned */}
+      {/* XP earned — animated count-up */}
       {xpEarned > 0 && (
-        <div
-          className="mt-3 animate-count-up"
-          style={{ animationDelay: '0.6s' }}
-        >
+        <div className="animate-count-up mt-3" style={{ animationDelay: '0.6s' }}>
           <span
-            className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-bold"
+            className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-bold tabular-nums"
             style={{
               background: 'rgba(232,88,28,0.2)',
               border: '1px solid rgba(232,88,28,0.4)',
               color: 'var(--orange-light)',
             }}
           >
-            ⭐ +{xpEarned} XP
-          </span>
-        </div>
-      )}
-
-      {/* CME next action recommendation */}
-      {cmeRecommendation && (
-        <div
-          className="mt-3 animate-count-up"
-          style={{ animationDelay: '0.9s' }}
-        >
-          <span
-            className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-medium"
-            style={{
-              background: 'rgba(124,58,237,0.15)',
-              border: '1px solid rgba(124,58,237,0.3)',
-              color: '#C4B5FD',
-            }}
-          >
-            🦊 {isHi ? 'Foxy का सुझाव:' : 'Foxy suggests:'} {cmeRecommendation}
+            +{displayXP} XP
           </span>
         </div>
       )}
@@ -232,7 +288,7 @@ export default function CelebrationOverlay({
           handleDismiss();
         }}
       >
-        {isHi ? 'विवरण देखो →' : 'See Details →'}
+        {isHi ? '\u0935\u093F\u0935\u0930\u0923 \u0926\u0947\u0916\u094B \u2192' : 'See Details \u2192'}
       </button>
     </div>
   );
