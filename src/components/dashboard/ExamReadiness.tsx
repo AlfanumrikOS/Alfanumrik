@@ -32,7 +32,7 @@ function gradeColor(grade: string): string {
     case 'C1':
       return 'var(--orange)';
     default:
-      return '#DC2626'; // red
+      return 'var(--mastery-low)';
   }
 }
 

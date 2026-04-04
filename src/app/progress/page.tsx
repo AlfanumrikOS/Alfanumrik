@@ -346,7 +346,7 @@ export default function ProgressPage() {
             ) : (
               <>
                 {/* ═══ MASTERY HERO — overall accuracy ring + key stats ═══ */}
-                <Card className="!p-6">
+                <Card className="!p-6 animate-slide-up">
                   <div className="flex items-center gap-5">
                     <MasteryRing value={accuracy} size={80} strokeWidth={6}>
                       <div className="text-center">

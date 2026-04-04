@@ -51,7 +51,7 @@ export default function ProgressSnapshot({ totalXp, streak, mastered, isHi }: Pr
       <div className="w-full h-2 rounded-full overflow-hidden mb-3" style={{ background: 'var(--surface-2)' }}>
         <div
           className="h-full rounded-full xp-bar"
-          style={{ width: `${prog.progress}%`, background: 'var(--orange)' }}
+          style={{ width: `${prog.progress}%`, background: 'var(--xp-color)' }}
         />
       </div>
 
