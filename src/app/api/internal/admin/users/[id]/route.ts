@@ -5,12 +5,12 @@ import { getSupabaseAdmin } from '@/lib/supabase-admin';
 export const runtime = 'nodejs';
 
 // GET /api/internal/admin/users/[id] — fetch single user detail
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const denied = requireAdminSecret(request);
   if (denied) return denied;
 
   const supabase = getSupabaseAdmin();
-  const { id } = params;
+  const { id } = await params;
 
   try {
     const [studentRes, quizRes, chatRes, masteryRes, activityRes] = await Promise.all([
@@ -36,12 +36,12 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 }
 
 // PATCH /api/internal/admin/users/[id] — update student fields + bulk actions
-export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const denied = requireAdminSecret(request);
   if (denied) return denied;
 
   const supabase = getSupabaseAdmin();
-  const { id } = params;
+  const { id } = await params;
   const ip = request.headers.get('x-forwarded-for') || '';
 
   try {
