@@ -75,7 +75,7 @@ This is **plumbing work**, not core algorithm changes:
 
 **Effort:** ~3-4 weeks | **Risk of not fixing:** HIGH — students get random difficulty, wasted review cards, no personalized remediation
 
-### 1.2 RAG Pipeline — PRODUCTION READY
+### 1.2 RAG Pipeline — PRODUCTION READY (95%)
 | Component | Technology | Status |
 |---|---|---|
 | Embeddings | Voyage-3 (1024 dims) with OpenAI fallback | Complete |
@@ -83,6 +83,10 @@ This is **plumbing work**, not core algorithm changes:
 | Retry logic | Exponential backoff, 3 retries | Complete |
 | Vector storage | Supabase pgvector (`rag_content_chunks`) | Complete |
 | Batch processing | Up to 128 texts per Voyage batch | Complete |
+| Trace logging | Async to `retrieval_traces` table | Complete |
+| Backward compat | `fetchRAGContextV2()` wraps new API for legacy callers | Complete |
+
+Minor gaps: No semantic caching (repeated queries re-embed), no embedding versioning (model upgrade = re-embed all).
 
 ### 1.3 Integrations — PRODUCTION READY
 | Service | Usage | Status |
@@ -92,6 +96,31 @@ This is **plumbing work**, not core algorithm changes:
 | **Razorpay** | Monthly recurring + yearly one-time, webhook verified | Complete |
 | **Sentry** | Client/server/edge, source maps, ad-blocker tunnel | Complete |
 | **Vercel** | Mumbai (bom1), bundle analyzer, speed insights | Complete |
+
+### 1.4 AI Integration — SHIP READY (7.8/10)
+
+| AI Function | LOC | Status | Key Strength | Key Gap |
+|---|---|---|---|---|
+| **Foxy Tutor** | 640 | ✅ Production | Circuit breaker, 3-lang fallback, 6-category safety filter | No streaming, no output filtering |
+| **NCERT Solver** | 409 | ✅ Production | 2-pass verification (solver + verifier), confidence scoring | 2x Claude cost per question |
+| **Quiz Generator** | 807 | ✅ Production | Mastery-based adaptive, Bloom's scaffolding, deduplication | No mid-quiz difficulty adjustment |
+| **CME Engine** | 539 | ✅ Production | IRT-based mastery, 5-tier action priority, exam readiness | Not connected to other engines |
+| **Shared RAG** | 939 | ✅ Production | Voyage-3 + rerank-2, 8-filter vector search, trace logging | No semantic caching |
+| **Total AI code** | 5,812 | — | — | — |
+
+**AI Safety posture:**
+- ✅ 6-category input safety filter (violence, sexual, self-harm, substance, hate, PII)
+- ✅ NCERT grounding with "no reference found" disclaimer + confidence dampening
+- ✅ Grade-level curriculum scope enforcement (blocks out-of-grade formulas)
+- ✅ Temperature 0.3 (factual, not creative)
+- ⚠️ No output filtering (relies on Claude training + prompts)
+- ⚠️ No multi-turn jailbreak detection
+
+**v2.0 AI action items:**
+1. Add thumbs up/down feedback on Foxy responses (quality signal)
+2. Implement token counting for cost attribution per user/feature
+3. Add output safety filter (scan Claude responses for PII leakage)
+4. Consider streaming for Foxy (SSE for lower perceived latency)
 
 ---
 
@@ -270,16 +299,27 @@ Based on educational psychology (Cognitive Load Theory, Self-Determination Theor
 12. **Smart nudges** — Already in database (`nudges` table), surface them better in UI
 13. **Session summary** — End-of-session stats: time, questions, accuracy, XP earned
 
-### Phase 3: Mobile App Polish (3-4 weeks)
-**Goal:** Play Store readiness
+### Phase 2b: Testing & Regression (2 weeks, parallel with Phase 2)
+**Goal:** Fix critical testing gaps
 
-14. **Feature parity** — Add missing screens (progress, review, leaderboard, study-plan)
-15. **Offline quiz mode** — Cache questions in Hive, sync results on reconnect
-16. **Push notifications** — Firebase Cloud Messaging setup
-17. **Widget tests** — 30+ tests covering all screens
-18. **Play Store assets** — Screenshots, descriptions, content rating, privacy policy
-19. **Firebase Crashlytics** — Error tracking for mobile
-20. **App bundle optimization** — Deferred components, tree-shaking, asset compression
+13b. **Regression catalog** — Write 31 missing tests (P1 scoring: 8, P2 XP: 8, P3 anti-cheat: 5, P6 question quality: 4, P11 payment: 4, P5 grade: 2)
+13c. **E2E critical flows** — Add quiz submission, payment, signup E2E specs
+13d. **Enable E2E gate in CI** — Remove `continue-on-error: true` from Playwright step
+13e. **Patch dependencies** — Fix 3 high-severity glob vulnerabilities
+13f. **AI quality feedback** — Add thumbs up/down to Foxy responses for quality signal
+
+### Phase 3: Mobile App → Play Store (3-4 weeks)
+**Goal:** Play Store submission
+
+14. **Release signing** — Generate keystore, configure build.gradle signing (CRITICAL BLOCKER)
+15. **Visual assets** — App icon (512x512), feature graphic (1024x500), 5-8 screenshots
+16. **Privacy policy** — Host at alfanumrik.com/privacy (CRITICAL BLOCKER)
+17. **Firebase Crashlytics** — Error tracking for production monitoring
+18. **Feature parity** — Add missing screens (progress, review, leaderboard, study-plan)
+19. **Offline quiz queue** — Cache quiz submissions in Hive, sync on reconnect
+20. **Push notifications** — Firebase Cloud Messaging for streak reminders
+21. **Widget tests** — 30+ tests covering all screens
+22. **App bundle optimization** — Verify AAB build, check bundle size
 
 ### Phase 4: Operational Readiness (1-2 weeks)
 **Goal:** Production confidence
@@ -374,17 +414,47 @@ These are explicitly preserved per requirements:
 
 ## Conclusion
 
-Alfanumrik is **architecturally ready for v2.0** with one critical prerequisite: **wire the engines together**.
+### Final Scorecard (6 Deep Audits Completed)
 
-The individual learning science algorithms (CME, BKT, SM-2, IRT, RAG/Voyage) are world-class and must NOT be changed. But they currently operate in silos — three separate mastery tables, orphaned review cards, error classification that goes nowhere, and an AI tutor blind to learner state.
+| Domain | Score | Verdict | Primary Blocker |
+|---|---|---|---|
+| Core Engines (CME/BKT/SM-2/IRT) | 9/10 | Algorithms world-class | Integration between engines broken |
+| RAG Pipeline (Voyage) | 9.5/10 | Production-ready | No semantic caching |
+| AI Integration (Foxy/NCERT/Quiz) | 7.8/10 | Ship-ready | No quality feedback, no output filtering |
+| Frontend UX | 8.5/10 | Strong foundation | No dark mode, needs simplification |
+| Backend & Infrastructure | 7.5/10 | Ready with caveats | Connection pooling, distributed tracing |
+| Security & Auth | 9/10 | Excellent | RLS complexity (185 migrations of fixes) |
+| Testing & Regression | 5/10 | **CRITICAL GAPS** | Regression catalog 11%, E2E non-blocking |
+| Mobile App (Android) | 4/10 | **NOT READY** | No signing, no assets, zero tests |
+| Documentation | 9/10 | Comprehensive | Missing API reference |
+| **Overall** | **7.5/10** | **Upgradeable** | — |
 
-**The v2.0 upgrade path:**
+### v2.0 Upgrade Path
 
-1. **Wire the engines** (Phase 0) — Unify mastery state, connect CME→Quiz→Foxy feedback loops. This is plumbing, not algorithm work.
-2. **Polish the UX** (Phases 1-2) — Simplify to "one thing at a time" psychology. Dark mode, celebrations, smart mode auto-selection.
-3. **Ship the Android app** (Phase 3) — Feature parity, offline, push notifications, Play Store.
-4. **Harden operations** (Phase 4) — Analytics, alerting, load testing.
+Alfanumrik is **architecturally ready for v2.0** with three critical prerequisites:
 
-The existing Wonder Blocks design system, bilingual support (85-100% Hindi coverage), accessibility patterns (AAA contrast, ARIA, keyboard nav), security posture (CSP, HSTS, RLS, RBAC with 148+ policies), and operational infrastructure (Sentry, Upstash, Mailgun) provide an excellent foundation.
+1. **Wire the engines together** (Phase 0, 3-4 weeks) — Three mastery tables must become one. SM-2 review cards must be fetched. CME actions must be consumed. Foxy must see learner state. This is plumbing, not algorithm changes.
 
-**v2.0 is about wiring and polish, not reconstruction.** Estimated total: 10-14 weeks.
+2. **Fix testing gaps** (Phase 2b, 2 weeks, parallel) — Regression catalog at 11% is a **data integrity risk**. Missing P1/P2/P6/P11 tests mean scoring, XP, question quality, and payment changes could ship broken.
+
+3. **Prepare Android for Play Store** (Phase 3, 3-4 weeks) — Debug keystore, missing assets, no privacy policy, and zero tests are hard blockers.
+
+**What's already excellent and must NOT change:**
+- All core algorithms (SM-2, BKT, IRT 3PL, Ebbinghaus, ZPD, interleaving)
+- Voyage-3 embeddings + rerank-2 RAG pipeline
+- Mailgun email delivery, Upstash rate limiting, Razorpay payments
+- 7-layer security (middleware → RLS → RBAC → CSP → HSTS → bot blocking → Sentry)
+- Wonder Blocks design system (81 components, AAA contrast, ARIA, keyboard nav)
+- 5,812 lines of AI code across 5 Edge Functions with circuit breakers
+
+**The UX upgrade philosophy:** "One Thing at a Time"
+- Reduce dashboard from 15+ data points to 3 focus cards
+- Auto-select Foxy mode from learner state (CME already provides this!)
+- Add dark mode, celebration screens, Framer Motion transitions
+- Minimize choices (Hick's Law), maximize flow (Flow Theory)
+
+**Estimated total: 10-14 weeks across 5 phases (0-4), with Phases 1-2 running parallel to Phase 0.**
+
+---
+
+*Audit conducted: 2026-04-04 by 6 specialist agents (core engines, frontend UX, backend infrastructure, mobile app, testing & quality, AI integration) examining 345 TypeScript files, 46 Dart files, 222 SQL migrations, 23 Edge Functions, 47 test files, and 47 operational documents.*
