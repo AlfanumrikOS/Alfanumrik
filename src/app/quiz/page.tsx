@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { track } from '@/lib/analytics';
 import { logger } from '@/lib/logger';
+import { validateAntiCheat } from '@/lib/anti-cheat';
+import { calculateScorePercent } from '@/lib/scoring';
 import { getQuizQuestionsV2, submitQuizResults, saveCognitiveMetrics, saveQuestionResponses, supabase, updateChapterProgress } from '@/lib/supabase';
 import { XP_RULES } from '@/lib/xp-rules';
 import { Card, Button, ProgressBar, LoadingFoxy } from '@/components/ui';
@@ -354,37 +356,13 @@ export default function QuizPage() {
         }
 
         // ── ANTI-CHEAT: Client-side validation before submission (P3) ──
-        // 1. Minimum time: 3 seconds avg per question (bots submit instantly) — REJECT
-        const avgTimePerQ = allResponses.length > 0 ? timer / allResponses.length : 0;
-        if (avgTimePerQ < 3) {
-          console.warn(`[AntiCheat] Quiz completed too fast: ${timer}s for ${allResponses.length} questions (avg ${avgTimePerQ.toFixed(1)}s < 3s)`);
+        // Uses extracted pure functions from @/lib/anti-cheat (single source of truth)
+        const antiCheat = validateAntiCheat(timer, allResponses, questions.length);
+        if (!antiCheat.valid) {
+          console.warn(`[AntiCheat] Rejected: ${antiCheat.reason}`);
           setResults({
-            total: allResponses.length,
-            correct: allResponses.filter(r => r.is_correct).length,
-            score_percent: 0,
-            xp_earned: 0,
-            session_id: '',
-          });
-          setLoading(false);
-          setScreen('results');
-          return;
-        }
-
-        // 2. Detect impossible response patterns — FLAG (warn but still submit)
-        // If ALL answers are the same index and >3 questions, flag as suspicious
-        const optionCounts = [0, 0, 0, 0];
-        allResponses.forEach(r => { if (r.selected_option >= 0 && r.selected_option < 4) optionCounts[r.selected_option]++; });
-        const maxSameOption = Math.max(...optionCounts);
-        if (allResponses.length > 3 && maxSameOption === allResponses.length) {
-          console.warn(`[AntiCheat] All answers were option ${optionCounts.indexOf(maxSameOption)} — pattern gaming`);
-        }
-
-        // 3. Verify response count matches question count — REJECT
-        if (allResponses.length !== questions.length) {
-          console.warn(`[AntiCheat] Response count (${allResponses.length}) != question count (${questions.length})`);
-          setResults({
-            total: questions.length,
-            correct: 0,
+            total: antiCheat.reason === 'count_mismatch' ? questions.length : allResponses.length,
+            correct: antiCheat.reason === 'count_mismatch' ? 0 : allResponses.filter(r => r.is_correct).length,
             score_percent: 0,
             xp_earned: 0,
             session_id: '',
@@ -481,7 +459,7 @@ export default function QuizPage() {
         setResults({
           total,
           correct,
-          score_percent: total > 0 ? Math.round((correct / total) * 100) : 0,
+          score_percent: calculateScorePercent(correct, total),
           xp_earned: 0, // XP is ONLY awarded server-side
           session_id: '',
         });
