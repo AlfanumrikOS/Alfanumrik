@@ -9,6 +9,7 @@ import { BLOOM_CONFIG, BLOOM_LEVELS, BLOOM_ORDER, getHighestMasteredBloom, predi
 import type { BloomLevel, KnowledgeGap, LearningVelocity, CognitiveSessionMetrics, StudentLearningProfile, Subject } from '@/lib/types';
 import { Card, Badge, ProgressBar, SectionHeader, StatCard, MasteryRing, LoadingFoxy, BottomNav, Button, EmptyState } from '@/components/ui';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
+import ExamProphecy from '@/components/ExamProphecy';
 
 /* ── Helpers ── */
 const SEVERITY_COLORS: Record<string, string> = {
@@ -312,6 +313,18 @@ export default function ProgressPage() {
            ══════════════════════════════════════════════════════════ */}
         {activeTab === 'overview' && (
           <>
+            {/* ═══ EXAM PROPHECY — Predictive Score Engine ═══ */}
+            {totalSessions > 0 && (student.preferred_subject || profiles.length > 0) && (
+              <SectionErrorBoundary section="ExamProphecy">
+                <ExamProphecy
+                  studentId={student.id}
+                  subject={student.preferred_subject ?? profiles[0]?.subject ?? 'math'}
+                  grade={student.grade}
+                  isHi={isHi}
+                />
+              </SectionErrorBoundary>
+            )}
+
             {/* ═══ EMPTY STATE — show when student has zero quiz history ═══ */}
             {totalSessions === 0 ? (
               <Card className="!p-6 text-center">

@@ -87,3 +87,65 @@ export function streakShareMessage(params: {
     text: `🔥 ${studentName} has been learning for ${days} days straight on Alfanumrik!\n\nAlfanumrik — AI-powered adaptive learning. Try it now!`,
   };
 }
+
+/**
+ * Generate a challenge invite share message.
+ */
+export function challengeInviteMessage(params: {
+  studentName: string;
+  subject: string;
+  shareCode: string;
+  isHi: boolean;
+}): ShareData {
+  const { studentName, subject, shareCode, isHi } = params;
+  const challengeUrl = `https://alfanumrik.com/challenge?code=${shareCode}`;
+
+  if (isHi) {
+    return {
+      title: `${studentName} ने तुम्हें ${subject} चैलेंज के लिए बुलाया!`,
+      text: `⚔️ ${studentName} ने तुम्हें Alfanumrik पर ${subject} क्विज़ चैलेंज भेजा है!\n\nक्या तुम जीत सकते हो? अभी खेलो!`,
+      url: challengeUrl,
+    };
+  }
+
+  return {
+    title: `${studentName} challenged you to a ${subject} quiz!`,
+    text: `⚔️ ${studentName} challenged you to a ${subject} quiz battle on Alfanumrik!\n\nCan you beat them? Play now!`,
+    url: challengeUrl,
+  };
+}
+
+/**
+ * Generate a challenge result share message.
+ */
+export function challengeResultMessage(params: {
+  studentName: string;
+  subject: string;
+  won: boolean;
+  myScore: number;
+  opponentScore: number;
+  opponentName: string;
+  isHi: boolean;
+}): ShareData {
+  const { studentName, subject, won, myScore, opponentScore, opponentName, isHi } = params;
+
+  if (isHi) {
+    return {
+      title: won
+        ? `${studentName} ने ${opponentName} को ${subject} में हराया!`
+        : `${opponentName} ने ${subject} चैलेंज जीता!`,
+      text: won
+        ? `🏆 ${studentName} ने ${opponentName} को ${subject} क्विज़ चैलेंज में ${myScore}% vs ${opponentScore}% से हराया!\n\nAlfanumrik पर अपने दोस्तों को चैलेंज करो!`
+        : `⚔️ कड़ा मुकाबला! ${studentName} (${myScore}%) vs ${opponentName} (${opponentScore}%) — ${subject} क्विज़ चैलेंज\n\nAlfanumrik पर रीमैच खेलो!`,
+    };
+  }
+
+  return {
+    title: won
+      ? `${studentName} beat ${opponentName} in ${subject}!`
+      : `${opponentName} won the ${subject} challenge!`,
+    text: won
+      ? `🏆 ${studentName} beat ${opponentName} in a ${subject} quiz challenge — ${myScore}% vs ${opponentScore}%!\n\nChallenge your friends on Alfanumrik!`
+      : `⚔️ Tough match! ${studentName} (${myScore}%) vs ${opponentName} (${opponentScore}%) in ${subject}\n\nPlay a rematch on Alfanumrik!`,
+  };
+}

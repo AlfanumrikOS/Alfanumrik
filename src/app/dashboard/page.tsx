@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase, getSubjects, getFeatureFlags, getNextTopics, generateNotifications } from '@/lib/supabase';
 import { useDashboardData } from '@/lib/swr';
-import { Card, StatCard, ProgressBar, SectionHeader, SubjectChip, Avatar, BottomNav, MasteryRing, StreakBadge } from '@/components/ui';
+import { Card, StatCard, ProgressBar, SectionHeader, SubjectChip, Avatar, BottomNav, MasteryRing } from '@/components/ui';
 import TrustFooter from '@/components/TrustFooter';
 import { DashboardSkeleton } from '@/components/Skeleton';
 import { calculateLevel, xpToNextLevel, getLevelName } from '@/lib/xp-rules';
@@ -19,7 +19,8 @@ import TodaysPlan from '@/components/dashboard/TodaysPlan';
 import ProgressSnapshot from '@/components/dashboard/ProgressSnapshot';
 import ExamReadiness from '@/components/dashboard/ExamReadiness';
 import DailyChallenge from '@/components/dashboard/DailyChallenge';
-import { StaggerContainer, StaggerItem } from '@/components/landing/Animations';
+import FocusDashboard from '@/components/dashboard/FocusDashboard';
+
 
 const BLOOM_LABELS: Record<string, { icon: string; label: string; labelHi: string }> = {
   remember: { icon: '📖', label: 'Remember', labelHi: 'याद' },
@@ -203,151 +204,16 @@ export default function Dashboard() {
        <SectionErrorBoundary section="Dashboard">
 
         {/* ═══ FOCUS ZONE: 3 cards — "One Thing at a Time" ═══ */}
-        <StaggerContainer className="space-y-3">
-
-          {/* FOCUS 1: Continue Learning Hero Card */}
-          <StaggerItem>
-            <div
-              className="rounded-2xl p-5 relative overflow-hidden"
-              style={{
-                background: 'linear-gradient(135deg, var(--orange), var(--gold))',
-                border: 'none',
-                boxShadow: '0 4px 20px rgba(232,88,28,0.2)',
-              }}
-            >
-              <div className="relative z-10">
-                {nextTopics.length > 0 ? (
-                  <>
-                    <p className="text-xs font-medium text-white/80 mb-1">
-                      {isHi ? 'जारी रखो' : 'Continue Learning'}
-                    </p>
-                    <div className="flex items-center gap-4">
-                      <div className="flex-1 min-w-0">
-                        <h2 className="text-lg font-bold text-white truncate" style={{ fontFamily: 'var(--font-display)' }}>
-                          {nextTopics[0].title}
-                        </h2>
-                        <p className="text-xs text-white/70 mt-0.5">
-                          {meta?.name ?? student.preferred_subject} {nextTopics[0].chapter_number ? `· ${isHi ? 'अध्याय' : 'Ch.'} ${nextTopics[0].chapter_number}` : ''}
-                        </p>
-                      </div>
-                      {current && current.total_questions_asked > 0 && (
-                        <MasteryRing value={Math.round((current.total_questions_answered_correctly / current.total_questions_asked) * 100)} size={56} strokeWidth={4} color="rgba(255,255,255,0.9)">
-                          <span className="text-[11px] font-bold text-white">{Math.round((current.total_questions_answered_correctly / current.total_questions_asked) * 100)}%</span>
-                        </MasteryRing>
-                      )}
-                    </div>
-                    <button
-                      onClick={() =>
-                        nextTopics[0].chapter_number
-                          ? router.push(`/learn/${student.preferred_subject}/${nextTopics[0].chapter_number}`)
-                          : router.push('/foxy')
-                      }
-                      className="w-full mt-4 py-3 rounded-xl text-sm font-bold transition-all active:scale-[0.98]"
-                      style={{ background: 'rgba(255,255,255,0.95)', color: 'var(--orange)' }}
-                    >
-                      {isHi ? 'Foxy के साथ जारी रखो \u2192' : 'Continue with Foxy \u2192'}
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <div className="flex items-center gap-3 mb-3">
-                      <span className="text-3xl">🦊</span>
-                      <div>
-                        <h2 className="text-lg font-bold text-white" style={{ fontFamily: 'var(--font-display)' }}>
-                          {isHi ? 'सीखना शुरू करो!' : 'Start Learning!'}
-                        </h2>
-                        <p className="text-xs text-white/70">
-                          {isHi ? 'अपना पहला विषय चुनो' : 'Pick your first subject'}
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => router.push('/learn')}
-                      className="w-full py-3 rounded-xl text-sm font-bold transition-all active:scale-[0.98]"
-                      style={{ background: 'rgba(255,255,255,0.95)', color: 'var(--orange)' }}
-                    >
-                      {isHi ? 'पढ़ना शुरू करो \u2192' : 'Start Learning \u2192'}
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-          </StaggerItem>
-
-          {/* FOCUS 2: Today's Goal Card */}
-          <StaggerItem>
-            <Card className="!p-4">
-              <div className="flex items-center gap-4">
-                <MasteryRing
-                  value={Math.min(100, ((snapshot?.quizzes_taken ?? 0) > 0 ? 100 : 0))}
-                  size={52}
-                  strokeWidth={4}
-                  color="var(--orange)"
-                >
-                  <span className="text-lg">{(snapshot?.quizzes_taken ?? 0) > 0 ? '\u2713' : '!'}</span>
-                </MasteryRing>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs text-[var(--text-3)] mb-0.5">
-                    {isHi ? 'आज का लक्ष्य' : "Today's Goal"}
-                  </p>
-                  <p className="text-sm font-bold" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}>
-                    {isHi ? 'आज 1 क्विज़ पूरा करो' : 'Complete 1 quiz today'}
-                  </p>
-                  {(() => {
-                    const lvl = calculateLevel(totalXp);
-                    const prog = xpToNextLevel(totalXp);
-                    return (
-                      <p className="text-[11px] text-[var(--text-3)] mt-0.5">
-                        {prog.current}/{prog.needed} XP {isHi ? `स्तर ${lvl + 1} तक` : `to Level ${lvl + 1}`}
-                      </p>
-                    );
-                  })()}
-                </div>
-                <button
-                  onClick={() => router.push('/quiz')}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-white flex-shrink-0 transition-all active:scale-[0.97]"
-                  style={{ background: 'var(--orange)' }}
-                >
-                  {isHi ? 'शुरू करो' : 'Start'}
-                </button>
-              </div>
-            </Card>
-          </StaggerItem>
-
-          {/* FOCUS 3: Streak + XP Bar (compact) */}
-          <StaggerItem>
-            <div
-              className="rounded-xl px-4 py-3 flex items-center gap-4"
-              style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
-            >
-              <StreakBadge count={streak} compact />
-              <div className="h-5 w-px" style={{ background: 'var(--border)' }} />
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs font-bold" style={{ color: 'var(--purple)', fontFamily: 'var(--font-display)' }}>
-                  {isHi ? `स्तर ${calculateLevel(totalXp)}` : `Lv ${calculateLevel(totalXp)}`}
-                </span>
-                <span className="text-[10px] text-[var(--text-3)]">{getLevelName(calculateLevel(totalXp))}</span>
-              </div>
-              <div className="flex-1 min-w-0">
-                {(() => {
-                  const prog = xpToNextLevel(totalXp);
-                  return (
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--surface-2)' }}>
-                        <div
-                          className="h-full rounded-full transition-all"
-                          style={{ width: `${prog.progress}%`, background: 'var(--purple)' }}
-                        />
-                      </div>
-                      <span className="text-[10px] text-[var(--text-3)] flex-shrink-0">{totalXp.toLocaleString()} XP</span>
-                    </div>
-                  );
-                })()}
-              </div>
-            </div>
-          </StaggerItem>
-
-        </StaggerContainer>
+        <FocusDashboard
+          studentId={student.id}
+          studentName={student.name}
+          isHi={isHi}
+          grade={(student.grade || '9').replace('Grade ', '').trim()}
+          xp={totalXp}
+          level={calculateLevel(totalXp)}
+          streak={streak}
+          preferredSubject={student.preferred_subject}
+        />
 
         {/* ═══ SHOW MORE TOGGLE — progressive disclosure ═══ */}
         <button

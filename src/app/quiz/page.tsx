@@ -20,10 +20,6 @@ const QuizResults = dynamic(() => import('@/components/quiz/QuizResults'), {
   ssr: false,
   loading: () => <LoadingFoxy />,
 });
-// Lazy-load CelebrationOverlay — only shown briefly after quiz completion
-const CelebrationOverlay = dynamic(() => import('@/components/quiz/CelebrationOverlay'), {
-  ssr: false,
-});
 import {
   createFeedbackState, onCorrectAnswer, onWrongAnswer, onSessionComplete,
   getNearCompletionNudge, playFeedbackSound,
@@ -102,8 +98,8 @@ export default function QuizPage() {
   // Results state
   const [results, setResults] = useState<{
     total: number; correct: number; score_percent: number; xp_earned: number; session_id: string;
+    cme_next_action?: string; cme_next_concept_id?: string; cme_reason?: string;
   } | null>(null);
-  const [showCelebration, setShowCelebration] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/login');
@@ -465,7 +461,6 @@ export default function QuizPage() {
         });
       }
       setLoading(false);
-      setShowCelebration(true);
       setScreen('results');
 
       // Play completion sound
@@ -739,14 +734,6 @@ export default function QuizPage() {
   if (screen === 'results' && results) {
     return (
       <>
-        {showCelebration && (
-          <CelebrationOverlay
-            scorePercent={results.score_percent}
-            xpEarned={results.xp_earned}
-            isHi={isHi}
-            onDismiss={() => setShowCelebration(false)}
-          />
-        )}
         <QuizResults
           results={results}
           questions={questions}
@@ -757,7 +744,7 @@ export default function QuizPage() {
           selectedSubject={selectedSubject}
           studentName={student!.name}
           timer={timer}
-          onRetry={() => { setScreen('select'); setQuestions([]); setResponses([]); setResults(null); setShowCelebration(false); }}
+          onRetry={() => { setScreen('select'); setQuestions([]); setResponses([]); setResults(null); }}
           onGoHome={() => router.push('/dashboard')}
         />
       </>

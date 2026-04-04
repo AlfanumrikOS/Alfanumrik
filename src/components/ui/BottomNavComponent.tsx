@@ -27,6 +27,7 @@ const MORE_ITEMS = [
   { href: '/study-plan', icon: '📅', label: 'Study Plan', labelHi: 'स्टडी प्लान' },
   { href: '/profile', icon: '👤', label: 'Profile', labelHi: 'प्रोफ़ाइल' },
   { href: '/simulations', icon: '🔬', label: 'Interactive Lab', labelHi: 'इंटरैक्टिव लैब' },
+  { href: '/challenge', icon: '⚔️', label: 'Challenge Friends', labelHi: 'दोस्तों को चैलेंज करो' },
   { href: '/leaderboard', icon: '🏆', label: 'Rankings & Compete', labelHi: 'रैंकिंग और प्रतियोगिता' },
   { href: '/progress', icon: '📈', label: 'My Progress', labelHi: 'मेरी प्रगति' },
   { href: '/notifications', icon: '🔔', label: 'Notifications', labelHi: 'सूचनाएँ' },
@@ -55,6 +56,7 @@ const SIDEBAR_SECTIONS = [
     title: 'Track', titleHi: 'ट्रैक',
     items: [
       { href: '/progress', icon: '📈', label: 'My Progress', labelHi: 'मेरी प्रगति' },
+      { href: '/challenge', icon: '⚔️', label: 'Challenge Friends', labelHi: 'दोस्तों को चैलेंज करो' },
       { href: '/leaderboard', icon: '🏆', label: 'Rankings', labelHi: 'रैंकिंग' },
       { href: '/notifications', icon: '🔔', label: 'Notifications', labelHi: 'सूचनाएँ' },
     ],
