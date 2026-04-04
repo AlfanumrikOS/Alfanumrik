@@ -15,6 +15,10 @@ import { SUBJECT_META, GRADE_SUBJECTS } from '@/lib/constants';
 import { PlanBadge } from '@/components/PlanBadge';
 import QuickActions from '@/components/dashboard/QuickActions';
 import SubjectProgress from '@/components/dashboard/SubjectProgress';
+import TodaysPlan from '@/components/dashboard/TodaysPlan';
+import ProgressSnapshot from '@/components/dashboard/ProgressSnapshot';
+import ExamReadiness from '@/components/dashboard/ExamReadiness';
+import DailyChallenge from '@/components/dashboard/DailyChallenge';
 
 const BLOOM_LABELS: Record<string, { icon: string; label: string; labelHi: string }> = {
   remember: { icon: '📖', label: 'Remember', labelHi: 'याद' },
@@ -540,7 +544,7 @@ export default function Dashboard() {
                   onClick={async () => {
                     await supabase.from('students').update({ preferred_subject: s.code }).eq('id', student.id);
                     if (typeof window !== 'undefined') localStorage.setItem('alfanumrik_subject', s.code);
-                    router.push('/foxy');
+                    router.push('/learn');
                   }}
                 />
               ))}
@@ -596,6 +600,43 @@ export default function Dashboard() {
           subjects={subjects}
           selectedSubjects={selectedSubjects}
           isHi={isHi}
+        />
+
+        {/* Progressive disclosure: unlocked after first meaningful engagement */}
+        {totalXp >= 50 && (
+          <TodaysPlan
+            isHi={isHi}
+            dueCount={dueCount}
+            knowledgeGaps={knowledgeGaps.map(g => ({ id: g.id, topic_title: g.topic_title ?? g.description }))}
+            nextTopics={nextTopics}
+            preferredSubject={student.preferred_subject ?? ''}
+            streak={streak}
+          />
+        )}
+
+        {totalXp >= 50 && (
+          <ProgressSnapshot
+            totalXp={totalXp}
+            streak={streak}
+            mastered={mastered}
+            isHi={isHi}
+          />
+        )}
+
+        {totalXp >= 100 && (
+          <ExamReadiness
+            accuracy={cbseReadiness ?? 0}
+            totalQuizzes={snapshot?.quizzes_taken ?? 0}
+            isHi={isHi}
+            grade={student.grade}
+          />
+        )}
+
+        <DailyChallenge
+          isHi={isHi}
+          studentName={student.name}
+          streak={streak}
+          grade={student.grade}
         />
        </SectionErrorBoundary>
       </main>

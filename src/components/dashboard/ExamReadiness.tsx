@@ -40,21 +40,36 @@ export default function ExamReadiness({ accuracy, totalQuizzes, isHi, grade }: E
   const router = useRouter();
   const hasEnoughData = totalQuizzes >= MIN_QUIZZES;
 
-  // Not enough data state
+  // Not enough data state — progress-to-unlock UI
   if (!hasEnoughData) {
+    const progress = Math.round((totalQuizzes / MIN_QUIZZES) * 100);
     return (
       <div
-        className="w-full rounded-2xl p-4 text-center"
+        className="w-full rounded-2xl p-4"
         style={{
           background: 'var(--surface-1)',
           border: '1px solid var(--border)',
           boxShadow: '0 2px 12px rgba(0,0,0,0.03)',
         }}
       >
-        <div className="text-sm text-[var(--text-3)]">
-          {isHi
-            ? `अपनी परीक्षा तैयारी देखने के लिए ${MIN_QUIZZES - totalQuizzes} और क्विज़ दो`
-            : `Take ${MIN_QUIZZES - totalQuizzes} more quiz${MIN_QUIZZES - totalQuizzes !== 1 ? 'zes' : ''} to see your exam readiness`}
+        <div className="flex items-center gap-3 mb-2">
+          <span className="text-lg">🔒</span>
+          <div className="flex-1 min-w-0">
+            <div className="text-xs font-semibold" style={{ fontFamily: 'var(--font-display)' }}>
+              {isHi ? 'परीक्षा तैयारी अनलॉक करो' : 'Unlock Exam Readiness'}
+            </div>
+            <div className="text-[10px] text-[var(--text-3)] mt-0.5">
+              {isHi
+                ? `${totalQuizzes}/${MIN_QUIZZES} क्विज़ पूरे — ${MIN_QUIZZES - totalQuizzes} और लो!`
+                : `${totalQuizzes}/${MIN_QUIZZES} quizzes done — ${MIN_QUIZZES - totalQuizzes} more to go!`}
+            </div>
+          </div>
+        </div>
+        <div className="w-full bg-gray-200 rounded-full h-2">
+          <div
+            className="h-2 rounded-full transition-all duration-500"
+            style={{ width: `${progress}%`, background: 'linear-gradient(135deg, #E8581C, #F5A623)' }}
+          />
         </div>
       </div>
     );

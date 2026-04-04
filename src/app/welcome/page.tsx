@@ -103,20 +103,25 @@ const FAQS = [
 function CTAButtons({ center = false }: { center?: boolean }) {
   const { t } = useLang();
   return (
-    <div className={`flex flex-col sm:flex-row items-center gap-3 ${center ? 'justify-center' : ''}`}>
-      <Link href="/login" className="text-sm px-7 py-3.5 rounded-xl font-bold text-white w-full sm:w-auto text-center"
-        style={{ background: 'linear-gradient(135deg, #E8581C, #F5A623)' }}>
-        {t('Start Learning Free', 'मुफ्त सीखना शुरू करें')}
-      </Link>
-      <Link href="/login?role=parent" className="text-sm px-6 py-3.5 rounded-xl font-semibold w-full sm:w-auto text-center"
-        style={{ color: '#16A34A', border: '1.5px solid #16A34A40' }}>
-        {t('For Parents', 'माता-पिता के लिए')}
-      </Link>
-      <Link href="/login?role=teacher" className="text-sm px-6 py-3.5 rounded-xl font-semibold w-full sm:w-auto text-center"
-        style={{ color: '#2563EB', border: '1.5px solid #2563EB40' }}>
-        {t('For Teachers', 'शिक्षकों के लिए')}
-      </Link>
-    </div>
+    <>
+      <div className={`flex flex-col sm:flex-row items-center gap-3 ${center ? 'justify-center' : ''}`}>
+        <Link href="/login" className="text-sm px-7 py-3.5 rounded-xl font-bold text-white w-full sm:w-auto text-center"
+          style={{ background: 'linear-gradient(135deg, #E8581C, #F5A623)' }}>
+          {t('Start Learning Free', 'मुफ्त सीखना शुरू करें')}
+        </Link>
+        <Link href="/login?role=parent" className="text-sm px-6 py-3.5 rounded-xl font-semibold w-full sm:w-auto text-center"
+          style={{ color: '#16A34A', border: '1.5px solid #16A34A40' }}>
+          {t('For Parents', 'माता-पिता के लिए')}
+        </Link>
+        <Link href="/login?role=teacher" className="text-sm px-6 py-3.5 rounded-xl font-semibold w-full sm:w-auto text-center"
+          style={{ color: '#2563EB', border: '1.5px solid #2563EB40' }}>
+          {t('For Teachers', 'शिक्षकों के लिए')}
+        </Link>
+      </div>
+      <p className="text-xs text-center mt-2" style={{ color: 'var(--text-3, #9CA3AF)' }}>
+        {t('Free: 5 AI sessions + 5 quizzes daily. Upgrade anytime.', 'मुफ्त: 5 AI सेशन + 5 क्विज़ प्रतिदिन। कभी भी अपग्रेड करें।')}
+      </p>
+    </>
   );
 }
 

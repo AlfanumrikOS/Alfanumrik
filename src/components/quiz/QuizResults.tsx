@@ -73,6 +73,11 @@ export default function QuizResults({
   const router = useRouter();
   const [expandedCorrect, setExpandedCorrect] = useState<Set<number>>(new Set());
 
+  const parseOptions = (opts: string | string[]): string[] => {
+    if (Array.isArray(opts)) return opts;
+    try { return JSON.parse(opts); } catch { return []; }
+  };
+
   // Play completion sound on mount
   useEffect(() => {
     import('@/lib/sounds').then(({ playSound }) => playSound('complete'));
@@ -218,9 +223,8 @@ export default function QuizResults({
               const resp = responses[idx];
               const correct = resp?.is_correct;
               const isExpanded = !correct || expandedCorrect.has(idx);
-              const opts: string[] = Array.isArray(question.options)
-                ? question.options
-                : (() => { try { return JSON.parse(question.options as string); } catch { return []; } })();
+              const opts = parseOptions(question.options);
+              const correctAnswerText = opts[question.correct_answer_index] || '';
               const questionText = isHi && question.question_hi ? question.question_hi : question.question_text;
               const explanation = isHi && question.explanation_hi ? question.explanation_hi : question.explanation;
               return (
@@ -253,7 +257,7 @@ export default function QuizResults({
                     </span>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-medium" style={{ color: 'var(--text-2)' }}>
-                        Q{idx + 1}. {questionText.substring(0, 90)}{questionText.length > 90 ? '…' : ''}
+                        Q{idx + 1}. {questionText.substring(0, 90)}{questionText.length > 90 ? '...' : ''}
                       </div>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
@@ -311,7 +315,26 @@ export default function QuizResults({
                           className="text-[11px] font-semibold px-3 py-1.5 rounded-lg w-full text-left"
                           style={{ background: `${subMeta?.color || '#7C3AED'}15`, color: subMeta?.color || '#7C3AED' }}
                         >
-                          📖 {isHi ? `अध्याय ${question.chapter_number} के concept पढ़ो →` : `Study Chapter ${question.chapter_number} concepts →`}
+                          📖 {isHi ? `अध्याय ${question.chapter_number} के concept पढ़ो ->` : `Study Chapter ${question.chapter_number} concepts ->`}
+                        </button>
+                      )}
+
+                      {/* Ask Foxy deep-link for wrong answers */}
+                      {!correct && (
+                        <button
+                          className="w-full rounded-lg py-2 px-3 flex items-center justify-center gap-2 text-xs font-semibold transition-colors"
+                          style={{ background: 'var(--orange)', color: '#fff' }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const subjectParam = selectedSubject || '';
+                            const msg = encodeURIComponent(
+                              `Explain why the answer to "${questionText.substring(0, 120)}" is "${correctAnswerText}"`
+                            );
+                            router.push(`/foxy?subject=${subjectParam}&mode=doubt&message=${msg}`);
+                          }}
+                        >
+                          <span>🦊</span>
+                          {isHi ? 'Foxy से पूछो' : 'Ask Foxy'}
                         </button>
                       )}
                     </div>
