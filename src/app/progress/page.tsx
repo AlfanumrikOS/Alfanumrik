@@ -303,7 +303,7 @@ export default function ProgressPage() {
               color: activeTab === 'cognitive' ? '#fff' : 'var(--text-3)',
             }}
           >
-            {isHi ? 'गहन विश्लेषण' : 'Deep Analysis'}
+            {isHi ? 'मेरी कमज़ोरियाँ' : 'My Weak Points'}
           </button>
         </div>
 

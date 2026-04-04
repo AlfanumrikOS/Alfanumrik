@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { SUBJECT_META } from '@/lib/constants';
@@ -136,11 +136,14 @@ export default function ChapterDetailPage() {
   const { student, isLoggedIn, isLoading: authLoading, isHi } = useAuth();
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
 
   const subjectCode = (params?.subject as string) || '';
   const chapterNumber = parseInt((params?.chapter as string) || '0', 10);
 
-  const [activeTab, setActiveTab] = useState<TabId>('learn');
+  const tabParam = searchParams?.get('tab');
+  const initialTab: TabId = (tabParam === 'qa' || tabParam === 'quiz' || tabParam === 'foxy') ? tabParam : 'learn';
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab);
   const [chunks, setChunks] = useState<RAGChunk[]>([]);
   const [dbConcepts, setDbConcepts] = useState<DbConcept[]>([]);
   const [questions, setQuestions] = useState<QAQuestion[]>([]);
@@ -575,10 +578,13 @@ function LearnTab({ dbConcepts, chunks, ragDiagrams, questions, isHi, activeConc
             {isHi ? '🦊 फॉक्सी से पूछें' : '🦊 Ask Foxy'}
           </button>
           <button
-            onClick={() => router.push('/foxy')}
+            onClick={() => {
+              const p = new URLSearchParams({ subject: subjectCode, mode: 'practice' });
+              router.push(`/quiz?${p.toString()}`);
+            }}
             className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
           >
-            {isHi ? '🦊 Foxy से पूछें' : '🦊 Ask Foxy'}
+            {isHi ? '⚡ क्विज़ लो' : '⚡ Take a Quiz'}
           </button>
         </div>
       </div>
@@ -628,6 +634,25 @@ function LearnTab({ dbConcepts, chunks, ragDiagrams, questions, isHi, activeConc
         <span className="text-[10px] text-gray-400 font-medium">
           {activeConcept + 1}/{total}
         </span>
+      </div>
+
+      {/* ── Progress bar + estimated time ── */}
+      <div className="space-y-1">
+        <div className="w-full bg-gray-200 rounded-full h-1.5">
+          <div
+            className="bg-orange-500 h-1.5 rounded-full transition-all duration-500"
+            style={{ width: `${((activeConcept + 1) / total) * 100}%` }}
+          />
+        </div>
+        {(() => {
+          const remainingConcepts = concepts.slice(activeConcept);
+          const remainingMin = remainingConcepts.reduce((sum, c) => sum + (c.estimated_minutes || 3), 0);
+          return remainingMin > 0 ? (
+            <p className="text-[10px] text-gray-400 text-right">
+              {isHi ? `~${remainingMin} मिनट शेष` : `~${remainingMin} min remaining`}
+            </p>
+          ) : null;
+        })()}
       </div>
 
       {/* ── Chapter overview card (shown on first concept) ── */}
@@ -860,30 +885,63 @@ function LearnTab({ dbConcepts, chunks, ragDiagrams, questions, isHi, activeConc
       </div>
 
       {/* ── Navigation buttons ── */}
-      <div className="flex gap-3">
-        <button
-          onClick={() => handleNextConcept(Math.max(0, activeConcept - 1))}
-          disabled={isFirst}
-          className={`flex-1 py-2.5 rounded-lg text-sm font-medium border transition-all ${
-            isFirst
-              ? 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed'
-              : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300 active:scale-[0.98]'
-          }`}
-        >
-          {isHi ? '← पिछला' : '← Previous'}
-        </button>
-        <button
-          onClick={() => handleNextConcept(Math.min(total - 1, activeConcept + 1))}
-          disabled={isLast}
-          className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-all ${
-            isLast
-              ? 'bg-gray-50 text-gray-300 border border-gray-100 cursor-not-allowed'
-              : 'bg-orange-500 text-white hover:bg-orange-600 active:scale-[0.98]'
-          }`}
-        >
-          {isHi ? 'अगला →' : 'Next →'}
-        </button>
-      </div>
+      {isLast ? (
+        <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-200 p-5 text-center space-y-3">
+          <div className="text-3xl">🎉</div>
+          <h3 className="text-base font-bold text-green-800">
+            {isHi ? 'अध्याय पूरा!' : 'Chapter Complete!'}
+          </h3>
+          <p className="text-xs text-green-600">
+            {isHi
+              ? `${total} अवधारणाएं पूरी — बहुत बढ़िया!`
+              : `${total} concepts covered — great job!`}
+          </p>
+          <div className="flex gap-2 pt-2">
+            <button
+              onClick={() => handleNextConcept(Math.max(0, activeConcept - 1))}
+              className="flex-1 py-2 rounded-lg text-xs font-medium bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 active:scale-[0.98] transition-all"
+            >
+              {isHi ? '← पिछला' : '← Previous'}
+            </button>
+            <button
+              onClick={() => router.push(`/learn/${subjectCode}/${chapterNumber}?tab=qa`)}
+              className="flex-1 py-2 rounded-lg text-xs font-medium bg-white text-green-700 border border-green-200 hover:bg-green-50 active:scale-[0.98] transition-all"
+            >
+              {isHi ? '❓ प्रश्न-उत्तर' : '❓ Review Q&A'}
+            </button>
+            <button
+              onClick={() => {
+                const p = new URLSearchParams({ subject: subjectCode, mode: 'practice' });
+                if (chapterNumber) p.set('chapter', String(chapterNumber));
+                router.push(`/quiz?${p.toString()}`);
+              }}
+              className="flex-1 py-2 rounded-lg text-xs font-medium bg-green-600 text-white hover:bg-green-700 active:scale-[0.98] transition-all"
+            >
+              {isHi ? '⚡ क्विज़ लो' : '⚡ Take Quiz'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex gap-3">
+          <button
+            onClick={() => handleNextConcept(Math.max(0, activeConcept - 1))}
+            disabled={isFirst}
+            className={`flex-1 py-2.5 rounded-lg text-sm font-medium border transition-all ${
+              isFirst
+                ? 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed'
+                : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300 active:scale-[0.98]'
+            }`}
+          >
+            {isHi ? '← पिछला' : '← Previous'}
+          </button>
+          <button
+            onClick={() => handleNextConcept(Math.min(total - 1, activeConcept + 1))}
+            className="flex-1 py-2.5 rounded-lg text-sm font-medium bg-orange-500 text-white hover:bg-orange-600 active:scale-[0.98] transition-all"
+          >
+            {isHi ? 'अगला →' : 'Next →'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -991,6 +1049,11 @@ function QATab({
                     <p className="text-sm text-gray-800 font-medium leading-snug">
                       {q.question_text || q.chunk_text.slice(0, 200)}
                     </p>
+                    {!isExpanded && q.answer_text && (
+                      <p className="text-xs text-gray-400 mt-1 line-clamp-1">
+                        {q.answer_text.slice(0, 120)}{q.answer_text.length > 120 ? '...' : ''}
+                      </p>
+                    )}
                     <div className="flex flex-wrap gap-1.5 mt-2">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium ${srcInfo.color}`}>
                         {srcInfo.icon} {isHi ? srcInfo.labelHi : srcInfo.label}
@@ -1054,6 +1117,11 @@ function QATab({
                     <p className="text-sm text-gray-800 font-medium leading-snug">
                       {q.question_text}
                     </p>
+                    {!isExpanded && (q.answer_text || q.explanation) && (
+                      <p className="text-xs text-gray-400 mt-1 line-clamp-1">
+                        {(q.answer_text || q.explanation || '').slice(0, 120)}{(q.answer_text || q.explanation || '').length > 120 ? '...' : ''}
+                      </p>
+                    )}
                     <div className="flex flex-wrap gap-1.5 mt-2">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium ${srcInfo.color}`}>
                         {srcInfo.icon} {isHi ? srcInfo.labelHi : srcInfo.label}

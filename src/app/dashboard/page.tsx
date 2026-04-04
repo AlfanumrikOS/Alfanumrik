@@ -185,8 +185,8 @@ export default function Dashboard() {
             subjectMeta={meta ? { icon: meta.icon, name: meta.name, color: meta.color } : null}
           />
 
-          {/* ═══ 2. TODAY'S PLAN — actionable daily learning path ═══ */}
-          <TodaysPlan
+          {/* ═══ 2. TODAY'S PLAN — actionable daily learning path (shown after XP >= 50) ═══ */}
+          {totalXp >= 50 && <TodaysPlan
             isHi={isHi}
             dueCount={dueCount}
             knowledgeGaps={knowledgeGaps}
@@ -194,18 +194,18 @@ export default function Dashboard() {
             preferredSubject={student.preferred_subject || 'math'}
             streak={streak}
             cmeAction={cmeAction}
-          />
+          />}
 
-          {/* ═══ 3. PROGRESS SNAPSHOT — XP, level, streak, mastered ═══ */}
-          <ProgressSnapshot
+          {/* ═══ 3. PROGRESS SNAPSHOT (shown after XP >= 50) ═══ */}
+          {totalXp >= 50 && <ProgressSnapshot
             totalXp={totalXp}
             streak={streak}
             mastered={mastered}
             isHi={isHi}
-          />
+          />}
 
-          {/* ═══ 3b. EXAM READINESS — predicted board grade ═══ */}
-          {(() => {
+          {/* ═══ 3b. EXAM READINESS — predicted board grade (hidden for beginners) ═══ */}
+          {totalXp >= 100 && (() => {
             const totalAsked = profiles.reduce((a, p) => a + (p.total_questions_asked ?? 0), 0);
             const totalCorrect = profiles.reduce((a, p) => a + (p.total_questions_answered_correctly ?? 0), 0);
             const totalSessions = profiles.reduce((a, p) => a + (p.total_sessions ?? 0), 0);
@@ -279,7 +279,7 @@ export default function Dashboard() {
                       key={s.code}
                       onClick={async () => {
                         await supabase.from('students').update({ preferred_subject: s.code }).eq('id', student.id);
-                        router.push('/foxy');
+                        router.push('/learn');
                       }}
                       className="rounded-xl p-3 flex items-center gap-3 transition-all active:scale-[0.97]"
                       style={{

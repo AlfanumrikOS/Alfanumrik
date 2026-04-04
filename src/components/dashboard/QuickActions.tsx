@@ -8,7 +8,7 @@ const QUICK_ACTIONS = [
   { href: '/foxy', icon: '🦊', label: 'Ask Foxy', labelHi: 'फॉक्सी से पूछो', color: '#7C3AED' },
   { href: '/stem-centre', icon: '🔬', label: 'STEM Centre', labelHi: 'स्टेम सेंटर', color: '#0891B2' },
   { href: '/review', icon: '🔄', label: 'Revise', labelHi: 'रिव्यू', color: '#0D9488' },
-  { href: '/scan', icon: '📷', label: 'Scan', labelHi: 'स्कैन', color: '#059669' },
+  { href: '/quiz', icon: '⚡', label: 'Quick Quiz', labelHi: 'क्विक क्विज़', color: '#F59E0B' },
   { href: '/exams', icon: '📋', label: 'Exams', labelHi: 'परीक्षाएँ', color: '#DC2626' },
 ];
 
