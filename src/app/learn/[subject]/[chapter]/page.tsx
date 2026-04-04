@@ -670,9 +670,9 @@ function LearnTab({ dbConcepts, chunks, ragDiagrams, questions, isHi, activeConc
           />
         </div>
         {(() => {
-          const remainingConcepts = concepts.slice(activeConcept);
-          const remainingMin = remainingConcepts.reduce((sum: number, c: { estimated_minutes?: number }) => sum + (c.estimated_minutes || 3), 0);
-          return remainingMin > 0 ? (
+          const remaining = total - activeConcept - 1;
+          const remainingMin = remaining * 3; // ~3 min per concept
+          return remaining > 0 ? (
             <p className="text-[10px] text-gray-400 text-right">
               {isHi ? `~${remainingMin} मिनट शेष` : `~${remainingMin} min remaining`}
             </p>

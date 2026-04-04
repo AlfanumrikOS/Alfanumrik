@@ -121,8 +121,10 @@ describe('RPC parameter construction', () => {
 })
 
 describe('retrieval orchestration (mocked Supabase)', () => {
-  let mockRpc: ReturnType<typeof vi.fn>
-  let mockFrom: ReturnType<typeof vi.fn>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let mockRpc: any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let mockFrom: any
   let mockSupabase: any
 
   const makeChunkRow = (overrides = {}) => ({
