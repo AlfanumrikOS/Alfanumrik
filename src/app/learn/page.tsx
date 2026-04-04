@@ -42,7 +42,8 @@ export default function LearnPage() {
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/');
-  }, [isLoading, isLoggedIn, router]);
+    if (!isLoading && isLoggedIn && student && !student.onboarding_completed) router.replace('/onboarding');
+  }, [isLoading, isLoggedIn, student, router]);
 
   useEffect(() => {
     if (!selectedSubject || !student?.grade) { setChapters([]); return; }

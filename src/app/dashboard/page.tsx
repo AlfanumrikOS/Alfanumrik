@@ -53,7 +53,11 @@ export default function Dashboard() {
     // Redirect non-student roles to their correct dashboard
     if (!isLoading && isLoggedIn && activeRole === 'teacher') router.replace('/teacher');
     if (!isLoading && isLoggedIn && activeRole === 'guardian') router.replace('/parent');
-  }, [isLoading, isLoggedIn, activeRole, router]);
+    // Redirect students who haven't completed onboarding (grade/board not set)
+    if (!isLoading && isLoggedIn && activeRole === 'student' && student && !student.onboarding_completed) {
+      router.replace('/onboarding');
+    }
+  }, [isLoading, isLoggedIn, activeRole, student, router]);
 
   useEffect(() => {
     const h = new Date().getHours();

@@ -6,7 +6,6 @@ import { clearAllCache } from './swr';
 import type { Student, StudentSnapshot } from './types';
 
 /* ─── Role Types ─── */
-// Note: 'guardian' is the DB role name; maps to 'parent' via ROLE_ALIASES in identity/constants.ts
 export type UserRole = 'student' | 'teacher' | 'guardian' | 'none';
 
 interface TeacherProfile {
@@ -50,7 +49,6 @@ interface AuthState {
   isLoggedIn: boolean;
   isLoading: boolean;
   isHi: boolean;
-  isDemoUser: boolean;
 
   // Language
   language: string;
@@ -74,7 +72,6 @@ const AuthContext = createContext<AuthState>({
   isLoggedIn: false,
   isLoading: true,
   isHi: false,
-  isDemoUser: false,
   language: 'en',
   setLanguage: () => {},
   refreshStudent: async () => {},
@@ -95,7 +92,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [roles, setRoles] = useState<UserRole[]>([]);
   const [activeRole, setActiveRoleState] = useState<UserRole>('none');
   const [isLoading, setIsLoading] = useState(true);
-  const [hasProfile, setHasProfile] = useState(false);
   const [language, setLanguageState] = useState('en');
 
   const setLanguage = (lang: string) => {
@@ -130,7 +126,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setGuardian(null);
         setRoles([]);
         setActiveRoleState('none');
-        setHasProfile(false);
         setIsLoading(false);
         return;
       }
@@ -177,7 +172,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               .single();
             if (studentData) {
               setStudent(studentData as Student);
-              setHasProfile(true);
               setLanguageState(studentData.preferred_language ?? 'en');
             }
           }
@@ -189,10 +183,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               .select('id, name, school_name, subjects_taught, grades_taught, email, phone')
               .eq('id', rd.teacher.id)
               .single();
-            if (teacherData) {
-              setTeacher(teacherData as TeacherProfile);
-              setHasProfile(true);
-            }
+            if (teacherData) setTeacher(teacherData as TeacherProfile);
           }
 
           // Load guardian profile if role exists
@@ -202,10 +193,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               .select('id, name, email, phone')
               .eq('id', rd.guardian.id)
               .single();
-            if (guardianData) {
-              setGuardian(guardianData as GuardianProfile);
-              setHasProfile(true);
-            }
+            if (guardianData) setGuardian(guardianData as GuardianProfile);
           }
         }
       } catch (rpcErr) {
@@ -257,91 +245,64 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (detectedRoles.length > 0) {
           setRoles(detectedRoles);
           setActiveRoleState(detectedPrimary);
-          setHasProfile(true);
         } else {
           // User is authenticated but has no profile yet.
-          // Call server bootstrap to create profile from auth metadata.
+          // Auto-create profile from auth metadata (handles failed signup inserts).
           const metaRole = user.user_metadata?.role as string | undefined;
           const metaName = user.user_metadata?.name as string || user.email?.split('@')[0] || 'Student';
-          const metaGrade = user.user_metadata?.grade as string || '9';
+          const metaGrade = user.user_metadata?.grade as string || '6';
           const metaBoard = user.user_metadata?.board as string || 'CBSE';
 
           try {
-            const bootstrapRes = await fetch('/api/auth/bootstrap', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                role: metaRole === 'teacher' ? 'teacher' : metaRole === 'parent' ? 'parent' : 'student',
-                name: metaName,
-                grade: metaGrade,
-                board: metaBoard,
-              }),
-            });
-
-            if (bootstrapRes.ok) {
-              // Re-fetch to get the newly created profile
-              const { data: newStudentData } = await supabase
-                .from('students')
-                .select('*')
-                .eq('auth_user_id', user.id)
-                .single();
-              if (newStudentData) {
-                setStudent(newStudentData as Student);
-                setRoles(['student']);
-                setActiveRoleState('student');
-                setHasProfile(true);
-              } else {
-                // Check teacher/guardian
-                const { data: newTeacherData } = await supabase
-                  .from('teachers')
-                  .select('id, name, school_name, subjects_taught, grades_taught, email, phone')
-                  .eq('auth_user_id', user.id)
-                  .single();
-                if (newTeacherData) {
-                  setTeacher(newTeacherData as TeacherProfile);
-                  setRoles(['teacher']);
-                  setActiveRoleState('teacher');
-                  setHasProfile(true);
-                } else {
-                  const { data: newGuardianData } = await supabase
-                    .from('guardians')
-                    .select('id, name, email, phone')
-                    .eq('auth_user_id', user.id)
-                    .single();
-                  if (newGuardianData) {
-                    setGuardian(newGuardianData as GuardianProfile);
-                    setRoles(['guardian']);
-                    setActiveRoleState('guardian');
-                    setHasProfile(true);
-                  }
-                }
-              }
-            } else {
-              // Bootstrap returned an error status — log for diagnostics.
-              // Student will be redirected to /login where they can try again.
-              // This surfaces the failure instead of silently dropping it.
-              let errDetail = `HTTP ${bootstrapRes.status}`;
-              try {
-                const errBody = await bootstrapRes.json();
-                errDetail = errBody?.error || errDetail;
-              } catch { /* ignore parse errors */ }
-              console.error('[Auth] Bootstrap API returned error:', errDetail, '— user will be redirected to login');
+            if (!metaRole || metaRole === 'student') {
+              const { data: newStudent } = await supabase.from('students').insert({
+                auth_user_id: user.id, name: metaName, email: user.email,
+                grade: metaGrade.startsWith('Grade') ? metaGrade : `Grade ${metaGrade}`,
+                board: metaBoard, preferred_language: 'en', account_status: 'active',
+                onboarding_completed: false,
+              }).select('*').single();
+              if (newStudent) { setStudent(newStudent as Student); setRoles(['student']); setActiveRoleState('student'); }
+            } else if (metaRole === 'teacher') {
+              const { data: newTeacher } = await supabase.from('teachers').insert({
+                auth_user_id: user.id, name: metaName, email: user.email || '',
+              }).select('id, name, school_name, subjects_taught, grades_taught, email, phone').single();
+              if (newTeacher) { setTeacher(newTeacher as TeacherProfile); setRoles(['teacher']); setActiveRoleState('teacher'); }
+            } else if (metaRole === 'parent') {
+              const { data: newGuardian } = await supabase.from('guardians').insert({
+                auth_user_id: user.id, name: metaName, email: user.email,
+              }).select('id, name, email, phone').single();
+              if (newGuardian) { setGuardian(newGuardian as GuardianProfile); setRoles(['guardian']); setActiveRoleState('guardian'); }
             }
-          } catch (bootstrapErr) {
-            console.warn('[Auth] Server bootstrap failed (network/runtime error):', bootstrapErr);
+          } catch (profileErr) {
+            console.warn('Auto-create profile failed:', profileErr);
           }
 
-          // No final fallback — if no profile was created, hasProfile stays false
-          // and isLoggedIn will be false, redirecting user to login
+          // Final fallback if insert also failed
+          if (roles.length === 0) {
+            const fallbackRole: UserRole = metaRole === 'teacher' ? 'teacher' : metaRole === 'parent' ? 'guardian' : 'student';
+            setRoles([fallbackRole]);
+            setActiveRoleState(fallbackRole);
+          }
         }
       }
     } catch (err) {
       console.error('Auth fetch error:', err);
-      // Don't set fallback roles without a real profile — this caused redirect loops.
-      // hasProfile stays false, isLoggedIn will be false, user redirected to login.
+      // If user was authenticated, ensure they're not stuck as "logged out"
+      // Use role from auth metadata if available
+      if (hasUser) {
+        try {
+          const { data: { user: u } } = await supabase.auth.getUser();
+          const metaRole = u?.user_metadata?.role as string | undefined;
+          const fallbackRole: UserRole = metaRole === 'teacher' ? 'teacher' : metaRole === 'parent' ? 'guardian' : 'student';
+          setRoles([fallbackRole]);
+          setActiveRoleState(fallbackRole);
+        } catch {
+          setRoles(['student']);
+          setActiveRoleState('student');
+        }
+      }
     }
     setIsLoading(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once on mount; roles.length is internal state set within this callback
   }, []);
 
   const refreshSnapshot = useCallback(async () => {
@@ -361,7 +322,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setGuardian(null);
     setRoles([]);
     setActiveRoleState('none');
-    setHasProfile(false);
     if (typeof window !== 'undefined') {
       localStorage.removeItem('alfanumrik_active_role');
       localStorage.removeItem('alfanumrik_guardian');
@@ -394,7 +354,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setGuardian(null);
         setRoles([]);
         setActiveRoleState('none');
-        setHasProfile(false);
       } else if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') {
         fetchUser();
       }
@@ -417,10 +376,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         roles,
         activeRole,
         setActiveRole,
-        isLoggedIn: hasProfile,
+        isLoggedIn: roles.length > 0 || !!authUserId,
         isLoading,
         isHi: language === 'hi',
-        isDemoUser: student?.account_status === 'demo',
         language,
         setLanguage,
         refreshStudent: fetchUser,
