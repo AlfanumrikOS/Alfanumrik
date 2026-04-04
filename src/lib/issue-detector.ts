@@ -162,7 +162,7 @@ export async function detectAuthFailures(): Promise<DetectedIssue[]> {
     const totalEvents = events.length;
     if (totalEvents < 20) return []; // Not enough data to be meaningful
 
-    const failedEvents = events.filter(e =>
+    const failedEvents = events.filter((e: Record<string, unknown>) =>
       ['login_failure', 'bootstrap_failure'].includes(e.event_type as string)
     );
     const failureRate = failedEvents.length / totalEvents;
@@ -210,7 +210,7 @@ export async function detectPaymentFailures(): Promise<DetectedIssue[]> {
     const total = payments.length;
     if (total < 10) return []; // Not enough data
 
-    const failed = payments.filter(p => p.status === 'failed').length;
+    const failed = payments.filter((p: Record<string, unknown>) => p.status === 'failed').length;
     const failureRate = failed / total;
 
     if (failureRate > 0.02) {
@@ -382,7 +382,7 @@ export async function detectStaleContent(): Promise<DetectedIssue[]> {
     }
 
     // Check which of these topics actually have questions (via concept_tag matching topic field)
-    const conceptTags = staleTopics.map(t => t.concept_tag as string).filter(Boolean);
+    const conceptTags = staleTopics.map((t: Record<string, unknown>) => t.concept_tag as string).filter(Boolean);
     if (conceptTags.length === 0) return [];
 
     const { data: questionsWithTopic, error: qErr } = await supabase
@@ -393,8 +393,8 @@ export async function detectStaleContent(): Promise<DetectedIssue[]> {
 
     if (qErr || !questionsWithTopic) return [];
 
-    const topicsWithQuestions = new Set(questionsWithTopic.map(q => q.topic as string));
-    const staleWithQuestions = staleTopics.filter(t => topicsWithQuestions.has(t.concept_tag as string));
+    const topicsWithQuestions = new Set(questionsWithTopic.map((q: Record<string, unknown>) => q.topic as string));
+    const staleWithQuestions = staleTopics.filter((t: Record<string, unknown>) => topicsWithQuestions.has(t.concept_tag as string));
 
     if (staleWithQuestions.length === 0) return [];
 
@@ -406,7 +406,7 @@ export async function detectStaleContent(): Promise<DetectedIssue[]> {
       severity: 'low',
       evidence: {
         stale_count: staleWithQuestions.length,
-        sample_topics: staleWithQuestions.slice(0, 10).map(t => ({ id: t.id, title: t.title, concept_tag: t.concept_tag })),
+        sample_topics: staleWithQuestions.slice(0, 10).map((t: Record<string, unknown>) => ({ id: t.id, title: t.title, concept_tag: t.concept_tag })),
       },
       affected_users_count: 0,
     }];

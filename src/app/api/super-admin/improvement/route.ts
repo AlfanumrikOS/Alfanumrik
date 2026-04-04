@@ -197,10 +197,9 @@ async function getDashboard(supabase: ReturnType<typeof getSupabaseAdmin>) {
   let avgResolutionHours = 0;
   const resolved = resolvedIssues.data || [];
   if (resolved.length > 0) {
-    const totalMs = resolved.reduce((sum, row) => {
-      const r = row as { detected_at: string; resolved_at: string };
-      const detected = new Date(r.detected_at).getTime();
-      const resolvedAt = new Date(r.resolved_at).getTime();
+    const totalMs = resolved.reduce((sum: number, row: Record<string, unknown>) => {
+      const detected = new Date(row.detected_at as string).getTime();
+      const resolvedAt = new Date(row.resolved_at as string).getTime();
       return sum + (resolvedAt - detected);
     }, 0);
     avgResolutionHours = Math.round(totalMs / resolved.length / (1000 * 60 * 60) * 10) / 10;
