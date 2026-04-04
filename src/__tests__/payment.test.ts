@@ -1,5 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import crypto from 'crypto';
+import { verifyRazorpaySignature } from '@/lib/payment-verification';
 import {
   paymentSubscribeSchema,
   paymentVerifySchema,
@@ -15,67 +16,56 @@ import {
  * - Webhook signature MUST be verified before processing
  * - Subscription status changes MUST be atomic with payment record
  * - Never grant plan access without verified payment
+ *
+ * Tests import the ACTUAL production function from:
+ *   - src/lib/payment-verification.ts (verifyRazorpaySignature)
  */
 
-// ─── Webhook Signature Verification (P11) ────────────────────
+// ─── Webhook Signature Verification (P11) — production function ─────
 
-describe('Payment Webhook Signature (P11)', () => {
-  const WEBHOOK_SECRET = 'test_webhook_secret_123';
+const WEBHOOK_SECRET = 'test_webhook_secret_123';
 
-  /**
-   * Timing-safe signature verification — mirrors production code in
-   * webhook/route.ts and verify/route.ts. Uses crypto.timingSafeEqual
-   * to prevent timing attacks on HMAC comparison.
-   */
-  function verifySignature(body: string, signature: string, secret: string): boolean {
-    const expected = crypto
-      .createHmac('sha256', secret)
-      .update(body)
-      .digest('hex');
+function createValidSignature(body: string, secret: string = WEBHOOK_SECRET): string {
+  return crypto
+    .createHmac('sha256', secret)
+    .update(body)
+    .digest('hex');
+}
 
-    // Timing-safe comparison (matches production implementation)
-    const sigBuffer = Buffer.from(signature, 'hex');
-    const expectedBuffer = Buffer.from(expected, 'hex');
-    if (sigBuffer.length !== expectedBuffer.length) return false;
-    return crypto.timingSafeEqual(sigBuffer, expectedBuffer);
-  }
-
-  function createValidSignature(body: string): string {
-    return crypto
-      .createHmac('sha256', WEBHOOK_SECRET)
-      .update(body)
-      .digest('hex');
-  }
-
+describe('Payment Webhook Signature (P11) — production function', () => {
   it('reject_invalid_webhook_signature: tampered signature returns false', () => {
     const body = JSON.stringify({ event: 'subscription.activated', payload: {} });
     const tamperedSig = 'deadbeef0000000000000000000000000000000000000000000000000000abcd';
-    expect(verifySignature(body, tamperedSig, WEBHOOK_SECRET)).toBe(false);
+    expect(verifyRazorpaySignature(body, tamperedSig, WEBHOOK_SECRET)).toBe(false);
   });
 
   it('accept_valid_webhook_signature: correct HMAC matches', () => {
     const body = JSON.stringify({ event: 'subscription.activated', payload: {} });
     const validSig = createValidSignature(body);
-    expect(verifySignature(body, validSig, WEBHOOK_SECRET)).toBe(true);
+    expect(verifyRazorpaySignature(body, validSig, WEBHOOK_SECRET)).toBe(true);
   });
 
   it('reject_empty_signature: empty string signature', () => {
     const body = JSON.stringify({ event: 'payment.captured' });
-    expect(verifySignature(body, '', WEBHOOK_SECRET)).toBe(false);
+    expect(verifyRazorpaySignature(body, '', WEBHOOK_SECRET)).toBe(false);
   });
 
   it('reject_body_tampered: valid sig for different body', () => {
     const originalBody = JSON.stringify({ event: 'subscription.activated', amount: 29900 });
     const tamperedBody = JSON.stringify({ event: 'subscription.activated', amount: 0 });
     const sigForOriginal = createValidSignature(originalBody);
-    // Signature for original body should NOT match tampered body
-    expect(verifySignature(tamperedBody, sigForOriginal, WEBHOOK_SECRET)).toBe(false);
+    expect(verifyRazorpaySignature(tamperedBody, sigForOriginal, WEBHOOK_SECRET)).toBe(false);
+  });
+
+  it('reject_wrong_secret: valid payload but wrong secret', () => {
+    const payload = JSON.stringify({ event: 'payment.captured' });
+    const sigWithCorrectSecret = createValidSignature(payload);
+    expect(verifyRazorpaySignature(payload, sigWithCorrectSecret, 'wrong_secret')).toBe(false);
   });
 
   it('reject_wrong_length_signature: different hex length rejected before comparison', () => {
     const body = JSON.stringify({ event: 'payment.captured' });
-    // Valid HMAC-SHA256 hex is 64 chars; this is 16 chars
-    expect(verifySignature(body, 'deadbeef12345678', WEBHOOK_SECRET)).toBe(false);
+    expect(verifyRazorpaySignature(body, 'deadbeef12345678', WEBHOOK_SECRET)).toBe(false);
   });
 });
 
