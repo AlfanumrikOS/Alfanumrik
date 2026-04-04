@@ -119,17 +119,25 @@ export async function checkDailyUsage(
 
 /**
  * Increment usage count for the student + feature + today.
- * Uses upsert so rows are created on first use each day.
+ * Uses the atomic check_and_record_usage RPC so concurrent client-side
+ * calls can't both pass the limit check before either increment lands.
+ *
+ * NOTE: The hard enforcement gate is in the foxy-tutor Edge Function
+ * (also using check_and_record_usage). This client-side call keeps the
+ * UI usage badge accurate.
  */
 export async function recordUsage(
   studentId: string,
   feature: Feature,
+  plan: string = 'free',
 ): Promise<void> {
   const today = todayISO();
+  const limit = getLimitForPlan(plan, feature);
 
-  await supabase.rpc('increment_daily_usage', {
+  await supabase.rpc('check_and_record_usage', {
     p_student_id: studentId,
     p_feature: feature,
+    p_limit: limit,
     p_usage_date: today,
   });
 

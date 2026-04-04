@@ -7,8 +7,13 @@
  * This page IS the "Learn" tab destination. Students pick a subject, see all
  * chapters, and tap any chapter to go to /learn/[subject]/[chapter].
  *
- * Previously "Learn" routed to /study-plan (a plan generator), which was
- * confusing. This page fixes that.
+ * Plan-based subject gating:
+ *   free (tier 0)      → 2 subjects (first N in grade order)
+ *   starter (tier 1)   → 4 subjects
+ *   pro / unlimited    → all subjects
+ *
+ * Locked subjects are shown greyed out with an upgrade CTA — they are never
+ * hidden, which helps students understand what upgrading unlocks.
  */
 
 import { useState, useEffect } from 'react';
@@ -18,6 +23,14 @@ import { getChaptersForSubject } from '@/lib/supabase';
 import { BottomNav, LoadingFoxy } from '@/components/ui';
 import { SUBJECT_META, getSubjectsForGrade } from '@/lib/constants';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
+import { getPlanConfig } from '@/lib/plans';
+
+// Number of subjects unlocked per plan tier.
+// tier 2+ (pro/unlimited) = unlimited (Infinity).
+const SUBJECT_LIMIT_BY_TIER: Record<number, number> = {
+  0: 2, // free
+  1: 4, // starter
+};
 
 export default function LearnPage() {
   const { student, isLoggedIn, isLoading, isHi } = useAuth();
@@ -29,7 +42,8 @@ export default function LearnPage() {
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/');
-  }, [isLoading, isLoggedIn, router]);
+    if (!isLoading && isLoggedIn && student && !student.onboarding_completed) router.replace('/onboarding');
+  }, [isLoading, isLoggedIn, student, router]);
 
   useEffect(() => {
     if (!selectedSubject || !student?.grade) { setChapters([]); return; }
@@ -42,8 +56,18 @@ export default function LearnPage() {
 
   if (isLoading || !student) return <LoadingFoxy />;
 
-  const subjects = getSubjectsForGrade(student.grade);
+  const allSubjects = getSubjectsForGrade(student.grade);
+  const plan = getPlanConfig(student.subscription_plan);
+  const subjectLimit = SUBJECT_LIMIT_BY_TIER[plan.tier] ?? Infinity;
+  const allowedSubjects = subjectLimit === Infinity ? allSubjects : allSubjects.slice(0, subjectLimit);
+  const lockedSubjects = subjectLimit === Infinity ? [] : allSubjects.slice(subjectLimit);
+
   const selectedMeta = SUBJECT_META.find(s => s.code === selectedSubject);
+
+  // Guard: if selected subject is locked, reset selection
+  if (selectedSubject && lockedSubjects.find(s => s.code === selectedSubject)) {
+    setSelectedSubject(null);
+  }
 
   return (
     <div className="mesh-bg min-h-dvh pb-nav">
@@ -78,7 +102,9 @@ export default function LearnPage() {
                   : `Grade ${student.grade} · Choose a subject to study`}
               </p>
               <div className="grid grid-cols-2 gap-3">
-                {subjects.map(s => {
+
+                {/* ── Unlocked subjects ── */}
+                {allowedSubjects.map(s => {
                   const isCurrent = student.preferred_subject === s.code;
                   return (
                     <button
@@ -106,7 +132,61 @@ export default function LearnPage() {
                     </button>
                   );
                 })}
+
+                {/* ── Locked subjects ── */}
+                {lockedSubjects.map(s => (
+                  <button
+                    key={s.code}
+                    onClick={() => router.push('/pricing')}
+                    className="rounded-2xl p-4 text-left transition-all active:scale-[0.97] relative overflow-hidden"
+                    style={{
+                      background: 'var(--surface-1)',
+                      border: '1.5px solid var(--border)',
+                      opacity: 0.55,
+                    }}
+                  >
+                    {/* Lock badge */}
+                    <div
+                      className="absolute top-2 right-2 text-[10px] font-bold px-1.5 py-0.5 rounded-md"
+                      style={{ background: 'rgba(0,0,0,0.08)', color: 'var(--text-3)' }}
+                    >
+                      🔒
+                    </div>
+                    <div className="text-3xl mb-2 grayscale">{s.icon}</div>
+                    <div className="text-sm font-bold" style={{ color: 'var(--text-2)' }}>
+                      {s.name}
+                    </div>
+                    <div className="text-[10px] font-semibold mt-1" style={{ color: 'var(--orange)' }}>
+                      {isHi
+                        ? `${plan.nextPlanLabel?.replace(' →', '') || 'अपग्रेड करो'} →`
+                        : `Upgrade to unlock →`}
+                    </div>
+                  </button>
+                ))}
+
               </div>
+
+              {/* Upgrade prompt strip — only shown when there are locked subjects */}
+              {lockedSubjects.length > 0 && (
+                <button
+                  onClick={() => router.push('/pricing')}
+                  className="w-full mt-4 py-3 px-4 rounded-2xl text-sm font-bold flex items-center justify-between transition-all active:scale-[0.98]"
+                  style={{
+                    background: 'linear-gradient(135deg, rgba(232,88,28,0.08), rgba(245,158,11,0.08))',
+                    border: '1.5px solid rgba(232,88,28,0.2)',
+                    color: 'var(--orange)',
+                  }}
+                >
+                  <span>
+                    🔓 {isHi
+                      ? `${lockedSubjects.length} और विषय अनलॉक करो`
+                      : `Unlock ${lockedSubjects.length} more subject${lockedSubjects.length > 1 ? 's' : ''}`}
+                  </span>
+                  <span style={{ opacity: 0.7 }}>
+                    {plan.nextPlanLabel || (isHi ? 'अपग्रेड करो →' : 'Upgrade →')}
+                  </span>
+                </button>
+              )}
             </div>
 
           ) : (

@@ -194,6 +194,7 @@ async function fetchRAGContext(
   query: string,
   subject: string,
   grade: string,
+  board: string | null = null,
 ): Promise<string | null> {
   try {
     // Try to call the match_rag_chunks RPC if it exists
@@ -202,6 +203,8 @@ async function fetchRAGContext(
       p_subject: subject,
       p_grade: grade,
       match_count: 3,
+      p_board: board,       // Filter content to student's curriculum board
+      p_min_quality: 0.5,   // Exclude low-quality/malformed chunks
     })
 
     if (error || !data || data.length === 0) return null
@@ -300,11 +303,18 @@ Deno.serve(async (req: Request) => {
       return errorResponse('grade and subject are required', 400, origin)
     }
 
-    // ── Input length and format validation ──
-    // Cap message length to prevent token exhaustion attacks (~1500 tokens max)
+    // ── Message sanitization ──
+    // Strip HTML tags to prevent injection of markup into the prompt.
+    // Pattern only matches tags that start with a letter (real HTML tags),
+    // so mathematical operators like "2 < 3" or "x > 0" are preserved.
+    // Length cap prevents token exhaustion attacks (~1500 tokens max).
     const MAX_MESSAGE_LENGTH = 5000
-    if (message.length > MAX_MESSAGE_LENGTH) {
-      return errorResponse(`Message too long (max ${MAX_MESSAGE_LENGTH} chars)`, 400, origin)
+    const safeMessage = message
+      .replace(/<\/?\s*[a-zA-Z][^>]{0,500}>/g, '')  // strip HTML tags (bounded, no ReDoS)
+      .trim()
+      .slice(0, MAX_MESSAGE_LENGTH)
+    if (!safeMessage) {
+      return errorResponse('Message is empty after sanitization', 400, origin)
     }
 
     // Whitelist mode to prevent prompt injection via arbitrary mode strings
@@ -343,32 +353,45 @@ Deno.serve(async (req: Request) => {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
     const today = new Date().toISOString().slice(0, 10)
 
-    // ── Parallel DB lookups (usage, plan, chat history, RAG) ──
-    const [usageResult, studentResult, sessionResult, ragContext] = await Promise.all([
-      supabase
-        .from('student_daily_usage')
-        .select('usage_count')
-        .eq('student_id', student_id)
-        .eq('feature', 'foxy_chat')
-        .eq('usage_date', today)
-        .maybeSingle(),
-      supabase
-        .from('students')
-        .select('subscription_plan')
-        .eq('id', student_id)
-        .maybeSingle(),
+    // ── Parallel DB lookups (plan, chat history, RAG) ──
+    // Usage check is now handled atomically below — no pre-read needed.
+    // Fetch student profile first — plan + board are needed before parallel lookups
+    const studentResult = await supabase
+      .from('students')
+      .select('subscription_plan, board')
+      .eq('id', student_id)
+      .maybeSingle()
+    const studentBoard = studentResult.data?.board ?? null
+
+    // Fetch chat history + RAG context in parallel (board now available)
+    const [sessionResult, ragContext] = await Promise.all([
       session_id
         ? supabase.from('chat_sessions').select('messages').eq('id', session_id).eq('student_id', student_id).maybeSingle()
         : Promise.resolve({ data: null }),
-      fetchRAGContext(supabase, message, subject, grade),
+      fetchRAGContext(supabase, safeMessage, subject, grade, studentBoard),
     ])
 
-    const currentCount = usageResult.data?.usage_count ?? 0
     const plan = normalizePlan(studentResult.data?.subscription_plan || 'free')
     const limit = PLAN_LIMITS[plan] ?? PLAN_LIMITS.free
 
-    // ── Usage enforcement (server-side, authoritative) ──
-    if (currentCount >= limit) {
+    // ── Atomic usage enforcement (check + increment in one DB transaction) ──
+    // Eliminates the TOCTOU race where concurrent requests could both pass the
+    // count check before either increment landed. FOR UPDATE inside the RPC
+    // serialises concurrent requests on the same row.
+    const { data: usageRows, error: usageErr } = await supabase.rpc('check_and_record_usage', {
+      p_student_id: student_id,
+      p_feature: 'foxy_chat',
+      p_limit: limit,
+      p_usage_date: today,
+    })
+    if (usageErr) {
+      // Fail closed: deny request if usage can't be tracked
+      console.error('check_and_record_usage failed:', usageErr.message)
+      return errorResponse('Usage tracking unavailable, please try again', 503, origin)
+    }
+    const usageRow = usageRows?.[0]
+    if (!usageRow?.allowed) {
+      const currentCount = usageRow?.current_count ?? limit
       return jsonResponse(
         {
           error: 'Daily chat limit reached',
@@ -378,24 +401,13 @@ Deno.serve(async (req: Request) => {
             : `You've used all ${limit} messages for today. Come back tomorrow! 🦊`,
           xp_earned: 0,
           session_id: session_id || null,
+          used: currentCount,
+          limit,
         },
         429,
         {},
         origin,
       )
-    }
-
-    // Record usage BEFORE processing — await to prevent TOCTOU bypass
-    // where concurrent requests all pass the check before any increment completes
-    const { error: usageIncErr } = await supabase.rpc('increment_daily_usage', {
-      p_student_id: student_id,
-      p_feature: 'foxy_chat',
-      p_usage_date: today,
-    })
-    if (usageIncErr) {
-      // Fail closed: deny request if usage can't be recorded
-      console.error('Usage increment failed:', usageIncErr.message)
-      return errorResponse('Usage tracking unavailable, please try again', 503, origin)
     }
 
     // ── Parse chat history from session ──
@@ -421,7 +433,7 @@ Deno.serve(async (req: Request) => {
 
     const messages = [
       ...chatHistory,
-      { role: 'user', content: message },
+      { role: 'user', content: safeMessage },
     ]
 
     // ── Call Claude API (with circuit breaker, timeout, retry) ──
@@ -537,7 +549,7 @@ Deno.serve(async (req: Request) => {
     // ── Persist chat session ──
     const now = new Date().toISOString()
     const newMessages = [
-      { role: 'student', content: message, ts: now },
+      { role: 'student', content: safeMessage, ts: now },
       { role: 'assistant', content: reply, ts: now, meta: { xp: xpEarned, latency: latencyMs } },
     ]
 
@@ -601,7 +613,7 @@ Deno.serve(async (req: Request) => {
       mode,
       topic_id: topic_id || null,
       lesson_step: safeLessonStep,
-      message_length: message.length,
+      message_length: safeMessage.length,
       reply_length: reply.length,
       latency_ms: latencyMs,
       model: 'claude-haiku-4-5-20251001',
