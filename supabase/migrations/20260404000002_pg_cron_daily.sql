@@ -37,7 +37,7 @@ SELECT cron.schedule(
   '30 18 * * *', -- 18:30 UTC = midnight IST
   $$
   SELECT net.http_post(
-    url      := 'https://rxrdnuohzedhtcmdxmtb.supabase.co/functions/v1/daily-cron',
+    url      := 'https://shktyoxqhundlvkiwguu.supabase.co/functions/v1/daily-cron',
     headers  := jsonb_build_object(
                   'Content-Type',   'application/json',
                   'x-cron-secret',  current_setting('app.cron_secret', true)
