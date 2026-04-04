@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, Button, StatCard, BottomNav } from '@/components/ui';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
@@ -71,6 +71,7 @@ export default function QuizResults({
   onGoHome,
 }: QuizResultsProps) {
   const router = useRouter();
+  const [expandedCorrect, setExpandedCorrect] = useState<Set<number>>(new Set());
 
   // Play completion sound on mount
   useEffect(() => {
@@ -212,46 +213,154 @@ export default function QuizResults({
           <p className="text-sm font-semibold text-[var(--text-2)] mb-3">
             {isHi ? 'सवालों की समीक्षा' : 'Question Review'}
           </p>
-          <div className="space-y-2">
+          <div className="space-y-3">
             {questions.map((question, idx) => {
               const resp = responses[idx];
               const correct = resp?.is_correct;
+              const isExpanded = !correct || expandedCorrect.has(idx);
+              const opts: string[] = Array.isArray(question.options)
+                ? question.options
+                : (() => { try { return JSON.parse(question.options as string); } catch { return []; } })();
+              const questionText = isHi && question.question_hi ? question.question_hi : question.question_text;
+              const explanation = isHi && question.explanation_hi ? question.explanation_hi : question.explanation;
               return (
                 <div
                   key={question.id}
-                  className="rounded-xl p-3 flex items-center gap-3"
+                  className="rounded-xl overflow-hidden"
                   style={{
-                    background: correct ? 'rgba(22,163,74,0.06)' : 'rgba(220,38,38,0.04)',
-                    border: `1px solid ${correct ? 'rgba(22,163,74,0.15)' : 'rgba(220,38,38,0.12)'}`,
+                    background: correct ? 'rgba(22,163,74,0.04)' : 'rgba(220,38,38,0.04)',
+                    border: `1px solid ${correct ? 'rgba(22,163,74,0.15)' : 'rgba(220,38,38,0.2)'}`,
                   }}
                 >
-                  <span
-                    className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
-                    style={{
-                      background: correct ? '#16A34A' : '#DC2626',
-                      color: '#fff',
+                  {/* Header row */}
+                  <button
+                    className="w-full p-3 flex items-center gap-3 text-left"
+                    onClick={() => {
+                      if (correct) {
+                        setExpandedCorrect(prev => {
+                          const next = new Set(prev);
+                          next.has(idx) ? next.delete(idx) : next.add(idx);
+                          return next;
+                        });
+                      }
                     }}
                   >
-                    {correct ? '✓' : '✗'}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs font-medium truncate" style={{ color: 'var(--text-2)' }}>
-                      {question.question_text.substring(0, 80)}{question.question_text.length > 80 ? '...' : ''}
-                    </div>
-                    {!correct && (
-                      <div className="text-[10px] text-[var(--text-3)] mt-0.5">
-                        {isHi ? 'सही:' : 'Correct:'} {OPTION_LETTERS[question.correct_answer_index]}
+                    <span
+                      className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
+                      style={{ background: correct ? '#16A34A' : '#DC2626', color: '#fff' }}
+                    >
+                      {correct ? '✓' : '✗'}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-medium" style={{ color: 'var(--text-2)' }}>
+                        Q{idx + 1}. {questionText.substring(0, 90)}{questionText.length > 90 ? '…' : ''}
                       </div>
-                    )}
-                  </div>
-                  <span className="text-[10px] text-[var(--text-3)] flex-shrink-0">
-                    {resp?.time_spent || 0}s
-                  </span>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className="text-[10px] text-[var(--text-3)]">{resp?.time_spent || 0}s</span>
+                      {correct && (
+                        <span className="text-[10px] text-[var(--text-3)]">{isExpanded ? '▲' : '▼'}</span>
+                      )}
+                    </div>
+                  </button>
+
+                  {/* Expanded detail */}
+                  {isExpanded && (
+                    <div className="px-3 pb-3 space-y-2">
+                      {/* Options */}
+                      {opts.length > 0 && (
+                        <div className="space-y-1">
+                          {opts.map((opt, oi) => {
+                            const isCorrectOpt = oi === question.correct_answer_index;
+                            const isSelected = oi === resp?.selected_option;
+                            let bg = 'var(--surface-2)';
+                            let borderColor = 'transparent';
+                            let textColor = 'var(--text-3)';
+                            if (isCorrectOpt) { bg = 'rgba(22,163,74,0.1)'; borderColor = '#16A34A'; textColor = '#16A34A'; }
+                            else if (isSelected && !correct) { bg = 'rgba(220,38,38,0.08)'; borderColor = '#DC2626'; textColor = '#DC2626'; }
+                            return (
+                              <div
+                                key={oi}
+                                className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[11px]"
+                                style={{ background: bg, border: `1px solid ${borderColor}`, color: textColor }}
+                              >
+                                <span className="font-bold w-4 flex-shrink-0">{OPTION_LETTERS[oi]}.</span>
+                                <span className="flex-1">{opt}</span>
+                                {isCorrectOpt && <span className="flex-shrink-0">✓</span>}
+                                {isSelected && !correct && <span className="flex-shrink-0">✗</span>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Explanation */}
+                      {explanation && (
+                        <div className="rounded-lg px-3 py-2 text-[11px] leading-relaxed" style={{ background: 'var(--surface-1)', color: 'var(--text-3)' }}>
+                          <span className="font-semibold" style={{ color: 'var(--text-2)' }}>
+                            {isHi ? 'व्याख्या: ' : 'Explanation: '}
+                          </span>
+                          {explanation}
+                        </div>
+                      )}
+
+                      {/* Study link */}
+                      {!correct && selectedSubject && question.chapter_number && (
+                        <button
+                          onClick={() => router.push(`/learn/${selectedSubject}/${question.chapter_number}`)}
+                          className="text-[11px] font-semibold px-3 py-1.5 rounded-lg w-full text-left"
+                          style={{ background: `${subMeta?.color || '#7C3AED'}15`, color: subMeta?.color || '#7C3AED' }}
+                        >
+                          📖 {isHi ? `अध्याय ${question.chapter_number} के concept पढ़ो →` : `Study Chapter ${question.chapter_number} concepts →`}
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
         </div>
+
+        {/* Chapters to Review */}
+        {(() => {
+          const weakChapters = [...new Set(
+            responses
+              .map((r, i) => (!r.is_correct && questions[i]?.chapter_number) ? questions[i].chapter_number : null)
+              .filter((c): c is number => c !== null)
+          )];
+          if (weakChapters.length === 0 || !selectedSubject) return null;
+          return (
+            <div>
+              <p className="text-sm font-semibold text-[var(--text-2)] mb-3">
+                {isHi ? 'इन अध्यायों को दोबारा पढ़ो' : 'Chapters to Review'}
+              </p>
+              <Card className="!p-4">
+                <div className="space-y-2">
+                  {weakChapters.map(ch => (
+                    <button
+                      key={ch}
+                      onClick={() => router.push(`/learn/${selectedSubject}/${ch}`)}
+                      className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-all active:scale-[0.98]"
+                      style={{ background: `${subMeta?.color || '#7C3AED'}10`, border: `1px solid ${subMeta?.color || '#7C3AED'}30` }}
+                    >
+                      <span className="text-base">{subMeta?.icon || '📚'}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-semibold" style={{ color: subMeta?.color || '#7C3AED' }}>
+                          {isHi ? `अध्याय ${ch}` : `Chapter ${ch}`}
+                        </div>
+                        <div className="text-[10px] text-[var(--text-3)]">
+                          {isHi ? 'concepts और notes देखो' : 'Review concepts & notes'}
+                        </div>
+                      </div>
+                      <span className="text-[10px]" style={{ color: subMeta?.color || '#7C3AED' }}>→</span>
+                    </button>
+                  ))}
+                </div>
+              </Card>
+            </div>
+          );
+        })()}
 
         {/* Action Buttons */}
         <div className="space-y-2">
