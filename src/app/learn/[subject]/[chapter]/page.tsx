@@ -77,7 +77,7 @@ export default function ChapterConceptPage() {
     const plan = getPlanConfig(student.subscription_plan);
     const subjectLimit = SUBJECT_LIMIT_BY_TIER[plan.tier] ?? Infinity;
     if (subjectLimit === Infinity) return; // pro/unlimited — all subjects unlocked
-    const allowedCodes = getSubjectsForGrade(student.grade)
+    const allowedCodes: string[] = getSubjectsForGrade(student.grade)
       .slice(0, subjectLimit)
       .map(s => s.code);
     if (!allowedCodes.includes(subject)) {
