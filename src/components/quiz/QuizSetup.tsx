@@ -1,12 +1,9 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, Button, BottomNav } from '@/components/ui';
-import { SUBJECT_META, GRADE_SUBJECTS } from '@/lib/constants';
-import { getExamPresets, calculateExamConfig, type ExamPreset } from '@/lib/exam-engine';
-import { XP_RULES } from '@/lib/xp-rules';
-import { useAuth } from '@/lib/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { SUBJECT_META } from '@/lib/constants';
+import { getChaptersForSubject } from '@/lib/supabase';
 
 type QuizMode = 'practice' | 'cognitive' | 'exam';
 
@@ -17,8 +14,6 @@ const DIFF_LABELS = [
   { id: 3, label: 'Hard', labelHi: 'कठिन', icon: '🔴' },
 ];
 
-const PRACTICE_COUNTS = [5, 10, 15, 20];
-
 interface QuizSetupProps {
   isHi: boolean;
   initialSubject: string | null;
@@ -26,6 +21,7 @@ interface QuizSetupProps {
   initialCount?: number;
   initialChapter?: number | null;
   loading: boolean;
+  studentGrade?: string;
   onStart: (opts: {
     subject: string;
     difficulty: number | null;
@@ -37,138 +33,178 @@ interface QuizSetupProps {
   onGoBack: () => void;
 }
 
-export default function QuizSetup({ isHi, initialSubject, initialMode, initialCount, initialChapter, loading, onStart, onGoBack }: QuizSetupProps) {
-  const { student } = useAuth();
-  const grade = student?.grade || '9';
-
+export default function QuizSetup({
+  isHi,
+  initialSubject,
+  initialMode,
+  initialCount,
+  initialChapter = null,
+  loading,
+  studentGrade = '',
+  onStart,
+  onGoBack,
+}: QuizSetupProps) {
   const [quizMode, setQuizMode] = useState<QuizMode>(initialMode);
   const [selectedSubject, setSelectedSubject] = useState<string | null>(initialSubject);
   const [selectedDifficulty, setSelectedDifficulty] = useState<number | null>(null);
   const [questionCount, setQuestionCount] = useState(initialCount ?? 10);
-  const [selectedPreset, setSelectedPreset] = useState<string>('standard_test');
-  const [selectedChapter, setSelectedChapter] = useState<number | null>(initialChapter ?? null);
-  const [chapters, setChapters] = useState<{ chapter_number: number; title: string }[]>([]);
+  const [examTimeLimit, setExamTimeLimit] = useState(180);
+  const [selectedChapter, setSelectedChapter] = useState<number | null>(initialChapter);
+  // Quick-start: when subject + chapter are pre-filled from context (e.g. from chapter page),
+  // skip the full setup form and show a 1-confirm screen.
+  const [showFullSetup, setShowFullSetup] = useState(false);
+  const hasContext = !!(initialSubject && initialChapter);
+  const [chapters, setChapters] = useState<Array<{ chapter_number: number; title: string }>>([]);
   const [chaptersLoading, setChaptersLoading] = useState(false);
 
-  // Fetch chapters when subject changes
-  useEffect(() => {
-    setSelectedChapter(null);
-    setChapters([]);
-    if (!selectedSubject) return;
-
-    let cancelled = false;
-    (async () => {
-      setChaptersLoading(true);
-      try {
-        // Look up the subject UUID from the code
-        const { data: subjectRow } = await supabase.from('subjects').select('id').eq('code', selectedSubject).single();
-        if (cancelled || !subjectRow) { setChaptersLoading(false); return; }
-
-        const { data, error } = await supabase
-          .from('curriculum_topics')
-          .select('chapter_number, title')
-          .eq('grade', grade)
-          .eq('subject_id', subjectRow.id)
-          .eq('is_active', true)
-          .order('chapter_number');
-
-        if (!cancelled && !error && data) {
-          // Deduplicate by chapter_number (topics may share chapters)
-          const seen = new Set<number>();
-          const unique: { chapter_number: number; title: string }[] = [];
-          for (const row of data) {
-            if (!seen.has(row.chapter_number)) {
-              seen.add(row.chapter_number);
-              unique.push(row);
-            }
-          }
-          setChapters(unique);
-        }
-      } catch {
-        // Silently fail — chapters are optional
-      }
-      if (!cancelled) setChaptersLoading(false);
-    })();
-    return () => { cancelled = true; };
-  }, [selectedSubject, grade]);
-
-  // Grade-filtered subjects
-  const subjects = useMemo(() => {
-    const codes = GRADE_SUBJECTS[grade] || GRADE_SUBJECTS['9'];
-    return SUBJECT_META.filter(s => codes.includes(s.code));
-  }, [grade]);
-
-  // Exam presets based on grade + subject
-  const presets = useMemo(() => {
-    return getExamPresets(grade, selectedSubject || 'math');
-  }, [grade, selectedSubject]);
-
-  // Calculate exam config from selected preset
-  const examConfig = useMemo(() => {
-    if (quizMode !== 'exam' || !selectedSubject) return null;
-    const preset = presets.find(p => p.id === selectedPreset);
-    if (!preset) return null;
-    return calculateExamConfig(preset, selectedSubject, grade);
-  }, [quizMode, selectedSubject, selectedPreset, presets, grade]);
-
-  const activePreset = presets.find(p => p.id === selectedPreset);
   const subMeta = SUBJECT_META.find(s => s.code === selectedSubject);
+
+  // Load chapters when subject changes
+  useEffect(() => {
+    if (!selectedSubject || !studentGrade) {
+      setChapters([]);
+      setSelectedChapter(null);
+      return;
+    }
+    setChaptersLoading(true);
+    getChaptersForSubject(selectedSubject, studentGrade)
+      .then(data => {
+        setChapters(data);
+        // If coming in with a pre-selected chapter (e.g. from /learn page), keep it
+        if (initialChapter && data.some(c => c.chapter_number === initialChapter)) {
+          setSelectedChapter(initialChapter);
+        } else {
+          setSelectedChapter(null);
+        }
+      })
+      .catch(() => setChapters([]))
+      .finally(() => setChaptersLoading(false));
+  }, [selectedSubject, studentGrade, initialChapter]);
 
   const handleStart = () => {
     if (!selectedSubject) return;
-
-    if (quizMode === 'exam' && examConfig) {
-      // Exam: use preset-calculated values
-      const diffMap: Record<string, number | null> = { easy: 1, medium: 2, hard: 3, mixed: null };
-      onStart({
-        subject: selectedSubject,
-        difficulty: diffMap[examConfig.difficulty],
-        questionCount: examConfig.questionCount,
-        quizMode: 'exam',
-        examTimeLimit: examConfig.durationMinutes,
-        chapterNumber: selectedChapter,
-      });
-    } else {
-      // Practice / Cognitive: use manual selections
-      onStart({
-        subject: selectedSubject,
-        difficulty: quizMode === 'cognitive' ? null : selectedDifficulty,
-        questionCount,
-        quizMode,
-        examTimeLimit: 0,
-        chapterNumber: selectedChapter,
-      });
-    }
+    onStart({
+      subject: selectedSubject,
+      difficulty: selectedDifficulty,
+      questionCount,
+      quizMode,
+      examTimeLimit,
+      chapterNumber: selectedChapter,
+    });
   };
+
+  // Quick-start: subject + chapter already known → show a 1-confirm screen
+  if (hasContext && !showFullSetup) {
+    const subMeta = SUBJECT_META.find(s => s.code === selectedSubject);
+    return (
+      <div className="mesh-bg min-h-dvh pb-nav">
+        <header className="page-header">
+          <div className="page-header-inner flex items-center gap-3">
+            <button onClick={onGoBack} className="text-[var(--text-3)]">&larr;</button>
+            <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+              {isHi ? 'क्विज़' : 'Quick Quiz'}
+            </h1>
+          </div>
+        </header>
+        <main className="app-container py-8 max-w-md mx-auto space-y-4">
+          {/* Context card — shows what will be quizzed */}
+          <div
+            className="rounded-2xl p-5 text-center"
+            style={{
+              background: `${subMeta?.color || 'var(--orange)'}08`,
+              border: `1.5px solid ${subMeta?.color || 'var(--orange)'}25`,
+            }}
+          >
+            <div className="text-4xl mb-2">{subMeta?.icon || '📖'}</div>
+            <div className="text-base font-bold mb-1" style={{ fontFamily: 'var(--font-display)' }}>
+              {subMeta?.name}
+            </div>
+            <div className="text-sm text-[var(--text-3)] mb-1">
+              {isHi ? `अध्याय ${selectedChapter}` : `Chapter ${selectedChapter}`}
+            </div>
+            <div className="text-xs text-[var(--text-3)]">
+              {questionCount} {isHi ? 'सवाल · स्मार्ट मोड' : 'questions · Smart mode'}
+            </div>
+          </div>
+
+          {/* Question count selector */}
+          <div>
+            <p className="text-xs text-[var(--text-3)] mb-2 font-medium text-center">
+              {isHi ? 'कितने सवाल?' : 'How many questions?'}
+            </p>
+            <div className="flex gap-2 justify-center">
+              {[5, 10, 15, 20].map(n => (
+                <button
+                  key={n}
+                  onClick={() => setQuestionCount(n)}
+                  className="rounded-xl px-4 py-2 text-sm font-bold transition-all"
+                  style={{
+                    background: questionCount === n ? (subMeta?.color || 'var(--orange)') : 'var(--surface-2)',
+                    color: questionCount === n ? '#fff' : 'var(--text-2)',
+                  }}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Start button */}
+          <Button
+            fullWidth
+            color={subMeta?.color}
+            onClick={() => onStart({
+              subject: selectedSubject!,
+              difficulty: null,
+              questionCount,
+              quizMode: 'cognitive', // Smart mode by default
+              examTimeLimit,
+              chapterNumber: selectedChapter,
+            })}
+          >
+            {loading ? (isHi ? 'लोड हो रहा...' : 'Loading...') : `⚡ ${isHi ? 'क्विज़ शुरू करो' : 'Start Quiz'}`}
+          </Button>
+
+          {/* Full setup link */}
+          <button
+            onClick={() => setShowFullSetup(true)}
+            className="w-full text-center text-xs font-medium py-2"
+            style={{ color: 'var(--text-3)' }}
+          >
+            {isHi ? 'सेटिंग बदलो (विषय, कठिनाई...)' : 'Change settings (subject, difficulty...)'}
+          </button>
+        </main>
+        <BottomNav />
+      </div>
+    );
+  }
 
   return (
     <div className="mesh-bg min-h-dvh pb-nav">
       <header className="page-header">
         <div className="page-header-inner flex items-center gap-3">
-          <button onClick={onGoBack} className="text-[var(--text-3)]" aria-label={isHi ? 'वापस जाओ' : 'Go back'}>&larr;</button>
+          <button onClick={hasContext && showFullSetup ? () => setShowFullSetup(false) : onGoBack} className="text-[var(--text-3)]">&larr;</button>
           <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
             {isHi ? 'क्विज़ शुरू करो' : 'Start a Quiz'}
           </h1>
         </div>
       </header>
       <main className="app-container py-6 space-y-5">
+
         {/* Quiz Mode */}
         <div>
           <p className="text-sm text-[var(--text-3)] mb-3 font-medium">
             {isHi ? 'मोड चुनो' : 'Choose Mode'}
           </p>
-          <div className="flex gap-3" role="radiogroup" aria-label={isHi ? 'क्विज़ मोड' : 'Quiz mode'}>
+          <div className="flex gap-3">
             {([
               { id: 'practice' as QuizMode, icon: '✏️', label: 'Practice', labelHi: 'अभ्यास', desc: 'Choose your own difficulty', descHi: 'अपनी कठिनाई चुनो', color: '#F5A623' },
               { id: 'cognitive' as QuizMode, icon: '🧠', label: 'Smart', labelHi: 'स्मार्ट', desc: 'AI picks the right level', descHi: 'AI सही स्तर चुनता है', color: '#7C3AED' },
-              { id: 'exam' as QuizMode, icon: '📋', label: 'Exam', labelHi: 'परीक्षा', desc: 'Structured timed assessment', descHi: 'संरचित समयबद्ध परीक्षा', color: '#DC2626' },
+              { id: 'exam' as QuizMode, icon: '📋', label: 'Exam', labelHi: 'परीक्षा', desc: 'CBSE paper format, timed', descHi: 'CBSE पेपर, समयबद्ध', color: '#DC2626' },
             ]).map(m => (
               <button
                 key={m.id}
                 onClick={() => setQuizMode(m.id)}
-                role="radio"
-                aria-checked={quizMode === m.id}
-                aria-label={isHi ? m.labelHi : m.label}
                 className="flex-1 rounded-2xl p-4 text-left transition-all active:scale-95"
                 style={{
                   background: quizMode === m.id ? `${m.color}12` : 'var(--surface-1)',
@@ -186,18 +222,16 @@ export default function QuizSetup({ isHi, initialSubject, initialMode, initialCo
           </div>
         </div>
 
-        {/* Subject Grid (grade-filtered) */}
+        {/* Subject Grid */}
         <div>
           <p className="text-sm text-[var(--text-3)] mb-3 font-medium">
             {isHi ? '1. विषय चुनो' : '1. Choose your subject'}
           </p>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            {subjects.map(s => (
+            {SUBJECT_META.slice(0, 9).map(s => (
               <button
                 key={s.code}
                 onClick={() => setSelectedSubject(s.code)}
-                aria-label={`${isHi ? 'विषय' : 'Subject'}: ${s.name}`}
-                aria-pressed={selectedSubject === s.code}
                 className="rounded-2xl p-4 text-center transition-all active:scale-95"
                 style={{
                   background: selectedSubject === s.code ? `${s.color}12` : 'var(--surface-1)',
@@ -214,57 +248,65 @@ export default function QuizSetup({ isHi, initialSubject, initialMode, initialCo
           </div>
         </div>
 
-        {/* Chapter Selector (optional) */}
-        {selectedSubject && chapters.length > 0 && (
+        {/* Chapter Selector */}
+        {selectedSubject && (
           <div>
             <p className="text-sm text-[var(--text-3)] mb-3 font-medium">
-              {isHi ? 'अध्याय चुनो (वैकल्पिक)' : 'Choose Chapter (optional)'}
+              {isHi ? '2. अध्याय चुनो (वैकल्पिक)' : '2. Choose chapter (optional)'}
             </p>
-            <div className="flex gap-2 flex-wrap">
-              <button
-                onClick={() => setSelectedChapter(null)}
-                className="rounded-xl px-4 py-2.5 text-sm font-semibold transition-all"
-                style={{
-                  background: selectedChapter === null ? 'var(--orange)' : 'var(--surface-2)',
-                  color: selectedChapter === null ? '#fff' : 'var(--text-2)',
-                  border: selectedChapter === null ? '1.5px solid var(--orange)' : '1.5px solid transparent',
-                }}
-              >
-                {isHi ? 'सभी अध्याय' : 'All Chapters'}
-              </button>
-              {chapters.map(ch => (
+            {chaptersLoading ? (
+              <div className="text-xs text-[var(--text-3)] py-2">
+                {isHi ? 'अध्याय लोड हो रहे हैं...' : 'Loading chapters...'}
+              </div>
+            ) : chapters.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {/* "All chapters" option */}
                 <button
-                  key={ch.chapter_number}
-                  onClick={() => setSelectedChapter(ch.chapter_number)}
-                  className="rounded-xl px-4 py-2.5 text-sm font-semibold transition-all text-left"
+                  onClick={() => setSelectedChapter(null)}
+                  className="rounded-xl px-4 py-2.5 text-sm font-semibold transition-all"
                   style={{
-                    background: selectedChapter === ch.chapter_number ? 'var(--orange)' : 'var(--surface-2)',
-                    color: selectedChapter === ch.chapter_number ? '#fff' : 'var(--text-2)',
-                    border: selectedChapter === ch.chapter_number ? '1.5px solid var(--orange)' : '1.5px solid transparent',
+                    background: selectedChapter === null ? subMeta?.color : 'var(--surface-2)',
+                    color: selectedChapter === null ? '#fff' : 'var(--text-2)',
+                    border: selectedChapter === null ? `1.5px solid ${subMeta?.color}` : '1.5px solid transparent',
                   }}
                 >
-                  {ch.chapter_number}. {ch.title}
+                  🎯 {isHi ? 'सभी अध्याय' : 'All Chapters'}
                 </button>
-              ))}
-            </div>
-            {chaptersLoading && (
-              <p className="text-xs text-[var(--text-3)] mt-2">{isHi ? 'अध्याय लोड हो रहे हैं...' : 'Loading chapters...'}</p>
+                {chapters.map(ch => (
+                  <button
+                    key={ch.chapter_number}
+                    onClick={() => setSelectedChapter(ch.chapter_number)}
+                    className="rounded-xl px-4 py-2.5 text-sm font-semibold transition-all max-w-[48%] text-left"
+                    style={{
+                      background: selectedChapter === ch.chapter_number ? `${subMeta?.color}12` : 'var(--surface-2)',
+                      color: selectedChapter === ch.chapter_number ? subMeta?.color : 'var(--text-2)',
+                      border: selectedChapter === ch.chapter_number ? `1.5px solid ${subMeta?.color}` : '1.5px solid transparent',
+                    }}
+                  >
+                    <span className="font-bold">Ch {ch.chapter_number}</span>
+                    <span className="text-[11px] block truncate opacity-70">{ch.title}</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-[var(--text-3)]">
+                {isHi ? 'इस विषय के लिए अध्याय उपलब्ध नहीं' : 'No chapters available for this subject yet'}
+              </p>
             )}
           </div>
         )}
 
-        {/* ─── PRACTICE / COGNITIVE: Difficulty + Question Count ─── */}
+        {/* Difficulty (practice mode only) */}
         {selectedSubject && quizMode === 'practice' && (
           <div>
             <p className="text-sm text-[var(--text-3)] mb-3 font-medium">
-              {isHi ? '2. कठिनाई स्तर' : '2. Difficulty level'}
+              {isHi ? '3. कठिनाई स्तर' : '3. Difficulty level'}
             </p>
             <div className="flex gap-2 flex-wrap">
               {DIFF_LABELS.map(d => (
                 <button
                   key={String(d.id)}
                   onClick={() => setSelectedDifficulty(d.id)}
-                  aria-pressed={selectedDifficulty === d.id}
                   className="rounded-xl px-4 py-2.5 text-sm font-semibold transition-all"
                   style={{
                     background: selectedDifficulty === d.id ? 'var(--orange)' : 'var(--surface-2)',
@@ -279,18 +321,51 @@ export default function QuizSetup({ isHi, initialSubject, initialMode, initialCo
           </div>
         )}
 
-        {selectedSubject && quizMode !== 'exam' && (
+        {/* Exam Mode Config */}
+        {selectedSubject && quizMode === 'exam' && (
           <div>
             <p className="text-sm text-[var(--text-3)] mb-3 font-medium">
-              {isHi ? (quizMode === 'practice' ? '3. कितने सवाल?' : '2. कितने सवाल?') : (quizMode === 'practice' ? '3. Number of questions' : '2. Number of questions')}
+              {isHi ? '3. समय सीमा (मिनट)' : '3. Time limit (minutes)'}
             </p>
             <div className="flex gap-2">
-              {PRACTICE_COUNTS.map(n => (
+              {[30, 60, 90, 180].map(m => (
+                <button
+                  key={m}
+                  onClick={() => setExamTimeLimit(m)}
+                  className="rounded-xl px-4 py-2.5 text-sm font-bold transition-all"
+                  style={{
+                    background: examTimeLimit === m ? '#DC2626' : 'var(--surface-2)',
+                    color: examTimeLimit === m ? '#fff' : 'var(--text-2)',
+                  }}
+                >
+                  {m} {isHi ? 'मि' : 'min'}
+                </button>
+              ))}
+            </div>
+            <Card className="!p-3 !mt-3">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">📋</span>
+                <div className="text-xs text-[var(--text-3)] leading-relaxed">
+                  {isHi
+                    ? 'CBSE पैटर्न: समयबद्ध परीक्षा, सवालों का जवाब एक बार में — रिवीज़न का समय रखो!'
+                    : 'CBSE format: Timed exam, answer all questions — keep time for revision!'}
+                </div>
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* Question Count */}
+        {selectedSubject && (
+          <div>
+            <p className="text-sm text-[var(--text-3)] mb-3 font-medium">
+              {isHi ? '4. कितने सवाल?' : '4. Number of questions'}
+            </p>
+            <div className="flex gap-2">
+              {[5, 10, 15, 20].map(n => (
                 <button
                   key={n}
                   onClick={() => setQuestionCount(n)}
-                  aria-pressed={questionCount === n}
-                  aria-label={`${n} ${isHi ? 'सवाल' : 'questions'}`}
                   className="rounded-xl px-5 py-2.5 text-sm font-bold transition-all"
                   style={{
                     background: questionCount === n ? 'var(--orange)' : 'var(--surface-2)',
@@ -304,116 +379,14 @@ export default function QuizSetup({ isHi, initialSubject, initialMode, initialCo
           </div>
         )}
 
-        {/* ─── EXAM: Structured Presets ─── */}
-        {selectedSubject && quizMode === 'exam' && (
-          <div>
-            <p className="text-sm text-[var(--text-3)] mb-3 font-medium">
-              {isHi ? '2. परीक्षा प्रकार चुनो' : '2. Choose exam type'}
-            </p>
-            <div className="space-y-3">
-              {presets.map(preset => {
-                const config = calculateExamConfig(preset, selectedSubject, grade);
-                const isSelected = selectedPreset === preset.id;
-                return (
-                  <button
-                    key={preset.id}
-                    onClick={() => setSelectedPreset(preset.id)}
-                    className="w-full rounded-2xl p-4 text-left transition-all active:scale-[0.98]"
-                    style={{
-                      background: isSelected ? `${preset.color}10` : 'var(--surface-1)',
-                      border: isSelected ? `2px solid ${preset.color}` : '1.5px solid var(--border)',
-                      boxShadow: isSelected ? `0 4px 16px ${preset.color}15` : '0 2px 8px rgba(0,0,0,0.03)',
-                    }}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-3">
-                        <span className="text-2xl">{preset.icon}</span>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-bold" style={{ color: isSelected ? preset.color : 'var(--text-1)' }}>
-                              {isHi ? preset.labelHi : preset.label}
-                            </span>
-                            {preset.recommended && (
-                              <span className="text-[9px] font-bold px-2 py-0.5 rounded-full" style={{ background: `${preset.color}15`, color: preset.color }}>
-                                {isHi ? 'अनुशंसित' : 'RECOMMENDED'}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-[11px] text-[var(--text-3)] mt-0.5">
-                            {isHi ? preset.bloomMixHi : preset.bloomMix}
-                          </p>
-                        </div>
-                      </div>
-                      {isSelected && (
-                        <span className="text-sm" style={{ color: preset.color }}>✓</span>
-                      )}
-                    </div>
-
-                    {/* Exam specs */}
-                    <div className="flex gap-4 mt-3 ml-11">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs">📝</span>
-                        <span className="text-xs font-semibold text-[var(--text-2)]">
-                          {config.questionCount} {isHi ? 'सवाल' : 'Qs'}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs">⏱️</span>
-                        <span className="text-xs font-semibold text-[var(--text-2)]">
-                          {config.durationMinutes} {isHi ? 'मिनट' : 'min'}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs">⚡</span>
-                        <span className="text-xs font-semibold text-[var(--text-2)]">
-                          ~{Math.round(config.avgSecondsPerQuestion / 60 * 10) / 10} {isHi ? 'मि/सवाल' : 'min/Q'}
-                        </span>
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Exam summary card */}
-            {examConfig && activePreset && (
-              <Card className="!p-4 !mt-4">
-                <div className="flex items-start gap-3">
-                  <span className="text-2xl">📋</span>
-                  <div className="flex-1">
-                    <div className="text-sm font-bold" style={{ color: activePreset.color }}>
-                      {isHi ? 'परीक्षा सारांश' : 'Exam Summary'}
-                    </div>
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 mt-2">
-                      <div className="text-xs text-[var(--text-3)]">{isHi ? 'सवाल' : 'Questions'}</div>
-                      <div className="text-xs font-semibold">{examConfig.questionCount}</div>
-                      <div className="text-xs text-[var(--text-3)]">{isHi ? 'समय' : 'Duration'}</div>
-                      <div className="text-xs font-semibold">{examConfig.durationMinutes} {isHi ? 'मिनट' : 'minutes'}</div>
-                      <div className="text-xs text-[var(--text-3)]">{isHi ? 'कठिनाई' : 'Difficulty'}</div>
-                      <div className="text-xs font-semibold capitalize">{examConfig.difficulty}</div>
-                      <div className="text-xs text-[var(--text-3)]">{isHi ? 'प्रति सवाल' : 'Per question'}</div>
-                      <div className="text-xs font-semibold">~{Math.round(examConfig.avgSecondsPerQuestion)} {isHi ? 'सेकंड' : 'sec'}</div>
-                    </div>
-                    <p className="text-[10px] text-[var(--text-3)] mt-2 leading-relaxed">
-                      {isHi
-                        ? 'समय और सवालों की संख्या आपकी कक्षा, विषय और कठिनाई के आधार पर गणना की गई है।'
-                        : 'Duration and question count are calculated based on your grade, subject, and difficulty level.'}
-                    </p>
-                  </div>
-                </div>
-              </Card>
-            )}
-          </div>
-        )}
-
         {/* Start Button */}
         {selectedSubject && (
-          <Button fullWidth onClick={handleStart} color={quizMode === 'exam' ? activePreset?.color || '#DC2626' : subMeta?.color}>
+          <Button fullWidth onClick={handleStart} color={quizMode === 'exam' ? '#DC2626' : subMeta?.color}>
             {loading ? (isHi ? 'लोड हो रहा...' : 'Loading...') : (
-              quizMode === 'exam' && examConfig ? (
-                <>{isHi
-                  ? `📋 ${examConfig.durationMinutes} मिनट, ${examConfig.questionCount} सवालों की परीक्षा शुरू करो`
-                  : `📋 Start ${activePreset?.label || 'Exam'} — ${examConfig.questionCount} Qs, ${examConfig.durationMinutes} min`}</>
+              quizMode === 'exam' ? (
+                <>{isHi ? `📋 ${examTimeLimit} मिनट की परीक्षा शुरू करो` : `📋 Start ${examTimeLimit}-min Exam (${questionCount} Qs)`}</>
+              ) : selectedChapter ? (
+                <>{subMeta?.icon} {isHi ? `अध्याय ${selectedChapter} · ${questionCount} सवाल शुरू करो` : `Start Ch ${selectedChapter} · ${questionCount} Questions`}</>
               ) : (
                 <>{subMeta?.icon} {isHi ? `${questionCount} सवालों की क्विज़ शुरू करो` : `Start ${questionCount}-Question Quiz`}</>
               )
@@ -421,14 +394,14 @@ export default function QuizSetup({ isHi, initialSubject, initialMode, initialCo
           </Button>
         )}
 
-        {/* XP Info */}
+        {/* Quick tip */}
         <Card className="!p-4">
           <div className="flex items-center gap-3">
             <span className="text-2xl">💡</span>
             <div className="text-xs text-[var(--text-3)] leading-relaxed">
               {isHi
-                ? `हर सही जवाब पर ${XP_RULES.quiz_per_correct} XP मिलता है। 80%+ स्कोर पर बोनस ${XP_RULES.quiz_high_score_bonus} XP!`
-                : `Earn ${XP_RULES.quiz_per_correct} XP per correct answer. Score 80%+ for a bonus ${XP_RULES.quiz_high_score_bonus} XP!`}
+                ? 'हर सही जवाब पर 10 XP मिलता है। 80%+ स्कोर पर बोनस 20 XP!'
+                : 'Earn 10 XP per correct answer. Score 80%+ for a bonus 20 XP!'}
             </div>
           </div>
         </Card>

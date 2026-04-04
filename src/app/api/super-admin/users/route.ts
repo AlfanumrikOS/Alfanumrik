@@ -54,7 +54,14 @@ export async function PATCH(request: NextRequest) {
       updates: z.object({
         is_active: z.boolean().optional(),
         account_status: z.enum(['active', 'demo', 'suspended', 'inactive']).optional(),
-        subscription_plan: z.enum(['free', 'starter', 'pro', 'unlimited']).optional(),
+        subscription_plan: z.enum([
+          'free',
+          'starter', 'starter_monthly', 'starter_yearly',
+          'pro', 'pro_monthly', 'pro_yearly',
+          'ultimate_monthly', 'ultimate_yearly',
+          'unlimited', 'unlimited_monthly', 'unlimited_yearly',
+          'basic', 'premium',
+        ]).optional(),
         grade: zGrade.optional(),
         board: z.string().min(1).max(50).optional(),
       }).refine(obj => Object.keys(obj).length > 0, { message: 'At least one update field is required' }),
@@ -82,6 +89,16 @@ export async function PATCH(request: NextRequest) {
     });
 
     if (!res.ok) return NextResponse.json({ error: 'Update failed' }, { status: 500 });
+
+    // If subscription_plan was overridden on students, sync student_subscriptions.plan_code
+    if (table === 'students' && typeof safe.subscription_plan === 'string') {
+      const rawPlan = safe.subscription_plan as string;
+      const canonicalPlan = rawPlan.replace(/_(monthly|yearly)$/, '').replace(/^ultimate$/, 'unlimited').replace(/^basic$/, 'starter').replace(/^premium$/, 'pro');
+      await fetch(supabaseAdminUrl('student_subscriptions', `student_id=eq.${user_id}`), {
+        method: 'PATCH', headers: supabaseAdminHeaders('return=minimal'),
+        body: JSON.stringify({ plan_code: canonicalPlan }),
+      });
+    }
 
     const action = safe.is_active === false ? 'user.suspended' : safe.is_active === true ? 'user.activated' : 'user.updated';
     await logAdminAudit(auth, action, table, user_id, { updates: safe });

@@ -4,10 +4,9 @@ import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { SUPABASE_URL, SUPABASE_ANON_KEY, SUBJECT_META } from '@/lib/constants';
 import { validatePassword } from '@/lib/sanitize';
-import { VALID_GRADES, VALID_BOARDS } from '@/lib/identity';
 
-const AUTH_GRADES = VALID_GRADES;
-const AUTH_BOARDS = VALID_BOARDS;
+const AUTH_GRADES = ['6', '7', '8', '9', '10', '11', '12'];
+const AUTH_BOARDS = ['CBSE', 'ICSE', 'State Board', 'IB', 'Other'];
 
 interface AuthScreenProps {
   onSuccess: () => void;
@@ -50,7 +49,7 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
   const TEACHER_SUBJECTS = SUBJECT_META.filter(s =>
     ['math', 'science', 'physics', 'chemistry', 'biology', 'english', 'hindi'].includes(s.code)
   );
-  const TEACHER_GRADES = VALID_GRADES;
+  const TEACHER_GRADES = ['6', '7', '8', '9', '10', '11', '12'];
 
   const toggleSubject = (code: string) => {
     setSubjectsTaught(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
@@ -119,49 +118,53 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
       });
       if (authError) { setError(authError.message); setLoading(false); return; }
       if (authData.user) {
-        const session = authData.session;
+        let profileError: string | null = null;
 
-        if (session) {
-          // Session exists — bootstrap profile via server
-          try {
-            const bootstrapPayload: Record<string, unknown> = {
-              role: roleTab,
-              name: name.trim(),
-            };
+        if (roleTab === 'student') {
+          const { error: insErr } = await supabase.from('students').insert({
+            auth_user_id: authData.user.id,
+            name: name.trim(),
+            email: email.trim(),
+            grade: `Grade ${grade}`,
+            board,
+            preferred_language: 'en',
+            account_status: 'active',
+            onboarding_completed: true,
+          });
+          if (insErr) profileError = insErr.message;
+        } else if (roleTab === 'teacher') {
+          const { error: insErr } = await supabase.from('teachers').insert({
+            auth_user_id: authData.user.id,
+            name: name.trim(),
+            email: email.trim(),
+            school_name: schoolName.trim(),
+            subjects_taught: subjectsTaught,
+            grades_taught: gradesTaught,
+          });
+          if (insErr) profileError = insErr.message;
+        } else if (roleTab === 'parent') {
+          const { data: guardianData, error: insErr } = await supabase.from('guardians').insert({
+            auth_user_id: authData.user.id,
+            name: name.trim(),
+            email: email.trim(),
+            phone: phone.trim() || null,
+          }).select('id').single();
+          if (insErr) profileError = insErr.message;
 
-            if (roleTab === 'student') {
-              bootstrapPayload.grade = grade;
-              bootstrapPayload.board = board;
-            } else if (roleTab === 'teacher') {
-              bootstrapPayload.school_name = schoolName.trim();
-              bootstrapPayload.subjects_taught = subjectsTaught;
-              bootstrapPayload.grades_taught = gradesTaught;
-            } else if (roleTab === 'parent') {
-              bootstrapPayload.phone = phone.trim() || null;
-              bootstrapPayload.link_code = linkCode.trim() || null;
-            }
-
-            const bootstrapRes = await fetch('/api/auth/bootstrap', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(bootstrapPayload),
+          if (linkCode.trim() && guardianData) {
+            await supabase.rpc('link_guardian_to_student_via_code', {
+              p_guardian_id: guardianData.id,
+              p_invite_code: linkCode.trim(),
             });
-
-            if (!bootstrapRes.ok) {
-              const errData = await bootstrapRes.json().catch(() => ({}));
-              console.error('[Signup] Bootstrap failed:', errData);
-              // Show error and let the user retry — do NOT call onSuccess
-              // since the profile was not created and redirecting would cause issues
-              setError(errData.error || 'Profile setup failed. Please try logging in again.');
-              setLoading(false);
-              return;
-            }
-          } catch (bootstrapErr) {
-            console.error('[Signup] Bootstrap error:', bootstrapErr);
-            // Non-fatal — proceed with onSuccess, AuthContext will handle
           }
+        }
 
-          // Fire-and-forget welcome email
+        if (profileError) {
+          console.error(`[Signup] Profile insert failed for ${roleTab}:`, profileError);
+        }
+
+        const session = authData.session;
+        if (session) {
           const welcomePayload: Record<string, string> = { role: roleTab, name: name.trim(), email: email.trim() };
           if (roleTab === 'student') { welcomePayload.grade = grade; welcomePayload.board = board; }
           if (roleTab === 'teacher') { welcomePayload.school_name = schoolName.trim(); }
@@ -170,10 +173,10 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}`, 'apikey': SUPABASE_ANON_KEY },
             body: JSON.stringify(welcomePayload),
           }).catch(() => {});
-
           onSuccess();
         } else {
-          // No session — email confirmation required
+          // No session returned — email confirmation required
+          // User will receive a Mailgun-sent confirmation email
           setPendingEmail(email.trim());
           setMode('check-email');
           setSuccess('');
@@ -449,10 +452,6 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
               <span style={{ color: 'var(--text-3)' }}>Already have an account? <button onClick={() => { setMode('login'); setError(''); setSuccess(''); }} className="font-bold" style={{ color: activeRoleColor }}>Log In</button></span>
             )}
           </div>
-
-          <p className="text-center text-xs mt-3" style={{ color: '#9CA3AF' }}>
-            Parent? <a href="/parent" style={{ color: '#E8581C', fontWeight: 500 }}>Go to Parent Portal &rarr;</a>
-          </p>
         </div>
 
         {/* Trust signals */}

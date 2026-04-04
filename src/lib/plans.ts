@@ -49,8 +49,8 @@ export const PLANS: Record<string, PlanConfig> = {
     gradient: 'linear-gradient(135deg, #E8581C, #F59E0B)',
     tagline: 'More learning, more growth',
     taglineHi: 'और सीखो, और बढ़ो',
-    benefits: ['30 Foxy chats/day', '20 quizzes/day', '4 subjects', 'STEM Centre'],
-    benefitsHi: ['30 चैट/दिन', '20 क्विज़/दिन', '4 विषय', 'स्टेम सेंटर'],
+    benefits: ['30 Foxy chats/day', '20 quizzes/day', '4 subjects', 'Interactive labs'],
+    benefitsHi: ['30 चैट/दिन', '20 क्विज़/दिन', '4 विषय', 'इंटरैक्टिव लैब'],
     tier: 1,
     nextPlan: 'pro',
     nextPlanLabel: 'Upgrade to Pro →',
@@ -64,8 +64,8 @@ export const PLANS: Record<string, PlanConfig> = {
     gradient: 'linear-gradient(135deg, #7C3AED, #A855F7)',
     tagline: 'The complete learning experience',
     taglineHi: 'संपूर्ण सीखने का अनुभव',
-    benefits: ['100 Foxy chats/day', 'Unlimited quizzes', 'All subjects', 'STEM Centre', 'Advanced analytics'],
-    benefitsHi: ['100 चैट/दिन', 'असीमित क्विज़', 'सभी विषय', 'स्टेम सेंटर', 'उन्नत विश्लेषण'],
+    benefits: ['100 Foxy chats/day', 'Unlimited quizzes', 'All subjects', 'Interactive labs', 'Advanced analytics'],
+    benefitsHi: ['100 चैट/दिन', 'असीमित क्विज़', 'सभी विषय', 'इंटरैक्टिव लैब', 'उन्नत विश्लेषण'],
     tier: 2,
     nextPlan: 'unlimited',
     nextPlanLabel: 'Upgrade to Unlimited →',
@@ -79,8 +79,8 @@ export const PLANS: Record<string, PlanConfig> = {
     gradient: 'linear-gradient(135deg, #0891B2, #06B6D4)',
     tagline: 'No limits. Maximum results.',
     taglineHi: 'कोई सीमा नहीं। अधिकतम परिणाम।',
-    benefits: ['Unlimited Foxy chats', 'Unlimited quizzes', 'All subjects', 'STEM Centre', 'Priority support'],
-    benefitsHi: ['असीमित चैट', 'असीमित क्विज़', 'सभी विषय', 'स्टेम सेंटर', 'प्राथमिकता सहायता'],
+    benefits: ['Unlimited Foxy chats', 'Unlimited quizzes', 'All subjects', 'Interactive labs', 'Priority support'],
+    benefitsHi: ['असीमित चैट', 'असीमित क्विज़', 'सभी विषय', 'इंटरैक्टिव लैब', 'प्राथमिकता सहायता'],
     tier: 3,
     nextPlan: null,
     nextPlanLabel: null,
@@ -107,9 +107,20 @@ export function yearlyPerMonth(yearlyPrice: number): number {
   return Math.round(yearlyPrice / 12);
 }
 
+// Maps legacy codes and billing-cycle variants to canonical tier
+const PLAN_ALIAS: Record<string, string> = {
+  basic: 'starter', premium: 'pro', ultimate: 'unlimited',
+};
+
+/** Normalise any plan code variant to a canonical tier key recognised by PLANS. */
+export function normalizePlanCode(planCode: string | null | undefined): string {
+  const code = (planCode || 'free').replace(/_(monthly|yearly)$/, '');
+  return PLAN_ALIAS[code] ?? code;
+}
+
 /** Get plan config from DB plan code. Falls back to free plan. */
 export function getPlanConfig(planCode: string | null | undefined): PlanConfig {
-  return PLANS[planCode || 'free'] || PLANS.free;
+  return PLANS[normalizePlanCode(planCode)] ?? PLANS.free;
 }
 
 /** Check if a plan is premium (paid) */

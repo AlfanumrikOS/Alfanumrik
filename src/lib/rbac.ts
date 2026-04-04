@@ -18,6 +18,7 @@
 
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { Redis } from '@upstash/redis';
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -53,33 +54,67 @@ function getServiceClient() {
   return getSupabaseAdmin();
 }
 
-// ─── Permission Cache ────────────────────────────────────────
-// In-memory cache with 5-minute TTL to avoid DB hits on every request.
-// In production, replace with Redis.
+// ─── Permission Cache (Upstash Redis) ────────────────────────
+// Redis-backed cache with 5-minute TTL, shared across all serverless instances.
+// Falls back to in-memory if Redis env vars are absent (local dev).
 
-const permissionCache = new Map<string, { data: UserPermissions; expires: number }>();
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const CACHE_TTL_SECS = 5 * 60; // 5 minutes
+const CACHE_KEY = (uid: string) => `rbac:perms:${uid}`;
 
-function getCachedPermissions(userId: string): UserPermissions | null {
-  const cached = permissionCache.get(userId);
-  if (cached && cached.expires > Date.now()) return cached.data;
-  if (cached) permissionCache.delete(userId);
+let _redis: Redis | null = null;
+function getRedis(): Redis | null {
+  if (_redis) return _redis;
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return null; // dev / missing config — use in-memory fallback
+  _redis = new Redis({ url, token });
+  return _redis;
+}
+
+// In-memory fallback for dev/test environments without Redis
+const _localCache = new Map<string, { data: UserPermissions; expires: number }>();
+
+async function getCachedPermissions(userId: string): Promise<UserPermissions | null> {
+  const redis = getRedis();
+  if (redis) {
+    try {
+      const raw = await redis.get<UserPermissions>(CACHE_KEY(userId));
+      return raw ?? null;
+    } catch {
+      // Redis unavailable — fall through to local cache
+    }
+  }
+  const local = _localCache.get(userId);
+  if (local && local.expires > Date.now()) return local.data;
+  if (local) _localCache.delete(userId);
   return null;
 }
 
-function setCachedPermissions(userId: string, data: UserPermissions): void {
-  permissionCache.set(userId, { data, expires: Date.now() + CACHE_TTL_MS });
-  // Periodic cleanup — evict expired entries every 100 sets
-  if (permissionCache.size > 200) {
+async function setCachedPermissions(userId: string, data: UserPermissions): Promise<void> {
+  const redis = getRedis();
+  if (redis) {
+    try {
+      await redis.set(CACHE_KEY(userId), data, { ex: CACHE_TTL_SECS });
+      return;
+    } catch {
+      // Redis write failed — fall through to local cache
+    }
+  }
+  _localCache.set(userId, { data, expires: Date.now() + CACHE_TTL_SECS * 1000 });
+  if (_localCache.size > 200) {
     const now = Date.now();
-    Array.from(permissionCache.entries()).forEach(([key, val]) => {
-      if (val.expires < now) permissionCache.delete(key);
-    });
+    for (const [k, v] of _localCache.entries()) {
+      if (v.expires < now) _localCache.delete(k);
+    }
   }
 }
 
-export function invalidatePermissionCache(userId: string): void {
-  permissionCache.delete(userId);
+export async function invalidatePermissionCache(userId: string): Promise<void> {
+  const redis = getRedis();
+  if (redis) {
+    try { await redis.del(CACHE_KEY(userId)); } catch { /* ignore */ }
+  }
+  _localCache.delete(userId);
 }
 
 // ─── Core Permission Functions ───────────────────────────────
@@ -88,7 +123,7 @@ export function invalidatePermissionCache(userId: string): void {
  * Get all permissions for a user (server-side, with caching).
  */
 export async function getUserPermissions(authUserId: string): Promise<UserPermissions> {
-  const cached = getCachedPermissions(authUserId);
+  const cached = await getCachedPermissions(authUserId);
   if (cached) return cached;
 
   const supabase = getServiceClient();
@@ -104,7 +139,7 @@ export async function getUserPermissions(authUserId: string): Promise<UserPermis
     permissions: data.permissions || [],
   };
 
-  setCachedPermissions(authUserId, result);
+  await setCachedPermissions(authUserId, result);
   return result;
 }
 

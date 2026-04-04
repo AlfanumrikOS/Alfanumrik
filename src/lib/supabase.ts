@@ -749,6 +749,60 @@ export async function upsertBloomProgression(data: {
   if (error) console.error('upsertBloomProgression:', error.message);
 }
 
+/* ── Chapter topics (for /learn/[subject]/[chapter] page) ── */
+export async function getChapterTopics(subject: string, grade: string, chapterNumber: number) {
+  const { data: subjectRow } = await supabase.from('subjects').select('id').eq('code', subject).single();
+  if (!subjectRow) return [];
+  const { data, error } = await supabase
+    .from('curriculum_topics')
+    .select('*')
+    .eq('is_active', true)
+    .eq('grade', grade)
+    .eq('subject_id', subjectRow.id)
+    .eq('chapter_number', chapterNumber)
+    .order('display_order');
+  if (error) console.error('getChapterTopics:', error.message);
+  return data ?? [];
+}
+
+/* ── Questions filtered by chapter (for chapter quiz + quick-check) ── */
+export async function getChapterQuestions(subject: string, grade: string, chapterNumber: number, count = 20, difficulty?: number | null) {
+  let query = supabase.from('question_bank')
+    .select('id, question_text, question_hi, question_type, options, correct_answer_index, explanation, explanation_hi, hint, difficulty, bloom_level, chapter_number')
+    .eq('subject', subject)
+    .eq('grade', grade)
+    .eq('is_active', true)
+    .eq('chapter_number', chapterNumber)
+    .limit(Math.min(count, 50));
+  if (difficulty != null) query = query.eq('difficulty', difficulty);
+  const { data, error } = await query;
+  if (error) console.error('getChapterQuestions:', error.message);
+  return (data ?? []).sort(() => Math.random() - 0.5);
+}
+
+/* ── Distinct chapters for a subject/grade (for quiz chapter selector) ── */
+export async function getChaptersForSubject(subject: string, grade: string) {
+  const { data: subjectRow } = await supabase.from('subjects').select('id').eq('code', subject).single();
+  if (!subjectRow) return [];
+  const { data, error } = await supabase
+    .from('curriculum_topics')
+    .select('chapter_number, title')
+    .eq('is_active', true)
+    .eq('grade', grade)
+    .eq('subject_id', subjectRow.id)
+    .not('chapter_number', 'is', null)
+    .order('chapter_number')
+    .order('display_order');
+  if (error) console.error('getChaptersForSubject:', error.message);
+  // Return first topic per unique chapter (use its title as chapter label)
+  const seen = new Set<number>();
+  return (data ?? []).filter(t => {
+    if (t.chapter_number == null || seen.has(t.chapter_number)) return false;
+    seen.add(t.chapter_number);
+    return true;
+  }) as Array<{ chapter_number: number; title: string }>;
+}
+
 // ─── Topic Diagrams ──────────────────────────────────────
 
 export async function getTopicDiagrams(subject: string, grade: string, chapterNumber: number) {

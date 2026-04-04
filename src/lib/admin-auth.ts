@@ -1,5 +1,19 @@
+/**
+ * Admin authentication helper — server-side and client-side utilities.
+ *
+ * Security model:
+ *  - Server routes: check `x-admin-secret` request header ONLY (never URL params).
+ *  - Client: stores the secret in sessionStorage (cleared on tab close), never in the URL.
+ *  - All admin actions are logged to admin_audit_log via logAdminAction().
+ *
+ * Also exports original session-based admin auth (authorizeAdmin) used by /api/super-admin/* routes.
+ */
+
 import { NextRequest, NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
+import { getSupabaseAdmin } from '@/lib/supabase-admin';
+
+// ─── Types ────────────────────────────────────────────────────
 
 export interface AdminAuth {
   authorized: true;
@@ -17,11 +31,15 @@ export interface AdminAuthFailure {
 
 export type AdminAuthResult = AdminAuth | AdminAuthFailure;
 
+// ─── Internal helpers ─────────────────────────────────────────
+
 function getSupabaseConfig() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   return { url: url || null, key: key || null };
 }
+
+// ─── Session-based admin auth (used by /api/super-admin/* routes) ─────────────
 
 /**
  * Verify that the request comes from an authenticated admin user.
@@ -148,7 +166,7 @@ export async function authorizeAdmin(request: NextRequest): Promise<AdminAuthRes
   }
 }
 
-/** Record an admin action to the audit trail. */
+/** Record an admin action to the audit trail (used by /api/super-admin/* routes). */
 export async function logAdminAudit(
   admin: AdminAuth, action: string, entityType: string, entityId: string,
   details?: Record<string, unknown>, ipAddress?: string
@@ -166,8 +184,6 @@ export async function logAdminAudit(
       }),
     });
   } catch (e) {
-    // Audit is best-effort (non-throwing), but failures MUST be logged
-    // so we can detect if the audit trail has gaps.
     logger.error('admin_audit_log_failed', {
       error: e instanceof Error ? e : new Error(String(e)),
       route: 'admin-auth',
@@ -194,3 +210,49 @@ export function supabaseAdminUrl(table: string, params: string = ''): string {
   if (!url) throw new Error('Supabase URL not configured');
   return `${url}/rest/v1/${table}${params ? `?${params}` : ''}`;
 }
+
+// ─── Secret-based admin auth (used by /api/internal/admin/* routes) ──────────
+
+/**
+ * Validates the x-admin-secret header on a server request.
+ * Returns 401 NextResponse if invalid, null if valid.
+ */
+export function requireAdminSecret(request: NextRequest): NextResponse | null {
+  const provided = request.headers.get('x-admin-secret');
+  const expected = process.env.SUPER_ADMIN_SECRET;
+  if (!expected) {
+    return NextResponse.json({ error: 'Admin not configured' }, { status: 503 });
+  }
+  if (!provided || provided !== expected) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  return null; // auth OK
+}
+
+/**
+ * Log an admin action to admin_audit_log (fire-and-forget).
+ * Used by /api/internal/admin/* routes.
+ */
+export async function logAdminAction(opts: {
+  action: string;
+  entity_type: string;
+  entity_id?: string;
+  details?: Record<string, unknown>;
+  ip?: string;
+}): Promise<void> {
+  try {
+    const supabase = getSupabaseAdmin();
+    await supabase.from('admin_audit_log').insert({
+      admin_id: null, // set to admin_users.id when proper admin accounts are used
+      action: opts.action,
+      entity_type: opts.entity_type,
+      entity_id: opts.entity_id ?? null,
+      details: opts.details ?? {},
+      ip_address: opts.ip ?? null,
+    });
+  } catch {
+    // Never let audit log failures break the main flow
+  }
+}
+
+// Client-side session helpers are in @/lib/admin-session (safe for 'use client' components)

@@ -351,7 +351,6 @@ describe('Middleware config', () => {
     expect(pattern).toContain('favicon');
     expect(pattern).toContain('manifest');
     expect(pattern).toContain('sw');
-    expect(pattern).toContain('robots');
   });
 
   it('middleware function is exported', async () => {

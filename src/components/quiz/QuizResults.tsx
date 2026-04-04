@@ -71,7 +71,7 @@ export default function QuizResults({
   onGoHome,
 }: QuizResultsProps) {
   const router = useRouter();
-  const [expandedQuestion, setExpandedQuestion] = useState<number | null>(null);
+  const [expandedCorrect, setExpandedCorrect] = useState<Set<number>>(new Set());
 
   const parseOptions = (opts: string | string[]): string[] => {
     if (Array.isArray(opts)) return opts;
@@ -218,132 +218,125 @@ export default function QuizResults({
           <p className="text-sm font-semibold text-[var(--text-2)] mb-3">
             {isHi ? 'सवालों की समीक्षा' : 'Question Review'}
           </p>
-          <div className="space-y-2">
+          <div className="space-y-3">
             {questions.map((question, idx) => {
               const resp = responses[idx];
               const correct = resp?.is_correct;
-              const isExpanded = expandedQuestion === idx;
+              const isExpanded = !correct || expandedCorrect.has(idx);
               const opts = parseOptions(question.options);
               const correctAnswerText = opts[question.correct_answer_index] || '';
               const questionText = isHi && question.question_hi ? question.question_hi : question.question_text;
               const explanation = isHi && question.explanation_hi ? question.explanation_hi : question.explanation;
-
               return (
                 <div
                   key={question.id}
                   className="rounded-xl overflow-hidden"
                   style={{
-                    background: correct ? 'rgba(22,163,74,0.06)' : 'rgba(220,38,38,0.04)',
-                    border: `1px solid ${correct ? 'rgba(22,163,74,0.15)' : 'rgba(220,38,38,0.12)'}`,
+                    background: correct ? 'rgba(22,163,74,0.04)' : 'rgba(220,38,38,0.04)',
+                    border: `1px solid ${correct ? 'rgba(22,163,74,0.15)' : 'rgba(220,38,38,0.2)'}`,
                   }}
                 >
-                  {/* Compact row — tappable for wrong answers */}
-                  <div
-                    className={`p-3 flex items-center gap-3${!correct ? ' cursor-pointer active:opacity-80' : ''}`}
-                    onClick={!correct ? () => setExpandedQuestion(isExpanded ? null : idx) : undefined}
-                    role={!correct ? 'button' : undefined}
-                    tabIndex={!correct ? 0 : undefined}
-                    onKeyDown={!correct ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedQuestion(isExpanded ? null : idx); } } : undefined}
-                    aria-expanded={!correct ? isExpanded : undefined}
+                  {/* Header row */}
+                  <button
+                    className="w-full p-3 flex items-center gap-3 text-left"
+                    onClick={() => {
+                      if (correct) {
+                        setExpandedCorrect(prev => {
+                          const next = new Set(prev);
+                          next.has(idx) ? next.delete(idx) : next.add(idx);
+                          return next;
+                        });
+                      }
+                    }}
                   >
                     <span
                       className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
-                      style={{
-                        background: correct ? '#16A34A' : '#DC2626',
-                        color: '#fff',
-                      }}
+                      style={{ background: correct ? '#16A34A' : '#DC2626', color: '#fff' }}
                     >
                       {correct ? '✓' : '✗'}
                     </span>
                     <div className="flex-1 min-w-0">
-                      <div className="text-xs font-medium truncate" style={{ color: 'var(--text-2)' }}>
-                        {questionText.substring(0, 80)}{questionText.length > 80 ? '...' : ''}
+                      <div className="text-xs font-medium" style={{ color: 'var(--text-2)' }}>
+                        Q{idx + 1}. {questionText.substring(0, 90)}{questionText.length > 90 ? '...' : ''}
                       </div>
-                      {!correct && !isExpanded && (
-                        <div className="text-[10px] text-[var(--text-3)] mt-0.5">
-                          {isHi ? 'सही:' : 'Correct:'} {OPTION_LETTERS[question.correct_answer_index]}
-                        </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className="text-[10px] text-[var(--text-3)]">{resp?.time_spent || 0}s</span>
+                      {correct && (
+                        <span className="text-[10px] text-[var(--text-3)]">{isExpanded ? '▲' : '▼'}</span>
                       )}
                     </div>
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <span className="text-[10px] text-[var(--text-3)]">
-                        {resp?.time_spent || 0}s
-                      </span>
-                      {!correct && (
-                        <span
-                          className="text-[10px] text-[var(--text-3)] transition-transform duration-200"
-                          style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}
-                        >
-                          ▼
-                        </span>
+                  </button>
+
+                  {/* Expanded detail */}
+                  {isExpanded && (
+                    <div className="px-3 pb-3 space-y-2">
+                      {/* Options */}
+                      {opts.length > 0 && (
+                        <div className="space-y-1">
+                          {opts.map((opt, oi) => {
+                            const isCorrectOpt = oi === question.correct_answer_index;
+                            const isSelected = oi === resp?.selected_option;
+                            let bg = 'var(--surface-2)';
+                            let borderColor = 'transparent';
+                            let textColor = 'var(--text-3)';
+                            if (isCorrectOpt) { bg = 'rgba(22,163,74,0.1)'; borderColor = '#16A34A'; textColor = '#16A34A'; }
+                            else if (isSelected && !correct) { bg = 'rgba(220,38,38,0.08)'; borderColor = '#DC2626'; textColor = '#DC2626'; }
+                            return (
+                              <div
+                                key={oi}
+                                className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[11px]"
+                                style={{ background: bg, border: `1px solid ${borderColor}`, color: textColor }}
+                              >
+                                <span className="font-bold w-4 flex-shrink-0">{OPTION_LETTERS[oi]}.</span>
+                                <span className="flex-1">{opt}</span>
+                                {isCorrectOpt && <span className="flex-shrink-0">✓</span>}
+                                {isSelected && !correct && <span className="flex-shrink-0">✗</span>}
+                              </div>
+                            );
+                          })}
+                        </div>
                       )}
-                    </div>
-                  </div>
-
-                  {/* Expanded detail for wrong answers */}
-                  {!correct && isExpanded && (
-                    <div className="px-3 pb-3 pt-0 space-y-2.5 border-t" style={{ borderColor: 'rgba(220,38,38,0.12)' }}>
-                      {/* Full question text */}
-                      <div className="pt-2.5">
-                        <p className="text-[10px] font-semibold text-[var(--text-3)] uppercase tracking-wide mb-1">
-                          {isHi ? 'पूरा सवाल' : 'Full Question'}
-                        </p>
-                        <p className="text-xs text-[var(--text-2)] leading-relaxed">
-                          {questionText}
-                        </p>
-                      </div>
-
-                      {/* Your answer vs correct answer */}
-                      <div className="flex gap-2">
-                        <div className="flex-1 rounded-lg p-2" style={{ background: 'rgba(220,38,38,0.08)' }}>
-                          <p className="text-[10px] font-semibold text-[#DC2626] mb-0.5">
-                            {isHi ? 'तुम्हारा जवाब' : 'Your Answer'}
-                          </p>
-                          <p className="text-xs text-[var(--text-2)]">
-                            {OPTION_LETTERS[resp?.selected_option ?? 0]}. {opts[resp?.selected_option ?? 0] || '—'}
-                          </p>
-                        </div>
-                        <div className="flex-1 rounded-lg p-2" style={{ background: 'rgba(22,163,74,0.08)' }}>
-                          <p className="text-[10px] font-semibold text-[#16A34A] mb-0.5">
-                            {isHi ? 'सही जवाब' : 'Correct Answer'}
-                          </p>
-                          <p className="text-xs text-[var(--text-2)]">
-                            {OPTION_LETTERS[question.correct_answer_index]}. {correctAnswerText}
-                          </p>
-                        </div>
-                      </div>
 
                       {/* Explanation */}
                       {explanation && (
-                        <div className="rounded-lg p-2" style={{ background: 'rgba(139,92,246,0.06)' }}>
-                          <p className="text-[10px] font-semibold text-[#8B5CF6] mb-0.5">
-                            {isHi ? 'व्याख्या' : 'Explanation'}
-                          </p>
-                          <p className="text-xs text-[var(--text-2)] leading-relaxed">
-                            {explanation}
-                          </p>
+                        <div className="rounded-lg px-3 py-2 text-[11px] leading-relaxed" style={{ background: 'var(--surface-1)', color: 'var(--text-3)' }}>
+                          <span className="font-semibold" style={{ color: 'var(--text-2)' }}>
+                            {isHi ? 'व्याख्या: ' : 'Explanation: '}
+                          </span>
+                          {explanation}
                         </div>
                       )}
 
-                      {/* Ask Foxy button */}
-                      <button
-                        className="w-full rounded-lg py-2 px-3 flex items-center justify-center gap-2 text-xs font-semibold transition-colors"
-                        style={{
-                          background: 'var(--orange)',
-                          color: '#fff',
-                        }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const subjectParam = selectedSubject || '';
-                          const msg = encodeURIComponent(
-                            `Explain why the answer to "${questionText.substring(0, 120)}" is "${correctAnswerText}"`
-                          );
-                          router.push(`/foxy?subject=${subjectParam}&mode=doubt&message=${msg}`);
-                        }}
-                      >
-                        <span>🦊</span>
-                        {isHi ? 'Foxy से पूछो' : 'Ask Foxy'}
-                      </button>
+                      {/* Study link */}
+                      {!correct && selectedSubject && question.chapter_number && (
+                        <button
+                          onClick={() => router.push(`/learn/${selectedSubject}/${question.chapter_number}`)}
+                          className="text-[11px] font-semibold px-3 py-1.5 rounded-lg w-full text-left"
+                          style={{ background: `${subMeta?.color || '#7C3AED'}15`, color: subMeta?.color || '#7C3AED' }}
+                        >
+                          📖 {isHi ? `अध्याय ${question.chapter_number} के concept पढ़ो ->` : `Study Chapter ${question.chapter_number} concepts ->`}
+                        </button>
+                      )}
+
+                      {/* Ask Foxy deep-link for wrong answers */}
+                      {!correct && (
+                        <button
+                          className="w-full rounded-lg py-2 px-3 flex items-center justify-center gap-2 text-xs font-semibold transition-colors"
+                          style={{ background: 'var(--orange)', color: '#fff' }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const subjectParam = selectedSubject || '';
+                            const msg = encodeURIComponent(
+                              `Explain why the answer to "${questionText.substring(0, 120)}" is "${correctAnswerText}"`
+                            );
+                            router.push(`/foxy?subject=${subjectParam}&mode=doubt&message=${msg}`);
+                          }}
+                        >
+                          <span>🦊</span>
+                          {isHi ? 'Foxy से पूछो' : 'Ask Foxy'}
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -351,6 +344,46 @@ export default function QuizResults({
             })}
           </div>
         </div>
+
+        {/* Chapters to Review */}
+        {(() => {
+          const weakChapters = [...new Set(
+            responses
+              .map((r, i) => (!r.is_correct && questions[i]?.chapter_number) ? questions[i].chapter_number : null)
+              .filter((c): c is number => c !== null)
+          )];
+          if (weakChapters.length === 0 || !selectedSubject) return null;
+          return (
+            <div>
+              <p className="text-sm font-semibold text-[var(--text-2)] mb-3">
+                {isHi ? 'इन अध्यायों को दोबारा पढ़ो' : 'Chapters to Review'}
+              </p>
+              <Card className="!p-4">
+                <div className="space-y-2">
+                  {weakChapters.map(ch => (
+                    <button
+                      key={ch}
+                      onClick={() => router.push(`/learn/${selectedSubject}/${ch}`)}
+                      className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-all active:scale-[0.98]"
+                      style={{ background: `${subMeta?.color || '#7C3AED'}10`, border: `1px solid ${subMeta?.color || '#7C3AED'}30` }}
+                    >
+                      <span className="text-base">{subMeta?.icon || '📚'}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-semibold" style={{ color: subMeta?.color || '#7C3AED' }}>
+                          {isHi ? `अध्याय ${ch}` : `Chapter ${ch}`}
+                        </div>
+                        <div className="text-[10px] text-[var(--text-3)]">
+                          {isHi ? 'concepts और notes देखो' : 'Review concepts & notes'}
+                        </div>
+                      </div>
+                      <span className="text-[10px]" style={{ color: subMeta?.color || '#7C3AED' }}>→</span>
+                    </button>
+                  ))}
+                </div>
+              </Card>
+            </div>
+          );
+        })()}
 
         {/* Action Buttons */}
         <div className="space-y-2">

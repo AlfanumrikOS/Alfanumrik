@@ -31,7 +31,6 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
-import { retrieveChunks } from '../_shared/retrieval.ts'
 
 // ─── Environment ────────────────────────────────────────────────
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY') || ''
@@ -112,135 +111,21 @@ setInterval(() => {
   }
 }, 120_000)
 
-// ─── Input safety filter (P12: age-appropriate content) ───────
-// Fast regex/keyword check to block clearly inappropriate inputs.
-// Conservative: only blocks obviously harmful content outside educational scope.
-// Does NOT block legitimate academic topics (e.g., "chemical reactions", "reproduction in plants").
-interface SafetyResult {
-  safe: boolean
-  category?: string
-}
-
-function checkInputSafety(message: string): SafetyResult {
-  // Normalize: lowercase, collapse whitespace, strip common obfuscation
-  const normalized = message
-    .toLowerCase()
-    .replace(/[\s_\-.*+]+/g, ' ')  // collapse separators
-    .replace(/[0@][o0]/gi, 'oo')   // basic leet-speak normalization
-    .trim()
-
-  // Each category has patterns that are clearly outside educational scope.
-  // Patterns are designed to avoid false positives with legitimate CBSE topics
-  // (e.g., "drug" alone is fine for pharmacy/biology context).
-  const SAFETY_PATTERNS: Array<{ category: string; pattern: RegExp }> = [
-    // Violence / weapons — but not "nuclear weapons in history" or "chemical weapons treaty"
-    {
-      category: 'violence',
-      pattern: /\b(how to (make|build|create) (a )?(bomb|weapon|gun|explosive)|kill (someone|people|myself|yourself)|murder (someone|people)|school shoot|mass shoot|terrorist attack|how to hurt)\b/,
-    },
-    // Sexual content — but not "sexual reproduction" (biology)
-    {
-      category: 'sexual_content',
-      pattern: /\b(porn|pornograph|sex video|nude photo|naked (photo|pic|image|video)|sexting|hookup|onlyfans|xxx rated)\b/,
-    },
-    // Self-harm
-    {
-      category: 'self_harm',
-      pattern: /\b(how to (commit suicide|kill myself|end my life|cut myself|hurt myself)|suicide method|want to die|ways to die)\b/,
-    },
-    // Drug / substance abuse — but not "drugs and medicines" (biology/chemistry)
-    {
-      category: 'substance_abuse',
-      pattern: /\b(how to (make|cook|brew|grow) (meth|cocaine|heroin|weed|drugs|lsd)|buy (drugs|weed|cocaine|meth)|get (high|drunk|stoned) (fast|easily|quickly))\b/,
-    },
-    // Hate speech
-    {
-      category: 'hate_speech',
-      pattern: /\b(hate (all )?(muslims|hindus|christians|jews|blacks|whites|dalits)|kill (all )?(muslims|hindus|christians|jews|blacks|whites)|ethnic cleansing|racial supremacy|white power|genocide is good)\b/,
-    },
-    // Personal information harvesting
-    {
-      category: 'pii_request',
-      pattern: /\b(give me (the )?(phone|mobile|address|email|password|aadhaar|aadhar) (number |of )|hack (into|someone|account)|stalk (someone|person)|find (someone|person).{0,20}(address|location|phone))\b/,
-    },
-  ]
-
-  for (const { category, pattern } of SAFETY_PATTERNS) {
-    if (pattern.test(normalized)) {
-      return { safe: false, category }
-    }
-  }
-
-  return { safe: true }
-}
-
 // ─── Usage limits by plan ──────────────────────────────────────
 const PLAN_LIMITS: Record<string, number> = {
   free: 5,
   starter: 30,
-  basic: 30,      // alias for starter
   pro: 100,
-  premium: 100,   // alias for pro
   unlimited: 999999,
 }
 
-// ─── CME integration helpers ───────────────────────────────────
-
-/** Call CME to get the recommended next concept for this student. Fire-and-forget safe. */
-async function fetchCMENextAction(studentId: string, subjectId: string): Promise<{
-  type: string;
-  concept_id: string;
-  title: string;
-  reason: string;
-  difficulty: number;
-} | null> {
-  try {
-    const cmeUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/cme-engine`;
-    const res = await fetch(cmeUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
-        'apikey': Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      },
-      body: JSON.stringify({ action: 'get_next_action', student_id: studentId, subject_id: subjectId }),
-      signal: AbortSignal.timeout(3000), // 3s max — don't block chat
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data?.type ? data : null;
-  } catch {
-    return null; // CME failure must never break Foxy
-  }
+const PLAN_ALIAS: Record<string, string> = {
+  basic: 'starter', premium: 'pro', ultimate: 'unlimited',
 }
 
-/** Record student response in CME — fire-and-forget, never awaited. */
-function recordCMEResponse(
-  studentId: string,
-  conceptId: string,
-  correct: boolean,
-  responseTimeMs: number,
-  difficulty: number,
-): void {
-  const cmeUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/cme-engine`;
-  fetch(cmeUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
-      'apikey': Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-    },
-    body: JSON.stringify({
-      action: 'record_response',
-      student_id: studentId,
-      concept_id: conceptId,
-      correct,
-      difficulty,
-      response_time_ms: responseTimeMs,
-      student_answer: '',
-      correct_answer: '',
-    }),
-  }).catch(() => {}); // intentional fire-and-forget
+function normalizePlan(plan: string): string {
+  const base = plan.replace(/_(monthly|yearly)$/, '')
+  return PLAN_ALIAS[base] ?? base
 }
 
 // ─── System prompt ─────────────────────────────────────────────
@@ -253,9 +138,6 @@ function buildSystemPrompt(
   chapters: string | null,
   lessonStep: string | null,
   ragContext: string | null,
-  syllabusContext: string | null = null,
-  masteryContext: string | null = null,
-  cmeAction?: { type: string; concept_id: string; title: string; reason: string; difficulty: number } | null,
 ): string {
   const lang =
     language === 'hi' ? 'Hindi (Devanagari script)'
@@ -278,7 +160,7 @@ function buildSystemPrompt(
     spaced_revision: 'Provide a quick revision summary: key points, formulas, and common mistakes.',
   }[lessonStep] || '' : ''
 
-  let prompt = `You are Foxy 🦊, a warm, encouraging AI tutor for Indian CBSE students.
+  let prompt = `You are Foxy 🦊, a warm, encouraging AI tutor for Indian students.
 
 STUDENT: Grade ${grade} | Subject: ${subject}
 LANGUAGE: Respond in ${lang}. Use simple, age-appropriate language.
@@ -287,18 +169,7 @@ ${stepInstr ? `\nLESSON STEP: ${stepInstr}` : ''}
 ${topicTitle ? `\nACTIVE TOPIC: ${topicTitle}` : ''}
 ${chapters ? `\nSELECTED CHAPTERS: ${chapters}` : ''}
 
-CURRICULUM GROUNDING (CRITICAL):
-- You MUST answer based on NCERT textbook content ONLY.
-- If NCERT REFERENCE MATERIAL is provided below, use it as your PRIMARY source.
-- Do NOT invent facts, formulas, dates, or definitions not in NCERT.
-- If the reference material covers the topic, base your answer on it.
-- If no reference material is available, clearly state the NCERT-standard answer and do not guess.
-- For Math/Science: use ONLY formulas and methods taught in NCERT for this grade.
-- For Social Studies: use ONLY facts, dates, events as per NCERT textbook.
-- For English: follow CBSE grammar rules and board exam answer format.
-- NEVER contradict NCERT. If your knowledge differs from NCERT, follow NCERT.
-
-RESPONSE RULES:
+RULES:
 - Be concise. Aim for 150-300 words per response.
 - Use markdown: **bold** for key terms, \`code\` for formulas.
 - Include [KEY: term] tags for important concepts.
@@ -306,160 +177,43 @@ RESPONSE RULES:
 - For exam tips, use [TIP: advice] tags.
 - End teaching responses with a follow-up question to keep engagement.
 - Award XP: 5 for good questions, 10 for correct answers, 15 for explanations.
-- Never reveal you are Claude or an AI model. You are Foxy the fox tutor.
-- If unsure about any fact, say "Let me check — I want to make sure I give you the correct NCERT answer" rather than guessing.`
+- Never reveal you're Claude or an AI model. You are Foxy the fox tutor.
+- Follow NCERT/CBSE curriculum strictly for Indian board exams.
+- If unsure, say so honestly rather than giving wrong information.`
 
-  // Inject student mastery state (Foxy adapts based on what student knows)
-  if (masteryContext) {
-    prompt += `\n\nSTUDENT MASTERY STATE (adapt your response based on this):\n${masteryContext}
-USE THIS TO:
-- If a concept has low mastery (<0.4): explain from basics, be patient, use simple examples
-- If a concept has medium mastery (0.4-0.7): focus on application and practice
-- If a concept has high mastery (>0.7): challenge with harder questions, skip basics
-- Prioritize weak concepts over strong ones in your teaching`
-  }
-
-  // Inject CME-recommended concept focus
-  if (cmeAction) {
-    prompt += `\n\n## Current Teaching Focus (CME Recommendation)
-Concept to teach: "${cmeAction.title}"
-Teaching mode: ${cmeAction.type} (${cmeAction.reason})
-Target difficulty: ${cmeAction.difficulty}/5
-
-You MUST ground your response in this specific concept. Use the NCERT content provided above as your primary reference for this concept. Structure your explanation around "${cmeAction.title}" specifically — do not drift to adjacent topics unless explicitly asked.`
-  }
-
-  // Inject syllabus graph (formulas, rules, answer patterns)
-  if (syllabusContext) {
-    prompt += `\n\nCBSE SYLLABUS REFERENCE (formulas, rules, answer patterns — AUTHORITATIVE):\n${syllabusContext}`
-  }
-
-  // Inject RAG textbook content
   if (ragContext) {
-    prompt += `\n\n=== NCERT REFERENCE MATERIAL (Grade ${grade}, ${subject}) ===\n${ragContext}\n=== END REFERENCE ===
-
-You MUST answer ONLY based on the NCERT content provided above. If the context doesn't contain relevant information, say 'This topic isn't in my current NCERT materials for your grade. Let me help with what I do know about ${subject}.' NEVER make up information. Do not contradict the reference material.`
-  }
-
-  if (!ragContext && !syllabusContext) {
-    // Subject-specific safety rules to prevent confident-sounding wrong teaching
-    const subjectLower = subject.toLowerCase()
-    let subjectSafetyRule = ''
-    if (['math', 'mathematics'].includes(subjectLower)) {
-      subjectSafetyRule = `\nSUBJECT-SPECIFIC SAFETY (Math): Do NOT provide formulas not in NCERT for Class ${grade}. If you are unsure of the exact formula or method taught at this grade level, explicitly say so. Never present an advanced formula as if it is part of this grade's syllabus.`
-    } else if (['science', 'physics', 'chemistry'].includes(subjectLower)) {
-      subjectSafetyRule = `\nSUBJECT-SPECIFIC SAFETY (Science): Do NOT state specific numerical values, constants, or experimental results unless you are CERTAIN they match NCERT for Class ${grade}. If unsure about a specific value or constant, say "Please verify the exact value from your NCERT textbook."`
-    } else if (['history', 'social studies', 'social science', 'geography', 'civics', 'economics', 'political science'].includes(subjectLower)) {
-      subjectSafetyRule = `\nSUBJECT-SPECIFIC SAFETY (Social Studies): Do NOT state specific dates, events, names, or historical claims unless you are CERTAIN they match NCERT for Class ${grade}. If unsure about a specific date or fact, say "Please verify the exact details from your NCERT textbook."`
-    }
-
-    const disclaimerBadge = language === 'hi'
-      ? '⚠️ **NCERT संदर्भ नहीं मिला** — यह उत्तर सामान्य CBSE पाठ्यक्रम ज्ञान पर आधारित है। कृपया अपनी पाठ्यपुस्तक से सत्यापित करें।'
-      : '⚠️ **No NCERT reference found** — This answer is based on general CBSE curriculum knowledge. Please verify from your textbook.'
-
-    const openingLine = language === 'hi'
-      ? '📚 मेरे पास इसके लिए सटीक NCERT पृष्ठ नहीं है, लेकिन CBSE कक्षा ' + grade + ' ' + subject + ' पाठ्यक्रम के आधार पर मुझे यह पता है...'
-      : '📚 I don\'t have the exact NCERT page for this, but here\'s what I know from the CBSE Class ' + grade + ' ' + subject + ' curriculum...'
-
-    prompt += `\n\n⚠️ NO-REFERENCE SAFETY MODE (CRITICAL — follow ALL rules below):
-No specific NCERT textbook content or syllabus reference was found for this question.
-You may still help the student using your general knowledge of the CBSE curriculum for Class ${grade} ${subject}, but you MUST follow these rules STRICTLY:
-
-1. You MUST begin your response with this EXACT disclaimer badge on its own line:
-   "${disclaimerBadge}"
-
-2. You MUST follow the disclaimer badge with this opening line:
-   "${openingLine}"
-
-3. Keep your answer strictly within the CBSE syllabus scope for Class ${grade}
-4. Recommend the student verify your answer from their NCERT textbook
-5. If the topic is clearly outside the CBSE syllabus for this grade, say so and suggest the correct grade/subject
-6. Never fabricate specific page numbers, exercise numbers, or NCERT quotes
-${subjectSafetyRule}
-
-CONFIDENCE RATING (MANDATORY — include at the END of your response):
-You MUST rate your confidence in a clearly visible block:
-- **Confidence: HIGH** — Standard curriculum knowledge, very likely correct
-- **Confidence: MEDIUM** — Likely correct but student should verify from textbook
-- **Confidence: LOW** — Not sure about grade-specific details. "I recommend asking your teacher to confirm this."
-If your confidence is LOW, you MUST explicitly recommend the student ask their teacher.
-
-Do NOT refuse to help — provide your best curriculum-aligned response with ALL the above safety markers.`
+    prompt += `\n\nREFERENCE MATERIAL (use if relevant, don't mention "reference material" to student):\n${ragContext}`
   }
 
   return prompt
 }
 
-// ─── Syllabus graph retrieval ──────────────────────────────────
-async function fetchSyllabusContext(
+// ─── RAG retrieval (best-effort) ───────────────────────────────
+async function fetchRAGContext(
   supabase: ReturnType<typeof createClient>,
   query: string,
   subject: string,
   grade: string,
+  board: string | null = null,
 ): Promise<string | null> {
   try {
-    const { data, error } = await supabase.rpc('match_syllabus_concept', {
-      p_query: query,
+    // Try to call the match_rag_chunks RPC if it exists
+    const { data, error } = await supabase.rpc('match_rag_chunks', {
+      query_text: query,
       p_subject: subject,
       p_grade: grade,
-      p_match_count: 2,
+      match_count: 3,
+      p_board: board,       // Filter content to student's curriculum board
+      p_min_quality: 0.5,   // Exclude low-quality/malformed chunks
     })
 
     if (error || !data || data.length === 0) return null
 
-    return data.map((c: any) => {
-      let block = `CONCEPT: ${c.concept} (Ch.${c.chapter_number} ${c.chapter_title})`
-      if (c.formulas && c.formulas.length > 0) {
-        block += '\nFORMULAS: ' + c.formulas.map((f: any) => `${f.name}: ${f.expression}`).join(' | ')
-      }
-      if (c.rules && c.rules.length > 0) {
-        block += '\nRULES: ' + c.rules.map((r: any) => r.rule).join(' | ')
-      }
-      if (c.common_mistakes && c.common_mistakes.length > 0) {
-        block += '\nAVOID: ' + c.common_mistakes.join('; ')
-      }
-      if (c.answer_pattern) {
-        block += '\nANSWER FORMAT: ' + c.answer_pattern
-      }
-      return block
-    }).join('\n\n')
+    return data
+      .map((chunk: { content: string; similarity?: number }) => chunk.content)
+      .join('\n\n---\n\n')
   } catch {
-    return null
-  }
-}
-
-// ─── Student mastery retrieval ─────────────────────────────────
-async function fetchStudentMastery(
-  supabase: ReturnType<typeof createClient>,
-  studentId: string,
-  subject: string,
-): Promise<string | null> {
-  try {
-    const { data, error } = await supabase
-      .from('concept_mastery')
-      .select('topic_id, mastery_level, total_attempts, correct_attempts, next_review_at')
-      .eq('student_id', studentId)
-      .order('mastery_level', { ascending: true })
-      .limit(10)
-
-    if (error || !data || data.length === 0) return null
-
-    const weak = data.filter((c: any) => parseFloat(c.mastery_level) < 0.4)
-    const medium = data.filter((c: any) => parseFloat(c.mastery_level) >= 0.4 && parseFloat(c.mastery_level) < 0.7)
-    const strong = data.filter((c: any) => parseFloat(c.mastery_level) >= 0.7)
-    const dueReview = data.filter((c: any) => c.next_review_at && new Date(c.next_review_at) <= new Date())
-
-    let summary = `Concepts tracked: ${data.length}`
-    if (weak.length > 0) summary += ` | WEAK (need help): ${weak.length}`
-    if (medium.length > 0) summary += ` | Developing: ${medium.length}`
-    if (strong.length > 0) summary += ` | Strong: ${strong.length}`
-    if (dueReview.length > 0) summary += ` | Due for review: ${dueReview.length}`
-
-    const avgMastery = data.reduce((a: number, c: any) => a + parseFloat(c.mastery_level || '0'), 0) / data.length
-    summary += ` | Average mastery: ${Math.round(avgMastery * 100)}%`
-
-    return summary
-  } catch {
+    // RAG not available — proceed without context
     return null
   }
 }
@@ -520,8 +274,6 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const requestStartTime = Date.now()
-
     // ── Verify JWT and resolve student_id from auth ──
     const authResult = await verifyAndGetStudentId(req)
     if ('error' in authResult) {
@@ -551,11 +303,18 @@ Deno.serve(async (req: Request) => {
       return errorResponse('grade and subject are required', 400, origin)
     }
 
-    // ── Input length and format validation ──
-    // Cap message length to prevent token exhaustion attacks (~1500 tokens max)
+    // ── Message sanitization ──
+    // Strip HTML tags to prevent injection of markup into the prompt.
+    // Pattern only matches tags that start with a letter (real HTML tags),
+    // so mathematical operators like "2 < 3" or "x > 0" are preserved.
+    // Length cap prevents token exhaustion attacks (~1500 tokens max).
     const MAX_MESSAGE_LENGTH = 5000
-    if (message.length > MAX_MESSAGE_LENGTH) {
-      return errorResponse(`Message too long (max ${MAX_MESSAGE_LENGTH} chars)`, 400, origin)
+    const safeMessage = message
+      .replace(/<\/?\s*[a-zA-Z][^>]{0,500}>/g, '')  // strip HTML tags (bounded, no ReDoS)
+      .trim()
+      .slice(0, MAX_MESSAGE_LENGTH)
+    if (!safeMessage) {
+      return errorResponse('Message is empty after sanitization', 400, origin)
     }
 
     // Whitelist mode to prevent prompt injection via arbitrary mode strings
@@ -585,35 +344,6 @@ Deno.serve(async (req: Request) => {
       ? student_name.replace(/<[^>]*>/g, '').replace(/[{}`]/g, '').slice(0, 100)
       : null
 
-    // ── Input safety check (P12: age-appropriate content) ──
-    // Fast keyword-based filter to block clearly inappropriate inputs
-    // BEFORE rate limit so blocked messages don't consume usage quota.
-    // Conservative: only blocks obviously off-topic harmful content.
-    const inputSafetyResult = checkInputSafety(message)
-    if (!inputSafetyResult.safe) {
-      // Log blocked input for monitoring (redact actual content for privacy P13)
-      console.warn(
-        `[INPUT_SAFETY] Blocked message from student. Category: ${inputSafetyResult.category}. ` +
-        `Length: ${message.length}. Grade: ${grade}. Subject: ${subject}.`
-      )
-
-      const safeReply = safeLanguage === 'hi'
-        ? '🦊 अरे! इसमें मैं मदद नहीं कर सकता। मैं तुम्हारा CBSE स्टडी बडी हूँ — मुझसे गणित, विज्ञान, अंग्रेज़ी, या अपने किसी भी विषय के बारे में पूछो! क्या सीखना चाहोगे?'
-        : '🦊 Hey! That\'s not something I can help with. I\'m your CBSE study buddy — ask me about Math, Science, English, or any of your school subjects! What would you like to learn?'
-
-      return jsonResponse(
-        {
-          reply: safeReply,
-          xp_earned: 0,
-          session_id: session_id || null,
-          blocked: true,
-        },
-        200,
-        {},
-        origin,
-      )
-    }
-
     // ── Rate limit ──
     if (!checkRateLimit(student_id)) {
       return errorResponse('Too many messages. Please slow down.', 429, origin)
@@ -623,65 +353,45 @@ Deno.serve(async (req: Request) => {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
     const today = new Date().toISOString().slice(0, 10)
 
-    // Derive single chapter for RAG filtering — pass null if zero or multiple chapters
-    const chapterParts = safeChapters ? safeChapters.split(',').map((c: string) => c.trim()).filter(Boolean) : []
-    const ragChapter = chapterParts.length === 1 ? chapterParts[0] : null
+    // ── Parallel DB lookups (plan, chat history, RAG) ──
+    // Usage check is now handled atomically below — no pre-read needed.
+    // Fetch student profile first — plan + board are needed before parallel lookups
+    const studentResult = await supabase
+      .from('students')
+      .select('subscription_plan, board')
+      .eq('id', student_id)
+      .maybeSingle()
+    const studentBoard = studentResult.data?.board ?? null
 
-    // ── Parallel DB lookups (usage, plan, chat history, syllabus, mastery, CME) ──
-    // RAG retrieval runs after CME resolves so we can pass the concept scope in one
-    // call (avoids the previous two-fetch pattern). CME has a 3s timeout so it
-    // never stalls the other DB queries.
-    const cmeActionPromise = fetchCMENextAction(student_id, subject)
-
-    const [usageResult, studentResult, sessionResult, syllabusContext, masteryContext] = await Promise.all([
-      supabase
-        .from('student_daily_usage')
-        .select('usage_count')
-        .eq('student_id', student_id)
-        .eq('feature', 'foxy_chat')
-        .eq('usage_date', today)
-        .maybeSingle(),
-      // Use check_entitlement RPC (reads from student_subscriptions, the authoritative source)
-      // to prevent split-brain where payment captured but students.subscription_plan not updated (P11).
-      supabase.rpc('check_entitlement', { p_student_id: student_id }),
+    // Fetch chat history + RAG context in parallel (board now available)
+    const [sessionResult, ragContext] = await Promise.all([
       session_id
         ? supabase.from('chat_sessions').select('messages').eq('id', session_id).eq('student_id', student_id).maybeSingle()
         : Promise.resolve({ data: null }),
-      fetchSyllabusContext(supabase, message, subject, grade),
-      fetchStudentMastery(supabase, student_id, subject),
+      fetchRAGContext(supabase, safeMessage, subject, grade, studentBoard),
     ])
 
-    // Resolve CME (may have already settled while the DB queries ran)
-    const cmeAction = await cmeActionPromise
-
-    // ── Single RAG retrieval with full context (userId + sessionId for trace logging) ──
-    // Use reranking for best quality. Pass the CME concept title when available so
-    // vector search preferentially retrieves chunks for that specific concept.
-    // chapterNumber is preferred; fall back to text-based chapter filter for legacy callers.
-    const ragResult = await retrieveChunks({
-      supabase,
-      query: message,
-      grade,
-      subject,
-      chapterText: ragChapter ?? undefined,
-      concept: cmeAction?.title ?? undefined,
-      useReranking: true,
-      caller: 'foxy-tutor',
-      userId: student_id,
-      sessionId: session_id ?? undefined,
-    })
-    const ragContext = ragResult.contextText || null
-
-    const currentCount = usageResult.data?.usage_count ?? 0
-    // check_entitlement returns TABLE from student_subscriptions (authoritative).
-    // Supabase JS returns {data: [{...}]} for table-returning RPCs.
-    // Fall back to 'free' if no subscription record or subscription inactive/expired.
-    const entitlement = Array.isArray(studentResult.data) ? studentResult.data[0] : studentResult.data
-    const plan = (entitlement?.has_access ? entitlement?.plan_code : null) || 'free'
+    const plan = normalizePlan(studentResult.data?.subscription_plan || 'free')
     const limit = PLAN_LIMITS[plan] ?? PLAN_LIMITS.free
 
-    // ── Usage enforcement (server-side, authoritative) ──
-    if (currentCount >= limit) {
+    // ── Atomic usage enforcement (check + increment in one DB transaction) ──
+    // Eliminates the TOCTOU race where concurrent requests could both pass the
+    // count check before either increment landed. FOR UPDATE inside the RPC
+    // serialises concurrent requests on the same row.
+    const { data: usageRows, error: usageErr } = await supabase.rpc('check_and_record_usage', {
+      p_student_id: student_id,
+      p_feature: 'foxy_chat',
+      p_limit: limit,
+      p_usage_date: today,
+    })
+    if (usageErr) {
+      // Fail closed: deny request if usage can't be tracked
+      console.error('check_and_record_usage failed:', usageErr.message)
+      return errorResponse('Usage tracking unavailable, please try again', 503, origin)
+    }
+    const usageRow = usageRows?.[0]
+    if (!usageRow?.allowed) {
+      const currentCount = usageRow?.current_count ?? limit
       return jsonResponse(
         {
           error: 'Daily chat limit reached',
@@ -691,24 +401,13 @@ Deno.serve(async (req: Request) => {
             : `You've used all ${limit} messages for today. Come back tomorrow! 🦊`,
           xp_earned: 0,
           session_id: session_id || null,
+          used: currentCount,
+          limit,
         },
         429,
         {},
         origin,
       )
-    }
-
-    // Record usage BEFORE processing — await to prevent TOCTOU bypass
-    // where concurrent requests all pass the check before any increment completes
-    const { error: usageIncErr } = await supabase.rpc('increment_daily_usage', {
-      p_student_id: student_id,
-      p_feature: 'foxy_chat',
-      p_usage_date: today,
-    })
-    if (usageIncErr) {
-      // Fail closed: deny request if usage can't be recorded
-      console.error('Usage increment failed:', usageIncErr.message)
-      return errorResponse('Usage tracking unavailable, please try again', 503, origin)
     }
 
     // ── Parse chat history from session ──
@@ -723,31 +422,18 @@ Deno.serve(async (req: Request) => {
       }))
     }
 
-    // ── Log content gaps (fire-and-forget) ──
-    if (!ragContext && !syllabusContext) {
-      supabase.rpc('upsert_content_gap', {
-        p_subject: subject,
-        p_grade: grade,
-        p_query: message.slice(0, 200),
-        p_topic_title: safeTopicTitle || 'unknown',
-      }).then(() => {}).catch(() => {})
-    }
-
-    // ── Build messages for Claude (with mastery awareness + CME focus) ──
+    // ── Build messages for Claude ──
     const systemPrompt = buildSystemPrompt(
       grade, subject, safeLanguage, safeMode,
       safeTopicTitle,
       safeChapters,
       safeLessonStep,
       ragContext,
-      syllabusContext,
-      masteryContext,
-      cmeAction,
     )
 
     const messages = [
       ...chatHistory,
-      { role: 'user', content: message },
+      { role: 'user', content: safeMessage },
     ]
 
     // ── Call Claude API (with circuit breaker, timeout, retry) ──
@@ -854,52 +540,16 @@ Deno.serve(async (req: Request) => {
     const claudeData = await claudeRes.json()
     const reply = claudeData.content?.[0]?.text || 'Hmm, let me think about that...'
 
-    // ── Record interaction in CME (fire-and-forget — never blocks response) ──
-    if (cmeAction?.concept_id && student_id) {
-      recordCMEResponse(
-        student_id,
-        cmeAction.concept_id,
-        true, // Foxy chat = learning interaction, treat as positive signal
-        Date.now() - requestStartTime,
-        cmeAction.difficulty ?? 2,
-      )
-    }
-
-    // ── Determine XP based on study quality ──
-    // Award XP only for substantive study interactions, not mere clicks.
-    // Cap at 50 XP per session to prevent spam farming.
-    let xpEarned = 0
-    const msgTrimmed = message.trim()
-    const msgLen = msgTrimmed.length
-    const rawSessionMsgs = Array.isArray(sessionResult.data?.messages) ? sessionResult.data.messages : []
-    const sessionMsgCount = rawSessionMsgs.length
-    const isSubstantive = msgLen > 30 && !/^(hi|hello|ok|yes|no|thanks|bye|hm+)\s*$/i.test(msgTrimmed)
-
-    // First message in session: 0 XP (just starting)
-    // Substantive question (>30 chars, not a greeting): 5 XP
-    if (sessionMsgCount > 0 && isSubstantive) {
-      xpEarned = 5
-    }
-
-    // Milestone bonus: 5+ substantive student messages in session (10+ raw = 5 student+assistant pairs)
-    if (sessionMsgCount >= 10 && isSubstantive) {
-      xpEarned += 5
-    }
-
-    // Session XP cap: max 50 XP per session
-    const sessionXpSoFar = rawSessionMsgs
-      .filter((m: { role: string }) => m.role === 'assistant')
-      .reduce((sum: number, m: { meta?: { xp?: number } }) => sum + ((m as any).meta?.xp || 0), 0)
-    if (sessionXpSoFar >= 50) {
-      xpEarned = 0
-    } else if (sessionXpSoFar + xpEarned > 50) {
-      xpEarned = 50 - sessionXpSoFar
-    }
+    // ── Determine XP ──
+    // Fixed XP per interaction to prevent inflation via keyword stuffing.
+    // Quality-based XP should be determined by analyzing the AI response,
+    // not the student's input (which is fully client-controlled).
+    const xpEarned = 5
 
     // ── Persist chat session ──
     const now = new Date().toISOString()
     const newMessages = [
-      { role: 'student', content: message, ts: now },
+      { role: 'student', content: safeMessage, ts: now },
       { role: 'assistant', content: reply, ts: now, meta: { xp: xpEarned, latency: latencyMs } },
     ]
 
@@ -963,7 +613,7 @@ Deno.serve(async (req: Request) => {
       mode,
       topic_id: topic_id || null,
       lesson_step: safeLessonStep,
-      message_length: message.length,
+      message_length: safeMessage.length,
       reply_length: reply.length,
       latency_ms: latencyMs,
       model: 'claude-haiku-4-5-20251001',
@@ -977,8 +627,6 @@ Deno.serve(async (req: Request) => {
         reply,
         xp_earned: xpEarned,
         session_id: activeSessionId,
-        // Include CME concept recommendation so the UI can display the teaching focus
-        ...(cmeAction ? { cme_action: cmeAction } : {}),
       },
       200,
       {},
