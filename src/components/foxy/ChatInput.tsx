@@ -226,7 +226,7 @@ export const ChatInput = memo(function ChatInput({ onSubmit, subjectKey, disable
           {image ? '1 image' : 'Photo'}
         </button>
         <button onClick={toggleVoice} className="px-2 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95"
-          style={{ background: isListening ? '#EF444420' : 'var(--surface-2)', color: isListening ? '#EF4444' : 'var(--text-3)', border: `1px solid ${isListening ? '#EF444440' : 'var(--border)'}` }}>
+          style={{ background: isListening ? 'color-mix(in srgb, var(--danger) 12%, transparent)' : 'var(--surface-2)', color: isListening ? 'var(--danger)' : 'var(--text-3)', border: `1px solid ${isListening ? 'color-mix(in srgb, var(--danger) 25%, transparent)' : 'var(--border)'}` }}>
           {isListening ? 'Stop' : 'Voice'}
         </button>
         <span className="flex-1" />
