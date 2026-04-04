@@ -343,15 +343,9 @@ Deno.serve(async (req: Request) => {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
     const today = new Date().toISOString().slice(0, 10)
 
-    // ── Parallel DB lookups (usage, plan, chat history, RAG) ──
-    const [usageResult, studentResult, sessionResult, ragContext] = await Promise.all([
-      supabase
-        .from('student_daily_usage')
-        .select('usage_count')
-        .eq('student_id', student_id)
-        .eq('feature', 'foxy_chat')
-        .eq('usage_date', today)
-        .maybeSingle(),
+    // ── Parallel DB lookups (plan, chat history, RAG) ──
+    // Usage check is now handled atomically below — no pre-read needed.
+    const [studentResult, sessionResult, ragContext] = await Promise.all([
       supabase
         .from('students')
         .select('subscription_plan')
@@ -363,12 +357,27 @@ Deno.serve(async (req: Request) => {
       fetchRAGContext(supabase, message, subject, grade),
     ])
 
-    const currentCount = usageResult.data?.usage_count ?? 0
     const plan = normalizePlan(studentResult.data?.subscription_plan || 'free')
     const limit = PLAN_LIMITS[plan] ?? PLAN_LIMITS.free
 
-    // ── Usage enforcement (server-side, authoritative) ──
-    if (currentCount >= limit) {
+    // ── Atomic usage enforcement (check + increment in one DB transaction) ──
+    // Eliminates the TOCTOU race where concurrent requests could both pass the
+    // count check before either increment landed. FOR UPDATE inside the RPC
+    // serialises concurrent requests on the same row.
+    const { data: usageRows, error: usageErr } = await supabase.rpc('check_and_record_usage', {
+      p_student_id: student_id,
+      p_feature: 'foxy_chat',
+      p_limit: limit,
+      p_usage_date: today,
+    })
+    if (usageErr) {
+      // Fail closed: deny request if usage can't be tracked
+      console.error('check_and_record_usage failed:', usageErr.message)
+      return errorResponse('Usage tracking unavailable, please try again', 503, origin)
+    }
+    const usageRow = usageRows?.[0]
+    if (!usageRow?.allowed) {
+      const currentCount = usageRow?.current_count ?? limit
       return jsonResponse(
         {
           error: 'Daily chat limit reached',
@@ -378,24 +387,13 @@ Deno.serve(async (req: Request) => {
             : `You've used all ${limit} messages for today. Come back tomorrow! 🦊`,
           xp_earned: 0,
           session_id: session_id || null,
+          used: currentCount,
+          limit,
         },
         429,
         {},
         origin,
       )
-    }
-
-    // Record usage BEFORE processing — await to prevent TOCTOU bypass
-    // where concurrent requests all pass the check before any increment completes
-    const { error: usageIncErr } = await supabase.rpc('increment_daily_usage', {
-      p_student_id: student_id,
-      p_feature: 'foxy_chat',
-      p_usage_date: today,
-    })
-    if (usageIncErr) {
-      // Fail closed: deny request if usage can't be recorded
-      console.error('Usage increment failed:', usageIncErr.message)
-      return errorResponse('Usage tracking unavailable, please try again', 503, origin)
     }
 
     // ── Parse chat history from session ──

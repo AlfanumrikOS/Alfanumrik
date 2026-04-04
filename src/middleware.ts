@@ -19,9 +19,9 @@ import { Redis } from '@upstash/redis';
  * ═══════════════════════════════════════════════════════════════ */
 
 // ── Rate limiting: Distributed (Upstash Redis) with in-memory fallback ──
-const RATE_LIMIT_MAX = 200;       // 200 requests per minute per IP
-const RATE_LIMIT_PARENT_MAX = 20; // 20 parent login attempts per minute per IP
-const RATE_LIMIT_ADMIN_MAX = 60;  // 60 requests per minute for /internal/admin/*
+const RATE_LIMIT_MAX = 60;        // 60 requests per minute per IP
+const RATE_LIMIT_PARENT_MAX = 5;  // 5 parent login attempts per minute per IP
+const RATE_LIMIT_ADMIN_MAX = 10;  // 10 requests per minute for /internal/admin/*
 
 // Distributed rate limiter via Upstash Redis (works across all Vercel instances)
 let redisRateLimiter: Ratelimit | null = null;
@@ -49,22 +49,6 @@ try {
 const MAX_MAP_SIZE = 10_000;
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT_WINDOW = 60_000;
-
-/**
- * Constant-time string comparison to prevent timing attacks on secrets.
- * Works in Edge Runtime (no Node crypto.timingSafeEqual available).
- * Returns false immediately (but in constant time) when lengths differ.
- */
-function timingSafeEqual(a: string, b: string): boolean {
-  // Pre-flag mismatch when lengths differ so result is always false in that case.
-  // Still iterate the full length to prevent timing leaks on length differences.
-  let mismatch = a.length === b.length ? 0 : 1;
-  const len = Math.max(a.length, b.length);
-  for (let i = 0; i < len; i++) {
-    mismatch |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
-  }
-  return mismatch === 0;
-}
 
 function getRateLimitKey(request: NextRequest): string {
   return (
@@ -158,21 +142,19 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // ── Early exit: monitoring endpoints bypass session refresh and rate limiting ──
-  // Health/status endpoints are hit by uptime monitors at high frequency.
-  // Running getUser() and rate-limit checks for these causes false throttling
-  // and unnecessary Supabase auth load. Security headers still applied.
-  // Static assets are already excluded via the matcher config below.
-  if (path === '/api/v1/health' || path === '/api/v1/status') {
-    const monitorResponse = NextResponse.next({ request });
-    return addSecurityHeaders(monitorResponse, request);
+  // ── Layer 0.6: Protected page routes (require Supabase session) ──
+  const PROTECTED_PREFIXES = ['/parent/children', '/parent/reports', '/parent/profile', '/parent/support'];
+  if (PROTECTED_PREFIXES.some(p => path.startsWith(p))) {
+    const hasSession = request.cookies.getAll().some(c => /^sb-.+-auth-token/.test(c.name));
+    if (!hasSession) {
+      const loginUrl = new URL('/parent', request.url);
+      return NextResponse.redirect(loginUrl);
+    }
   }
 
   // ── Layer 0: Supabase session refresh ──
   // This keeps the auth cookie fresh on every request.
   // Required for the PKCE email flow (signup confirm, password reset).
-  // MUST run BEFORE protected route checks so that expired-but-refreshable
-  // sessions get renewed before the cookie-presence check.
   let response = NextResponse.next({ request });
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -199,25 +181,6 @@ export async function middleware(request: NextRequest) {
     await supabase.auth.getUser();
   }
 
-  // ── Layer 0.6: Protected page routes (require Supabase session cookie) ──
-  // Only protect routes where server-side cookie check is reliable.
-  // Student routes (/dashboard, /quiz, etc.) use client-side useAuth()
-  // because the Supabase JS client stores sessions in localStorage,
-  // NOT cookies. Middleware cookie checks block legitimate users who
-  // just logged in (session in memory, cookies not yet set).
-  const PROTECTED_PREFIXES = [
-    '/parent/children', '/parent/reports', '/parent/profile', '/parent/support',
-    '/billing',
-  ];
-  if (PROTECTED_PREFIXES.some(p => path.startsWith(p))) {
-    const hasSession = request.cookies.getAll().some(c => /^sb-.+-auth-token/.test(c.name) || c.name.includes('auth-token'));
-    if (!hasSession) {
-      const isParentRoute = path.startsWith('/parent');
-      const loginUrl = new URL(isParentRoute ? '/parent' : '/login', request.url);
-      return NextResponse.redirect(loginUrl);
-    }
-  }
-
   // ── Layer 2: Block common bot/scanner paths early ──
   if (
     path.startsWith('/wp-') ||
@@ -234,29 +197,74 @@ export async function middleware(request: NextRequest) {
 
   // ── Layer 2.1: Protect ALL /internal/admin routes (page + API) ──
   // Server-side auth: secret must match BEFORE page or API renders.
-  // Accepts secret via query param (?secret=xxx) for page access,
-  // or via x-admin-secret header for API calls.
+  //
+  // Auth flow (two accepted mechanisms):
+  //   1. x-admin-secret header      — used by all API calls (adminHeaders() in admin-session.ts)
+  //   2. ?secret= query param       — ONLY for first page load; immediately stripped from URL
+  //                                   and stored as a short-lived httpOnly session cookie so
+  //                                   the secret never persists in browser history or server logs.
+  //   3. alfanumrik_admin_sess cookie — set by mechanism 2; used for subsequent page loads.
+  //
+  // Security property: after the first redirect, the secret no longer appears in any URL.
+  const ADMIN_SESSION_COOKIE = 'alfanumrik_admin_sess';
+  const ADMIN_SESSION_MAX_AGE = 8 * 60 * 60; // 8 hours
+
   if (path.startsWith('/internal/admin') || path.startsWith('/api/internal/admin')) {
     const secretKey = process.env.SUPER_ADMIN_SECRET;
 
-    // Get secret from header (API calls) or query param (page access)
+    // Header-based auth (API calls + already-authenticated page requests)
     const headerSecret = request.headers.get('x-admin-secret');
-    const querySecret = request.nextUrl.searchParams.get('secret');
-    const providedSecret = headerSecret || querySecret;
 
-    if (!secretKey || !providedSecret || !timingSafeEqual(providedSecret, secretKey)) {
-      // Return 401 JSON for API routes, 401 HTML for page
+    // Query-param auth (first-time page navigation only — strip immediately after validation)
+    const querySecret = request.nextUrl.searchParams.get('secret');
+
+    // Cookie-based auth (subsequent page loads after first redirect)
+    const sessionCookie = request.cookies.get(ADMIN_SESSION_COOKIE)?.value;
+    // Cookie stores sha256(secretKey + "|admin_session") — validates without putting the raw
+    // secret in the cookie value. Uses Web Crypto (globalThis.crypto.subtle) for Edge compat.
+    let expectedCookieToken: string | null = null;
+    if (secretKey) {
+      const enc = new TextEncoder();
+      const hashBuf = await crypto.subtle.digest('SHA-256', enc.encode(`${secretKey}|admin_session`));
+      expectedCookieToken = Array.from(new Uint8Array(hashBuf))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('')
+        .slice(0, 32);
+    }
+    const cookieValid = !!(sessionCookie && expectedCookieToken && sessionCookie === expectedCookieToken);
+
+    const headerValid = !!(headerSecret && secretKey && headerSecret === secretKey);
+    const queryValid  = !!(querySecret  && secretKey && querySecret  === secretKey);
+
+    const isAuthenticated = headerValid || cookieValid || queryValid;
+
+    if (!secretKey || !isAuthenticated) {
       if (path.startsWith('/api/')) {
         return new NextResponse(
           JSON.stringify({ error: 'Unauthorized' }),
           { status: 401, headers: { 'Content-Type': 'application/json' } }
         );
       }
-      // For the page: return a minimal 401 response
       return new NextResponse(
         '<html><body style="background:#0f0f0f;color:#e0e0e0;font-family:monospace;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><div style="font-size:48px;margin-bottom:16px">🔐</div><h1 style="font-size:18px;margin-bottom:8px">Access Denied</h1><p style="color:#888;font-size:13px">Invalid or missing admin secret.</p></div></body></html>',
         { status: 401, headers: { 'Content-Type': 'text/html' } }
       );
+    }
+
+    // If authenticated via query param on a page route: redirect to clean URL + set session cookie.
+    // This strips the secret from the URL so it never sits in browser history or CDN logs.
+    if (queryValid && !path.startsWith('/api/')) {
+      const cleanUrl = new URL(request.url);
+      cleanUrl.searchParams.delete('secret');
+      const redirectRes = NextResponse.redirect(cleanUrl, { status: 302 });
+      redirectRes.cookies.set(ADMIN_SESSION_COOKIE, expectedCookieToken!, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: ADMIN_SESSION_MAX_AGE,
+        path: '/internal/admin',
+      });
+      return redirectRes;
     }
 
     // Rate limit: 10 requests/minute for admin routes
@@ -365,7 +373,7 @@ function addSecurityHeaders(response: NextResponse, request: NextRequest): NextR
   // Permissions policy — restrict sensitive APIs
   response.headers.set(
     'Permissions-Policy',
-    'camera=(), microphone=(), geolocation=(), payment=(self)'
+    'camera=(), microphone=(), geolocation=(), payment=()'
   );
 
   // HSTS — force HTTPS (1 year, include subdomains)
@@ -381,6 +389,6 @@ function addSecurityHeaders(response: NextResponse, request: NextRequest): NextR
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon\\.ico|favicon\\.svg|apple-touch-icon\\.svg|icon-.*\\.svg|manifest\\.json|sw\\.js|icons/|robots\\.txt).*)',
+    '/((?!_next/static|_next/image|favicon.ico|manifest.json|sw.js|icons/).*)',
   ],
 };
