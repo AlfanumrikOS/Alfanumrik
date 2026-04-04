@@ -1022,7 +1022,7 @@ function CommandCenterContent() {
       <div style={{ marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <h1 style={S.h1}>Command Center</h1>
-          <StatusBadge label={mode === 'suggest' ? 'Suggest' : mode === 'observe' ? 'Observe' : 'Controlled Act'} variant="info" />
+          <StatusBadge label={mode === 'suggest' ? 'Suggest' : mode === 'observe' ? 'Observe' : 'Controlled Act'} variant={mode === 'observe' ? 'neutral' : mode === 'suggest' ? 'info' : 'warning'} />
         </div>
         <div style={S.subtitle}>Product improvement monitoring &amp; automation</div>
       </div>
@@ -1240,13 +1240,14 @@ function CommandCenterContent() {
                 return (
                   <div
                     key={m.key}
-                    onClick={() => setMode(m.key)}
+                    onClick={() => !modeLoading && handleModeChange(m.key)}
                     style={{
                       ...S.card,
-                      cursor: 'pointer',
+                      cursor: modeLoading ? 'wait' : 'pointer',
                       borderColor: selected ? colors.text1 : colors.border,
                       borderWidth: selected ? 2 : 1,
                       background: selected ? colors.surface : colors.bg,
+                      opacity: modeLoading && !selected ? 0.5 : 1,
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
