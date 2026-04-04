@@ -194,6 +194,7 @@ async function fetchRAGContext(
   query: string,
   subject: string,
   grade: string,
+  board: string | null = null,
 ): Promise<string | null> {
   try {
     // Try to call the match_rag_chunks RPC if it exists
@@ -202,6 +203,8 @@ async function fetchRAGContext(
       p_subject: subject,
       p_grade: grade,
       match_count: 3,
+      p_board: board,       // Filter content to student's curriculum board
+      p_min_quality: 0.5,   // Exclude low-quality/malformed chunks
     })
 
     if (error || !data || data.length === 0) return null
@@ -300,11 +303,18 @@ Deno.serve(async (req: Request) => {
       return errorResponse('grade and subject are required', 400, origin)
     }
 
-    // ── Input length and format validation ──
-    // Cap message length to prevent token exhaustion attacks (~1500 tokens max)
+    // ── Message sanitization ──
+    // Strip HTML tags to prevent injection of markup into the prompt.
+    // Pattern only matches tags that start with a letter (real HTML tags),
+    // so mathematical operators like "2 < 3" or "x > 0" are preserved.
+    // Length cap prevents token exhaustion attacks (~1500 tokens max).
     const MAX_MESSAGE_LENGTH = 5000
-    if (message.length > MAX_MESSAGE_LENGTH) {
-      return errorResponse(`Message too long (max ${MAX_MESSAGE_LENGTH} chars)`, 400, origin)
+    const safeMessage = message
+      .replace(/<\/?\s*[a-zA-Z][^>]{0,500}>/g, '')  // strip HTML tags (bounded, no ReDoS)
+      .trim()
+      .slice(0, MAX_MESSAGE_LENGTH)
+    if (!safeMessage) {
+      return errorResponse('Message is empty after sanitization', 400, origin)
     }
 
     // Whitelist mode to prevent prompt injection via arbitrary mode strings
@@ -345,16 +355,20 @@ Deno.serve(async (req: Request) => {
 
     // ── Parallel DB lookups (plan, chat history, RAG) ──
     // Usage check is now handled atomically below — no pre-read needed.
-    const [studentResult, sessionResult, ragContext] = await Promise.all([
-      supabase
-        .from('students')
-        .select('subscription_plan')
-        .eq('id', student_id)
-        .maybeSingle(),
+    // Fetch student profile first — plan + board are needed before parallel lookups
+    const studentResult = await supabase
+      .from('students')
+      .select('subscription_plan, board')
+      .eq('id', student_id)
+      .maybeSingle()
+    const studentBoard = studentResult.data?.board ?? null
+
+    // Fetch chat history + RAG context in parallel (board now available)
+    const [sessionResult, ragContext] = await Promise.all([
       session_id
         ? supabase.from('chat_sessions').select('messages').eq('id', session_id).eq('student_id', student_id).maybeSingle()
         : Promise.resolve({ data: null }),
-      fetchRAGContext(supabase, message, subject, grade),
+      fetchRAGContext(supabase, safeMessage, subject, grade, studentBoard),
     ])
 
     const plan = normalizePlan(studentResult.data?.subscription_plan || 'free')
@@ -419,7 +433,7 @@ Deno.serve(async (req: Request) => {
 
     const messages = [
       ...chatHistory,
-      { role: 'user', content: message },
+      { role: 'user', content: safeMessage },
     ]
 
     // ── Call Claude API (with circuit breaker, timeout, retry) ──
@@ -535,7 +549,7 @@ Deno.serve(async (req: Request) => {
     // ── Persist chat session ──
     const now = new Date().toISOString()
     const newMessages = [
-      { role: 'student', content: message, ts: now },
+      { role: 'student', content: safeMessage, ts: now },
       { role: 'assistant', content: reply, ts: now, meta: { xp: xpEarned, latency: latencyMs } },
     ]
 
@@ -599,7 +613,7 @@ Deno.serve(async (req: Request) => {
       mode,
       topic_id: topic_id || null,
       lesson_step: safeLessonStep,
-      message_length: message.length,
+      message_length: safeMessage.length,
       reply_length: reply.length,
       latency_ms: latencyMs,
       model: 'claude-haiku-4-5-20251001',
