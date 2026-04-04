@@ -75,7 +75,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     if (action === 'upgrade_plan') {
       const plan = updates.plan || 'premium';
-      await supabase.from('students').update({ subscription_plan: plan }).eq('id', id);
+      // Normalise to canonical tier for student_subscriptions (strips _monthly/_yearly, maps ultimate→unlimited etc.)
+      const canonicalPlan = plan.replace(/_(monthly|yearly)$/, '').replace(/^ultimate$/, 'unlimited').replace(/^basic$/, 'starter').replace(/^premium$/, 'pro');
+      await Promise.all([
+        supabase.from('students').update({ subscription_plan: plan }).eq('id', id),
+        supabase.from('student_subscriptions').update({ plan_code: canonicalPlan, updated_at: new Date().toISOString() }).eq('student_id', id),
+      ]);
       await logAdminAction({ action: 'upgrade_plan', entity_type: 'student', entity_id: id, details: { plan }, ip });
       return NextResponse.json({ success: true, action: 'plan_upgraded', plan });
     }
