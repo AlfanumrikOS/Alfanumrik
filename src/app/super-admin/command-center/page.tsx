@@ -18,11 +18,9 @@ interface DashboardData {
   recommendations_by_status: Record<string, number>;
   executions_by_status: Record<string, number>;
   recent_issues: Issue[];
-  summary: {
-    open_issues: number;
-    pending_recommendations: number;
-    in_pipeline: number;
-    resolved_this_week: number;
+  health: {
+    total_open_issues: number;
+    avg_resolution_hours: number;
   };
 }
 
@@ -259,7 +257,7 @@ function CommandCenterContent() {
       const res = await apiFetch(`/api/super-admin/improvement?${params}`);
       if (!res.ok) throw new Error('Failed to load issues');
       const json = await res.json();
-      setIssues(json.data || json || []);
+      setIssues(json.data?.issues || []);
     } catch {
       setIssues([]);
     } finally {
@@ -273,7 +271,7 @@ function CommandCenterContent() {
       const res = await apiFetch('/api/super-admin/improvement?action=recommendations');
       if (!res.ok) throw new Error('Failed to load recommendations');
       const json = await res.json();
-      setRecommendations(json.data || json || []);
+      setRecommendations(json.data?.recommendations || []);
     } catch {
       setRecommendations([]);
     } finally {
@@ -287,7 +285,7 @@ function CommandCenterContent() {
       const res = await apiFetch('/api/super-admin/improvement?action=executions');
       if (!res.ok) throw new Error('Failed to load executions');
       const json = await res.json();
-      setExecutions(json.data || json || []);
+      setExecutions(json.data?.executions || []);
     } catch {
       setExecutions([]);
     } finally {
@@ -360,7 +358,7 @@ function CommandCenterContent() {
     try {
       const res = await apiFetch('/api/super-admin/improvement?action=issue', {
         method: 'PATCH',
-        body: JSON.stringify({ id: issueId, status: newStatus }),
+        body: JSON.stringify({ id: issueId, updates: { status: newStatus } }),
       });
       if (!res.ok) throw new Error('Failed to update issue');
       setDrawerOpen(false);
@@ -375,7 +373,7 @@ function CommandCenterContent() {
     try {
       const res = await apiFetch('/api/super-admin/improvement?action=recommendation', {
         method: 'PATCH',
-        body: JSON.stringify({ id: recId, status: action }),
+        body: JSON.stringify({ id: recId, updates: { status: action } }),
       });
       if (!res.ok) throw new Error('Failed to update recommendation');
       setDrawerOpen(false);
@@ -782,10 +780,10 @@ function CommandCenterContent() {
       {tab === 'Overview' && dashboard && (
         <div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 24 }}>
-            <StatCard label="Open Issues" value={dashboard.summary.open_issues} icon={'\u2298'} accentColor={colors.danger} />
-            <StatCard label="Pending Recommendations" value={dashboard.summary.pending_recommendations} icon={'\u25C8'} accentColor={colors.warning} />
-            <StatCard label="In Pipeline" value={dashboard.summary.in_pipeline} icon={'\u229E'} accentColor={colors.accent} />
-            <StatCard label="Resolved This Week" value={dashboard.summary.resolved_this_week} icon={'\u2295'} accentColor={colors.success} />
+            <StatCard label="Open Issues" value={dashboard.health?.total_open_issues || 0} icon={'\u2298'} accentColor={colors.danger} />
+            <StatCard label="Pending Recommendations" value={dashboard.recommendations_by_status?.proposed || 0} icon={'\u25C8'} accentColor={colors.warning} />
+            <StatCard label="In Pipeline" value={Object.entries(dashboard.executions_by_status || {}).filter(([k]) => ['pending','staging','testing','approved'].includes(k)).reduce((s, [,v]) => s + (v as number), 0)} icon={'\u229E'} accentColor={colors.accent} />
+            <StatCard label="Resolved This Week" value={dashboard.issues_by_status?.resolved || 0} icon={'\u2295'} accentColor={colors.success} />
           </div>
 
           <div style={{ ...S.card, marginBottom: 24 }}>
