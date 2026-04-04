@@ -128,6 +128,60 @@ function normalizePlan(plan: string): string {
   return PLAN_ALIAS[base] ?? base
 }
 
+// ─── Learner context from concept_mastery (best-effort) ────────
+interface LearnerContext {
+  mastery_level: number
+  current_retention: number
+  bloom_mastery: Record<string, number> | null
+  error_count_conceptual: number
+  error_count_careless: number
+  streak_current: number
+  cme_action_type: string | null
+  max_difficulty_succeeded: number | null
+}
+
+async function fetchLearnerContext(
+  supabase: ReturnType<typeof createClient>,
+  studentId: string,
+  topicId: string | null,
+): Promise<LearnerContext | null> {
+  if (!topicId) return null
+  try {
+    const { data, error } = await supabase
+      .from('concept_mastery')
+      .select(
+        'mastery_level, current_retention, bloom_mastery, error_count_conceptual, error_count_careless, streak_current, cme_action_type, max_difficulty_succeeded',
+      )
+      .eq('student_id', studentId)
+      .eq('topic_id', topicId)
+      .maybeSingle()
+
+    if (error || !data) return null
+    return data as LearnerContext
+  } catch {
+    // Best-effort: never block the tutor if mastery lookup fails
+    return null
+  }
+}
+
+/**
+ * Determine which lesson step the student should start at based on Bloom mastery.
+ * Only applies to 'learn' mode. Returns null if no override is needed.
+ */
+function inferLessonStepFromBloom(
+  learnerCtx: LearnerContext | null,
+  currentStep: string | null,
+): string | null {
+  // Only override if no explicit step was requested and we have bloom data
+  if (currentStep || !learnerCtx?.bloom_mastery) return null
+
+  const bloom = learnerCtx.bloom_mastery
+  if ((bloom.remember ?? 0) < 0.7) return 'hook'
+  if ((bloom.understand ?? 0) < 0.7) return 'visualization'
+  if ((bloom.apply ?? 0) < 0.7) return 'guided_examples'
+  return 'active_recall'
+}
+
 // ─── System prompt ─────────────────────────────────────────────
 function buildSystemPrompt(
   grade: string,
@@ -138,6 +192,7 @@ function buildSystemPrompt(
   chapters: string | null,
   lessonStep: string | null,
   ragContext: string | null,
+  learnerCtx: LearnerContext | null = null,
 ): string {
   const lang =
     language === 'hi' ? 'Hindi (Devanagari script)'
@@ -180,6 +235,33 @@ RULES:
 - Never reveal you're Claude or an AI model. You are Foxy the fox tutor.
 - Follow NCERT/CBSE curriculum strictly for Indian board exams.
 - If unsure, say so honestly rather than giving wrong information.`
+
+  if (learnerCtx) {
+    const bloomLabel = learnerCtx.bloom_mastery
+      ? Object.entries(learnerCtx.bloom_mastery)
+          .filter(([, v]) => (v as number) >= 0.7)
+          .map(([k]) => k)
+          .pop() || 'none yet'
+      : 'unknown'
+
+    prompt += `
+
+## Student's Current State for This Topic
+- Mastery: ${Math.round(learnerCtx.mastery_level)}% (0=new, 100=mastered)
+- Retention: ${Math.round(learnerCtx.current_retention)}% (how well they remember)
+- Bloom's Level: ${bloomLabel}
+- Error Pattern: ${learnerCtx.error_count_conceptual} conceptual errors, ${learnerCtx.error_count_careless} careless errors
+- Current Streak: ${learnerCtx.streak_current} correct in a row
+- Recommended Action: ${learnerCtx.cme_action_type || 'continue'}
+
+ADAPT YOUR RESPONSE based on this state:
+- If mastery < 30%: Use simple language, start from basics, lots of examples
+- If mastery 30-60%: Guide through practice, point out common mistakes
+- If mastery 60-85%: Challenge with harder problems, connect concepts
+- If mastery > 85%: Focus on exam-style questions, edge cases, applications
+- If many careless errors: Remind to read carefully, highlight tricky parts
+- If many conceptual errors: Re-explain the concept differently, use analogies`
+  }
 
   if (ragContext) {
     prompt += `\n\nREFERENCE MATERIAL (use if relevant, don't mention "reference material" to student):\n${ragContext}`
@@ -363,12 +445,13 @@ Deno.serve(async (req: Request) => {
       .maybeSingle()
     const studentBoard = studentResult.data?.board ?? null
 
-    // Fetch chat history + RAG context in parallel (board now available)
-    const [sessionResult, ragContext] = await Promise.all([
+    // Fetch chat history + RAG context + learner mastery in parallel (board now available)
+    const [sessionResult, ragContext, learnerCtx] = await Promise.all([
       session_id
         ? supabase.from('chat_sessions').select('messages').eq('id', session_id).eq('student_id', student_id).maybeSingle()
         : Promise.resolve({ data: null }),
       fetchRAGContext(supabase, safeMessage, subject, grade, studentBoard),
+      fetchLearnerContext(supabase, student_id, topic_id || null),
     ])
 
     const plan = normalizePlan(studentResult.data?.subscription_plan || 'free')
@@ -422,13 +505,19 @@ Deno.serve(async (req: Request) => {
       }))
     }
 
+    // ── Infer lesson step from Bloom mastery for 'learn' mode ──
+    const effectiveLessonStep = safeMode === 'learn'
+      ? (safeLessonStep || inferLessonStepFromBloom(learnerCtx, safeLessonStep))
+      : safeLessonStep
+
     // ── Build messages for Claude ──
     const systemPrompt = buildSystemPrompt(
       grade, subject, safeLanguage, safeMode,
       safeTopicTitle,
       safeChapters,
-      safeLessonStep,
+      effectiveLessonStep,
       ragContext,
+      learnerCtx,
     )
 
     const messages = [
@@ -538,7 +627,18 @@ Deno.serve(async (req: Request) => {
     }
 
     const claudeData = await claudeRes.json()
-    const reply = claudeData.content?.[0]?.text || 'Hmm, let me think about that...'
+    let reply = claudeData.content?.[0]?.text || 'Hmm, let me think about that...'
+
+    // ── Prepend remediation note if CME recommends it ──
+    if (learnerCtx?.cme_action_type === 'remediate') {
+      const remediationNote =
+        safeLanguage === 'hi'
+          ? '💡 लगता है इस विषय की बुनियादी बातों को दोहराना अच्छा रहेगा। चलो शुरू से शुरू करते हैं...\n\n'
+          : safeLanguage === 'hinglish'
+            ? '💡 Lagta hai is topic ke basics ko revise karna accha rahega. Chalo fundamentals se shuru karte hain...\n\n'
+            : '💡 It looks like you might need a refresher on the basics of this topic. Let me start from the fundamentals...\n\n'
+      reply = remediationNote + reply
+    }
 
     // ── Determine XP ──
     // Fixed XP per interaction to prevent inflation via keyword stuffing.

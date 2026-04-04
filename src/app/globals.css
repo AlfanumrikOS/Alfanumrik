@@ -44,6 +44,102 @@
   --content-max-wide: 1080px;
 }
 
+/* ─── Alfanumrik Dark Theme ──────────────────────────────── */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0F0D0B;
+    --surface-1: #1A1714;
+    --surface-2: #252119;
+    --surface-3: #302A21;
+
+    --border: rgba(255, 255, 255, 0.08);
+    --border-mid: rgba(255, 255, 255, 0.12);
+    --border-strong: rgba(255, 255, 255, 0.18);
+
+    --text-1: #F5F0EA;
+    --text-2: #BDB3A4;
+    --text-3: #8A7F72;
+  }
+}
+
+[data-theme="dark"] {
+  --bg: #0F0D0B;
+  --surface-1: #1A1714;
+  --surface-2: #252119;
+  --surface-3: #302A21;
+
+  --border: rgba(255, 255, 255, 0.08);
+  --border-mid: rgba(255, 255, 255, 0.12);
+  --border-strong: rgba(255, 255, 255, 0.18);
+
+  --text-1: #F5F0EA;
+  --text-2: #BDB3A4;
+  --text-3: #8A7F72;
+}
+
+/* ─── Dark Mode Component Overrides ─────────────────────── */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .page-header {
+    background: rgba(15, 13, 11, 0.88);
+  }
+  :root:not([data-theme="light"]) .glass {
+    background: rgba(26, 23, 20, 0.75);
+  }
+  :root:not([data-theme="light"]) .glass-mid {
+    background: rgba(26, 23, 20, 0.6);
+  }
+  :root:not([data-theme="light"]) .mesh-bg {
+    background:
+      radial-gradient(ellipse 60% 50% at 20% 10%, rgba(232, 88, 28, 0.08) 0, transparent 60%),
+      radial-gradient(ellipse 50% 40% at 80% 80%, rgba(8, 145, 178, 0.06) 0, transparent 55%),
+      radial-gradient(ellipse 40% 60% at 50% 50%, rgba(124, 58, 237, 0.04) 0, transparent 65%),
+      var(--bg);
+  }
+  :root:not([data-theme="light"]) .card-hover:hover {
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
+  }
+  :root:not([data-theme="light"]) select.input-base option {
+    background: var(--surface-1);
+    color: var(--text-1);
+  }
+  :root:not([data-theme="light"]) ::-webkit-scrollbar-thumb {
+    background: rgba(232, 88, 28, 0.35);
+  }
+  :root:not([data-theme="light"]) input[type="range"] {
+    background: #302A21;
+  }
+}
+
+[data-theme="dark"] .page-header {
+  background: rgba(15, 13, 11, 0.88);
+}
+[data-theme="dark"] .glass {
+  background: rgba(26, 23, 20, 0.75);
+}
+[data-theme="dark"] .glass-mid {
+  background: rgba(26, 23, 20, 0.6);
+}
+[data-theme="dark"] .mesh-bg {
+  background:
+    radial-gradient(ellipse 60% 50% at 20% 10%, rgba(232, 88, 28, 0.08) 0, transparent 60%),
+    radial-gradient(ellipse 50% 40% at 80% 80%, rgba(8, 145, 178, 0.06) 0, transparent 55%),
+    radial-gradient(ellipse 40% 60% at 50% 50%, rgba(124, 58, 237, 0.04) 0, transparent 65%),
+    var(--bg);
+}
+[data-theme="dark"] .card-hover:hover {
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
+}
+[data-theme="dark"] select.input-base option {
+  background: var(--surface-1);
+  color: var(--text-1);
+}
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: rgba(232, 88, 28, 0.35);
+}
+[data-theme="dark"] input[type="range"] {
+  background: #302A21;
+}
+
 /* ─── Base ────────────────────────────────────────────────── */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html { scroll-behavior: smooth; }
@@ -784,3 +880,26 @@ img, video, iframe, canvas, svg {
     font-size: 11px;
   }
 }
+
+/* ─── Celebration Overlay Animations ─────────────────── */
+@keyframes countUp {
+  0% { opacity: 0; transform: scale(0.5); }
+  50% { transform: scale(1.1); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes confettiBurst {
+  0% { transform: scale(0); opacity: 1; }
+  50% { transform: scale(1.2); opacity: 0.8; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+
+@keyframes gradeReveal {
+  0% { transform: scale(0) rotate(-10deg); opacity: 0; }
+  60% { transform: scale(1.2) rotate(5deg); }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+
+.animate-count-up { animation: countUp 0.6s cubic-bezier(0.34,1.56,0.64,1) both; }
+.animate-confetti { animation: confettiBurst 1s ease-out both; }
+.animate-grade-reveal { animation: gradeReveal 0.5s cubic-bezier(0.34,1.56,0.64,1) 0.3s both; }

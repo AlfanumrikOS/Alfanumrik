@@ -650,5 +650,36 @@ export function SheetModal({ open, onClose, title, children }: SheetModalProps) 
   );
 }
 
+/* ─── Theme Toggle ──────────────────────────────────────── */
+interface ThemeToggleProps {
+  theme: string;
+  onToggle: () => void;
+}
+
+export function ThemeToggle({ theme, onToggle }: ThemeToggleProps) {
+  const label = theme === 'dark'
+    ? 'Switch to system theme'
+    : theme === 'system'
+      ? 'Switch to light theme'
+      : 'Switch to dark theme';
+
+  const icon = theme === 'dark' ? '\u2600\uFE0F' : theme === 'system' ? '\uD83D\uDCBB' : '\uD83C\uDF19';
+
+  return (
+    <button
+      onClick={onToggle}
+      className="rounded-xl p-2.5 transition-all"
+      style={{
+        background: 'var(--surface-2)',
+        border: '1px solid var(--border)',
+      }}
+      aria-label={label}
+      title={label}
+    >
+      {icon}
+    </button>
+  );
+}
+
 /* ─── Bottom Nav ──────────────────────────────────────────── */
 export { default as BottomNav } from './BottomNavComponent';

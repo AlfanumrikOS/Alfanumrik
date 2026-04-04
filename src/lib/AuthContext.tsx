@@ -31,6 +31,9 @@ interface RoleData {
   guardian: { id: string; name: string } | null;
 }
 
+/* ─── Theme Type ─── */
+export type ThemePreference = 'light' | 'dark' | 'system';
+
 /* ─── Auth State ─── */
 interface AuthState {
   // Current user
@@ -55,6 +58,10 @@ interface AuthState {
   language: string;
   setLanguage: (lang: string) => void;
 
+  // Theme
+  theme: ThemePreference;
+  toggleTheme: () => void;
+
   // Actions
   refreshStudent: () => Promise<void>;
   refreshSnapshot: () => Promise<void>;
@@ -76,6 +83,8 @@ const AuthContext = createContext<AuthState>({
   isDemoUser: false,
   language: 'en',
   setLanguage: () => {},
+  theme: 'system',
+  toggleTheme: () => {},
   refreshStudent: async () => {},
   refreshSnapshot: async () => {},
   signOut: async () => {},
@@ -83,6 +92,17 @@ const AuthContext = createContext<AuthState>({
 
 export function useAuth() {
   return useContext(AuthContext);
+}
+
+/** Apply theme preference to document.documentElement via data-theme attribute */
+function applyThemeToDOM(pref: ThemePreference) {
+  if (typeof document === 'undefined') return;
+  const root = document.documentElement;
+  if (pref === 'system') {
+    root.removeAttribute('data-theme');
+  } else {
+    root.setAttribute('data-theme', pref);
+  }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -95,6 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [activeRole, setActiveRoleState] = useState<UserRole>('none');
   const [isLoading, setIsLoading] = useState(true);
   const [language, setLanguageState] = useState('en');
+  const [theme, setThemeState] = useState<ThemePreference>('system');
 
   const setLanguage = (lang: string) => {
     setLanguageState(lang);
@@ -102,6 +123,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem('alfanumrik_language', lang);
     }
   };
+
+  // Theme: cycle through light -> dark -> system
+  const toggleTheme = useCallback(() => {
+    setThemeState((prev) => {
+      const next: ThemePreference = prev === 'light' ? 'dark' : prev === 'dark' ? 'system' : 'light';
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('alfanumrik_theme', next);
+        applyThemeToDOM(next);
+      }
+      return next;
+    });
+  }, []);
 
   const setActiveRole = (role: UserRole) => {
     // SECURITY: Only allow switching to roles the server has verified.
@@ -341,6 +374,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!cancelled && typeof window !== 'undefined') {
         const saved = localStorage.getItem('alfanumrik_language');
         if (saved) setLanguageState(saved);
+
+        // Initialize theme from localStorage
+        const savedTheme = localStorage.getItem('alfanumrik_theme') as ThemePreference | null;
+        if (savedTheme && ['light', 'dark', 'system'].includes(savedTheme)) {
+          setThemeState(savedTheme);
+          applyThemeToDOM(savedTheme);
+        }
       }
     };
 
@@ -384,6 +424,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isDemoUser: false,
         language,
         setLanguage,
+        theme,
+        toggleTheme,
         refreshStudent: fetchUser,
         refreshSnapshot,
         signOut,

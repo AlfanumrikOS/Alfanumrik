@@ -18,6 +18,10 @@ const QuizResults = dynamic(() => import('@/components/quiz/QuizResults'), {
   ssr: false,
   loading: () => <LoadingFoxy />,
 });
+// Lazy-load CelebrationOverlay — only shown briefly after quiz completion
+const CelebrationOverlay = dynamic(() => import('@/components/quiz/CelebrationOverlay'), {
+  ssr: false,
+});
 import {
   createFeedbackState, onCorrectAnswer, onWrongAnswer, onSessionComplete,
   getNearCompletionNudge, playFeedbackSound,
@@ -97,6 +101,7 @@ export default function QuizPage() {
   const [results, setResults] = useState<{
     total: number; correct: number; score_percent: number; xp_earned: number; session_id: string;
   } | null>(null);
+  const [showCelebration, setShowCelebration] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/login');
@@ -482,6 +487,7 @@ export default function QuizPage() {
         });
       }
       setLoading(false);
+      setShowCelebration(true);
       setScreen('results');
 
       // Play completion sound
@@ -754,19 +760,29 @@ export default function QuizPage() {
   // ═══ RESULTS SCREEN ═══
   if (screen === 'results' && results) {
     return (
-      <QuizResults
-        results={results}
-        questions={questions}
-        responses={responses}
-        isHi={isHi}
-        quizMode={quizMode}
-        cogLoad={cogLoad}
-        selectedSubject={selectedSubject}
-        studentName={student!.name}
-        timer={timer}
-        onRetry={() => { setScreen('select'); setQuestions([]); setResponses([]); setResults(null); }}
-        onGoHome={() => router.push('/dashboard')}
-      />
+      <>
+        {showCelebration && (
+          <CelebrationOverlay
+            scorePercent={results.score_percent}
+            xpEarned={results.xp_earned}
+            isHi={isHi}
+            onDismiss={() => setShowCelebration(false)}
+          />
+        )}
+        <QuizResults
+          results={results}
+          questions={questions}
+          responses={responses}
+          isHi={isHi}
+          quizMode={quizMode}
+          cogLoad={cogLoad}
+          selectedSubject={selectedSubject}
+          studentName={student!.name}
+          timer={timer}
+          onRetry={() => { setScreen('select'); setQuestions([]); setResponses([]); setResults(null); setShowCelebration(false); }}
+          onGoHome={() => router.push('/dashboard')}
+        />
+      </>
     );
   }
 
