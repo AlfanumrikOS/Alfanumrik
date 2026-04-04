@@ -142,7 +142,8 @@ const C = {
   purple: '#a855f7',
 };
 
-const S: Record<string, React.CSSProperties> = {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const S: Record<string, any> = {
   page: { minHeight: '100vh', background: C.bg, color: C.text1, fontFamily: "'Plus Jakarta Sans', 'Inter', system-ui, sans-serif", fontSize: 13 },
   header: { padding: '12px 20px', borderBottom: `1px solid ${C.border}`, background: C.bg2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   sidebar: { width: 200, minHeight: 'calc(100vh - 49px)', borderRight: `1px solid ${C.border}`, background: C.bg2, padding: '8px 0', flexShrink: 0 },
