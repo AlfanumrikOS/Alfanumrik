@@ -31,6 +31,8 @@ function SubscriptionsContent() {
   const [overridePlan, setOverridePlan] = useState('');
   const [lookupEmail, setLookupEmail] = useState('');
   const [lookupResult, setLookupResult] = useState<UserRecord | null>(null);
+  const [overrideMsg, setOverrideMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [overrideLoading, setOverrideLoading] = useState(false);
 
   const fetchAnalytics = useCallback(async () => {
     const res = await apiFetch('/api/super-admin/analytics');
@@ -50,13 +52,29 @@ function SubscriptionsContent() {
 
   useEffect(() => { fetchAnalytics(); fetchUsers(); }, [fetchAnalytics, fetchUsers]);
 
-  const changePlan = async (user: UserRecord, newPlan: string) => {
-    await apiFetch('/api/super-admin/users', {
-      method: 'PATCH',
-      body: JSON.stringify({ user_id: user.id, table: 'students', updates: { subscription_plan: newPlan } }),
-    });
-    fetchUsers();
-    if (selectedUser?.id === user.id) setSelectedUser({ ...user, subscription_plan: newPlan });
+  const changePlan = async (user: UserRecord, newPlan: string, isLookupOverride = false) => {
+    if (isLookupOverride) { setOverrideLoading(true); setOverrideMsg(null); }
+    try {
+      const res = await apiFetch('/api/super-admin/users', {
+        method: 'PATCH',
+        body: JSON.stringify({ user_id: user.id, table: 'students', updates: { subscription_plan: newPlan } }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        if (isLookupOverride) setOverrideMsg({ ok: false, text: json.error || 'Override failed' });
+      } else {
+        if (isLookupOverride) {
+          setOverrideMsg({ ok: true, text: `Plan changed to "${newPlan}" — applied immediately` });
+          setLookupResult({ ...user, subscription_plan: newPlan });
+          setOverridePlan('');
+        }
+        fetchUsers();
+        if (selectedUser?.id === user.id) setSelectedUser({ ...user, subscription_plan: newPlan });
+      }
+    } catch {
+      if (isLookupOverride) setOverrideMsg({ ok: false, text: 'Network error — override not applied' });
+    }
+    if (isLookupOverride) setOverrideLoading(false);
   };
 
   const lookupUser = async () => {
@@ -167,17 +185,24 @@ function SubscriptionsContent() {
                 <StatusBadge label={lookupResult.subscription_plan || 'free'} variant={lookupResult.subscription_plan && lookupResult.subscription_plan !== 'free' ? 'success' : 'neutral'} />
               </div>
               <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
-                <select value={overridePlan} onChange={e => setOverridePlan(e.target.value)} style={S.select}>
+                <select value={overridePlan} onChange={e => { setOverridePlan(e.target.value); setOverrideMsg(null); }} style={S.select}>
                   <option value="">Change plan to...</option>
                   {plans.map(p => <option key={p} value={p}>{p.replace(/_/g, ' ')}</option>)}
                 </select>
                 {overridePlan && (
-                  <button onClick={() => { changePlan(lookupResult, overridePlan); setOverridePlan(''); setLookupResult({ ...lookupResult, subscription_plan: overridePlan }); }}
-                    style={{ ...S.actionBtn, color: colors.accent, borderColor: colors.accent }}>
-                    Apply Override
+                  <button
+                    onClick={() => changePlan(lookupResult, overridePlan, true)}
+                    disabled={overrideLoading}
+                    style={{ ...S.actionBtn, color: colors.accent, borderColor: colors.accent, opacity: overrideLoading ? 0.6 : 1 }}>
+                    {overrideLoading ? 'Applying…' : 'Apply Override'}
                   </button>
                 )}
               </div>
+              {overrideMsg && (
+                <div style={{ marginTop: 8, padding: '7px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, background: overrideMsg.ok ? '#16a34a18' : '#dc262618', color: overrideMsg.ok ? '#16a34a' : '#dc2626', border: `1px solid ${overrideMsg.ok ? '#16a34a' : '#dc2626'}30` }}>
+                  {overrideMsg.ok ? '✓ ' : '✗ '}{overrideMsg.text}
+                </div>
+              )}
             </div>
           )}
           {lookupEmail && !lookupResult && !loading && (

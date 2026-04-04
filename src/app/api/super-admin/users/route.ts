@@ -54,7 +54,14 @@ export async function PATCH(request: NextRequest) {
       updates: z.object({
         is_active: z.boolean().optional(),
         account_status: z.enum(['active', 'demo', 'suspended', 'inactive']).optional(),
-        subscription_plan: z.enum(['free', 'starter', 'pro', 'unlimited']).optional(),
+        subscription_plan: z.enum([
+          'free',
+          'starter', 'starter_monthly', 'starter_yearly',
+          'pro', 'pro_monthly', 'pro_yearly',
+          'ultimate_monthly', 'ultimate_yearly',
+          'unlimited', 'unlimited_monthly', 'unlimited_yearly',
+          'basic', 'premium',
+        ]).optional(),
         grade: zGrade.optional(),
         board: z.string().min(1).max(50).optional(),
       }).refine(obj => Object.keys(obj).length > 0, { message: 'At least one update field is required' }),
