@@ -18,6 +18,9 @@ export const colors = {
   successLight: '#F0FDF4',
   warning: '#D97706',
   warningLight: '#FFFBEB',
+  shadow: '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02)',
+  shadowMd: '0 4px 6px rgba(0,0,0,0.04), 0 2px 4px rgba(0,0,0,0.02)',
+  shadowLg: '0 10px 15px rgba(0,0,0,0.04), 0 4px 6px rgba(0,0,0,0.02)',
 } as const;
 
 export const S: Record<string, React.CSSProperties> = {
@@ -63,6 +66,8 @@ export const S: Record<string, React.CSSProperties> = {
     borderRadius: 8,
     border: `1px solid ${colors.border}`,
     background: colors.bg,
+    boxShadow: colors.shadow,
+    transition: 'box-shadow 0.2s ease, border-color 0.2s ease',
   },
   cardSurface: {
     padding: 16,
@@ -110,6 +115,7 @@ export const S: Record<string, React.CSSProperties> = {
     fontFamily: 'inherit',
     width: 220,
     boxSizing: 'border-box' as const,
+    transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
   },
   select: {
     padding: '8px 12px',
@@ -132,6 +138,7 @@ export const S: Record<string, React.CSSProperties> = {
     fontSize: 12,
     fontWeight: 500,
     cursor: 'pointer',
+    transition: 'all 0.15s ease',
   },
   filterActive: {
     background: colors.text1,
@@ -148,6 +155,7 @@ export const S: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     cursor: 'pointer',
     letterSpacing: 0.2,
+    transition: 'all 0.15s ease',
   },
   secondaryBtn: {
     padding: '8px 16px',
@@ -158,6 +166,7 @@ export const S: Record<string, React.CSSProperties> = {
     fontSize: 13,
     fontWeight: 500,
     cursor: 'pointer',
+    transition: 'all 0.15s ease',
   },
   actionBtn: {
     background: 'none',
@@ -168,6 +177,7 @@ export const S: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     fontWeight: 500,
     color: colors.text2,
+    transition: 'all 0.15s ease',
   },
   dangerBtn: {
     padding: '8px 16px',
@@ -178,6 +188,7 @@ export const S: Record<string, React.CSSProperties> = {
     fontSize: 13,
     fontWeight: 600,
     cursor: 'pointer',
+    transition: 'all 0.15s ease',
   },
   pageBtn: {
     padding: '7px 16px',
@@ -187,6 +198,7 @@ export const S: Record<string, React.CSSProperties> = {
     color: colors.text2,
     fontSize: 12,
     cursor: 'pointer',
+    transition: 'all 0.15s ease',
   },
   dlBtn: {
     padding: '8px 14px',
@@ -197,5 +209,72 @@ export const S: Record<string, React.CSSProperties> = {
     fontSize: 12,
     fontWeight: 600,
     cursor: 'pointer',
+    transition: 'all 0.15s ease',
+  },
+
+  // Section header with left accent bar
+  sectionHeader: {
+    fontSize: 14,
+    fontWeight: 700,
+    color: colors.text1,
+    marginBottom: 16,
+    marginTop: 28,
+    paddingLeft: 12,
+    borderLeft: `3px solid ${colors.accent}`,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+  },
+
+  // Grid layouts for stat cards
+  grid2: { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 },
+  grid3: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 },
+  grid4: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 },
+
+  // Badge
+  badge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '2px 8px',
+    borderRadius: 12,
+    fontSize: 11,
+    fontWeight: 600,
+    letterSpacing: 0.3,
+  },
+
+  // Divider
+  divider: {
+    height: 1,
+    background: colors.border,
+    margin: '20px 0',
+  },
+
+  // Toolbar (row of filters/actions)
+  toolbar: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    flexWrap: 'wrap' as const,
+    marginBottom: 16,
+  },
+
+  // Empty state
+  emptyState: {
+    textAlign: 'center' as const,
+    padding: '48px 24px',
+    color: colors.text3,
+    fontSize: 14,
+  },
+
+  // Stat card with accent top bar
+  statCardAccent: {
+    borderTop: `3px solid ${colors.accent}`,
+    borderRadius: 8,
+    padding: 16,
+    background: colors.bg,
+    border: `1px solid ${colors.border}`,
+    borderTopColor: colors.accent,
+    boxShadow: colors.shadow,
+    transition: 'box-shadow 0.2s ease, transform 0.2s ease',
   },
 };

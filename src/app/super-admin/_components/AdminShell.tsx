@@ -28,6 +28,7 @@ const NAV_ITEMS: { href: string; label: string; icon: string }[] = [
   { href: '/super-admin/workbench', label: 'Data Workbench', icon: '⊞' },
   { href: '/super-admin/flags', label: 'Feature Flags', icon: '⊡' },
   { href: '/super-admin/institutions', label: 'Institutions', icon: '⊟' },
+  { href: '/super-admin/bulk-upload', label: 'Bulk Upload', icon: '⊞' },
   { href: '/super-admin/cms', label: 'CMS', icon: '⊠' },
   { href: '/super-admin/reports', label: 'Reports', icon: '⊏' },
   { href: '/super-admin/logs', label: 'Audit Logs', icon: '⊙' },
@@ -124,6 +125,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
           width: sidebarWidth, flexShrink: 0,
           borderRight: `1px solid ${colors.border}`,
           background: colors.bg,
+          boxShadow: '1px 0 4px rgba(0,0,0,0.03)',
           display: 'flex', flexDirection: 'column',
           transition: 'width 0.2s',
           position: 'fixed', top: 0, bottom: 0, left: 0, zIndex: 100,
@@ -166,11 +168,11 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
                     padding: collapsed ? '9px 0' : '9px 16px',
                     justifyContent: collapsed ? 'center' : 'flex-start',
                     fontSize: 13, fontWeight: isActive ? 600 : 400,
-                    color: isActive ? colors.text1 : colors.text2,
-                    background: isActive ? colors.surface : 'transparent',
-                    borderRight: isActive ? `2px solid ${colors.text1}` : '2px solid transparent',
+                    color: isActive ? colors.accent : colors.text2,
+                    background: isActive ? colors.accentLight : 'transparent',
+                    borderRight: isActive ? `2px solid ${colors.accent}` : '2px solid transparent',
                     textDecoration: 'none',
-                    transition: 'background 0.1s',
+                    transition: 'all 0.15s ease',
                   }}
                   title={collapsed ? item.label : undefined}
                   onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = colors.surfaceHover; }}
@@ -196,6 +198,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
                 width: '100%', padding: '6px 0', borderRadius: 5,
                 border: `1px solid ${colors.border}`, background: colors.bg,
                 color: colors.text2, fontSize: 11, cursor: 'pointer', fontWeight: 500,
+                transition: 'all 0.15s ease',
               }}
             >
               {collapsed ? '→' : 'Logout'}
