@@ -24,8 +24,18 @@ const PLAN_LIMITS: Record<string, Record<Feature, number>> = {
   unlimited: { foxy_chat: 999999, quiz: 999999 },
 };
 
+// Maps legacy codes and billing-cycle variants to canonical tier
+const PLAN_ALIAS: Record<string, string> = {
+  basic: 'starter', premium: 'pro', ultimate: 'unlimited',
+};
+
+function normalizePlanCode(plan: string): string {
+  const base = plan.replace(/_(monthly|yearly)$/, '');
+  return PLAN_ALIAS[base] ?? base;
+}
+
 function getLimitForPlan(plan: string, feature: Feature): number {
-  return (PLAN_LIMITS[plan] ?? PLAN_LIMITS.free)[feature];
+  return (PLAN_LIMITS[normalizePlanCode(plan)] ?? PLAN_LIMITS.free)[feature];
 }
 
 // ─── Client-side in-memory cache (avoids spamming DB) ────────
@@ -152,7 +162,7 @@ export async function getDailyUsageSummary(
   const result = {} as Record<Feature, UsageResult>;
 
   for (const f of features) {
-    const row = rows.find((r: { feature: string; usage_count?: number }) => r.feature === f);
+    const row = rows.find((r: any) => r.feature === f);
     const count = row?.usage_count ?? 0;
     const limit = getLimitForPlan(plan, f);
     result[f] = {

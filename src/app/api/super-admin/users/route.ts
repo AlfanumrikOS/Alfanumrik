@@ -90,6 +90,16 @@ export async function PATCH(request: NextRequest) {
 
     if (!res.ok) return NextResponse.json({ error: 'Update failed' }, { status: 500 });
 
+    // If subscription_plan was overridden on students, sync student_subscriptions.plan_code
+    if (table === 'students' && typeof safe.subscription_plan === 'string') {
+      const rawPlan = safe.subscription_plan as string;
+      const canonicalPlan = rawPlan.replace(/_(monthly|yearly)$/, '').replace(/^ultimate$/, 'unlimited').replace(/^basic$/, 'starter').replace(/^premium$/, 'pro');
+      await fetch(supabaseAdminUrl('student_subscriptions', `student_id=eq.${user_id}`), {
+        method: 'PATCH', headers: supabaseAdminHeaders('return=minimal'),
+        body: JSON.stringify({ plan_code: canonicalPlan }),
+      });
+    }
+
     const action = safe.is_active === false ? 'user.suspended' : safe.is_active === true ? 'user.activated' : 'user.updated';
     await logAdminAudit(auth, action, table, user_id, { updates: safe });
     return NextResponse.json({ success: true });
