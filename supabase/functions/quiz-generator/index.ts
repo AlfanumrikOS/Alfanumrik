@@ -969,7 +969,8 @@ Deno.serve(async (req) => {
     }
 
     // ── Parse & validate request body ──────────────────────────────────────
-    let body: RequestBody
+    // deno-lint-ignore no-explicit-any
+    let body: any
     try {
       body = await req.json()
     } catch {
@@ -979,8 +980,7 @@ Deno.serve(async (req) => {
       })
     }
 
-    const { student_id, subject, grade, count: rawCount, difficulty = null } = body
-    const chapterNumber = body.chapter_number ?? null
+    const { student_id, subject, grade } = body
 
     if (!student_id) {
       return new Response(JSON.stringify({ error: 'student_id is required' }), {
@@ -1014,6 +1014,45 @@ Deno.serve(async (req) => {
         },
       )
     }
+
+    // ── Route: next_question (mid-quiz adaptive) ─────────────────────────
+    if (body.action === 'next_question') {
+      if (!subject || !grade) {
+        return new Response(JSON.stringify({ error: 'subject and grade are required' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+      if (!body.session_id) {
+        return new Response(JSON.stringify({ error: 'session_id is required for next_question' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+      if (!Array.isArray(body.responses_so_far)) {
+        return new Response(JSON.stringify({ error: 'responses_so_far must be an array' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      // Build service-role client for question selection
+      const supabase = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+        {
+          auth: { persistSession: false },
+          global: authHeader ? { headers: { Authorization: authHeader } } : {},
+        },
+      )
+
+      return handleNextQuestion(supabase, body as NextQuestionRequestBody)
+    }
+
+    // ── Route: batch question generation (default) ───────────────────────
+    const { count: rawCount, difficulty = null } = body as RequestBody
+    const chapterNumber = body.chapter_number ?? null
+
     if (!subject) {
       return new Response(JSON.stringify({ error: 'subject is required' }), {
         status: 400,

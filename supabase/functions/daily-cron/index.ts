@@ -271,6 +271,147 @@ async function purgeExpiredStudyCache(
   return count ?? 0
 }
 
+// ─── Step 6: WhatsApp daily reminders & streak warnings ──────────────────
+
+/**
+ * Send WhatsApp notifications to opted-in users:
+ *   - daily_reminder: students who have whatsapp prefs enabled
+ *   - streak_warning: students whose streak is at risk (no activity yesterday)
+ *
+ * Calls the whatsapp-notify Edge Function for each message.
+ * Gracefully degrades: if WhatsApp is unavailable, the Edge Function
+ * queues email fallback automatically.
+ *
+ * P13: Phone numbers are never logged — only redacted versions.
+ */
+async function sendWhatsAppNotifications(
+  supabase: ReturnType<typeof createClient>,
+): Promise<number> {
+  // Fetch users who opted in to WhatsApp notifications and are verified
+  const { data: prefs, error: prefsError } = await supabase
+    .from('notification_preferences')
+    .select('user_id, phone_number, daily_reminder, streak_warning')
+    .eq('channel', 'whatsapp')
+    .eq('is_verified', true)
+
+  if (prefsError) throw new Error(`sendWhatsAppNotifications prefs: ${prefsError.message}`)
+  if (!prefs || prefs.length === 0) return 0
+
+  const whatsappFunctionUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/whatsapp-notify`
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+
+  let sentCount = 0
+  const yesterday = new Date()
+  yesterday.setUTCDate(yesterday.getUTCDate() - 1)
+  yesterday.setUTCHours(0, 0, 0, 0)
+
+  for (const pref of prefs as {
+    user_id: string
+    phone_number: string | null
+    daily_reminder: boolean
+    streak_warning: boolean
+  }[]) {
+    if (!pref.phone_number) continue
+
+    // Look up student info for this user
+    const { data: studentRows } = await supabase
+      .from('students')
+      .select('id, name, grade')
+      .eq('auth_user_id', pref.user_id)
+      .limit(1)
+
+    const student = (studentRows ?? [])[0] as
+      | { id: string; name: string; grade: string }
+      | undefined
+    if (!student) continue
+
+    // Get learning profile for streak + suggestion
+    const { data: profiles } = await supabase
+      .from('student_learning_profiles')
+      .select('subject, streak_days, last_activity_at')
+      .eq('student_id', student.id)
+
+    const profileList = (profiles ?? []) as {
+      subject: string
+      streak_days: number
+      last_activity_at: string | null
+    }[]
+
+    const maxStreak = profileList.reduce((max, p) => Math.max(max, p.streak_days ?? 0), 0)
+    const subjects = profileList.map((p) => p.subject).filter(Boolean)
+    const subjectSuggestion = subjects.length > 0 ? subjects[0] : 'Mathematics'
+
+    // Check if student was active yesterday
+    const wasActiveYesterday = profileList.some(
+      (p) => p.last_activity_at && new Date(p.last_activity_at) >= yesterday,
+    )
+
+    // Determine language (default to English)
+    const language = 'en'
+
+    // Send daily reminder if opted in
+    if (pref.daily_reminder) {
+      try {
+        await fetch(whatsappFunctionUrl, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${serviceRoleKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            type: 'daily_reminder',
+            recipient_phone: pref.phone_number,
+            language,
+            data: {
+              student_name: student.name?.split(' ')[0] ?? 'Student',
+              streak_count: String(maxStreak),
+              subject_suggestion: subjectSuggestion,
+            },
+            user_id: pref.user_id,
+          }),
+        })
+        sentCount++
+      } catch (err) {
+        console.error(
+          `[daily-cron] WhatsApp daily_reminder failed for user ${pref.user_id}:`,
+          err instanceof Error ? err.message : String(err),
+        )
+      }
+    }
+
+    // Send streak warning if opted in and student was NOT active yesterday
+    if (pref.streak_warning && !wasActiveYesterday && maxStreak > 0) {
+      try {
+        await fetch(whatsappFunctionUrl, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${serviceRoleKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            type: 'streak_warning',
+            recipient_phone: pref.phone_number,
+            language,
+            data: {
+              student_name: student.name?.split(' ')[0] ?? 'Student',
+              streak_count: String(maxStreak),
+            },
+            user_id: pref.user_id,
+          }),
+        })
+        sentCount++
+      } catch (err) {
+        console.error(
+          `[daily-cron] WhatsApp streak_warning failed for user ${pref.user_id}:`,
+          err instanceof Error ? err.message : String(err),
+        )
+      }
+    }
+  }
+
+  return sentCount
+}
+
 // ─── Main handler ─────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -317,6 +458,7 @@ Deno.serve(async (req) => {
       ['parent_digests_sent', () => generateParentDigests(supabase)],
       ['task_queue_rows_deleted', () => cleanupTaskQueue(supabase)],
       ['study_cache_entries_purged', () => purgeExpiredStudyCache(supabase)],
+      ['whatsapp_notifications_sent', () => sendWhatsAppNotifications(supabase)],
     ]
 
     const settled = await Promise.allSettled(steps.map(([, fn]) => fn()))
