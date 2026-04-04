@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import crypto from 'crypto';
+import { verifyRazorpaySignature } from '@/lib/payment-verification';
 
 /**
  * Razorpay Webhook Handler
@@ -36,13 +36,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Not configured' }, { status: 400 });
     }
 
-    // Verify webhook signature
-    const expectedSignature = crypto
-      .createHmac('sha256', webhookSecret)
-      .update(body)
-      .digest('hex');
-
-    if (expectedSignature !== signature) {
+    // Verify webhook signature (P11: timing-safe via extracted utility)
+    if (!verifyRazorpaySignature(body, signature, webhookSecret)) {
       console.error('Webhook signature mismatch');
       return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
     }

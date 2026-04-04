@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
-import crypto from 'crypto';
+import { verifyRazorpaySignature } from '@/lib/payment-verification';
 import { logger } from '@/lib/logger';
 import { paymentVerifySchema, validateBody } from '@/lib/validation';
 
@@ -72,15 +72,7 @@ export async function POST(request: NextRequest) {
       ? `${razorpay_subscription_id}|${razorpay_payment_id}`
       : `${razorpay_order_id}|${razorpay_payment_id}`;
 
-    const expectedSignature = crypto
-      .createHmac('sha256', razorpaySecret)
-      .update(signaturePayload)
-      .digest('hex');
-
-    // Use timing-safe comparison to prevent timing attacks on signature verification
-    const sigBuffer = Buffer.from(razorpay_signature, 'hex');
-    const expectedBuffer = Buffer.from(expectedSignature, 'hex');
-    if (sigBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(sigBuffer, expectedBuffer)) {
+    if (!verifyRazorpaySignature(signaturePayload, razorpay_signature, razorpaySecret)) {
       return NextResponse.json({ error: 'Invalid payment signature' }, { status: 401 });
     }
 

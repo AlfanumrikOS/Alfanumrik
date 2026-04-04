@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { XP_RULES } from './xp-rules';
+import { calculateScorePercent, calculateQuizXP } from './scoring';
 
 export const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 export const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -326,8 +327,8 @@ export async function submitQuizResults(studentId: string, subject: string, grad
   // when multiple quiz submissions happen concurrently.
   const total = responses.length;
   const correct = responses.filter(r => r.is_correct).length;
-  const scorePct = total > 0 ? Math.round((correct / total) * 100) : 0;
-  const xpEarned = correct * XP_RULES.quiz_per_correct + (scorePct >= 80 ? XP_RULES.quiz_high_score_bonus : 0) + (scorePct === 100 ? XP_RULES.quiz_perfect_bonus : 0);
+  const scorePct = calculateScorePercent(correct, total);
+  const xpEarned = calculateQuizXP(correct, scorePct);
 
   // 1. Insert quiz session (columns must match DB schema exactly)
   const { data: session, error: sessErr } = await supabase.from('quiz_sessions').insert({
