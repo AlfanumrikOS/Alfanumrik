@@ -95,7 +95,7 @@ export default function QuizResults({
       ? (isHi ? 'बहुत अच्छा! थोड़ा और अभ्यास करो!' : 'Good job! A little more practice!')
       : pct >= 40
         ? (isHi ? 'ठीक है! रिव्यू करके फिर try करो!' : 'Keep going! Review and try again!')
-        : (isHi ? 'कोई बात नहीं! Foxy से सीखो!' : 'No worries! Learn with Foxy first!');
+        : (isHi ? 'हर विशेषज्ञ कभी शुरुआती था। चलो मिलकर सीखते हैं!' : 'Every expert was once a beginner. Let\'s review together!');
 
   return (
     <div className="mesh-bg min-h-dvh pb-nav">
@@ -110,10 +110,10 @@ export default function QuizResults({
       </header>
       <main className="app-container py-6 space-y-5 max-w-lg mx-auto">
         {/* Score Card */}
-        <Card accent={pct >= 60 ? '#16A34A' : '#DC2626'}>
+        <Card accent={pct >= 60 ? 'var(--success)' : 'var(--danger)'}>
           <div className="text-center py-4">
             <div className="text-5xl mb-3">{emoji}</div>
-            <div className="text-6xl font-bold mb-1" style={{ fontFamily: 'var(--font-display)', color: pct >= 60 ? '#16A34A' : '#DC2626' }}>
+            <div className="text-6xl font-bold mb-1 animate-score-reveal" style={{ fontFamily: 'var(--font-display)', color: pct >= 60 ? 'var(--success)' : 'var(--danger)' }}>
               {pct}%
             </div>
             <div className="text-xl font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
@@ -127,7 +127,7 @@ export default function QuizResults({
         <div className="grid-stats">
           <StatCard icon="✓" value={results.correct} label={isHi ? 'सही' : 'Correct'} color="#16A34A" />
           <StatCard icon="✗" value={results.total - results.correct} label={isHi ? 'गलत' : 'Wrong'} color="#DC2626" />
-          <StatCard icon="⭐" value={`+${results.xp_earned}`} label="XP" color="var(--orange)" />
+          <StatCard icon="✨" value={`+${results.xp_earned}`} label="XP" color="var(--orange)" />
           <StatCard icon="⏱" value={formatTime(timer)} label={isHi ? 'समय' : 'Time'} color="var(--teal)" />
         </div>
 

@@ -46,7 +46,7 @@ export function Card({ children, className = '', accent, onClick, hoverable }: C
 
 /* ─── Button ──────────────────────────────────────────────── */
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'ghost' | 'soft';
+  variant?: 'primary' | 'ghost' | 'soft' | 'trust';
   size?: 'sm' | 'md' | 'lg';
   color?: string;
   fullWidth?: boolean;
@@ -82,6 +82,25 @@ export function Button({
   if (variant === 'ghost') {
     return (
       <button className={`btn-ghost focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2 ${sizeMap[size]} ${base} ${className}`} {...disabledAttr} {...props}>
+        {children}
+      </button>
+    );
+  }
+
+  // trust variant — indigo for trust-building contexts
+  if (variant === 'trust') {
+    return (
+      <button
+        className={`inline-flex items-center justify-center gap-2 font-semibold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] focus-visible:ring-offset-2 ${sizeMap[size]} ${base} ${className}`}
+        style={{
+          background: 'var(--primary)',
+          color: '#fff',
+          border: 'none',
+          boxShadow: 'var(--shadow-md)',
+        }}
+        {...disabledAttr}
+        {...props}
+      >
         {children}
       </button>
     );
@@ -678,6 +697,78 @@ export function ThemeToggle({ theme, onToggle }: ThemeToggleProps) {
     >
       {icon}
     </button>
+  );
+}
+
+/* ─── Skeleton Loader ────────────────────────────────────── */
+interface SkeletonProps {
+  variant?: 'text' | 'title' | 'card' | 'avatar' | 'circle';
+  width?: string | number;
+  height?: string | number;
+  className?: string;
+}
+
+export function Skeleton({ variant = 'text', width, height, className = '' }: SkeletonProps) {
+  const variants = {
+    text: 'skeleton skeleton-text',
+    title: 'skeleton skeleton-title',
+    card: 'skeleton skeleton-card',
+    avatar: 'skeleton skeleton-avatar',
+    circle: 'skeleton skeleton-avatar',
+  };
+  return (
+    <div
+      className={`${variants[variant]} ${className}`}
+      style={{ width: width ?? undefined, height: height ?? undefined }}
+      aria-hidden="true"
+    />
+  );
+}
+
+/* ─── Progress Ring (Mastery Visualization) ──────────────── */
+interface ProgressRingProps {
+  value: number; // 0-100
+  size?: number;
+  strokeWidth?: number;
+  label?: string;
+  showValue?: boolean;
+  className?: string;
+}
+
+export function ProgressRing({
+  value,
+  size = 64,
+  strokeWidth = 6,
+  label,
+  showValue = true,
+  className = '',
+}: ProgressRingProps) {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = radius * 2 * Math.PI;
+  const offset = circumference - (Math.min(Math.max(value, 0), 100) / 100) * circumference;
+  const color = value >= 70 ? 'var(--mastery-high)' : value >= 40 ? 'var(--mastery-mid)' : 'var(--mastery-low)';
+
+  return (
+    <div className={`relative inline-flex items-center justify-center ${className}`} style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="animate-mastery-fill" style={{ transform: 'rotate(-90deg)', ['--mastery-offset' as string]: offset }}>
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="var(--border)" strokeWidth={strokeWidth} />
+        <circle
+          cx={size / 2} cy={size / 2} r={radius} fill="none"
+          stroke={color} strokeWidth={strokeWidth}
+          strokeDasharray={circumference} strokeDashoffset={offset}
+          strokeLinecap="round"
+          style={{ transition: 'stroke-dashoffset 1.2s cubic-bezier(0.4, 0, 0.2, 1)' }}
+        />
+      </svg>
+      {showValue && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span style={{ fontSize: size * 0.28, fontWeight: 800, color: 'var(--text-1)', fontFamily: 'var(--font-display)' }}>
+            {Math.round(value)}%
+          </span>
+          {label && <span style={{ fontSize: Math.max(size * 0.14, 10), color: 'var(--text-3)' }}>{label}</span>}
+        </div>
+      )}
+    </div>
   );
 }
 

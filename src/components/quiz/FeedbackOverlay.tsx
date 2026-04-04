@@ -66,17 +66,17 @@ export default function FeedbackOverlay({ feedback, isHi }: FeedbackOverlayProps
         style={{
           background: isCorrect
             ? 'rgba(22, 163, 74, 0.95)'
-            : 'rgba(100, 100, 100, 0.9)',
+            : 'rgba(244, 63, 94, 0.9)',
           backdropFilter: 'blur(12px)',
           boxShadow: isCorrect
             ? '0 4px 20px rgba(22, 163, 74, 0.3)'
-            : '0 4px 20px rgba(0, 0, 0, 0.15)',
+            : '0 4px 20px rgba(244, 63, 94, 0.2)',
           color: '#fff',
           maxWidth: 280,
         }}
       >
         <span className="text-lg flex-shrink-0">
-          {isCorrect ? '🦊' : '🤔'}
+          {isCorrect ? '🦊' : '💡'}
         </span>
         <span className="text-sm font-semibold">{foxyText}</span>
       </div>
