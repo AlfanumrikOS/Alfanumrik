@@ -296,7 +296,7 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
           </h2>
 
           {error && (
-            <div role="alert" className="mb-3 px-3 py-2 rounded-xl text-xs font-semibold" style={{ background: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA' }}>
+            <div role="alert" className="mb-3 px-3 py-2 rounded-xl text-xs font-semibold" style={{ background: 'var(--danger-light)', color: 'var(--danger)', border: '1px solid color-mix(in srgb, var(--danger) 25%, transparent)' }}>
               {error}
             </div>
           )}
@@ -422,7 +422,7 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
                   <span>
                     I consent to the collection and processing of my data as described in the{' '}
                     <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline font-semibold" style={{ color: activeRoleColor }}>Privacy Policy</a>
-                    <span style={{ color: '#EF4444' }}> *</span>
+                    <span style={{ color: 'var(--danger)' }}> *</span>
                   </span>
                 </label>
                 <label className="flex items-start gap-2 cursor-pointer" style={{ fontSize: 12, color: 'var(--text-2)' }}>

@@ -87,10 +87,12 @@ export default function OnboardingPage() {
     border: '1.5px solid var(--border)', background: 'var(--surface-2)',
     fontSize: 15, color: 'var(--text-1)', outline: 'none',
     fontFamily: 'var(--font-body)', appearance: 'none',
+    transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
   };
 
   return (
     <div
+      className="mesh-bg"
       style={{
         minHeight: '100dvh',
         display: 'flex',
@@ -98,13 +100,12 @@ export default function OnboardingPage() {
         alignItems: 'center',
         justifyContent: 'center',
         padding: '24px 16px',
-        background: 'var(--bg)',
       }}
     >
-      <div style={{ width: '100%', maxWidth: 400 }}>
+      <div style={{ width: '100%', maxWidth: 400, animation: 'fadeInUp 0.5s ease-out' }}>
         {/* Header */}
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <div style={{ fontSize: 48, marginBottom: 12 }}>🦊</div>
+          <div className="animate-float" style={{ fontSize: 48, marginBottom: 12 }}>🦊</div>
           <h1
             style={{
               fontSize: 22, fontWeight: 700, color: 'var(--text-1)',
@@ -167,7 +168,7 @@ export default function OnboardingPage() {
 
             {/* Error */}
             {error && (
-              <p style={{ fontSize: 13, color: '#E53E3E', margin: 0 }}>{error}</p>
+              <p style={{ fontSize: 13, color: 'var(--danger)', margin: 0 }}>{error}</p>
             )}
 
             {/* Submit */}
@@ -176,14 +177,14 @@ export default function OnboardingPage() {
               disabled={saving || !grade}
               style={{
                 width: '100%', padding: '14px 0', borderRadius: 12,
-                background: grade ? '#E8590C' : 'var(--surface-3)',
+                background: grade ? 'var(--orange)' : 'var(--surface-3)',
                 color: grade ? '#fff' : 'var(--text-3)',
                 border: 'none', fontSize: 15, fontWeight: 700,
                 cursor: grade && !saving ? 'pointer' : 'not-allowed',
                 transition: 'background 0.2s',
               }}
             >
-              {saving ? 'Saving…' : 'Start Learning'}
+              {saving ? 'Saving...' : 'Start Learning ✨'}
             </button>
           </div>
         </form>
