@@ -168,16 +168,43 @@ Based on educational psychology (Cognitive Load Theory, Self-Determination Theor
 
 **Play Store Readiness Score: 4/10** — Functional skeleton, needs significant feature parity and polish work.
 
-### 2.3 Testing & Quality — GOOD, NEEDS EXPANSION
+### 2.3 Testing & Quality — CRITICAL GAPS FOUND
 
-| Metric | Current | v2.0 Target |
+| Metric | Current | v2.0 Target | Status |
+|---|---|---|---|
+| Unit tests | 47 files, 1,621 tests, 2,754 assertions | 60+ files | ✅ Good foundation |
+| E2E tests | 7 specs (smoke, auth, nav, SEO, a11y) | 15+ (full user journeys) | ⚠️ Missing: quiz, payment, signup |
+| Mobile tests | 1 placeholder file (non-functional) | 30+ widget + 10 integration | ❌ Zero coverage |
+| **Regression catalog** | **4/35 (11%)** — NOT 100% as claimed | **35/35 (100%)** | ❌ **CRITICAL BLOCKER** |
+| Type safety | Strict mode, 27 `any` instances | Maintain strict | ✅ Good |
+| Bundle budget | <160kB shared, <260kB pages, CI-enforced | Monitor with v2.0 additions | ✅ Good |
+| E2E gate in CI | `continue-on-error: true` (non-blocking) | Must block merges | ❌ Fix required |
+| Dependencies | 3 HIGH severity vulns (glob via eslint-config-next) | 0 high severity | ⚠️ Patch needed |
+
+**Regression catalog breakdown — what's missing:**
+- P1 Score Accuracy: 0/8 tests
+- P2 XP Economy: 0/8 tests
+- P3 Anti-Cheat: 0/5 complete (3 partial)
+- P6 Question Quality: 0/4 tests
+- P11 Payment Integrity: 0/4 tests
+- Only RBAC has 3/4 passing (best covered area)
+
+### 2.3b Mobile App — NOT PLAY STORE READY
+
+| Area | Score | Blocker? |
 |---|---|---|
-| Unit tests | 47 test files | 60+ (cover all Edge Functions) |
-| E2E tests | 7 spec files | 15+ (full user journeys) |
-| Mobile tests | 1 file | 30+ widget + 10 integration |
-| Regression catalog | 35/35 (100%) | Maintain 100% |
-| Type safety | TypeScript strict mode | Good — maintain |
-| Bundle budget | <160kB shared, <260kB pages | Monitor with v2.0 additions |
+| Architecture (Riverpod + GoRouter) | 8/10 | No |
+| State management | 8/10 | No |
+| Security (PKCE, HTTPS-only) | 8/10 | No |
+| **Release signing** | **0/10** | **YES — debug keystore** |
+| **App icon & screenshots** | **0/10** | **YES — no assets** |
+| **Privacy policy URL** | **0/10** | **YES — not hosted** |
+| Testing | 0/10 | YES — zero coverage |
+| Crash reporting | 0/10 | YES — no Crashlytics |
+| Push notifications | 0/10 | No (post-launch) |
+| Feature parity with web | 5/10 | No (companion app) |
+| Offline write queue | 0/10 | Yes — quiz results lost |
+| **Overall Play Store readiness** | **4/10** | **4-6 weeks to fix** |
 
 ### 2.4 Performance & Scalability
 
@@ -196,12 +223,16 @@ Based on educational psychology (Cognitive Load Theory, Self-Determination Theor
 
 | Gap | Impact | Effort |
 |---|---|---|
+| **DB connection pooling not verified** | Serverless cold starts → connection exhaustion at 50k+ users | High — verify PgBouncer on Supabase |
+| **Circuit breaker only in foxy-tutor** | Other Edge Functions (ncert-solver, quiz-generator) lack graceful degradation | Medium — roll pattern to all external API callers |
+| **No distributed tracing** | Cannot correlate API → Edge Function → RPC in incidents | Medium — add request ID propagation |
 | **No feature flag UI** | Can't A/B test UX changes | Medium — ops owns this |
-| **No analytics events** | Can't measure UX improvement impact | Medium — add Mixpanel/PostHog or extend Vercel Analytics |
+| **No analytics events** | Can't measure UX improvement impact | Medium — add Mixpanel/PostHog |
 | **No error rate alerting** | May miss production issues | Low — add Sentry alert rules |
-| **No database backup verification** | Risk of data loss | Low — Supabase handles, but verify schedule |
 | **No load testing** | Unknown breaking point | Medium — k6 or Artillery scripts |
-| **No staging environment** | Deploy safety concern | Medium — Vercel preview URLs partially cover this |
+| **Upstash underutilized** | Only rate limiting — no caching, session store, or feature flag cache | Low — extend usage |
+| **Webhook endpoints not rate-limited** | Razorpay/Mailgun webhooks could be DDoS vector | Low — add per-endpoint limits |
+| **Health check gaps** | No checks for: Storage, Edge Functions, Mailgun, Razorpay reachability | Low — extend health endpoint |
 
 ---
 
