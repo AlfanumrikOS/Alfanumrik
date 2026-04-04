@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth, type UserRole } from '@/lib/AuthContext';
 import { ROLE_CONFIG } from '@/lib/constants';
+import { useDashboardData } from '@/lib/swr';
 
 /* ═══ NAVIGATION ARCHITECTURE ═══
  * Research-backed: Duolingo 5-tab model (the gold standard for EdTech)
@@ -14,18 +15,20 @@ import { ROLE_CONFIG } from '@/lib/constants';
 
 const CORE_TABS = [
   { href: '/dashboard', icon: '🏠', activeIcon: '🏠', label: 'Home', labelHi: 'होम' },
-  { href: '/learn', icon: '📚', activeIcon: '📚', label: 'Learn', labelHi: 'सीखो' },
+  // 'Learn' routes to the subject/chapter browser — NOT study-plan
+  { href: '/learn', icon: '📖', activeIcon: '📖', label: 'Learn', labelHi: 'सीखो' },
   { href: '/foxy', icon: '🦊', activeIcon: '🦊', label: 'Foxy', labelHi: 'फॉक्सी', isFab: true },
-  { href: '/progress', icon: '📈', activeIcon: '📈', label: 'Progress', labelHi: 'प्रगति' },
-  { href: '/profile', icon: '👤', activeIcon: '👤', label: 'Me', labelHi: 'मैं' },
+  // Review is a daily habit — promoted to core tab with due-count badge
+  { href: '/review', icon: '🔄', activeIcon: '🔄', label: 'Review', labelHi: 'रिव्यू' },
+  { href: '/quiz', icon: '⚡', activeIcon: '⚡', label: 'Quiz', labelHi: 'क्विज़' },
 ];
 
 const MORE_ITEMS = [
-  { href: '/study-plan', icon: '📅', label: 'Study Plan', labelHi: 'अध्ययन योजना' },
-  { href: '/stem-centre', icon: '🔬', label: 'STEM Centre', labelHi: 'स्टेम सेंटर' },
+  { href: '/study-plan', icon: '📅', label: 'Study Plan', labelHi: 'स्टडी प्लान' },
+  { href: '/profile', icon: '👤', label: 'Profile', labelHi: 'प्रोफ़ाइल' },
+  { href: '/simulations', icon: '🔬', label: 'Interactive Lab', labelHi: 'इंटरैक्टिव लैब' },
   { href: '/leaderboard', icon: '🏆', label: 'Rankings & Compete', labelHi: 'रैंकिंग और प्रतियोगिता' },
   { href: '/progress', icon: '📈', label: 'My Progress', labelHi: 'मेरी प्रगति' },
-  { href: '/review', icon: '🔄', label: 'Flashcard Review', labelHi: 'फ्लैशकार्ड रिव्यू' },
   { href: '/notifications', icon: '🔔', label: 'Notifications', labelHi: 'सूचनाएँ' },
   { href: '/help', icon: '❓', label: 'Help & Support', labelHi: 'सहायता और सपोर्ट' },
 ];
@@ -41,9 +44,10 @@ const SIDEBAR_SECTIONS = [
   {
     title: 'Study', titleHi: 'पढ़ाई',
     items: [
-      { href: '/learn', icon: '📚', label: 'Chapters', labelHi: 'अध्याय' },
+      { href: '/learn', icon: '📖', label: 'Subjects & Chapters', labelHi: 'विषय और अध्याय' },
       { href: '/study-plan', icon: '📅', label: 'Study Plan', labelHi: 'अध्ययन योजना' },
-      { href: '/stem-centre', icon: '🔬', label: 'STEM Centre', labelHi: 'स्टेम सेंटर' },
+      { href: '/simulations', icon: '🔬', label: 'Interactive Lab', labelHi: 'इंटरैक्टिव लैब' },
+      { href: '/quiz', icon: '⚡', label: 'Quick Quiz', labelHi: 'क्विज़' },
       { href: '/review', icon: '🔄', label: 'Flashcard Review', labelHi: 'फ्लैशकार्ड रिव्यू' },
     ],
   },
@@ -158,6 +162,10 @@ export default function BottomNavComponent() {
   const tabs = getCoreTabs(activeRole);
   const moreItems = getMoreItems(activeRole);
   const sidebarSections = getSidebarSections(activeRole);
+
+  // Due-review count for the Review tab badge (SWR-cached — no extra request if dashboard already loaded)
+  const { data: dashData } = useDashboardData((auth as any)?.student?.id);
+  const dueCount: number = (dashData as any)?.due_count ?? 0;
 
   const isActive = (href: string) => pathname === href || (href !== '/' && pathname.startsWith(href));
   const isMoreActive = moreItems.some(m => isActive(m.href));
@@ -301,24 +309,37 @@ export default function BottomNavComponent() {
             }
 
             /* ── Regular tabs ── */
+            const isReviewTab = item.href === '/review';
+            const showBadge = isReviewTab && dueCount > 0 && activeRole === 'student';
             return (
               <button
                 key={item.href}
                 onClick={() => router.push(item.href)}
-                aria-label={item.label}
+                aria-label={`${item.label}${showBadge ? ` (${dueCount} due)` : ''}`}
                 aria-current={active ? 'page' : undefined}
-                className="flex flex-col items-center gap-1 min-w-[56px] py-2 transition-all"
+                className="flex flex-col items-center gap-1 min-w-[56px] py-2 transition-all relative"
                 style={{ color: active ? 'var(--orange)' : 'var(--text-3)' }}
               >
-                <span
-                  className="text-[22px] leading-none transition-transform"
-                  aria-hidden="true"
-                  style={{
-                    transform: active ? 'scale(1.15)' : 'scale(1)',
-                    filter: active ? 'drop-shadow(0 0 6px rgba(232, 88, 28, 0.35))' : 'none',
-                  }}
-                >
-                  {active ? item.activeIcon : item.icon}
+                <span className="relative inline-block">
+                  <span
+                    className="text-[22px] leading-none transition-transform block"
+                    aria-hidden="true"
+                    style={{
+                      transform: active ? 'scale(1.15)' : 'scale(1)',
+                      filter: active ? 'drop-shadow(0 0 6px rgba(232, 88, 28, 0.35))' : 'none',
+                    }}
+                  >
+                    {active ? item.activeIcon : item.icon}
+                  </span>
+                  {showBadge && (
+                    <span
+                      className="absolute -top-1.5 -right-2 min-w-[16px] h-[16px] rounded-full flex items-center justify-center text-[9px] font-bold text-white leading-none px-1"
+                      style={{ background: '#DC2626', boxShadow: '0 1px 4px rgba(220,38,38,0.5)' }}
+                      aria-hidden="true"
+                    >
+                      {dueCount > 9 ? '9+' : dueCount}
+                    </span>
+                  )}
                 </span>
                 <span className="text-[11px] font-semibold tracking-wide">
                   {isHi ? item.labelHi : item.label}

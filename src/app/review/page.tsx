@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { getReviewCards, supabase } from '@/lib/supabase';
-import { Card, Button, LoadingFoxy, BottomNav, EmptyState } from '@/components/ui';
+import { Card, Button, LoadingFoxy, BottomNav } from '@/components/ui';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 
 interface ReviewCard {
@@ -48,9 +48,11 @@ export default function ReviewPage() {
   const [loading, setLoading] = useState(true);
   const [reviewed, setReviewed] = useState(0);
   const [retentionTests, setRetentionTests] = useState<RetentionTest[]>([]);
+  // Track which subjects were reviewed this session for the guided post-review CTA
+  const [reviewedSubjects, setReviewedSubjects] = useState<string[]>([]);
 
   useEffect(() => {
-    if (!isLoading && !isLoggedIn) router.replace('/login');
+    if (!isLoading && !isLoggedIn) router.replace('/');
   }, [isLoading, isLoggedIn, router]);
 
   const load = useCallback(async () => {
@@ -78,12 +80,10 @@ export default function ReviewPage() {
       setRetentionTests([]);
     }
     setLoading(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- depend on student.id to avoid re-running on object reference changes
-  }, [student?.id]);
+  }, [student]);
 
   useEffect(() => {
     if (student) load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- student?.id is the stable identity; student object reference changes on every render
   }, [student?.id, load]);
 
   // Track which cards have been reviewed in this session to prevent double-rating
@@ -178,6 +178,10 @@ export default function ReviewPage() {
     }
 
     setReviewed((r) => r + 1);
+    // Track subject for guided post-review CTA
+    if (card.subject) {
+      setReviewedSubjects(prev => prev.includes(card.subject) ? prev : [...prev, card.subject]);
+    }
     setFlipped(false);
     setShowHint(false);
 
@@ -268,37 +272,56 @@ export default function ReviewPage() {
         ) : !card ? (
           /* All done or no cards */
           <div className="flex-1 flex items-center justify-center">
-            <EmptyState
-              icon={reviewed > 0 ? '🎉' : '🎉'}
-              title={
-                reviewed > 0
-                  ? isHi
-                    ? 'शाबाश! सब रिव्यू हो गया!'
-                    : 'Great job! All reviews done!'
-                  : isHi
-                    ? 'सब पूरा! कोई रिव्यू बाकी नहीं।'
-                    : 'All caught up! No reviews due.'
-              }
-              description={
-                reviewed > 0
-                  ? isHi
-                    ? `${reviewed} कार्ड रिव्यू किये। तुम्हारी याददाश्त मजबूत हो रही है!`
-                    : `${reviewed} cards reviewed. Your memory is getting stronger!`
-                  : isHi
-                    ? 'बहुत बढ़िया, ट्रैक पर हो!'
-                    : 'Great job staying on track.'
-              }
-              action={
-                <div className="flex gap-2 justify-center">
-                  <Button onClick={() => router.push('/quiz')}>
-                    {isHi ? 'क्विज़ खेलो' : 'Take a Quiz'} ⚡
+            <div className="text-center max-w-xs mx-auto">
+              <div className="text-5xl mb-4">{reviewed > 0 ? '🎉' : '✨'}</div>
+              <h3 className="text-xl font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
+                {reviewed > 0
+                  ? (isHi ? 'शाबाश! सब रिव्यू हो गया!' : 'All reviews done!')
+                  : (isHi ? 'कोई रिव्यू बाकी नहीं' : 'No reviews due')}
+              </h3>
+              <p className="text-sm text-[var(--text-3)] mb-5">
+                {reviewed > 0
+                  ? (isHi
+                      ? `${reviewed} कार्ड रिव्यू किये। याददाश्त मजबूत हो रही है!`
+                      : `${reviewed} cards reviewed. Keep the streak going!`)
+                  : (isHi
+                      ? 'क्विज़ खेलो — नए रिव्यू कार्ड अपने आप बनेंगे।'
+                      : 'Take quizzes to generate review cards automatically.')}
+              </p>
+
+              <div className="space-y-2 w-full">
+                {/* Primary CTA: Quiz on the subjects just reviewed (context-aware) */}
+                {reviewed > 0 && reviewedSubjects.length > 0 ? (
+                  <Button
+                    fullWidth
+                    onClick={() => router.push(
+                      `/quiz?subject=${reviewedSubjects[0]}${reviewedSubjects.length === 1 ? '' : ''}`
+                    )}
+                  >
+                    ⚡ {isHi
+                      ? `${reviewedSubjects[0]} का क्विज़ दो`
+                      : `Quiz on ${reviewedSubjects[0]}`}
                   </Button>
-                  <Button variant="ghost" onClick={() => router.push('/dashboard')}>
-                    {isHi ? 'होम' : 'Home'}
+                ) : (
+                  <Button fullWidth onClick={() => router.push('/quiz')}>
+                    ⚡ {isHi ? 'क्विज़ खेलो' : 'Take a Quiz'}
                   </Button>
-                </div>
-              }
-            />
+                )}
+
+                {/* Secondary: Continue reading */}
+                <Button
+                  fullWidth
+                  variant="ghost"
+                  onClick={() => router.push('/learn')}
+                >
+                  📖 {isHi ? 'अध्याय पढ़ो' : 'Read a chapter'}
+                </Button>
+
+                <Button fullWidth variant="ghost" onClick={() => router.push('/dashboard')}>
+                  {isHi ? 'होम' : 'Home'}
+                </Button>
+              </div>
+            </div>
           </div>
         ) : (
           /* Flashcard UI */

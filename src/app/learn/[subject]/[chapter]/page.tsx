@@ -1,1285 +1,533 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { supabase } from '@/lib/supabase';
+import {
+  getChapterTopics,
+  getChapterQuestions,
+  getTopicDiagrams,
+  recordLearningEvent,
+} from '@/lib/supabase';
+import { Card, Button, ProgressBar, BottomNav, LoadingFoxy } from '@/components/ui';
 import { SUBJECT_META } from '@/lib/constants';
-import { BottomNav } from '@/components/ui';
+import { BLOOM_CONFIG, type BloomLevel } from '@/lib/cognitive-engine';
+import type { CurriculumTopic } from '@/lib/types';
 
-/* ── Subject display name mapping ── */
-const SUBJECT_DISPLAY: Record<string, string> = {
-  math: 'Mathematics', science: 'Science', physics: 'Physics',
-  chemistry: 'Chemistry', biology: 'Biology', english: 'English',
-  hindi: 'Hindi', sanskrit: 'Sanskrit', social_studies: 'Social Studies',
-  computer_science: 'Computer Science', informatics_practices: 'Informatics Practices',
-  economics: 'Economics', accountancy: 'Accountancy',
-  political_science: 'Political Science', history: 'History', geography: 'Geography',
-};
+const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
 
-/* ── Types ── */
-interface RAGChunk {
-  chunk_id: string;
-  chunk_text: string;
-  topic: string | null;
-  concept: string | null;
-  chapter_title: string;
-  chunk_index: number | null;
-  page_number: number | null;
-  media_url: string | null;
-  media_type: string | null;
-  media_description: string | null;
-  content_type: string | null;
-}
-
-interface RAGQuestion {
-  chunk_id: string;
-  question_text: string | null;
-  answer_text: string | null;
-  question_type: string | null;
-  ncert_exercise: string | null;
-  marks_expected: number | null;
-  bloom_level: string | null;
-  chunk_text: string;
-  topic: string | null;
-  concept: string | null;
-  chapter_title: string | null;
-  media_url: string | null;
-  page_number: number | null;
-}
-
-interface QAQuestion {
-  question_id: string;
+interface Question {
+  id: string;
   question_text: string;
-  question_text_hi: string | null;
-  question_type: string;
-  source_type: string;
-  answer_text: string | null;
-  answer_text_hi: string | null;
-  answer_methodology: string | null;
-  marks_expected: number | null;
-  board_relevance: string | null;
-  board_relevance_note: string | null;
-  ncert_exercise: string | null;
-  ncert_page: number | null;
-  is_ncert: boolean;
-  difficulty: number;
-  bloom_level: string;
-  options: string[] | string | null;
+  question_hi: string | null;
+  options: string | string[];
   correct_answer_index: number;
   explanation: string | null;
-}
-
-interface DbConcept {
-  concept_id: string;
-  concept_number: number;
-  title: string;
-  title_hi: string | null;
-  learning_objective: string;
-  explanation: string;
-  key_formula: string | null;
-  example_title: string | null;
-  example_content: string | null;
-  common_mistakes: string[] | null;
-  exam_tips: string[] | null;
-  diagram_refs: string[] | null;
-  diagram_description: string | null;
-  practice_question: string | null;
-  practice_options: string[] | null;
-  practice_correct_index: number | null;
-  practice_explanation: string | null;
-  difficulty: number;
+  explanation_hi: string | null;
   bloom_level: string;
-  estimated_minutes: number;
+  difficulty: number;
+  chapter_number: number;
 }
 
-interface ConceptEngineResponse {
-  success: boolean;
-  error?: string;
-  data: {
-    chapter_title: string;
-    grade: string;
-    subject: string;
-    chapter_number: number;
-    concepts: DbConcept[];
-    content_chunks: RAGChunk[];
-    diagram_chunks: RAGChunk[];
-    qa_chunks: RAGQuestion[];
-    legacy_questions: QAQuestion[];
-    source: string;
-    total_chunks: number;
-  };
+interface Diagram {
+  id: string;
+  image_url: string;
+  caption: string | null;
+  caption_hi: string | null;
+  alt_text: string | null;
 }
 
-type TabId = 'learn' | 'qa' | 'quiz' | 'foxy';
+interface ConceptState {
+  selectedOption: number | null;
+  submitted: boolean;
+  isCorrect: boolean;
+}
 
-/* ── Source type labels ── */
-const SOURCE_LABELS: Record<string, { label: string; labelHi: string; icon: string; color: string }> = {
-  ncert_exercise: { label: 'NCERT Exercise', labelHi: 'NCERT अभ्यास', icon: '📘', color: 'bg-blue-100 text-blue-800' },
-  ncert_intext: { label: 'In-Text Question', labelHi: 'पाठ में प्रश्न', icon: '📖', color: 'bg-green-100 text-green-800' },
-  ncert_example: { label: 'NCERT Example', labelHi: 'NCERT उदाहरण', icon: '📝', color: 'bg-purple-100 text-purple-800' },
-  cbse_style: { label: 'CBSE Style', labelHi: 'CBSE शैली', icon: '🎯', color: 'bg-orange-100 text-orange-800' },
-  practice: { label: 'Practice', labelHi: 'अभ्यास', icon: '✏️', color: 'bg-gray-100 text-gray-700' },
-};
-
-const BOARD_LABELS: Record<string, { label: string; labelHi: string; color: string }> = {
-  board_appeared: { label: 'Board Exam Pattern', labelHi: 'बोर्ड परीक्षा पैटर्न', color: 'bg-red-100 text-red-700' },
-  board_pattern: { label: 'CBSE Important', labelHi: 'CBSE महत्वपूर्ण', color: 'bg-amber-100 text-amber-700' },
-};
-
-/* ══════════════════════════════════════════════════════════════
-   CHAPTER DETAIL PAGE — Learn / Q&A / Quiz / Foxy
-   URL: /learn/[subject]/[chapter]
-   ══════════════════════════════════════════════════════════════ */
-
-export default function ChapterDetailPage() {
-  const { student, isLoggedIn, isLoading: authLoading, isHi } = useAuth();
+export default function ChapterConceptPage() {
   const router = useRouter();
   const params = useParams();
+  const subject = params.subject as string;
+  const chapterNum = parseInt(params.chapter as string, 10);
 
-  const subjectCode = (params?.subject as string) || '';
-  const chapterNumber = parseInt((params?.chapter as string) || '0', 10);
+  const { student, isLoggedIn, isLoading, isHi } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<TabId>('learn');
-  const [chunks, setChunks] = useState<RAGChunk[]>([]);
-  const [dbConcepts, setDbConcepts] = useState<DbConcept[]>([]);
-  const [questions, setQuestions] = useState<QAQuestion[]>([]);
-  const [ragDiagrams, setRagDiagrams] = useState<RAGChunk[]>([]);
-  const [ragQuestions, setRagQuestions] = useState<RAGQuestion[]>([]);
+  const [topics, setTopics] = useState<CurriculumTopic[]>([]);
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [diagrams, setDiagrams] = useState<Diagram[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [qaFilter, setQaFilter] = useState<string>('all');
-  const [expandedQ, setExpandedQ] = useState<Set<string>>(new Set());
-  const [reviewedQs, setReviewedQs] = useState<Set<string>>(new Set());
-  const [activeConcept, setActiveConcept] = useState(0);
-  const [studyStartTime] = useState(Date.now()); // Track study duration for XP
+  const [currentIdx, setCurrentIdx] = useState(0);
+  // Per-concept quick-check state, keyed by topic index
+  const [conceptStates, setConceptStates] = useState<Record<number, ConceptState>>({});
+  const [completedCount, setCompletedCount] = useState(0);
+  const [showCompletion, setShowCompletion] = useState(false);
 
-  const subjectDisplay = SUBJECT_DISPLAY[subjectCode] || subjectCode;
-  const subjectMeta = SUBJECT_META.find(s => s.code === subjectCode);
-  const chapterTitle = chunks.length > 0 ? chunks[0].chapter_title : `Chapter ${chapterNumber}`;
+  const subMeta = SUBJECT_META.find(s => s.code === subject);
 
-  // Redirect if not logged in
   useEffect(() => {
-    if (!authLoading && !isLoggedIn) router.replace('/login');
-  }, [authLoading, isLoggedIn, router]);
+    if (!isLoading && !isLoggedIn) router.replace('/');
+  }, [isLoading, isLoggedIn, router]);
 
-  // Load chapter data — single Concept Engine API call
-  const loadData = useCallback(async () => {
-    if (!student?.grade || !subjectCode || !chapterNumber) return;
+  const load = useCallback(async () => {
+    if (!student) return;
     setLoading(true);
-    setError(null);
-
-    try {
-      const grade = (student.grade || '9').replace('Grade ', '').trim();
-
-      // Single Concept Engine call replaces 5 separate RPC calls
-      const res = await fetch(
-        `/api/concept-engine?action=chapter&grade=${encodeURIComponent(grade)}&subject=${encodeURIComponent(subjectCode)}&chapter=${encodeURIComponent(String(chapterNumber))}`
-      );
-      const json = await res.json() as ConceptEngineResponse;
-
-      if (!res.ok || !json.success) {
-        console.error('Concept Engine error:', json.error || res.statusText);
-        setError(isHi ? 'अध्याय लोड नहीं हो पाया' : 'Could not load chapter');
-        setChunks([]);
-        setRagDiagrams([]);
-        setRagQuestions([]);
-        setDbConcepts([]);
-        setQuestions([]);
-      } else {
-        setDbConcepts(json.data.concepts || []);
-        setChunks(json.data.content_chunks || []);
-        setRagDiagrams(json.data.diagram_chunks || []);
-        setRagQuestions(json.data.qa_chunks || []);
-        setQuestions(json.data.legacy_questions || []);
-      }
-    } catch (e) {
-      console.error('Load chapter error:', e);
-      setError(isHi ? 'अध्याय लोड नहीं हो पाया' : 'Could not load chapter');
-    }
+    const grade = student.grade;
+    const [topicsData, questionsData, diagramsData] = await Promise.all([
+      getChapterTopics(subject, grade, chapterNum),
+      getChapterQuestions(subject, grade, chapterNum, 30),
+      getTopicDiagrams(subject, grade, chapterNum),
+    ]);
+    setTopics(topicsData as CurriculumTopic[]);
+    setQuestions(questionsData as Question[]);
+    setDiagrams(diagramsData as Diagram[]);
     setLoading(false);
-  }, [student, subjectCode, chapterNumber, isHi]);
+  }, [student, subject, chapterNum]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    if (student) load();
+  }, [student?.id, load]);
 
-  // Use RAG Q&A as primary, fall back to legacy questions if RAG is empty
-  const useRagQa = ragQuestions.length > 0;
-
-  // Filtered Q&A questions (legacy path)
-  const filteredQuestions = useMemo(() => {
-    if (qaFilter === 'all') return questions;
-    return questions.filter((q: QAQuestion) => q.source_type === qaFilter);
-  }, [questions, qaFilter]);
-
-  // Filtered RAG Q&A
-  const filteredRagQuestions = useMemo(() => {
-    if (qaFilter === 'all') return ragQuestions;
-    return ragQuestions.filter((q: RAGQuestion) => q.question_type === qaFilter);
-  }, [ragQuestions, qaFilter]);
-
-  // Toggle question expansion
-  const toggleQuestion = (id: string) => {
-    setExpandedQ((prev: Set<string>) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else {
-        next.add(id);
-        setReviewedQs((r: Set<string>) => new Set(r).add(id));
-      }
-      return next;
-    });
+  const parseOptions = (opts: string | string[]): string[] => {
+    if (Array.isArray(opts)) return opts;
+    try { return JSON.parse(opts); } catch { return []; }
   };
 
-  if (authLoading) {
+  const selectOption = (optIdx: number) => {
+    if (conceptStates[currentIdx]?.submitted) return;
+    setConceptStates(prev => ({
+      ...prev,
+      [currentIdx]: { selectedOption: optIdx, submitted: false, isCorrect: false },
+    }));
+  };
+
+  const submitAnswer = () => {
+    const state = conceptStates[currentIdx];
+    if (!state || state.selectedOption === null || state.submitted) return;
+    const q = questions[currentIdx % Math.max(questions.length, 1)];
+    if (!q) return;
+    const isCorrect = state.selectedOption === q.correct_answer_index;
+    setConceptStates(prev => ({
+      ...prev,
+      [currentIdx]: { ...state, submitted: true, isCorrect },
+    }));
+    if (student && topics[currentIdx]) {
+      recordLearningEvent(
+        student.id,
+        topics[currentIdx].id,
+        isCorrect,
+        'practice',
+        topics[currentIdx].bloom_focus || 'remember',
+      ).catch(() => {});
+    }
+    if (!conceptStates[currentIdx]?.submitted) {
+      setCompletedCount(prev => prev + 1);
+    }
+  };
+
+  const goNext = () => {
+    if (currentIdx < topics.length - 1) {
+      setCurrentIdx(i => i + 1);
+    } else {
+      setShowCompletion(true);
+    }
+  };
+
+  const goPrev = () => {
+    if (currentIdx > 0) setCurrentIdx(i => i - 1);
+  };
+
+  const askFoxy = () => {
+    const topic = topics[currentIdx];
+    const topicParam = topic ? encodeURIComponent(topic.title) : '';
+    router.push(`/foxy?subject=${subject}&mode=doubt&topic=${topicParam}`);
+  };
+
+  if (isLoading || loading) return <LoadingFoxy />;
+
+  if (!student) return null;
+
+  // ── Completion screen ──
+  if (showCompletion) {
+    const correctCount = Object.values(conceptStates).filter(s => s.submitted && s.isCorrect).length;
+    const totalAnswered = Object.values(conceptStates).filter(s => s.submitted).length;
+    const pct = totalAnswered > 0 ? Math.round((correctCount / totalAnswered) * 100) : 0;
+
+    // Which concepts did the student get wrong?
+    const wrongTopics = Object.entries(conceptStates)
+      .filter(([, s]) => s.submitted && !s.isCorrect)
+      .map(([idx]) => topics[parseInt(idx)])
+      .filter(Boolean)
+      .slice(0, 3);
+
+    const scoreGood = pct >= 60 || totalAnswered === 0;
+    const scoreLabel = totalAnswered === 0
+      ? null
+      : pct >= 80
+        ? (isHi ? '🌟 शानदार! तुमने अध्याय में महारत हासिल की!' : '🌟 Excellent! You\'ve mastered this chapter!')
+        : pct >= 60
+          ? (isHi ? '👍 अच्छा! क्विज़ देने के लिए तैयार हो!' : '👍 Good work! Ready for the quiz!')
+          : (isHi ? '💪 थोड़ा और अभ्यास करो — नीचे कमज़ोर अवधारणाएँ देखो' : '💪 A bit more practice needed — see weak concepts below');
+
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500" />
+      <div className="mesh-bg min-h-dvh pb-nav flex flex-col">
+        <header className="page-header">
+          <div className="page-header-inner flex items-center gap-3">
+            <button onClick={() => router.push('/learn')} className="text-[var(--text-3)]">&larr;</button>
+            <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+              {isHi ? 'अध्याय पूरा!' : 'Chapter Complete!'}
+            </h1>
+          </div>
+        </header>
+        <main className="app-container py-6 max-w-lg mx-auto flex flex-col gap-5">
+          <div className="text-center py-4">
+            <div className="text-6xl mb-3">🎉</div>
+            <h2 className="text-2xl font-bold mb-1" style={{ fontFamily: 'var(--font-display)' }}>
+              {isHi ? `अध्याय ${chapterNum} पूरा!` : `Chapter ${chapterNum} Done!`}
+            </h2>
+            <p className="text-sm text-[var(--text-3)]">
+              {subMeta?.name} · {isHi ? `${topics.length} अवधारणाएँ पढ़ीं` : `${topics.length} concepts covered`}
+            </p>
+            {scoreLabel && (
+              <p className="text-sm font-semibold mt-3 px-4" style={{ color: scoreGood ? '#16A34A' : '#D97706' }}>
+                {scoreLabel}
+              </p>
+            )}
+          </div>
+
+          {totalAnswered > 0 && (
+            <Card>
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-sm font-bold text-[var(--text-2)]">
+                  {isHi ? 'त्वरित जाँच स्कोर' : 'Quick Check Score'}
+                </span>
+                <span className="text-lg font-bold" style={{ color: scoreGood ? '#16A34A' : '#DC2626' }}>
+                  {correctCount}/{totalAnswered} ({pct}%)
+                </span>
+              </div>
+              <ProgressBar value={pct} color={scoreGood ? '#16A34A' : '#DC2626'} showPercent />
+            </Card>
+          )}
+
+          {/* Weak concepts — shown when score < 60% */}
+          {wrongTopics.length > 0 && (
+            <div className="rounded-2xl p-4" style={{ background: 'rgba(220,38,38,0.04)', border: '1px solid rgba(220,38,38,0.12)' }}>
+              <p className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: '#DC2626' }}>
+                {isHi ? '⚠️ इन अवधारणाओं पर और ध्यान दो' : '⚠️ Review these concepts'}
+              </p>
+              <div className="space-y-2">
+                {wrongTopics.map((t, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded" style={{ background: 'rgba(220,38,38,0.08)', color: '#DC2626' }}>✗</span>
+                    <span className="text-xs text-[var(--text-2)]">{t.title}</span>
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={() => router.push(`/foxy?subject=${subject}&chapter=${chapterNum}&mode=doubt`)}
+                className="mt-3 text-xs font-bold px-3 py-1.5 rounded-lg transition-all active:scale-95"
+                style={{ background: 'rgba(220,38,38,0.08)', color: '#DC2626', border: '1px solid rgba(220,38,38,0.2)' }}
+              >
+                🦊 {isHi ? 'Foxy से ये समझो' : 'Clear doubts with Foxy'}
+              </button>
+            </div>
+          )}
+
+          <div className="space-y-3">
+            {scoreGood ? (
+              <Button
+                fullWidth
+                color={subMeta?.color}
+                onClick={() => router.push(`/quiz?subject=${subject}&chapter=${chapterNum}`)}
+              >
+                ⚡ {isHi ? `अध्याय ${chapterNum} का क्विज़ दो` : `Take Chapter ${chapterNum} Quiz`}
+              </Button>
+            ) : (
+              <Button
+                fullWidth
+                color={subMeta?.color}
+                onClick={askFoxy}
+              >
+                🦊 {isHi ? 'Foxy के साथ कमज़ोर हिस्से सुधारो' : 'Fix weak spots with Foxy'}
+              </Button>
+            )}
+            <Button
+              fullWidth
+              variant="ghost"
+              onClick={() => router.push(`/learn/${subject}/${chapterNum + 1}`)}
+            >
+              📖 {isHi ? `अगला अध्याय ${chapterNum + 1} →` : `Next Chapter ${chapterNum + 1} →`}
+            </Button>
+            {!scoreGood && (
+              <Button
+                fullWidth
+                variant="ghost"
+                onClick={() => router.push(`/quiz?subject=${subject}&chapter=${chapterNum}`)}
+              >
+                ⚡ {isHi ? 'फिर भी क्विज़ दो' : 'Take Quiz anyway'}
+              </Button>
+            )}
+            <Button fullWidth variant="ghost" onClick={() => router.push('/learn')}>
+              {isHi ? '← विषय सूची पर वापस जाओ' : '← Back to Subjects'}
+            </Button>
+          </div>
+        </main>
+        <BottomNav />
       </div>
     );
   }
 
-  /* ── Tab definitions ── */
-  const tabs: { id: TabId; label: string; labelHi: string; icon: string }[] = [
-    { id: 'learn', label: 'Learn', labelHi: 'सीखें', icon: '📚' },
-    { id: 'qa', label: 'Q&A', labelHi: 'प्रश्न-उत्तर', icon: '❓' },
-    { id: 'quiz', label: 'Quiz', labelHi: 'क्विज़', icon: '🧠' },
-    { id: 'foxy', label: 'Foxy', labelHi: 'फॉक्सी', icon: '🦊' },
-  ];
+  // ── No topics fallback ──
+  if (topics.length === 0) {
+    return (
+      <div className="mesh-bg min-h-dvh pb-nav flex flex-col">
+        <header className="page-header">
+          <div className="page-header-inner flex items-center gap-3">
+            <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)]">&larr;</button>
+            <span className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+              {subMeta?.icon} {subMeta?.name} · {isHi ? `अध्याय ${chapterNum}` : `Chapter ${chapterNum}`}
+            </span>
+          </div>
+        </header>
+        <main className="app-container py-12 text-center">
+          <div className="text-5xl mb-4">📚</div>
+          <p className="text-base font-semibold text-[var(--text-2)] mb-2">
+            {isHi ? 'अभी कोई अवधारणा नहीं मिली' : 'No concepts found for this chapter yet'}
+          </p>
+          <p className="text-sm text-[var(--text-3)] mb-6">
+            {isHi ? 'Foxy से इस अध्याय के बारे में पूछो' : 'Ask Foxy to teach you this chapter'}
+          </p>
+          <Button onClick={askFoxy} color={subMeta?.color}>
+            🦊 {isHi ? 'Foxy से सीखो' : 'Learn with Foxy'}
+          </Button>
+        </main>
+        <BottomNav />
+      </div>
+    );
+  }
+
+  const topic = topics[currentIdx];
+  const question = questions.length > 0 ? questions[currentIdx % questions.length] : null;
+  const diagram = diagrams.length > 0 ? diagrams[currentIdx % diagrams.length] : null;
+  const conceptState = conceptStates[currentIdx];
+  const progressPct = ((currentIdx + 1) / topics.length) * 100;
+  const bloomLevel = (topic.bloom_focus || 'remember') as BloomLevel;
+  const bloomCfg = BLOOM_CONFIG[bloomLevel] || BLOOM_CONFIG.remember;
+  const opts = question ? parseOptions(question.options) : [];
+  const isAnswered = conceptState?.submitted ?? false;
+  const isCorrect = conceptState?.isCorrect ?? false;
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
-      {/* ── Header ── */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-20">
-        <div className="max-w-3xl mx-auto px-4 py-3">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => router.push('/learn')}
-              className="text-gray-500 hover:text-gray-700 p-1"
-              aria-label="Back"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                {subjectMeta && (
-                  <span className="text-lg">{subjectMeta.icon}</span>
-                )}
-                <h1 className="text-base font-semibold text-gray-900 truncate">
-                  {loading ? (isHi ? 'लोड हो रहा है...' : 'Loading...') : chapterTitle}
-                </h1>
-              </div>
-              <div className="flex items-center gap-2 mt-0.5">
-                <p className="text-xs text-gray-500">
-                  {isHi ? `कक्षा ${student?.grade || ''} • ${subjectDisplay}` : `Class ${student?.grade || ''} • ${subjectDisplay}`}
-                  {' • '}Ch. {chapterNumber}
-                </p>
-                <span className="text-[9px] font-semibold bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">
-                  NCERT 2025
-                </span>
-                {!loading && dbConcepts.length > 0 && (
-                  <span className="text-[9px] font-medium bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full">
-                    {dbConcepts.length} {isHi ? 'अवधारणाएं' : 'concepts'}
-                  </span>
-                )}
-              </div>
+    <div className="mesh-bg min-h-dvh pb-nav flex flex-col">
+      {/* Header */}
+      <header className="page-header" style={{ background: 'rgba(251,248,244,0.92)', backdropFilter: 'blur(20px)', borderColor: 'var(--border)' }}>
+        <div className="app-container py-3">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)] mr-1">&larr;</button>
+              <span className="text-lg">{subMeta?.icon}</span>
+              <span className="text-sm font-semibold truncate" style={{ color: subMeta?.color }}>
+                {subMeta?.name} · {isHi ? `अध्याय ${chapterNum}` : `Chapter ${chapterNum}`}
+              </span>
             </div>
+            <span className="text-xs font-medium text-[var(--text-3)]">
+              {currentIdx + 1}/{topics.length}
+            </span>
           </div>
-
-          {/* ── Tab bar ── */}
-          <div className="flex gap-1 mt-3 -mb-px">
-            {tabs.map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex-1 py-2 px-2 text-xs font-medium text-center rounded-t-lg border-b-2 transition-colors ${
-                  activeTab === tab.id
-                    ? 'border-orange-500 text-orange-600 bg-orange-50'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                <span className="mr-1">{tab.icon}</span>
-                {isHi ? tab.labelHi : tab.label}
-                {tab.id === 'qa' && (useRagQa ? ragQuestions.length : questions.length) > 0 && (
-                  <span className="ml-1 text-[10px] bg-gray-200 rounded-full px-1.5">
-                    {useRagQa ? ragQuestions.length : questions.length}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
+          <ProgressBar value={progressPct} color={subMeta?.color} height={5} />
         </div>
       </header>
 
-      {/* ── Content ── */}
-      <main className="max-w-3xl mx-auto px-4 py-4">
-        {error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
-            <p className="text-red-700 text-sm">{error}</p>
-            <button onClick={loadData} className="text-red-600 text-sm underline mt-1">
-              {isHi ? 'पुनः प्रयास करें' : 'Retry'}
-            </button>
-          </div>
-        )}
+      <main className="flex-1 app-container py-4 max-w-2xl mx-auto w-full flex flex-col gap-4">
 
-        {loading && (
-          <div className="space-y-4">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="bg-white rounded-lg p-4 animate-pulse">
-                <div className="h-4 bg-gray-200 rounded w-3/4 mb-3" />
-                <div className="h-3 bg-gray-200 rounded w-full mb-2" />
-                <div className="h-3 bg-gray-200 rounded w-5/6" />
-              </div>
-            ))}
-          </div>
-        )}
+        {/* Concept label */}
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-bold text-[var(--text-3)] uppercase tracking-wider">
+            {isHi ? `अवधारणा ${currentIdx + 1}/${topics.length}` : `Concept ${currentIdx + 1} of ${topics.length}`}
+          </span>
+          <span
+            className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+            style={{ background: `${bloomCfg.color}18`, color: bloomCfg.color }}
+          >
+            {bloomCfg.icon} {isHi ? bloomCfg.labelHi : bloomCfg.label}
+          </span>
+        </div>
 
-        {!loading && activeTab === 'learn' && (
-          <LearnTab
-            dbConcepts={dbConcepts}
-            chunks={chunks}
-            ragDiagrams={ragDiagrams}
-            questions={questions}
-            isHi={isHi}
-            activeConcept={activeConcept}
-            setActiveConcept={setActiveConcept}
-            subjectCode={subjectCode}
-            subjectDisplay={subjectDisplay}
-            grade={student?.grade || ''}
-            chapterTitle={chapterTitle}
-            chapterNumber={chapterNumber}
-            router={router}
-            studentId={student?.id}
-            studyStartTime={studyStartTime}
-          />
-        )}
-        {!loading && activeTab === 'qa' && (
-          <QATab
-            questions={useRagQa ? [] : filteredQuestions}
-            ragQuestions={useRagQa ? filteredRagQuestions : []}
-            allCount={useRagQa ? ragQuestions.length : questions.length}
-            filter={qaFilter}
-            onFilterChange={setQaFilter}
-            expanded={expandedQ}
-            onToggle={toggleQuestion}
-            reviewedCount={reviewedQs.size}
-            isHi={isHi}
-            useRagQa={useRagQa}
-          />
-        )}
-        {!loading && activeTab === 'quiz' && (
-          <QuizTab subjectCode={subjectCode} chapterNumber={chapterNumber} isHi={isHi} router={router} ragQuestionCount={ragQuestions.length} />
-        )}
-        {!loading && activeTab === 'foxy' && (
-          <FoxyTab chapterTitle={chapterTitle} subjectCode={subjectCode} chapterNumber={chapterNumber} isHi={isHi} router={router} />
-        )}
-      </main>
+        {/* Concept card */}
+        <Card className="!p-5">
+          {/* Title */}
+          <h2 className="text-lg font-bold mb-3 leading-tight" style={{ fontFamily: 'var(--font-display)' }}>
+            {isHi && (topic as { title_hi?: string | null }).title_hi
+              ? (topic as { title_hi?: string | null }).title_hi
+              : topic.title}
+          </h2>
 
-      <BottomNav />
-    </div>
-  );
-}
-
-/* ═══ CONCEPT BLOCK TYPE ═══ */
-interface EmbeddedDiagram {
-  url: string;
-  description: string | null;
-  type: string;
-}
-
-interface ConceptBlock {
-  title: string;
-  explanation: string;
-  example: string | null;
-  formula: string | null;
-  diagramRefs: string[];
-  embeddedDiagrams: EmbeddedDiagram[];
-  practiceQ: QAQuestion | null;
-  learningObjective?: string;
-  commonMistakes?: string[];
-  examTips?: string[];
-}
-
-/** Match RAG diagram chunks to a concept by topic/concept name or page proximity.
- *  Returns at most 3 matches, prioritizing topic match over page proximity. */
-function findRagDiagramsForConcept(concept: DbConcept, diagrams: RAGChunk[]): RAGChunk[] {
-  if (diagrams.length === 0) return [];
-
-  const normalize = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
-  const conceptTitle = normalize(concept.title);
-
-  // Score each diagram for relevance to this concept
-  const scored = diagrams.map(d => {
-    let score = 0;
-    // Topic or concept field matches the concept title
-    if (d.topic && normalize(d.topic).includes(conceptTitle)) score += 10;
-    if (d.concept && normalize(d.concept).includes(conceptTitle)) score += 10;
-    // Concept title mentioned in diagram description or chunk text
-    if (d.media_description && normalize(d.media_description).includes(conceptTitle)) score += 5;
-    if (normalize(d.chunk_text).includes(conceptTitle)) score += 3;
-    // Reverse: concept title contains the diagram topic
-    if (d.topic && conceptTitle.includes(normalize(d.topic))) score += 4;
-    return { diagram: d, score };
-  });
-
-  // Return top matches with score > 0, max 3
-  return scored
-    .filter(s => s.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 3)
-    .map(s => s.diagram);
-}
-
-/** Convert DB chapter_concepts into ConceptBlocks with RAG diagram matching */
-function dbConceptsToBlocks(concepts: DbConcept[], ragDiagrams: RAGChunk[]): ConceptBlock[] {
-  return concepts.map((c) => {
-    // Match RAG diagram chunks by topic/concept proximity or page number
-    const matchedDiagrams = findRagDiagramsForConcept(c, ragDiagrams);
-    return {
-      title: c.title,
-      explanation: c.explanation,
-      example: c.example_content || null,
-      formula: c.key_formula || null,
-      diagramRefs: (c.diagram_refs || []) as string[],
-      embeddedDiagrams: matchedDiagrams
-        .filter((d: RAGChunk) => d.media_url)
-        .map((d: RAGChunk) => ({ url: d.media_url!, description: d.media_description || d.chunk_text.slice(0, 100) || '', type: 'diagram' })),
-      practiceQ: c.practice_question ? {
-        question_id: c.concept_id,
-        question_text: c.practice_question,
-        question_text_hi: null,
-        question_type: 'mcq',
-        source_type: 'practice',
-        answer_text: c.practice_explanation || null,
-        answer_text_hi: null,
-        answer_methodology: null,
-        marks_expected: 1,
-        board_relevance: null,
-        board_relevance_note: null,
-        ncert_exercise: null,
-        ncert_page: null,
-        is_ncert: true,
-        difficulty: c.difficulty,
-        bloom_level: c.bloom_level,
-        options: c.practice_options || null,
-        correct_answer_index: c.practice_correct_index ?? 0,
-        explanation: c.practice_explanation || null,
-      } as QAQuestion : null,
-      learningObjective: c.learning_objective,
-      commonMistakes: c.common_mistakes || [],
-      examTips: c.exam_tips || [],
-    };
-  });
-}
-
-/* ═══ LEARN TAB — CONCEPT CARDS (one at a time) ═══ */
-function LearnTab({ dbConcepts, chunks, ragDiagrams, questions, isHi, activeConcept, setActiveConcept, subjectCode, subjectDisplay, grade, chapterTitle, chapterNumber, router, studentId, studyStartTime }: {
-  dbConcepts: DbConcept[]; chunks: RAGChunk[]; ragDiagrams: RAGChunk[]; questions: QAQuestion[]; isHi: boolean;
-  activeConcept: number; setActiveConcept: (n: number) => void;
-  subjectCode: string; subjectDisplay: string; grade: string; chapterTitle: string; chapterNumber: number;
-  router: ReturnType<typeof useRouter>;
-  studentId?: string; studyStartTime: number;
-}) {
-  const [practiceAnswer, setPracticeAnswer] = useState<number | null>(null);
-  const [practiceRevealed, setPracticeRevealed] = useState(false);
-  const [conceptStartTime, setConceptStartTime] = useState(Date.now());
-
-  // Use DB concepts — no regex fallback; concepts must come from generate-concepts pipeline
-  const concepts = useMemo(() => {
-    if (dbConcepts.length > 0) return dbConceptsToBlocks(dbConcepts, ragDiagrams);
-    return []; // No regex fallback — concepts must be generated via generate-concepts pipeline
-  }, [dbConcepts, ragDiagrams]);
-
-  // Reset practice state and track time when concept changes
-  useEffect(() => {
-    setPracticeAnswer(null);
-    setPracticeRevealed(false);
-    setConceptStartTime(Date.now());
-  }, [activeConcept]);
-
-  // Award XP when moving to next concept IF student spent ≥15 seconds (real study)
-  const handleNextConcept = (next: number) => {
-    const timeSpent = (Date.now() - conceptStartTime) / 1000;
-    if (timeSpent >= 15 && studentId) {
-      // Fire-and-forget XP award for real study
-      void supabase.rpc('add_xp', { p_student_id: studentId, p_xp: 5, p_source: `learn_${subjectCode}` }).then(() => {});
-    }
-    setActiveConcept(next);
-  };
-
-  if (concepts.length === 0) {
-    if (chunks.length > 0) {
-      // Chunks exist but structured concepts not yet generated
-      return (
-        <div className="space-y-4">
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-center">
-            <p className="text-3xl mb-2">📖</p>
-            <p className="text-sm font-medium text-amber-800">
-              {isHi ? 'अध्याय सामग्री उपलब्ध है' : 'Chapter content is available'}
-            </p>
-            <p className="text-xs text-amber-600 mt-1">
-              {isHi
-                ? 'संरचित अवधारणाएं तैयार की जा रही हैं। तब तक नीचे पूर्वावलोकन देखें या फॉक्सी से पूछें।'
-                : 'Structured concepts are being prepared. Preview content below or ask Foxy.'}
-            </p>
-          </div>
-
-          {/* RAG chunk previews */}
-          <div className="space-y-2 max-h-80 overflow-y-auto">
-            {chunks.slice(0, 8).map((chunk, i) => (
-              <div key={chunk.chunk_id || i} className="bg-white rounded-lg border border-gray-200 p-3">
-                <p className="text-xs text-gray-600 leading-relaxed">
-                  {chunk.chunk_text.slice(0, 100).trim()}{chunk.chunk_text.length > 100 ? '...' : ''}
+          {/* Diagram */}
+          {diagram && diagram.image_url && (
+            <div className="mb-4 rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={diagram.image_url}
+                alt={diagram.alt_text || topic.title}
+                className="w-full object-contain max-h-52"
+                style={{ background: 'var(--surface-2)' }}
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+              />
+              {(diagram.caption || diagram.caption_hi) && (
+                <p className="text-[11px] text-[var(--text-3)] px-3 py-2 text-center">
+                  {isHi && diagram.caption_hi ? diagram.caption_hi : diagram.caption}
                 </p>
-                {chunk.topic && (
-                  <span className="inline-block mt-1.5 text-[10px] bg-gray-100 text-gray-500 rounded px-1.5 py-0.5">
-                    {chunk.topic}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-
-          {/* Ask Foxy button */}
-          <button
-            onClick={() => {
-              const p = new URLSearchParams({ subject: subjectCode, chapter: chapterTitle, mode: 'learn' });
-              router.push(`/foxy?${p.toString()}`);
-            }}
-            className="w-full bg-orange-500 text-white rounded-lg py-3 text-sm font-medium hover:bg-orange-600 transition-colors"
-          >
-            {isHi ? '🦊 इस अध्याय के बारे में फॉक्सी से पूछें' : '🦊 Ask Foxy about this chapter'}
-          </button>
-        </div>
-      );
-    }
-
-    return (
-      <div className="text-center py-12 space-y-4">
-        <p className="text-4xl mb-1">📖</p>
-        <p className="text-gray-600 text-sm font-medium">
-          {isHi ? 'इस अध्याय की सामग्री तैयार की जा रही है' : 'Content is being prepared for this chapter'}
-        </p>
-        <p className="text-gray-400 text-xs">
-          {isHi ? 'तब तक फॉक्सी से पूछें या क्विज़ आज़माएं' : 'Meanwhile, ask Foxy or try a quiz'}
-        </p>
-        <div className="flex gap-3 justify-center pt-2">
-          <button
-            onClick={() => {
-              const p = new URLSearchParams({ subject: subjectCode, chapter: chapterTitle, mode: 'learn' });
-              router.push(`/foxy?${p.toString()}`);
-            }}
-            className="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 transition-colors"
-          >
-            {isHi ? '🦊 फॉक्सी से पूछें' : '🦊 Ask Foxy'}
-          </button>
-          <button
-            onClick={() => router.push('/foxy')}
-            className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
-          >
-            {isHi ? '🦊 Foxy से पूछें' : '🦊 Ask Foxy'}
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  const concept = concepts[activeConcept] || concepts[0];
-  const total = concepts.length;
-  const isFirst = activeConcept === 0;
-  const isLast = activeConcept === total - 1;
-
-  return (
-    <div className="space-y-3">
-      {/* ── Concept navigator pills ── */}
-      {total > 1 && (
-        <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-hide">
-          {concepts.map((c, i) => (
-            <button
-              key={i}
-              onClick={() => setActiveConcept(i)}
-              className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                i === activeConcept
-                  ? 'bg-orange-500 text-white'
-                  : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
-              }`}
-            >
-              <span className="font-bold">{i + 1}</span>
-              <span className="truncate max-w-[20ch]">{c.title.length > 20 ? c.title.slice(0, 20) + '...' : c.title}</span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* ── Progress dots ── */}
-      <div className="flex items-center justify-between">
-        <div className="flex gap-1.5">
-          {concepts.map((_, i) => (
-            <button
-              key={i}
-              onClick={() => setActiveConcept(i)}
-              className={`w-2 h-2 rounded-full transition-all ${
-                i === activeConcept ? 'bg-orange-500 w-4' : i < activeConcept ? 'bg-orange-300' : 'bg-gray-200'
-              }`}
-            />
-          ))}
-        </div>
-        <span className="text-[10px] text-gray-400 font-medium">
-          {activeConcept + 1}/{total}
-        </span>
-      </div>
-
-      {/* ── Chapter overview card (shown on first concept) ── */}
-      {isFirst && (
-        <div className="bg-gradient-to-br from-gray-50 to-orange-50 rounded-xl border border-gray-200 p-4">
-          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-            {isHi ? 'अध्याय अवलोकन' : 'Chapter Overview'}
-          </h3>
-          <p className="text-sm font-bold text-gray-900 leading-snug">{chapterTitle}</p>
-          <p className="text-xs text-gray-500 mt-1">
-            {isHi ? `कक्षा ${grade}` : `Class ${grade}`} &bull; {subjectDisplay}
-          </p>
-          <div className="flex gap-3 mt-2.5">
-            <span className="text-xs text-gray-600">
-              {concepts.length} {isHi ? 'अवधारणाएं' : 'concepts'}
-            </span>
-            <span className="text-xs text-gray-600">
-              {questions.length} {isHi ? 'प्रश्न-उत्तर उपलब्ध' : 'Q&A available'}
-            </span>
-          </div>
-          <div className="mt-2.5 border-t border-gray-200 pt-2">
-            <span className="text-[10px] font-semibold text-green-700 bg-green-100 px-2 py-0.5 rounded-full">
-              NCERT 2025
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* ── CONCEPT CARD ── */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-
-        {/* Title bar */}
-        <div className="bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-3">
-          <div className="flex items-center gap-2">
-            <span className="bg-white/20 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-              {activeConcept + 1}
-            </span>
-            <h2 className="text-sm font-bold text-white leading-tight">{concept.title}</h2>
-          </div>
-        </div>
-
-        {/* Learning Objective (if from DB concepts) */}
-        {concept.learningObjective && (
-          <div className="px-4 py-2.5 bg-indigo-50 border-b border-indigo-100">
-            <h3 className="text-[10px] uppercase font-semibold text-indigo-500 mb-1 tracking-wide">
-              {isHi ? 'सीखने का उद्देश्य' : 'Learning Objective'}
-            </h3>
-            <p className="text-sm text-indigo-800">{concept.learningObjective}</p>
-          </div>
-        )}
-
-        {/* Explanation */}
-        <div className="px-4 py-3 border-b border-gray-100">
-          <h3 className="text-[10px] uppercase font-semibold text-gray-400 mb-1.5 tracking-wide">
-            {isHi ? 'समझें' : 'Understand'}
-          </h3>
-          <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
-            {concept.explanation}
-          </p>
-        </div>
-
-        {/* Formula (if exists) */}
-        {concept.formula && (
-          <div className="px-4 py-2.5 bg-blue-50 border-b border-blue-100">
-            <h3 className="text-[10px] uppercase font-semibold text-blue-500 mb-1 tracking-wide">
-              {isHi ? 'सूत्र' : 'Formula'}
-            </h3>
-            <p className="text-sm font-mono text-blue-800 bg-white/60 rounded px-3 py-1.5 inline-block">
-              {concept.formula}
-            </p>
-          </div>
-        )}
-
-        {/* Embedded Diagrams — from RAG chunks with media_url (first-class Voyage-indexed content) */}
-        {concept.embeddedDiagrams.length > 0 && (
-          <div className="px-4 py-3 border-b border-gray-100">
-            {concept.embeddedDiagrams.map((d, i) => (
-              <div key={i} className="mb-2">
-                {d.url.endsWith('.pdf') ? (
-                  <div className="bg-purple-50 rounded-lg border border-purple-200 p-3">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-purple-600">📄</span>
-                      <span className="text-xs font-semibold text-purple-700">{isHi ? 'NCERT आरेख' : 'NCERT Diagram'}</span>
-                    </div>
-                    {d.description && <p className="text-xs text-purple-600 mb-2">{d.description}</p>}
-                    <a
-                      href={d.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 text-xs font-medium text-purple-700 bg-white border border-purple-300 rounded-lg px-3 py-1.5 hover:bg-purple-50"
-                    >
-                      {isHi ? 'पाठ्यपुस्तक में देखें' : 'View in textbook'} ↗
-                    </a>
-                  </div>
-                ) : (
-                  <div className="rounded-lg border border-gray-200 overflow-hidden">
-                    <img src={d.url} alt={d.description || 'Diagram'} className="w-full" loading="lazy" />
-                    {d.description && <p className="text-[10px] text-gray-500 px-2 py-1 bg-gray-50">{d.description}</p>}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Referenced Diagrams — shown as labels when no embedded diagrams exist */}
-        {concept.embeddedDiagrams.length === 0 && concept.diagramRefs.length > 0 && (
-          <div className="px-4 py-2.5 bg-purple-50 border-b border-purple-100">
-            <h3 className="text-[10px] uppercase font-semibold text-purple-500 mb-1.5 tracking-wide">
-              {isHi ? 'संदर्भित चित्र' : 'Referenced Diagrams'}
-            </h3>
-            <div className="flex flex-wrap gap-2">
-              {concept.diagramRefs.slice(0, 2).map((ref, i) => (
-                <span key={i} className="text-xs bg-white border border-purple-200 rounded-lg px-2.5 py-1 text-purple-700">
-                  📊 {ref}
-                </span>
-              ))}
+              )}
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Common Mistakes */}
-        {concept.commonMistakes && concept.commonMistakes.length > 0 && (
-          <div className="px-4 py-2.5 bg-red-50 border-b border-red-100">
-            <h3 className="text-[10px] uppercase font-semibold text-red-500 mb-1.5 tracking-wide">
-              {isHi ? '⚠️ सामान्य गलतियाँ' : '⚠️ Common Mistakes'}
-            </h3>
-            <ul className="space-y-1">
-              {concept.commonMistakes.map((m, i) => (
-                <li key={i} className="text-xs text-red-700 flex gap-1.5">
-                  <span className="text-red-400 mt-0.5">•</span>
-                  <span>{typeof m === 'string' ? m : String(m)}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {/* Exam Tips */}
-        {concept.examTips && concept.examTips.length > 0 && (
-          <div className="px-4 py-2.5 bg-amber-50 border-b border-amber-100">
-            <h3 className="text-[10px] uppercase font-semibold text-amber-600 mb-1.5 tracking-wide">
-              {isHi ? '🎯 परीक्षा टिप्स' : '🎯 Exam Tips'}
-            </h3>
-            <ul className="space-y-1">
-              {concept.examTips.map((t, i) => (
-                <li key={i} className="text-xs text-amber-700 flex gap-1.5">
-                  <span className="text-amber-400 mt-0.5">★</span>
-                  <span>{typeof t === 'string' ? t : String(t)}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {/* Example */}
-        {concept.example && (
-          <div className="px-4 py-3 bg-green-50 border-b border-green-100">
-            <h3 className="text-[10px] uppercase font-semibold text-green-600 mb-1.5 tracking-wide">
-              {isHi ? 'उदाहरण' : 'Example'}
-            </h3>
-            <p className="text-sm text-green-800 leading-relaxed whitespace-pre-wrap">
-              {concept.example}
+          {/* Description */}
+          {topic.description && (
+            <p className="text-sm leading-relaxed text-[var(--text-2)] mb-3" style={{ whiteSpace: 'pre-wrap' }}>
+              {topic.description}
             </p>
-          </div>
-        )}
+          )}
 
-        {/* Practice Question */}
-        {concept.practiceQ && (
-          <div className="px-4 py-3 bg-amber-50">
-            <h3 className="text-[10px] uppercase font-semibold text-amber-600 mb-2 tracking-wide">
-              {isHi ? 'अभ्यास' : 'Quick Check'}
-            </h3>
-            <p className="text-sm font-medium text-gray-800 mb-2">{concept.practiceQ.question_text}</p>
-            {concept.practiceQ.options && (
-              <div className="space-y-1.5">
-                {safeParseOptions(concept.practiceQ.options).map((opt: string, oi: number) => {
-                  const isCorrect = oi === concept.practiceQ!.correct_answer_index;
-                  const isSelected = practiceAnswer === oi;
-                  const showResult = practiceRevealed;
+          {/* Learning Objectives */}
+          {topic.learning_objectives && topic.learning_objectives.length > 0 && (
+            <div className="rounded-xl p-3 mb-1" style={{ background: `${subMeta?.color || 'var(--orange)'}08`, border: `1px solid ${subMeta?.color || 'var(--orange)'}20` }}>
+              <p className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: subMeta?.color }}>
+                {isHi ? 'इस अवधारणा में सीखोगे' : 'You will learn'}
+              </p>
+              <ul className="space-y-1">
+                {topic.learning_objectives.slice(0, 4).map((obj, i) => (
+                  <li key={i} className="flex items-start gap-2 text-xs text-[var(--text-2)]">
+                    <span className="mt-0.5 flex-shrink-0" style={{ color: subMeta?.color }}>•</span>
+                    {obj}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </Card>
+
+        {/* Quick Check */}
+        {question && (
+          <div>
+            <p className="text-[11px] font-bold text-[var(--text-3)] uppercase tracking-wider mb-2">
+              {isHi ? '⚡ त्वरित जाँच' : '⚡ Quick Check'}
+            </p>
+            <Card className="!p-4">
+              <p className="text-sm font-semibold leading-relaxed mb-4" style={{ whiteSpace: 'pre-wrap' }}>
+                {isHi && question.question_hi ? question.question_hi : question.question_text}
+              </p>
+
+              <div className="space-y-2">
+                {opts.map((opt, idx) => {
+                  const letter = OPTION_LETTERS[idx] || String(idx + 1);
+                  const optText = opt.replace(/^[A-D][\.\)]\s*/, '');
+                  const isSelected = conceptState?.selectedOption === idx;
+                  const isCorrectOpt = idx === question.correct_answer_index;
+
+                  let bg = 'var(--surface-2)';
+                  let border = 'transparent';
+                  let textColor = 'var(--text-2)';
+                  let letterBg = 'var(--surface-1)';
+                  let letterColor = 'var(--text-3)';
+
+                  if (isAnswered) {
+                    if (isCorrectOpt) {
+                      bg = 'rgba(22,163,74,0.08)'; border = 'rgba(22,163,74,0.4)';
+                      textColor = '#16A34A'; letterBg = '#16A34A'; letterColor = '#fff';
+                    } else if (isSelected) {
+                      bg = 'rgba(220,38,38,0.06)'; border = 'rgba(220,38,38,0.3)';
+                      textColor = '#DC2626'; letterBg = '#DC2626'; letterColor = '#fff';
+                    }
+                  } else if (isSelected) {
+                    bg = `${subMeta?.color || 'var(--orange)'}08`;
+                    border = subMeta?.color || 'var(--orange)';
+                    letterBg = subMeta?.color || 'var(--orange)';
+                    letterColor = '#fff';
+                  }
+
                   return (
                     <button
-                      key={oi}
-                      onClick={() => {
-                        if (!practiceRevealed) {
-                          setPracticeAnswer(oi);
-                          setPracticeRevealed(true);
-                        }
-                      }}
-                      className={`w-full text-left px-3 py-2 rounded-lg text-sm border transition-all ${
-                        showResult && isCorrect
-                          ? 'bg-green-100 border-green-400 text-green-800 font-medium'
-                          : showResult && isSelected && !isCorrect
-                          ? 'bg-red-50 border-red-300 text-red-700'
-                          : isSelected
-                          ? 'bg-orange-50 border-orange-300'
-                          : 'bg-white border-gray-200 hover:border-gray-300'
-                      }`}
+                      key={idx}
+                      onClick={() => selectOption(idx)}
+                      disabled={isAnswered}
+                      className="w-full rounded-xl py-3 px-3 flex items-center gap-3 transition-all active:scale-[0.98] text-left"
+                      style={{ background: bg, border: `1.5px solid ${border}`, minHeight: 48 }}
                     >
-                      <span className="font-mono text-xs mr-2">{String.fromCharCode(65 + oi)})</span>
-                      {opt}
-                      {showResult && isCorrect && <span className="float-right text-green-600">✓</span>}
-                      {showResult && isSelected && !isCorrect && <span className="float-right text-red-500">✗</span>}
+                      <span className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 transition-all" style={{ background: letterBg, color: letterColor }}>
+                        {letter}
+                      </span>
+                      <span className="text-sm font-medium leading-snug flex-1" style={{ color: textColor }}>
+                        {optText}
+                      </span>
+                      {isAnswered && isCorrectOpt && <span className="ml-auto text-base flex-shrink-0">✓</span>}
+                      {isAnswered && isSelected && !isCorrectOpt && <span className="ml-auto text-base flex-shrink-0">✗</span>}
                     </button>
                   );
                 })}
               </div>
-            )}
-            {practiceRevealed && concept.practiceQ.explanation && (
-              <p className="text-xs text-gray-600 mt-2 bg-white rounded p-2 border border-gray-100">
-                {concept.practiceQ.explanation}
-              </p>
-            )}
+
+              {/* Check answer button */}
+              {!isAnswered && (
+                <Button
+                  fullWidth
+                  className="mt-3"
+                  color={subMeta?.color}
+                  onClick={submitAnswer}
+                  disabled={conceptState?.selectedOption === undefined || conceptState?.selectedOption === null}
+                >
+                  {isHi ? 'जवाब जाँचो' : 'Check Answer'}
+                </Button>
+              )}
+
+              {/* Explanation */}
+              {isAnswered && (
+                <div
+                  className="mt-3 rounded-xl p-3"
+                  style={{
+                    background: isCorrect ? 'rgba(22,163,74,0.05)' : 'rgba(220,38,38,0.04)',
+                    border: `1px solid ${isCorrect ? 'rgba(22,163,74,0.15)' : 'rgba(220,38,38,0.12)'}`,
+                  }}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <span>{isCorrect ? '🎉' : '💡'}</span>
+                    <span className="text-xs font-bold" style={{ color: isCorrect ? '#16A34A' : '#DC2626' }}>
+                      {isCorrect
+                        ? (isHi ? 'शाबाश! सही जवाब!' : 'Correct!')
+                        : (isHi ? 'गलत — पर सीखो!' : 'Not quite — here\'s why:')}
+                    </span>
+                  </div>
+                  <p className="text-xs leading-relaxed text-[var(--text-2)]">
+                    {isHi && question.explanation_hi ? question.explanation_hi : question.explanation || (isHi ? 'ऊपर दी गई अवधारणा दोबारा पढ़ो।' : 'Review the concept above.')}
+                  </p>
+                </div>
+              )}
+            </Card>
           </div>
         )}
 
-        {/* Foxy hook */}
-        <div className="px-4 py-2.5 border-t border-gray-100">
-          <button
-            onClick={() => {
-              const p = new URLSearchParams({ subject: subjectCode, chapter: chapterTitle, mode: 'doubt', message: `Explain "${concept.title}" in simple words` });
-              router.push(`/foxy?${p.toString()}`);
-            }}
-            className="flex items-center gap-2 text-xs text-orange-600 hover:text-orange-700 font-medium"
+        {/* Navigation — Next is the primary action */}
+        <div className="flex flex-col gap-2 mt-auto pb-2">
+          <Button
+            fullWidth
+            color={subMeta?.color}
+            onClick={goNext}
           >
-            <span>🦊</span>
-            {isHi ? 'फॉक्सी से यह समझें' : 'Ask Foxy to explain this'}
-          </button>
+            {currentIdx === topics.length - 1
+              ? (isHi ? '✓ अध्याय पूरा करो' : '✓ Finish Chapter')
+              : isHi
+                ? `अगला: ${topics[currentIdx + 1]?.title?.slice(0, 28)} →`
+                : `Next: ${topics[currentIdx + 1]?.title?.slice(0, 28)} →`}
+          </Button>
+          <div className="flex gap-2">
+            <Button variant="ghost" onClick={goPrev} disabled={currentIdx === 0} className="flex-1">
+              ← {isHi ? 'पिछला' : 'Prev'}
+            </Button>
+            <Button variant="soft" color="#E8581C" onClick={askFoxy} className="flex-1">
+              🦊 {isHi ? 'Foxy से पूछो' : 'Ask Foxy'}
+            </Button>
+          </div>
         </div>
-      </div>
+      </main>
 
-      {/* ── Navigation buttons ── */}
-      <div className="flex gap-3">
-        <button
-          onClick={() => handleNextConcept(Math.max(0, activeConcept - 1))}
-          disabled={isFirst}
-          className={`flex-1 py-2.5 rounded-lg text-sm font-medium border transition-all ${
-            isFirst
-              ? 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed'
-              : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300 active:scale-[0.98]'
-          }`}
-        >
-          {isHi ? '← पिछला' : '← Previous'}
-        </button>
-        <button
-          onClick={() => handleNextConcept(Math.min(total - 1, activeConcept + 1))}
-          disabled={isLast}
-          className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-all ${
-            isLast
-              ? 'bg-gray-50 text-gray-300 border border-gray-100 cursor-not-allowed'
-              : 'bg-orange-500 text-white hover:bg-orange-600 active:scale-[0.98]'
-          }`}
-        >
-          {isHi ? 'अगला →' : 'Next →'}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/* ═══ Q&A TAB ═══ */
-function QATab({
-  questions, ragQuestions, allCount, filter, onFilterChange, expanded, onToggle, reviewedCount, isHi, useRagQa,
-}: {
-  questions: QAQuestion[];
-  ragQuestions: RAGQuestion[];
-  allCount: number;
-  filter: string;
-  onFilterChange: (f: string) => void;
-  expanded: Set<string>;
-  onToggle: (id: string) => void;
-  reviewedCount: number;
-  isHi: boolean;
-  useRagQa: boolean;
-}) {
-  // Only show filters that have at least 1 question
-  const sourceCounts: Record<string, number> = {};
-  if (useRagQa) {
-    for (const q of ragQuestions) {
-      const key = q.question_type || 'practice';
-      sourceCounts[key] = (sourceCounts[key] || 0) + 1;
-    }
-  } else {
-    for (const q of questions) {
-      sourceCounts[q.source_type] = (sourceCounts[q.source_type] || 0) + 1;
-    }
-  }
-  const allFilters = [
-    { id: 'all', label: 'All', labelHi: 'सभी' },
-    { id: 'ncert_exercise', label: 'Exercise', labelHi: 'अभ्यास' },
-    { id: 'ncert_intext', label: 'In-Text', labelHi: 'पाठ में' },
-    { id: 'cbse_style', label: 'CBSE Style', labelHi: 'CBSE शैली' },
-    { id: 'practice', label: 'Practice', labelHi: 'अभ्यास' },
-  ];
-  // Show "All" always + only filters that have questions
-  const filters = allFilters.filter(f => f.id === 'all' || (sourceCounts[f.id] || 0) > 0);
-
-  if (allCount === 0) {
-    return (
-      <div className="text-center py-12">
-        <p className="text-4xl mb-3">❓</p>
-        <p className="text-gray-500 text-sm">
-          {isHi ? 'इस अध्याय के प्रश्न जल्द ही उपलब्ध होंगे' : 'Questions for this chapter will be available soon'}
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      {/* Progress bar */}
-      <div className="bg-white rounded-lg border border-gray-200 p-3">
-        <div className="flex justify-between items-center mb-1">
-          <span className="text-xs text-gray-600">
-            {isHi ? `${reviewedCount}/${allCount} प्रश्न देखे` : `${reviewedCount}/${allCount} questions reviewed`}
-          </span>
-          <span className="text-xs font-medium text-orange-600">
-            {allCount > 0 ? Math.round((reviewedCount / allCount) * 100) : 0}%
-          </span>
-        </div>
-        <div className="w-full bg-gray-200 rounded-full h-1.5">
-          <div
-            className="bg-orange-500 h-1.5 rounded-full transition-all"
-            style={{ width: `${allCount > 0 ? (reviewedCount / allCount) * 100 : 0}%` }}
-          />
-        </div>
-      </div>
-
-      {/* Filter pills */}
-      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
-        {filters.map(f => (
-          <button
-            key={f.id}
-            onClick={() => onFilterChange(f.id)}
-            className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-              filter === f.id
-                ? 'bg-orange-500 text-white'
-                : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
-            }`}
-          >
-            {isHi ? f.labelHi : f.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Questions list */}
-      <div className="space-y-3">
-        {useRagQa ? ragQuestions.map((q, qi) => {
-          const isExpanded = expanded.has(q.chunk_id);
-          const srcInfo = SOURCE_LABELS[q.question_type || 'practice'] || SOURCE_LABELS.practice;
-
-          return (
-            <div key={q.chunk_id} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-              <button
-                onClick={() => onToggle(q.chunk_id)}
-                className="w-full text-left p-4 hover:bg-gray-50 transition-colors"
-              >
-                <div className="flex items-start gap-3">
-                  <span className="text-xs text-gray-400 font-mono mt-0.5">{qi + 1}.</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-800 font-medium leading-snug">
-                      {q.question_text || q.chunk_text.slice(0, 200)}
-                    </p>
-                    <div className="flex flex-wrap gap-1.5 mt-2">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium ${srcInfo.color}`}>
-                        {srcInfo.icon} {isHi ? srcInfo.labelHi : srcInfo.label}
-                        {q.ncert_exercise && ` (${q.ncert_exercise})`}
-                      </span>
-                      {q.marks_expected && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-600">
-                          {q.marks_expected} {isHi ? 'अंक' : 'marks'}
-                        </span>
-                      )}
-                      {q.bloom_level && (
-                        <span className="text-[10px] text-gray-400 capitalize">{q.bloom_level}</span>
-                      )}
-                    </div>
-                  </div>
-                  <svg
-                    className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
-                    fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </div>
-              </button>
-              {isExpanded && (
-                <div className="border-t border-gray-100 bg-gray-50 p-4">
-                  {q.answer_text && (
-                    <div className="mb-3">
-                      <h4 className="text-xs font-semibold text-gray-500 uppercase mb-1">
-                        {isHi ? 'उत्तर' : 'Answer'}
-                      </h4>
-                      <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
-                        {q.answer_text}
-                      </div>
-                    </div>
-                  )}
-                  {q.topic && (
-                    <span className="inline-block text-[10px] bg-blue-50 text-blue-600 rounded px-2 py-0.5">
-                      {q.topic}
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        }) : questions.map((q, qi) => {
-          const isExpanded = expanded.has(q.question_id);
-          const srcInfo = SOURCE_LABELS[q.source_type] || SOURCE_LABELS.practice;
-          const boardInfo = q.board_relevance ? BOARD_LABELS[q.board_relevance] : null;
-
-          return (
-            <div key={q.question_id} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-              <button
-                onClick={() => onToggle(q.question_id)}
-                className="w-full text-left p-4 hover:bg-gray-50 transition-colors"
-              >
-                <div className="flex items-start gap-3">
-                  <span className="text-xs text-gray-400 font-mono mt-0.5">
-                    {qi + 1}.
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-800 font-medium leading-snug">
-                      {q.question_text}
-                    </p>
-                    <div className="flex flex-wrap gap-1.5 mt-2">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium ${srcInfo.color}`}>
-                        {srcInfo.icon} {isHi ? srcInfo.labelHi : srcInfo.label}
-                        {q.ncert_exercise && ` (${q.ncert_exercise})`}
-                      </span>
-                      {boardInfo && (
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium ${boardInfo.color}`}>
-                          {isHi ? boardInfo.labelHi : boardInfo.label}
-                        </span>
-                      )}
-                      {q.marks_expected && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-600">
-                          {q.marks_expected} {isHi ? 'अंक' : 'marks'}
-                        </span>
-                      )}
-                      <span className="text-[10px] text-gray-400">
-                        {'●'.repeat(q.difficulty)}{'○'.repeat(3 - q.difficulty)}
-                      </span>
-                    </div>
-                  </div>
-                  <svg
-                    className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
-                    fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </div>
-              </button>
-
-              {isExpanded && (
-                <div className="border-t border-gray-100 bg-gray-50 p-4">
-                  {/* MCQ options */}
-                  {q.options && (
-                    <div className="mb-3">
-                      {(Array.isArray(q.options) ? q.options : safeParseOptions(q.options)).map((opt: string, oi: number) => (
-                        <div
-                          key={oi}
-                          className={`flex items-center gap-2 py-1.5 px-3 rounded text-sm mb-1 ${
-                            oi === q.correct_answer_index
-                              ? 'bg-green-50 text-green-800 font-medium'
-                              : 'text-gray-600'
-                          }`}
-                        >
-                          <span className="font-mono text-xs">
-                            {String.fromCharCode(65 + oi)})
-                          </span>
-                          {opt}
-                          {oi === q.correct_answer_index && (
-                            <span className="ml-auto text-green-600 text-xs">✓</span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Answer text */}
-                  {q.answer_text && (
-                    <div className="mb-3">
-                      <h4 className="text-xs font-semibold text-gray-500 uppercase mb-1">
-                        {isHi ? 'उत्तर' : 'Answer'}
-                      </h4>
-                      <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
-                        {q.answer_text}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Explanation */}
-                  {q.explanation && (
-                    <div className="mb-3">
-                      <h4 className="text-xs font-semibold text-gray-500 uppercase mb-1">
-                        {isHi ? 'व्याख्या' : 'Explanation'}
-                      </h4>
-                      <div className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
-                        {q.explanation}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Board relevance note */}
-                  {q.board_relevance_note && (
-                    <div className="bg-amber-50 border border-amber-200 rounded p-2 mt-2">
-                      <p className="text-xs text-amber-700">
-                        🎯 {q.board_relevance_note}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function safeParseOptions(opts: unknown): string[] {
-  if (Array.isArray(opts)) return opts;
-  if (typeof opts === 'string') {
-    try { return JSON.parse(opts); } catch { return []; }
-  }
-  return [];
-}
-
-/* ═══ QUIZ TAB ═══ */
-function QuizTab({
-  subjectCode, chapterNumber, isHi, router, ragQuestionCount,
-}: {
-  subjectCode: string; chapterNumber: number; isHi: boolean; router: ReturnType<typeof useRouter>; ragQuestionCount: number;
-}) {
-  const quizOptions = [
-    { count: 5, label: 'Quick Quiz', labelHi: 'त्वरित क्विज़', desc: '~5 min', icon: '⚡' },
-    { count: 10, label: 'Practice', labelHi: 'अभ्यास', desc: '~12 min', icon: '📝' },
-    { count: 15, label: 'Full Quiz', labelHi: 'पूर्ण क्विज़', desc: '~20 min', icon: '📋' },
-    { count: 20, label: 'Test Mode', labelHi: 'परीक्षा मोड', desc: '~30 min', icon: '🎯' },
-  ];
-
-  return (
-    <div className="space-y-4">
-      <div className="bg-gradient-to-r from-blue-50 to-cyan-50 rounded-lg p-4 border border-blue-100">
-        <h2 className="text-sm font-semibold text-blue-800">
-          {isHi ? '🧠 अध्याय क्विज़' : '🧠 Chapter Quiz'}
-        </h2>
-        <p className="text-xs text-blue-600 mt-1">
-          {isHi
-            ? 'इस अध्याय के प्रश्नों से अभ्यास करें। प्रश्न दोहराए नहीं जाएंगे।'
-            : 'Practice with questions from this chapter. Questions won\'t repeat until you\'ve seen 80% of the pool.'}
-        </p>
-        <p className="text-xs text-blue-600 mt-1">
-          {ragQuestionCount > 0
-            ? (isHi
-                ? `${ragQuestionCount} NCERT प्रश्न RAG से उपलब्ध`
-                : `${ragQuestionCount} NCERT questions available from RAG`)
-            : (isHi ? 'प्रश्न बैंक से प्रश्न' : 'Questions from question bank')}
-        </p>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        {quizOptions.map(opt => (
-          <button
-            key={opt.count}
-            onClick={() => router.push('/foxy')}
-            className="bg-white rounded-lg border border-gray-200 p-4 text-left hover:border-orange-300 hover:shadow-sm transition-all"
-          >
-            <span className="text-2xl">{opt.icon}</span>
-            <h3 className="text-sm font-semibold text-gray-800 mt-2">
-              {isHi ? opt.labelHi : opt.label}
-            </h3>
-            <p className="text-xs text-gray-500 mt-0.5">
-              {opt.count} {isHi ? 'प्रश्न' : 'questions'} • {opt.desc}
-            </p>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/* ═══ FOXY TAB ═══ */
-function FoxyTab({
-  chapterTitle, subjectCode, chapterNumber, isHi, router,
-}: {
-  chapterTitle: string; subjectCode: string; chapterNumber: number; isHi: boolean; router: ReturnType<typeof useRouter>;
-}) {
-  const suggestions = [
-    { text: isHi ? 'इस अध्याय की मुख्य अवधारणाएं समझाइए' : 'Explain the key concepts of this chapter', mode: 'learn' },
-    { text: isHi ? 'महत्वपूर्ण सूत्र क्या हैं?' : 'What are the important formulas?', mode: 'learn' },
-    { text: isHi ? 'इस अध्याय के लिए परीक्षा टिप्स दीजिए' : 'Give me exam tips for this chapter', mode: 'revision' },
-    { text: isHi ? 'सामान्य गलतियों में मेरी मदद करें' : 'Help me with common mistakes', mode: 'doubt' },
-    { text: isHi ? 'त्वरित संशोधन नोट्स दीजिए' : 'Quick revision notes please', mode: 'revision' },
-  ];
-
-  return (
-    <div className="space-y-4">
-      <div className="bg-gradient-to-r from-orange-50 to-yellow-50 rounded-lg p-4 border border-orange-100">
-        <div className="flex items-center gap-2 mb-2">
-          <span className="text-2xl">🦊</span>
-          <h2 className="text-sm font-semibold text-orange-800">
-            {isHi ? 'फॉक्सी — आपका AI ट्यूटर' : 'Foxy — Your AI Tutor'}
-          </h2>
-        </div>
-        <p className="text-xs text-orange-600">
-          {isHi
-            ? `${chapterTitle} के बारे में कुछ भी पूछें। फॉक्सी NCERT पाठ्यपुस्तक से जवाब देगा।`
-            : `Ask anything about ${chapterTitle}. Foxy answers from NCERT textbook content.`}
-        </p>
-      </div>
-
-      <div className="space-y-2">
-        <p className="text-xs font-medium text-gray-500 uppercase">
-          {isHi ? 'सुझाए गए प्रश्न' : 'Suggested Questions'}
-        </p>
-        {suggestions.map((s, i) => (
-          <button
-            key={i}
-            onClick={() => {
-              const params = new URLSearchParams({
-                subject: subjectCode,
-                chapter: chapterTitle,
-                mode: s.mode,
-                message: s.text,
-                chapter_number: String(chapterNumber),
-              });
-              router.push(`/foxy?${params.toString()}`);
-            }}
-            className="w-full bg-white rounded-lg border border-gray-200 p-3 text-left hover:border-orange-300 hover:shadow-sm transition-all"
-          >
-            <p className="text-sm text-gray-700">{s.text}</p>
-          </button>
-        ))}
-      </div>
-
-      <button
-        onClick={() => {
-          const params = new URLSearchParams({
-            subject: subjectCode,
-            chapter: chapterTitle,
-            chapter_number: String(chapterNumber),
-          });
-          router.push(`/foxy?${params.toString()}`);
-        }}
-        className="w-full bg-orange-500 text-white rounded-lg py-3 text-sm font-medium hover:bg-orange-600 transition-colors"
-      >
-        {isHi ? '🦊 फॉक्सी से चैट करें' : '🦊 Chat with Foxy'}
-      </button>
+      <BottomNav />
     </div>
   );
 }
