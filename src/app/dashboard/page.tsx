@@ -230,9 +230,9 @@ export default function Dashboard() {
                           {meta?.name ?? student.preferred_subject} {nextTopics[0].chapter_number ? `· ${isHi ? 'अध्याय' : 'Ch.'} ${nextTopics[0].chapter_number}` : ''}
                         </p>
                       </div>
-                      {current && (
-                        <MasteryRing value={current.mastery_pct ?? 0} size={56} strokeWidth={4} color="rgba(255,255,255,0.9)">
-                          <span className="text-[11px] font-bold text-white">{Math.round(current.mastery_pct ?? 0)}%</span>
+                      {current && current.total_questions_asked > 0 && (
+                        <MasteryRing value={Math.round((current.total_questions_answered_correctly / current.total_questions_asked) * 100)} size={56} strokeWidth={4} color="rgba(255,255,255,0.9)">
+                          <span className="text-[11px] font-bold text-white">{Math.round((current.total_questions_answered_correctly / current.total_questions_asked) * 100)}%</span>
                         </MasteryRing>
                       )}
                     </div>
