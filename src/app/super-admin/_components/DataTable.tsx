@@ -103,25 +103,27 @@ export default function DataTable<T extends Record<string, unknown>>({
           )}
           {!loading && sortedData.length === 0 && (
             <tr>
-              <td colSpan={columns.length + (selectable ? 1 : 0)} style={{ ...S.td, textAlign: 'center', color: colors.text3, padding: 32 }}>
-                {emptyMessage}
+              <td colSpan={columns.length + (selectable ? 1 : 0)} style={{ ...S.emptyState, borderBottom: 'none' }}>
+                <div style={{ fontSize: 28, marginBottom: 8, opacity: 0.3 }}>∅</div>
+                <div style={{ fontWeight: 500 }}>{emptyMessage}</div>
               </td>
             </tr>
           )}
-          {!loading && sortedData.map(row => {
+          {!loading && sortedData.map((row, idx) => {
             const id = String(row[keyField]);
             const isSelected = selectedIds?.has(id);
+            const zebraColor = idx % 2 === 1 ? colors.surface : colors.bg;
             return (
               <tr
                 key={id}
                 onClick={() => onRowClick?.(row)}
                 style={{
                   cursor: onRowClick ? 'pointer' : 'default',
-                  background: isSelected ? colors.accentLight : undefined,
-                  transition: 'background 0.1s',
+                  background: isSelected ? colors.accentLight : zebraColor,
+                  transition: 'background 0.15s ease',
                 }}
                 onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = colors.surfaceHover; }}
-                onMouseLeave={e => { e.currentTarget.style.background = isSelected ? colors.accentLight : ''; }}
+                onMouseLeave={e => { e.currentTarget.style.background = isSelected ? colors.accentLight : zebraColor; }}
               >
                 {selectable && (
                   <td style={{ ...S.td, textAlign: 'center', width: 40 }} onClick={e => e.stopPropagation()}>

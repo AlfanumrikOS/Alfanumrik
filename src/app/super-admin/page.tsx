@@ -51,6 +51,20 @@ interface AnalyticsData {
   top_students: { id: string; name: string; email: string; grade: string; xp_total: number; streak_days: number }[];
 }
 
+interface RevenueMetrics {
+  estimated_mrr: number;
+  total_paid_users: number;
+  churn_rate: number;
+  plan_distribution?: { plan: string; count: number; percentage: number }[];
+}
+
+interface AIHealthMetrics {
+  success_rate: number;
+  chat_sessions?: { chats_24h: number; chats_7d: number };
+  ai_tutor?: { avg_latency_ms: number; error_rate: number };
+  circuit_breaker?: { state: string };
+}
+
 interface FeatureFlag {
   id: string; name: string; enabled: boolean; description: string | null;
 }
@@ -65,6 +79,8 @@ function ControlRoom() {
   const [recentLogs, setRecentLogs] = useState<AuditEntry[]>([]);
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [flags, setFlags] = useState<FeatureFlag[]>([]);
+  const [revenue, setRevenue] = useState<RevenueMetrics | null>(null);
+  const [aiHealth, setAIHealth] = useState<AIHealthMetrics | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Quick action states
@@ -90,7 +106,12 @@ function ControlRoom() {
         apiFetch('/api/super-admin/analytics'),
         apiFetch('/api/super-admin/feature-flags'),
       ]);
-      if (statsRes.ok) setStats(await statsRes.json());
+      if (statsRes.ok) {
+        const statsData = await statsRes.json();
+        setStats(statsData);
+        if (statsData.revenue) setRevenue(statsData.revenue);
+        if (statsData.ai_health) setAIHealth(statsData.ai_health);
+      }
       if (deployRes.ok) setDeployInfo(await deployRes.json());
       if (obsRes.ok) setObsData(await obsRes.json());
       if (backupRes.ok) { const d = await backupRes.json(); setBackups(d.data || []); }
@@ -374,6 +395,84 @@ function ControlRoom() {
           )}
         </div>
       </div>
+
+      {/* ═══ REVENUE METRICS ═══ */}
+      {revenue && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: colors.text2, textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 8 }}>Revenue</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 12 }}>
+            <StatCard label="Estimated MRR" value={`\u20B9${revenue.estimated_mrr?.toLocaleString() || 0}`} icon="$" accentColor={colors.success} />
+            <StatCard label="Paid Users" value={revenue.total_paid_users || 0} icon="+" accentColor={colors.accent} />
+            <StatCard label="Churn Rate" value={`${revenue.churn_rate || 0}%`} icon="-" accentColor={revenue.churn_rate > 5 ? colors.danger : colors.warning} />
+          </div>
+          {revenue.plan_distribution && revenue.plan_distribution.length > 0 && (
+            <div style={{ ...S.card, padding: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: colors.text2, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Plan Distribution</div>
+              {revenue.plan_distribution.map(p => {
+                const maxPct = Math.max(...revenue.plan_distribution!.map(x => x.percentage), 1);
+                return (
+                  <div key={p.plan} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    <span style={{ fontSize: 11, color: colors.text2, width: 100, textTransform: 'capitalize', flexShrink: 0 }}>{p.plan.replace(/_/g, ' ')}</span>
+                    <div style={{ flex: 1, height: 14, background: colors.surface, borderRadius: 3, overflow: 'hidden' }}>
+                      <div style={{ width: `${(p.percentage / maxPct) * 100}%`, height: '100%', background: colors.success, borderRadius: 3, opacity: 0.6, minWidth: p.count > 0 ? 3 : 0 }} />
+                    </div>
+                    <span style={{ fontSize: 11, color: colors.text3, width: 40, textAlign: 'right' }}>{p.percentage}%</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: colors.text1, width: 30, textAlign: 'right' }}>{p.count}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ═══ AI HEALTH ═══ */}
+      {aiHealth && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: colors.text2, textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 8 }}>AI Health</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 12 }}>
+            <StatCard
+              label="API Success Rate"
+              value={`${aiHealth.success_rate ?? 100}%`}
+              icon="*"
+              accentColor={aiHealth.success_rate >= 99 ? colors.success : aiHealth.success_rate >= 95 ? colors.warning : colors.danger}
+            />
+            <StatCard
+              label="Foxy Chats (24h)"
+              value={aiHealth.chat_sessions?.chats_24h || 0}
+              icon=">"
+              accentColor={colors.accent}
+            />
+            <StatCard
+              label="Avg Latency"
+              value={`${Math.round(aiHealth.ai_tutor?.avg_latency_ms || 0)}ms`}
+              icon="~"
+              accentColor={
+                (aiHealth.ai_tutor?.avg_latency_ms || 0) <= 2000 ? colors.success :
+                (aiHealth.ai_tutor?.avg_latency_ms || 0) <= 5000 ? colors.warning : colors.danger
+              }
+            />
+          </div>
+          {/* Circuit breaker status */}
+          {aiHealth.circuit_breaker && (
+            <div style={{ ...S.card, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{
+                width: 8, height: 8, borderRadius: '50%',
+                background: aiHealth.circuit_breaker.state === 'closed' ? colors.success :
+                  aiHealth.circuit_breaker.state === 'half-open' ? colors.warning : colors.danger,
+              }} />
+              <span style={{ fontSize: 12, color: colors.text1, fontWeight: 500 }}>
+                Circuit Breaker: <code style={{ fontSize: 11, background: colors.surface, padding: '1px 4px', borderRadius: 2 }}>{aiHealth.circuit_breaker.state}</code>
+              </span>
+              {aiHealth.ai_tutor?.error_rate != null && aiHealth.ai_tutor.error_rate > 0 && (
+                <span style={{ fontSize: 11, color: colors.danger, marginLeft: 8 }}>
+                  Error rate: {aiHealth.ai_tutor.error_rate}%
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ═══ PENDING ACTIONS ═══ */}
       {(() => {
