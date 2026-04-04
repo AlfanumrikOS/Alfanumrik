@@ -924,3 +924,113 @@ img, video, iframe, canvas, svg {
 .animate-count-up { animation: countUp 0.6s cubic-bezier(0.34,1.56,0.64,1) both; }
 .animate-confetti { animation: confettiBurst 1s ease-out both; }
 .animate-grade-reveal { animation: gradeReveal 0.5s cubic-bezier(0.34,1.56,0.64,1) 0.3s both; }
+
+/* ═══════════════════════════════════════════════════════════
+   ANDROID FIT & FINISH + RESPONSIVE POLISH
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Android-specific: prevent 300ms tap delay ── */
+html { touch-action: manipulation; }
+
+/* ── Prevent Android overscroll glow / pull bounce ── */
+body { overscroll-behavior-y: contain; }
+
+/* ── Safe Area Insets for Notched Phones ── */
+@supports (padding: env(safe-area-inset-top)) {
+  .page-header {
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+  }
+  .bottom-nav {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  body {
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+}
+
+/* ── Small Screen Optimizations (360px Android phones) ── */
+@media (max-width: 380px) {
+  .app-container {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .grid-stats {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .page-header h1 {
+    font-size: 1rem;
+  }
+}
+
+/* ── Micro-Interactions ── */
+
+/* Card hover/tap effect */
+.card-interactive {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.card-interactive:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+.card-interactive:active {
+  transform: scale(0.98);
+}
+
+/* Smooth page entrance */
+.page-enter {
+  animation: pageSlideIn 0.3s ease-out;
+}
+@keyframes pageSlideIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Pull-to-refresh indicator style */
+.ptr-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+/* Loading shimmer (faster for 4G) */
+.shimmer-fast {
+  animation: shimmer 1.2s infinite;
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-1) 50%, var(--surface-2) 75%);
+  background-size: 200% 100%;
+}
+
+/* ── PWA Install Banner ── */
+.pwa-install-banner {
+  position: fixed;
+  bottom: calc(4rem + env(safe-area-inset-bottom, 0px) + 8px);
+  left: 12px;
+  right: 12px;
+  z-index: 40;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.12);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  animation: pwaBannerSlideUp 0.3s ease-out;
+}
+@keyframes pwaBannerSlideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Respect Reduced Motion for new animations ── */
+@media (prefers-reduced-motion: reduce) {
+  .card-interactive:hover { transform: none; }
+  .card-interactive:active { transform: none; }
+  .page-enter { animation: none; }
+  .shimmer-fast { animation: none; }
+  .pwa-install-banner { animation: none; }
+}

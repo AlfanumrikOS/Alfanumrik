@@ -13,7 +13,7 @@
  */
 
 import { type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { generateEmbedding, getEmbeddingModel } from './embeddings.ts'
+import { generateEmbedding, getEmbeddingModel, getEmbeddingCacheStats } from './embeddings.ts'
 import { rerankDocuments } from './reranking.ts'
 
 // Default syllabus version. Callers may override via RetrievalParams.syllabusVersion.
@@ -120,6 +120,76 @@ interface RawChunkRow {
   marks_expected?: number | null
   bloom_level?: string | null
   ncert_exercise?: string | null
+}
+
+// ---------------------------------------------------------------------------
+// Query Preprocessing
+// ---------------------------------------------------------------------------
+
+/**
+ * Preprocess student query for better semantic matching.
+ * CBSE students often ask vague or very short questions — expand them with
+ * grade/subject/chapter context so the embedding captures intent better.
+ *
+ * Also normalises common Hindi transliterations to English equivalents so
+ * Hinglish queries match English-language NCERT chunks.
+ */
+function preprocessQuery(
+  query: string,
+  grade: string,
+  subject: string,
+  chapter?: string,
+): string {
+  let enriched = query.trim();
+
+  // If query is very short (< 10 chars), it's likely a bare topic name — expand
+  if (enriched.length < 10) {
+    enriched = `CBSE Class ${grade} ${subject}: ${enriched}`;
+  }
+
+  // Add chapter context when available for narrower embedding match
+  if (chapter) {
+    enriched = `${enriched} (Chapter: ${chapter})`;
+  }
+
+  // Normalise common Hindi transliterations (minimal set — only high-frequency)
+  enriched = enriched
+    .replace(/\bkya\b/gi, 'what')
+    .replace(/\bkaise\b/gi, 'how')
+    .replace(/\bkyun\b/gi, 'why')
+    .replace(/\bbatao\b/gi, 'explain')
+    .replace(/\bsamjhao\b/gi, 'explain');
+
+  return enriched;
+}
+
+// ---------------------------------------------------------------------------
+// Retrieval Quality Filter
+// ---------------------------------------------------------------------------
+
+/**
+ * Filter out low-quality retrieval results after vector search / reranking.
+ * Combines similarity score threshold with content quality heuristics.
+ */
+function filterByQuality(
+  chunks: RetrievedChunk[],
+  minScore = 0.3,
+): RetrievedChunk[] {
+  return chunks.filter((chunk) => {
+    // Skip if similarity is too low
+    if (chunk.similarity < minScore) return false;
+
+    // Skip if content is too short (likely a fragment)
+    if (chunk.content.length < 50) return false;
+
+    // Skip if content is mostly code/symbols (not educational text)
+    // Includes Devanagari range \u0900-\u097F for Hindi content
+    const alphaMatches = chunk.content.match(/[a-zA-Z\u0900-\u097F]/g);
+    const alphaRatio = (alphaMatches?.length ?? 0) / chunk.content.length;
+    if (alphaRatio < 0.3) return false;
+
+    return true;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -338,10 +408,16 @@ export async function retrieveChunks(params: RetrievalParams): Promise<Retrieval
   const shouldLog = params.logTrace !== false
 
   try {
-    // ── Step 1: Embed query ──────────────────────────────────────────────────
+    // ── Step 1: Preprocess & embed query ───────────────────────────────────
+    const preprocessed = preprocessQuery(
+      params.query,
+      params.grade,
+      params.subject,
+      params.chapterText,
+    )
     const effectiveQuery = params.concept
-      ? `${params.concept}: ${params.query}`
-      : params.query
+      ? `${params.concept}: ${preprocessed}`
+      : preprocessed
 
     let queryEmbedding: number[] | null = null
     try {
@@ -401,7 +477,10 @@ export async function retrieveChunks(params: RetrievalParams): Promise<Retrieval
     const diagramMap = await fetchDiagramRecords(params.supabase, diagramIds)
 
     // ── Step 5: Build RetrievedChunk[] ───────────────────────────────────────
-    const chunks: RetrievedChunk[] = selectedRaw.map((raw) => mapRawChunk(raw, diagramMap))
+    const rawChunksMapped: RetrievedChunk[] = selectedRaw.map((raw) => mapRawChunk(raw, diagramMap))
+
+    // ── Step 5b: Quality filter — remove low-quality results ────────────────
+    const chunks = filterByQuality(rawChunksMapped)
 
     // ── Step 6: Format context text ──────────────────────────────────────────
     const contextText = formatContextText(chunks)
@@ -409,6 +488,14 @@ export async function retrieveChunks(params: RetrievalParams): Promise<Retrieval
     // ── Step 7: Log retrieval trace (fire-and-forget) ────────────────────────
     const latencyMs = Date.now() - startMs
     let traceId = ''
+
+    // Log embedding cache stats for monitoring
+    const cacheStats = getEmbeddingCacheStats()
+    if (cacheStats.hits + cacheStats.misses > 0 && (cacheStats.hits + cacheStats.misses) % 25 === 0) {
+      console.warn(
+        `retrieval: embedding cache — hitRate=${(cacheStats.hitRate * 100).toFixed(1)}% size=${cacheStats.size}`,
+      )
+    }
 
     if (shouldLog) {
       // Start logging but don't block — we'll collect the id after returning

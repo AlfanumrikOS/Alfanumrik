@@ -38,6 +38,86 @@ const MAX_TEXT_CHARS = 32_000; // ~8000 tokens safety limit
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY_MS = 500;
 
+/**
+ * Embedding versioning — update these when changing models.
+ *
+ * When changing embedding model:
+ * 1. Update EMBEDDING_MODEL and EMBEDDING_VERSION below
+ * 2. Re-embed all rag_content_chunks rows (batch script)
+ * 3. Verify retrieval quality with test suite before cutover
+ */
+export const EMBEDDING_MODEL = 'voyage-3';
+export const EMBEDDING_VERSION = '2026-04-04'; // Update when model changes
+
+// ---------------------------------------------------------------------------
+// Semantic Embedding Cache
+// ---------------------------------------------------------------------------
+// Cache recently computed embeddings to avoid redundant API calls for
+// repeated student queries (e.g. same question asked in a session).
+// Key: hash of input text, Value: embedding vector + expiry timestamp.
+
+const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const MAX_CACHE_SIZE = 500;           // bounded to prevent memory growth
+
+interface CachedEmbedding {
+  embedding: number[];
+  expiry: number;
+}
+
+const embeddingCache = new Map<string, CachedEmbedding>();
+
+// Counters for monitoring cache effectiveness
+let cacheHits = 0;
+let cacheMisses = 0;
+
+function simpleHash(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
+  }
+  return hash.toString(36);
+}
+
+function getCachedEmbedding(text: string): number[] | null {
+  const key = simpleHash(text);
+  const cached = embeddingCache.get(key);
+  if (cached && Date.now() < cached.expiry) {
+    cacheHits++;
+    return cached.embedding;
+  }
+  if (cached) {
+    embeddingCache.delete(key); // Cleanup expired
+  }
+  cacheMisses++;
+  return null;
+}
+
+function setCachedEmbedding(text: string, embedding: number[]): void {
+  if (embeddingCache.size >= MAX_CACHE_SIZE) {
+    // Evict oldest entry (first inserted key)
+    const firstKey = embeddingCache.keys().next().value;
+    if (firstKey !== undefined) embeddingCache.delete(firstKey);
+  }
+  embeddingCache.set(simpleHash(text), {
+    embedding,
+    expiry: Date.now() + CACHE_TTL_MS,
+  });
+}
+
+/**
+ * Returns cache hit/miss stats for monitoring.
+ * Call this periodically or in trace logging.
+ */
+export function getEmbeddingCacheStats(): { hits: number; misses: number; size: number; hitRate: number } {
+  const total = cacheHits + cacheMisses;
+  return {
+    hits: cacheHits,
+    misses: cacheMisses,
+    size: embeddingCache.size,
+    hitRate: total > 0 ? cacheHits / total : 0,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Providers
 // ---------------------------------------------------------------------------
@@ -253,11 +333,33 @@ async function generateEmbeddingsBatched(
 /**
  * Generate an embedding vector for a single text.
  * Returns a 1024-dimensional number array.
+ *
+ * Uses semantic cache: repeated identical texts return cached vectors
+ * without an API call (TTL: 1 hour, max 500 entries).
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
   validateTexts([text]);
+
+  // Check cache first
+  const cached = getCachedEmbedding(text);
+  if (cached) {
+    return cached;
+  }
+
   const { provider, apiKey } = resolveProvider();
   const [embedding] = await generateEmbeddingsBatched([text], provider, apiKey);
+
+  // Cache for future calls
+  setCachedEmbedding(text, embedding);
+
+  // Log cache stats periodically (every 50 misses)
+  if (cacheMisses % 50 === 0 && cacheMisses > 0) {
+    const stats = getEmbeddingCacheStats();
+    console.warn(
+      `embeddings: cache stats — hits=${stats.hits} misses=${stats.misses} size=${stats.size} hitRate=${(stats.hitRate * 100).toFixed(1)}%`,
+    );
+  }
+
   return embedding;
 }
 

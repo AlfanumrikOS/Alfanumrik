@@ -7,6 +7,7 @@ import CookieConsent from '@/components/CookieConsent';
 import JsonLd from '@/components/JsonLd';
 import NetworkStatus from '@/components/NetworkStatus';
 import DemoModeWrapper from '@/components/DemoModeWrapper';
+import PWAInstallPrompt from '@/components/PWAInstallPrompt';
 
 export const metadata: Metadata = {
   title: {
@@ -56,6 +57,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  maximumScale: 5,
+  viewportFit: 'cover',
   themeColor: '#FBF8F4',
 };
 
@@ -85,6 +88,7 @@ export default function RootLayout({
             <div id="main-content" className="app-shell">{children}</div>
           </ErrorBoundary>
           <DemoModeWrapper />
+          <PWAInstallPrompt />
           <RegisterSW />
           <CookieConsent />
         </AuthProvider>
