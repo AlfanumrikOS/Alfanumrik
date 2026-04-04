@@ -564,7 +564,7 @@ export default function TeacherStudentsPage() {
         <div
           style={{
             backgroundColor: '#1C1017',
-            border: '1px solid #DC2626',
+            border: '1px solid var(--danger)',
             borderRadius: 10,
             padding: '14px 18px',
             marginBottom: 16,
@@ -659,7 +659,7 @@ export default function TeacherStudentsPage() {
               style={{
                 padding: '11px 16px',
                 backgroundColor: filterStruggling ? 'var(--mastery-low)' : '#0F172A',
-                border: filterStruggling ? '1px solid #DC2626' : '1px solid color-mix(in srgb, var(--mastery-low) 40%, transparent)',
+                border: filterStruggling ? '1px solid var(--mastery-low)' : '1px solid color-mix(in srgb, var(--mastery-low) 40%, transparent)',
                 borderRadius: 10,
                 color: filterStruggling ? '#fff' : '#FCA5A5',
                 fontSize: 13,

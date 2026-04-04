@@ -102,7 +102,7 @@ export default function OnboardingPage() {
         padding: '24px 16px',
       }}
     >
-      <div style={{ width: '100%', maxWidth: 400, animation: 'fadeInUp 0.5s ease-out' }}>
+      <div style={{ width: '100%', maxWidth: 400, animation: 'slideUp 0.5s ease-out' }}>
         {/* Header */}
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <div className="animate-float" style={{ fontSize: 48, marginBottom: 12 }}>🦊</div>
@@ -120,74 +120,89 @@ export default function OnboardingPage() {
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {/* Grade */}
-            <div>
-              <label
+        <div style={{
+          borderRadius: 16, padding: 24,
+          background: 'var(--surface-1)', border: '1px solid var(--border)',
+          boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
+        }}>
+          <form onSubmit={handleSubmit}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* Grade */}
+              <div style={{ animation: 'slideUp 0.4s ease-out 0.1s both' }}>
+                <label
+                  style={{
+                    display: 'block', fontSize: 13, fontWeight: 600,
+                    color: 'var(--text-2)', marginBottom: 6,
+                  }}
+                >
+                  Your Grade
+                </label>
+                <select
+                  value={grade}
+                  onChange={e => setGrade(e.target.value)}
+                  style={inputStyle}
+                  required
+                >
+                  <option value="" disabled>Select grade...</option>
+                  {GRADES.map(g => (
+                    <option key={g} value={g}>Grade {g}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Board */}
+              <div style={{ animation: 'slideUp 0.4s ease-out 0.2s both' }}>
+                <label
+                  style={{
+                    display: 'block', fontSize: 13, fontWeight: 600,
+                    color: 'var(--text-2)', marginBottom: 6,
+                  }}
+                >
+                  Your Board
+                </label>
+                <select
+                  value={board}
+                  onChange={e => setBoard(e.target.value)}
+                  style={inputStyle}
+                >
+                  {BOARDS.map(b => (
+                    <option key={b} value={b}>{b}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Error */}
+              {error && (
+                <div role="alert" style={{
+                  fontSize: 13, color: 'var(--danger)', margin: 0,
+                  padding: '8px 12px', borderRadius: 12,
+                  background: 'var(--danger-light)',
+                  border: '1px solid color-mix(in srgb, var(--danger) 25%, transparent)',
+                  fontWeight: 600,
+                }}>
+                  {error}
+                </div>
+              )}
+
+              {/* Submit */}
+              <button
+                type="submit"
+                disabled={saving || !grade}
                 style={{
-                  display: 'block', fontSize: 13, fontWeight: 600,
-                  color: 'var(--text-2)', marginBottom: 6,
+                  width: '100%', padding: '14px 0', borderRadius: 12,
+                  background: grade ? 'linear-gradient(135deg, #E8590C, #F59E0B)' : 'var(--surface-3)',
+                  color: grade ? '#fff' : 'var(--text-3)',
+                  border: 'none', fontSize: 15, fontWeight: 700,
+                  cursor: grade && !saving ? 'pointer' : 'not-allowed',
+                  transition: 'all 0.2s ease',
+                  animation: 'slideUp 0.4s ease-out 0.3s both',
                 }}
               >
-                Your Grade
-              </label>
-              <select
-                value={grade}
-                onChange={e => setGrade(e.target.value)}
-                style={inputStyle}
-                required
-              >
-                <option value="" disabled>Select grade…</option>
-                {GRADES.map(g => (
-                  <option key={g} value={g}>Grade {g}</option>
-                ))}
-              </select>
+                {saving ? 'Saving...' : 'Start Learning'}
+              </button>
             </div>
-
-            {/* Board */}
-            <div>
-              <label
-                style={{
-                  display: 'block', fontSize: 13, fontWeight: 600,
-                  color: 'var(--text-2)', marginBottom: 6,
-                }}
-              >
-                Your Board
-              </label>
-              <select
-                value={board}
-                onChange={e => setBoard(e.target.value)}
-                style={inputStyle}
-              >
-                {BOARDS.map(b => (
-                  <option key={b} value={b}>{b}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Error */}
-            {error && (
-              <p style={{ fontSize: 13, color: 'var(--danger)', margin: 0 }}>{error}</p>
-            )}
-
-            {/* Submit */}
-            <button
-              type="submit"
-              disabled={saving || !grade}
-              style={{
-                width: '100%', padding: '14px 0', borderRadius: 12,
-                background: grade ? 'var(--orange)' : 'var(--surface-3)',
-                color: grade ? '#fff' : 'var(--text-3)',
-                border: 'none', fontSize: 15, fontWeight: 700,
-                cursor: grade && !saving ? 'pointer' : 'not-allowed',
-                transition: 'background 0.2s',
-              }}
-            >
-              {saving ? 'Saving...' : 'Start Learning ✨'}
-            </button>
-          </div>
-        </form>
+          </form>
+        </div>
       </div>
     </div>
   );
