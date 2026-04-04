@@ -10,24 +10,29 @@
 
 Alfanumrik has a **remarkably mature core** — the cognitive engine (1,412 lines implementing 15+ cognitive science principles), RAG pipeline (Voyage-3 embeddings + reranking), payment system, and auth infrastructure are production-grade. The app is **v1.x feature-complete** with 48 routes, 23 Edge Functions, 222 migrations, and 345 TypeScript files.
 
-**v2.0 verdict: YES — upgradeable without touching core.** The core algorithms (SM-2, BKT, IRT 3PL, Ebbinghaus retention, ZPD, interleaving, cognitive load management) are solid and well-tested. The upgrade path is primarily **UX/DX surface** + **mobile maturity** + **operational hardening**.
+**v2.0 verdict: YES — upgradeable, with one critical caveat.** The core algorithms (SM-2, BKT, IRT 3PL, Ebbinghaus retention, ZPD, interleaving, cognitive load management) are individually solid. However, the **deep audit revealed critical integration gaps** between these engines that must be addressed for v2.0 to deliver on its learning science promise. The upgrade path is:
+
+1. **Engine integration** (wiring, not algorithm changes) — 3-4 weeks
+2. **UX surface** (simplify, animate, celebrate) — 2-3 weeks
+3. **Mobile maturity** (feature parity, Play Store) — 3-4 weeks
+4. **Operational hardening** (analytics, alerting) — 1-2 weeks
 
 ---
 
-## Section 1: Core Engine Assessment (DO NOT TOUCH)
+## Section 1: Core Engine Assessment
 
-### 1.1 Cognitive Mastery Engine (CME) — PRODUCTION READY
-| Algorithm | Implementation | Status |
-|---|---|---|
-| SM-2 Spaced Repetition | `sm2Update()`, `responseToQuality()`, `nextReviewDate()` | Complete |
-| Bloom's Taxonomy (6 levels) | Full config, progression, mastery tracking | Complete |
-| Zone of Proximal Development | `calculateZPD()` with confidence bands | Complete |
-| Interleaving | 70/30 weak/strong split, no back-to-back | Complete |
-| Cognitive Load Manager | Fatigue detection, ease-off/push-harder/pause | Complete |
-| Metacognitive Reflection | Bilingual prompts (4 types) | Complete |
-| Learning Velocity Analytics | Trend detection (fast/steady/slow) | Complete |
-| Knowledge Gap Detector | Severity classification, bilingual descriptions | Complete |
-| IRT 3PL | Newton-Raphson MLE, `irtProbCorrect()` | Complete |
+### 1.1 Individual Algorithms — PRODUCTION READY (DO NOT TOUCH)
+| Algorithm | Implementation | Status | Maturity |
+|---|---|---|---|
+| SM-2 Spaced Repetition | `sm2Update()`, `responseToQuality()`, `nextReviewDate()` | Complete | 85% |
+| Bloom's Taxonomy (6 levels) | Full config, progression, mastery tracking | Complete | 100% |
+| Zone of Proximal Development | `calculateZPD()` with confidence bands | Complete | 100% |
+| Interleaving | 70/30 weak/strong split, no back-to-back | Complete | 100% |
+| Cognitive Load Manager | Fatigue detection, ease-off/push-harder/pause | Complete | 100% |
+| Metacognitive Reflection | Bilingual prompts (4 types) | Complete | 100% |
+| Learning Velocity Analytics | Trend detection (fast/steady/slow) | Complete | 100% |
+| Knowledge Gap Detector | Severity classification, bilingual descriptions | Complete | 100% |
+| IRT 3PL | Newton-Raphson MLE, `irtProbCorrect()` | Complete | 100% |
 | BKT | Adaptive parameters, per-concept tracking | Complete |
 | Error Classification | Careless / conceptual / misinterpretation | Complete |
 | RL Reward Function | Multi-factor reward for question selection | Complete |
@@ -35,7 +40,40 @@ Alfanumrik has a **remarkably mature core** — the cognitive engine (1,412 line
 | Lesson Flow (6-step) | Hook → Visualization → Guided → Recall → Application → Revision | Complete |
 | Predict-Before-Reveal | Active recall prompts | Complete |
 
-**Verdict:** World-class for an EdTech startup. No changes needed.
+**Verdict:** Individual algorithms are world-class. No algorithm changes needed.
+
+### 1.1b CRITICAL: Engine Integration Gaps
+
+The deep audit revealed that while each engine works in isolation, **they don't talk to each other**. This is the #1 blocker for v2.0 learning effectiveness.
+
+#### The Three Mastery Sources Problem
+| Source | Table | Written By | Read By |
+|---|---|---|---|
+| Quiz BKT path | `concept_mastery` | `queue-consumer` | `quiz-generator` |
+| CME path | `cme_concept_state` | `cme-engine` | `cme-engine` only |
+| SM-2 path | `review_cards` | `queue-consumer` | **Nobody** (orphaned!) |
+
+**Impact:** A student's mastery is tracked in 3 places with no reconciliation. Foxy tutor reads none of them. Quiz generator reads only one.
+
+#### Missing Integration Flows
+
+| Flow | Current State | What Should Happen |
+|---|---|---|
+| Quiz → CME action | CME never called after quiz | Post-quiz should trigger CME `selectNextAction()` to recommend next step |
+| SM-2 → Quiz selection | Review cards created but never fetched | 50% of quiz questions should come from due review cards |
+| Error classification → Remediation | Error type stored in `cme_error_log`, never consumed | Careless → "slow down" nudge; Conceptual → Foxy re-teach with simpler RAG |
+| CME → Foxy difficulty | Foxy ignores learner state entirely | Foxy should adjust explanation depth based on mastery + Bloom level |
+| Bloom's enforcement | `getNextBloomTarget()` exists but never called from quiz-generator | Must master "remember" before receiving "apply" questions |
+
+#### Resolution (Wiring, Not Algorithm Changes)
+This is **plumbing work**, not core algorithm changes:
+1. **Unify learner state** — Single table consolidating all 3 sources (1 migration + 1 RPC)
+2. **Wire CME → quiz recommendation** — Post-quiz calls CME, stores action in `quiz_sessions`
+3. **Fetch review cards in quiz-generator** — Add `WHERE due_date <= now()` query
+4. **Pass learner state to Foxy** — Include mastery + Bloom level in tutor context
+5. **Route error classification** — Feed `classifyError()` output back to adaptation logic
+
+**Effort:** ~3-4 weeks | **Risk of not fixing:** HIGH — students get random difficulty, wasted review cards, no personalized remediation
 
 ### 1.2 RAG Pipeline — PRODUCTION READY
 | Component | Technology | Status |
@@ -169,8 +207,19 @@ Based on educational psychology (Cognitive Load Theory, Self-Determination Theor
 
 ## Section 3: v2.0 Upgrade Roadmap
 
+### Phase 0: Engine Integration (3-4 weeks) �� CRITICAL
+**Goal:** Unify the three mastery sources and wire engine feedback loops
+
+0a. **Unified learner state migration** — Consolidate `concept_mastery` + `cme_concept_state` + `review_cards` into single canonical table with dual-write migration
+0b. **Post-quiz CME action** — After quiz submission, call CME `selectNextAction()`, store recommendation in `quiz_sessions`
+0c. **SM-2 review card fetching** — Quiz generator queries due review cards (50% weight)
+0d. **Bloom's enforcement** — Quiz generator checks `getNextBloomTarget()` before serving questions
+0e. **Error classification routing** — Feed `classifyError()` output to Foxy remediation context
+0f. **Foxy learner context** — Pass mastery + Bloom level + error patterns to foxy-tutor prompts
+0g. **Integration tests** — End-to-end: submit quiz → mastery updates → CME action → Foxy recommendation
+
 ### Phase 1: UX Foundation (2-3 weeks)
-**Goal:** Visible improvement without touching core
+**Goal:** Visible improvement without touching core algorithms
 
 1. **Dark mode** — Add CSS variables for dark theme, toggle in settings
 2. **Framer Motion** — Add `framer-motion` for page transitions and micro-interactions
@@ -279,22 +328,32 @@ These are explicitly preserved per requirements:
 
 ## Section 7: Estimated Effort
 
-| Phase | Duration | Agents Needed |
-|---|---|---|
-| Phase 1: UX Foundation | 2-3 weeks | frontend, quality |
-| Phase 2: Student Psychology | 1-2 weeks | frontend, assessment (validation), quality |
-| Phase 3: Mobile Polish | 3-4 weeks | mobile, testing, quality |
-| Phase 4: Operational | 1-2 weeks | ops, architect, testing |
-| **Total** | **7-11 weeks** | — |
+| Phase | Duration | Agents Needed | Priority |
+|---|---|---|---|
+| Phase 0: Engine Integration | 3-4 weeks | architect, assessment, ai-engineer, backend, testing | CRITICAL |
+| Phase 1: UX Foundation | 2-3 weeks | frontend, quality | HIGH |
+| Phase 2: Student Psychology | 1-2 weeks | frontend, assessment (validation), quality | HIGH |
+| Phase 3: Mobile Polish | 3-4 weeks | mobile, testing, quality | HIGH |
+| Phase 4: Operational | 1-2 weeks | ops, architect, testing | MEDIUM |
+| **Total** | **10-14 weeks** | — | — |
+
+**Note:** Phases 1-2 can run in parallel with Phase 0 (different files). Phase 3 can start after Phase 1.
 
 ---
 
 ## Conclusion
 
-Alfanumrik is **architecturally ready for v2.0**. The core learning science (CME, BKT, SM-2, IRT, RAG) is production-grade and should not be touched. The upgrade path is:
+Alfanumrik is **architecturally ready for v2.0** with one critical prerequisite: **wire the engines together**.
 
-1. **UX surface** — Simplify, animate, celebrate. Follow "one thing at a time" psychology.
-2. **Mobile maturity** — Feature parity, offline, push notifications, Play Store compliance.
-3. **Operational confidence** — Analytics, alerting, load testing.
+The individual learning science algorithms (CME, BKT, SM-2, IRT, RAG/Voyage) are world-class and must NOT be changed. But they currently operate in silos — three separate mastery tables, orphaned review cards, error classification that goes nowhere, and an AI tutor blind to learner state.
 
-The existing Wonder Blocks design system, bilingual support, accessibility patterns (ARIA, keyboard nav, focus management), and security posture (CSP, HSTS, RLS, RBAC) provide an excellent foundation. The v2.0 upgrade is about **polish, not reconstruction**.
+**The v2.0 upgrade path:**
+
+1. **Wire the engines** (Phase 0) — Unify mastery state, connect CME→Quiz→Foxy feedback loops. This is plumbing, not algorithm work.
+2. **Polish the UX** (Phases 1-2) — Simplify to "one thing at a time" psychology. Dark mode, celebrations, smart mode auto-selection.
+3. **Ship the Android app** (Phase 3) — Feature parity, offline, push notifications, Play Store.
+4. **Harden operations** (Phase 4) — Analytics, alerting, load testing.
+
+The existing Wonder Blocks design system, bilingual support (85-100% Hindi coverage), accessibility patterns (AAA contrast, ARIA, keyboard nav), security posture (CSP, HSTS, RLS, RBAC with 148+ policies), and operational infrastructure (Sentry, Upstash, Mailgun) provide an excellent foundation.
+
+**v2.0 is about wiring and polish, not reconstruction.** Estimated total: 10-14 weeks.
