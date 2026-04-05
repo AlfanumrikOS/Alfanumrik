@@ -175,6 +175,33 @@ export default function ChallengeMode({ studentId, studentName, grade, isHi }: C
     }));
   };
 
+  // ─── Quick Match ───
+  const handleQuickMatch = async (subject: string) => {
+    setCreating(true);
+    try {
+      const { data, error } = await supabase.rpc('create_challenge', {
+        p_student_id: studentId,
+        p_subject: subject,
+        p_grade: grade,
+        p_question_count: 10,
+        p_opponent_id: null,
+      });
+      if (!error && data) {
+        await loadChallenges();
+        setSelectedChallenge(data as QuizChallenge);
+        setView('waiting');
+      }
+    } catch { /* ignore */ }
+    setCreating(false);
+  };
+
+  // ─── Rematch ───
+  const handleRematch = (challenge: QuizChallenge) => {
+    setSelectedSubject(challenge.subject);
+    setQuestionCount(challenge.question_count);
+    setView('create');
+  };
+
   // ─── Categorize challenges ───
   const myChallenges = challenges.filter(c =>
     c.challenger_id === studentId || c.opponent_id === studentId
