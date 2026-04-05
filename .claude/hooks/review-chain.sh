@@ -68,6 +68,9 @@ elif echo "$FILE_PATH" | grep -qE "^supabase/functions/_shared/"; then
 elif echo "$FILE_PATH" | grep -qE "^src/lib/(rbac|admin-auth)\.ts$|^src/middleware\.ts$"; then
   REMINDER="REVIEW CHAIN REQUIRED: auth/RBAC was modified. Before task completion, orchestrator must invoke: (1) backend — verify API routes use correct permission codes, (2) frontend — verify usePermissions UI gating matches, (3) ops — verify admin panel access unaffected, (4) testing — update RBAC regression tests."
 
+elif echo "$FILE_PATH" | grep -qE "^src/components/auth/AuthScreen\.tsx$|^src/app/auth/(callback|confirm)/route\.ts$|^src/app/api/auth/|^src/lib/AuthContext\.tsx$|^src/app/onboarding/page\.tsx$|^src/lib/identity/|^supabase/functions/send-auth-email/"; then
+  REMINDER="REVIEW CHAIN REQUIRED — ONBOARDING CRITICAL PATH: This file is part of the signup/onboarding funnel. Breaking it blocks ALL new user acquisition. Before task completion, orchestrator must invoke: (1) architect — verify auth callback chain intact (AuthScreen→callback→bootstrap→AuthContext fallback), (2) testing — run full auth E2E tests (student+teacher+parent signup), (3) backend — verify send-auth-email ALWAYS returns HTTP 200, (4) frontend — verify onboarding page redirects correctly. WARNING: The send-auth-email Edge Function MUST return 200 on ALL code paths — Supabase blocks signup on non-200."
+
 elif echo "$FILE_PATH" | grep -qE "^supabase/migrations/.*(student|chapter|topic|question_bank|quiz|chat|subscription|daily_usage)"; then
   REMINDER="REVIEW CHAIN REQUIRED: migration modifying a mobile-dependent table was added. Before task completion, orchestrator must invoke: (1) mobile — verify mobile models and repositories match updated schema (tables: students, chapters, topics, question_bank, quiz_attempts, chat_sessions, chat_messages, student_daily_usage, student_subscriptions, student_topic_progress), (2) testing — update schema-dependent tests."
 

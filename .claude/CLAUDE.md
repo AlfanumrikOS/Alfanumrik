@@ -96,6 +96,16 @@ AI responses (foxy-tutor, ncert-solver) MUST be age-appropriate for grades 6-12.
 ### P13: Data Privacy
 No PII in client-side logs or Sentry events. Logger redacts: password, token, email, phone, API keys. Student data accessible only to: the student, their linked parent, their assigned teacher, or admin via service role.
 
+### P15: Onboarding Integrity
+The signup→verification→profile→dashboard funnel MUST never break. This is the #1 user acquisition path. Non-negotiable rules:
+1. `send-auth-email` Edge Function MUST return HTTP 200 on ALL code paths (Supabase blocks signup on non-200).
+2. Profile creation uses a 3-layer failsafe: client insert → `/api/auth/bootstrap` server fallback → `AuthContext` runtime fallback. All three layers must remain intact.
+3. Auth callback routes (`/auth/callback`, `/auth/confirm`) MUST handle both PKCE and token_hash flows.
+4. The `bootstrap_user_profile` RPC MUST be idempotent (safe to call multiple times via ON CONFLICT).
+5. Onboarding works for ALL three roles: student (grade/board selection), teacher (school/subjects), parent (phone/link code).
+6. Email verification links MUST use `SITE_URL` from Edge Function secrets, never hardcoded.
+Critical files: `AuthScreen.tsx`, `auth/callback/route.ts`, `auth/confirm/route.ts`, `api/auth/bootstrap/route.ts`, `AuthContext.tsx`, `onboarding/page.tsx`, `send-auth-email/index.ts`, `lib/identity/`.
+
 ### P14: Review Chain Completeness
 When a critical file is modified, mandatory downstream reviewers must be invoked before the task can be marked complete. The PostToolUse hook (`review-chain.sh`) injects reminders automatically. Orchestrator validates at Gate 5. Quality rejects if chains are incomplete. The full matrix is defined in `.claude/skills/review-chains/SKILL.md`.
 
@@ -108,6 +118,7 @@ Summary of mandatory chains:
 | RAG/retrieval | ai-engineer | assessment, testing |
 | Quiz generation | ai-engineer | assessment, testing |
 | RBAC/auth | architect | backend, frontend, ops, testing |
+| Onboarding/signup flow | architect | backend, frontend, testing (E2E for all 3 roles) |
 | Payment flow | backend | architect, testing, **mobile** |
 | Deployment config | architect | ops, testing |
 | Anti-cheat thresholds | assessment + architect | backend, testing |
