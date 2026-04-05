@@ -12,7 +12,7 @@ import { getQuizQuestionsV2, submitQuizResults, saveCognitiveMetrics, saveQuesti
 import { XP_RULES } from '@/lib/xp-rules';
 import { Card, Button, ProgressBar, LoadingFoxy } from '@/components/ui';
 import { SUBJECT_META } from '@/lib/constants';
-import QuizSetup from '@/components/quiz/QuizSetup';
+import QuizSetup, { type SmartSuggestion } from '@/components/quiz/QuizSetup';
 import FeedbackOverlay from '@/components/quiz/FeedbackOverlay';
 
 // Lazy-load QuizResults — only shown after quiz completion (results screen)
@@ -73,6 +73,9 @@ export default function QuizPage() {
   const [examTimeLimit, setExamTimeLimit] = useState(180); // minutes for exam mode
   const [examTimerActive, setExamTimerActive] = useState(false);
   const [selectedChapter, setSelectedChapter] = useState<number | null>(null);
+
+  // Smart Quiz suggestion state
+  const [smartSuggestion, setSmartSuggestion] = useState<SmartSuggestion | null>(null);
 
   // Cognitive 2.0 state
   const [cogLoad, setCogLoad] = useState<CognitiveLoadState>(initialCognitiveLoad());
@@ -141,6 +144,45 @@ export default function QuizPage() {
       }
     }
   }, []);
+
+  // Compute smart quiz suggestion from student data
+  useEffect(() => {
+    if (!student) return;
+    (async () => {
+      try {
+        // Try lowest-mastery topic first
+        const { data: mastery } = await supabase
+          .from('topic_mastery')
+          .select('topic, subject, mastery_level')
+          .eq('student_id', student.id)
+          .order('mastery_level', { ascending: true })
+          .limit(1);
+
+        if (mastery && mastery.length > 0) {
+          setSmartSuggestion({
+            subject: mastery[0].subject || student.preferred_subject || 'science',
+            topicTitle: mastery[0].topic,
+            questionCount: 10,
+            difficulty: 'medium',
+            reason: `Practice "${mastery[0].topic}" — your weakest area`,
+            reasonHi: `"${mastery[0].topic}" का अभ्यास करो — सबसे कमज़ोर क्षेत्र`,
+          });
+          return;
+        }
+
+        // Default for new users with no mastery data
+        setSmartSuggestion({
+          subject: student.preferred_subject || 'science',
+          questionCount: 5,
+          difficulty: 'easy',
+          reason: 'Start with a quick quiz to find your level',
+          reasonHi: 'अपना स्तर जानने के लिए एक क्विक क्विज़ लो',
+        });
+      } catch {
+        // Silently fail — smart suggestion is optional
+      }
+    })();
+  }, [student]);
 
   // Track whether exam auto-submit has fired (prevents double-submit)
   const examAutoSubmittedRef = useRef(false);
@@ -257,6 +299,18 @@ export default function QuizPage() {
     }
     setLoading(false);
   }, [selectedSubject, student, questionCount, selectedDifficulty, selectedChapter, isHi]);
+
+  const handleStartSmartQuiz = useCallback((suggestion: SmartSuggestion) => {
+    const diffMap: Record<string, number | null> = { easy: 1, medium: 2, hard: 3 };
+    startQuiz({
+      subject: suggestion.subject,
+      difficulty: suggestion.difficulty ? (diffMap[suggestion.difficulty] ?? null) : null,
+      questionCount: suggestion.questionCount || 5,
+      quizMode: 'cognitive',
+      examTimeLimit: 180,
+      chapterNumber: null,
+    });
+  }, [startQuiz]);
 
   const parseOptions = (opts: string | string[]): string[] => {
     if (Array.isArray(opts)) return opts;
@@ -489,6 +543,8 @@ export default function QuizPage() {
         initialCount={initialCount}
         initialChapter={initialChapter}
         loading={loading}
+        smartSuggestion={smartSuggestion}
+        onStartSmartQuiz={handleStartSmartQuiz}
         onStart={startQuiz}
         onGoBack={() => router.push('/dashboard')}
       />

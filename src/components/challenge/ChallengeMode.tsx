@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { shareResult, challengeInviteMessage, challengeResultMessage } from '@/lib/share';
 import { SUBJECT_META, GRADE_SUBJECTS } from '@/lib/constants';
@@ -48,6 +48,16 @@ export default function ChallengeMode({ studentId, studentName, grade, isHi }: C
   const availableSubjects = (GRADE_SUBJECTS[grade] || GRADE_SUBJECTS['9'])
     .map(code => SUBJECT_META.find(s => s.code === code))
     .filter(Boolean) as typeof SUBJECT_META[number][];
+
+  // ─── My Record stats ───
+  const myRecord = useMemo(() => {
+    const completed = challenges.filter(c => c.status === 'completed');
+    const wins = completed.filter(c => c.winner_id === studentId).length;
+    const losses = completed.filter(c => c.winner_id && c.winner_id !== studentId).length;
+    const draws = completed.length - wins - losses;
+    const winRate = completed.length > 0 ? Math.round((wins / completed.length) * 100) : 0;
+    return { wins, losses, draws, winRate, total: completed.length };
+  }, [challenges, studentId]);
 
   // ─── Load challenges ───
   const loadChallenges = useCallback(async () => {
@@ -163,6 +173,33 @@ export default function ChallengeMode({ studentId, studentName, grade, isHi }: C
       opponentName,
       isHi,
     }));
+  };
+
+  // ─── Quick Match ───
+  const handleQuickMatch = async (subject: string) => {
+    setCreating(true);
+    try {
+      const { data, error } = await supabase.rpc('create_challenge', {
+        p_student_id: studentId,
+        p_subject: subject,
+        p_grade: grade,
+        p_question_count: 10,
+        p_opponent_id: null,
+      });
+      if (!error && data) {
+        await loadChallenges();
+        setSelectedChallenge(data as QuizChallenge);
+        setView('waiting');
+      }
+    } catch { /* ignore */ }
+    setCreating(false);
+  };
+
+  // ─── Rematch ───
+  const handleRematch = (challenge: QuizChallenge) => {
+    setSelectedSubject(challenge.subject);
+    setQuestionCount(challenge.question_count);
+    setView('create');
   };
 
   // ─── Categorize challenges ───
@@ -388,6 +425,64 @@ export default function ChallengeMode({ studentId, studentName, grade, isHi }: C
         </div>
       </div>
 
+      {/* Quick Match */}
+      <div className="rounded-2xl p-5 mb-4" style={{
+        background: 'linear-gradient(135deg, rgba(232,88,28,0.06), rgba(245,166,35,0.06))',
+        border: '1px solid rgba(232,88,28,0.15)',
+      }}>
+        <div className="flex items-center gap-3 mb-3">
+          <span className="text-2xl">⚔️</span>
+          <div>
+            <h3 className="text-sm font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+              {isHi ? 'क्विक मैच' : 'Quick Match'}
+            </h3>
+            <p className="text-[10px] text-[var(--text-3)]">
+              {isHi ? 'अपने लेवल के किसी से मुकाबला करो' : 'Get matched with someone your level'}
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-2 flex-wrap mb-3">
+          {availableSubjects.slice(0, 4).map(sub => (
+            <button
+              key={sub.code}
+              onClick={() => { setSelectedSubject(sub.code); handleQuickMatch(sub.code); }}
+              disabled={creating}
+              className="text-xs px-3 py-1.5 rounded-full transition-all active:scale-95"
+              style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-2)' }}
+            >
+              {sub.icon} {sub.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* My Record */}
+      {myRecord.total > 0 && (
+        <div className="rounded-2xl p-4 mb-4" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
+          <p className="text-xs font-bold mb-2" style={{ color: 'var(--text-1)', fontFamily: 'var(--font-display)' }}>
+            📊 {isHi ? 'मेरा रिकॉर्ड' : 'My Record'}
+          </p>
+          <div className="flex gap-4">
+            <div className="text-center">
+              <p className="text-lg font-bold" style={{ color: '#16A34A' }}>{myRecord.wins}</p>
+              <p className="text-[10px] text-[var(--text-3)]">{isHi ? 'जीत' : 'Won'}</p>
+            </div>
+            <div className="text-center">
+              <p className="text-lg font-bold" style={{ color: '#DC2626' }}>{myRecord.losses}</p>
+              <p className="text-[10px] text-[var(--text-3)]">{isHi ? 'हार' : 'Lost'}</p>
+            </div>
+            <div className="text-center">
+              <p className="text-lg font-bold" style={{ color: 'var(--text-2)' }}>{myRecord.draws}</p>
+              <p className="text-[10px] text-[var(--text-3)]">{isHi ? 'ड्रॉ' : 'Draw'}</p>
+            </div>
+            <div className="text-center">
+              <p className="text-lg font-bold" style={{ color: 'var(--text-2)' }}>{myRecord.winRate}%</p>
+              <p className="text-[10px] text-[var(--text-3)]">{isHi ? 'जीत दर' : 'Win Rate'}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Create new challenge CTA */}
       <button
         onClick={() => setView('create')}
@@ -503,6 +598,7 @@ export default function ChallengeMode({ studentId, studentName, grade, isHi }: C
                   studentId={studentId}
                   isHi={isHi}
                   onView={() => handleViewResults(c)}
+                  onRematch={c.status === 'completed' ? () => handleRematch(c) : undefined}
                   onShare={c.status === 'pending' && c.challenger_id === studentId
                     ? async () => {
                         if (!c.share_code) return;
@@ -535,9 +631,10 @@ interface ChallengeCardProps {
   onAccept?: () => void;
   onView?: () => void;
   onShare?: () => void;
+  onRematch?: () => void;
 }
 
-function ChallengeCard({ challenge, studentId, isHi, onAccept, onView, onShare }: ChallengeCardProps) {
+function ChallengeCard({ challenge, studentId, isHi, onAccept, onView, onShare, onRematch }: ChallengeCardProps) {
   const c = challenge;
   const status = STATUS_CONFIG[c.status];
   const subjectMeta = SUBJECT_META.find(s => s.code === c.subject);
@@ -592,6 +689,16 @@ function ChallengeCard({ challenge, studentId, isHi, onAccept, onView, onShare }
                 <span className="text-xs">🏆</span>
               )}
             </div>
+          )}
+          {/* Rematch button for completed */}
+          {c.status === 'completed' && onRematch && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onRematch(); }}
+              className="text-[10px] font-semibold px-3 py-1 rounded-lg mt-2"
+              style={{ background: 'rgba(232,88,28,0.08)', color: '#E8581C' }}
+            >
+              🔄 {isHi ? 'दोबारा मैच' : 'Rematch'}
+            </button>
           )}
         </div>
 

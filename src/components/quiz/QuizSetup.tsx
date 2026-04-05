@@ -14,6 +14,18 @@ const DIFF_LABELS = [
   { id: 3, label: 'Hard', labelHi: 'कठिन', icon: '🔴' },
 ];
 
+export interface SmartSuggestion {
+  subject: string;
+  topicId?: string;
+  topicTitle?: string;
+  chapterId?: string;
+  chapterTitle?: string;
+  difficulty?: string;
+  questionCount?: number;
+  reason: string;
+  reasonHi: string;
+}
+
 interface QuizSetupProps {
   isHi: boolean;
   initialSubject: string | null;
@@ -22,6 +34,8 @@ interface QuizSetupProps {
   initialChapter?: number | null;
   loading: boolean;
   studentGrade?: string;
+  smartSuggestion?: SmartSuggestion | null;
+  onStartSmartQuiz?: (suggestion: SmartSuggestion) => void;
   onStart: (opts: {
     subject: string;
     difficulty: number | null;
@@ -41,6 +55,8 @@ export default function QuizSetup({
   initialChapter = null,
   loading,
   studentGrade = '',
+  smartSuggestion,
+  onStartSmartQuiz,
   onStart,
   onGoBack,
 }: QuizSetupProps) {
@@ -54,6 +70,7 @@ export default function QuizSetup({
   // skip the full setup form and show a 1-confirm screen.
   const [showFullSetup, setShowFullSetup] = useState(false);
   const hasContext = !!(initialSubject && initialChapter);
+  const [showCustom, setShowCustom] = useState(!smartSuggestion);
   const [chapters, setChapters] = useState<Array<{ chapter_number: number; title: string }>>([]);
   const [chaptersLoading, setChaptersLoading] = useState(false);
 
@@ -190,6 +207,51 @@ export default function QuizSetup({
         </div>
       </header>
       <main className="app-container py-6 space-y-5">
+
+        {/* Smart Quiz — One Tap Start */}
+        {smartSuggestion && onStartSmartQuiz && (
+          <div className="mb-6 rounded-2xl p-5 relative overflow-hidden"
+            style={{ background: 'linear-gradient(135deg, rgba(232,88,28,0.08), rgba(245,166,35,0.08))', border: '1px solid rgba(232,88,28,0.15)' }}>
+            <div className="flex items-start gap-3">
+              <span className="text-3xl" role="img" aria-label="brain">&#x1F9E0;</span>
+              <div className="flex-1">
+                <h3 className="text-sm font-bold mb-1" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}>
+                  {isHi ? 'स्मार्ट क्विज़' : 'Smart Quiz'}
+                </h3>
+                <p className="text-xs text-[var(--text-3)] mb-3 leading-relaxed">
+                  {smartSuggestion.reasonHi && isHi ? smartSuggestion.reasonHi : smartSuggestion.reason}
+                </p>
+                <div className="flex items-center gap-2 text-[10px] text-[var(--text-3)] mb-3">
+                  <span>{smartSuggestion.questionCount || 5} {isHi ? 'प्रश्न' : 'questions'}</span>
+                  <span>·</span>
+                  <span>~{(smartSuggestion.questionCount || 5) * 2} {isHi ? 'मिनट' : 'min'}</span>
+                  <span>·</span>
+                  <span>{isHi ? 'ऑटो कठिनाई' : 'Auto difficulty'}</span>
+                </div>
+                <button
+                  onClick={() => onStartSmartQuiz(smartSuggestion)}
+                  className="w-full py-3 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.97]"
+                  style={{ background: 'linear-gradient(135deg, #E8581C, #F5A623)' }}
+                >
+                  {isHi ? '\uD83D\uDE80 अभी शुरू करो' : '\uD83D\uDE80 Start Now'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Customize toggle — only shown when smart suggestion is present */}
+        {smartSuggestion && (
+          <button
+            onClick={() => setShowCustom(!showCustom)}
+            className="w-full py-2 text-xs font-semibold text-[var(--text-3)] flex items-center justify-center gap-1"
+          >
+            {showCustom ? (isHi ? 'कम विकल्प \u2191' : 'Fewer options \u2191') : (isHi ? 'क्विज़ कस्टमाइज़ करो \u2193' : 'Customize Quiz \u2193')}
+          </button>
+        )}
+
+        {/* Custom quiz setup — always visible when no smart suggestion, collapsible otherwise */}
+        {showCustom && (<>
 
         {/* Quiz Mode */}
         <div>
@@ -405,6 +467,8 @@ export default function QuizSetup({
             </div>
           </div>
         </Card>
+
+        </>)}
       </main>
       <BottomNav />
     </div>

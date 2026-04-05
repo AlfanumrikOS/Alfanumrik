@@ -21,6 +21,52 @@ const TYPE_CONFIG: Record<string, { icon: string; color: string; label: string; 
   quiz_result: { icon: '⚡', color: '#D97706', label: 'Quiz', labelHi: 'क्विज़' },
 };
 
+const PRIORITY_MAP: Record<string, 'urgent' | 'important' | 'info' | 'social'> = {
+  streak_risk: 'urgent',
+  competition_live: 'urgent',
+  review_due: 'important',
+  quiz_result: 'important',
+  rank_update: 'important',
+  daily_progress: 'info',
+  plan_reminder: 'info',
+  xp_milestone: 'social',
+  streak_milestone: 'social',
+  foxy_motivation: 'social',
+  achievement: 'social',
+  parent_daily_report: 'info',
+};
+
+const PRIORITY_STYLES: Record<string, { borderWidth: string; animate?: boolean; size: string }> = {
+  urgent: { borderWidth: '3px', animate: true, size: 'p-5' },
+  important: { borderWidth: '2px', size: 'p-4' },
+  info: { borderWidth: '1px', size: 'p-4' },
+  social: { borderWidth: '1px', size: 'p-3.5' },
+};
+
+const NOTIFICATION_ACTIONS: Record<string, { label: string; labelHi: string; href: string; icon: string }[]> = {
+  streak_risk: [{ label: 'Save Streak', labelHi: 'स्ट्रीक बचाओ', href: '/quiz', icon: '⚡' }],
+  review_due: [{ label: 'Review Now', labelHi: 'अभी रिव्यू करो', href: '/review', icon: '🔄' }],
+  rank_update: [{ label: 'View Rankings', labelHi: 'रैंकिंग देखो', href: '/leaderboard', icon: '📊' }],
+  quiz_result: [{ label: 'Review Mistakes', labelHi: 'गलतियाँ देखो', href: '/review', icon: '📝' }],
+  competition_live: [{ label: 'Join Now', labelHi: 'अभी जॉइन करो', href: '/leaderboard?tab=compete', icon: '🏆' }],
+  plan_reminder: [{ label: 'Study Now', labelHi: 'अभी पढ़ो', href: '/study-plan', icon: '📅' }],
+  achievement: [{ label: 'Share', labelHi: 'शेयर करो', href: '', icon: '📱' }],
+  xp_milestone: [{ label: 'View Progress', labelHi: 'प्रगति देखो', href: '/progress', icon: '📈' }],
+};
+
+const FILTER_TABS = [
+  { key: 'all', label: 'All', labelHi: 'सभी' },
+  { key: 'urgent', label: '🔥 Urgent', labelHi: '🔥 ज़रूरी' },
+  { key: 'activity', label: '📊 Activity', labelHi: '📊 गतिविधि' },
+  { key: 'achievements', label: '🏆 Achievements', labelHi: '🏆 उपलब्धियाँ' },
+];
+
+const FILTER_TYPES: Record<string, string[]> = {
+  urgent: ['streak_risk', 'competition_live'],
+  activity: ['review_due', 'quiz_result', 'daily_progress', 'plan_reminder', 'rank_update'],
+  achievements: ['xp_milestone', 'streak_milestone', 'achievement', 'foxy_motivation'],
+};
+
 interface Notification {
   id: string;
   type: string;
@@ -61,12 +107,25 @@ function groupNotifications(notifs: Notification[]): { label: string; labelHi: s
   return groups.filter(g => g.items.length > 0);
 }
 
+function groupNotificationsSmart(notifs: Notification[]): { label: string; labelHi: string; items: Notification[] }[] {
+  const urgent = notifs.filter(n => !n.is_read && ['urgent', 'important'].includes(PRIORITY_MAP[n.type] || 'info'));
+  const unread = notifs.filter(n => !n.is_read && !urgent.includes(n));
+  const read = notifs.filter(n => n.is_read);
+
+  const groups: { label: string; labelHi: string; items: Notification[] }[] = [];
+  if (urgent.length > 0) groups.push({ label: 'Needs Attention', labelHi: 'ध्यान दें', items: urgent });
+  if (unread.length > 0) groups.push({ label: 'New Updates', labelHi: 'नई अपडेट', items: unread });
+  if (read.length > 0) groups.push({ label: 'Earlier', labelHi: 'पहले', items: read });
+  return groups;
+}
+
 export default function NotificationsPage() {
   const { student, isLoggedIn, isLoading, isHi } = useAuth();
   const router = useRouter();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('all');
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/login');
@@ -88,8 +147,8 @@ export default function NotificationsPage() {
   const markRead = async (id: string) => {
     try {
       await supabase.rpc('mark_notification_read', { p_notification_id: id });
-      setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
-      setUnreadCount(c => Math.max(0, c - 1));
+      setNotifications((prev: Notification[]) => prev.map((n: Notification) => n.id === id ? { ...n, is_read: true } : n));
+      setUnreadCount((c: number) => Math.max(0, c - 1));
     } catch (e) { console.error('Failed to mark notification read:', e); }
   };
 
@@ -97,7 +156,7 @@ export default function NotificationsPage() {
     if (!student) return;
     try {
       await supabase.rpc('mark_all_notifications_read', { p_student_id: student.id });
-      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+      setNotifications((prev: Notification[]) => prev.map((n: Notification) => ({ ...n, is_read: true })));
       setUnreadCount(0);
     } catch {}
   };
@@ -110,7 +169,15 @@ export default function NotificationsPage() {
 
   if (isLoading || !student) return <LoadingFoxy />;
 
-  const groups = groupNotifications(notifications);
+  // Apply filter
+  const filteredNotifications = filter === 'all'
+    ? notifications
+    : notifications.filter(n => FILTER_TYPES[filter]?.includes(n.type));
+
+  // Use smart grouping for 'all' filter, date-based for specific filters
+  const groups = filter === 'all'
+    ? groupNotificationsSmart(filteredNotifications)
+    : groupNotifications(filteredNotifications);
 
   return (
     <div className="mesh-bg min-h-dvh pb-nav">
@@ -136,20 +203,43 @@ export default function NotificationsPage() {
       </header>
 
       <main className="app-container py-4 space-y-4">
+        {/* Filter Tabs */}
+        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide mb-4">
+          {FILTER_TABS.map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setFilter(tab.key)}
+              className="flex-shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full transition-all"
+              style={{
+                background: filter === tab.key ? 'var(--orange)' : 'var(--surface-2)',
+                color: filter === tab.key ? '#fff' : 'var(--text-3)',
+              }}
+            >
+              {isHi ? tab.labelHi : tab.label}
+            </button>
+          ))}
+        </div>
+
         {loading ? (
           <div className="text-center py-16">
             <div className="text-4xl animate-float mb-3">🔔</div>
             <p className="text-sm text-[var(--text-3)]">{isHi ? 'लोड हो रहा है...' : 'Loading notifications...'}</p>
           </div>
-        ) : notifications.length === 0 ? (
+        ) : filteredNotifications.length === 0 ? (
           <EmptyState
             icon="🔔"
-            title={isHi ? 'अभी तक कोई सूचना नहीं' : 'No notifications yet'}
+            title={isHi ? (filter === 'all' ? 'अभी तक कोई सूचना नहीं' : 'इस श्रेणी में कोई सूचना नहीं') : (filter === 'all' ? 'No notifications yet' : 'No notifications in this category')}
             description={isHi ? 'क्विज़ लो और हम तुम्हें अपडेट करते रहेंगे' : 'Start quizzing and we\'ll keep you updated'}
             action={
-              <Button onClick={() => router.push('/quiz')}>
-                ⚡ {isHi ? 'क्विज़ शुरू करो' : 'Start a Quiz'}
-              </Button>
+              filter === 'all' ? (
+                <Button onClick={() => router.push('/quiz')}>
+                  ⚡ {isHi ? 'क्विज़ शुरू करो' : 'Start a Quiz'}
+                </Button>
+              ) : (
+                <Button onClick={() => setFilter('all')}>
+                  {isHi ? 'सभी सूचनाएँ देखो' : 'View all notifications'}
+                </Button>
+              )
             }
           />
         ) : (
@@ -162,20 +252,24 @@ export default function NotificationsPage() {
                 {group.items.map(n => {
                   const cfg = TYPE_CONFIG[n.type] || { icon: '📌', color: 'var(--text-3)', label: 'Update', labelHi: 'अपडेट' };
                   const isShareable = n.data?.shareable;
+                  const priority = PRIORITY_MAP[n.type] || 'info';
+                  const pStyle = PRIORITY_STYLES[priority];
 
                   return (
                     <button
                       key={n.id}
                       onClick={() => handleTap(n)}
-                      className="w-full rounded-2xl p-4 text-left transition-all active:scale-[0.98] relative overflow-hidden"
+                      className={`w-full rounded-2xl ${pStyle.size} text-left transition-all active:scale-[0.98] relative overflow-hidden`}
                       style={{
                         background: n.is_read ? 'var(--surface-1)' : `${cfg.color}06`,
                         border: `1px solid ${n.is_read ? 'var(--border)' : cfg.color + '25'}`,
+                        borderLeftWidth: n.is_read ? '1px' : pStyle.borderWidth,
+                        borderLeftColor: n.is_read ? 'var(--border)' : cfg.color,
                       }}
                     >
-                      {/* Unread indicator */}
-                      {!n.is_read && (
-                        <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-2xl" style={{ background: cfg.color }} />
+                      {/* Pulsing dot for urgent unread */}
+                      {!n.is_read && priority === 'urgent' && (
+                        <div className="absolute top-3 right-3 w-2.5 h-2.5 rounded-full animate-pulse" style={{ background: cfg.color }} />
                       )}
 
                       <div className="flex items-start gap-3 pl-1">
@@ -221,6 +315,22 @@ export default function NotificationsPage() {
                               </span>
                             )}
                           </div>
+
+                          {/* Inline Actions */}
+                          {NOTIFICATION_ACTIONS[n.type] && (
+                            <div className="flex gap-2 mt-2.5">
+                              {NOTIFICATION_ACTIONS[n.type].map((action, idx) => (
+                                <button
+                                  key={idx}
+                                  onClick={(e) => { e.stopPropagation(); if (action.href) router.push(action.href); }}
+                                  className="text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-all active:scale-95"
+                                  style={{ background: `${cfg.color}12`, color: cfg.color }}
+                                >
+                                  {action.icon} {isHi ? action.labelHi : action.label}
+                                </button>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </button>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { getReviewCards, supabase } from '@/lib/supabase';
 import { Card, Button, LoadingFoxy, BottomNav } from '@/components/ui';
@@ -15,13 +15,31 @@ interface ReviewCard {
   front_text: string;
   back_text: string;
   hint: string;
+  source: string | null;
   ease_factor: number;
   interval_days: number;
   streak: number;
   repetition_count: number;
   total_reviews: number;
   correct_reviews: number;
+  last_review_date: string | null;
+  created_at: string | null;
 }
+
+type SourceFilter = 'all' | 'quiz_wrong_answer' | 'foxy_chat' | 'study_plan';
+
+const SOURCE_BADGES: Record<string, { labelEn: string; labelHi: string; icon: string; color: string }> = {
+  quiz_wrong_answer: { labelEn: 'From Quiz', labelHi: 'क्विज़ से', icon: '🔴', color: '#DC2626' },
+  foxy_chat: { labelEn: 'From Foxy', labelHi: 'Foxy से', icon: '🦊', color: '#E8581C' },
+  study_plan: { labelEn: 'Study Plan', labelHi: 'स्टडी प्लान', icon: '📅', color: '#2563EB' },
+};
+
+const FILTER_TABS: { key: SourceFilter; labelEn: string; labelHi: string }[] = [
+  { key: 'all', labelEn: 'All', labelHi: 'सब' },
+  { key: 'quiz_wrong_answer', labelEn: 'Quiz Mistakes', labelHi: 'क्विज़ गलतियाँ' },
+  { key: 'foxy_chat', labelEn: 'Foxy Saves', labelHi: 'Foxy सेव' },
+  { key: 'study_plan', labelEn: 'Study Plan', labelHi: 'स्टडी प्लान' },
+];
 
 const QUALITY_BUTTONS = [
   { q: 0, label: '😵 Forgot', labelHi: '😵 भूल गया', color: '#DC2626' },
@@ -41,7 +59,13 @@ interface RetentionTest {
 export default function ReviewPage() {
   const { student, isLoggedIn, isLoading, isHi } = useAuth();
   const router = useRouter();
-  const [cards, setCards] = useState<ReviewCard[]>([]);
+  const searchParams = useSearchParams();
+  const initialFilter = (searchParams.get('filter') as SourceFilter) || 'all';
+  const [allCards, setAllCards] = useState<ReviewCard[]>([]);
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>(initialFilter);
+  const cards = sourceFilter === 'all'
+    ? allCards
+    : allCards.filter(c => c.source === sourceFilter);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [flipped, setFlipped] = useState(false);
   const [showHint, setShowHint] = useState(false);
@@ -50,6 +74,15 @@ export default function ReviewPage() {
   const [retentionTests, setRetentionTests] = useState<RetentionTest[]>([]);
   // Track which subjects were reviewed this session for the guided post-review CTA
   const [reviewedSubjects, setReviewedSubjects] = useState<string[]>([]);
+  const [showIntro, setShowIntro] = useState(false);
+
+  // Reset card index when filter changes
+  const handleFilterChange = (f: SourceFilter) => {
+    setSourceFilter(f);
+    setCurrentIdx(0);
+    setFlipped(false);
+    setShowHint(false);
+  };
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/');
@@ -60,10 +93,15 @@ export default function ReviewPage() {
     setLoading(true);
     try {
       const data = await getReviewCards(student.id, 20);
-      setCards(Array.isArray(data) ? data : []);
+      const loaded = Array.isArray(data) ? data : [];
+      setAllCards(loaded);
+      // Show intro for first-time users (no cards at all or no reviews done)
+      if (loaded.length > 0 && loaded.every(c => (c.total_reviews || 0) === 0)) {
+        setShowIntro(true);
+      }
     } catch (e) {
       console.error('Failed to load review cards:', e);
-      setCards([]);
+      setAllCards([]);
     }
     // Load pending retention tests
     try {
@@ -102,7 +140,7 @@ export default function ReviewPage() {
       console.warn('[Security] Card already reviewed in this session:', card.id);
       // Skip to next card
       if (currentIdx < cards.length - 1) setCurrentIdx(i => i + 1);
-      else setCards([]);
+      else setAllCards([]);
       return;
     }
 
@@ -189,7 +227,7 @@ export default function ReviewPage() {
       setCurrentIdx((i) => i + 1);
     } else {
       // All done
-      setCards([]);
+      setAllCards([]);
     }
   };
 
@@ -228,6 +266,61 @@ export default function ReviewPage() {
 
       <main className="flex-1 max-w-lg mx-auto px-4 py-6 w-full flex flex-col">
         <SectionErrorBoundary section="Flashcard Review">
+
+        {/* First-time intro */}
+        {showIntro && (
+          <div
+            className="mb-4 rounded-2xl p-4 relative"
+            style={{ background: 'rgba(232,88,28,0.05)', border: '1px solid rgba(232,88,28,0.12)' }}
+          >
+            <button
+              onClick={() => setShowIntro(false)}
+              className="absolute top-2 right-2 text-xs text-[var(--text-3)] w-6 h-6 flex items-center justify-center"
+              aria-label="Close"
+            >
+              x
+            </button>
+            <div className="flex items-start gap-3">
+              <span className="text-2xl flex-shrink-0">🧠</span>
+              <div>
+                <p className="text-sm font-bold mb-1" style={{ color: 'var(--text-1)', fontFamily: 'var(--font-display)' }}>
+                  {isHi ? 'Spaced Repetition क्या है?' : 'How Spaced Repetition Works'}
+                </p>
+                <p className="text-xs text-[var(--text-3)] leading-relaxed">
+                  {isHi
+                    ? 'जो concepts तुम भूलते हो, वो बार-बार दिखाई देंगे। जो याद रहते हैं, वो कम आएंगे। इससे याददाश्त मजबूत होती है!'
+                    : 'Cards you struggle with appear more often. Cards you know well appear less frequently. This strengthens your long-term memory!'}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Source filter tabs */}
+        {!loading && allCards.length > 0 && (
+          <div className="mb-4 flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+            {FILTER_TABS.map(tab => {
+              const count = tab.key === 'all'
+                ? allCards.length
+                : allCards.filter(c => c.source === tab.key).length;
+              if (tab.key !== 'all' && count === 0) return null;
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => handleFilterChange(tab.key)}
+                  className="flex-shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full transition-all active:scale-95"
+                  style={{
+                    background: sourceFilter === tab.key ? 'var(--orange)' : 'var(--surface-2)',
+                    color: sourceFilter === tab.key ? '#fff' : 'var(--text-3)',
+                  }}
+                >
+                  {isHi ? tab.labelHi : tab.labelEn} ({count})
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {/* Retention Tests Due */}
         {retentionTests.length > 0 && !loading && (
           <div className="mb-4 rounded-2xl p-4" style={{ background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.15)' }}>
@@ -345,13 +438,51 @@ export default function ReviewPage() {
               </span>
             </div>
 
-            {/* Subject/Chapter label */}
-            <div className="text-center">
+            {/* Subject/Chapter label + source badge */}
+            <div className="text-center flex items-center justify-center gap-2 flex-wrap">
               <span className="text-xs font-semibold px-3 py-1 rounded-full"
                 style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }}>
                 {card.subject} · {card.chapter_title || card.topic}
               </span>
+              {card.source && SOURCE_BADGES[card.source] && (
+                <span
+                  className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                  style={{
+                    background: `${SOURCE_BADGES[card.source].color}10`,
+                    color: SOURCE_BADGES[card.source].color,
+                  }}
+                >
+                  {SOURCE_BADGES[card.source].icon} {isHi ? SOURCE_BADGES[card.source].labelHi : SOURCE_BADGES[card.source].labelEn}
+                </span>
+              )}
             </div>
+
+            {/* Review stats */}
+            {(card.total_reviews > 0 || card.last_review_date) && (
+              <div className="text-center">
+                <span className="text-[10px] text-[var(--text-3)]">
+                  {card.total_reviews > 0 && (
+                    <>
+                      {isHi
+                        ? `${card.total_reviews} बार रिव्यू किया`
+                        : `Reviewed ${card.total_reviews} time${card.total_reviews > 1 ? 's' : ''}`}
+                    </>
+                  )}
+                  {card.total_reviews > 0 && card.last_review_date && ' · '}
+                  {card.last_review_date && (
+                    <>
+                      {isHi ? 'आखिरी: ' : 'Last: '}
+                      {(() => {
+                        const days = Math.floor((Date.now() - new Date(card.last_review_date).getTime()) / 86400000);
+                        if (days === 0) return isHi ? 'आज' : 'Today';
+                        if (days === 1) return isHi ? 'कल' : 'Yesterday';
+                        return isHi ? `${days} दिन पहले` : `${days} days ago`;
+                      })()}
+                    </>
+                  )}
+                </span>
+              </div>
+            )}
 
             {/* Card */}
             <button
