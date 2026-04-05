@@ -328,7 +328,7 @@ export default function LeaderboardPage() {
                           <div className="flex gap-3 text-[10px] text-[var(--text-3)] mt-1">
                             {entry.accuracy != null && <span>🎯 {Math.round(entry.accuracy)}%</span>}
                             {entry.streak > 0 && <span>🔥 {entry.streak}d</span>}
-                            {entry.topics_mastered > 0 && <span>🧠 {entry.topics_mastered}</span>}
+                            {(entry.topics_mastered ?? 0) > 0 && <span>🧠 {entry.topics_mastered}</span>}
                           </div>
                         </div>
                         <div className="text-right flex-shrink-0">

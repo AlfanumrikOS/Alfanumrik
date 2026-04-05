@@ -990,7 +990,7 @@ export default function FoxyPage() {
                       <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--text-3)' }}>What should the correct answer be? (optional)</label>
                       <textarea
                         value={reportCorrection}
-                        onChange={e => setReportCorrection(e.target.value)}
+                        onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setReportCorrection(e.target.value)}
                         placeholder={language === 'hi' ? 'सही उत्तर लिखें...' : 'Type the correct answer here...'}
                         rows={3}
                         className="w-full text-sm rounded-xl px-3 py-2 resize-none outline-none"
@@ -1047,7 +1047,7 @@ export default function FoxyPage() {
               <button onClick={() => setShowTopicSheet(false)} className="text-xs text-[var(--text-3)] font-semibold">Close</button>
             </div>
             <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-2">
-              {topics.map(topic => {
+              {topics.map((topic: any) => {
                 const mastery = masteryData.find((m: any) => m.topic_tag === topic.title || m.chapter_number === topic.chapter_number);
                 const pct = mastery?.mastery_percent || 0;
                 const lvl = mastery?.mastery_level || 'not_started';
