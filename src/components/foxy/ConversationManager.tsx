@@ -243,7 +243,7 @@ export function ConversationManager({
             ref={searchRef}
             type="text"
             value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
             placeholder={isHi ? '\u091A\u0948\u091F \u0916\u094B\u091C\u094B...' : 'Search chats...'}
             className="flex-1 bg-transparent outline-none text-xs"
             style={{ color: 'var(--text-1)' }}
@@ -302,7 +302,7 @@ export function ConversationManager({
                   {isHi ? GROUP_LABELS[group].hi : GROUP_LABELS[group].en}
                 </div>
                 <div className="space-y-0.5">
-                  {items.map(conv => {
+                  {items.map((conv: ConversationSummary) => {
                     const subCfg = SUBJECTS[conv.subject];
                     const isActive = conv.id === activeConversationId;
                     return (

@@ -299,8 +299,8 @@ export default function FoxyPage() {
     setLessonStepsCompleted([]);
     setXpGained(0);
     // Update active state in conversation list
-    setConversations(prev =>
-      prev.map(c => ({ ...c, isActive: c.id === sessionId }))
+    setConversations((prev: ConversationSummary[]) =>
+      prev.map((c: ConversationSummary) => ({ ...c, isActive: c.id === sessionId }))
     );
   }, [activeSubject]);
 
@@ -314,7 +314,7 @@ export default function FoxyPage() {
     setLessonStep('hook');
     setLessonStepsCompleted([]);
     setXpGained(0);
-    setConversations(prev => prev.map(c => ({ ...c, isActive: false })));
+    setConversations((prev: ConversationSummary[]) => prev.map((c: ConversationSummary) => ({ ...c, isActive: false })));
   }, []);
 
   // Refresh conversation list after a message is sent (debounced)
@@ -373,7 +373,7 @@ export default function FoxyPage() {
     if (!text.trim()) return;
     // Client-side length limit matching server-side MAX_MESSAGE_LENGTH
     if (text.length > 5000) {
-      setMessages(p => [...p, { id: Date.now(), role: 'tutor', content: 'Message too long! Please keep it under 5000 characters.', timestamp: new Date().toISOString() }]);
+      setMessages((p: ChatMessage[]) => [...p, { id: Date.now(), role: 'tutor', content: 'Message too long! Please keep it under 5000 characters.', timestamp: new Date().toISOString() }]);
       return;
     }
 
@@ -389,30 +389,30 @@ export default function FoxyPage() {
       // NOTE: Do NOT call recordUsage here — the server-side edge function
       // increments usage atomically BEFORE processing. Client-side increment
       // caused double-counting (every chat counted twice).
-      setChatUsage(prev => prev ? { ...prev, count: prev.count + 1, remaining: Math.max(0, prev.remaining - 1), allowed: prev.count + 1 < prev.limit } : prev);
+      setChatUsage((prev: UsageResult | null) => prev ? { ...prev, count: prev.count + 1, remaining: Math.max(0, prev.remaining - 1), allowed: prev.count + 1 < prev.limit } : prev);
     }
 
-    setMessages(p => [...p, { id: Date.now(), role: 'student', content: text, timestamp: new Date().toISOString() }]);
+    setMessages((p: ChatMessage[]) => [...p, { id: Date.now(), role: 'student', content: text, timestamp: new Date().toISOString() }]);
     setLoading(true); setFoxyState('thinking'); setShowTopicSheet(false);
     try {
-      const chapCtx = selectedChapters.length > 0 ? topics.filter(t => selectedChapters.includes(t.id)).map(t => `Ch ${t.chapter_number}: ${t.title}`).join(', ') : null;
+      const chapCtx = selectedChapters.length > 0 ? topics.filter((t: any) => selectedChapters.includes(t.id)).map((t: any) => `Ch ${t.chapter_number}: ${t.title}`).join(', ') : null;
       const resp = await callFoxyTutor({ message: text, student_id: student?.id || '', student_name: student?.name || 'Student', grade: studentGrade, subject: activeSubject, language, mode: sessionMode, topic_id: activeTopic?.id || null, topic_title: activeTopic?.title || null, session_id: chatSessionId, selected_chapters: chapCtx });
       // Server confirmed daily limit reached — show UpgradeModal
       if (resp.limitReached) {
-        setMessages(p => [...p, { id: Date.now() + 1, role: 'tutor', content: resp.reply, timestamp: new Date().toISOString() }]);
+        setMessages((p: ChatMessage[]) => [...p, { id: Date.now() + 1, role: 'tutor', content: resp.reply, timestamp: new Date().toISOString() }]);
         setShowLimitModal(true);
         setFoxyState('idle');
         setLoading(false);
         return;
       }
-      setMessages(p => [...p, { id: Date.now() + 1, role: 'tutor', content: resp.reply, timestamp: new Date().toISOString(), xp: resp.xp_earned }]);
-      if (resp.xp_earned > 0) setXpGained(p => p + resp.xp_earned);
+      setMessages((p: ChatMessage[]) => [...p, { id: Date.now() + 1, role: 'tutor', content: resp.reply, timestamp: new Date().toISOString(), xp: resp.xp_earned }]);
+      if (resp.xp_earned > 0) setXpGained((p: number) => p + resp.xp_earned);
       if (resp.session_id) setChatSessionId(resp.session_id);
       setFoxyState('happy'); setTimeout(() => setFoxyState('idle'), 2000);
       // Refresh conversation list so new/updated sessions appear
       setTimeout(refreshConversations, 1000);
     } catch {
-      setMessages(p => [...p, { id: Date.now() + 1, role: 'tutor', content: 'Oops! Please try again.', timestamp: new Date().toISOString() }]);
+      setMessages((p: ChatMessage[]) => [...p, { id: Date.now() + 1, role: 'tutor', content: 'Oops! Please try again.', timestamp: new Date().toISOString() }]);
       setFoxyState('idle');
     }
     setLoading(false);
@@ -420,15 +420,15 @@ export default function FoxyPage() {
 
   // Feedback: thumbs up/down
   const handleFeedback = useCallback(async (msgId: number, isUp: boolean) => {
-    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, feedback: isUp ? 'up' : 'down' } : m));
+    setMessages((prev: ChatMessage[]) => prev.map((m: ChatMessage) => m.id === msgId ? { ...m, feedback: isUp ? 'up' : 'down' } : m));
     try { await supabase.rpc('track_ai_quality', { p_subject: activeSubject, p_is_thumbs_up: isUp }); } catch {}
   }, [activeSubject]);
 
   // Open report modal
   const openReport = useCallback((msgId: number) => {
-    const foxyMsg = messages.find(m => m.id === msgId);
-    const idx = messages.findIndex(m => m.id === msgId);
-    const studentMsg = idx > 0 ? messages.slice(0, idx).reverse().find(m => m.role === 'student') : null;
+    const foxyMsg = messages.find((m: ChatMessage) => m.id === msgId);
+    const idx = messages.findIndex((m: ChatMessage) => m.id === msgId);
+    const studentMsg = idx > 0 ? messages.slice(0, idx).reverse().find((m: ChatMessage) => m.role === 'student') : null;
     if (!foxyMsg) return;
     setReportModal({ msgId, studentMsg: studentMsg?.content || '', foxyMsg: foxyMsg.content });
     setReportReason('wrong_answer'); setReportCorrection(''); setReportSuccess(false);
@@ -437,7 +437,7 @@ export default function FoxyPage() {
   // Save tutor message to spaced repetition / flashcard deck
   const saveToFlashcard = useCallback(async (msgId: number, content: string) => {
     if (!student?.id) return;
-    setSavedMessageIds(prev => new Set(prev).add(msgId));
+    setSavedMessageIds((prev: Set<number>) => new Set(prev).add(msgId));
     try {
       await supabase.from('spaced_repetition_cards').insert({
         student_id: student.id,
@@ -450,7 +450,7 @@ export default function FoxyPage() {
       });
     } catch {
       // Non-critical — silently undo optimistic update
-      setSavedMessageIds(prev => { const s = new Set(prev); s.delete(msgId); return s; });
+      setSavedMessageIds((prev: Set<number>) => { const s = new Set(prev); s.delete(msgId); return s; });
     }
   }, [student?.id, activeSubject, activeTopic]);
 
@@ -474,7 +474,7 @@ export default function FoxyPage() {
         language,
       });
       await supabase.rpc('track_ai_quality', { p_subject: activeSubject, p_is_report: true });
-      setMessages(prev => prev.map(m => m.id === reportModal.msgId ? { ...m, reported: true, feedback: 'down' } : m));
+      setMessages((prev: ChatMessage[]) => prev.map((m: ChatMessage) => m.id === reportModal.msgId ? { ...m, reported: true, feedback: 'down' } : m));
       setReportSuccess(true);
     } catch {}
     setReportSubmitting(false);
@@ -535,7 +535,7 @@ export default function FoxyPage() {
       setSessionMode('learn');
       return;
     }
-    setLessonStepsCompleted(prev => [...prev, lessonStep]);
+    setLessonStepsCompleted((prev: LessonStep[]) => [...prev, lessonStep]);
     setLessonStep(next);
     setPredictionSubmitted(false);
     setShowPredictionInput(next === 'active_recall');
@@ -595,7 +595,7 @@ export default function FoxyPage() {
           {showSubjectDD && (
             <div className="absolute top-full left-0 mt-1 z-50 w-[calc(100vw-24px)] sm:w-56 rounded-2xl overflow-hidden shadow-lg" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
               <div className="p-2 text-[10px] font-bold uppercase tracking-wider text-[var(--text-3)] px-3">My Subjects</div>
-              {(studentSubs.length > 0 ? studentSubs : Object.keys(SUBJECTS)).map(key => {
+              {(studentSubs.length > 0 ? studentSubs : Object.keys(SUBJECTS)).map((key: string) => {
                 const sub = SUBJECTS[key]; if (!sub) return null;
                 return (
                   <button key={key} onClick={() => switchSubject(key)} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-all" style={{ background: activeSubject === key ? `${sub.color}08` : 'transparent', borderLeft: activeSubject === key ? `3px solid ${sub.color}` : '3px solid transparent' }}>
@@ -621,13 +621,13 @@ export default function FoxyPage() {
                 <button onClick={() => setSelectedChapters([])} className="text-[10px] font-semibold" style={{ color: 'var(--orange)' }}>Clear All</button>
               </div>
               <div className="flex-1 overflow-y-auto">
-                {topics.map(topic => {
+                {topics.map((topic: any) => {
                   const sel = selectedChapters.includes(topic.id);
                   const mastery = masteryData.find((m: any) => m.topic_tag === topic.title || m.chapter_number === topic.chapter_number);
                   const lvl = mastery?.mastery_level || 'not_started';
                   const lc = MASTERY_COLORS[lvl] || MASTERY_COLORS.not_started;
                   return (
-                    <button key={topic.id} onClick={() => setSelectedChapters(p => sel ? p.filter(x => x !== topic.id) : [...p, topic.id])} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-all" style={{ background: sel ? `${cfg.color}06` : 'transparent', borderBottom: '1px solid var(--border)' }}>
+                    <button key={topic.id} onClick={() => setSelectedChapters((p: string[]) => sel ? p.filter((x: string) => x !== topic.id) : [...p, topic.id])} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-all" style={{ background: sel ? `${cfg.color}06` : 'transparent', borderBottom: '1px solid var(--border)' }}>
                       <div className="w-5 h-5 rounded flex items-center justify-center shrink-0 text-[10px]" style={{ background: sel ? cfg.color : 'var(--surface-2)', color: sel ? '#fff' : 'var(--text-3)', border: sel ? 'none' : '1.5px solid var(--border)' }}>{sel ? '✓' : ''}</div>
                       <div className="flex-1 min-w-0"><div className="text-xs font-semibold truncate" style={{ color: 'var(--text-1)' }}>Ch {topic.chapter_number}: {topic.title}</div></div>
                       <span className="text-[9px] font-bold capitalize px-1.5 py-0.5 rounded" style={{ background: `${lc}15`, color: lc }}>{lvl.replace('_', ' ')}</span>
@@ -637,7 +637,7 @@ export default function FoxyPage() {
               </div>
               {selectedChapters.length > 0 && (
                 <div className="p-2 px-3" style={{ borderTop: '1px solid var(--border)' }}>
-                  <button onClick={() => { const ch = topics.find(t => selectedChapters.includes(t.id)); if (ch) { setActiveTopic(ch); sendMessage(`Teach me about: ${ch.title} (Chapter ${ch.chapter_number})`); setShowChapterDD(false); } }} className="w-full py-2 rounded-xl text-xs font-bold text-white" style={{ background: cfg.color }}>
+                  <button onClick={() => { const ch = topics.find((t: any) => selectedChapters.includes(t.id)); if (ch) { setActiveTopic(ch); sendMessage(`Teach me about: ${ch.title} (Chapter ${ch.chapter_number})`); setShowChapterDD(false); } }} className="w-full py-2 rounded-xl text-xs font-bold text-white" style={{ background: cfg.color }}>
                     Start with Selected
                   </button>
                 </div>
@@ -672,7 +672,7 @@ export default function FoxyPage() {
       {/* ═══ CONTEXT BAR — shows active conversation header ═══ */}
       {messages.length > 0 && (
         <ConversationHeader
-          title={generateTitle(messages.map(m => ({ role: m.role, content: m.content })), activeSubject)}
+          title={generateTitle(messages.map((m: ChatMessage) => ({ role: m.role, content: m.content })), activeSubject)}
           subject={activeSubject}
           mode={sessionMode}
           messageCount={messages.length}
@@ -734,7 +734,7 @@ export default function FoxyPage() {
                 <input
                   type="text"
                   value={lessonPrediction}
-                  onChange={e => setLessonPrediction(e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLessonPrediction(e.target.value)}
                   placeholder={language === 'hi' ? 'तुम्हारा अनुमान...' : 'Your prediction...'}
                   className="flex-1 text-sm rounded-lg px-3 py-2 outline-none"
                   style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
@@ -769,7 +769,7 @@ export default function FoxyPage() {
       <div className="flex-1 flex overflow-hidden relative">
         {/* Conversation Manager Sidebar — desktop: always visible, mobile: slide-over */}
         <ConversationManager
-          conversations={conversations.map(c => ({ ...c, isActive: c.id === chatSessionId }))}
+          conversations={conversations.map((c: ConversationSummary) => ({ ...c, isActive: c.id === chatSessionId }))}
           activeConversationId={chatSessionId}
           isHi={language === 'hi'}
           isOpen={conversationSidebarOpen}
@@ -787,7 +787,7 @@ export default function FoxyPage() {
               <button onClick={() => setSidebarOpen(false)} className="w-6 h-6 rounded-lg flex items-center justify-center text-[10px] transition-all hover:opacity-70" style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }} title="Collapse">×</button>
             </div>
             <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
-              {topics.map(topic => {
+              {topics.map((topic: any) => {
                 const mastery = masteryData.find((m: any) => m.topic_tag === topic.title || m.chapter_number === topic.chapter_number);
                 const pct = mastery?.mastery_percent || 0;
                 const lvl = mastery?.mastery_level || 'not_started';
@@ -915,7 +915,7 @@ export default function FoxyPage() {
               </button>
             )}
 
-            {messages.map((msg, idx) => {
+            {messages.map((msg: ChatMessage, idx: number) => {
               // Skip collapsed messages
               if (collapsedAbove !== null && idx < collapsedAbove) return null;
 
@@ -959,7 +959,7 @@ export default function FoxyPage() {
 
             {/* ── Report Error Modal ── */}
             {reportModal && (
-              <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={(e) => { if (e.target === e.currentTarget) { setReportModal(null); } }}>
+              <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={(e: React.MouseEvent<HTMLDivElement>) => { if (e.target === e.currentTarget) { setReportModal(null); } }}>
                 <div className="w-full max-w-md rounded-t-2xl sm:rounded-2xl p-5 max-h-[80vh] overflow-y-auto animate-slide-up" style={{ background: 'var(--surface-1)' }}>
                   {!reportSuccess ? (<>
                     <div className="flex items-center justify-between mb-4">

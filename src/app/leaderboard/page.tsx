@@ -286,7 +286,7 @@ export default function LeaderboardPage() {
                 description={isHi ? 'क्विज़ खेलो और XP कमाओ — रैंकिंग में ऊपर चढ़ो!' : 'Take quizzes and earn XP to climb the ranks!'}
                 action={
                   <Button onClick={() => router.push('/quiz')}>
-                    {isHi ? 'क्विज़ शुरू करो' : 'Start a Quiz'} ⚡
+                    {`${isHi ? 'क्विज़ शुरू करो' : 'Start a Quiz'} ⚡`}
                   </Button>
                 }
               />
@@ -300,11 +300,7 @@ export default function LeaderboardPage() {
                     const isMe = entry.student_id === student.id;
                     return (
                       <Card key={entry.student_id}
-                        className="!p-4 flex items-center gap-3"
-                        style={{
-                          background: isMe ? 'rgba(232,88,28,0.06)' : 'var(--surface-1)',
-                          border: isMe ? '2px solid rgba(232,88,28,0.3)' : '1px solid var(--border)',
-                        }}>
+                        className={`!p-4 flex items-center gap-3 ${isMe ? '!bg-[rgba(232,88,28,0.06)] !border-2 !border-[rgba(232,88,28,0.3)]' : ''}`}>
                         <div className="w-8 text-center flex-shrink-0">
                           {idx < 3 ? <span className="text-xl">{MEDALS[idx]}</span>
                             : <span className="text-sm font-bold text-[var(--text-3)]">#{idx + 1}</span>}
@@ -369,7 +365,7 @@ export default function LeaderboardPage() {
             ) : (
               <div className="space-y-3">
                 {/* Featured banner */}
-                {competitions.filter(c => c.is_featured && c.status === 'live').map(comp => (
+                {competitions.filter((c: RPCRecord) => c.is_featured && c.status === 'live').map((comp: RPCRecord) => (
                   <div key={comp.id} className="rounded-2xl p-5 relative overflow-hidden"
                     style={{
                       background: `linear-gradient(135deg, ${comp.accent_color}15, ${comp.accent_color}08)`,
@@ -432,7 +428,7 @@ export default function LeaderboardPage() {
 
                 {/* Other competitions */}
                 <SectionHeader icon="🎯">{isHi ? 'सभी प्रतियोगिताएँ' : 'All Competitions'}</SectionHeader>
-                {competitions.filter(c => !c.is_featured || c.status !== 'live').map(comp => {
+                {competitions.filter((c: RPCRecord) => !c.is_featured || c.status !== 'live').map((comp: RPCRecord) => {
                   const sb = STATUS_BADGE[comp.status] || STATUS_BADGE.upcoming;
                   return (
                     <Card key={comp.id} className="!p-4">
@@ -514,12 +510,12 @@ export default function LeaderboardPage() {
                   {isHi ? 'अभी कोई स्कोर नहीं। क्विज़ खेलो!' : 'No scores yet. Take a quiz to compete!'}
                 </p>
                 <Button onClick={() => router.push('/quiz')} className="mt-3">
-                  ⚡ {isHi ? 'क्विज़ खेलो' : 'Take Quiz'}
+                  {`⚡ ${isHi ? 'क्विज़ खेलो' : 'Take Quiz'}`}
                 </Button>
               </div>
             ) : (
               <div className="space-y-3">
-                {compLeaderboard.map((entry, idx) => {
+                {compLeaderboard.map((entry: RPCRecord, idx: number) => {
                   const isMe = entry.student_id === student.id;
                   return (
                     <Card key={entry.student_id}
@@ -572,13 +568,13 @@ export default function LeaderboardPage() {
                     : 'Finish in the Top 3 of any competition — your name will be immortalized here!'}
                 </p>
                 <Button onClick={() => setTab('compete')}>
-                  ⚔️ {isHi ? 'प्रतियोगिता देखो' : 'View Competitions'}
+                  {`⚔️ ${isHi ? 'प्रतियोगिता देखो' : 'View Competitions'}`}
                 </Button>
               </div>
             ) : (
               <div className="space-y-3">
                 <SectionHeader icon="👑">{isHi ? 'शानदार विजेता' : 'Champions & Winners'}</SectionHeader>
-                {fame.map(entry => (
+                {fame.map((entry: RPCRecord) => (
                   <Card key={entry.id} className="!p-4">
                     <div className="flex items-center gap-3">
                       <span className="text-3xl flex-shrink-0">{entry.rank <= 3 ? MEDALS[entry.rank - 1] : FAME_ICONS[entry.achievement_type] || '🏆'}</span>
@@ -619,10 +615,10 @@ export default function LeaderboardPage() {
                 </p>
                 <div className="flex gap-2 justify-center">
                   <Button onClick={() => setTab('compete')}>
-                    ⚔️ {isHi ? 'प्रतियोगिता' : 'Compete'}
+                    {`⚔️ ${isHi ? 'प्रतियोगिता' : 'Compete'}`}
                   </Button>
                   <Button variant="ghost" onClick={() => router.push('/quiz')}>
-                    ⚡ {isHi ? 'क्विज़' : 'Quiz'}
+                    {`⚡ ${isHi ? 'क्विज़' : 'Quiz'}`}
                   </Button>
                 </div>
               </div>
@@ -630,7 +626,7 @@ export default function LeaderboardPage() {
               <div className="space-y-3">
                 <SectionHeader icon="🎖️">{isHi ? `मेरे खिताब (${titles.length})` : `My Titles (${titles.length})`}</SectionHeader>
                 <div className="grid grid-cols-2 gap-3">
-                  {titles.map(t => (
+                  {titles.map((t: RPCRecord) => (
                     <div key={t.id} className="rounded-2xl p-4 text-center"
                       style={{
                         background: t.tier === 'gold' ? 'rgba(245,166,35,0.08)' : t.tier === 'silver' ? 'rgba(156,163,175,0.08)' : t.tier === 'bronze' ? 'rgba(205,127,50,0.08)' : 'rgba(124,58,237,0.08)',

@@ -147,8 +147,8 @@ export default function NotificationsPage() {
   const markRead = async (id: string) => {
     try {
       await supabase.rpc('mark_notification_read', { p_notification_id: id });
-      setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
-      setUnreadCount(c => Math.max(0, c - 1));
+      setNotifications((prev: Notification[]) => prev.map((n: Notification) => n.id === id ? { ...n, is_read: true } : n));
+      setUnreadCount((c: number) => Math.max(0, c - 1));
     } catch (e) { console.error('Failed to mark notification read:', e); }
   };
 
@@ -156,7 +156,7 @@ export default function NotificationsPage() {
     if (!student) return;
     try {
       await supabase.rpc('mark_all_notifications_read', { p_student_id: student.id });
-      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+      setNotifications((prev: Notification[]) => prev.map((n: Notification) => ({ ...n, is_read: true })));
       setUnreadCount(0);
     } catch {}
   };

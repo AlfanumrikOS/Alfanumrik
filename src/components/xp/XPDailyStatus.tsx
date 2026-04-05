@@ -109,7 +109,7 @@ export default function XPDailyStatus({ studentId, streak, isHi }: XPDailyStatus
     return () => { cancelled = true; };
   }, [studentId, isHi]);
 
-  const totalToday = Object.values(categories).reduce((a, b) => a + b, 0);
+  const totalToday = (Object.values(categories) as number[]).reduce((a: number, b: number) => a + b, 0);
 
   /* ─── Loading ─── */
   if (isLoading) {
