@@ -118,69 +118,92 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
       });
       if (authError) { setError(authError.message); setLoading(false); return; }
       if (authData.user) {
-        let profileError: string | null = null;
+        try {
+          let profileError: string | null = null;
 
-        if (roleTab === 'student') {
-          const { error: insErr } = await supabase.from('students').insert({
-            auth_user_id: authData.user.id,
-            name: name.trim(),
-            email: email.trim(),
-            grade: `Grade ${grade}`,
-            board,
-            preferred_language: 'en',
-            account_status: 'active',
-            onboarding_completed: true,
-          });
-          if (insErr) profileError = insErr.message;
-        } else if (roleTab === 'teacher') {
-          const { error: insErr } = await supabase.from('teachers').insert({
-            auth_user_id: authData.user.id,
-            name: name.trim(),
-            email: email.trim(),
-            school_name: schoolName.trim(),
-            subjects_taught: subjectsTaught,
-            grades_taught: gradesTaught,
-          });
-          if (insErr) profileError = insErr.message;
-        } else if (roleTab === 'parent') {
-          const { data: guardianData, error: insErr } = await supabase.from('guardians').insert({
-            auth_user_id: authData.user.id,
-            name: name.trim(),
-            email: email.trim(),
-            phone: phone.trim() || null,
-          }).select('id').single();
-          if (insErr) profileError = insErr.message;
-
-          if (linkCode.trim() && guardianData) {
-            await supabase.rpc('link_guardian_to_student_via_code', {
-              p_guardian_id: guardianData.id,
-              p_invite_code: linkCode.trim(),
+          if (roleTab === 'student') {
+            const { error: insErr } = await supabase.from('students').insert({
+              auth_user_id: authData.user.id,
+              name: name.trim(),
+              email: email.trim(),
+              grade: `Grade ${grade}`,
+              board,
+              preferred_language: 'en',
+              account_status: 'active',
+              onboarding_completed: true,
             });
+            if (insErr) profileError = insErr.message;
+          } else if (roleTab === 'teacher') {
+            const { error: insErr } = await supabase.from('teachers').insert({
+              auth_user_id: authData.user.id,
+              name: name.trim(),
+              email: email.trim(),
+              school_name: schoolName.trim(),
+              subjects_taught: subjectsTaught,
+              grades_taught: gradesTaught,
+            });
+            if (insErr) profileError = insErr.message;
+          } else if (roleTab === 'parent') {
+            const { data: guardianData, error: insErr } = await supabase.from('guardians').insert({
+              auth_user_id: authData.user.id,
+              name: name.trim(),
+              email: email.trim(),
+              phone: phone.trim() || null,
+            }).select('id').single();
+            if (insErr) profileError = insErr.message;
+
+            if (linkCode.trim() && guardianData) {
+              await supabase.rpc('link_guardian_to_student_via_code', {
+                p_guardian_id: guardianData.id,
+                p_invite_code: linkCode.trim(),
+              });
+            }
           }
-        }
 
-        if (profileError) {
-          console.error(`[Signup] Profile insert failed for ${roleTab}:`, profileError);
-        }
+          if (profileError) {
+            console.error(`[Signup] Profile insert failed for ${roleTab}:`, profileError);
+            // Client-side insert failed — try server-side bootstrap as fallback
+            if (authData.session) {
+              try {
+                const bootstrapPayload: Record<string, unknown> = { role: roleTab, name: name.trim() };
+                if (roleTab === 'student') { bootstrapPayload.grade = grade; bootstrapPayload.board = board; }
+                if (roleTab === 'teacher') { bootstrapPayload.school_name = schoolName.trim(); bootstrapPayload.subjects_taught = subjectsTaught; bootstrapPayload.grades_taught = gradesTaught; }
+                if (roleTab === 'parent') { bootstrapPayload.phone = phone.trim() || null; bootstrapPayload.link_code = linkCode.trim() || null; }
 
-        const session = authData.session;
-        if (session) {
-          const welcomePayload: Record<string, string> = { role: roleTab, name: name.trim(), email: email.trim() };
-          if (roleTab === 'student') { welcomePayload.grade = grade; welcomePayload.board = board; }
-          if (roleTab === 'teacher') { welcomePayload.school_name = schoolName.trim(); }
-          fetch(`${SUPABASE_URL}/functions/v1/send-welcome-email`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}`, 'apikey': SUPABASE_ANON_KEY },
-            body: JSON.stringify(welcomePayload),
-          }).catch(() => {});
-          onSuccess();
-        } else {
-          // No session returned — email confirmation required
-          // User will receive a Mailgun-sent confirmation email
-          setPendingEmail(email.trim());
-          setMode('check-email');
-          setSuccess('');
-          setError('');
+                await fetch('/api/auth/bootstrap', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(bootstrapPayload),
+                });
+              } catch (bootstrapErr) {
+                console.error('[Signup] Bootstrap fallback also failed:', bootstrapErr);
+              }
+            }
+          }
+
+          const session = authData.session;
+          if (session) {
+            const welcomePayload: Record<string, string> = { role: roleTab, name: name.trim(), email: email.trim() };
+            if (roleTab === 'student') { welcomePayload.grade = grade; welcomePayload.board = board; }
+            if (roleTab === 'teacher') { welcomePayload.school_name = schoolName.trim(); }
+            fetch(`${SUPABASE_URL}/functions/v1/send-welcome-email`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}`, 'apikey': SUPABASE_ANON_KEY },
+              body: JSON.stringify(welcomePayload),
+            }).catch(() => {});
+            setLoading(false);
+            onSuccess();
+          } else {
+            // No session returned — email confirmation required
+            // User will receive a Mailgun-sent confirmation email
+            setPendingEmail(email.trim());
+            setMode('check-email');
+            setSuccess('');
+            setError('');
+            setLoading(false);
+          }
+        } catch (profileErr) {
+          console.error('[Signup] Profile creation block threw:', profileErr);
           setLoading(false);
         }
       }
