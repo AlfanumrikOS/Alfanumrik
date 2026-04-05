@@ -76,6 +76,14 @@ export default function ReviewPage() {
   const [reviewedSubjects, setReviewedSubjects] = useState<string[]>([]);
   const [showIntro, setShowIntro] = useState(false);
 
+  // Reset card index when filter changes
+  const handleFilterChange = (f: SourceFilter) => {
+    setSourceFilter(f);
+    setCurrentIdx(0);
+    setFlipped(false);
+    setShowHint(false);
+  };
+
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/');
   }, [isLoading, isLoggedIn, router]);
@@ -85,10 +93,15 @@ export default function ReviewPage() {
     setLoading(true);
     try {
       const data = await getReviewCards(student.id, 20);
-      setCards(Array.isArray(data) ? data : []);
+      const loaded = Array.isArray(data) ? data : [];
+      setAllCards(loaded);
+      // Show intro for first-time users (no cards at all or no reviews done)
+      if (loaded.length > 0 && loaded.every(c => (c.total_reviews || 0) === 0)) {
+        setShowIntro(true);
+      }
     } catch (e) {
       console.error('Failed to load review cards:', e);
-      setCards([]);
+      setAllCards([]);
     }
     // Load pending retention tests
     try {
@@ -127,7 +140,7 @@ export default function ReviewPage() {
       console.warn('[Security] Card already reviewed in this session:', card.id);
       // Skip to next card
       if (currentIdx < cards.length - 1) setCurrentIdx(i => i + 1);
-      else setCards([]);
+      else setAllCards([]);
       return;
     }
 
@@ -214,7 +227,7 @@ export default function ReviewPage() {
       setCurrentIdx((i) => i + 1);
     } else {
       // All done
-      setCards([]);
+      setAllCards([]);
     }
   };
 
