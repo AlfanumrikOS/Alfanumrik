@@ -226,9 +226,9 @@ Deno.serve(async (req: Request) => {
     // Without this, anyone can trigger email sends to arbitrary addresses.
     // Fail closed: if the secret is not configured, reject all requests.
     if (!hookSecret) {
-      console.error('[Auth Email] SEND_EMAIL_HOOK_SECRET is not set. Rejecting request. Configure the secret in Edge Functions → Secrets.')
-      return new Response(JSON.stringify({ error: 'Webhook secret not configured' }), {
-        status: 500, headers: { 'Content-Type': 'application/json' },
+      console.error('[Auth Email] SEND_EMAIL_HOOK_SECRET is not set. Allowing auth to proceed but email hook is unconfigured. Configure the secret in Edge Functions → Secrets.')
+      return new Response(JSON.stringify({ success: false, warning: 'Webhook secret not configured' }), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
       })
     }
 
@@ -236,9 +236,9 @@ Deno.serve(async (req: Request) => {
       const wh = new Webhook(hookSecret)
       data = wh.verify(payload, headers) as typeof data
     } catch (verifyErr) {
-      console.error('[Auth Email] Webhook verification FAILED — rejecting:', (verifyErr as Error).message)
-      return new Response(JSON.stringify({ error: 'Webhook verification failed' }), {
-        status: 401, headers: { 'Content-Type': 'application/json' },
+      console.error('[Auth Email] Webhook verification FAILED — allowing auth to proceed but email will not be sent:', (verifyErr as Error).message)
+      return new Response(JSON.stringify({ success: false, warning: 'Webhook verification failed' }), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
       })
     }
 
