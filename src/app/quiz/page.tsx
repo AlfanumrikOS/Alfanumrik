@@ -543,6 +543,8 @@ export default function QuizPage() {
         initialCount={initialCount}
         initialChapter={initialChapter}
         loading={loading}
+        smartSuggestion={smartSuggestion}
+        onStartSmartQuiz={handleStartSmartQuiz}
         onStart={startQuiz}
         onGoBack={() => router.push('/dashboard')}
       />

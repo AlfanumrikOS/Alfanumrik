@@ -279,7 +279,7 @@ export default function LeaderboardPage() {
                 <div className="text-4xl animate-float mb-3">🏆</div>
                 <p className="text-sm text-[var(--text-3)]">{isHi ? 'लोड हो रहा है...' : 'Loading rankings...'}</p>
               </div>
-            ) : entries.length === 0 ? (
+            ) : sortedEntries.length === 0 ? (
               <EmptyState
                 icon="🏆"
                 title={isHi ? 'अभी कोई रैंकिंग नहीं' : 'No rankings yet'}
@@ -293,14 +293,18 @@ export default function LeaderboardPage() {
             ) : (
               <>
                 <SectionHeader icon="📊">
-                  {isHi ? `टॉप ${entries.length} छात्र` : `Top ${entries.length} Students`}
+                  {isHi ? `टॉप ${sortedEntries.length} छात्र` : `Top ${sortedEntries.length} Students`}
                 </SectionHeader>
                 <div className="space-y-3">
-                  {entries.map((entry, idx) => {
+                  {sortedEntries.map((entry, idx) => {
                     const isMe = entry.student_id === student.id;
                     return (
                       <Card key={entry.student_id}
-                        className={`!p-4 flex items-center gap-3 ${isMe ? 'ring-2 ring-[var(--orange)]' : ''}`}>
+                        className="!p-4 flex items-center gap-3"
+                        style={{
+                          background: isMe ? 'rgba(232,88,28,0.06)' : 'var(--surface-1)',
+                          border: isMe ? '2px solid rgba(232,88,28,0.3)' : '1px solid var(--border)',
+                        }}>
                         <div className="w-8 text-center flex-shrink-0">
                           {idx < 3 ? <span className="text-xl">{MEDALS[idx]}</span>
                             : <span className="text-sm font-bold text-[var(--text-3)]">#{idx + 1}</span>}
@@ -309,7 +313,11 @@ export default function LeaderboardPage() {
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-semibold truncate">
                             {entry.name}
-                            {isMe && <span className="text-xs text-[var(--orange)] ml-1">({isHi ? 'तुम' : 'You'})</span>}
+                            {isMe && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full ml-1.5" style={{ background: 'var(--orange)', color: '#fff' }}>
+                                {isHi ? 'आप' : 'You'}
+                              </span>
+                            )}
                           </div>
                           <div className="text-xs text-[var(--text-3)]">
                             Gr {entry.grade}
@@ -321,6 +329,11 @@ export default function LeaderboardPage() {
                               🎖️ {entry.top_title}
                             </div>
                           )}
+                          <div className="flex gap-3 text-[10px] text-[var(--text-3)] mt-1">
+                            {entry.accuracy != null && <span>🎯 {Math.round(entry.accuracy)}%</span>}
+                            {entry.streak > 0 && <span>🔥 {entry.streak}d</span>}
+                            {entry.topics_mastered > 0 && <span>🧠 {entry.topics_mastered}</span>}
+                          </div>
                         </div>
                         <div className="text-right flex-shrink-0">
                           <div className="text-sm font-bold gradient-text">{entry.total_xp?.toLocaleString()}</div>

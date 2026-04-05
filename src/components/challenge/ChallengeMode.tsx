@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { shareResult, challengeInviteMessage, challengeResultMessage } from '@/lib/share';
 import { SUBJECT_META, GRADE_SUBJECTS } from '@/lib/constants';
@@ -48,6 +48,16 @@ export default function ChallengeMode({ studentId, studentName, grade, isHi }: C
   const availableSubjects = (GRADE_SUBJECTS[grade] || GRADE_SUBJECTS['9'])
     .map(code => SUBJECT_META.find(s => s.code === code))
     .filter(Boolean) as typeof SUBJECT_META[number][];
+
+  // ─── My Record stats ───
+  const myRecord = useMemo(() => {
+    const completed = challenges.filter(c => c.status === 'completed');
+    const wins = completed.filter(c => c.winner_id === studentId).length;
+    const losses = completed.filter(c => c.winner_id && c.winner_id !== studentId).length;
+    const draws = completed.length - wins - losses;
+    const winRate = completed.length > 0 ? Math.round((wins / completed.length) * 100) : 0;
+    return { wins, losses, draws, winRate, total: completed.length };
+  }, [challenges, studentId]);
 
   // ─── Load challenges ───
   const loadChallenges = useCallback(async () => {
