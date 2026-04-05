@@ -95,6 +95,52 @@ check_rule \
   "" \
   "Auth/RBAC is a security boundary owned by architect."
 
+# Rule 2a: Onboarding critical path — architect owns, frontend may coordinate
+# Why: Onboarding is the #1 user funnel. Broken signup = zero users.
+# These files form a 3-layer failsafe chain that MUST NOT break:
+#   AuthScreen → auth/callback → bootstrap API → AuthContext fallback
+check_rule \
+  "^src/components/auth/AuthScreen\.tsx$" \
+  "architect,frontend" \
+  "" \
+  "AuthScreen is signup critical path. Architect+frontend own. Never break the 3-layer failsafe."
+
+check_rule \
+  "^src/app/auth/(callback|confirm)/route\.ts$" \
+  "architect" \
+  "" \
+  "Auth callback/confirm routes are email verification critical path. Architect only."
+
+check_rule \
+  "^src/app/api/auth/(bootstrap|onboarding-status|repair)/route\.ts$" \
+  "architect,backend" \
+  "" \
+  "Auth bootstrap APIs are profile creation critical path. Architect+backend only."
+
+check_rule \
+  "^src/lib/AuthContext\.tsx$" \
+  "architect,frontend" \
+  "" \
+  "AuthContext is auth state management. Architect+frontend own. Contains profile fallback logic."
+
+check_rule \
+  "^src/app/onboarding/page\.tsx$" \
+  "architect,frontend" \
+  "" \
+  "Onboarding page is grade/board setup. Architect+frontend own."
+
+check_rule \
+  "^src/lib/identity/" \
+  "architect" \
+  "" \
+  "Identity system constants and onboarding logic. Architect only."
+
+check_rule \
+  "^supabase/functions/send-auth-email/" \
+  "backend,architect" \
+  "" \
+  "Auth email hook. Returns 200 ALWAYS. Breaking this blocks ALL signups."
+
 # Rule 3: Middleware — architect only
 # Why: 7-layer security middleware. Rate limiting, CORS, session refresh.
 check_rule \
