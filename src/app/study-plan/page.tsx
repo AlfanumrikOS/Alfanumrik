@@ -8,6 +8,8 @@ import { Card, Button, ProgressBar, SectionHeader, LoadingFoxy, BottomNav } from
 import { SUBJECT_META } from '@/lib/constants';
 import { BLOOM_CONFIG, type BloomLevel } from '@/lib/cognitive-engine';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
+import TodaysFocus, { getTaskDeepLink } from '@/components/study-plan/TodaysFocus';
+import PlanInsights from '@/components/study-plan/PlanInsights';
 
 const TASK_BLOOM_MAP: Record<string, BloomLevel> = {
   learn: 'understand', quiz: 'apply', review: 'remember', revision: 'remember',
@@ -431,6 +433,17 @@ export default function StudyPlanPage() {
               </div>
             </Card>
 
+            {/* Today's Focus — The ONE thing to do now */}
+            {hasPlan && tasks.length > 0 && (
+              <TodaysFocus
+                tasks={tasks}
+                allTasks={tasks}
+                isHi={isHi}
+                knowledgeGaps={criticalGaps}
+                onMarkInProgress={(taskId: string) => markTask(taskId, 'in_progress')}
+              />
+            )}
+
             {/* Day-by-day Tasks */}
             {days.map(dayNum => {
               const dayTasks = dayGroups[dayNum];
@@ -482,11 +495,17 @@ export default function StudyPlanPage() {
                         const icon = TASK_ICONS[task.task_type] || '📋';
                         const accentColor = TASK_COLORS[task.task_type] || 'var(--orange)';
 
+                        const taskLink = getTaskDeepLink(task, 'study_plan');
+
                         return (
                           <div
                             key={task.id}
-                            className="rounded-2xl p-3.5 relative overflow-hidden"
+                            className="rounded-2xl p-3.5 relative overflow-hidden cursor-pointer active:scale-[0.98] transition-transform"
                             style={{ background: s.bg, border: `1px solid ${s.border}` }}
+                            onClick={() => {
+                              if (task.status === 'pending') markTask(task.id, 'in_progress');
+                              router.push(taskLink);
+                            }}
                           >
                             {/* Accent bar */}
                             <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-2xl" style={{ background: accentColor }} />
@@ -543,7 +562,7 @@ export default function StudyPlanPage() {
 
                                 {/* Action buttons */}
                                 {task.status !== 'completed' && task.status !== 'skipped' && (
-                                  <div className="flex gap-2 mt-2.5 flex-wrap">
+                                  <div className="flex gap-2 mt-2.5 flex-wrap" onClick={(e) => e.stopPropagation()}>
                                     <button
                                       onClick={() => markTask(task.id, 'completed')}
                                       className="text-xs px-3 py-1.5 rounded-lg font-semibold"
@@ -607,48 +626,29 @@ export default function StudyPlanPage() {
               );
             })}
 
-            {/* Critical Knowledge Gaps */}
-            {criticalGaps.length > 0 && (
-              <Card className="!p-4" accent="#EF4444">
-                <div className="flex items-start gap-2">
-                  <span className="text-lg">🦊</span>
-                  <div className="flex-1">
-                    <p className="text-xs font-bold" style={{ color: '#EF4444' }}>
-                      {isHi ? 'Foxy की सलाह' : 'Foxy Suggests'}
-                    </p>
-                    <div className="space-y-2 mt-2">
-                      {criticalGaps.map(g => (
-                        <div key={g.id} className="flex items-center justify-between gap-2">
-                          <span className="text-xs text-[var(--text-3)] flex-1">
-                            {g.topic_title ? `${g.topic_title}: ` : ''}{isHi && g.description_hi ? g.description_hi : g.description}
-                          </span>
-                          <button
-                            onClick={() => router.push(`/foxy${g.topic_title ? `?topic=${encodeURIComponent(g.topic_title)}` : ''}`)}
-                            className="text-[10px] font-bold px-2 py-1 rounded-lg flex-shrink-0"
-                            style={{ background: 'rgba(232,88,28,0.1)', color: 'var(--orange)' }}
-                          >
-                            {isHi ? 'ठीक करो' : 'Fix Now'}
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </Card>
+            {/* Plan Insights — Why this plan? */}
+            {plan && (plan.ai_reasoning || criticalGaps.length > 0) && (
+              <PlanInsights
+                aiReasoning={plan.ai_reasoning}
+                knowledgeGaps={criticalGaps}
+                isHi={isHi}
+              />
             )}
 
-            {/* Science behind the plan */}
-            {plan?.ai_reasoning && (
-              <Card className="!p-4">
-                <div className="flex items-start gap-2">
-                  <span className="text-lg">🧪</span>
-                  <div>
-                    <p className="text-xs font-bold text-[var(--text-2)] mb-1">{isHi ? 'विज्ञान आधारित' : 'Science-backed'}</p>
-                    <p className="text-xs text-[var(--text-3)] leading-relaxed">{plan.ai_reasoning}</p>
-                  </div>
-                </div>
-              </Card>
-            )}
+            {/* Generate New Plan button */}
+            <div className="pt-2">
+              <button
+                onClick={handleReset}
+                className="w-full rounded-xl py-3 text-center text-sm font-semibold transition-all"
+                style={{
+                  background: 'var(--surface-2)',
+                  border: '1.5px solid var(--border)',
+                  color: 'var(--text-2)',
+                }}
+              >
+                {isHi ? '🔄 नया प्लान बनाओ' : '🔄 Generate New Plan'}
+              </button>
+            </div>
           </>
         )}
         </SectionErrorBoundary>

@@ -45,6 +45,7 @@ export default function LeaderboardPage() {
 
   const [tab, setTab] = useState<Tab>('ranks');
   const [period, setPeriod] = useState('weekly');
+  const [rankMode, setRankMode] = useState<'xp' | 'accuracy' | 'mastery'>('xp');
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [competitions, setCompetitions] = useState<RPCRecord[]>([]);
   const [fame, setFame] = useState<RPCRecord[]>([]);
@@ -136,7 +137,13 @@ export default function LeaderboardPage() {
 
   if (isLoading || !student) return <LoadingFoxy />;
 
-  const myRank = entries.findIndex(e => e.student_id === student.id);
+  const sortedEntries = [...entries].sort((a, b) => {
+    if (rankMode === 'accuracy') return (b.accuracy || 0) - (a.accuracy || 0);
+    if (rankMode === 'mastery') return (b.topics_mastered || 0) - (a.topics_mastered || 0);
+    return (b.total_xp || 0) - (a.total_xp || 0);
+  });
+
+  const myRank = sortedEntries.findIndex(e => e.student_id === student.id);
 
   const TABS: { id: Tab; label: string; labelHi: string; icon: string }[] = [
     { id: 'ranks', label: 'Rankings', labelHi: 'रैंकिंग', icon: '🏆' },
@@ -193,6 +200,27 @@ export default function LeaderboardPage() {
               ))}
             </div>
 
+            {/* Ranking Mode Toggle */}
+            <div className="flex gap-2 mb-3">
+              {([
+                { key: 'xp' as const, label: 'XP', labelHi: 'XP', icon: '⭐' },
+                { key: 'accuracy' as const, label: 'Accuracy', labelHi: 'सटीकता', icon: '🎯' },
+                { key: 'mastery' as const, label: 'Mastery', labelHi: 'दक्षता', icon: '🧠' },
+              ] as const).map(mode => (
+                <button
+                  key={mode.key}
+                  onClick={() => setRankMode(mode.key)}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-full transition-all"
+                  style={{
+                    background: rankMode === mode.key ? 'var(--orange)' : 'var(--surface-2)',
+                    color: rankMode === mode.key ? '#fff' : 'var(--text-3)',
+                  }}
+                >
+                  {mode.icon} {isHi ? mode.labelHi : mode.label}
+                </button>
+              ))}
+            </div>
+
             {/* My Rank Highlight */}
             {myRank >= 0 && (
               <Card accent="var(--orange)" className="!p-4">
@@ -204,11 +232,11 @@ export default function LeaderboardPage() {
                   <div className="flex-1">
                     <div className="text-sm font-bold">{isHi ? 'तुम्हारी रैंक' : 'Your Rank'}</div>
                     <div className="text-xs text-[var(--text-3)]">
-                      {entries[myRank]?.total_xp?.toLocaleString() ?? 0} XP · {entries[myRank]?.accuracy ?? 0}% {isHi ? 'सटीकता' : 'accuracy'}
+                      {sortedEntries[myRank]?.total_xp?.toLocaleString() ?? 0} XP · {sortedEntries[myRank]?.accuracy ?? 0}% {isHi ? 'सटीकता' : 'accuracy'}
                     </div>
-                    {entries[myRank]?.top_title && (
+                    {sortedEntries[myRank]?.top_title && (
                       <div className="text-xs mt-1 font-semibold" style={{ color: 'var(--purple)' }}>
-                        🎖️ {entries[myRank].top_title}
+                        🎖️ {sortedEntries[myRank].top_title}
                       </div>
                     )}
                   </div>
@@ -218,10 +246,10 @@ export default function LeaderboardPage() {
             )}
 
             {/* Top 3 Podium */}
-            {entries.length >= 3 && (
+            {sortedEntries.length >= 3 && (
               <div className="flex items-end justify-center gap-3 py-4">
                 {[1, 0, 2].map(idx => {
-                  const e = entries[idx];
+                  const e = sortedEntries[idx];
                   if (!e) return null;
                   const isMe = e.student_id === student.id;
                   const height = idx === 0 ? 'h-28' : idx === 1 ? 'h-20' : 'h-16';
