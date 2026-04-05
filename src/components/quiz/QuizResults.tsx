@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, Button, StatCard, BottomNav } from '@/components/ui';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
@@ -10,6 +10,8 @@ import {
   type BloomLevel, type CognitiveLoadState,
 } from '@/lib/cognitive-engine';
 import { shareResult, quizShareMessage } from '@/lib/share';
+import { useAuth } from '@/lib/AuthContext';
+import { supabase } from '@/lib/supabase';
 import NextActionCard from '@/components/quiz/NextActionCard';
 import CelebrationOverlay from '@/components/quiz/CelebrationOverlay';
 import type { ErrorType } from '@/lib/cognitive-engine';
@@ -76,8 +78,12 @@ export default function QuizResults({
   onGoHome,
 }: QuizResultsProps) {
   const router = useRouter();
+  const { student } = useAuth();
   const [expandedCorrect, setExpandedCorrect] = useState<Set<number>>(new Set());
   const [showCelebration, setShowCelebration] = useState(true);
+  const [flashcardCount, setFlashcardCount] = useState(0);
+  const [flashcardBanner, setFlashcardBanner] = useState(false);
+  const flashcardCreated = useRef(false);
 
   const parseOptions = (opts: string | string[]): string[] => {
     if (Array.isArray(opts)) return opts;
@@ -88,6 +94,61 @@ export default function QuizResults({
   useEffect(() => {
     import('@/lib/sounds').then(({ playSound }) => playSound('complete'));
   }, []);
+
+  // Auto-create flashcards from wrong answers
+  useEffect(() => {
+    if (flashcardCreated.current || !student?.id) return;
+    flashcardCreated.current = true;
+
+    const wrongIndices = responses
+      .map((r, i) => (!r.is_correct ? i : -1))
+      .filter(i => i >= 0);
+    if (wrongIndices.length === 0) return;
+
+    (async () => {
+      try {
+        // Check for existing cards to avoid duplicates
+        const questionTexts = wrongIndices.map(i => questions[i].question_text);
+        const { data: existing } = await supabase
+          .from('spaced_repetition_cards')
+          .select('front_text')
+          .eq('student_id', student.id)
+          .in('front_text', questionTexts);
+        const existingSet = new Set((existing ?? []).map(c => c.front_text));
+
+        const cardsToInsert = wrongIndices
+          .filter(i => !existingSet.has(questions[i].question_text))
+          .map(i => {
+            const q = questions[i];
+            const r = responses[i];
+            const opts = parseOptions(q.options);
+            const correctAnswer = opts[q.correct_answer_index] || '';
+            const explanation = isHi && q.explanation_hi ? q.explanation_hi : (q.explanation || '');
+            return {
+              student_id: student.id,
+              card_type: 'review',
+              subject: selectedSubject || undefined,
+              chapter_number: q.chapter_number || undefined,
+              topic: q.bloom_level || undefined,
+              front_text: q.question_text,
+              back_text: `${correctAnswer}${explanation ? `\n\n${explanation}` : ''}`,
+              hint: q.hint || undefined,
+              source: 'quiz_wrong_answer',
+              source_id: results.session_id || undefined,
+            };
+          });
+
+        if (cardsToInsert.length > 0) {
+          await supabase.from('spaced_repetition_cards').insert(cardsToInsert);
+          setFlashcardCount(cardsToInsert.length);
+          setFlashcardBanner(true);
+        }
+      } catch (err) {
+        // Non-critical — flashcard creation should not block results display
+        console.error('Failed to create flashcards:', err);
+      }
+    })();
+  }, [student?.id, questions, responses, results.session_id, selectedSubject, isHi]);
 
   const formatTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
 
@@ -145,6 +206,30 @@ export default function QuizResults({
           <StatCard icon="✨" value={`+${results.xp_earned}`} label="XP" color="var(--orange)" />
           <StatCard icon="⏱" value={formatTime(timer)} label={isHi ? 'समय' : 'Time'} color="var(--teal)" />
         </div>
+
+        {/* Flashcard creation banner */}
+        {flashcardBanner && flashcardCount > 0 && (
+          <div
+            className="rounded-xl p-3 flex items-center gap-3"
+            style={{ background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.15)' }}
+          >
+            <span className="text-2xl flex-shrink-0">📝</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold" style={{ color: '#7C3AED' }}>
+                {isHi
+                  ? `${flashcardCount} फ्लैशकार्ड बन गए तुम्हारी गलतियों से — रिव्यू करो और master करो!`
+                  : `${flashcardCount} flashcard${flashcardCount > 1 ? 's' : ''} created from your mistakes — review them to master these concepts!`}
+              </p>
+            </div>
+            <button
+              onClick={() => router.push('/review')}
+              className="flex-shrink-0 text-xs font-bold px-3 py-1.5 rounded-lg transition-all active:scale-95"
+              style={{ background: 'rgba(124,58,237,0.12)', color: '#7C3AED' }}
+            >
+              {isHi ? 'रिव्यू करो' : 'Review'}
+            </button>
+          </div>
+        )}
 
         {/* CME Next Action Recommendation */}
         {results.cme_next_action && (
@@ -435,12 +520,33 @@ export default function QuizResults({
           >
             {isHi ? '📱 WhatsApp पर शेयर करो' : '📱 Share on WhatsApp'}
           </Button>
+          {/* Review Mistakes — shown when flashcards were created */}
+          {flashcardCount > 0 && (
+            <Button
+              fullWidth
+              onClick={() => router.push('/review?filter=quiz_wrong_answer')}
+              style={{ background: '#7C3AED', color: '#fff' }}
+            >
+              📝 {isHi ? 'गलतियाँ रिव्यू करो' : 'Review Your Mistakes'}
+            </Button>
+          )}
           <Button fullWidth onClick={onRetry}>
             {isHi ? 'एक और क्विज़ खेलो' : 'Take Another Quiz'} ⚡
           </Button>
-          {pct < 60 && (
-            <Button fullWidth variant="ghost" onClick={() => router.push('/foxy')}>
-              🦊 {isHi ? 'Foxy से सीखो' : 'Learn with Foxy'}
+          {/* Score-contextual actions */}
+          {pct < 50 && (
+            <Button fullWidth variant="ghost" onClick={() => router.push(`/foxy?subject=${selectedSubject || ''}&mode=learn`)}>
+              📖 {isHi ? 'बुनियादी बातें सीखो' : 'Review Basics with Foxy'}
+            </Button>
+          )}
+          {pct >= 50 && pct <= 80 && (
+            <Button fullWidth variant="ghost" onClick={() => router.push(`/foxy?subject=${selectedSubject || ''}&mode=practice`)}>
+              🦊 {isHi ? 'और अभ्यास करो' : 'Practice More with Foxy'}
+            </Button>
+          )}
+          {pct > 80 && (
+            <Button fullWidth variant="ghost" onClick={() => router.push('/quiz')}>
+              🚀 {isHi ? 'Level Up करो' : 'Level Up — Harder Quiz'}
             </Button>
           )}
           <Button fullWidth variant="ghost" onClick={onGoHome}>

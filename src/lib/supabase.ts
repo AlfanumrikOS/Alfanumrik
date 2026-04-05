@@ -429,7 +429,7 @@ export async function getReviewCards(studentId: string, limit = 10) {
   // Fallback: use spaced_repetition_cards if available, else concept_mastery
   const today = new Date().toISOString().split('T')[0]; // next_review_date is DATE type
   const { data: cards } = await supabase.from('spaced_repetition_cards')
-    .select('id, student_id, subject, topic, chapter_title, front_text, back_text, hint, ease_factor, interval_days, streak, repetition_count, total_reviews, correct_reviews, next_review_date')
+    .select('id, student_id, subject, topic, chapter_title, front_text, back_text, hint, source, ease_factor, interval_days, streak, repetition_count, total_reviews, correct_reviews, next_review_date, last_review_date, created_at')
     .eq('student_id', studentId)
     .lte('next_review_date', today)
     .order('next_review_date')

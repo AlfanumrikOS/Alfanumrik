@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { Card, Button } from '@/components/ui';
 
 type ActionType = 'teach' | 'practice' | 'challenge' | 'revise' | 'remediate' | 'exam_prep';
@@ -10,6 +11,14 @@ interface NextActionCardProps {
   reason: string;
   isHi: boolean;
   onAction: (action: ActionType, conceptId: string | null) => void;
+  /** Number of wrong answers — controls "Review Mistakes" visibility */
+  wrongAnswerCount?: number;
+  /** Score percentage — controls contextual secondary actions */
+  scorePercent?: number;
+  /** Subject code — used for deep-linking */
+  subject?: string | null;
+  /** Retry callback — restarts quiz with same settings */
+  onRetry?: () => void;
 }
 
 const ACTION_CONFIG: Record<ActionType, {

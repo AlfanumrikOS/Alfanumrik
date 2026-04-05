@@ -15,6 +15,8 @@ import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import { RichContent } from '@/components/foxy/RichContent';
 import { ChatInput } from '@/components/foxy/ChatInput';
 import { UpgradeModal } from '@/components/UpgradeModal';
+import { ConversationManager, generateTitle, SIMPLIFIED_MODES, MODE_MAP, type ConversationSummary } from '@/components/foxy/ConversationManager';
+import { ConversationHeader } from '@/components/foxy/ConversationHeader';
 
 /* ══════════════════════════════════════════════════════════════
    SUBJECT CONFIGURATION
@@ -89,6 +91,41 @@ async function fetchChatHistory(studentId: string) {
   return null;
 }
 
+async function fetchAllConversations(studentId: string): Promise<ConversationSummary[]> {
+  const { data } = await supabase
+    .from('chat_sessions')
+    .select('id, messages, updated_at, subject')
+    .eq('student_id', studentId)
+    .order('updated_at', { ascending: false })
+    .limit(50);
+  if (!data) return [];
+  return data
+    .filter((s: any) => s.messages && s.messages.length > 0)
+    .map((s: any) => {
+      const msgs = s.messages || [];
+      const subject = s.subject || 'science';
+      const lastMsg = msgs[msgs.length - 1];
+      return {
+        id: s.id,
+        title: generateTitle(msgs, subject),
+        subject,
+        lastMessage: lastMsg?.content?.substring(0, 80) || '',
+        messageCount: msgs.length,
+        updatedAt: s.updated_at || new Date().toISOString(),
+        isActive: false,
+      };
+    });
+}
+
+async function fetchConversationById(sessionId: string) {
+  const { data } = await supabase
+    .from('chat_sessions')
+    .select('id, messages, subject')
+    .eq('id', sessionId)
+    .single();
+  return data;
+}
+
 async function callFoxyTutor(params: Record<string, any>) {
   try {
     // Get user's JWT for authenticated edge function calls — anon key causes 401
@@ -159,6 +196,11 @@ export default function FoxyPage() {
   const [totalXP, setTotalXP] = useState(0);
   const [streakDays, setStreakDays] = useState(0);
 
+  // Conversation sessions state
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [conversationsLoading, setConversationsLoading] = useState(false);
+  const [conversationSidebarOpen, setConversationSidebarOpen] = useState(false);
+
   // UI state
   const [showSubjectDD, setShowSubjectDD] = useState(false);
   const [showChapterDD, setShowChapterDD] = useState(false);
@@ -220,6 +262,73 @@ export default function FoxyPage() {
       }
     })();
   }, [authStudent]);
+
+  // Load conversation list
+  useEffect(() => {
+    if (!authStudent?.id) return;
+    setConversationsLoading(true);
+    fetchAllConversations(authStudent.id).then(convs => {
+      setConversations(convs);
+      setConversationsLoading(false);
+    });
+  }, [authStudent?.id]);
+
+  // Select a conversation from the sidebar
+  const selectConversation = useCallback(async (sessionId: string) => {
+    const session = await fetchConversationById(sessionId);
+    if (!session) return;
+    setChatSessionId(session.id);
+    const subject = session.subject || activeSubject;
+    if (subject && SUBJECTS[subject]) {
+      setActiveSubject(subject);
+      if (typeof window !== 'undefined') localStorage.setItem('alfanumrik_subject', subject);
+    }
+    setMessages(
+      (session.messages || []).map((m: any, i: number) => ({
+        id: Date.now() + i,
+        role: m.role === 'assistant' ? ('tutor' as const) : m.role,
+        content: m.content,
+        timestamp: m.ts || new Date().toISOString(),
+        xp: m.meta?.xp || 0,
+      }))
+    );
+    setActiveTopic(null);
+    setSelectedChapters([]);
+    setCollapsedAbove(null);
+    setLessonStep('hook');
+    setLessonStepsCompleted([]);
+    setXpGained(0);
+    // Update active state in conversation list
+    setConversations(prev =>
+      prev.map(c => ({ ...c, isActive: c.id === sessionId }))
+    );
+  }, [activeSubject]);
+
+  // Start a new conversation — clears chat and updates list
+  const handleNewConversation = useCallback(() => {
+    setMessages([]);
+    setChatSessionId(null);
+    setActiveTopic(null);
+    setSelectedChapters([]);
+    setCollapsedAbove(null);
+    setLessonStep('hook');
+    setLessonStepsCompleted([]);
+    setXpGained(0);
+    setConversations(prev => prev.map(c => ({ ...c, isActive: false })));
+  }, []);
+
+  // Refresh conversation list after a message is sent (debounced)
+  const refreshConversations = useCallback(() => {
+    if (!student?.id) return;
+    fetchAllConversations(student.id).then(convs => {
+      setConversations(
+        convs.map(c => ({
+          ...c,
+          isActive: c.id === chatSessionId,
+        }))
+      );
+    });
+  }, [student?.id, chatSessionId]);
 
   // Apply URL context (subject, chapter, mode) — runs once after student loads
   useEffect(() => {
@@ -300,6 +409,8 @@ export default function FoxyPage() {
       if (resp.xp_earned > 0) setXpGained(p => p + resp.xp_earned);
       if (resp.session_id) setChatSessionId(resp.session_id);
       setFoxyState('happy'); setTimeout(() => setFoxyState('idle'), 2000);
+      // Refresh conversation list so new/updated sessions appear
+      setTimeout(refreshConversations, 1000);
     } catch {
       setMessages(p => [...p, { id: Date.now() + 1, role: 'tutor', content: 'Oops! Please try again.', timestamp: new Date().toISOString() }]);
       setFoxyState('idle');
@@ -392,15 +503,17 @@ export default function FoxyPage() {
   // Language toggle lock for language subjects
   const isLangLocked = activeSubject === 'hindi' || activeSubject === 'english';
 
-  // Mode switch with auto-prompt
+  // Mode switch with auto-prompt — supports both simplified and legacy mode IDs
   const switchMode = useCallback((modeId: string) => {
-    setSessionMode(modeId);
-    const mode = MODES.find(m => m.id === modeId);
+    // Map simplified mode to backend mode
+    const backendMode = MODE_MAP[modeId] || modeId;
+    setSessionMode(backendMode);
+    const mode = MODES.find(m => m.id === backendMode);
     if (!mode) return;
-    // Doubt mode: let user type their own question
-    if (modeId === 'doubt') return;
+    // Doubt/ask mode: let user type their own question
+    if (backendMode === 'doubt' || modeId === 'ask') return;
     // Lesson mode: start lesson flow
-    if (modeId === 'lesson') {
+    if (backendMode === 'lesson') {
       setLessonStep('hook');
       setLessonStepsCompleted([]);
       setPredictionSubmitted(false);
@@ -531,42 +644,42 @@ export default function FoxyPage() {
           )}
         </div>
 
-        {/* Mode pills — each triggers a mode-specific action */}
+        {/* Simplified mode pills — 3 primary modes */}
         <div className="foxy-mode-bar ml-auto">
-          {MODES.map(m => (
-            <button key={m.id} onClick={() => switchMode(m.id)} className="shrink-0 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all active:scale-95 flex items-center gap-1" style={{ background: sessionMode === m.id ? `${cfg.color}15` : 'transparent', color: sessionMode === m.id ? cfg.color : 'var(--text-3)', border: sessionMode === m.id ? `1px solid ${cfg.color}30` : '1px solid transparent' }}>
-              <span>{m.emoji}</span>
-              <span className="hidden sm:inline">{language === 'hi' ? m.labelHi : m.label}</span>
-            </button>
-          ))}
+          {SIMPLIFIED_MODES.map(m => {
+            const backendMode = MODE_MAP[m.id] || m.id;
+            const isActive = sessionMode === backendMode || (m.id === 'ask' && (sessionMode === 'learn' || sessionMode === 'doubt'));
+            return (
+              <button key={m.id} onClick={() => switchMode(m.id)} className="shrink-0 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all active:scale-95 flex items-center gap-1" style={{ background: isActive ? `${cfg.color}15` : 'transparent', color: isActive ? cfg.color : 'var(--text-3)', border: isActive ? `1px solid ${cfg.color}30` : '1px solid transparent' }}>
+                <span>{m.icon}</span>
+                <span>{language === 'hi' ? m.labelHi : m.label}</span>
+              </button>
+            );
+          })}
+          {/* Lesson mode — advanced, shown as small pill */}
+          <button onClick={() => switchMode('lesson')} className="shrink-0 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all active:scale-95 flex items-center gap-1" style={{ background: sessionMode === 'lesson' ? `${cfg.color}15` : 'transparent', color: sessionMode === 'lesson' ? cfg.color : 'var(--text-3)', border: sessionMode === 'lesson' ? `1px solid ${cfg.color}30` : '1px solid transparent' }}>
+            <span>🎓</span>
+            <span className="hidden sm:inline">{language === 'hi' ? 'पाठ' : 'Lesson'}</span>
+          </button>
         </div>
       </div>
 
       {/* Close dropdowns */}
       {(showSubjectDD || showChapterDD) && <div className="fixed inset-0 z-40" onClick={() => { setShowSubjectDD(false); setShowChapterDD(false); }} />}
 
-      {/* ═══ CONTEXT BAR — shows active topic + new topic button ═══ */}
+      {/* ═══ CONTEXT BAR — shows active conversation header ═══ */}
       {messages.length > 0 && (
-        <div className="px-3 py-2 flex items-center justify-between gap-2" style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
-          <div className="flex items-center gap-2 min-w-0 flex-1">
-            <span className="text-sm">{cfg.icon}</span>
-            <div className="min-w-0">
-              <div className="text-[11px] font-bold truncate" style={{ color: 'var(--text-1)' }}>
-                {activeTopic ? `Ch ${activeTopic.chapter_number}: ${activeTopic.title}` : cfg.name}
-              </div>
-              <div className="text-[9px] font-medium" style={{ color: cfg.color }}>
-                {MODES.find(m => m.id === sessionMode)?.emoji} {MODES.find(m => m.id === sessionMode)?.label} · {messages.length} messages
-              </div>
-            </div>
-          </div>
-          <button
-            onClick={startNewTopic}
-            className="shrink-0 text-[10px] font-bold px-3 py-1.5 rounded-lg transition-all active:scale-95"
-            style={{ background: 'var(--surface-2)', color: 'var(--text-3)', border: '1px solid var(--border)' }}
-          >
-            + New Topic
-          </button>
-        </div>
+        <ConversationHeader
+          title={generateTitle(messages.map(m => ({ role: m.role, content: m.content })), activeSubject)}
+          subject={activeSubject}
+          mode={sessionMode}
+          messageCount={messages.length}
+          isHi={language === 'hi'}
+          onNewChat={handleNewConversation}
+          onOpenSidebar={() => setConversationSidebarOpen(true)}
+          topicTitle={activeTopic?.title}
+          chapterNumber={activeTopic?.chapter_number}
+        />
       )}
 
       {/* ═══ LESSON STEP PROGRESS BAR ═══ */}
@@ -652,25 +765,37 @@ export default function FoxyPage() {
       {/* ═══ MAIN CHAT AREA ═══ */}
       <SectionErrorBoundary section="Foxy Chat">
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Desktop sidebar */}
-        <div className="hidden lg:flex shrink-0 relative" style={{ width: sidebarOpen ? 280 : 0, transition: 'width 0.3s ease' }}>
-          <div className="flex flex-col overflow-hidden border-r" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)', width: 280, position: 'absolute', top: 0, bottom: 0, left: 0, transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)', transition: 'transform 0.3s ease' }}>
+        {/* Conversation Manager Sidebar — desktop: always visible, mobile: slide-over */}
+        <ConversationManager
+          conversations={conversations.map(c => ({ ...c, isActive: c.id === chatSessionId }))}
+          activeConversationId={chatSessionId}
+          isHi={language === 'hi'}
+          isOpen={conversationSidebarOpen}
+          onSelect={selectConversation}
+          onNewChat={handleNewConversation}
+          onClose={() => setConversationSidebarOpen(false)}
+          isLoading={conversationsLoading}
+        />
+
+        {/* Desktop topic sidebar — chapters/mastery */}
+        <div className="hidden xl:flex shrink-0 relative" style={{ width: sidebarOpen ? 240 : 0, transition: 'width 0.3s ease' }}>
+          <div className="flex flex-col overflow-hidden border-r" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)', width: 240, position: 'absolute', top: 0, bottom: 0, left: 0, transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)', transition: 'transform 0.3s ease' }}>
             <div className="p-3 text-xs font-bold flex items-center justify-between" style={{ color: cfg.color, borderBottom: '1px solid var(--border)' }}>
-              <span>{cfg.icon} {cfg.name} · Gr {studentGrade} ({topics.length})</span>
-              <button onClick={() => setSidebarOpen(false)} className="w-6 h-6 rounded-lg flex items-center justify-center text-[10px] transition-all hover:opacity-70" style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }} title="Collapse">«</button>
+              <span>{cfg.icon} {language === 'hi' ? 'अध्याय' : 'Chapters'} ({topics.length})</span>
+              <button onClick={() => setSidebarOpen(false)} className="w-6 h-6 rounded-lg flex items-center justify-center text-[10px] transition-all hover:opacity-70" style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }} title="Collapse">×</button>
             </div>
-            <div className="flex-1 overflow-y-auto p-2.5 space-y-2">
+            <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
               {topics.map(topic => {
                 const mastery = masteryData.find((m: any) => m.topic_tag === topic.title || m.chapter_number === topic.chapter_number);
                 const pct = mastery?.mastery_percent || 0;
                 const lvl = mastery?.mastery_level || 'not_started';
                 const lc = MASTERY_COLORS[lvl] || MASTERY_COLORS.not_started;
                 return (
-                  <button key={topic.id} onClick={() => { setActiveTopic(topic); setMessages([]); setChatSessionId(null); setCollapsedAbove(null); setTimeout(() => sendMessage(`Teach me about: ${topic.title} (Chapter ${topic.chapter_number})`), 50); }} className="w-full text-left p-3 rounded-xl transition-all active:scale-[0.98]" style={{ border: `1px solid ${lc}25`, background: activeTopic?.id === topic.id ? `${lc}10` : 'var(--surface-1)' }}>
-                    <div className="text-xs font-bold truncate" style={{ color: 'var(--text-1)' }}>Ch {topic.chapter_number}: {topic.title}</div>
+                  <button key={topic.id} onClick={() => { setActiveTopic(topic); setMessages([]); setChatSessionId(null); setCollapsedAbove(null); setTimeout(() => sendMessage(`Teach me about: ${topic.title} (Chapter ${topic.chapter_number})`), 50); }} className="w-full text-left p-2.5 rounded-xl transition-all active:scale-[0.98]" style={{ border: `1px solid ${lc}25`, background: activeTopic?.id === topic.id ? `${lc}10` : 'var(--surface-1)' }}>
+                    <div className="text-[11px] font-bold truncate" style={{ color: 'var(--text-1)' }}>Ch {topic.chapter_number}: {topic.title}</div>
                     <div className="flex items-center gap-2 mt-1">
-                      <div className="w-16 h-1.5 rounded-full" style={{ background: 'var(--surface-2)' }}><div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: lc }} /></div>
-                      <span className="text-[10px] font-bold capitalize" style={{ color: lc }}>{lvl.replace('_', ' ')}</span>
+                      <div className="w-14 h-1.5 rounded-full" style={{ background: 'var(--surface-2)' }}><div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: lc }} /></div>
+                      <span className="text-[9px] font-bold capitalize" style={{ color: lc }}>{lvl.replace('_', ' ')}</span>
                     </div>
                   </button>
                 );
@@ -678,7 +803,7 @@ export default function FoxyPage() {
             </div>
           </div>
         </div>
-        {!sidebarOpen && <button onClick={() => setSidebarOpen(true)} className="hidden lg:flex shrink-0 w-8 items-center justify-center border-r cursor-pointer transition-all hover:bg-[var(--surface-2)]" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)' }} title="Show chapters"><span className="text-[10px]" style={{ color: 'var(--text-3)' }}>»</span></button>}
+        {!sidebarOpen && <button onClick={() => setSidebarOpen(true)} className="hidden xl:flex shrink-0 w-8 items-center justify-center border-r cursor-pointer transition-all hover:bg-[var(--surface-2)]" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)' }} title={language === 'hi' ? 'अध्याय दिखाओ' : 'Show chapters'}><span className="text-[10px]" style={{ color: 'var(--text-3)' }}>»</span></button>}
 
         {/* Chat column */}
         <div className="flex-1 flex flex-col min-w-0">
