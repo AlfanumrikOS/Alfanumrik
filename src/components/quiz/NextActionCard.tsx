@@ -92,7 +92,12 @@ export default function NextActionCard({
   reason,
   isHi,
   onAction,
+  wrongAnswerCount = 0,
+  scorePercent,
+  subject,
+  onRetry,
 }: NextActionCardProps) {
+  const router = useRouter();
   const config = ACTION_CONFIG[action] || ACTION_CONFIG.practice;
 
   return (
@@ -144,6 +149,30 @@ export default function NextActionCard({
             </Button>
           </div>
         </div>
+
+        {/* Secondary contextual actions */}
+        {(wrongAnswerCount > 0 || onRetry) && (
+          <div className="mt-3 pt-3 flex flex-wrap gap-2" style={{ borderTop: '1px solid var(--border)' }}>
+            {wrongAnswerCount > 0 && (
+              <button
+                onClick={() => router.push('/review?filter=quiz_wrong_answer')}
+                className="text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-all active:scale-95"
+                style={{ background: 'rgba(124,58,237,0.08)', color: '#7C3AED' }}
+              >
+                📝 {isHi ? 'गलतियाँ रिव्यू करो' : 'Review Mistakes'}
+              </button>
+            )}
+            {onRetry && (
+              <button
+                onClick={onRetry}
+                className="text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-all active:scale-95"
+                style={{ background: 'rgba(37,99,235,0.08)', color: '#2563EB' }}
+              >
+                🔄 {isHi ? 'फिर से खेलो' : 'Try Again'}
+              </button>
+            )}
+          </div>
+        )}
       </Card>
     </div>
   );

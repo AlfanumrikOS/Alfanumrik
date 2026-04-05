@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { getReviewCards, supabase } from '@/lib/supabase';
 import { Card, Button, LoadingFoxy, BottomNav } from '@/components/ui';
@@ -15,13 +15,31 @@ interface ReviewCard {
   front_text: string;
   back_text: string;
   hint: string;
+  source: string | null;
   ease_factor: number;
   interval_days: number;
   streak: number;
   repetition_count: number;
   total_reviews: number;
   correct_reviews: number;
+  last_review_date: string | null;
+  created_at: string | null;
 }
+
+type SourceFilter = 'all' | 'quiz_wrong_answer' | 'foxy_chat' | 'study_plan';
+
+const SOURCE_BADGES: Record<string, { labelEn: string; labelHi: string; icon: string; color: string }> = {
+  quiz_wrong_answer: { labelEn: 'From Quiz', labelHi: 'क्विज़ से', icon: '🔴', color: '#DC2626' },
+  foxy_chat: { labelEn: 'From Foxy', labelHi: 'Foxy से', icon: '🦊', color: '#E8581C' },
+  study_plan: { labelEn: 'Study Plan', labelHi: 'स्टडी प्लान', icon: '📅', color: '#2563EB' },
+};
+
+const FILTER_TABS: { key: SourceFilter; labelEn: string; labelHi: string }[] = [
+  { key: 'all', labelEn: 'All', labelHi: 'सब' },
+  { key: 'quiz_wrong_answer', labelEn: 'Quiz Mistakes', labelHi: 'क्विज़ गलतियाँ' },
+  { key: 'foxy_chat', labelEn: 'Foxy Saves', labelHi: 'Foxy सेव' },
+  { key: 'study_plan', labelEn: 'Study Plan', labelHi: 'स्टडी प्लान' },
+];
 
 const QUALITY_BUTTONS = [
   { q: 0, label: '😵 Forgot', labelHi: '😵 भूल गया', color: '#DC2626' },
@@ -41,7 +59,13 @@ interface RetentionTest {
 export default function ReviewPage() {
   const { student, isLoggedIn, isLoading, isHi } = useAuth();
   const router = useRouter();
-  const [cards, setCards] = useState<ReviewCard[]>([]);
+  const searchParams = useSearchParams();
+  const initialFilter = (searchParams.get('filter') as SourceFilter) || 'all';
+  const [allCards, setAllCards] = useState<ReviewCard[]>([]);
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>(initialFilter);
+  const cards = sourceFilter === 'all'
+    ? allCards
+    : allCards.filter(c => c.source === sourceFilter);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [flipped, setFlipped] = useState(false);
   const [showHint, setShowHint] = useState(false);
@@ -50,6 +74,7 @@ export default function ReviewPage() {
   const [retentionTests, setRetentionTests] = useState<RetentionTest[]>([]);
   // Track which subjects were reviewed this session for the guided post-review CTA
   const [reviewedSubjects, setReviewedSubjects] = useState<string[]>([]);
+  const [showIntro, setShowIntro] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/');

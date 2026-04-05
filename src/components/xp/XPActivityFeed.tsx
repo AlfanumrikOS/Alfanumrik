@@ -87,9 +87,9 @@ export default function XPActivityFeed({ studentId, isHi, limit = 20 }: XPActivi
         todayStart.setHours(0, 0, 0, 0);
         const todayQuizXp = (txns ?? [])
           .filter(
-            (t) => t.source === 'quiz' && new Date(t.created_at) >= todayStart
+            (t: XPTransaction) => t.source === 'quiz' && new Date(t.created_at) >= todayStart
           )
-          .reduce((sum, t) => sum + t.amount, 0);
+          .reduce((sum: number, t: XPTransaction) => sum + t.amount, 0);
         setDailyQuizXp(todayQuizXp);
       } catch (err) {
         if (!cancelled) {
@@ -174,7 +174,7 @@ export default function XPActivityFeed({ studentId, isHi, limit = 20 }: XPActivi
 
       {/* Transaction list */}
       <div className="space-y-1 max-h-[320px] overflow-y-auto -mx-1 px-1">
-        {transactions.map((txn) => {
+        {transactions.map((txn: XPTransaction) => {
           const config = getSourceConfig(txn.source);
           return (
             <div

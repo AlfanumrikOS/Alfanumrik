@@ -1,6 +1,6 @@
 'use client';
 
-import { calculateLevel, xpToNextLevel, getLevelName, XP_PER_LEVEL } from '@/lib/xp-rules';
+import { calculateLevel, xpToNextLevel, getLevelName } from '@/lib/xp-rules';
 
 /* ─── Types ──────────────────────────────────────────────── */
 

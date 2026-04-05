@@ -238,6 +238,10 @@ export default function QuizResults({
             conceptId={results.cme_next_concept_id || null}
             reason={results.cme_reason || ''}
             isHi={isHi}
+            wrongAnswerCount={results.total - results.correct}
+            scorePercent={pct}
+            subject={selectedSubject}
+            onRetry={onRetry}
             onAction={(action, conceptId) => {
               const mode = action === 'teach' ? 'learn'
                 : action === 'revise' ? 'revision'

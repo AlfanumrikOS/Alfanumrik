@@ -416,7 +416,7 @@ export default function FoxyPage() {
       setFoxyState('idle');
     }
     setLoading(false);
-  }, [student, studentGrade, activeSubject, language, sessionMode, activeTopic, chatSessionId, selectedChapters, topics]);
+  }, [student, studentGrade, activeSubject, language, sessionMode, activeTopic, chatSessionId, selectedChapters, topics, refreshConversations]);
 
   // Feedback: thumbs up/down
   const handleFeedback = useCallback(async (msgId: number, isUp: boolean) => {
@@ -488,17 +488,8 @@ export default function FoxyPage() {
     else if (key === 'english') setLanguage('en');
   };
 
-  // Start a fresh topic session — clears chat, keeps subject
-  const startNewTopic = useCallback(() => {
-    setMessages([]);
-    setChatSessionId(null);
-    setActiveTopic(null);
-    setSelectedChapters([]);
-    setCollapsedAbove(null);
-    setLessonStep('hook');
-    setLessonStepsCompleted([]);
-    setXpGained(0);
-  }, []);
+  // Start a fresh topic session — delegates to handleNewConversation
+  const startNewTopic = handleNewConversation;
 
   // Language toggle lock for language subjects
   const isLangLocked = activeSubject === 'hindi' || activeSubject === 'english';
@@ -569,6 +560,17 @@ export default function FoxyPage() {
       {/* ═══ HEADER ═══ */}
       <header className="sticky top-0 z-30 px-3 py-2.5 flex items-center gap-3" style={{ background: 'linear-gradient(135deg, #1a1a2e, #0f3460)', color: '#fff' }}>
         <button onClick={() => router.push('/dashboard')} className="text-white/60 text-sm">←</button>
+        {/* Mobile: open conversation history sidebar */}
+        <button
+          onClick={() => setConversationSidebarOpen(true)}
+          className="lg:hidden w-8 h-8 rounded-lg flex items-center justify-center transition-all active:scale-95"
+          style={{ background: 'rgba(255,255,255,0.1)' }}
+          aria-label={language === 'hi' ? '\u091A\u0948\u091F \u0939\u093F\u0938\u094D\u091F\u094D\u0930\u0940' : 'Chat history'}
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+        </button>
         <div className="w-10 h-10 rounded-full flex items-center justify-center text-xl shrink-0" style={{ background: 'linear-gradient(135deg, #E8590C, #F59E0B)', animation: foxyState === 'thinking' ? 'pulse 1s infinite' : 'none' }}>
           {FOXY_FACES[foxyState]}
         </div>
