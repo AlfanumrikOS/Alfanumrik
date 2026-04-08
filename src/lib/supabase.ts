@@ -142,9 +142,17 @@ export async function getNextTopics(studentId: string, subject: string | null | 
 /* ── Foxy AI tutor chat ── */
 export async function chatWithFoxy(params: { message: string; student_id: string; session_id?: string; subject?: string; grade: string; language: string; mode: string; }) {
   try {
+    // Send Bearer token so authorizeRequest can authenticate without relying
+    // solely on chunked session cookies (which can fail on large JWTs).
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+    } catch { /* proceed without token — cookie fallback */ }
+
     const res = await fetchWithTimeout('/api/foxy', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       credentials: 'include',
       body: JSON.stringify({
         message:   params.message,

@@ -144,10 +144,22 @@ async function fetchConversationById(sessionId: string) {
 
 async function callFoxyTutor(params: Record<string, any>) {
   try {
+    // Get the current access token — this is the primary auth mechanism.
+    // cookies() alone can fail for chunked Supabase JWTs; the Bearer token
+    // from the client session is always fresh (auto-refreshed by @supabase/auth).
+    let accessToken: string | null = null;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      accessToken = session?.access_token ?? null;
+    } catch { /* proceed without token — cookie fallback in authorizeRequest */ }
+
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+
     const res = await fetch('/api/foxy', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include', // sends session cookie automatically
+      headers,
+      credentials: 'include', // also send cookies as secondary fallback
       body: JSON.stringify({
         message:   params.message,
         subject:   params.subject,
