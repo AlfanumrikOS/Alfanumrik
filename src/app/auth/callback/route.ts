@@ -77,6 +77,15 @@ export async function GET(request: NextRequest) {
               try {
                 const { getSupabaseAdmin } = await import('@/lib/supabase-admin');
                 const admin = getSupabaseAdmin();
+                // B4: Parse teacher fields that were stored as JSON strings in user_metadata
+                // during signup (see AuthScreen.tsx metaData.subjects_taught = JSON.stringify(...))
+                let parsedSubjects: string[] | null = null;
+                let parsedGrades: string[] | null = null;
+                try {
+                  if (meta.subjects_taught) parsedSubjects = JSON.parse(meta.subjects_taught);
+                  if (meta.grades_taught) parsedGrades = JSON.parse(meta.grades_taught);
+                } catch { /* malformed JSON — fall through with null */ }
+
                 await admin.rpc('bootstrap_user_profile', {
                   p_auth_user_id: user.id,
                   p_role: redirectRole,
@@ -85,8 +94,8 @@ export async function GET(request: NextRequest) {
                   p_grade: meta.grade || '9',
                   p_board: meta.board || 'CBSE',
                   p_school_name: meta.school_name || null,
-                  p_subjects_taught: null,
-                  p_grades_taught: null,
+                  p_subjects_taught: parsedSubjects,
+                  p_grades_taught: parsedGrades,
                   p_phone: null,
                   p_link_code: null,
                 });

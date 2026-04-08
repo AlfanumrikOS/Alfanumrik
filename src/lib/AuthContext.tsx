@@ -136,7 +136,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const setActiveRole = (role: UserRole) => {
+  // B11: Use useCallback + roles dependency to prevent stale closure.
+  // Without useCallback, event handlers that captured a previous version of
+  // setActiveRole would validate against an outdated roles array.
+  const setActiveRole = useCallback((role: UserRole) => {
     // SECURITY: Only allow switching to roles the server has verified.
     // This prevents localStorage injection attacks where a student
     // sets themselves as 'teacher' via DevTools.
@@ -148,7 +151,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (typeof window !== 'undefined') {
       localStorage.setItem('alfanumrik_active_role', role);
     }
-  };
+  }, [roles]);
 
   const fetchUser = useCallback(async () => {
     let hasUser = false;
@@ -282,41 +285,83 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setActiveRoleState(detectedPrimary);
         } else {
           // User is authenticated but has no profile yet.
-          // Auto-create profile from auth metadata (handles failed signup inserts).
+          // B10: Route through /api/auth/bootstrap (server-side, admin client, idempotent)
+          // instead of inserting directly via browser client (which bypasses RLS, triggers,
+          // and onboarding_state creation).
           const metaRole = user.user_metadata?.role as string | undefined;
           const metaName = user.user_metadata?.name as string || user.email?.split('@')[0] || 'Student';
           const metaGrade = user.user_metadata?.grade as string || '6';
           const metaBoard = user.user_metadata?.board as string || 'CBSE';
 
+          let bootstrapSucceeded = false;
           try {
-            if (!metaRole || metaRole === 'student') {
-              const { data: newStudent } = await supabase.from('students').insert({
-                auth_user_id: user.id, name: metaName, email: user.email,
-                grade: metaGrade.startsWith('Grade') ? metaGrade : `Grade ${metaGrade}`,
-                board: metaBoard, preferred_language: 'en', account_status: 'active',
-                onboarding_completed: false,
-              }).select('*').single();
-              if (newStudent) { setStudent(newStudent as Student); setRoles(['student']); setActiveRoleState('student'); }
-            } else if (metaRole === 'teacher') {
-              const { data: newTeacher } = await supabase.from('teachers').insert({
-                auth_user_id: user.id, name: metaName, email: user.email || '',
-              }).select('id, name, school_name, subjects_taught, grades_taught, email, phone').single();
-              if (newTeacher) { setTeacher(newTeacher as TeacherProfile); setRoles(['teacher']); setActiveRoleState('teacher'); }
-            } else if (metaRole === 'parent') {
-              const { data: newGuardian } = await supabase.from('guardians').insert({
-                auth_user_id: user.id, name: metaName, email: user.email,
-              }).select('id, name, email, phone').single();
-              if (newGuardian) { setGuardian(newGuardian as GuardianProfile); setRoles(['guardian']); setActiveRoleState('guardian'); }
+            let parsedSubjects: string[] | null = null;
+            let parsedGrades: string[] | null = null;
+            try {
+              if (user.user_metadata?.subjects_taught) parsedSubjects = JSON.parse(user.user_metadata.subjects_taught);
+              if (user.user_metadata?.grades_taught) parsedGrades = JSON.parse(user.user_metadata.grades_taught);
+            } catch { /* malformed JSON */ }
+
+            const payload: Record<string, unknown> = {
+              role: metaRole || 'student',
+              name: metaName,
+              grade: metaGrade,
+              board: metaBoard,
+            };
+            if (metaRole === 'teacher') {
+              payload.school_name = user.user_metadata?.school_name || null;
+              payload.subjects_taught = parsedSubjects;
+              payload.grades_taught = parsedGrades;
             }
-          } catch (profileErr) {
-            console.warn('Auto-create profile failed:', profileErr);
+
+            const res = await fetch('/api/auth/bootstrap', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            });
+            if (res.ok) {
+              bootstrapSucceeded = true;
+              // Re-run fetchUser to pick up newly created profile
+              await fetchUser();
+              return; // fetchUser will set all state; don't double-set below
+            }
+          } catch (bootstrapErr) {
+            console.warn('[Auth] Bootstrap via API failed, using direct insert fallback:', bootstrapErr);
           }
 
-          // Final fallback if insert also failed
-          if (roles.length === 0) {
-            const fallbackRole: UserRole = metaRole === 'teacher' ? 'teacher' : metaRole === 'parent' ? 'guardian' : 'student';
-            setRoles([fallbackRole]);
-            setActiveRoleState(fallbackRole);
+          // Final direct-insert fallback (if bootstrap API is unreachable)
+          if (!bootstrapSucceeded) {
+            try {
+              if (!metaRole || metaRole === 'student') {
+                const { data: newStudent } = await supabase.from('students').insert({
+                  auth_user_id: user.id, name: metaName, email: user.email,
+                  // B1: Store bare grade, never "Grade X" prefix
+                  grade: metaGrade.replace(/^Grade\s*/i, ''),
+                  board: metaBoard, preferred_language: 'en', account_status: 'active',
+                  onboarding_completed: false,
+                }).select('*').single();
+                if (newStudent) { setStudent(newStudent as Student); setRoles(['student']); setActiveRoleState('student'); }
+              } else if (metaRole === 'teacher') {
+                const { data: newTeacher } = await supabase.from('teachers').insert({
+                  auth_user_id: user.id, name: metaName, email: user.email || '',
+                }).select('id, name, school_name, subjects_taught, grades_taught, email, phone').single();
+                if (newTeacher) { setTeacher(newTeacher as TeacherProfile); setRoles(['teacher']); setActiveRoleState('teacher'); }
+              } else if (metaRole === 'parent' || metaRole === 'guardian') {
+                const { data: newGuardian } = await supabase.from('guardians').insert({
+                  auth_user_id: user.id, name: metaName, email: user.email,
+                }).select('id, name, email, phone').single();
+                if (newGuardian) { setGuardian(newGuardian as GuardianProfile); setRoles(['guardian']); setActiveRoleState('guardian'); }
+              }
+            } catch (profileErr) {
+              console.warn('[Auth] Direct insert fallback also failed:', profileErr);
+            }
+
+            // Last resort: set role from metadata so UI isn't broken
+            if (roles.length === 0) {
+              const fallbackRole: UserRole = metaRole === 'teacher' ? 'teacher' : (metaRole === 'parent' || metaRole === 'guardian') ? 'guardian' : 'student';
+              setRoles([fallbackRole]);
+              setActiveRoleState(fallbackRole);
+            }
           }
         }
       }
@@ -418,7 +463,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         roles,
         activeRole,
         setActiveRole,
-        isLoggedIn: roles.length > 0 || !!authUserId,
+        // B7: isLoggedIn requires a verified profile, not just an auth token.
+        // An auth user with no profile rows is NOT considered logged in — this
+        // prevents profileless users from reaching protected routes.
+        isLoggedIn: roles.length > 0,
         isLoading,
         isHi: language === 'hi',
         isDemoUser: false,

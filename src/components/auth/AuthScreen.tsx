@@ -107,6 +107,13 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
           metaData.parent_consent_email = parentEmail.trim();
         }
       }
+      // B4: Persist teacher fields into auth metadata so callback/confirm routes
+      // can bootstrap the teacher profile after email confirmation.
+      if (roleTab === 'teacher') {
+        metaData.school_name = schoolName.trim();
+        metaData.subjects_taught = JSON.stringify(subjectsTaught);
+        metaData.grades_taught = JSON.stringify(gradesTaught);
+      }
 
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: email.trim(),
@@ -126,7 +133,7 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
               auth_user_id: authData.user.id,
               name: name.trim(),
               email: email.trim(),
-              grade: `Grade ${grade}`,
+              grade: grade,
               board,
               preferred_language: 'en',
               account_status: 'active',
@@ -162,22 +169,22 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
 
           if (profileError) {
             console.error(`[Signup] Profile insert failed for ${roleTab}:`, profileError);
-            // Client-side insert failed — try server-side bootstrap as fallback
-            if (authData.session) {
-              try {
-                const bootstrapPayload: Record<string, unknown> = { role: roleTab, name: name.trim() };
-                if (roleTab === 'student') { bootstrapPayload.grade = grade; bootstrapPayload.board = board; }
-                if (roleTab === 'teacher') { bootstrapPayload.school_name = schoolName.trim(); bootstrapPayload.subjects_taught = subjectsTaught; bootstrapPayload.grades_taught = gradesTaught; }
-                if (roleTab === 'parent') { bootstrapPayload.phone = phone.trim() || null; bootstrapPayload.link_code = linkCode.trim() || null; }
+            // B2: Client-side insert failed — always try server-side bootstrap as fallback.
+            // Do NOT guard on authData.session — it is null when email confirmation is required,
+            // which is the most common production path. The bootstrap API reads auth from cookies.
+            try {
+              const bootstrapPayload: Record<string, unknown> = { role: roleTab, name: name.trim() };
+              if (roleTab === 'student') { bootstrapPayload.grade = grade; bootstrapPayload.board = board; }
+              if (roleTab === 'teacher') { bootstrapPayload.school_name = schoolName.trim(); bootstrapPayload.subjects_taught = subjectsTaught; bootstrapPayload.grades_taught = gradesTaught; }
+              if (roleTab === 'parent') { bootstrapPayload.phone = phone.trim() || null; bootstrapPayload.link_code = linkCode.trim() || null; }
 
-                await fetch('/api/auth/bootstrap', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(bootstrapPayload),
-                });
-              } catch (bootstrapErr) {
-                console.error('[Signup] Bootstrap fallback also failed:', bootstrapErr);
-              }
+              await fetch('/api/auth/bootstrap', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(bootstrapPayload),
+              });
+            } catch (bootstrapErr) {
+              console.error('[Signup] Bootstrap fallback also failed:', bootstrapErr);
             }
           }
 
@@ -196,6 +203,10 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
           } else {
             // No session returned — email confirmation required
             // User will receive a Mailgun-sent confirmation email
+            // B9: Persist pending email to sessionStorage so resend works after page refresh
+            if (typeof window !== 'undefined') {
+              sessionStorage.setItem('alfanumrik_pending_email', email.trim());
+            }
             setPendingEmail(email.trim());
             setMode('check-email');
             setSuccess('');
@@ -226,10 +237,18 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
 
   const handleResendVerification = async () => {
     setError(''); setLoading(true);
+    // B9: Recover email from sessionStorage if React state was lost (e.g. page refresh)
+    const targetEmail = pendingEmail ||
+      (typeof window !== 'undefined' ? sessionStorage.getItem('alfanumrik_pending_email') ?? '' : '');
+    if (!targetEmail) {
+      setError('Email address not found. Please start sign-up again.');
+      setLoading(false);
+      return;
+    }
     try {
       const { error: resendError } = await supabase.auth.resend({
         type: 'signup',
-        email: pendingEmail,
+        email: targetEmail,
       });
       if (resendError) { setError(resendError.message); } else { setSuccess('Verification email sent again! Check your inbox.'); }
       setLoading(false);
