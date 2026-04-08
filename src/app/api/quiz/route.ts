@@ -370,8 +370,41 @@ async function handleGetQuestions(
     );
   }
 
+  // Generate Voyage embedding server-side for RAG-based question selection.
+  // This enables semantic similarity matching in select_quiz_questions_rag.
+  // Gracefully degrades to null (random selection fallback) if Voyage is unreachable.
+  let queryEmbedding: number[] | null = null;
+  const embeddingContext = `${subject} class ${grade}${chapter ? ` chapter ${chapter}` : ''} quiz questions ${difficulty}`;
+  if (process.env.VOYAGE_API_KEY) {
+    try {
+      const voyageRes = await fetch('https://api.voyageai.com/v1/embeddings', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.VOYAGE_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'voyage-3',
+          input: [embeddingContext],
+          output_dimension: 1024,
+        }),
+      });
+      if (voyageRes.ok) {
+        const voyageData = await voyageRes.json();
+        queryEmbedding = voyageData?.data?.[0]?.embedding ?? null;
+      } else {
+        logger.warn('voyage_embedding_http_error', { status: voyageRes.status, route: '/api/quiz' });
+      }
+    } catch (voyageErr) {
+      logger.warn('voyage_embedding_generation_failed', {
+        error: voyageErr instanceof Error ? voyageErr.message : String(voyageErr),
+        route: '/api/quiz',
+      });
+      // Fall through: queryEmbedding stays null, RPC uses random fallback
+    }
+  }
+
   // Call the RAG RPC for non-repetition, concept balancing, and vector similarity
-  // p_query_embedding is null for now — will be populated when client-side generates embeddings
   const { data, error } = await supabaseAdmin.rpc('select_quiz_questions_rag', {
     p_student_id: studentId,
     p_subject: subject,
@@ -380,7 +413,7 @@ async function handleGetQuestions(
     p_count: count,
     p_difficulty_mode: difficulty,
     p_question_types: types,
-    p_query_embedding: null,
+    p_query_embedding: queryEmbedding,
   });
 
   if (error) {
