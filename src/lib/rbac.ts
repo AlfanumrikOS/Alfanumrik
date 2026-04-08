@@ -304,7 +304,6 @@ export async function authorizeRequest(
 ): Promise<AuthorizationResult> {
   // 1. Extract auth token
   const authHeader = request.headers.get('Authorization');
-  const cookieHeader = request.headers.get('Cookie');
 
   let authUserId: string | null = null;
 
@@ -316,24 +315,29 @@ export async function authorizeRequest(
     authUserId = user?.id || null;
   }
 
-  // Fallback: try Supabase session cookie
-  if (!authUserId && cookieHeader) {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-    const { createServerClient } = await import('@supabase/ssr');
-    const supabase = createServerClient(url, anonKey, {
-      cookies: {
-        getAll() {
-          return (cookieHeader || '').split(';').map(c => {
-            const [name, ...rest] = c.trim().split('=');
-            return { name, value: rest.join('=') };
-          });
+  // Fallback: try Supabase session cookie via next/headers
+  // NOTE: Must use cookies() from next/headers — NOT manual Cookie header parsing.
+  // Supabase splits large JWTs across multiple chunked cookies (sb-*-auth-token.0,
+  // sb-*-auth-token.1, …). cookieStore.getAll() returns all chunks; @supabase/ssr
+  // reassembles them. The manual split(';') approach misses this and returns null.
+  if (!authUserId) {
+    try {
+      const { cookies } = await import('next/headers');
+      const { createServerClient } = await import('@supabase/ssr');
+      const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+      const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+      const cookieStore = await cookies();
+      const supabase = createServerClient(url, anonKey, {
+        cookies: {
+          getAll() { return cookieStore.getAll(); },
+          setAll() {},
         },
-        setAll() {},
-      },
-    });
-    const { data: { user } } = await supabase.auth.getUser();
-    authUserId = user?.id || null;
+      });
+      const { data: { user } } = await supabase.auth.getUser();
+      authUserId = user?.id || null;
+    } catch {
+      // Not in a Next.js request context (e.g., unit tests) — skip cookie auth
+    }
   }
 
   if (!authUserId) {
