@@ -518,7 +518,11 @@ export default function Dashboard() {
               <p className="text-xs text-[var(--text-2)] leading-relaxed flex-1">{isHi && nudge.message_hi ? nudge.message_hi : nudge.message}</p>
               <button
                 onClick={async () => {
-                  await supabase.from('smart_nudges').update({ is_dismissed: true }).eq('id', nudge.id);
+                  await fetch('/api/student/preferences', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'dismiss_nudge', nudge_id: nudge.id }),
+                  });
                   setNudges(prev => prev.filter(n => n.id !== nudge.id));
                 }}
                 className="text-[var(--text-3)] text-xs flex-shrink-0"
@@ -621,7 +625,11 @@ export default function Dashboard() {
                   active={student.preferred_subject === s.code}
                   size="sm"
                   onClick={async () => {
-                    await supabase.from('students').update({ preferred_subject: s.code }).eq('id', student.id);
+                    await fetch('/api/student/preferences', {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ action: 'set_preferred_subject', subject: s.code }),
+                    });
                     if (typeof window !== 'undefined') localStorage.setItem('alfanumrik_subject', s.code);
                     router.push('/learn');
                   }}
@@ -661,7 +669,11 @@ export default function Dashboard() {
               <div className="px-4 pb-4 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
                 <button onClick={async () => {
                   const subs = selectedSubjects.length > 0 ? selectedSubjects : [student.preferred_subject];
-                  await supabase.from('students').update({ selected_subjects: subs, preferred_subject: subs[0] }).eq('id', student.id);
+                  await fetch('/api/student/preferences', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'set_selected_subjects', subjects: subs, preferred_subject: subs[0] }),
+                  });
                   setShowSubjectPicker(false);
                   loadStaticData();
                 }} disabled={selectedSubjects.length === 0} className="w-full py-3 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-40"

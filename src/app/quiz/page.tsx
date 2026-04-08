@@ -477,19 +477,21 @@ export default function QuizPage() {
         if (quizMode === 'exam' && res?.session_id) {
           const totalMarks = allResponses.length; // 1 mark per question for MCQ
           const obtainedMarks = allResponses.filter(r => r.is_correct).length;
-          supabase.from('exam_simulations').insert({
-            student_id: student!.id,
-            subject: selectedSubject!,
-            grade: student!.grade,
-            exam_format: 'cbse',
-            total_marks: totalMarks,
-            obtained_marks: obtainedMarks,
-            percentage: totalMarks > 0 ? Math.round((obtainedMarks / totalMarks) * 100 * 100) / 100 : 0,
-            time_taken_seconds: examTimeLimit * 60 - timer,
-            time_limit_seconds: examTimeLimit * 60,
-            is_completed: true,
-            completed_at: new Date().toISOString(),
-          }).then(() => {});
+          fetch('/api/student/exam-simulation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              subject: selectedSubject!,
+              grade: student!.grade,
+              exam_format: 'cbse',
+              total_marks: totalMarks,
+              obtained_marks: obtainedMarks,
+              percentage: totalMarks > 0 ? Math.round((obtainedMarks / totalMarks) * 10000) / 100 : 0,
+              time_taken_seconds: examTimeLimit * 60 - timer,
+              time_limit_seconds: examTimeLimit * 60,
+              session_id: res.session_id,
+            }),
+          }).catch(() => {}); // fire-and-forget: exam record is non-critical path
         }
 
         track('quiz_completed', {
