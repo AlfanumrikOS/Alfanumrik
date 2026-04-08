@@ -533,17 +533,20 @@ export default function FoxyPage() {
     if (!student?.id) return;
     setSavedMessageIds((prev: Set<number>) => new Set(prev).add(msgId));
     try {
-      await supabase.from('spaced_repetition_cards').insert({
-        student_id: student.id,
-        subject: activeSubject,
-        topic: activeTopic?.title || null,
-        question: `Review: ${activeSubject}${activeTopic ? ` — ${activeTopic.title}` : ''}`,
-        answer: content.substring(0, 2000),
-        source: 'foxy_chat',
-        difficulty: 2,
+      const res = await fetch('/api/student/foxy-interaction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'save_flashcard',
+          subject: activeSubject,
+          topic: activeTopic?.title || null,
+          question: `Review: ${activeSubject}${activeTopic ? ` — ${activeTopic.title}` : ''}`,
+          answer: content,
+        }),
       });
+      if (!res.ok) throw new Error('save_flashcard failed');
     } catch {
-      // Non-critical — silently undo optimistic update
+      // Non-critical — undo optimistic update
       setSavedMessageIds((prev: Set<number>) => { const s = new Set(prev); s.delete(msgId); return s; });
     }
   }, [student?.id, activeSubject, activeTopic]);
@@ -553,21 +556,24 @@ export default function FoxyPage() {
     if (!reportModal) return;
     setReportSubmitting(true);
     try {
-      await supabase.from('ai_response_reports').insert({
-        student_id: student?.id || null,
-        student_name: student?.name || 'Anonymous',
-        session_id: chatSessionId,
-        student_message: reportModal.studentMsg,
-        foxy_response: reportModal.foxyMsg.substring(0, 4000),
-        report_reason: reportReason,
-        student_correction: reportCorrection || null,
-        subject: activeSubject,
-        grade: studentGrade,
-        topic_title: activeTopic?.title || null,
-        session_mode: sessionMode,
-        language,
+      const res = await fetch('/api/student/foxy-interaction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'report_response',
+          session_id: chatSessionId,
+          student_message: reportModal.studentMsg,
+          foxy_response: reportModal.foxyMsg,
+          report_reason: reportReason,
+          student_correction: reportCorrection || null,
+          subject: activeSubject,
+          grade: studentGrade,
+          topic_title: activeTopic?.title || null,
+          session_mode: sessionMode,
+          language,
+        }),
       });
-      await supabase.rpc('track_ai_quality', { p_subject: activeSubject, p_is_report: true });
+      if (!res.ok) throw new Error('report_response failed');
       setMessages((prev: ChatMessage[]) => prev.map((m: ChatMessage) => m.id === reportModal.msgId ? { ...m, reported: true, feedback: 'down' } : m));
       setReportSuccess(true);
     } catch {}

@@ -186,7 +186,11 @@ export default function ExamsPage() {
         });
 
       if (chaptersToInsert.length > 0) {
-        await supabase.from('exam_chapters').insert(chaptersToInsert);
+        await fetch('/api/exam/chapters', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ exam_config_id: exam.id, chapters: chaptersToInsert }),
+        });
       }
 
       // Reset form

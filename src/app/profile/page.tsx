@@ -373,9 +373,16 @@ export default function ProfilePage() {
         updatePayload.board = editBoard;
       }
 
-      const { error } = await supabase.from('students').update(updatePayload).eq('id', student.id);
+      const res = await fetch('/api/student/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatePayload),
+      });
 
-      if (error) throw error;
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? `HTTP ${res.status}`);
+      }
 
       // Update language in AuthContext too
       setLanguage(editLang);

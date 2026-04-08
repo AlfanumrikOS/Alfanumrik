@@ -213,23 +213,26 @@ export default function StudyPlanPage() {
         return;
       }
 
-      const updates: Record<string, string> = { status };
-      if (status === 'completed') updates.completed_at = new Date().toISOString();
+      // Optimistic update — API route verifies ownership server-side
+      setTasks(prev => prev.map(t => (t.id === taskId ? { ...t, status } : t)));
 
-      // RLS enforces ownership, but we also add student_id check via plan ownership
-      const { error } = await supabase.from('study_plan_tasks').update(updates).eq('id', taskId);
-      if (error) {
-        console.error('markTask DB error:', error);
+      const res = await fetch('/api/student/study-plan', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_id: taskId, status }),
+      });
+
+      if (!res.ok) {
+        console.error('markTask API error:', res.status);
+        // Rollback optimistic update
+        setTasks(prev => prev.map(t => (t.id === taskId ? { ...t, status: task.status } : t)));
         return;
       }
 
-      setTasks(prev => prev.map(t => (t.id === taskId ? { ...t, status } : t)));
-
-      if (plan) {
-        const completed = tasks.filter(t => (t.id === taskId ? status : t.status) === 'completed').length;
-        const pct = Math.round((completed / plan.total_tasks) * 100);
-        setPlan(p => p ? { ...p, completed_tasks: completed, progress_percent: pct } : p);
-        await supabase.from('study_plans').update({ completed_tasks: completed, progress_percent: pct }).eq('id', plan.id);
+      // Sync plan progress from server-computed values
+      const result = await res.json();
+      if (plan && typeof result.completed_tasks === 'number') {
+        setPlan(p => p ? { ...p, completed_tasks: result.completed_tasks, progress_percent: result.progress_percent } : p);
       }
 
       if (status === 'completed') refreshSnapshot();
