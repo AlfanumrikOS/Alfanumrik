@@ -32,13 +32,13 @@
 /**
  * ARCHITECTURE NOTE (2026-04-08):
  * Two Foxy endpoints exist in parallel:
- * 1. THIS FUNCTION (foxy-tutor) — currently active, called by foxy/page.tsx
+ * 1. THIS FUNCTION (foxy-tutor) — LEGACY, used by mobile app and older clients
  *    Model: claude-haiku-4-5-20251001 | Auth: JWT | Sessions: chat_sessions
- * 2. /src/app/api/foxy/route.ts — new Next.js route, NOT YET WIRED to UI
- *    Model: claude-3-5-sonnet-20241022 | Auth: RBAC | Sessions: foxy_sessions
+ * 2. /src/app/api/foxy/route.ts — ACTIVE production path, called by foxy/page.tsx
+ *    Model: claude-haiku-4-5-20251001 | Auth: RBAC | Sessions: foxy_sessions
  *
- * Migration plan: /api/foxy will replace this function once verified.
- * Until then, THIS function is the production Foxy path.
+ * The web UI (foxy/page.tsx) calls /api/foxy (Next.js route), NOT this function.
+ * This function remains deployed for mobile/legacy clients.
  * Do not change session table schema (chat_sessions) without updating both.
  */
 

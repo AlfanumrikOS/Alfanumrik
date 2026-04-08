@@ -6,7 +6,7 @@
  *  2. Daily quota enforcement (foxy_chats_used in student_daily_usage)
  *  3. Session continuity (foxy_sessions table)
  *  4. RAG retrieval — Voyage voyage-3 embedding → match_rag_chunks RPC
- *  5. Context-aware response — Claude claude-3-5-sonnet-20241022
+ *  5. Context-aware response — Claude claude-haiku-4-5-20251001 (fallback: claude-sonnet-4-20250514)
  *  6. Persist turn to foxy_chat_messages
  *  7. Audit log
  *
@@ -212,8 +212,8 @@ async function generateEmbedding(text: string): Promise<number[] | null> {
 // Model preference order: try Haiku first (fast, cheap, confirmed working in
 // existing Edge Functions), then fall back to Sonnet if Haiku is unavailable.
 const CLAUDE_MODELS = [
-  'claude-3-haiku-20240307',
-  'claude-3-5-sonnet-20241022',
+  'claude-haiku-4-5-20251001',   // fast, cheap — used by all other Edge Functions
+  'claude-sonnet-4-20250514',    // fallback — more capable but slower
 ];
 
 async function callClaude(
@@ -308,6 +308,10 @@ async function callClaude(
     }
   }
 
+  logger.error('foxy_claude_all_models_failed', {
+    modelsAttempted: CLAUDE_MODELS,
+    lastError,
+  });
   throw new Error(lastError);
 }
 
@@ -359,6 +363,17 @@ ${contextSection}`;
 // ─── POST handler ─────────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest): Promise<Response> {
+  // 0. Config validation — fail fast with clear diagnostic
+  if (!process.env.ANTHROPIC_API_KEY) {
+    logger.error('foxy_config_missing', { variable: 'ANTHROPIC_API_KEY' });
+    return errorJson(
+      'Foxy is not configured. Please contact support.',
+      'Foxy configure nahi hai. Support se sampark karein.',
+      503,
+      { _diag: 'ANTHROPIC_API_KEY is not set in environment' },
+    );
+  }
+
   // 1. Auth
   const auth = await authorizeRequest(request, 'foxy.chat', {
     requireStudentId: true,
@@ -510,15 +525,17 @@ export async function POST(request: NextRequest): Promise<Response> {
       const today = new Date().toISOString().split('T')[0];
       const { data: row } = await supabaseAdmin
         .from('student_daily_usage')
-        .select('foxy_chats_used')
+        .select('usage_count')
         .eq('student_id', studentId)
+        .eq('feature', 'foxy_chat')
         .eq('usage_date', today)
         .single();
-      if (row && typeof row.foxy_chats_used === 'number' && row.foxy_chats_used > 0) {
+      if (row && typeof row.usage_count === 'number' && row.usage_count > 0) {
         await supabaseAdmin
           .from('student_daily_usage')
-          .update({ foxy_chats_used: row.foxy_chats_used - 1, updated_at: new Date().toISOString() })
+          .update({ usage_count: row.usage_count - 1, updated_at: new Date().toISOString() })
           .eq('student_id', studentId)
+          .eq('feature', 'foxy_chat')
           .eq('usage_date', today);
       }
     } catch { /* Non-fatal */ }
