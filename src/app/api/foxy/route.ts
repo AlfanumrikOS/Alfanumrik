@@ -268,18 +268,20 @@ async function callClaude(
           model,
         });
 
-        // Persist to audit_logs so admin can query via Supabase
-        await supabaseAdmin.from('audit_logs').insert({
-          auth_user_id: null,
-          action: 'foxy.diag.claude_error',
-          resource_type: 'diagnostic',
-          details: {
-            httpStatus: res.status,
-            errorBody: errBody.slice(0, 500),
-            keyPrefix,
-            model,
-          },
-        }).catch(() => {});
+        // Persist to audit_logs so admin can query via Supabase (non-fatal)
+        try {
+          await supabaseAdmin.from('audit_logs').insert({
+            auth_user_id: null,
+            action: 'foxy.diag.claude_error',
+            resource_type: 'diagnostic',
+            details: {
+              httpStatus: res.status,
+              errorBody: errBody.slice(0, 500),
+              keyPrefix,
+              model,
+            },
+          });
+        } catch { /* non-fatal */ }
 
         // Auth errors (401/403) won't be fixed by trying a different model — stop immediately
         if (res.status === 401 || res.status === 403) {
