@@ -147,8 +147,15 @@ async function callFoxyTutor(params: Record<string, any>) {
       let errBody: Record<string, unknown> | null = null;
       try { errBody = await res.json(); } catch { /* not JSON */ }
 
-      if (res.status === 401 || res.status === 403) {
-        return { reply: 'Session expired. Please refresh the page and try again!', xp_earned: 0, session_id: null };
+      if (res.status === 401) {
+        return { reply: 'Session expired. Please sign in again.', xp_earned: 0, session_id: null };
+      }
+      if (res.status === 403) {
+        const errCode = (errBody?.code as string) ?? '';
+        if (errCode === 'PERMISSION_DENIED' || errCode === 'NO_ROLES') {
+          return { reply: 'Foxy is available on paid plans. Upgrade to chat with your AI tutor!', xp_earned: 0, session_id: null };
+        }
+        return { reply: 'Access denied. Please contact support.', xp_earned: 0, session_id: null };
       }
       if (res.status === 429) {
         return {
