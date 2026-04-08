@@ -217,6 +217,10 @@ async function callClaude(
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY not configured');
 
+  // Diagnostic: log key prefix to confirm correct key is loaded (first 12 chars, safe)
+  const keyPrefix = apiKey.slice(0, 12);
+  logger.info('foxy_claude_call_start', { keyPrefix, model: 'claude-3-5-sonnet-20241022' });
+
   const messages = [
     ...history,
     { role: 'user' as const, content: userMessage },
@@ -239,6 +243,12 @@ async function callClaude(
 
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
+    // Log status + full error body for diagnosis (truncated to 400 chars)
+    logger.error('foxy_claude_http_error', {
+      httpStatus: res.status,
+      errorBody: errBody.slice(0, 400),
+      keyPrefix,
+    });
     throw new Error(`Claude API error ${res.status}: ${errBody.slice(0, 200)}`);
   }
 
