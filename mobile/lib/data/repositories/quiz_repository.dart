@@ -83,7 +83,7 @@ class QuizRepository {
         await _client.rpc('add_xp', params: {
           'p_student_id': studentId,
           'p_amount': xp,
-          'p_source': 'quiz_$subject',
+          'p_source': 'quiz',
         });
       } catch (_) {
         // XP is best-effort
