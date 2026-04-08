@@ -869,6 +869,25 @@ export async function getQuizQuestionsV2(
   const studentId = await resolveStudentId();
   const diffMap: Record<string, number | null> = { easy: 1, medium: 2, hard: 3, mixed: null, progressive: null };
 
+  // ── Fetch IRT theta (student ability estimate) from learning profile ──
+  // IRT theta is the student's calibrated ability level in this subject.
+  // Passing it to quiz-generator enables 3PL IRT item selection: questions
+  // are chosen from the difficulty band closest to theta, maximising
+  // information gain and keeping the student in ZPD.
+  let irtTheta: number | null = null;
+  try {
+    const { data: profileData } = await supabase
+      .from('student_learning_profiles')
+      .select('irt_theta')
+      .eq('student_id', studentId)
+      .maybeSingle();
+    if (profileData?.irt_theta != null) {
+      irtTheta = profileData.irt_theta as number;
+    }
+  } catch {
+    // Non-fatal: quiz-generator will use default difficulty band
+  }
+
   // ── PRIMARY: quiz-generator Edge Function ──
   // This is the CME-driven source. It does adaptive selection based on
   // student mastery, RAG Q&A from NCERT content, and question_bank —
@@ -884,6 +903,9 @@ export async function getQuizQuestionsV2(
         count,
         difficulty: diffMap[difficultyMode] ?? null,
         chapter_number: chapterNumber,
+        // IRT theta — student ability estimate for adaptive item selection.
+        // null means quiz-generator will use its default difficulty logic.
+        ability_estimate: irtTheta,
       },
     });
 

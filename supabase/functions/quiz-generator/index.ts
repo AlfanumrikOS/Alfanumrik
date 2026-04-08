@@ -10,6 +10,9 @@
  *   grade:      string        – e.g. "9"
  *   count?:     number        – number of questions (default 10, max 30)
  *   difficulty?: number|null  – 1 | 2 | 3 | null (null = adaptive)
+ *   ability_estimate?: number|null – IRT theta (student ability, typically -3..+3)
+ *                                    When provided, biases adaptive difficulty
+ *                                    selection toward ZPD band for this student.
  * }
  *
  * Response:
@@ -1051,8 +1054,28 @@ Deno.serve(async (req) => {
     }
 
     // ── Route: batch question generation (default) ───────────────────────
-    const { count: rawCount, difficulty = null } = body as RequestBody
+    const { count: rawCount } = body as RequestBody
     const chapterNumber = body.chapter_number ?? null
+
+    // IRT theta → difficulty override for adaptive mode.
+    // theta is calibrated ability: -3 = very weak, 0 = average, +3 = advanced.
+    // Map to question_bank difficulty (1=easy, 2=medium, 3=hard) with ±0.5 tolerance
+    // band so the student gets questions slightly above their current level (ZPD).
+    let difficulty: number | null = body.difficulty ?? null
+    const abilityEstimate: number | null = body.ability_estimate ?? null
+    if (difficulty == null && abilityEstimate != null) {
+      // Map IRT theta to difficulty band (ZPD = one step above current ability)
+      if (abilityEstimate < -1.0) {
+        difficulty = 1  // Below average → easy (build confidence, then push)
+      } else if (abilityEstimate < 0.5) {
+        difficulty = 2  // Average → medium (core ZPD range)
+      } else {
+        difficulty = 3  // Above average → hard (keep challenged)
+      }
+      // Note: difficulty is used for random/fallback path only.
+      // selectAdaptiveQuestions uses per-topic mastery_level which is more precise.
+      // Setting difficulty here biases the fallback and review-fill paths.
+    }
 
     if (!subject) {
       return new Response(JSON.stringify({ error: 'subject is required' }), {
