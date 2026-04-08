@@ -715,7 +715,7 @@ Deno.serve(async (req: Request) => {
     if (xpEarned > 0) {
       supabase.rpc('add_xp', {
         p_student_id: student_id,
-        p_xp: xpEarned,
+        p_amount: xpEarned,
         p_source: `foxy_${subject}`,
       }).then(() => {}).catch((e: Error) => console.error('add_xp failed:', e.message))
     }
