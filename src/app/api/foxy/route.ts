@@ -209,53 +209,106 @@ async function generateEmbedding(text: string): Promise<number[] | null> {
 
 // ─── Helper: call Claude ──────────────────────────────────────────────────────
 
+// Model preference order: try Haiku first (fast, cheap, confirmed working in
+// existing Edge Functions), then fall back to Sonnet if Haiku is unavailable.
+const CLAUDE_MODELS = [
+  'claude-3-haiku-20240307',
+  'claude-3-5-sonnet-20241022',
+];
+
 async function callClaude(
   systemPrompt: string,
   history: ChatMessage[],
   userMessage: string,
-): Promise<{ content: string; tokensUsed: number }> {
+): Promise<{ content: string; tokensUsed: number; model: string }> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY not configured');
 
-  // Diagnostic: log key prefix to confirm correct key is loaded (first 12 chars, safe)
   const keyPrefix = apiKey.slice(0, 12);
-  logger.info('foxy_claude_call_start', { keyPrefix, model: 'claude-3-5-sonnet-20241022' });
-
   const messages = [
     ...history,
     { role: 'user' as const, content: userMessage },
   ];
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'claude-3-5-sonnet-20241022',
-      max_tokens: 1024,
-      system: systemPrompt,
-      messages,
-    }),
-  });
+  let lastError = 'Claude API unavailable';
 
-  if (!res.ok) {
-    const errBody = await res.text().catch(() => '');
-    // Log status + full error body for diagnosis (truncated to 400 chars)
-    logger.error('foxy_claude_http_error', {
-      httpStatus: res.status,
-      errorBody: errBody.slice(0, 400),
-      keyPrefix,
-    });
-    throw new Error(`Claude API error ${res.status}: ${errBody.slice(0, 200)}`);
+  for (const model of CLAUDE_MODELS) {
+    logger.info('foxy_claude_attempt', { keyPrefix, model });
+
+    // 30-second hard timeout per attempt
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30_000);
+
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        signal: controller.signal,
+        method: 'POST',
+        headers: {
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 1024,
+          system: systemPrompt,
+          messages,
+        }),
+      });
+
+      clearTimeout(timer);
+
+      if (!res.ok) {
+        const errBody = await res.text().catch(() => '');
+        lastError = `Claude API error ${res.status} [${model}]: ${errBody.slice(0, 300)}`;
+        logger.error('foxy_claude_http_error', {
+          httpStatus: res.status,
+          errorBody: errBody.slice(0, 500),
+          keyPrefix,
+          model,
+        });
+
+        // Persist to audit_logs so admin can query via Supabase (non-fatal)
+        try {
+          await supabaseAdmin.from('audit_logs').insert({
+            auth_user_id: null,
+            action: 'foxy.diag.claude_error',
+            resource_type: 'diagnostic',
+            details: {
+              httpStatus: res.status,
+              errorBody: errBody.slice(0, 500),
+              keyPrefix,
+              model,
+            },
+          });
+        } catch { /* non-fatal */ }
+
+        // Auth errors (401/403) won't be fixed by trying a different model — stop immediately
+        if (res.status === 401 || res.status === 403) {
+          throw new Error(lastError);
+        }
+        // For 404 (model not found) or 529 (overloaded), try the next model
+        continue;
+      }
+
+      const data = await res.json();
+      const content = data?.content?.[0]?.text ?? '';
+      const tokensUsed = (data?.usage?.input_tokens ?? 0) + (data?.usage?.output_tokens ?? 0);
+      return { content, tokensUsed, model };
+
+    } catch (fetchErr) {
+      clearTimeout(timer);
+      if (fetchErr instanceof Error && fetchErr.name === 'AbortError') {
+        lastError = `Claude API timeout after 30s [${model}]`;
+        logger.error('foxy_claude_timeout', { model, keyPrefix });
+        continue; // try next model
+      }
+      // Re-throw network errors and intentional throws (e.g. 401/403)
+      throw fetchErr;
+    }
   }
 
-  const data = await res.json();
-  const content = data?.content?.[0]?.text ?? '';
-  const tokensUsed = (data?.usage?.input_tokens ?? 0) + (data?.usage?.output_tokens ?? 0);
-  return { content, tokensUsed };
+  throw new Error(lastError);
 }
 
 // ─── Build system prompt ──────────────────────────────────────────────────────
@@ -444,6 +497,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     const result = await callClaude(systemPrompt, history, message);
     assistantResponse = result.content;
     tokensUsed = result.tokensUsed;
+    logger.info('foxy_claude_ok', { model: result.model, tokensUsed });
   } catch (claudeErr) {
     logger.error('foxy_claude_api_failed', {
       error: claudeErr instanceof Error ? claudeErr : new Error(String(claudeErr)),
