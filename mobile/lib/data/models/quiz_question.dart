@@ -59,27 +59,48 @@ class QuizQuestion extends Equatable {
 class QuizResult extends Equatable {
   final int totalQuestions;
   final int correctAnswers;
+  /// Score percentage as returned by the server (already rounded — P1).
+  final int scorePercent;
   final int xpEarned;
   final Duration timeTaken;
+  final String? sessionId;
+  final bool flagged;
 
   const QuizResult({
     required this.totalQuestions,
     required this.correctAnswers,
+    required this.scorePercent,
     required this.xpEarned,
     required this.timeTaken,
+    this.sessionId,
+    this.flagged = false,
   });
 
-  double get percentage =>
-      totalQuestions > 0 ? (correctAnswers / totalQuestions) * 100 : 0;
+  /// Build from the JSONB map returned by submit_quiz_results RPC.
+  factory QuizResult.fromRpc(
+    Map<String, dynamic> rpc,
+    Duration timeTaken,
+  ) {
+    return QuizResult(
+      totalQuestions: (rpc['total'] as num).toInt(),
+      correctAnswers: (rpc['correct'] as num).toInt(),
+      scorePercent: (rpc['score_percent'] as num).toInt(),
+      xpEarned: (rpc['xp_earned'] as num).toInt(),
+      timeTaken: timeTaken,
+      sessionId: rpc['session_id'] as String?,
+      flagged: rpc['flagged'] as bool? ?? false,
+    );
+  }
 
+  /// Letter grade derived from server-authoritative scorePercent.
   String get grade {
-    if (percentage >= 90) return 'A+';
-    if (percentage >= 80) return 'A';
-    if (percentage >= 70) return 'B';
-    if (percentage >= 60) return 'C';
+    if (scorePercent >= 90) return 'A+';
+    if (scorePercent >= 80) return 'A';
+    if (scorePercent >= 70) return 'B';
+    if (scorePercent >= 60) return 'C';
     return 'D';
   }
 
   @override
-  List<Object?> get props => [totalQuestions, correctAnswers, xpEarned];
+  List<Object?> get props => [totalQuestions, correctAnswers, scorePercent, xpEarned];
 }

@@ -300,7 +300,7 @@ class _ResultScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final result = quiz.result!;
-    final isGood = result.percentage >= 70;
+    final isGood = result.scorePercent >= 70;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -344,7 +344,7 @@ class _ResultScreen extends ConsumerWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        '${result.percentage.toInt()}%',
+                        '${result.scorePercent}%',
                         style: TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.w700,
