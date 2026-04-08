@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { getStudyPlan, generateStudyPlan, supabase } from '@/lib/supabase';
+import { generateStudyPlan, supabase } from '@/lib/supabase';
+import { getStudyPlan as getDomainStudyPlan } from '@/lib/domains/profile';
 import { Card, Button, ProgressBar, SectionHeader, LoadingFoxy, BottomNav } from '@/components/ui';
 import { SUBJECT_META } from '@/lib/constants';
 import { BLOOM_CONFIG, type BloomLevel } from '@/lib/cognitive-engine';
@@ -104,13 +105,14 @@ export default function StudyPlanPage() {
     if (!student) return;
     setLoading(true);
     try {
-      const data = await getStudyPlan(student.id);
+      const result = await getDomainStudyPlan(student.id);
+      const data = result.ok ? result.data : null;
       if (data?.has_plan) {
-        setPlan(data.plan);
-        setTasks(Array.isArray(data.tasks) ? data.tasks : []);
+        setPlan(data.plan as Plan);
+        setTasks(Array.isArray(data.tasks) ? data.tasks as Task[] : []);
         setHasPlan(true);
         const today = new Date().toISOString().split('T')[0];
-        const todayTask = (data.tasks || []).find((t: Task) => t.scheduled_date === today);
+        const todayTask = (data.tasks as Task[] || []).find((t: Task) => t.scheduled_date === today);
         if (todayTask) setExpandedDay(todayTask.day_number);
         else setExpandedDay(1);
       } else {

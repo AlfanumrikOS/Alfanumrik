@@ -4,7 +4,7 @@
  * Updates teacher profile: name, school_name.
  * Replaces direct anon-client write in teacher/profile/page.tsx.
  *
- * Auth: JWT → auth_user_id → teachers.auth_id lookup (ownership enforced server-side)
+ * Auth: JWT → auth_user_id → teachers.auth_user_id lookup (ownership enforced server-side)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -19,7 +19,7 @@ async function resolveTeacherId(authUserId: string): Promise<string | null> {
   const { data } = await supabaseAdmin
     .from('teachers')
     .select('id')
-    .eq('auth_id', authUserId)
+    .eq('auth_user_id', authUserId)
     .single();
   return data?.id ?? null;
 }

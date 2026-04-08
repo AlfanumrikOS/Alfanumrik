@@ -75,7 +75,7 @@ Deno.serve(async (req: Request) => {
   const { data: student, error: studentError } = await admin
     .from('students')
     .select('id, grade, subscription_plan, school_id, account_status, institution_id')
-    .eq('auth_id', user.id)
+    .eq('auth_user_id', user.id)
     .single();
 
   if (studentError || !student) {
@@ -83,7 +83,7 @@ Deno.serve(async (req: Request) => {
     const { data: teacher } = await admin
       .from('teachers')
       .select('id, school_id')
-      .eq('auth_id', user.id)
+      .eq('auth_user_id', user.id)
       .single();
 
     if (teacher) {

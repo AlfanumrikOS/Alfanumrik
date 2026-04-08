@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
       const { data: student } = await supabaseAdmin
         .from('students')
         .select('id, name, email')
-        .eq('auth_id', user.id)
+        .eq('auth_user_id', user.id)
         .single();
       if (student) {
         studentId = student.id;

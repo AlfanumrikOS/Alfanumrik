@@ -8,7 +8,8 @@ import { track } from '@/lib/analytics';
 import { logger } from '@/lib/logger';
 import { validateAntiCheat } from '@/lib/anti-cheat';
 import { calculateScorePercent } from '@/lib/scoring';
-import { getQuizQuestionsV2, submitQuizResults, saveCognitiveMetrics, saveQuestionResponses, supabase, updateChapterProgress } from '@/lib/supabase';
+import { saveCognitiveMetrics, saveQuestionResponses, supabase, updateChapterProgress } from '@/lib/supabase';
+import { fetchQuizQuestions, submitQuizSession, getStudentIrtTheta } from '@/lib/domains/quiz';
 import { XP_RULES } from '@/lib/xp-rules';
 import { Card, Button, ProgressBar, LoadingFoxy } from '@/components/ui';
 import { SUBJECT_META } from '@/lib/constants';
@@ -257,28 +258,46 @@ export default function QuizPage() {
     if (!subj || !student) return;
     setLoading(true);
     try {
-      const diffModeMap: Record<string, string> = { '1': 'easy', '2': 'medium', '3': 'hard' };
-      const diffMode = diff != null ? (diffModeMap[String(diff)] || 'mixed') : (opts?.quizMode === 'cognitive' ? 'progressive' : 'mixed');
-      const data = await getQuizQuestionsV2(
-        subj,
-        student.grade,
-        qCount,
-        diffMode,
-        chapter,
-        ['mcq']
-      );
-      const qs = Array.isArray(data) ? data : [];
+      const diffModeMap: Record<string, 'easy' | 'medium' | 'hard'> = { '1': 'easy', '2': 'medium', '3': 'hard' };
+      const diffMode = diff != null
+        ? (diffModeMap[String(diff)] ?? 'mixed')
+        : (opts?.quizMode === 'cognitive' ? 'progressive' : 'mixed') as 'progressive' | 'mixed';
+
+      // Fetch IRT theta for adaptive difficulty targeting
+      const thetaResult = await getStudentIrtTheta(student.id, subj);
+      const irtTheta = thetaResult.ok ? thetaResult.data : null;
+
+      const result = await fetchQuizQuestions({
+        subject: subj,
+        grade: student.grade,
+        count: qCount,
+        difficultyMode: diffMode,
+        chapterNumber: chapter ?? null,
+        questionTypes: ['mcq'],
+        studentId: student.id,
+        irtTheta,
+      });
+
+      if (!result.ok) {
+        logger.error('quiz_fetch_failed', { error: new Error(result.error), subject: subj, grade: student.grade });
+        alert(isHi ? 'इस विषय में अभी प्रश्न नहीं हैं।' : 'No questions available for this subject yet.');
+        setLoading(false);
+        return;
+      }
+
+      const qs = result.data.questions;
       if (qs.length === 0) {
         alert(isHi ? 'इस विषय में अभी प्रश्न नहीं हैं।' : 'No questions available for this subject yet.');
         setLoading(false);
         return;
       }
-      // If we still have fewer questions than requested after all fallbacks,
-      // proceed with what we have but log the gap
+
+      // Log shortfall if we got fewer questions than requested
       if (qs.length < qCount) {
         logger.warn('quiz_pool_insufficient', {
           requested: qCount,
           available: qs.length,
+          source: result.data.source,
           subject: subj,
           grade: student.grade,
           chapter,
@@ -423,15 +442,35 @@ export default function QuizPage() {
         }
 
         const subMeta = SUBJECT_META.find(s => s.code === selectedSubject);
-        const res = await submitQuizResults(
-          student!.id,
-          selectedSubject!,
-          student!.grade,
-          subMeta?.name || selectedSubject!,
-          questions[0]?.chapter_number || 1,
-          allResponses,
-          timer
-        );
+        const submitResult = await submitQuizSession({
+          studentId: student!.id,
+          subject: selectedSubject!,
+          grade: student!.grade,
+          topic: subMeta?.name || selectedSubject!,
+          chapter: questions[0]?.chapter_number || 1,
+          responses: allResponses.map(r => ({
+            question_id: r.question_id,
+            selected_index: r.selected_option ?? -1,
+            is_correct: r.is_correct,
+            time_taken_seconds: r.time_spent,
+          })),
+          timeTakenSeconds: timer,
+        });
+
+        // Domain returns ServiceResult — explicit error handling required
+        const res = submitResult.ok
+          ? { ...submitResult.data, total: allResponses.length, correct: allResponses.filter(r => r.is_correct).length }
+          : {
+              session_id: '',
+              total: allResponses.length,
+              correct: allResponses.filter(r => r.is_correct).length,
+              score_percent: Math.round((allResponses.filter(r => r.is_correct).length / allResponses.length) * 100),
+              xp_earned: 0, // XP not awarded on submission failure
+            };
+
+        if (!submitResult.ok) {
+          logger.warn('quiz_submit_failed', { error: new Error(submitResult.error), studentId: student!.id });
+        }
         setResults(res);
         refreshSnapshot();
 

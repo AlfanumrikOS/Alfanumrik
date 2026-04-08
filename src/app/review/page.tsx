@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { getReviewCards, supabase } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
+import { getReviewCards as getDomainReviewCards } from '@/lib/domains/profile';
 import { Card, Button, LoadingFoxy, BottomNav } from '@/components/ui';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 
@@ -92,8 +93,8 @@ export default function ReviewPage() {
     if (!student) return;
     setLoading(true);
     try {
-      const data = await getReviewCards(student.id, 20);
-      const loaded = Array.isArray(data) ? data : [];
+      const result = await getDomainReviewCards(student.id, 20);
+      const loaded: ReviewCard[] = result.ok && Array.isArray(result.data) ? result.data as ReviewCard[] : [];
       setAllCards(loaded);
       // Show intro for first-time users (no cards at all or no reviews done)
       if (loaded.length > 0 && loaded.every(c => (c.total_reviews || 0) === 0)) {

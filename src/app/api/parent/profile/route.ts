@@ -4,7 +4,7 @@
  * Updates guardian profile: name, phone.
  * Replaces direct anon-client write in parent/profile/page.tsx.
  *
- * Auth: JWT → auth_user_id → guardians.auth_id lookup (ownership enforced server-side)
+ * Auth: JWT → auth_user_id → guardians.auth_user_id lookup (ownership enforced server-side)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -21,7 +21,7 @@ async function resolveGuardianId(authUserId: string): Promise<string | null> {
   const { data } = await supabaseAdmin
     .from('guardians')
     .select('id')
-    .eq('auth_id', authUserId)
+    .eq('auth_user_id', authUserId)
     .single();
   return data?.id ?? null;
 }
