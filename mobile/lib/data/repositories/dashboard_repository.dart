@@ -52,9 +52,10 @@ class DashboardRepository {
             .eq('usage_date', DateTime.now().toIso8601String().substring(0, 10))
             .maybeSingle(),
         _client
-            .from('quiz_attempts')
-            .select('score, created_at')
+            .from('quiz_sessions')
+            .select('score_percent, created_at')
             .eq('student_id', studentId)
+            .eq('is_completed', true)
             .order('created_at', ascending: false)
             .limit(20),
       ]);
@@ -65,7 +66,7 @@ class DashboardRepository {
 
       final avgScore = quizData.isNotEmpty
           ? quizData
-                  .map((q) => (q['score'] as num?)?.toDouble() ?? 0)
+                  .map((q) => (q['score_percent'] as num?)?.toDouble() ?? 0)
                   .reduce((a, b) => a + b) /
               quizData.length
           : 0.0;
