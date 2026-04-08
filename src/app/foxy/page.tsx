@@ -175,6 +175,15 @@ async function callFoxyTutor(params: Record<string, any>) {
       let errBody: Record<string, unknown> | null = null;
       try { errBody = await res.json(); } catch { /* not JSON */ }
 
+      // Log diagnostic info for debugging (never shown to user)
+      if (errBody) {
+        console.error('[Foxy] API error', {
+          status: res.status,
+          error: errBody.error,
+          diag: errBody._diag,
+        });
+      }
+
       if (res.status === 401) {
         return { reply: 'Session expired. Please sign in again.', xp_earned: 0, session_id: null };
       }
@@ -193,7 +202,10 @@ async function callFoxyTutor(params: Record<string, any>) {
           limitReached: true,
         };
       }
-      return { reply: 'Foxy is taking a short break. Try again in a moment!', xp_earned: 0, session_id: null };
+      if (res.status === 503) {
+        return { reply: 'Foxy is temporarily unavailable. Please try again in a minute.', xp_earned: 0, session_id: null };
+      }
+      return { reply: 'Something went wrong. Please try again.', xp_earned: 0, session_id: null };
     }
 
     const data = await res.json();
@@ -204,7 +216,8 @@ async function callFoxyTutor(params: Record<string, any>) {
       sources:    data.sources   || [],
       quota:      data.quotaRemaining,
     };
-  } catch {
+  } catch (err) {
+    console.error('[Foxy] Network error:', err);
     return { reply: 'Connection issue. Check your network and try again!', xp_earned: 0, session_id: null };
   }
 }
