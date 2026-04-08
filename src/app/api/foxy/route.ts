@@ -33,11 +33,22 @@ const SESSION_IDLE_MINUTES = 30;
 // Quota per plan per day
 const DAILY_QUOTA: Record<string, number> = {
   free: 10,
-  basic: 30,
+  starter: 30,
   pro: 100,
-  premium: 200,
+  unlimited: 999999, // effectively unlimited
 };
 const DEFAULT_QUOTA = 10;
+
+// Normalize raw plan codes from the DB to canonical keys.
+// Handles legacy aliases (basic→starter, premium→pro, ultimate→unlimited)
+// and strips monthly/yearly billing-cycle suffixes.
+function normalizePlan(raw: string): string {
+  return (raw || 'free')
+    .replace(/_(monthly|yearly)$/, '')
+    .replace(/^basic$/, 'starter')
+    .replace(/^premium$/, 'pro')
+    .replace(/^ultimate$/, 'unlimited');
+}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -133,72 +144,36 @@ async function loadHistory(sessionId: string): Promise<ChatMessage[]> {
   return (messages as ChatMessage[]).reverse();
 }
 
-// ─── Helper: check and increment daily quota ─────────────────────────────────
+// ─── Helper: check and increment daily quota (atomic via RPC) ────────────────
 
 async function checkAndIncrementQuota(
   studentId: string,
   plan: string,
 ): Promise<{ allowed: boolean; remaining: number }> {
-  const limit = DAILY_QUOTA[plan] ?? DEFAULT_QUOTA;
+  const normalizedPlan = normalizePlan(plan);
+  const limit = DAILY_QUOTA[normalizedPlan] ?? DEFAULT_QUOTA;
   const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
 
-  // Upsert today's usage row, increment foxy_chats_used
-  const { data, error } = await supabaseAdmin
-    .from('student_daily_usage')
-    .upsert(
-      {
-        student_id: studentId,
-        usage_date: today,
-        foxy_chats_used: 1,
-        ai_calls_total: 1,
-        updated_at: new Date().toISOString(),
-      },
-      {
-        onConflict: 'student_id,usage_date',
-        ignoreDuplicates: false,
-      },
-    )
-    .select('foxy_chats_used')
-    .single();
+  // Single atomic DB transaction — avoids TOCTOU race between check and increment
+  const { data: rows, error } = await supabaseAdmin.rpc('check_and_record_usage', {
+    p_student_id: studentId,
+    p_feature: 'foxy_chat',
+    p_limit: limit,
+    p_usage_date: today,
+  });
 
   if (error) {
-    // If upsert failed (e.g. conflict handling), read current value
-    const { data: current } = await supabaseAdmin
-      .from('student_daily_usage')
-      .select('foxy_chats_used')
-      .eq('student_id', studentId)
-      .eq('usage_date', today)
-      .single();
-
-    const used = current?.foxy_chats_used ?? 0;
-    if (used >= limit) return { allowed: false, remaining: 0 };
-
-    // Increment
-    await supabaseAdmin
-      .from('student_daily_usage')
-      .update({
-        foxy_chats_used: used + 1,
-        ai_calls_total: (current as Record<string, number>)?.ai_calls_total ? (current as Record<string, number>).ai_calls_total + 1 : 1,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('student_id', studentId)
-      .eq('usage_date', today);
-
-    return { allowed: true, remaining: limit - used - 1 };
-  }
-
-  const used = data?.foxy_chats_used ?? 1;
-  if (used > limit) {
-    // We over-incremented — decrement back and deny
-    await supabaseAdmin
-      .from('student_daily_usage')
-      .update({ foxy_chats_used: used - 1, updated_at: new Date().toISOString() })
-      .eq('student_id', studentId)
-      .eq('usage_date', today);
+    // Fail closed: deny if usage tracking fails
+    logger.error('foxy_quota_check_failed', { error: error.message, studentId });
     return { allowed: false, remaining: 0 };
   }
 
-  return { allowed: true, remaining: limit - used };
+  const row = rows?.[0];
+  if (!row?.allowed) {
+    return { allowed: false, remaining: 0 };
+  }
+
+  return { allowed: true, remaining: Math.max(0, limit - (row.current_count ?? 0)) };
 }
 
 // ─── Helper: generate Voyage embedding ───────────────────────────────────────
@@ -370,7 +345,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       .select('subscription_plan, account_status')
       .eq('id', studentId)
       .single();
-    if (studentRow?.subscription_plan) plan = studentRow.subscription_plan;
+    if (studentRow?.subscription_plan) plan = normalizePlan(studentRow.subscription_plan);
     if (studentRow?.account_status === 'suspended') {
       return errorJson('Your account is suspended.', 'Aapka account suspend hai.', 403);
     }
