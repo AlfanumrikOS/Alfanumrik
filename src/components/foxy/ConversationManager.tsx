@@ -4,13 +4,15 @@ import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 
 /* ═══════════════════════════════════════════════════════════════
    ConversationManager — Sidebar with organized chat sessions
-   Groups conversations by date, supports search, new chat
+   Groups conversations by subject then chapter, supports search
    ═══════════════════════════════════════════════════════════════ */
 
 export interface ConversationSummary {
   id: string;
   title: string;
   subject: string;
+  chapter?: string;
+  chapterNumber?: number;
   lastMessage: string;
   messageCount: number;
   updatedAt: string;
@@ -34,32 +36,6 @@ const SUBJECTS: Record<string, SubjectConfig> = {
   social_studies: { name: 'Social Studies', icon: '\uD83C\uDF0D', color: '#D97706' },
   coding: { name: 'Coding', icon: '\uD83D\uDCBB', color: '#6366F1' },
 };
-
-/* ─── Date grouping ─── */
-
-type DateGroup = 'today' | 'yesterday' | 'this_week' | 'older';
-
-function getDateGroup(dateStr: string): DateGroup {
-  const date = new Date(dateStr);
-  const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const startOfYesterday = new Date(startOfToday.getTime() - 86400000);
-  const startOfWeek = new Date(startOfToday.getTime() - startOfToday.getDay() * 86400000);
-
-  if (date >= startOfToday) return 'today';
-  if (date >= startOfYesterday) return 'yesterday';
-  if (date >= startOfWeek) return 'this_week';
-  return 'older';
-}
-
-const GROUP_LABELS: Record<DateGroup, { en: string; hi: string }> = {
-  today: { en: 'Today', hi: '\u0906\u091C' },
-  yesterday: { en: 'Yesterday', hi: '\u0915\u0932' },
-  this_week: { en: 'This Week', hi: '\u0907\u0938 \u0939\u092B\u094D\u0924\u0947' },
-  older: { en: 'Older', hi: '\u092A\u0941\u0930\u093E\u0928\u0947' },
-};
-
-const GROUP_ORDER: DateGroup[] = ['today', 'yesterday', 'this_week', 'older'];
 
 /* ─── Relative time ─── */
 
@@ -136,8 +112,14 @@ export const MODE_MAP: Record<string, string> = {
 };
 
 /* ═══════════════════════════════════════════════════════════════
-   ConversationManager Component
+   ConversationManager Component — Subject/Chapter Tree Sidebar
+   Groups conversations by subject, then by chapter within each subject
    ═══════════════════════════════════════════════════════════════ */
+
+interface SubjectGroup {
+  subject: string;
+  chapters: Record<string, ConversationSummary[]>;
+}
 
 interface ConversationManagerProps {
   conversations: ConversationSummary[];
@@ -161,6 +143,7 @@ export function ConversationManager({
   isLoading,
 }: ConversationManagerProps) {
   const [searchQuery, setSearchQuery] = useState('');
+  const [collapsedSubjects, setCollapsedSubjects] = useState<Set<string>>(new Set());
   const searchRef = useRef<HTMLInputElement>(null);
 
   // Filter conversations by search
@@ -171,29 +154,75 @@ export function ConversationManager({
       c =>
         c.title.toLowerCase().includes(q) ||
         c.lastMessage.toLowerCase().includes(q) ||
-        c.subject.toLowerCase().includes(q)
+        c.subject.toLowerCase().includes(q) ||
+        (c.chapter || '').toLowerCase().includes(q)
     );
   }, [conversations, searchQuery]);
 
-  // Group by date
-  const grouped = useMemo(() => {
-    const groups: Record<DateGroup, ConversationSummary[]> = {
-      today: [],
-      yesterday: [],
-      this_week: [],
-      older: [],
-    };
+  // Determine active subject from active conversation
+  const activeSubject = useMemo(() => {
+    if (!activeConversationId) return null;
+    const active = conversations.find(c => c.id === activeConversationId);
+    return active?.subject || null;
+  }, [conversations, activeConversationId]);
+
+  // Group by subject → chapter
+  const subjectGroups = useMemo(() => {
+    const subjectMap: Record<string, Record<string, ConversationSummary[]>> = {};
     for (const conv of filtered) {
-      const group = getDateGroup(conv.updatedAt);
-      groups[group].push(conv);
+      const subj = conv.subject || 'science';
+      if (!subjectMap[subj]) subjectMap[subj] = {};
+      const chapterKey = conv.chapter
+        ? (conv.chapterNumber ? `Ch ${conv.chapterNumber}: ${conv.chapter}` : conv.chapter)
+        : (isHi ? '\u0938\u093E\u092E\u093E\u0928\u094D\u092F' : 'General');
+      if (!subjectMap[subj][chapterKey]) subjectMap[subj][chapterKey] = [];
+      subjectMap[subj][chapterKey].push(conv);
     }
-    return groups;
-  }, [filtered]);
+    // Sort conversations within each chapter by updatedAt (most recent first)
+    for (const subj of Object.keys(subjectMap)) {
+      for (const ch of Object.keys(subjectMap[subj])) {
+        subjectMap[subj][ch].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+      }
+    }
+    // Build ordered list: active subject first, then rest alphabetically
+    const subjects = Object.keys(subjectMap);
+    subjects.sort((a, b) => {
+      if (a === activeSubject) return -1;
+      if (b === activeSubject) return 1;
+      return (SUBJECTS[a]?.name || a).localeCompare(SUBJECTS[b]?.name || b);
+    });
+    return subjects.map(s => ({ subject: s, chapters: subjectMap[s] })) as SubjectGroup[];
+  }, [filtered, activeSubject, isHi]);
+
+  // Auto-collapse inactive subjects, expand active subject
+  useEffect(() => {
+    if (!activeSubject) return;
+    setCollapsedSubjects(prev => {
+      const next = new Set(prev);
+      // Expand active subject
+      next.delete(activeSubject);
+      // Collapse others that have not been manually toggled
+      for (const group of subjectGroups) {
+        if (group.subject !== activeSubject && !prev.has(group.subject)) {
+          next.add(group.subject);
+        }
+      }
+      return next;
+    });
+  }, [activeSubject]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleSubject = useCallback((subject: string) => {
+    setCollapsedSubjects(prev => {
+      const next = new Set(prev);
+      if (next.has(subject)) next.delete(subject);
+      else next.add(subject);
+      return next;
+    });
+  }, []);
 
   // Focus search on open
   useEffect(() => {
     if (isOpen && searchRef.current) {
-      // Small delay so slide animation doesn't interfere
       const t = setTimeout(() => searchRef.current?.focus(), 300);
       return () => clearTimeout(t);
     }
@@ -202,7 +231,6 @@ export function ConversationManager({
   const handleSelect = useCallback(
     (id: string) => {
       onSelect(id);
-      // Close on mobile after selection
       if (window.innerWidth < 1024) onClose();
     },
     [onSelect, onClose]
@@ -260,7 +288,7 @@ export function ConversationManager({
         </div>
       </div>
 
-      {/* Conversation list */}
+      {/* Conversation list — subject/chapter tree */}
       <div className="flex-1 overflow-y-auto px-2 pb-4">
         {isLoading ? (
           <div className="space-y-3 p-2">
@@ -290,95 +318,124 @@ export function ConversationManager({
             )}
           </div>
         ) : (
-          GROUP_ORDER.map(group => {
-            const items = grouped[group];
-            if (items.length === 0) return null;
+          subjectGroups.map(group => {
+            const subCfg = SUBJECTS[group.subject];
+            const isCollapsed = collapsedSubjects.has(group.subject);
+            const totalConvs = Object.values(group.chapters).reduce((sum, c) => sum + c.length, 0);
+            const isActiveSubject = group.subject === activeSubject;
+
             return (
-              <div key={group} className="mb-3">
-                <div
-                  className="text-[10px] font-bold uppercase tracking-wider px-2 py-1.5"
-                  style={{ color: 'var(--text-3)' }}
+              <div key={group.subject} className="mb-2">
+                {/* Subject header */}
+                <button
+                  onClick={() => toggleSubject(group.subject)}
+                  className="w-full flex items-center gap-2 px-2 py-2 rounded-xl transition-all active:scale-[0.98]"
+                  style={{
+                    background: isActiveSubject ? `${subCfg?.color || '#E8590C'}08` : 'transparent',
+                  }}
                 >
-                  {isHi ? GROUP_LABELS[group].hi : GROUP_LABELS[group].en}
-                </div>
-                <div className="space-y-0.5">
-                  {items.map((conv: ConversationSummary) => {
-                    const subCfg = SUBJECTS[conv.subject];
-                    const isActive = conv.id === activeConversationId;
-                    return (
-                      <button
-                        key={conv.id}
-                        onClick={() => handleSelect(conv.id)}
-                        className="w-full text-left px-2.5 py-2.5 rounded-xl transition-all active:scale-[0.98]"
-                        style={{
-                          background: isActive
-                            ? `${subCfg?.color || '#E8590C'}10`
-                            : 'transparent',
-                          border: isActive
-                            ? `1px solid ${subCfg?.color || '#E8590C'}25`
-                            : '1px solid transparent',
-                        }}
-                      >
-                        <div className="flex items-start gap-2.5">
-                          {/* Subject icon */}
-                          <div
-                            className="w-7 h-7 rounded-lg flex items-center justify-center text-xs shrink-0 mt-0.5"
-                            style={{
-                              background: `${subCfg?.color || '#E8590C'}12`,
-                              color: subCfg?.color || '#E8590C',
-                            }}
-                          >
-                            {subCfg?.icon || '\uD83E\uDD8A'}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <span
-                                className="text-xs font-semibold truncate flex-1"
-                                style={{
-                                  color: isActive
-                                    ? subCfg?.color || 'var(--text-1)'
-                                    : 'var(--text-1)',
-                                }}
-                              >
-                                {conv.title}
-                              </span>
-                              <span
-                                className="text-[9px] shrink-0"
-                                style={{ color: 'var(--text-3)' }}
-                              >
-                                {relativeTime(conv.updatedAt, isHi)}
-                              </span>
-                            </div>
-                            <div
-                              className="text-[11px] truncate mt-0.5"
-                              style={{ color: 'var(--text-3)' }}
-                            >
-                              {conv.lastMessage || (isHi ? '\u0928\u0908 \u091A\u0948\u091F' : 'New chat')}
-                            </div>
-                            <div className="flex items-center gap-1.5 mt-1">
-                              <span
-                                className="text-[9px] font-medium px-1.5 py-0.5 rounded"
-                                style={{
-                                  background: `${subCfg?.color || '#999'}08`,
-                                  color: subCfg?.color || 'var(--text-3)',
-                                }}
-                              >
-                                {subCfg?.name || conv.subject}
-                              </span>
-                              <span
-                                className="text-[9px]"
-                                style={{ color: 'var(--text-3)' }}
-                              >
-                                {conv.messageCount}{' '}
-                                {isHi ? '\u0938\u0902\u0926\u0947\u0936' : 'msgs'}
-                              </span>
-                            </div>
-                          </div>
+                  <div
+                    className="w-6 h-6 rounded-lg flex items-center justify-center text-xs shrink-0"
+                    style={{
+                      background: `${subCfg?.color || '#E8590C'}15`,
+                      color: subCfg?.color || '#E8590C',
+                    }}
+                  >
+                    {subCfg?.icon || '\uD83D\uDCDA'}
+                  </div>
+                  <span
+                    className="text-[11px] font-bold flex-1 text-left truncate"
+                    style={{ color: isActiveSubject ? subCfg?.color || 'var(--text-1)' : 'var(--text-1)' }}
+                  >
+                    {subCfg?.name || group.subject}
+                  </span>
+                  <span className="text-[9px] font-medium" style={{ color: 'var(--text-3)' }}>
+                    {totalConvs}
+                  </span>
+                  <span
+                    className="text-[9px] transition-transform"
+                    style={{
+                      color: 'var(--text-3)',
+                      transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+                    }}
+                  >
+                    {'\u25BC'}
+                  </span>
+                </button>
+
+                {/* Chapter groups and conversations */}
+                {!isCollapsed && (
+                  <div className="ml-3 border-l-2 pl-2" style={{ borderColor: `${subCfg?.color || '#E8590C'}20` }}>
+                    {Object.entries(group.chapters).map(([chapterKey, convs]) => (
+                      <div key={chapterKey} className="mb-1.5">
+                        {/* Chapter sub-header */}
+                        <div
+                          className="text-[9px] font-bold uppercase tracking-wider px-2 py-1 truncate"
+                          style={{ color: subCfg?.color || 'var(--text-3)', opacity: 0.7 }}
+                        >
+                          {chapterKey}
                         </div>
-                      </button>
-                    );
-                  })}
-                </div>
+                        {/* Conversations in this chapter */}
+                        <div className="space-y-0.5">
+                          {convs.map((conv: ConversationSummary) => {
+                            const isActive = conv.id === activeConversationId;
+                            return (
+                              <button
+                                key={conv.id}
+                                onClick={() => handleSelect(conv.id)}
+                                className="w-full text-left px-2 py-2 rounded-lg transition-all active:scale-[0.98]"
+                                style={{
+                                  background: isActive
+                                    ? `${subCfg?.color || '#E8590C'}12`
+                                    : 'transparent',
+                                  border: isActive
+                                    ? `1px solid ${subCfg?.color || '#E8590C'}25`
+                                    : '1px solid transparent',
+                                }}
+                              >
+                                <div className="flex items-center gap-1.5">
+                                  <span
+                                    className="text-[11px] font-semibold truncate flex-1"
+                                    style={{
+                                      color: isActive
+                                        ? subCfg?.color || 'var(--text-1)'
+                                        : 'var(--text-1)',
+                                    }}
+                                  >
+                                    {conv.title}
+                                  </span>
+                                  <span
+                                    className="text-[8px] shrink-0"
+                                    style={{ color: 'var(--text-3)' }}
+                                  >
+                                    {relativeTime(conv.updatedAt, isHi)}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                  <span
+                                    className="text-[10px] truncate flex-1"
+                                    style={{ color: 'var(--text-3)' }}
+                                  >
+                                    {conv.lastMessage || (isHi ? '\u0928\u0908 \u091A\u0948\u091F' : 'New chat')}
+                                  </span>
+                                  <span
+                                    className="text-[8px] font-medium shrink-0 px-1 py-0.5 rounded"
+                                    style={{
+                                      background: `${subCfg?.color || '#999'}08`,
+                                      color: subCfg?.color || 'var(--text-3)',
+                                    }}
+                                  >
+                                    {conv.messageCount} {isHi ? '\u0938\u0902\u0926\u0947\u0936' : 'msgs'}
+                                  </span>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })
@@ -393,7 +450,7 @@ export function ConversationManager({
       <div
         className="hidden lg:flex shrink-0 flex-col border-r overflow-hidden"
         style={{
-          width: 240,
+          width: 260,
           background: 'var(--surface-1)',
           borderColor: 'var(--border)',
         }}

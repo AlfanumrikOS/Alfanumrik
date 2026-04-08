@@ -105,10 +105,26 @@ async function fetchAllConversations(studentId: string): Promise<ConversationSum
       const msgs = s.messages || [];
       const subject = s.subject || 'science';
       const lastMsg = msgs[msgs.length - 1];
+      // Extract chapter info from first user message if it mentions a chapter
+      let chapter: string | undefined;
+      let chapterNumber: number | undefined;
+      const firstUserMsg = msgs.find((m: any) => m.role === 'student' || m.role === 'user');
+      if (firstUserMsg?.content) {
+        const chMatch = firstUserMsg.content.match(/\(Chapter\s+(\d+)\)/i);
+        if (chMatch) {
+          chapterNumber = parseInt(chMatch[1], 10);
+        }
+        const aboutMatch = firstUserMsg.content.match(/(?:Teach me about|मुझे सिखाओ):\s*(.+?)(?:\s*\(Chapter|$)/i);
+        if (aboutMatch) {
+          chapter = aboutMatch[1].trim();
+        }
+      }
       return {
         id: s.id,
         title: generateTitle(msgs, subject),
         subject,
+        chapter,
+        chapterNumber,
         lastMessage: lastMsg?.content?.substring(0, 80) || '',
         messageCount: msgs.length,
         updatedAt: s.updated_at || new Date().toISOString(),
@@ -504,7 +520,7 @@ export default function FoxyPage() {
   }, [reportModal, student, chatSessionId, reportReason, reportCorrection, activeSubject, studentGrade, activeTopic, sessionMode, language]);
 
   const switchSubject = (key: string) => {
-    setActiveSubject(key); setActiveTopic(null); setSelectedChapters([]); setShowSubjectDD(false); setMessages([]); setChatSessionId(null);
+    setActiveSubject(key); setActiveTopic(null); setSelectedChapters([]); setShowSubjectDD(false); setMessages([]); setChatSessionId(null); setCollapsedAbove(null);
     if (typeof window !== 'undefined') localStorage.setItem('alfanumrik_subject', key);
     // Auto-set language for language subjects
     if (key === 'hindi') setLanguage('hi');
@@ -608,68 +624,96 @@ export default function FoxyPage() {
         </div>
       </header>
 
-      {/* ═══ SUBJECT + CHAPTER + MODE BAR ═══ */}
-      <div className="foxy-toolbar" style={{ background: 'var(--surface-1)', borderBottom: '1px solid var(--border)' }}>
-        {/* Subject dropdown */}
-        <div className="relative">
-          <button onClick={() => { setShowSubjectDD(!showSubjectDD); setShowChapterDD(false); }} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-[0.97]" style={{ background: `${cfg.color}10`, border: `1.5px solid ${cfg.color}30`, color: cfg.color }}>
-            <span className="text-sm">{cfg.icon}</span><span>{cfg.name}</span><span className="text-[10px] ml-0.5 opacity-60">{showSubjectDD ? '▲' : '▼'}</span>
-          </button>
-          {showSubjectDD && (
-            <div className="absolute top-full left-0 mt-1 z-50 w-[calc(100vw-24px)] sm:w-56 rounded-2xl overflow-hidden shadow-lg" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
-              <div className="p-2 text-[10px] font-bold uppercase tracking-wider text-[var(--text-3)] px-3">My Subjects</div>
-              {(studentSubs.length > 0 ? studentSubs : Object.keys(SUBJECTS)).map((key: string) => {
-                const sub = SUBJECTS[key]; if (!sub) return null;
-                return (
-                  <button key={key} onClick={() => switchSubject(key)} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-all" style={{ background: activeSubject === key ? `${sub.color}08` : 'transparent', borderLeft: activeSubject === key ? `3px solid ${sub.color}` : '3px solid transparent' }}>
-                    <span className="text-base">{sub.icon}</span>
-                    <span className="text-sm font-semibold" style={{ color: activeSubject === key ? sub.color : 'var(--text-1)' }}>{sub.name}</span>
-                    {activeSubject === key && <span className="ml-auto text-xs" style={{ color: sub.color }}>✓</span>}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
+      {/* ═══ SUBJECT TAB BAR — horizontal scrollable pills ═══ */}
+      <div
+        className="foxy-subject-tabs flex items-center gap-1.5 px-3 py-2"
+        style={{
+          background: 'var(--surface-1)',
+          borderBottom: '1px solid var(--border)',
+        }}
+      >
+        {(studentSubs.length > 0 ? studentSubs : Object.keys(SUBJECTS)).map((key: string) => {
+          const sub = SUBJECTS[key];
+          if (!sub) return null;
+          const isActive = activeSubject === key;
+          return (
+            <button
+              key={key}
+              onClick={() => {
+                if (key !== activeSubject) {
+                  switchSubject(key);
+                  setShowChapterDD(true);
+                }
+              }}
+              className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-[0.97]"
+              style={{
+                background: isActive ? `${sub.color}15` : 'var(--surface-2)',
+                border: isActive ? `1.5px solid ${sub.color}40` : '1.5px solid var(--border)',
+                color: isActive ? sub.color : 'var(--text-2)',
+              }}
+            >
+              <span className="text-sm">{sub.icon}</span>
+              <span className="whitespace-nowrap">{sub.name.length > 8 ? sub.name.substring(0, 7) + '.' : sub.name}</span>
+            </button>
+          );
+        })}
+      </div>
 
+      {/* ═══ CHAPTER SELECTOR + MODE BAR ═══ */}
+      <div className="foxy-toolbar" style={{ background: 'var(--surface-1)', borderBottom: '1px solid var(--border)' }}>
         {/* Chapter dropdown */}
         <div className="relative">
           <button onClick={() => { setShowChapterDD(!showChapterDD); setShowSubjectDD(false); }} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-[0.97]" style={{ background: 'var(--surface-2)', border: '1.5px solid var(--border)', color: 'var(--text-2)' }}>
-            <span className="text-sm">📖</span><span>{selectedChapters.length > 0 ? `${selectedChapters.length} Ch` : `All ${topics.length} Ch`}</span><span className="text-[10px] ml-0.5 opacity-60">{showChapterDD ? '▲' : '▼'}</span>
+            <span className="text-sm">{cfg.icon}</span>
+            <span>
+              {activeTopic
+                ? `Ch ${activeTopic.chapter_number}: ${activeTopic.title?.length > 15 ? activeTopic.title.substring(0, 14) + '...' : activeTopic.title}`
+                : selectedChapters.length > 0
+                  ? `${selectedChapters.length} ${language === 'hi' ? '\u0905\u0927\u094D\u092F\u093E\u092F' : 'Ch'}`
+                  : (language === 'hi' ? '\u0905\u0927\u094D\u092F\u093E\u092F \u091A\u0941\u0928\u094B' : 'Select Chapter')}
+            </span>
+            <span className="text-[10px] ml-0.5 opacity-60">{showChapterDD ? '\u25B2' : '\u25BC'}</span>
           </button>
           {showChapterDD && (
             <div className="absolute top-full left-0 mt-1 z-50 w-[calc(100vw-24px)] sm:w-72 max-h-[50vh] rounded-2xl overflow-hidden shadow-lg flex flex-col" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
               <div className="p-2 px-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-3)]">{cfg.icon} {cfg.name} Chapters</span>
-                <button onClick={() => setSelectedChapters([])} className="text-[10px] font-semibold" style={{ color: 'var(--orange)' }}>Clear All</button>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-3)]">{cfg.icon} {cfg.name} {language === 'hi' ? '\u0905\u0927\u094D\u092F\u093E\u092F' : 'Chapters'}</span>
+                {(selectedChapters.length > 0 || activeTopic) && (
+                  <button onClick={() => { setSelectedChapters([]); setActiveTopic(null); }} className="text-[10px] font-semibold" style={{ color: 'var(--orange)' }}>{language === 'hi' ? '\u0938\u092C \u0939\u091F\u093E\u0913' : 'Clear All'}</button>
+                )}
               </div>
               <div className="flex-1 overflow-y-auto">
                 {topics.map((topic: any) => {
-                  const sel = selectedChapters.includes(topic.id);
+                  const sel = selectedChapters.includes(topic.id) || activeTopic?.id === topic.id;
                   const mastery = masteryData.find((m: any) => m.topic_tag === topic.title || m.chapter_number === topic.chapter_number);
                   const lvl = mastery?.mastery_level || 'not_started';
                   const lc = MASTERY_COLORS[lvl] || MASTERY_COLORS.not_started;
                   return (
-                    <button key={topic.id} onClick={() => setSelectedChapters((p: string[]) => sel ? p.filter((x: string) => x !== topic.id) : [...p, topic.id])} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-all" style={{ background: sel ? `${cfg.color}06` : 'transparent', borderBottom: '1px solid var(--border)' }}>
-                      <div className="w-5 h-5 rounded flex items-center justify-center shrink-0 text-[10px]" style={{ background: sel ? cfg.color : 'var(--surface-2)', color: sel ? '#fff' : 'var(--text-3)', border: sel ? 'none' : '1.5px solid var(--border)' }}>{sel ? '✓' : ''}</div>
+                    <button
+                      key={topic.id}
+                      onClick={() => {
+                        setActiveTopic(topic);
+                        setSelectedChapters([topic.id]);
+                        setMessages([]);
+                        setChatSessionId(null);
+                        setCollapsedAbove(null);
+                        setShowChapterDD(false);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-all"
+                      style={{ background: sel ? `${cfg.color}06` : 'transparent', borderBottom: '1px solid var(--border)' }}
+                    >
+                      <div className="w-5 h-5 rounded flex items-center justify-center shrink-0 text-[10px]" style={{ background: sel ? cfg.color : 'var(--surface-2)', color: sel ? '#fff' : 'var(--text-3)', border: sel ? 'none' : '1.5px solid var(--border)' }}>{sel ? '\u2713' : ''}</div>
                       <div className="flex-1 min-w-0"><div className="text-xs font-semibold truncate" style={{ color: 'var(--text-1)' }}>Ch {topic.chapter_number}: {topic.title}</div></div>
                       <span className="text-[9px] font-bold capitalize px-1.5 py-0.5 rounded" style={{ background: `${lc}15`, color: lc }}>{lvl.replace('_', ' ')}</span>
                     </button>
                   );
                 })}
               </div>
-              {selectedChapters.length > 0 && (
-                <div className="p-2 px-3" style={{ borderTop: '1px solid var(--border)' }}>
-                  <button onClick={() => { const ch = topics.find((t: any) => selectedChapters.includes(t.id)); if (ch) { setActiveTopic(ch); sendMessage(`Teach me about: ${ch.title} (Chapter ${ch.chapter_number})`); setShowChapterDD(false); } }} className="w-full py-2 rounded-xl text-xs font-bold text-white" style={{ background: cfg.color }}>
-                    Start with Selected
-                  </button>
-                </div>
-              )}
             </div>
           )}
         </div>
 
-        {/* Simplified mode pills — 3 primary modes */}
+        {/* Simplified mode pills */}
         <div className="foxy-mode-bar ml-auto">
           {SIMPLIFIED_MODES.map(m => {
             const backendMode = MODE_MAP[m.id] || m.id;
@@ -683,8 +727,8 @@ export default function FoxyPage() {
           })}
           {/* Lesson mode — advanced, shown as small pill */}
           <button onClick={() => switchMode('lesson')} className="shrink-0 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all active:scale-95 flex items-center gap-1" style={{ background: sessionMode === 'lesson' ? `${cfg.color}15` : 'transparent', color: sessionMode === 'lesson' ? cfg.color : 'var(--text-3)', border: sessionMode === 'lesson' ? `1px solid ${cfg.color}30` : '1px solid transparent' }}>
-            <span>🎓</span>
-            <span className="hidden sm:inline">{language === 'hi' ? 'पाठ' : 'Lesson'}</span>
+            <span>{'\uD83C\uDF93'}</span>
+            <span className="hidden sm:inline">{language === 'hi' ? '\u092A\u093E\u0920' : 'Lesson'}</span>
           </button>
         </div>
       </div>
@@ -852,7 +896,31 @@ export default function FoxyPage() {
               <div className="text-center py-12 md:py-20 animate-slide-up">
                 <div className="text-6xl md:text-7xl mb-4 animate-float">{FOXY_FACES.idle}</div>
                 <h2 className="text-xl md:text-2xl font-extrabold mb-2" style={{ fontFamily: 'var(--font-display)', background: `linear-gradient(135deg, #E8590C, ${cfg.color})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Hi! I am Foxy</h2>
-                <p className="text-sm text-[var(--text-3)] max-w-sm mx-auto mb-4 leading-relaxed">Your AI tutor. Pick a topic or type below!</p>
+                <p className="text-sm text-[var(--text-3)] max-w-sm mx-auto mb-4 leading-relaxed">
+                  {!activeTopic
+                    ? (language === 'hi'
+                        ? '\u0928\u0940\u091A\u0947 \u0938\u0947 \u0905\u0927\u094D\u092F\u093E\u092F \u091A\u0941\u0928\u094B \u092F\u093E \u0938\u0940\u0927\u0947 \u091F\u093E\u0907\u092A \u0915\u0930\u094B!'
+                        : 'Select a chapter below or just start typing!')
+                    : (language === 'hi'
+                        ? `${cfg.name} \u2014 Ch ${activeTopic.chapter_number}: ${activeTopic.title}`
+                        : `${cfg.name} \u2014 Ch ${activeTopic.chapter_number}: ${activeTopic.title}`)
+                  }
+                </p>
+
+                {/* Chapter selection nudge when no topic selected */}
+                {!activeTopic && !urlContext && (
+                  <button
+                    onClick={() => setShowChapterDD(true)}
+                    className="mb-6 px-5 py-3 rounded-2xl text-sm font-bold transition-all active:scale-[0.97]"
+                    style={{
+                      background: `${cfg.color}12`,
+                      color: cfg.color,
+                      border: `1.5px solid ${cfg.color}30`,
+                    }}
+                  >
+                    {cfg.icon} {language === 'hi' ? '\u0905\u0927\u094D\u092F\u093E\u092F \u091A\u0941\u0928\u094B' : 'Select a Chapter to Start'}
+                  </button>
+                )}
 
                 {/* Context banner — shown when arriving from /learn, /quiz, or knowledge gap */}
                 {urlContext && (
@@ -913,7 +981,11 @@ export default function FoxyPage() {
                   onSelect={sendMessage}
                 />
 
-                <button onClick={() => setShowChapterDD(true)} className="mt-6 px-5 py-2.5 rounded-xl text-sm font-bold" style={{ background: `${cfg.color}10`, color: cfg.color, border: `1.5px solid ${cfg.color}30` }}>{cfg.icon} Browse {topics.length} Chapters</button>
+                {activeTopic && (
+                  <button onClick={() => setShowChapterDD(true)} className="mt-6 px-5 py-2.5 rounded-xl text-sm font-bold" style={{ background: `${cfg.color}10`, color: cfg.color, border: `1.5px solid ${cfg.color}30` }}>
+                    {cfg.icon} {language === 'hi' ? `\u0905\u0928\u094D\u092F ${topics.length} \u0905\u0927\u094D\u092F\u093E\u092F \u0926\u0947\u0916\u094B` : `Browse ${topics.length} Chapters`}
+                  </button>
+                )}
               </div>
             )}
 
@@ -1055,6 +1127,26 @@ export default function FoxyPage() {
             <div ref={endRef} />
           </div>
 
+          {/* Conversation length nudge — after 15+ user messages */}
+          {messages.filter((m: ChatMessage) => m.role === 'student').length >= 15 && (
+            <div
+              className="mx-3 mb-2 p-2.5 rounded-xl text-xs flex items-center justify-between gap-2"
+              style={{ background: '#F97316' + '0D', border: '1px solid #F97316' + '25' }}
+            >
+              <span style={{ color: '#C2410C' }}>
+                {language === 'hi'
+                  ? '\uD83E\uDD8A \u0928\u0908 \u091A\u0948\u091F \u0936\u0941\u0930\u0942 \u0915\u0930\u094B \u0924\u093E\u0915\u093F Foxy \u092C\u0947\u0939\u0924\u0930 \u091C\u0935\u093E\u092C \u0926\u0947 \u0938\u0915\u0947!'
+                  : '\uD83E\uDD8A Start a new chat so Foxy can give better answers!'}
+              </span>
+              <button
+                onClick={handleNewConversation}
+                className="shrink-0 px-3 py-1.5 rounded-full text-[10px] font-bold text-white transition-all active:scale-95"
+                style={{ background: '#F97316' }}
+              >
+                {language === 'hi' ? '\u0928\u0908 \u091A\u0948\u091F' : 'New Chat'}
+              </button>
+            </div>
+          )}
           <ChatInput onSubmit={sendMessage} subjectKey={activeSubject} disabled={loading} />
         </div>
       </div>

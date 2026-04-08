@@ -798,6 +798,8 @@ img, video, iframe, canvas, svg {
 .foxy-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 12px}
 .foxy-mode-bar{display:flex;gap:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;flex-shrink:0}
 .foxy-mode-bar::-webkit-scrollbar{display:none}
+.foxy-subject-tabs{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.foxy-subject-tabs::-webkit-scrollbar{display:none}
 @media(min-width:640px){.foxy-toolbar{flex-wrap:nowrap;gap:8px;padding:8px 12px}}
 
 /* ─── Low-End Device Fallback ────────────────────────────── */
