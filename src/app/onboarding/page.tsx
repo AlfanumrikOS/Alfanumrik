@@ -21,7 +21,7 @@ import { GRADES, BOARDS } from '@/lib/constants';
 import { LoadingFoxy } from '@/components/ui';
 
 export default function OnboardingPage() {
-  const { student, isLoggedIn, isLoading, refreshStudent } = useAuth();
+  const { student, isLoggedIn, isLoading, refreshStudent, activeRole, isHi } = useAuth();
   const router = useRouter();
 
   const [grade, setGrade] = useState('');
@@ -33,6 +33,18 @@ export default function OnboardingPage() {
     if (!isLoading && !isLoggedIn) {
       router.replace('/');
       return;
+    }
+    if (!isLoading && isLoggedIn) {
+      // Redirect non-student roles to their home portal —
+      // teachers and parents complete their profile setup there.
+      if (activeRole === 'teacher') {
+        router.replace('/teacher');
+        return;
+      }
+      if (activeRole === 'guardian') {
+        router.replace('/parent');
+        return;
+      }
     }
     if (!isLoading && student) {
       // Already completed onboarding — skip this page
@@ -46,9 +58,34 @@ export default function OnboardingPage() {
       setGrade(validGrades.includes(rawGrade) ? rawGrade : '');
       setBoard(student.board ?? 'CBSE');
     }
-  }, [isLoading, isLoggedIn, student, router]);
+  }, [isLoading, isLoggedIn, activeRole, student, router]);
 
-  if (isLoading || !student) return <LoadingFoxy />;
+  // Show loading while role is being determined or while a redirect is in flight
+  if (isLoading) return <LoadingFoxy />;
+
+  // Non-student roles: show a brief redirect indicator while useEffect fires
+  if (activeRole === 'teacher' || activeRole === 'guardian') {
+    return (
+      <div
+        className="mesh-bg"
+        style={{
+          minHeight: '100dvh',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '24px 16px',
+        }}
+      >
+        <div className="animate-float" style={{ fontSize: 48, marginBottom: 16 }}>🦊</div>
+        <p style={{ fontSize: 15, color: 'var(--text-2)', fontWeight: 600 }}>
+          {isHi ? 'आपको रीडायरेक्ट किया जा रहा है…' : 'Redirecting you…'}
+        </p>
+      </div>
+    );
+  }
+
+  if (!student) return <LoadingFoxy />;
   // Guard: already onboarded — redirect handled in useEffect above
   if (student.onboarding_completed) return <LoadingFoxy />;
 
