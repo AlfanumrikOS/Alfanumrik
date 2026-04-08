@@ -598,6 +598,7 @@ async function selectRAGQuestions(
     caller: 'quiz-generator',
     userId: requestingUserId,
     logTrace: true,
+    board: 'CBSE',
   })
 
   if (result.error || result.chunks.length === 0) return []

@@ -35,6 +35,8 @@ export interface RetrievalParams {
   concept?: string          // concept filter
   contentType?: 'content' | 'diagram' | 'qa' | null
   syllabusVersion?: string  // e.g., '2025-26'
+  board?: string            // CBSE | ICSE — defaults to 'CBSE' at RPC level
+  minQuality?: number       // minimum quality_score threshold (default 0.5 at RPC level)
   source?: string           // default 'NCERT'
   matchCount?: number       // chunks to return (default 5)
   candidateCount?: number   // fetch this many for reranking (default: matchCount * 3 if useReranking, else matchCount)
@@ -360,6 +362,8 @@ async function runVectorSearch(
       p_content_type: params.contentType ?? null,
       p_source: params.source ?? 'NCERT',
       p_syllabus_version: params.syllabusVersion ?? DEFAULT_SYLLABUS_VERSION,
+      p_board: params.board ?? 'CBSE',
+      p_min_quality: params.minQuality ?? 0.5,
       query_embedding: queryEmbedding ? JSON.stringify(queryEmbedding) : null,
     })
 
@@ -384,6 +388,8 @@ async function runVectorSearch(
       p_subject: params.subject,
       p_grade: params.grade,
       match_count: fetchCount,
+      p_board: params.board ?? null,           // null = no board filter on legacy (preserve backward compat)
+      p_syllabus_version: params.syllabusVersion ?? DEFAULT_SYLLABUS_VERSION,
     }
     if (params.chapterText) rpcParams.p_chapter = params.chapterText
     if (params.contentType) rpcParams.p_content_type = params.contentType
@@ -554,6 +560,7 @@ export async function fetchRAGContextV2(
     chapterText: chapter ?? undefined,
     contentType: (contentType as 'content' | 'diagram' | 'qa' | null) ?? null,
     concept: concept ?? undefined,
+    board: 'CBSE',
     caller,
     logTrace: false, // legacy callers don't supply userId/sessionId — skip trace
   })

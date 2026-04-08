@@ -201,7 +201,7 @@ Deno.serve(async (req: Request) => {
 
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-      status: 405, headers: { 'Content-Type': 'application/json' },
+      status: 200, headers: { 'Content-Type': 'application/json' },
     })
   }
 
@@ -245,7 +245,7 @@ Deno.serve(async (req: Request) => {
     const { user, email_data } = data
     if (!user?.email || !email_data) {
       return new Response(JSON.stringify({ error: 'Invalid payload' }), {
-        status: 400, headers: { 'Content-Type': 'application/json' },
+        status: 200, headers: { 'Content-Type': 'application/json' },
       })
     }
 

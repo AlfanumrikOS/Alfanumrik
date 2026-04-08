@@ -29,6 +29,19 @@
  * }
  */
 
+/**
+ * ARCHITECTURE NOTE (2026-04-08):
+ * Two Foxy endpoints exist in parallel:
+ * 1. THIS FUNCTION (foxy-tutor) — currently active, called by foxy/page.tsx
+ *    Model: claude-haiku-4-5-20251001 | Auth: JWT | Sessions: chat_sessions
+ * 2. /src/app/api/foxy/route.ts — new Next.js route, NOT YET WIRED to UI
+ *    Model: claude-3-5-sonnet-20241022 | Auth: RBAC | Sessions: foxy_sessions
+ *
+ * Migration plan: /api/foxy will replace this function once verified.
+ * Until then, THIS function is the production Foxy path.
+ * Do not change session table schema (chat_sessions) without updating both.
+ */
+
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 
@@ -644,7 +657,10 @@ Deno.serve(async (req: Request) => {
     // Fixed XP per interaction to prevent inflation via keyword stuffing.
     // Quality-based XP should be determined by analyzing the AI response,
     // not the student's input (which is fully client-controlled).
-    const xpEarned = 5
+    // XP per Foxy interaction — must match XP_RULES.foxy_chat in src/lib/xp-rules.ts
+    // If you change this, also update xp-rules.ts and the XP_RULES type.
+    const XP_PER_FOXY_CHAT = 5 // mirrors XP_RULES.foxy_chat
+    const xpEarned = XP_PER_FOXY_CHAT
 
     // ── Persist chat session ──
     const now = new Date().toISOString()
@@ -699,7 +715,7 @@ Deno.serve(async (req: Request) => {
     if (xpEarned > 0) {
       supabase.rpc('add_xp', {
         p_student_id: student_id,
-        p_xp: xpEarned,
+        p_amount: xpEarned,
         p_source: `foxy_${subject}`,
       }).then(() => {}).catch((e: Error) => console.error('add_xp failed:', e.message))
     }
