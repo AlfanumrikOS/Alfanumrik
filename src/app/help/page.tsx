@@ -106,9 +106,15 @@ const TICKET_CATEGORIES = [
 /* ── AI Support Bot via Foxy API route ── */
 async function askSupportBot(message: string, history: Array<{role: string; content: string}>, userContext: string): Promise<string> {
   try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+    } catch { /* cookie fallback */ }
+
     const res = await fetch('/api/foxy', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       credentials: 'include',
       body: JSON.stringify({
         message: `${userContext}\n\nUser question: ${message}`,
