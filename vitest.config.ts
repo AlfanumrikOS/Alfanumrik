@@ -19,7 +19,7 @@ export default defineConfig({
         'src/app/**/page.tsx',
       ],
       thresholds: {
-        // Global threshold — aspirational, does not fail CI yet
+        // Global threshold — enforced: vitest exits non-zero when not met
         statements: 60,
         branches: 60,
         functions: 60,

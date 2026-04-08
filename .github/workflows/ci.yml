@@ -319,6 +319,10 @@ jobs:
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ env.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ env.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+        # continue-on-error is intentional: CI uses placeholder Supabase credentials
+        # (https://placeholder.supabase.co), so tests that require a live backend will
+        # fail regardless of code correctness. Remove this line only when CI is
+        # configured with a real staging Supabase instance and valid secrets.
         continue-on-error: true
       - uses: actions/upload-artifact@v4
         if: always()
