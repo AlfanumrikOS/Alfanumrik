@@ -122,7 +122,7 @@ export async function checkDailyUsage(
  * Uses the atomic check_and_record_usage RPC so concurrent client-side
  * calls can't both pass the limit check before either increment lands.
  *
- * NOTE: The hard enforcement gate is in the foxy-tutor Edge Function
+ * NOTE: The hard enforcement gate is in the /api/foxy Next.js route
  * (also using check_and_record_usage). This client-side call keeps the
  * UI usage badge accurate.
  */

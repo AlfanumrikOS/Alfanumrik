@@ -128,31 +128,47 @@ async function fetchConversationById(sessionId: string) {
 
 async function callFoxyTutor(params: Record<string, any>) {
   try {
-    // Get user's JWT for authenticated edge function calls — anon key causes 401
-    const { data: { session } } = await supabase.auth.getSession();
-    const token = session?.access_token || SUPABASE_ANON_KEY;
-
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/foxy-tutor`, {
+    const res = await fetch('/api/foxy', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include', // sends session cookie automatically
+      body: JSON.stringify({
+        message:   params.message,
+        subject:   params.subject,
+        grade:     params.grade,
+        chapter:   params.chapter   ?? null,
+        board:     params.board     ?? null,
+        sessionId: params.session_id ?? null, // map old param name to new
+        mode:      params.mode      ?? 'learn',
+      }),
     });
+
     if (!res.ok) {
-      // Try to parse JSON body for structured error info (e.g. CHAT_LIMIT code)
-      let errBody: any = null;
+      let errBody: Record<string, unknown> | null = null;
       try { errBody = await res.json(); } catch { /* not JSON */ }
-      console.error('Foxy tutor error:', res.status, errBody);
+
       if (res.status === 401 || res.status === 403) {
         return { reply: 'Session expired. Please refresh the page and try again!', xp_earned: 0, session_id: null };
       }
-      if (res.status === 429 && errBody?.code === 'CHAT_LIMIT') {
-        // Signal daily limit reached so the caller can show UpgradeModal
-        return { reply: errBody.reply || `You've used all your messages for today.`, xp_earned: 0, session_id: null, limitReached: true };
+      if (res.status === 429) {
+        return {
+          reply: (errBody?.error as string) || "You've used all your messages for today. Upgrade to continue!",
+          xp_earned: 0,
+          session_id: null,
+          limitReached: true,
+        };
       }
-      return { reply: res.status === 429 ? 'Slow down! Wait a moment and try again.' : 'Foxy is taking a short break. Try again!', xp_earned: 0, session_id: null };
+      return { reply: 'Foxy is taking a short break. Try again in a moment!', xp_earned: 0, session_id: null };
     }
+
     const data = await res.json();
-    return { reply: data.reply || data.response || data.message || 'Let me think...', xp_earned: data.xp_earned || 0, session_id: data.session_id || null };
+    return {
+      reply:      data.response || 'Let me think about that...',
+      xp_earned:  0, // new route does not award per-message XP (XP via quiz/study plan)
+      session_id: data.sessionId || null,
+      sources:    data.sources   || [],
+      quota:      data.quotaRemaining,
+    };
   } catch {
     return { reply: 'Connection issue. Check your network and try again!', xp_earned: 0, session_id: null };
   }
