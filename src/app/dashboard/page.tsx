@@ -54,6 +54,9 @@ export default function Dashboard() {
   const [nudges, setNudges] = useState<Array<{ id: string; nudge_type: string; message: string; message_hi?: string; priority: number }>>([]);
   const [studentRank, setStudentRank] = useState<number | null>(null);
   const [showMore, setShowMore] = useState(false);
+  // BKT mastery: average mastery_probability per subject from concept_mastery table.
+  // This is the real adaptive mastery signal, not the XP/accuracy proxy.
+  const [bktMastery, setBktMastery] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/');
@@ -86,6 +89,34 @@ export default function Dashboard() {
     setSubjects(subs);
     setFlags(feats);
     setNextTopics(nextTopicsResult.slice(0, 3));
+
+    // Fetch BKT mastery per subject: average mastery_probability from concept_mastery.
+    // concept_mastery has no direct subject column — join via curriculum_topics.
+    // We select topic_id, mastery_probability and join subject from curriculum_topics.
+    try {
+      const { data: cmData } = await supabase
+        .from('concept_mastery')
+        .select('mastery_probability, curriculum_topics!inner(subject_id, subjects!inner(code))')
+        .eq('student_id', student.id)
+        .gt('mastery_probability', 0);
+      if (cmData && cmData.length > 0) {
+        // Group by subject code and compute average mastery_probability
+        const bySubject: Record<string, number[]> = {};
+        for (const row of cmData as any[]) {
+          const code = row.curriculum_topics?.subjects?.code as string | undefined;
+          if (code && row.mastery_probability != null) {
+            (bySubject[code] = bySubject[code] || []).push(row.mastery_probability as number);
+          }
+        }
+        const avgMastery: Record<string, number> = {};
+        for (const [code, vals] of Object.entries(bySubject)) {
+          avgMastery[code] = Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100);
+        }
+        setBktMastery(avgMastery);
+      }
+    } catch {
+      // Non-fatal: falls back to XP-based progress bar
+    }
     const gradeKey = (student.grade || '9').replace('Grade ', '').trim();
     const gradeSubjects = GRADE_SUBJECTS[gradeKey] || GRADE_SUBJECTS['9'];
     const rawSelected = (student.selected_subjects || [student.preferred_subject].filter(Boolean)) as string[];
@@ -213,6 +244,16 @@ export default function Dashboard() {
           level={calculateLevel(totalXp)}
           streak={streak}
           preferredSubject={student.preferred_subject}
+        />
+
+        {/* ═══ DAILY CHALLENGE — hero card, always visible above fold ═══ */}
+        {/* Challenges are time-sensitive and drive daily engagement. They must
+            be visible without the user having to tap "Show More". */}
+        <DailyChallenge
+          isHi={isHi}
+          studentName={student.name}
+          streak={streak}
+          grade={student.grade}
         />
 
         {/* ═══ SHOW MORE TOGGLE — progressive disclosure ═══ */}
@@ -516,8 +557,14 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Quick Actions */}
-        <QuickActions isHi={isHi} />
+        {/* Smart "What to do now?" CTA — context-driven, single recommendation */}
+        <QuickActions
+          isHi={isHi}
+          dueCount={dueCount}
+          nextTopic={nextTopics[0]?.title ?? null}
+          streak={streak}
+          quizzesTaken={snapshot?.quizzes_taken ?? 0}
+        />
 
         {/* Mini Leaderboard — competitive motivation, prominent for CBSE students */}
         {(studentRank !== null || totalXp > 0) && (
@@ -626,12 +673,13 @@ export default function Dashboard() {
           </>
         )}
 
-        {/* XP by Subject (only selected subjects) */}
+        {/* XP by Subject + BKT Mastery (only selected subjects) */}
         <SubjectProgress
           profiles={profiles}
           subjects={subjects}
           selectedSubjects={selectedSubjects}
           isHi={isHi}
+          bktMastery={bktMastery}
         />
 
         {/* Progressive disclosure: unlocked after first meaningful engagement */}
@@ -663,13 +711,6 @@ export default function Dashboard() {
             grade={student.grade}
           />
         )}
-
-        <DailyChallenge
-          isHi={isHi}
-          studentName={student.name}
-          streak={streak}
-          grade={student.grade}
-        />
 
         </>}
        </SectionErrorBoundary>
