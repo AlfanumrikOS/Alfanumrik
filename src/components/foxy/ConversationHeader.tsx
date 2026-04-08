@@ -84,44 +84,55 @@ export function ConversationHeader({
         </svg>
       </button>
 
-      {/* Subject icon */}
+      {/* Persistent context badge — subject > chapter > mode */}
       <div
-        className="w-7 h-7 rounded-lg flex items-center justify-center text-xs shrink-0"
+        className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl shrink-0 max-w-[55%] sm:max-w-none"
         style={{
-          background: `${cfg.color}12`,
-          color: cfg.color,
+          background: `${cfg.color}10`,
+          border: `1.5px solid ${cfg.color}25`,
         }}
       >
-        {cfg.icon}
+        <span className="text-xs shrink-0" style={{ color: cfg.color }}>{cfg.icon}</span>
+        <span
+          className="text-[10px] font-bold truncate"
+          style={{ color: cfg.color }}
+        >
+          {cfg.name}
+        </span>
+        {(topicTitle || chapterNumber) && (
+          <>
+            <span className="text-[9px] shrink-0" style={{ color: `${cfg.color}80` }}>&gt;</span>
+            <span
+              className="text-[10px] font-semibold truncate"
+              style={{ color: cfg.color }}
+            >
+              {chapterNumber ? `Ch.${chapterNumber}` : ''}{chapterNumber && topicTitle ? ': ' : ''}{topicTitle || ''}
+            </span>
+          </>
+        )}
+        <span className="text-[9px] shrink-0 mx-0.5" style={{ color: `${cfg.color}50` }}>|</span>
+        <span
+          className="text-[9px] font-bold shrink-0"
+          style={{ color: cfg.color }}
+        >
+          {modeInfo.icon} {isHi ? modeInfo.hi : modeInfo.en}
+        </span>
       </div>
 
-      {/* Title and meta */}
+      {/* Message count + title */}
       <div className="flex-1 min-w-0">
         <div
           className="text-[11px] font-bold truncate"
           style={{ color: 'var(--text-1)' }}
         >
-          {topicTitle
-            ? `${chapterNumber ? `Ch ${chapterNumber}: ` : ''}${topicTitle}`
-            : title || cfg.name}
+          {title || cfg.name}
         </div>
-        <div className="flex items-center gap-1.5">
-          <span
-            className="text-[9px] font-semibold px-1.5 py-0.5 rounded"
-            style={{
-              background: `${cfg.color}08`,
-              color: cfg.color,
-            }}
-          >
-            {modeInfo.icon} {isHi ? modeInfo.hi : modeInfo.en}
-          </span>
-          <span
-            className="text-[9px]"
-            style={{ color: 'var(--text-3)' }}
-          >
-            {messageCount} {isHi ? '\u0938\u0902\u0926\u0947\u0936' : 'msgs'}
-          </span>
-        </div>
+        <span
+          className="text-[9px]"
+          style={{ color: 'var(--text-3)' }}
+        >
+          {messageCount} {isHi ? '\u0938\u0902\u0926\u0947\u0936' : 'msgs'}
+        </span>
       </div>
 
       {/* New chat button */}
