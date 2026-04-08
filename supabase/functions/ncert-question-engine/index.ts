@@ -160,27 +160,12 @@ async function fetchQuestions(body: Record<string, unknown>): Promise<Response> 
 // a simple counter row in student_ncert_attempts aggregation.
 // Uses a lightweight in-memory store keyed by student_id for the current
 // Edge Function instance. At scale, use Upstash Redis or Supabase realtime.
-const _evalWindows = new Map<string, { count: number; windowStart: number }>()
+import { createRateLimiter } from '../../src/lib/rate-limiter.ts'
+
 const EVAL_LIMIT = 30
 const EVAL_WINDOW_MS = 10 * 60 * 1000 // 10 minutes
 
-function checkEvalRateLimit(studentId: string): { allowed: boolean; retryAfterMs: number } {
-  const now = Date.now()
-  const entry = _evalWindows.get(studentId)
-
-  if (!entry || (now - entry.windowStart) > EVAL_WINDOW_MS) {
-    _evalWindows.set(studentId, { count: 1, windowStart: now })
-    return { allowed: true, retryAfterMs: 0 }
-  }
-
-  if (entry.count >= EVAL_LIMIT) {
-    const retryAfterMs = EVAL_WINDOW_MS - (now - entry.windowStart)
-    return { allowed: false, retryAfterMs }
-  }
-
-  entry.count++
-  return { allowed: true, retryAfterMs: 0 }
-}
+const checkEvalRateLimit = createRateLimiter(EVAL_LIMIT, EVAL_WINDOW_MS)
 
 // ─── Action: evaluate_answer ──────────────────────────────────────────────────
 async function evaluateAnswer(body: Record<string, unknown>): Promise<Response> {
