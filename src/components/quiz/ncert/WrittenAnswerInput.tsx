@@ -30,12 +30,12 @@ const CBSE_HINTS: Record<string, string[]> = {
 };
 
 const TYPE_CONFIG: Record<string, { label: string; color: string; marksLabel: string }> = {
-  short_answer:  { label: 'SA',   color: '#0891B2', marksLabel: '1–2 Marks' },
-  medium_answer: { label: 'MA',   color: '#16A34A', marksLabel: '3–4 Marks' },
-  long_answer:   { label: 'LA',   color: '#DC2626', marksLabel: '5–6 Marks' },
-  hots:          { label: 'HOTS', color: '#7C3AED', marksLabel: '4–5 Marks' },
-  numerical:     { label: 'NUM',  color: '#D97706', marksLabel: '2–3 Marks' },
-  intext:        { label: 'ITQ',  color: '#0891B2', marksLabel: '1–3 Marks' },
+  short_answer:  { label: 'SA',   color: 'var(--text-teal)',   marksLabel: '1–2 Marks' },
+  medium_answer: { label: 'MA',   color: 'var(--text-green)',  marksLabel: '3–4 Marks' },
+  long_answer:   { label: 'LA',   color: 'var(--text-red)',    marksLabel: '5–6 Marks' },
+  hots:          { label: 'HOTS', color: 'var(--text-purple)', marksLabel: '4–5 Marks' },
+  numerical:     { label: 'NUM',  color: 'var(--text-amber)',  marksLabel: '2–3 Marks' },
+  intext:        { label: 'ITQ',  color: 'var(--text-teal)',   marksLabel: '1–3 Marks' },
 };
 
 export default function WrittenAnswerInput({
@@ -84,7 +84,13 @@ export default function WrittenAnswerInput({
   }
 
   const timePercent = (timeLeft / timeEstimate) * 100;
-  const timerColor = timePercent > 50 ? '#16A34A' : timePercent > 20 ? '#D97706' : '#DC2626';
+  const timerColor = timePercent > 50 ? 'var(--text-green)' : timePercent > 20 ? 'var(--text-amber)' : 'var(--text-red)';
+
+  // a11y: announce time milestones to screen readers
+  const timerAnnouncement =
+    timeLeft === 60 ? '60 seconds remaining' :
+    timeLeft === 30 ? '30 seconds remaining — please wrap up' :
+    timeLeft === 0  ? 'Time is up' : '';
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-4">
@@ -107,10 +113,23 @@ export default function WrittenAnswerInput({
         </div>
       </div>
 
-      {/* Timer bar */}
-      <div className="w-full h-1 rounded-full mb-4" style={{ background: 'var(--surface-2)' }}>
+      {/* Timer bar — WCAG 2.1 4.1.3: status updates via aria-live */}
+      <div
+        role="progressbar"
+        aria-label="Time remaining"
+        aria-valuenow={timeLeft}
+        aria-valuemin={0}
+        aria-valuemax={timeEstimate}
+        className="w-full h-1 rounded-full mb-4"
+        style={{ background: 'var(--surface-2)' }}
+      >
         <div className="h-1 rounded-full transition-all duration-1000"
           style={{ width: `${timePercent}%`, background: timerColor }} />
+      </div>
+
+      {/* Screen-reader time announcements (hidden visually) */}
+      <div aria-live="polite" aria-atomic="true" className="sr-only">
+        {timerAnnouncement}
       </div>
 
       {/* Question */}
@@ -152,23 +171,39 @@ export default function WrittenAnswerInput({
       {!reviewing ? (
         <>
           <div className="relative">
+            {/* WCAG 3.3.2: visible label associated with input */}
+            <label
+              htmlFor="answer-input"
+              className="sr-only"
+            >
+              Your answer — {tConfig.label}, {marksP} mark{marksP > 1 ? 's' : ''}, up to {wordLimit} words
+            </label>
             <textarea
+              id="answer-input"
               ref={textareaRef}
               value={answer}
               onChange={e => setAnswer(e.target.value)}
               placeholder={`Write your answer here…\n(${marksP} mark${marksP > 1 ? 's' : ''} · ~${wordLimit} words)`}
-              className="w-full rounded-2xl px-4 py-3 text-sm leading-relaxed resize-none outline-none transition-all"
+              aria-describedby="word-count-hint"
+              aria-invalid={isOverLimit}
+              /* WCAG 2.4.7: keep focus-visible ring — removed outline-none */
+              className="w-full rounded-2xl px-4 py-3 text-sm leading-relaxed resize-none transition-all focus-visible:outline-2 focus-visible:outline-offset-2"
               rows={questionType === 'long_answer' ? 10 : questionType === 'medium_answer' ? 7 : 4}
               style={{
                 background: 'var(--surface-1)',
-                border: `1.5px solid ${isOverLimit ? '#DC2626' : 'var(--border)'}`,
+                border: `1.5px solid ${isOverLimit ? 'var(--text-red)' : 'var(--border)'}`,
                 color: 'var(--text-1)',
                 fontFamily: 'var(--font-body)',
+                outlineColor: 'var(--brand)',
               }}
             />
             {/* Word / char count */}
-            <div className="absolute bottom-2.5 right-3 flex items-center gap-2 text-[10px]"
-              style={{ color: isOverLimit ? '#DC2626' : 'var(--text-3)' }}>
+            <div
+              id="word-count-hint"
+              className="absolute bottom-2.5 right-3 flex items-center gap-2 text-[10px]"
+              style={{ color: isOverLimit ? 'var(--text-red)' : 'var(--text-3)' }}
+              aria-live="polite"
+            >
               <span>{wordCount} words</span>
               {wordLimit > 0 && <span>/ {wordLimit} suggested</span>}
             </div>
@@ -182,8 +217,10 @@ export default function WrittenAnswerInput({
             <button
               onClick={() => answer.trim().length > 0 ? setReviewing(true) : handleSubmit()}
               className="flex-1 py-3 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.98]"
-              style={{ background: answer.trim() ? 'var(--brand)' : '#999' }}
-              disabled={isEvaluating}>
+              style={{ background: answer.trim() ? 'var(--btn-primary)' : '#767676' }}
+              disabled={isEvaluating}
+              aria-label={answer.trim() ? 'Review your answer before submitting' : 'Submit empty answer'}
+            >
               {answer.trim() ? 'Review Answer →' : 'Submit Empty'}
             </button>
           </div>
@@ -207,8 +244,10 @@ export default function WrittenAnswerInput({
             </button>
             <button onClick={handleSubmit}
               className="flex-1 py-3 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.98]"
-              style={{ background: 'linear-gradient(135deg, var(--brand), #ff7043)' }}
-              disabled={isEvaluating}>
+              style={{ background: 'var(--btn-primary-gradient)' }}
+              disabled={isEvaluating}
+              aria-busy={isEvaluating}
+            >
               {isEvaluating ? 'Evaluating…' : 'Submit for Evaluation →'}
             </button>
           </div>

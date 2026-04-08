@@ -39,11 +39,11 @@ interface Props {
 }
 
 const QUESTION_TYPES = [
-  { key: 'mixed',         label: 'Mixed CBSE Paper',   icon: '📄', marks: 'All types',  desc: 'Balanced MCQ + SA + MA + LA',  color: '#E8581C' },
-  { key: 'mcq',           label: 'MCQ',                icon: '⭕', marks: '1 mark',     desc: 'Objective single choice',       color: '#6C5CE7' },
-  { key: 'short_answer',  label: 'Short Answer (SA)',  icon: '✏️', marks: '1–2 marks',  desc: '2–3 sentences answer',          color: '#0891B2' },
-  { key: 'medium_answer', label: 'Medium Answer (MA)', icon: '📝', marks: '3–4 marks',  desc: 'Paragraph with key points',     color: '#16A34A' },
-  { key: 'long_answer',   label: 'Long Answer (LA)',   icon: '📃', marks: '5–6 marks',  desc: 'Structured essay response',     color: '#DC2626' },
+  { key: 'mixed',         label: 'Mixed CBSE Paper',   icon: '📄', marks: 'All types',  desc: 'Balanced MCQ + SA + MA + LA',  colorVar: 'var(--brand)',        colorHex: '#E8581C' },
+  { key: 'mcq',           label: 'MCQ',                icon: '⭕', marks: '1 mark',     desc: 'Objective single choice',       colorVar: 'var(--text-purple)',  colorHex: '#6C5CE7' },
+  { key: 'short_answer',  label: 'Short Answer (SA)',  icon: '✏️', marks: '1–2 marks',  desc: '2–3 sentences answer',          colorVar: 'var(--text-teal)',    colorHex: '#0880A1' },
+  { key: 'medium_answer', label: 'Medium Answer (MA)', icon: '📝', marks: '3–4 marks',  desc: 'Paragraph with key points',     colorVar: 'var(--text-green)',   colorHex: '#168930' },
+  { key: 'long_answer',   label: 'Long Answer (LA)',   icon: '📃', marks: '5–6 marks',  desc: 'Structured essay response',     colorVar: 'var(--text-red)',     colorHex: '#DC2626' },
 ] as const;
 
 const COUNT_OPTIONS = [5, 10, 15, 20];
@@ -130,34 +130,48 @@ export default function NCERTQuizSetup({ initialSubject, initialGrade, onStart }
   return (
     <div className="max-w-2xl mx-auto px-4 py-6">
       {/* ── Step breadcrumb ─────────────────────────────── */}
-      <div className="flex items-center gap-2 mb-6 text-xs">
-        {(['subject','grade','chapter','type'] as const).map((s, i) => (
-          <span key={s} className="flex items-center gap-2">
-            {i > 0 && <span style={{ color: 'var(--text-3)' }}>›</span>}
-            <span
-              className={`capitalize px-2 py-0.5 rounded-full font-medium cursor-pointer transition-colors ${
-                step === s
-                  ? 'text-white'
-                  : i < (['subject','grade','chapter','type'].indexOf(step))
-                  ? 'cursor-pointer'
-                  : 'opacity-40'
-              }`}
-              style={step === s ? { background: 'var(--brand)', color: '#fff' } : { color: 'var(--text-2)' }}
-              onClick={() => {
-                if (i < (['subject','grade','chapter','type'].indexOf(step))) {
-                  if (s === 'subject') { setStep('subject'); }
-                  if (s === 'grade')   { setStep('grade'); }
-                  if (s === 'chapter') { setStep('chapter'); }
-                }
-              }}
-            >
-              {s === 'subject' && subject ? SUBJECT_META.find(m => m.code === subject)?.name ?? s : s}
-              {s === 'grade' && grade ? ` ${grade}` : ''}
-              {s === 'chapter' && chapter ? ` Ch.${chapter}` : ''}
-            </span>
-          </span>
-        ))}
-      </div>
+      <nav aria-label="Quiz setup steps">
+        <ol className="flex items-center gap-2 mb-6 text-xs list-none p-0 m-0">
+          {(['subject','grade','chapter','type'] as const).map((s, i) => {
+            const stepOrder = ['subject','grade','chapter','type'];
+            const currentIdx = stepOrder.indexOf(step);
+            const isActive = step === s;
+            const isPast = i < currentIdx;
+            const isFuture = i > currentIdx;
+            return (
+              <li key={s} className="flex items-center gap-2">
+                {i > 0 && <span aria-hidden="true" style={{ color: 'var(--text-3)' }}>›</span>}
+                {isPast ? (
+                  <button
+                    aria-label={`Go back to ${s} selection`}
+                    className="capitalize px-2 py-0.5 rounded-full font-medium transition-colors underline-offset-2 hover:underline"
+                    style={{ color: 'var(--text-2)' }}
+                    onClick={() => {
+                      if (s === 'subject') setStep('subject');
+                      if (s === 'grade')   setStep('grade');
+                      if (s === 'chapter') setStep('chapter');
+                    }}
+                  >
+                    {s === 'subject' && subject ? SUBJECT_META.find(m => m.code === subject)?.name ?? s : s}
+                    {s === 'grade' && grade ? ` ${grade}` : ''}
+                    {s === 'chapter' && chapter ? ` Ch.${chapter}` : ''}
+                  </button>
+                ) : (
+                  <span
+                    aria-current={isActive ? 'step' : undefined}
+                    className={`capitalize px-2 py-0.5 rounded-full font-medium ${isFuture ? 'opacity-40' : ''}`}
+                    style={isActive ? { background: 'var(--brand)', color: '#fff' } : { color: 'var(--text-2)' }}
+                  >
+                    {s === 'subject' && subject ? SUBJECT_META.find(m => m.code === subject)?.name ?? s : s}
+                    {s === 'grade' && grade ? ` ${grade}` : ''}
+                    {s === 'chapter' && chapter ? ` Ch.${chapter}` : ''}
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+      </nav>
 
       {/* ── Step: Subject ──────────────────────────────── */}
       {step === 'subject' && (
@@ -230,8 +244,13 @@ export default function NCERTQuizSetup({ initialSubject, initialGrade, onStart }
                     <button key={ch.chapter_number} onClick={() => selectChapter(ch.chapter_number, ch.chapter_title ?? `Chapter ${ch.chapter_number}`)}
                       className="w-full flex items-center gap-3 p-3 rounded-xl text-left transition-all active:scale-[0.99] hover:shadow-sm"
                       style={{ border: '1.5px solid var(--border)', background: 'var(--surface-1)' }}>
-                      <span className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold flex-shrink-0"
-                        style={{ background: mastery >= 70 ? '#16A34A18' : mastery >= 40 ? '#F59E0B18' : 'var(--surface-2)', color: mastery >= 70 ? '#16A34A' : mastery >= 40 ? '#D97706' : 'var(--text-3)' }}>
+                      <span
+                        className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold flex-shrink-0"
+                        aria-hidden="true"
+                        style={{
+                          background: mastery >= 70 ? '#16893018' : mastery >= 40 ? '#BD5B0618' : 'var(--surface-2)',
+                          color: mastery >= 70 ? 'var(--text-green)' : mastery >= 40 ? 'var(--text-amber)' : 'var(--text-3)',
+                        }}>
                         {ch.chapter_number}
                       </span>
                       <div className="flex-1 min-w-0">
@@ -240,10 +259,14 @@ export default function NCERTQuizSetup({ initialSubject, initialGrade, onStart }
                         </div>
                         <div className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>
                           {ch.total_questions} questions · MCQ {ch.mcq_count} · Written {ch.written_count}
-                          {prog && <span className="ml-2" style={{ color: mastery >= 70 ? '#16A34A' : 'var(--text-3)' }}> · {Math.round(mastery)}% mastery</span>}
+                          {prog && (
+                            <span className="ml-2" style={{ color: mastery >= 70 ? 'var(--text-green)' : 'var(--text-3)' }}>
+                              {' · '}{Math.round(mastery)}% mastery
+                            </span>
+                          )}
                         </div>
                       </div>
-                      {mastery >= 70 && <span className="text-lg">✅</span>}
+                      {mastery >= 70 && <span className="text-lg" aria-label="Chapter completed">✅</span>}
                     </button>
                   );
                 })}
@@ -261,33 +284,52 @@ export default function NCERTQuizSetup({ initialSubject, initialGrade, onStart }
           </h2>
           <p className="text-sm mb-4" style={{ color: 'var(--text-3)' }}>Choose question format for your practice</p>
 
-          <div className="space-y-2 mb-5">
-            {QUESTION_TYPES.map(qt => (
-              <button key={qt.key} onClick={() => setQType(qt.key as NCERTQuizConfig['questionType'])}
-                className="w-full flex items-center gap-3 p-3.5 rounded-xl text-left transition-all active:scale-[0.99]"
-                style={{
-                  border: questionType === qt.key ? `2px solid ${qt.color}` : '1.5px solid var(--border)',
-                  background: questionType === qt.key ? `${qt.color}0C` : 'var(--surface-1)',
-                }}>
-                <span className="text-xl w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
-                  style={{ background: `${qt.color}18` }}>
-                  {qt.icon}
-                </span>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold text-sm" style={{ color: 'var(--text-1)' }}>{qt.label}</span>
-                    <span className="text-xs px-1.5 py-0.5 rounded font-medium"
-                      style={{ background: `${qt.color}18`, color: qt.color }}>{qt.marks}</span>
+          {/* WCAG 1.3.1 / 4.1.2: radiogroup semantics for exclusive choice */}
+          <div
+            role="radiogroup"
+            aria-label="Question format"
+            className="space-y-2 mb-5"
+          >
+            {QUESTION_TYPES.map(qt => {
+              const isSelected = questionType === qt.key;
+              return (
+                <button
+                  key={qt.key}
+                  role="radio"
+                  aria-checked={isSelected}
+                  onClick={() => setQType(qt.key as NCERTQuizConfig['questionType'])}
+                  className="w-full flex items-center gap-3 p-3.5 rounded-xl text-left transition-all active:scale-[0.99]"
+                  style={{
+                    border: isSelected ? `2px solid ${qt.colorHex}` : '1.5px solid var(--border)',
+                    background: isSelected ? `${qt.colorHex}0C` : 'var(--surface-1)',
+                  }}>
+                  <span
+                    className="text-xl w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                    aria-hidden="true"
+                    style={{ background: `${qt.colorHex}18` }}>
+                    {qt.icon}
+                  </span>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-sm" style={{ color: 'var(--text-1)' }}>{qt.label}</span>
+                      <span className="text-xs px-1.5 py-0.5 rounded font-medium"
+                        style={{ background: `${qt.colorHex}18`, color: qt.colorVar }}>{qt.marks}</span>
+                    </div>
+                    <div className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>{qt.desc}</div>
                   </div>
-                  <div className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>{qt.desc}</div>
-                </div>
-                <div className="w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0"
-                  style={{ borderColor: questionType === qt.key ? qt.color : 'var(--border)',
-                           background: questionType === qt.key ? qt.color : 'transparent' }}>
-                  {questionType === qt.key && <div className="w-2 h-2 rounded-full bg-white" />}
-                </div>
-              </button>
-            ))}
+                  {/* Visual radio indicator */}
+                  <div
+                    aria-hidden="true"
+                    className="w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0"
+                    style={{
+                      borderColor: isSelected ? qt.colorHex : 'var(--border)',
+                      background:  isSelected ? qt.colorHex : 'transparent',
+                    }}>
+                    {isSelected && <div className="w-2 h-2 rounded-full bg-white" />}
+                  </div>
+                </button>
+              );
+            })}
           </div>
 
           {/* Question count */}
@@ -308,9 +350,12 @@ export default function NCERTQuizSetup({ initialSubject, initialGrade, onStart }
             </div>
           </div>
 
-          <button onClick={handleStart}
+          <button
+            onClick={handleStart}
             className="w-full py-4 rounded-2xl font-bold text-white text-base transition-all active:scale-[0.98]"
-            style={{ background: 'linear-gradient(135deg, var(--brand), #ff7043)' }}>
+            style={{ background: 'var(--btn-primary-gradient)' }}
+            aria-label={`Start practice: ${count} ${questionType === 'mixed' ? 'mixed' : questionType.replace('_', ' ')} questions from Chapter ${chapter}`}
+          >
             Start Practice →
           </button>
         </div>

@@ -79,14 +79,28 @@
   --border-mid: rgba(0, 0, 0, 0.12);
   --border-strong: rgba(0, 0, 0, 0.18);
 
-  /* Text — Contrast-checked against --bg (#FBF8F4)
-     text-1 on bg: 15.2:1 (AAA) — primary text
-     text-2 on bg: 6.8:1 (AA)  — secondary text
-     text-3 on bg: 4.5:1 (AA)  — tertiary/hint text (was 3.8:1, fixed)
+  /* Text — Contrast-checked against --bg (#FBF8F4) — WCAG 2.1 AA verified
+     text-1 on bg: 17.50:1 (AAA) — primary text
+     text-2 on bg:  9.72:1 (AAA) — secondary text
+     text-3 on bg:  4.51:1 (AA)  — tertiary/hint text (darkened from #7D7264 which was 4.44:1 ❌)
      Indian students study outdoors & in harsh sunlight — contrast matters more */
   --text-1: #1A1207;
   --text-2: #4A3F2E;
-  --text-3: #7D7264;
+  --text-3: #7C7163;   /* Was #7D7264 (4.44:1 ❌) → now #7C7163 (4.51:1 ✅) */
+
+  /* WCAG-safe accent text colours (4.5:1+ on white / surface-1)
+     For use as foreground text on light surfaces. Do NOT use brand/orange (#E8581C)
+     as normal text — it's 3.59:1 and only passes as large/bold UI text. */
+  --text-teal:   #0880A1;   /* Teal for text on light bg: 4.55:1 ✅ (was #0891B2 = 3.68:1 ❌) */
+  --text-green:  #168930;   /* Green for text on light bg: 4.51:1 ✅ (was #16A34A = 3.30:1 ❌) */
+  --text-amber:  #BD5B06;   /* Amber for text on light bg: 4.50:1 ✅ (was #D97706 = 3.19:1 ❌) */
+  --text-red:    #DC2626;   /* Red on white: 4.83:1 ✅ — unchanged */
+  --text-purple: #7C3AED;   /* Purple on white: 5.70:1 ✅ — unchanged */
+
+  /* Primary button background — white text needs 4.5:1+
+     #E8581C (brand) gives 3.59:1 with white ❌ — use --btn-primary for text-bearing buttons */
+  --btn-primary: #CF4917;   /* White on this: 4.55:1 ✅ — slightly darker brand for CTA buttons */
+  --btn-primary-gradient: linear-gradient(135deg, #CF4917, #E05A2A);
 
   /* Layout */
   --sidebar-width: 240px;

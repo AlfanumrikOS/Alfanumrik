@@ -292,12 +292,20 @@ export default function NCERTQuizPage() {
 
         {/* Per-question summary */}
         <div className="space-y-2 mb-6">
-          {attempts.map((a, i) => (
+          {attempts.map((a, i) => {
+            const awarded   = a.evaluation?.marks_awarded ?? 0;
+            const possible  = a.evaluation?.marks_possible ?? 1;
+            const resultEmoji = awarded >= possible ? '✅' : awarded > 0 ? '🟡' : '❌';
+            const resultLabel = awarded >= possible ? 'Full marks' : awarded > 0 ? 'Partial marks' : 'No marks';
+            return (
             <div key={i} className="flex items-center gap-3 p-3 rounded-xl"
               style={{ background: 'var(--surface-1)', border: '1.5px solid var(--border)' }}>
-              <span className="text-base flex-shrink-0">
-                {(a.evaluation?.marks_awarded ?? 0) >= (a.evaluation?.marks_possible ?? 1) ? '✅' :
-                 (a.evaluation?.marks_awarded ?? 0) > 0 ? '🟡' : '❌'}
+              <span
+                className="text-base flex-shrink-0"
+                role="img"
+                aria-label={resultLabel}
+              >
+                {resultEmoji}
               </span>
               <div className="flex-1 min-w-0">
                 <div className="text-xs truncate" style={{ color: 'var(--text-2)' }}>
@@ -308,7 +316,8 @@ export default function NCERTQuizPage() {
                 </div>
               </div>
             </div>
-          ))}
+          );
+          })}
         </div>
 
         <div className="flex gap-3">
@@ -320,7 +329,7 @@ export default function NCERTQuizPage() {
           {config && student && (
             <button onClick={() => setScreen('coverage')}
               className="flex-1 py-3 rounded-xl font-bold text-sm text-white transition-all"
-              style={{ background: 'var(--brand)' }}>
+              style={{ background: 'var(--btn-primary-gradient)' }}>
               Coverage Map →
             </button>
           )}
@@ -338,9 +347,13 @@ export default function NCERTQuizPage() {
       {/* Header */}
       <div className="sticky top-0 z-10 px-4 py-3 flex items-center gap-3"
         style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
-        <button onClick={() => screen === 'setup' ? router.push('/quiz') : setScreen('setup')}
-          className="w-8 h-8 flex items-center justify-center rounded-lg"
-          style={{ background: 'var(--surface-1)', color: 'var(--text-2)' }}>
+        {/* WCAG 2.5.5: 44×44px touch target */}
+        <button
+          onClick={() => screen === 'setup' ? router.push('/quiz') : setScreen('setup')}
+          aria-label={screen === 'setup' ? 'Back to Quiz home' : 'Back to setup'}
+          className="w-11 h-11 flex items-center justify-center rounded-lg"
+          style={{ background: 'var(--surface-1)', color: 'var(--text-2)' }}
+        >
           ←
         </button>
         <div className="flex-1">
@@ -367,7 +380,12 @@ export default function NCERTQuizPage() {
       {screen === 'setup' && (
         <>
           {loadError && (
-            <div className="mx-4 mt-3 p-3 rounded-xl text-sm" style={{ background: '#DC262608', border: '1px solid #DC262630', color: '#DC2626' }}>
+            /* WCAG 3.3.1: role="alert" announces error to screen readers immediately */
+            <div
+              role="alert"
+              className="mx-4 mt-3 p-3 rounded-xl text-sm"
+              style={{ background: '#DC262608', border: '1px solid #DC262630', color: 'var(--text-red)' }}
+            >
               {loadError}
             </div>
           )}
@@ -386,15 +404,25 @@ export default function NCERTQuizPage() {
         isMCQ ? (
           /* MCQ */
           <div className="max-w-2xl mx-auto px-4 py-4">
-            {/* Progress bar */}
-            <div className="w-full h-1.5 rounded-full mb-4" style={{ background: 'var(--surface-2)' }}>
+            {/* Progress bar — WCAG 4.1.2 progressbar role */}
+            <div
+              role="progressbar"
+              aria-label="Quiz progress"
+              aria-valuenow={currentIdx}
+              aria-valuemin={0}
+              aria-valuemax={questions.length}
+              className="w-full h-1.5 rounded-full mb-4"
+              style={{ background: 'var(--surface-2)' }}
+            >
               <div className="h-1.5 rounded-full transition-all"
                 style={{ width: `${((currentIdx) / questions.length) * 100}%`, background: 'var(--brand)' }} />
             </div>
             <div className="flex items-center gap-2 mb-3">
               <span className="text-xs px-2 py-0.5 rounded font-bold"
-                style={{ background: '#6C5CE718', color: '#6C5CE7' }}>MCQ · 1 Mark</span>
-              <span className="text-xs" style={{ color: 'var(--text-3)' }}>Q{currentIdx+1}/{questions.length}</span>
+                style={{ background: '#6C5CE718', color: 'var(--text-purple)' }}>MCQ · 1 Mark</span>
+              <span className="text-xs" style={{ color: 'var(--text-3)' }}>
+                Question {currentIdx+1} of {questions.length}
+              </span>
             </div>
             <div className="p-4 rounded-2xl mb-4"
               style={{ background: 'var(--surface-1)', border: '1.5px solid var(--border)' }}>
@@ -402,17 +430,33 @@ export default function NCERTQuizPage() {
                 {q.question_text}
               </p>
             </div>
-            <div className="space-y-2 mb-4">
+            {/* WCAG 1.3.1: radiogroup semantics for single-choice MCQ */}
+            <div
+              role="radiogroup"
+              aria-label="Answer options"
+              className="space-y-2 mb-4"
+            >
               {(Array.isArray(q.options) ? q.options : []).map((opt, i) => (
-                <button key={i} onClick={() => !optionConfirmed && setSelectedOption(i)}
+                <button
+                  key={i}
+                  role="radio"
+                  aria-checked={selectedOption === i}
+                  onClick={() => !optionConfirmed && setSelectedOption(i)}
+                  disabled={optionConfirmed}
+                  aria-label={`Option ${OPTION_LETTERS[i]}: ${opt}`}
                   className="w-full flex items-center gap-3 p-3.5 rounded-xl text-left text-sm transition-all active:scale-[0.99]"
                   style={{
                     border: selectedOption === i ? '2px solid var(--brand)' : '1.5px solid var(--border)',
-                    background: selectedOption === i ? 'var(--brand-soft,#E8581C10)' : 'var(--surface-1)',
+                    background: selectedOption === i ? '#E8581C10' : 'var(--surface-1)',
                     color: 'var(--text-1)',
                   }}>
-                  <span className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0"
-                    style={{ background: selectedOption === i ? 'var(--brand)' : 'var(--surface-2)', color: selectedOption === i ? '#fff' : 'var(--text-2)' }}>
+                  <span
+                    aria-hidden="true"
+                    className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0"
+                    style={{
+                      background: selectedOption === i ? 'var(--brand)' : 'var(--surface-2)',
+                      color: selectedOption === i ? '#fff' : 'var(--text-2)',
+                    }}>
                     {OPTION_LETTERS[i]}
                   </span>
                   {opt}
@@ -420,13 +464,18 @@ export default function NCERTQuizPage() {
               ))}
             </div>
             <div className="flex gap-3">
-              <button onClick={handleSkip} className="px-4 py-3 rounded-xl text-sm font-medium"
+              <button
+                onClick={handleSkip}
+                className="px-4 py-3 rounded-xl text-sm font-medium"
                 style={{ background: 'var(--surface-2)', color: 'var(--text-2)', border: '1.5px solid var(--border)' }}>
                 Skip
               </button>
-              <button onClick={handleMCQSubmit} disabled={selectedOption === null}
+              <button
+                onClick={handleMCQSubmit}
+                disabled={selectedOption === null}
+                aria-disabled={selectedOption === null}
                 className="flex-1 py-3 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.98]"
-                style={{ background: selectedOption !== null ? 'var(--brand)' : '#999' }}>
+                style={{ background: selectedOption !== null ? 'var(--btn-primary)' : '#767676' }}>
                 Submit Answer
               </button>
             </div>

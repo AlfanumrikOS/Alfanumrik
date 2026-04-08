@@ -24,11 +24,11 @@ interface Props {
   isLast: boolean;
 }
 
-const GRADE_CONFIG: Record<string, { color: string; bg: string; icon: string }> = {
-  'Excellent':          { color: '#16A34A', bg: '#16A34A12', icon: '⭐' },
-  'Good':               { color: '#0891B2', bg: '#0891B212', icon: '✅' },
-  'Satisfactory':       { color: '#D97706', bg: '#D9770612', icon: '📝' },
-  'Needs Improvement':  { color: '#DC2626', bg: '#DC262612', icon: '💡' },
+const GRADE_CONFIG: Record<string, { colorVar: string; colorHex: string; bg: string; icon: string }> = {
+  'Excellent':          { colorVar: 'var(--text-green)',  colorHex: '#168930', bg: '#16893012', icon: '⭐' },
+  'Good':               { colorVar: 'var(--text-teal)',   colorHex: '#0880A1', bg: '#0880A112', icon: '✅' },
+  'Satisfactory':       { colorVar: 'var(--text-amber)',  colorHex: '#BD5B06', bg: '#BD5B0612', icon: '📝' },
+  'Needs Improvement':  { colorVar: 'var(--text-red)',    colorHex: '#DC2626', bg: '#DC262612', icon: '💡' },
 };
 
 export default function NCERTEvaluation({
@@ -45,15 +45,20 @@ export default function NCERTEvaluation({
   const circ   = 2 * Math.PI * radius;
   const dash   = circ * ratio;
 
-  const arcColor = ratio >= 0.8 ? '#16A34A' : ratio >= 0.5 ? '#D97706' : '#DC2626';
+  const arcColor = ratio >= 0.8 ? 'var(--text-green)' : ratio >= 0.5 ? 'var(--text-amber)' : 'var(--text-red)';
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-4">
       {/* ── Score arc ──────────────────────────────────── */}
       <div className="flex items-center gap-5 mb-4 p-4 rounded-2xl"
-        style={{ background: g.bg, border: `1.5px solid ${g.color}30` }}>
+        style={{ background: g.bg, border: `1.5px solid ${g.colorHex}30` }}>
+        {/* WCAG 1.1.1: SVG arc has role="img" with text alternative */}
         <div className="relative flex items-center justify-center flex-shrink-0">
-          <svg width="88" height="88" viewBox="0 0 88 88">
+          <svg
+            width="88" height="88" viewBox="0 0 88 88"
+            role="img"
+            aria-label={`Score: ${marksAwarded} out of ${marksPossible} marks`}
+          >
             <circle cx="44" cy="44" r={radius} fill="none" stroke="rgba(0,0,0,0.08)" strokeWidth="8" />
             <circle cx="44" cy="44" r={radius} fill="none"
               stroke={arcColor} strokeWidth="8"
@@ -62,14 +67,17 @@ export default function NCERTEvaluation({
               transform="rotate(-90 44 44)"
               style={{ transition: 'stroke-dasharray 0.8s ease' }} />
           </svg>
-          <div className="absolute flex flex-col items-center">
+          {/* Hidden from AT — score is announced via svg aria-label above */}
+          <div className="absolute flex flex-col items-center" aria-hidden="true">
             <span className="text-xl font-bold" style={{ color: 'var(--text-1)' }}>{marksAwarded}</span>
             <span className="text-xs" style={{ color: 'var(--text-3)' }}>/{marksPossible}</span>
           </div>
         </div>
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-base font-bold" style={{ color: g.color }}>{g.icon} {grade}</span>
+            <span aria-hidden="true" className="text-base font-bold" style={{ color: g.colorVar }}>
+              {g.icon} {grade}
+            </span>
           </div>
           <div className="text-sm" style={{ color: 'var(--text-2)' }}>
             {marksAwarded === marksPossible
@@ -97,14 +105,22 @@ export default function NCERTEvaluation({
       {keyPoints.length > 0 && (
         <div className="mb-4">
           <div className="text-xs font-bold mb-2" style={{ color: 'var(--text-3)' }}>KEY POINTS</div>
-          <div className="space-y-1.5">
+          {/* WCAG 1.3.1: list semantics for screen readers */}
+          <ul role="list" className="space-y-1.5">
             {keyPoints.map((kp, i) => (
-              <div key={i} className="flex items-start gap-2.5 text-sm">
-                <span className="mt-0.5 flex-shrink-0 text-base">{kp.hit ? '✅' : '❌'}</span>
+              <li key={i} className="flex items-start gap-2.5 text-sm">
+                {/* WCAG 1.1.1: emoji has text alternative */}
+                <span
+                  className="mt-0.5 flex-shrink-0 text-base"
+                  aria-label={kp.hit ? 'Covered' : 'Missed'}
+                  role="img"
+                >
+                  {kp.hit ? '✅' : '❌'}
+                </span>
                 <span style={{ color: kp.hit ? 'var(--text-1)' : 'var(--text-3)' }}>{kp.point}</span>
-              </div>
+              </li>
             ))}
-          </div>
+          </ul>
         </div>
       )}
 
@@ -122,15 +138,19 @@ export default function NCERTEvaluation({
 
       {/* ── Model answer ───────────────────────────────── */}
       <div className="mb-5 p-3 rounded-xl text-sm leading-relaxed"
-        style={{ background: '#16A34A08', border: '1px solid #16A34A30' }}>
-        <div className="text-xs font-bold mb-1" style={{ color: '#16A34A' }}>📖 MODEL ANSWER</div>
+        style={{ background: '#16893008', border: '1px solid #16893030' }}>
+        <div className="text-xs font-bold mb-1" style={{ color: 'var(--text-green)' }}>
+          <span aria-hidden="true">📖 </span>MODEL ANSWER
+        </div>
         <p style={{ color: 'var(--text-1)' }}>{modelAnswerSummary}</p>
       </div>
 
       {/* ── Next CTA ───────────────────────────────────── */}
-      <button onClick={onNext}
+      <button
+        onClick={onNext}
         className="w-full py-4 rounded-2xl font-bold text-white text-base transition-all active:scale-[0.98]"
-        style={{ background: 'linear-gradient(135deg, var(--brand), #ff7043)' }}>
+        style={{ background: 'var(--btn-primary-gradient)' }}
+      >
         {isLast ? 'View Results →' : 'Next Question →'}
       </button>
     </div>

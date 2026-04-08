@@ -33,11 +33,21 @@ interface Props {
 }
 
 function masteryColor(pct: number): { bg: string; text: string; border: string } {
-  if (pct >= 80) return { bg: '#16A34A18', text: '#16A34A', border: '#16A34A40' };
-  if (pct >= 60) return { bg: '#0891B218', text: '#0891B2', border: '#0891B240' };
-  if (pct >= 40) return { bg: '#D9770618', text: '#D97706', border: '#D9770640' };
-  if (pct >  0)  return { bg: '#DC262618', text: '#DC2626', border: '#DC262640' };
+  // WCAG 1.4.1: use WCAG-corrected token values so colour + text both indicate state
+  if (pct >= 80) return { bg: '#16893018', text: 'var(--text-green)', border: '#16893040' };
+  if (pct >= 60) return { bg: '#0880A118', text: 'var(--text-teal)',  border: '#0880A140' };
+  if (pct >= 40) return { bg: '#BD5B0618', text: 'var(--text-amber)', border: '#BD5B0640' };
+  if (pct >  0)  return { bg: '#DC262618', text: 'var(--text-red)',   border: '#DC262640' };
   return { bg: 'var(--surface-1)', text: 'var(--text-3)', border: 'var(--border)' };
+}
+
+// WCAG 1.4.1: colour-blind symbol — never rely on colour alone
+function masterySymbol(pct: number, attempted: number): string {
+  if (attempted === 0) return '–';
+  if (pct >= 80) return '✓';
+  if (pct >= 60) return '◑';
+  if (pct >= 40) return '◔';
+  return '!';
 }
 
 export default function NCERTCoverageMap({ studentId, subject, grade, onChapterClick }: Props) {
@@ -107,48 +117,66 @@ export default function NCERTCoverageMap({ studentId, subject, grade, onChapterC
           style={{ width: `${overallMastery}%`, background: overallMastery >= 60 ? '#16A34A' : overallMastery >= 40 ? '#D97706' : '#DC2626' }} />
       </div>
 
-      {/* Legend */}
-      <div className="flex items-center gap-4 mb-4 text-xs" style={{ color: 'var(--text-3)' }}>
+      {/* Legend — WCAG 1.4.1: symbols alongside colour swatches */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-4 text-xs" style={{ color: 'var(--text-3)' }}>
         {[
-          { label: 'Not started', pct: -1 },
-          { label: '1–39%',       pct: 20 },
-          { label: '40–59%',      pct: 50 },
-          { label: '60–79%',      pct: 65 },
-          { label: '80–100%',     pct: 85 },
+          { label: 'Not started', pct: -1, sym: '–' },
+          { label: '1–39%',       pct: 20, sym: '!' },
+          { label: '40–59%',      pct: 50, sym: '◔' },
+          { label: '60–79%',      pct: 65, sym: '◑' },
+          { label: '80–100%',     pct: 85, sym: '✓' },
         ].map(l => {
           const c = l.pct < 0 ? masteryColor(0) : masteryColor(l.pct);
           return (
             <div key={l.label} className="flex items-center gap-1">
-              <div className="w-3 h-3 rounded-sm" style={{ background: c.bg, border: `1px solid ${c.border}` }} />
+              <div
+                aria-hidden="true"
+                className="w-3 h-3 rounded-sm flex items-center justify-center text-[8px] font-bold"
+                style={{ background: c.bg, border: `1px solid ${c.border}`, color: c.text }}
+              >
+                {l.sym}
+              </div>
               <span>{l.label}</span>
             </div>
           );
         })}
       </div>
 
-      {/* Chapter grid */}
-      <div className="grid grid-cols-4 gap-2">
+      {/* Chapter grid — WCAG 4.1.2: each button has descriptive aria-label */}
+      <div className="grid grid-cols-4 gap-2" role="list" aria-label="Chapters">
         {chapters.map(ch => {
-          const p    = progressMap[ch.chapter_number];
-          const pct  = p?.mastery_pct ?? 0;
-          const c    = masteryColor(pct);
-          const done = (p?.attempted ?? 0) > 0;
+          const p       = progressMap[ch.chapter_number];
+          const pct     = p?.mastery_pct ?? 0;
+          const c       = masteryColor(pct);
+          const done    = (p?.attempted ?? 0) > 0;
+          const symbol  = masterySymbol(pct, p?.attempted ?? 0);
+          const title   = ch.chapter_title ?? `Chapter ${ch.chapter_number}`;
+          const a11yLabel = done
+            ? `Chapter ${ch.chapter_number}: ${title} — ${Math.round(pct)}% mastery, ${p?.attempted} questions attempted`
+            : `Chapter ${ch.chapter_number}: ${title} — not started`;
           return (
-            <button key={ch.chapter_number} onClick={() => onChapterClick(ch.chapter_number, ch.chapter_title ?? `Chapter ${ch.chapter_number}`)}
+            <button
+              key={ch.chapter_number}
+              role="listitem"
+              aria-label={a11yLabel}
+              onClick={() => onChapterClick(ch.chapter_number, title)}
               className="relative p-2 rounded-xl text-left transition-all active:scale-[0.96] hover:shadow-md group"
-              style={{ background: c.bg, border: `1.5px solid ${c.border}` }}>
+              style={{ background: c.bg, border: `1.5px solid ${c.border}` }}
+            >
               <div className="text-xs font-bold" style={{ color: c.text }}>
                 Ch.{ch.chapter_number}
               </div>
-              {done && (
-                <div className="text-[10px] font-semibold mt-0.5" style={{ color: c.text }}>
-                  {Math.round(pct)}%
-                </div>
-              )}
-              {/* Tooltip on hover (CSS only) */}
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 rounded text-[10px] whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10"
-                style={{ background: 'var(--surface-tooltip,#1a1a1a)', color: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.2)' }}>
-                {ch.chapter_title ?? `Chapter ${ch.chapter_number}`}
+              {/* WCAG 1.4.1: show symbol + percentage — not colour alone */}
+              <div className="text-[10px] font-semibold mt-0.5" style={{ color: c.text }}>
+                {done ? `${symbol} ${Math.round(pct)}%` : symbol}
+              </div>
+              {/* CSS-only tooltip — aria-label handles AT, tooltip is visual only */}
+              <div
+                aria-hidden="true"
+                className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 rounded text-[10px] whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10"
+                style={{ background: 'var(--surface-tooltip,#1a1a1a)', color: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.2)' }}
+              >
+                {title}
                 {done && ` · ${p?.attempted} Q`}
               </div>
             </button>
