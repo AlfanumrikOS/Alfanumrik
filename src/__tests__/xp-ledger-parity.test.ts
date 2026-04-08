@@ -148,6 +148,19 @@ describe('Ledger cap arithmetic: computeXpToAward mirrors SQL GREATEST(0, LEAST(
     expect(computeXpToAward(170, 199)).toBe(1);
   });
 
+  it('20-question perfect quiz raw XP is capped to quiz_daily_cap — xp_ledger_20q_perfect_cap', () => {
+    // Max quiz: 20 correct × quiz_per_correct + high_score_bonus + perfect_bonus
+    // = 20×10 + 20 + 50 = 270 raw, but server-side cap = LEAST(270, daily_cap - 0)
+    const maxQuestions = 20; // VALID_QUIZ_COUNTS maximum
+    const rawXp = maxQuestions * XP_RULES.quiz_per_correct
+                + XP_RULES.quiz_high_score_bonus
+                + XP_RULES.quiz_perfect_bonus;
+    const cap = XP_RULES.quiz_daily_cap;
+    // Raw XP exceeds the cap — student receives the cap, not raw XP
+    expect(rawXp).toBeGreaterThan(cap);
+    expect(computeXpToAward(rawXp, 0)).toBe(cap);
+  });
+
   it('DAILY_CAP constant is 200 (P2 invariant anchor)', () => {
     // If this constant changes, the ledger SQL must also be updated
     expect(XP_RULES.quiz_daily_cap).toBe(200);

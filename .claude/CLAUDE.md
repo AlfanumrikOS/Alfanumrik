@@ -1,19 +1,19 @@
 # Alfanumrik Learning OS — Non-Negotiable Product Rules
 
 ## What This Is
-Indian K-12 EdTech platform (CBSE grades 6-12). Next.js 14 + Supabase + Razorpay. 219 source files, 188+ SQL migrations, 24 Supabase Edge Functions, Flutter mobile app. Serves students, parents, teachers, and administrators.
+Indian K-12 EdTech platform (CBSE grades 6-12). Next.js 16 + Supabase + Razorpay. 219 source files, 227+ SQL migrations, 24 Supabase Edge Functions, Flutter mobile app. Serves students, parents, teachers, and administrators.
 
 ## Architecture Quick Reference
 | Layer | Technology |
 |---|---|
-| Frontend | Next.js 14.2 App Router, React 18, Tailwind 3.4, SWR |
+| Frontend | Next.js 16.2 App Router, React 18, Tailwind 3.4, SWR |
 | Backend | Next.js API routes (32+ routes) + Supabase Edge Functions (24 functions) |
 | Auth | Supabase Auth (email/PKCE), session cookies via middleware |
 | Database | Supabase Postgres, RLS (148+ policies), RBAC (6 roles, 71 permissions) |
 | AI | Claude API (Haiku) via Edge Functions: foxy-tutor, ncert-solver, quiz-generator, cme-engine |
 | Payments | Razorpay (INR, monthly recurring + yearly one-time) |
 | Deployment | Vercel (bom1/Mumbai), GitHub Actions CI/CD (3 workflows) |
-| Testing | Vitest (633+ tests, 38+ files), Playwright E2E (4 specs). **Regression catalog: 35/35 (100%).** |
+| Testing | Vitest (633+ tests, 49+ files), Playwright E2E (4 specs). **Regression catalog: 35/35 (100%).** |
 | Monitoring | Sentry (client/server/edge), Vercel Analytics, structured logging |
 | Mobile | Flutter + Riverpod (/mobile) |
 | Offline | Service worker, localStorage cache, background sync |
