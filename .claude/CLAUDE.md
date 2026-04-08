@@ -37,7 +37,7 @@ Indian K-12 EdTech platform (CBSE grades 6-12). Next.js 14 + Supabase + Razorpay
 | AI Edge Functions | `supabase/functions/foxy-tutor/` (active prod), `ncert-solver/`, `quiz-generator/`, `cme-engine/` |
 | Foxy Next.js Route | `src/app/api/foxy/route.ts` (new RAG+sonnet route — not yet wired to UI; will replace foxy-tutor Edge Function) |
 | Non-AI Edge Functions | `supabase/functions/daily-cron/`, `queue-consumer/`, `send-*-email/`, `session-guard/`, `scan-ocr/`, `export-report/` |
-| Super admin panel | `src/app/super-admin/` (10 pages), `src/app/api/super-admin/` (12 routes) |
+| Super admin panel | `src/app/super-admin/` (17 pages), `src/app/api/super-admin/` (24 routes) |
 | Parent portal | `src/app/parent/` (5 pages) |
 | Teacher portal | `src/app/teacher/` (6 pages) |
 | Notifications | `src/app/notifications/page.tsx`, daily-cron Edge Function |
@@ -90,6 +90,7 @@ Shared JS < 160 kB. Pages < 260 kB. Middleware < 120 kB. Target: Indian 4G (2-5 
 
 ### P11: Payment Integrity
 Razorpay webhook signature MUST be verified before processing any payment event. Subscription status changes MUST be written atomically with the payment record. Never grant plan access without verified payment.
+Known tracked risk: webhook handler has a fallback path that updates `students` and `student_subscriptions` as two separate statements if `activate_subscription` RPC fails. If the second statement fails, a temporary split-brain state can occur. Mitigated by: idempotency checks, duplicate payment guards, `reconcile_stuck_payments.sql` runbook, and `verify` route returning 503 (not 200) on RPC failure so clients retry.
 
 ### P12: AI Safety
 AI responses (foxy-tutor, ncert-solver) MUST be age-appropriate for grades 6-12. No unfiltered LLM output to students. Responses must stay within CBSE curriculum scope. Daily usage limits enforced per plan.
