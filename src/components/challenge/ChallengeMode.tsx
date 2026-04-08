@@ -83,6 +83,56 @@ export default function ChallengeMode({ studentId, studentName, grade, isHi }: C
     loadChallenges();
   }, [loadChallenges]);
 
+  // ─── Realtime: notify opponent when a new challenge arrives ───
+  // Without this, opponents only discover they've been challenged if they
+  // happen to open WhatsApp AND click the link. With Realtime, the challenge
+  // list updates automatically and we show an in-app badge/toast.
+  useEffect(() => {
+    if (!studentId) return;
+
+    const channel = supabase
+      .channel(`challenges_for_${studentId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'quiz_challenges',
+          filter: `opponent_id=eq.${studentId}`,
+        },
+        (payload) => {
+          // New challenge received — add to list and show notification
+          const newChallenge = payload.new as QuizChallenge;
+          setChallenges((prev) => {
+            // Deduplicate: ignore if already in list
+            if (prev.some((c) => c.id === newChallenge.id)) return prev;
+            return [newChallenge, ...prev];
+          });
+        },
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'quiz_challenges',
+          filter: `challenger_id=eq.${studentId}`,
+        },
+        (payload) => {
+          // Challenger sees when opponent accepts/completes a challenge
+          const updated = payload.new as QuizChallenge;
+          setChallenges((prev) =>
+            prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c)),
+          );
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [studentId]);
+
   // ─── Create challenge ───
   const handleCreateChallenge = async () => {
     if (!selectedSubject) return;

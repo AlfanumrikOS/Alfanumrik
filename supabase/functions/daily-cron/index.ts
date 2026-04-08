@@ -1,4 +1,4 @@
-// daily-cron v25 — all P5 steps: streaks, leaderboard, parent digest,
+// daily-cron v26 — leaderboard gate ≥50→≥2 students; all P5 steps: streaks, leaderboard, parent digest,
 // task cleanup, platform health snapshot, ml retrain trigger.
 // Secret: CRON_SECRET env var OR get_cron_secret() DB RPC fallback.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -25,7 +25,10 @@ async function recalculateLeaderboards(supabase: ReturnType<typeof createClient>
   if (!entries.length) return 0
   const { error: e } = await supabase.from('leaderboard_snapshots').upsert(entries,{onConflict:'student_id'})
   if (e) throw new Error(`recalculateLeaderboards upsert: ${e.message}`)
-  if (entries.length >= 50) await supabase.from('feature_flags').update({is_enabled:true,updated_at:now}).in('flag_name',['leaderboard_global','wave1_leaderboard']).eq('is_enabled',false)
+  // Auto-enable leaderboard at ≥2 students (was 50 — too high for early-stage, hid the feature from all users).
+  // With only 10 students in DB, ≥50 means leaderboard is permanently disabled.
+  // ≥2 ensures the leaderboard activates as soon as there is someone to compete with.
+  if (entries.length >= 2) await supabase.from('feature_flags').update({is_enabled:true,updated_at:now}).in('flag_name',['leaderboard_global','wave1_leaderboard']).eq('is_enabled',false)
   return entries.length
 }
 
