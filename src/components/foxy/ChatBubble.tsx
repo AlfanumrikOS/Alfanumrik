@@ -28,7 +28,6 @@ export function ChatBubble({
   rawContent,
   timestamp,
   studentName,
-  xp,
   feedback,
   reported,
   color,
@@ -69,12 +68,7 @@ export function ChatBubble({
             🤖 AI
           </span>
         )}
-        {(xp ?? 0) > 0 && (
-          <span className="px-2 py-0.5 rounded-lg text-[10px] font-extrabold text-white"
-            style={{ background: 'linear-gradient(135deg, #F59E0B, #EF4444)' }}>
-            +{xp} XP
-          </span>
-        )}
+
       </div>
 
       {/* Message body */}

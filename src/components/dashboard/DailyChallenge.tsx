@@ -83,13 +83,6 @@ export default function DailyChallenge({ isHi, studentName, streak, grade }: Dai
 
   return (
     <div>
-      {/* Personal greeting — the first thing they see */}
-      <div className="mb-3">
-        <h2 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
-          {greeting}, {firstName}! {motivation}
-        </h2>
-      </div>
-
       {/* Daily Challenge Card — the hook */}
       <button
         onClick={() => router.push('/quiz?mode=practice&challenge=daily')}
