@@ -298,8 +298,9 @@ async function fetchRAGContext(
       p_subject: subject,
       p_grade: grade,
       match_count: 3,
-      p_board: board,       // Filter content to student's curriculum board
-      p_min_quality: 0.5,   // Exclude low-quality/malformed chunks
+      p_board: board,              // Filter content to student's curriculum board
+      p_min_quality: 0.5,          // Exclude low-quality/malformed chunks
+      p_syllabus_version: '2025-26', // Restrict to current NCERT syllabus year
     })
 
     if (error || !data || data.length === 0) return null
