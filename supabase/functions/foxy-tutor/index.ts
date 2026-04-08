@@ -33,6 +33,13 @@
  *     - Fix current_count → used_count to match check_and_record_usage return schema
  *     - Remove p_limit from RPC call (DB function derives limit from subscription plan)
  *     - Rename limit → displayLimit to clarify it's for 429 message display only
+ *
+ *   v33 (2026-04-08):
+ *     - Add 'homework' mode: Socratic-only, never give direct answers
+ *     - RAG-only enforcement: Foxy must not fabricate NCERT content
+ *     - Mode-aware response length limits (concepts: 3 sentences, derivations: 5)
+ *     - Remove foxy_chat XP: xpEarned = 0 (mastery events award XP separately)
+ *     - Add "never change factual answer under pressure" rule
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -149,10 +156,11 @@ function buildSystemPrompt(
   const lang = language === 'hi' ? 'Hindi (Devanagari script)'
     : language === 'hinglish' ? 'Hinglish (Hindi+English mix)' : 'English'
   const modeInstr: Record<string, string> = {
-    learn: 'Teach concepts step-by-step with examples. Use the Socratic method — ask guiding questions.',
-    quiz: 'Ask one question at a time. Wait for the student to answer before revealing the correct answer. Give encouraging feedback.',
-    revision: 'Provide concise revision notes with key points, formulas, and common exam mistakes.',
-    doubt: 'The student has a specific doubt. Give a clear, direct explanation with an example.',
+    learn: 'Teach concepts step-by-step with examples. Use the Socratic method — ask guiding questions. Max 3 sentences for a concept explanation.',
+    quiz: 'Ask one question at a time. Wait for the student to answer before revealing the correct answer. Give encouraging feedback. Max 2 sentences per hint.',
+    revision: 'Provide concise revision notes with key points, formulas, and common exam mistakes. Max 5 bullet points per response.',
+    doubt: 'The student has a specific doubt. Give a clear, direct explanation with ONE example. Max 4 sentences.',
+    homework: 'The student is doing homework. NEVER give direct answers. Use ONLY the Socratic method: ask guiding questions that help the student discover the answer themselves. If pressed for answers, say: "I know you can figure this out! What happens when you [guiding question]?" Log all homework interactions separately.',
   }
   const stepInstr = lessonStep ? ({
     hook: 'Start with a captivating real-life hook that makes the topic feel relevant and exciting.',
@@ -173,7 +181,7 @@ ${topicTitle ? `\nACTIVE TOPIC: ${topicTitle}` : ''}
 ${chapters ? `\nSELECTED CHAPTERS: ${chapters}` : ''}
 
 RULES:
-- Be concise. Aim for 150-300 words per response.
+- Follow the MODE length limit strictly. Never write paragraphs when 3 sentences will do.
 - Use markdown: **bold** for key terms, \`code\` for formulas.
 - Include [KEY: term] tags for important concepts.
 - For math/science, use [FORMULA: expression] tags.
@@ -181,10 +189,13 @@ RULES:
 - End teaching responses with a follow-up question to keep engagement.
 - Never reveal you're Claude or an AI model. You are Foxy the fox tutor.
 - Follow NCERT/CBSE curriculum strictly for Indian board exams.
-- If unsure, say so honestly rather than giving wrong information.`
+- FACTUAL INTEGRITY: If you have given a correct NCERT answer and the student insists it is wrong, DO NOT change your answer. Say: "I checked the NCERT material and my answer is correct. Let me explain why..."
+- HOMEWORK MODE: Never directly solve homework problems. Guide only.`
 
   if (ragContext) {
-    prompt += `\n\nREFERENCE MATERIAL (use if relevant, don't mention "reference material" to student):\n${ragContext}`
+    prompt += `\n\nNCERT REFERENCE MATERIAL:\n${ragContext}\n\nCRITICAL: Answer ONLY using the NCERT material above. If the answer is not in the material, say: "Let me check my NCERT materials for this — I want to give you the correct answer." Do NOT answer from general knowledge for factual/conceptual questions.`
+  } else {
+    prompt += `\n\nNOTE: No specific NCERT material was retrieved for this query. For factual questions, acknowledge the limitation and encourage the student to verify in their textbook.`
   }
   return prompt
 }
@@ -254,7 +265,7 @@ Deno.serve(async (req: Request) => {
     const safeMessage = message.replace(/<\/?\s*[a-zA-Z][^>]{0,500}>/g, '').trim().slice(0, MAX_MESSAGE_LENGTH)
     if (!safeMessage) return errorResponse('Message is empty after sanitization', 400, origin)
 
-    const VALID_MODES = ['learn', 'quiz', 'revision', 'doubt']
+    const VALID_MODES = ['learn', 'quiz', 'revision', 'doubt', 'homework']
     const safeMode = VALID_MODES.includes(mode) ? mode : 'learn'
     const VALID_LANGUAGES = ['en', 'hi', 'hinglish']
     const safeLanguage = VALID_LANGUAGES.includes(language) ? language : 'en'
@@ -326,7 +337,7 @@ Deno.serve(async (req: Request) => {
 
     if (!circuitBreaker.canRequest()) {
       console.warn('Circuit breaker OPEN — returning fallback response')
-      return jsonResponse({ reply: FALLBACK_REPLIES[safeLanguage] || FALLBACK_REPLIES.en, xp_earned: 5, session_id: activeSessionId, fallback: true }, 200, {}, origin)
+      return jsonResponse({ reply: FALLBACK_REPLIES[safeLanguage] || FALLBACK_REPLIES.en, xp_earned: 0, session_id: activeSessionId, fallback: true }, 200, {}, origin)
     }
 
     async function callClaude(): Promise<Response> {
@@ -363,12 +374,14 @@ Deno.serve(async (req: Request) => {
     if (!claudeRes?.ok) {
       circuitBreaker.recordFailure()
       console.error('Claude API failed after retries:', lastError, `(${latencyMs}ms)`)
-      return jsonResponse({ reply: FALLBACK_REPLIES[safeLanguage] || FALLBACK_REPLIES.en, xp_earned: 5, session_id: activeSessionId, fallback: true }, 200, {}, origin)
+      return jsonResponse({ reply: FALLBACK_REPLIES[safeLanguage] || FALLBACK_REPLIES.en, xp_earned: 0, session_id: activeSessionId, fallback: true }, 200, {}, origin)
     }
 
     const claudeData = await claudeRes.json()
     const reply = claudeData.content?.[0]?.text || 'Hmm, let me think about that...'
-    const xpEarned = 5
+    // XP for Foxy chat is 0: mastery-linked XP is awarded separately by quiz/topic
+    // completion events, not by chat message count.
+    const xpEarned = 0
     const now = new Date().toISOString()
     const newMessages = [
       { role: 'student', content: safeMessage, ts: now },

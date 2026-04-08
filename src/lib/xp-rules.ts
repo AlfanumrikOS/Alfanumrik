@@ -12,30 +12,47 @@
  */
 
 // ─── XP Earning Values ────────────────────────────────────
+//
+// Design mandate (2026-04-08):
+// XP must be awarded for MASTERY, not presence.
+// - Foxy chat XP removed: chatting is a tool, not an achievement.
+// - Login streak XP removed: replaced by milestone streak bonuses only.
+// - ZPD correct bonus added: reward answers in the student's challenge zone.
+// - Persistence bonus added: reward attempting hard questions even when wrong.
+// - topic_mastered doubled to 60: mastery is the core metric.
+// - chapter_complete doubled to 100: completing a chapter is a significant event.
+//
+// UPGRADE RULE: Increase values only. Never reduce existing earned XP.
+// All caps prevent daily grind abuse while keeping meaningful earning potential.
 
 export const XP_RULES = {
-  // Foxy AI Tutor
-  foxy_chat: 5,              // Per meaningful interaction (server-controlled)
-  foxy_chat_daily_cap: 50,   // Max 10 chats earn XP per day
+  // Foxy AI Tutor — XP awarded by server only for concept clarification events
+  // (Not per message click — that was removed. Server awards on mastery signals.)
+  foxy_chat: 0,              // No XP for simply sending a message
+  foxy_chat_daily_cap: 0,    // Cap irrelevant (earning is 0)
 
-  // Quizzes
+  // Quizzes — mastery-linked rewards
   quiz_per_correct: 10,      // Per correct answer
   quiz_high_score_bonus: 20, // Bonus if score >= 80%
   quiz_perfect_bonus: 50,    // Bonus if score = 100%
   quiz_daily_cap: 200,       // Max quiz XP per day
 
-  // Streaks
-  streak_daily: 10,          // Daily login/activity bonus
-  streak_7_day_bonus: 25,    // 7-day streak milestone
-  streak_30_day_bonus: 100,  // 30-day streak milestone
-  streak_100_day_bonus: 500, // 100-day streak milestone
+  // ZPD (Zone of Proximal Development) — reward right-challenge answers
+  zpd_correct_bonus: 8,      // Bonus XP for correct answer in ZPD band
+  persistence_bonus: 5,      // Bonus for attempting 10+ questions in one session (even low score)
 
-  // Learning milestones
-  chapter_complete: 50,      // Finishing all topics in a chapter
-  topic_mastered: 30,        // Reaching mastery on a topic
+  // Streaks — milestone bonuses only (not daily login)
+  streak_daily: 0,           // Removed: login-only XP rewarded presence not learning
+  streak_7_day_bonus: 25,    // 7-day activity streak milestone
+  streak_30_day_bonus: 100,  // 30-day activity streak milestone
+  streak_100_day_bonus: 500, // 100-day activity streak milestone
+
+  // Learning milestones — core value events
+  chapter_complete: 100,     // Finishing all topics in a chapter (doubled from 50)
+  topic_mastered: 60,        // Reaching mastery on a topic (doubled from 30)
   first_quiz_of_day: 10,     // Bonus for first quiz each day
 
-  // Study plan
+  // Study plan — structured commitment
   study_task_complete: 8,    // Completing a study plan task
   study_plan_week: 40,       // Completing a full week of study plan
 } as const;
