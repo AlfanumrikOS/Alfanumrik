@@ -295,7 +295,7 @@ ${contextSection}`;
 
 // ─── POST handler ─────────────────────────────────────────────────────────────
 
-export async function POST(request: NextRequest): Promise<NextResponse> {
+export async function POST(request: NextRequest): Promise<Response> {
   // 1. Auth
   const auth = await authorizeRequest(request, 'foxy.chat', {
     requireStudentId: true,
@@ -500,9 +500,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // 13. Audit log
   logAudit(auth.userId!, {
     action: 'foxy.chat',
-    resource: 'foxy_sessions',
+    resourceType: 'foxy_sessions',
     resourceId: resolvedSessionId,
-    metadata: { subject, grade, chapter, mode, tokensUsed, ragChunksFound: ragChunks.length },
+    details: { subject, grade, chapter, mode, tokensUsed, ragChunksFound: ragChunks.length },
   });
 
   // 14. Return response
@@ -518,7 +518,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
 // ─── GET: fetch chat history for a session ────────────────────────────────────
 
-export async function GET(request: NextRequest): Promise<NextResponse> {
+export async function GET(request: NextRequest): Promise<Response> {
   const auth = await authorizeRequest(request, 'foxy.chat', {
     requireStudentId: true,
   });
