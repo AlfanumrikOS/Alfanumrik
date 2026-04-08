@@ -17,6 +17,7 @@ import { ChatInput } from '@/components/foxy/ChatInput';
 import { UpgradeModal } from '@/components/UpgradeModal';
 import { ConversationManager, generateTitle, SIMPLIFIED_MODES, MODE_MAP, type ConversationSummary } from '@/components/foxy/ConversationManager';
 import { ConversationHeader } from '@/components/foxy/ConversationHeader';
+import SELCheckIn, { useSELCheckIn, type MoodState } from '@/components/SELCheckIn';
 
 /* ══════════════════════════════════════════════════════════════
    SUBJECT CONFIGURATION
@@ -292,6 +293,35 @@ export default function FoxyPage() {
 
   // Save-to-flashcard — tracks which message IDs have been saved
   const [savedMessageIds, setSavedMessageIds] = useState<Set<number>>(new Set());
+
+  // SEL mood check-in — shown once per day at session start
+  const { shouldShow: shouldShowSEL, markShown: markSELShown } = useSELCheckIn(student?.id);
+  const [showSELCheckIn, setShowSELCheckIn] = useState(false);
+  const [sessionMood, setSessionMood] = useState<MoodState | null>(null);
+
+  // Show SEL check-in when the Foxy page first loads (after auth resolves)
+  useEffect(() => {
+    if (student?.id && shouldShowSEL && messages.length === 0) {
+      setShowSELCheckIn(true);
+    }
+  }, [student?.id, shouldShowSEL, messages.length]);
+
+  function handleMoodSelected(mood: MoodState) {
+    setSessionMood(mood);
+    setShowSELCheckIn(false);
+    markSELShown();
+    // Adjust Foxy mode based on mood (tired/stressed → easier content)
+    if (mood === 'tired' || mood === 'stressed') {
+      setSessionMode('revision'); // Lighter mode for fatigued students
+    } else if (mood === 'great') {
+      setSessionMode('learn'); // Challenge mode for energized students
+    }
+  }
+
+  function handleSELSkip() {
+    setShowSELCheckIn(false);
+    markSELShown();
+  }
 
   // Lesson flow state
   const [lessonStep, setLessonStep] = useState<LessonStep>('hook');
@@ -902,6 +932,18 @@ export default function FoxyPage() {
         {/* Chat column */}
         <div className="flex-1 flex flex-col min-w-0">
           <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-3 md:px-5 py-4 pb-32">
+            {/* SEL mood check-in — shown once per day at session start */}
+            {showSELCheckIn && student && (
+              <div className="mb-4 animate-slide-up">
+                <SELCheckIn
+                  isHi={language === 'hi'}
+                  studentId={student.id}
+                  onMoodSelected={handleMoodSelected}
+                  onSkip={handleSELSkip}
+                />
+              </div>
+            )}
+
             {/* Inline simulation — shows when active topic matches a simulation */}
             {activeTopic && (() => {
               const sim = findSimulation(activeTopic.title || '');
