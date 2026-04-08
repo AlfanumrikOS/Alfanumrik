@@ -337,14 +337,14 @@ describe('Security header expectations', () => {
 
 describe('Middleware config', () => {
   it('exports a config with matcher array', async () => {
-    const mod = await import('@/middleware');
+    const mod = await import('@/proxy');
     expect(mod.config).toBeDefined();
     expect(mod.config.matcher).toBeDefined();
     expect(Array.isArray(mod.config.matcher)).toBe(true);
   });
 
   it('matcher excludes static assets', async () => {
-    const mod = await import('@/middleware');
+    const mod = await import('@/proxy');
     const pattern = mod.config.matcher[0];
     expect(pattern).toContain('_next/static');
     expect(pattern).toContain('_next/image');
@@ -354,7 +354,7 @@ describe('Middleware config', () => {
   });
 
   it('middleware function is exported', async () => {
-    const mod = await import('@/middleware');
+    const mod = await import('@/proxy');
     expect(typeof mod.middleware).toBe('function');
   });
 });

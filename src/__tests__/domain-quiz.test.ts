@@ -90,7 +90,7 @@ function makeSubmissionInput(overrides: Record<string, unknown> = {}) {
   return {
     studentId: 'student-uuid-1',
     subject: 'science',
-    grade: 8,
+    grade: '8',
     topic: 'Cell Biology',
     chapter: 1,
     responses: [
@@ -104,11 +104,11 @@ function makeSubmissionInput(overrides: Record<string, unknown> = {}) {
 
 const baseInput = {
   subject: 'science',
-  grade: 8,
+  grade: '8',
   count: 5,
   difficultyMode: 'mixed' as const,
   chapterNumber: null,
-  questionTypes: ['mcq'] as const,
+  questionTypes: ['mcq'] as string[],
   studentId: 'student-uuid-1',
   irtTheta: null,
 };
@@ -131,7 +131,7 @@ beforeEach(async () => {
   submitQuizSession  = mod.submitQuizSession;
 
   const logMod = await import('@/lib/logger');
-  logger = logMod.logger as { warn: Mock; error: Mock; info: Mock };
+  logger = logMod.logger as unknown as { warn: Mock; error: Mock; info: Mock };
 });
 
 // =============================================================================

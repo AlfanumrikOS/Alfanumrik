@@ -21,7 +21,7 @@ import { NextRequest } from 'next/server';
 // MUST create Promise ONCE and bind then/catch/finally — Proxy does not auto-bind.
 function chain(resolveWith: unknown) {
   const p = Promise.resolve(resolveWith);
-  return new Proxy({} as Record<string, unknown>, {
+  const handler: ProxyHandler<Record<string, unknown>> = {
     get(_, prop: string) {
       if (prop === 'then')        return p.then.bind(p);
       if (prop === 'catch')       return p.catch.bind(p);
@@ -29,9 +29,10 @@ function chain(resolveWith: unknown) {
       if (prop === 'single')      return () => p;
       if (prop === 'maybeSingle') return () => p;
       // selectchains: eq, select, limit, order, etc. all return self
-      return () => new Proxy({} as Record<string, unknown>, this);
+      return () => new Proxy({} as Record<string, unknown>, handler);
     },
-  });
+  };
+  return new Proxy({} as Record<string, unknown>, handler);
 }
 
 // ── RBAC mock ─────────────────────────────────────────────────────────────────

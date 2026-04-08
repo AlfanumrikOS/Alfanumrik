@@ -50,7 +50,6 @@ describe('ServiceResult monad', () => {
 
     it('does not set error property', () => {
       const r = ok('data');
-      // @ts-expect-error — type narrowing should make this inaccessible
       expect((r as Record<string, unknown>).error).toBeUndefined();
     });
   });
@@ -93,7 +92,6 @@ describe('ServiceResult monad', () => {
 
     it('does not set data property', () => {
       const r = fail('msg');
-      // @ts-expect-error — type narrowing should make this inaccessible
       expect((r as Record<string, unknown>).data).toBeUndefined();
     });
   });

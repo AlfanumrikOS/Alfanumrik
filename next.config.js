@@ -36,11 +36,8 @@ const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   compress: true,
-  eslint: {
-    // Lint warnings (no-console, exhaustive-deps) should not break production builds.
-    // Lint is checked separately via `npm run lint`.
-    ignoreDuringBuilds: true,
-  },
+  // NOTE: eslint.ignoreDuringBuilds removed — Next.js 16 no longer reads it
+  // from next.config.js. ESLint runs are controlled by `npm run lint` (CI only).
   images: {
     formats: ['image/avif', 'image/webp'],
     remotePatterns: [
@@ -98,12 +95,9 @@ const nextConfig = {
           { key: 'Service-Worker-Allowed', value: '/' },
         ],
       },
-      {
-        source: '/_next/static/(.*)',
-        headers: [
-          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
-        ],
-      },
+      // NOTE: /_next/static/(.*) Cache-Control removed — Next.js 16 sets
+      // 'public, max-age=31536000, immutable' automatically on hashed assets.
+      // Overriding it triggered a build warning and was redundant.
       // Cache fonts aggressively (rarely change)
       {
         source: '/fonts/(.*)',

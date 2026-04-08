@@ -4,7 +4,8 @@ import { Ratelimit } from '@upstash/ratelimit';
 import { Redis } from '@upstash/redis';
 
 /* ═══════════════════════════════════════════════════════════════
- * MIDDLEWARE — Security Hardening + Auth Session Refresh
+ * PROXY — Security Hardening + Auth Session Refresh
+ * (renamed from middleware.ts → proxy.ts for Next.js 16 convention)
  *
  * Defense in depth. Every layer assumes the layer below might be
  * compromised.
@@ -90,7 +91,7 @@ async function checkRateLimit(key: string, max: number, type: 'general' | 'paren
   return checkRateLimitLocal(key, max);
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const pathname = path; // alias for clarity in API checks
 
@@ -392,3 +393,6 @@ export const config = {
     '/((?!_next/static|_next/image|favicon.ico|manifest.json|sw.js|icons/).*)',
   ],
 };
+
+// Alias for backward-compatibility with test imports (import('@/proxy').middleware)
+export { proxy as middleware };
