@@ -468,10 +468,13 @@ export async function POST(request: NextRequest): Promise<Response> {
           .eq('usage_date', today);
       }
     } catch { /* Non-fatal */ }
+    // TEMPORARY DIAGNOSTIC: expose exact error so admin can identify root cause
+    const diagMsg = claudeErr instanceof Error ? claudeErr.message : String(claudeErr);
     return errorJson(
       'Foxy is temporarily unavailable. Please try again in a moment.',
       'Foxy abhi available nahi hai. Thodi der mein dobara try karein.',
       503,
+      { _diag: diagMsg.slice(0, 300) },
     );
   }
 
