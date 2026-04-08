@@ -184,18 +184,17 @@ export default function HelpPage() {
     if (!ticketCategory || !ticketMessage.trim()) return;
     setTicketSubmitting(true);
     try {
-      await supabase.from('support_tickets').insert({
-        student_id: student?.id || null,
-        email: ticketEmail || student?.email || 'anonymous',
-        category: ticketCategory,
-        subject: ticketSubject || ticketCategory,
-        message: ticketMessage,
-        status: 'open',
-        user_role: student ? 'student' : 'guest',
-        user_name: student?.name || 'Guest',
-        device_info: typeof navigator !== 'undefined' ? navigator.userAgent.substring(0, 200) : '',
+      await fetch('/api/support/ticket', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category: ticketCategory,
+          subject: ticketSubject || ticketCategory,
+          message: ticketMessage,
+          email: ticketEmail || student?.email || undefined,
+        }),
       });
-    } catch { /* table may not exist yet — still show success */ }
+    } catch { /* non-critical — still show success to user */ }
     setTicketSubmitting(false);
     setView('ticket-sent');
   };

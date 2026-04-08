@@ -92,23 +92,23 @@ export default function STEMCentrePage() {
     if (!student?.id) return false;
     setSaving(true);
     setSaveError('');
-    const { error } = await supabase.from('experiment_observations').insert({
-      student_id: student.id,
-      simulation_id: params.simId,
-      experiment_id: params.experimentId || null,
-      observation_type: params.type,
-      observation_text: params.type === 'simple' ? params.observationText : null,
-      structured_observations: params.result?.observations || null,
-      data_entries: params.result?.dataEntries || null,
-      conclusion: params.result?.conclusion || null,
-      quiz_score: params.result?.quizScore ?? null,
-      total_questions: params.result?.totalQuestions ?? null,
-      time_spent_seconds: params.result?.timeSpent ?? 0,
-      grade,
-      subject: params.subject,
+    const res = await fetch('/api/student/stem-observation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        simulation_id: params.simId,
+        experiment_id: params.experimentId || null,
+        observation_type: params.type,
+        observation_text: params.type === 'simple' ? params.observationText : null,
+        structured_observations: params.result?.observations || null,
+        data_entries: params.result?.dataEntries || null,
+        conclusion: params.result?.conclusion || null,
+        quiz_score: params.result?.quizScore ?? null,
+        total_questions: params.result?.totalQuestions ?? null,
+      }),
     });
     setSaving(false);
-    if (error) {
+    if (!res.ok) {
       setSaveError(isHi ? 'सहेजने में त्रुटि हुई' : 'Failed to save observation');
       return false;
     }

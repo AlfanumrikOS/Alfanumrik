@@ -104,11 +104,10 @@ export default function ScanPage() {
 
       const url = supabase.storage.from('uploads').getPublicUrl(path).data.publicUrl;
 
-      await supabase.from('image_uploads').insert({
-        student_id: student.id,
-        image_url: url,
-        image_type: selectedType,
-        processing_status: 'pending',
+      await fetch('/api/student/scan-upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image_url: url, image_type: selectedType }),
       });
 
       setUploadState('done');

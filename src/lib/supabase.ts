@@ -1,37 +1,21 @@
+/**
+ * @deprecated Import from '@/lib/supabase-client' for the pure client.
+ * Import from '@/lib/domains/*' for data access functions.
+ * This file exists for backward compatibility while the migration proceeds.
+ *
+ * MIGRATION STATUS: 51 importers remain (tracked in Phase C notes)
+ * Do not add new imports from this file.
+ */
+
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { XP_RULES } from './xp-rules';
 import { calculateScorePercent, calculateQuizXP } from './scoring';
 
-export const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-export const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+// Re-export from the canonical client module — new code uses supabase-client.ts
+export { supabase, supabaseUrl, supabaseAnonKey } from './supabase-client';
 
-// Lazy-init: avoid throwing during Next.js static page generation (build time)
-// where env vars may not yet be available.
-let _supabase: SupabaseClient | null = null;
-
-function getSupabase(): SupabaseClient {
-  if (_supabase) return _supabase;
-  if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY');
-  }
-  _supabase = createClient(supabaseUrl, supabaseAnonKey, {
-    auth: {
-      autoRefreshToken: true,
-      persistSession: true,
-      detectSessionInUrl: true,
-    },
-  });
-  return _supabase;
-}
-
-// Proxy that lazily initializes on first property access
-export const supabase: SupabaseClient = new Proxy({} as SupabaseClient, {
-  get(_target, prop, receiver) {
-    const client = getSupabase();
-    const value = Reflect.get(client, prop, receiver);
-    return typeof value === 'function' ? value.bind(client) : value;
-  },
-});
+// Internal: import client + constants for use by the data functions below
+import { supabase, supabaseUrl, supabaseAnonKey } from './supabase-client';
 
 /* ── Timeout wrapper for fetch calls ── */
 function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 15000): Promise<Response> {

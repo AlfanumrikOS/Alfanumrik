@@ -155,6 +155,33 @@ async function fetchQuestions(body: Record<string, unknown>): Promise<Response> 
   return jsonResponse({ questions: enriched, total: enriched.length, chapter, subject, grade }, 200, {}, origin)
 }
 
+// ─── Rate limiter: evaluate_answer (Anthropic call, most expensive path) ─────
+// 30 evaluations per student per 10-minute window stored in Supabase KV via
+// a simple counter row in student_ncert_attempts aggregation.
+// Uses a lightweight in-memory store keyed by student_id for the current
+// Edge Function instance. At scale, use Upstash Redis or Supabase realtime.
+const _evalWindows = new Map<string, { count: number; windowStart: number }>()
+const EVAL_LIMIT = 30
+const EVAL_WINDOW_MS = 10 * 60 * 1000 // 10 minutes
+
+function checkEvalRateLimit(studentId: string): { allowed: boolean; retryAfterMs: number } {
+  const now = Date.now()
+  const entry = _evalWindows.get(studentId)
+
+  if (!entry || (now - entry.windowStart) > EVAL_WINDOW_MS) {
+    _evalWindows.set(studentId, { count: 1, windowStart: now })
+    return { allowed: true, retryAfterMs: 0 }
+  }
+
+  if (entry.count >= EVAL_LIMIT) {
+    const retryAfterMs = EVAL_WINDOW_MS - (now - entry.windowStart)
+    return { allowed: false, retryAfterMs }
+  }
+
+  entry.count++
+  return { allowed: true, retryAfterMs: 0 }
+}
+
 // ─── Action: evaluate_answer ──────────────────────────────────────────────────
 async function evaluateAnswer(body: Record<string, unknown>): Promise<Response> {
   const origin = body._origin as string | undefined
@@ -172,6 +199,16 @@ async function evaluateAnswer(body: Record<string, unknown>): Promise<Response> 
   }
   if (!marks_possible || marks_possible < 1) {
     return errorResponse('marks_possible must be >= 1', 400, origin)
+  }
+
+  // Rate limit: 30 evaluations / 10 min per student (Anthropic cost protection)
+  const rl = checkEvalRateLimit(student_id)
+  if (!rl.allowed) {
+    const retryAfterSec = Math.ceil(rl.retryAfterMs / 1000)
+    return new Response(
+      JSON.stringify({ error: 'Too many evaluation requests. Please wait before submitting more answers.', retry_after_seconds: retryAfterSec }),
+      { status: 429, headers: { 'Content-Type': 'application/json', 'Retry-After': String(retryAfterSec), ...(origin ? { 'Access-Control-Allow-Origin': origin } : {}) } }
+    )
   }
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)

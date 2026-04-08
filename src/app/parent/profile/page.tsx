@@ -36,10 +36,12 @@ export default function ParentProfilePage() {
     }
     setSaving(true);
     try {
-      await supabase.from('guardians').update({
-        name: trimmedName,
-        phone: trimmedPhone || null,
-      }).eq('id', guardian.id);
+      const res = await fetch('/api/parent/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: trimmedName, phone: trimmedPhone || null }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setToast(tp('Profile updated!', 'प्रोफ़ाइल अपडेट हो गई!'));
       setEditing(false);
       setTimeout(() => setToast(''), 3000);
