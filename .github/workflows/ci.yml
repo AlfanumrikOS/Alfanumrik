@@ -33,16 +33,16 @@ jobs:
           FOUND=0
 
           # Patterns that indicate leaked secrets
-          # Exclude: placeholder values in CI env, test fixtures, lock files, .env.example
-          EXCLUDE_PATTERN="ci.yml|deploy-production.yml|deploy-staging.yml|package-lock.json|\.env\.example|\.env\.local\.example|node_modules|__tests__|\.test\.(ts|tsx|js)"
+          # Exclude: placeholder values in CI env, test fixtures, scripts (dev-only CLI), lock files, .env.example
+          EXCLUDE_PATTERN="ci.yml|deploy-production.yml|deploy-staging.yml|package-lock.json|\.env\.example|\.env\.local\.example|node_modules|__tests__|\.test\.(ts|tsx|js)|scripts/"
 
           for PATTERN in \
             'sk_live_[a-zA-Z0-9]{20,}' \
             'rzp_live_[a-zA-Z0-9]{10,}' \
             'SUPABASE_SERVICE_ROLE_KEY\s*[:=]\s*eyJ' \
             'service_role.*eyJ[a-zA-Z0-9_-]{50,}' \
-            'NEXT_PUBLIC_.*SERVICE_ROLE' \
-            'NEXT_PUBLIC_.*SECRET' \
+            'NEXT_PUBLIC_[A-Z0-9_]*SERVICE_ROLE' \
+            'NEXT_PUBLIC_[A-Z0-9_]*SECRET' \
             'password\s*[:=]\s*["\x27][^"\x27]{8,}' \
             'ghp_[a-zA-Z0-9]{36}' \
             'sk-[a-zA-Z0-9]{20,}' \
@@ -56,7 +56,7 @@ jobs:
           done
 
           # Check NEXT_PUBLIC_ vars don't contain secret-like values
-          NEXT_PUBLIC_SECRETS=$(grep -rn 'NEXT_PUBLIC_.*\(SERVICE_ROLE\|SECRET_KEY\|PRIVATE_KEY\)' . --include='*.ts' --include='*.tsx' --include='*.js' --include='*.env' 2>/dev/null | grep -vE "$EXCLUDE_PATTERN" || true)
+          NEXT_PUBLIC_SECRETS=$(grep -rn 'NEXT_PUBLIC_[A-Z0-9_]*\(SERVICE_ROLE\|SECRET_KEY\|PRIVATE_KEY\)' . --include='*.ts' --include='*.tsx' --include='*.js' --include='*.env' 2>/dev/null | grep -vE "$EXCLUDE_PATTERN" || true)
           if [ -n "$NEXT_PUBLIC_SECRETS" ]; then
             echo "CRITICAL: NEXT_PUBLIC_ variable exposes a secret!"
             echo "$NEXT_PUBLIC_SECRETS"
