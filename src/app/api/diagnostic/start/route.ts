@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
 
     // 6. Fetch 15 questions ordered by difficulty ascending (easy first for diagnostic ramp-up)
     const { data: questions, error: questionsError } = await admin
-      .from('questions')
+      .from('question_bank')
       .select(
         'id, question_text, question_hi, question_type, options, correct_answer_index, explanation, explanation_hi, difficulty, bloom_level, chapter_number, topic_id'
       )

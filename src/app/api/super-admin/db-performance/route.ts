@@ -32,25 +32,23 @@ interface DbPerfResponse {
   alert: string | null;
 }
 
+async function safeRpc<T>(name: string): Promise<T[]> {
+  try {
+    const { data } = await supabaseAdmin.rpc(name);
+    return (data as T[] | null) ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const auth = await authorizeAdmin(request);
   if (!auth.authorized) return auth.response;
 
   const [slowFunctionsResult, connectionStatsResult, tableSizesResult] = await Promise.all([
-    supabaseAdmin
-      .rpc('get_slow_functions_stats')
-      .then((r) => (r.data as SlowFunctionRow[] | null) ?? [])
-      .catch((): SlowFunctionRow[] => []),
-
-    supabaseAdmin
-      .rpc('get_connection_stats')
-      .then((r) => (r.data as ConnectionStateRow[] | null) ?? [])
-      .catch((): ConnectionStateRow[] => []),
-
-    supabaseAdmin
-      .rpc('get_table_sizes')
-      .then((r) => (r.data as TableSizeRow[] | null) ?? [])
-      .catch((): TableSizeRow[] => []),
+    safeRpc<SlowFunctionRow>('get_slow_functions_stats'),
+    safeRpc<ConnectionStateRow>('get_connection_stats'),
+    safeRpc<TableSizeRow>('get_table_sizes'),
   ]);
 
   const activeConnections =
