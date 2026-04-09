@@ -50,6 +50,25 @@ const DEFAULT_BLOOM      = 'remember'
 const VALID_GRADES      = ['6','7','8','9','10','11','12']
 const VALID_BLOOM_LEVELS = ['remember','understand','apply','analyze','evaluate','create']
 
+// CBSE subject allowlist per grade (assessment requirement — prevent nonsense subjects)
+// Subjects stored lowercase; input is normalised before lookup.
+const VALID_SUBJECTS_BY_GRADE: Record<string, string[]> = {
+  '6':  ['math', 'science', 'english', 'hindi', 'social_studies', 'social studies'],
+  '7':  ['math', 'science', 'english', 'hindi', 'social_studies', 'social studies'],
+  '8':  ['math', 'science', 'english', 'hindi', 'social_studies', 'social studies'],
+  '9':  ['math', 'science', 'english', 'hindi', 'social_studies', 'social studies', 'physics', 'chemistry', 'biology'],
+  '10': ['math', 'science', 'english', 'hindi', 'social_studies', 'social studies', 'physics', 'chemistry', 'biology'],
+  '11': ['math', 'physics', 'chemistry', 'biology', 'english', 'hindi', 'economics', 'accountancy', 'business_studies', 'business studies', 'history', 'geography', 'political_science', 'political science'],
+  '12': ['math', 'physics', 'chemistry', 'biology', 'english', 'hindi', 'economics', 'accountancy', 'business_studies', 'business studies', 'history', 'geography', 'political_science', 'political science'],
+}
+
+/** Returns true if the subject is a known CBSE subject for the given grade. */
+function isValidSubjectForGrade(grade: string, subject: string): boolean {
+  const allowed = VALID_SUBJECTS_BY_GRADE[grade]
+  if (!allowed) return false
+  return allowed.includes(subject.toLowerCase().trim())
+}
+
 // ─── Circuit breaker (P12 — must always have fallback) ───────────────────────
 const circuitBreaker = {
   failures:         0,
@@ -376,6 +395,13 @@ Deno.serve(async (req: Request) => {
     }
     if (typeof subject !== 'string' || !subject.trim()) {
       return errorResponse('subject is required', 400, origin)
+    }
+    if (!isValidSubjectForGrade(grade, subject)) {
+      const allowed = VALID_SUBJECTS_BY_GRADE[grade]?.join(', ') ?? ''
+      return errorResponse(
+        `subject "${subject}" is not a valid CBSE subject for grade ${grade}. Allowed: ${allowed}`,
+        400, origin,
+      )
     }
     if (typeof chapter !== 'string' || !chapter.trim()) {
       return errorResponse('chapter is required', 400, origin)
