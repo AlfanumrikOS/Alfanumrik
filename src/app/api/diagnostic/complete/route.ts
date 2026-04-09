@@ -22,7 +22,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createSupabaseServerClient } from '@/lib/supabase-server';
+import { authorizeRequest } from '@/lib/rbac';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 
@@ -38,19 +38,10 @@ interface DiagnosticResponseItem {
 
 export async function POST(request: NextRequest) {
   try {
-    // 1. Authenticate
-    const supabase = await createSupabaseServerClient();
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return NextResponse.json(
-        { success: false, error: 'Authentication required', code: 'AUTH_REQUIRED' },
-        { status: 401 }
-      );
-    }
+    // 1. Authorize — requires 'diagnostic.complete' permission (P9: RBAC enforcement)
+    const auth = await authorizeRequest(request, 'diagnostic.complete');
+    if (!auth.authorized) return auth.errorResponse!;
+    const userId = auth.userId!;
 
     // 2. Parse body
     let body: Record<string, unknown>;
@@ -89,7 +80,7 @@ export async function POST(request: NextRequest) {
     const { data: student, error: studentError } = await admin
       .from('students')
       .select('id')
-      .eq('auth_user_id', user.id)
+      .eq('auth_user_id', userId)
       .single();
 
     if (studentError || !student) {
