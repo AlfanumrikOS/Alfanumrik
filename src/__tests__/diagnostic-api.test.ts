@@ -6,37 +6,18 @@ import { NextRequest } from 'next/server';
  *
  * Covers:
  *   POST /api/diagnostic/start  — auth, grade validation, subject validation
- *   POST /api/diagnostic/complete — auth, session_id validation
+ *   POST /api/diagnostic/complete — auth, session_id validation, RPC fallback
  *
  * P5: diagnostic grades are strings "6"-"10" (grade "11" is invalid for diagnostic)
- * P9: both routes require an authenticated session
+ * P9: both routes require authorizeRequest('diagnostic.attempt' / 'diagnostic.complete')
+ *
+ * Mock strategy (matching api-routes.test.ts standard):
+ *   - Mock @/lib/rbac authorizeRequest directly — most reliable way to control
+ *     the P9 gate without fighting Supabase JWT resolution in unit tests.
+ *   - Mock @/lib/supabase-admin for database operations.
  */
 
-// ── Mock: createSupabaseServerClient ─────────────────────────────────────────
-const mockGetUser = vi.fn();
-
-vi.mock('@/lib/supabase-server', () => ({
-  createSupabaseServerClient: vi.fn().mockResolvedValue({
-    auth: {
-      getUser: () => mockGetUser(),
-    },
-  }),
-}));
-
-// ── Mock: getSupabaseAdmin (service-role client) ──────────────────────────────
-// Per-table result map — tests call setFromResult(table, result) to control responses.
-let _tableResults: Map<string, unknown> = new Map();
-let _rpcResult: unknown = { data: null, error: null };
-
-function setFromResult(table: string, result: unknown) {
-  _tableResults.set(table, result);
-}
-
-function setRpcResult(result: unknown) {
-  _rpcResult = result;
-}
-
-// Chain proxy: supports await, .select(), .eq(), .single(), .insert(), .limit(), .order()
+// ── Shared thenable chain proxy ────────────────────────────────────────────────
 function chain(resolveWith: unknown) {
   const p = Promise.resolve(resolveWith);
   const handler: ProxyHandler<Record<string, unknown>> = {
@@ -52,66 +33,103 @@ function chain(resolveWith: unknown) {
   return new Proxy({} as Record<string, unknown>, handler);
 }
 
+// ── RBAC mock ─────────────────────────────────────────────────────────────────
+// authorizeRequest is mocked at module level; tests control return value via
+// _authorizeImpl.  Default: unauthorized (returns 401 AUTH_REQUIRED).
+
+const _authorizeImpl = vi.fn();
+
+vi.mock('@/lib/rbac', () => ({
+  authorizeRequest: (...args: unknown[]) => _authorizeImpl(...args),
+}));
+
+function setAuthorized(userId = 'auth-user-1') {
+  _authorizeImpl.mockResolvedValue({
+    authorized: true,
+    userId,
+    studentId: null,
+    roles: ['student'],
+    permissions: ['diagnostic.attempt', 'diagnostic.complete'],
+  });
+}
+
+function setUnauthorized(status = 401, code = 'AUTH_REQUIRED') {
+  _authorizeImpl.mockResolvedValue({
+    authorized: false,
+    userId: null,
+    studentId: null,
+    roles: [],
+    permissions: [],
+    errorResponse: new Response(
+      JSON.stringify({ success: false, error: code, code }),
+      { status, headers: { 'Content-Type': 'application/json' } },
+    ),
+  });
+}
+
+// ── supabaseAdmin mock ────────────────────────────────────────────────────────
+let _tableResults: Map<string, unknown> = new Map();
 const mockRpc = vi.fn();
+
+function setFromResult(table: string, result: unknown) {
+  _tableResults.set(table, result);
+}
+
+function setRpcResult(result: unknown) {
+  mockRpc.mockResolvedValue(result);
+}
 
 vi.mock('@/lib/supabase-admin', () => ({
   getSupabaseAdmin: vi.fn(() => ({
     from: (table: string) => chain(_tableResults.get(table) ?? { data: null, error: null }),
-    rpc: (...args: unknown[]) => mockRpc(...args),
+    rpc:  (...args: unknown[]) => mockRpc(...args),
+    auth: { getUser: () => Promise.resolve({ data: { user: { id: 'auth-user-1' } }, error: null }) },
   })),
   supabaseAdmin: {
     from: (table: string) => chain(_tableResults.get(table) ?? { data: null, error: null }),
-    rpc: (...args: unknown[]) => mockRpc(...args),
+    rpc:  (...args: unknown[]) => mockRpc(...args),
+    auth: { getUser: () => Promise.resolve({ data: { user: { id: 'auth-user-1' } }, error: null }) },
   },
 }));
 
-// ── Mock: logger ──────────────────────────────────────────────────────────────
+// ── Logger mock ───────────────────────────────────────────────────────────────
 vi.mock('@/lib/logger', () => ({
   logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function makeStartRequest(body: unknown, token?: string): NextRequest {
+function makeStartRequest(body: unknown): NextRequest {
   return new NextRequest('http://localhost/api/diagnostic/start', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test-token' },
     body: JSON.stringify(body),
   });
 }
 
-function makeCompleteRequest(body: unknown, token?: string): NextRequest {
+function makeCompleteRequest(body: unknown): NextRequest {
   return new NextRequest('http://localhost/api/diagnostic/complete', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test-token' },
     body: JSON.stringify(body),
   });
 }
-
-const MOCK_USER = { id: 'auth-user-1', email: 'student@test.com' };
 
 beforeEach(() => {
   vi.clearAllMocks();
   _tableResults = new Map();
-  _rpcResult = { data: null, error: null };
   mockRpc.mockResolvedValue({ data: null, error: null });
-  // Default: not authenticated
-  mockGetUser.mockResolvedValue({ data: { user: null }, error: { message: 'Not authenticated' } });
+  // Default: unauthorized — tests opt in by calling setAuthorized()
+  setUnauthorized();
 });
 
 // =============================================================================
 // POST /api/diagnostic/start
 // =============================================================================
 
-describe('POST /api/diagnostic/start — authentication', () => {
+describe('POST /api/diagnostic/start — authentication (P9)', () => {
   it('returns 401 when user is not authenticated', async () => {
-    // mockGetUser is already defaulting to unauthenticated
+    setUnauthorized(401, 'AUTH_REQUIRED');
     const { POST } = await import('@/app/api/diagnostic/start/route');
     const res = await POST(makeStartRequest({ grade: '9', subject: 'math' }));
     expect(res.status).toBe(401);
@@ -120,18 +138,18 @@ describe('POST /api/diagnostic/start — authentication', () => {
     expect(body.code).toBe('AUTH_REQUIRED');
   });
 
-  it('returns 401 when getUser returns null user', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: null }, error: null });
+  it('returns 403 when authenticated user lacks diagnostic.attempt permission', async () => {
+    setUnauthorized(403, 'NO_PERMISSION');
     const { POST } = await import('@/app/api/diagnostic/start/route');
     const res = await POST(makeStartRequest({ grade: '9', subject: 'math' }));
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.success).toBe(false);
   });
 });
 
 describe('POST /api/diagnostic/start — grade validation (P5)', () => {
-  beforeEach(() => {
-    mockGetUser.mockResolvedValue({ data: { user: MOCK_USER }, error: null });
-  });
+  beforeEach(() => { setAuthorized(); });
 
   it('returns 400 when grade is "11" (diagnostic only covers grades 6-10)', async () => {
     const { POST } = await import('@/app/api/diagnostic/start/route');
@@ -175,11 +193,9 @@ describe('POST /api/diagnostic/start — grade validation (P5)', () => {
   });
 
   it('accepts grade "6" (lowest valid diagnostic grade)', async () => {
-    // Authenticated, but student not found — still verifies grade is accepted
     setFromResult('students', { data: null, error: { message: 'Not found' } });
     const { POST } = await import('@/app/api/diagnostic/start/route');
     const res = await POST(makeStartRequest({ grade: '6', subject: 'math' }));
-    // Should not be 400 INVALID_GRADE — may be 404 for missing student
     const body = await res.json();
     expect(body.code).not.toBe('INVALID_GRADE');
   });
@@ -194,9 +210,7 @@ describe('POST /api/diagnostic/start — grade validation (P5)', () => {
 });
 
 describe('POST /api/diagnostic/start — subject validation', () => {
-  beforeEach(() => {
-    mockGetUser.mockResolvedValue({ data: { user: MOCK_USER }, error: null });
-  });
+  beforeEach(() => { setAuthorized(); });
 
   it('returns 400 when subject is invalid for the given grade', async () => {
     const { POST } = await import('@/app/api/diagnostic/start/route');
@@ -251,9 +265,10 @@ describe('POST /api/diagnostic/start — subject validation', () => {
 
 describe('POST /api/diagnostic/start — full success path', () => {
   beforeEach(() => {
-    mockGetUser.mockResolvedValue({ data: { user: MOCK_USER }, error: null });
+    setAuthorized();
     setFromResult('students', { data: { id: 'student-1', grade: '9' }, error: null });
-    setFromResult('questions', {
+    // NOTE: table name is question_bank (not questions) per P-schema
+    setFromResult('question_bank', {
       data: [
         {
           id: 'q1', question_text: 'What is 2+2?', options: ['2', '3', '4', '5'],
@@ -281,24 +296,29 @@ describe('POST /api/diagnostic/start — full success path', () => {
 // POST /api/diagnostic/complete
 // =============================================================================
 
-describe('POST /api/diagnostic/complete — authentication', () => {
+describe('POST /api/diagnostic/complete — authentication (P9)', () => {
   it('returns 401 when user is not authenticated', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: null }, error: { message: 'Not authenticated' } });
+    setUnauthorized(401, 'AUTH_REQUIRED');
     const { POST } = await import('@/app/api/diagnostic/complete/route');
-    const res = await POST(
-      makeCompleteRequest({ session_id: 'session-1', responses: [] }),
-    );
+    const res = await POST(makeCompleteRequest({ session_id: 'session-1', responses: [] }));
     expect(res.status).toBe(401);
     const body = await res.json();
     expect(body.success).toBe(false);
     expect(body.code).toBe('AUTH_REQUIRED');
   });
+
+  it('returns 403 when authenticated user lacks diagnostic.complete permission', async () => {
+    setUnauthorized(403, 'NO_PERMISSION');
+    const { POST } = await import('@/app/api/diagnostic/complete/route');
+    const res = await POST(makeCompleteRequest({ session_id: 'session-1', responses: [] }));
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.success).toBe(false);
+  });
 });
 
 describe('POST /api/diagnostic/complete — input validation', () => {
-  beforeEach(() => {
-    mockGetUser.mockResolvedValue({ data: { user: MOCK_USER }, error: null });
-  });
+  beforeEach(() => { setAuthorized(); });
 
   it('returns 400 when session_id is missing', async () => {
     const { POST } = await import('@/app/api/diagnostic/complete/route');
@@ -313,9 +333,7 @@ describe('POST /api/diagnostic/complete — input validation', () => {
 
   it('returns 400 when session_id is an empty string', async () => {
     const { POST } = await import('@/app/api/diagnostic/complete/route');
-    const res = await POST(
-      makeCompleteRequest({ session_id: '', responses: [] }),
-    );
+    const res = await POST(makeCompleteRequest({ session_id: '', responses: [] }));
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.code).toBe('MISSING_SESSION_ID');
@@ -338,11 +356,10 @@ describe('POST /api/diagnostic/complete — input validation', () => {
   });
 
   it('returns 400 when request body is not valid JSON', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: MOCK_USER }, error: null });
     const { POST } = await import('@/app/api/diagnostic/complete/route');
     const req = new NextRequest('http://localhost/api/diagnostic/complete', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test-token' },
       body: 'not-json{{',
     });
     const res = await POST(req);
@@ -354,7 +371,7 @@ describe('POST /api/diagnostic/complete — input validation', () => {
 
 describe('POST /api/diagnostic/complete — RPC fallback (P1 score accuracy)', () => {
   beforeEach(() => {
-    mockGetUser.mockResolvedValue({ data: { user: MOCK_USER }, error: null });
+    setAuthorized();
     setFromResult('students', { data: { id: 'student-1' }, error: null });
     setFromResult('diagnostic_sessions', { data: { id: 'session-1', status: 'in_progress' }, error: null });
     setFromResult('diagnostic_responses', { data: null, error: null });
@@ -362,12 +379,12 @@ describe('POST /api/diagnostic/complete — RPC fallback (P1 score accuracy)', (
 
   it('falls back to in-process score calculation when RPC fails, using P1 formula', async () => {
     // RPC fails — route falls back to Math.round((correct / total) * 100)
-    mockRpc.mockResolvedValue({ data: null, error: { message: 'RPC unavailable' } });
+    setRpcResult({ data: null, error: { message: 'RPC unavailable' } });
     const { POST } = await import('@/app/api/diagnostic/complete/route');
 
     const responses = [
-      { question_id: 'q1', selected_answer_index: 0, is_correct: true,  time_taken_seconds: 10, topic: 'algebra', difficulty: 2, bloom_level: 'understand' },
-      { question_id: 'q2', selected_answer_index: 1, is_correct: true,  time_taken_seconds: 8,  topic: 'algebra', difficulty: 2, bloom_level: 'apply' },
+      { question_id: 'q1', selected_answer_index: 0, is_correct: true,  time_taken_seconds: 10, topic: 'algebra',  difficulty: 2, bloom_level: 'understand' },
+      { question_id: 'q2', selected_answer_index: 1, is_correct: true,  time_taken_seconds: 8,  topic: 'algebra',  difficulty: 2, bloom_level: 'apply' },
       { question_id: 'q3', selected_answer_index: 2, is_correct: false, time_taken_seconds: 12, topic: 'geometry', difficulty: 3, bloom_level: 'analyze' },
       { question_id: 'q4', selected_answer_index: 0, is_correct: false, time_taken_seconds: 6,  topic: 'geometry', difficulty: 3, bloom_level: 'remember' },
     ];
