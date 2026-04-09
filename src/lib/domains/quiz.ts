@@ -1,4 +1,4 @@
-/**
+h/**
  * Quiz Domain — authoritative interface for quiz session management.
  *
  * This is the microservice boundary. All quiz data operations go through here.
@@ -11,7 +11,7 @@
  *   - XP calculation never happens client-side; always via RPC
  *   - Submission is idempotent: duplicate session_id is a no-op, not an error
  *
- * MICROSERVICE EXTRACTION PATH:
+ * MICROSERVICE EXTRACTION PATH:h
  *   When extracted: wrap submitQuizSession and fetchQuestions in HTTP handlers.
  *   The types in ./types.ts become the HTTP schema. Zero logic rewrite.
  */
@@ -88,7 +88,7 @@ function validateQuestions(questions: unknown[]): QuizQuestion[] {
  * the questions — callers can log/alert when falling back.
  *
  * Source order:
- *   1. quiz-generator Edge Function (adaptive, IRT, RAG)  → best
+ *   1. quiz-engine Edge Function (adaptive, IRT, RAG)  → best
  *   2. select_quiz_questions_rag RPC                      → good
  *   3. select_quiz_questions_v2 RPC                       → acceptable
  *   4. direct question_bank query                         → last resort
@@ -103,7 +103,7 @@ export async function fetchQuizQuestions(
   // ── Source 1: Edge Function (adaptive + RAG + IRT) ───────────────────────
   try {
     const { data: funcData, error: funcError } = await supabase.functions.invoke(
-      'quiz-generator',
+      'quiz-engine',
       {
         body: {
           student_id: input.studentId,
