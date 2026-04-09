@@ -1,4 +1,4 @@
-h/**
+/**
  * Quiz Domain — authoritative interface for quiz session management.
  *
  * This is the microservice boundary. All quiz data operations go through here.
@@ -11,7 +11,7 @@ h/**
  *   - XP calculation never happens client-side; always via RPC
  *   - Submission is idempotent: duplicate session_id is a no-op, not an error
  *
- * MICROSERVICE EXTRACTION PATH:h
+ * MICROSERVICE EXTRACTION PATH:
  *   When extracted: wrap submitQuizSession and fetchQuestions in HTTP handlers.
  *   The types in ./types.ts become the HTTP schema. Zero logic rewrite.
  */
