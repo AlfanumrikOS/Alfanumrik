@@ -146,6 +146,8 @@ export default function BottomNavComponent() {
   const { roles, activeRole, setActiveRole } = auth;
   const [showMore, setShowMore] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  // Hick's Law: collapse secondary sidebar sections by default to reduce choices
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({ Track: true, Account: true });
   const moreSheetRef = useRef<HTMLDivElement>(null);
 
   // Focus management and keyboard support for More sheet
@@ -413,14 +415,24 @@ export default function BottomNavComponent() {
             <span style={{ fontSize: 12 }}>{collapsed ? '\u00BB' : '\u00AB'}</span>
           </button>
 
-          {/* Grouped Nav Sections */}
+          {/* Grouped Nav Sections — secondary sections collapsible (Hick's Law) */}
           <div className="space-y-5">
-            {sidebarSections.map(section => (
+            {sidebarSections.map(section => {
+              const isSectionCollapsed = !collapsed && collapsedSections[section.title];
+              const hasActiveItem = section.items.some(item => isActive(item.href));
+              return (
               <div key={section.title}>
-                {!collapsed && <div className="text-[11px] font-bold text-[var(--text-3)] uppercase tracking-widest px-3 mb-1.5">
-                  {isHi ? section.titleHi : section.title}
-                </div>}
-                <div className="space-y-0.5">
+                {!collapsed && <button
+                  onClick={() => setCollapsedSections(prev => ({ ...prev, [section.title]: !prev[section.title] }))}
+                  className="w-full flex items-center justify-between text-[11px] font-bold text-[var(--text-3)] uppercase tracking-widest px-3 mb-1.5 hover:text-[var(--text-2)] transition-colors"
+                  aria-expanded={!isSectionCollapsed}
+                >
+                  <span>{isHi ? section.titleHi : section.title}</span>
+                  <span className="text-[9px] transition-transform" style={{ transform: isSectionCollapsed ? 'rotate(-90deg)' : 'rotate(0)' }}>
+                    {isSectionCollapsed ? '▶' + (hasActiveItem ? ' •' : '') : '▼'}
+                  </span>
+                </button>}
+                {!isSectionCollapsed && <div className="space-y-0.5">
                   {section.items.map(item => {
                     const active = isActive(item.href);
                     const isFoxy = item.href === '/foxy';
@@ -446,9 +458,10 @@ export default function BottomNavComponent() {
                       </button>
                     );
                   })}
-                </div>
+                </div>}
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
