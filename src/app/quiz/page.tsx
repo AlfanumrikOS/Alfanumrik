@@ -146,6 +146,18 @@ export default function QuizPage() {
     }
   }, []);
 
+  // Auto-select preferred subject when student loads (Hick's Law — reduce initial choices)
+  useEffect(() => {
+    if (!student?.preferred_subject) return;
+    // Don't override if already set via URL params
+    if (initialSubject) return;
+    const prefCode = student.preferred_subject;
+    if (SUBJECT_META.find(s => s.code === prefCode)) {
+      setSelectedSubject(prefCode);
+      setInitialSubject(prefCode);
+    }
+  }, [student?.preferred_subject, initialSubject]);
+
   // Compute smart quiz suggestion from student data
   useEffect(() => {
     if (!student) return;
