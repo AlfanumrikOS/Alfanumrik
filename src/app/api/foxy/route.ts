@@ -315,6 +315,16 @@ async function callClaude(
   throw new Error(lastError);
 }
 
+// ─── Academic goal → prompt instruction mapping ──────────────────────────────
+const GOAL_PROMPT_MAP: Record<string, string> = {
+  board_topper: 'Board Topper (90%+). Teach with depth, cover edge cases, use HOTS-style questioning, and push for thorough understanding.',
+  school_topper: 'School Topper. Focus on strong conceptual clarity and application-based questions beyond rote learning.',
+  pass_comfortably: 'Pass Comfortably. Keep explanations simple and confidence-building. Focus on frequently-tested topics and basic numericals.',
+  competitive_exam: 'Competitive Exam Prep (JEE/NEET/Olympiad). Go beyond NCERT where relevant, include tricky problems and conceptual depth.',
+  olympiad: 'Olympiad Preparation. Challenge with advanced reasoning, logical puzzles, and problems that require creative thinking.',
+  improve_basics: 'Improve Basics. Be extra patient, use analogies and visuals, break complex topics into tiny steps, and reinforce fundamentals.',
+};
+
 // ─── Build system prompt ──────────────────────────────────────────────────────
 
 function buildSystemPrompt(
@@ -324,6 +334,7 @@ function buildSystemPrompt(
   chapter: string | null,
   mode: string,
   ragChunks: Array<{ content: string; chapter?: string; page_number?: number }>,
+  academicGoal?: string | null,
 ): string {
   const contextSection =
     ragChunks.length > 0
@@ -357,7 +368,7 @@ ${modeInstruction[mode] ?? modeInstruction.learn}
 - If you cite information, it must come from the Reference Material below
 - Never invent facts, formulas, or historical dates
 - If the student seems frustrated, be extra encouraging
-${contextSection}`;
+${academicGoal ? `\n## Student's Academic Goal: ${GOAL_PROMPT_MAP[academicGoal] ?? academicGoal}\n` : ''}${contextSection}`;
 }
 
 // ─── POST handler ─────────────────────────────────────────────────────────────
@@ -417,13 +428,15 @@ export async function POST(request: NextRequest): Promise<Response> {
   // 4. Resolve student ID and plan
   const studentId = auth.studentId!;
   let plan = 'free';
+  let academicGoal: string | null = null;
   try {
     const { data: studentRow } = await supabaseAdmin
       .from('students')
-      .select('subscription_plan, account_status')
+      .select('subscription_plan, account_status, academic_goal')
       .eq('id', studentId)
       .single();
     if (studentRow?.subscription_plan) plan = normalizePlan(studentRow.subscription_plan);
+    if (studentRow?.academic_goal) academicGoal = studentRow.academic_goal;
     if (studentRow?.account_status === 'suspended') {
       return errorJson('Your account is suspended.', 'Aapka account suspend hai.', 403);
     }
@@ -503,7 +516,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   const history = await loadHistory(resolvedSessionId);
 
   // 10. Build system prompt with RAG context
-  const systemPrompt = buildSystemPrompt(subject, grade, board, chapter, mode, ragChunks);
+  const systemPrompt = buildSystemPrompt(subject, grade, board, chapter, mode, ragChunks, academicGoal);
 
   // 11. Call Claude
   let assistantResponse: string;
