@@ -41,6 +41,27 @@ interface FeatureFlag {
   target_roles: string[]; target_environments: string[];
 }
 
+interface DbPerfData {
+  connections: {
+    active: number;
+    by_state: Array<{ state: string; count: number }>;
+  };
+  tables: Array<{
+    tablename: string;
+    live_rows: number;
+    dead_rows: number;
+    size_bytes: number;
+  }>;
+  slow_functions: Array<{
+    funcname: string;
+    calls: number;
+    total_time: number;
+    mean_time: number;
+  }>;
+  timestamp: string;
+  alert: string | null;
+}
+
 function DiagnosticsContent() {
   const { apiFetch } = useAdmin();
   const [obsData, setObsData] = useState<ObsData | null>(null);
@@ -50,6 +71,27 @@ function DiagnosticsContent() {
   const [failedJobs, setFailedJobs] = useState<FailedJob[]>([]);
   const [flags, setFlags] = useState<FeatureFlag[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dbPerf, setDbPerf] = useState<DbPerfData | null>(null);
+  const [dbPerfLoading, setDbPerfLoading] = useState(false);
+  const [dbPerfError, setDbPerfError] = useState<string | null>(null);
+
+  const fetchDbPerf = useCallback(async () => {
+    setDbPerfLoading(true);
+    setDbPerfError(null);
+    try {
+      const res = await apiFetch('/api/super-admin/db-performance');
+      if (res.ok) {
+        const json = await res.json();
+        setDbPerf(json.data ?? null);
+      } else {
+        setDbPerfError(`Failed to load database performance (HTTP ${res.status})`);
+      }
+    } catch (err) {
+      setDbPerfError(err instanceof Error ? err.message : 'Unknown error fetching database performance');
+    } finally {
+      setDbPerfLoading(false);
+    }
+  }, [apiFetch]);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -68,9 +110,15 @@ function DiagnosticsContent() {
     if (jobsRes.ok) { const d = await jobsRes.json(); setFailedJobs(d.data || []); }
     if (flagsRes.ok) { const d = await flagsRes.json(); setFlags(d.data || []); }
     setLoading(false);
-  }, [apiFetch]);
+    fetchDbPerf();
+  }, [apiFetch, fetchDbPerf]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  useEffect(() => {
+    const interval = setInterval(fetchDbPerf, 60_000);
+    return () => clearInterval(interval);
+  }, [fetchDbPerf]);
 
   if (loading && !obsData) {
     return <div style={{ color: colors.text3, padding: 40, textAlign: 'center' }}>Loading diagnostics...</div>;
@@ -337,6 +385,151 @@ function DiagnosticsContent() {
           </div>
         </div>
       )}
+
+      {/* Database Performance */}
+      <div style={{ marginTop: 24 }}>
+        <h2 style={S.h2}>Database Performance</h2>
+
+        {dbPerfLoading && !dbPerf && (
+          <div style={{ color: colors.text3, fontSize: 12, padding: '12px 0' }}>Loading database performance...</div>
+        )}
+
+        {dbPerfError && !dbPerf && (
+          <div style={{
+            ...S.card,
+            borderLeft: `3px solid ${colors.danger}`,
+            background: colors.dangerLight,
+            color: colors.danger,
+            fontSize: 12,
+            marginBottom: 12,
+          }}>
+            {dbPerfError}
+          </div>
+        )}
+
+        {dbPerf && (
+          <>
+            {/* Alert banner */}
+            {dbPerf.alert && (
+              <div style={{
+                padding: '10px 14px',
+                background: colors.dangerLight,
+                border: `1px solid #FECACA`,
+                borderRadius: 8,
+                color: colors.danger,
+                fontSize: 13,
+                fontWeight: 600,
+                marginBottom: 16,
+              }}>
+                {dbPerf.alert}
+              </div>
+            )}
+
+            {/* Connection Health */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: colors.text2, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
+                Connection Health
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 24, marginBottom: 12 }}>
+                <div style={S.card}>
+                  <div style={{ fontSize: 10, color: colors.text3, textTransform: 'uppercase', letterSpacing: 1, fontWeight: 600 }}>Active Connections</div>
+                  <div style={{ fontSize: 24, fontWeight: 800, color: colors.text1, marginTop: 4, lineHeight: 1.2 }}>{dbPerf.connections.active}</div>
+                </div>
+              </div>
+              {dbPerf.connections.by_state.length > 0 && (
+                <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                  <table style={S.table}>
+                    <thead>
+                      <tr>
+                        <th style={S.th}>State</th>
+                        <th style={S.th}>Count</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dbPerf.connections.by_state.map((row, i) => (
+                        <tr key={i}>
+                          <td style={S.td}><code style={{ fontSize: 12, color: colors.text1, background: colors.surface, padding: '1px 6px', borderRadius: 3 }}>{row.state || '—'}</code></td>
+                          <td style={S.td}>{row.count}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Top Tables by Size */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: colors.text2, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
+                Top Tables by Size
+              </div>
+              {dbPerf.tables.length === 0 ? (
+                <div style={{ ...S.card, color: colors.text3, fontSize: 12 }}>
+                  pg_stat_user_tables not accessible — check service role permissions
+                </div>
+              ) : (
+                <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                  <table style={S.table}>
+                    <thead>
+                      <tr>
+                        <th style={S.th}>Table Name</th>
+                        <th style={S.th}>Live Rows</th>
+                        <th style={S.th}>Dead Rows</th>
+                        <th style={S.th}>Size</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dbPerf.tables.slice(0, 10).map((row, i) => (
+                        <tr key={i}>
+                          <td style={S.td}><code style={{ fontSize: 12, color: colors.text1, background: colors.surface, padding: '1px 6px', borderRadius: 3 }}>{row.tablename}</code></td>
+                          <td style={S.td}>{row.live_rows.toLocaleString()}</td>
+                          <td style={{ ...S.td, color: row.dead_rows > 0 ? colors.warning : colors.text1 }}>{row.dead_rows.toLocaleString()}</td>
+                          <td style={S.td}>{(row.size_bytes / 1_048_576).toFixed(1)} MB</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Slowest Functions */}
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: colors.text2, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
+                Slowest Functions
+              </div>
+              {dbPerf.slow_functions.length === 0 ? (
+                <div style={{ ...S.card, color: colors.text3, fontSize: 12 }}>
+                  pg_stat_user_functions not accessible or no calls recorded yet
+                </div>
+              ) : (
+                <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                  <table style={S.table}>
+                    <thead>
+                      <tr>
+                        <th style={S.th}>Function</th>
+                        <th style={S.th}>Calls</th>
+                        <th style={S.th}>Mean Time (ms)</th>
+                        <th style={S.th}>Total Time (ms)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dbPerf.slow_functions.slice(0, 10).map((row, i) => (
+                        <tr key={i}>
+                          <td style={S.td}><code style={{ fontSize: 12, color: colors.text1, background: colors.surface, padding: '1px 6px', borderRadius: 3 }}>{row.funcname}</code></td>
+                          <td style={S.td}>{row.calls.toLocaleString()}</td>
+                          <td style={S.td}>{row.mean_time.toFixed(2)}</td>
+                          <td style={S.td}>{row.total_time.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

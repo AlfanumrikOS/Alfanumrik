@@ -153,6 +153,33 @@ export interface QuizResponse {
   time_spent?: number;
 }
 
+/**
+ * DB row shape for the `questions` table.
+ * hint and hint_hi were added in migration 20260409000001_add_hint_to_questions.sql.
+ * hint_hi carries the Hindi translation of the hint (P7 bilingual requirement).
+ */
+export interface Question {
+  id: string;
+  question_text: string;
+  question_hi: string | null;
+  question_type: string;
+  options: string[];
+  correct_answer_index: number;
+  explanation: string | null;
+  explanation_hi: string | null;
+  hint?: string | null;
+  hint_hi?: string | null;
+  difficulty: number;
+  bloom_level: string;
+  chapter_number: number;
+  subject: string | null;
+  grade: string | null;
+  topic_id: string | null;
+  is_active: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
 /* ── Mastery ── */
 export interface TopicMastery {
   id: string;

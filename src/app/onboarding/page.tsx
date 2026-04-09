@@ -26,8 +26,18 @@ export default function OnboardingPage() {
 
   const [grade, setGrade] = useState('');
   const [board, setBoard] = useState('CBSE');
+  const [academicGoal, setAcademicGoal] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  const GOAL_OPTIONS = [
+    { value: 'board_topper',     label: 'Board Topper (90%+)',       labelHi: 'बोर्ड टॉपर (90%+)',         icon: '🏆' },
+    { value: 'school_topper',    label: 'School Topper',             labelHi: 'स्कूल टॉपर',                icon: '🥇' },
+    { value: 'pass_comfortably', label: 'Pass Comfortably',          labelHi: 'आराम से पास होना',           icon: '✅' },
+    { value: 'competitive_exam', label: 'Crack JEE/NEET',            labelHi: 'JEE/NEET क्रैक करना',       icon: '🎯' },
+    { value: 'olympiad',         label: 'Olympiad / Competition',    labelHi: 'ओलंपियाड / प्रतियोगिता',    icon: '🌟' },
+    { value: 'improve_basics',   label: 'Improve Basics',            labelHi: 'बेसिक्स सुधारना',            icon: '📚' },
+  ];
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) {
@@ -100,6 +110,7 @@ export default function OnboardingPage() {
         .update({
           grade: `Grade ${grade}`,
           board,
+          academic_goal: academicGoal || null,
           onboarding_completed: true,
         })
         .eq('id', student.id);
@@ -208,6 +219,48 @@ export default function OnboardingPage() {
                 </select>
               </div>
 
+              {/* Academic Goal (optional) */}
+              <div style={{ animation: 'slideUp 0.4s ease-out 0.3s both' }}>
+                <label
+                  style={{
+                    display: 'block', fontSize: 13, fontWeight: 600,
+                    color: 'var(--text-2)', marginBottom: 6,
+                  }}
+                >
+                  {isHi ? 'आपका लक्ष्य क्या है? (वैकल्पिक)' : "What's your goal? (optional)"}
+                </label>
+                <div
+                  style={{
+                    display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8,
+                  }}
+                >
+                  {GOAL_OPTIONS.map(opt => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setAcademicGoal(prev => prev === opt.value ? '' : opt.value)}
+                      style={{
+                        padding: '10px 8px', borderRadius: 10, textAlign: 'center',
+                        border: `2px solid ${academicGoal === opt.value ? 'var(--accent)' : 'var(--border)'}`,
+                        background: academicGoal === opt.value ? 'rgba(232,88,28,0.06)' : 'var(--surface-2)',
+                        cursor: 'pointer', transition: 'border-color 0.15s ease, background 0.15s ease',
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                      }}
+                    >
+                      <span style={{ fontSize: 20 }}>{opt.icon}</span>
+                      <span
+                        style={{
+                          fontSize: 11, fontWeight: 600, lineHeight: 1.3,
+                          color: academicGoal === opt.value ? 'var(--accent)' : 'var(--text-2)',
+                        }}
+                      >
+                        {isHi ? opt.labelHi : opt.label}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* Error */}
               {error && (
                 <div role="alert" style={{
@@ -232,7 +285,7 @@ export default function OnboardingPage() {
                   border: 'none', fontSize: 15, fontWeight: 700,
                   cursor: grade && !saving ? 'pointer' : 'not-allowed',
                   transition: 'all 0.2s ease',
-                  animation: 'slideUp 0.4s ease-out 0.3s both',
+                  animation: 'slideUp 0.4s ease-out 0.4s both',
                 }}
               >
                 {saving ? 'Saving...' : 'Start Learning'}

@@ -49,6 +49,7 @@ export interface QuizQuestion {
   explanation: string | null;
   explanation_hi: string | null;
   hint: string | null;
+  hint_hi?: string | null;
   difficulty: number;
   bloom_level: string;
   chapter_number: number;
