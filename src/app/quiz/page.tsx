@@ -183,13 +183,19 @@ export default function QuizPage() {
           return;
         }
 
-        // Default for new users with no mastery data
+        // Default for new users with no mastery data — calibrate to academic goal
+        const goalDifficulty = (['board_topper', 'competitive_exam', 'olympiad'].includes(student.academic_goal ?? ''))
+          ? 'medium' : 'easy';
         setSmartSuggestion({
           subject: student.preferred_subject || 'science',
           questionCount: 5,
-          difficulty: 'easy',
-          reason: 'Start with a quick quiz to find your level',
-          reasonHi: 'अपना स्तर जानने के लिए एक क्विक क्विज़ लो',
+          difficulty: goalDifficulty,
+          reason: goalDifficulty === 'medium'
+            ? 'Start with a medium quiz to calibrate your level'
+            : 'Start with a quick quiz to find your level',
+          reasonHi: goalDifficulty === 'medium'
+            ? 'अपना स्तर जानने के लिए मीडियम क्विज़ लो'
+            : 'अपना स्तर जानने के लिए एक क्विक क्विज़ लो',
         });
       } catch {
         // Silently fail — smart suggestion is optional
