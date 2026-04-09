@@ -453,6 +453,107 @@ export async function authorizeRequest(
   };
 }
 
+// ─── Permission Code Registry ────────────────────────────────
+//
+// Canonical list of all permission codes used in authorizeRequest() calls and
+// usePermissions().can() checks.  The authoritative source of truth is the
+// `permissions` table in Postgres (seeded in supabase/migrations/); this
+// object is the TypeScript companion — it prevents typos and provides
+// IDE auto-complete.  Every code here MUST have a matching row in the DB.
+//
+// Role assignment summary:
+//   student    — own-data permissions + quiz/foxy/diagnostic/review/simulation
+//   parent     — child-scoped read permissions
+//   teacher    — class management + student feedback permissions
+//   admin      — all permissions (wildcard insert in migration)
+//   super_admin — all permissions (wildcard insert in migration) + bypass in hasPermission()
+
+export const PERMISSIONS = {
+  // ── Study plan ──────────────────────────────────────────────
+  STUDY_PLAN_VIEW: 'study_plan.view',
+  STUDY_PLAN_CREATE: 'study_plan.create',
+
+  // ── Quiz ────────────────────────────────────────────────────
+  QUIZ_ATTEMPT: 'quiz.attempt',
+  QUIZ_VIEW_RESULTS: 'quiz.view_results',
+
+  // ── Exam ────────────────────────────────────────────────────
+  EXAM_VIEW: 'exam.view',
+  EXAM_CREATE: 'exam.create',
+
+  // ── Image upload ────────────────────────────────────────────
+  IMAGE_UPLOAD: 'image.upload',
+  IMAGE_VIEW_OWN: 'image.view_own',
+
+  // ── Reports ─────────────────────────────────────────────────
+  REPORT_VIEW_OWN: 'report.view_own',
+  REPORT_DOWNLOAD_OWN: 'report.download_own',
+
+  // ── Spaced-repetition review ─────────────────────────────────
+  REVIEW_VIEW: 'review.view',
+  REVIEW_PRACTICE: 'review.practice',
+
+  // ── Foxy AI tutor ────────────────────────────────────────────
+  FOXY_CHAT: 'foxy.chat',
+
+  // ── Simulations ─────────────────────────────────────────────
+  SIMULATION_VIEW: 'simulation.view',
+  SIMULATION_INTERACT: 'simulation.interact',
+
+  // ── Leaderboard ─────────────────────────────────────────────
+  LEADERBOARD_VIEW: 'leaderboard.view',
+
+  // ── Profile ─────────────────────────────────────────────────
+  PROFILE_VIEW_OWN: 'profile.view_own',
+  PROFILE_UPDATE_OWN: 'profile.update_own',
+
+  // ── Notifications ────────────────────────────────────────────
+  NOTIFICATION_VIEW: 'notification.view',
+  NOTIFICATION_DISMISS: 'notification.dismiss',
+
+  // ── Progress ─────────────────────────────────────────────────
+  PROGRESS_VIEW_OWN: 'progress.view_own',
+
+  // ── Diagnostic assessment (student role) ────────────────────
+  // diagnostic.attempt  — student can start a new diagnostic session
+  //                        (POST /api/diagnostic/start)
+  // diagnostic.complete — student can submit responses for a diagnostic session
+  //                        (POST /api/diagnostic/complete)
+  DIAGNOSTIC_ATTEMPT: 'diagnostic.attempt',
+  DIAGNOSTIC_COMPLETE: 'diagnostic.complete',
+
+  // ── Parent (child-scoped) ────────────────────────────────────
+  CHILD_VIEW_PERFORMANCE: 'child.view_performance',
+  CHILD_VIEW_PROGRESS: 'child.view_progress',
+  CHILD_DOWNLOAD_REPORT: 'child.download_report',
+  CHILD_VIEW_EXAMS: 'child.view_exams',
+  CHILD_RECEIVE_ALERTS: 'child.receive_alerts',
+
+  // ── Teacher ──────────────────────────────────────────────────
+  CLASS_MANAGE: 'class.manage',
+  CLASS_VIEW_ANALYTICS: 'class.view_analytics',
+  EXAM_ASSIGN: 'exam.assign',
+  EXAM_CREATE_FOR_CLASS: 'exam.create_for_class',
+  TEST_CREATE: 'test.create',
+  TEST_EDIT: 'test.edit',
+  STUDENT_VIEW_UPLOADS: 'student.view_uploads',
+  STUDENT_PROVIDE_FEEDBACK: 'student.provide_feedback',
+  WORKSHEET_CREATE: 'worksheet.create',
+  WORKSHEET_ASSIGN: 'worksheet.assign',
+  REPORT_VIEW_CLASS: 'report.view_class',
+
+  // ── Admin ────────────────────────────────────────────────────
+  USER_MANAGE: 'user.manage',
+  ROLE_MANAGE: 'role.manage',
+  PERMISSION_MANAGE: 'permission.manage',
+  SYSTEM_AUDIT: 'system.audit',
+  SYSTEM_CONFIG: 'system.config',
+  CONTENT_MANAGE: 'content.manage',
+  ANALYTICS_GLOBAL: 'analytics.global',
+} as const;
+
+export type PermissionCode = typeof PERMISSIONS[keyof typeof PERMISSIONS];
+
 // ─── Client-side Permission Hook ─────────────────────────────
 
 // This is a lightweight client-side check. The real enforcement happens server-side.
