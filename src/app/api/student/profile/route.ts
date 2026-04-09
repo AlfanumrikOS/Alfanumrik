@@ -1,19 +1,17 @@
 /**
  * PATCH /api/student/profile
  *
- * Updates mutable student profile fields: name, board, preferred_language.
+ * Updates mutable student profile fields.
  * Replaces direct anon-client write in profile/page.tsx.
  *
- * WHY:
- *   - Client passed student.id from client state — no server-side ownership check
- *   - name_change_count was computed client-side and passed to DB — should be
- *     computed server-side to prevent replay attacks that reset the counter
- *   - board update guard ("hasQuizHistory") was client-side logic only
+ * ALWAYS WRITABLE:
+ *   preferred_language, preferred_subject, academic_goal,
+ *   school_name, city, state, daily_study_hours,
+ *   phone, parent_name, parent_phone
  *
- * FIELDS:
- *   preferred_language — always writable
- *   name              — writable max once (enforced server-side by DB value, not client counter)
- *   board             — writable only if student has no quiz history
+ * CONDITIONAL:
+ *   name  — writable max once (enforced server-side)
+ *   board — writable only if student has no quiz history
  *
  * NOT WRITABLE via this route (system-managed):
  *   grade, xp_total, streak_days, subscription_plan, account_status
@@ -26,6 +24,8 @@ import { logger } from '@/lib/logger';
 
 const ALLOWED_LANGUAGES = ['en', 'hi'];
 const ALLOWED_BOARDS = ['CBSE', 'ICSE', 'State Board'];
+const ALLOWED_GOALS = ['board_topper', 'school_topper', 'pass_comfortably', 'competitive_exam', 'olympiad', 'improve_basics'];
+const ALLOWED_SUBJECTS = ['math', 'science', 'physics', 'chemistry', 'biology', 'english', 'hindi', 'social_studies', 'coding'];
 
 function err(message: string, status: number) {
   return NextResponse.json({ success: false, error: message }, { status });
@@ -97,6 +97,56 @@ export async function PATCH(request: NextRequest) {
       return err('Board cannot be changed after quiz history exists', 403);
     }
     updatePayload.board = board;
+  }
+
+  // academic_goal — always writable, must be a known value or null
+  const { academic_goal, preferred_subject, school_name, city, state, daily_study_hours, phone, parent_name, parent_phone } = body;
+
+  if (academic_goal !== undefined) {
+    if (academic_goal === null || academic_goal === '') {
+      updatePayload.academic_goal = null;
+    } else if (typeof academic_goal === 'string' && ALLOWED_GOALS.includes(academic_goal)) {
+      updatePayload.academic_goal = academic_goal;
+    } else {
+      return err(`academic_goal must be one of: ${ALLOWED_GOALS.join(', ')}`, 400);
+    }
+  }
+
+  // preferred_subject — always writable
+  if (preferred_subject !== undefined) {
+    if (typeof preferred_subject === 'string' && ALLOWED_SUBJECTS.includes(preferred_subject)) {
+      updatePayload.preferred_subject = preferred_subject;
+    } else if (preferred_subject === null || preferred_subject === '') {
+      updatePayload.preferred_subject = null;
+    } else {
+      return err(`preferred_subject must be one of: ${ALLOWED_SUBJECTS.join(', ')}`, 400);
+    }
+  }
+
+  // Free-text profile fields — sanitize length
+  if (school_name !== undefined) {
+    updatePayload.school_name = typeof school_name === 'string' && school_name.trim() ? school_name.trim().slice(0, 100) : null;
+  }
+  if (city !== undefined) {
+    updatePayload.city = typeof city === 'string' && city.trim() ? city.trim().slice(0, 50) : null;
+  }
+  if (state !== undefined) {
+    updatePayload.state = typeof state === 'string' && state.trim() ? state.trim().slice(0, 50) : null;
+  }
+  if (daily_study_hours !== undefined) {
+    const hours = typeof daily_study_hours === 'number' ? daily_study_hours : parseInt(String(daily_study_hours), 10);
+    if (!isNaN(hours) && hours >= 1 && hours <= 16) {
+      updatePayload.daily_study_hours = hours;
+    }
+  }
+  if (phone !== undefined) {
+    updatePayload.phone = typeof phone === 'string' && phone.trim() ? phone.trim().slice(0, 20) : null;
+  }
+  if (parent_name !== undefined) {
+    updatePayload.parent_name = typeof parent_name === 'string' && parent_name.trim() ? parent_name.trim().slice(0, 100) : null;
+  }
+  if (parent_phone !== undefined) {
+    updatePayload.parent_phone = typeof parent_phone === 'string' && parent_phone.trim() ? parent_phone.trim().slice(0, 20) : null;
   }
 
   if (Object.keys(updatePayload).length === 0) {
