@@ -238,6 +238,7 @@ export default function OnboardingPage() {
                     <button
                       key={opt.value}
                       type="button"
+                      aria-pressed={academicGoal === opt.value}
                       onClick={() => setAcademicGoal(prev => prev === opt.value ? '' : opt.value)}
                       style={{
                         padding: '10px 8px', borderRadius: 10, textAlign: 'center',
