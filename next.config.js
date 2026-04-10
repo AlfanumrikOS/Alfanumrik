@@ -1,15 +1,12 @@
 // Validate required env vars for production deployments (not during local dev)
 if (process.env.NODE_ENV === 'production' && process.env.VERCEL) {
   const required = [
-    // Supabase
     'NEXT_PUBLIC_SUPABASE_URL',
     'NEXT_PUBLIC_SUPABASE_ANON_KEY',
     'SUPABASE_SERVICE_ROLE_KEY',
-    // Razorpay
     'RAZORPAY_KEY_ID',
     'RAZORPAY_KEY_SECRET',
     'RAZORPAY_WEBHOOK_SECRET',
-    // Admin
     'SUPER_ADMIN_SECRET',
   ];
   const optional = [
@@ -36,11 +33,6 @@ const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   compress: true,
-  eslint: {
-    // Lint warnings (no-console, exhaustive-deps) should not break production builds.
-    // Lint is checked separately via `npm run lint`.
-    ignoreDuringBuilds: true,
-  },
   images: {
     formats: ['image/avif', 'image/webp'],
     remotePatterns: [
@@ -72,14 +64,11 @@ const nextConfig = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              // unsafe-inline required by Next.js for inline scripts/styles.
-              // strict-dynamic tells modern browsers to trust scripts loaded
-              // by already-trusted scripts, reducing the risk of XSS.
-              "script-src 'self' 'unsafe-inline' 'strict-dynamic' https://checkout.razorpay.com",
+              "script-src 'self' 'unsafe-inline' 'strict-dynamic' https://checkout.razorpay.com https://prod.spline.design",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "font-src 'self' https://fonts.gstatic.com",
               "img-src 'self' data: blob: https://*.supabase.co https://lh3.googleusercontent.com",
-              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.ingest.sentry.io https://checkout.razorpay.com https://api.razorpay.com",
+              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.ingest.sentry.io https://checkout.razorpay.com https://api.razorpay.com https://prod.spline.design",
               "media-src 'self' blob:",
               "worker-src 'self'",
               "frame-src https://api.razorpay.com https://checkout.razorpay.com",
@@ -99,19 +88,11 @@ const nextConfig = {
         ],
       },
       {
-        source: '/_next/static/(.*)',
-        headers: [
-          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
-        ],
-      },
-      // Cache fonts aggressively (rarely change)
-      {
         source: '/fonts/(.*)',
         headers: [
           { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
         ],
       },
-      // Cache icons and manifest (PWA assets)
       {
         source: '/icons/(.*)',
         headers: [
@@ -124,15 +105,12 @@ const nextConfig = {
           { key: 'Cache-Control', value: 'public, max-age=86400, stale-while-revalidate=604800' },
         ],
       },
-      // API health check — never cache
       {
         source: '/api/v1/health',
         headers: [
           { key: 'Cache-Control', value: 'no-store, max-age=0' },
         ],
       },
-      // HTML pages — short cache with stale-while-revalidate for offline resilience
-      // Indian mobile users on patchy 4G benefit from cached pages
       {
         source: '/(dashboard|foxy|quiz|progress|review|study-plan|leaderboard|simulations|profile|notifications|reports|scan|exams|help)',
         headers: [
@@ -143,17 +121,20 @@ const nextConfig = {
   },
 };
 
-const { withSentryConfig } = require('@sentry/nextjs');
-
-module.exports = withSentryConfig(withBundleAnalyzer(nextConfig), {
-  // Sentry webpack plugin options
-  silent: true, // Suppress build logs
-  org: process.env.SENTRY_ORG,
-  project: process.env.SENTRY_PROJECT,
-}, {
-  // Sentry SDK options
-  widenClientFileUpload: true,
-  hideSourceMaps: true,
-  disableLogger: true,
-  tunnelRoute: '/monitoring', // Bypass ad-blockers
-});
+// Only wrap with Sentry in production (Vercel/CI) — avoids OpenTelemetry peer
+// dep issues in local dev where Sentry is not configured anyway.
+if (process.env.VERCEL || process.env.CI) {
+  const { withSentryConfig } = require('@sentry/nextjs');
+  module.exports = withSentryConfig(withBundleAnalyzer(nextConfig), {
+    silent: true,
+    org: process.env.SENTRY_ORG,
+    project: process.env.SENTRY_PROJECT,
+  }, {
+    widenClientFileUpload: true,
+    hideSourceMaps: true,
+    disableLogger: true,
+    tunnelRoute: '/monitoring',
+  });
+} else {
+  module.exports = withBundleAnalyzer(nextConfig);
+}

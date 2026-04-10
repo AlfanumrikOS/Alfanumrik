@@ -103,28 +103,31 @@ const TICKET_CATEGORIES = [
   'App crash / error', 'Feature request', 'Billing question', 'Data / privacy concern', 'Other',
 ];
 
-/* ── AI Support Bot via Foxy Edge Function ── */
+/* ── AI Support Bot via Foxy API route ── */
 async function askSupportBot(message: string, history: Array<{role: string; content: string}>, userContext: string): Promise<string> {
   try {
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/foxy-tutor`, {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+    } catch { /* cookie fallback */ }
+
+    const res = await fetch('/api/foxy', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json' },
+      headers,
+      credentials: 'include',
       body: JSON.stringify({
-        message,
-        student_id: '',
-        student_name: 'Support User',
-        grade: '',
-        subject: 'support',
-        language: 'en',
-        mode: 'support',
-        system_override: `You are the Alfanumrik Help & Support assistant. You help users with account issues, technical problems, learning questions, and billing queries about the Alfanumrik Adaptive Learning OS platform. Be friendly, concise, and helpful. If you cannot resolve the issue, suggest the user submit a support ticket. User context: ${userContext}. Platform features: Foxy AI Tutor (chat-based learning in Hindi/English), Spaced Repetition, Quizzes, XP/Streaks/Leaderboards, Student/Teacher/Parent dashboards, CBSE curriculum for Grades 6-12, Voice support, 16 subjects. Company: Cusiosense Learning India Private Limited.`,
-        chat_history: history,
+        message: `${userContext}\n\nUser question: ${message}`,
+        subject: 'general',
+        grade:   '9',
+        mode:    'doubt',
       }),
     });
+    if (!res.ok) return "I'm having trouble connecting right now. Please email support@alfanumrik.com";
     const data = await res.json();
-    return data.reply || data.response || data.message || 'I\'m having trouble connecting. Please try again or submit a ticket.';
+    return data.response || "I'm sorry, I couldn't process your question. Please try again.";
   } catch {
-    return 'Connection issue. Please check your internet and try again, or email us at support@alfanumrik.com';
+    return "Connection issue. Please email support@alfanumrik.com for help.";
   }
 }
 
@@ -181,18 +184,17 @@ export default function HelpPage() {
     if (!ticketCategory || !ticketMessage.trim()) return;
     setTicketSubmitting(true);
     try {
-      await supabase.from('support_tickets').insert({
-        student_id: student?.id || null,
-        email: ticketEmail || student?.email || 'anonymous',
-        category: ticketCategory,
-        subject: ticketSubject || ticketCategory,
-        message: ticketMessage,
-        status: 'open',
-        user_role: student ? 'student' : 'guest',
-        user_name: student?.name || 'Guest',
-        device_info: typeof navigator !== 'undefined' ? navigator.userAgent.substring(0, 200) : '',
+      await fetch('/api/support/ticket', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category: ticketCategory,
+          subject: ticketSubject || ticketCategory,
+          message: ticketMessage,
+          email: ticketEmail || student?.email || undefined,
+        }),
       });
-    } catch { /* table may not exist yet — still show success */ }
+    } catch { /* non-critical — still show success to user */ }
     setTicketSubmitting(false);
     setView('ticket-sent');
   };

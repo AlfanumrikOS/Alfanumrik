@@ -4,7 +4,8 @@ import { Ratelimit } from '@upstash/ratelimit';
 import { Redis } from '@upstash/redis';
 
 /* ═══════════════════════════════════════════════════════════════
- * MIDDLEWARE — Security Hardening + Auth Session Refresh
+ * PROXY — Security Hardening + Auth Session Refresh
+ * (renamed from middleware.ts → proxy.ts for Next.js 16 convention)
  *
  * Defense in depth. Every layer assumes the layer below might be
  * compromised.
@@ -19,9 +20,9 @@ import { Redis } from '@upstash/redis';
  * ═══════════════════════════════════════════════════════════════ */
 
 // ── Rate limiting: Distributed (Upstash Redis) with in-memory fallback ──
-const RATE_LIMIT_MAX = 60;        // 60 requests per minute per IP
-const RATE_LIMIT_PARENT_MAX = 5;  // 5 parent login attempts per minute per IP
-const RATE_LIMIT_ADMIN_MAX = 10;  // 10 requests per minute for /internal/admin/*
+const RATE_LIMIT_MAX = 200;       // 200 requests per minute per IP (each page load = 5-8 API calls)
+const RATE_LIMIT_PARENT_MAX = 20; // 20 parent requests per minute per IP
+const RATE_LIMIT_ADMIN_MAX = 60;  // 60 requests per minute for /internal/admin/*
 
 // Distributed rate limiter via Upstash Redis (works across all Vercel instances)
 let redisRateLimiter: Ratelimit | null = null;
@@ -90,7 +91,7 @@ async function checkRateLimit(key: string, max: number, type: 'general' | 'paren
   return checkRateLimitLocal(key, max);
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const pathname = path; // alias for clarity in API checks
 
@@ -392,3 +393,6 @@ export const config = {
     '/((?!_next/static|_next/image|favicon.ico|manifest.json|sw.js|icons/).*)',
   ],
 };
+
+// Alias for backward-compatibility with test imports (import('@/proxy').middleware)
+export { proxy as middleware };

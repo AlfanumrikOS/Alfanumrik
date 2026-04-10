@@ -104,6 +104,21 @@ export default function ChapterConceptPage() {
     if (student) load();
   }, [student?.id, load]);
 
+  // Save current study position for "continue where you left off"
+  useEffect(() => {
+    if (subject && chapterNum && !loading) {
+      try {
+        localStorage.setItem('alfanumrik_last_studied', JSON.stringify({
+          subject,
+          chapter: chapterNum,
+          chapterTitle: subMeta?.name ? `${subMeta.name} · Chapter ${chapterNum}` : `Chapter ${chapterNum}`,
+          concept: currentIdx,
+          timestamp: Date.now(),
+        }));
+      } catch {}
+    }
+  }, [subject, chapterNum, currentIdx, subMeta?.name, loading]);
+
   const parseOptions = (opts: string | string[]): string[] => {
     if (Array.isArray(opts)) return opts;
     try { return JSON.parse(opts); } catch { return []; }
@@ -316,6 +331,15 @@ export default function ChapterConceptPage() {
           <Button onClick={askFoxy} color={subMeta?.color}>
             🦊 {isHi ? 'Foxy से सीखो' : 'Learn with Foxy'}
           </Button>
+          <button
+            onClick={() => {
+              const p = new URLSearchParams({ subject, mode: 'practice' });
+              router.push(`/quiz?${p.toString()}`);
+            }}
+            className="mt-3 px-6 py-2.5 rounded-xl text-sm font-semibold bg-orange-500 text-white hover:bg-orange-600 active:scale-[0.98] transition-all"
+          >
+            {isHi ? '⚡ क्विज़ लो' : '⚡ Take a Quiz'}
+          </button>
         </main>
         <BottomNav />
       </div>
@@ -367,6 +391,25 @@ export default function ChapterConceptPage() {
           >
             {bloomCfg.icon} {isHi ? bloomCfg.labelHi : bloomCfg.label}
           </span>
+        </div>
+
+        {/* ── Progress bar + estimated time ── */}
+        <div className="space-y-1">
+          <div className="w-full bg-gray-200 rounded-full h-1.5">
+            <div
+              className="bg-orange-500 h-1.5 rounded-full transition-all duration-500"
+              style={{ width: `${((currentIdx + 1) / topics.length) * 100}%` }}
+            />
+          </div>
+          {(() => {
+            const remaining = topics.length - currentIdx - 1;
+            const remainingMin = remaining * 3;
+            return remaining > 0 ? (
+              <p className="text-[10px] text-gray-400 text-right">
+                {isHi ? `~${remainingMin} मिनट शेष` : `~${remainingMin} min remaining`}
+              </p>
+            ) : null;
+          })()}
         </div>
 
         {/* Concept card */}
@@ -522,27 +565,50 @@ export default function ChapterConceptPage() {
         )}
 
         {/* Navigation — Next is the primary action */}
-        <div className="flex flex-col gap-2 mt-auto pb-2">
-          <Button
-            fullWidth
-            color={subMeta?.color}
-            onClick={goNext}
-          >
-            {currentIdx === topics.length - 1
-              ? (isHi ? '✓ अध्याय पूरा करो' : '✓ Finish Chapter')
-              : isHi
+        {currentIdx === topics.length - 1 ? (
+          <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-200 p-5 text-center space-y-3 mt-auto mb-2">
+            <div className="text-3xl">🎉</div>
+            <h3 className="text-base font-bold text-green-800">
+              {isHi ? 'अध्याय पूरा!' : 'Chapter Complete!'}
+            </h3>
+            <p className="text-xs text-green-600">
+              {isHi ? `${topics.length} अवधारणाएं पूरी — बहुत बढ़िया!` : `${topics.length} concepts covered — great job!`}
+            </p>
+            <div className="flex gap-2 pt-2">
+              <button onClick={goPrev}
+                className="flex-1 py-2 rounded-lg text-xs font-medium bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 active:scale-[0.98] transition-all">
+                {isHi ? '← पिछला' : '← Previous'}
+              </button>
+              <button onClick={() => {
+                  const p = new URLSearchParams({ subject, mode: 'practice' });
+                  router.push(`/quiz?${p.toString()}`);
+                }}
+                className="flex-1 py-2 rounded-lg text-xs font-medium bg-green-600 text-white hover:bg-green-700 active:scale-[0.98] transition-all">
+                {isHi ? '⚡ क्विज़ लो' : '⚡ Take Quiz'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2 mt-auto pb-2">
+            <Button
+              fullWidth
+              color={subMeta?.color}
+              onClick={goNext}
+            >
+              {isHi
                 ? `अगला: ${topics[currentIdx + 1]?.title?.slice(0, 28)} →`
                 : `Next: ${topics[currentIdx + 1]?.title?.slice(0, 28)} →`}
-          </Button>
-          <div className="flex gap-2">
-            <Button variant="ghost" onClick={goPrev} disabled={currentIdx === 0} className="flex-1">
-              ← {isHi ? 'पिछला' : 'Prev'}
             </Button>
-            <Button variant="soft" color="#E8581C" onClick={askFoxy} className="flex-1">
-              🦊 {isHi ? 'Foxy से पूछो' : 'Ask Foxy'}
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="ghost" onClick={goPrev} disabled={currentIdx === 0} className="flex-1">
+                ← {isHi ? 'पिछला' : 'Prev'}
+              </Button>
+              <Button variant="soft" color="#E8581C" onClick={askFoxy} className="flex-1">
+                🦊 {isHi ? 'Foxy से पूछो' : 'Ask Foxy'}
+              </Button>
+            </div>
           </div>
-        </div>
+        )}
       </main>
 
       <BottomNav />

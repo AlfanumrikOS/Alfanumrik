@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, Button, StatCard, BottomNav } from '@/components/ui';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
@@ -10,6 +10,10 @@ import {
   type BloomLevel, type CognitiveLoadState,
 } from '@/lib/cognitive-engine';
 import { shareResult, quizShareMessage } from '@/lib/share';
+import { useAuth } from '@/lib/AuthContext';
+import { supabase } from '@/lib/supabase';
+import NextActionCard from '@/components/quiz/NextActionCard';
+import CelebrationOverlay from '@/components/quiz/CelebrationOverlay';
 import type { ErrorType } from '@/lib/cognitive-engine';
 
 interface Question {
@@ -44,6 +48,9 @@ interface QuizResultsProps {
     score_percent: number;
     xp_earned: number;
     session_id: string;
+    cme_next_action?: string;
+    cme_next_concept_id?: string;
+    cme_reason?: string;
   };
   questions: Question[];
   responses: Response[];
@@ -71,12 +78,77 @@ export default function QuizResults({
   onGoHome,
 }: QuizResultsProps) {
   const router = useRouter();
+  const { student } = useAuth();
   const [expandedCorrect, setExpandedCorrect] = useState<Set<number>>(new Set());
+  const [showCelebration, setShowCelebration] = useState(true);
+  const [flashcardCount, setFlashcardCount] = useState(0);
+  const [flashcardBanner, setFlashcardBanner] = useState(false);
+  const flashcardCreated = useRef(false);
+
+  const parseOptions = (opts: string | string[]): string[] => {
+    if (Array.isArray(opts)) return opts;
+    try { return JSON.parse(opts); } catch { return []; }
+  };
 
   // Play completion sound on mount
   useEffect(() => {
     import('@/lib/sounds').then(({ playSound }) => playSound('complete'));
   }, []);
+
+  // Auto-create flashcards from wrong answers
+  useEffect(() => {
+    if (flashcardCreated.current || !student?.id) return;
+    flashcardCreated.current = true;
+
+    const wrongIndices = responses
+      .map((r, i) => (!r.is_correct ? i : -1))
+      .filter(i => i >= 0);
+    if (wrongIndices.length === 0) return;
+
+    (async () => {
+      try {
+        // Check for existing cards to avoid duplicates
+        const questionTexts = wrongIndices.map(i => questions[i].question_text);
+        const { data: existing } = await supabase
+          .from('spaced_repetition_cards')
+          .select('front_text')
+          .eq('student_id', student.id)
+          .in('front_text', questionTexts);
+        const existingSet = new Set((existing ?? []).map(c => c.front_text));
+
+        const cardsToInsert = wrongIndices
+          .filter(i => !existingSet.has(questions[i].question_text))
+          .map(i => {
+            const q = questions[i];
+            const r = responses[i];
+            const opts = parseOptions(q.options);
+            const correctAnswer = opts[q.correct_answer_index] || '';
+            const explanation = isHi && q.explanation_hi ? q.explanation_hi : (q.explanation || '');
+            return {
+              student_id: student.id,
+              card_type: 'review',
+              subject: selectedSubject || undefined,
+              chapter_number: q.chapter_number || undefined,
+              topic: q.bloom_level || undefined,
+              front_text: q.question_text,
+              back_text: `${correctAnswer}${explanation ? `\n\n${explanation}` : ''}`,
+              hint: q.hint || undefined,
+              source: 'quiz_wrong_answer',
+              source_id: results.session_id || undefined,
+            };
+          });
+
+        if (cardsToInsert.length > 0) {
+          await supabase.from('spaced_repetition_cards').insert(cardsToInsert);
+          setFlashcardCount(cardsToInsert.length);
+          setFlashcardBanner(true);
+        }
+      } catch (err) {
+        // Non-critical — flashcard creation should not block results display
+        console.error('Failed to create flashcards:', err);
+      }
+    })();
+  }, [student?.id, questions, responses, results.session_id, selectedSubject, isHi]);
 
   const formatTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
 
@@ -90,10 +162,19 @@ export default function QuizResults({
       ? (isHi ? 'बहुत अच्छा! थोड़ा और अभ्यास करो!' : 'Good job! A little more practice!')
       : pct >= 40
         ? (isHi ? 'ठीक है! रिव्यू करके फिर try करो!' : 'Keep going! Review and try again!')
-        : (isHi ? 'कोई बात नहीं! Foxy से सीखो!' : 'No worries! Learn with Foxy first!');
+        : (isHi ? 'हर विशेषज्ञ कभी शुरुआती था। चलो मिलकर सीखते हैं!' : 'Every expert was once a beginner. Let\'s review together!');
 
   return (
     <div className="mesh-bg min-h-dvh pb-nav">
+     {/* Celebration overlay — auto-dismisses after 3s */}
+     {showCelebration && (
+       <CelebrationOverlay
+         scorePercent={pct}
+         xpEarned={results.xp_earned}
+         isHi={isHi}
+         onDismiss={() => setShowCelebration(false)}
+       />
+     )}
      <SectionErrorBoundary section="Quiz Results">
       <header className="page-header">
         <div className="page-header-inner flex items-center gap-3">
@@ -105,10 +186,10 @@ export default function QuizResults({
       </header>
       <main className="app-container py-6 space-y-5 max-w-lg mx-auto">
         {/* Score Card */}
-        <Card accent={pct >= 60 ? '#16A34A' : '#DC2626'}>
+        <Card accent={pct >= 60 ? 'var(--success)' : 'var(--danger)'}>
           <div className="text-center py-4">
             <div className="text-5xl mb-3">{emoji}</div>
-            <div className="text-6xl font-bold mb-1" style={{ fontFamily: 'var(--font-display)', color: pct >= 60 ? '#16A34A' : '#DC2626' }}>
+            <div className="text-6xl font-bold mb-1 animate-score-reveal" style={{ fontFamily: 'var(--font-display)', color: pct >= 60 ? 'var(--success)' : 'var(--danger)' }}>
               {pct}%
             </div>
             <div className="text-xl font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
@@ -122,9 +203,56 @@ export default function QuizResults({
         <div className="grid-stats">
           <StatCard icon="✓" value={results.correct} label={isHi ? 'सही' : 'Correct'} color="#16A34A" />
           <StatCard icon="✗" value={results.total - results.correct} label={isHi ? 'गलत' : 'Wrong'} color="#DC2626" />
-          <StatCard icon="⭐" value={`+${results.xp_earned}`} label="XP" color="var(--orange)" />
+          <StatCard icon="✨" value={`+${results.xp_earned}`} label="XP" color="var(--orange)" />
           <StatCard icon="⏱" value={formatTime(timer)} label={isHi ? 'समय' : 'Time'} color="var(--teal)" />
         </div>
+
+        {/* Flashcard creation banner */}
+        {flashcardBanner && flashcardCount > 0 && (
+          <div
+            className="rounded-xl p-3 flex items-center gap-3"
+            style={{ background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.15)' }}
+          >
+            <span className="text-2xl flex-shrink-0">📝</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold" style={{ color: '#7C3AED' }}>
+                {isHi
+                  ? `${flashcardCount} फ्लैशकार्ड बन गए तुम्हारी गलतियों से — रिव्यू करो और master करो!`
+                  : `${flashcardCount} flashcard${flashcardCount > 1 ? 's' : ''} created from your mistakes — review them to master these concepts!`}
+              </p>
+            </div>
+            <button
+              onClick={() => router.push('/review')}
+              className="flex-shrink-0 text-xs font-bold px-3 py-1.5 rounded-lg transition-all active:scale-95"
+              style={{ background: 'rgba(124,58,237,0.12)', color: '#7C3AED' }}
+            >
+              {isHi ? 'रिव्यू करो' : 'Review'}
+            </button>
+          </div>
+        )}
+
+        {/* CME Next Action Recommendation */}
+        {results.cme_next_action && (
+          <NextActionCard
+            action={results.cme_next_action as 'teach' | 'practice' | 'challenge' | 'revise' | 'remediate' | 'exam_prep'}
+            conceptId={results.cme_next_concept_id || null}
+            reason={results.cme_reason || ''}
+            isHi={isHi}
+            wrongAnswerCount={results.total - results.correct}
+            scorePercent={pct}
+            subject={selectedSubject}
+            onRetry={onRetry}
+            onAction={(action, conceptId) => {
+              const mode = action === 'teach' ? 'learn'
+                : action === 'revise' ? 'revision'
+                : action === 'remediate' ? 'doubt'
+                : action === 'exam_prep' ? 'quiz'
+                : action === 'practice' ? 'quiz'
+                : 'quiz'; // challenge
+              router.push(`/foxy?mode=${mode}${conceptId ? `&topic_id=${conceptId}` : ''}`);
+            }}
+          />
+        )}
 
         {/* Error Classification Breakdown */}
         {responses.some(r => !r.is_correct) && (
@@ -218,9 +346,8 @@ export default function QuizResults({
               const resp = responses[idx];
               const correct = resp?.is_correct;
               const isExpanded = !correct || expandedCorrect.has(idx);
-              const opts: string[] = Array.isArray(question.options)
-                ? question.options
-                : (() => { try { return JSON.parse(question.options as string); } catch { return []; } })();
+              const opts = parseOptions(question.options);
+              const correctAnswerText = opts[question.correct_answer_index] || '';
               const questionText = isHi && question.question_hi ? question.question_hi : question.question_text;
               const explanation = isHi && question.explanation_hi ? question.explanation_hi : question.explanation;
               return (
@@ -253,7 +380,7 @@ export default function QuizResults({
                     </span>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-medium" style={{ color: 'var(--text-2)' }}>
-                        Q{idx + 1}. {questionText.substring(0, 90)}{questionText.length > 90 ? '…' : ''}
+                        Q{idx + 1}. {questionText.substring(0, 90)}{questionText.length > 90 ? '...' : ''}
                       </div>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
@@ -311,7 +438,26 @@ export default function QuizResults({
                           className="text-[11px] font-semibold px-3 py-1.5 rounded-lg w-full text-left"
                           style={{ background: `${subMeta?.color || '#7C3AED'}15`, color: subMeta?.color || '#7C3AED' }}
                         >
-                          📖 {isHi ? `अध्याय ${question.chapter_number} के concept पढ़ो →` : `Study Chapter ${question.chapter_number} concepts →`}
+                          📖 {isHi ? `अध्याय ${question.chapter_number} के concept पढ़ो ->` : `Study Chapter ${question.chapter_number} concepts ->`}
+                        </button>
+                      )}
+
+                      {/* Ask Foxy deep-link for wrong answers */}
+                      {!correct && (
+                        <button
+                          className="w-full rounded-lg py-2 px-3 flex items-center justify-center gap-2 text-xs font-semibold transition-colors"
+                          style={{ background: 'var(--orange)', color: '#fff' }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const subjectParam = selectedSubject || '';
+                            const msg = encodeURIComponent(
+                              `Explain why the answer to "${questionText.substring(0, 120)}" is "${correctAnswerText}"`
+                            );
+                            router.push(`/foxy?subject=${subjectParam}&mode=doubt&message=${msg}`);
+                          }}
+                        >
+                          <span>🦊</span>
+                          {isHi ? 'Foxy से पूछो' : 'Ask Foxy'}
                         </button>
                       )}
                     </div>
@@ -378,12 +524,33 @@ export default function QuizResults({
           >
             {isHi ? '📱 WhatsApp पर शेयर करो' : '📱 Share on WhatsApp'}
           </Button>
+          {/* Review Mistakes — shown when flashcards were created */}
+          {flashcardCount > 0 && (
+            <Button
+              fullWidth
+              onClick={() => router.push('/review?filter=quiz_wrong_answer')}
+              style={{ background: '#7C3AED', color: '#fff' }}
+            >
+              📝 {isHi ? 'गलतियाँ रिव्यू करो' : 'Review Your Mistakes'}
+            </Button>
+          )}
           <Button fullWidth onClick={onRetry}>
             {isHi ? 'एक और क्विज़ खेलो' : 'Take Another Quiz'} ⚡
           </Button>
-          {pct < 60 && (
-            <Button fullWidth variant="ghost" onClick={() => router.push('/foxy')}>
-              🦊 {isHi ? 'Foxy से सीखो' : 'Learn with Foxy'}
+          {/* Score-contextual actions */}
+          {pct < 50 && (
+            <Button fullWidth variant="ghost" onClick={() => router.push(`/foxy?subject=${selectedSubject || ''}&mode=learn`)}>
+              📖 {isHi ? 'बुनियादी बातें सीखो' : 'Review Basics with Foxy'}
+            </Button>
+          )}
+          {pct >= 50 && pct <= 80 && (
+            <Button fullWidth variant="ghost" onClick={() => router.push(`/foxy?subject=${selectedSubject || ''}&mode=practice`)}>
+              🦊 {isHi ? 'और अभ्यास करो' : 'Practice More with Foxy'}
+            </Button>
+          )}
+          {pct > 80 && (
+            <Button fullWidth variant="ghost" onClick={() => router.push('/quiz')}>
+              🚀 {isHi ? 'Level Up करो' : 'Level Up — Harder Quiz'}
             </Button>
           )}
           <Button fullWidth variant="ghost" onClick={onGoHome}>

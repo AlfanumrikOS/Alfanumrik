@@ -1,36 +1,21 @@
+/**
+ * @deprecated Import from '@/lib/supabase-client' for the pure client.
+ * Import from '@/lib/domains/*' for data access functions.
+ * This file exists for backward compatibility while the migration proceeds.
+ *
+ * MIGRATION STATUS: 51 importers remain (tracked in Phase C notes)
+ * Do not add new imports from this file.
+ */
+
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { XP_RULES } from './xp-rules';
+import { calculateScorePercent, calculateQuizXP } from './scoring';
 
-export const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-export const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+// Re-export from the canonical client module — new code uses supabase-client.ts
+export { supabase, supabaseUrl, supabaseAnonKey } from './supabase-client';
 
-// Lazy-init: avoid throwing during Next.js static page generation (build time)
-// where env vars may not yet be available.
-let _supabase: SupabaseClient | null = null;
-
-function getSupabase(): SupabaseClient {
-  if (_supabase) return _supabase;
-  if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY');
-  }
-  _supabase = createClient(supabaseUrl, supabaseAnonKey, {
-    auth: {
-      autoRefreshToken: true,
-      persistSession: true,
-      detectSessionInUrl: true,
-    },
-  });
-  return _supabase;
-}
-
-// Proxy that lazily initializes on first property access
-export const supabase: SupabaseClient = new Proxy({} as SupabaseClient, {
-  get(_target, prop, receiver) {
-    const client = getSupabase();
-    const value = Reflect.get(client, prop, receiver);
-    return typeof value === 'function' ? value.bind(client) : value;
-  },
-});
+// Internal: import client + constants for use by the data functions below
+import { supabase, supabaseUrl, supabaseAnonKey } from './supabase-client';
 
 /* ── Timeout wrapper for fetch calls ── */
 function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 15000): Promise<Response> {
@@ -141,24 +126,43 @@ export async function getNextTopics(studentId: string, subject: string | null | 
 /* ── Foxy AI tutor chat ── */
 export async function chatWithFoxy(params: { message: string; student_id: string; session_id?: string; subject?: string; grade: string; language: string; mode: string; }) {
   try {
-    // Get the current user's JWT for authenticated edge function calls
-    const { data: { session } } = await supabase.auth.getSession();
-    const token = session?.access_token || supabaseAnonKey;
+    // Send Bearer token so authorizeRequest can authenticate without relying
+    // solely on chunked session cookies (which can fail on large JWTs).
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+    } catch { /* proceed without token — cookie fallback */ }
 
-    const res = await fetchWithTimeout(`${supabaseUrl}/functions/v1/foxy-tutor`, {
+    const res = await fetchWithTimeout('/api/foxy', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ message: params.message, session_id: params.session_id, subject: params.subject, grade: params.grade, language: params.language, mode: params.mode }),
+      headers,
+      credentials: 'include',
+      body: JSON.stringify({
+        message:   params.message,
+        subject:   params.subject   ?? 'general',
+        grade:     params.grade     ?? '9',
+        chapter:   null,
+        board:     null,
+        sessionId: params.session_id ?? null,
+        mode:      params.mode       ?? 'learn',
+      }),
     }, 30000); // 30s timeout for AI responses
-    if (!res.ok) throw new Error(`Foxy error: ${res.status}`);
+    if (!res.ok) {
+      return { reply: 'Foxy is unavailable right now. Try again shortly!', xp_earned: 0, session_id: params.session_id ?? '' };
+    }
     const data = await res.json();
-    return { reply: data.text ?? data.reply ?? 'Foxy had a hiccup! Try again.', session_id: data.session_id ?? params.session_id ?? '' };
+    return {
+      reply:      data.response || 'Let me think...',
+      xp_earned:  0,
+      session_id: data.sessionId || params.session_id || '',
+    };
   } catch (e) {
     console.error('chatWithFoxy:', e);
     const msg = e instanceof DOMException && e.name === 'AbortError'
       ? 'Request timed out — please try again.'
       : 'Connection issue — please try again.';
-    return { reply: msg, session_id: params.session_id ?? '' };
+    return { reply: msg, xp_earned: 0, session_id: params.session_id ?? '' };
   }
 }
 
@@ -326,8 +330,8 @@ export async function submitQuizResults(studentId: string, subject: string, grad
   // when multiple quiz submissions happen concurrently.
   const total = responses.length;
   const correct = responses.filter(r => r.is_correct).length;
-  const scorePct = total > 0 ? Math.round((correct / total) * 100) : 0;
-  const xpEarned = correct * XP_RULES.quiz_per_correct + (scorePct >= 80 ? XP_RULES.quiz_high_score_bonus : 0) + (scorePct === 100 ? XP_RULES.quiz_perfect_bonus : 0);
+  const scorePct = calculateScorePercent(correct, total);
+  const xpEarned = calculateQuizXP(correct, scorePct);
 
   // 1. Insert quiz session (columns must match DB schema exactly)
   const { data: session, error: sessErr } = await supabase.from('quiz_sessions').insert({
@@ -428,7 +432,7 @@ export async function getReviewCards(studentId: string, limit = 10) {
   // Fallback: use spaced_repetition_cards if available, else concept_mastery
   const today = new Date().toISOString().split('T')[0]; // next_review_date is DATE type
   const { data: cards } = await supabase.from('spaced_repetition_cards')
-    .select('id, student_id, subject, topic, chapter_title, front_text, back_text, hint, ease_factor, interval_days, streak, repetition_count, total_reviews, correct_reviews, next_review_date')
+    .select('id, student_id, subject, topic, chapter_title, front_text, back_text, hint, source, ease_factor, interval_days, streak, repetition_count, total_reviews, correct_reviews, next_review_date, last_review_date, created_at')
     .eq('student_id', studentId)
     .lte('next_review_date', today)
     .order('next_review_date')
@@ -849,6 +853,25 @@ export async function getQuizQuestionsV2(
   const studentId = await resolveStudentId();
   const diffMap: Record<string, number | null> = { easy: 1, medium: 2, hard: 3, mixed: null, progressive: null };
 
+  // ── Fetch IRT theta (student ability estimate) from learning profile ──
+  // IRT theta is the student's calibrated ability level in this subject.
+  // Passing it to quiz-generator enables 3PL IRT item selection: questions
+  // are chosen from the difficulty band closest to theta, maximising
+  // information gain and keeping the student in ZPD.
+  let irtTheta: number | null = null;
+  try {
+    const { data: profileData } = await supabase
+      .from('student_learning_profiles')
+      .select('irt_theta')
+      .eq('student_id', studentId)
+      .maybeSingle();
+    if (profileData?.irt_theta != null) {
+      irtTheta = profileData.irt_theta as number;
+    }
+  } catch {
+    // Non-fatal: quiz-generator will use default difficulty band
+  }
+
   // ── PRIMARY: quiz-generator Edge Function ──
   // This is the CME-driven source. It does adaptive selection based on
   // student mastery, RAG Q&A from NCERT content, and question_bank —
@@ -864,6 +887,9 @@ export async function getQuizQuestionsV2(
         count,
         difficulty: diffMap[difficultyMode] ?? null,
         chapter_number: chapterNumber,
+        // IRT theta — student ability estimate for adaptive item selection.
+        // null means quiz-generator will use its default difficulty logic.
+        ability_estimate: irtTheta,
       },
     });
 

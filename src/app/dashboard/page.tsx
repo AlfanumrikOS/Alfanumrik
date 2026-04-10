@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase, getSubjects, getFeatureFlags, getNextTopics, generateNotifications } from '@/lib/supabase';
 import { useDashboardData } from '@/lib/swr';
-import { Card, StatCard, ProgressBar, SectionHeader, SubjectChip, Avatar, BottomNav } from '@/components/ui';
+import { Card, StatCard, ProgressBar, SectionHeader, SubjectChip, Avatar, BottomNav, MasteryRing } from '@/components/ui';
 import TrustFooter from '@/components/TrustFooter';
 import { DashboardSkeleton } from '@/components/Skeleton';
 import { calculateLevel, xpToNextLevel, getLevelName } from '@/lib/xp-rules';
@@ -15,6 +15,12 @@ import { SUBJECT_META, GRADE_SUBJECTS } from '@/lib/constants';
 import { PlanBadge } from '@/components/PlanBadge';
 import QuickActions from '@/components/dashboard/QuickActions';
 import SubjectProgress from '@/components/dashboard/SubjectProgress';
+import TodaysPlan from '@/components/dashboard/TodaysPlan';
+import ProgressSnapshot from '@/components/dashboard/ProgressSnapshot';
+import ExamReadiness from '@/components/dashboard/ExamReadiness';
+import DailyChallenge from '@/components/dashboard/DailyChallenge';
+import FocusDashboard from '@/components/dashboard/FocusDashboard';
+
 
 const BLOOM_LABELS: Record<string, { icon: string; label: string; labelHi: string }> = {
   remember: { icon: '📖', label: 'Remember', labelHi: 'याद' },
@@ -47,6 +53,10 @@ export default function Dashboard() {
   const [upcomingExams, setUpcomingExams] = useState<Array<{ id: string; exam_name: string; exam_type: string; subject: string; exam_date: string; days_left: number }>>([]);
   const [nudges, setNudges] = useState<Array<{ id: string; nudge_type: string; message: string; message_hi?: string; priority: number }>>([]);
   const [studentRank, setStudentRank] = useState<number | null>(null);
+  const [showMore, setShowMore] = useState(false);
+  // BKT mastery: average mastery_probability per subject from concept_mastery table.
+  // This is the real adaptive mastery signal, not the XP/accuracy proxy.
+  const [bktMastery, setBktMastery] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/');
@@ -79,6 +89,34 @@ export default function Dashboard() {
     setSubjects(subs);
     setFlags(feats);
     setNextTopics(nextTopicsResult.slice(0, 3));
+
+    // Fetch BKT mastery per subject: average mastery_probability from concept_mastery.
+    // concept_mastery has no direct subject column — join via curriculum_topics.
+    // We select topic_id, mastery_probability and join subject from curriculum_topics.
+    try {
+      const { data: cmData } = await supabase
+        .from('concept_mastery')
+        .select('mastery_probability, curriculum_topics!inner(subject_id, subjects!inner(code))')
+        .eq('student_id', student.id)
+        .gt('mastery_probability', 0);
+      if (cmData && cmData.length > 0) {
+        // Group by subject code and compute average mastery_probability
+        const bySubject: Record<string, number[]> = {};
+        for (const row of cmData as any[]) {
+          const code = row.curriculum_topics?.subjects?.code as string | undefined;
+          if (code && row.mastery_probability != null) {
+            (bySubject[code] = bySubject[code] || []).push(row.mastery_probability as number);
+          }
+        }
+        const avgMastery: Record<string, number> = {};
+        for (const [code, vals] of Object.entries(bySubject)) {
+          avgMastery[code] = Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100);
+        }
+        setBktMastery(avgMastery);
+      }
+    } catch {
+      // Non-fatal: falls back to XP-based progress bar
+    }
     const gradeKey = (student.grade || '9').replace('Grade ', '').trim();
     const gradeSubjects = GRADE_SUBJECTS[gradeKey] || GRADE_SUBJECTS['9'];
     const rawSelected = (student.selected_subjects || [student.preferred_subject].filter(Boolean)) as string[];
@@ -180,7 +218,7 @@ export default function Dashboard() {
               {unreadCount > 0 && (
                 <span
                   className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-white"
-                  style={{ background: '#DC2626', fontSize: 10, lineHeight: 1 }}
+                  style={{ background: 'var(--danger)', fontSize: 10, lineHeight: 1 }}
                 >
                   {unreadCount > 9 ? '9+' : unreadCount}
                 </span>
@@ -195,6 +233,45 @@ export default function Dashboard() {
 
       <main className="app-container py-4 space-y-4">
        <SectionErrorBoundary section="Dashboard">
+
+        {/* ═══ FOCUS ZONE: 3 cards — "One Thing at a Time" ═══ */}
+        <FocusDashboard
+          studentId={student.id}
+          studentName={student.name}
+          isHi={isHi}
+          grade={(student.grade || '9').replace('Grade ', '').trim()}
+          xp={totalXp}
+          level={calculateLevel(totalXp)}
+          streak={streak}
+          preferredSubject={student.preferred_subject}
+        />
+
+        {/* ═══ DAILY CHALLENGE — hero card, always visible above fold ═══ */}
+        {/* Challenges are time-sensitive and drive daily engagement. They must
+            be visible without the user having to tap "Show More". */}
+        <DailyChallenge
+          isHi={isHi}
+          studentName={student.name}
+          streak={streak}
+          grade={student.grade}
+        />
+
+        {/* ═══ SHOW MORE TOGGLE — progressive disclosure ═══ */}
+        <button
+          onClick={() => setShowMore(prev => !prev)}
+          className="w-full py-2.5 rounded-xl text-xs font-semibold transition-all active:scale-[0.98] flex items-center justify-center gap-1.5"
+          style={{
+            background: 'var(--surface-1)',
+            border: '1px solid var(--border)',
+            color: 'var(--text-3)',
+          }}
+        >
+          {showMore
+            ? (isHi ? 'कम दिखाओ ↑' : 'Show Less ↑')
+            : (isHi ? 'और दिखाओ ↓' : 'Show More ↓')}
+        </button>
+
+        {showMore && <>
 
         {/* ═══ FIRST-TIME WELCOME — single opinionated CTA ═══ */}
         {totalXp === 0 && profiles.length <= 1 && (
@@ -417,7 +494,7 @@ export default function Dashboard() {
                         </div>
                       </div>
                       <div className="text-right flex-shrink-0">
-                        <div className="text-lg font-bold" style={{ color: isUrgent ? '#DC2626' : 'var(--orange)', fontFamily: 'var(--font-display)' }}>
+                        <div className="text-lg font-bold" style={{ color: isUrgent ? 'var(--danger)' : 'var(--orange)', fontFamily: 'var(--font-display)' }}>
                           {exam.days_left}
                         </div>
                         <div className="text-[10px] text-[var(--text-3)]">{isHi ? 'दिन' : 'days'}</div>
@@ -441,7 +518,11 @@ export default function Dashboard() {
               <p className="text-xs text-[var(--text-2)] leading-relaxed flex-1">{isHi && nudge.message_hi ? nudge.message_hi : nudge.message}</p>
               <button
                 onClick={async () => {
-                  await supabase.from('smart_nudges').update({ is_dismissed: true }).eq('id', nudge.id);
+                  await fetch('/api/student/preferences', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'dismiss_nudge', nudge_id: nudge.id }),
+                  });
                   setNudges(prev => prev.filter(n => n.id !== nudge.id));
                 }}
                 className="text-[var(--text-3)] text-xs flex-shrink-0"
@@ -455,12 +536,12 @@ export default function Dashboard() {
 
         {/* Knowledge Gaps Alert */}
         {knowledgeGaps.length > 0 && showGapsAlert && (
-          <div className="rounded-2xl p-4 relative" style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)' }}>
+          <div className="rounded-2xl p-4 relative" style={{ background: 'var(--danger-light)', border: '1px solid rgba(244,63,94,0.15)' }}>
             <button onClick={() => setShowGapsAlert(false)} className="absolute top-2 right-3 text-[var(--text-3)] text-sm">✕</button>
             <div className="flex items-start gap-3">
               <span className="text-2xl">🔍</span>
               <div className="flex-1">
-                <div className="font-semibold text-sm" style={{ color: '#DC2626' }}>
+                <div className="font-semibold text-sm" style={{ color: 'var(--danger)' }}>
                   {knowledgeGaps.length} {isHi ? 'ज्ञान अंतराल पाए गए' : 'knowledge gaps found'}
                 </div>
                 <div className="text-xs text-[var(--text-3)] mt-1 space-y-0.5">
@@ -480,8 +561,14 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Quick Actions */}
-        <QuickActions isHi={isHi} />
+        {/* Smart "What to do now?" CTA — context-driven, single recommendation */}
+        <QuickActions
+          isHi={isHi}
+          dueCount={dueCount}
+          nextTopic={nextTopics[0]?.title ?? null}
+          streak={streak}
+          quizzesTaken={snapshot?.quizzes_taken ?? 0}
+        />
 
         {/* Mini Leaderboard — competitive motivation, prominent for CBSE students */}
         {(studentRank !== null || totalXp > 0) && (
@@ -538,9 +625,13 @@ export default function Dashboard() {
                   active={student.preferred_subject === s.code}
                   size="sm"
                   onClick={async () => {
-                    await supabase.from('students').update({ preferred_subject: s.code }).eq('id', student.id);
+                    await fetch('/api/student/preferences', {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ action: 'set_preferred_subject', subject: s.code }),
+                    });
                     if (typeof window !== 'undefined') localStorage.setItem('alfanumrik_subject', s.code);
-                    router.push('/foxy');
+                    router.push('/learn');
                   }}
                 />
               ))}
@@ -578,7 +669,11 @@ export default function Dashboard() {
               <div className="px-4 pb-4 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
                 <button onClick={async () => {
                   const subs = selectedSubjects.length > 0 ? selectedSubjects : [student.preferred_subject];
-                  await supabase.from('students').update({ selected_subjects: subs, preferred_subject: subs[0] }).eq('id', student.id);
+                  await fetch('/api/student/preferences', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'set_selected_subjects', subjects: subs, preferred_subject: subs[0] }),
+                  });
                   setShowSubjectPicker(false);
                   loadStaticData();
                 }} disabled={selectedSubjects.length === 0} className="w-full py-3 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-40"
@@ -590,13 +685,46 @@ export default function Dashboard() {
           </>
         )}
 
-        {/* XP by Subject (only selected subjects) */}
+        {/* XP by Subject + BKT Mastery (only selected subjects) */}
         <SubjectProgress
           profiles={profiles}
           subjects={subjects}
           selectedSubjects={selectedSubjects}
           isHi={isHi}
+          bktMastery={bktMastery}
         />
+
+        {/* Progressive disclosure: unlocked after first meaningful engagement */}
+        {totalXp >= 50 && (
+          <TodaysPlan
+            isHi={isHi}
+            dueCount={dueCount}
+            knowledgeGaps={knowledgeGaps.map(g => ({ id: g.id, topic_title: g.topic_title ?? g.description }))}
+            nextTopics={nextTopics}
+            preferredSubject={student.preferred_subject ?? ''}
+            streak={streak}
+          />
+        )}
+
+        {totalXp >= 50 && (
+          <ProgressSnapshot
+            totalXp={totalXp}
+            streak={streak}
+            mastered={mastered}
+            isHi={isHi}
+          />
+        )}
+
+        {totalXp >= 100 && (
+          <ExamReadiness
+            accuracy={cbseReadiness ?? 0}
+            totalQuizzes={snapshot?.quizzes_taken ?? 0}
+            isHi={isHi}
+            grade={student.grade}
+          />
+        )}
+
+        </>}
        </SectionErrorBoundary>
       </main>
 

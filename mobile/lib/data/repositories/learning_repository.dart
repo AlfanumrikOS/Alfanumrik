@@ -107,7 +107,7 @@ class LearningRepository {
         await _client.rpc('add_xp', params: {
           'p_student_id': studentId,
           'p_amount': 10,
-          'p_source': 'concept_completion',
+          'p_source': 'topic_mastered',
         });
       } catch (_) {
         // XP is best-effort

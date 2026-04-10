@@ -39,6 +39,21 @@ export default function LearnPage() {
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
   const [chapters, setChapters] = useState<Array<{ chapter_number: number; title: string }>>([]);
   const [chaptersLoading, setChaptersLoading] = useState(false);
+  const [lastStudied, setLastStudied] = useState<{ subject: string; chapter: number; chapterTitle: string; concept: number; timestamp: number } | null>(null);
+
+  // Load last-studied position from localStorage
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('alfanumrik_last_studied');
+      if (stored) {
+        const data = JSON.parse(stored);
+        // Only show if studied within last 7 days
+        if (Date.now() - data.timestamp < 7 * 24 * 60 * 60 * 1000) {
+          setLastStudied(data);
+        }
+      }
+    } catch {}
+  }, []);
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/');
@@ -195,6 +210,32 @@ export default function LearnPage() {
               <p className="text-sm text-[var(--text-3)] mb-4 font-medium">
                 {isHi ? 'कौन सा अध्याय पढ़ना है?' : 'Choose a chapter to study'}
               </p>
+
+              {/* ═══ CONTINUE WHERE YOU LEFT OFF ═══ */}
+              {lastStudied && lastStudied.subject === selectedSubject && (
+                <button
+                  onClick={() => router.push(`/learn/${lastStudied.subject}/${lastStudied.chapter}`)}
+                  className="w-full rounded-xl p-4 mb-4 flex items-center gap-3 transition-all active:scale-[0.98]"
+                  style={{
+                    background: 'linear-gradient(135deg, rgba(232,88,28,0.06), rgba(245,166,35,0.06))',
+                    border: '1px solid rgba(232,88,28,0.15)',
+                  }}
+                >
+                  <span className="text-xl">📖</span>
+                  <div className="flex-1 min-w-0 text-left">
+                    <div className="text-xs text-orange-600 font-semibold">
+                      {isHi ? 'जहां छोड़ा था वहीं से शुरू करो' : 'Continue where you left off'}
+                    </div>
+                    <div className="text-sm font-medium text-gray-800 truncate mt-0.5">
+                      {lastStudied.chapterTitle}
+                    </div>
+                    <div className="text-[10px] text-gray-400 mt-0.5">
+                      {isHi ? `अवधारणा ${lastStudied.concept + 1}` : `Concept ${lastStudied.concept + 1}`}
+                    </div>
+                  </div>
+                  <span className="text-gray-400">→</span>
+                </button>
+              )}
 
               {chaptersLoading ? (
                 <div className="text-center py-10">

@@ -107,6 +107,13 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
           metaData.parent_consent_email = parentEmail.trim();
         }
       }
+      // B4: Persist teacher fields into auth metadata so callback/confirm routes
+      // can bootstrap the teacher profile after email confirmation.
+      if (roleTab === 'teacher') {
+        metaData.school_name = schoolName.trim();
+        metaData.subjects_taught = JSON.stringify(subjectsTaught);
+        metaData.grades_taught = JSON.stringify(gradesTaught);
+      }
 
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: email.trim(),
@@ -118,69 +125,96 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
       });
       if (authError) { setError(authError.message); setLoading(false); return; }
       if (authData.user) {
-        let profileError: string | null = null;
+        try {
+          let profileError: string | null = null;
 
-        if (roleTab === 'student') {
-          const { error: insErr } = await supabase.from('students').insert({
-            auth_user_id: authData.user.id,
-            name: name.trim(),
-            email: email.trim(),
-            grade: `Grade ${grade}`,
-            board,
-            preferred_language: 'en',
-            account_status: 'active',
-            onboarding_completed: true,
-          });
-          if (insErr) profileError = insErr.message;
-        } else if (roleTab === 'teacher') {
-          const { error: insErr } = await supabase.from('teachers').insert({
-            auth_user_id: authData.user.id,
-            name: name.trim(),
-            email: email.trim(),
-            school_name: schoolName.trim(),
-            subjects_taught: subjectsTaught,
-            grades_taught: gradesTaught,
-          });
-          if (insErr) profileError = insErr.message;
-        } else if (roleTab === 'parent') {
-          const { data: guardianData, error: insErr } = await supabase.from('guardians').insert({
-            auth_user_id: authData.user.id,
-            name: name.trim(),
-            email: email.trim(),
-            phone: phone.trim() || null,
-          }).select('id').single();
-          if (insErr) profileError = insErr.message;
-
-          if (linkCode.trim() && guardianData) {
-            await supabase.rpc('link_guardian_to_student_via_code', {
-              p_guardian_id: guardianData.id,
-              p_invite_code: linkCode.trim(),
+          if (roleTab === 'student') {
+            const { error: insErr } = await supabase.from('students').insert({
+              auth_user_id: authData.user.id,
+              name: name.trim(),
+              email: email.trim(),
+              grade: grade,
+              board,
+              preferred_language: 'en',
+              account_status: 'active',
+              onboarding_completed: true,
             });
+            if (insErr) profileError = insErr.message;
+          } else if (roleTab === 'teacher') {
+            const { error: insErr } = await supabase.from('teachers').insert({
+              auth_user_id: authData.user.id,
+              name: name.trim(),
+              email: email.trim(),
+              school_name: schoolName.trim(),
+              subjects_taught: subjectsTaught,
+              grades_taught: gradesTaught,
+            });
+            if (insErr) profileError = insErr.message;
+          } else if (roleTab === 'parent') {
+            const { data: guardianData, error: insErr } = await supabase.from('guardians').insert({
+              auth_user_id: authData.user.id,
+              name: name.trim(),
+              email: email.trim(),
+              phone: phone.trim() || null,
+            }).select('id').single();
+            if (insErr) profileError = insErr.message;
+
+            if (linkCode.trim() && guardianData) {
+              await supabase.rpc('link_guardian_to_student_via_code', {
+                p_guardian_id: guardianData.id,
+                p_invite_code: linkCode.trim(),
+              });
+            }
           }
-        }
 
-        if (profileError) {
-          console.error(`[Signup] Profile insert failed for ${roleTab}:`, profileError);
-        }
+          if (profileError) {
+            console.error(`[Signup] Profile insert failed for ${roleTab}:`, profileError);
+            // B2: Client-side insert failed — always try server-side bootstrap as fallback.
+            // Do NOT guard on authData.session — it is null when email confirmation is required,
+            // which is the most common production path. The bootstrap API reads auth from cookies.
+            try {
+              const bootstrapPayload: Record<string, unknown> = { role: roleTab, name: name.trim() };
+              if (roleTab === 'student') { bootstrapPayload.grade = grade; bootstrapPayload.board = board; }
+              if (roleTab === 'teacher') { bootstrapPayload.school_name = schoolName.trim(); bootstrapPayload.subjects_taught = subjectsTaught; bootstrapPayload.grades_taught = gradesTaught; }
+              if (roleTab === 'parent') { bootstrapPayload.phone = phone.trim() || null; bootstrapPayload.link_code = linkCode.trim() || null; }
 
-        const session = authData.session;
-        if (session) {
-          const welcomePayload: Record<string, string> = { role: roleTab, name: name.trim(), email: email.trim() };
-          if (roleTab === 'student') { welcomePayload.grade = grade; welcomePayload.board = board; }
-          if (roleTab === 'teacher') { welcomePayload.school_name = schoolName.trim(); }
-          fetch(`${SUPABASE_URL}/functions/v1/send-welcome-email`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}`, 'apikey': SUPABASE_ANON_KEY },
-            body: JSON.stringify(welcomePayload),
-          }).catch(() => {});
-          onSuccess();
-        } else {
-          // No session returned — email confirmation required
-          // User will receive a Mailgun-sent confirmation email
-          setPendingEmail(email.trim());
-          setMode('check-email');
-          setSuccess('');
-          setError('');
+              await fetch('/api/auth/bootstrap', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(bootstrapPayload),
+              });
+            } catch (bootstrapErr) {
+              console.error('[Signup] Bootstrap fallback also failed:', bootstrapErr);
+            }
+          }
+
+          const session = authData.session;
+          if (session) {
+            const welcomePayload: Record<string, string> = { role: roleTab, name: name.trim(), email: email.trim() };
+            if (roleTab === 'student') { welcomePayload.grade = grade; welcomePayload.board = board; }
+            if (roleTab === 'teacher') { welcomePayload.school_name = schoolName.trim(); }
+            fetch(`${SUPABASE_URL}/functions/v1/send-welcome-email`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}`, 'apikey': SUPABASE_ANON_KEY },
+              body: JSON.stringify(welcomePayload),
+            }).catch(() => {});
+            setLoading(false);
+            onSuccess();
+          } else {
+            // No session returned — email confirmation required
+            // User will receive a Mailgun-sent confirmation email
+            // B9: Persist pending email to sessionStorage so resend works after page refresh
+            if (typeof window !== 'undefined') {
+              sessionStorage.setItem('alfanumrik_pending_email', email.trim());
+            }
+            setPendingEmail(email.trim());
+            setMode('check-email');
+            setSuccess('');
+            setError('');
+            setLoading(false);
+          }
+        } catch (profileErr) {
+          console.error('[Signup] Profile creation block threw:', profileErr);
           setLoading(false);
         }
       }
@@ -203,10 +237,18 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
 
   const handleResendVerification = async () => {
     setError(''); setLoading(true);
+    // B9: Recover email from sessionStorage if React state was lost (e.g. page refresh)
+    const targetEmail = pendingEmail ||
+      (typeof window !== 'undefined' ? sessionStorage.getItem('alfanumrik_pending_email') ?? '' : '');
+    if (!targetEmail) {
+      setError('Email address not found. Please start sign-up again.');
+      setLoading(false);
+      return;
+    }
     try {
       const { error: resendError } = await supabase.auth.resend({
         type: 'signup',
-        email: pendingEmail,
+        email: targetEmail,
       });
       if (resendError) { setError(resendError.message); } else { setSuccess('Verification email sent again! Check your inbox.'); }
       setLoading(false);
@@ -296,7 +338,7 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
           </h2>
 
           {error && (
-            <div role="alert" className="mb-3 px-3 py-2 rounded-xl text-xs font-semibold" style={{ background: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA' }}>
+            <div role="alert" className="mb-3 px-3 py-2 rounded-xl text-xs font-semibold" style={{ background: 'var(--danger-light)', color: 'var(--danger)', border: '1px solid color-mix(in srgb, var(--danger) 25%, transparent)' }}>
               {error}
             </div>
           )}
@@ -422,7 +464,7 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
                   <span>
                     I consent to the collection and processing of my data as described in the{' '}
                     <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline font-semibold" style={{ color: activeRoleColor }}>Privacy Policy</a>
-                    <span style={{ color: '#EF4444' }}> *</span>
+                    <span style={{ color: 'var(--danger)' }}> *</span>
                   </span>
                 </label>
                 <label className="flex items-start gap-2 cursor-pointer" style={{ fontSize: 12, color: 'var(--text-2)' }}>

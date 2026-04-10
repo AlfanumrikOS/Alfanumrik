@@ -145,6 +145,32 @@ const SOUNDS = {
   click: () => {
     playTone(600, 0.03, 'square', 0.04);
   },
+
+  // Challenge win — triumphant victory fanfare (3-note ascending major chord)
+  challengeWin: () => {
+    playChord([523, 659, 784], 0.15, 'sine', 0.12);
+    setTimeout(() => playChord([659, 784, 1047], 0.2, 'sine', 0.1), 150);
+    setTimeout(() => playChord([784, 1047, 1319], 0.4, 'sine', 0.08), 350);
+  },
+
+  // Foxy greeting — playful two-note yip (high pitch, bouncy)
+  foxyGreet: () => {
+    playTone(1200, 0.08, 'sine', 0.1);
+    setTimeout(() => playTone(1500, 0.12, 'sine', 0.08), 60);
+  },
+
+  // Streak fire — crackling ascending (rapid micro-tones)
+  streakFire: () => {
+    for (let i = 0; i < 5; i++) {
+      setTimeout(() => playTone(400 + i * 100, 0.06, 'sawtooth', 0.04), i * 40);
+    }
+  },
+
+  // Coin collect — classic coin pickup sound (quick high bounce)
+  coin: () => {
+    playTone(988, 0.06, 'square', 0.08);
+    setTimeout(() => playTone(1319, 0.1, 'square', 0.06), 50);
+  },
 } as const;
 
 export type SoundEvent = keyof typeof SOUNDS;
