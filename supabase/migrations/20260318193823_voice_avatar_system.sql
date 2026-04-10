@@ -1,0 +1,3 @@
+-- Migration: voice_avatar_system
+-- Applied remotely to Supabase
+-- See _legacy/ for consolidated SQL reference
