@@ -249,6 +249,9 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
       const { error: resendError } = await supabase.auth.resend({
         type: 'signup',
         email: targetEmail,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback?type=signup`,
+        },
       });
       if (resendError) { setError(resendError.message); } else { setSuccess('Verification email sent again! Check your inbox.'); }
       setLoading(false);
