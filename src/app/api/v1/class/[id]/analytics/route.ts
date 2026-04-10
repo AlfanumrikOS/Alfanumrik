@@ -28,33 +28,38 @@ export async function GET(
     const auth = await authorizeRequest(request, 'class.view_analytics');
     if (!auth.authorized) return auth.errorResponse!;
 
-    // Resolve teacher_id from the authenticated user
-    const { data: teacher } = await supabaseAdmin
-      .from('teachers')
-      .select('id')
-      .eq('user_id', auth.userId)
-      .single();
+    // Admins and super_admins can view any class analytics without a class assignment
+    const isAdmin = auth.roles.some(r => r === 'admin' || r === 'super_admin');
 
-    if (!teacher) {
-      return NextResponse.json(
-        { error: 'Teacher profile not found' },
-        { status: 403 }
-      );
-    }
+    if (!isAdmin) {
+      // Resolve teacher_id from the authenticated user
+      const { data: teacher } = await supabaseAdmin
+        .from('teachers')
+        .select('id')
+        .eq('user_id', auth.userId)
+        .single();
 
-    // Verify teacher is assigned to this class
-    const { data: classTeacher } = await supabaseAdmin
-      .from('class_teachers')
-      .select('id')
-      .eq('class_id', classId)
-      .eq('teacher_id', teacher.id)
-      .single();
+      if (!teacher) {
+        return NextResponse.json(
+          { error: 'Teacher profile not found' },
+          { status: 403 }
+        );
+      }
 
-    if (!classTeacher) {
-      return NextResponse.json(
-        { error: 'Not assigned to this class' },
-        { status: 403 }
-      );
+      // Verify teacher is assigned to this class
+      const { data: classTeacher } = await supabaseAdmin
+        .from('class_teachers')
+        .select('id')
+        .eq('class_id', classId)
+        .eq('teacher_id', teacher.id)
+        .single();
+
+      if (!classTeacher) {
+        return NextResponse.json(
+          { error: 'Not assigned to this class' },
+          { status: 403 }
+        );
+      }
     }
 
     // Get student IDs in the class

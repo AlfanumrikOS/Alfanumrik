@@ -212,7 +212,7 @@ export async function canAccessStudent(authUserId: string, studentId: string): P
       .from('guardian_student_links')
       .select('id')
       .eq('student_id', studentId)
-      .eq('status', 'approved')
+      .in('status', ['active', 'approved'])
       .in('guardian_id', guardianIds)
       .limit(1);
     if (linkedChild && linkedChild.length > 0) return true;
@@ -550,6 +550,29 @@ export const PERMISSIONS = {
   SYSTEM_CONFIG: 'system.config',
   CONTENT_MANAGE: 'content.manage',
   ANALYTICS_GLOBAL: 'analytics.global',
+  ADMIN_MANAGE_USERS: 'admin.manage_users',
+  SYSTEM_MANAGE_ROLES: 'system.manage_roles',
+
+  // ── Student (write-scoped) ────────────────────────────────
+  STUDENT_PROFILE_WRITE: 'student.profile.write',
+  STUDENT_SCAN: 'student.scan',
+
+  // ── Study plan (write) ────────────────────────────────────
+  STUDY_PLAN_WRITE: 'study_plan.write',
+
+  // ── Exam (write) ──────────────────────────────────────────
+  EXAM_WRITE: 'exam.write',
+
+  // ── Foxy AI tutor (interaction) ───────────────────────────
+  FOXY_INTERACT: 'foxy.interact',
+
+  // ── STEM observations ─────────────────────────────────────
+  STEM_OBSERVE: 'stem.observe',
+
+  // ── Institution (multi-school admin) ─────────────────────
+  INSTITUTION_MANAGE: 'institution.manage',
+  INSTITUTION_VIEW_ANALYTICS: 'institution.view_analytics',
+  INSTITUTION_MANAGE_TEACHERS: 'institution.manage_teachers',
 } as const;
 
 export type PermissionCode = typeof PERMISSIONS[keyof typeof PERMISSIONS];
