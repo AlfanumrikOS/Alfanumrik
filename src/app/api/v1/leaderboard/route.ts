@@ -20,7 +20,7 @@ import { authorizeRequest } from '@/lib/rbac';
 export async function GET(request: NextRequest) {
   // Defense in depth: middleware blocks unauthenticated /api/v1/ requests,
   // but verify here too since this route exposes student PII (names, schools).
-  const auth = await authorizeRequest(request);
+  const auth = await authorizeRequest(request, 'leaderboard.view');
   if (!auth.authorized) return auth.errorResponse!;
 
   const { searchParams } = new URL(request.url);
