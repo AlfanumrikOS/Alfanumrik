@@ -650,5 +650,27 @@ export function SheetModal({ open, onClose, title, children }: SheetModalProps) 
   );
 }
 
+/* ─── Skeleton ───────────────────────────────────────────── */
+interface SkeletonProps {
+  className?: string;
+  width?: string | number;
+  height?: string | number;
+  rounded?: string;
+}
+
+export function Skeleton({ className = '', width, height, rounded = 'rounded-lg' }: SkeletonProps) {
+  return (
+    <div
+      className={`animate-pulse ${rounded} ${className}`}
+      style={{
+        width,
+        height,
+        background: 'var(--surface-2)',
+      }}
+      aria-hidden="true"
+    />
+  );
+}
+
 /* ─── Bottom Nav ──────────────────────────────────────────── */
 export { default as BottomNav } from './BottomNavComponent';
