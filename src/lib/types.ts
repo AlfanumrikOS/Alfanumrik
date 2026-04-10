@@ -489,3 +489,32 @@ export interface ResourceAccessRule {
   field_restrictions: string[];
   max_records_per_request: number;
 }
+
+/* ─── Challenge Mode ─────────────────────────────────────────── */
+
+export type ChallengeStatus = 'pending' | 'active' | 'completed' | 'expired';
+
+export interface QuizChallenge {
+  id: string;
+  challenger_id: string;
+  opponent_id: string | null;
+  subject: string;
+  grade: string;
+  question_count: number;
+  difficulty: number | null;
+  status: ChallengeStatus;
+  challenger_score: number | null;
+  challenger_time: number | null;
+  opponent_score: number | null;
+  opponent_time: number | null;
+  winner_id: string | null;
+  share_code: string | null;
+  question_ids: string[];
+  created_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  expires_at: string | null;
+  // Joined fields (from RPC or view)
+  challenger_name?: string;
+  opponent_name?: string;
+}

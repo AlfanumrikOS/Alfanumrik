@@ -121,8 +121,8 @@ describe('RPC parameter construction', () => {
 })
 
 describe('retrieval orchestration (mocked Supabase)', () => {
-  let mockRpc: ReturnType<typeof vi.fn>
-  let mockFrom: ReturnType<typeof vi.fn>
+  let mockRpc: any
+  let mockFrom: any
   let mockSupabase: any
 
   const makeChunkRow = (overrides = {}) => ({

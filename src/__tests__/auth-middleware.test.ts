@@ -257,7 +257,7 @@ describe('Middleware auth route handling', () => {
 
 describe('Middleware session refresh', () => {
   it('middleware exports config with matcher that covers all dynamic routes', async () => {
-    const mod = await import('@/middleware');
+    const mod = await import('@/proxy');
     expect(mod.config).toBeDefined();
     expect(Array.isArray(mod.config.matcher)).toBe(true);
 
@@ -268,12 +268,12 @@ describe('Middleware session refresh', () => {
   });
 
   it('middleware function is exported and callable for session refresh', async () => {
-    const mod = await import('@/middleware');
+    const mod = await import('@/proxy');
     expect(typeof mod.middleware).toBe('function');
   });
 
   it('matcher pattern does not exclude auth routes (ensures session refresh runs)', async () => {
-    const mod = await import('@/middleware');
+    const mod = await import('@/proxy');
     const pattern = mod.config.matcher[0];
 
     // Auth routes should NOT be excluded from the matcher

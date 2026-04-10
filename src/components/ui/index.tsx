@@ -656,12 +656,15 @@ interface SkeletonProps {
   width?: string | number;
   height?: string | number;
   rounded?: string;
+  /** Visual variant: 'text' | 'title' | 'circle' | 'rect'. 'circle' forces rounded-full. */
+  variant?: 'text' | 'title' | 'circle' | 'rect';
 }
 
-export function Skeleton({ className = '', width, height, rounded = 'rounded-lg' }: SkeletonProps) {
+export function Skeleton({ className = '', width, height, rounded = 'rounded-lg', variant }: SkeletonProps) {
+  const roundedClass = variant === 'circle' ? 'rounded-full' : rounded;
   return (
     <div
-      className={`animate-pulse ${rounded} ${className}`}
+      className={`animate-pulse ${roundedClass} ${className}`}
       style={{
         width,
         height,

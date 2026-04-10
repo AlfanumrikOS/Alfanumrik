@@ -24,7 +24,7 @@ describe('Auth Flow: session_refresh_on_request', () => {
   it('middleware exports a config with matcher for session refresh coverage', async () => {
     // Middleware applies to all non-static routes, ensuring session refresh runs on every request.
     // We verify the matcher pattern exists and covers dynamic routes.
-    const middlewareSrc = await import('@/middleware');
+    const middlewareSrc = await import('@/proxy');
     expect(middlewareSrc.config).toBeDefined();
     expect(middlewareSrc.config.matcher).toBeDefined();
     expect(Array.isArray(middlewareSrc.config.matcher)).toBe(true);
@@ -36,7 +36,7 @@ describe('Auth Flow: session_refresh_on_request', () => {
   });
 
   it('middleware function is exported and callable', async () => {
-    const middlewareSrc = await import('@/middleware');
+    const middlewareSrc = await import('@/proxy');
     expect(typeof middlewareSrc.middleware).toBe('function');
   });
 });
@@ -50,7 +50,7 @@ describe('Auth Flow: redirect_unauthenticated', () => {
   it('middleware defines PROTECTED_PREFIXES covering parent and billing routes', async () => {
     // The middleware source protects these route prefixes by checking for auth cookies.
     // We verify the middleware config matcher covers all routes (not just static).
-    const middlewareSrc = await import('@/middleware');
+    const middlewareSrc = await import('@/proxy');
     // The catch-all matcher ensures middleware runs on /dashboard, /quiz, /progress, etc.
     const pattern = middlewareSrc.config.matcher[0];
     // Pattern is a negative lookahead that only excludes static assets
