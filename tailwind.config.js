@@ -65,7 +65,17 @@ module.exports = {
         'sp-12': 'var(--space-12)',
         'sp-16': 'var(--space-16)',
       },
+      keyframes: {
+        // Spotlight beam entrance animation
+        spotlight: {
+          '0%':   { opacity: '0', transform: 'translate(-72%, -62%) scale(0.5)' },
+          '100%': { opacity: '1', transform: 'translate(-50%, -40%) scale(1)' },
+        },
+        // Keep existing keyframes from globals.css working via Tailwind
+      },
       animation: {
+        // Spline / Spotlight (Aceternity) — beam sweep-in
+        spotlight: 'spotlight 2s ease .75s 1 forwards',
         float: 'float 3s ease-in-out infinite',
         'scale-in': 'scale-in 0.3s cubic-bezier(0.34,1.56,0.64,1)',
         'slide-up': 'slide-up 0.4s ease-out',
