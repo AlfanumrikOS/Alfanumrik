@@ -97,7 +97,7 @@ const FAQS = [
   { q: 'Is it safe for my child?', qHi: 'क्या यह मेरे बच्चे के लिए सुरक्षित है?', a: 'Yes. We follow DPDPA compliance, encrypt all data, never show ads, and never sell personal information. Students under 13 require parental consent.', aHi: 'हाँ। हम DPDPA अनुपालन करते हैं, सारा डेटा एन्क्रिप्ट करते हैं, कभी विज्ञापन नहीं दिखाते, और कभी व्यक्तिगत जानकारी नहीं बेचते। 13 साल से कम उम्र के छात्रों के लिए माता-पिता की सहमति ज़रूरी है।' },
   { q: 'How do parents track progress?', qHi: 'माता-पिता प्रगति कैसे ट्रैक करते हैं?', a: 'Parents connect using a simple link code from their child\'s profile. You see clear weekly reports — what they studied, quiz scores, strengths, and areas that need attention.', aHi: 'माता-पिता बच्चे की प्रोफ़ाइल से एक सिंपल लिंक कोड से जुड़ते हैं। आपको स्पष्ट साप्ताहिक रिपोर्ट दिखती है — क्या पढ़ा, क्विज़ स्कोर, ताकत, और जिन क्षेत्रों पर ध्यान देना है।' },
   { q: 'Is Alfanumrik free?', qHi: 'क्या Alfanumrik मुफ्त है?', a: 'The free plan includes 5 study sessions and 5 quizzes per day. Starter, Pro, and Unlimited plans unlock more practice, subjects, and features.', aHi: 'फ्री प्लान में रोज़ 5 स्टडी सेशन और 5 क्विज़ शामिल हैं। Starter, Pro, और Unlimited प्लान से ज़्यादा प्रैक्टिस, विषय, और फ़ीचर्स मिलते हैं।' },
-  { q: 'Which boards and grades are supported?', qHi: 'कौन से बोर्ड और कक्षाएँ उपलब्ध हैं?', a: 'Currently CBSE Grades 6–12 with 16 subjects including Mathematics, Science, Physics, Chemistry, Biology, English, Hindi, and more.', aHi: 'फिलहाल CBSE कक्षा 6–12 में 16 विषय उपलब्ध हैं जिनमें गणित, विज्ञान, भौतिकी, रसायन विज्ञान, जीव विज्ञान, अंग्रेज़ी, हिन्दी, और बहुत कुछ शामिल है।' },
+  { q: 'Which boards and grades are supported?', qHi: 'कौन से बोर्ड और कक्षाएँ उपलब्ध हैं?', a: 'Currently CBSE Grades 6–12 with 11 subjects including Mathematics, Science, Physics, Chemistry, Biology, English, Hindi, Social Studies, and more — 542 chapters and 8,057+ questions across 640+ learning concepts.', aHi: 'फिलहाल CBSE कक्षा 6–12 में 11 विषय उपलब्ध हैं — गणित, विज्ञान, भौतिकी, रसायन, जीव विज्ञान, अंग्रेज़ी, हिन्दी, सामाजिक विज्ञान, और बहुत कुछ — 542 अध्याय और 8,057+ प्रश्न, 640+ शिक्षण कॉन्सेप्ट के साथ।' },
 ];
 
 function CTAButtons({ center = false }: { center?: boolean }) {
@@ -179,11 +179,13 @@ function WelcomeContent() {
 
           <CTAButtons center />
 
-          <div className="grid grid-cols-4 gap-3 sm:gap-8 max-w-md sm:max-w-none mx-auto mt-10">
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 sm:gap-6 max-w-sm sm:max-w-none mx-auto mt-10">
             {[
-              { value: '16', label: 'Subjects', labelHi: 'विषय' },
-              { value: '6–12', label: 'Grades', labelHi: 'कक्षाएँ' },
-              { value: 'हिन्दी+En', label: 'Bilingual', labelHi: 'द्विभाषी' },
+              { value: '11', label: 'Subjects', labelHi: '11 विषय' },
+              { value: '6–12', label: 'Grades', labelHi: '6–12 कक्षा' },
+              { value: '542', label: 'Chapters', labelHi: 'अध्याय' },
+              { value: '8,057+', label: 'Questions', labelHi: 'प्रश्न' },
+              { value: '640+', label: 'Concepts', labelHi: 'कॉन्सेप्ट' },
               { value: 'DPIIT', label: 'Recognized', labelHi: 'मान्यता प्राप्त' },
             ].map(s => (
               <div key={s.label} className="text-center">
@@ -641,7 +643,7 @@ function WelcomeContent() {
               </div>
               <ul className="space-y-2.5">
                 {[
-                  { en: 'AI Tutor (Foxy) — 16 subjects, Hindi + English', hi: 'AI ट्यूटर (Foxy) — 16 विषय, हिन्दी + अंग्रेज़ी' },
+                  { en: 'AI Tutor (Foxy) — 11 subjects, Hindi + English', hi: 'AI ट्यूटर (Foxy) — 11 विषय, हिन्दी + अंग्रेज़ी' },
                   { en: 'Adaptive quizzes with Bloom\'s taxonomy', hi: 'Bloom\'s टैक्सोनॉमी के साथ अडैप्टिव क्विज़' },
                   { en: 'Spaced repetition for revision', hi: 'रिवीज़न के लिए स्पेस्ड रिपिटिशन' },
                   { en: 'STEM Centre with 19 interactive simulations', hi: '19 इंटरैक्टिव सिमुलेशन के साथ STEM सेंटर' },
