@@ -564,10 +564,6 @@ export default function Dashboard() {
         {/* Smart "What to do now?" CTA — context-driven, single recommendation */}
         <QuickActions
           isHi={isHi}
-          dueCount={dueCount}
-          nextTopic={nextTopics[0]?.title ?? null}
-          streak={streak}
-          quizzesTaken={snapshot?.quizzes_taken ?? 0}
         />
 
         {/* Mini Leaderboard — competitive motivation, prominent for CBSE students */}
