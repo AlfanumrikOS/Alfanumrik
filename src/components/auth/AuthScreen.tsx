@@ -160,100 +160,34 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
       });
       if (authError) { setError(authError.message); setLoading(false); return; }
       if (authData.user) {
-        try {
-          let profileError: string | null = null;
+        // Profile creation happens server-side:
+        // 1. If email verification required: /auth/callback bootstraps the profile
+        // 2. If no verification: AuthContext.fetchUser() calls /api/auth/bootstrap
+        // We do NOT create profiles client-side to maintain zero-frontend-trusted auth.
 
-          if (roleTab === 'student') {
-            const { error: insErr } = await supabase.from('students').insert({
-              auth_user_id: authData.user.id,
-              name: name.trim(),
-              email: email.trim(),
-              grade: grade,
-              board,
-              preferred_language: 'en',
-              account_status: 'active',
-              onboarding_completed: true,
-            });
-            if (insErr) profileError = insErr.message;
-          } else if (roleTab === 'teacher') {
-            const { error: insErr } = await supabase.from('teachers').insert({
-              auth_user_id: authData.user.id,
-              name: name.trim(),
-              email: email.trim(),
-              school_name: schoolName.trim(),
-              subjects_taught: subjectsTaught,
-              grades_taught: gradesTaught,
-            });
-            if (insErr) profileError = insErr.message;
-          } else if (roleTab === 'parent') {
-            const { data: guardianData, error: insErr } = await supabase.from('guardians').insert({
-              auth_user_id: authData.user.id,
-              name: name.trim(),
-              email: email.trim(),
-              phone: phone.trim() || null,
-            }).select('id').single();
-            if (insErr) profileError = insErr.message;
-
-            if (linkCode.trim() && guardianData) {
-              await supabase.rpc('link_guardian_to_student_via_code', {
-                p_guardian_id: guardianData.id,
-                p_invite_code: linkCode.trim(),
-              });
-            }
-          } else if (roleTab === 'institution_admin') {
-            // School profile creation handled server-side in auth/callback
-            // after email verification — metadata already stored in user_metadata
+        const session = authData.session;
+        if (session) {
+          // No email verification required — user is immediately logged in
+          // Send welcome email (fire-and-forget)
+          const welcomePayload: Record<string, string> = { role: roleTab, name: name.trim(), email: email.trim() };
+          if (roleTab === 'student') { welcomePayload.grade = grade; welcomePayload.board = board; }
+          if (roleTab === 'teacher') { welcomePayload.school_name = schoolName.trim(); }
+          fetch(`${SUPABASE_URL}/functions/v1/send-welcome-email`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}`, 'apikey': SUPABASE_ANON_KEY },
+            body: JSON.stringify(welcomePayload),
+          }).catch(() => {});
+          setLoading(false);
+          onSuccess();
+        } else {
+          // Email confirmation required — show check-email screen
+          if (typeof window !== 'undefined') {
+            sessionStorage.setItem('alfanumrik_pending_email', email.trim());
           }
-
-          if (profileError) {
-            console.error(`[Signup] Profile insert failed for ${roleTab}:`, profileError);
-            // B2: Client-side insert failed — always try server-side bootstrap as fallback.
-            // Do NOT guard on authData.session — it is null when email confirmation is required,
-            // which is the most common production path. The bootstrap API reads auth from cookies.
-            try {
-              const bootstrapPayload: Record<string, unknown> = { role: roleTab, name: name.trim() };
-              if (roleTab === 'student') { bootstrapPayload.grade = grade; bootstrapPayload.board = board; }
-              if (roleTab === 'teacher') { bootstrapPayload.school_name = schoolName.trim(); bootstrapPayload.subjects_taught = subjectsTaught; bootstrapPayload.grades_taught = gradesTaught; }
-              if (roleTab === 'parent') { bootstrapPayload.phone = phone.trim() || null; bootstrapPayload.link_code = linkCode.trim() || null; }
-              if (roleTab === 'institution_admin') { bootstrapPayload.school_name = instSchoolName.trim(); bootstrapPayload.city = instCity.trim(); bootstrapPayload.state = instState.trim(); bootstrapPayload.board = instBoard; }
-
-              await fetch('/api/auth/bootstrap', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(bootstrapPayload),
-              });
-            } catch (bootstrapErr) {
-              console.error('[Signup] Bootstrap fallback also failed:', bootstrapErr);
-            }
-          }
-
-          const session = authData.session;
-          if (session) {
-            const welcomePayload: Record<string, string> = { role: roleTab, name: name.trim(), email: email.trim() };
-            if (roleTab === 'student') { welcomePayload.grade = grade; welcomePayload.board = board; }
-            if (roleTab === 'teacher') { welcomePayload.school_name = schoolName.trim(); }
-            fetch(`${SUPABASE_URL}/functions/v1/send-welcome-email`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}`, 'apikey': SUPABASE_ANON_KEY },
-              body: JSON.stringify(welcomePayload),
-            }).catch(() => {});
-            setLoading(false);
-            onSuccess();
-          } else {
-            // No session returned — email confirmation required
-            // User will receive a Mailgun-sent confirmation email
-            // B9: Persist pending email to sessionStorage so resend works after page refresh
-            if (typeof window !== 'undefined') {
-              sessionStorage.setItem('alfanumrik_pending_email', email.trim());
-            }
-            setPendingEmail(email.trim());
-            setMode('check-email');
-            setSuccess('');
-            setError('');
-            setLoading(false);
-          }
-        } catch (profileErr) {
-          console.error('[Signup] Profile creation block threw:', profileErr);
+          setPendingEmail(email.trim());
+          setMode('check-email');
+          setSuccess('');
+          setError('');
           setLoading(false);
         }
       }

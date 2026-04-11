@@ -6,7 +6,7 @@ import { Redis } from '@upstash/redis';
 // ⚠️ CRITICAL AUTH PATH — DO NOT MODIFY without testing login/signup/reset flows
 /* ═══════════════════════════════════════════════════════════════
  * PROXY — Security Hardening + Auth Session Refresh
- * Entry point: src/middleware.ts (re-exports this file for Next.js convention)
+ * Next.js 16 proxy — exported as both proxy (primary) and middleware (compat alias)
  *
  * Defense in depth. Every layer assumes the layer below might be
  * compromised.
@@ -26,22 +26,24 @@ const RATE_LIMIT_PARENT_MAX = 20; // 20 parent requests per minute per IP
 const RATE_LIMIT_ADMIN_MAX = 60;  // 60 requests per minute for /internal/admin/*
 
 // Distributed rate limiter via Upstash Redis (works across all Vercel instances)
+let redisClient: Redis | null = null;
 let redisRateLimiter: Ratelimit | null = null;
 let redisParentLimiter: Ratelimit | null = null;
 let redisAdminLimiter: Ratelimit | null = null;
 
 try {
   if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
-    const redis = new Redis({
+    redisClient = new Redis({
       url: process.env.UPSTASH_REDIS_REST_URL,
       token: process.env.UPSTASH_REDIS_REST_TOKEN,
     });
-    redisRateLimiter = new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(RATE_LIMIT_MAX, '1 m'), prefix: 'rl:general' });
-    redisParentLimiter = new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(RATE_LIMIT_PARENT_MAX, '1 m'), prefix: 'rl:parent' });
-    redisAdminLimiter = new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(RATE_LIMIT_ADMIN_MAX, '1 m'), prefix: 'rl:admin' });
+    redisRateLimiter = new Ratelimit({ redis: redisClient, limiter: Ratelimit.slidingWindow(RATE_LIMIT_MAX, '1 m'), prefix: 'rl:general' });
+    redisParentLimiter = new Ratelimit({ redis: redisClient, limiter: Ratelimit.slidingWindow(RATE_LIMIT_PARENT_MAX, '1 m'), prefix: 'rl:parent' });
+    redisAdminLimiter = new Ratelimit({ redis: redisClient, limiter: Ratelimit.slidingWindow(RATE_LIMIT_ADMIN_MAX, '1 m'), prefix: 'rl:admin' });
   }
 } catch {
   // Redis initialization failed (invalid URL, etc.) — fall back to in-memory
+  redisClient = null;
   redisRateLimiter = null;
   redisParentLimiter = null;
   redisAdminLimiter = null;
@@ -90,6 +92,88 @@ async function checkRateLimit(key: string, max: number, type: 'general' | 'paren
     }
   }
   return checkRateLimitLocal(key, max);
+}
+
+// ── Session validation cache (5-minute TTL, prevents DB hit on every request) ──
+const SESSION_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const _sessionCache = new Map<string, { valid: boolean; checkedAt: number }>();
+const SESSION_CACHE_MAX = 5000;
+
+/**
+ * Validate a session ID against the user_active_sessions table.
+ * Uses a 3-tier cache: in-memory → Redis → Supabase REST API.
+ * FAIL-OPEN: returns null (allow through) on any error. Only returns false
+ * when the session is confirmed revoked (is_active = false).
+ */
+async function validateSessionCached(sessionId: string): Promise<boolean | null> {
+  // Tier 1: In-memory cache (same Vercel instance)
+  const cached = _sessionCache.get(sessionId);
+  if (cached && Date.now() - cached.checkedAt < SESSION_CACHE_TTL) {
+    return cached.valid;
+  }
+
+  // Tier 2: Redis cache (shared across Vercel instances)
+  if (redisClient) {
+    try {
+      const redisKey = `sess:valid:${sessionId}`;
+      const redisVal = await redisClient.get<string>(redisKey);
+      if (redisVal !== null && redisVal !== undefined) {
+        const valid = redisVal === '1';
+        _sessionCache.set(sessionId, { valid, checkedAt: Date.now() });
+        return valid;
+      }
+    } catch { /* Redis unavailable, fall through to Supabase */ }
+  }
+
+  // Tier 3: Supabase REST API (source of truth)
+  try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!supabaseUrl || !serviceKey) return null; // Can't validate, allow through
+
+    const res = await fetch(
+      `${supabaseUrl}/rest/v1/user_active_sessions?id=eq.${encodeURIComponent(sessionId)}&select=is_active&limit=1`,
+      {
+        headers: {
+          'apikey': serviceKey,
+          'Authorization': `Bearer ${serviceKey}`,
+        },
+      }
+    );
+
+    if (!res.ok) return null; // DB error, allow through
+    const rows = await res.json();
+
+    if (rows.length === 0) {
+      // Session ID not found — might be stale cookie, allow through but don't cache
+      return null;
+    }
+
+    const valid = rows[0].is_active === true;
+
+    // Cache the result in memory
+    _sessionCache.set(sessionId, { valid, checkedAt: Date.now() });
+
+    // Evict oldest entries if cache is too large
+    if (_sessionCache.size > SESSION_CACHE_MAX) {
+      const entries = [..._sessionCache.entries()];
+      entries.sort((a, b) => a[1].checkedAt - b[1].checkedAt);
+      for (let i = 0; i < entries.length / 2; i++) {
+        _sessionCache.delete(entries[i][0]);
+      }
+    }
+
+    // Also cache in Redis for cross-instance sharing (5 min TTL)
+    if (redisClient) {
+      try {
+        await redisClient.set(`sess:valid:${sessionId}`, valid ? '1' : '0', { ex: 300 });
+      } catch { /* Redis unavailable, in-memory cache is sufficient */ }
+    }
+
+    return valid;
+  } catch {
+    return null; // Network error, allow through
+  }
 }
 
 export async function proxy(request: NextRequest) {
@@ -193,6 +277,38 @@ export async function proxy(request: NextRequest) {
     });
     // Refresh the session — this extends the cookie expiry
     await supabase.auth.getUser();
+  }
+
+  // ── Layer 0.8: Session Validation (device limit enforcement) ──
+  // Check if the user's session has been revoked (e.g., exceeded 2-device limit).
+  // FAIL-OPEN: only blocks when we KNOW the session is revoked.
+  const alfanumrikSid = request.cookies.get('alfanumrik_sid')?.value;
+  const hasSessionForValidation = request.cookies.getAll().some(c => /^sb-.+-auth-token/.test(c.name));
+  if (alfanumrikSid && hasSessionForValidation) {
+    const isValid = await validateSessionCached(alfanumrikSid);
+    if (isValid === false) {
+      // Session was revoked — force logout
+      const logoutUrl = new URL('/login?error=session_revoked', request.url);
+      const logoutRes = NextResponse.redirect(logoutUrl);
+      // Clear the session cookie
+      logoutRes.cookies.delete('alfanumrik_sid');
+      // Clear Supabase auth cookies to fully log out
+      request.cookies.getAll().forEach(c => {
+        if (/^sb-.+-auth-token/.test(c.name)) {
+          logoutRes.cookies.delete(c.name);
+        }
+      });
+      return logoutRes;
+    }
+  }
+
+  // ── Layer 0.9: Student route protection (require Supabase session) ──
+  const STUDENT_PROTECTED = ['/dashboard', '/quiz', '/foxy', '/progress', '/profile', '/learn', '/leaderboard', '/exams', '/simulations', '/challenges', '/billing'];
+  if (STUDENT_PROTECTED.some(r => path === r || path.startsWith(r + '/'))) {
+    const hasAuth = request.cookies.getAll().some(c => /^sb-.+-auth-token/.test(c.name));
+    if (!hasAuth) {
+      return NextResponse.redirect(new URL('/login', request.url));
+    }
   }
 
   // ── Layer 2: Block common bot/scanner paths early ──

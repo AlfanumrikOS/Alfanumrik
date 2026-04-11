@@ -330,39 +330,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             console.warn('[Auth] Bootstrap via API failed, using direct insert fallback:', bootstrapErr);
           }
 
-          // Final direct-insert fallback (if bootstrap API is unreachable)
+          // If bootstrap failed, set role from metadata so UI shows something
+          // (user will be prompted to retry on next page load)
           if (!bootstrapSucceeded) {
-            try {
-              if (!metaRole || metaRole === 'student') {
-                const { data: newStudent } = await supabase.from('students').insert({
-                  auth_user_id: user.id, name: metaName, email: user.email,
-                  // B1: Store bare grade, never "Grade X" prefix
-                  grade: metaGrade.replace(/^Grade\s*/i, ''),
-                  board: metaBoard, preferred_language: 'en', account_status: 'active',
-                  onboarding_completed: false,
-                }).select('*').single();
-                if (newStudent) { setStudent(newStudent as Student); setRoles(['student']); setActiveRoleState('student'); }
-              } else if (metaRole === 'teacher') {
-                const { data: newTeacher } = await supabase.from('teachers').insert({
-                  auth_user_id: user.id, name: metaName, email: user.email || '',
-                }).select('id, name, school_name, subjects_taught, grades_taught, email, phone').single();
-                if (newTeacher) { setTeacher(newTeacher as TeacherProfile); setRoles(['teacher']); setActiveRoleState('teacher'); }
-              } else if (metaRole === 'parent' || metaRole === 'guardian') {
-                const { data: newGuardian } = await supabase.from('guardians').insert({
-                  auth_user_id: user.id, name: metaName, email: user.email,
-                }).select('id, name, email, phone').single();
-                if (newGuardian) { setGuardian(newGuardian as GuardianProfile); setRoles(['guardian']); setActiveRoleState('guardian'); }
-              }
-            } catch (profileErr) {
-              console.warn('[Auth] Direct insert fallback also failed:', profileErr);
-            }
-
-            // Last resort: set role from metadata so UI isn't broken
-            if (roles.length === 0) {
-              const fallbackRole: UserRole = metaRole === 'teacher' ? 'teacher' : (metaRole === 'parent' || metaRole === 'guardian') ? 'guardian' : 'student';
-              setRoles([fallbackRole]);
-              setActiveRoleState(fallbackRole);
-            }
+            console.warn('[Auth] Bootstrap API unreachable — will retry on next load');
+            const fallbackRole: UserRole = metaRole === 'teacher' ? 'teacher'
+              : (metaRole === 'parent' || metaRole === 'guardian') ? 'guardian'
+              : 'student';
+            setRoles([fallbackRole]);
+            setActiveRoleState(fallbackRole);
           }
         }
       }
@@ -378,8 +354,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setRoles([fallbackRole]);
           setActiveRoleState(fallbackRole);
         } catch {
-          setRoles(['student']);
-          setActiveRoleState('student');
+          // Don't assume student role if we can't verify anything
+          setRoles([]);
+          setActiveRoleState('none');
         }
       }
     }
@@ -393,6 +370,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [student]);
 
   const signOut = useCallback(async () => {
+    // Deregister device session
+    try {
+      await fetch('/api/auth/session', { method: 'DELETE' });
+    } catch { /* best-effort */ }
     await supabase.auth.signOut();
     // Clear SWR cache to prevent data leakage between accounts on shared devices
     clearAllCache();
@@ -442,7 +423,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setGuardian(null);
         setRoles([]);
         setActiveRoleState('none');
-      } else if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') {
+      } else if (event === 'TOKEN_REFRESHED') {
+        fetchUser();
+      } else if (event === 'SIGNED_IN') {
+        // Register device session for 2-device limit enforcement
+        fetch('/api/auth/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ device_label: navigator.userAgent }),
+        }).catch(() => {}); // Best-effort, non-blocking
         fetchUser();
       }
     });

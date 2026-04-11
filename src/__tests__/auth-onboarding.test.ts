@@ -444,8 +444,8 @@ describe('POST /api/auth/bootstrap — Validation', () => {
 // ═══════════════════════════════════════════════════════════════
 
 describe('RBAC Constants — Role Architecture', () => {
-  it('VALID_ROLES contains exactly student, teacher, parent', () => {
-    expect([...VALID_ROLES]).toEqual(['student', 'teacher', 'parent']);
+  it('VALID_ROLES contains exactly student, teacher, parent, institution_admin', () => {
+    expect([...VALID_ROLES]).toEqual(['student', 'teacher', 'parent', 'institution_admin']);
   });
 
   it('ROLE_DESTINATIONS maps all VALID_ROLES', () => {

@@ -38,12 +38,12 @@ import {
 // ── VALID_ROLES ──────────────────────────────────────────────────
 
 describe('VALID_ROLES', () => {
-  it('has exactly student, teacher, parent', () => {
-    expect([...VALID_ROLES]).toEqual(['student', 'teacher', 'parent']);
+  it('has exactly student, teacher, parent, institution_admin', () => {
+    expect([...VALID_ROLES]).toEqual(['student', 'teacher', 'parent', 'institution_admin']);
   });
 
-  it('has length 3', () => {
-    expect(VALID_ROLES).toHaveLength(3);
+  it('has length 4', () => {
+    expect(VALID_ROLES).toHaveLength(4);
   });
 
   it('is a tuple with as const (readonly at compile time)', () => {
@@ -123,11 +123,12 @@ describe('getRoleDestination', () => {
 // ── ROLE_DESTINATIONS ────────────────────────────────────────────
 
 describe('ROLE_DESTINATIONS', () => {
-  it('maps all three roles to their destinations', () => {
+  it('maps all four roles to their destinations', () => {
     expect(ROLE_DESTINATIONS).toEqual({
       student: '/dashboard',
       teacher: '/teacher',
       parent: '/parent',
+      institution_admin: '/school-admin',
     });
   });
 });
