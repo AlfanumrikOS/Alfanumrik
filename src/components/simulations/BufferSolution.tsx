@@ -78,7 +78,7 @@ export default function BufferSolution() {
     ctx.stroke();
 
     // Buffer line
-    ctx.beginPath(); ctx.strokeStyle = 'var(--orange)' || '#f97316'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.strokeStyle = '#f97316'; ctx.lineWidth = 2.5;
     for (let v = -10; v <= 10; v += 0.2) {
       const a2 = Math.max(0.001, initA - v);
       const ha2 = Math.max(0.001, initHA + v);
@@ -91,7 +91,7 @@ export default function BufferSolution() {
     // Current point
     const cx = toX(addedMMol), cy = toY(bufferPH);
     ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI * 2);
-    ctx.fillStyle = 'var(--orange)' || '#f97316'; ctx.fill();
+    ctx.fillStyle = '#f97316'; ctx.fill();
 
     // Legend
     ctx.fillStyle = '#93c5fd'; ctx.fillRect(pad.l + 5, pad.t + 5, 14, 3);
