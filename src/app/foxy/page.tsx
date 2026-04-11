@@ -143,6 +143,9 @@ async function fetchConversationById(sessionId: string) {
   return data;
 }
 
+// Calls the NEW Next.js API route (src/app/api/foxy/route.ts), which uses
+// the src/lib/ai/ orchestration layer. The legacy foxy-tutor Edge Function
+// (supabase/functions/foxy-tutor/) is deprecated — do not revert to it.
 async function callFoxyTutor(params: Record<string, any>) {
   try {
     // Get the current access token — this is the primary auth mechanism.
