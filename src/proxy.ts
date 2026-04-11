@@ -3,9 +3,10 @@ import { createServerClient } from '@supabase/ssr';
 import { Ratelimit } from '@upstash/ratelimit';
 import { Redis } from '@upstash/redis';
 
+// ⚠️ CRITICAL AUTH PATH — DO NOT MODIFY without testing login/signup/reset flows
 /* ═══════════════════════════════════════════════════════════════
  * PROXY — Security Hardening + Auth Session Refresh
- * (renamed from middleware.ts → proxy.ts for Next.js 16 convention)
+ * Entry point: src/middleware.ts (re-exports this file for Next.js convention)
  *
  * Defense in depth. Every layer assumes the layer below might be
  * compromised.

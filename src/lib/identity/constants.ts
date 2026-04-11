@@ -1,3 +1,4 @@
+// ⚠️ CRITICAL AUTH PATH — DO NOT MODIFY without testing login/signup/reset flows
 /**
  * Identity System Constants
  *

@@ -1,5 +1,6 @@
 'use client';
 
+// ⚠️ CRITICAL AUTH PATH — DO NOT MODIFY without testing login/signup/reset flows
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { supabase, getStudentSnapshot } from './supabase';
 import { clearAllCache } from './swr';

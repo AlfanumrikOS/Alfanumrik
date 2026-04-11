@@ -1,3 +1,4 @@
+// ⚠️ CRITICAL AUTH PATH — DO NOT MODIFY without testing login/signup/reset flows
 /**
  * Auth Callback Route — The Heart of Email-Based Auth
  *

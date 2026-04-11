@@ -1,5 +1,6 @@
 'use client';
 
+// ⚠️ CRITICAL AUTH PATH — DO NOT MODIFY without testing login/signup/reset flows
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { SUPABASE_URL, SUPABASE_ANON_KEY, SUBJECT_META } from '@/lib/constants';
