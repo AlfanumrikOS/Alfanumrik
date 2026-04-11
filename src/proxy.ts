@@ -313,14 +313,11 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  // ── Layer 0.9: Student route protection (require Supabase session) ──
-  const STUDENT_PROTECTED = ['/dashboard', '/quiz', '/foxy', '/progress', '/profile', '/learn', '/leaderboard', '/exams', '/simulations', '/challenges', '/billing'];
-  if (STUDENT_PROTECTED.some(r => path === r || path.startsWith(r + '/'))) {
-    const hasAuth = request.cookies.getAll().some(c => /^sb-.+-auth-token/.test(c.name));
-    if (!hasAuth) {
-      return NextResponse.redirect(new URL('/login', request.url));
-    }
-  }
+  // ── Layer 0.9: REMOVED ──
+  // Route protection is handled client-side by AuthContext + RLS at DB level.
+  // Cookie-based checks here broke signInWithPassword() flow because that method
+  // stores tokens in localStorage, not cookies. DO NOT re-add cookie-based
+  // route protection without first migrating the browser client to @supabase/ssr.
 
   // ── Layer 2: Block common bot/scanner paths early ──
   if (
