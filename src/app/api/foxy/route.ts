@@ -19,6 +19,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest, logAudit } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { isFeatureEnabled } from '@/lib/feature-flags';
+import { classifyIntent, routeIntent } from '@/lib/ai';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -468,6 +470,106 @@ export async function POST(request: NextRequest): Promise<Response> {
       500,
     );
   }
+
+  // 6b. Intent Router (feature-flagged)
+  // When enabled, classifies the student's intent and routes through the
+  // unified AI layer (src/lib/ai/) for structured workflows, output validation,
+  // and tracing. Falls back to the existing inline flow on any error.
+  const useIntentRouter = await isFeatureEnabled('ai_intent_router', {
+    role: 'student',
+    userId: auth.userId!,
+  });
+
+  if (useIntentRouter) {
+    try {
+      const history = await loadHistory(resolvedSessionId);
+
+      const classification = await classifyIntent(message, subject, grade, mode);
+      logger.info('foxy_intent_classified', {
+        intent: classification.intent,
+        confidence: classification.confidence,
+        studentId,
+      });
+
+      const result = await routeIntent(classification.intent, message, {
+        subject,
+        grade,
+        board,
+        chapter,
+        mode,
+        history,
+        academicGoal,
+        studentId,
+        sessionId: resolvedSessionId,
+      });
+
+      // Persist conversation turns
+      const now = new Date().toISOString();
+      const sources = result.sources.map((c) => ({
+        chunk_id: c.id,
+        subject: c.subject,
+        chapter: c.chapter,
+        page_number: c.pageNumber,
+        similarity: c.similarity,
+        content_preview: c.content.slice(0, 150),
+      }));
+
+      await supabaseAdmin.from('foxy_chat_messages').insert([
+        {
+          session_id: resolvedSessionId,
+          student_id: studentId,
+          role: 'user',
+          content: message,
+          sources: null,
+          tokens_used: null,
+          created_at: now,
+        },
+        {
+          session_id: resolvedSessionId,
+          student_id: studentId,
+          role: 'assistant',
+          content: result.response,
+          sources: sources.length > 0 ? sources : null,
+          tokens_used: result.tokensUsed,
+          created_at: new Date(Date.now() + 1).toISOString(),
+        },
+      ]);
+
+      logAudit(auth.userId!, {
+        action: 'foxy.chat',
+        resourceType: 'foxy_sessions',
+        resourceId: resolvedSessionId,
+        details: {
+          subject, grade, chapter, mode,
+          intent: classification.intent,
+          confidence: classification.confidence,
+          tokensUsed: result.tokensUsed,
+          model: result.model,
+          traceId: result.traceId,
+          ragChunksFound: result.sources.length,
+          router: true,
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        response: result.response,
+        sources: sources,
+        sessionId: resolvedSessionId,
+        quotaRemaining: remaining,
+        tokensUsed: result.tokensUsed,
+        intent: classification.intent,
+      });
+    } catch (routerErr) {
+      // Intent router failed — fall through to existing inline flow
+      logger.warn('foxy_intent_router_fallback', {
+        error: routerErr instanceof Error ? routerErr.message : String(routerErr),
+        studentId,
+      });
+    }
+  }
+
+  // ─── Existing inline flow (default, or fallback from intent router) ────────
 
   // 7. Generate Voyage embedding for the user's message
   const embeddingQuery = `${subject} grade ${grade}${chapter ? ` chapter ${chapter}` : ''}: ${message}`;
