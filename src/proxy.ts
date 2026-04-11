@@ -1,9 +1,20 @@
+/**
+ * ⚠️ CRITICAL AUTH PATH
+ * This file is part of the core authentication system.
+ * Changes here WILL break login/signup/verify/reset for ALL users.
+ *
+ * Before modifying:
+ * 1. Run: npm run test -- --grep "auth"
+ * 2. Run: node scripts/auth-guard.js
+ * 3. Test ALL flows manually: signup, login, verify email, reset password, logout
+ * 4. Verify on Chrome: /login renders, /dashboard redirects to /login when unauthenticated
+ *
+ * DO NOT: create middleware.ts, add client-side profile inserts, remove role tabs
+ */
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { Ratelimit } from '@upstash/ratelimit';
 import { Redis } from '@upstash/redis';
-
-// ⚠️ CRITICAL AUTH PATH — DO NOT MODIFY without testing login/signup/reset flows
 /* ═══════════════════════════════════════════════════════════════
  * PROXY — Security Hardening + Auth Session Refresh
  * Next.js 16 proxy — exported as both proxy (primary) and middleware (compat alias)

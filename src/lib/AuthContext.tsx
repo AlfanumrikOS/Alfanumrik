@@ -1,6 +1,18 @@
 'use client';
 
-// ⚠️ CRITICAL AUTH PATH — DO NOT MODIFY without testing login/signup/reset flows
+/**
+ * ⚠️ CRITICAL AUTH PATH
+ * This file is part of the core authentication system.
+ * Changes here WILL break login/signup/verify/reset for ALL users.
+ *
+ * Before modifying:
+ * 1. Run: npm run test -- --grep "auth"
+ * 2. Run: node scripts/auth-guard.js
+ * 3. Test ALL flows manually: signup, login, verify email, reset password, logout
+ * 4. Verify on Chrome: /login renders, /dashboard redirects to /login when unauthenticated
+ *
+ * DO NOT: create middleware.ts, add client-side profile inserts, remove role tabs
+ */
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { supabase, getStudentSnapshot } from './supabase';
 import { clearAllCache } from './swr';
