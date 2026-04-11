@@ -86,61 +86,105 @@ async function fetchMastery(studentId: string, subject: string): Promise<any[]> 
   return data ?? [];
 }
 
-async function fetchChatHistory(studentId: string) {
-  const { data } = await supabase.from('chat_sessions').select('id, messages').eq('student_id', studentId).order('updated_at', { ascending: false }).limit(1);
-  if (data && data[0]?.messages?.length > 0) return data[0];
-  return null;
+async function fetchRecentSession(
+  studentId: string,
+  subject: string
+): Promise<{ sessionId: string; messages: ChatMessage[] } | null> {
+  const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  const { data: sessions } = await supabase
+    .from('foxy_sessions')
+    .select('id')
+    .eq('student_id', studentId)
+    .eq('subject', subject)
+    .gte('last_active_at', cutoff)
+    .order('last_active_at', { ascending: false })
+    .limit(1);
+  if (!sessions || sessions.length === 0) return null;
+  const sessionId = sessions[0].id;
+  const { data: msgs } = await supabase
+    .from('foxy_chat_messages')
+    .select('role, content, created_at')
+    .eq('session_id', sessionId)
+    .order('created_at', { ascending: true });
+  if (!msgs || msgs.length === 0) return null;
+  return {
+    sessionId,
+    messages: msgs.map((m: any, i: number) => ({
+      id: Date.now() + i,
+      role: (m.role === 'assistant' ? 'tutor' : 'student') as 'tutor' | 'student',
+      content: m.content,
+      timestamp: m.created_at || new Date().toISOString(),
+    })),
+  };
 }
 
 async function fetchAllConversations(studentId: string): Promise<ConversationSummary[]> {
-  const { data } = await supabase
-    .from('chat_sessions')
-    .select('id, messages, updated_at, subject')
+  // Step 1: get recent sessions ordered by activity
+  const { data: sessions } = await supabase
+    .from('foxy_sessions')
+    .select('id, subject, chapter, last_active_at')
     .eq('student_id', studentId)
-    .order('updated_at', { ascending: false })
-    .limit(50);
-  if (!data) return [];
-  return data
-    .filter((s: any) => s.messages && s.messages.length > 0)
+    .order('last_active_at', { ascending: false })
+    .limit(30);
+  if (!sessions || sessions.length === 0) return [];
+
+  // Step 2: batch-fetch messages for all sessions in a single query
+  const sessionIds = sessions.map((s: any) => s.id);
+  const { data: allMsgs } = await supabase
+    .from('foxy_chat_messages')
+    .select('session_id, role, content, created_at')
+    .in('session_id', sessionIds)
+    .order('created_at', { ascending: true });
+
+  // Step 3: group messages by session
+  const msgsBySession: Record<string, Array<{ role: string; content: string; created_at: string }>> = {};
+  for (const msg of (allMsgs ?? [])) {
+    if (!msgsBySession[(msg as any).session_id]) msgsBySession[(msg as any).session_id] = [];
+    msgsBySession[(msg as any).session_id].push(msg as any);
+  }
+
+  // Step 4: build summaries for sessions that have at least 1 message
+  return sessions
+    .filter((s: any) => msgsBySession[s.id]?.length > 0)
     .map((s: any) => {
-      const msgs = s.messages || [];
-      const subject = s.subject || 'science';
+      const msgs = msgsBySession[s.id] || [];
       const lastMsg = msgs[msgs.length - 1];
-      // Extract chapter info from first user message if it mentions a chapter
-      let chapter: string | undefined;
-      let chapterNumber: number | undefined;
-      const firstUserMsg = msgs.find((m: any) => m.role === 'student' || m.role === 'user');
-      if (firstUserMsg?.content) {
-        const chMatch = firstUserMsg.content.match(/\(Chapter\s+(\d+)\)/i);
-        if (chMatch) {
-          chapterNumber = parseInt(chMatch[1], 10);
-        }
-        const aboutMatch = firstUserMsg.content.match(/(?:Teach me about|मुझे सिखाओ):\s*(.+?)(?:\s*\(Chapter|$)/i);
-        if (aboutMatch) {
-          chapter = aboutMatch[1].trim();
-        }
-      }
       return {
         id: s.id,
-        title: generateTitle(msgs, subject),
-        subject,
-        chapter,
-        chapterNumber,
+        title: generateTitle(msgs, s.subject),
+        subject: s.subject || 'science',
+        chapter: s.chapter || undefined,
+        chapterNumber: undefined,
         lastMessage: lastMsg?.content?.substring(0, 80) || '',
         messageCount: msgs.length,
-        updatedAt: s.updated_at || new Date().toISOString(),
+        updatedAt: s.last_active_at || new Date().toISOString(),
         isActive: false,
       };
     });
 }
 
 async function fetchConversationById(sessionId: string) {
-  const { data } = await supabase
-    .from('chat_sessions')
-    .select('id, messages, subject')
+  const { data: session } = await supabase
+    .from('foxy_sessions')
+    .select('id, subject, chapter, mode')
     .eq('id', sessionId)
     .single();
-  return data;
+  if (!session) return null;
+  const { data: messages } = await supabase
+    .from('foxy_chat_messages')
+    .select('role, content, created_at')
+    .eq('session_id', sessionId)
+    .order('created_at', { ascending: true });
+  return {
+    id: session.id,
+    subject: session.subject,
+    chapter: session.chapter,
+    messages: (messages ?? []).map((m: any) => ({
+      role: m.role,           // 'user' | 'assistant'
+      content: m.content,
+      ts: m.created_at,
+    })),
+  };
 }
 
 // Calls the NEW Next.js API route (src/app/api/foxy/route.ts), which uses
@@ -349,13 +393,14 @@ export default function FoxyPage() {
     const grade = (authStudent.grade || '9').replace('Grade ', ''); setStudentGrade(grade);
     setLanguage(authStudent.preferred_language || 'en');
     const saved = typeof window !== 'undefined' ? localStorage.getItem('alfanumrik_subject') : null;
-    setActiveSubject(saved || authStudent.preferred_subject || 'science');
+    const subjectKey = saved || authStudent.preferred_subject || 'science';
+    setActiveSubject(subjectKey);
     setStudentSubs((authStudent.selected_subjects && authStudent.selected_subjects.length > 1) ? (authStudent.selected_subjects as string[]) : getGradeSubjects(grade));
     (async () => {
-      const hist = await fetchChatHistory(authStudent.id);
-      if (hist) {
-        setChatSessionId(hist.id);
-        setMessages(hist.messages.map((m: any, i: number) => ({ id: Date.now() + i, role: m.role === 'assistant' ? 'tutor' as const : m.role, content: m.content, timestamp: m.ts || new Date().toISOString(), xp: m.meta?.xp || 0 })));
+      const recent = await fetchRecentSession(authStudent.id, subjectKey);
+      if (recent) {
+        setChatSessionId(recent.sessionId);
+        setMessages(recent.messages);
       }
     })();
   }, [authStudent]);
@@ -383,9 +428,9 @@ export default function FoxyPage() {
     setMessages(
       (session.messages || []).map((m: any, i: number) => ({
         id: Date.now() + i,
-        role: m.role === 'assistant' ? ('tutor' as const) : m.role,
+        role: (m.role === 'assistant' ? 'tutor' : 'student') as 'tutor' | 'student',
         content: m.content,
-        timestamp: m.ts || new Date().toISOString(),
+        timestamp: m.ts || m.created_at || new Date().toISOString(),
         xp: m.meta?.xp || 0,
       }))
     );
@@ -492,8 +537,10 @@ export default function FoxyPage() {
     setMessages((p: ChatMessage[]) => [...p, { id: Date.now(), role: 'student', content: text, timestamp: new Date().toISOString() }]);
     setLoading(true); setFoxyState('thinking'); setShowTopicSheet(false);
     try {
-      const chapCtx = selectedChapters.length > 0 ? topics.filter((t: any) => selectedChapters.includes(t.id)).map((t: any) => `Ch ${t.chapter_number}: ${t.title}`).join(', ') : null;
-      const resp = await callFoxyTutor({ message: text, student_id: student?.id || '', student_name: student?.name || 'Student', grade: studentGrade, subject: activeSubject, language, mode: sessionMode, topic_id: activeTopic?.id || null, topic_title: activeTopic?.title || null, session_id: chatSessionId, selected_chapters: chapCtx });
+      const selectedChapterTopics = selectedChapters.length > 0 ? topics.filter((t: any) => selectedChapters.includes(t.id)) : [];
+      const chapCtx = selectedChapterTopics.length > 0 ? selectedChapterTopics.map((t: any) => `Ch ${t.chapter_number}: ${t.title}`).join(', ') : null;
+      const chapterForSession = activeTopic?.title || (selectedChapterTopics.length === 1 ? selectedChapterTopics[0].title : null);
+      const resp = await callFoxyTutor({ message: text, student_id: student?.id || '', student_name: student?.name || 'Student', grade: studentGrade, subject: activeSubject, language, mode: sessionMode, topic_id: activeTopic?.id || null, topic_title: activeTopic?.title || null, chapter: chapterForSession, session_id: chatSessionId, selected_chapters: chapCtx });
       // Server confirmed daily limit reached — show UpgradeModal
       if (resp.limitReached) {
         setMessages((p: ChatMessage[]) => [...p, { id: Date.now() + 1, role: 'tutor', content: resp.reply, timestamp: new Date().toISOString() }]);
@@ -584,11 +631,20 @@ export default function FoxyPage() {
   }, [reportModal, student, chatSessionId, reportReason, reportCorrection, activeSubject, studentGrade, activeTopic, sessionMode, language]);
 
   const switchSubject = (key: string) => {
-    setActiveSubject(key); setActiveTopic(null); setSelectedChapters([]); setShowSubjectDD(false); setMessages([]); setChatSessionId(null); setCollapsedAbove(null);
+    setActiveSubject(key); setActiveTopic(null); setSelectedChapters([]); setShowSubjectDD(false); setCollapsedAbove(null);
     if (typeof window !== 'undefined') localStorage.setItem('alfanumrik_subject', key);
-    // Auto-set language for language subjects
     if (key === 'hindi') setLanguage('hi');
     else if (key === 'english') setLanguage('en');
+    // Try to resume most recent active session for this subject (within 30 min)
+    setMessages([]); setChatSessionId(null);
+    if (student?.id) {
+      fetchRecentSession(student.id, key).then(result => {
+        if (result) {
+          setChatSessionId(result.sessionId);
+          setMessages(result.messages);
+        }
+      });
+    }
   };
 
   // Start a fresh topic session — delegates to handleNewConversation
