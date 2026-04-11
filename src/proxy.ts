@@ -153,6 +153,18 @@ export async function proxy(request: NextRequest) {
     }
   }
 
+  // ── Layer 0.7: School admin portal — require Supabase session ──
+  // Role verification (institution_admin check) is performed client-side via
+  // school_admins table query (RLS-enforced). Middleware only blocks unauthenticated access.
+  if (path.startsWith('/school-admin')) {
+    const hasSession = request.cookies.getAll().some(c => /^sb-.+-auth-token/.test(c.name));
+    if (!hasSession) {
+      const loginUrl = new URL('/login', request.url);
+      loginUrl.searchParams.set('next', path);
+      return NextResponse.redirect(loginUrl);
+    }
+  }
+
   // ── Layer 0: Supabase session refresh ──
   // This keeps the auth cookie fresh on every request.
   // Required for the PKCE email flow (signup confirm, password reset).

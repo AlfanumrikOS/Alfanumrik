@@ -58,7 +58,7 @@ export const FOXY_MODES = [
 ] as const;
 
 /* ─── Role System ─── */
-export type UserRole = 'student' | 'teacher' | 'guardian' | 'none';
+export type UserRole = 'student' | 'teacher' | 'guardian' | 'institution_admin' | 'none';
 
 export const ROLE_CONFIG = {
   student: {
@@ -101,6 +101,17 @@ export const ROLE_CONFIG = {
       { href: '/parent/children', icon: '📋', label: 'Exams', labelHi: 'परीक्षा' },
       { href: '/parent/support', icon: '💬', label: 'Support', labelHi: 'सहायता' },
       { href: '/parent/profile', icon: '👤', label: 'Profile', labelHi: 'प्रोफ़ाइल' },
+    ],
+  },
+  institution_admin: {
+    label: 'School Admin', labelHi: 'स्कूल व्यवस्थापक', icon: '🏫', color: '#7C3AED',
+    homePath: '/school-admin',
+    nav: [
+      { href: '/school-admin', icon: '🏠', label: 'Dashboard', labelHi: 'डैशबोर्ड' },
+      { href: '/school-admin/teachers', icon: '👩‍🏫', label: 'Teachers', labelHi: 'शिक्षक' },
+      { href: '/school-admin/students', icon: '👩‍🎓', label: 'Students', labelHi: 'छात्र' },
+      { href: '/school-admin/classes', icon: '🏫', label: 'Classes', labelHi: 'कक्षाएं' },
+      { href: '/school-admin/invite-codes', icon: '🔑', label: 'Invite Codes', labelHi: 'कोड' },
     ],
   },
   none: {

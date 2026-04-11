@@ -11,7 +11,7 @@
 
 // ── Roles ────────────────────────────────────────────────────
 
-export const VALID_ROLES = ['student', 'teacher', 'parent'] as const;
+export const VALID_ROLES = ['student', 'teacher', 'parent', 'institution_admin'] as const;
 export type ValidRole = typeof VALID_ROLES[number];
 
 export const VALID_GRADES = ['6', '7', '8', '9', '10', '11', '12'] as const;
@@ -28,6 +28,7 @@ export const ROLE_DESTINATIONS: Record<ValidRole, string> = {
   student: '/dashboard',
   teacher: '/teacher',
   parent: '/parent',
+  institution_admin: '/school-admin',
 };
 
 /** Map from internal role name to URL-safe role name */
@@ -36,6 +37,7 @@ export const ROLE_ALIASES: Record<string, ValidRole> = {
   teacher: 'teacher',
   parent: 'parent',
   guardian: 'parent', // DB table is "guardians" but role is "parent"
+  institution_admin: 'institution_admin',
 };
 
 /** Get the post-login destination for a role */

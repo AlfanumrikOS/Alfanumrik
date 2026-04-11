@@ -6,7 +6,7 @@ import { clearAllCache } from './swr';
 import type { Student, StudentSnapshot } from './types';
 
 /* ─── Role Types ─── */
-export type UserRole = 'student' | 'teacher' | 'guardian' | 'none';
+export type UserRole = 'student' | 'teacher' | 'guardian' | 'institution_admin' | 'none';
 
 interface TeacherProfile {
   id: string;
