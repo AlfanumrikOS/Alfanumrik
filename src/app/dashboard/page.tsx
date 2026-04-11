@@ -61,7 +61,7 @@ export default function Dashboard() {
   const [pendingLinks, setPendingLinks] = useState<PendingLink[]>([]);
 
   useEffect(() => {
-    if (!isLoading && !isLoggedIn) router.replace('/');
+    if (!isLoading && !isLoggedIn) router.replace('/login');
     // Redirect non-student roles to their correct dashboard
     if (!isLoading && isLoggedIn && activeRole === 'teacher') router.replace('/teacher');
     if (!isLoading && isLoggedIn && activeRole === 'guardian') router.replace('/parent');
@@ -204,8 +204,8 @@ export default function Dashboard() {
     // Non-student role (teacher/guardian) — redirect is already in flight from useEffect
     // Show skeleton briefly while redirect completes
     if (activeRole === 'teacher' || activeRole === 'guardian') return <DashboardSkeleton />;
-    // No student profile and no other role — something's wrong, redirect to home
-    router.replace('/');
+    // No student profile and no other role — something's wrong, redirect to login
+    router.replace('/login');
     return <DashboardSkeleton />;
   }
 

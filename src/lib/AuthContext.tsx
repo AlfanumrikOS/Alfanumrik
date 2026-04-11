@@ -438,6 +438,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else if (event === 'TOKEN_REFRESHED') {
         fetchUser();
       } else if (event === 'SIGNED_IN') {
+        // ⚠️ CRITICAL: Set isLoading=true BEFORE fetchUser to prevent race condition.
+        // Without this, pages like /dashboard see isLoading=false + isLoggedIn=false
+        // during the gap between SIGNED_IN and fetchUser completion, and redirect to /.
+        setIsLoading(true);
         // Register device session for 2-device limit enforcement
         fetch('/api/auth/session', {
           method: 'POST',
