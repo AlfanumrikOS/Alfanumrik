@@ -43,36 +43,6 @@
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-<<<<<<< HEAD
-
-// ─── CORS (inlined to avoid relative-import path issues across deploy methods) ─
-const ALLOWED_ORIGINS = [
-  'https://alfanumrik.com',
-  'https://www.alfanumrik.com',
-  'https://alfanumrik.vercel.app',
-  'https://alfanumrik-ten.vercel.app',
-]
-function getCorsHeaders(origin?: string | null): Record<string, string> {
-  const isAllowed = origin && (
-    ALLOWED_ORIGINS.includes(origin) ||
-    (origin.endsWith('.vercel.app') && origin.includes('alfanumrik'))
-  )
-  return {
-    'Access-Control-Allow-Origin': isAllowed ? origin : ALLOWED_ORIGINS[0],
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-request-id, x-cron-secret',
-    'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
-    'Access-Control-Max-Age': '86400',
-    'Vary': 'Origin',
-  }
-}
-function jsonResponse(body: unknown, status = 200, extra: Record<string, string> = {}, origin?: string | null): Response {
-  return new Response(JSON.stringify(body), { status, headers: { ...getCorsHeaders(origin), 'Content-Type': 'application/json', ...extra } })
-}
-function errorResponse(message: string, status = 400, origin?: string | null): Response {
-  return jsonResponse({ error: message }, status, {}, origin)
-}
-=======
->>>>>>> 3efeedb285aae3cee4754f580994c5f0a292717f
 
 // ─── CORS ────────────────────────────────────────────────────────────────────
 const ALLOWED_ORIGINS = [
