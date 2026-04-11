@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, Suspense } from 'react';
 import dynamic from 'next/dynamic';
+import SimulationSkeleton from '@/components/simulations/SimulationSkeleton';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -269,7 +270,7 @@ export default function STEMCentrePage() {
           const simId = activeLab.sim.id;
           const experiment = getExperimentForSimulation(simId, grade);
           const simNode = activeLab.type === 'builtin' ? (
-            <Suspense fallback={<div className="text-4xl animate-pulse">🔬</div>}>
+            <Suspense fallback={<SimulationSkeleton />}>
               <activeLab.sim.component />
             </Suspense>
           ) : activeLab.sim.widget_code ? (
