@@ -41,7 +41,7 @@ export default function OnboardingPage() {
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) {
-      router.replace('/');
+      router.replace('/login');
       return;
     }
     if (!isLoading && isLoggedIn) {
