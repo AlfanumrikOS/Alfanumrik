@@ -9,15 +9,25 @@ import { validatePassword } from '@/lib/sanitize';
 const AUTH_GRADES = ['6', '7', '8', '9', '10', '11', '12'];
 const AUTH_BOARDS = ['CBSE', 'ICSE', 'State Board', 'IB', 'Other'];
 
+const INDIAN_STATES = [
+  'Andhra Pradesh','Arunachal Pradesh','Assam','Bihar','Chhattisgarh',
+  'Goa','Gujarat','Haryana','Himachal Pradesh','Jharkhand','Karnataka',
+  'Kerala','Madhya Pradesh','Maharashtra','Manipur','Meghalaya','Mizoram',
+  'Nagaland','Odisha','Punjab','Rajasthan','Sikkim','Tamil Nadu','Telangana',
+  'Tripura','Uttar Pradesh','Uttarakhand','West Bengal',
+  'Delhi','Jammu & Kashmir','Ladakh','Puducherry','Chandigarh',
+];
+const SCHOOL_BOARDS = ['CBSE', 'ICSE', 'State Board'];
+
 interface AuthScreenProps {
   onSuccess: () => void;
   /** Pre-select a role tab (from ?role= query param) */
-  initialRole?: 'student' | 'teacher' | 'parent';
+  initialRole?: 'student' | 'teacher' | 'parent' | 'institution_admin';
 }
 
 export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenProps) {
   const [mode, setMode] = useState<'login' | 'signup' | 'forgot' | 'check-email'>('login');
-  const [roleTab, setRoleTab] = useState<'student' | 'teacher' | 'parent'>(initialRole);
+  const [roleTab, setRoleTab] = useState<'student' | 'teacher' | 'parent' | 'institution_admin'>(initialRole);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
@@ -42,6 +52,14 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
   const [phone, setPhone] = useState('');
   const [linkCode, setLinkCode] = useState('');
 
+  // Institution admin fields
+  const [instSchoolName, setInstSchoolName] = useState('');
+  const [instCity, setInstCity] = useState('');
+  const [instState, setInstState] = useState('');
+  const [instBoard, setInstBoard] = useState('CBSE');
+  const [principalName, setPrincipalName] = useState('');
+  const [instPhone, setInstPhone] = useState('');
+
   // Email verification pending
   const [pendingEmail, setPendingEmail] = useState('');
   const [consentData, setConsentData] = useState(false);
@@ -63,6 +81,7 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
     { key: 'student' as const, label: 'Student', emoji: '🎓', color: '#E8590C' },
     { key: 'teacher' as const, label: 'Teacher', emoji: '👩‍🏫', color: '#2563EB' },
     { key: 'parent' as const, label: 'Parent', emoji: '👨‍👩‍👧', color: '#16A34A' },
+    { key: 'institution_admin' as const, label: 'School', emoji: '🏫', color: '#7C3AED' },
   ];
 
   const activeRoleColor = ROLE_TABS.find(r => r.key === roleTab)?.color ?? '#E8590C';
@@ -87,6 +106,12 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
       if (!schoolName.trim()) { setError('Please enter your school name'); return; }
       if (subjectsTaught.length === 0) { setError('Please select at least one subject'); return; }
       if (gradesTaught.length === 0) { setError('Please select at least one grade'); return; }
+    }
+
+    if (roleTab === 'institution_admin') {
+      if (!instSchoolName.trim()) { setError('Please enter the school name'); return; }
+      if (!instCity.trim()) { setError('Please enter the city'); return; }
+      if (!instState.trim()) { setError('Please select a state'); return; }
     }
 
     if (roleTab === 'student' && studentAgeRange === '10-12') {
@@ -114,6 +139,15 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
         metaData.school_name = schoolName.trim();
         metaData.subjects_taught = JSON.stringify(subjectsTaught);
         metaData.grades_taught = JSON.stringify(gradesTaught);
+      }
+
+      if (roleTab === 'institution_admin') {
+        metaData.school_name = instSchoolName.trim();
+        metaData.city = instCity.trim();
+        metaData.state = instState.trim();
+        metaData.board = instBoard;
+        if (principalName.trim()) metaData.principal_name = principalName.trim();
+        if (instPhone.trim()) metaData.phone = instPhone.trim();
       }
 
       const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -166,6 +200,9 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
                 p_invite_code: linkCode.trim(),
               });
             }
+          } else if (roleTab === 'institution_admin') {
+            // School profile creation handled server-side in auth/callback
+            // after email verification — metadata already stored in user_metadata
           }
 
           if (profileError) {
@@ -178,6 +215,7 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
               if (roleTab === 'student') { bootstrapPayload.grade = grade; bootstrapPayload.board = board; }
               if (roleTab === 'teacher') { bootstrapPayload.school_name = schoolName.trim(); bootstrapPayload.subjects_taught = subjectsTaught; bootstrapPayload.grades_taught = gradesTaught; }
               if (roleTab === 'parent') { bootstrapPayload.phone = phone.trim() || null; bootstrapPayload.link_code = linkCode.trim() || null; }
+              if (roleTab === 'institution_admin') { bootstrapPayload.school_name = instSchoolName.trim(); bootstrapPayload.city = instCity.trim(); bootstrapPayload.state = instState.trim(); bootstrapPayload.board = instBoard; }
 
               await fetch('/api/auth/bootstrap', {
                 method: 'POST',
@@ -278,19 +316,25 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
     ? 'Empower your classroom with AI'
     : roleTab === 'parent'
       ? 'Track your child\'s learning journey'
-      : 'AI Tutor for CBSE Students';
+      : roleTab === 'institution_admin'
+        ? 'Manage your school on Alfanumrik'
+        : 'AI Tutor for CBSE Students';
 
   const signupTitle = roleTab === 'teacher'
     ? 'Join as Teacher'
     : roleTab === 'parent'
       ? 'Join as Parent'
-      : 'Start Learning Now';
+      : roleTab === 'institution_admin'
+        ? 'Register Your School'
+        : 'Start Learning Now';
 
   const buttonGradient = roleTab === 'teacher'
     ? 'linear-gradient(135deg, #2563EB, #3B82F6)'
     : roleTab === 'parent'
       ? 'linear-gradient(135deg, #16A34A, #22C55E)'
-      : 'linear-gradient(135deg, #E8590C, #F59E0B)';
+      : roleTab === 'institution_admin'
+        ? 'linear-gradient(135deg, #7C3AED, #A855F7)'
+        : 'linear-gradient(135deg, #E8590C, #F59E0B)';
 
   return (
     <div className="mesh-bg min-h-dvh flex flex-col items-center justify-center px-4 py-8">
@@ -457,6 +501,25 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
                     Have a link code from your child&apos;s school? Enter it to connect!
                   </p>
                 </div>
+              </>
+            )}
+
+            {/* Institution admin signup fields */}
+            {mode === 'signup' && roleTab === 'institution_admin' && (
+              <>
+                <input type="text" placeholder="School Name *" value={instSchoolName} onChange={e => setInstSchoolName(e.target.value)} style={inputStyle} required aria-label="School name" autoComplete="organization" />
+                <div className="flex gap-2">
+                  <input type="text" placeholder="City *" value={instCity} onChange={e => setInstCity(e.target.value)} style={{ ...inputStyle, flex: 1 }} required aria-label="City" autoComplete="address-level2" />
+                  <select value={instState} onChange={e => setInstState(e.target.value)} style={{ ...inputStyle, flex: 1, cursor: 'pointer' }} aria-label="State" required>
+                    <option value="">State *</option>
+                    {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <select value={instBoard} onChange={e => setInstBoard(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }} aria-label="Board affiliation">
+                  {SCHOOL_BOARDS.map(b => <option key={b} value={b}>{b}</option>)}
+                </select>
+                <input type="text" placeholder="Principal Name (optional)" value={principalName} onChange={e => setPrincipalName(e.target.value)} style={inputStyle} aria-label="Principal name" autoComplete="name" />
+                <input type="tel" placeholder="School Phone (optional)" value={instPhone} onChange={e => setInstPhone(e.target.value)} style={inputStyle} aria-label="School phone" autoComplete="tel" />
               </>
             )}
 

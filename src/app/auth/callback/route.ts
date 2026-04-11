@@ -70,45 +70,80 @@ export async function GET(request: NextRequest) {
             const { data: existingStudent } = await supabase.from('students').select('id').eq('auth_user_id', user.id).single();
             const { data: existingTeacher } = await supabase.from('teachers').select('id').eq('auth_user_id', user.id).single();
             const { data: existingGuardian } = await supabase.from('guardians').select('id').eq('auth_user_id', user.id).single();
+            const { data: existingSchoolAdmin } = await supabase.from('school_admins').select('id').eq('auth_user_id', user.id).single();
 
-            const hasProfile = !!(existingStudent || existingTeacher || existingGuardian);
+            const hasProfile = !!(existingStudent || existingTeacher || existingGuardian || existingSchoolAdmin);
 
             if (!hasProfile) {
-              // No profile exists — run server bootstrap via admin client
-              try {
-                const { getSupabaseAdmin } = await import('@/lib/supabase-admin');
-                const admin = getSupabaseAdmin();
-                await admin.rpc('bootstrap_user_profile', {
-                  p_auth_user_id: user.id,
-                  p_role: redirectRole,
-                  p_name: name,
-                  p_email: email,
-                  p_grade: meta.grade || '9',
-                  p_board: meta.board || 'CBSE',
-                  p_school_name: meta.school_name || null,
-                  p_subjects_taught: null,
-                  p_grades_taught: null,
-                  p_phone: null,
-                  p_link_code: null,
-                });
-                // Re-query after bootstrap to confirm actual role from the DB.
-                // This handles the case where user_metadata.role is missing
-                // (e.g., teacher invited via link without role set in meta).
-                // Only override redirectRole if DB confirms a specific profile —
-                // if queries return null (network blip, test mock, etc.) we keep
-                // the meta.role value that was already set above.
-                const { data: postBootstrapTeacher } = await supabase.from('teachers').select('id').eq('auth_user_id', user.id).single();
-                const { data: postBootstrapGuardian } = await supabase.from('guardians').select('id').eq('auth_user_id', user.id).single();
-                if (postBootstrapTeacher) redirectRole = 'teacher';
-                else if (postBootstrapGuardian) redirectRole = 'parent';
-                // else: keep redirectRole as meta.role (already set at line above try block)
-              } catch (bootstrapErr) {
-                console.error('[Auth Callback] Bootstrap failed:', bootstrapErr);
-                // Non-fatal — AuthContext fallback will retry, role stays as meta.role
+              if (redirectRole === 'institution_admin') {
+                // Create school + school_admin rows using admin client.
+                // The sync_school_admin_role trigger auto-assigns the institution_admin role.
+                try {
+                  const { getSupabaseAdmin } = await import('@/lib/supabase-admin');
+                  const admin = getSupabaseAdmin();
+                  const { data: newSchool, error: schoolErr } = await admin
+                    .from('schools')
+                    .insert({
+                      name: meta.school_name || 'My School',
+                      city: meta.city || null,
+                      state: meta.state || null,
+                      board: meta.board || 'CBSE',
+                    })
+                    .select('id')
+                    .single();
+                  if (!schoolErr && newSchool) {
+                    await admin.from('school_admins').insert({
+                      auth_user_id: user.id,
+                      school_id: newSchool.id,
+                      name,
+                      email,
+                      phone: meta.phone || null,
+                    });
+                  } else if (schoolErr) {
+                    console.error('[Auth Callback] School insert failed:', schoolErr.message);
+                  }
+                } catch (schoolBootstrapErr) {
+                  console.error('[Auth Callback] School admin bootstrap failed:', schoolBootstrapErr);
+                  // Non-fatal — admin can be set up manually
+                }
+              } else {
+                // No profile exists — run server bootstrap via admin client
+                try {
+                  const { getSupabaseAdmin } = await import('@/lib/supabase-admin');
+                  const admin = getSupabaseAdmin();
+                  await admin.rpc('bootstrap_user_profile', {
+                    p_auth_user_id: user.id,
+                    p_role: redirectRole,
+                    p_name: name,
+                    p_email: email,
+                    p_grade: meta.grade || '9',
+                    p_board: meta.board || 'CBSE',
+                    p_school_name: meta.school_name || null,
+                    p_subjects_taught: null,
+                    p_grades_taught: null,
+                    p_phone: null,
+                    p_link_code: null,
+                  });
+                  // Re-query after bootstrap to confirm actual role from the DB.
+                  // This handles the case where user_metadata.role is missing
+                  // (e.g., teacher invited via link without role set in meta).
+                  // Only override redirectRole if DB confirms a specific profile —
+                  // if queries return null (network blip, test mock, etc.) we keep
+                  // the meta.role value that was already set above.
+                  const { data: postBootstrapTeacher } = await supabase.from('teachers').select('id').eq('auth_user_id', user.id).single();
+                  const { data: postBootstrapGuardian } = await supabase.from('guardians').select('id').eq('auth_user_id', user.id).single();
+                  if (postBootstrapTeacher) redirectRole = 'teacher';
+                  else if (postBootstrapGuardian) redirectRole = 'parent';
+                  // else: keep redirectRole as meta.role (already set at line above try block)
+                } catch (bootstrapErr) {
+                  console.error('[Auth Callback] Bootstrap failed:', bootstrapErr);
+                  // Non-fatal — AuthContext fallback will retry, role stays as meta.role
+                }
               }
             } else {
               // Detect actual role from existing profile (pre-bootstrap queries)
-              if (existingTeacher) redirectRole = 'teacher';
+              if (existingSchoolAdmin) redirectRole = 'institution_admin';
+              else if (existingTeacher) redirectRole = 'teacher';
               else if (existingGuardian) redirectRole = 'parent';
               else redirectRole = 'student';
             }
