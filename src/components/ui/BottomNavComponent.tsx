@@ -14,50 +14,49 @@ import { useDashboardData } from '@/lib/swr';
  */
 
 const CORE_TABS = [
-  { href: '/dashboard', icon: '🏠', activeIcon: '🏠', label: 'Dashboard', labelHi: 'डैशबोर्ड' },
-  { href: '/learn', icon: '📖', activeIcon: '📖', label: 'Learn', labelHi: 'सीखो' },
-  { href: '/quiz', icon: '📝', activeIcon: '📝', label: 'Quiz', labelHi: 'क्विज़' },
+  { href: '/dashboard', icon: '🏠', activeIcon: '🏠', label: 'Home', labelHi: 'होम' },
+  { href: '/quiz', icon: '✏️', activeIcon: '✏️', label: 'Practice', labelHi: 'अभ्यास' },
   { href: '/foxy', icon: '🦊', activeIcon: '🦊', label: 'Foxy', labelHi: 'फॉक्सी', isFab: true },
+  { href: '/progress', icon: '📈', activeIcon: '📈', label: 'Progress', labelHi: 'प्रगति' },
 ];
 
 const MORE_ITEMS = [
-  { href: '/review', icon: '🔄', label: 'Flashcard Review', labelHi: 'फ्लैशकार्ड रिव्यू' },
-  { href: '/study-plan', icon: '📅', label: 'Study Plan', labelHi: 'स्टडी प्लान' },
-  { href: '/pyq', icon: '📄', label: 'PYQ Practice', labelHi: 'पिछले साल के प्रश्न', gradeMin: 9 },
-  { href: '/mock-exam', icon: '📋', label: 'Mock Exam', labelHi: 'मॉक परीक्षा', gradeMin: 9 },
-  { href: '/progress', icon: '📈', label: 'My Progress', labelHi: 'मेरी प्रगति' },
   { href: '/simulations', icon: '🔬', label: 'STEM Lab', labelHi: 'STEM लैब' },
-  { href: '/challenge', icon: '⚔️', label: 'Challenge Friends', labelHi: 'दोस्तों को चैलेंज करो' },
-  { href: '/leaderboard', icon: '🏆', label: 'Rankings & Compete', labelHi: 'रैंकिंग और प्रतियोगिता' },
+  { href: '/pyq', icon: '📄', label: 'PYQ Papers', labelHi: 'पिछले साल के प्रश्न', gradeMin: 9 },
+  { href: '/mock-exam', icon: '📋', label: 'Mock Exam', labelHi: 'मॉक परीक्षा', gradeMin: 9 },
+  { href: '/study-plan', icon: '📅', label: 'Study Plan', labelHi: 'स्टडी प्लान' },
+  { href: '/leaderboard', icon: '🏆', label: 'Leaderboard', labelHi: 'लीडरबोर्ड' },
+  { href: '/learn', icon: '📚', label: 'Subjects & Chapters', labelHi: 'विषय और अध्याय' },
+  { href: '/review', icon: '🔄', label: 'Flashcard Review', labelHi: 'फ्लैशकार्ड रिव्यू' },
   { href: '/profile', icon: '👤', label: 'Profile', labelHi: 'प्रोफ़ाइल' },
-  { href: '/notifications', icon: '🔔', label: 'Notifications', labelHi: 'सूचनाएँ' },
+  { href: '/notifications', icon: '🔔', label: 'Settings & Notifications', labelHi: 'सेटिंग्स और सूचनाएँ' },
   { href: '/help', icon: '❓', label: 'Help & Support', labelHi: 'सहायता और सपोर्ट' },
 ];
 
 const SIDEBAR_SECTIONS = [
   {
-    title: 'Learn', titleHi: 'सीखो',
+    title: 'Home', titleHi: 'होम',
     items: [
-      { href: '/dashboard', icon: '🏠', label: 'Dashboard', labelHi: 'डैशबोर्ड' },
-      { href: '/learn', icon: '📚', label: 'Subjects & Chapters', labelHi: 'विषय और अध्याय' },
+      { href: '/dashboard', icon: '🏠', label: 'Home', labelHi: 'होम' },
       { href: '/foxy', icon: '🦊', label: 'Foxy AI Tutor', labelHi: 'फॉक्सी AI ट्यूटर' },
+      { href: '/progress', icon: '📈', label: 'My Progress', labelHi: 'मेरी प्रगति' },
     ],
   },
   {
     title: 'Practice', titleHi: 'अभ्यास',
     items: [
-      { href: '/quiz', icon: '📝', label: 'Quiz', labelHi: 'क्विज़' },
+      { href: '/quiz', icon: '✏️', label: 'Practice', labelHi: 'अभ्यास' },
+      { href: '/simulations', icon: '🔬', label: 'STEM Lab', labelHi: 'STEM लैब' },
       { href: '/pyq', icon: '📄', label: 'PYQ Papers', labelHi: 'पिछले साल के प्रश्न', gradeMin: 9 },
       { href: '/mock-exam', icon: '📋', label: 'Mock Exam', labelHi: 'मॉक परीक्षा', gradeMin: 9 },
-      { href: '/simulations', icon: '🔬', label: 'STEM Lab', labelHi: 'STEM लैब' },
     ],
   },
   {
     title: 'Review', titleHi: 'रिव्यू',
     items: [
+      { href: '/learn', icon: '📚', label: 'Subjects & Chapters', labelHi: 'विषय और अध्याय' },
       { href: '/study-plan', icon: '📅', label: 'Study Plan', labelHi: 'अध्ययन योजना' },
       { href: '/review', icon: '🔄', label: 'Flashcard Review', labelHi: 'फ्लैशकार्ड रिव्यू' },
-      { href: '/progress', icon: '📈', label: 'My Progress', labelHi: 'मेरी प्रगति' },
     ],
   },
   {

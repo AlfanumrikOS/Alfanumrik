@@ -370,6 +370,90 @@ export default function Dashboard() {
           />
         )}
 
+        {/* ═══ BOARD EXAM COUNTDOWN — grades 10/11/12 only ═══ */}
+        {(() => {
+          const g = (student.grade || '').replace('Grade ', '').trim();
+          const gradeNum = parseInt(g, 10);
+          if (gradeNum < 10) return null;
+
+          // Approximate board exam dates (CBSE 2027)
+          const BOARD_DATE_10_12 = new Date('2027-02-15');
+          const PREBOARD_DATE_11 = new Date('2026-12-01');
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+
+          let targetDate: Date;
+          let examLabel: string;
+          let examLabelHi: string;
+
+          if (gradeNum === 11) {
+            targetDate = PREBOARD_DATE_11;
+            examLabel = 'Pre-Board Exams';
+            examLabelHi = 'प्री-बोर्ड परीक्षा';
+          } else {
+            targetDate = BOARD_DATE_10_12;
+            examLabel = `Class ${g} Board Exams`;
+            examLabelHi = `कक्षा ${g} बोर्ड परीक्षा`;
+          }
+
+          const daysLeft = Math.max(0, Math.ceil((targetDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)));
+          const readinessPct = cbseReadiness ?? 0;
+
+          const urgencyColor = daysLeft < 60 ? '#DC2626' : daysLeft < 120 ? '#D97706' : '#16A34A';
+          const bgColor = daysLeft < 60 ? 'rgba(220,38,38,0.05)' : daysLeft < 120 ? 'rgba(217,119,6,0.05)' : 'rgba(22,163,74,0.05)';
+          const borderColor = daysLeft < 60 ? 'rgba(220,38,38,0.2)' : daysLeft < 120 ? 'rgba(217,119,6,0.2)' : 'rgba(22,163,74,0.2)';
+
+          const motivationEn = daysLeft < 60
+            ? 'Final push — every session counts now.'
+            : daysLeft < 120
+              ? 'Consistent daily practice beats last-minute cramming.'
+              : 'You have time. Build the habit now.';
+          const motivationHi = daysLeft < 60
+            ? 'अंतिम चरण — हर सेशन अब मायने रखता है।'
+            : daysLeft < 120
+              ? 'नियमित अभ्यास लास्ट-मिनट रटाई से बेहतर है।'
+              : 'समय है। अभी से आदत बनाओ।';
+
+          return (
+            <div
+              className="rounded-2xl p-4"
+              style={{ background: bgColor, border: `1.5px solid ${borderColor}` }}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
+                    style={{ background: `${urgencyColor}15` }}
+                  >
+                    🎓
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: urgencyColor }}>
+                      {isHi ? examLabelHi : examLabel}
+                    </p>
+                    <p className="text-xl font-extrabold leading-none mt-0.5" style={{ fontFamily: 'var(--font-display)', color: urgencyColor }}>
+                      {daysLeft} {isHi ? 'दिन बाकी' : 'days left'}
+                    </p>
+                  </div>
+                </div>
+                {readinessPct > 0 && (
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-lg font-extrabold" style={{ color: urgencyColor, fontFamily: 'var(--font-display)' }}>
+                      {readinessPct}%
+                    </p>
+                    <p className="text-[10px]" style={{ color: 'var(--text-3)' }}>
+                      {isHi ? 'सिलेबस कवर' : 'syllabus covered'}
+                    </p>
+                  </div>
+                )}
+              </div>
+              <p className="text-xs mt-3" style={{ color: 'var(--text-3)' }}>
+                {isHi ? motivationHi : motivationEn}
+              </p>
+            </div>
+          );
+        })()}
+
         {/* ═══ FOCUS ZONE: 3 cards — "One Thing at a Time" ═══ */}
         <FocusDashboard
           studentId={student.id}
@@ -390,6 +474,7 @@ export default function Dashboard() {
           studentName={student.name}
           streak={streak}
           grade={student.grade}
+          studentId={student.id}
         />
 
         {/* ═══ SHOW MORE TOGGLE — progressive disclosure ═══ */}

@@ -207,6 +207,67 @@ export default function QuizResults({
           <StatCard icon="⏱" value={formatTime(timer)} label={isHi ? 'समय' : 'Time'} color="var(--teal)" />
         </div>
 
+        {/* ── Ask Foxy about your weakest topic ── */}
+        {(() => {
+          // Find the bloom level with the highest wrong rate (>0 wrong answers)
+          const bloomStats: Record<string, { wrong: number; total: number }> = {};
+          questions.forEach((q, i) => {
+            const bl = q.bloom_level || 'remember';
+            if (!bloomStats[bl]) bloomStats[bl] = { wrong: 0, total: 0 };
+            bloomStats[bl].total++;
+            if (!responses[i]?.is_correct) bloomStats[bl].wrong++;
+          });
+          const worstEntry = Object.entries(bloomStats)
+            .filter(([, s]) => s.wrong > 0)
+            .sort(([, a], [, b]) => b.wrong / b.total - a.wrong / a.total)[0];
+          if (!worstEntry) return null;
+          const [worstBloom] = worstEntry;
+          const bloomLabels: Record<string, { en: string; hi: string }> = {
+            remember: { en: 'Recall & Memory', hi: 'याद करना' },
+            understand: { en: 'Understanding', hi: 'समझना' },
+            apply: { en: 'Application', hi: 'लागू करना' },
+            analyze: { en: 'Analysis', hi: 'विश्लेषण' },
+            evaluate: { en: 'Evaluation', hi: 'मूल्यांकन' },
+            create: { en: 'Creative Thinking', hi: 'सृजन' },
+          };
+          const topicLabel = bloomLabels[worstBloom] ?? { en: worstBloom, hi: worstBloom };
+          const subjectParam = selectedSubject ? `&subject=${encodeURIComponent(selectedSubject)}` : '';
+          const foxyHref = `/foxy?mode=doubt&bloom=${encodeURIComponent(worstBloom)}${subjectParam}`;
+          return (
+            <div
+              className="rounded-2xl p-4 flex items-center gap-4"
+              style={{
+                background: 'linear-gradient(135deg, rgba(232,88,28,0.06), rgba(245,166,35,0.06))',
+                border: '1.5px solid rgba(232,88,28,0.18)',
+              }}
+            >
+              <div
+                className="w-11 h-11 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
+                style={{ background: 'rgba(232,88,28,0.12)' }}
+              >
+                🦊
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold" style={{ color: 'var(--text-1)' }}>
+                  {isHi
+                    ? `"${topicLabel.hi}" में मदद चाहिए?`
+                    : `Struggling with ${topicLabel.en}?`}
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>
+                  {isHi ? 'Foxy तुम्हें step-by-step समझाएगी' : 'Foxy will explain it step by step'}
+                </p>
+              </div>
+              <button
+                onClick={() => router.push(foxyHref)}
+                className="flex-shrink-0 text-sm font-bold px-4 py-2 rounded-xl transition-all active:scale-95"
+                style={{ background: 'var(--orange)', color: '#fff' }}
+              >
+                {isHi ? 'पूछो →' : 'Ask →'}
+              </button>
+            </div>
+          );
+        })()}
+
         {/* Flashcard creation banner */}
         {flashcardBanner && flashcardCount > 0 && (
           <div
