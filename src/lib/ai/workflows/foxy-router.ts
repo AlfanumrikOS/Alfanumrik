@@ -165,6 +165,13 @@ Current mode: ${mode}`;
   };
 }
 
+// ─── State Machine (primary execution path) ───────────────────────────────
+// For callers that want a single deterministic call instead of the two-step
+// classifyIntent → routeIntent pattern, use runFoxyGraph from ./foxy-graph.
+// It wraps both functions inside a traced, error-safe state machine.
+export { runFoxyGraph } from './foxy-graph';
+export type { FoxyState } from './foxy-graph';
+
 // ─── Intent Routing ────────────────────────────────────────────────────────
 
 /**
