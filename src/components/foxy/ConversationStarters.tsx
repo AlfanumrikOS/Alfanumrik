@@ -15,7 +15,7 @@ interface StarterConfig {
 
 const UNIVERSAL_STARTERS: StarterConfig[] = [
   { text: 'What should I study today?', textHi: '\u0906\u091C \u092E\u0941\u091D\u0947 \u0915\u094D\u092F\u093E \u092A\u0922\u093C\u0928\u093E \u091A\u093E\u0939\u093F\u090F?', icon: '\u{1F4DA}' },
-  { text: 'Quick quiz', textHi: '\u0915\u094D\u0935\u093F\u0915 \u0915\u094D\u0935\u093F\u091C\u093C', icon: '\u26A1' },
+  { text: 'Quiz', textHi: '\u0915\u094D\u0935\u093F\u091C\u093C', icon: '\u{1F4DD}' },
   { text: 'Explain last topic', textHi: '\u092A\u093F\u091B\u0932\u093E \u091F\u0949\u092A\u093F\u0915 \u0938\u092E\u091D\u093E\u0913', icon: '\u{1F4D6}' },
   { text: 'Formula sheet', textHi: '\u092B\u0949\u0930\u094D\u092E\u0942\u0932\u093E \u0936\u0940\u091F', icon: '\u{1F4CB}' },
   { text: 'My weak areas', textHi: '\u092E\u0947\u0930\u0947 \u0915\u092E\u091C\u093C\u094B\u0930 \u0935\u093F\u0937\u092F', icon: '\u{1F3AF}' },
