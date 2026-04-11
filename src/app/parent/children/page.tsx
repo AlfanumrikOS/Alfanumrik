@@ -134,12 +134,13 @@ function MiniProgressBar({ label, percent, color }: { label: string; percent: nu
 // CHILD CARD
 // ============================================================
 function ChildCard({
-  child, expanded, onToggle, onViewReport,
+  child, expanded, onToggle, onViewReport, onUnlink,
 }: {
   child: ChildData;
   expanded: boolean;
   onToggle: () => void;
   onViewReport: () => void;
+  onUnlink: () => void;
 }) {
   const subjectColors = ['#16A34A', '#2563EB', '#D97706', '#8B5CF6', '#EC4899', '#06B6D4'];
 
@@ -339,6 +340,28 @@ function ChildCard({
               </p>
             </div>
           )}
+
+          {/* Remove Link */}
+          <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #FDBA7433' }}>
+            <button
+              onClick={(e) => { e.stopPropagation(); onUnlink(); }}
+              style={{
+                padding: '7px 16px',
+                backgroundColor: 'transparent',
+                color: '#EF4444',
+                border: '1px solid #EF4444',
+                borderRadius: 8,
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+              }}
+            >
+              &#x1F517; {t(false, 'Remove Link', 'लिंक हटाएं')}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -489,6 +512,90 @@ function NoChildrenState({ guardianId, onLinked, isHi }: { guardianId: string; o
 }
 
 // ============================================================
+// UNLINK CONFIRMATION MODAL
+// ============================================================
+function UnlinkConfirmModal({
+  childName,
+  onConfirm,
+  onCancel,
+  loading,
+  isHi,
+}: {
+  childName: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  loading: boolean;
+  isHi: boolean;
+}) {
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 1000,
+      backgroundColor: 'rgba(0,0,0,0.45)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: '0 20px',
+    }}>
+      <div style={{
+        backgroundColor: '#FFFFFF',
+        borderRadius: 18,
+        padding: '26px 22px',
+        maxWidth: 360,
+        width: '100%',
+        boxShadow: '0 8px 40px rgba(0,0,0,0.2)',
+      }}>
+        <div style={{ fontSize: 36, textAlign: 'center', marginBottom: 12 }}>&#x26A0;&#xFE0F;</div>
+        <h3 style={{ fontSize: 17, fontWeight: 700, color: '#1E293B', margin: '0 0 8px', textAlign: 'center' }}>
+          {t(isHi,
+            `Remove link with ${childName}?`,
+            `${childName} के साथ लिंक हटाएं?`
+          )}
+        </h3>
+        <p style={{ fontSize: 13, color: '#64748B', textAlign: 'center', lineHeight: 1.6, margin: '0 0 20px' }}>
+          {t(isHi,
+            'This will revoke your access to their progress data. The student will need to share a new link code to reconnect.',
+            'इससे उनके प्रगति डेटा तक आपकी पहुँच रद्द हो जाएगी। पुनः कनेक्ट करने के लिए छात्र को नया लिंक कोड साझा करना होगा।'
+          )}
+        </p>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button
+            onClick={onCancel}
+            disabled={loading}
+            style={{
+              flex: 1, padding: '12px', backgroundColor: '#F1F5F9',
+              color: '#475569', border: 'none', borderRadius: 10,
+              fontSize: 14, fontWeight: 600, cursor: loading ? 'default' : 'pointer',
+              opacity: loading ? 0.5 : 1,
+            }}
+          >
+            {t(isHi, 'Cancel', 'रद्द करें')}
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={loading}
+            style={{
+              flex: 1, padding: '12px', backgroundColor: '#EF4444',
+              color: '#fff', border: 'none', borderRadius: 10,
+              fontSize: 14, fontWeight: 700, cursor: loading ? 'default' : 'pointer',
+              opacity: loading ? 0.7 : 1,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            }}
+          >
+            {loading ? (
+              <span style={{
+                display: 'inline-block', width: 14, height: 14,
+                border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff',
+                borderRadius: '50%', animation: 'spin 0.7s linear infinite',
+              }} />
+            ) : (
+              t(isHi, 'Remove', 'हटाएं')
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // MAIN PAGE
 // ============================================================
 const t = (isHi: boolean, en: string, hi: string) => isHi ? hi : en;
@@ -500,6 +607,8 @@ export default function ParentChildrenPage() {
   const [children, setChildren] = useState<ChildData[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedChild, setExpandedChild] = useState<string | null>(null);
+  const [unlinkTarget, setUnlinkTarget] = useState<ChildData | null>(null);
+  const [unlinkLoading, setUnlinkLoading] = useState(false);
 
   const fetchChildren = useCallback(async () => {
     if (!guardian) return;
@@ -545,6 +654,23 @@ export default function ParentChildrenPage() {
     }
   };
 
+  const handleUnlinkConfirm = async () => {
+    if (!unlinkTarget || !guardian) return;
+    setUnlinkLoading(true);
+    try {
+      await supabase
+        .from('guardian_student_links')
+        .update({ status: 'revoked' })
+        .eq('student_id', unlinkTarget.id)
+        .eq('guardian_id', guardian.id);
+      setUnlinkTarget(null);
+      await fetchChildren();
+    } catch (err) {
+      console.error('Failed to unlink child:', err);
+    }
+    setUnlinkLoading(false);
+  };
+
   // Loading state
   if (authLoading || loading) {
     return (
@@ -571,6 +697,17 @@ export default function ParentChildrenPage() {
   return (
     <div style={pageStyle}>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+
+      {/* Unlink Confirmation Modal */}
+      {unlinkTarget && (
+        <UnlinkConfirmModal
+          childName={unlinkTarget.name}
+          onConfirm={handleUnlinkConfirm}
+          onCancel={() => setUnlinkTarget(null)}
+          loading={unlinkLoading}
+          isHi={isHi}
+        />
+      )}
 
       {/* Header */}
       <div style={{
@@ -608,6 +745,7 @@ export default function ParentChildrenPage() {
                 setExpandedChild(expandedChild === child.id ? null : child.id)
               }
               onViewReport={handleViewReport}
+              onUnlink={() => setUnlinkTarget(child)}
             />
           ))}
 

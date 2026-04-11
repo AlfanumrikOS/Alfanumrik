@@ -338,21 +338,119 @@ function MasteryRing({ levels, total }: { levels: Record<string, number>; total:
 }
 
 // ============================================================
+// MULTI-CHILD SELECTOR
+// ============================================================
+const avatarGradientsDash = [
+  ['#F59E0B', '#D97706'],
+  ['#EC4899', '#DB2777'],
+  ['#8B5CF6', '#7C3AED'],
+  ['#06B6D4', '#0891B2'],
+  ['#F97316', '#EA580C'],
+  ['#10B981', '#059669'],
+];
+
+function ChildSelectorPills({
+  studentList,
+  selectedIdx,
+  onSelect,
+}: {
+  studentList: StudentSession[];
+  selectedIdx: number;
+  onSelect: (idx: number) => void;
+}) {
+  if (studentList.length <= 1) return null;
+  return (
+    <div style={{
+      display: 'flex',
+      gap: 8,
+      overflowX: 'auto',
+      paddingBottom: 4,
+      marginBottom: 16,
+      scrollbarWidth: 'none',
+      WebkitOverflowScrolling: 'touch',
+    } as React.CSSProperties}>
+      <style>{`.child-pills::-webkit-scrollbar{display:none}`}</style>
+      {studentList.map((child, idx) => {
+        const selected = idx === selectedIdx;
+        const [from, to] = avatarGradientsDash[child.name.charCodeAt(0) % avatarGradientsDash.length];
+        return (
+          <button
+            key={child.id}
+            onClick={() => onSelect(idx)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 14px 8px 8px',
+              borderRadius: 24,
+              border: selected ? 'none' : '1px solid #FDBA7444',
+              backgroundColor: selected ? '#F97316' : '#FFFFFF',
+              color: selected ? '#FFFFFF' : '#475569',
+              fontSize: 13,
+              fontWeight: selected ? 700 : 500,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+              boxShadow: selected ? '0 2px 8px #F9731640' : 'none',
+              transition: 'all 0.2s',
+            }}
+          >
+            {/* Avatar circle */}
+            <div style={{
+              width: 26,
+              height: 26,
+              borderRadius: '50%',
+              background: `linear-gradient(135deg, ${from}, ${to})`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 11,
+              fontWeight: 700,
+              color: '#fff',
+              flexShrink: 0,
+            }}>
+              {child.name.charAt(0).toUpperCase()}
+            </div>
+            {child.name.split(' ')[0]}
+            {/* Grade badge */}
+            <span style={{
+              fontSize: 10,
+              fontWeight: 700,
+              backgroundColor: selected ? 'rgba(255,255,255,0.25)' : '#FDBA7433',
+              color: selected ? '#fff' : '#F97316',
+              borderRadius: 8,
+              padding: '1px 6px',
+            }}>
+              {t(false, 'G', 'क')}{child.grade}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ============================================================
 // MAIN DASHBOARD
 // ============================================================
-function Dashboard({ guardian, student, isHi }: { guardian: ParentSession; student: StudentSession; isHi: boolean }) {
+function Dashboard({ guardian, initialStudent, allChildren, isHi }: { guardian: ParentSession; initialStudent: StudentSession; allChildren: StudentSession[]; isHi: boolean }) {
   const [dash, setDash] = useState<DashboardData | null>(null);
   const [tips, setTips] = useState<ParentTip[]>([]);
   const [loading, setLoading] = useState(true);
   const [showTips, setShowTips] = useState(false);
+  const [selectedChildIdx, setSelectedChildIdx] = useState(0);
+
+  // Derive current student from selectedChildIdx
+  const children = allChildren.length > 0 ? allChildren : [initialStudent];
+  const student = children[selectedChildIdx] ?? initialStudent;
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [d, t] = await Promise.all([
+    const [d, tipRes] = await Promise.all([
       api('get_child_dashboard', { student_id: student.id, guardian_id: guardian.id }),
       api('get_tips'),
     ]);
-    setDash(d); setTips(t.tips || []);
+    setDash(d); setTips(tipRes.tips || []);
     setLoading(false);
   }, [student.id, guardian.id]);
 
@@ -389,6 +487,7 @@ function Dashboard({ guardian, student, isHi }: { guardian: ParentSession; stude
 
       {/* Header */}
       <div className="flex justify-between items-start mb-5 pb-4 border-b border-orange-200">
+
         <div>
           <p className="text-[11px] text-orange-500 font-semibold uppercase tracking-[1px] mb-1">{t(isHi, 'Parent Dashboard', 'अभिभावक डैशबोर्ड')}</p>
           <h1 className="text-[22px] font-bold text-gray-900 m-0">{childName}</h1>
@@ -399,6 +498,16 @@ function Dashboard({ guardian, student, isHi }: { guardian: ParentSession; stude
           <button onClick={logout} className="px-3 py-1.5 bg-transparent text-gray-500 border border-orange-200 rounded-md text-xs cursor-pointer">{t(isHi, 'Logout', 'लॉग आउट')}</button>
         </div>
       </div>
+
+      {/* Multi-child selector — only renders when >1 child linked */}
+      <ChildSelectorPills
+        studentList={children}
+        selectedIdx={selectedChildIdx}
+        onSelect={(idx) => {
+          setSelectedChildIdx(idx);
+          setDash(null);
+        }}
+      />
 
       {/* Contextual empty state when child has no data yet */}
       {hasNoActivity && (
@@ -594,6 +703,19 @@ function Dashboard({ guardian, student, isHi }: { guardian: ParentSession; stude
         </div>
       )}
 
+      {/* Quick nav links */}
+      <div className="flex gap-3 mb-4 justify-center flex-wrap">
+        <a href="/parent/children" className="flex items-center gap-1.5 px-4 py-2.5 bg-white text-orange-500 border border-orange-200 rounded-[10px] text-[13px] font-semibold no-underline">
+          &#x1F467; {t(isHi, 'My Children', 'मेरे बच्चे')}
+        </a>
+        <a href="/parent/reports" className="flex items-center gap-1.5 px-4 py-2.5 bg-white text-orange-500 border border-orange-200 rounded-[10px] text-[13px] font-semibold no-underline">
+          &#x1F4CA; {t(isHi, 'Reports', 'रिपोर्ट')}
+        </a>
+        <a href="/parent/calendar" className="flex items-center gap-1.5 px-4 py-2.5 bg-white text-orange-500 border border-orange-200 rounded-[10px] text-[13px] font-semibold no-underline">
+          &#x1F4C5; {t(isHi, 'Calendar', 'कैलेंडर')}
+        </a>
+      </div>
+
       <p className="text-center text-[11px] text-gray-500 my-5">
         Alfanumrik Learning OS | {t(isHi, 'Parent Portal', 'अभिभावक पोर्टल')} | {t(isHi, 'Logged in as', 'लॉग इन')} {guardian.name}
       </p>
@@ -608,7 +730,34 @@ export default function ParentPage() {
   const auth = useAuth();
   const [guardian, setGuardian] = useState<ParentSession | null>(null);
   const [student, setStudent] = useState<StudentSession | null>(null);
+  const [allChildren, setAllChildren] = useState<StudentSession[]>([]);
   const [checking, setChecking] = useState(true);
+
+  // Fetch all children for this guardian so the multi-child selector works
+  const fetchAllChildren = useCallback(async (guardianId: string, primaryStudent: StudentSession) => {
+    try {
+      const res = await api('get_children', { guardian_id: guardianId });
+      if (res?.children && Array.isArray(res.children)) {
+        const normalized: StudentSession[] = res.children.map((c: Record<string, unknown>) => ({
+          id: String(c.id || ''),
+          name: String(c.name || 'Child'),
+          grade: String(c.grade || ''),
+        }));
+        setAllChildren(normalized.length > 0 ? normalized : [primaryStudent]);
+      } else if (res?.students && Array.isArray(res.students)) {
+        const normalized: StudentSession[] = res.students.map((c: Record<string, unknown>) => ({
+          id: String(c.id || ''),
+          name: String(c.name || 'Child'),
+          grade: String(c.grade || ''),
+        }));
+        setAllChildren(normalized.length > 0 ? normalized : [primaryStudent]);
+      } else {
+        setAllChildren([primaryStudent]);
+      }
+    } catch {
+      setAllChildren([primaryStudent]);
+    }
+  }, []);
 
   useEffect(() => {
     if (auth.isLoading) return;
@@ -618,7 +767,10 @@ export default function ParentPage() {
       setGuardian(auth.guardian);
       // Student data will be fetched by the dashboard API; load from verified session if available
       loadParentSession().then(session => {
-        if (session) setStudent(session.student);
+        if (session) {
+          setStudent(session.student);
+          fetchAllChildren(auth.guardian!.id, session.student);
+        }
         setChecking(false);
       });
       return;
@@ -629,10 +781,11 @@ export default function ParentPage() {
       if (session) {
         setGuardian(session.guardian);
         setStudent(session.student);
+        fetchAllChildren(session.guardian.id, session.student);
       }
       setChecking(false);
     });
-  }, [auth.isLoading, auth.guardian]);
+  }, [auth.isLoading, auth.guardian, fetchAllChildren]);
 
   if (checking || auth.isLoading) return (
     <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-screen">
@@ -645,8 +798,8 @@ export default function ParentPage() {
   if (!guardian || !student) {
     // If guardian profile exists from signup, pre-fill name
     const prefillName = auth.guardian?.name || '';
-    return <LoginScreen onLogin={(g, s) => { setGuardian(g); setStudent(s); }} isHi={isHi} authUserId={auth.authUserId} prefillName={prefillName || undefined} />;
+    return <LoginScreen onLogin={(g, s) => { setGuardian(g); setStudent(s); fetchAllChildren(g.id, s); }} isHi={isHi} authUserId={auth.authUserId} prefillName={prefillName || undefined} />;
   }
 
-  return <Dashboard guardian={guardian} student={student} isHi={isHi} />;
+  return <Dashboard guardian={guardian} initialStudent={student} allChildren={allChildren} isHi={isHi} />;
 }

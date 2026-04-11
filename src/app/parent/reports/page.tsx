@@ -87,6 +87,7 @@ interface ReportStats {
   avgScore?: number;
   streak?: number;
   xp?: number;
+  totalQuizzes?: number;
   accuracyTrend?: string;
   trend?: string;
 }
@@ -567,9 +568,135 @@ function InsightsSection({ insights, tips, isHi = false }: { insights: Array<str
 }
 
 // ============================================================
+// PDF DOWNLOAD HELPERS
+// ============================================================
+function downloadReportPDF(studentName: string, grade: string, reportData: ReportData | null) {
+  const stats = reportData?.stats || {};
+  const subjects = reportData?.subjects || [];
+  const quizzes = (reportData?.quizHistory || reportData?.recentQuizzes || []).slice(0, 5);
+  const insights = reportData?.insights || [];
+  const now = new Date().toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  const subjectRows = subjects.map((s: SubjectData) => `
+    <tr>
+      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-weight:600">${s.name}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:center">
+        <span style="color:${(s.mastery ?? 0) >= 80 ? '#16A34A' : (s.mastery ?? 0) >= 50 ? '#D97706' : '#EF4444'};font-weight:700">
+          ${s.mastery ?? 0}%
+        </span>
+      </td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:center">
+        ${s.recentScore != null ? `${s.recentScore}%` : '--'}
+      </td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#64748B">
+        ${(s.weakTopics || []).slice(0, 2).join(', ') || '—'}
+      </td>
+    </tr>
+  `).join('');
+
+  const quizRows = quizzes.map((q: QuizRecord) => `
+    <tr>
+      <td style="padding:7px 12px;border-bottom:1px solid #f1f5f9">${q.topic || q.subject || 'Quiz'}</td>
+      <td style="padding:7px 12px;border-bottom:1px solid #f1f5f9;text-align:center;font-weight:700;color:${(q.score ?? 0) >= 80 ? '#16A34A' : (q.score ?? 0) >= 50 ? '#D97706' : '#EF4444'}">${q.score ?? 0}%</td>
+      <td style="padding:7px 12px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#94A3B8">${q.date || q.created_at ? new Date(q.date || q.created_at || '').toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }) : ''}</td>
+    </tr>
+  `).join('');
+
+  const insightHtml = insights.slice(0, 3).map((ins: string | InsightItem) =>
+    `<li style="margin-bottom:6px;color:#1E293B;font-size:13px">${typeof ins === 'string' ? ins : ins.text || ins.message || ''}</li>`
+  ).join('');
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Report — ${studentName}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, 'Plus Jakarta Sans', sans-serif; background: #fff; color: #1E293B; font-size: 13px; }
+    .header { background: linear-gradient(135deg, #F97316, #EA580C); color: #fff; padding: 24px 28px; margin-bottom: 24px; }
+    .header h1 { font-size: 22px; font-weight: 800; margin-bottom: 4px; }
+    .header p { font-size: 13px; opacity: 0.9; }
+    .container { padding: 0 28px 28px; }
+    .section { margin-bottom: 22px; }
+    .section-title { font-size: 14px; font-weight: 700; color: #F97316; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; border-bottom: 2px solid #FFF3E0; padding-bottom: 4px; }
+    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 10px; }
+    .stat-box { background: #FFF8F0; border-radius: 10px; padding: 12px; text-align: center; border: 1px solid #FDBA7444; }
+    .stat-value { font-size: 22px; font-weight: 800; color: #F97316; }
+    .stat-label { font-size: 10px; color: #64748B; text-transform: uppercase; margin-top: 2px; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; border: 1px solid #F1F5F9; }
+    th { background: #FFF8F0; padding: 10px 12px; font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase; text-align: left; }
+    .footer { text-align: center; margin-top: 28px; padding-top: 14px; border-top: 1px solid #F1F5F9; font-size: 11px; color: #94A3B8; }
+    ul { padding-left: 18px; }
+    @media print {
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Alfanumrik Learning Report</h1>
+    <p>${studentName} &bull; Grade ${grade} &bull; Generated ${now}</p>
+  </div>
+  <div class="container">
+    <div class="section">
+      <div class="section-title">Performance Summary</div>
+      <div class="stats-grid">
+        <div class="stat-box"><div class="stat-value">${stats.overallMastery ?? stats.accuracy ?? 0}%</div><div class="stat-label">Mastery</div></div>
+        <div class="stat-box"><div class="stat-value">${stats.accuracy ?? 0}%</div><div class="stat-label">Accuracy</div></div>
+        <div class="stat-box"><div class="stat-value">${stats.streak ?? 0}d</div><div class="stat-label">Streak</div></div>
+        <div class="stat-box"><div class="stat-value">${stats.xp ?? 0}</div><div class="stat-label">XP Earned</div></div>
+        <div class="stat-box"><div class="stat-value">${stats.totalQuizzes ?? 0}</div><div class="stat-label">Quizzes</div></div>
+        <div class="stat-box"><div class="stat-value">${stats.avgScore ?? 0}%</div><div class="stat-label">Avg Score</div></div>
+      </div>
+    </div>
+
+    ${subjects.length > 0 ? `
+    <div class="section">
+      <div class="section-title">Subject Performance</div>
+      <table>
+        <thead><tr>
+          <th>Subject</th><th style="text-align:center">Mastery</th><th style="text-align:center">Last Quiz</th><th>Needs Practice</th>
+        </tr></thead>
+        <tbody>${subjectRows}</tbody>
+      </table>
+    </div>` : ''}
+
+    ${quizzes.length > 0 ? `
+    <div class="section">
+      <div class="section-title">Recent Quiz Scores</div>
+      <table>
+        <thead><tr><th>Topic</th><th style="text-align:center">Score</th><th>Date</th></tr></thead>
+        <tbody>${quizRows}</tbody>
+      </table>
+    </div>` : ''}
+
+    ${insights.length > 0 ? `
+    <div class="section">
+      <div class="section-title">AI Recommendations</div>
+      <ul>${insightHtml}</ul>
+    </div>` : ''}
+
+    <div class="footer">Generated by Alfanumrik Learning OS &bull; alfanumrik.com</div>
+  </div>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank', 'width=800,height=900');
+  if (!win) return;
+  win.document.write(html);
+  win.document.close();
+  // Give CSS time to paint before printing
+  setTimeout(() => {
+    win.focus();
+    win.print();
+  }, 400);
+}
+
+// ============================================================
 // PRINT / SHARE SECTION
 // ============================================================
-function PrintShareSection({ studentName, reportData, isHi = false }: { studentName: string; reportData: ReportData | null; isHi?: boolean }) {
+function PrintShareSection({ studentName, grade, reportData, isHi = false }: { studentName: string; grade: string; reportData: ReportData | null; isHi?: boolean }) {
   const handlePrint = () => {
     window.print();
   };
@@ -602,6 +729,13 @@ function PrintShareSection({ studentName, reportData, isHi = false }: { studentN
     <div style={{ ...cardStyle, textAlign: 'center' }} className="no-print">
       <h3 style={{ ...cardTitle, textAlign: 'center' }}>{t(isHi, 'Share This Report', 'यह रिपोर्ट साझा करें')}</h3>
       <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+        <button onClick={() => downloadReportPDF(studentName, grade, reportData)} style={{
+          padding: '12px 24px', backgroundColor: '#F97316', color: '#fff',
+          border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700,
+          cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
+        }}>
+          <span>&#x1F4C4;</span> {t(isHi, 'Download PDF', 'PDF डाउनलोड करें')}
+        </button>
         <button onClick={handlePrint} style={{
           padding: '12px 24px', backgroundColor: '#16A34A', color: '#fff',
           border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700,
@@ -1055,7 +1189,7 @@ export default function ParentReportsPage() {
       setError(isHi ? 'रिपोर्ट लोड नहीं हो सकी। कृपया बाद में फिर कोशिश करें।' : 'Could not load report. Please try again later.');
     }
     setLoading(false);
-  }, [guardian, student, dateRange]);
+  }, [guardian, student, dateRange, isHi]);
 
   useEffect(() => {
     if (guardian && student) {
@@ -1325,7 +1459,7 @@ export default function ParentReportsPage() {
             </div>
 
             {/* ── 7. PRINT / SHARE ── */}
-            <PrintShareSection studentName={student.name} reportData={report} isHi={isHi} />
+            <PrintShareSection studentName={student.name} grade={student.grade} reportData={report} isHi={isHi} />
 
             {/* Footer */}
             <p style={{ textAlign: 'center', fontSize: 11, color: '#94A3B8', margin: '24px 0 8px' }}>

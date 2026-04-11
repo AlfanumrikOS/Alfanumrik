@@ -20,6 +20,7 @@ import ProgressSnapshot from '@/components/dashboard/ProgressSnapshot';
 import ExamReadiness from '@/components/dashboard/ExamReadiness';
 import DailyChallenge from '@/components/dashboard/DailyChallenge';
 import FocusDashboard from '@/components/dashboard/FocusDashboard';
+import PendingLinkApproval, { type PendingLink } from '@/components/dashboard/PendingLinkApproval';
 
 
 const BLOOM_LABELS: Record<string, { icon: string; label: string; labelHi: string }> = {
@@ -57,6 +58,7 @@ export default function Dashboard() {
   // BKT mastery: average mastery_probability per subject from concept_mastery table.
   // This is the real adaptive mastery signal, not the XP/accuracy proxy.
   const [bktMastery, setBktMastery] = useState<Record<string, number>>({});
+  const [pendingLinks, setPendingLinks] = useState<PendingLink[]>([]);
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/');
@@ -168,6 +170,34 @@ export default function Dashboard() {
     if (student) { loadStaticData(); refreshSnapshot(); }
   }, [student?.id, loadStaticData, refreshSnapshot]);
 
+  // Fetch pending parent link requests for this student
+  const fetchPendingLinks = useCallback(async () => {
+    if (!student) return;
+    try {
+      const { data } = await supabase
+        .from('guardian_student_links')
+        .select('id, created_at, guardians:guardian_id(name)')
+        .eq('student_id', student.id)
+        .eq('status', 'pending');
+      if (data && data.length > 0) {
+        const normalized: PendingLink[] = data.map((row: any) => ({
+          id: row.id,
+          parentName: row.guardians?.name || 'Parent',
+          requestedAt: row.created_at || new Date().toISOString(),
+        }));
+        setPendingLinks(normalized);
+      } else {
+        setPendingLinks([]);
+      }
+    } catch {
+      // Non-fatal: pending links are a non-critical feature
+    }
+  }, [student]);
+
+  useEffect(() => {
+    if (student) { fetchPendingLinks(); }
+  }, [student?.id, fetchPendingLinks]);
+
   // Show skeleton while loading, but don't block non-student roles — they'll be redirected
   if (isLoading) return <DashboardSkeleton />;
   if (!student) {
@@ -233,6 +263,15 @@ export default function Dashboard() {
 
       <main className="app-container py-4 space-y-4">
        <SectionErrorBoundary section="Dashboard">
+
+        {/* ═══ PENDING PARENT LINK APPROVAL ═══ */}
+        {pendingLinks.length > 0 && (
+          <PendingLinkApproval
+            links={pendingLinks}
+            onApproved={fetchPendingLinks}
+            isHi={isHi}
+          />
+        )}
 
         {/* ═══ FOCUS ZONE: 3 cards — "One Thing at a Time" ═══ */}
         <FocusDashboard
