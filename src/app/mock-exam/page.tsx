@@ -500,5 +500,30 @@ export default function MockExamPage() {
     );
   }
 
+  /* ─── Empty State: exam started but no questions found ─── */
+  if (screen === 'exam' && questions.length === 0) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center px-6 gap-5" style={{ background: 'var(--warm-cream, #FFF9F0)' }}>
+        <div className="text-5xl">📭</div>
+        <h2 className="font-bold text-lg text-center" style={{ color: 'var(--text-1)' }}>
+          {isHi ? 'इस विषय के लिए पर्याप्त प्रश्न नहीं हैं' : 'Not enough questions for this subject yet'}
+        </h2>
+        <p className="text-sm text-center max-w-xs" style={{ color: 'var(--text-2)' }}>
+          {isHi
+            ? 'हम जल्द ही और प्रश्न जोड़ रहे हैं। कृपया कोई अन्य विषय चुनें या बाद में पुनः प्रयास करें।'
+            : 'We\'re adding more questions soon. Please try another subject or check back later.'}
+        </p>
+        <div className="flex gap-3">
+          <Button onClick={() => { setScreen('select'); setQuestions([]); }}>
+            {isHi ? '← विषय बदलें' : '← Change Subject'}
+          </Button>
+          <Button variant="ghost" onClick={() => router.push('/quiz')}>
+            {isHi ? 'प्रैक्टिस क्विज़ लो' : 'Take Practice Quiz'}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return null;
 }

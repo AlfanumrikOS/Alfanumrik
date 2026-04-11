@@ -477,24 +477,7 @@ export default function Dashboard() {
           studentId={student.id}
         />
 
-        {/* ═══ SHOW MORE TOGGLE — progressive disclosure ═══ */}
-        <button
-          onClick={() => setShowMore(prev => !prev)}
-          className="w-full py-2.5 rounded-xl text-xs font-semibold transition-all active:scale-[0.98] flex items-center justify-center gap-1.5"
-          style={{
-            background: 'var(--surface-1)',
-            border: '1px solid var(--border)',
-            color: 'var(--text-3)',
-          }}
-        >
-          {showMore
-            ? (isHi ? 'कम दिखाओ ↑' : 'Show Less ↑')
-            : (isHi ? 'और दिखाओ ↓' : 'Show More ↓')}
-        </button>
-
-        {showMore && <>
-
-        {/* ═══ FIRST-TIME WELCOME — single opinionated CTA ═══ */}
+        {/* ═══ FIRST-TIME WELCOME — always visible for new students ═══ */}
         {totalXp === 0 && profiles.length <= 1 && (
           <div
             className="rounded-2xl p-5"
@@ -533,6 +516,23 @@ export default function Dashboard() {
             </button>
           </div>
         )}
+
+        {/* ═══ SHOW MORE TOGGLE — progressive disclosure ═══ */}
+        <button
+          onClick={() => setShowMore(prev => !prev)}
+          className="w-full py-2.5 rounded-xl text-xs font-semibold transition-all active:scale-[0.98] flex items-center justify-center gap-1.5"
+          style={{
+            background: 'var(--surface-1)',
+            border: '1px solid var(--border)',
+            color: 'var(--text-3)',
+          }}
+        >
+          {showMore
+            ? (isHi ? 'कम दिखाओ ↑' : 'Show Less ↑')
+            : (isHi ? 'और दिखाओ ↓' : 'Show More ↓')}
+        </button>
+
+        {showMore && <>
 
         {/* ═══ PRIORITY 1: CONTINUE LEARNING (was buried at #6 — now first) ═══ */}
         {nextTopics.length > 0 && (

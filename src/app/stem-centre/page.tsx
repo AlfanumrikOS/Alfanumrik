@@ -420,12 +420,22 @@ export default function STEMCentrePage() {
         )}
 
         {/* Empty State */}
-        {!loading && builtInFiltered.length === 0 && dbSims.length === 0 && (
-          <div className="text-center py-16">
-            <div className="text-5xl mb-3">🔍</div>
-            <p className="text-gray-500 font-medium">{isHi ? 'इस फ़िल्टर के लिए कोई लैब नहीं मिला' : 'No labs found for this filter'}</p>
-            <button onClick={() => setSubject('all')} className="mt-3 text-orange-500 text-sm font-medium hover:underline">
-              {isHi ? 'सभी विषय दिखाएं' : 'Show all subjects'}
+        {!loading && !activeLab && builtInFiltered.length === 0 && dbSims.length === 0 && (
+          <div className="text-center py-16 max-w-xs mx-auto">
+            <div className="text-5xl mb-3">🔬</div>
+            <h3 className="text-gray-900 font-bold text-base mb-2">
+              {isHi ? 'इस फ़िल्टर के लिए कोई लैब नहीं मिला' : 'No labs found for this filter'}
+            </h3>
+            <p className="text-gray-500 text-sm mb-4">
+              {isHi
+                ? 'कोई अन्य विषय चुनें या सभी विषय देखें। हम जल्द ही और लैब्स जोड़ रहे हैं!'
+                : 'Try another subject or view all subjects. We\'re adding more labs soon!'}
+            </p>
+            <button
+              onClick={() => setSubject('all')}
+              className="px-5 py-2.5 min-h-[44px] bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-sm font-semibold transition-colors active:scale-[0.98]"
+            >
+              {isHi ? '📚 सभी विषय दिखाएं' : '📚 Show All Subjects'}
             </button>
           </div>
         )}

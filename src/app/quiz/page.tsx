@@ -90,6 +90,7 @@ export default function QuizPage() {
   const [timer, setTimer] = useState(0);
   const [questionTimer, setQuestionTimer] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [noQuestionsError, setNoQuestionsError] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const qTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -236,7 +237,7 @@ export default function QuizPage() {
       );
       const qs = Array.isArray(data) ? data : [];
       if (qs.length === 0) {
-        alert(isHi ? 'इस विषय में अभी प्रश्न नहीं हैं।' : 'No questions available for this subject yet.');
+        setNoQuestionsError(true);
         setLoading(false);
         return;
       }
@@ -534,6 +535,32 @@ export default function QuizPage() {
   const progress = questions.length > 0 ? ((currentIdx + (showExplanation ? 1 : 0)) / questions.length) * 100 : 0;
   const correctSoFar = responses.filter(r => r.is_correct).length;
 
+  // ═══ NO QUESTIONS AVAILABLE — friendly empty state ═══
+  if (noQuestionsError && screen === 'select') {
+    const errorSubMeta = SUBJECT_META.find(s => s.code === selectedSubject);
+    return (
+      <div className="mesh-bg min-h-dvh flex flex-col items-center justify-center px-6 gap-5">
+        <div className="text-5xl">📭</div>
+        <h2 className="font-bold text-lg text-center" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}>
+          {isHi ? 'इस विषय में अभी प्रश्न नहीं हैं' : 'No questions available yet'}
+        </h2>
+        <p className="text-sm text-center max-w-xs" style={{ color: 'var(--text-2)' }}>
+          {isHi
+            ? `${errorSubMeta?.name ?? 'इस विषय'} के लिए पर्याप्त प्रश्न उपलब्ध नहीं हैं। कृपया कोई अन्य विषय या अध्याय चुनें।`
+            : `Not enough questions for ${errorSubMeta?.name ?? 'this subject'} right now. Try a different subject or chapter.`}
+        </p>
+        <div className="flex gap-3">
+          <Button variant="primary" onClick={() => { setNoQuestionsError(false); }}>
+            {isHi ? '← विषय बदलें' : '← Change Subject'}
+          </Button>
+          <Button variant="ghost" onClick={() => router.push('/foxy')}>
+            {isHi ? 'Foxy से सीखो' : 'Learn with Foxy'}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   // ═══ SUBJECT SELECTION SCREEN ═══
   if (screen === 'select') {
     return (
@@ -544,6 +571,7 @@ export default function QuizPage() {
         initialCount={initialCount}
         initialChapter={initialChapter}
         loading={loading}
+        studentGrade={student?.grade ?? ''}
         onStart={startQuiz}
         onGoBack={() => router.push('/dashboard')}
       />
