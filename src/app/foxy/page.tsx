@@ -8,6 +8,7 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY, GRADE_SUBJECTS } from '@/lib/constants
 import { BottomNav } from '@/components/ui';
 import { LESSON_STEPS, getLessonStepPrompt, getNextLessonStep, type LessonStep, type LessonState } from '@/lib/cognitive-engine';
 import { checkDailyUsage, clearUsageCache, type UsageResult } from '@/lib/usage';
+import { speak, isVoiceSupported } from '@/lib/voice';
 import { ConversationStarters } from '@/components/foxy/ConversationStarters';
 import { findSimulation, InlineSimulation } from '@/components/InlineSimulation';
 import { ChatBubble } from '@/components/foxy/ChatBubble';
@@ -346,6 +347,56 @@ export default function FoxyPage() {
   const [showSELCheckIn, setShowSELCheckIn] = useState(false);
   const [sessionMood, setSessionMood] = useState<MoodState | null>(null);
 
+  // ── Voice mode ─────────────────────────────────────────────
+  // voiceMode: when ON, every Foxy reply is auto-spoken via TTS
+  const [voiceMode, setVoiceMode] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  // Ref keeps voiceMode + language current inside sendMessage without extra deps
+  const voiceModeRef = useRef(false);
+  const voiceLangRef = useRef('en');
+  const speakCancelRef = useRef<{ cancel: () => void } | null>(null);
+
+  useEffect(() => { voiceModeRef.current = voiceMode; }, [voiceMode]);
+  useEffect(() => { voiceLangRef.current = language; }, [language]);
+
+  // Load persisted preference
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const saved = localStorage.getItem('foxy_voice_mode');
+    if (saved === 'on') setVoiceMode(true);
+  }, []);
+
+  const toggleVoiceMode = () => {
+    setVoiceMode(prev => {
+      const next = !prev;
+      if (typeof window !== 'undefined') localStorage.setItem('foxy_voice_mode', next ? 'on' : 'off');
+      if (!next) {
+        // Turning off — cancel any ongoing speech
+        speakCancelRef.current?.cancel();
+        setIsSpeaking(false);
+      }
+      return next;
+    });
+  };
+
+  const speakMessage = (text: string) => {
+    speakCancelRef.current?.cancel();
+    setIsSpeaking(true);
+    speakCancelRef.current = speak(text, {
+      language: voiceLangRef.current,
+      rate: 0.9,
+      onEnd: () => setIsSpeaking(false),
+    });
+  };
+
+  // Cancel speech on unmount
+  useEffect(() => {
+    return () => { speakCancelRef.current?.cancel(); };
+  }, []);
+
+  const { tts: ttsSupported } = isVoiceSupported();
+  // ─────────────────────────────────────────────────────────────
+
   // Show SEL check-in when the Foxy page first loads (after auth resolves)
   useEffect(() => {
     if (student?.id && shouldShowSEL && messages.length === 0) {
@@ -553,6 +604,16 @@ export default function FoxyPage() {
       if (resp.xp_earned > 0) setXpGained((p: number) => p + resp.xp_earned);
       if (resp.session_id) setChatSessionId(resp.session_id);
       setFoxyState('happy'); setTimeout(() => setFoxyState('idle'), 2000);
+      // Auto-speak when voice mode is ON
+      if (voiceModeRef.current) {
+        speakCancelRef.current?.cancel();
+        setIsSpeaking(true);
+        speakCancelRef.current = speak(resp.reply, {
+          language: voiceLangRef.current,
+          rate: 0.9,
+          onEnd: () => setIsSpeaking(false),
+        });
+      }
       // Refresh conversation list so new/updated sessions appear
       setTimeout(refreshConversations, 1000);
     } catch {
@@ -741,6 +802,22 @@ export default function FoxyPage() {
           {LANGS.map(l => <button key={l.code} onClick={() => { if (!isLangLocked) setLanguage(l.code); }} className={`text-[10px] font-bold px-2 py-1 rounded-lg transition-all ${language !== l.code ? 'hidden sm:inline-block' : ''}`} style={{ background: language === l.code ? 'rgba(255,255,255,0.2)' : 'transparent', color: language === l.code ? '#fff' : 'rgba(255,255,255,0.4)', opacity: isLangLocked && language !== l.code ? 0.2 : 1, cursor: isLangLocked ? 'default' : 'pointer' }}>{l.label}</button>)}
           {isLangLocked && <span className="text-[8px] text-white/30">🔒</span>}
           {chatUsage && <span className="hidden sm:inline text-[8px] opacity-40 ml-1" title="Chat messages remaining">💬{chatUsage.remaining}/{chatUsage.limit}</span>}
+          {/* Voice mode toggle — hidden on browsers without TTS */}
+          {ttsSupported && (
+            <button
+              onClick={toggleVoiceMode}
+              title={voiceMode ? 'Voice mode ON — click to mute' : 'Voice mode OFF — click to enable auto-speak'}
+              aria-label={voiceMode ? 'Disable voice mode' : 'Enable voice mode'}
+              className="w-7 h-7 rounded-lg flex items-center justify-center text-sm transition-all active:scale-90"
+              style={{
+                background: voiceMode ? 'rgba(232,88,28,0.25)' : 'rgba(255,255,255,0.08)',
+                border: voiceMode ? '1.5px solid rgba(232,88,28,0.5)' : '1.5px solid rgba(255,255,255,0.1)',
+                animation: isSpeaking ? 'pulse 1s infinite' : 'none',
+              }}
+            >
+              {voiceMode ? '🔊' : '🔇'}
+            </button>
+          )}
         </div>
       </header>
 
@@ -1161,6 +1238,7 @@ export default function FoxyPage() {
                     activeSubject={activeSubject}
                     onFeedback={(isUp) => handleFeedback(msg.id, isUp)}
                     onReport={() => openReport(msg.id)}
+                    onSpeak={ttsSupported && msg.role === 'tutor' ? () => speakMessage(msg.content) : undefined}
                   />
                   {msg.role === 'tutor' && !msg.reported && (
                     <div className="flex justify-start pl-11 -mt-2 mb-3">
@@ -1279,7 +1357,13 @@ export default function FoxyPage() {
               </button>
             </div>
           )}
-          <ChatInput onSubmit={sendMessage} subjectKey={activeSubject} disabled={loading} />
+          <ChatInput
+            onSubmit={sendMessage}
+            subjectKey={activeSubject}
+            disabled={loading}
+            language={language}
+            onVoiceSend={voiceMode ? sendMessage : undefined}
+          />
         </div>
       </div>
 

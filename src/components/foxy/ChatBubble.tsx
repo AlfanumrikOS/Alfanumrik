@@ -20,6 +20,8 @@ interface ChatBubbleProps {
   activeSubject: string;
   onFeedback: (isUp: boolean) => void;
   onReport: () => void;
+  /** Called when the student taps 🔊 to replay this message via TTS */
+  onSpeak?: () => void;
 }
 
 export function ChatBubble({
@@ -34,6 +36,7 @@ export function ChatBubble({
   activeSubject,
   onFeedback,
   onReport,
+  onSpeak,
 }: ChatBubbleProps) {
   const isTutor = role === 'tutor';
   const time = new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -134,10 +137,30 @@ export function ChatBubble({
             </span>
           )}
 
+          {/* Replay via TTS */}
+          {onSpeak && (
+            <button
+              onClick={onSpeak}
+              aria-label="Read aloud"
+              title="Read aloud"
+              className="px-2 py-1 rounded-lg text-[11px] transition-all active:scale-90 ml-auto"
+              style={{ color: 'var(--text-3)', background: 'transparent' }}
+            >
+              🔊
+            </button>
+          )}
+
           {/* Verify with textbook hint */}
-          {['math', 'science', 'physics', 'chemistry'].includes(activeSubject) &&
+          {!onSpeak && ['math', 'science', 'physics', 'chemistry'].includes(activeSubject) &&
             (rawContent.includes('=') || rawContent.includes('formula') || rawContent.includes('²') || rawContent.includes('√')) && (
               <span className="ml-auto text-[9px] px-2 py-0.5 rounded"
+                style={{ color: 'var(--text-3)', background: 'var(--surface-2)' }}>
+                Verify with textbook
+              </span>
+            )}
+          {onSpeak && ['math', 'science', 'physics', 'chemistry'].includes(activeSubject) &&
+            (rawContent.includes('=') || rawContent.includes('formula') || rawContent.includes('²') || rawContent.includes('√')) && (
+              <span className="text-[9px] px-2 py-0.5 rounded"
                 style={{ color: 'var(--text-3)', background: 'var(--surface-2)' }}>
                 Verify with textbook
               </span>

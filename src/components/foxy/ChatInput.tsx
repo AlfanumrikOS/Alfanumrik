@@ -1,31 +1,7 @@
 'use client';
 
 import { useState, useRef, memo, useEffect } from 'react';
-
-// Web Speech API types (not in default TS lib)
-interface SpeechRecognitionEvent extends Event {
-  results: SpeechRecognitionResultList;
-}
-interface SpeechRecognitionResultList {
-  length: number;
-  [index: number]: SpeechRecognitionResult;
-}
-interface SpeechRecognitionResult {
-  [index: number]: SpeechRecognitionAlternative;
-}
-interface SpeechRecognitionAlternative {
-  transcript: string;
-}
-interface SpeechRecognition extends EventTarget {
-  lang: string;
-  interimResults: boolean;
-  continuous: boolean;
-  onresult: ((event: SpeechRecognitionEvent) => void) | null;
-  onerror: ((event: Event) => void) | null;
-  onend: (() => void) | null;
-  start(): void;
-  stop(): void;
-}
+import { startListening, isVoiceSupported } from '@/lib/voice';
 
 /* ══════════════════════════════════════════════════════════════
    CHAT INPUT COMPONENT
@@ -63,9 +39,20 @@ export interface ChatInputProps {
   subjectKey: string;
   disabled: boolean;
   subjectConfig?: { color: string; icon: string };
+  /** Student's current language preference: 'en' | 'hi' | 'hinglish' */
+  language?: string;
+  /** When provided, final speech result auto-sends instead of requiring manual send */
+  onVoiceSend?: (text: string) => void;
 }
 
-export const ChatInput = memo(function ChatInput({ onSubmit, subjectKey, disabled, subjectConfig }: ChatInputProps) {
+export const ChatInput = memo(function ChatInput({
+  onSubmit,
+  subjectKey,
+  disabled,
+  subjectConfig,
+  language = 'en',
+  onVoiceSend,
+}: ChatInputProps) {
   const [text, setText] = useState('');
   const [showSymbols, setShowSymbols] = useState(false);
   const [symTab, setSymTab] = useState('basic');
@@ -74,25 +61,41 @@ export const ChatInput = memo(function ChatInput({ onSubmit, subjectKey, disable
   const [image, setImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
+  const [isInterim, setIsInterim] = useState(false); // true while showing interim text
+
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  // Holds the { stop } handle returned by startListening
+  const listenHandleRef = useRef<{ stop: () => void } | null>(null);
+
   const cfg = subjectConfig || SUBJECTS[subjectKey] || DEFAULT_CONFIG;
 
-  // Clean up speech recognition on unmount
+  // Feature-detect once (SSR-safe)
+  const { stt: sttSupported } = isVoiceSupported();
+
+  // Stop recognition on unmount
   useEffect(() => {
     return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-      }
+      listenHandleRef.current?.stop();
     };
   }, []);
 
+  const resizeTextarea = () => {
+    const ta = taRef.current;
+    if (!ta) return;
+    ta.style.height = 'auto';
+    ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+  };
+
   const insertAt = (s: string) => {
-    const ta = taRef.current; if (!ta) return;
+    const ta = taRef.current;
+    if (!ta) return;
     const start = ta.selectionStart, end = ta.selectionEnd;
     setText(text.substring(0, start) + s + text.substring(end));
-    setTimeout(() => { ta.focus(); ta.selectionStart = ta.selectionEnd = start + s.length; }, 0);
+    setTimeout(() => {
+      ta.focus();
+      ta.selectionStart = ta.selectionEnd = start + s.length;
+    }, 0);
   };
 
   const handleImage = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -105,65 +108,70 @@ export const ChatInput = memo(function ChatInput({ onSubmit, subjectKey, disable
     reader.readAsDataURL(file);
   };
 
+  const stopListening = () => {
+    listenHandleRef.current?.stop();
+    listenHandleRef.current = null;
+    setIsListening(false);
+    setIsInterim(false);
+  };
+
   const toggleVoice = () => {
-    const w = window as unknown as Record<string, unknown>;
-    const SpeechRecognitionCtor = w.SpeechRecognition || w.webkitSpeechRecognition;
-    if (!SpeechRecognitionCtor) {
-      alert('Voice input is not supported in this browser. Try Chrome or Edge.');
+    if (!sttSupported) return;
+
+    if (isListening) {
+      stopListening();
       return;
     }
 
-    if (isListening && recognitionRef.current) {
-      recognitionRef.current.stop();
-      setIsListening(false);
-      return;
-    }
-
-    const recognition = new (SpeechRecognitionCtor as new () => SpeechRecognition)();
-    recognition.lang = 'en-IN';
-    recognition.interimResults = true;
-    recognition.continuous = true;
-
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
-      let transcript = '';
-      for (let i = 0; i < event.results.length; i++) {
-        transcript += event.results[i][0].transcript;
-      }
-      setText(transcript);
-      if (taRef.current) {
-        taRef.current.style.height = 'auto';
-        taRef.current.style.height = `${Math.min(taRef.current.scrollHeight, 200)}px`;
-      }
-    };
-
-    recognition.onerror = () => {
-      setIsListening(false);
-      recognitionRef.current = null;
-    };
-
-    recognition.onend = () => {
-      setIsListening(false);
-      recognitionRef.current = null;
-    };
-
-    recognitionRef.current = recognition;
-    recognition.start();
     setIsListening(true);
+    setIsInterim(false);
+
+    listenHandleRef.current = startListening({
+      language,
+      onResult: (transcript, isFinal) => {
+        setText(transcript);
+        setIsInterim(!isFinal);
+        resizeTextarea();
+
+        if (isFinal) {
+          stopListening();
+          if (onVoiceSend) {
+            // Auto-send when voice mode is active
+            onVoiceSend(transcript);
+            setText('');
+            setPointCount(1);
+            setPointMode(false);
+            if (taRef.current) taRef.current.style.height = 'auto';
+          }
+          // Otherwise just leave text in box for manual send
+        }
+      },
+      onError: () => {
+        stopListening();
+      },
+      onEnd: () => {
+        setIsListening(false);
+        setIsInterim(false);
+        listenHandleRef.current = null;
+      },
+      continuous: false,
+    });
   };
 
   const send = () => {
     if ((!text.trim() && !image) || disabled) return;
-    if (recognitionRef.current) { recognitionRef.current.stop(); setIsListening(false); }
+    stopListening();
     onSubmit(text.trim(), image || null);
-    setText(''); setPointCount(1); setPointMode(false);
-    setImage(null); setImagePreview(null);
+    setText('');
+    setPointCount(1);
+    setPointMode(false);
+    setImage(null);
+    setImagePreview(null);
     if (fileRef.current) fileRef.current.value = '';
     if (taRef.current) taRef.current.style.height = 'auto';
   };
 
   const handleKey = (e: React.KeyboardEvent) => {
-    // Enter = new line (students write multi-line questions)
-    // Ctrl+Enter or Cmd+Enter = send (intentional action)
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       send();
@@ -173,7 +181,6 @@ export const ChatInput = memo(function ChatInput({ onSubmit, subjectKey, disable
       insertAt(`\n${n}. `);
       setPointCount(n);
     }
-    // Plain Enter = default textarea behavior (new line)
   };
 
   const togglePoints = () => {
@@ -181,62 +188,133 @@ export const ChatInput = memo(function ChatInput({ onSubmit, subjectKey, disable
       if (!text.trim()) { setText('1. '); setPointCount(1); }
       else if (!text.startsWith('1.')) { setText(`1. ${text}`); setPointCount(1); }
       setPointMode(true);
-      setTimeout(() => { const ta = taRef.current; if (ta) { ta.focus(); ta.selectionStart = ta.selectionEnd = ta.value.length; } }, 0);
-    } else setPointMode(false);
+      setTimeout(() => {
+        const ta = taRef.current;
+        if (ta) { ta.focus(); ta.selectionStart = ta.selectionEnd = ta.value.length; }
+      }, 0);
+    } else {
+      setPointMode(false);
+    }
   };
 
   const autoGrow = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setText(e.target.value); e.target.style.height = 'auto'; e.target.style.height = `${Math.min(e.target.scrollHeight, 200)}px`;
+    setText(e.target.value);
+    e.target.style.height = 'auto';
+    e.target.style.height = `${Math.min(e.target.scrollHeight, 200)}px`;
   };
 
   const syms = MATH_SYMBOL_TABS.find(t => t.id === symTab)?.symbols ?? MATH_SYMBOL_TABS[0].symbols;
 
   return (
     <div className="border-t" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)' }}>
+      {/* Pulse animation for mic button */}
+      <style>{`
+        @keyframes mic-pulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(232, 88, 28, 0.4); }
+          50%       { box-shadow: 0 0 0 10px rgba(232, 88, 28, 0); }
+        }
+        .mic-pulsing { animation: mic-pulse 1.2s ease-in-out infinite; }
+      `}</style>
+
       {showSymbols && (
         <div className="px-3 pt-2 pb-1">
           <div className="flex gap-1 overflow-x-auto mb-2" style={{ scrollbarWidth: 'none' }}>
             {MATH_SYMBOL_TABS.map(tab => (
-              <button key={tab.id} onClick={() => setSymTab(tab.id)} className="shrink-0 px-2 py-1 rounded-lg text-[10px] font-bold transition-all"
-                style={{ background: symTab === tab.id ? `${cfg.color}15` : 'transparent', color: symTab === tab.id ? cfg.color : 'var(--text-3)', border: symTab === tab.id ? `1px solid ${cfg.color}30` : '1px solid transparent' }}>
+              <button key={tab.id} onClick={() => setSymTab(tab.id)}
+                className="shrink-0 px-2 py-1 rounded-lg text-[10px] font-bold transition-all"
+                style={{
+                  background: symTab === tab.id ? `${cfg.color}15` : 'transparent',
+                  color: symTab === tab.id ? cfg.color : 'var(--text-3)',
+                  border: symTab === tab.id ? `1px solid ${cfg.color}30` : '1px solid transparent',
+                }}>
                 <span className="text-sm mr-0.5">{tab.emoji}</span> {tab.label}
               </button>
             ))}
           </div>
           <div className="flex flex-wrap gap-1">
             {syms.map((s, i) => (
-              <button key={i} onClick={() => insertAt(s)} className="w-9 h-9 rounded-lg flex items-center justify-center text-sm font-semibold transition-all active:scale-90"
-                style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', fontFamily: 'monospace' }}>{s}</button>
+              <button key={i} onClick={() => insertAt(s)}
+                className="w-9 h-9 rounded-lg flex items-center justify-center text-sm font-semibold transition-all active:scale-90"
+                style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', fontFamily: 'monospace' }}>
+                {s}
+              </button>
             ))}
           </div>
         </div>
       )}
+
       <div className="flex items-center gap-1.5 px-3 pt-2 pb-1">
-        <button onClick={() => setShowSymbols(!showSymbols)} className="px-2 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95"
-          style={{ background: showSymbols ? `${cfg.color}15` : 'var(--surface-2)', color: showSymbols ? cfg.color : 'var(--text-3)', border: `1px solid ${showSymbols ? `${cfg.color}30` : 'var(--border)'}` }}>
+        <button onClick={() => setShowSymbols(!showSymbols)}
+          className="px-2 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95"
+          style={{
+            background: showSymbols ? `${cfg.color}15` : 'var(--surface-2)',
+            color: showSymbols ? cfg.color : 'var(--text-3)',
+            border: `1px solid ${showSymbols ? `${cfg.color}30` : 'var(--border)'}`,
+          }}>
           {showSymbols ? '× Close' : 'fx Math'}
         </button>
-        <button onClick={togglePoints} className="px-2 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95"
-          style={{ background: pointMode ? `${cfg.color}15` : 'var(--surface-2)', color: pointMode ? cfg.color : 'var(--text-3)', border: `1px solid ${pointMode ? `${cfg.color}30` : 'var(--border)'}` }}>
+        <button onClick={togglePoints}
+          className="px-2 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95"
+          style={{
+            background: pointMode ? `${cfg.color}15` : 'var(--surface-2)',
+            color: pointMode ? cfg.color : 'var(--text-3)',
+            border: `1px solid ${pointMode ? `${cfg.color}30` : 'var(--border)'}`,
+          }}>
           {pointMode ? '1. ON' : '1. Points'}
         </button>
         <input type="file" ref={fileRef} accept="image/*" capture="environment" onChange={handleImage} className="hidden" />
-        <button onClick={() => fileRef.current?.click()} className="px-2 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95"
-          style={{ background: image ? `${cfg.color}15` : 'var(--surface-2)', color: image ? cfg.color : 'var(--text-3)', border: `1px solid ${image ? `${cfg.color}30` : 'var(--border)'}` }}>
+        <button onClick={() => fileRef.current?.click()}
+          className="px-2 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95"
+          style={{
+            background: image ? `${cfg.color}15` : 'var(--surface-2)',
+            color: image ? cfg.color : 'var(--text-3)',
+            border: `1px solid ${image ? `${cfg.color}30` : 'var(--border)'}`,
+          }}>
           {image ? '1 image' : 'Photo'}
         </button>
-        <button onClick={toggleVoice} className="px-2 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95"
-          style={{ background: isListening ? '#EF444420' : 'var(--surface-2)', color: isListening ? '#EF4444' : 'var(--text-3)', border: `1px solid ${isListening ? '#EF444440' : 'var(--border)'}` }}>
-          {isListening ? 'Stop' : 'Voice'}
-        </button>
+
+        {/* Voice button — hidden entirely if browser doesn't support STT */}
+        {sttSupported && (
+          <button
+            onClick={toggleVoice}
+            className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95 flex items-center gap-1${isListening ? ' mic-pulsing' : ''}`}
+            style={{
+              background: isListening
+                ? 'linear-gradient(135deg, #E8590C22, #F59E0B22)'
+                : 'var(--surface-2)',
+              color: isListening ? '#E8590C' : 'var(--text-3)',
+              border: `1px solid ${isListening ? '#E8590C40' : 'var(--border)'}`,
+            }}
+            aria-label={isListening ? 'Stop listening' : 'Start voice input'}
+            title={isListening ? 'Stop' : 'Voice input'}
+          >
+            {isListening ? (
+              <>
+                <span style={{ fontSize: 10 }}>●</span>
+                <span>Listening…</span>
+              </>
+            ) : (
+              <>
+                <span>🎤</span>
+                <span>Voice</span>
+              </>
+            )}
+          </button>
+        )}
+
         <span className="flex-1" />
-        <span className="text-[10px] text-[var(--text-3)] hidden sm:inline">Enter = new line · Ctrl+Enter = send</span>
+        <span className="text-[10px] text-[var(--text-3)] hidden sm:inline">
+          Enter = new line · Ctrl+Enter = send
+        </span>
       </div>
+
       {imagePreview && (
         <div className="px-3 pt-2 flex items-center gap-2">
           <div className="relative">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={imagePreview} alt="Attached" className="w-12 h-12 rounded-lg object-cover border" style={{ borderColor: 'var(--border)' }} />
-            <button onClick={() => { setImage(null); setImagePreview(null); if (fileRef.current) fileRef.current.value = ''; }}
+            <button
+              onClick={() => { setImage(null); setImagePreview(null); if (fileRef.current) fileRef.current.value = ''; }}
               className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold bg-red-500 text-white">
               x
             </button>
@@ -244,15 +322,46 @@ export const ChatInput = memo(function ChatInput({ onSubmit, subjectKey, disable
           <span className="text-xs" style={{ color: 'var(--text-3)' }}>Image attached</span>
         </div>
       )}
+
       <div className="px-3 py-2 flex items-end gap-2" style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 8px), 8px)' }}>
-        <textarea ref={taRef} value={text} onChange={autoGrow} onKeyDown={handleKey}
-          placeholder={pointMode ? '1. Write your answer point by point...\n(Shift+Enter for next point)' : 'Ask Foxy anything...\nPress Enter for new line, Ctrl+Enter to send'}
-          rows={pointMode ? 3 : 2} className="flex-1 min-w-0 text-sm rounded-2xl px-4 py-2.5 resize-none outline-none leading-relaxed"
-          style={{ background: 'var(--surface-2)', border: `1.5px solid ${pointMode ? `${cfg.color}40` : 'var(--border)'}`, fontFamily: 'var(--font-body)', maxHeight: 200, minHeight: pointMode ? 80 : 52, overflowWrap: 'break-word', wordBreak: 'break-word' }} />
-        <button onClick={send} disabled={disabled || (!text.trim() && !image)}
+        <textarea
+          ref={taRef}
+          value={text}
+          onChange={autoGrow}
+          onKeyDown={handleKey}
+          placeholder={
+            isListening
+              ? 'Listening… speak now'
+              : pointMode
+                ? '1. Write your answer point by point…\n(Shift+Enter for next point)'
+                : 'Ask Foxy anything…\nPress Enter for new line, Ctrl+Enter to send'
+          }
+          rows={pointMode ? 3 : 2}
+          className="flex-1 min-w-0 text-sm rounded-2xl px-4 py-2.5 resize-none outline-none leading-relaxed"
+          style={{
+            background: 'var(--surface-2)',
+            border: `1.5px solid ${isListening ? '#E8590C40' : pointMode ? `${cfg.color}40` : 'var(--border)'}`,
+            fontFamily: 'var(--font-body)',
+            maxHeight: 200,
+            minHeight: pointMode ? 80 : 52,
+            overflowWrap: 'break-word',
+            wordBreak: 'break-word',
+            // Interim text shown in muted colour
+            color: isInterim ? 'var(--text-3)' : 'var(--text-1)',
+            fontStyle: isInterim ? 'italic' : 'normal',
+          }}
+        />
+        <button
+          onClick={send}
+          disabled={disabled || (!text.trim() && !image)}
           className="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-lg font-bold transition-all active:scale-90 disabled:opacity-40"
-          style={{ background: (text.trim() || image) ? `linear-gradient(135deg, ${cfg.color}, ${cfg.color}dd)` : 'var(--surface-2)', color: (text.trim() || image) ? '#fff' : 'var(--text-3)' }}>
-          {disabled ? '...' : '↑'}
+          style={{
+            background: (text.trim() || image)
+              ? `linear-gradient(135deg, ${cfg.color}, ${cfg.color}dd)`
+              : 'var(--surface-2)',
+            color: (text.trim() || image) ? '#fff' : 'var(--text-3)',
+          }}>
+          {disabled ? '…' : '↑'}
         </button>
       </div>
     </div>
