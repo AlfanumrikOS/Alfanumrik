@@ -25,6 +25,8 @@ const CORE_TABS = [
 
 const MORE_ITEMS = [
   { href: '/study-plan', icon: '📅', label: 'Study Plan', labelHi: 'स्टडी प्लान' },
+  { href: '/pyq', icon: '📄', label: 'PYQ Practice', labelHi: 'पिछले साल के प्रश्न', gradeMin: 9 },
+  { href: '/mock-exam', icon: '📋', label: 'Mock Exam', labelHi: 'मॉक परीक्षा', gradeMin: 9 },
   { href: '/profile', icon: '👤', label: 'Profile', labelHi: 'प्रोफ़ाइल' },
   { href: '/simulations', icon: '🔬', label: 'STEM Lab', labelHi: 'STEM लैब' },
   { href: '/challenge', icon: '⚔️', label: 'Challenge Friends', labelHi: 'दोस्तों को चैलेंज करो' },
@@ -51,6 +53,14 @@ const SIDEBAR_SECTIONS = [
       { href: '/quiz', icon: '⚡', label: 'Quick Quiz', labelHi: 'क्विज़' },
       { href: '/review', icon: '🔄', label: 'Flashcard Review', labelHi: 'फ्लैशकार्ड रिव्यू' },
     ],
+  },
+  {
+    title: 'Board Exam Prep', titleHi: 'बोर्ड परीक्षा तैयारी',
+    items: [
+      { href: '/pyq', icon: '📄', label: 'PYQ Practice', labelHi: 'पिछले साल के प्रश्न' },
+      { href: '/mock-exam', icon: '📋', label: 'Mock Exam', labelHi: 'मॉक परीक्षा' },
+    ],
+    gradeMin: 9, // only shown for grades 9+
   },
   {
     title: 'Track', titleHi: 'ट्रैक',
@@ -164,8 +174,17 @@ export default function BottomNavComponent() {
   }, [showMore]);
 
   const tabs = getCoreTabs(activeRole);
-  const moreItems = getMoreItems(activeRole);
-  const sidebarSections = getSidebarSections(activeRole);
+  const allSidebarSections = getSidebarSections(activeRole);
+  // Filter by grade for grade-gated sections (Board Exam Prep: grade 9+)
+  const studentGrade = parseInt((auth as any)?.student?.grade ?? '6', 10);
+  const sidebarSections = allSidebarSections.filter(s => {
+    const gMin = (s as any).gradeMin;
+    return gMin == null || studentGrade >= gMin;
+  });
+  const moreItems = getMoreItems(activeRole).filter(item => {
+    const gMin = (item as any).gradeMin;
+    return gMin == null || studentGrade >= gMin;
+  });
 
   // Due-review count for the Review tab badge (SWR-cached — no extra request if dashboard already loaded)
   const { data: dashData } = useDashboardData((auth as any)?.student?.id);

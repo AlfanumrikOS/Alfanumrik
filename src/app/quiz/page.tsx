@@ -98,6 +98,18 @@ export default function QuizPage() {
     total: number; correct: number; score_percent: number; xp_earned: number; session_id: string;
   } | null>(null);
 
+  // JEE/NEET tag mode — grades 11-12 only, persisted to localStorage
+  const [jeeNeetMode, setJeeNeetMode] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const stored = localStorage.getItem('alfanumrik_jee_neet_mode');
+    if (stored !== null) setJeeNeetMode(stored === 'true');
+    else {
+      const g = student?.grade ?? '9';
+      if (g === '11' || g === '12') setJeeNeetMode(true);
+    }
+  }, [student?.grade]);
+
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/login');
     if (!isLoading && isLoggedIn && !student && activeRole !== 'student') {
@@ -492,6 +504,28 @@ export default function QuizPage() {
 
   const formatTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
 
+  /**
+   * Heuristic exam tag for JEE/NEET mode (grades 11-12).
+   * Physics numerical-style → JEE Main
+   * Biology application → NEET
+   * Chemistry with organic keywords → JEE Advanced
+   * Else → Board
+   */
+  function getExamTag(question: Question): { label: string; labelHi: string; color: string } {
+    const text = (question.question_text || '').toLowerCase();
+    const subject = selectedSubject || '';
+    if (subject === 'physics' && /\d+\s*(m\/s|newton|joule|kg|ms|rad|ohm|volt|watt|coulomb|ampere|hertz|pascal)/.test(text)) {
+      return { label: 'JEE Main', labelHi: 'JEE मेन', color: '#2563EB' };
+    }
+    if (subject === 'biology' && (question.bloom_level === 'apply' || question.bloom_level === 'analyze' || /cell|enzyme|hormone|dna|rna|organ|gene|photosynthesis|respirat/.test(text))) {
+      return { label: 'NEET', labelHi: 'NEET', color: '#16A34A' };
+    }
+    if (subject === 'chemistry' && /organic|benzene|alkane|alkene|alkyl|ester|aldehyde|ketone|amine|polymer|aromatic/.test(text)) {
+      return { label: 'JEE Adv', labelHi: 'JEE एडवांस', color: '#7C3AED' };
+    }
+    return { label: 'Board', labelHi: 'बोर्ड', color: '#F97316' };
+  }
+
   if (isLoading || !student) return <LoadingFoxy />;
 
   const subMeta = SUBJECT_META.find(s => s.code === selectedSubject);
@@ -541,6 +575,24 @@ export default function QuizPage() {
                 <span style={{ color: quizMode === 'exam' && timer < 300 ? '#DC2626' : 'var(--text-3)', fontWeight: 600, fontFamily: 'var(--font-mono, monospace)' }}>
                   {formatTime(timer)}
                 </span>
+                {(student?.grade === '11' || student?.grade === '12') && (
+                  <button
+                    onClick={() => {
+                      const next = !jeeNeetMode;
+                      setJeeNeetMode(next);
+                      localStorage.setItem('alfanumrik_jee_neet_mode', String(next));
+                    }}
+                    className="text-[10px] font-bold px-2 py-0.5 rounded-full transition-all"
+                    style={{
+                      background: jeeNeetMode ? '#2563EB18' : 'var(--surface-2)',
+                      color: jeeNeetMode ? '#2563EB' : 'var(--text-3)',
+                      border: `1px solid ${jeeNeetMode ? '#2563EB40' : 'transparent'}`,
+                    }}
+                    title={jeeNeetMode ? 'Hide JEE/NEET tags' : 'Show JEE/NEET tags'}
+                  >
+                    🎯 {jeeNeetMode ? 'JEE/NEET' : 'Tags'}
+                  </button>
+                )}
               </div>
             </div>
             <ProgressBar value={progress} color={subMeta?.color} height={4} />
@@ -568,6 +620,15 @@ export default function QuizPage() {
                   {isHi ? 'थकान' : 'Fatigue'} {Math.round(cogLoad.fatigueScore * 100)}%
                 </span>
               )}
+              {jeeNeetMode && (student?.grade === '11' || student?.grade === '12') && (() => {
+                const tag = getExamTag(q);
+                return (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full ml-auto"
+                    style={{ background: tag.color + '18', color: tag.color }}>
+                    🎯 {isHi ? tag.labelHi : tag.label}
+                  </span>
+                );
+              })()}
             </div>
             <div className="text-lg md:text-xl font-semibold leading-relaxed" style={{ whiteSpace: 'pre-wrap' }}>
               {isHi && q.question_hi ? q.question_hi : q.question_text}

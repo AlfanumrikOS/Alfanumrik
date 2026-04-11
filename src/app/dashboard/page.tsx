@@ -60,6 +60,10 @@ export default function Dashboard() {
   const [bktMastery, setBktMastery] = useState<Record<string, number>>({});
   const [pendingLinks, setPendingLinks] = useState<PendingLink[]>([]);
 
+  // Stream selector — grades 11-12 only, persisted to localStorage
+  const [selectedStream, setSelectedStream] = useState<'science' | 'commerce' | 'humanities' | null>(null);
+  const [showStreamPicker, setShowStreamPicker] = useState(false);
+
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/login');
     // Redirect non-student roles to their correct dashboard
@@ -198,6 +202,25 @@ export default function Dashboard() {
     if (student) { fetchPendingLinks(); }
   }, [student?.id, fetchPendingLinks]);
 
+  // Stream selector: show picker on first visit for grades 11-12
+  useEffect(() => {
+    if (!student) return;
+    const g = student.grade;
+    if (g !== '11' && g !== '12') return;
+    const stored = localStorage.getItem('alfanumrik_stream');
+    if (stored === 'science' || stored === 'commerce' || stored === 'humanities') {
+      setSelectedStream(stored);
+    } else {
+      setShowStreamPicker(true);
+    }
+  }, [student?.grade, student?.id]);
+
+  const STREAM_SUBJECTS: Record<string, string[]> = {
+    science: ['math', 'physics', 'chemistry', 'biology', 'english', 'computer_science'],
+    commerce: ['math', 'economics', 'accountancy', 'business_studies', 'english', 'computer_science'],
+    humanities: ['history_sr', 'geography', 'political_science', 'economics', 'english', 'hindi'],
+  };
+
   // Show skeleton while loading, but don't block non-student roles — they'll be redirected
   if (isLoading) return <DashboardSkeleton />;
   if (!student) {
@@ -218,18 +241,92 @@ export default function Dashboard() {
   const currentLevel = current?.level ?? 1;
   const meta = subjects.find((s) => s.code === student.preferred_subject);
 
+  // Filter subjects by stream for grades 11-12
+  const streamFilteredSubjects = (() => {
+    const g = student?.grade ?? '9';
+    if ((g === '11' || g === '12') && selectedStream) {
+      return subjects.filter(s => (STREAM_SUBJECTS[selectedStream] ?? []).includes(s.code));
+    }
+    return subjects;
+  })();
+
   return (
     <div className="mesh-bg min-h-dvh pb-nav">
+      {/* Stream Picker Modal — grades 11-12 first visit */}
+      {showStreamPicker && (student?.grade === '11' || student?.grade === '12') && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.5)' }}>
+          <div className="w-full max-w-sm rounded-3xl p-6 shadow-2xl"
+            style={{ background: 'var(--warm-cream, #FFF9F0)', border: '1px solid var(--border)' }}>
+            <div className="text-center mb-5">
+              <div className="text-4xl mb-2">🎓</div>
+              <h2 className="font-bold text-xl" style={{ color: 'var(--text-1)' }}>
+                {isHi ? 'अपनी स्ट्रीम चुनें' : 'Choose Your Stream'}
+              </h2>
+              <p className="text-sm mt-1" style={{ color: 'var(--text-2)' }}>
+                {isHi ? 'कक्षा ' + student.grade + ' · CBSE' : 'Class ' + student.grade + ' · CBSE'}
+              </p>
+            </div>
+            <div className="space-y-3">
+              {[
+                { key: 'science', icon: '⚗️', label: 'Science', labelHi: 'विज्ञान', desc: 'Physics · Chemistry · Biology · Math', color: '#2563EB' },
+                { key: 'commerce', icon: '📊', label: 'Commerce', labelHi: 'वाणिज्य', desc: 'Accountancy · Economics · Business', color: '#D97706' },
+                { key: 'humanities', icon: '🌍', label: 'Humanities', labelHi: 'मानविकी', desc: 'History · Geography · Political Science', color: '#7C3AED' },
+              ].map(st => (
+                <button
+                  key={st.key}
+                  onClick={() => {
+                    const s = st.key as 'science' | 'commerce' | 'humanities';
+                    setSelectedStream(s);
+                    localStorage.setItem('alfanumrik_stream', s);
+                    setShowStreamPicker(false);
+                  }}
+                  className="w-full flex items-center gap-4 p-4 rounded-2xl text-left transition-all hover:scale-[1.01]"
+                  style={{
+                    background: 'var(--surface-1)',
+                    border: `2px solid ${st.color}30`,
+                  }}
+                >
+                  <span className="text-3xl">{st.icon}</span>
+                  <div>
+                    <p className="font-bold text-base" style={{ color: st.color }}>
+                      {isHi ? st.labelHi : st.label}
+                    </p>
+                    <p className="text-xs" style={{ color: 'var(--text-2)' }}>{st.desc}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <header className="page-header">
         <div className="page-header-inner flex items-center justify-between">
           <div>
             <p className="text-xs text-[var(--text-3)]">{greeting},</p>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-lg md:text-xl font-bold" style={{ fontFamily: 'var(--font-display)' }}>
                 {student.name} 👋
               </h1>
               <PlanBadge planCode={student.subscription_plan} size="sm" />
+              {(student.grade === '11' || student.grade === '12') && selectedStream && (
+                <button
+                  onClick={() => setShowStreamPicker(true)}
+                  className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                  style={{
+                    background: selectedStream === 'science' ? '#2563EB15' : selectedStream === 'commerce' ? '#D9770615' : '#7C3AED15',
+                    color: selectedStream === 'science' ? '#2563EB' : selectedStream === 'commerce' ? '#D97706' : '#7C3AED',
+                    border: `1px solid ${selectedStream === 'science' ? '#2563EB30' : selectedStream === 'commerce' ? '#D9770630' : '#7C3AED30'}`,
+                  }}
+                >
+                  {selectedStream === 'science' ? '⚗️' : selectedStream === 'commerce' ? '📊' : '🌍'}
+                  {' '}{isHi
+                    ? (selectedStream === 'science' ? 'विज्ञान' : selectedStream === 'commerce' ? 'वाणिज्य' : 'मानविकी')
+                    : (selectedStream === 'science' ? 'Science' : selectedStream === 'commerce' ? 'Commerce' : 'Humanities')}
+                </button>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2">
