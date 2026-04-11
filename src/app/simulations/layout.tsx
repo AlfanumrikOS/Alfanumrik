@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'STEM Centre — Alfanumrik',
+  title: 'STEM Lab — Alfanumrik',
   description: 'Explore physics, chemistry, biology, and math through guided experiments and interactive simulations. CBSE-aligned STEM learning.',
 };
 

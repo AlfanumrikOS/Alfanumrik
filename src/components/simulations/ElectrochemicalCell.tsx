@@ -2,6 +2,14 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 
+export const metadata = {
+  id: 'electrochemical-cell',
+  name: 'Electrochemical Cell',
+  subject: 'Chemistry',
+  grade: '11-12',
+  description: 'Explore galvanic cells — electron flow, electrode reactions, and cell potential',
+};
+
 /**
  * Electrochemical Cell (Daniell Cell) Simulation
  *

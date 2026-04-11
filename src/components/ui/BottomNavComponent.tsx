@@ -26,7 +26,7 @@ const CORE_TABS = [
 const MORE_ITEMS = [
   { href: '/study-plan', icon: '📅', label: 'Study Plan', labelHi: 'स्टडी प्लान' },
   { href: '/profile', icon: '👤', label: 'Profile', labelHi: 'प्रोफ़ाइल' },
-  { href: '/simulations', icon: '🔬', label: 'Interactive Lab', labelHi: 'इंटरैक्टिव लैब' },
+  { href: '/simulations', icon: '🔬', label: 'STEM Lab', labelHi: 'STEM लैब' },
   { href: '/challenge', icon: '⚔️', label: 'Challenge Friends', labelHi: 'दोस्तों को चैलेंज करो' },
   { href: '/leaderboard', icon: '🏆', label: 'Rankings & Compete', labelHi: 'रैंकिंग और प्रतियोगिता' },
   { href: '/progress', icon: '📈', label: 'My Progress', labelHi: 'मेरी प्रगति' },
@@ -47,7 +47,7 @@ const SIDEBAR_SECTIONS = [
     items: [
       { href: '/learn', icon: '📖', label: 'Subjects & Chapters', labelHi: 'विषय और अध्याय' },
       { href: '/study-plan', icon: '📅', label: 'Study Plan', labelHi: 'अध्ययन योजना' },
-      { href: '/simulations', icon: '🔬', label: 'Interactive Lab', labelHi: 'इंटरैक्टिव लैब' },
+      { href: '/simulations', icon: '🔬', label: 'STEM Lab', labelHi: 'STEM लैब' },
       { href: '/quiz', icon: '⚡', label: 'Quick Quiz', labelHi: 'क्विज़' },
       { href: '/review', icon: '🔄', label: 'Flashcard Review', labelHi: 'फ्लैशकार्ड रिव्यू' },
     ],

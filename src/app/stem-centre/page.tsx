@@ -169,24 +169,24 @@ export default function STEMCentrePage() {
     );
   }
 
-  /* ─── Plan Gate: STEM Centre requires Starter+ ─── */
+  /* ─── Plan Gate: STEM Lab requires Starter+ ─── */
   if (student && !isPremium(student.subscription_plan)) {
     return (
       <div className="min-h-screen bg-[#FFF8F0] flex items-center justify-center px-4">
         <div className="max-w-md w-full bg-white rounded-2xl shadow-lg border border-orange-100 p-6 text-center">
           <div className="text-5xl mb-4">🔬</div>
           <h1 className="text-xl font-bold text-gray-900 font-[Sora] mb-2">
-            {isHi ? 'स्टेम सेंटर' : 'STEM Centre'}
+            {isHi ? 'STEM लैब' : 'STEM Lab'}
           </h1>
           <p className="text-sm text-gray-600 mb-4">
             {isHi
-              ? 'इंटरैक्टिव लैब्स, सिमुलेशन और गाइडेड प्रयोगों के साथ विज्ञान और गणित को जीवंत बनाएं।'
-              : 'Bring science and math to life with interactive labs, simulations, and guided experiments.'}
+              ? 'STEM लैब्स, सिमुलेशन और गाइडेड प्रयोगों के साथ विज्ञान और गणित को जीवंत बनाएं।'
+              : 'Bring science and math to life with STEM labs, simulations, and guided experiments.'}
           </p>
 
           <div className="bg-orange-50 rounded-xl p-4 mb-5 text-left">
             <p className="text-xs font-semibold text-orange-700 mb-2">
-              {isHi ? 'स्टेम सेंटर में शामिल है:' : 'STEM Centre includes:'}
+              {isHi ? 'STEM लैब में शामिल है:' : 'STEM Lab includes:'}
             </p>
             <ul className="space-y-1.5">
               {[
@@ -205,8 +205,8 @@ export default function STEMCentrePage() {
 
           <p className="text-xs text-gray-500 mb-4">
             {isHi
-              ? 'स्टेम सेंटर Starter योजना और उससे ऊपर के लिए उपलब्ध है।'
-              : 'STEM Centre is available on the Starter plan and above.'}
+              ? 'STEM लैब Starter योजना और उससे ऊपर के लिए उपलब्ध है।'
+              : 'STEM Lab is available on the Starter plan and above.'}
           </p>
 
           <Link
@@ -234,7 +234,7 @@ export default function STEMCentrePage() {
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold text-gray-900 font-[Sora]">
-              🔬 {isHi ? 'स्टेम सेंटर' : 'STEM Centre'}
+              🔬 {isHi ? 'STEM लैब' : 'STEM Lab'}
             </h1>
             <p className="text-xs text-gray-500">
               {isHi ? `कक्षा ${grade} — प्रयोग और सिमुलेशन` : `Grade ${grade} — Experiments & Simulations`}

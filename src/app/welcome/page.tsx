@@ -639,7 +639,7 @@ function WelcomeContent() {
                   { en: 'AI Tutor (Foxy) — 16 subjects, Hindi + English', hi: 'AI ट्यूटर (Foxy) — 16 विषय, हिन्दी + अंग्रेज़ी' },
                   { en: 'Adaptive quizzes with Bloom\'s taxonomy', hi: 'Bloom\'s टैक्सोनॉमी के साथ अडैप्टिव क्विज़' },
                   { en: 'Spaced repetition for revision', hi: 'रिवीज़न के लिए स्पेस्ड रिपिटिशन' },
-                  { en: 'STEM Centre with 19 interactive simulations', hi: '19 इंटरैक्टिव सिमुलेशन के साथ STEM सेंटर' },
+                  { en: 'STEM Lab with 19 interactive simulations', hi: '19 इंटरैक्टिव सिमुलेशन के साथ STEM लैब' },
                   { en: 'Progress tracking with mastery data', hi: 'mastery डेटा के साथ प्रगति ट्रैकिंग' },
                   { en: 'Parent dashboard with weekly reports', hi: 'साप्ताहिक रिपोर्ट के साथ पैरेंट डैशबोर्ड' },
                   { en: 'Teacher portal with class management', hi: 'क्लास मैनेजमेंट के साथ टीचर पोर्टल' },

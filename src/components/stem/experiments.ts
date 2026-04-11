@@ -1,5 +1,5 @@
 /**
- * STEM Centre — Guided Experiment Definitions
+ * STEM Lab — Guided Experiment Definitions
  *
  * Each experiment wraps a built-in simulation (or a future DB simulation)
  * with structured observations, data recording, and viva-style quiz questions.

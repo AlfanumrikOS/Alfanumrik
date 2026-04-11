@@ -56,7 +56,7 @@ const PLANS: Plan[] = [
       { label: '2 subjects', labelHi: '2 विषय', included: true },
       { label: 'Progress reports', labelHi: 'प्रगति रिपोर्ट', included: true },
       { label: 'Spaced repetition', labelHi: 'स्पेस्ड रिपीटिशन', included: true },
-      { label: 'STEM Centre', labelHi: 'STEM सेंटर', included: false },
+      { label: 'STEM Lab', labelHi: 'STEM लैब', included: false },
     ],
   },
   {
@@ -77,7 +77,7 @@ const PLANS: Plan[] = [
       { label: '4 subjects', labelHi: '4 विषय', included: true },
       { label: 'Progress reports', labelHi: 'प्रगति रिपोर्ट', included: true },
       { label: 'Spaced repetition', labelHi: 'स्पेस्ड रिपीटिशन', included: true },
-      { label: 'STEM Centre', labelHi: 'STEM सेंटर', included: true },
+      { label: 'STEM Lab', labelHi: 'STEM लैब', included: true },
     ],
   },
   {
@@ -98,7 +98,7 @@ const PLANS: Plan[] = [
       { label: 'All subjects', labelHi: 'सभी विषय', included: true },
       { label: 'Progress reports', labelHi: 'प्रगति रिपोर्ट', included: true },
       { label: 'Spaced repetition', labelHi: 'स्पेस्ड रिपीटिशन', included: true },
-      { label: 'STEM Centre', labelHi: 'STEM सेंटर', included: true },
+      { label: 'STEM Lab', labelHi: 'STEM लैब', included: true },
     ],
   },
   {
@@ -119,7 +119,7 @@ const PLANS: Plan[] = [
       { label: 'All subjects', labelHi: 'सभी विषय', included: true },
       { label: 'Progress reports', labelHi: 'प्रगति रिपोर्ट', included: true },
       { label: 'Spaced repetition', labelHi: 'स्पेस्ड रिपीटिशन', included: true },
-      { label: 'STEM Centre', labelHi: 'STEM सेंटर', included: true },
+      { label: 'STEM Lab', labelHi: 'STEM लैब', included: true },
     ],
   },
 ];
