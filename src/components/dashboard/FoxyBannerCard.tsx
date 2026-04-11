@@ -38,7 +38,7 @@ export default function FoxyBannerCard({
   if (streak > 0 && streak <= 2) {
     return (
       <FoxyBanner
-        message={isHi ? `${streak} दिन की स्ट्रीक बचाओ! 1 क्विज़ लो` : `Save your ${streak}-day streak! Take a quick quiz`}
+        message={isHi ? `${streak} दिन की स्ट्रीक बचाओ! 1 क्विज़ लो` : `Save your ${streak}-day streak! Take a quiz`}
         actionLabel={isHi ? 'क्विज़ लो' : 'Take Quiz'}
         onAction={() => router.push('/quiz?mode=practice')}
         accent="#EF4444"

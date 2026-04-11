@@ -375,7 +375,7 @@ export default function FocusDashboard({
         </span>
         <div className="flex-1 min-w-0">
           <div className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>
-            {isHi ? 'NCERT अभ्यास' : 'NCERT Practice'}
+            {isHi ? 'अभ्यास प्रश्न' : 'Practice Questions'}
           </div>
           <div className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>
             {isHi ? 'MCQ · लघु उत्तर · दीर्घ उत्तर — CBSE शैली' : 'MCQ · Short Answer · Long Answer — CBSE style'}

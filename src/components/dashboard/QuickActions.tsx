@@ -20,8 +20,8 @@ export default function QuickActions({ isHi }: QuickActionsProps) {
   const router = useRouter();
 
   return (
-    <nav aria-label={isHi ? 'त्वरित क्रियाएँ' : 'Quick Actions'}>
-      <SectionHeader icon="⚡">{isHi ? 'त्वरित क्रियाएँ' : 'Quick Actions'}</SectionHeader>
+    <nav aria-label={isHi ? 'शॉर्टकट' : 'Shortcuts'}>
+      <SectionHeader icon="🔗">{isHi ? 'शॉर्टकट' : 'Shortcuts'}</SectionHeader>
       <div className="grid grid-cols-3 gap-2">
         {QUICK_ACTIONS.map((a) => (
           <ActionTile
