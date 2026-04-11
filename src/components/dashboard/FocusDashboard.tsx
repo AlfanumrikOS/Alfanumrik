@@ -360,7 +360,7 @@ export default function FocusDashboard({
       </div>
       {/* ── NCERT Practice quick-link (secondary, below main card) ── */}
       <button
-        onClick={() => router.push('/quiz/ncert')}
+        onClick={() => router.push('/quiz')}
         className="mt-3 w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-left transition-all active:scale-[0.98]"
         style={{
           border: '1.5px solid var(--border)',
