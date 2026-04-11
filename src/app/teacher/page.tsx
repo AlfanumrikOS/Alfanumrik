@@ -82,6 +82,12 @@ const SEV: Record<string, { bg: string; border: string }> = {
   low: { bg: 'bg-blue-600', border: 'border-blue-500' },
 };
 
+const CHAPTER_NAMES: Record<number, string> = {
+  1: 'Forces', 2: 'Motion', 3: 'Light', 4: 'Heat', 5: 'Sound',
+  6: 'Atoms', 7: 'Cells', 8: 'Plants', 9: 'Animals', 10: 'Earth',
+  11: 'Weather', 12: 'Matter',
+};
+
 function HeatmapTab({ data, isHi }: { data: HeatmapData; isHi: boolean }) {
   const [selected, setSelected] = useState<(HeatmapCell & { student: string; concept: string }) | null>(null);
   if (!data?.matrix?.length) return <div className="p-10 text-center text-slate-600 italic">{tt(isHi, 'No mastery data yet — students need to start practicing.', 'अभी तक कोई मास्टरी डेटा नहीं — छात्रों को अभ्यास शुरू करना होगा।')}</div>;
@@ -94,7 +100,11 @@ function HeatmapTab({ data, isHi }: { data: HeatmapData; isHi: boolean }) {
           <thead><tr>
             <th className="px-2 py-1.5 text-slate-500 font-medium text-[10px] text-left border-b border-slate-800 min-w-[110px]">{tt(isHi, 'Student', 'छात्र')}</th>
             <th className="px-1 py-1.5 text-slate-500 font-medium text-[10px] text-center border-b border-slate-800">{tt(isHi, 'Avg', 'औसत')}</th>
-            {concepts.map((c: HeatmapConcept, i: number) => <th key={i} className="px-1 py-1.5 text-slate-500 font-medium text-[10px] text-center border-b border-slate-800" title={c.title}>Ch{c.chapter}</th>)}
+            {concepts.map((c: HeatmapConcept, i: number) => (
+              <th key={i} className="px-1 py-1.5 text-slate-500 font-medium text-[10px] text-center border-b border-slate-800" title={c.title}>
+                Ch{c.chapter}{CHAPTER_NAMES[c.chapter] ? `: ${CHAPTER_NAMES[c.chapter].slice(0, 6)}` : ''}
+              </th>
+            ))}
           </tr></thead>
           <tbody>
             {data.matrix.map((row: HeatmapRow, ri: number) => (
@@ -338,6 +348,20 @@ export default function TeacherPage() {
         </div>
         <button onClick={load} className="py-2 px-4 bg-transparent text-indigo-500 border border-indigo-500 rounded-lg text-[13px] font-medium cursor-pointer">{tt(isHi, 'Refresh', 'रिफ्रेश')}</button>
       </header>
+
+      {/* Quick nav links */}
+      <div className="flex gap-2 flex-wrap mb-4">
+        {[
+          { label: tt(isHi, '🏫 Classes', '🏫 कक्षाएं'), path: '/teacher/classes' },
+          { label: tt(isHi, '📋 Assignments', '📋 असाइनमेंट'), path: '/teacher/assignments' },
+          { label: tt(isHi, '👨‍🎓 Students', '👨‍🎓 छात्र'), path: '/teacher/students' },
+          { label: tt(isHi, '📊 Reports', '📊 रिपोर्ट'), path: '/teacher/reports' },
+        ].map(({ label, path }) => (
+          <button key={path} onClick={() => router.push(path)} className="py-2 px-4 bg-slate-900 border border-slate-800 rounded-lg text-[13px] text-slate-400 font-medium cursor-pointer hover:border-indigo-500 hover:text-indigo-400 transition-colors">
+            {label}
+          </button>
+        ))}
+      </div>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-[repeat(auto-fit,minmax(100px,1fr))] gap-3 mb-4">

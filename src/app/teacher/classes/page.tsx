@@ -77,6 +77,15 @@ export default function TeacherClassesPage() {
   const [formSubject, setFormSubject] = useState('math');
   const [creating, setCreating] = useState(false);
 
+  // Edit class state
+  const [editingClass, setEditingClass] = useState<ClassData | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editSection, setEditSection] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  // Archive confirm state
+  const [archiveConfirmId, setArchiveConfirmId] = useState<string | null>(null);
+
   const teacherId = teacher?.id || '';
 
   // Auth guard
@@ -146,6 +155,55 @@ export default function TeacherClassesPage() {
       setCopiedId(classId);
       setTimeout(() => setCopiedId(null), 2000);
     });
+  };
+
+  const openEdit = (cls: ClassData) => {
+    setEditingClass(cls);
+    setEditName(cls.name);
+    setEditSection(cls.section || '');
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingClass) return;
+    const name = editName.trim();
+    if (!name || name.length < 2) {
+      showToast(tt(isHi, 'Class name must be at least 2 characters', 'कक्षा का नाम कम से कम 2 अक्षरों का होना चाहिए'));
+      return;
+    }
+    if (!/^[a-zA-Z0-9\s\-_().]+$/.test(name)) {
+      showToast(tt(isHi, 'Class name contains invalid characters', 'कक्षा के नाम में अमान्य अक्षर हैं'));
+      return;
+    }
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('classes')
+        .update({ name, section: editSection || null, updated_at: new Date().toISOString() })
+        .eq('id', editingClass.id);
+      if (error) throw error;
+      setClasses(prev => prev.map(c => c.id === editingClass.id ? { ...c, name, section: editSection || undefined } : c));
+      setEditingClass(null);
+      showToast(tt(isHi, 'Class updated!', 'कक्षा अपडेट की गई!'));
+    } catch (e: unknown) {
+      showToast(e instanceof Error ? e.message : tt(isHi, 'Failed to update class', 'कक्षा अपडेट करने में विफल'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleArchive = async (classId: string) => {
+    try {
+      const { error } = await supabase
+        .from('classes')
+        .update({ is_active: false })
+        .eq('id', classId);
+      if (error) throw error;
+      setClasses(prev => prev.filter(c => c.id !== classId));
+      setArchiveConfirmId(null);
+      showToast(tt(isHi, 'Class archived', 'कक्षा संग्रहीत की गई'));
+    } catch (e: unknown) {
+      showToast(e instanceof Error ? e.message : tt(isHi, 'Failed to archive class', 'कक्षा संग्रहीत करने में विफल'));
+    }
   };
 
   const toggleExpand = (id: string) => {
@@ -482,7 +540,67 @@ export default function TeacherClassesPage() {
                     >
                       {tt(isHi, 'View Reports', 'रिपोर्ट देखें')}
                     </button>
+                    <button
+                      onClick={() => openEdit(cls)}
+                      style={{
+                        padding: '7px 12px',
+                        backgroundColor: 'transparent',
+                        color: '#A78BFA',
+                        border: '1px solid #4C1D95',
+                        borderRadius: 7,
+                        fontSize: 12,
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      ✏️ {tt(isHi, 'Edit', 'संपादित करें')}
+                    </button>
+                    <button
+                      onClick={() => setArchiveConfirmId(cls.id)}
+                      style={{
+                        padding: '7px 12px',
+                        backgroundColor: 'transparent',
+                        color: '#F59E0B',
+                        border: '1px solid #78350F',
+                        borderRadius: 7,
+                        fontSize: 12,
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      📦 {tt(isHi, 'Archive', 'संग्रहीत करें')}
+                    </button>
                   </div>
+
+                  {/* Archive confirm inline overlay */}
+                  {archiveConfirmId === cls.id && (
+                    <div style={{
+                      marginTop: 12,
+                      backgroundColor: '#1C0A00',
+                      border: '1px solid #78350F',
+                      borderRadius: 10,
+                      padding: '14px 16px',
+                      animation: 'fadeIn 0.2s ease',
+                    }}>
+                      <p style={{ fontSize: 13, color: '#FCD34D', margin: '0 0 12px', fontWeight: 500 }}>
+                        {tt(isHi, 'Are you sure? This will hide the class from your dashboard.', 'क्या आप निश्चित हैं? यह कक्षा आपके डैशबोर्ड से छुप जाएगी।')}
+                      </p>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button
+                          onClick={() => setArchiveConfirmId(null)}
+                          style={{ flex: 1, padding: '8px 12px', backgroundColor: 'transparent', color: '#94A3B8', border: '1px solid #334155', borderRadius: 7, fontSize: 12, fontWeight: 500, cursor: 'pointer' }}
+                        >
+                          {tt(isHi, 'Cancel', 'रद्द करें')}
+                        </button>
+                        <button
+                          onClick={() => handleArchive(cls.id)}
+                          style={{ flex: 1, padding: '8px 12px', backgroundColor: '#DC2626', color: '#fff', border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                        >
+                          {tt(isHi, 'Archive', 'संग्रहीत करें')}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Expanded detail view */}
@@ -627,6 +745,67 @@ export default function TeacherClassesPage() {
       >
         +
       </button>
+
+      {/* Edit Class Modal */}
+      {editingClass && (
+        <div
+          style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, animation: 'fadeIn 0.2s ease' }}
+          onClick={e => { if (e.target === e.currentTarget) setEditingClass(null); }}
+        >
+          <div style={{ backgroundColor: '#0F172A', borderRadius: 16, border: '1px solid #1E293B', padding: '28px 24px', width: '100%', maxWidth: 440, margin: '0 16px', animation: 'fadeIn 0.25s ease' }}>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: '#F1F5F9', margin: '0 0 20px' }}>
+              {tt(isHi, 'Edit Class', 'कक्षा संपादित करें')}
+            </h2>
+
+            {/* Name */}
+            <label style={{ display: 'block', marginBottom: 14 }}>
+              <span style={{ fontSize: 13, color: '#94A3B8', display: 'block', marginBottom: 4 }}>{tt(isHi, 'Class Name', 'कक्षा का नाम')}</span>
+              <input
+                type="text"
+                value={editName}
+                onChange={e => setEditName(e.target.value)}
+                style={{ width: '100%', padding: '10px 12px', backgroundColor: '#1E293B', border: '1px solid #334155', borderRadius: 8, color: '#E2E8F0', fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
+              />
+            </label>
+
+            {/* Section */}
+            <label style={{ display: 'block', marginBottom: 20 }}>
+              <span style={{ fontSize: 13, color: '#94A3B8', display: 'block', marginBottom: 4 }}>{tt(isHi, 'Section', 'सेक्शन')}</span>
+              <select
+                value={editSection}
+                onChange={e => setEditSection(e.target.value)}
+                style={{ width: '100%', padding: '10px 12px', backgroundColor: '#1E293B', border: '1px solid #334155', borderRadius: 8, color: '#E2E8F0', fontSize: 14, outline: 'none', boxSizing: 'border-box', cursor: 'pointer' }}
+              >
+                {SECTIONS.map(s => (
+                  <option key={s} value={s}>{s || tt(isHi, '— None —', '— कोई नहीं —')}</option>
+                ))}
+              </select>
+            </label>
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={() => setEditingClass(null)}
+                style={{ flex: 1, padding: '11px 16px', backgroundColor: 'transparent', color: '#94A3B8', border: '1px solid #334155', borderRadius: 8, fontSize: 14, fontWeight: 500, cursor: 'pointer' }}
+              >
+                {tt(isHi, 'Cancel', 'रद्द करें')}
+              </button>
+              <button
+                onClick={handleSaveEdit}
+                disabled={saving || !editName.trim()}
+                style={{
+                  flex: 1, padding: '11px 16px',
+                  background: saving || !editName.trim() ? '#334155' : 'linear-gradient(135deg, #7C3AED, #6D28D9)',
+                  color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600,
+                  cursor: saving || !editName.trim() ? 'default' : 'pointer',
+                  opacity: saving || !editName.trim() ? 0.5 : 1,
+                }}
+              >
+                {saving ? tt(isHi, 'Saving...', 'सहेज रहे हैं...') : tt(isHi, 'Save Changes', 'बदलाव सहेजें')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Create Class Modal */}
       {showModal && (
