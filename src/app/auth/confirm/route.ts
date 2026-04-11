@@ -12,7 +12,71 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
+import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { getRoleDestination, validateRedirectTarget } from '@/lib/identity';
+
+// ── Session registration (2-device limit) ────────────────────────
+const SESSION_COOKIE = 'alfanumrik_sid';
+const MAX_SESSIONS = 2;
+const SESSION_MAX_AGE = 30 * 24 * 60 * 60; // 30 days
+
+/**
+ * Register a device session on the redirect response.
+ * Fail-open: errors are logged but never block the auth flow.
+ */
+async function registerSessionOnResponse(
+  response: NextResponse,
+  userId: string,
+  request: NextRequest
+): Promise<void> {
+  try {
+    const admin = getSupabaseAdmin();
+    const deviceLabel = (request.headers.get('user-agent') || 'unknown').slice(0, 200);
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+
+    // Enforce MAX_SESSIONS — revoke oldest if at limit
+    const { data: active } = await admin
+      .from('user_active_sessions')
+      .select('id, created_at, device_label')
+      .eq('auth_user_id', userId)
+      .eq('is_active', true)
+      .order('created_at', { ascending: true });
+
+    if (active && active.length >= MAX_SESSIONS) {
+      const toRevoke = active.slice(0, active.length - MAX_SESSIONS + 1);
+      for (const s of toRevoke) {
+        await admin.from('user_active_sessions').update({
+          is_active: false, revoked_at: new Date().toISOString(),
+        }).eq('id', s.id);
+      }
+    }
+
+    const { data: newSession } = await admin
+      .from('user_active_sessions')
+      .insert({
+        auth_user_id: userId,
+        session_token_hash: 'sid-based', // Legacy NOT NULL column
+        device_label: deviceLabel,
+        ip_address: ip,
+        user_agent: deviceLabel,
+      })
+      .select('id')
+      .single();
+
+    if (newSession) {
+      response.cookies.set(SESSION_COOKIE, newSession.id, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+        maxAge: SESSION_MAX_AGE,
+      });
+    }
+  } catch (err) {
+    console.error('[Confirm] Session registration failed:', err instanceof Error ? err.message : err);
+    // Non-blocking: don't break the auth flow
+  }
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl;
@@ -61,9 +125,11 @@ export async function GET(request: NextRequest) {
       if (type === 'signup') {
         // Email confirmation for signup — bootstrap profile if needed, same as /auth/callback
         let redirectRole = 'student';
+        let signupUserId = '';
         try {
           const { data: { user } } = await supabase.auth.getUser();
           if (user) {
+            signupUserId = user.id;
             const meta = user.user_metadata || {};
             const email = user.email || '';
             const name = meta.name || email.split('@')[0];
@@ -102,10 +168,24 @@ export async function GET(request: NextRequest) {
           }
         } catch { /* Non-fatal */ }
 
-        return NextResponse.redirect(`${origin}${getRoleDestination(redirectRole)}`);
+        const signupResponse = NextResponse.redirect(`${origin}${getRoleDestination(redirectRole)}`);
+        if (signupUserId) {
+          await registerSessionOnResponse(signupResponse, signupUserId, request);
+        }
+        return signupResponse;
       }
 
-      return NextResponse.redirect(`${origin}${safeNext}`);
+      // Default (non-signup, non-recovery) — register session
+      const defaultResponse = NextResponse.redirect(`${origin}${safeNext}`);
+      try {
+        const { data: { user: defaultUser } } = await supabase.auth.getUser();
+        if (defaultUser) {
+          await registerSessionOnResponse(defaultResponse, defaultUser.id, request);
+        }
+      } catch {
+        // Non-blocking — session registration failure shouldn't break login
+      }
+      return defaultResponse;
     }
 
     console.error('[Auth Confirm] Token verification failed:', error.message);
