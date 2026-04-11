@@ -68,7 +68,7 @@ export default function ChapterConceptPage() {
   const subMeta = SUBJECT_META.find(s => s.code === subject);
 
   useEffect(() => {
-    if (!isLoading && !isLoggedIn) router.replace('/');
+    if (!isLoading && !isLoggedIn) router.replace('/login');
   }, [isLoading, isLoggedIn, router]);
 
   // Plan-gate: redirect to /learn if this subject is locked for the student's plan

@@ -86,7 +86,7 @@ export default function ReviewPage() {
   };
 
   useEffect(() => {
-    if (!isLoading && !isLoggedIn) router.replace('/');
+    if (!isLoading && !isLoggedIn) router.replace('/login');
   }, [isLoading, isLoggedIn, router]);
 
   const load = useCallback(async () => {

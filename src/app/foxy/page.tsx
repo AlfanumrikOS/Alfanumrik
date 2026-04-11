@@ -330,7 +330,7 @@ export default function FoxyPage() {
   const [showPredictionInput, setShowPredictionInput] = useState(false);
   const [predictionSubmitted, setPredictionSubmitted] = useState(false);
 
-  useEffect(() => { if (!authLoading && !isLoggedIn) router.replace('/'); }, [authLoading, isLoggedIn, router]);
+  useEffect(() => { if (!authLoading && !isLoggedIn) router.replace('/login'); }, [authLoading, isLoggedIn, router]);
 
   // Fetch usage stats on mount and after student loads
   useEffect(() => {

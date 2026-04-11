@@ -170,7 +170,7 @@ export default function DiagnosticPage() {
   // ── Navigation guard ──────────────────────────────────────────
   useEffect(() => {
     if (!isLoading && !isLoggedIn) {
-      router.replace('/');
+      router.replace('/login');
     }
     if (!isLoading && isLoggedIn && activeRole !== 'student') {
       // Diagnostic is student-only

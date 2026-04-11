@@ -110,7 +110,7 @@ export default function ResetPasswordPage() {
             <p style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.6, marginBottom: 20 }}>
               This password reset link has expired or is invalid. Please request a new one.
             </p>
-            <Button fullWidth onClick={() => router.replace('/')}>
+            <Button fullWidth onClick={() => router.replace('/login')}>
               Go to Login &rarr;
             </Button>
           </div>
@@ -123,7 +123,7 @@ export default function ResetPasswordPage() {
             <p style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.6, marginBottom: 20 }}>
               Your password has been changed successfully. You can now log in with your new password.
             </p>
-            <Button fullWidth onClick={() => router.replace('/')}>
+            <Button fullWidth onClick={() => router.replace('/login')}>
               Log In &rarr;
             </Button>
           </div>

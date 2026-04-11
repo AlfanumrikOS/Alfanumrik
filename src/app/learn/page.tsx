@@ -56,7 +56,7 @@ export default function LearnPage() {
   }, []);
 
   useEffect(() => {
-    if (!isLoading && !isLoggedIn) router.replace('/');
+    if (!isLoading && !isLoggedIn) router.replace('/login');
     if (!isLoading && isLoggedIn && student && !student.onboarding_completed) router.replace('/onboarding');
   }, [isLoading, isLoggedIn, student, router]);
 
