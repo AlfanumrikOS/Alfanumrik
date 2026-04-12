@@ -43,6 +43,8 @@
 | `admin-control-plane.test.ts` | 12 | Admin control plane | -- |
 | `api.test.ts` | 8 | API smoke tests | -- |
 | `india.test.ts` | 7 | India locale specifics | -- |
+| `observability-migration-1a.test.ts` | 6 | Observability 1a migration (DB-gated) | -- |
+| `observability-migration-1b.test.ts` | 5 | Observability 1b alerting migration (DB-gated) | -- |
 
 ### E2E Test Files (4 files in `e2e/`)
 
@@ -53,8 +55,9 @@
 | `accessibility.spec.ts` | Accessibility checks | No |
 | `landing-seo.spec.ts` | SEO meta tags, structured data | No |
 | `observability-timeline.spec.ts` | Observability Console timeline, filters, drawer, export | Yes (super admin) |
+| `observability-rules.spec.ts` | Observability Console alert rules and channels management | Yes (super admin) |
 
-E2E tests are unauthenticated except `observability-timeline.spec.ts` which requires `SUPER_ADMIN_EMAIL` and `SUPER_ADMIN_PASSWORD` env vars (skips without them).
+E2E tests are unauthenticated except `observability-timeline.spec.ts` and `observability-rules.spec.ts` which require `SUPER_ADMIN_EMAIL` and `SUPER_ADMIN_PASSWORD` env vars (skips without them).
 
 ## Vitest Configuration
 
@@ -183,9 +186,17 @@ E2E tests are unauthenticated except `observability-timeline.spec.ts` which requ
 | 40 | Observability timeline loads with widgets for range=1h | Yes (auth-gated) | `e2e/observability-timeline.spec.ts` |
 | 41 | Free-text search on the observability timeline matches against message, subject_id, and request_id | Partial | Implementation verified by inspection; no dedicated search assertion test |
 
+### Observability (Cut 1b)
+| # | Scenario | Test Exists | File |
+|---|---|---|---|
+| 42 | Critical payment event (severity=critical, category=payment) fires the on-insert trigger and creates a pending alert_dispatch | Yes (DB-gated) | `observability-migration-1b.test.ts` |
+| 43 | Alert deliverer retries a failed dispatch up to 3 times, then buries with status=failed | Yes | `supabase/functions/alert-deliverer/index_test.ts` (Deno test) |
+| 44 | Alert rules and channels pages render with seeded data | Yes (auth-gated) | `e2e/observability-rules.spec.ts` |
+
 ### Catalog Summary
 - **35/35 core scenarios have corresponding tests** at the unit level
 - **6 observability scenarios added (R36-R41)**: 4 fully covered, 1 partial, 1 DB-gated (skips without local Supabase)
+- **3 observability Cut 1b scenarios added (R42-R44)**: 2 DB/auth-gated, 1 Deno test
 - **Gap**: No integration tests verify core invariants against real database/services
 - **Gap**: No E2E tests verify core invariants in a running application (observability E2E added but auth-gated)
 - **Gap**: Score consistency across client + server + RPC (P1 #4) is only tested client-side
