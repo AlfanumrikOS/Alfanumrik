@@ -58,6 +58,7 @@
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { logOpsEvent } from '../_shared/ops-events.ts'
 
 // ─── CORS ────────────────────────────────────────────────────────────────────
 const ALLOWED_ORIGINS = [
@@ -434,9 +435,29 @@ Deno.serve(async (req: Request) => {
       xp_earned: xpEarned, language: safeLanguage, created_at: now,
     }).then(() => {}).catch(() => {})
 
+    logOpsEvent({
+      category: 'ai',
+      source: 'foxy-tutor',
+      severity: 'info',
+      message: `Foxy tutor response succeeded`,
+      subjectType: 'student',
+      subjectId: student_id,
+      context: { subject, grade, mode: safeMode, latency_ms: latencyMs, session_id: activeSessionId },
+    })
+
     return jsonResponse({ reply, xp_earned: xpEarned, session_id: activeSessionId }, 200, {}, origin)
   } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err)
     console.error('foxy-tutor error:', err)
+
+    await logOpsEvent({
+      category: 'ai',
+      source: 'foxy-tutor',
+      severity: 'error',
+      message: `Foxy tutor unhandled error: ${errMsg.slice(0, 300)}`,
+      context: { error: errMsg.slice(0, 500) },
+    })
+
     return errorResponse('Internal server error', 500, origin)
   }
 })
