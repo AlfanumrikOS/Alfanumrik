@@ -134,6 +134,55 @@ export async function GET(request: NextRequest) {
     const dbGrade = resolveGrade(gradeNum);
     const dbSubject = resolveSubject(subjectParam);
 
+    // 2b. Fetch previously seen NCERT question IDs for this student (30-day window)
+    //     to avoid serving repeat questions. Falls back gracefully if lookup fails.
+    let seenQuestionIds: Set<string> = new Set();
+    if (auth.studentId) {
+      try {
+        // Check student_ncert_attempts (NCERT written answer tracking)
+        const { data: ncertAttempts } = await supabaseAdmin
+          .from('student_ncert_attempts')
+          .select('question_id')
+          .eq('student_id', auth.studentId)
+          .gte('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
+          .not('question_id', 'is', null);
+        if (ncertAttempts) {
+          for (const row of ncertAttempts) {
+            if (row.question_id) seenQuestionIds.add(row.question_id);
+          }
+        }
+
+        // Also check quiz_responses (MCQ tracking that may reference rag_content_chunks)
+        const { data: quizResponses } = await supabaseAdmin
+          .from('quiz_responses')
+          .select('question_id')
+          .eq('student_id', auth.studentId)
+          .gte('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
+          .not('question_id', 'is', null);
+        if (quizResponses) {
+          for (const row of quizResponses) {
+            if (row.question_id) seenQuestionIds.add(row.question_id);
+          }
+        }
+
+        // Also check user_question_history (unified history tracking)
+        const { data: historyRows } = await supabaseAdmin
+          .from('user_question_history')
+          .select('question_id')
+          .eq('student_id', auth.studentId)
+          .eq('subject', subjectParam)
+          .eq('grade', gradeNum)
+          .limit(500);
+        if (historyRows) {
+          for (const row of historyRows) {
+            if (row.question_id) seenQuestionIds.add(row.question_id);
+          }
+        }
+      } catch {
+        // Non-fatal: proceed without exclusion if history lookup fails
+      }
+    }
+
     // 3. Build query
     let query = supabaseAdmin
       .from('rag_content_chunks')
@@ -203,18 +252,24 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 4. Deduplicate by question_text prefix
-    const seen = new Set<string>();
+    // 4. Deduplicate by question_text prefix and exclude previously seen questions
+    const seenTexts = new Set<string>();
     const deduped = resultRows.filter((q: Record<string, unknown>) => {
       const key = String(q.question_text ?? '').slice(0, 80).toLowerCase().trim();
-      if (!key || seen.has(key)) return false;
-      seen.add(key);
+      if (!key || seenTexts.has(key)) return false;
+      seenTexts.add(key);
       return true;
     });
 
-    // 5. Shuffle and take requested count
-    const shuffled = deduped.sort(() => Math.random() - 0.5);
-    const selected = shuffled.slice(0, count);
+    // Separate into unseen and seen (previously answered) questions
+    const unseenQuestions = deduped.filter((q: Record<string, unknown>) => !seenQuestionIds.has(String(q.id)));
+    const previouslySeen = deduped.filter((q: Record<string, unknown>) => seenQuestionIds.has(String(q.id)));
+
+    // 5. Shuffle and take requested count — prefer unseen, fall back to seen if pool exhausted
+    const shuffledUnseen = unseenQuestions.sort(() => Math.random() - 0.5);
+    const shuffledSeen = previouslySeen.sort(() => Math.random() - 0.5);
+    // Prioritize unseen questions, backfill with previously seen if not enough
+    const selected = [...shuffledUnseen, ...shuffledSeen].slice(0, count);
 
     // 6. Map to Question interface expected by quiz/page.tsx
     const questions = selected.map((chunk: Record<string, unknown>) => {
@@ -254,6 +309,33 @@ export async function GET(request: NextRequest) {
         word_limit: meta.wordLimit,
       };
     });
+
+    // 7. Record served questions in user_question_history for future dedup
+    //    Fire-and-forget: don't block the response on history recording
+    if (auth.studentId && questions.length > 0) {
+      const now = new Date().toISOString();
+      const historyRows = questions.map((q: Record<string, unknown>) => ({
+        student_id: auth.studentId,
+        question_id: q.question_id as string,
+        subject: subjectParam,
+        grade: gradeNum,
+        chapter_number: (q.chapter_number as number) || null,
+        first_shown_at: now,
+        last_shown_at: now,
+        times_shown: 1,
+      }));
+      supabaseAdmin.from('user_question_history')
+        .upsert(historyRows, {
+          onConflict: 'student_id,question_id',
+          ignoreDuplicates: false,
+        })
+        .then(({ error: histErr }) => {
+          if (histErr) logger.warn('ncert_questions_history_record_failed', {
+            error: new Error(histErr.message),
+            route: '/api/quiz/ncert-questions',
+          });
+        });
+    }
 
     return NextResponse.json({
       success: true,
