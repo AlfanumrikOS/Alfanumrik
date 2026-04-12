@@ -1,10 +1,15 @@
 'use client';
 
 import { memo, useState, type ReactNode } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkMath from 'remark-math';
+import remarkGfm from 'remark-gfm';
+import rehypeKatex from 'rehype-katex';
 
 /* ══════════════════════════════════════════════════════════════
-   RICH TEXT RENDERER
-   Shared component used by both /page.tsx and /foxy/page.tsx
+   RICH TEXT RENDERER — Proper Markdown + LaTeX + Tables
+   Replaces the old cleanMd() approach that destroyed markdown
+   by converting backticks to [FORMULA:] markers.
    ══════════════════════════════════════════════════════════════ */
 
 export interface RichContentProps {
@@ -27,97 +32,169 @@ const SUBJECTS: Record<string, { icon: string; color: string }> = {
 
 const DEFAULT_CONFIG = SUBJECTS.science;
 
-function cleanMd(t: string): string {
-  return t.replace(/\*\*([^*]+)\*\*/g, '[KEY: $1]').replace(/__([^_]+)__/g, '[KEY: $1]').replace(/\*([^*]+)\*/g, '$1').replace(/_([^_]+)_/g, '$1').replace(/`([^`]+)`/g, '[FORMULA: $1]').replace(/^#{1,4}\s+/gm, '');
-}
-
-function renderInline(text: string, color: string): ReactNode {
-  const clean = cleanMd(text);
-  const parts: ReactNode[] = [];
-  const re = /\[(KEY|ANS|FORMULA|TIP|MARKS):\s*([^\]]+)\]/g;
-  let m: RegExpExecArray | null, last = 0, k = 0;
-
-  while ((m = re.exec(clean)) !== null) {
-    if (m.index > last) parts.push(<span key={k++}>{clean.substring(last, m.index)}</span>);
-    const [, tag, val] = m;
-    if (tag === 'KEY') parts.push(<span key={k++} className="font-bold" style={{ color, borderBottom: `2px solid ${color}40`, paddingBottom: 1 }}>{val}</span>);
-    else if (tag === 'ANS') parts.push(<span key={k++} className="inline-block px-3 py-1 my-1 rounded-lg font-extrabold text-sm" style={{ border: `2px solid ${color}`, color, background: `${color}08` }}>{val}</span>);
-    else if (tag === 'FORMULA') parts.push(<code key={k++} className="inline-block max-w-full px-3 py-1.5 my-1 rounded-lg font-semibold text-xs" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', fontFamily: 'monospace', overflowWrap: 'break-word' }}>{val}</code>);
-    else if (tag === 'TIP') parts.push(<div key={k++} className="my-2 px-3 py-2.5 rounded-xl text-xs" style={{ background: '#fffbeb', border: '1px solid #f59e0b30', color: '#92400e' }}><span className="font-extrabold">Exam Tip: </span>{val}</div>);
-    else if (tag === 'MARKS') parts.push(<span key={k++} className="inline-block px-2 py-0.5 rounded-lg text-[11px] font-bold ml-1" style={{ background: '#7c3aed15', color: '#7c3aed' }}>({val} marks)</span>);
-    last = m.index + m[0].length;
-  }
-  if (last < clean.length) parts.push(<span key={k++}>{clean.substring(last)}</span>);
-  return parts.length > 0 ? <>{parts}</> : <span>{clean}</span>;
+/**
+ * Clean legacy markers from old stored messages.
+ * Old RichContent converted markdown to [FORMULA:], [KEY:] etc.
+ * Convert them back to standard markdown so ReactMarkdown renders them.
+ */
+function cleanLegacyMarkers(content: string): string {
+  return content
+    .replace(/\[FORMULA:\s*([^\]]+)\]/g, '`$1`')
+    .replace(/\[KEY:\s*([^\]]+)\]/g, '**$1**')
+    .replace(/\[DIAGRAM:\s*([^\]]+)\]/g, '*Diagram: $1*')
+    .replace(/\[EXAMPLE:\s*([^\]]+)\]/g, '> $1')
+    .replace(/\[ANS:\s*([^\]]+)\]/g, '**$1**')
+    .replace(/\[TIP:\s*([^\]]+)\]/g, '> **Exam Tip:** $1')
+    .replace(/\[MARKS:\s*([^\]]+)\]/g, ' *($1 marks)*');
 }
 
 export const RichContent = memo(function RichContent({ content, subjectKey, subjectConfig }: RichContentProps) {
   const cfg = subjectConfig || SUBJECTS[subjectKey] || DEFAULT_CONFIG;
   if (!content) return null;
-  const text = cleanMd(content);
-  const lines = text.split('\n');
-  const els: ReactNode[] = [];
-  let li: string[] = [], lk: 'num' | 'bul' | null = null;
 
-  function flush() {
-    if (li.length === 0) return;
-    els.push(
-      <div key={`l${els.length}`} className="my-3 px-4 py-3 rounded-r-xl" style={{ background: `${cfg.color}08`, borderLeft: `3px solid ${cfg.color}` }}>
-        {li.map((item, i) => (
-          <div key={i} className="flex gap-2.5 py-1.5 items-start" style={{ borderBottom: i < li.length - 1 ? '1px solid #f0f0f0' : 'none' }}>
-            <span className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{ background: `${cfg.color}20`, color: cfg.color }}>{lk === 'num' ? i + 1 : '•'}</span>
-            <span className="leading-relaxed">{renderInline(item, cfg.color)}</span>
+  const cleaned = cleanLegacyMarkers(content);
+
+  const rendered = (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm, remarkMath]}
+      rehypePlugins={[rehypeKatex]}
+      components={{
+        h1: ({ children }) => (
+          <h3 className="text-base font-bold mt-4 mb-2 pb-2" style={{ borderBottom: `2px solid ${cfg.color}30` }}>
+            {children}
+          </h3>
+        ),
+        h2: ({ children }) => (
+          <h3 className="text-base font-bold mt-4 mb-2 pb-2" style={{ borderBottom: `2px solid ${cfg.color}30` }}>
+            {children}
+          </h3>
+        ),
+        h3: ({ children }) => (
+          <h4 className="text-sm font-bold mt-4 mb-2 uppercase tracking-wide" style={{ color: cfg.color }}>
+            {cfg.icon} {children}
+          </h4>
+        ),
+        h4: ({ children }) => (
+          <h5 className="text-sm font-semibold mt-3 mb-1" style={{ color: cfg.color }}>{children}</h5>
+        ),
+        p: ({ children }) => (
+          <p className="my-1.5 leading-[1.75] text-[var(--text-2)]">{children}</p>
+        ),
+        strong: ({ children }) => (
+          <span className="font-bold" style={{ color: cfg.color, borderBottom: `2px solid ${cfg.color}40`, paddingBottom: 1 }}>
+            {children}
+          </span>
+        ),
+        em: ({ children }) => (
+          <em className="not-italic text-purple-700">{children}</em>
+        ),
+        code: ({ className, children, ...props }) => {
+          const isBlock = className?.includes('language-');
+          if (isBlock) {
+            return (
+              <pre className="my-2 rounded-xl overflow-x-auto" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                <code className={`block px-4 py-3 text-xs font-mono ${className || ''}`} {...props}>
+                  {children}
+                </code>
+              </pre>
+            );
+          }
+          return (
+            <code
+              className="inline-block max-w-full px-2 py-0.5 rounded-lg font-semibold text-xs"
+              style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', fontFamily: 'monospace', overflowWrap: 'break-word' }}
+              {...props}
+            >
+              {children}
+            </code>
+          );
+        },
+        blockquote: ({ children }) => (
+          <div className="my-3 px-4 py-3 rounded-xl text-sm leading-relaxed"
+            style={{ background: `${cfg.color}08`, border: `1px solid ${cfg.color}25` }}>
+            {children}
           </div>
-        ))}
-      </div>
-    );
-    li = []; lk = null;
+        ),
+        ul: ({ children }) => (
+          <div className="my-3 px-4 py-3 rounded-r-xl" style={{ background: `${cfg.color}08`, borderLeft: `3px solid ${cfg.color}` }}>
+            {children}
+          </div>
+        ),
+        ol: ({ children }) => (
+          <div className="my-3 px-4 py-3 rounded-r-xl" style={{ background: `${cfg.color}08`, borderLeft: `3px solid ${cfg.color}` }}>
+            {children}
+          </div>
+        ),
+        li: ({ children }) => (
+          <div className="flex gap-2.5 py-1.5 items-start" style={{ borderBottom: '1px solid #f0f0f0' }}>
+            <span className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
+              style={{ background: `${cfg.color}20`, color: cfg.color }}>
+              {'\u2022'}
+            </span>
+            <span className="leading-relaxed text-[var(--text-2)]">{children}</span>
+          </div>
+        ),
+        table: ({ children }) => (
+          <div className="overflow-x-auto my-3 rounded-lg border border-gray-200">
+            <table className="min-w-full text-sm">{children}</table>
+          </div>
+        ),
+        thead: ({ children }) => (
+          <thead style={{ background: `${cfg.color}10` }}>{children}</thead>
+        ),
+        th: ({ children }) => (
+          <th className="px-3 py-2 text-left text-xs font-bold" style={{ color: cfg.color, borderBottom: `2px solid ${cfg.color}30` }}>
+            {children}
+          </th>
+        ),
+        td: ({ children }) => (
+          <td className="px-3 py-2 text-sm border-b border-gray-100">{children}</td>
+        ),
+        a: ({ href, children }) => (
+          <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline hover:text-blue-800">
+            {children}
+          </a>
+        ),
+        hr: () => <div className="h-2" />,
+      }}
+    >
+      {cleaned}
+    </ReactMarkdown>
+  );
+
+  // Wrap in collapsible container for long responses
+  const COLLAPSE_THRESHOLD = 800; // characters, not elements
+  if (cleaned.length > COLLAPSE_THRESHOLD) {
+    return <CollapsibleContent content={rendered} fullLength={cleaned.length} threshold={COLLAPSE_THRESHOLD} color={cfg.color} />;
   }
 
-  lines.forEach((line, idx) => {
-    const t = line.trim();
-    if (t.startsWith('###')) { flush(); els.push(<h4 key={idx} className="text-sm font-bold mt-4 mb-2 uppercase tracking-wide" style={{ color: cfg.color }}>{cfg.icon} {t.replace(/^###\s*/, '')}</h4>); }
-    else if (t.startsWith('##')) { flush(); els.push(<h3 key={idx} className="text-base font-bold mt-4 mb-2 pb-2" style={{ borderBottom: `2px solid ${cfg.color}30` }}>{t.replace(/^##\s*/, '')}</h3>); }
-    else if (t.startsWith('>')) { flush(); els.push(<div key={idx} className="my-3 px-4 py-3 rounded-xl text-sm leading-relaxed" style={{ background: `${cfg.color}08`, border: `1px solid ${cfg.color}25` }}>{renderInline(t.replace(/^>\s*/, ''), cfg.color)}</div>); }
-    else if (/^\d+[.)]\s/.test(t)) { if (lk !== 'num') { flush(); lk = 'num'; } li.push(t.replace(/^\d+[.)]\s*/, '')); }
-    else if (/^[-•*]\s/.test(t)) { if (lk !== 'bul') { flush(); lk = 'bul'; } li.push(t.replace(/^[-•*]\s*/, '')); }
-    else if (!t) { flush(); els.push(<div key={idx} className="h-2" />); }
-    else { flush(); els.push(<p key={idx} className="my-1.5 leading-[1.75] text-[var(--text-2)]">{renderInline(t, cfg.color)}</p>); }
-  });
-  flush();
-
-  // Collapsible long responses — show first ~6 elements, expand on click
-  const COLLAPSE_THRESHOLD = 8;
-  if (els.length > COLLAPSE_THRESHOLD) {
-    return <CollapsibleContent elements={els} threshold={COLLAPSE_THRESHOLD} color={cfg.color} />;
-  }
-
-  return <div className="overflow-hidden" style={{ overflowWrap: 'break-word', wordBreak: 'break-word' }}>{els}</div>;
+  return <div className="overflow-hidden rich-content" style={{ overflowWrap: 'break-word', wordBreak: 'break-word' }}>{rendered}</div>;
 });
 
-function CollapsibleContent({ elements, threshold, color }: { elements: ReactNode[]; threshold: number; color: string }) {
-  const [expanded, setExpanded] = useState(false);
-  const visible = expanded ? elements : elements.slice(0, threshold);
+function CollapsibleContent({ content, fullLength, threshold, color }: { content: ReactNode; fullLength: number; threshold: number; color: string }) {
+  const [expanded, setExpanded] = useState(fullLength <= threshold);
 
   return (
-    <div className="overflow-hidden" style={{ overflowWrap: 'break-word', wordBreak: 'break-word' }}>
-      {visible}
+    <div className="overflow-hidden rich-content" style={{ overflowWrap: 'break-word', wordBreak: 'break-word' }}>
+      <div style={expanded ? {} : { maxHeight: '300px', overflow: 'hidden', maskImage: 'linear-gradient(to bottom, black 70%, transparent 100%)', WebkitMaskImage: 'linear-gradient(to bottom, black 70%, transparent 100%)' }}>
+        {content}
+      </div>
       {!expanded && (
         <button
           onClick={() => setExpanded(true)}
           className="mt-2 text-[11px] font-bold px-3 py-1.5 rounded-lg transition-all active:scale-95"
           style={{ background: `${color}10`, color, border: `1px solid ${color}25` }}
         >
-          ↓ Show more ({elements.length - threshold} more sections)
+          Show full response
         </button>
       )}
-      {expanded && elements.length > threshold && (
+      {expanded && fullLength > threshold && (
         <button
           onClick={() => setExpanded(false)}
           className="mt-2 text-[11px] font-bold px-3 py-1.5 rounded-lg transition-all active:scale-95"
           style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }}
         >
-          ↑ Show less
+          Show less
         </button>
       )}
     </div>

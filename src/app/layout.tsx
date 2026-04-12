@@ -77,6 +77,7 @@ export default function RootLayout({
           rel="stylesheet"
         />
         <JsonLd />
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossOrigin="anonymous" />
       </head>
       <body>
         <a href="#main-content" className="skip-nav">Skip to content</a>
