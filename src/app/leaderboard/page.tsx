@@ -193,6 +193,25 @@ export default function LeaderboardPage() {
               ))}
             </div>
 
+            {/* My Rank — Not in leaderboard */}
+            {myRank < 0 && !loading && entries.length > 0 && (
+              <div className="bg-gradient-to-r from-purple-50 to-orange-50 border border-purple-200 rounded-xl p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-gray-600">{isHi ? 'तुम्हारा रैंक' : 'Your Rank'}</p>
+                    <p className="text-2xl font-bold text-purple-700">#---</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm text-gray-600">XP</p>
+                    <p className="text-lg font-semibold">{student?.xp_total ?? 0}</p>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  {isHi ? 'क्विज़ दो और लीडरबोर्ड पर आओ!' : 'Take quizzes to climb the leaderboard!'}
+                </p>
+              </div>
+            )}
+
             {/* My Rank Highlight */}
             {myRank >= 0 && (
               <Card accent="var(--orange)" className="!p-4">
