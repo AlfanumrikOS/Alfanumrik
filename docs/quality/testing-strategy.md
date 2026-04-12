@@ -219,6 +219,7 @@ E2E tests are unauthenticated except `observability-timeline.spec.ts` and `obser
 |---|---|---|---|
 | 52 | Cohort retention computes weekly/monthly retention from students.created_at + quiz_sessions activity | Yes | `strategic-reports-api.test.ts` + `e2e/strategic-reports.spec.ts` |
 | 53 | Bloom's distribution correctly joins quiz responses with question_bank bloom_level by grade | Yes | `strategic-reports-api.test.ts` + `e2e/strategic-reports.spec.ts` |
+| 54 | Control room refactor preserves all existing sections; 9 widget components render identical output to the original 719-line page | Yes | `e2e/control-room-refactor.spec.ts` |
 
 ### Catalog Summary
 - **35/35 core scenarios have corresponding tests** at the unit level
@@ -228,6 +229,7 @@ E2E tests are unauthenticated except `observability-timeline.spec.ts` and `obser
 - **2 payment ops scenarios added (R48-R49)**: R48 unit-tested, R49 unit-tested + code inspection
 - **2 bulk actions scenarios added (R50-R51)**: R50 audit-log verification, R51 batch limit enforcement
 - **2 strategic reports scenarios added (R52-R53)**: R52 cohort retention, R53 Bloom's distribution
+- **1 control room refactor scenario added (R54)**: R54 verifies all sections render after widget extraction
 - **Gap**: No integration tests verify core invariants against real database/services
 - **Gap**: No E2E tests verify core invariants in a running application (observability E2E added but auth-gated)
 - **Gap**: Score consistency across client + server + RPC (P1 #4) is only tested client-side
