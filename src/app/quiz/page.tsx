@@ -137,6 +137,9 @@ export default function QuizPage() {
 
   // Written answer evaluation state
   const [isEvaluating, setIsEvaluating] = useState(false);
+  const [evalError, setEvalError] = useState<string | null>(null);
+  const [lastWrittenAnswer, setLastWrittenAnswer] = useState<string>('');
+  const [lastWrittenTimeSpent, setLastWrittenTimeSpent] = useState<number>(0);
   const [currentEval, setCurrentEval] = useState<{
     marks_awarded: number;
     marks_possible: number;
@@ -277,6 +280,23 @@ export default function QuizPage() {
     return () => { if (qTimerRef.current) clearInterval(qTimerRef.current); };
   }, [screen, currentIdx, showExplanation]);
 
+  /** P6: Runtime question quality gate — filter out malformed questions before serving */
+  function isValidQuestion(q: Question): boolean {
+    // Text must be non-empty and free of template markers
+    if (!q.question_text || q.question_text.length < 5) return false;
+    if (q.question_text.includes('{{') || q.question_text.includes('[BLANK]')) return false;
+
+    // MCQ-specific validation
+    if (isQuestionMCQ(q)) {
+      const qOpts = Array.isArray(q.options) ? q.options : (() => { try { return JSON.parse(q.options as string); } catch { return []; } })();
+      if (qOpts.length !== 4) return false;
+      if (qOpts.some((o: string) => !o || String(o).trim() === '')) return false;
+      if (typeof q.correct_answer_index !== 'number' || q.correct_answer_index < 0 || q.correct_answer_index > 3) return false;
+    }
+
+    return true;
+  }
+
   const startQuiz = useCallback(async (opts?: {
     subject: string;
     difficulty: number | null;
@@ -383,7 +403,22 @@ export default function QuizPage() {
       }
 
       const data = allQuestions;
-      const qs = Array.isArray(data) ? data : [];
+      const rawQs = Array.isArray(data) ? data : [];
+
+      // P6: Runtime question quality gate — filter out malformed questions
+      const qs = rawQs.filter(isValidQuestion);
+      const invalidCount = rawQs.length - qs.length;
+      if (invalidCount > 0) {
+        logger.warn('quiz_questions_filtered_quality', {
+          subject: subj,
+          grade: student.grade,
+          chapter,
+          invalidCount,
+          totalFetched: rawQs.length,
+          validCount: qs.length,
+        });
+      }
+
       if (qs.length === 0) {
         setNoQuestionsError(true);
         setLoading(false);
@@ -489,6 +524,10 @@ export default function QuizPage() {
   const handleWrittenSubmit = async (answer: string, timeSpent: number) => {
     const q = questions[currentIdx];
     setIsEvaluating(true);
+    setEvalError(null);
+    // Save for retry
+    setLastWrittenAnswer(answer);
+    setLastWrittenTimeSpent(timeSpent);
 
     let evalResult: { marks_awarded: number; marks_possible: number; feedback: string; is_correct: boolean; key_points?: { point: string; hit: boolean }[]; model_answer_summary?: string } | null = null;
 
@@ -519,11 +558,24 @@ export default function QuizPage() {
       console.warn('Written answer evaluation failed:', err);
     }
 
+    // If evaluation failed (network error, API error, null result), don't punish the student.
+    // Show retry/skip options instead of marking wrong.
+    if (!evalResult) {
+      setIsEvaluating(false);
+      setEvalError(
+        isHi
+          ? 'मूल्यांकन विफल। तुम्हारा जवाब सहेजा गया है — फिर से कोशिश करो या छोड़ दो।'
+          : 'Evaluation failed. Your answer is saved — you can retry or skip.'
+      );
+      return; // Don't auto-advance — let student retry or skip
+    }
+
     // Record the written response
-    // For scoring consistency: written answers count as correct if they earn >= 50% marks
-    const marksAwarded = evalResult?.marks_awarded ?? 0;
+    // Written answers are "correct" if they earn >= 50% of marks.
+    // A student who earns 1/2 marks deserves credit, not a red "WRONG" mark.
+    const marksAwarded = evalResult.marks_awarded ?? 0;
     const marksPossible = q.marks_possible ?? 2;
-    const isCorrect = marksAwarded >= marksPossible;
+    const isCorrect = marksPossible > 0 ? marksAwarded >= marksPossible * 0.5 : false;
 
     // Emotional feedback
     const fb = isCorrect ? onCorrectAnswer(feedbackState) : onWrongAnswer(feedbackState);
@@ -542,26 +594,16 @@ export default function QuizPage() {
     }]);
 
     // Store full evaluation result for rich feedback display
-    if (evalResult) {
-      setCurrentEval({
-        marks_awarded: marksAwarded,
-        marks_possible: marksPossible,
-        feedback: evalResult.feedback,
-        is_correct: isCorrect,
-        key_points: evalResult.key_points,
-        model_answer_summary: evalResult.model_answer_summary,
-        grade: undefined, // grade not returned from this endpoint
-        percentage: marksPossible > 0 ? Math.round((marksAwarded / marksPossible) * 100) : 0,
-      });
-    } else {
-      setCurrentEval({
-        marks_awarded: 0,
-        marks_possible: marksPossible,
-        feedback: isHi ? 'मूल्यांकन विफल — आदर्श उत्तर देखें' : 'Evaluation failed — see model answer',
-        is_correct: false,
-        percentage: 0,
-      });
-    }
+    setCurrentEval({
+      marks_awarded: marksAwarded,
+      marks_possible: marksPossible,
+      feedback: evalResult.feedback,
+      is_correct: isCorrect,
+      key_points: evalResult.key_points,
+      model_answer_summary: evalResult.model_answer_summary,
+      grade: undefined, // grade not returned from this endpoint
+      percentage: marksPossible > 0 ? Math.round((marksAwarded / marksPossible) * 100) : 0,
+    });
 
     setIsEvaluating(false);
     setShowExplanation(true);
@@ -1153,18 +1195,40 @@ export default function QuizPage() {
             /* ═══ WRITTEN ANSWER (SA/MA/LA) ═══ */
             <>
               {!isAnswered ? (
-                <WrittenAnswerInput
-                  questionText={isHi && q.question_hi ? q.question_hi : q.question_text}
-                  questionType={mapToWrittenType(q.cbse_type ?? q.question_type)}
-                  marksP={q.marks_possible ?? 2}
-                  wordLimit={q.word_limit ?? getWordLimit(q.cbse_type ?? q.question_type)}
-                  timeEstimate={q.time_estimate ?? getTimeEstimate(q.cbse_type ?? q.question_type)}
-                  onSubmit={handleWrittenSubmit}
-                  onSkip={handleWrittenSkip}
-                  questionNumber={currentIdx + 1}
-                  totalQuestions={questions.length}
-                  isEvaluating={isEvaluating}
-                />
+                <>
+                  <WrittenAnswerInput
+                    questionText={isHi && q.question_hi ? q.question_hi : q.question_text}
+                    questionType={mapToWrittenType(q.cbse_type ?? q.question_type)}
+                    marksP={q.marks_possible ?? 2}
+                    wordLimit={q.word_limit ?? getWordLimit(q.cbse_type ?? q.question_type)}
+                    timeEstimate={q.time_estimate ?? getTimeEstimate(q.cbse_type ?? q.question_type)}
+                    onSubmit={handleWrittenSubmit}
+                    onSkip={handleWrittenSkip}
+                    questionNumber={currentIdx + 1}
+                    totalQuestions={questions.length}
+                    isEvaluating={isEvaluating}
+                  />
+                  {/* Evaluation failure — retry/skip UI */}
+                  {evalError && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-center space-y-2">
+                      <p className="text-sm text-amber-800">{evalError}</p>
+                      <div className="flex gap-2 justify-center">
+                        <button
+                          onClick={() => { setEvalError(null); handleWrittenSubmit(lastWrittenAnswer, lastWrittenTimeSpent); }}
+                          className="px-4 py-2 bg-amber-600 text-white rounded text-sm font-medium hover:bg-amber-700 active:scale-[0.98] transition-all"
+                        >
+                          {isHi ? 'फिर से कोशिश करो' : 'Retry Evaluation'}
+                        </button>
+                        <button
+                          onClick={() => { setEvalError(null); handleWrittenSkip(); }}
+                          className="px-4 py-2 bg-gray-200 text-gray-700 rounded text-sm font-medium hover:bg-gray-300 active:scale-[0.98] transition-all"
+                        >
+                          {isHi ? 'छोड़ दो' : 'Skip'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
               ) : (
                 /* Written answer post-evaluation feedback */
                 <>

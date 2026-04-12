@@ -8,6 +8,7 @@ import {
   getChapterQuestions,
   getTopicDiagrams,
   recordLearningEvent,
+  updateChapterProgress,
 } from '@/lib/supabase';
 import { Card, Button, ProgressBar, BottomNav, LoadingFoxy } from '@/components/ui';
 import { SUBJECT_META, getSubjectsForGrade } from '@/lib/constants';
@@ -118,6 +119,18 @@ export default function ChapterConceptPage() {
       } catch {}
     }
   }, [subject, chapterNum, currentIdx, subMeta?.name, loading]);
+
+  // Save chapter completion to database when student achieves >= 60%
+  useEffect(() => {
+    if (!showCompletion || !student) return;
+    const correctCount = Object.values(conceptStates).filter(s => s.submitted && s.isCorrect).length;
+    const totalAnswered = Object.values(conceptStates).filter(s => s.submitted).length;
+    const pct = totalAnswered > 0 ? Math.round((correctCount / totalAnswered) * 100) : 0;
+    const scoreGood = totalAnswered > 0 && pct >= 60;
+    if (scoreGood) {
+      updateChapterProgress(subject, student.grade, chapterNum).catch(() => {});
+    }
+  }, [showCompletion, student, conceptStates, subject, chapterNum]);
 
   const parseOptions = (opts: string | string[]): string[] => {
     if (Array.isArray(opts)) return opts;
