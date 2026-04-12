@@ -36,6 +36,12 @@ import {
   type ValidRole,
 } from '@/lib/identity';
 
+// Dedup guard: prevent concurrent bootstrap calls for the same user.
+// The bootstrap_user_profile RPC is idempotent (ON CONFLICT), but concurrent
+// calls from SWR retries waste DB resources. This map tracks in-flight requests
+// so duplicate calls await the existing promise instead of firing a new RPC.
+const pendingBootstraps = new Map<string, Promise<NextResponse>>();
+
 export async function POST(request: NextRequest) {
   try {
     // 1. Authenticate: get the current user from the session
@@ -52,6 +58,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Dedup: if a bootstrap is already in progress for this user, await it
+    const existingPromise = pendingBootstraps.get(user.id);
+    if (existingPromise) {
+      return existingPromise;
+    }
+
+    const bootstrapPromise = handleBootstrap(request, user);
+    pendingBootstraps.set(user.id, bootstrapPromise);
+    try {
+      return await bootstrapPromise;
+    } finally {
+      pendingBootstraps.delete(user.id);
+    }
+  } catch (error) {
+    console.error('[Bootstrap] Unexpected error:', error);
+    return NextResponse.json(
+      { success: false, error: 'Internal server error', code: 'INTERNAL_ERROR' },
+      { status: 500 }
+    );
+  }
+}
+
+async function handleBootstrap(
+  request: NextRequest,
+  user: { id: string; email?: string },
+): Promise<NextResponse> {
+  try {
     // 2. Parse and validate request body
     let body: Record<string, unknown>;
     try {

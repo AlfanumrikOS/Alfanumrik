@@ -147,15 +147,22 @@ export async function POST(request: NextRequest) {
     }
 
     // Get amount from subscription_plans (source of truth)
-    const { data: planRow } = await admin
+    const { data: planRow, error: planError } = await admin
       .from('subscription_plans')
       .select('price_monthly, price_yearly')
       .eq('plan_code', plan_code)
-      .single();
+      .maybeSingle();
 
-    const priceRupees = planRow
-      ? (billing_cycle === 'yearly' ? planRow.price_yearly : planRow.price_monthly)
-      : 0;
+    if (planError) {
+      logger.error('verify: subscription_plans lookup failed', { error: planError.message, plan_code });
+      return NextResponse.json({ error: 'Plan lookup failed' }, { status: 500 });
+    }
+    if (!planRow) {
+      logger.error('verify: unknown plan_code', { plan_code });
+      return NextResponse.json({ error: `Unknown plan: ${plan_code}` }, { status: 400 });
+    }
+
+    const priceRupees = billing_cycle === 'yearly' ? planRow.price_yearly : planRow.price_monthly;
 
     // Record payment — ignore duplicate constraint (webhook may have already inserted)
     const { error: insertErr } = await admin.from('payment_history').insert({
@@ -214,7 +221,7 @@ export async function POST(request: NextRequest) {
       .from('students')
       .select('subscription_plan')
       .eq('auth_user_id', user.id)
-      .single();
+      .maybeSingle();
 
     if (verify?.subscription_plan !== plan_code) {
       logger.error('verify: post-update check failed', { expected: plan_code, got: verify?.subscription_plan });
