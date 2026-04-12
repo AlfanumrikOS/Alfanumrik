@@ -29,12 +29,13 @@ interface StudentRecord {
 
 interface KnowledgeGap {
   id: string;
-  topic_id: string;
-  gap_type: string;
-  severity: string;
-  description: string;
+  target_concept_name: string;
+  missing_prerequisite_name: string;
+  detection_method: string;
+  confidence_score: number;
+  status: string;
+  remediation_plan: string | null;
   detected_at: string;
-  is_resolved: boolean;
 }
 
 interface QuizSession {
@@ -354,10 +355,19 @@ export default function DataPanel({ studentId }: DataPanelProps) {
                   lineHeight: 1.4,
                 }}
               >
-                <span style={{ fontWeight: 500 }}>{gap.description}</span>
+                <span style={{ fontWeight: 500 }}>{gap.target_concept_name}</span>
                 <span style={{ fontSize: 11, color: colors.text3, marginLeft: 8 }}>
-                  ({gap.gap_type} / {gap.severity})
+                  missing: {gap.missing_prerequisite_name}
                 </span>
+                <span style={{ fontSize: 11, color: colors.text3, marginLeft: 8 }}>
+                  ({gap.detection_method} / {Math.round(gap.confidence_score * 100)}%)
+                </span>
+                {gap.status !== 'active' && (
+                  <StatusBadge
+                    label={gap.status}
+                    variant={gap.status === 'resolved' ? 'success' : 'neutral'}
+                  />
+                )}
               </li>
             ))}
           </ul>

@@ -23,14 +23,23 @@ interface QuizSession {
 interface QuizResponse {
   id: string;
   question_id: string;
-  selected_option: number | string;
   is_correct: boolean;
-  time_spent_seconds?: number;
-  time_spent?: number;
+  created_at: string;
+  /* quiz_responses (core) columns */
+  question_text?: string;
+  options?: string[];
+  correct_answer_index?: number;
+  student_answer_index?: number;
+  student_answer_text?: string;
+  time_taken_seconds?: number;
+  explanation?: string;
   bloom_level?: string;
   difficulty?: string;
-  source?: string;
-  created_at: string;
+  /* question_responses (v2 fallback) columns */
+  selected_answer?: number | string;
+  response_time_seconds?: number;
+  bloom_level_attempted?: string;
+  error_type?: string;
 }
 
 export default function ViewAsQuizzesPage({
@@ -301,15 +310,16 @@ export default function ViewAsQuizzesPage({
                             <th style={S.th}>Selected</th>
                             <th style={S.th}>Correct</th>
                             <th style={S.th}>Time</th>
-                            {responses.some((r) => r.bloom_level) && (
+                            {responses.some((r) => (r.bloom_level ?? r.bloom_level_attempted)) && (
                               <th style={S.th}>Bloom&apos;s</th>
                             )}
                           </tr>
                         </thead>
                         <tbody>
                           {responses.map((r, idx) => {
-                            const timeSpent =
-                              r.time_spent_seconds ?? r.time_spent;
+                            const answerDisplay = r.student_answer_text ?? r.selected_answer ?? r.student_answer_index ?? '\u2014';
+                            const timeDisplay = r.time_taken_seconds ?? r.response_time_seconds ?? null;
+                            const bloomDisplay = r.bloom_level ?? r.bloom_level_attempted ?? null;
                             return (
                               <tr key={r.id || idx}>
                                 <td style={S.td}>{idx + 1}</td>
@@ -321,7 +331,7 @@ export default function ViewAsQuizzesPage({
                                     ...
                                   </code>
                                 </td>
-                                <td style={S.td}>{r.selected_option}</td>
+                                <td style={S.td}>{answerDisplay}</td>
                                 <td style={S.td}>
                                   <StatusBadge
                                     label={r.is_correct ? 'Correct' : 'Wrong'}
@@ -331,13 +341,13 @@ export default function ViewAsQuizzesPage({
                                   />
                                 </td>
                                 <td style={S.td}>
-                                  {timeSpent != null
-                                    ? `${timeSpent}s`
+                                  {timeDisplay != null
+                                    ? `${timeDisplay}s`
                                     : '\u2014'}
                                 </td>
-                                {responses.some((r2) => r2.bloom_level) && (
+                                {responses.some((r2) => (r2.bloom_level ?? r2.bloom_level_attempted)) && (
                                   <td style={S.td}>
-                                    {r.bloom_level || '\u2014'}
+                                    {bloomDisplay || '\u2014'}
                                   </td>
                                 )}
                               </tr>
