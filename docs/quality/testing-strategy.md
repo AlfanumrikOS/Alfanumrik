@@ -200,11 +200,18 @@ E2E tests are unauthenticated except `observability-timeline.spec.ts` and `obser
 | 46 | Support notes are append-only -- only GET and POST routes exist, no PUT/PATCH/DELETE | Yes | `student-notes-api.test.ts` + code inspection |
 | 47 | Live View iframe pages have no write endpoints -- all proxy routes are GET-only | Yes (by inspection) | Code inspection of `src/app/api/super-admin/students/[id]/{dashboard,progress,foxy-history,quiz-history}/route.ts` |
 
+### Payment Ops
+| # | Scenario | Test Exists | File |
+|---|---|---|---|
+| 48 | Payment reconciliation action is audit-logged in both ops_events (category=payment, source=payment-ops) and admin_audit_log | Yes | `payment-ops-api.test.ts` |
+| 49 | Stuck payment detection query matches the logic in reconcile_stuck_payments.sql: status=captured AND (plan IS NULL OR plan=free OR plan mismatch) | Yes | `payment-ops-api.test.ts` + code inspection of `src/app/api/super-admin/payment-ops/stuck/route.ts` |
+
 ### Catalog Summary
 - **35/35 core scenarios have corresponding tests** at the unit level
 - **6 observability scenarios added (R36-R41)**: 4 fully covered, 1 partial, 1 DB-gated (skips without local Supabase)
 - **3 observability Cut 1b scenarios added (R42-R44)**: 2 DB/auth-gated, 1 Deno test
 - **3 impersonation scenarios added (R45-R47)**: R45 unit-tested, R46 unit-tested + inspected, R47 by code inspection
+- **2 payment ops scenarios added (R48-R49)**: R48 unit-tested, R49 unit-tested + code inspection
 - **Gap**: No integration tests verify core invariants against real database/services
 - **Gap**: No E2E tests verify core invariants in a running application (observability E2E added but auth-gated)
 - **Gap**: Score consistency across client + server + RPC (P1 #4) is only tested client-side
