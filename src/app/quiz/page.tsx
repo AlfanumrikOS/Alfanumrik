@@ -178,6 +178,10 @@ export default function QuizPage() {
     total: number; correct: number; score_percent: number; xp_earned: number; session_id: string;
   } | null>(null);
 
+  // Network error resilience — retry support for failed submissions
+  const [networkError, setNetworkError] = useState<string | null>(null);
+  const pendingSubmissionRef = useRef<Response[] | null>(null);
+
   // JEE/NEET tag mode — grades 11-12 only, persisted to localStorage
   const [jeeNeetMode, setJeeNeetMode] = useState(false);
   useEffect(() => {
@@ -815,6 +819,22 @@ export default function QuizPage() {
         });
       } catch (e) {
         console.error('Submit error:', e);
+        // Store pending submission for retry
+        pendingSubmissionRef.current = [...responses];
+        if (pendingSubmissionRef.current.length < questions.length) {
+          const q = questions[currentIdx];
+          if (isQuestionMCQ(q) && selectedOption !== null) {
+            pendingSubmissionRef.current.push({
+              question_id: q.id,
+              selected_option: selectedOption,
+              is_correct: selectedOption === q.correct_answer_index,
+              time_spent: questionTimer,
+            });
+          }
+        }
+        setNetworkError(isHi
+          ? 'कनेक्शन टूट गया — आपके उत्तर सुरक्षित हैं। पुनः प्रयास करें।'
+          : 'Connection lost — your answers are saved. Please retry.');
         const total = responses.length;
         const correct = responses.filter(r => r.is_correct).length;
         // SECURITY: When API fails, show score for display only but DO NOT award XP.
@@ -836,6 +856,48 @@ export default function QuizPage() {
       playFeedbackSound(completionFb);
     }
   };
+
+  // Retry failed quiz submission (network error recovery)
+  const retrySubmit = useCallback(async () => {
+    if (!pendingSubmissionRef.current || !student || !selectedSubject) return;
+    setLoading(true);
+    setNetworkError(null);
+    try {
+      const allResponses = pendingSubmissionRef.current;
+      const subMeta = SUBJECT_META.find(s => s.code === selectedSubject);
+      const res = await submitQuizResults(
+        student.id,
+        selectedSubject,
+        student.grade,
+        subMeta?.name || selectedSubject,
+        questions[0]?.chapter_number || 1,
+        allResponses,
+        timer
+      );
+      setResults(res);
+      refreshSnapshot();
+      pendingSubmissionRef.current = null;
+
+      // Update chapter progress after quiz
+      if (selectedChapter) {
+        updateChapterProgress(selectedSubject, student.grade, selectedChapter).catch(() => {});
+      }
+
+      track('quiz_completed', {
+        subject: selectedSubject,
+        score: res?.score_percent ?? 0,
+        questions: allResponses.length,
+        grade: student.grade,
+        time_seconds: timer,
+      });
+    } catch (e) {
+      console.error('Retry submit error:', e);
+      setNetworkError(isHi
+        ? 'कनेक्शन टूट गया — आपके उत्तर सुरक्षित हैं। पुनः प्रयास करें।'
+        : 'Connection lost — your answers are saved. Please retry.');
+    }
+    setLoading(false);
+  }, [student, selectedSubject, questions, timer, selectedChapter, isHi, refreshSnapshot]);
 
   const formatTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
 
@@ -1373,20 +1435,36 @@ export default function QuizPage() {
   // ═══ RESULTS SCREEN ═══
   if (screen === 'results' && results) {
     return (
-      <QuizResults
-        results={results}
-        questions={questions}
-        responses={responses}
-        isHi={isHi}
-        quizMode={quizMode}
-        cogLoad={cogLoad}
-        selectedSubject={selectedSubject}
-        studentName={student!.name}
-        timer={timer}
-        isFirstQuiz={(snapshot?.quizzes_taken ?? 0) <= 1}
-        onRetry={() => { setScreen('select'); setQuestions([]); setResponses([]); setResults(null); }}
-        onGoHome={() => router.push('/dashboard')}
-      />
+      <>
+        <QuizResults
+          results={results}
+          questions={questions}
+          responses={responses}
+          isHi={isHi}
+          quizMode={quizMode}
+          cogLoad={cogLoad}
+          selectedSubject={selectedSubject}
+          studentName={student!.name}
+          timer={timer}
+          isFirstQuiz={(snapshot?.quizzes_taken ?? 0) <= 1}
+          onRetry={() => { setScreen('select'); setQuestions([]); setResponses([]); setResults(null); setNetworkError(null); pendingSubmissionRef.current = null; }}
+          onGoHome={() => router.push('/dashboard')}
+        />
+        {networkError && (
+          <div className="fixed bottom-20 left-4 right-4 bg-amber-500 text-white rounded-xl p-4 text-center z-40 shadow-lg animate-slide-up">
+            <p className="text-sm font-medium mb-2">{networkError}</p>
+            <button
+              onClick={retrySubmit}
+              disabled={loading}
+              className="px-4 py-1.5 bg-white text-amber-700 rounded-lg text-sm font-medium disabled:opacity-50"
+            >
+              {loading
+                ? (isHi ? 'भेज रहे हैं...' : 'Submitting...')
+                : (isHi ? 'पुनः प्रयास करें' : 'Retry')}
+            </button>
+          </div>
+        )}
+      </>
     );
   }
 
