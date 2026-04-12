@@ -350,15 +350,16 @@ export default function QuizSetup({
                   <button
                     key={ch.chapter_number}
                     onClick={() => setSelectedChapter(ch.chapter_number)}
-                    className="rounded-xl px-4 py-2.5 text-sm font-semibold transition-all max-w-[48%] text-left"
+                    className="rounded-xl px-4 py-3 text-sm font-semibold transition-all w-full sm:max-w-[48%] text-left"
+                    title={`Ch ${ch.chapter_number}: ${ch.title}`}
                     style={{
                       background: selectedChapter === ch.chapter_number ? `${subMeta?.color}12` : 'var(--surface-2)',
                       color: selectedChapter === ch.chapter_number ? subMeta?.color : 'var(--text-2)',
                       border: selectedChapter === ch.chapter_number ? `1.5px solid ${subMeta?.color}` : '1.5px solid transparent',
                     }}
                   >
-                    <span className="font-bold">Ch {ch.chapter_number}</span>
-                    <span className="text-[11px] block truncate opacity-70">{ch.title}</span>
+                    <span className="font-bold">Ch {ch.chapter_number}:</span>
+                    <span className="text-[11px] block line-clamp-2 mt-0.5" style={{ color: selectedChapter === ch.chapter_number ? subMeta?.color : 'var(--text-3)' }}>{ch.title}</span>
                   </button>
                 ))}
               </div>
