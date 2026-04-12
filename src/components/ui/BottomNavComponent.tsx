@@ -178,6 +178,9 @@ export default function BottomNavComponent() {
   const { data: dashData } = useDashboardData((auth as any)?.student?.id);
   const dueCount: number = (dashData as any)?.due_count ?? 0;
 
+  // Streak count from snapshot (already loaded in AuthContext — no extra request)
+  const streakCount: number = (auth as any)?.snapshot?.current_streak ?? 0;
+
   const isActive = (href: string) => pathname === href || (href !== '/' && pathname.startsWith(href));
   const isMoreActive = moreItems.some(m => isActive(m.href));
   const hasMultipleRoles = roles.length > 1;
@@ -347,6 +350,16 @@ export default function BottomNavComponent() {
                   >
                     {active ? item.activeIcon : item.icon}
                   </span>
+                  {/* Streak badge on Home tab */}
+                  {item.href === '/dashboard' && streakCount > 0 && activeRole === 'student' && (
+                    <span
+                      className="absolute -top-1.5 -right-2.5 min-w-[20px] h-[16px] rounded-full flex items-center justify-center text-[9px] font-bold px-0.5"
+                      style={{ background: '#F59E0B', color: '#fff' }}
+                      aria-label={`${streakCount} day streak`}
+                    >
+                      {streakCount}
+                    </span>
+                  )}
                 </span>
                 <span className="text-[11px] font-semibold tracking-wide">
                   {isHi ? item.labelHi : item.label}
