@@ -193,10 +193,18 @@ E2E tests are unauthenticated except `observability-timeline.spec.ts` and `obser
 | 43 | Alert deliverer retries a failed dispatch up to 3 times, then buries with status=failed | Yes | `supabase/functions/alert-deliverer/index_test.ts` (Deno test) |
 | 44 | Alert rules and channels pages render with seeded data | Yes (auth-gated) | `e2e/observability-rules.spec.ts` |
 
+### Student Impersonation
+| # | Scenario | Test Exists | File |
+|---|---|---|---|
+| 45 | Impersonation sessions are audit-logged in admin_impersonation_sessions with start/end times and admin identity | Yes | `student-impersonation-api.test.ts` |
+| 46 | Support notes are append-only -- only GET and POST routes exist, no PUT/PATCH/DELETE | Yes | `student-notes-api.test.ts` + code inspection |
+| 47 | Live View iframe pages have no write endpoints -- all proxy routes are GET-only | Yes (by inspection) | Code inspection of `src/app/api/super-admin/students/[id]/{dashboard,progress,foxy-history,quiz-history}/route.ts` |
+
 ### Catalog Summary
 - **35/35 core scenarios have corresponding tests** at the unit level
 - **6 observability scenarios added (R36-R41)**: 4 fully covered, 1 partial, 1 DB-gated (skips without local Supabase)
 - **3 observability Cut 1b scenarios added (R42-R44)**: 2 DB/auth-gated, 1 Deno test
+- **3 impersonation scenarios added (R45-R47)**: R45 unit-tested, R46 unit-tested + inspected, R47 by code inspection
 - **Gap**: No integration tests verify core invariants against real database/services
 - **Gap**: No E2E tests verify core invariants in a running application (observability E2E added but auth-gated)
 - **Gap**: Score consistency across client + server + RPC (P1 #4) is only tested client-side
