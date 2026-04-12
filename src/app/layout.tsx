@@ -1,6 +1,7 @@
 import './globals.css';
 import type { Metadata, Viewport } from 'next';
 import { AuthProvider } from '@/lib/AuthContext';
+import { SchoolProvider } from '@/lib/SchoolContext';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import RegisterSW from '@/lib/RegisterSW';
 import CookieConsent from '@/components/CookieConsent';
@@ -79,15 +80,17 @@ export default function RootLayout({
       </head>
       <body>
         <a href="#main-content" className="skip-nav">Skip to content</a>
-        <AuthProvider>
-          <NetworkStatus />
-          <ErrorBoundary>
-            <div id="main-content" className="app-shell">{children}</div>
-          </ErrorBoundary>
-          <DemoModeWrapper />
-          <RegisterSW />
-          <CookieConsent />
-        </AuthProvider>
+        <SchoolProvider>
+          <AuthProvider>
+            <NetworkStatus />
+            <ErrorBoundary>
+              <div id="main-content" className="app-shell">{children}</div>
+            </ErrorBoundary>
+            <DemoModeWrapper />
+            <RegisterSW />
+            <CookieConsent />
+          </AuthProvider>
+        </SchoolProvider>
       </body>
     </html>
   );

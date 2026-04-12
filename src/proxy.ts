@@ -22,9 +22,15 @@ import { Redis } from '@upstash/redis';
  * Defense in depth. Every layer assumes the layer below might be
  * compromised.
  *
- * Layer 0: Supabase session refresh (keeps auth cookies fresh)
- * Layer 1: Security headers (XSS, clickjacking, MIME sniffing)
- * Layer 2: Bot/scanner blocking
+ * Layer 0: Subdomain → school config resolution (white-label)
+ * Layer 0.5: API Authentication Check
+ * Layer 0.6: Protected page route redirects
+ * Layer 0.7: School admin portal protection
+ * Layer 0.8: Session validation (device limit)
+ * Layer 1: Supabase session refresh (keeps auth cookies fresh)
+ * Layer 2: Security headers (XSS, clickjacking, MIME sniffing)
+ * Layer 2.1: Bot/scanner blocking
+ * Layer 2.5: Super admin protection
  * Layer 3: Distributed rate limiting (Upstash Redis, falls back to in-memory)
  * Layer 4: Request validation
  *
@@ -187,6 +193,86 @@ async function validateSessionCached(sessionId: string): Promise<boolean | null>
   }
 }
 
+// ── Subdomain → School resolution (white-label) ──────────────────────
+// Schools access Alfanumrik via <slug>.alfanumrik.com. This cache avoids
+// a DB query on every request (5-minute TTL, 1-minute negative cache).
+const schoolCache = new Map<string, { data: SchoolConfig | null; expires: number }>();
+
+interface SchoolConfig {
+  id: string;
+  name: string;
+  slug: string;
+  logo_url: string | null;
+  primary_color: string;
+  secondary_color: string;
+  tagline: string | null;
+  settings: Record<string, unknown>;
+}
+
+function extractSubdomain(host: string): string | null {
+  // Strip port (e.g., "dps-noida.localhost:3000" → "dps-noida.localhost")
+  const hostWithoutPort = host.split(':')[0];
+  const parts = hostWithoutPort.split('.');
+
+  // school-slug.alfanumrik.com (3+ parts, not www)
+  if (parts.length >= 3 && parts[0] !== 'www') {
+    return parts[0];
+  }
+
+  // school-slug.localhost (local dev)
+  if (parts.length >= 2 && parts[parts.length - 1] === 'localhost' && parts[0] !== 'localhost') {
+    return parts[0];
+  }
+
+  return null;
+}
+
+async function getSchoolBySlug(
+  slug: string,
+  sbUrl: string,
+  sbKey: string
+): Promise<SchoolConfig | null> {
+  const cached = schoolCache.get(slug);
+  if (cached && cached.expires > Date.now()) return cached.data;
+
+  try {
+    // Direct PostgREST query with anon key — lightweight for edge middleware.
+    // School branding is non-sensitive public info. If no RLS policy allows
+    // anonymous/authenticated SELECT on schools, the query returns empty and
+    // we fall through to default Alfanumrik branding.
+    const url = `${sbUrl}/rest/v1/schools?slug=eq.${encodeURIComponent(slug)}&is_active=eq.true&select=id,name,slug,logo_url,primary_color,secondary_color,tagline,settings&limit=1`;
+    const res = await fetch(url, {
+      headers: {
+        'apikey': sbKey,
+        'Authorization': `Bearer ${sbKey}`,
+      },
+    });
+
+    if (!res.ok) {
+      schoolCache.set(slug, { data: null, expires: Date.now() + 60_000 });
+      return null;
+    }
+
+    const rows = await res.json();
+    const data: SchoolConfig | null = rows?.[0] ?? null;
+
+    const ttl = data ? 5 * 60_000 : 60_000;
+    schoolCache.set(slug, { data, expires: Date.now() + ttl });
+
+    // Evict stale entries to prevent unbounded growth
+    if (schoolCache.size > 500) {
+      const now = Date.now();
+      for (const [k, v] of schoolCache.entries()) {
+        if (v.expires < now) schoolCache.delete(k);
+      }
+    }
+
+    return data;
+  } catch {
+    return null;
+  }
+}
+
 export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const pathname = path; // alias for clarity in API checks
@@ -204,6 +290,29 @@ export async function proxy(request: NextRequest) {
 
   const origin = request.headers.get('origin') || '';
   const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+
+  // ── Layer 0: Subdomain → School resolution (white-label) ──
+  // Extract subdomain early (before auth) so school headers are available
+  // to all downstream layers and client-side SchoolContext.
+  const host = request.headers.get('host') || '';
+  const subdomain = extractSubdomain(host);
+  let schoolConfig: SchoolConfig | null = null;
+
+  if (subdomain) {
+    const sbUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const sbKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (sbUrl && sbKey) {
+      schoolConfig = await getSchoolBySlug(subdomain, sbUrl, sbKey);
+
+      // Add school subdomain to allowed origins for CORS
+      if (schoolConfig) {
+        ALLOWED_ORIGINS.push(`https://${subdomain}.alfanumrik.com`);
+        if (process.env.NODE_ENV !== 'production') {
+          ALLOWED_ORIGINS.push(`http://${subdomain}.localhost:3000`);
+        }
+      }
+    }
+  }
 
   // ── Layer 0.5: API Authentication Check ──
   if (pathname.startsWith('/api/v1/')) {
@@ -288,6 +397,17 @@ export async function proxy(request: NextRequest) {
     });
     // Refresh the session — this extends the cookie expiry
     await supabase.auth.getUser();
+  }
+
+  // ── Inject school config headers (after response is created) ──
+  // These headers are read by /api/school-config and forwarded to SchoolContext.
+  if (schoolConfig) {
+    response.headers.set('x-school-id', schoolConfig.id);
+    response.headers.set('x-school-name', encodeURIComponent(schoolConfig.name));
+    response.headers.set('x-school-slug', schoolConfig.slug);
+    response.headers.set('x-school-logo', schoolConfig.logo_url || '');
+    response.headers.set('x-school-primary-color', schoolConfig.primary_color || '#7C3AED');
+    response.headers.set('x-school-secondary-color', schoolConfig.secondary_color || '#F97316');
   }
 
   // ── Layer 0.8: Session Validation (device limit enforcement) ──
