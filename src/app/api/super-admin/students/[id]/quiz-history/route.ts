@@ -53,7 +53,7 @@ export async function GET(
       const { data: coreResponses } = await supabaseAdmin
         .from('quiz_responses')
         .select(
-          'id, question_id, selected_option, is_correct, time_spent_seconds, created_at'
+          'id, question_id, question_text, options, correct_answer_index, student_answer_index, student_answer_text, is_correct, time_taken_seconds, explanation, bloom_level, difficulty, created_at'
         )
         .eq('quiz_session_id', quizId)
         .order('created_at', { ascending: true });
@@ -65,9 +65,9 @@ export async function GET(
         const { data: cogResponses } = await supabaseAdmin
           .from('question_responses')
           .select(
-            'id, question_id, selected_option, is_correct, time_spent, bloom_level, difficulty, source, created_at'
+            'id, question_id, selected_answer, is_correct, response_time_seconds, bloom_level_attempted, error_type, created_at'
           )
-          .eq('session_id', quizId)
+          .eq('quiz_session_id', quizId)
           .order('created_at', { ascending: true });
 
         responses = cogResponses || [];

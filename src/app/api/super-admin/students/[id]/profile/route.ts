@@ -44,10 +44,10 @@ export async function GET(
       supabaseAdmin
         .from('knowledge_gaps')
         .select(
-          'id, topic_id, gap_type, severity, description, detected_at, is_resolved'
+          'id, target_concept_name, missing_prerequisite_name, detection_method, confidence_score, status, remediation_plan, detected_at'
         )
         .eq('student_id', studentId)
-        .eq('is_resolved', false)
+        .neq('status', 'resolved')
         .order('detected_at', { ascending: false })
         .limit(20),
 
@@ -140,7 +140,7 @@ export async function GET(
     const bloomDistribution: Record<string, number> = {};
     try {
       const { data: responses } = await supabaseAdmin
-        .from('question_responses')
+        .from('quiz_responses')
         .select('bloom_level')
         .eq('student_id', studentId)
         .not('bloom_level', 'is', null);

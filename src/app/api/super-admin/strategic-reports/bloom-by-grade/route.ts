@@ -6,7 +6,7 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
  * GET /api/super-admin/strategic-reports/bloom-by-grade
  *
  * Computes distribution of Bloom's taxonomy levels per grade,
- * based on question_responses (which stores bloom_level per response).
+ * based on question_responses (which stores bloom_level_attempted per response).
  *
  * Fallback: if question_responses has no bloom_level data, joins
  * quiz_responses -> question_bank to get bloom_level from the question.
@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
     // Join to students for grade
     let query = supabaseAdmin
       .from('question_responses')
-      .select('student_id, bloom_level');
+      .select('student_id, bloom_level_attempted');
 
     // We need student grade, so fetch students separately and join in JS
     // (Supabase JS client doesn't support cross-table joins without FK path easily)
@@ -81,8 +81,8 @@ export async function GET(request: NextRequest) {
       studentGradeMap.set(s.id, s.grade);
     }
 
-    // Check if question_responses has bloom_level data
-    const responsesWithBloom = responses.filter(r => r.bloom_level);
+    // Check if question_responses has bloom_level_attempted data
+    const responsesWithBloom = responses.filter(r => r.bloom_level_attempted);
 
     let gradeBloomCounts: Record<string, Record<BloomLevel, number>>;
 
@@ -94,7 +94,7 @@ export async function GET(request: NextRequest) {
         const grade = studentGradeMap.get(r.student_id);
         if (!grade) continue; // Student not in filter or not active
 
-        const bloom = normalizeBloomLevel(r.bloom_level);
+        const bloom = normalizeBloomLevel(r.bloom_level_attempted);
         if (!bloom) continue;
 
         if (!gradeBloomCounts[grade]) {

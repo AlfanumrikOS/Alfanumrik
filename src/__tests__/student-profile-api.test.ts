@@ -59,7 +59,7 @@ beforeEach(async () => {
 
 function chainMock(resolveValue: { data: unknown; error: unknown }) {
   const chain: any = {};
-  const methods = ['select', 'eq', 'is', 'gt', 'not', 'order', 'limit', 'in', 'single'];
+  const methods = ['select', 'eq', 'neq', 'is', 'gt', 'not', 'order', 'limit', 'in', 'single'];
   for (const m of methods) {
     chain[m] = (..._args: unknown[]) => chain;
   }
@@ -129,7 +129,7 @@ describe('GET /api/super-admin/students/[id]/profile', () => {
           error: null,
         });
       }
-      if (table === 'question_responses') {
+      if (table === 'quiz_responses') {
         return chainMock({
           data: [
             { bloom_level: 'understand' },
