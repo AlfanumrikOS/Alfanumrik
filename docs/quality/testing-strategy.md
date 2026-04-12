@@ -7,9 +7,9 @@
 ### Summary
 | Type | Tool | Files | Approx. Cases | CI Enforced |
 |---|---|---|---|---|
-| Unit / Logic | Vitest 4.1.0 | 26 | ~722 | Yes |
+| Unit / Logic | Vitest 4.1.0 | 27 | ~730 | Yes |
 | Component | @testing-library/react | (within unit files) | ~24 (smoke) | Yes |
-| E2E | Playwright 1.58.2 | 4 | ~20 | No (not in CI) |
+| E2E | Playwright 1.58.2 | 5 | ~25 | No (not in CI) |
 | Integration | None | 0 | 0 | N/A |
 | Visual regression | None | 0 | 0 | N/A |
 
@@ -52,8 +52,9 @@
 | `navigation.spec.ts` | Route navigation and redirects | No |
 | `accessibility.spec.ts` | Accessibility checks | No |
 | `landing-seo.spec.ts` | SEO meta tags, structured data | No |
+| `observability-timeline.spec.ts` | Observability Console timeline, filters, drawer, export | Yes (super admin) |
 
-All E2E tests currently test unauthenticated flows only.
+E2E tests are unauthenticated except `observability-timeline.spec.ts` which requires `SUPER_ADMIN_EMAIL` and `SUPER_ADMIN_PASSWORD` env vars (skips without them).
 
 ## Vitest Configuration
 
@@ -172,10 +173,21 @@ All E2E tests currently test unauthenticated flows only.
 |---|---|---|---|
 | 35 | PII redacted in logs | Yes | `security.test.ts` |
 
+### Observability (Cut 1a)
+| # | Scenario | Test Exists | File |
+|---|---|---|---|
+| 36 | AI failure in claude.ts persists as an ops_event with category=ai, severity=error | Yes | `ops-events.test.ts` (writer) + `observability-migration-1a.test.ts` (persistence) |
+| 37 | PII is redacted before writing to ops_events | Yes | `ops-events.test.ts`, `ops-events-redactor.test.ts` |
+| 38 | cleanup_ops_events deletes info rows after 30 days and warning rows after 90 days; never deletes error/critical rows | Yes (DB-gated) | `observability-migration-1a.test.ts` |
+| 39 | Observability Console page loads and renders snapshot widgets | Yes (auth-gated) | `e2e/observability-timeline.spec.ts` |
+| 40 | Observability timeline loads with widgets for range=1h | Yes (auth-gated) | `e2e/observability-timeline.spec.ts` |
+| 41 | Free-text search on the observability timeline matches against message, subject_id, and request_id | Partial | Implementation verified by inspection; no dedicated search assertion test |
+
 ### Catalog Summary
-- **35/35 scenarios have corresponding tests** at the unit level
-- **Gap**: No integration tests verify these invariants against real database/services
-- **Gap**: No E2E tests verify these invariants in a running application
+- **35/35 core scenarios have corresponding tests** at the unit level
+- **6 observability scenarios added (R36-R41)**: 4 fully covered, 1 partial, 1 DB-gated (skips without local Supabase)
+- **Gap**: No integration tests verify core invariants against real database/services
+- **Gap**: No E2E tests verify core invariants in a running application (observability E2E added but auth-gated)
 - **Gap**: Score consistency across client + server + RPC (P1 #4) is only tested client-side
 
 ## Testing Gaps and Priorities
