@@ -131,7 +131,10 @@ export async function getUserPermissions(authUserId: string): Promise<UserPermis
 
   if (error || !data) {
     logger.error('rbac_permissions_failed', { error: error ? new Error(error.message) : new Error('unknown'), route: 'rbac' });
-    return { roles: [], permissions: [] };
+    // Throw instead of returning empty permissions to prevent false 403 errors.
+    // Returning empty roles/permissions would cause authorizeRequest() to respond
+    // with "No roles assigned" (403), when the real issue is a database error (500).
+    throw new Error(`Permission lookup failed: ${error?.message ?? 'no data returned'}`);
   }
 
   const result: UserPermissions = {
@@ -197,7 +200,7 @@ export async function canAccessStudent(authUserId: string, studentId: string): P
     .select('id')
     .eq('auth_user_id', authUserId)
     .eq('id', studentId)
-    .single();
+    .maybeSingle();
   if (ownStudent) return true;
 
   // Parent: can access linked children
@@ -237,7 +240,7 @@ export async function canAccessStudent(authUserId: string, studentId: string): P
  */
 export async function canAccessImage(authUserId: string, imageId: string): Promise<boolean> {
   const supabase = getServiceClient();
-  const { data: image } = await supabase.from('image_uploads').select('student_id').eq('id', imageId).single();
+  const { data: image } = await supabase.from('image_uploads').select('student_id').eq('id', imageId).maybeSingle();
   if (!image) return false;
   return canAccessStudent(authUserId, image.student_id);
 }
@@ -356,7 +359,32 @@ export async function authorizeRequest(
   }
 
   // 2. Get user permissions
-  const perms = await getUserPermissions(authUserId);
+  let perms: UserPermissions;
+  try {
+    perms = await getUserPermissions(authUserId);
+  } catch (permError) {
+    // Database/RPC failure — return 500 instead of misleading 403.
+    // This prevents SWR from retrying on what it thinks is a client error.
+    logger.error('rbac_authorize_permissions_failed', {
+      error: permError instanceof Error ? permError : new Error(String(permError)),
+      route: 'rbac',
+    });
+    return {
+      authorized: false,
+      userId: authUserId,
+      studentId: null,
+      roles: [],
+      permissions: [],
+      errorResponse: new Response(JSON.stringify({
+        error: 'Permission check failed',
+        code: 'PERMISSION_LOOKUP_ERROR',
+      }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+      reason: 'Permission lookup failed due to server error',
+    };
+  }
 
   if (perms.roles.length === 0) {
     return {
@@ -415,7 +443,7 @@ export async function authorizeRequest(
       .from('students')
       .select('id')
       .eq('auth_user_id', authUserId)
-      .single();
+      .maybeSingle();
     studentId = student?.id || null;
   }
 
