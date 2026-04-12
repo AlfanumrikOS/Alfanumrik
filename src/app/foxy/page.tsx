@@ -1243,7 +1243,7 @@ export default function FoxyPage() {
                     onSpeak={ttsSupported && msg.role === 'tutor' ? () => speakMessage(msg.content) : undefined}
                   />
                   {msg.role === 'tutor' && msg.diagrams && msg.diagrams.length > 0 && (
-                    <div className="pl-11 -mt-1 mb-2 space-y-1.5">
+                    <div className="pl-11 -mt-1 mb-2 space-y-2">
                       <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>
                         {language === 'hi' ? 'NCERT चित्र:' : 'NCERT Diagrams:'}
                       </p>
@@ -1253,15 +1253,38 @@ export default function FoxyPage() {
                           href={d.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium transition-all hover:brightness-95 active:scale-[0.98]"
+                          className="flex items-center gap-3 px-4 py-3 rounded-2xl text-left transition-all hover:brightness-95 active:scale-[0.98]"
                           style={{
-                            background: `${cfg.color}08`,
-                            color: cfg.color,
-                            border: `1px solid ${cfg.color}20`,
+                            background: `linear-gradient(135deg, ${cfg.color}08, ${cfg.color}04)`,
+                            border: `1.5px solid ${cfg.color}25`,
+                            boxShadow: `0 2px 8px ${cfg.color}08`,
                           }}
                         >
-                          <span className="text-sm">&#128202;</span>
-                          <span className="truncate">{d.title}{d.pageNumber ? ` (p. ${d.pageNumber})` : ''}</span>
+                          <div
+                            className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                            style={{ background: `${cfg.color}12` }}
+                          >
+                            <span className="text-lg" style={{ color: cfg.color }}>📊</span>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-bold truncate" style={{ color: 'var(--text-1)' }}>
+                              {d.title}
+                            </p>
+                            {d.description && (
+                              <p className="text-[10px] mt-0.5 truncate" style={{ color: 'var(--text-3)' }}>
+                                {d.description}
+                              </p>
+                            )}
+                          </div>
+                          {d.pageNumber && (
+                            <span
+                              className="flex-shrink-0 text-[9px] font-bold px-2 py-1 rounded-lg"
+                              style={{ background: `${cfg.color}15`, color: cfg.color }}
+                            >
+                              p. {d.pageNumber}
+                            </span>
+                          )}
+                          <span className="flex-shrink-0 text-sm" style={{ color: cfg.color }}>↗</span>
                         </a>
                       ))}
                     </div>
