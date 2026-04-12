@@ -45,6 +45,7 @@
 | `india.test.ts` | 7 | India locale specifics | -- |
 | `observability-migration-1a.test.ts` | 6 | Observability 1a migration (DB-gated) | -- |
 | `observability-migration-1b.test.ts` | 5 | Observability 1b alerting migration (DB-gated) | -- |
+| `bulk-actions-api.test.ts` | 20 | Bulk actions API validation & audit logging | R50, R51 |
 
 ### E2E Test Files (4 files in `e2e/`)
 
@@ -56,6 +57,7 @@
 | `landing-seo.spec.ts` | SEO meta tags, structured data | No |
 | `observability-timeline.spec.ts` | Observability Console timeline, filters, drawer, export | Yes (super admin) |
 | `observability-rules.spec.ts` | Observability Console alert rules and channels management | Yes (super admin) |
+| `bulk-actions.spec.ts` | Bulk Actions page tabs and student selector | Yes (super admin) |
 
 E2E tests are unauthenticated except `observability-timeline.spec.ts` and `observability-rules.spec.ts` which require `SUPER_ADMIN_EMAIL` and `SUPER_ADMIN_PASSWORD` env vars (skips without them).
 
@@ -206,12 +208,19 @@ E2E tests are unauthenticated except `observability-timeline.spec.ts` and `obser
 | 48 | Payment reconciliation action is audit-logged in both ops_events (category=payment, source=payment-ops) and admin_audit_log | Yes | `payment-ops-api.test.ts` |
 | 49 | Stuck payment detection query matches the logic in reconcile_stuck_payments.sql: status=captured AND (plan IS NULL OR plan=free OR plan mismatch) | Yes | `payment-ops-api.test.ts` + code inspection of `src/app/api/super-admin/payment-ops/stuck/route.ts` |
 
+### Bulk Actions
+| # | Scenario | Test Exists | File |
+|---|---|---|---|
+| 50 | All bulk actions are audit-logged in both ops_events and admin_audit_log | Yes | `bulk-actions-api.test.ts` |
+| 51 | Bulk actions enforce max 500 student limit per batch | Yes | `bulk-actions-api.test.ts` |
+
 ### Catalog Summary
 - **35/35 core scenarios have corresponding tests** at the unit level
 - **6 observability scenarios added (R36-R41)**: 4 fully covered, 1 partial, 1 DB-gated (skips without local Supabase)
 - **3 observability Cut 1b scenarios added (R42-R44)**: 2 DB/auth-gated, 1 Deno test
 - **3 impersonation scenarios added (R45-R47)**: R45 unit-tested, R46 unit-tested + inspected, R47 by code inspection
 - **2 payment ops scenarios added (R48-R49)**: R48 unit-tested, R49 unit-tested + code inspection
+- **2 bulk actions scenarios added (R50-R51)**: R50 audit-log verification, R51 batch limit enforcement
 - **Gap**: No integration tests verify core invariants against real database/services
 - **Gap**: No E2E tests verify core invariants in a running application (observability E2E added but auth-gated)
 - **Gap**: Score consistency across client + server + RPC (P1 #4) is only tested client-side
