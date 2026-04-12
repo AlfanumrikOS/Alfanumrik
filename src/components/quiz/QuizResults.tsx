@@ -235,6 +235,87 @@ export default function QuizResults({
           <StatCard icon="⏱" value={formatTime(timer)} label={isHi ? 'समय' : 'Time'} color="var(--teal)" />
         </div>
 
+        {/* Post-quiz nudge -- contextual encouragement based on score */}
+        {(() => {
+          const subjectParam = selectedSubject || '';
+          if (pct >= 80) {
+            return (
+              <div
+                className="rounded-2xl p-4 flex items-center gap-3"
+                style={{ background: 'rgba(22,163,74,0.06)', border: '1.5px solid rgba(22,163,74,0.15)' }}
+              >
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
+                  style={{ background: 'rgba(22,163,74,0.12)' }}>🚀</div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold" style={{ color: '#16A34A' }}>
+                    {isHi ? 'शानदार! अब Level Up करो' : 'Great score! Ready to level up?'}
+                  </p>
+                  <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-3)' }}>
+                    {isHi ? 'कठिन सवालों से खुद को challenge करो' : 'Challenge yourself with harder questions'}
+                  </p>
+                </div>
+                <button
+                  onClick={() => router.push('/quiz')}
+                  className="flex-shrink-0 text-xs font-bold px-3 py-2 rounded-xl transition-all active:scale-95"
+                  style={{ background: '#16A34A', color: '#fff' }}
+                >
+                  {isHi ? 'करो →' : 'Go →'}
+                </button>
+              </div>
+            );
+          } else if (pct < 50) {
+            return (
+              <div
+                className="rounded-2xl p-4 flex items-center gap-3"
+                style={{ background: 'rgba(232,88,28,0.06)', border: '1.5px solid rgba(232,88,28,0.15)' }}
+              >
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
+                  style={{ background: 'rgba(232,88,28,0.12)' }}>🦊</div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold" style={{ color: 'var(--orange)' }}>
+                    {isHi ? 'Foxy तुम्हारी मदद कर सकती है!' : 'Foxy can help you improve!'}
+                  </p>
+                  <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-3)' }}>
+                    {isHi ? 'कमजोर topics को step-by-step समझो' : 'Get step-by-step help on weak topics'}
+                  </p>
+                </div>
+                <button
+                  onClick={() => router.push(`/foxy?subject=${subjectParam}&mode=doubt`)}
+                  className="flex-shrink-0 text-xs font-bold px-3 py-2 rounded-xl transition-all active:scale-95"
+                  style={{ background: 'var(--orange)', color: '#fff' }}
+                >
+                  {isHi ? 'पूछो →' : 'Ask →'}
+                </button>
+              </div>
+            );
+          } else {
+            return (
+              <div
+                className="rounded-2xl p-4 flex items-center gap-3"
+                style={{ background: 'rgba(59,130,246,0.06)', border: '1.5px solid rgba(59,130,246,0.15)' }}
+              >
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
+                  style={{ background: 'rgba(59,130,246,0.12)' }}>💪</div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold" style={{ color: '#3B82F6' }}>
+                    {isHi ? 'अच्छा काम! और अभ्यास करो' : 'Good effort! Keep practicing'}
+                  </p>
+                  <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-3)' }}>
+                    {isHi ? 'एक और क्विज़ से score बढ़ाओ' : 'One more quiz to push your score higher'}
+                  </p>
+                </div>
+                <button
+                  onClick={onRetry}
+                  className="flex-shrink-0 text-xs font-bold px-3 py-2 rounded-xl transition-all active:scale-95"
+                  style={{ background: '#3B82F6', color: '#fff' }}
+                >
+                  {isHi ? 'फिर से →' : 'Retry →'}
+                </button>
+              </div>
+            );
+          }
+        })()}
+
         {/* Separate MCQ/Written subscores — shown when quiz has both types */}
         {(() => {
           const mcqResponses = responses.filter((r) => r.selected_option >= 0);
