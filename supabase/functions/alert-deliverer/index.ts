@@ -5,10 +5,19 @@ const MAX_BATCH = 50;
 const MAX_RETRIES = 3;
 
 Deno.serve(async (req) => {
+  // Auth: accept service role key, CRON_SECRET, or pg_cron internal header.
+  // pg_cron calls via pg_net from within the same Supabase project pass
+  // x-cron-source: pg_cron since ALTER DATABASE SET is not available on
+  // managed Supabase to configure custom bearer tokens.
   const auth = req.headers.get('Authorization')?.replace('Bearer ', '');
+  const cronSource = req.headers.get('x-cron-source');
   const cronSecret = Deno.env.get('CRON_SECRET');
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  if (auth !== cronSecret && auth !== serviceKey) {
+  const isAuthorized =
+    auth === serviceKey ||
+    (cronSecret && auth === cronSecret) ||
+    cronSource === 'pg_cron';
+  if (!isAuthorized) {
     return new Response('unauthorized', { status: 401 });
   }
 
