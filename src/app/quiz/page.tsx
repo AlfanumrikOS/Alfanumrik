@@ -125,6 +125,16 @@ export default function QuizPage() {
 
   // Written answer evaluation state
   const [isEvaluating, setIsEvaluating] = useState(false);
+  const [currentEval, setCurrentEval] = useState<{
+    marks_awarded: number;
+    marks_possible: number;
+    feedback: string;
+    is_correct: boolean;
+    key_points?: { point: string; hit: boolean }[];
+    model_answer_summary?: string;
+    grade?: string;
+    percentage?: number;
+  } | null>(null);
 
   // Cognitive 2.0 state
   const [cogLoad, setCogLoad] = useState<CognitiveLoadState>(initialCognitiveLoad());
@@ -519,6 +529,28 @@ export default function QuizPage() {
       rubric_feedback: evalResult?.feedback ?? undefined,
     }]);
 
+    // Store full evaluation result for rich feedback display
+    if (evalResult) {
+      setCurrentEval({
+        marks_awarded: marksAwarded,
+        marks_possible: marksPossible,
+        feedback: evalResult.feedback,
+        is_correct: isCorrect,
+        key_points: evalResult.key_points,
+        model_answer_summary: evalResult.model_answer_summary,
+        grade: undefined, // grade not returned from this endpoint
+        percentage: marksPossible > 0 ? Math.round((marksAwarded / marksPossible) * 100) : 0,
+      });
+    } else {
+      setCurrentEval({
+        marks_awarded: 0,
+        marks_possible: marksPossible,
+        feedback: isHi ? 'मूल्यांकन विफल — आदर्श उत्तर देखें' : 'Evaluation failed — see model answer',
+        is_correct: false,
+        percentage: 0,
+      });
+    }
+
     setIsEvaluating(false);
     setShowExplanation(true);
     if (qTimerRef.current) clearInterval(qTimerRef.current);
@@ -559,6 +591,7 @@ export default function QuizPage() {
       setShowExplanation(false);
       setReflection(null);
       setHintLevel(0);
+      setCurrentEval(null);
     } else {
       // Quiz complete — submit results
       if (timerRef.current) clearInterval(timerRef.current);
@@ -808,6 +841,24 @@ export default function QuizPage() {
       <div className="mesh-bg min-h-dvh flex flex-col focus-screen">
         {/* Emotional feedback overlay */}
         <FeedbackOverlay feedback={activeFeedback} isHi={isHi} />
+
+        {/* Full-screen evaluation blocker for written answers */}
+        {isEvaluating && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+            <div className="bg-white rounded-xl p-8 text-center max-w-sm mx-4 shadow-xl">
+              <div className="text-4xl mb-4 animate-bounce">🤔</div>
+              <h3 className="text-lg font-semibold mb-2" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}>
+                {isHi ? 'तुम्हारा जवाब जांचा जा रहा है...' : 'Evaluating your answer...'}
+              </h3>
+              <p className="text-sm" style={{ color: 'var(--text-3)' }}>
+                {isHi ? 'AI शिक्षक तुम्हारे उत्तर की समीक्षा कर रहा है' : 'Our AI teacher is reviewing your response'}
+              </p>
+              <div className="mt-4 w-full bg-gray-200 rounded-full h-1">
+                <div className="bg-purple-600 h-1 rounded-full animate-pulse" style={{ width: '60%' }} />
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Header — distraction-free: progress + timer only */}
         <header className="page-header" style={{ background: 'rgba(251,248,244,0.92)', backdropFilter: 'blur(20px)', borderColor: 'var(--border)' }}>
@@ -1094,11 +1145,89 @@ export default function QuizPage() {
                     </div>
                   </Card>
 
-                  {/* Written evaluation feedback */}
-                  {(() => {
+                  {/* Written evaluation feedback — uses currentEval for richer display */}
+                  {currentEval && (
+                    <div className="rounded-2xl p-4 border space-y-3"
+                      style={{
+                        background: (currentEval.percentage ?? 0) >= 80 ? 'rgba(22,163,74,0.05)'
+                          : (currentEval.percentage ?? 0) >= 50 ? 'rgba(245,158,11,0.05)'
+                          : 'rgba(220,38,38,0.04)',
+                        borderColor: (currentEval.percentage ?? 0) >= 80 ? 'rgba(22,163,74,0.15)'
+                          : (currentEval.percentage ?? 0) >= 50 ? 'rgba(245,158,11,0.15)'
+                          : 'rgba(220,38,38,0.12)',
+                      }}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg">
+                            {(currentEval.percentage ?? 0) >= 80 ? '🎉' : (currentEval.marks_awarded ?? 0) > 0 ? '📝' : '💡'}
+                          </span>
+                          <span className="text-base font-bold"
+                            style={{
+                              color: (currentEval.percentage ?? 0) >= 80 ? '#16A34A'
+                                : (currentEval.marks_awarded ?? 0) > 0 ? '#F59E0B'
+                                : '#DC2626',
+                            }}>
+                            {currentEval.marks_awarded}/{currentEval.marks_possible} {isHi ? 'अंक' : 'marks'}
+                          </span>
+                        </div>
+                        <span className={`px-2 py-1 rounded text-xs font-bold ${
+                          (currentEval.percentage ?? 0) >= 80 ? 'bg-green-100 text-green-700'
+                            : (currentEval.percentage ?? 0) >= 50 ? 'bg-yellow-100 text-yellow-700'
+                            : 'bg-red-100 text-red-700'
+                        }`}>
+                          {(currentEval.percentage ?? 0) >= 80
+                            ? (isHi ? 'बहुत अच्छा' : 'Good')
+                            : (currentEval.percentage ?? 0) >= 50
+                            ? (isHi ? 'ठीक' : 'Fair')
+                            : (isHi ? 'सुधार करो' : 'Needs Work')}
+                        </span>
+                      </div>
+
+                      {/* AI feedback */}
+                      {currentEval.feedback && (
+                        <p className="text-sm leading-relaxed text-[var(--text-2)]">
+                          {currentEval.feedback}
+                        </p>
+                      )}
+
+                      {/* Key points breakdown */}
+                      {currentEval.key_points && currentEval.key_points.length > 0 && (
+                        <div className="space-y-1">
+                          <span className="text-xs font-semibold" style={{ color: 'var(--text-3)' }}>
+                            {isHi ? 'मुख्य बिंदु:' : 'Key Points:'}
+                          </span>
+                          {currentEval.key_points.map((kp, i) => (
+                            <div key={i} className="flex items-start gap-2 text-xs">
+                              <span className="flex-shrink-0 mt-0.5">{kp.hit ? '✅' : '❌'}</span>
+                              <span style={{ color: kp.hit ? '#16A34A' : 'var(--text-3)' }}>{kp.point}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Model answer */}
+                      {(currentEval.model_answer_summary || q.explanation) && (
+                        <div className="pt-3" style={{ borderTop: '1px solid var(--border)' }}>
+                          <div className="rounded-lg px-3 py-2 text-sm leading-relaxed"
+                            style={{ background: 'rgba(59,130,246,0.05)', border: '1px solid rgba(59,130,246,0.12)' }}>
+                            <span className="font-semibold text-xs block mb-1" style={{ color: '#3B82F6' }}>
+                              {isHi ? 'आदर्श उत्तर' : 'Model Answer'}
+                            </span>
+                            <p className="text-[var(--text-2)]">
+                              {currentEval.model_answer_summary || q.explanation}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Fallback if currentEval is null but showExplanation is true */}
+                  {!currentEval && (() => {
                     const lastResp = responses[responses.length - 1];
-                    const awarded = lastResp?.marks_awarded ?? 0;
-                    const possible = lastResp?.marks_possible ?? q.marks_possible ?? 2;
+                    if (!lastResp) return null;
+                    const awarded = lastResp.marks_awarded ?? 0;
+                    const possible = lastResp.marks_possible ?? q.marks_possible ?? 2;
                     const gotFullMarks = awarded >= possible;
                     return (
                       <div className="rounded-2xl p-4 border"
@@ -1113,20 +1242,10 @@ export default function QuizPage() {
                             {awarded}/{possible} {isHi ? 'अंक' : 'marks'}
                           </span>
                         </div>
-                        {lastResp?.rubric_feedback && (
+                        {lastResp.rubric_feedback && (
                           <p className="text-sm leading-relaxed text-[var(--text-2)]">
                             {lastResp.rubric_feedback}
                           </p>
-                        )}
-                        {q.explanation && (
-                          <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--border)' }}>
-                            <div className="text-xs font-semibold mb-1" style={{ color: 'var(--text-3)' }}>
-                              {isHi ? 'आदर्श उत्तर' : 'Model Answer'}
-                            </div>
-                            <p className="text-sm leading-relaxed text-[var(--text-2)]">
-                              {q.explanation}
-                            </p>
-                          </div>
                         )}
                       </div>
                     );
