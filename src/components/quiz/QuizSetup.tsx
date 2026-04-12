@@ -14,6 +14,14 @@ const DIFF_LABELS = [
   { id: 3, label: 'Hard', labelHi: 'कठिन', icon: '🔴' },
 ];
 
+const QUESTION_TYPE_OPTIONS = [
+  { id: 'mcq', label: 'MCQ Only', labelHi: 'केवल MCQ', icon: '⭕', desc: 'Multiple choice questions', descHi: 'बहुविकल्पीय प्रश्न', types: ['mcq'] },
+  { id: 'short_answer', label: 'Short Answer', labelHi: 'लघु उत्तर', icon: '✏️', desc: '1-2 marks, typed answers', descHi: '1-2 अंक, लिखित उत्तर', types: ['short_answer'] },
+  { id: 'long_answer', label: 'Long Answer', labelHi: 'दीर्घ उत्तर', icon: '📝', desc: '5-6 marks, paragraph answers', descHi: '5-6 अंक, विस्तृत उत्तर', types: ['long_answer'] },
+  { id: 'mixed', label: 'Mixed', labelHi: 'मिश्रित', icon: '📋', desc: 'MCQ + SA + LA (CBSE pattern)', descHi: 'MCQ + SA + LA (CBSE पैटर्न)', types: ['mcq', 'short_answer', 'medium_answer', 'long_answer'] },
+  { id: 'ncert', label: 'NCERT Exercise', labelHi: 'NCERT अभ्यास', icon: '📖', desc: 'From NCERT question bank', descHi: 'NCERT प्रश्न बैंक से', types: ['ncert'] },
+];
+
 export interface SmartSuggestion {
   subject: string;
   topicId?: string;
@@ -43,6 +51,7 @@ interface QuizSetupProps {
     quizMode: QuizMode;
     examTimeLimit: number;
     chapterNumber: number | null;
+    questionTypes: string[];
   }) => void;
   onGoBack: () => void;
 }
@@ -66,6 +75,7 @@ export default function QuizSetup({
   const [questionCount, setQuestionCount] = useState(initialCount ?? 10);
   const [examTimeLimit, setExamTimeLimit] = useState(180);
   const [selectedChapter, setSelectedChapter] = useState<number | null>(initialChapter);
+  const [questionTypes, setQuestionTypes] = useState<string[]>(['mcq']);
   // Quick-start: when subject + chapter are pre-filled from context (e.g. from chapter page),
   // skip the full setup form and show a 1-confirm screen.
   const [showFullSetup, setShowFullSetup] = useState(false);
@@ -107,6 +117,7 @@ export default function QuizSetup({
       quizMode,
       examTimeLimit,
       chapterNumber: selectedChapter,
+      questionTypes,
     });
   };
 
@@ -177,6 +188,7 @@ export default function QuizSetup({
               quizMode: 'cognitive', // Smart mode by default
               examTimeLimit,
               chapterNumber: selectedChapter,
+              questionTypes: ['mcq'],
             })}
           >
             {loading ? (isHi ? 'लोड हो रहा...' : 'Loading...') : `⚡ ${isHi ? 'क्विज़ शुरू करो' : 'Start Quiz'}`}
@@ -417,11 +429,45 @@ export default function QuizSetup({
           </div>
         )}
 
+        {/* Question Type Selector */}
+        {selectedSubject && (
+          <div>
+            <p className="text-sm text-[var(--text-3)] mb-3 font-medium">
+              {isHi ? `${quizMode === 'practice' ? '4' : '3'}. प्रश्न प्रकार` : `${quizMode === 'practice' ? '4' : '3'}. Question type`}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {QUESTION_TYPE_OPTIONS.map(qt => {
+                const isActive = (qt.id === 'mcq' && questionTypes.length === 1 && questionTypes[0] === 'mcq')
+                  || (qt.id === 'short_answer' && questionTypes.length === 1 && questionTypes[0] === 'short_answer')
+                  || (qt.id === 'long_answer' && questionTypes.length === 1 && questionTypes[0] === 'long_answer')
+                  || (qt.id === 'mixed' && questionTypes.length > 1)
+                  || (qt.id === 'ncert' && questionTypes.length === 1 && questionTypes[0] === 'ncert');
+                return (
+                  <button
+                    key={qt.id}
+                    onClick={() => setQuestionTypes(qt.types)}
+                    className="rounded-xl px-3 py-2.5 text-sm font-semibold transition-all text-left"
+                    style={{
+                      background: isActive ? `${subMeta?.color || 'var(--orange)'}12` : 'var(--surface-2)',
+                      color: isActive ? (subMeta?.color || 'var(--orange)') : 'var(--text-2)',
+                      border: isActive ? `1.5px solid ${subMeta?.color || 'var(--orange)'}` : '1.5px solid transparent',
+                    }}
+                  >
+                    <span className="mr-1">{qt.icon}</span>
+                    {isHi ? qt.labelHi : qt.label}
+                    <span className="block text-[10px] opacity-70 mt-0.5">{isHi ? qt.descHi : qt.desc}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Question Count */}
         {selectedSubject && (
           <div>
             <p className="text-sm text-[var(--text-3)] mb-3 font-medium">
-              {isHi ? '4. कितने सवाल?' : '4. Number of questions'}
+              {isHi ? `${quizMode === 'practice' ? '5' : '4'}. कितने सवाल?` : `${quizMode === 'practice' ? '5' : '4'}. Number of questions`}
             </p>
             <div className="flex gap-2">
               {[5, 10, 15, 20].map(n => (
