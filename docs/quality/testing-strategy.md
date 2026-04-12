@@ -214,6 +214,12 @@ E2E tests are unauthenticated except `observability-timeline.spec.ts` and `obser
 | 50 | All bulk actions are audit-logged in both ops_events and admin_audit_log | Yes | `bulk-actions-api.test.ts` |
 | 51 | Bulk actions enforce max 500 student limit per batch | Yes | `bulk-actions-api.test.ts` |
 
+### Strategic Reports
+| # | Scenario | Test Exists | File |
+|---|---|---|---|
+| 52 | Cohort retention computes weekly/monthly retention from students.created_at + quiz_sessions activity | Yes | `strategic-reports-api.test.ts` + `e2e/strategic-reports.spec.ts` |
+| 53 | Bloom's distribution correctly joins quiz responses with question_bank bloom_level by grade | Yes | `strategic-reports-api.test.ts` + `e2e/strategic-reports.spec.ts` |
+
 ### Catalog Summary
 - **35/35 core scenarios have corresponding tests** at the unit level
 - **6 observability scenarios added (R36-R41)**: 4 fully covered, 1 partial, 1 DB-gated (skips without local Supabase)
@@ -221,6 +227,7 @@ E2E tests are unauthenticated except `observability-timeline.spec.ts` and `obser
 - **3 impersonation scenarios added (R45-R47)**: R45 unit-tested, R46 unit-tested + inspected, R47 by code inspection
 - **2 payment ops scenarios added (R48-R49)**: R48 unit-tested, R49 unit-tested + code inspection
 - **2 bulk actions scenarios added (R50-R51)**: R50 audit-log verification, R51 batch limit enforcement
+- **2 strategic reports scenarios added (R52-R53)**: R52 cohort retention, R53 Bloom's distribution
 - **Gap**: No integration tests verify core invariants against real database/services
 - **Gap**: No E2E tests verify core invariants in a running application (observability E2E added but auth-gated)
 - **Gap**: Score consistency across client + server + RPC (P1 #4) is only tested client-side
