@@ -282,32 +282,24 @@ export default function QuizPage() {
     if (!subj || !student) return;
     setLoading(true);
 
-    // If NCERT exercise type is selected, redirect to the dedicated NCERT quiz page
-    if (qTypes.length === 1 && qTypes[0] === 'ncert') {
-      const params = new URLSearchParams({
-        subject: subj,
-        grade: student.grade,
-        ...(chapter ? { chapter: String(chapter) } : {}),
-        count: String(qCount),
-      });
-      router.push(`/quiz/ncert?${params.toString()}`);
-      setLoading(false);
-      return;
-    }
+    // Map 'ncert' to all NCERT written question types (fetch in main quiz, no redirect)
+    const effectiveTypes = qTypes.length === 1 && qTypes[0] === 'ncert'
+      ? ['short_answer', 'long_answer', 'intext', 'exercise', 'example', 'hots', 'numerical']
+      : qTypes;
 
     try {
       const diffModeMap: Record<string, string> = { '1': 'easy', '2': 'medium', '3': 'hard' };
       const diffMode = diff != null ? (diffModeMap[String(diff)] || 'mixed') : (opts?.quizMode === 'cognitive' ? 'progressive' : 'mixed');
 
       // Determine if we need written questions from NCERT sources
-      const needsWritten = qTypes.some(t => t !== 'mcq');
-      const mcqTypes = qTypes.filter(t => t === 'mcq');
-      const writtenTypes = qTypes.filter(t => t !== 'mcq');
+      const needsWritten = effectiveTypes.some(t => t !== 'mcq');
+      const mcqTypes = effectiveTypes.filter(t => t === 'mcq');
+      const writtenTypes = effectiveTypes.filter(t => t !== 'mcq');
 
       let allQuestions: Question[] = [];
 
       // Fetch MCQ questions from question_bank (existing path)
-      if (mcqTypes.length > 0 || !needsWritten) {
+      if (mcqTypes.length > 0) {
         const mcqCount = needsWritten ? Math.ceil(qCount * 0.6) : qCount;
         const data = await getQuizQuestionsV2(
           subj,
@@ -320,57 +312,50 @@ export default function QuizPage() {
         allQuestions = Array.isArray(data) ? data : [];
       }
 
-      // Fetch written questions from ncert-question-engine when SA/MA/LA requested
+      // Fetch written questions from /api/quiz/ncert-questions (direct rag_content_chunks query)
       if (needsWritten) {
-        const writtenCount = mcqTypes.length > 0 ? qCount - allQuestions.length : qCount;
-        const writtenTypeParam = writtenTypes.length > 1 ? 'mixed' : writtenTypes[0];
+        const writtenCount = mcqTypes.length > 0 ? Math.max(qCount - allQuestions.length, 3) : qCount;
         try {
-          const { data: sessData } = await supabase.auth.getSession();
-          const token = sessData?.session?.access_token ?? '';
-          const resp = await fetch(
-            `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/ncert-question-engine`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-              body: JSON.stringify({
-                action: 'fetch_questions',
-                student_id: student.id,
-                subject: subj,
-                grade: student.grade,
-                chapter: chapter ?? 1,
-                question_type: writtenTypeParam,
-                count: Math.max(writtenCount, 3),
-              }),
-            }
-          );
+          const ncertParams = new URLSearchParams({
+            grade: student.grade,
+            subject: subj,
+            types: writtenTypes.join(','),
+            count: String(writtenCount),
+          });
+          if (chapter) ncertParams.set('chapter', String(chapter));
+
+          const resp = await fetch(`/api/quiz/ncert-questions?${ncertParams.toString()}`);
           if (resp.ok) {
             const writtenData = await resp.json();
             const writtenQs: Question[] = (writtenData.questions ?? []).map((wq: Record<string, unknown>) => ({
-              id: wq.question_id as string,
+              id: (wq.id as string) ?? (wq.question_id as string),
               question_text: wq.question_text as string,
               question_hi: null,
               question_type: (wq.cbse_type ?? wq.question_type ?? 'short_answer') as string,
-              options: wq.options ?? [],
+              options: (wq.options as string[]) ?? [],
               correct_answer_index: -1,
-              explanation: (wq.answer_text as string) ?? null,
+              explanation: (wq.explanation as string) ?? (wq.answer_text as string) ?? null,
               explanation_hi: null,
               hint: null,
               difficulty: 2,
               bloom_level: (wq.bloom_level as string) ?? 'understand',
-              chapter_number: chapter ?? 1,
+              chapter_number: (wq.chapter_number as number) ?? chapter ?? 0,
               marks_possible: (wq.marks_possible as number) ?? 2,
               answer_text: (wq.answer_text as string) ?? null,
-              source_table: (wq.source_table as string) ?? 'ncert_exercises',
-              question_id: wq.question_id as string,
+              source_table: (wq.source_table as string) ?? 'rag_content_chunks',
+              question_id: (wq.question_id as string) ?? (wq.id as string),
               cbse_type: (wq.cbse_type as string) ?? (wq.question_type as string) ?? 'short_answer',
               cbse_label: (wq.cbse_label as string) ?? 'SA',
               time_estimate: (wq.time_estimate as number) ?? getTimeEstimate((wq.question_type as string) ?? 'short_answer'),
               word_limit: (wq.word_limit as number) ?? getWordLimit((wq.question_type as string) ?? 'short_answer'),
             }));
             allQuestions = [...allQuestions, ...writtenQs].slice(0, qCount);
+          } else {
+            const errText = await resp.text();
+            console.warn('NCERT questions API returned error:', resp.status, errText);
           }
         } catch (e) {
-          console.warn('Failed to fetch written questions from ncert-question-engine:', e);
+          console.warn('Failed to fetch written questions from /api/quiz/ncert-questions:', e);
           // Proceed with MCQ-only if written fetch fails
         }
       }
