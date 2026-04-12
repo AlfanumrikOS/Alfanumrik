@@ -312,8 +312,39 @@ function validateQuestions(questions: QuestionRecord[]): QuestionRecord[] {
   });
 }
 
+/**
+ * ARCHITECTURAL CONTRACT -- DO NOT MODIFY WITHOUT REVIEW
+ *
+ * Quiz submission MUST update adaptive learning state. This happens in TWO layers:
+ *
+ * Layer 1 (SERVER-SIDE, in RPC):
+ *   submit_quiz_results RPC -> update_learner_state_post_quiz()
+ *   Updates: concept_mastery (BKT), bloom_progression, spaced_repetition,
+ *            error classification, retention half-life, streak, CME action
+ *   Requires: question_bank.topic_id IS NOT NULL (currently 99.9% populated)
+ *   Guarded by: IF v_q_topic_id IS NOT NULL THEN ... END IF
+ *
+ * Layer 2 (CLIENT-SIDE, belt-and-braces backup):
+ *   processAdaptiveLearning() -> CME Edge Function record_response
+ *   Updates: cme_concept_state (IRT mastery), error classification
+ *   Fires after Layer 1 succeeds, fire-and-forget
+ *   NOTE: This is redundant with Layer 1 since migration 20260405000001
+ *   unified concept_mastery and cme_concept_state. Kept as safety net
+ *   in case Layer 1's topic_id lookup returns NULL for edge-case questions.
+ *
+ * FALLBACK PATH WARNING:
+ *   If submit_quiz_results RPC fails, the fallback uses atomic_quiz_profile_update
+ *   which does NOT call update_learner_state_post_quiz. In that case, Layer 2
+ *   (processAdaptiveLearning) is the ONLY mastery update path. This is acceptable
+ *   because the RPC failure is already logged, and Layer 2 is always called from
+ *   the quiz page regardless of which submission path succeeded.
+ *
+ * INVARIANT: Every quiz submission MUST trigger both layers.
+ * If you add a new quiz page, it MUST call submitQuizResults() + processAdaptiveLearning().
+ * Test: src/__tests__/adaptive-pipeline.test.ts verifies this contract.
+ */
 export async function submitQuizResults(studentId: string, subject: string, grade: string, topic: string, chapter: number, responses: import('./types').QuizResponse[], time: number) {
-  // Try RPC first
+  // Try RPC first (Layer 1: server-side mastery update via update_learner_state_post_quiz)
   try {
     const { data, error } = await supabase.rpc('submit_quiz_results', {
       p_student_id: studentId, p_subject: subject, p_grade: grade,
@@ -446,6 +477,8 @@ export async function processAdaptiveLearning(
   // Call CME record_response for each question response.
   // This updates cme_concept_state with BKT mastery, error classification,
   // retention scheduling per concept.
+  let cmeFailureCount = 0;
+  let cmeSuccessCount = 0;
   for (const response of responses) {
     const question = questionMap.get(response.question_id);
     if (!question) continue;
@@ -469,8 +502,26 @@ export async function processAdaptiveLearning(
           response_time_ms: (response.time_spent ?? 10) * 1000,
         }),
       }, 5000); // 5s timeout per call — best-effort
+      cmeSuccessCount++;
     } catch {
-      // Individual response tracking failure is non-fatal
+      cmeFailureCount++;
+    }
+  }
+
+  // Report adaptive pipeline failures to ops_events via /api/client-error
+  // so they appear in the Observability Console and alert rules can fire.
+  if (cmeFailureCount > 0) {
+    try {
+      fetch('/api/client-error', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: `[adaptive-pipeline] CME record_response failed for ${cmeFailureCount}/${cmeFailureCount + cmeSuccessCount} questions`,
+          url: '/quiz',
+        }),
+      }).catch(() => {}); // fire-and-forget, never block
+    } catch {
+      // Reporting failure is itself non-fatal
     }
   }
 }
