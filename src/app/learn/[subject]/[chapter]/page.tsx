@@ -191,9 +191,11 @@ export default function ChapterConceptPage() {
       .filter(Boolean)
       .slice(0, 3);
 
-    const scoreGood = pct >= 60 || totalAnswered === 0;
+    // FIXED: Do NOT celebrate if student hasn't answered anything or scored below 60%.
+    // Previously: totalAnswered === 0 was treated as "good" — this rewarded doing nothing.
+    const scoreGood = totalAnswered > 0 && pct >= 60;
     const scoreLabel = totalAnswered === 0
-      ? null
+      ? (isHi ? '📝 अवधारणाओं के प्रश्नों का अभ्यास करो' : '📝 Practice the concept questions to complete this chapter')
       : pct >= 80
         ? (isHi ? '🌟 शानदार! तुमने अध्याय में महारत हासिल की!' : '🌟 Excellent! You\'ve mastered this chapter!')
         : pct >= 60
@@ -206,15 +208,19 @@ export default function ChapterConceptPage() {
           <div className="page-header-inner flex items-center gap-3">
             <button onClick={() => router.push('/learn')} className="text-[var(--text-3)]">&larr;</button>
             <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
-              {isHi ? 'अध्याय पूरा!' : 'Chapter Complete!'}
+              {scoreGood
+                ? (isHi ? 'अध्याय पूरा!' : 'Chapter Complete!')
+                : (isHi ? 'अध्याय सारांश' : 'Chapter Summary')}
             </h1>
           </div>
         </header>
         <main className="app-container py-6 max-w-lg mx-auto flex flex-col gap-5">
           <div className="text-center py-4">
-            <div className="text-6xl mb-3">🎉</div>
+            <div className="text-6xl mb-3">{scoreGood ? '🎉' : '📊'}</div>
             <h2 className="text-2xl font-bold mb-1" style={{ fontFamily: 'var(--font-display)' }}>
-              {isHi ? `अध्याय ${chapterNum} पूरा!` : `Chapter ${chapterNum} Done!`}
+              {scoreGood
+                ? (isHi ? `अध्याय ${chapterNum} पूरा!` : `Chapter ${chapterNum} Done!`)
+                : (isHi ? `अध्याय ${chapterNum} — और अभ्यास करो` : `Chapter ${chapterNum} — More Practice Needed`)}
             </h2>
             <p className="text-sm text-[var(--text-3)]">
               {subMeta?.name} · {isHi ? `${topics.length} अवधारणाएँ पढ़ीं` : `${topics.length} concepts covered`}
@@ -565,14 +571,21 @@ export default function ChapterConceptPage() {
         )}
 
         {/* Navigation — Next is the primary action */}
-        {currentIdx === topics.length - 1 ? (
+        {currentIdx === topics.length - 1 ? (() => {
+          // FIXED: Only show completion celebration if student has answered questions
+          // and achieved a meaningful score. No more celebrating wrong answers.
+          const answered = Object.values(conceptStates).filter(s => s.submitted).length;
+          const correct = Object.values(conceptStates).filter(s => s.submitted && s.isCorrect).length;
+          const chapterPct = answered > 0 ? Math.round((correct / answered) * 100) : 0;
+          const isChapterComplete = answered > 0 && chapterPct >= 60;
+
+          return isChapterComplete ? (
           <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-200 p-5 text-center space-y-3 mt-auto mb-2">
-            <div className="text-3xl">🎉</div>
             <h3 className="text-base font-bold text-green-800">
               {isHi ? 'अध्याय पूरा!' : 'Chapter Complete!'}
             </h3>
             <p className="text-xs text-green-600">
-              {isHi ? `${topics.length} अवधारणाएं पूरी — बहुत बढ़िया!` : `${topics.length} concepts covered — great job!`}
+              {isHi ? `${correct}/${answered} सही — बहुत बढ़िया!` : `${correct}/${answered} correct — great job!`}
             </p>
             <div className="flex gap-2 pt-2">
               <button onClick={goPrev}
@@ -588,7 +601,32 @@ export default function ChapterConceptPage() {
               </button>
             </div>
           </div>
-        ) : (
+          ) : (
+          <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-xl border border-amber-200 p-5 text-center space-y-3 mt-auto mb-2">
+            <h3 className="text-base font-bold text-amber-800">
+              {isHi
+                ? (answered === 0 ? 'अभ्यास करो!' : 'और अभ्यास करो!')
+                : (answered === 0 ? 'Practice the concepts!' : 'Keep practicing!')}
+            </h3>
+            <p className="text-xs text-amber-600">
+              {answered === 0
+                ? (isHi ? 'प्रश्नों का उत्तर दो और अध्याय पूरा करो' : 'Answer the concept questions to complete this chapter')
+                : (isHi ? `${correct}/${answered} सही (${chapterPct}%) — 60% चाहिए` : `${correct}/${answered} correct (${chapterPct}%) — need 60% to complete`)}
+            </p>
+            <div className="flex gap-2 pt-2">
+              <button onClick={goPrev}
+                className="flex-1 py-2 rounded-lg text-xs font-medium bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 active:scale-[0.98] transition-all">
+                {isHi ? '← पिछला' : '← Previous'}
+              </button>
+              <button onClick={() => setCurrentIdx(0)}
+                className="flex-1 py-2 rounded-lg text-xs font-medium bg-amber-600 text-white hover:bg-amber-700 active:scale-[0.98] transition-all">
+                {isHi ? '🔄 फिर से करो' : '🔄 Try Again'}
+              </button>
+            </div>
+          </div>
+          );
+        })()
+        : (
           <div className="flex flex-col gap-2 mt-auto pb-2">
             <Button
               fullWidth
