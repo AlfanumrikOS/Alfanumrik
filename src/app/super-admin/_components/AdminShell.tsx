@@ -26,6 +26,7 @@ const NAV_ITEMS: { href: string; label: string; icon: string }[] = [
   { href: '/super-admin/subscriptions', label: 'Subscriptions', icon: '◈' },
   { href: '/super-admin/learning', label: 'Learning Intel', icon: '◉' },
   { href: '/super-admin/diagnostics', label: 'Diagnostics', icon: '⊘' },
+  { href: '/super-admin/observability', label: 'Observability', icon: '◎' },
   { href: '/super-admin/workbench', label: 'Data Workbench', icon: '⊞' },
   { href: '/super-admin/flags', label: 'Feature Flags', icon: '⊡' },
   { href: '/super-admin/institutions', label: 'Institutions', icon: '⊟' },
