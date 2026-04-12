@@ -3,6 +3,7 @@
 // Secret: CRON_SECRET env var OR get_cron_secret() DB RPC fallback.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
+import { logOpsEvent } from '../_shared/ops-events.ts'
 
 async function resetMissedStreaks(supabase: ReturnType<typeof createClient>): Promise<number> {
   const y = new Date(); y.setUTCDate(y.getUTCDate()-1); y.setUTCHours(0,0,0,0)
@@ -78,6 +79,73 @@ async function triggerModelRetrainIfNeeded(supabase: ReturnType<typeof createCli
   return n??0
 }
 
+// ─── Observability steps ──────────────────────────────────────────────────────
+
+async function emitHealthSnapshot(): Promise<number> {
+  const siteUrl = Deno.env.get('SITE_URL') || Deno.env.get('PUBLIC_SITE_URL') || 'https://alfanumrik.com'
+  try {
+    const res = await fetch(`${siteUrl}/api/v1/health`, { signal: AbortSignal.timeout(10_000) })
+    if (!res.ok) {
+      await logOpsEvent({ category: 'health', source: 'daily-cron', severity: 'error', message: `Health endpoint returned HTTP ${res.status}` })
+      return 1
+    }
+    const data = await res.json() as { status?: string; version?: { git_sha?: string }; checks?: Record<string, unknown> }
+    const status = data.status ?? 'unknown'
+    const severity = status === 'healthy' ? 'info' as const : status === 'degraded' ? 'warning' as const : 'error' as const
+    await logOpsEvent({
+      category: 'health',
+      source: 'daily-cron',
+      severity,
+      message: `Daily health snapshot: ${status}`,
+      context: { status, git_sha: data.version?.git_sha ?? null, checks: data.checks ?? null },
+    })
+    return 1
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    await logOpsEvent({ category: 'health', source: 'daily-cron', severity: 'error', message: `Health snapshot fetch failed: ${msg}` })
+    return 1
+  }
+}
+
+async function detectDeploy(): Promise<number> {
+  const siteUrl = Deno.env.get('SITE_URL') || Deno.env.get('PUBLIC_SITE_URL') || 'https://alfanumrik.com'
+  try {
+    const res = await fetch(`${siteUrl}/api/v1/health`, { signal: AbortSignal.timeout(10_000) })
+    if (!res.ok) return 0
+    const data = await res.json() as { version?: { git_sha?: string } }
+    const currentSha = data.version?.git_sha
+    if (!currentSha) return 0
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    const queryUrl = `${supabaseUrl}/rest/v1/ops_events?select=context&category=eq.deploy&order=occurred_at.desc&limit=1`
+    const prevRes = await fetch(queryUrl, {
+      headers: { 'apikey': serviceKey, 'Authorization': `Bearer ${serviceKey}`, 'Content-Type': 'application/json' },
+    })
+    if (prevRes.ok) {
+      const rows = await prevRes.json() as Array<{ context?: { git_sha?: string } }>
+      const lastSha = rows?.[0]?.context?.git_sha
+      if (lastSha === currentSha) return 0
+    }
+
+    await logOpsEvent({
+      category: 'deploy',
+      source: 'daily-cron',
+      severity: 'info',
+      message: `New deploy detected: ${currentSha}`,
+      context: { git_sha: currentSha },
+    })
+    return 1
+  } catch { return 0 }
+}
+
+async function retentionCleanup(supabase: ReturnType<typeof createClient>): Promise<number> {
+  const { data, error } = await supabase.rpc('cleanup_ops_events')
+  if (error) throw new Error(`retentionCleanup: ${error.message}`)
+  console.log(`daily-cron: ops_events cleanup deleted=${data}`)
+  return data ?? 0
+}
+
 Deno.serve(async (req) => {
   if (req.method==='OPTIONS') return new Response('ok',{headers:corsHeaders})
   const t0=Date.now()
@@ -93,6 +161,9 @@ Deno.serve(async (req) => {
       ['task_queue_rows_deleted',()=>cleanupTaskQueue(sb)],
       ['health_snapshot',()=>recordHealthSnapshot(sb)],
       ['ml_retrain_new_responses',()=>triggerModelRetrainIfNeeded(sb)],
+      ['ops_health_snapshot',()=>emitHealthSnapshot()],
+      ['ops_deploy_detection',()=>detectDeploy()],
+      ['ops_events_retention',()=>retentionCleanup(sb)],
     ]
     const settled=await Promise.allSettled(steps.map(([,fn])=>fn()))
     const results:Record<string,number>={};const errors:Record<string,string>={}
