@@ -3,6 +3,7 @@ import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
 import { logger } from '@/lib/logger';
+import { logOpsEvent } from '@/lib/ops-events';
 import { paymentVerifySchema, validateBody } from '@/lib/validation';
 
 /**
@@ -189,6 +190,16 @@ export async function POST(request: NextRequest) {
       // where students.subscription_plan says 'pro' but student_subscriptions is stale.
       // Instead, rely on the webhook for activation and tell the user to wait.
       logger.error('verify: RECONCILIATION REQUIRED', { paymentId: razorpay_payment_id, authUserId: user.id, planCode: plan_code });
+
+      logOpsEvent({
+        category: 'payment',
+        source: 'verify/route.ts',
+        severity: 'warning',
+        message: 'Payment verify returned 503 — RPC failed, reconciliation required',
+        subjectType: 'student',
+        subjectId: studentId,
+        context: { payment_id: razorpay_payment_id, plan_code, rpc_error: rpcError.message },
+      });
 
       return NextResponse.json({
         success: false,
