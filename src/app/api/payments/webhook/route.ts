@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { verifyRazorpaySignature } from '@/lib/payment-verification';
+import { logOpsEvent } from '@/lib/ops-events';
 
 /**
  * Razorpay Webhook Handler
@@ -39,6 +40,15 @@ export async function POST(request: NextRequest) {
     // Verify webhook signature (P11: timing-safe via extracted utility)
     if (!verifyRazorpaySignature(body, signature, webhookSecret)) {
       console.error('Webhook signature mismatch');
+
+      await logOpsEvent({
+        category: 'payment',
+        source: 'webhook/route.ts',
+        severity: 'critical',
+        message: 'Razorpay webhook signature verification failed',
+        context: { signature_present: !!signature },
+      });
+
       return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
     }
 
@@ -116,6 +126,16 @@ export async function POST(request: NextRequest) {
         if (rpcError) {
           console.error(`Webhook: activate_subscription RPC failed for ${userId}:`, rpcError.message);
 
+          await logOpsEvent({
+            category: 'payment',
+            source: 'webhook/route.ts',
+            severity: 'error',
+            message: `activate_subscription RPC failed — falling back to separate UPDATEs (split-brain risk)`,
+            subjectType: 'student',
+            subjectId: studentRow?.id,
+            context: { plan_code: planCode, payment_id: paymentId, rpc_error: rpcError.message },
+          });
+
           // Fallback: directly update both tables so entitlement is never left stale
           await admin
             .from('students')
@@ -140,6 +160,16 @@ export async function POST(request: NextRequest) {
           }
         } else {
           console.log(`Webhook: subscription activated for ${userId} → ${planCode}`);
+
+          logOpsEvent({
+            category: 'payment',
+            source: 'webhook/route.ts',
+            severity: 'info',
+            message: `Subscription activated via webhook RPC`,
+            subjectType: 'student',
+            subjectId: studentRow?.id,
+            context: { plan_code: planCode, billing_cycle: billingCycle, payment_id: paymentId },
+          });
         }
       }
     }
