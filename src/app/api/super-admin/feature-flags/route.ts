@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../lib/admin-auth';
 import { invalidateFlagCache } from '../../../../lib/feature-flags';
+import { logOpsEvent } from '@/lib/ops-events';
 import { featureFlagSchema, validateBody, zUuid } from '../../../../lib/validation';
 import { z } from 'zod';
 
@@ -113,6 +114,15 @@ export async function POST(request: NextRequest) {
     const flagId = Array.isArray(created) ? created[0]?.id : created?.id;
     await logAdminAudit(auth, 'feature_flag.created', 'feature_flags', flagId || '', { name, enabled });
     invalidateFlagCache();
+
+    logOpsEvent({
+      category: 'deploy',
+      source: 'feature-flags/route.ts',
+      severity: 'info',
+      message: `Feature flag created: ${name}`,
+      context: { flag_name: name, enabled: enabled === true, admin_user_id: auth.userId },
+    });
+
     return NextResponse.json({ success: true, data: created }, { status: 201 });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 });
@@ -200,6 +210,15 @@ export async function PATCH(request: NextRequest) {
       flag_name: previousState?.flag_name || null,
     });
     invalidateFlagCache();
+
+    logOpsEvent({
+      category: 'deploy',
+      source: 'feature-flags/route.ts',
+      severity: 'info',
+      message: `Feature flag updated: ${previousState?.flag_name || id}`,
+      context: { flag_id: id, updates, admin_user_id: auth.userId },
+    });
+
     return NextResponse.json({ success: true, data: updated });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 });
