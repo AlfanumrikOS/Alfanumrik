@@ -374,6 +374,107 @@ export async function submitQuizResults(studentId: string, subject: string, grad
   };
 }
 
+/**
+ * Post-quiz adaptive processing — fire-and-forget, non-blocking.
+ *
+ * Calls the CME Edge Function `record_response` action per question to update
+ * mastery state in `cme_concept_state`. This enables:
+ * - Adaptive difficulty in future quizzes (quiz-generator uses concept_mastery)
+ * - Spaced repetition scheduling (retention half-life tracking)
+ * - Knowledge gap detection (error classification)
+ * - Bloom's progression tracking
+ *
+ * Called from the quiz page AFTER submitQuizResults succeeds. Receives both
+ * the responses and the original questions (needed for chapter_number, difficulty,
+ * bloom_level which are on the question, not the response).
+ *
+ * IMPORTANT: This is a best-effort enhancement. If it fails, the quiz score and
+ * XP are already saved correctly via the atomic RPC (P1/P2/P3/P4 untouched).
+ */
+export async function processAdaptiveLearning(
+  studentId: string,
+  subject: string,
+  grade: string,
+  responses: Array<{ question_id: string; is_correct: boolean; time_spent: number; selected_option: number; error_type?: string }>,
+  questions: Array<{ id: string; chapter_number: number; difficulty: number; bloom_level: string }>,
+  sessionId: string,
+): Promise<void> {
+  // Get the user's access token for CME Edge Function auth
+  const { data: { session: authSession } } = await supabase.auth.getSession();
+  const token = authSession?.access_token;
+  if (!token) return; // Can't call Edge Function without auth
+
+  // Build question lookup by ID
+  const questionMap = new Map(questions.map(q => [q.id, q]));
+
+  // Resolve subject code -> subject UUID for curriculum_topics lookup
+  const { data: subjectRow } = await supabase
+    .from('subjects')
+    .select('id')
+    .eq('code', subject)
+    .maybeSingle();
+  if (!subjectRow) return;
+
+  // Collect unique chapter numbers from questions to resolve topic IDs
+  const chapterNumbers = new Set<number>();
+  for (const q of questions) {
+    if (typeof q.chapter_number === 'number' && q.chapter_number > 0) {
+      chapterNumbers.add(q.chapter_number);
+    }
+  }
+
+  // Resolve chapter_number -> curriculum_topics.id (UUID) for CME
+  const topicMap = new Map<number, string>(); // chapter_number -> topic UUID
+  if (chapterNumbers.size > 0) {
+    const { data: topics } = await supabase
+      .from('curriculum_topics')
+      .select('id, chapter_number')
+      .eq('subject_id', subjectRow.id)
+      .eq('grade', grade)
+      .in('chapter_number', [...chapterNumbers])
+      .is('parent_topic_id', null) // top-level chapter topics
+      .limit(50);
+    if (topics) {
+      for (const t of topics) {
+        if (t.chapter_number != null && !topicMap.has(t.chapter_number)) {
+          topicMap.set(t.chapter_number, t.id);
+        }
+      }
+    }
+  }
+
+  // Call CME record_response for each question response.
+  // This updates cme_concept_state with BKT mastery, error classification,
+  // retention scheduling per concept.
+  for (const response of responses) {
+    const question = questionMap.get(response.question_id);
+    if (!question) continue;
+
+    const conceptId = topicMap.get(question.chapter_number);
+    if (!conceptId) continue; // No matching curriculum_topic — skip
+
+    try {
+      await fetchWithTimeout(`${supabaseUrl}/functions/v1/cme-engine`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          action: 'record_response',
+          concept_id: conceptId,
+          question_id: response.question_id,
+          correct: response.is_correct,
+          difficulty: question.difficulty ?? 2,
+          response_time_ms: (response.time_spent ?? 10) * 1000,
+        }),
+      }, 5000); // 5s timeout per call — best-effort
+    } catch {
+      // Individual response tracking failure is non-fatal
+    }
+  }
+}
+
 export async function getLeaderboard(period = 'weekly', limit = 20) {
   try {
     const { data, error } = await supabase.rpc('get_leaderboard', { p_period: period, p_limit: limit });

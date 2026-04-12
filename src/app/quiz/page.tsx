@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { track } from '@/lib/analytics';
 import { logger } from '@/lib/logger';
-import { getQuizQuestionsV2, submitQuizResults, saveCognitiveMetrics, saveQuestionResponses, supabase, updateChapterProgress } from '@/lib/supabase';
+import { getQuizQuestionsV2, submitQuizResults, saveCognitiveMetrics, saveQuestionResponses, processAdaptiveLearning, supabase, updateChapterProgress } from '@/lib/supabase';
 import { XP_RULES } from '@/lib/xp-rules';
 import { Card, Button, ProgressBar, LoadingFoxy } from '@/components/ui';
 import { SUBJECT_META } from '@/lib/constants';
@@ -103,6 +103,18 @@ function isQuestionMCQ(q: Question): boolean {
   const opts = Array.isArray(q.options) ? q.options : (() => { try { return JSON.parse(q.options as string); } catch { return []; } })();
   if (opts.length === 4 && typeof q.correct_answer_index === 'number' && q.correct_answer_index >= 0 && q.correct_answer_index <= 3) return true;
   return false;
+}
+
+/** Classify error type for wrong answers — used by adaptive processing */
+function classifyQuizError(question: Question, response: Response): string {
+  // If student answered very quickly (<5s), likely careless
+  if ((response.time_spent ?? 0) < 5) return 'careless';
+  // If question is 'remember' level and wrong, likely knowledge gap
+  if (question.bloom_level === 'remember') return 'knowledge_gap';
+  // If question is 'apply' or higher, likely conceptual
+  if (['apply', 'analyze', 'evaluate', 'create'].includes(question.bloom_level ?? '')) return 'conceptual';
+  // Default
+  return 'procedural';
 }
 
 const VALID_QUIZ_COUNTS = [5, 10, 15, 20] as const;
@@ -674,7 +686,46 @@ export default function QuizPage() {
           updateChapterProgress(selectedSubject!, student!.grade, selectedChapter).catch(() => {});
         }
 
-        // Save cognitive metrics for this session (fire-and-forget)
+        // Save per-question responses for ALL quiz modes (populates question_responses table).
+        // Runs for practice, cognitive, and exam modes — enables adaptive learning tracking.
+        if (res?.session_id) {
+          saveQuestionResponses(allResponses.map((r, i) => ({
+            student_id: student!.id,
+            question_id: r.question_id,
+            quiz_session_id: res.session_id,
+            selected_answer: String(r.selected_option),
+            is_correct: r.is_correct,
+            response_time_seconds: r.time_spent,
+            bloom_level_attempted: questions[i]?.bloom_level || 'remember',
+            was_in_zpd: questions[i]?.difficulty === 2,
+            error_type: !r.is_correct ? (r.error_type || classifyQuizError(questions[i], r)) : undefined,
+            quality: r.is_correct ? (r.time_spent < 10 ? 5 : 4) : (r.time_spent < 5 ? 1 : 2),
+          }))).catch(() => {});
+
+          // Fire-and-forget: update CME mastery state for adaptive question selection.
+          // Populates cme_concept_state so future quizzes adapt to the student's
+          // mastery level. Non-blocking — P1/P2/P3/P4 invariants untouched.
+          processAdaptiveLearning(
+            student!.id,
+            selectedSubject!,
+            student!.grade,
+            allResponses.map(r => ({
+              question_id: r.question_id,
+              is_correct: r.is_correct,
+              time_spent: r.time_spent,
+              selected_option: r.selected_option,
+            })),
+            questions.map(q => ({
+              id: q.id,
+              chapter_number: q.chapter_number,
+              difficulty: q.difficulty,
+              bloom_level: q.bloom_level,
+            })),
+            res.session_id,
+          ).catch(() => {});
+        }
+
+        // Save cognitive metrics for this session (cognitive mode only — tracks ZPD and fatigue)
         if (quizMode === 'cognitive' && res?.session_id) {
           const inZpd = allResponses.filter((_, i) => questions[i]?.difficulty === 2).length;
           const tooEasy = allResponses.filter((_, i) => questions[i]?.difficulty === 1).length;
@@ -692,19 +743,6 @@ export default function QuizPage() {
               ? allResponses.reduce((a, r) => a + r.time_spent, 0) / allResponses.length
               : undefined,
           }).catch(() => {});
-
-          // Save per-question responses
-          saveQuestionResponses(allResponses.map((r, i) => ({
-            student_id: student!.id,
-            question_id: r.question_id,
-            quiz_session_id: res.session_id,
-            selected_answer: String(r.selected_option),
-            is_correct: r.is_correct,
-            response_time_seconds: r.time_spent,
-            bloom_level_attempted: questions[i]?.bloom_level || 'remember',
-            was_in_zpd: questions[i]?.difficulty === 2,
-            quality: r.is_correct ? (r.time_spent < 10 ? 5 : 4) : (r.time_spent < 5 ? 1 : 2),
-          }))).catch(() => {});
         }
 
         // Save exam simulation if in exam mode
