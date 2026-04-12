@@ -121,7 +121,7 @@ const VALID_QUIZ_COUNTS = [5, 10, 15, 20] as const;
 const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
 
 export default function QuizPage() {
-  const { student, isLoggedIn, isLoading, isHi, refreshSnapshot, activeRole } = useAuth();
+  const { student, snapshot, isLoggedIn, isLoading, isHi, refreshSnapshot, activeRole } = useAuth();
   const router = useRouter();
 
   // Setup state
@@ -1383,6 +1383,7 @@ export default function QuizPage() {
         selectedSubject={selectedSubject}
         studentName={student!.name}
         timer={timer}
+        isFirstQuiz={(snapshot?.quizzes_taken ?? 0) <= 1}
         onRetry={() => { setScreen('select'); setQuestions([]); setResponses([]); setResults(null); }}
         onGoHome={() => router.push('/dashboard')}
       />

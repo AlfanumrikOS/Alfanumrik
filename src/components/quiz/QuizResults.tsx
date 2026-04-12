@@ -65,6 +65,7 @@ interface QuizResultsProps {
   selectedSubject: string | null;
   studentName: string;
   timer: number;
+  isFirstQuiz?: boolean;
   onRetry: () => void;
   onGoHome: () => void;
 }
@@ -79,6 +80,7 @@ export default function QuizResults({
   selectedSubject,
   studentName,
   timer,
+  isFirstQuiz = false,
   onRetry,
   onGoHome,
 }: QuizResultsProps) {
@@ -190,6 +192,27 @@ export default function QuizResults({
         </div>
       </header>
       <main className="app-container py-6 space-y-5 max-w-lg mx-auto">
+        {/* First Quiz Celebration */}
+        {isFirstQuiz && (
+          <div className="bg-gradient-to-br from-purple-500 to-orange-400 rounded-2xl p-6 text-center text-white animate-scale-in">
+            <div className="text-5xl mb-3">🎊</div>
+            <h2 className="text-2xl font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
+              {isHi ? 'पहला क्विज़ पूरा!' : 'First Quiz Complete!'}
+            </h2>
+            <p className="text-sm opacity-90 mb-4">
+              {isHi ? 'तुमने शुरुआत की — यही सबसे ज़रूरी कदम है!' : "You've started — that's the most important step!"}
+            </p>
+            <div className="flex gap-3 justify-center">
+              <a href="/foxy" className="px-4 py-2 bg-white/20 rounded-lg text-sm backdrop-blur-sm hover:bg-white/30 transition-colors">
+                {isHi ? '🦊 फॉक्सी से बात करो' : '🦊 Chat with Foxy'}
+              </a>
+              <a href="/learn" className="px-4 py-2 bg-white/20 rounded-lg text-sm backdrop-blur-sm hover:bg-white/30 transition-colors">
+                {isHi ? '📚 पढ़ना शुरू करो' : '📚 Start Learning'}
+              </a>
+            </div>
+          </div>
+        )}
+
         {/* Score Card */}
         <Card accent={pct >= 60 ? 'var(--success)' : 'var(--danger)'}>
           <div className="text-center py-4">
