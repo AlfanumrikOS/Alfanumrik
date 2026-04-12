@@ -1,11 +1,16 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
 import StatCard from '../_components/StatCard';
 import StatusBadge from '../_components/StatusBadge';
 import { colors, S } from '../_components/admin-styles';
 import { VALID_GRADES } from '@/lib/identity';
+
+const StrategicReportsTab = dynamic(() => import('./_components/StrategicReportsTab'), {
+  loading: () => <div style={{ color: colors.text3, padding: 40, textAlign: 'center' }}>Loading strategic reports...</div>,
+});
 
 interface AnalyticsData {
   engagement: { date: string; signups: number; quizzes: number; chats: number }[];
@@ -27,12 +32,15 @@ interface ObsData {
   activity_24h: { quizzes: number; chats: number; admin_actions: number };
 }
 
+type TabId = 'engagement' | 'strategic';
+
 function LearningContent() {
   const { apiFetch } = useAdmin();
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [obsData, setObsData] = useState<ObsData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<TabId>('engagement');
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -67,6 +75,39 @@ function LearningContent() {
         </div>
         <button onClick={fetchAll} style={S.secondaryBtn}>Refresh</button>
       </div>
+
+      {/* Tab Bar */}
+      <div style={{ display: 'flex', gap: 0, borderBottom: `2px solid ${colors.border}`, marginBottom: 24 }}>
+        {([
+          { id: 'engagement' as TabId, label: 'Engagement & Content' },
+          { id: 'strategic' as TabId, label: 'Strategic Reports' },
+        ]).map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            style={{
+              padding: '10px 20px',
+              fontSize: 13,
+              fontWeight: activeTab === tab.id ? 700 : 500,
+              color: activeTab === tab.id ? colors.text1 : colors.text3,
+              background: 'none',
+              border: 'none',
+              borderBottom: activeTab === tab.id ? `2px solid ${colors.text1}` : '2px solid transparent',
+              marginBottom: -2,
+              cursor: 'pointer',
+              transition: 'color 0.15s, border-color 0.15s',
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Strategic Reports Tab */}
+      {activeTab === 'strategic' && <StrategicReportsTab />}
+
+      {/* Engagement & Content Tab */}
+      {activeTab === 'engagement' && <>
 
       {/* KPI Strip */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 24 }}>
@@ -368,6 +409,8 @@ function LearningContent() {
           </div>
         </div>
       )}
+
+      </>}
     </div>
   );
 }
