@@ -61,6 +61,14 @@ interface RagSource {
   page_number?: number;
   similarity: number;
   content_preview: string;
+  media_url?: string | null;
+}
+
+interface DiagramRef {
+  url: string;
+  title: string;
+  pageNumber?: number;
+  description: string;
 }
 
 interface ChatMessage {
@@ -335,13 +343,20 @@ function buildSystemPrompt(
   board: string,
   chapter: string | null,
   mode: string,
-  ragChunks: Array<{ content: string; chapter?: string; page_number?: number }>,
+  ragChunks: Array<{ content: string; chapter?: string; page_number?: number; media_url?: string | null; media_description?: string | null }>,
   academicGoal?: string | null,
 ): string {
   const contextSection =
     ragChunks.length > 0
       ? `\n\n## NCERT Reference Material\n${ragChunks
-          .map((c, i) => `[${i + 1}] ${c.chapter ? `Chapter: ${c.chapter}` : ''}${c.page_number ? ` (p.${c.page_number})` : ''}\n${c.content}`)
+          .map((c, i) => {
+            let entry = `[${i + 1}] ${c.chapter ? `Chapter: ${c.chapter}` : ''}${c.page_number ? ` (p.${c.page_number})` : ''}\n${c.content}`;
+            if (c.media_url) {
+              const desc = c.media_description || `NCERT ${c.chapter || subject}`;
+              entry += `\n[Diagram available: ${desc}${c.page_number ? ` - see attached figure from NCERT page ${c.page_number}` : ''}]`;
+            }
+            return entry;
+          })
           .join('\n\n')}`
       : '';
 
@@ -512,7 +527,17 @@ export async function POST(request: NextRequest): Promise<Response> {
         page_number: c.pageNumber,
         similarity: c.similarity,
         content_preview: c.content.slice(0, 150),
+        media_url: c.mediaUrl || null,
       }));
+
+      const routerDiagrams: DiagramRef[] = result.sources
+        .filter((c) => c.mediaUrl)
+        .map((c) => ({
+          url: c.mediaUrl!,
+          title: c.chapter || subject,
+          pageNumber: c.pageNumber,
+          description: c.mediaDescription || `NCERT ${subject} ${c.chapter || ''}`.trim(),
+        }));
 
       await supabaseAdmin.from('foxy_chat_messages').insert([
         {
@@ -555,6 +580,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         success: true,
         response: result.response,
         sources: sources,
+        diagrams: routerDiagrams,
         sessionId: resolvedSessionId,
         quotaRemaining: remaining,
         tokensUsed: result.tokensUsed,
@@ -583,6 +609,8 @@ export async function POST(request: NextRequest): Promise<Response> {
     chapter?: string;
     page_number?: number;
     similarity: number;
+    media_url?: string | null;
+    media_description?: string | null;
   }> = [];
 
   try {
@@ -664,7 +692,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     );
   }
 
-  // 12. Persist both turns to foxy_chat_messages
+  // 12. Build sources and diagrams arrays
   const now = new Date().toISOString();
   const sources: RagSource[] = ragChunks.map((c) => ({
     chunk_id: c.id,
@@ -673,7 +701,19 @@ export async function POST(request: NextRequest): Promise<Response> {
     page_number: c.page_number,
     similarity: c.similarity,
     content_preview: c.content.slice(0, 150),
+    media_url: c.media_url || null,
   }));
+
+  const diagrams: DiagramRef[] = ragChunks
+    .filter((c) => c.media_url)
+    .map((c) => ({
+      url: c.media_url!,
+      title: c.chapter || subject,
+      pageNumber: c.page_number,
+      description: c.media_description || `NCERT ${subject} ${c.chapter || ''}`.trim(),
+    }));
+
+  // 12b. Persist both turns to foxy_chat_messages
 
   await supabaseAdmin.from('foxy_chat_messages').insert([
     {
@@ -709,6 +749,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     success: true,
     response: assistantResponse,
     sources,
+    diagrams,
     sessionId: resolvedSessionId,
     quotaRemaining: remaining,
     tokensUsed,

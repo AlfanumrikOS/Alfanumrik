@@ -73,6 +73,16 @@ export interface RetrievedChunk {
   pageNumber?: number;
   similarity: number;
   contentType?: string;
+  mediaUrl?: string | null;
+  mediaDescription?: string | null;
+}
+
+/** Diagram metadata surfaced alongside tutor responses */
+export interface DiagramReference {
+  url: string;
+  title: string;
+  pageNumber?: number;
+  description: string;
 }
 
 export interface RetrievalResult {

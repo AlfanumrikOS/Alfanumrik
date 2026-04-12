@@ -114,10 +114,12 @@ export async function retrieveNcertChunks(query: RetrievalQuery): Promise<Retrie
       id: String(row.id ?? ''),
       content: String(row.content ?? ''),
       subject: String(row.subject ?? query.subject),
-      chapter: row.chapter != null ? String(row.chapter) : undefined,
+      chapter: row.chapter_title != null ? String(row.chapter_title) : (row.chapter != null ? String(row.chapter) : undefined),
       pageNumber: typeof row.page_number === 'number' ? row.page_number : undefined,
       similarity: typeof row.similarity === 'number' ? row.similarity : 0,
       contentType: row.content_type != null ? String(row.content_type) : undefined,
+      mediaUrl: typeof row.media_url === 'string' ? row.media_url : null,
+      mediaDescription: typeof row.media_description === 'string' ? row.media_description : null,
     }));
 
     // Format LLM-ready context string
@@ -149,7 +151,13 @@ function formatContextText(chunks: RetrievedChunk[]): string {
       if (chunk.chapter) meta.push(`Chapter: ${chunk.chapter}`);
       if (chunk.pageNumber) meta.push(`p.${chunk.pageNumber}`);
       const header = meta.length > 0 ? ` (${meta.join(', ')})` : '';
-      return `[${i + 1}]${header}\n${chunk.content}`;
+      let text = `[${i + 1}]${header}\n${chunk.content}`;
+      // Notify the LLM that a diagram is available for this chunk
+      if (chunk.mediaUrl) {
+        const desc = chunk.mediaDescription || `NCERT ${chunk.chapter || 'figure'}`;
+        text += `\n[Diagram available: ${desc}${chunk.pageNumber ? ` - see attached figure from NCERT page ${chunk.pageNumber}` : ''}]`;
+      }
+      return text;
     })
     .join('\n\n');
 }

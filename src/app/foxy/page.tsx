@@ -263,6 +263,7 @@ async function callFoxyTutor(params: Record<string, any>) {
       xp_earned:  0, // new route does not award per-message XP (XP via quiz/study plan)
       session_id: data.sessionId || null,
       sources:    data.sources   || [],
+      diagrams:   data.diagrams  || [],
       quota:      data.quotaRemaining,
     };
   } catch (err) {
@@ -275,7 +276,8 @@ async function callFoxyTutor(params: Record<string, any>) {
    MAIN FOXY PAGE
    ══════════════════════════════════════════════════════════════ */
 
-interface ChatMessage { id: number; role: 'student' | 'tutor'; content: string; timestamp: string; xp?: number; feedback?: 'up' | 'down' | null; reported?: boolean; }
+interface DiagramRef { url: string; title: string; pageNumber?: number; description: string; }
+interface ChatMessage { id: number; role: 'student' | 'tutor'; content: string; timestamp: string; xp?: number; feedback?: 'up' | 'down' | null; reported?: boolean; diagrams?: DiagramRef[]; }
 
 const REPORT_REASONS = [
   { value: 'wrong_answer', label: '❌ Wrong answer', labelHi: '❌ गलत उत्तर' },
@@ -600,7 +602,7 @@ export default function FoxyPage() {
         setLoading(false);
         return;
       }
-      setMessages((p: ChatMessage[]) => [...p, { id: Date.now() + 1, role: 'tutor', content: resp.reply, timestamp: new Date().toISOString(), xp: resp.xp_earned }]);
+      setMessages((p: ChatMessage[]) => [...p, { id: Date.now() + 1, role: 'tutor', content: resp.reply, timestamp: new Date().toISOString(), xp: resp.xp_earned, diagrams: resp.diagrams?.length > 0 ? resp.diagrams : undefined }]);
       if (resp.xp_earned > 0) setXpGained((p: number) => p + resp.xp_earned);
       if (resp.session_id) setChatSessionId(resp.session_id);
       setFoxyState('happy'); setTimeout(() => setFoxyState('idle'), 2000);
@@ -1240,6 +1242,30 @@ export default function FoxyPage() {
                     onReport={() => openReport(msg.id)}
                     onSpeak={ttsSupported && msg.role === 'tutor' ? () => speakMessage(msg.content) : undefined}
                   />
+                  {msg.role === 'tutor' && msg.diagrams && msg.diagrams.length > 0 && (
+                    <div className="pl-11 -mt-1 mb-2 space-y-1.5">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>
+                        {language === 'hi' ? 'NCERT चित्र:' : 'NCERT Diagrams:'}
+                      </p>
+                      {msg.diagrams.map((d: DiagramRef, i: number) => (
+                        <a
+                          key={i}
+                          href={d.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium transition-all hover:brightness-95 active:scale-[0.98]"
+                          style={{
+                            background: `${cfg.color}08`,
+                            color: cfg.color,
+                            border: `1px solid ${cfg.color}20`,
+                          }}
+                        >
+                          <span className="text-sm">&#128202;</span>
+                          <span className="truncate">{d.title}{d.pageNumber ? ` (p. ${d.pageNumber})` : ''}</span>
+                        </a>
+                      ))}
+                    </div>
+                  )}
                   {msg.role === 'tutor' && !msg.reported && (
                     <div className="flex justify-start pl-11 -mt-2 mb-3">
                       <button
