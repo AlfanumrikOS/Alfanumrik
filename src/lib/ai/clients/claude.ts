@@ -12,6 +12,7 @@
 import { getAIConfig } from '../config';
 import type { ClaudeRequestOptions, ClaudeResponse, ChatMessage } from '../types';
 import { logger } from '@/lib/logger';
+import { logOpsEvent } from '@/lib/ops-events';
 
 // ─── Circuit Breaker ────────────────────────────────────────────────────────
 
@@ -210,6 +211,25 @@ export async function callClaude(options: ClaudeRequestOptions): Promise<ClaudeR
     // Success
     recordSuccess();
 
+    logOpsEvent({
+      category: 'ai',
+      source: 'claude.ts',
+      severity: 'info',
+      message: `Claude API call succeeded (${modelName})`,
+      context: { model: modelName, latency_ms: result.latencyMs },
+    });
+
+    // If we fell back to a later model in the chain, emit a warning
+    if (modelsToTry.length > 1 && modelName !== modelsToTry[0]) {
+      logOpsEvent({
+        category: 'ai',
+        source: 'claude.ts',
+        severity: 'warning',
+        message: `Haiku→Sonnet fallback triggered`,
+        context: { original_model: modelsToTry[0], fallback_model: modelName, reason: lastError },
+      });
+    }
+
     const content = result.response.content?.[0]?.text ?? '';
     return {
       content,
@@ -225,6 +245,15 @@ export async function callClaude(options: ClaudeRequestOptions): Promise<ClaudeR
   // All models failed
   recordFailure();
   logger.error('claude_all_models_failed', { modelsAttempted: modelsToTry, lastError });
+
+  await logOpsEvent({
+    category: 'ai',
+    source: 'claude.ts',
+    severity: 'error',
+    message: `Claude API call failed — all models exhausted`,
+    context: { models_attempted: modelsToTry, last_error: lastError },
+  });
+
   throw new Error(lastError);
 }
 
