@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import { colors, S } from '../../_components/admin-styles';
 import { useAdmin } from '../../_components/AdminShell';
 import type { TimelineEvent } from './EventRow';
@@ -160,7 +161,22 @@ export default function EventDetailDrawer({ eventId, onClose }: EventDetailDrawe
                 <DetailRow label="Source" value={event.source} />
                 <DetailRow label="Message" value={event.message} />
                 <DetailRow label="Subject Type" value={event.subject_type} />
-                <DetailRow label="Subject ID" value={event.subject_id} mono />
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{ fontSize: 10, color: colors.text3, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 2 }}>
+                    Subject ID
+                  </div>
+                  <div style={{ fontSize: 12, fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                    {event.subject_type === 'student' && event.subject_id ? (
+                      <Link href={`/super-admin/students/${event.subject_id}`} className="text-blue-600 hover:underline font-mono text-xs">
+                        {event.subject_id}
+                      </Link>
+                    ) : (
+                      <span style={{ color: event.subject_id ? colors.text1 : colors.text3 }}>
+                        {event.subject_id || '--'}
+                      </span>
+                    )}
+                  </div>
+                </div>
                 <DetailRow label="Request ID" value={event.request_id} mono />
                 <DetailRow label="Environment" value={event.environment} />
                 <DetailRow label="Event ID" value={event.id} mono />

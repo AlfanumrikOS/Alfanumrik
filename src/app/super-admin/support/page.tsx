@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
 import { colors, S } from '../_components/admin-styles';
 import StatCard from '../_components/StatCard';
@@ -297,61 +298,68 @@ function SupportContent() {
         )}
 
         {userActivity && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
-            {/* Recent Quiz Sessions */}
-            <div style={S.cardSurface}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: colors.text2, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
-                Recent Quiz Sessions
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+              {/* Recent Quiz Sessions */}
+              <div style={S.cardSurface}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: colors.text2, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
+                  Recent Quiz Sessions
+                </div>
+                {userActivity.quiz_sessions.length === 0 ? (
+                  <div style={{ fontSize: 12, color: colors.text3 }}>No recent quizzes</div>
+                ) : (
+                  userActivity.quiz_sessions.map(q => (
+                    <div key={q.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: `1px solid ${colors.borderLight}`, fontSize: 12 }}>
+                      <span style={{ color: colors.text1, fontWeight: 500 }}>{q.subject}</span>
+                      <span style={{ color: colors.text2 }}>{q.score_percent}% ({q.total_questions}Q)</span>
+                      <span style={{ color: colors.text3, fontSize: 11 }}>{fmtShortDate(q.created_at)}</span>
+                    </div>
+                  ))
+                )}
               </div>
-              {userActivity.quiz_sessions.length === 0 ? (
-                <div style={{ fontSize: 12, color: colors.text3 }}>No recent quizzes</div>
-              ) : (
-                userActivity.quiz_sessions.map(q => (
-                  <div key={q.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: `1px solid ${colors.borderLight}`, fontSize: 12 }}>
-                    <span style={{ color: colors.text1, fontWeight: 500 }}>{q.subject}</span>
-                    <span style={{ color: colors.text2 }}>{q.score_percent}% ({q.total_questions}Q)</span>
-                    <span style={{ color: colors.text3, fontSize: 11 }}>{fmtShortDate(q.created_at)}</span>
-                  </div>
-                ))
-              )}
-            </div>
 
-            {/* Recent Chat Sessions */}
-            <div style={S.cardSurface}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: colors.text2, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
-                Recent Chat Sessions
+              {/* Recent Chat Sessions */}
+              <div style={S.cardSurface}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: colors.text2, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
+                  Recent Chat Sessions
+                </div>
+                {userActivity.chat_sessions.length === 0 ? (
+                  <div style={{ fontSize: 12, color: colors.text3 }}>No recent chats</div>
+                ) : (
+                  userActivity.chat_sessions.map(c => (
+                    <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: `1px solid ${colors.borderLight}`, fontSize: 12 }}>
+                      <span style={{ color: colors.text1, fontWeight: 500 }}>{c.topic}</span>
+                      <span style={{ color: colors.text2 }}>{c.message_count} msgs</span>
+                      <span style={{ color: colors.text3, fontSize: 11 }}>{fmtShortDate(c.created_at)}</span>
+                    </div>
+                  ))
+                )}
               </div>
-              {userActivity.chat_sessions.length === 0 ? (
-                <div style={{ fontSize: 12, color: colors.text3 }}>No recent chats</div>
-              ) : (
-                userActivity.chat_sessions.map(c => (
-                  <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: `1px solid ${colors.borderLight}`, fontSize: 12 }}>
-                    <span style={{ color: colors.text1, fontWeight: 500 }}>{c.topic}</span>
-                    <span style={{ color: colors.text2 }}>{c.message_count} msgs</span>
-                    <span style={{ color: colors.text3, fontSize: 11 }}>{fmtShortDate(c.created_at)}</span>
-                  </div>
-                ))
-              )}
-            </div>
 
-            {/* Daily Usage */}
-            <div style={S.cardSurface}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: colors.text2, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
-                Daily Usage (Last 7 Days)
+              {/* Daily Usage */}
+              <div style={S.cardSurface}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: colors.text2, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
+                  Daily Usage (Last 7 Days)
+                </div>
+                {userActivity.daily_usage.length === 0 ? (
+                  <div style={{ fontSize: 12, color: colors.text3 }}>No usage data</div>
+                ) : (
+                  userActivity.daily_usage.map(d => (
+                    <div key={d.date} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: `1px solid ${colors.borderLight}`, fontSize: 12 }}>
+                      <span style={{ color: colors.text1, fontWeight: 500 }}>{fmtShortDate(d.date)}</span>
+                      <span style={{ color: colors.text2 }}>{d.quizzes}Q / {d.chats}C</span>
+                      <span style={{ color: colors.text3 }}>{d.minutes} min</span>
+                    </div>
+                  ))
+                )}
               </div>
-              {userActivity.daily_usage.length === 0 ? (
-                <div style={{ fontSize: 12, color: colors.text3 }}>No usage data</div>
-              ) : (
-                userActivity.daily_usage.map(d => (
-                  <div key={d.date} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: `1px solid ${colors.borderLight}`, fontSize: 12 }}>
-                    <span style={{ color: colors.text1, fontWeight: 500 }}>{fmtShortDate(d.date)}</span>
-                    <span style={{ color: colors.text2 }}>{d.quizzes}Q / {d.chats}C</span>
-                    <span style={{ color: colors.text3 }}>{d.minutes} min</span>
-                  </div>
-                ))
-              )}
             </div>
-          </div>
+            {userQuery.trim() && (
+              <Link href={`/super-admin/students/${encodeURIComponent(userQuery.trim())}`} className="text-sm text-blue-600 hover:underline mt-2 inline-block">
+                View Full Profile &rarr;
+              </Link>
+            )}
+          </>
         )}
       </div>
 

@@ -146,6 +146,27 @@ async function retentionCleanup(supabase: ReturnType<typeof createClient>): Prom
   return data ?? 0
 }
 
+async function closeExpiredImpersonationSessions(): Promise<number> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+  const now = new Date().toISOString()
+  const res = await fetch(
+    `${supabaseUrl}/rest/v1/admin_impersonation_sessions?ended_at=is.null&expires_at=lt.${now}`,
+    {
+      method: 'PATCH',
+      headers: {
+        apikey: serviceKey,
+        Authorization: `Bearer ${serviceKey}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify({ ended_at: now }),
+    },
+  )
+  if (!res.ok) throw new Error(`closeExpiredImpersonationSessions: HTTP ${res.status}`)
+  return 1
+}
+
 Deno.serve(async (req) => {
   if (req.method==='OPTIONS') return new Response('ok',{headers:corsHeaders})
   const t0=Date.now()
@@ -164,6 +185,7 @@ Deno.serve(async (req) => {
       ['ops_health_snapshot',()=>emitHealthSnapshot()],
       ['ops_deploy_detection',()=>detectDeploy()],
       ['ops_events_retention',()=>retentionCleanup(sb)],
+      ['close_expired_impersonation_sessions',()=>closeExpiredImpersonationSessions()],
     ]
     const settled=await Promise.allSettled(steps.map(([,fn])=>fn()))
     const results:Record<string,number>={};const errors:Record<string,string>={}
