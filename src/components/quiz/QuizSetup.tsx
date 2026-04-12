@@ -272,9 +272,9 @@ export default function QuizSetup({
           </p>
           <div className="flex gap-3">
             {([
-              { id: 'practice' as QuizMode, icon: '✏️', label: 'Practice', labelHi: 'अभ्यास', desc: 'Choose your own difficulty', descHi: 'अपनी कठिनाई चुनो', color: '#F5A623' },
-              { id: 'cognitive' as QuizMode, icon: '🧠', label: 'Smart', labelHi: 'स्मार्ट', desc: 'AI picks the right level', descHi: 'AI सही स्तर चुनता है', color: '#7C3AED' },
-              { id: 'exam' as QuizMode, icon: '📋', label: 'Exam', labelHi: 'परीक्षा', desc: 'CBSE paper format, timed', descHi: 'CBSE पेपर, समयबद्ध', color: '#DC2626' },
+              { id: 'practice' as QuizMode, icon: '✏️', label: 'Practice Mode', labelHi: 'अभ्यास मोड', desc: 'No timer. Learn at your own pace.', descHi: 'कोई टाइमर नहीं। अपनी गति से सीखो।', color: '#F5A623' },
+              { id: 'cognitive' as QuizMode, icon: '🧠', label: 'Smart Mode', labelHi: 'स्मार्ट मोड', desc: 'AI picks the right difficulty for you.', descHi: 'AI तुम्हारे लिए सही कठिनाई चुनता है।', color: '#7C3AED' },
+              { id: 'exam' as QuizMode, icon: '📋', label: 'Exam Mode', labelHi: 'परीक्षा मोड', desc: 'Timed. Simulates a real CBSE exam.', descHi: 'समयबद्ध। असली CBSE परीक्षा जैसा।', color: '#DC2626' },
             ]).map(m => (
               <button
                 key={m.id}
@@ -290,7 +290,7 @@ export default function QuizSetup({
                 <div className="text-sm font-bold" style={{ color: quizMode === m.id ? m.color : 'var(--text-2)' }}>
                   {isHi ? m.labelHi : m.label}
                 </div>
-                <div className="text-[10px] text-[var(--text-3)] mt-0.5">{isHi ? m.descHi : m.desc}</div>
+                <span className="text-[10px] text-[var(--text-3)] block mt-0.5 leading-relaxed">{isHi ? m.descHi : m.desc}</span>
               </button>
             ))}
           </div>
