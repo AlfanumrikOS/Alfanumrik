@@ -345,6 +345,27 @@ export default function ProgressPage() {
               </Card>
             ) : (
               <>
+                {/* ═══ NEW STUDENT GUIDANCE — shown when < 3 quizzes taken ═══ */}
+                {totalSessions > 0 && totalSessions < 3 && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 text-center mb-2">
+                    <div className="text-3xl mb-2">📊</div>
+                    <h3 className="font-semibold text-blue-800 mb-1">
+                      {isHi ? 'अपना लर्निंग डैशबोर्ड अनलॉक करो' : 'Unlock Your Learning Dashboard'}
+                    </h3>
+                    <p className="text-sm text-blue-600 mb-3">
+                      {isHi
+                        ? `${3 - totalSessions} और क्विज़ दो और अपनी प्रगति देखो`
+                        : `Complete ${3 - totalSessions} more quiz${3 - totalSessions > 1 ? 'zes' : ''} to see your full progress`}
+                    </p>
+                    <div className="w-full bg-blue-200 rounded-full h-2 mb-3">
+                      <div className="bg-blue-600 h-2 rounded-full transition-all" style={{ width: `${(totalSessions / 3) * 100}%` }} />
+                    </div>
+                    <Button variant="primary" size="sm" onClick={() => router.push('/quiz')}>
+                      {isHi ? '⚡ क्विज़ शुरू करो' : '⚡ Start a Quiz'}
+                    </Button>
+                  </div>
+                )}
+
                 {/* ═══ MASTERY HERO — overall accuracy ring + key stats ═══ */}
                 <Card className="!p-6">
                   <div className="flex items-center gap-5">
