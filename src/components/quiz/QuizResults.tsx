@@ -37,6 +37,11 @@ interface Response {
   is_correct: boolean;
   time_spent: number;
   error_type?: ErrorType;
+  // Written answer fields (populated for SA/MA/LA)
+  student_answer_text?: string;
+  marks_awarded?: number;
+  marks_possible?: number;
+  rubric_feedback?: string;
 }
 
 const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
@@ -206,6 +211,61 @@ export default function QuizResults({
           <StatCard icon="✨" value={`+${results.xp_earned}`} label="XP" color="var(--orange)" />
           <StatCard icon="⏱" value={formatTime(timer)} label={isHi ? 'समय' : 'Time'} color="var(--teal)" />
         </div>
+
+        {/* Separate MCQ/Written subscores — shown when quiz has both types */}
+        {(() => {
+          const mcqResponses = responses.filter((r) => r.selected_option >= 0);
+          const writtenResponses = responses.filter((r) => r.selected_option < 0 && r.student_answer_text !== undefined);
+          if (mcqResponses.length === 0 || writtenResponses.length === 0) return null;
+          const mcqCorrect = mcqResponses.filter(r => r.is_correct).length;
+          const mcqPct = Math.round((mcqCorrect / mcqResponses.length) * 100);
+          const writtenEarned = writtenResponses.reduce((sum, r) => sum + (r.marks_awarded ?? 0), 0);
+          const writtenPossible = writtenResponses.reduce((sum, r) => sum + (r.marks_possible ?? 0), 0);
+          const writtenPct = writtenPossible > 0 ? Math.round((writtenEarned / writtenPossible) * 100) : 0;
+          return (
+            <Card className="!p-4">
+              <p className="text-xs font-semibold text-[var(--text-3)] mb-3 uppercase tracking-wider">
+                {isHi ? 'अंकों का विवरण' : 'Score Breakdown'}
+              </p>
+              <div className="space-y-3">
+                {/* MCQ subscore */}
+                <div className="flex items-center gap-3">
+                  <span className="text-base flex-shrink-0">⭕</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-semibold" style={{ color: 'var(--text-2)' }}>MCQ</span>
+                      <span className="text-xs font-bold" style={{ color: mcqPct >= 60 ? '#16A34A' : '#DC2626' }}>{mcqPct}%</span>
+                    </div>
+                    <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--surface-2)' }}>
+                      <div className="h-full rounded-full transition-all" style={{ width: `${mcqPct}%`, background: mcqPct >= 60 ? '#16A34A' : '#DC2626' }} />
+                    </div>
+                    <span className="text-[10px] text-[var(--text-3)] mt-0.5 block">
+                      {mcqCorrect}/{mcqResponses.length} {isHi ? 'सही' : 'correct'}
+                    </span>
+                  </div>
+                </div>
+                {/* Written subscore */}
+                <div className="flex items-center gap-3">
+                  <span className="text-base flex-shrink-0">✏️</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-semibold" style={{ color: 'var(--text-2)' }}>
+                        {isHi ? 'लिखित' : 'Written'}
+                      </span>
+                      <span className="text-xs font-bold" style={{ color: writtenPct >= 60 ? '#16A34A' : '#DC2626' }}>{writtenPct}%</span>
+                    </div>
+                    <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--surface-2)' }}>
+                      <div className="h-full rounded-full transition-all" style={{ width: `${writtenPct}%`, background: writtenPct >= 60 ? '#16A34A' : '#DC2626' }} />
+                    </div>
+                    <span className="text-[10px] text-[var(--text-3)] mt-0.5 block">
+                      {writtenEarned}/{writtenPossible} {isHi ? 'अंक' : 'marks'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          );
+        })()}
 
         {/* ── Ask Foxy about your weakest topic ── */}
         {(() => {
@@ -435,9 +495,16 @@ export default function QuizResults({
                   >
                     <span
                       className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
-                      style={{ background: correct ? '#16A34A' : '#DC2626', color: '#fff' }}
+                      style={{
+                        background: correct ? '#16A34A'
+                          : (resp?.student_answer_text !== undefined && (resp?.marks_awarded ?? 0) > 0) ? '#F59E0B'
+                          : '#DC2626',
+                        color: '#fff',
+                      }}
                     >
-                      {correct ? '✓' : '✗'}
+                      {resp?.student_answer_text !== undefined && resp?.selected_option < 0
+                        ? `${resp.marks_awarded ?? 0}`
+                        : (correct ? '✓' : '✗')}
                     </span>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-medium" style={{ color: 'var(--text-2)' }}>
@@ -455,41 +522,98 @@ export default function QuizResults({
                   {/* Expanded detail */}
                   {isExpanded && (
                     <div className="px-3 pb-3 space-y-2">
-                      {/* Options */}
-                      {opts.length > 0 && (
-                        <div className="space-y-1">
-                          {opts.map((opt, oi) => {
-                            const isCorrectOpt = oi === question.correct_answer_index;
-                            const isSelected = oi === resp?.selected_option;
-                            let bg = 'var(--surface-2)';
-                            let borderColor = 'transparent';
-                            let textColor = 'var(--text-3)';
-                            if (isCorrectOpt) { bg = 'rgba(22,163,74,0.1)'; borderColor = '#16A34A'; textColor = '#16A34A'; }
-                            else if (isSelected && !correct) { bg = 'rgba(220,38,38,0.08)'; borderColor = '#DC2626'; textColor = '#DC2626'; }
-                            return (
-                              <div
-                                key={oi}
-                                className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[11px]"
-                                style={{ background: bg, border: `1px solid ${borderColor}`, color: textColor }}
-                              >
-                                <span className="font-bold w-4 flex-shrink-0">{OPTION_LETTERS[oi]}.</span>
-                                <span className="flex-1">{opt}</span>
-                                {isCorrectOpt && <span className="flex-shrink-0">✓</span>}
-                                {isSelected && !correct && <span className="flex-shrink-0">✗</span>}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
+                      {/* Written answer display — when response has student_answer_text */}
+                      {resp?.student_answer_text !== undefined && resp?.selected_option < 0 ? (
+                        <>
+                          {/* Student's written answer */}
+                          {resp.student_answer_text && (
+                            <div className="rounded-lg px-3 py-2 text-[11px] leading-relaxed" style={{ background: 'var(--surface-1)', color: 'var(--text-2)' }}>
+                              <span className="font-semibold block mb-1" style={{ color: 'var(--text-3)' }}>
+                                {isHi ? 'तुम्हारा उत्तर:' : 'Your answer:'}
+                              </span>
+                              <p className="whitespace-pre-wrap">{resp.student_answer_text}</p>
+                            </div>
+                          )}
 
-                      {/* Explanation */}
-                      {explanation && (
-                        <div className="rounded-lg px-3 py-2 text-[11px] leading-relaxed" style={{ background: 'var(--surface-1)', color: 'var(--text-3)' }}>
-                          <span className="font-semibold" style={{ color: 'var(--text-2)' }}>
-                            {isHi ? 'व्याख्या: ' : 'Explanation: '}
-                          </span>
-                          {explanation}
-                        </div>
+                          {/* Marks awarded */}
+                          <div className="flex items-center gap-2 px-3 py-2 rounded-lg"
+                            style={{
+                              background: (resp.marks_awarded ?? 0) >= (resp.marks_possible ?? 1)
+                                ? 'rgba(22,163,74,0.08)' : (resp.marks_awarded ?? 0) > 0
+                                ? 'rgba(245,158,11,0.08)' : 'rgba(220,38,38,0.06)',
+                              border: `1px solid ${(resp.marks_awarded ?? 0) >= (resp.marks_possible ?? 1)
+                                ? 'rgba(22,163,74,0.2)' : (resp.marks_awarded ?? 0) > 0
+                                ? 'rgba(245,158,11,0.2)' : 'rgba(220,38,38,0.15)'}`,
+                            }}>
+                            <span className="text-sm font-bold"
+                              style={{
+                                color: (resp.marks_awarded ?? 0) >= (resp.marks_possible ?? 1)
+                                  ? '#16A34A' : (resp.marks_awarded ?? 0) > 0
+                                  ? '#F59E0B' : '#DC2626',
+                              }}>
+                              {resp.marks_awarded ?? 0}/{resp.marks_possible ?? 0} {isHi ? 'अंक' : 'marks'}
+                            </span>
+                          </div>
+
+                          {/* AI rubric feedback */}
+                          {resp.rubric_feedback && resp.rubric_feedback !== 'Skipped' && (
+                            <div className="rounded-lg px-3 py-2 text-[11px] leading-relaxed" style={{ background: 'rgba(124,58,237,0.05)', border: '1px solid rgba(124,58,237,0.12)', color: 'var(--text-2)' }}>
+                              <span className="font-semibold" style={{ color: '#7C3AED' }}>
+                                {isHi ? 'AI मूल्यांकन: ' : 'AI Feedback: '}
+                              </span>
+                              {resp.rubric_feedback}
+                            </div>
+                          )}
+
+                          {/* Model answer (from explanation field) */}
+                          {explanation && (
+                            <div className="rounded-lg px-3 py-2 text-[11px] leading-relaxed" style={{ background: 'rgba(59,130,246,0.05)', border: '1px solid rgba(59,130,246,0.12)', color: 'var(--text-2)' }}>
+                              <span className="font-semibold" style={{ color: '#3B82F6' }}>
+                                {isHi ? 'आदर्श उत्तर: ' : 'Model Answer: '}
+                              </span>
+                              {explanation}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          {/* MCQ Options */}
+                          {opts.length > 0 && (
+                            <div className="space-y-1">
+                              {opts.map((opt, oi) => {
+                                const isCorrectOpt = oi === question.correct_answer_index;
+                                const isSelected = oi === resp?.selected_option;
+                                let bg = 'var(--surface-2)';
+                                let borderColor = 'transparent';
+                                let textColor = 'var(--text-3)';
+                                if (isCorrectOpt) { bg = 'rgba(22,163,74,0.1)'; borderColor = '#16A34A'; textColor = '#16A34A'; }
+                                else if (isSelected && !correct) { bg = 'rgba(220,38,38,0.08)'; borderColor = '#DC2626'; textColor = '#DC2626'; }
+                                return (
+                                  <div
+                                    key={oi}
+                                    className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[11px]"
+                                    style={{ background: bg, border: `1px solid ${borderColor}`, color: textColor }}
+                                  >
+                                    <span className="font-bold w-4 flex-shrink-0">{OPTION_LETTERS[oi]}.</span>
+                                    <span className="flex-1">{opt}</span>
+                                    {isCorrectOpt && <span className="flex-shrink-0">✓</span>}
+                                    {isSelected && !correct && <span className="flex-shrink-0">✗</span>}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {/* Explanation */}
+                          {explanation && (
+                            <div className="rounded-lg px-3 py-2 text-[11px] leading-relaxed" style={{ background: 'var(--surface-1)', color: 'var(--text-3)' }}>
+                              <span className="font-semibold" style={{ color: 'var(--text-2)' }}>
+                                {isHi ? 'व्याख्या: ' : 'Explanation: '}
+                              </span>
+                              {explanation}
+                            </div>
+                          )}
+                        </>
                       )}
 
                       {/* Study link */}
