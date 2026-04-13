@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { verifyRazorpaySignature } from '@/lib/payment-verification';
 import { logOpsEvent } from '@/lib/ops-events';
+import { acquireIdempotencyLock } from '@/lib/redis';
 
 /**
  * Razorpay Webhook Handler
@@ -54,6 +55,25 @@ export async function POST(request: NextRequest) {
 
     const event = JSON.parse(body);
     const eventType = event.event;
+
+    // Redis idempotency: fast dedup BEFORE hitting DB.
+    // Extracts payment ID (payment events) or subscription ID (subscription events)
+    // to create a unique key per webhook delivery. This is a faster check than the
+    // existing DB-level idempotency (payment_history lookup) and prevents duplicate
+    // DB writes across concurrent Vercel instances.
+    const paymentEntity = event.payload?.payment?.entity;
+    const subscriptionEntity = event.payload?.subscription?.entity;
+    const idempotencyId = paymentEntity?.id || subscriptionEntity?.id;
+    if (idempotencyId) {
+      const isFirstProcessing = await acquireIdempotencyLock(
+        `webhook:${eventType}:${idempotencyId}`,
+        86400 // 24 hour TTL
+      );
+      if (!isFirstProcessing) {
+        console.warn(`[payment-webhook] duplicate webhook blocked: ${eventType} ${idempotencyId}`);
+        return NextResponse.json({ received: true, note: 'duplicate_blocked_by_redis' });
+      }
+    }
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
