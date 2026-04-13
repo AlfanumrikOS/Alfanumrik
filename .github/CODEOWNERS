@@ -1,0 +1,74 @@
+# Alfanumrik CODEOWNERS — Domain Protection
+# Changes to these files require review from the listed owner.
+# GitHub will automatically request review on PRs touching these paths.
+
+# ═══════════════════════════════════════════════════
+# AUTH & IDENTITY — P15 (Onboarding Integrity)
+# Breakage here blocks all new user acquisition.
+# ═══════════════════════════════════════════════════
+src/lib/AuthContext.tsx              @AlfanumrikOS
+src/lib/rbac.ts                      @AlfanumrikOS
+src/lib/admin-auth.ts                @AlfanumrikOS
+src/lib/identity/                    @AlfanumrikOS
+src/app/auth/                        @AlfanumrikOS
+src/app/api/auth/                    @AlfanumrikOS
+src/app/onboarding/                  @AlfanumrikOS
+src/proxy.ts                         @AlfanumrikOS
+
+# ═══════════════════════════════════════════════════
+# QUIZ ENGINE — P1 (Score Accuracy), P2 (XP), P3 (Anti-cheat)
+# Scoring, XP, and anti-cheat invariants live here.
+# ═══════════════════════════════════════════════════
+src/app/quiz/                        @AlfanumrikOS
+src/lib/quiz-assembler.ts            @AlfanumrikOS
+src/lib/scoring.ts                   @AlfanumrikOS
+src/lib/xp-rules.ts                  @AlfanumrikOS
+src/lib/cognitive-engine.ts          @AlfanumrikOS
+src/lib/exam-engine.ts               @AlfanumrikOS
+src/components/quiz/                 @AlfanumrikOS
+
+# ═══════════════════════════════════════════════════
+# FOXY AI TUTOR — P12 (AI Safety)
+# Age-appropriate, CBSE-scoped, usage-limited.
+# ═══════════════════════════════════════════════════
+src/app/foxy/                        @AlfanumrikOS
+src/app/api/foxy/                    @AlfanumrikOS
+src/components/foxy/                 @AlfanumrikOS
+src/lib/ai/                          @AlfanumrikOS
+supabase/functions/foxy-tutor/       @AlfanumrikOS
+
+# ═══════════════════════════════════════════════════
+# PAYMENTS — P11 (Payment Integrity)
+# Razorpay webhook, subscription activation, plan enforcement.
+# ═══════════════════════════════════════════════════
+src/app/api/payments/                @AlfanumrikOS
+src/lib/razorpay.ts                  @AlfanumrikOS
+
+# ═══════════════════════════════════════════════════
+# DATABASE & MIGRATIONS
+# Schema changes require migration discipline.
+# ═══════════════════════════════════════════════════
+supabase/migrations/                 @AlfanumrikOS
+
+# ═══════════════════════════════════════════════════
+# CI/CD & DEPLOYMENT
+# Pipeline changes can break all gates.
+# ═══════════════════════════════════════════════════
+.github/workflows/                   @AlfanumrikOS
+.github/CODEOWNERS                   @AlfanumrikOS
+vercel.json                          @AlfanumrikOS
+next.config.js                       @AlfanumrikOS
+
+# ═══════════════════════════════════════════════════
+# ADMIN & RBAC
+# Super-admin and school-admin access control.
+# ═══════════════════════════════════════════════════
+src/app/super-admin/                 @AlfanumrikOS
+src/app/api/super-admin/             @AlfanumrikOS
+src/app/school-admin/                @AlfanumrikOS
+
+# ═══════════════════════════════════════════════════
+# STRUCTURAL GUARANTEES
+# Tests that enforce architectural contracts.
+# ═══════════════════════════════════════════════════
+src/__tests__/adaptive-pipeline.test.ts  @AlfanumrikOS
