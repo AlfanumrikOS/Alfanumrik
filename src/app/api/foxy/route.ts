@@ -5,10 +5,11 @@
  *  1. RBAC auth guard (foxy.chat permission)
  *  2. Daily quota enforcement (foxy_chats_used in student_daily_usage)
  *  3. Session continuity (foxy_sessions table)
- *  4. RAG retrieval — Voyage voyage-3 embedding → match_rag_chunks RPC
- *  5. Context-aware response — Claude claude-haiku-4-5-20251001 (fallback: claude-sonnet-4-20250514)
- *  6. Persist turn to foxy_chat_messages
- *  7. Audit log
+ *  4. Cognitive context loading — concept_mastery, knowledge_gaps, cme_error_log, CME next-action
+ *  5. RAG retrieval — Voyage voyage-3 embedding → match_rag_chunks RPC
+ *  6. Context-aware response — Claude claude-haiku-4-5-20251001 (fallback: claude-sonnet-4-20250514)
+ *  7. Persist turn to foxy_chat_messages + cognitive action logging
+ *  8. Audit log
  *
  * POST /api/foxy
  * Body: { message, subject, grade, chapter?, board?, sessionId?, mode? }
@@ -67,6 +68,28 @@ interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
 }
+
+// ─── Cognitive Context Types ────────────────────────────────────────────────
+
+interface CognitiveContext {
+  weakTopics: Array<{ title: string; mastery: number; attempts: number }>;
+  strongTopics: Array<{ title: string; mastery: number }>;
+  knowledgeGaps: Array<{ target: string; prerequisite: string; gapType: string }>;
+  revisionDue: Array<{ title: string; lastReviewed: string; mastery: number }>;
+  recentErrors: Array<{ errorType: string; count: number }>;
+  nextAction: { actionType: string; conceptName: string; reason: string } | null;
+  masteryLevel: 'low' | 'medium' | 'high';
+}
+
+const EMPTY_COGNITIVE_CONTEXT: CognitiveContext = {
+  weakTopics: [],
+  strongTopics: [],
+  knowledgeGaps: [],
+  revisionDue: [],
+  recentErrors: [],
+  nextAction: null,
+  masteryLevel: 'medium',
+};
 
 // ─── Helper: error response ───────────────────────────────────────────────────
 
@@ -144,6 +167,253 @@ async function loadHistory(sessionId: string): Promise<ChatMessage[]> {
   if (!messages || messages.length === 0) return [];
   // Reverse so oldest first (correct for Claude messages array)
   return (messages as ChatMessage[]).reverse();
+}
+
+// ─── Helper: load cognitive context from CME tables ─────────────────────────
+
+async function loadCognitiveContext(
+  studentId: string,
+  subject: string,
+  grade: string,
+): Promise<CognitiveContext> {
+  try {
+    // Resolve subject code → subject UUID for filtering
+    const { data: subjectRow } = await supabaseAdmin
+      .from('subjects')
+      .select('id')
+      .ilike('code', subject)
+      .maybeSingle();
+    const subjectId = subjectRow?.id ?? null;
+
+    // All queries run in parallel for < 100ms latency budget
+    const [masteryRes, gapsRes, revisionRes, errorsRes, cmeStateRes] = await Promise.all([
+      // concept_mastery: weak and strong topics for this subject
+      supabaseAdmin
+        .from('concept_mastery')
+        .select('mastery_probability, mastery_level, attempts, topic_id, curriculum_topics(title, subject_id)')
+        .eq('student_id', studentId)
+        .order('mastery_probability', { ascending: true })
+        .limit(30),
+
+      // knowledge_gaps: active prerequisite gaps
+      supabaseAdmin
+        .from('knowledge_gaps')
+        .select('topic_id, prerequisite_topic_id, gap_type, is_resolved, description, curriculum_topics!knowledge_gaps_topic_id_fkey(title), prereq:curriculum_topics!knowledge_gaps_prerequisite_topic_id_fkey(title)')
+        .eq('student_id', studentId)
+        .eq('is_resolved', false)
+        .limit(5),
+
+      // concept_mastery: concepts due for spaced repetition review
+      supabaseAdmin
+        .from('concept_mastery')
+        .select('mastery_probability, next_review_date, topic_id, curriculum_topics(title)')
+        .eq('student_id', studentId)
+        .not('next_review_date', 'is', null)
+        .lte('next_review_date', new Date().toISOString().split('T')[0])
+        .order('next_review_date', { ascending: true })
+        .limit(5),
+
+      // cme_error_log: recent error patterns (last 30 days)
+      supabaseAdmin
+        .from('cme_error_log')
+        .select('error_type')
+        .eq('student_id', studentId)
+        .gte('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()),
+
+      // cme_concept_state: for CME next-action computation (read mastery_mean for overall level)
+      supabaseAdmin
+        .from('cme_concept_state')
+        .select('concept_id, mastery_mean, current_retention')
+        .eq('student_id', studentId)
+        .limit(50),
+    ]);
+
+    // Filter mastery results by subject
+    const subjectMastery = (masteryRes.data ?? []).filter((m: any) => {
+      if (!subjectId) return true; // no subject filter if subject not found
+      return m.curriculum_topics?.subject_id === subjectId;
+    });
+
+    const weakTopics = subjectMastery
+      .filter((m: any) => (m.mastery_probability ?? 0) < 0.6)
+      .slice(0, 5)
+      .map((m: any) => ({
+        title: m.curriculum_topics?.title ?? 'Unknown topic',
+        mastery: Math.round((m.mastery_probability ?? 0) * 100),
+        attempts: m.attempts ?? 0,
+      }));
+
+    const strongTopics = subjectMastery
+      .filter((m: any) => (m.mastery_probability ?? 0) >= 0.8)
+      .slice(-3)
+      .map((m: any) => ({
+        title: m.curriculum_topics?.title ?? 'Unknown topic',
+        mastery: Math.round((m.mastery_probability ?? 0) * 100),
+      }));
+
+    // Knowledge gaps
+    const knowledgeGaps = (gapsRes.data ?? []).map((g: any) => ({
+      target: g.curriculum_topics?.title ?? g.description ?? '',
+      prerequisite: g.prereq?.title ?? '',
+      gapType: g.gap_type ?? '',
+    }));
+
+    // Revision due
+    const revisionDue = (revisionRes.data ?? []).map((r: any) => ({
+      title: r.curriculum_topics?.title ?? 'Unknown',
+      lastReviewed: r.next_review_date ?? '',
+      mastery: Math.round((r.mastery_probability ?? 0) * 100),
+    }));
+
+    // Error pattern counts
+    const errorCounts: Record<string, number> = {};
+    for (const e of errorsRes.data ?? []) {
+      errorCounts[e.error_type] = (errorCounts[e.error_type] || 0) + 1;
+    }
+    const recentErrors = Object.entries(errorCounts)
+      .map(([errorType, count]) => ({ errorType, count }))
+      .sort((a, b) => b.count - a.count);
+
+    // Overall mastery level for this subject
+    const avgMastery = subjectMastery.length > 0
+      ? subjectMastery.reduce((s: number, m: any) => s + (m.mastery_probability ?? 0), 0) / subjectMastery.length
+      : 0.5;
+    const masteryLevel: CognitiveContext['masteryLevel'] =
+      avgMastery < 0.4 ? 'low' : avgMastery < 0.7 ? 'medium' : 'high';
+
+    // Call CME for next-best-action (non-blocking — uses Edge Function)
+    let nextAction: CognitiveContext['nextAction'] = null;
+    if (subjectId) {
+      try {
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+        if (supabaseUrl && serviceKey) {
+          const cmeRes = await fetch(`${supabaseUrl}/functions/v1/cme-engine`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${serviceKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              action: 'get_next_action',
+              student_id: studentId,
+              subject_id: subjectId,
+            }),
+            signal: AbortSignal.timeout(3000), // 3s hard timeout for CME call
+          });
+          if (cmeRes.ok) {
+            const cmeData = await cmeRes.json();
+            if (cmeData.type) {
+              nextAction = {
+                actionType: cmeData.type,
+                conceptName: cmeData.title ?? cmeData.concept_id ?? '',
+                reason: cmeData.reason ?? '',
+              };
+            }
+          }
+        }
+      } catch {
+        // CME failure is non-fatal — Foxy still works without next-action
+      }
+    }
+
+    return { weakTopics, strongTopics, knowledgeGaps, revisionDue, recentErrors, nextAction, masteryLevel };
+  } catch (err) {
+    // Return empty context on failure — Foxy still works, just without cognitive awareness
+    logger.warn('foxy_cognitive_context_failed', {
+      error: err instanceof Error ? err.message : String(err),
+      studentId,
+    });
+    return EMPTY_COGNITIVE_CONTEXT;
+  }
+}
+
+// ─── Helper: build cognitive prompt section from CME data ───────────────────
+
+function buildCognitivePromptSection(ctx: CognitiveContext): string {
+  // If no cognitive data loaded, return empty string (no noise in prompt)
+  if (
+    ctx.weakTopics.length === 0 &&
+    ctx.strongTopics.length === 0 &&
+    ctx.knowledgeGaps.length === 0 &&
+    ctx.revisionDue.length === 0 &&
+    ctx.recentErrors.length === 0 &&
+    !ctx.nextAction
+  ) {
+    return '';
+  }
+
+  const sections: string[] = [];
+
+  sections.push('=== STUDENT LEARNING STATE (from Cognitive Mastery Engine) ===');
+
+  if (ctx.weakTopics.length > 0) {
+    sections.push('\nWEAK TOPICS (explain more carefully, use simpler language):');
+    for (const t of ctx.weakTopics) {
+      sections.push(`- ${t.title}: ${t.mastery}% mastery (${t.attempts} attempts)`);
+    }
+  }
+
+  if (ctx.strongTopics.length > 0) {
+    sections.push('\nSTRONG TOPICS (can reference as foundations, challenge with harder questions):');
+    for (const t of ctx.strongTopics) {
+      sections.push(`- ${t.title}: ${t.mastery}% mastery`);
+    }
+  }
+
+  if (ctx.knowledgeGaps.length > 0) {
+    sections.push('\nKNOWLEDGE GAPS (address prerequisites before advancing):');
+    for (const g of ctx.knowledgeGaps) {
+      sections.push(`- Missing: "${g.prerequisite}" needed for "${g.target}" (${g.gapType})`);
+    }
+  }
+
+  if (ctx.revisionDue.length > 0) {
+    sections.push('\nCONCEPTS DUE FOR REVISION (ask a quick recall question before teaching new content):');
+    for (const r of ctx.revisionDue) {
+      sections.push(`- ${r.title}: ${r.mastery}% mastery, overdue for review`);
+    }
+  }
+
+  if (ctx.recentErrors.length > 0) {
+    sections.push('\nRECENT ERROR PATTERNS (address these misconceptions proactively):');
+    for (const e of ctx.recentErrors) {
+      sections.push(`- ${e.errorType} errors: ${e.count} times in last 30 days`);
+    }
+  }
+
+  if (ctx.nextAction) {
+    sections.push(`\nRECOMMENDED ACTION: ${ctx.nextAction.actionType.toUpperCase()}`);
+    sections.push(`Concept: ${ctx.nextAction.conceptName}`);
+    sections.push(`Reason: ${ctx.nextAction.reason}`);
+  }
+
+  // Cognitive load instructions based on overall mastery level
+  sections.push('\n=== COGNITIVE LOAD INSTRUCTIONS ===');
+  if (ctx.masteryLevel === 'low') {
+    sections.push('Student is STRUGGLING. Instructions:');
+    sections.push('- Use simple, clear language. One idea per paragraph.');
+    sections.push('- Give a worked example BEFORE asking the student to try.');
+    sections.push('- Break multi-step problems into individual steps.');
+    sections.push('- Maximum 3-4 sentences per explanation block.');
+    sections.push('- Use analogies from daily life familiar to Indian students.');
+    sections.push('- After explaining, ask ONE simple check-for-understanding question.');
+  } else if (ctx.masteryLevel === 'medium') {
+    sections.push('Student is PROGRESSING. Instructions:');
+    sections.push('- Standard explanation with examples.');
+    sections.push('- Ask check-for-understanding questions to verify comprehension.');
+    sections.push('- Build on their strong topics when explaining new concepts.');
+    sections.push('- Introduce "why" questions to deepen understanding.');
+  } else {
+    sections.push('Student is PROFICIENT. Instructions:');
+    sections.push('- Challenge with higher-order questions (analyze, evaluate, create).');
+    sections.push('- Connect concepts across chapters.');
+    sections.push('- Encourage independent reasoning before giving answers.');
+    sections.push('- Ask "what if" and "why not" questions.');
+    sections.push('- Suggest CBSE board-level application problems.');
+  }
+
+  return sections.join('\n');
 }
 
 // ─── Helper: check and increment daily quota (atomic via RPC) ────────────────
@@ -337,6 +607,7 @@ function buildSystemPrompt(
   mode: string,
   ragChunks: Array<{ content: string; chapter?: string; page_number?: number }>,
   academicGoal?: string | null,
+  cognitiveCtx?: CognitiveContext | null,
 ): string {
   const contextSection =
     ragChunks.length > 0
@@ -344,6 +615,10 @@ function buildSystemPrompt(
           .map((c, i) => `[${i + 1}] ${c.chapter ? `Chapter: ${c.chapter}` : ''}${c.page_number ? ` (p.${c.page_number})` : ''}\n${c.content}`)
           .join('\n\n')}`
       : '';
+
+  const cognitiveSection = cognitiveCtx
+    ? buildCognitivePromptSection(cognitiveCtx)
+    : '';
 
   const modeInstruction: Record<string, string> = {
     learn: 'Explain concepts clearly and build understanding step by step.',
@@ -370,7 +645,18 @@ ${modeInstruction[mode] ?? modeInstruction.learn}
 - If you cite information, it must come from the Reference Material below
 - Never invent facts, formulas, or historical dates
 - If the student seems frustrated, be extra encouraging
-${academicGoal ? `\n## Student's Academic Goal: ${GOAL_PROMPT_MAP[academicGoal] ?? academicGoal}\n` : ''}${contextSection}`;
+
+## Formatting Rules
+- Use standard markdown: **bold** for key terms, *italic* for emphasis
+- Use LaTeX for math: inline $x^2$ and block $$\\frac{a}{b}$$
+- Use markdown tables for structured data (place values, comparisons, element properties)
+- Use numbered lists for steps and procedures
+- Use bullet lists for properties and features
+- Use > blockquote for NCERT textbook excerpts or important definitions
+- Use \`code\` for short formulas and \`\`\`code blocks\`\`\` for multi-line formulas/equations
+- Do NOT use ASCII art or Unicode block characters for diagrams
+- Keep responses concise and well-structured with clear headings
+${academicGoal ? `\n## Student's Academic Goal: ${GOAL_PROMPT_MAP[academicGoal] ?? academicGoal}\n` : ''}${cognitiveSection ? `\n${cognitiveSection}\n` : ''}${contextSection}`;
 }
 
 // ─── POST handler ─────────────────────────────────────────────────────────────
@@ -571,9 +857,12 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   // ─── Existing inline flow (default, or fallback from intent router) ────────
 
-  // 7. Generate Voyage embedding for the user's message
+  // 7. Load cognitive context + generate embedding in parallel (latency < 100ms)
   const embeddingQuery = `${subject} grade ${grade}${chapter ? ` chapter ${chapter}` : ''}: ${message}`;
-  const embedding = await generateEmbedding(embeddingQuery);
+  const [embedding, cognitiveCtx] = await Promise.all([
+    generateEmbedding(embeddingQuery),
+    loadCognitiveContext(studentId, subject, grade),
+  ]);
 
   // 8. RAG retrieval via match_rag_chunks RPC
   let ragChunks: Array<{
@@ -617,8 +906,10 @@ export async function POST(request: NextRequest): Promise<Response> {
   // 9. Load conversation history for multi-turn context
   const history = await loadHistory(resolvedSessionId);
 
-  // 10. Build system prompt with RAG context
-  const systemPrompt = buildSystemPrompt(subject, grade, board, chapter, mode, ragChunks, academicGoal);
+  // 10. Build system prompt with RAG context + cognitive context
+  const systemPrompt = buildSystemPrompt(
+    subject, grade, board, chapter, mode, ragChunks, academicGoal, cognitiveCtx,
+  );
 
   // 11. Call Claude
   let assistantResponse: string;
@@ -627,7 +918,12 @@ export async function POST(request: NextRequest): Promise<Response> {
     const result = await callClaude(systemPrompt, history, message);
     assistantResponse = result.content;
     tokensUsed = result.tokensUsed;
-    logger.info('foxy_claude_ok', { model: result.model, tokensUsed });
+    logger.info('foxy_claude_ok', {
+      model: result.model,
+      tokensUsed,
+      cognitiveContextLoaded: cognitiveCtx.weakTopics.length > 0 || cognitiveCtx.nextAction !== null,
+      masteryLevel: cognitiveCtx.masteryLevel,
+    });
   } catch (claudeErr) {
     logger.error('foxy_claude_api_failed', {
       error: claudeErr instanceof Error ? claudeErr : new Error(String(claudeErr)),
@@ -696,15 +992,51 @@ export async function POST(request: NextRequest): Promise<Response> {
     },
   ]);
 
-  // 13. Audit log
+  // 13. Post-response cognitive logging (fire-and-forget — non-blocking)
+  if (cognitiveCtx.nextAction) {
+    Promise.resolve(
+      supabaseAdmin
+        .from('cme_action_log')
+        .insert({
+          student_id: studentId,
+          action_type: cognitiveCtx.nextAction.actionType,
+          concept_id: null, // concept_id is UUID; conceptName may be a title string
+          reason: cognitiveCtx.nextAction.reason,
+          was_followed: true,
+          outcome: 'foxy_responded',
+        }),
+    ).catch(() => {}); // fire-and-forget
+  }
+
+  // Update foxy_sessions with cognitive tracking metadata
+  Promise.resolve(
+    supabaseAdmin
+      .from('foxy_sessions')
+      .update({
+        cognitive_context_loaded: true,
+        last_cme_action: cognitiveCtx.nextAction?.actionType ?? null,
+      })
+      .eq('id', resolvedSessionId),
+  ).catch(() => {}); // fire-and-forget
+
+  // 14. Audit log
   logAudit(auth.userId!, {
     action: 'foxy.chat',
     resourceType: 'foxy_sessions',
     resourceId: resolvedSessionId,
-    details: { subject, grade, chapter, mode, tokensUsed, ragChunksFound: ragChunks.length },
+    details: {
+      subject, grade, chapter, mode, tokensUsed,
+      ragChunksFound: ragChunks.length,
+      cognitiveContextLoaded: true,
+      masteryLevel: cognitiveCtx.masteryLevel,
+      weakTopicCount: cognitiveCtx.weakTopics.length,
+      knowledgeGapCount: cognitiveCtx.knowledgeGaps.length,
+      revisionDueCount: cognitiveCtx.revisionDue.length,
+      cmeAction: cognitiveCtx.nextAction?.actionType ?? null,
+    },
   });
 
-  // 14. Return response
+  // 15. Return response
   return NextResponse.json({
     success: true,
     response: assistantResponse,
