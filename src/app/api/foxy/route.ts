@@ -884,11 +884,27 @@ export async function POST(request: NextRequest): Promise<Response> {
   // ─── Existing inline flow (default, or fallback from intent router) ────────
 
   // 7. Load cognitive context + generate embedding in parallel (latency < 100ms)
+  // CRITICAL: This MUST be wrapped in try-catch. If Voyage API or cognitive queries fail,
+  // Foxy should still respond (without embedding-based RAG / without cognitive context),
+  // NOT crash with 500 "Something went wrong."
   const embeddingQuery = `${subject} grade ${grade}${chapter ? ` chapter ${chapter}` : ''}: ${message}`;
-  const [embedding, cognitiveCtx] = await Promise.all([
-    generateEmbedding(embeddingQuery),
-    loadCognitiveContext(studentId, subject, grade),
-  ]);
+  let embedding: number[] | null = null;
+  let cognitiveCtx: CognitiveContext = EMPTY_COGNITIVE_CONTEXT;
+  try {
+    const [emb, ctx] = await Promise.all([
+      generateEmbedding(embeddingQuery).catch(() => null),
+      loadCognitiveContext(studentId, subject, grade),
+    ]);
+    embedding = emb;
+    cognitiveCtx = ctx;
+  } catch (embErr) {
+    logger.warn('foxy_embedding_or_cognitive_failed', {
+      error: embErr instanceof Error ? embErr.message : String(embErr),
+      studentId, subject, grade,
+    });
+    // Proceed without embedding (RAG will fall back to text search)
+    // Proceed without cognitive context (Foxy works in generic mode)
+  }
 
   // 8. RAG retrieval via match_rag_chunks RPC
   let ragChunks: Array<{
