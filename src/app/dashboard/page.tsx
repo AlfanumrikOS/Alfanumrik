@@ -127,7 +127,9 @@ export default function Dashboard() {
     const gradeSubjects = GRADE_SUBJECTS[gradeKey] || GRADE_SUBJECTS['9'];
     const rawSelected = (student.selected_subjects || [student.preferred_subject].filter(Boolean)) as string[];
     setSelectedSubjects(rawSelected.filter(s => gradeSubjects.includes(s)));
-    generateNotifications(student.id).catch(() => {});
+    generateNotifications(student.id).catch((err: unknown) => {
+      console.warn('[dashboard] notification generation failed:', err instanceof Error ? err.message : String(err));
+    });
   }, [student]);
 
   // Process dashboard RPC data when SWR returns it

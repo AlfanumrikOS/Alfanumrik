@@ -88,7 +88,9 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
     if (!accessToken) return;
     fetch('/api/super-admin/roles?action=roles', {
       headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-    }).catch(() => {});
+    }).catch((err: unknown) => {
+      console.warn('[admin-shell] roles prefetch failed:', err instanceof Error ? err.message : String(err));
+    });
     // Try to get name from session user metadata
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user?.user_metadata?.name) setAdminName(user.user_metadata.name);

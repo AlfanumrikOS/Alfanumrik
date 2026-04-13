@@ -89,7 +89,9 @@ export default function ScanSolver({ studentId, grade, subject, isHi, onSolveCom
       requestAnimationFrame(() => {
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          videoRef.current.play().catch(() => {});
+          videoRef.current.play().catch((err: unknown) => {
+            console.warn('[scan] video play failed:', err instanceof Error ? err.message : String(err));
+          });
         }
       });
     } catch (err) {

@@ -188,7 +188,9 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}`, 'apikey': SUPABASE_ANON_KEY },
             body: JSON.stringify(welcomePayload),
-          }).catch(() => {});
+          }).catch((err: unknown) => {
+            console.warn('[auth] welcome email failed:', err instanceof Error ? err.message : String(err));
+          });
           setLoading(false);
           onSuccess();
         } else {

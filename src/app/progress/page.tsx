@@ -195,9 +195,15 @@ export default function ProgressPage() {
     });
 
     // Cognitive 2.0 data
-    getBloomProgression(student.id).then(setBloomData).catch(() => {});
-    getLearningVelocity(student.id).then(setVelocityData).catch(() => {});
-    getKnowledgeGaps(student.id, undefined, 20).then(setKnowledgeGaps).catch(() => {});
+    getBloomProgression(student.id).then(setBloomData).catch((err: unknown) => {
+      console.warn('[progress] bloom progression fetch failed:', err instanceof Error ? err.message : String(err));
+    });
+    getLearningVelocity(student.id).then(setVelocityData).catch((err: unknown) => {
+      console.warn('[progress] learning velocity fetch failed:', err instanceof Error ? err.message : String(err));
+    });
+    getKnowledgeGaps(student.id, undefined, 20).then(setKnowledgeGaps).catch((err: unknown) => {
+      console.warn('[progress] knowledge gaps fetch failed:', err instanceof Error ? err.message : String(err));
+    });
 
     // Cognitive session metrics
     supabase

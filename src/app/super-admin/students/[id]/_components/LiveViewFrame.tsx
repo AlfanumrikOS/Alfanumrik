@@ -113,7 +113,9 @@ export default function LiveViewFrame({ studentId }: LiveViewFrameProps) {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           keepalive: true,
-        }).catch(() => {});
+        }).catch((err: unknown) => {
+          console.warn('[live-view] session end PATCH failed:', err instanceof Error ? err.message : String(err));
+        });
         sessionActiveRef.current = false;
       }
     };
@@ -128,7 +130,9 @@ export default function LiveViewFrame({ studentId }: LiveViewFrameProps) {
       .then((data) => {
         if (data?.student?.name) setStudentName(data.student.name);
       })
-      .catch(() => {});
+      .catch((err: unknown) => {
+        console.warn('[live-view] student name fetch failed:', err instanceof Error ? err.message : String(err));
+      });
   }, [session, apiFetch, studentId]);
 
   /* ---------- Countdown timer ---------- */

@@ -660,7 +660,9 @@ export default function QuizPage() {
 
         // Update chapter progress after quiz
         if (selectedChapter) {
-          updateChapterProgress(selectedSubject!, student!.grade, selectedChapter).catch(() => {});
+          updateChapterProgress(selectedSubject!, student!.grade, selectedChapter).catch((err: unknown) => {
+            console.warn('[quiz] chapter progress update failed:', err instanceof Error ? err.message : String(err));
+          });
         }
 
         // Save per-question responses for ALL quiz modes (populates question_responses table).
@@ -677,7 +679,9 @@ export default function QuizPage() {
             was_in_zpd: questions[i]?.difficulty === 2,
             error_type: !r.is_correct ? (r.error_type || classifyQuizError(questions[i], r)) : undefined,
             quality: r.is_correct ? (r.time_spent < 10 ? 5 : 4) : (r.time_spent < 5 ? 1 : 2),
-          }))).catch(() => {});
+          }))).catch((err: unknown) => {
+            console.warn('[quiz] saveQuestionResponses failed:', err instanceof Error ? err.message : String(err));
+          });
 
           // Fire-and-forget: update CME mastery state for adaptive question selection.
           // Populates cme_concept_state so future quizzes adapt to the student's
@@ -699,7 +703,9 @@ export default function QuizPage() {
               bloom_level: q.bloom_level,
             })),
             res.session_id,
-          ).catch(() => {});
+          ).catch((err: unknown) => {
+            console.warn('[quiz] processAdaptiveLearning failed:', err instanceof Error ? err.message : String(err));
+          });
         }
 
         // Save cognitive metrics for this session (cognitive mode only — tracks ZPD and fatigue)
@@ -719,7 +725,9 @@ export default function QuizPage() {
             avg_response_time_seconds: allResponses.length > 0
               ? allResponses.reduce((a, r) => a + r.time_spent, 0) / allResponses.length
               : undefined,
-          }).catch(() => {});
+          }).catch((err: unknown) => {
+            console.warn('[quiz] saveCognitiveMetrics failed:', err instanceof Error ? err.message : String(err));
+          });
         }
 
         // Save exam simulation if in exam mode
@@ -811,7 +819,9 @@ export default function QuizPage() {
 
       // Update chapter progress after quiz
       if (selectedChapter) {
-        updateChapterProgress(selectedSubject, student.grade, selectedChapter).catch(() => {});
+        updateChapterProgress(selectedSubject, student.grade, selectedChapter).catch((err: unknown) => {
+          console.warn('[quiz-retry] chapter progress update failed:', err instanceof Error ? err.message : String(err));
+        });
       }
 
       track('quiz_completed', {

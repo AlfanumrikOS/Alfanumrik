@@ -519,7 +519,9 @@ export async function processAdaptiveLearning(
           message: `[adaptive-pipeline] CME record_response failed for ${cmeFailureCount}/${cmeFailureCount + cmeSuccessCount} questions`,
           url: '/quiz',
         }),
-      }).catch(() => {}); // fire-and-forget, never block
+      }).catch((err: unknown) => {
+        console.warn('[adaptive-pipeline] error-report POST failed:', err instanceof Error ? err.message : String(err));
+      }); // fire-and-forget, never block
     } catch {
       // Reporting failure is itself non-fatal
     }

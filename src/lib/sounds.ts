@@ -43,7 +43,9 @@ function getCtx(): AudioContext | null {
       return null;
     }
   }
-  if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+  if (ctx.state === 'suspended') ctx.resume().catch((err: unknown) => {
+    console.warn('[sounds] AudioContext resume failed:', err instanceof Error ? err.message : String(err));
+  });
   return ctx;
 }
 

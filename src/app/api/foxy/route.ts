@@ -1045,7 +1045,9 @@ export async function POST(request: NextRequest): Promise<Response> {
           was_followed: true,
           outcome: 'foxy_responded',
         }),
-    ).catch(() => {}); // fire-and-forget
+    ).catch((err: unknown) => {
+      console.warn('[foxy] cognitive action log failed:', err instanceof Error ? err.message : String(err));
+    }); // fire-and-forget
   }
 
   // Update foxy_sessions with cognitive tracking metadata
@@ -1057,7 +1059,9 @@ export async function POST(request: NextRequest): Promise<Response> {
         last_cme_action: cognitiveCtx.nextAction?.actionType ?? null,
       })
       .eq('id', resolvedSessionId),
-  ).catch(() => {}); // fire-and-forget
+  ).catch((err: unknown) => {
+    console.warn('[foxy] session cognitive update failed:', err instanceof Error ? err.message : String(err));
+  }); // fire-and-forget
 
   // 14. Audit log
   logAudit(auth.userId!, {

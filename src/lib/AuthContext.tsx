@@ -471,7 +471,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ device_label: navigator.userAgent }),
-        }).catch(() => {}); // Best-effort, non-blocking
+        }).catch((err: unknown) => {
+          console.warn('[auth-session] session POST failed:', err instanceof Error ? err.message : String(err));
+        }); // Best-effort, non-blocking
         fetchUser();
       }
     });

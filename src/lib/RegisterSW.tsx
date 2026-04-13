@@ -11,7 +11,9 @@ export default function RegisterSW() {
     navigator.serviceWorker.register('/sw.js').then((registration) => {
       // Check for updates periodically (every 60 min)
       const interval = setInterval(() => {
-        registration.update().catch(() => {});
+        registration.update().catch((err: unknown) => {
+          console.warn('[sw] service worker update check failed:', err instanceof Error ? err.message : String(err));
+        });
       }, 60 * 60 * 1000);
 
       registration.addEventListener('updatefound', () => {

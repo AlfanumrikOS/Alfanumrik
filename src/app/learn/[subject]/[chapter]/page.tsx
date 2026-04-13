@@ -128,7 +128,9 @@ export default function ChapterConceptPage() {
     const pct = totalAnswered > 0 ? Math.round((correctCount / totalAnswered) * 100) : 0;
     const scoreGood = totalAnswered > 0 && pct >= 60;
     if (scoreGood) {
-      updateChapterProgress(subject, student.grade, chapterNum).catch(() => {});
+      updateChapterProgress(subject, student.grade, chapterNum).catch((err: unknown) => {
+        console.warn('[chapter-progress] update failed:', err instanceof Error ? err.message : String(err));
+      });
     }
   }, [showCompletion, student, conceptStates, subject, chapterNum]);
 
@@ -162,7 +164,9 @@ export default function ChapterConceptPage() {
         isCorrect,
         'practice',
         topics[currentIdx].bloom_focus || 'remember',
-      ).catch(() => {});
+      ).catch((err: unknown) => {
+        console.warn('[learn] recordLearningEvent failed:', err instanceof Error ? err.message : String(err));
+      });
     }
     if (!conceptStates[currentIdx]?.submitted) {
       setCompletedCount(prev => prev + 1);

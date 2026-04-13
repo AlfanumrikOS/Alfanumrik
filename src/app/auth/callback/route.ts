@@ -239,7 +239,9 @@ export async function GET(request: NextRequest) {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`, 'apikey': supabaseAnonKey },
                 body: JSON.stringify(payload),
-              }).catch(() => {}); // Best-effort
+              }).catch((err: unknown) => {
+                console.warn('[auth-callback] welcome email failed:', err instanceof Error ? err.message : String(err));
+              }); // Best-effort
             }
           }
         } catch {
