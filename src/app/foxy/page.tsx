@@ -278,7 +278,7 @@ async function callFoxyTutor(params: Record<string, any>) {
    ══════════════════════════════════════════════════════════════ */
 
 interface DiagramRef { url: string; title: string; pageNumber?: number; description: string; }
-interface ChatMessage { id: number; role: 'student' | 'tutor'; content: string; timestamp: string; xp?: number; feedback?: 'up' | 'down' | null; reported?: boolean; diagrams?: DiagramRef[]; }
+interface ChatMessage { id: number; role: 'student' | 'tutor'; content: string; timestamp: string; xp?: number; feedback?: 'up' | 'down' | null; reported?: boolean; diagrams?: DiagramRef[]; imageUrl?: string; }
 
 const REPORT_REASONS = [
   { value: 'wrong_answer', label: '❌ Wrong answer', labelHi: '❌ गलत उत्तर' },
@@ -344,6 +344,9 @@ export default function FoxyPage() {
 
   // Save-to-flashcard — tracks which message IDs have been saved
   const [savedMessageIds, setSavedMessageIds] = useState<Set<number>>(new Set());
+
+  // Image upload — OCR processing indicator
+  const [isProcessingImage, setIsProcessingImage] = useState(false);
 
   // SEL mood check-in — shown once per day at session start
   const { shouldShow: shouldShowSEL, markShown: markSELShown } = useSELCheckIn(student?.id);
@@ -565,8 +568,8 @@ export default function FoxyPage() {
   }, [messages, loading]);
 
   // Send message with usage enforcement
-  const sendMessage = useCallback(async (text: string) => {
-    if (!text.trim()) return;
+  const sendMessage = useCallback(async (text: string, image?: File | null) => {
+    if (!text.trim() && !image) return;
     // Client-side length limit matching server-side MAX_MESSAGE_LENGTH
     if (text.length > 5000) {
       setMessages((p: ChatMessage[]) => [...p, { id: Date.now(), role: 'tutor', content: 'Message too long! Please keep it under 5000 characters.', timestamp: new Date().toISOString() }]);
@@ -588,13 +591,79 @@ export default function FoxyPage() {
       setChatUsage((prev: UsageResult | null) => prev ? { ...prev, count: prev.count + 1, remaining: Math.max(0, prev.remaining - 1), allowed: prev.count + 1 < prev.limit } : prev);
     }
 
-    setMessages((p: ChatMessage[]) => [...p, { id: Date.now(), role: 'student', content: text, timestamp: new Date().toISOString() }]);
-    setLoading(true); setFoxyState('thinking'); setShowTopicSheet(false);
+    // ── Image OCR processing ──
+    // When the student attaches a photo of handwritten work, extract text via
+    // the existing /api/scan-solve endpoint (OCR pipeline) and augment the
+    // message so Foxy can review the handwritten content.
+    let augmentedMessage = text;
+    let imagePreviewUrl: string | undefined;
+
+    if (image) {
+      // Create a preview URL to display in the chat bubble
+      imagePreviewUrl = URL.createObjectURL(image);
+
+      // Show the student message immediately with the image
+      setMessages((p: ChatMessage[]) => [...p, {
+        id: Date.now(),
+        role: 'student',
+        content: text || (language === 'hi' ? 'फ़ोटो अपलोड की' : 'Uploaded photo'),
+        timestamp: new Date().toISOString(),
+        imageUrl: imagePreviewUrl,
+      }]);
+      setLoading(true); setFoxyState('thinking'); setShowTopicSheet(false);
+      setIsProcessingImage(true);
+
+      try {
+        // Send image to scan-solve for OCR text extraction
+        const formData = new FormData();
+        formData.append('image', image);
+        formData.append('subject', activeSubject);
+        formData.append('grade', studentGrade);
+
+        let accessToken: string | null = null;
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          accessToken = session?.access_token ?? null;
+        } catch { /* proceed without token */ }
+
+        const ocrRes = await fetch('/api/scan-solve', {
+          method: 'POST',
+          headers: {
+            'x-lang': language === 'hi' ? 'hi' : 'en',
+            ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
+          },
+          credentials: 'include',
+          body: formData,
+        });
+
+        if (ocrRes.ok) {
+          const ocrData = await ocrRes.json();
+          const extractedText = ocrData.extracted_text || ocrData.text_preview || '';
+          if (extractedText) {
+            augmentedMessage = `[Student uploaded a photo of their handwritten work]\n\nExtracted text from the image:\n${extractedText}\n\n${text ? `Student's message: ${text}` : 'Please review and check this work.'}`;
+          } else {
+            augmentedMessage = `[Student uploaded a photo but text could not be extracted clearly]\n\n${text || (language === 'hi' ? 'कृपया इसमें मेरी मदद करें।' : 'Please help me with this.')}`;
+          }
+        } else {
+          augmentedMessage = `[Student tried to upload a photo but OCR processing failed]\n\n${text || (language === 'hi' ? 'मैं अपना लिखा हुआ उत्तर दिखाना चाहता था।' : 'I wanted to share my handwritten answer.')}`;
+        }
+      } catch (err) {
+        console.warn('[foxy] Image OCR failed:', err);
+        augmentedMessage = `[Student tried to upload a photo but processing failed]\n\n${text || (language === 'hi' ? 'मैं अपना लिखा हुआ उत्तर दिखाना चाहता था।' : 'I wanted to share my handwritten answer.')}`;
+      } finally {
+        setIsProcessingImage(false);
+      }
+    } else {
+      // Text-only message — show immediately
+      setMessages((p: ChatMessage[]) => [...p, { id: Date.now(), role: 'student', content: text, timestamp: new Date().toISOString() }]);
+      setLoading(true); setFoxyState('thinking'); setShowTopicSheet(false);
+    }
+
     try {
       const selectedChapterTopics = selectedChapters.length > 0 ? topics.filter((t: any) => selectedChapters.includes(t.id)) : [];
       const chapCtx = selectedChapterTopics.length > 0 ? selectedChapterTopics.map((t: any) => `Ch ${t.chapter_number}: ${t.title}`).join(', ') : null;
       const chapterForSession = activeTopic?.title || (selectedChapterTopics.length === 1 ? selectedChapterTopics[0].title : null);
-      const resp = await callFoxyTutor({ message: text, student_id: student?.id || '', student_name: student?.name || 'Student', grade: studentGrade, subject: activeSubject, language, mode: sessionMode, topic_id: activeTopic?.id || null, topic_title: activeTopic?.title || null, chapter: chapterForSession, session_id: chatSessionId, selected_chapters: chapCtx });
+      const resp = await callFoxyTutor({ message: augmentedMessage, student_id: student?.id || '', student_name: student?.name || 'Student', grade: studentGrade, subject: activeSubject, language, mode: sessionMode, topic_id: activeTopic?.id || null, topic_title: activeTopic?.title || null, chapter: chapterForSession, session_id: chatSessionId, selected_chapters: chapCtx });
       // Server confirmed daily limit reached — show UpgradeModal
       if (resp.limitReached) {
         setMessages((p: ChatMessage[]) => [...p, { id: Date.now() + 1, role: 'tutor', content: resp.reply, timestamp: new Date().toISOString() }]);
@@ -1241,7 +1310,17 @@ export default function FoxyPage() {
                 <div key={msg.id}>
                   <ChatBubble
                     role={msg.role}
-                    content={msg.role === 'tutor' ? <RichContent content={msg.content} subjectKey={activeSubject} /> : <div className="whitespace-pre-wrap">{msg.content}</div>}
+                    content={msg.role === 'tutor' ? <RichContent content={msg.content} subjectKey={activeSubject} /> : (
+                      <div>
+                        {msg.imageUrl && (
+                          <div className="mb-2 rounded-xl overflow-hidden max-w-[220px]">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={msg.imageUrl} alt={language === 'hi' ? 'अपलोड की गई फ़ोटो' : 'Uploaded photo'} className="w-full h-auto rounded-xl" />
+                          </div>
+                        )}
+                        <div className="whitespace-pre-wrap">{msg.content}</div>
+                      </div>
+                    )}
                     rawContent={msg.content}
                     timestamp={msg.timestamp}
                     studentName={student?.name}
@@ -1398,7 +1477,9 @@ export default function FoxyPage() {
                     <span className="w-2 h-2 bg-orange-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                   </div>
                   <p className="text-xs text-orange-600 mt-1.5">
-                    {language === 'hi' ? 'फॉक्सी सोच रहा है...' : 'Foxy is thinking...'}
+                    {isProcessingImage
+                      ? (language === 'hi' ? '📷 फ़ोटो पढ़ रहे हैं...' : '📷 Reading your handwriting...')
+                      : (language === 'hi' ? 'फॉक्सी सोच रहा है...' : 'Foxy is thinking...')}
                   </p>
                 </div>
               </div>
