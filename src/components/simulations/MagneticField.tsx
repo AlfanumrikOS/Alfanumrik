@@ -1,5 +1,6 @@
 'use client';
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useResponsiveCanvas } from '@/hooks/useResponsiveCanvas';
 
 export const metadata = {
   id: 'magnetic-field',
@@ -12,7 +13,7 @@ export const metadata = {
 const MU0 = 4 * Math.PI * 1e-7;
 
 export default function MagneticField() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { canvasRef, containerRef, size } = useResponsiveCanvas(400 / 280);
   const [current, setCurrent] = useState(5);
   const [direction, setDirection] = useState<'out' | 'into'>('out');
   const [showCompass, setShowCompass] = useState(true);
@@ -24,8 +25,8 @@ export default function MagneticField() {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const W = canvas.width;
-    const H = canvas.height;
+    const W = size.width;
+    const H = size.height;
     ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = '#0f0f23';
     ctx.fillRect(0, 0, W, H);
@@ -151,7 +152,7 @@ export default function MagneticField() {
     ctx.font = '12px sans-serif';
     ctx.textAlign = 'right';
     ctx.fillText(`I = ${current} A  ${direction === 'out' ? '⊙ out of screen' : '⊗ into screen'}`, W - 8, H - 8);
-  }, [current, direction, showCompass, bAtR]);
+  }, [current, direction, showCompass, bAtR, size, canvasRef]);
 
   useEffect(() => { draw(); }, [draw]);
 
@@ -162,7 +163,9 @@ export default function MagneticField() {
   return (
     <div style={{ background: '#1a1a2e', borderRadius: 12, padding: 16, maxWidth: '100%', fontFamily: 'sans-serif' }}>
       <h2 style={{ color: '#F97316', margin: '0 0 12px', fontSize: 18, fontWeight: 700 }}>Magnetic Field Visualizer</h2>
-      <canvas ref={canvasRef} width={400} height={280} style={{ width: '100%', borderRadius: 8, display: 'block' }} />
+      <div ref={containerRef} className="w-full" style={{ aspectRatio: '400/280' }}>
+        <canvas ref={canvasRef} className="rounded-lg" style={{ display: 'block' }} />
+      </div>
       <div style={{ marginTop: 12 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
           <span style={labelStyle}>Current (I)</span>

@@ -1,19 +1,20 @@
 'use client';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { useResponsiveCanvas } from '@/hooks/useResponsiveCanvas';
 
 export default function MirrorReflection() {
   const [angle, setAngle] = useState(40);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { canvasRef, containerRef, size } = useResponsiveCanvas(560 / 300);
 
   useEffect(() => {
     const canvas = canvasRef.current; if (!canvas) return;
     const ctx = canvas.getContext('2d')!;
-    const w = canvas.width, h = canvas.height;
+    const w = size.width, h = size.height;
     ctx.clearRect(0, 0, w, h);
 
     const mx = w / 2, my = h - 60;
     const rad = (angle * Math.PI) / 180;
-    const rayLen = 200;
+    const rayLen = Math.min(200, h * 0.6);
 
     // Mirror
     ctx.strokeStyle = '#aaa'; ctx.lineWidth = 4;
@@ -69,12 +70,14 @@ export default function MirrorReflection() {
     // Surface label
     ctx.fillStyle = 'var(--text-2)'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
     ctx.fillText('Mirror Surface', mx, my + 16);
-  }, [angle]);
+  }, [angle, size, canvasRef]);
 
   return (
     <div style={{ background: 'var(--surface-1)', borderRadius: 12, padding: 16, maxWidth: 600, margin: '0 auto', fontFamily: 'inherit' }}>
       <h3 style={{ color: 'var(--text-1)', fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Mirror Reflection — Law of Reflection</h3>
-      <canvas ref={canvasRef} width={560} height={300} style={{ width: '100%', borderRadius: 8, background: 'var(--surface-2)', display: 'block' }} />
+      <div ref={containerRef} className="w-full" style={{ aspectRatio: '560/300' }}>
+        <canvas ref={canvasRef} className="rounded-lg" style={{ background: 'var(--surface-2)', display: 'block' }} />
+      </div>
       <div style={{ marginTop: 10 }}>
         <label style={{ color: 'var(--text-2)', fontSize: 13 }}>Incident Angle: {angle}°</label>
         <input type="range" min={5} max={85} value={angle} onChange={e => setAngle(+e.target.value)} style={{ width: '100%' }} />

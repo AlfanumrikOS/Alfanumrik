@@ -1,11 +1,12 @@
 'use client';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { useResponsiveCanvas } from '@/hooks/useResponsiveCanvas';
 
 export default function ArchimedesPrinciple() {
   const [density, setDensity] = useState(2000);
   const [volume, setVolume] = useState(200);
   const [depth, setDepth] = useState(50);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { canvasRef, containerRef, size } = useResponsiveCanvas(500 / 300);
 
   const g = 10;
   const rhoWater = 1000;
@@ -20,14 +21,15 @@ export default function ArchimedesPrinciple() {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d')!;
-    const W = canvas.width, H = canvas.height;
+    const W = size.width, H = size.height;
     ctx.clearRect(0, 0, W, H);
 
     ctx.fillStyle = '#111827';
     ctx.fillRect(0, 0, W, H);
 
-    // Water tank
-    const tankX = 40, tankY = 80, tankW = 200, tankH = 200;
+    // Water tank (scaled to canvas)
+    const sx = W / 500, sy = H / 300;
+    const tankX = 40 * sx, tankY = 80 * sy, tankW = 200 * sx, tankH = 200 * sy;
     ctx.strokeStyle = '#60a5fa';
     ctx.lineWidth = 2;
     ctx.strokeRect(tankX, tankY, tankW, tankH);
@@ -56,7 +58,7 @@ export default function ArchimedesPrinciple() {
     }
 
     // Spring scale on right
-    const scaleX = 320, scaleTopY = 40, scaleH = 200;
+    const scaleX = 320 * sx, scaleTopY = 40 * sy, scaleH = 200 * sy;
     ctx.strokeStyle = '#6b7280';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -127,13 +129,15 @@ export default function ArchimedesPrinciple() {
       ctx.fillStyle = '#fbbf24';
       ctx.fillText('Object FLOATS', tankX + tankW / 2, tankY - 10);
     }
-  }, [density, volume, depth, weightAir, maxBuoy, subFrac, buoyForce, apparentWeight, floats]);
+  }, [density, volume, depth, weightAir, maxBuoy, subFrac, buoyForce, apparentWeight, floats, size, canvasRef]);
 
   return (
     <div style={{ background: 'var(--surface-1)', borderRadius: 12, padding: 16, maxWidth: 600, margin: '0 auto', fontFamily: 'inherit' }}>
       <h3 style={{ color: 'var(--text-1)', fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Archimedes' Principle</h3>
-      <canvas ref={canvasRef} width={500} height={300} style={{ width: '100%', borderRadius: 8, display: 'block' }} />
-      <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+      <div ref={containerRef} className="w-full" style={{ aspectRatio: '500/300' }}>
+        <canvas ref={canvasRef} className="rounded-lg" style={{ display: 'block' }} />
+      </div>
+      <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8 }}>
         <div>
           <label style={{ color: 'var(--text-2)', fontSize: 13 }}>ρ_obj: {density} kg/m³</label>
           <input type="range" min={500} max={5000} step={100} value={density} onChange={e => setDensity(+e.target.value)} style={{ width: '100%' }} />
