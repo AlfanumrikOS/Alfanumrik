@@ -35,6 +35,7 @@ import {
   getRoleDestination,
   type ValidRole,
 } from '@/lib/identity';
+import { acquireIdempotencyLock, releaseIdempotencyLock } from '@/lib/redis';
 
 // Dedup guard: prevent concurrent bootstrap calls for the same user.
 // The bootstrap_user_profile RPC is idempotent (ON CONFLICT), but concurrent
@@ -59,15 +60,29 @@ export async function POST(request: NextRequest) {
     }
 
     // Dedup: if a bootstrap is already in progress for this user, await it
+    // Layer 1: In-memory dedup (same Vercel instance)
     const existingPromise = pendingBootstraps.get(user.id);
     if (existingPromise) {
       return existingPromise;
+    }
+
+    // Layer 2: Distributed Redis dedup (across Vercel instances)
+    // 30s TTL — short enough that a failed bootstrap can be retried quickly,
+    // long enough to cover the RPC round-trip time.
+    const isFirstBootstrap = await acquireIdempotencyLock(`bootstrap:${user.id}`, 30);
+    if (!isFirstBootstrap) {
+      console.warn('[Bootstrap] duplicate bootstrap blocked by Redis:', user.id);
+      return NextResponse.json({ success: true, data: { status: 'deduplicated', role: 'unknown', redirect: '/dashboard' } });
     }
 
     const bootstrapPromise = handleBootstrap(request, user);
     pendingBootstraps.set(user.id, bootstrapPromise);
     try {
       return await bootstrapPromise;
+    } catch (err) {
+      // Release Redis lock so a retry can proceed
+      await releaseIdempotencyLock(`bootstrap:${user.id}`);
+      throw err;
     } finally {
       pendingBootstraps.delete(user.id);
     }
