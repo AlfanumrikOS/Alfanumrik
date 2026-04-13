@@ -343,66 +343,75 @@ function validateQuestions(questions: QuestionRecord[]): QuestionRecord[] {
  * If you add a new quiz page, it MUST call submitQuizResults() + processAdaptiveLearning().
  * Test: src/__tests__/adaptive-pipeline.test.ts verifies this contract.
  */
+// Dedup guard: prevents double-click / SWR retry from re-submitting a quiz (5 min window).
+const _quizDedup = new Set<string>();
 export async function submitQuizResults(studentId: string, subject: string, grade: string, topic: string, chapter: number, responses: import('./types').QuizResponse[], time: number) {
-  // Try RPC first (Layer 1: server-side mastery update via update_learner_state_post_quiz)
-  try {
-    const { data, error } = await supabase.rpc('submit_quiz_results', {
-      p_student_id: studentId, p_subject: subject, p_grade: grade,
-      p_topic: topic, p_chapter: chapter, p_responses: responses, p_time: time,
-    });
-    if (!error && data) return data;
-    console.warn('submit_quiz_results RPC failed, using fallback:', error?.message);
-  } catch (e) {
-    console.warn('submit_quiz_results RPC error, using fallback:', e);
+  const _k = `${studentId}:${subject}:${topic}:${responses.length}:${time}`;
+  if (_quizDedup.has(_k)) return { duplicate: true };
+  _quizDedup.add(_k); setTimeout(() => _quizDedup.delete(_k), 300_000);
+  try { try { // Layer 1: RPC primary path
+      const { data, error } = await supabase.rpc('submit_quiz_results', {
+        p_student_id: studentId, p_subject: subject, p_grade: grade,
+        p_topic: topic, p_chapter: chapter, p_responses: responses, p_time: time,
+      });
+      if (!error && data) return data;
+      console.warn('submit_quiz_results RPC failed, using fallback:', error?.message);
+    } catch (e) {
+      console.warn('submit_quiz_results RPC error, using fallback:', e);
+    }
+
+    // ── Robust client-side fallback ──
+    // Uses atomic RPC for XP/profile updates to prevent race conditions
+    // when multiple quiz submissions happen concurrently.
+    const total = responses.length;
+    const correct = responses.filter(r => r.is_correct).length;
+    const scorePct = calculateScorePercent(correct, total);
+    const xpEarned = calculateQuizXP(correct, scorePct);
+
+    // 1. Insert quiz session (columns must match DB schema exactly)
+    const { data: session, error: sessErr } = await supabase.from('quiz_sessions').insert({
+      student_id: studentId, subject, grade, total_questions: total,
+      correct_answers: correct, wrong_answers: total - correct,
+      score_percent: scorePct, score: xpEarned,
+      time_taken_seconds: time, total_answered: total,
+      is_completed: true, completed_at: new Date().toISOString(),
+    }).select('id').single();
+    if (sessErr) console.error('Fallback: quiz_sessions insert failed:', sessErr.message);
+
+    // 2. Atomically update learning profile and student XP via RPC
+    // This avoids the read-modify-write race condition where concurrent
+    // quiz submissions could lose XP or corrupt counters.
+    try {
+      await supabase.rpc('atomic_quiz_profile_update', {
+        p_student_id: studentId,
+        p_subject: subject,
+        p_xp: xpEarned,
+        p_total: total,
+        p_correct: correct,
+        p_time_seconds: time,
+      });
+    } catch (atomicErr) {
+      console.warn('atomic_quiz_profile_update failed, using non-atomic fallback:', atomicErr);
+      // Last-resort fallback: upsert with ON CONFLICT if the RPC doesn't exist
+      await supabase.from('student_learning_profiles').upsert({
+        student_id: studentId, subject, xp: xpEarned,
+        total_sessions: 1, total_questions_asked: total,
+        total_questions_answered_correctly: correct,
+        total_time_minutes: Math.max(1, Math.round(time / 60)),
+        last_session_at: new Date().toISOString(),
+        streak_days: 1, level: 1, current_level: 'beginner',
+      }, { onConflict: 'student_id,subject' });
+    }
+
+    return {
+      session_id: session?.id ?? '',
+      total, correct, score_percent: scorePct, xp_earned: xpEarned,
+    };
+  } catch (err) {
+    // Release dedup lock so a genuine retry can proceed
+    _quizDedup.delete(_k);
+    throw err;
   }
-
-  // ── Robust client-side fallback ──
-  // Uses atomic RPC for XP/profile updates to prevent race conditions
-  // when multiple quiz submissions happen concurrently.
-  const total = responses.length;
-  const correct = responses.filter(r => r.is_correct).length;
-  const scorePct = calculateScorePercent(correct, total);
-  const xpEarned = calculateQuizXP(correct, scorePct);
-
-  // 1. Insert quiz session (columns must match DB schema exactly)
-  const { data: session, error: sessErr } = await supabase.from('quiz_sessions').insert({
-    student_id: studentId, subject, grade, total_questions: total,
-    correct_answers: correct, wrong_answers: total - correct,
-    score_percent: scorePct, score: xpEarned,
-    time_taken_seconds: time, total_answered: total,
-    is_completed: true, completed_at: new Date().toISOString(),
-  }).select('id').single();
-  if (sessErr) console.error('Fallback: quiz_sessions insert failed:', sessErr.message);
-
-  // 2. Atomically update learning profile and student XP via RPC
-  // This avoids the read-modify-write race condition where concurrent
-  // quiz submissions could lose XP or corrupt counters.
-  try {
-    await supabase.rpc('atomic_quiz_profile_update', {
-      p_student_id: studentId,
-      p_subject: subject,
-      p_xp: xpEarned,
-      p_total: total,
-      p_correct: correct,
-      p_time_seconds: time,
-    });
-  } catch (atomicErr) {
-    console.warn('atomic_quiz_profile_update failed, using non-atomic fallback:', atomicErr);
-    // Last-resort fallback: upsert with ON CONFLICT if the RPC doesn't exist
-    await supabase.from('student_learning_profiles').upsert({
-      student_id: studentId, subject, xp: xpEarned,
-      total_sessions: 1, total_questions_asked: total,
-      total_questions_answered_correctly: correct,
-      total_time_minutes: Math.max(1, Math.round(time / 60)),
-      last_session_at: new Date().toISOString(),
-      streak_days: 1, level: 1, current_level: 'beginner',
-    }, { onConflict: 'student_id,subject' });
-  }
-
-  return {
-    session_id: session?.id ?? '',
-    total, correct, score_percent: scorePct, xp_earned: xpEarned,
-  };
 }
 
 /**
