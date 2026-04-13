@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useResponsiveCanvas } from '@/hooks/useResponsiveCanvas';
 
 /**
  * Gas Laws Lab — Interactive PV = nRT Simulation
@@ -37,8 +38,7 @@ function createParticles(count: number, width: number, height: number, speed: nu
 }
 
 export default function GasLaws() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const { canvasRef, containerRef, size } = useResponsiveCanvas(16 / 9);
   const animRef = useRef<number>(0);
   const particlesRef = useRef<Particle[]>([]);
 
@@ -46,7 +46,6 @@ export default function GasLaws() {
   const [volume, setVolume] = useState(50); // arbitrary units (maps to container width %)
   const [moles, setMoles] = useState(1);
   const [mode, setMode] = useState<'boyle' | 'charles' | 'free'>('boyle');
-  const [canvasWidth, setCanvasWidth] = useState(500);
 
   // Derived: P = nRT/V
   const pressure = (moles * R * temperature) / volume;
@@ -55,22 +54,12 @@ export default function GasLaws() {
   // Container width proportional to volume
   const containerFraction = Math.max(0.3, Math.min(0.95, volume / 100));
 
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const obs = new ResizeObserver(entries => {
-      for (const e of entries) setCanvasWidth(e.contentRect.width);
-    });
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, []);
-
   // Initialize particles
   useEffect(() => {
-    const w = canvasWidth * containerFraction;
-    const h = 250;
+    const w = size.width * containerFraction;
+    const h = size.height - 40;
     particlesRef.current = createParticles(PARTICLE_COUNT, w - 20, h - 20, particleSpeed);
-  }, [canvasWidth, containerFraction, particleSpeed]);
+  }, [size, containerFraction, particleSpeed]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -78,12 +67,8 @@ export default function GasLaws() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const dpr = window.devicePixelRatio || 1;
-    const w = canvas.clientWidth;
-    const h = canvas.clientHeight;
-    canvas.width = w * dpr;
-    canvas.height = h * dpr;
-    ctx.scale(dpr, dpr);
+    const w = size.width;
+    const h = size.height;
 
     // Background
     ctx.fillStyle = '#f8fafc';
@@ -192,7 +177,7 @@ export default function GasLaws() {
     ctx.fillText('kPa', gaugeX + gaugeW / 2, gaugeY + gaugeH + 26);
 
     animRef.current = requestAnimationFrame(draw);
-  }, [containerFraction, particleSpeed, pressure, temperature]);
+  }, [containerFraction, particleSpeed, pressure, temperature, size, canvasRef]);
 
   useEffect(() => {
     animRef.current = requestAnimationFrame(draw);
@@ -200,15 +185,15 @@ export default function GasLaws() {
   }, [draw]);
 
   return (
-    <div ref={containerRef} style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", maxWidth: 600, margin: '0 auto' }}>
+    <div style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", maxWidth: 600, margin: '0 auto' }}>
       {/* Header */}
       <div style={{ textAlign: 'center', marginBottom: 12 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: '#6366F1' }}>🧪 Gas Laws Lab</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#6366F1' }}>Gas Laws Lab</div>
         <div style={{ fontSize: 11, color: '#64748B' }}>PV = nRT — Boyle&apos;s &amp; Charles&apos;s Law</div>
       </div>
 
       {/* Mode selector */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 12, justifyContent: 'center' }}>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
         {([
           { id: 'boyle' as const, label: "Boyle's Law", labelHi: 'बॉयल नियम', desc: 'P vs V (T constant)' },
           { id: 'charles' as const, label: "Charles's Law", labelHi: 'चार्ल्स नियम', desc: 'V vs T (P adjust)' },
@@ -221,7 +206,9 @@ export default function GasLaws() {
       </div>
 
       {/* Canvas */}
-      <canvas ref={canvasRef} role="img" aria-label="Gas particles in a container, showing pressure, volume and temperature relationships" style={{ width: '100%', height: 280, borderRadius: 8, border: '1px solid #e2e8f0' }} />
+      <div ref={containerRef} className="w-full" style={{ aspectRatio: '16/9' }}>
+        <canvas ref={canvasRef} role="img" aria-label="Gas particles in a container, showing pressure, volume and temperature relationships" className="rounded-lg" style={{ border: '1px solid #e2e8f0' }} />
+      </div>
 
       {/* Controls */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12 }}>

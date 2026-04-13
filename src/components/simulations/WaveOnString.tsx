@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useEffect, useState, useCallback } from 'react';
+import { useResponsiveCanvas } from '@/hooks/useResponsiveCanvas';
 
 /* ═══════════════════════════════════════════════════════════════
    WAVE ON A STRING — Interactive Transverse Wave Simulation
@@ -22,7 +23,6 @@ interface PulseState {
   startTime: number;
 }
 
-const CANVAS_HEIGHT = 350;
 const BEAD_SPACING = 18;
 const WAVE_THICKNESS = 3;
 const BEAD_RADIUS = 5;
@@ -42,8 +42,7 @@ function waveGradientColor(t: number): string {
 }
 
 export default function WaveOnString() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const { canvasRef, containerRef, size } = useResponsiveCanvas(16 / 9);
   const animRef = useRef<number>(0);
   const timeRef = useRef<number>(0);
   const lastFrameRef = useRef<number>(0);
@@ -65,25 +64,10 @@ export default function WaveOnString() {
   // Main render loop
   useEffect(() => {
     const canvas = canvasRef.current;
-    const container = containerRef.current;
-    if (!canvas || !container) return;
+    if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-
-    const resizeCanvas = () => {
-      const rect = container.getBoundingClientRect();
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = rect.width * dpr;
-      canvas.height = CANVAS_HEIGHT * dpr;
-      canvas.style.width = `${rect.width}px`;
-      canvas.style.height = `${CANVAS_HEIGHT}px`;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    };
-
-    resizeCanvas();
-    const resizeObserver = new ResizeObserver(resizeCanvas);
-    resizeObserver.observe(container);
 
     const draw = (timestamp: number) => {
       if (!lastFrameRef.current) lastFrameRef.current = timestamp;
@@ -95,8 +79,8 @@ export default function WaveOnString() {
       }
 
       const t = timeRef.current;
-      const w = canvas.width / (window.devicePixelRatio || 1);
-      const h = CANVAS_HEIGHT;
+      const w = size.width;
+      const h = size.height;
       const midY = h / 2 + 20; // offset down slightly for annotation room
 
       ctx.clearRect(0, 0, w, h);
@@ -383,9 +367,8 @@ export default function WaveOnString() {
 
     return () => {
       cancelAnimationFrame(animRef.current);
-      resizeObserver.disconnect();
     };
-  }, [frequency, amplitude, waveSpeed, wavelength, showParticles, standingWave, pulseState, isPaused]);
+  }, [frequency, amplitude, waveSpeed, wavelength, showParticles, standingWave, pulseState, isPaused, size, canvasRef]);
 
   const sliders: SliderConfig[] = [
     { label: 'Frequency', min: 0.5, max: 5, step: 0.1, value: frequency, unit: 'Hz', symbol: 'f' },
@@ -397,7 +380,6 @@ export default function WaveOnString() {
 
   return (
     <div
-      ref={containerRef}
       style={{
         width: '100%',
         fontFamily: "'Sora', 'Plus Jakarta Sans', system-ui, sans-serif",
@@ -427,12 +409,14 @@ export default function WaveOnString() {
       </div>
 
       {/* Canvas */}
-      <canvas
-        ref={canvasRef}
-        role="img"
-        aria-label="Transverse wave on a string simulation showing wave propagation with adjustable amplitude, frequency, and speed"
-        style={{ display: 'block', width: '100%', height: `${CANVAS_HEIGHT}px`, cursor: 'crosshair' }}
-      />
+      <div ref={containerRef} className="w-full" style={{ aspectRatio: '16/9' }}>
+        <canvas
+          ref={canvasRef}
+          role="img"
+          aria-label="Transverse wave on a string simulation showing wave propagation with adjustable amplitude, frequency, and speed"
+          style={{ display: 'block', cursor: 'crosshair' }}
+        />
+      </div>
 
       {/* Controls */}
       <div style={{ padding: '14px 18px 18px', background: '#16213e' }}>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useResponsiveCanvas } from '@/hooks/useResponsiveCanvas';
 
 /**
  * Bohr Atomic Model Simulation
@@ -38,7 +39,7 @@ const SHELL_MAX = [2, 8, 18, 32];
 const SHELL_COLORS = ['#ef4444', '#f59e0b', '#22c55e', '#3b82f6'];
 
 export default function BohrModel() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { canvasRef, containerRef, size } = useResponsiveCanvas(4 / 3);
   const animRef = useRef<number>(0);
   const timeRef = useRef(0);
 
@@ -52,12 +53,8 @@ export default function BohrModel() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const dpr = window.devicePixelRatio || 1;
-    const w = canvas.clientWidth;
-    const h = canvas.clientHeight;
-    canvas.width = w * dpr;
-    canvas.height = h * dpr;
-    ctx.scale(dpr, dpr);
+    const w = size.width;
+    const h = size.height;
 
     const cx = w / 2;
     const cy = h / 2 - 10;
@@ -164,7 +161,7 @@ export default function BohrModel() {
     ctx.font = '12px system-ui';
     ctx.fillText(`Configuration: ${configStr}`, cx, h - 8);
 
-  }, [element, showLabels, speed]);
+  }, [element, showLabels, speed, size]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -178,7 +175,7 @@ export default function BohrModel() {
 
     animRef.current = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(animRef.current);
-  }, [draw]);
+  }, [draw, canvasRef]);
 
   const valenceElectrons = element.config[element.config.length - 1];
   const isMetal = valenceElectrons <= 3 && element.z > 2;
@@ -186,12 +183,15 @@ export default function BohrModel() {
 
   return (
     <div style={{ fontFamily: 'system-ui, sans-serif' }}>
-      <canvas
-        ref={canvasRef}
-        role="img"
-        aria-label="Bohr atomic model visualization showing electron shells and orbits"
-        style={{ width: '100%', height: 280, borderRadius: 12, background: '#0f172a' }}
-      />
+      <div ref={containerRef} className="w-full" style={{ aspectRatio: '4/3' }}>
+        <canvas
+          ref={canvasRef}
+          role="img"
+          aria-label="Bohr atomic model visualization showing electron shells and orbits"
+          className="rounded-xl"
+          style={{ background: '#0f172a' }}
+        />
+      </div>
 
       {/* Element selector */}
       <div style={{
