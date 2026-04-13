@@ -1,5 +1,6 @@
 'use client';
 import { useRef, useEffect, useState, useCallback } from 'react';
+import { useResponsiveCanvas } from '@/hooks/useResponsiveCanvas';
 
 const G = 9.8;
 const GROUND_HEIGHT = 50;
@@ -63,8 +64,7 @@ function bestScale(v0: number, canvasWidth: number, canvasHeight: number): numbe
 }
 
 export default function ProjectileMotion() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const { canvasRef, containerRef, size } = useResponsiveCanvas(16 / 9);
   const animFrameRef = useRef<number>(0);
   const projectilesRef = useRef<Projectile[]>([]);
   const activeIndexRef = useRef<number>(-1);
@@ -217,21 +217,6 @@ export default function ProjectileMotion() {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-
-    const resizeCanvas = () => {
-      const container = containerRef.current;
-      if (!container) return;
-      const dpr = window.devicePixelRatio || 1;
-      const rect = container.getBoundingClientRect();
-      canvas.width = rect.width * dpr;
-      canvas.height = 400 * dpr;
-      canvas.style.width = rect.width + 'px';
-      canvas.style.height = '400px';
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    };
-
-    resizeCanvas();
-    window.addEventListener('resize', resizeCanvas);
 
     const dt = 1 / 60;
 
@@ -576,9 +561,8 @@ export default function ProjectileMotion() {
 
     return () => {
       cancelAnimationFrame(animFrameRef.current);
-      window.removeEventListener('resize', resizeCanvas);
     };
-  }, [angle, drawArrow]);
+  }, [angle, drawArrow, size, canvasRef]);
 
   // Formulas
   const angleRad = (angle * Math.PI) / 180;
@@ -588,7 +572,6 @@ export default function ProjectileMotion() {
 
   return (
     <div
-      ref={containerRef}
       style={{
         width: '100%',
         fontFamily: "'Sora', 'Plus Jakarta Sans', system-ui, sans-serif",
@@ -597,18 +580,18 @@ export default function ProjectileMotion() {
       }}
     >
       {/* Canvas */}
-      <canvas
-        ref={canvasRef}
-        role="img"
-        aria-label="Projectile motion simulation showing trajectory, height, and range of a launched object"
-        style={{
-          width: '100%',
-          height: '400px',
-          borderRadius: '12px 12px 0 0',
-          display: 'block',
-          cursor: 'crosshair',
-        }}
-      />
+      <div ref={containerRef} style={{ width: '100%', aspectRatio: '16/9' }}>
+        <canvas
+          ref={canvasRef}
+          role="img"
+          aria-label="Projectile motion simulation showing trajectory, height, and range of a launched object"
+          style={{
+            borderRadius: '12px 12px 0 0',
+            display: 'block',
+            cursor: 'crosshair',
+          }}
+        />
+      </div>
 
       {/* Controls panel */}
       <div

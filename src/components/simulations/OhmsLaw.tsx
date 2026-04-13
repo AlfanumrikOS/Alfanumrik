@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
+import { useResponsiveCanvas } from '@/hooks/useResponsiveCanvas';
 
 interface Electron {
   t: number; // parameter along the path [0, 1]
@@ -100,8 +101,7 @@ function computePathLength(path: Point[]): number {
 }
 
 export default function OhmsLaw() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const { canvasRef, containerRef, size } = useResponsiveCanvas(16 / 9);
   const animFrameRef = useRef<number>(0);
   const electronsRef = useRef<Electron[]>([]);
   const voltageRef = useRef(DEFAULT_VOLTAGE);
@@ -457,26 +457,12 @@ export default function OhmsLaw() {
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    const container = containerRef.current;
-    if (!canvas || !container) return;
+    if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     let running = true;
-
-    const resize = () => {
-      const dpr = window.devicePixelRatio || 1;
-      const rect = container.getBoundingClientRect();
-      canvas.width = rect.width * dpr;
-      canvas.height = 400 * dpr;
-      canvas.style.width = `${rect.width}px`;
-      canvas.style.height = '400px';
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    };
-
-    resize();
-    window.addEventListener('resize', resize);
 
     const animate = (time: number) => {
       if (!running) return;
@@ -489,9 +475,8 @@ export default function OhmsLaw() {
     return () => {
       running = false;
       cancelAnimationFrame(animFrameRef.current);
-      window.removeEventListener('resize', resize);
     };
-  }, [drawCircuit]);
+  }, [drawCircuit, size, canvasRef]);
 
   const handleReset = () => {
     setVoltage(DEFAULT_VOLTAGE);
@@ -500,7 +485,6 @@ export default function OhmsLaw() {
 
   return (
     <div
-      ref={containerRef}
       style={{
         width: '100%',
         maxWidth: 640,
@@ -508,17 +492,17 @@ export default function OhmsLaw() {
         fontFamily: '"Segoe UI", system-ui, sans-serif',
       }}
     >
-      <canvas
-        ref={canvasRef}
-        role="img"
-        aria-label="Ohm's Law circuit simulation showing voltage, resistance, and current flow with animated electrons"
-        style={{
-          width: '100%',
-          height: 400,
-          borderRadius: 16,
-          display: 'block',
-        }}
-      />
+      <div ref={containerRef} style={{ width: '100%', aspectRatio: '16/9' }}>
+        <canvas
+          ref={canvasRef}
+          role="img"
+          aria-label="Ohm's Law circuit simulation showing voltage, resistance, and current flow with animated electrons"
+          style={{
+            borderRadius: 16,
+            display: 'block',
+          }}
+        />
+      </div>
 
       <div
         style={{
