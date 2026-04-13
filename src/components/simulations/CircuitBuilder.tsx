@@ -1,5 +1,6 @@
 'use client';
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useResponsiveCanvas } from '@/hooks/useResponsiveCanvas';
 
 export const metadata = {
   id: 'circuit-builder',
@@ -12,7 +13,7 @@ export const metadata = {
 type Mode = 'series' | 'parallel';
 
 export default function CircuitBuilder() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { canvasRef, containerRef, size } = useResponsiveCanvas(400 / 220);
   const [resistance1, setResistance1] = useState(20);
   const [resistance2, setResistance2] = useState(30);
   const [voltage, setVoltage] = useState(12);
@@ -51,8 +52,8 @@ export default function CircuitBuilder() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const W = canvas.width;
-    const H = canvas.height;
+    const W = size.width;
+    const H = size.height;
     ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = '#0f0f23';
     ctx.fillRect(0, 0, W, H);
@@ -174,7 +175,7 @@ export default function CircuitBuilder() {
     ctx.fillStyle = '#F97316';
     ctx.font = 'bold 12px sans-serif';
     ctx.fillText(`R_total = ${rTotal.toFixed(2)}Ω`, W - 130, H - 10);
-  }, [resistance1, resistance2, voltage, mode, current, power, rTotal, currentColor, drawResistor]);
+  }, [resistance1, resistance2, voltage, mode, current, power, rTotal, currentColor, drawResistor, size, canvasRef]);
 
   useEffect(() => { draw(); }, [draw]);
 
@@ -185,7 +186,9 @@ export default function CircuitBuilder() {
   return (
     <div style={{ background: '#1a1a2e', borderRadius: 12, padding: 16, maxWidth: '100%', fontFamily: 'sans-serif' }}>
       <h2 style={{ color: '#F97316', margin: '0 0 12px', fontSize: 18, fontWeight: 700 }}>Circuit Builder</h2>
-      <canvas ref={canvasRef} width={400} height={220} style={{ width: '100%', borderRadius: 8, display: 'block' }} />
+      <div ref={containerRef} className="w-full" style={{ aspectRatio: '400/220' }}>
+        <canvas ref={canvasRef} className="rounded-lg" style={{ display: 'block' }} />
+      </div>
       <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
         {(['series', 'parallel'] as Mode[]).map(m => (
           <button key={m} onClick={() => setMode(m)}

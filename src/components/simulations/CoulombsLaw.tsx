@@ -1,5 +1,6 @@
 'use client';
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useResponsiveCanvas } from '@/hooks/useResponsiveCanvas';
 
 export const metadata = {
   id: 'coulombs-law',
@@ -12,7 +13,7 @@ export const metadata = {
 const K = 8.99e9; // N·m²/C²
 
 export default function CoulombsLaw() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { canvasRef, containerRef, size } = useResponsiveCanvas(2);
   const [q1, setQ1] = useState(5);
   const [q2, setQ2] = useState(5);
   const [distance, setDistance] = useState(10);
@@ -55,8 +56,8 @@ export default function CoulombsLaw() {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const W = canvas.width;
-    const H = canvas.height;
+    const W = size.width;
+    const H = size.height;
     ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = '#0f0f23';
     ctx.fillRect(0, 0, W, H);
@@ -136,7 +137,7 @@ export default function CoulombsLaw() {
     ctx.font = 'bold 13px sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(`F = ${forceStr}`, W / 2, H - 12);
-  }, [q1, q2, distance, q1Sign, q2Sign, force, isAttractive, forceStr, drawArrow]);
+  }, [q1, q2, distance, q1Sign, q2Sign, force, isAttractive, forceStr, drawArrow, size, canvasRef]);
 
   useEffect(() => { draw(); }, [draw]);
 
@@ -155,8 +156,10 @@ export default function CoulombsLaw() {
   return (
     <div style={{ background: '#1a1a2e', borderRadius: 12, padding: 16, maxWidth: '100%', fontFamily: 'sans-serif' }}>
       <h2 style={{ color: '#F97316', margin: '0 0 12px', fontSize: 18, fontWeight: 700 }}>Coulomb's Law</h2>
-      <canvas ref={canvasRef} width={400} height={200} style={{ width: '100%', borderRadius: 8, display: 'block' }} />
-      <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div ref={containerRef} className="w-full" style={{ aspectRatio: '2/1' }}>
+        <canvas ref={canvasRef} className="rounded-lg" style={{ display: 'block' }} />
+      </div>
+      <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
             <span style={{ ...labelStyle, fontWeight: 700 }}>Charge q1</span>

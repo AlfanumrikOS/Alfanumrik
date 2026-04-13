@@ -1,5 +1,6 @@
 'use client';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { useResponsiveCanvas } from '@/hooks/useResponsiveCanvas';
 
 const N2_LABELS: Record<string, string> = {
   '1.0': 'Air', '1.33': 'Water', '1.5': 'Glass', '2.42': 'Diamond',
@@ -8,7 +9,7 @@ const N2_LABELS: Record<string, string> = {
 export default function LightRefraction() {
   const [n2Raw, setN2Raw] = useState(150);
   const [incidentDeg, setIncidentDeg] = useState(30);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { canvasRef, containerRef, size } = useResponsiveCanvas(560 / 300);
 
   const n1 = 1.0;
   const n2 = n2Raw / 100;
@@ -23,7 +24,7 @@ export default function LightRefraction() {
   useEffect(() => {
     const canvas = canvasRef.current; if (!canvas) return;
     const ctx = canvas.getContext('2d')!;
-    const w = canvas.width, h = canvas.height;
+    const w = size.width, h = size.height;
     ctx.clearRect(0, 0, w, h);
 
     const midY = h / 2;
@@ -78,7 +79,7 @@ export default function LightRefraction() {
       ctx.fillStyle = 'var(--purple)'; ctx.font = '12px sans-serif';
       ctx.fillText(`θ₂=${rDeg}°`, cx + 30, midY + 55);
     }
-  }, [n2, incidentDeg, tir, rRad, rDeg]);
+  }, [n2, incidentDeg, tir, rRad, rDeg, size, canvasRef]);
 
   const n2Steps = [100, 133, 150, 242];
 
@@ -92,7 +93,9 @@ export default function LightRefraction() {
           </button>
         ))}
       </div>
-      <canvas ref={canvasRef} width={560} height={300} style={{ width: '100%', borderRadius: 8, background: 'var(--surface-2)', display: 'block' }} />
+      <div ref={containerRef} className="w-full" style={{ aspectRatio: '560/300' }}>
+        <canvas ref={canvasRef} className="rounded-lg" style={{ background: 'var(--surface-2)', display: 'block' }} />
+      </div>
       <div style={{ marginTop: 10 }}>
         <label style={{ color: 'var(--text-2)', fontSize: 13 }}>Incident angle θ₁: {incidentDeg}°</label>
         <input type="range" min={5} max={85} value={incidentDeg} onChange={e => setIncidentDeg(+e.target.value)} style={{ width: '100%' }} />

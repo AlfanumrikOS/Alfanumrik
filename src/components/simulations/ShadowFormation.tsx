@@ -1,19 +1,20 @@
 'use client';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { useResponsiveCanvas } from '@/hooks/useResponsiveCanvas';
 
 export default function ShadowFormation() {
   const [srcHeight, setSrcHeight] = useState(150);
   const [dualSrc, setDualSrc] = useState(false);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  const OBJ_X = 280, OBJ_R = 24;
-  const SCREEN_X = 500;
-  const OBJ_Y = 240;
+  const { canvasRef, containerRef, size } = useResponsiveCanvas(2);
 
   useEffect(() => {
     const canvas = canvasRef.current; if (!canvas) return;
     const ctx = canvas.getContext('2d')!;
-    const w = canvas.width, h = canvas.height;
+    const w = size.width, h = size.height;
+
+    const OBJ_X = w * 0.5, OBJ_R = Math.min(24, w * 0.04);
+    const SCREEN_X = w * 0.9;
+    const OBJ_Y = h * 0.86;
     ctx.clearRect(0, 0, w, h);
 
     // Background
@@ -108,14 +109,19 @@ export default function ShadowFormation() {
     ctx.beginPath(); ctx.moveTo(SCREEN_X + 18, shadowTop); ctx.lineTo(SCREEN_X + 18, shadowBot); ctx.stroke();
     ctx.fillStyle = 'var(--orange)'; ctx.font = 'bold 11px sans-serif';
     ctx.fillText(`${shadowH.toFixed(0)}px`, SCREEN_X + 36, (shadowTop + shadowBot) / 2 + 4);
-  }, [srcHeight, dualSrc]);
+  }, [srcHeight, dualSrc, size, canvasRef]);
 
-  const shadowSize = ((OBJ_R * 2 * (SCREEN_X - OBJ_X)) / (OBJ_X - 60)).toFixed(1);
+  // Use reference dimensions for display formula
+  const refW = size.width;
+  const refObjX = refW * 0.5, refObjR = Math.min(24, refW * 0.04), refScreenX = refW * 0.9;
+  const shadowSize = ((refObjR * 2 * (refScreenX - refObjX)) / (refObjX - 60)).toFixed(1);
 
   return (
     <div style={{ background: 'var(--surface-1)', borderRadius: 12, padding: 16, maxWidth: 600, margin: '0 auto', fontFamily: 'inherit' }}>
       <h3 style={{ color: 'var(--text-1)', fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Shadow Formation</h3>
-      <canvas ref={canvasRef} width={560} height={280} style={{ width: '100%', borderRadius: 8, background: '#0f172a', display: 'block' }} />
+      <div ref={containerRef} className="w-full" style={{ aspectRatio: '2/1' }}>
+        <canvas ref={canvasRef} className="rounded-lg" style={{ background: '#0f172a', display: 'block' }} />
+      </div>
       <div style={{ marginTop: 10 }}>
         <label style={{ color: 'var(--text-2)', fontSize: 13 }}>Light Source Height: {srcHeight} px</label>
         <input type="range" min={50} max={250} value={srcHeight} onChange={e => setSrcHeight(+e.target.value)} style={{ width: '100%' }} />

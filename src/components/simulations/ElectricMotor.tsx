@@ -1,10 +1,11 @@
 'use client';
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useResponsiveCanvas } from '@/hooks/useResponsiveCanvas';
 
 export default function ElectricMotor() {
   const [current, setCurrent] = useState(2.5);
   const [playing, setPlaying] = useState(true);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { canvasRef, containerRef, size } = useResponsiveCanvas(560 / 300);
   const angleRef = useRef(0);
   const rafRef = useRef<number>(0);
   const B = 0.5;
@@ -15,7 +16,7 @@ export default function ElectricMotor() {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d')!;
-    const W = canvas.width, H = canvas.height;
+    const W = size.width, H = size.height;
     ctx.clearRect(0, 0, W, H);
 
     // Background
@@ -86,7 +87,7 @@ export default function ElectricMotor() {
     ctx.fillStyle = '#a855f7';
     ctx.textAlign = 'right';
     ctx.fillText(`F = ${F.toFixed(2)} N`, W - 20, H - 20);
-  }, [current]);
+  }, [current, size, canvasRef]);
 
   function drawArrow(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number, size: number) {
     const dx = x2 - x1, dy = y2 - y1;
@@ -125,9 +126,11 @@ export default function ElectricMotor() {
   return (
     <div style={{ background: 'var(--surface-1)', borderRadius: 12, padding: 16, maxWidth: 600, margin: '0 auto', fontFamily: 'inherit' }}>
       <h3 style={{ color: 'var(--text-1)', fontSize: 16, fontWeight: 700, marginBottom: 8 }}>DC Electric Motor</h3>
-      <canvas ref={canvasRef} width={560} height={300} style={{ width: '100%', borderRadius: 8, display: 'block' }} />
+      <div ref={containerRef} className="w-full" style={{ aspectRatio: '560/300' }}>
+        <canvas ref={canvasRef} className="rounded-lg" style={{ display: 'block' }} />
+      </div>
       <div style={{ marginTop: 10, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, minWidth: 140 }}>
           <label style={{ color: 'var(--text-2)', fontSize: 13 }}>Current I: {current.toFixed(1)} A</label>
           <input type="range" min={0.5} max={5} step={0.1} value={current} onChange={e => setCurrent(+e.target.value)} style={{ width: '100%' }} />
         </div>

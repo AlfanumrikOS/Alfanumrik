@@ -1,5 +1,6 @@
 'use client';
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useResponsiveCanvas } from '@/hooks/useResponsiveCanvas';
 
 const METALS = [
   { name: 'Na', phi: 2.3 },
@@ -11,7 +12,7 @@ export default function PhotoelectricEffect() {
   const [freq, setFreq] = useState(8);
   const [intensity, setIntensity] = useState(5);
   const [metalIdx, setMetalIdx] = useState(0);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { canvasRef, containerRef, size } = useResponsiveCanvas(560 / 260);
   const rafRef = useRef<number>(0);
   const electronsRef = useRef<{ x: number; y: number; vx: number; vy: number; life: number }[]>([]);
   const tickRef = useRef(0);
@@ -39,7 +40,7 @@ export default function PhotoelectricEffect() {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d')!;
-    const W = canvas.width, H = canvas.height;
+    const W = size.width, H = size.height;
     ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = '#0a0a14';
     ctx.fillRect(0, 0, W, H);
@@ -116,7 +117,7 @@ export default function PhotoelectricEffect() {
     ctx.font = '11px sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(`f₀(threshold) = ${threshold.toFixed(2)} × 10¹⁴ Hz`, W / 2, H - 8);
-  }, [freq, intensity, aboveThreshold, KE, metal, phi, photonColor, threshold]);
+  }, [freq, intensity, aboveThreshold, KE, metal, phi, photonColor, threshold, size, canvasRef]);
 
   useEffect(() => {
     const loop = () => {
@@ -135,9 +136,11 @@ export default function PhotoelectricEffect() {
           <button key={m.name} onClick={() => setMetalIdx(i)} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: metalIdx === i ? 'var(--purple,#7c3aed)' : 'var(--surface-2)', color: metalIdx === i ? '#fff' : 'var(--text-2)' }}>{m.name} (φ={m.phi}eV)</button>
         ))}
       </div>
-      <canvas ref={canvasRef} width={560} height={260} style={{ width: '100%', borderRadius: 8, display: 'block' }} />
+      <div ref={containerRef} className="w-full" style={{ aspectRatio: '560/260' }}>
+        <canvas ref={canvasRef} className="rounded-lg" style={{ display: 'block' }} />
+      </div>
       <div style={{ marginTop: 10, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, minWidth: 140 }}>
           <label style={{ color: 'var(--text-2)', fontSize: 13 }}>Frequency: {freq} × 10¹⁴ Hz <span style={{ display: 'inline-block', width: 12, height: 12, background: photonColor, borderRadius: 2, verticalAlign: 'middle' }} /></label>
           <input type="range" min={4} max={16} step={0.5} value={freq} onChange={e => setFreq(+e.target.value)} style={{ width: '100%' }} />
         </div>

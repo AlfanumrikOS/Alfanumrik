@@ -1,10 +1,11 @@
 'use client';
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useResponsiveCanvas } from '@/hooks/useResponsiveCanvas';
 
 export default function DopplerEffect() {
   const [vRatio, setVRatio] = useState(0.4);
   const [running, setRunning] = useState(true);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { canvasRef, containerRef, size } = useResponsiveCanvas(560 / 200);
   const rafRef = useRef<number>(0);
   const srcXRef = useRef(60);
   const wavesRef = useRef<{ x: number; r: number; maxR: number }[]>([]);
@@ -20,7 +21,7 @@ export default function DopplerEffect() {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d')!;
-    const W = canvas.width, H = canvas.height;
+    const W = size.width, H = size.height;
     ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = '#111827';
     ctx.fillRect(0, 0, W, H);
@@ -90,7 +91,7 @@ export default function DopplerEffect() {
     ctx.font = '11px sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(`Source: f₀=${f0} Hz  |  v_s = ${vSource.toFixed(0)} m/s`, W / 2, H - 8);
-  }, [running, vRatio, f0, vSource, fAhead, fBehind]);
+  }, [running, vRatio, f0, vSource, fAhead, fBehind, size, canvasRef]);
 
   useEffect(() => {
     const loop = () => {
@@ -110,9 +111,11 @@ export default function DopplerEffect() {
   return (
     <div style={{ background: 'var(--surface-1)', borderRadius: 12, padding: 16, maxWidth: 600, margin: '0 auto', fontFamily: 'inherit' }}>
       <h3 style={{ color: 'var(--text-1)', fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Doppler Effect</h3>
-      <canvas ref={canvasRef} width={560} height={200} style={{ width: '100%', borderRadius: 8, display: 'block' }} />
+      <div ref={containerRef} className="w-full" style={{ aspectRatio: '560/200' }}>
+        <canvas ref={canvasRef} className="rounded-lg" style={{ display: 'block' }} />
+      </div>
       <div style={{ marginTop: 10, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, minWidth: 140 }}>
           <label style={{ color: 'var(--text-2)', fontSize: 13 }}>v_s / v_sound: {vRatio.toFixed(2)}</label>
           <input type="range" min={0} max={0.8} step={0.05} value={vRatio} onChange={e => setVRatio(+e.target.value)} style={{ width: '100%' }} />
         </div>
