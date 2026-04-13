@@ -217,6 +217,11 @@ async function callFoxyTutor(params: Record<string, any>) {
         board:     params.board     ?? null,
         sessionId: params.session_id ?? null, // map old param name to new
         mode:      params.mode      ?? 'learn',
+        // Claude Vision: send image directly for handwriting recognition
+        ...(params.image_base64 ? {
+          image_base64: params.image_base64,
+          image_media_type: params.image_media_type ?? 'image/jpeg',
+        } : {}),
       }),
     });
 
@@ -592,11 +597,12 @@ export default function FoxyPage() {
     }
 
     // ── Image OCR processing ──
-    // When the student attaches a photo of handwritten work, extract text via
-    // the existing /api/scan-solve endpoint (OCR pipeline) and augment the
-    // message so Foxy can review the handwritten content.
+    // When the student attaches a photo of handwritten work, convert to base64
+    // and send directly to the Foxy API which passes it to Claude Vision.
+    // Claude reads handwriting natively — far better than any OCR service.
     let augmentedMessage = text;
     let imagePreviewUrl: string | undefined;
+    let imageBase64: string | undefined;
 
     if (image) {
       // Create a preview URL to display in the chat bubble
@@ -614,42 +620,22 @@ export default function FoxyPage() {
       setIsProcessingImage(true);
 
       try {
-        // Send image to scan-solve for OCR text extraction
-        const formData = new FormData();
-        formData.append('image', image);
-        formData.append('subject', activeSubject);
-        formData.append('grade', studentGrade);
-
-        let accessToken: string | null = null;
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          accessToken = session?.access_token ?? null;
-        } catch { /* proceed without token */ }
-
-        const ocrRes = await fetch('/api/scan-solve', {
-          method: 'POST',
-          headers: {
-            'x-lang': language === 'hi' ? 'hi' : 'en',
-            ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
-          },
-          credentials: 'include',
-          body: formData,
-        });
-
-        if (ocrRes.ok) {
-          const ocrData = await ocrRes.json();
-          const extractedText = ocrData.extracted_text || ocrData.text_preview || '';
-          if (extractedText) {
-            augmentedMessage = `[Student uploaded a photo of their handwritten work]\n\nExtracted text from the image:\n${extractedText}\n\n${text ? `Student's message: ${text}` : 'Please review and check this work.'}`;
-          } else {
-            augmentedMessage = `[Student uploaded a photo but text could not be extracted clearly]\n\n${text || (language === 'hi' ? 'कृपया इसमें मेरी मदद करें।' : 'Please help me with this.')}`;
-          }
-        } else {
-          augmentedMessage = `[Student tried to upload a photo but OCR processing failed]\n\n${text || (language === 'hi' ? 'मैं अपना लिखा हुआ उत्तर दिखाना चाहता था।' : 'I wanted to share my handwritten answer.')}`;
+        // Convert image to base64 for Claude Vision
+        const buffer = await image.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) {
+          binary += String.fromCharCode(bytes[i]);
         }
+        imageBase64 = btoa(binary);
+        augmentedMessage = text || (language === 'hi'
+          ? 'मेरा लिखा हुआ उत्तर देखो और जाँचो।'
+          : 'Please look at my handwritten answer and check it.');
       } catch (err) {
-        console.warn('[foxy] Image OCR failed:', err);
-        augmentedMessage = `[Student tried to upload a photo but processing failed]\n\n${text || (language === 'hi' ? 'मैं अपना लिखा हुआ उत्तर दिखाना चाहता था।' : 'I wanted to share my handwritten answer.')}`;
+        console.warn('[foxy] Image base64 conversion failed:', err);
+        augmentedMessage = text || (language === 'hi'
+          ? 'मैं अपना लिखा हुआ उत्तर दिखाना चाहता था।'
+          : 'I wanted to share my handwritten answer.');
       } finally {
         setIsProcessingImage(false);
       }
@@ -663,7 +649,13 @@ export default function FoxyPage() {
       const selectedChapterTopics = selectedChapters.length > 0 ? topics.filter((t: any) => selectedChapters.includes(t.id)) : [];
       const chapCtx = selectedChapterTopics.length > 0 ? selectedChapterTopics.map((t: any) => `Ch ${t.chapter_number}: ${t.title}`).join(', ') : null;
       const chapterForSession = activeTopic?.title || (selectedChapterTopics.length === 1 ? selectedChapterTopics[0].title : null);
-      const resp = await callFoxyTutor({ message: augmentedMessage, student_id: student?.id || '', student_name: student?.name || 'Student', grade: studentGrade, subject: activeSubject, language, mode: sessionMode, topic_id: activeTopic?.id || null, topic_title: activeTopic?.title || null, chapter: chapterForSession, session_id: chatSessionId, selected_chapters: chapCtx });
+      const foxyParams: Record<string, any> = { message: augmentedMessage, student_id: student?.id || '', student_name: student?.name || 'Student', grade: studentGrade, subject: activeSubject, language, mode: sessionMode, topic_id: activeTopic?.id || null, topic_title: activeTopic?.title || null, chapter: chapterForSession, session_id: chatSessionId, selected_chapters: chapCtx };
+      // Pass image to Claude Vision when student uploads a photo
+      if (imageBase64) {
+        foxyParams.image_base64 = imageBase64;
+        foxyParams.image_media_type = image?.type || 'image/jpeg';
+      }
+      const resp = await callFoxyTutor(foxyParams);
       // Server confirmed daily limit reached — show UpgradeModal
       if (resp.limitReached) {
         setMessages((p: ChatMessage[]) => [...p, { id: Date.now() + 1, role: 'tutor', content: resp.reply, timestamp: new Date().toISOString() }]);

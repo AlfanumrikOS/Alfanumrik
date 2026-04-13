@@ -578,14 +578,38 @@ async function callClaude(
   systemPrompt: string,
   history: ChatMessage[],
   userMessage: string,
+  imageData?: { base64: string; mediaType: string } | null,
 ): Promise<{ content: string; tokensUsed: number; model: string }> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY not configured');
 
   const keyPrefix = apiKey.slice(0, 12);
+
+  // Build the user message content — with optional image for Claude Vision
+  let userContent: any;
+  if (imageData?.base64) {
+    // Claude Vision: multi-modal message with image + text
+    userContent = [
+      {
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: imageData.mediaType || 'image/jpeg',
+          data: imageData.base64,
+        },
+      },
+      {
+        type: 'text',
+        text: userMessage,
+      },
+    ];
+  } else {
+    userContent = userMessage;
+  }
+
   const messages = [
     ...history,
-    { role: 'user' as const, content: userMessage },
+    { role: 'user' as const, content: userContent },
   ];
 
   let lastError = 'Claude API unavailable';
@@ -787,6 +811,11 @@ export async function POST(request: NextRequest): Promise<Response> {
   const board = typeof body.board === 'string' ? body.board.trim() || 'CBSE' : 'CBSE';
   const sessionId = typeof body.sessionId === 'string' ? body.sessionId.trim() || null : null;
   const mode = typeof body.mode === 'string' && VALID_MODES.includes(body.mode) ? body.mode : 'learn';
+
+  // Claude Vision: optional image for handwriting recognition
+  const imageBase64 = typeof body.image_base64 === 'string' ? body.image_base64 : null;
+  const imageMediaType = typeof body.image_media_type === 'string' ? body.image_media_type : 'image/jpeg';
+  const imageData = imageBase64 ? { base64: imageBase64, mediaType: imageMediaType } : null;
 
   // 3. Validate inputs
   if (!message) {
@@ -1035,7 +1064,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   let assistantResponse: string;
   let tokensUsed = 0;
   try {
-    const result = await callClaude(systemPrompt, history, message);
+    const result = await callClaude(systemPrompt, history, message, imageData);
     assistantResponse = result.content;
     tokensUsed = result.tokensUsed;
     logger.info('foxy_claude_ok', {
