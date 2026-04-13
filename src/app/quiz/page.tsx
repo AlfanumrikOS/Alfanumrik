@@ -5,8 +5,8 @@ import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { track } from '@/lib/analytics';
-import { logger } from '@/lib/logger';
-import { getQuizQuestionsV2, submitQuizResults, saveCognitiveMetrics, saveQuestionResponses, supabase, updateChapterProgress } from '@/lib/supabase';
+import { submitQuizResults, saveCognitiveMetrics, saveQuestionResponses, supabase, updateChapterProgress } from '@/lib/supabase';
+import { assembleQuiz } from '@/lib/quiz-assembler';
 import { XP_RULES } from '@/lib/xp-rules';
 import { Card, Button, ProgressBar, LoadingFoxy } from '@/components/ui';
 import { SUBJECT_META } from '@/lib/constants';
@@ -90,6 +90,8 @@ export default function QuizPage() {
   const [timer, setTimer] = useState(0);
   const [questionTimer, setQuestionTimer] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [noQuestionsError, setNoQuestionsError] = useState(false);
+  const [noQuestionsMessage, setNoQuestionsMessage] = useState('');
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const qTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -211,34 +213,44 @@ export default function QuizPage() {
     }
     if (!subj || !student) return;
     setLoading(true);
+    setNoQuestionsError(false);
+    setNoQuestionsMessage('');
     try {
       const diffModeMap: Record<string, string> = { '1': 'easy', '2': 'medium', '3': 'hard' };
       const diffMode = diff != null ? (diffModeMap[String(diff)] || 'mixed') : (opts?.quizMode === 'cognitive' ? 'progressive' : 'mixed');
-      const data = await getQuizQuestionsV2(
-        subj,
-        student.grade,
-        qCount,
-        diffMode,
-        chapter,
-        ['mcq']
-      );
-      const qs = Array.isArray(data) ? data : [];
-      if (qs.length === 0) {
-        alert(isHi ? 'इस विषय में अभी प्रश्न नहीं हैं।' : 'No questions available for this subject yet.');
+
+      // Guaranteed Count Assembler — ensures exact requested count or explicit failure.
+      // Replaces direct getQuizQuestionsV2 call which silently returned fewer questions.
+      const result = await assembleQuiz({
+        subject: subj,
+        grade: student.grade,
+        requestedCount: qCount,
+        difficulty: diffMode,
+        chapter: chapter ?? null,
+        questionTypes: ['mcq'],
+        mode: opts?.quizMode ?? quizMode,
+      });
+
+      if (!result.success) {
+        // Explicit failure — show message instead of silent partial quiz
+        if (result.returnedCount === 0) {
+          setNoQuestionsError(true);
+          setNoQuestionsMessage(
+            isHi ? 'इस विषय में अभी प्रश्न नहीं हैं।' : 'No questions available for this subject yet.'
+          );
+        } else {
+          setNoQuestionsError(true);
+          setNoQuestionsMessage(
+            isHi
+              ? `केवल ${result.returnedCount} प्रश्न उपलब्ध हैं (${qCount} चाहिए)। कृपया अन्य अध्याय या विषय आज़माएँ।`
+              : `Only ${result.returnedCount} questions available (${qCount} needed). Try another chapter or subject.`
+          );
+        }
         setLoading(false);
         return;
       }
-      // If we still have fewer questions than requested after all fallbacks,
-      // proceed with what we have but log the gap
-      if (qs.length < qCount) {
-        logger.warn('quiz_pool_insufficient', {
-          requested: qCount,
-          available: qs.length,
-          subject: subj,
-          grade: student.grade,
-          chapter,
-        });
-      }
+
+      const qs = result.questions;
       setQuestions(qs);
       setCurrentIdx(0);
       setResponses([]);
@@ -250,7 +262,10 @@ export default function QuizPage() {
       setScreen('quiz');
     } catch (e) {
       console.error('Quiz load error:', e);
-      alert(isHi ? 'क्विज़ लोड करने में समस्या हुई। कृपया फिर से कोशिश करें।' : 'Failed to load quiz. Please try again.');
+      setNoQuestionsError(true);
+      setNoQuestionsMessage(
+        isHi ? 'क्विज़ लोड करने में समस्या हुई। कृपया फिर से कोशिश करें।' : 'Failed to load quiz. Please try again.'
+      );
     }
     setLoading(false);
   }, [selectedSubject, student, questionCount, selectedDifficulty, selectedChapter, isHi]);
