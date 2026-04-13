@@ -779,6 +779,36 @@ ${academicGoal ? `\n## Student's Academic Goal: ${GOAL_PROMPT_MAP[academicGoal] 
 // ─── POST handler ─────────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest): Promise<Response> {
+  // TOP-LEVEL SAFETY NET — no unhandled exception can crash Foxy.
+  // Individual sections have their own try-catches, but gaps between them
+  // previously caused invisible 500 errors ("Something went wrong").
+  // This catch-all ensures: (1) error is LOGGED, (2) student gets 503 not 500.
+  try {
+  return await handleFoxyPost(request);
+  } catch (topLevelErr) {
+    const diagMsg = topLevelErr instanceof Error ? topLevelErr.message : String(topLevelErr);
+    console.error('[FOXY CRITICAL] Unhandled exception in POST handler:', diagMsg);
+    // Log to ops_events so it's visible in the Observability Console
+    try {
+      const { logOpsEvent } = await import('@/lib/ops-events');
+      await logOpsEvent({
+        category: 'ai',
+        source: 'foxy-route',
+        severity: 'critical',
+        message: `Foxy unhandled crash: ${diagMsg.slice(0, 200)}`,
+        context: { stack: topLevelErr instanceof Error ? topLevelErr.stack?.slice(0, 500) : undefined },
+      });
+    } catch { /* even ops logging failed — nothing more we can do */ }
+    return errorJson(
+      'Foxy encountered an error. Please try again.',
+      'Foxy mein error aaya. Dobara try karein.',
+      503,
+      { _diag: diagMsg.slice(0, 300) },
+    );
+  }
+}
+
+async function handleFoxyPost(request: NextRequest): Promise<Response> {
   // 0. Config validation — fail fast with clear diagnostic
   if (!process.env.ANTHROPIC_API_KEY) {
     logger.error('foxy_config_missing', { variable: 'ANTHROPIC_API_KEY' });
@@ -1052,8 +1082,13 @@ export async function POST(request: NextRequest): Promise<Response> {
     // Non-fatal: proceed with no context
   }
 
-  // 9. Load conversation history for multi-turn context
-  const history = await loadHistory(resolvedSessionId);
+  // 9. Load conversation history for multi-turn context (non-fatal)
+  let history: ChatMessage[] = [];
+  try {
+    history = await loadHistory(resolvedSessionId);
+  } catch (histErr) {
+    console.warn('[foxy] history load failed:', histErr instanceof Error ? histErr.message : String(histErr));
+  }
 
   // 10. Build system prompt with RAG context + cognitive context
   const systemPrompt = buildSystemPrompt(
@@ -1130,28 +1165,32 @@ export async function POST(request: NextRequest): Promise<Response> {
       description: c.media_description || `NCERT ${subject} ${c.chapter || ''}`.trim(),
     }));
 
-  // 12b. Persist both turns to foxy_chat_messages
-
-  await supabaseAdmin.from('foxy_chat_messages').insert([
-    {
-      session_id: resolvedSessionId,
-      student_id: studentId,
-      role: 'user',
-      content: message,
-      sources: null,
-      tokens_used: null,
-      created_at: now,
-    },
-    {
-      session_id: resolvedSessionId,
-      student_id: studentId,
-      role: 'assistant',
-      content: assistantResponse,
-      sources: sources.length > 0 ? sources : null,
-      tokens_used: tokensUsed,
-      created_at: new Date(Date.now() + 1).toISOString(), // ensure ordering
-    },
-  ]);
+  // 12b. Persist both turns to foxy_chat_messages (non-fatal — response already generated)
+  try {
+    await supabaseAdmin.from('foxy_chat_messages').insert([
+      {
+        session_id: resolvedSessionId,
+        student_id: studentId,
+        role: 'user',
+        content: message,
+        sources: null,
+        tokens_used: null,
+        created_at: now,
+      },
+      {
+        session_id: resolvedSessionId,
+        student_id: studentId,
+        role: 'assistant',
+        content: assistantResponse,
+        sources: sources.length > 0 ? sources : null,
+        tokens_used: tokensUsed,
+        created_at: new Date(Date.now() + 1).toISOString(), // ensure ordering
+      },
+    ]);
+  } catch (saveErr) {
+    // Message save failure must NOT crash the route — the response is already ready
+    console.warn('[foxy] message save failed:', saveErr instanceof Error ? saveErr.message : String(saveErr));
+  }
 
   // 13. Post-response cognitive logging (fire-and-forget — non-blocking)
   if (cognitiveCtx.nextAction) {
