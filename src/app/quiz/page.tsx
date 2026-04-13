@@ -337,97 +337,28 @@ export default function QuizPage() {
       const diffModeMap: Record<string, string> = { '1': 'easy', '2': 'medium', '3': 'hard' };
       const diffMode = diff != null ? (diffModeMap[String(diff)] || 'mixed') : (opts?.quizMode === 'cognitive' ? 'progressive' : 'mixed');
 
-      // Determine if we need written questions from NCERT sources
-      const needsWritten = effectiveTypes.some(t => t !== 'mcq');
-      const mcqTypes = effectiveTypes.filter(t => t === 'mcq');
-      const writtenTypes = effectiveTypes.filter(t => t !== 'mcq');
+      // GUARANTEED COUNT ASSEMBLER — replaces scattered fetching
+      // Uses 4-rung fallback ladder to ensure exact count fulfillment.
+      // Never returns a partial quiz silently.
+      const { assembleQuiz } = await import('@/lib/quiz-assembler');
+      const assemblyResult = await assembleQuiz({
+        subject: subj,
+        grade: student.grade,
+        requestedCount: qCount,
+        difficulty: diffMode,
+        chapter: chapter ?? null,
+        questionTypes: effectiveTypes,
+        mode: quizMode,
+      });
 
-      let allQuestions: Question[] = [];
-
-      // Fetch MCQ questions from question_bank (existing path)
-      if (mcqTypes.length > 0) {
-        const mcqCount = needsWritten ? Math.ceil(qCount * 0.6) : qCount;
-        const data = await getQuizQuestionsV2(
-          subj,
-          student.grade,
-          mcqCount,
-          diffMode,
-          chapter,
-          ['mcq']
-        );
-        allQuestions = Array.isArray(data) ? data : [];
-      }
-
-      // Fetch written questions from /api/quiz/ncert-questions (direct rag_content_chunks query)
-      if (needsWritten) {
-        const writtenCount = mcqTypes.length > 0 ? Math.max(qCount - allQuestions.length, 3) : qCount;
-        try {
-          const ncertParams = new URLSearchParams({
-            grade: student.grade,
-            subject: subj,
-            types: writtenTypes.join(','),
-            count: String(writtenCount),
-          });
-          if (chapter) ncertParams.set('chapter', String(chapter));
-
-          const resp = await fetch(`/api/quiz/ncert-questions?${ncertParams.toString()}`);
-          if (resp.ok) {
-            const writtenData = await resp.json();
-            const writtenQs: Question[] = (writtenData.questions ?? []).map((wq: Record<string, unknown>) => ({
-              id: (wq.id as string) ?? (wq.question_id as string),
-              question_text: wq.question_text as string,
-              question_hi: null,
-              question_type: (wq.cbse_type ?? wq.question_type ?? 'short_answer') as string,
-              options: (wq.options as string[]) ?? [],
-              correct_answer_index: -1,
-              explanation: (wq.explanation as string) ?? (wq.answer_text as string) ?? null,
-              explanation_hi: null,
-              hint: null,
-              difficulty: 2,
-              bloom_level: (wq.bloom_level as string) ?? 'understand',
-              chapter_number: (wq.chapter_number as number) ?? chapter ?? 0,
-              marks_possible: (wq.marks_possible as number) ?? 2,
-              answer_text: (wq.answer_text as string) ?? null,
-              source_table: (wq.source_table as string) ?? 'rag_content_chunks',
-              question_id: (wq.question_id as string) ?? (wq.id as string),
-              cbse_type: (wq.cbse_type as string) ?? (wq.question_type as string) ?? 'short_answer',
-              cbse_label: (wq.cbse_label as string) ?? 'SA',
-              time_estimate: (wq.time_estimate as number) ?? getTimeEstimate((wq.question_type as string) ?? 'short_answer'),
-              word_limit: (wq.word_limit as number) ?? getWordLimit((wq.question_type as string) ?? 'short_answer'),
-            }));
-            allQuestions = [...allQuestions, ...writtenQs].slice(0, qCount);
-          } else {
-            const errText = await resp.text();
-            console.warn('NCERT questions API returned error:', resp.status, errText);
-          }
-        } catch (e) {
-          console.warn('Failed to fetch written questions from /api/quiz/ncert-questions:', e);
-          // Proceed with MCQ-only if written fetch fails
-        }
-      }
-
-      const data = allQuestions;
-      const rawQs = Array.isArray(data) ? data : [];
-
-      // P6: Runtime question quality gate — filter out malformed questions
-      const qs = rawQs.filter(isValidQuestion);
-      const invalidCount = rawQs.length - qs.length;
-      if (invalidCount > 0) {
-        logger.warn('quiz_questions_filtered_quality', {
-          subject: subj,
-          grade: student.grade,
-          chapter,
-          invalidCount,
-          totalFetched: rawQs.length,
-          validCount: qs.length,
-        });
-      }
-
-      if (qs.length === 0) {
+      if (!assemblyResult.success) {
         setNoQuestionsError(true);
         setLoading(false);
         return;
       }
+
+      const qs = assemblyResult.questions;
+
       // If we still have fewer questions than requested after all fallbacks,
       // proceed with what we have but log the gap
       if (qs.length < qCount) {
