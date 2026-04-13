@@ -265,6 +265,7 @@ async function callFoxyTutor(params: Record<string, any>) {
       sources:    data.sources   || [],
       diagrams:   data.diagrams  || [],
       quota:      data.quotaRemaining,
+      upgradePrompt: data.upgradePrompt || null,
     };
   } catch (err) {
     console.error('[Foxy] Network error:', err);
@@ -603,6 +604,17 @@ export default function FoxyPage() {
         return;
       }
       setMessages((p: ChatMessage[]) => [...p, { id: Date.now() + 1, role: 'tutor', content: resp.reply, timestamp: new Date().toISOString(), xp: resp.xp_earned, diagrams: resp.diagrams?.length > 0 ? resp.diagrams : undefined }]);
+      // Soft upgrade prompt when quota is near exhaustion (user's choice, not forced)
+      if (resp.upgradePrompt) {
+        const up = resp.upgradePrompt;
+        const promptMsg = language === 'hi' ? up.messageHi : up.message;
+        setMessages((p: ChatMessage[]) => [...p, {
+          id: Date.now() + 2,
+          role: 'tutor',
+          content: `💡 ${promptMsg}`,
+          timestamp: new Date().toISOString(),
+        }]);
+      }
       if (resp.xp_earned > 0) setXpGained((p: number) => p + resp.xp_earned);
       if (resp.session_id) setChatSessionId(resp.session_id);
       setFoxyState('happy'); setTimeout(() => setFoxyState('idle'), 2000);

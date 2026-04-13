@@ -42,6 +42,51 @@ const DAILY_QUOTA: Record<string, number> = {
 };
 const DEFAULT_QUOTA = 10;
 
+// API timeout per plan (milliseconds) — paying students get more patience
+// Free: 8s (budget), Starter: 15s (good), Pro: 25s (premium), Unlimited: 30s (max)
+const VOYAGE_TIMEOUT: Record<string, number> = {
+  free: 8000,
+  starter: 15000,
+  pro: 25000,
+  unlimited: 30000,
+};
+const CLAUDE_TIMEOUT: Record<string, number> = {
+  free: 15000,
+  starter: 30000,
+  pro: 45000,
+  unlimited: 60000,
+};
+const DEFAULT_VOYAGE_TIMEOUT = 8000;
+const DEFAULT_CLAUDE_TIMEOUT = 15000;
+
+// Soft upgrade prompts — shown ONLY when quota is near exhaustion (not on errors)
+const UPGRADE_PROMPTS: Record<string, { threshold: number; message: string; messageHi: string; nextPlan: string }> = {
+  free: {
+    threshold: 8, // show when 8/10 used (2 remaining)
+    message: 'You have {remaining} messages left today. Upgrade to Starter for 30 daily messages!',
+    messageHi: 'आज {remaining} मैसेज बाकी हैं। Starter प्लान लो और 30 रोज़ पाओ!',
+    nextPlan: 'starter',
+  },
+  starter: {
+    threshold: 25, // show when 25/30 used (5 remaining)
+    message: 'You have {remaining} messages left today. Upgrade to Pro for 100 daily messages!',
+    messageHi: 'आज {remaining} मैसेज बाकी हैं। Pro प्लान लो और 100 रोज़ पाओ!',
+    nextPlan: 'pro',
+  },
+  pro: {
+    threshold: 90, // show when 90/100 used (10 remaining)
+    message: 'You have {remaining} messages left today. Upgrade to Unlimited for unlimited messages!',
+    messageHi: 'आज {remaining} मैसेज बाकी हैं। Unlimited प्लान लो!',
+    nextPlan: 'unlimited',
+  },
+  unlimited: {
+    threshold: 999999, // never show
+    message: '',
+    messageHi: '',
+    nextPlan: '',
+  },
+};
+
 // Normalize raw plan codes from the DB to canonical keys.
 // Handles legacy aliases (basic→starter, premium→pro, ultimate→unlimited)
 // and strips monthly/yearly billing-cycle suffixes.
@@ -458,9 +503,12 @@ async function checkAndIncrementQuota(
 
 // ─── Helper: generate Voyage embedding ───────────────────────────────────────
 
-async function generateEmbedding(text: string): Promise<number[] | null> {
+async function generateEmbedding(text: string, timeoutMs: number = 15000): Promise<number[] | null> {
   if (!process.env.VOYAGE_API_KEY) return null;
   try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
     const res = await fetch('https://api.voyageai.com/v1/embeddings', {
       method: 'POST',
       headers: {
@@ -472,17 +520,47 @@ async function generateEmbedding(text: string): Promise<number[] | null> {
         input: [text],
         output_dimension: 1024,
       }),
+      signal: controller.signal,
     });
+    clearTimeout(timer);
+
     if (!res.ok) {
-      logger.warn('foxy_voyage_http_error', { status: res.status });
+      logger.warn('foxy_voyage_http_error', { status: res.status, timeoutMs });
       return null;
     }
     const body = await res.json();
     return body?.data?.[0]?.embedding ?? null;
   } catch (err) {
+    const isTimeout = err instanceof Error && err.name === 'AbortError';
     logger.warn('foxy_voyage_embedding_failed', {
       error: err instanceof Error ? err.message : String(err),
+      isTimeout,
+      timeoutMs,
     });
+    if (isTimeout) {
+      // Timeout is NOT acceptable for paying users — retry once with extended timeout
+      try {
+        const retryRes = await fetch('https://api.voyageai.com/v1/embeddings', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${process.env.VOYAGE_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'voyage-3',
+            input: [text],
+            output_dimension: 1024,
+          }),
+          signal: AbortSignal.timeout(timeoutMs * 2), // double the timeout for retry
+        });
+        if (retryRes.ok) {
+          const retryBody = await retryRes.json();
+          return retryBody?.data?.[0]?.embedding ?? null;
+        }
+      } catch {
+        // Second attempt also failed — fall through to null
+      }
+    }
     return null;
   }
 }
@@ -883,16 +961,15 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   // ─── Existing inline flow (default, or fallback from intent router) ────────
 
-  // 7. Load cognitive context + generate embedding in parallel (latency < 100ms)
-  // CRITICAL: This MUST be wrapped in try-catch. If Voyage API or cognitive queries fail,
-  // Foxy should still respond (without embedding-based RAG / without cognitive context),
-  // NOT crash with 500 "Something went wrong."
+  // 7. Load cognitive context + generate embedding in parallel
+  // Timeouts are plan-aware: paying students get longer timeouts + automatic retry
+  const voyageTimeout = VOYAGE_TIMEOUT[plan] ?? DEFAULT_VOYAGE_TIMEOUT;
   const embeddingQuery = `${subject} grade ${grade}${chapter ? ` chapter ${chapter}` : ''}: ${message}`;
   let embedding: number[] | null = null;
   let cognitiveCtx: CognitiveContext = EMPTY_COGNITIVE_CONTEXT;
   try {
     const [emb, ctx] = await Promise.all([
-      generateEmbedding(embeddingQuery).catch(() => null),
+      generateEmbedding(embeddingQuery, voyageTimeout),
       loadCognitiveContext(studentId, subject, grade),
     ]);
     embedding = emb;
@@ -900,10 +977,9 @@ export async function POST(request: NextRequest): Promise<Response> {
   } catch (embErr) {
     logger.warn('foxy_embedding_or_cognitive_failed', {
       error: embErr instanceof Error ? embErr.message : String(embErr),
-      studentId, subject, grade,
+      studentId, subject, grade, plan, voyageTimeout,
     });
-    // Proceed without embedding (RAG will fall back to text search)
-    // Proceed without cognitive context (Foxy works in generic mode)
+    // Non-fatal: RAG falls back to text search, cognitive context empty
   }
 
   // 8. RAG retrieval via match_rag_chunks RPC
@@ -1096,7 +1172,20 @@ export async function POST(request: NextRequest): Promise<Response> {
     },
   });
 
-  // 15. Return response
+  // 15. Build soft upgrade prompt if quota near exhaustion
+  const limit = DAILY_QUOTA[plan] ?? DEFAULT_QUOTA;
+  const upgradeConfig = UPGRADE_PROMPTS[plan];
+  let upgradePrompt: { message: string; messageHi: string; nextPlan: string; remaining: number } | null = null;
+  if (upgradeConfig && typeof remaining === 'number' && remaining <= (limit - upgradeConfig.threshold)) {
+    upgradePrompt = {
+      message: upgradeConfig.message.replace('{remaining}', String(remaining)),
+      messageHi: upgradeConfig.messageHi.replace('{remaining}', String(remaining)),
+      nextPlan: upgradeConfig.nextPlan,
+      remaining,
+    };
+  }
+
+  // 16. Return response
   return NextResponse.json({
     success: true,
     response: assistantResponse,
@@ -1105,6 +1194,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     sessionId: resolvedSessionId,
     quotaRemaining: remaining,
     tokensUsed,
+    ...(upgradePrompt ? { upgradePrompt } : {}),
   });
 }
 
