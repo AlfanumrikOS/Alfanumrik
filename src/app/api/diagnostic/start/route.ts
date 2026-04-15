@@ -12,17 +12,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest } from '@/lib/rbac';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { validateSubjectWrite } from '@/lib/subjects';
 
 // P5: grades are strings "6"-"10" for diagnostic (6-10 only)
 const VALID_DIAGNOSTIC_GRADES = ['6', '7', '8', '9', '10'];
 
-const SUBJECT_BY_GRADE: Record<string, string[]> = {
-  '6': ['math', 'science'],
-  '7': ['math', 'science'],
-  '8': ['math', 'science'],
-  '9': ['math', 'physics', 'chemistry', 'biology'],
-  '10': ['math', 'physics', 'chemistry', 'biology'],
-};
+// Subject allowlist (SUBJECT_BY_GRADE) removed in favour of dynamic governance
+// via validateSubjectWrite → get_available_subjects (grade × stream × plan).
 
 const DIAGNOSTIC_QUESTION_COUNT = 15;
 
@@ -58,13 +54,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 4. Validate subject for grade
-    const allowedSubjects = SUBJECT_BY_GRADE[grade] ?? [];
-    if (!subject || !allowedSubjects.includes(subject.toLowerCase())) {
+    // 4. Validate subject shape (content governance happens post-student-resolve)
+    if (!subject || typeof subject !== 'string' || !subject.trim()) {
       return NextResponse.json(
         {
           success: false,
-          error: `Subject must be one of: ${allowedSubjects.join(', ')} for grade ${grade}.`,
+          error: 'subject is required',
           code: 'INVALID_SUBJECT',
         },
         { status: 400 }
@@ -83,6 +78,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { success: false, error: 'Student profile not found.', code: 'NO_STUDENT' },
         { status: 404 }
+      );
+    }
+
+    // 5b. Subject governance (grade × stream × plan)
+    const subjectValidation = await validateSubjectWrite(student.id, subject, {
+      supabase: admin,
+    });
+    if (!subjectValidation.ok) {
+      return NextResponse.json(
+        {
+          error: subjectValidation.error.code,
+          subject: subjectValidation.error.subject,
+          reason: subjectValidation.error.reason,
+          allowed: subjectValidation.error.allowed,
+        },
+        { status: 422 },
       );
     }
 

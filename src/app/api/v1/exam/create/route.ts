@@ -61,7 +61,7 @@ export async function POST(request: Request) {
     // Resolve teacher_id from the authenticated user
     const { data: teacher } = await supabaseAdmin
       .from('teachers')
-      .select('id')
+      .select('id, subjects_taught')
       .eq('user_id', auth.userId)
       .single();
 
@@ -70,6 +70,51 @@ export async function POST(request: Request) {
         { error: 'Teacher profile not found' },
         { status: 403 }
       );
+    }
+
+    // Subject governance: confirm the requested subject is in the teacher's
+    // authorised subject list AND is active in the master table. Bootstrap
+    // already validates subjects_taught on creation; this is a defence-in-depth
+    // guard against stale / tampered teacher rows.
+    if (body.subject) {
+      const { data: activeSubjects, error: subjectsErr } = await supabaseAdmin
+        .from('subjects')
+        .select('code')
+        .eq('is_active', true);
+      if (subjectsErr) {
+        return NextResponse.json(
+          { error: 'Failed to load subject master list' },
+          { status: 500 }
+        );
+      }
+      const activeCodes = new Set(
+        (activeSubjects ?? []).map((r: { code: string }) => r.code),
+      );
+      const teacherCodes = new Set(
+        ((teacher as { subjects_taught?: string[] | null }).subjects_taught ?? []),
+      );
+      if (!activeCodes.has(body.subject)) {
+        return NextResponse.json(
+          {
+            error: 'subject_not_allowed',
+            subject: body.subject,
+            reason: 'inactive',
+            allowed: Array.from(activeCodes),
+          },
+          { status: 422 }
+        );
+      }
+      if (teacherCodes.size > 0 && !teacherCodes.has(body.subject)) {
+        return NextResponse.json(
+          {
+            error: 'subject_not_allowed',
+            subject: body.subject,
+            reason: 'inactive',
+            allowed: Array.from(teacherCodes),
+          },
+          { status: 422 }
+        );
+      }
     }
 
     // Verify teacher is assigned to this class

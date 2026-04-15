@@ -15,6 +15,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { validateSubjectWrite } from '@/lib/subjects';
 
 // ─── Rate Limits by Plan ───────────────────────────────────────
 const SCAN_LIMITS: Record<string, number> = {
@@ -111,7 +112,10 @@ export async function POST(request: NextRequest) {
     let imageBase64: string | null = null;
     let fileName = `scan_${Date.now()}.jpg`;
     let fileType = 'image/jpeg';
-    let subject = request.headers.get('x-subject') || student.preferred_subject || '';
+    // Subject: default to student's preferred_subject. Client-supplied values
+    // (form field / JSON body) are accepted only if they pass governance below.
+    // The legacy 'x-subject' header is no longer honoured (removed for P13/governance).
+    let subject = student.preferred_subject || '';
     let grade = student.grade;
 
     if (contentType.includes('multipart/form-data')) {
@@ -158,6 +162,26 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           { error: bilingualError('image_base64 required', 'image_base64 zaroori hai', isHi) },
           { status: 400 },
+        );
+      }
+    }
+
+    // ── Subject governance ──
+    // Reject if caller tried to override subject with a value outside the
+    // student's allowed set. Missing subject is allowed (solver falls back).
+    if (subject) {
+      const subjectValidation = await validateSubjectWrite(studentId, subject, {
+        supabase: supabaseAdmin,
+      });
+      if (!subjectValidation.ok) {
+        return NextResponse.json(
+          {
+            error: subjectValidation.error.code,
+            subject: subjectValidation.error.subject,
+            reason: subjectValidation.error.reason,
+            allowed: subjectValidation.error.allowed,
+          },
+          { status: 422 },
         );
       }
     }

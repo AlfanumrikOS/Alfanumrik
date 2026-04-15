@@ -16,9 +16,24 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { validateSubjectWrite } from '@/lib/subjects';
 
 function err(message: string, status: number) {
   return NextResponse.json({ success: false, error: message }, { status });
+}
+
+async function guardSubject(studentId: string, subject: string) {
+  const v = await validateSubjectWrite(studentId, subject, { supabase: supabaseAdmin });
+  if (v.ok) return null;
+  return NextResponse.json(
+    {
+      error: v.error.code,
+      subject: v.error.subject,
+      reason: v.error.reason,
+      allowed: v.error.allowed,
+    },
+    { status: 422 },
+  );
 }
 
 export async function POST(request: NextRequest) {
@@ -41,6 +56,9 @@ export async function POST(request: NextRequest) {
 
     if (typeof subject !== 'string' || !subject.trim()) return err('subject required', 400);
     if (typeof answer !== 'string' || !answer.trim()) return err('answer required', 400);
+
+    const guard = await guardSubject(studentId, subject);
+    if (guard) return guard;
 
     const { error } = await supabaseAdmin.from('spaced_repetition_cards').insert({
       student_id: studentId,
@@ -70,6 +88,9 @@ export async function POST(request: NextRequest) {
     if (typeof subject !== 'string' || !subject.trim()) return err('subject required', 400);
     if (typeof report_reason !== 'string' || !report_reason.trim()) return err('report_reason required', 400);
     if (typeof foxy_response !== 'string' || !foxy_response.trim()) return err('foxy_response required', 400);
+
+    const reportGuard = await guardSubject(studentId, subject);
+    if (reportGuard) return reportGuard;
 
     // Insert report
     const { error: insertError } = await supabaseAdmin.from('ai_response_reports').insert({

@@ -15,6 +15,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { validateSubjectWrite } from '@/lib/subjects';
+
+const VALID_GRADES = ['6', '7', '8', '9', '10', '11', '12'];
 
 function err(message: string, status: number) {
   return NextResponse.json({ success: false, error: message }, { status });
@@ -46,12 +49,29 @@ export async function POST(request: NextRequest) {
   // Input validation
   if (typeof subject !== 'string' || !subject.trim()) return err('subject required', 400);
   if (typeof grade !== 'string' || !grade.trim()) return err('grade required', 400);
+  if (!VALID_GRADES.includes(grade)) return err('grade must be one of 6-12 (string)', 400);
   if (typeof total_marks !== 'number' || total_marks < 0) return err('total_marks must be non-negative number', 400);
   if (typeof obtained_marks !== 'number' || obtained_marks < 0) return err('obtained_marks must be non-negative number', 400);
   if (obtained_marks > total_marks) return err('obtained_marks cannot exceed total_marks', 400);
   if (typeof time_taken_seconds !== 'number' || time_taken_seconds < 0) return err('time_taken_seconds must be non-negative number', 400);
 
   const studentId = auth.studentId!;
+
+  // Subject governance: reject exams for subjects not in the student's allowed set.
+  const subjectValidation = await validateSubjectWrite(studentId, subject, {
+    supabase: supabaseAdmin,
+  });
+  if (!subjectValidation.ok) {
+    return NextResponse.json(
+      {
+        error: subjectValidation.error.code,
+        subject: subjectValidation.error.subject,
+        reason: subjectValidation.error.reason,
+        allowed: subjectValidation.error.allowed,
+      },
+      { status: 422 },
+    );
+  }
 
   const { error } = await supabaseAdmin.from('exam_simulations').insert({
     student_id: studentId,                                     // always from auth, never from body

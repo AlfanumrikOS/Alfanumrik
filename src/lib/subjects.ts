@@ -1,8 +1,12 @@
 import type { Subject, SubjectWriteError, SubjectCode, OkOr } from './subjects.types';
 
+// NOTE: The type is widened to accept any supabase-shaped client (admin,
+// server, or mock). The real Supabase client's rpc() returns a thenable
+// PostgrestFilterBuilder, not a raw Promise; we only `await` it, so treating
+// the return as a thenable is safe here.
 interface ServerCtx {
   supabase: {
-    rpc: (name: string, args: Record<string, unknown>) => Promise<{ data: any; error: any }>;
+    rpc: (name: string, args?: Record<string, unknown>) => PromiseLike<{ data: any; error: any }> | Promise<{ data: any; error: any }>;
   };
 }
 

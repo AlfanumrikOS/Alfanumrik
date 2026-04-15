@@ -203,11 +203,11 @@ export async function POST(request: NextRequest) {
           profileData.xp_total = 0;
           profileData.streak_days = 0;
           profileData.preferred_language = 'en';
-          profileData.preferred_subject = 'Mathematics';
+          profileData.preferred_subject = 'math';
         } else if (item.role === 'teacher') {
           profileData.is_active = true;
           profileData.school_name = 'Demo School - Delhi Public School';
-          profileData.subjects_taught = ['Mathematics', 'Science'];
+          profileData.subjects_taught = ['math', 'science'];
           profileData.grades_taught = ['10', '11', '12'];
           profileData.board = 'CBSE';
           profileData.preferred_language = 'en';
@@ -383,11 +383,11 @@ export async function POST(request: NextRequest) {
       profileData.xp_total = 0;
       profileData.streak_days = 0;
       profileData.preferred_language = 'en';
-      profileData.preferred_subject = 'Mathematics';
+      profileData.preferred_subject = 'math';
     } else if (role === 'teacher') {
       profileData.is_active = true;
       profileData.school_name = 'Demo School - Delhi Public School';
-      profileData.subjects_taught = ['Mathematics', 'Science'];
+      profileData.subjects_taught = ['math', 'science'];
       profileData.grades_taught = ['10', '11', '12'];
       profileData.board = 'CBSE';
       profileData.preferred_language = 'en';
