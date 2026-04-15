@@ -9,10 +9,12 @@
 
 import { useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useAuth } from '@/lib/AuthContext';
 
 export default function NCERTQuizRedirect() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { isHi } = useAuth();
 
   useEffect(() => {
     // Preserve any query params (subject, chapter, grade, etc.)
@@ -27,7 +29,7 @@ export default function NCERTQuizRedirect() {
   return (
     <div className="flex items-center justify-center min-h-screen" style={{ background: 'var(--bg)' }}>
       <p className="text-sm" style={{ color: 'var(--text-3)' }}>
-        Redirecting to quiz...
+        {isHi ? 'क्विज़ पर ले जाया जा रहा है…' : 'Redirecting to quiz…'}
       </p>
     </div>
   );
