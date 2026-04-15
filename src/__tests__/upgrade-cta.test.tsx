@@ -48,11 +48,13 @@ describe('UpgradeCTA', () => {
   it('dispatches alfanumrik:upgrade-cta-click with the source tag when clicked', () => {
     render(<UpgradeCTA source="profile_row" />);
     fireEvent.click(screen.getByTestId('upgrade-cta-pill'));
-    const events = dispatchSpy.mock.calls
-      .map(call => call[0])
-      .filter((e): e is CustomEvent =>
-        e instanceof CustomEvent && e.type === 'alfanumrik:upgrade-cta-click',
-      );
+    const events: CustomEvent[] = [];
+    for (const call of dispatchSpy.mock.calls as Array<[Event]>) {
+      const e = call[0];
+      if (e instanceof CustomEvent && e.type === 'alfanumrik:upgrade-cta-click') {
+        events.push(e);
+      }
+    }
     expect(events.length).toBeGreaterThanOrEqual(1);
     expect(events[0]!.detail).toMatchObject({ source: 'profile_row', variant: 'pill' });
   });
@@ -70,11 +72,13 @@ describe('UpgradeCTA', () => {
   it('does not dispatch the analytics event when source is not provided', () => {
     render(<UpgradeCTA />);
     fireEvent.click(screen.getByTestId('upgrade-cta-pill'));
-    const upgradeEvents = dispatchSpy.mock.calls
-      .map(call => call[0])
-      .filter((e): e is CustomEvent =>
-        e instanceof CustomEvent && e.type === 'alfanumrik:upgrade-cta-click',
-      );
+    const upgradeEvents: CustomEvent[] = [];
+    for (const call of dispatchSpy.mock.calls as Array<[Event]>) {
+      const e = call[0];
+      if (e instanceof CustomEvent && e.type === 'alfanumrik:upgrade-cta-click') {
+        upgradeEvents.push(e);
+      }
+    }
     expect(upgradeEvents.length).toBe(0);
   });
 });

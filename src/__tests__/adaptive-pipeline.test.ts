@@ -115,10 +115,14 @@ describe('Adaptive Pipeline Integrity', () => {
   it('submitQuizResults must try submit_quiz_results RPC as primary path', () => {
     const supabasePath = path.resolve('src/lib/supabase.ts');
     const source = fs.readFileSync(supabasePath, 'utf-8');
-    // The function body within submitQuizResults
+    // The function body within submitQuizResults. Window widened from 500 to
+    // 1000 chars — the function now has a dedup prelude + layered try/catch
+    // wrappers that push the RPC call past the old 500-char cutoff. Intent of
+    // the assertion is unchanged: the RPC call must appear in the function's
+    // primary path, not in a deep fallback.
     const funcStart = source.indexOf('export async function submitQuizResults');
     expect(funcStart).toBeGreaterThan(-1);
-    const funcBody = source.slice(funcStart, funcStart + 500);
+    const funcBody = source.slice(funcStart, funcStart + 1000);
     // Primary path calls the full RPC (not the fallback)
     expect(funcBody).toContain("supabase.rpc('submit_quiz_results'");
   });
