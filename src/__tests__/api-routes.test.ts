@@ -51,19 +51,28 @@ vi.mock('@/lib/rbac', () => ({
 let _tableResults: Map<string, unknown>  = new Map();
 let _defaultResult: unknown = { data: null, error: null };
 let _authGetUserResult: unknown = { data: { user: { id: 'auth-user-1' } }, error: null };
+let _rpcResults: Map<string, unknown> = new Map();
+const _rpcDefaultResult: unknown = { data: null, error: null };
 
 function setFromResult(table: string, result: unknown) {
   _tableResults.set(table, result);
+}
+function setRpcResult(name: string, result: unknown) {
+  _rpcResults.set(name, result);
 }
 
 vi.mock('@/lib/supabase-admin', () => ({
   supabaseAdmin: {
     from: (table: string) => chain(_tableResults.get(table) ?? _defaultResult),
     auth: { getUser: () => Promise.resolve(_authGetUserResult) },
+    rpc: (name: string) =>
+      Promise.resolve(_rpcResults.get(name) ?? _rpcDefaultResult),
   },
   getSupabaseAdmin: () => ({
     from: (table: string) => chain(_tableResults.get(table) ?? _defaultResult),
     auth: { getUser: () => Promise.resolve(_authGetUserResult) },
+    rpc: (name: string) =>
+      Promise.resolve(_rpcResults.get(name) ?? _rpcDefaultResult),
   }),
 }));
 
@@ -121,8 +130,25 @@ beforeEach(() => {
   _tableResults = new Map();
   _defaultResult = { data: null, error: null };
   _authGetUserResult = { data: { user: { id: 'auth-user-1' } }, error: null };
+  _rpcResults = new Map();
   unauthorized(); // default: unauthenticated
 });
+
+// Subject-governance test helper: make get_available_subjects RPC return an
+// allowed-subject list. Pass the subjects you want the student to see.
+function mockAllowedSubjects(codes: string[]) {
+  const rows = codes.map((c) => ({
+    code: c,
+    name: c,
+    name_hi: c,
+    icon: 'i',
+    color: 'c',
+    subject_kind: 'cbse_core',
+    is_core: true,
+    is_locked: false,
+  }));
+  setRpcResult('get_available_subjects', { data: rows, error: null });
+}
 
 // =============================================================================
 // PATCH /api/student/preferences
@@ -190,10 +216,26 @@ describe('PATCH /api/student/preferences', () => {
 
     it('returns 200 on valid subject update', async () => {
       authorizedAs('s1');
+      mockAllowedSubjects(['math', 'science']);
       setFromResult('students', { data: null, error: null });
       const res = await call({ action: 'set_preferred_subject', subject: 'science' });
       expect(res.status).toBe(200);
       expect(await res.json()).toMatchObject({ success: true });
+    });
+
+    it('returns 422 with structured body when subject is not in allowed set', async () => {
+      authorizedAs('s1');
+      mockAllowedSubjects(['math', 'science']); // physics excluded
+      setFromResult('students', { data: null, error: null });
+      const res = await call({ action: 'set_preferred_subject', subject: 'physics' });
+      expect(res.status).toBe(422);
+      const body = await res.json();
+      expect(body).toMatchObject({
+        error: 'subject_not_allowed',
+        subject: 'physics',
+        reason: 'grade',
+      });
+      expect(Array.isArray(body.allowed)).toBe(true);
     });
   });
 
@@ -218,9 +260,56 @@ describe('PATCH /api/student/preferences', () => {
 
     it('returns 200 on valid payload', async () => {
       authorizedAs('s1');
-      setFromResult('students', { data: null, error: null });
+      setRpcResult('set_student_subjects', { data: null, error: null });
       const res = await call({ action: 'set_selected_subjects', subjects: ['math', 'science'], preferred_subject: 'math' });
       expect(res.status).toBe(200);
+    });
+
+    it('rejects set_selected_subjects with invalid subject, returns 422 with structured body', async () => {
+      authorizedAs('s1');
+      // set_student_subjects RPC raises exception when subject is disallowed
+      setRpcResult('set_student_subjects', {
+        data: null,
+        error: { message: 'subject_not_allowed: physics is not available for this student' },
+      });
+      const res = await call({
+        action: 'set_selected_subjects',
+        subjects: ['math', 'physics'],
+        preferred_subject: 'math',
+      });
+      expect(res.status).toBe(422);
+      const body = await res.json();
+      expect(body.error).toBe('subject_not_allowed');
+      expect(typeof body.detail).toBe('string');
+    });
+
+    it('returns 403 when RPC raises not_authorized', async () => {
+      authorizedAs('s1');
+      setRpcResult('set_student_subjects', {
+        data: null,
+        error: { message: 'not_authorized' },
+      });
+      const res = await call({
+        action: 'set_selected_subjects',
+        subjects: ['math'],
+        preferred_subject: 'math',
+      });
+      expect(res.status).toBe(403);
+    });
+
+    it('returns 422 when RPC raises max_subjects_exceeded', async () => {
+      authorizedAs('s1');
+      setRpcResult('set_student_subjects', {
+        data: null,
+        error: { message: 'max_subjects_exceeded' },
+      });
+      const res = await call({
+        action: 'set_selected_subjects',
+        subjects: ['math', 'science', 'english', 'hindi', 'social_studies', 'sanskrit'],
+        preferred_subject: 'math',
+      });
+      expect(res.status).toBe(422);
+      expect((await res.json()).error).toBe('max_subjects_exceeded');
     });
   });
 
