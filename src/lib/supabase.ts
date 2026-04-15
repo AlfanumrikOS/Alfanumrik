@@ -918,18 +918,69 @@ export async function upsertBloomProgression(data: {
 
 /* ── Chapter topics (for /learn/[subject]/[chapter] page) ── */
 export async function getChapterTopics(subject: string, grade: string, chapterNumber: number) {
-  const { data: subjectRow } = await supabase.from('subjects').select('id').eq('code', subject).single();
-  if (!subjectRow) return [];
-  const { data, error } = await supabase
-    .from('curriculum_topics')
-    .select('*')
-    .eq('is_active', true)
-    .eq('grade', grade)
-    .eq('subject_id', subjectRow.id)
-    .eq('chapter_number', chapterNumber)
-    .order('display_order');
-  if (error) console.error('getChapterTopics:', error.message);
-  return data ?? [];
+  // Voyage RAG source of truth. curriculum_topics is legacy and will be removed
+  // after chapter_concepts + rag_content_chunks fully supersede it.
+  const ragGrade = grade.startsWith('Grade') ? grade : `Grade ${grade}`;
+  const { data: ragSubjectRow } = await supabase.rpc('subject_code_to_rag_name', { p_code: subject });
+  const ragSubject = typeof ragSubjectRow === 'string' && ragSubjectRow ? ragSubjectRow : subject;
+
+  const { data, error } = await supabase.rpc('get_chapter_rag_content', {
+    p_grade: ragGrade,
+    p_subject: ragSubject,
+    p_chapter_number: chapterNumber,
+    p_content_type: null,
+  });
+  if (error) console.error('getChapterTopics (RAG):', error.message);
+
+  interface RagChunk {
+    chunk_id: string;
+    chunk_text: string | null;
+    topic: string | null;
+    concept: string | null;
+    chapter_title: string | null;
+    chunk_index: number | null;
+    page_number: number | null;
+    media_url: string | null;
+  }
+  const chunks = (data ?? []) as RagChunk[];
+
+  // Group RAG chunks by concept (or topic) so the Learn page sees one card per
+  // concept instead of 10+ raw chunks. Preserves ordering via min chunk_index.
+  const byKey = new Map<string, {
+    id: string; subject_id: string; title: string; title_hi: string | null;
+    description: string | null; grade: string; board: string | null;
+    chapter_number: number | null; difficulty_level: number;
+    estimated_minutes: number | null; tags: string[] | null;
+    is_active: boolean; display_order: number;
+    learning_objectives: string[] | null; bloom_focus: string | null;
+  }>();
+
+  for (const c of chunks) {
+    const key = (c.concept ?? c.topic ?? `chunk-${c.chunk_index ?? c.chunk_id}`).trim() || c.chunk_id;
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, {
+        id: c.chunk_id,
+        subject_id: '',
+        title: key,
+        title_hi: null,
+        description: c.chunk_text ?? '',
+        grade,
+        board: 'CBSE',
+        chapter_number: chapterNumber,
+        difficulty_level: 1,
+        estimated_minutes: null,
+        tags: null,
+        is_active: true,
+        display_order: c.chunk_index ?? 0,
+        learning_objectives: null,
+        bloom_focus: null,
+      });
+    } else if (c.chunk_text) {
+      existing.description = (existing.description ?? '') + '\n\n' + c.chunk_text;
+    }
+  }
+  return Array.from(byKey.values()).sort((a, b) => a.display_order - b.display_order);
 }
 
 /* ── Questions filtered by chapter (for chapter quiz + quick-check) ── */
@@ -947,27 +998,25 @@ export async function getChapterQuestions(subject: string, grade: string, chapte
   return (data ?? []).sort(() => Math.random() - 0.5);
 }
 
-/* ── Distinct chapters for a subject/grade (for quiz chapter selector) ── */
+/* ── Distinct chapters for a subject/grade (for quiz chapter selector) ──
+ * Reads from `chapters` (Voyage-RAG-aligned registry with ncert_page_start/end
+ * and total_questions) instead of the legacy `curriculum_topics` shadow.
+ * Both tables were 1:1 on chapter_number+title after the NCERT 2024 refresh,
+ * but chapters is the source of truth and gets rebuilt when content re-indexes.
+ */
 export async function getChaptersForSubject(subject: string, grade: string) {
   const { data: subjectRow } = await supabase.from('subjects').select('id').eq('code', subject).single();
   if (!subjectRow) return [];
   const { data, error } = await supabase
-    .from('curriculum_topics')
+    .from('chapters')
     .select('chapter_number, title')
     .eq('is_active', true)
     .eq('grade', grade)
     .eq('subject_id', subjectRow.id)
     .not('chapter_number', 'is', null)
-    .order('chapter_number')
-    .order('display_order');
+    .order('chapter_number');
   if (error) console.error('getChaptersForSubject:', error.message);
-  // Return first topic per unique chapter (use its title as chapter label)
-  const seen = new Set<number>();
-  return (data ?? []).filter(t => {
-    if (t.chapter_number == null || seen.has(t.chapter_number)) return false;
-    seen.add(t.chapter_number);
-    return true;
-  }) as Array<{ chapter_number: number; title: string }>;
+  return (data ?? []) as Array<{ chapter_number: number; title: string }>;
 }
 
 // ─── Topic Diagrams ──────────────────────────────────────
