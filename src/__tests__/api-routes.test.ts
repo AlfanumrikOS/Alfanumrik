@@ -587,3 +587,29 @@ describe('IDOR: study-plan task ownership', () => {
     expect(res.status).toBe(404);
   });
 });
+
+// =============================================================================
+// C5 — GET /api/concept-engine (auth gate for chapter + search)
+// =============================================================================
+
+describe('GET /api/concept-engine auth gate', () => {
+  async function call(url: string) {
+    const { GET } = await import('@/app/api/concept-engine/route');
+    return GET(new NextRequest(url));
+  }
+
+  it('returns 401 for unauthenticated caller on action=chapter', async () => {
+    // default beforeEach sets unauthorized()
+    const res = await call(
+      'http://localhost/api/concept-engine?action=chapter&grade=10&subject=math&chapter=1',
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 401 for unauthenticated caller on action=search', async () => {
+    const res = await call(
+      'http://localhost/api/concept-engine?action=search&grade=10&subject=math&query=force',
+    );
+    expect(res.status).toBe(401);
+  });
+});
