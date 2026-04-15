@@ -7,7 +7,8 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { SUBJECT_META, GRADE_SUBJECTS } from '@/lib/constants';
+import { GRADES } from '@/lib/constants';
+import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 
 export type NCERTQuizConfig = {
   subject: string;
@@ -118,12 +119,12 @@ export default function NCERTQuizSetup({ initialSubject, initialGrade, onStart }
     onStart({ subject, grade, chapter, chapterTitle, questionType, count });
   }
 
-  const subjectMeta = SUBJECT_META.find(s => s.code === subject);
-  const availableGrades = subject
-    ? Object.entries(GRADE_SUBJECTS)
-        .filter(([, subs]) => subs.includes(subject))
-        .map(([g]) => g)
-    : [];
+  const { unlocked: allowedSubjects } = useAllowedSubjects();
+  const subjectMeta = allowedSubjects.find(s => s.code === subject);
+  // NCERT content is available for whichever grades the chapter index returns;
+  // we surface the full standard CBSE grade set and let the chapter fetch 404
+  // if an actual grade/subject combo has no content yet.
+  const availableGrades = subject ? Array.from(GRADES) : [];
 
   const progressMap = Object.fromEntries(progress.map(p => [p.chapter_number, p]));
 
@@ -152,7 +153,7 @@ export default function NCERTQuizSetup({ initialSubject, initialGrade, onStart }
                       if (s === 'chapter') setStep('chapter');
                     }}
                   >
-                    {s === 'subject' && subject ? SUBJECT_META.find(m => m.code === subject)?.name ?? s : s}
+                    {s === 'subject' && subject ? allowedSubjects.find(m => m.code === subject)?.name ?? s : s}
                     {s === 'grade' && grade ? ` ${grade}` : ''}
                     {s === 'chapter' && chapter ? ` Ch.${chapter}` : ''}
                   </button>
@@ -162,7 +163,7 @@ export default function NCERTQuizSetup({ initialSubject, initialGrade, onStart }
                     className={`capitalize px-2 py-0.5 rounded-full font-medium ${isFuture ? 'opacity-40' : ''}`}
                     style={isActive ? { background: 'var(--brand)', color: '#fff' } : { color: 'var(--text-2)' }}
                   >
-                    {s === 'subject' && subject ? SUBJECT_META.find(m => m.code === subject)?.name ?? s : s}
+                    {s === 'subject' && subject ? allowedSubjects.find(m => m.code === subject)?.name ?? s : s}
                     {s === 'grade' && grade ? ` ${grade}` : ''}
                     {s === 'chapter' && chapter ? ` Ch.${chapter}` : ''}
                   </span>
@@ -181,7 +182,7 @@ export default function NCERTQuizSetup({ initialSubject, initialGrade, onStart }
           </h2>
           <p className="text-sm mb-4" style={{ color: 'var(--text-3)' }}>NCERT questions from your textbook</p>
           <div className="grid grid-cols-2 gap-3">
-            {SUBJECT_META.filter(s => ['math','science','physics','chemistry','biology','english','hindi','social_studies','computer_science'].includes(s.code)).map(s => (
+            {allowedSubjects.map(s => (
               <button key={s.code} onClick={() => selectSubject(s.code)}
                 className="flex items-center gap-3 p-3 rounded-xl text-left transition-all active:scale-[0.98] hover:shadow-md"
                 style={{ border: '1.5px solid var(--border)', background: 'var(--surface-1)' }}>
