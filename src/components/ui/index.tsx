@@ -128,6 +128,110 @@ export function LockedCard({
   );
 }
 
+/* ─── Upgrade CTA ─────────────────────────────────────────── */
+/** Proactive upgrade entry point — distinct from <UpgradeModal>, which
+ *  fires on "daily limit reached". This component is for voluntary
+ *  discovery (nav pill, settings row, paywall peek). Routes to /pricing
+ *  by default, or fires onClick if provided.
+ *
+ *  `source` is a free-form analytics tag ("nav_more", "profile_row", etc.)
+ *  so we can measure where upgrades originate without bolting on a
+ *  per-call-site event. Callers that need an in-place limit-reached
+ *  checkout should keep using <UpgradeModal>. */
+interface UpgradeCTAProps {
+  variant?: 'pill' | 'card';
+  label?: ReactNode;
+  subtitle?: ReactNode;
+  source?: string;
+  href?: string;
+  onClick?: () => void;
+  className?: string;
+}
+
+export function UpgradeCTA({
+  variant = 'pill',
+  label,
+  subtitle,
+  source,
+  href = '/pricing',
+  onClick,
+  className = '',
+}: UpgradeCTAProps) {
+  const resolvedLabel = label ?? 'Upgrade';
+
+  const handleClick = (e: React.MouseEvent) => {
+    // Analytics hook: log-only (no PII), non-blocking. Callers that want
+    // custom routing pass onClick; we still log the source.
+    if (source && typeof window !== 'undefined') {
+      try {
+        // Use a harmless CustomEvent — whoever wires analytics (ops) can
+        // listen for this without this component taking a dependency on
+        // a specific analytics SDK.
+        window.dispatchEvent(new CustomEvent('alfanumrik:upgrade-cta-click', {
+          detail: { source, variant, timestamp: Date.now() },
+        }));
+      } catch { /* non-blocking */ }
+    }
+    if (onClick) {
+      e.preventDefault();
+      onClick();
+    }
+  };
+
+  if (variant === 'pill') {
+    return (
+      <a
+        href={href}
+        onClick={handleClick}
+        className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition-all hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${className}`}
+        style={{
+          background: 'linear-gradient(135deg, var(--purple), var(--purple-light))',
+          color: 'white',
+          boxShadow: '0 2px 8px rgb(var(--purple-rgb) / 0.25)',
+        }}
+        data-testid="upgrade-cta-pill"
+      >
+        <span aria-hidden="true">✨</span>
+        <span>{resolvedLabel}</span>
+      </a>
+    );
+  }
+
+  // card variant — larger, for settings/profile rows
+  return (
+    <a
+      href={href}
+      onClick={handleClick}
+      className={`block rounded-2xl p-4 transition-all hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--purple)] focus-visible:ring-offset-2 ${className}`}
+      style={{
+        background: 'linear-gradient(135deg, rgb(var(--purple-rgb) / 0.08), rgb(var(--orange-rgb) / 0.06))',
+        border: '1px solid rgb(var(--purple-rgb) / 0.2)',
+      }}
+      data-testid="upgrade-cta-card"
+    >
+      <div className="flex items-center gap-3">
+        <div
+          className="flex items-center justify-center w-10 h-10 rounded-xl shrink-0"
+          style={{
+            background: 'linear-gradient(135deg, var(--purple), var(--purple-light))',
+            color: 'white',
+          }}
+          aria-hidden="true"
+        >
+          <span className="text-lg">✨</span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-bold" style={{ color: 'var(--text-1)' }}>{resolvedLabel}</div>
+          {subtitle && (
+            <div className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>{subtitle}</div>
+          )}
+        </div>
+        <span className="text-xs font-bold" style={{ color: 'var(--purple)' }} aria-hidden="true">→</span>
+      </div>
+    </a>
+  );
+}
+
 /* ─── Button ──────────────────────────────────────────────── */
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'primary' | 'ghost' | 'soft' | 'destructive' | 'link';

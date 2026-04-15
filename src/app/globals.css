@@ -15,6 +15,8 @@
   --teal: #0891B2;
   --green: #16A34A;
   --purple: #7C3AED;
+  --purple-rgb: 124, 58, 237;       /* for rgb(var(--purple-rgb) / <alpha>) */
+  --purple-light: #9333EA;
   --pink: #DB2777;
   --red: #DC2626;
 

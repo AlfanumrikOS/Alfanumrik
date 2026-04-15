@@ -186,6 +186,10 @@ export default function BottomNavComponent() {
   // Phase 5B UX mission: "locked state > missing state".
   const studentGrade = parseInt((auth as any)?.student?.grade ?? '6', 10);
   const getItemLock = (item: any) => getItemLockForGrade(item, studentGrade);
+  // Phase 5B Surface 3 — show a proactive Upgrade pill in the More sheet
+  // for free-plan students. Pro/starter/unlimited never see it.
+  const subscriptionPlan = ((auth as any)?.student?.subscription_plan as string | null | undefined) ?? null;
+  const showUpgradePill = activeRole === 'student' && (subscriptionPlan === null || subscriptionPlan === 'free');
   // Sidebar SECTION-level gating (rare) still filters the section entirely —
   // a whole-section lockout is too heavy to render as locked items.
   const sidebarSections = allSidebarSections.filter(s => {
@@ -293,6 +297,50 @@ export default function BottomNavComponent() {
                   </button>
                 );
               })}
+              {/* Phase 5B Surface 3 — Upgrade pill (free-plan students only) */}
+              {showUpgradePill && (
+                <div className="pt-3 mt-2" style={{ borderTop: '1px solid var(--border)' }}>
+                  <a
+                    href="/pricing"
+                    onClick={() => {
+                      setShowMore(false);
+                      if (typeof window !== 'undefined') {
+                        try {
+                          window.dispatchEvent(new CustomEvent('alfanumrik:upgrade-cta-click', {
+                            detail: { source: 'nav_more_sheet', variant: 'pill', timestamp: Date.now() },
+                          }));
+                        } catch { /* non-blocking */ }
+                      }
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--purple)] focus-visible:ring-offset-2"
+                    style={{
+                      background: 'linear-gradient(135deg, rgb(var(--purple-rgb) / 0.10), rgb(var(--orange-rgb) / 0.08))',
+                      border: '1px solid rgb(var(--purple-rgb) / 0.25)',
+                    }}
+                    data-testid="nav-upgrade-pill"
+                  >
+                    <span
+                      className="inline-flex items-center justify-center w-8 h-8 rounded-xl shrink-0"
+                      style={{
+                        background: 'linear-gradient(135deg, var(--purple), var(--purple-light))',
+                        color: 'white',
+                      }}
+                      aria-hidden="true"
+                    >
+                      ✨
+                    </span>
+                    <span className="flex flex-col flex-1 min-w-0">
+                      <span className="text-sm font-bold" style={{ color: 'var(--text-1)' }}>
+                        {isHi ? 'प्रीमियम पर अपग्रेड करें' : 'Upgrade to Premium'}
+                      </span>
+                      <span className="text-[11px]" style={{ color: 'var(--text-3)' }}>
+                        {isHi ? 'और चैट, अनलिमिटेड क्विज़' : 'More chats, unlimited quizzes'}
+                      </span>
+                    </span>
+                    <span className="text-xs font-bold" style={{ color: 'var(--purple)' }} aria-hidden="true">→</span>
+                  </a>
+                </div>
+              )}
               {/* Role Switcher for multi-role users */}
               {hasMultipleRoles && (
                 <div className="pt-2 mt-2" style={{ borderTop: '1px solid var(--border)' }}>
