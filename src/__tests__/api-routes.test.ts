@@ -409,6 +409,37 @@ describe('PATCH /api/student/profile', () => {
     });
   });
 
+  describe('preferred_subject governance', () => {
+    it('rejects preferred_subject outside allowed set with 422', async () => {
+      authorizedAs('s1');
+      setFromResult('students', { data: { id: 's1', name: 'Ravi', board: 'CBSE', name_change_count: 0 }, error: null });
+      mockAllowedSubjects(['math', 'science']); // 'physics' not allowed
+      const res = await call({ preferred_subject: 'physics' });
+      expect(res.status).toBe(422);
+      const body = await res.json();
+      expect(body).toMatchObject({
+        error: 'subject_not_allowed',
+        subject: 'physics',
+      });
+      expect(Array.isArray(body.allowed)).toBe(true);
+    });
+
+    it('accepts preferred_subject when in allowed set', async () => {
+      authorizedAs('s1');
+      setFromResult('students', { data: { id: 's1', name: 'Ravi', board: 'CBSE', name_change_count: 0 }, error: null });
+      mockAllowedSubjects(['math', 'science']);
+      const res = await call({ preferred_subject: 'math' });
+      expect(res.status).toBe(200);
+    });
+
+    it('accepts null preferred_subject (clear)', async () => {
+      authorizedAs('s1');
+      setFromResult('students', { data: { id: 's1', name: 'Ravi', board: 'CBSE', name_change_count: 0 }, error: null });
+      const res = await call({ preferred_subject: null });
+      expect(res.status).toBe(200);
+    });
+  });
+
   describe('board change guard', () => {
     it('returns 400 for invalid board value', async () => {
       authorizedAs('s1');
