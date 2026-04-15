@@ -290,19 +290,11 @@ describe('super-admin/subjects/violations route', () => {
     expect(res.status).toBe(401);
   });
 
-  it('GET returns JSON shape on happy path (RPC fallback empty)', async () => {
+  it('GET returns JSON shape on happy path (empty violations)', async () => {
     mockAuthorizeAdmin.mockResolvedValueOnce(AUTH_OK);
-    // exec_admin_query: error so it falls back to per-student loop
-    mockRpc.mockResolvedValueOnce({ data: null, error: { message: 'no exec helper' } });
-    // students table: empty list
-    fromMock.mockReturnValueOnce({
-      select: () => ({
-        order: () => ({
-          range: async () => ({ data: [] }),
-          eq: () => ({ range: async () => ({ data: [] }) }),
-        }),
-      }),
-    });
+    // New implementation (migration 20260415000010) calls get_subject_violations
+    // directly — no from() fallback path.
+    mockRpc.mockResolvedValueOnce({ data: [], error: null });
 
     const { GET } = await import('@/app/api/super-admin/subjects/violations/route');
     const res = await GET(
@@ -312,7 +304,47 @@ describe('super-admin/subjects/violations route', () => {
     const body = await res.json();
     expect(body).toHaveProperty('violations');
     expect(body).toHaveProperty('count');
+    expect(body).toHaveProperty('data');
+    expect(body).toHaveProperty('total');
     expect(Array.isArray(body.violations)).toBe(true);
+    expect(body.count).toBe(0);
+  });
+
+  it('GET returns 500 on RPC error', async () => {
+    mockAuthorizeAdmin.mockResolvedValueOnce(AUTH_OK);
+    mockRpc.mockResolvedValueOnce({ data: null, error: { message: 'rpc missing' } });
+    const { GET } = await import('@/app/api/super-admin/subjects/violations/route');
+    const res = await GET(
+      jsonRequest('http://test/api/super-admin/subjects/violations?format=json', 'GET') as any
+    );
+    expect(res.status).toBe(500);
+  });
+
+  it('GET with format=csv returns text/csv and correct headers', async () => {
+    mockAuthorizeAdmin.mockResolvedValueOnce(AUTH_OK);
+    mockRpc.mockResolvedValueOnce({
+      data: [
+        {
+          student_id: '99999999-9999-9999-9999-999999999999',
+          grade: '11',
+          stream: 'science',
+          plan: 'free',
+          invalid_subjects: ['physics', 'chemistry'],
+          total: 2,
+          total_count: 1,
+        },
+      ],
+      error: null,
+    });
+    const { GET } = await import('@/app/api/super-admin/subjects/violations/route');
+    const res = await GET(
+      jsonRequest('http://test/api/super-admin/subjects/violations?format=csv', 'GET') as any
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toContain('text/csv');
+    const body = await res.text();
+    expect(body).toContain('student_id,grade,stream,plan,invalid_subjects,total');
+    expect(body).toContain('physics|chemistry');
   });
 });
 
