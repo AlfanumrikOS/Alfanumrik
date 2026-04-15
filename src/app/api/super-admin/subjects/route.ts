@@ -52,8 +52,10 @@ export async function GET(request: NextRequest) {
       const text = await res.text();
       return NextResponse.json({ error: `Fetch failed: ${text}` }, { status: res.status });
     }
-    const subjects = await res.json();
-    return NextResponse.json({ subjects: Array.isArray(subjects) ? subjects : [] });
+    const subjectsRaw = await res.json();
+    const subjects = Array.isArray(subjectsRaw) ? subjectsRaw : [];
+    // Phase I: `data` alias added for frontend compatibility (additive).
+    return NextResponse.json({ subjects, data: subjects });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Internal error' },

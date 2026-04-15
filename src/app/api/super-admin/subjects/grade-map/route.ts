@@ -70,8 +70,10 @@ export async function GET(request: NextRequest) {
       const text = await res.text();
       return NextResponse.json({ error: `Fetch failed: ${text}` }, { status: res.status });
     }
-    const rows = await res.json();
-    return NextResponse.json({ rows: Array.isArray(rows) ? rows : [] });
+    const rowsRaw = await res.json();
+    const rows = Array.isArray(rowsRaw) ? rowsRaw : [];
+    // Phase I: `data` alias added for frontend compatibility (additive).
+    return NextResponse.json({ rows, data: rows });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Internal error' },

@@ -97,12 +97,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to fetch subscription_plans' }, { status: plansRes.status });
     }
 
-    const rows = await pairsRes.json();
-    const plans = await plansRes.json();
-    return NextResponse.json({
-      rows: Array.isArray(rows) ? rows : [],
-      plans: Array.isArray(plans) ? plans : [],
-    });
+    const rowsRaw = await pairsRes.json();
+    const plansRaw = await plansRes.json();
+    const rows = Array.isArray(rowsRaw) ? rowsRaw : [];
+    const plans = Array.isArray(plansRaw) ? plansRaw : [];
+    // Phase I: `data` alias added for frontend compatibility (additive).
+    return NextResponse.json({ rows, plans, data: rows });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Internal error' },

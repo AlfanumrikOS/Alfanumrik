@@ -311,7 +311,8 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    return NextResponse.json({ violations: rows, count });
+    // Phase I: `data` + `total` aliases added for frontend compatibility (additive).
+    return NextResponse.json({ violations: rows, count, data: rows, total: count });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Internal error' },
