@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/app_colors.dart';
-import '../../../core/constants/grade_subjects.dart';
+import '../../../core/services/subjects_provider.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../providers/quiz_provider.dart';
 import '../../widgets/loading_widget.dart';
@@ -35,6 +35,8 @@ class QuizScreen extends ConsumerWidget {
     }
 
     // Subject selection
+    final subjectsAsync = ref.watch(subjectsProvider);
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(title: const Text('Practice Quiz')),
@@ -51,54 +53,72 @@ class QuizScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 12),
           if (student != null)
-            ...GradeSubjects.forGrade(student.gradeNumber).map((subj) {
-              final color = AppColors.subjectColor(subj.code);
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: GestureDetector(
-                  onTap: () {
-                    ref.read(quizProvider.notifier).startQuiz(
-                          subject: subj.code,
-                          count: 10,
-                        );
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: AppColors.surface,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: color.withValues(alpha: 0.15)),
-                    ),
-                    child: Row(
-                      children: [
-                        Text(subj.emoji, style: const TextStyle(fontSize: 24)),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Text(
-                            subj.name,
-                            style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textPrimary,
-                            ),
-                          ),
-                        ),
-                        Text(
-                          '10 Qs',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: color,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Icon(Icons.play_arrow_rounded, color: color, size: 20),
-                      ],
-                    ),
+            ...subjectsAsync.when(
+              loading: () => const [
+                Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+              ],
+              error: (e, _) => [
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Text(
+                    e.toString(),
+                    style: const TextStyle(color: AppColors.error, fontSize: 13),
+                    textAlign: TextAlign.center,
                   ),
                 ),
-              );
-            }),
+              ],
+              data: (subjects) => subjects.where((s) => !s.isLocked).map((subj) {
+                final color = AppColors.subjectColor(subj.code);
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: GestureDetector(
+                    onTap: () {
+                      ref.read(quizProvider.notifier).startQuiz(
+                            subject: subj.code,
+                            count: 10,
+                          );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: color.withValues(alpha: 0.15)),
+                      ),
+                      child: Row(
+                        children: [
+                          Text(subj.icon, style: const TextStyle(fontSize: 24)),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Text(
+                              subj.name,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            '10 Qs',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: color,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Icon(Icons.play_arrow_rounded, color: color, size: 20),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
           if (quiz.error != null)
             Padding(
               padding: const EdgeInsets.only(top: 12),
