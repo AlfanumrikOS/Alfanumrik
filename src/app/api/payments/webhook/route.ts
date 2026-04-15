@@ -1,20 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { verifyRazorpaySignature } from '@/lib/payment-verification';
+import { logOpsEvent } from '@/lib/ops-events';
+import { logger } from '@/lib/logger';
 
 /**
- * Razorpay Webhook Handler
+ * Razorpay Webhook Handler — CANONICAL (per architect C3)
  *
- * Safety net for the payment lifecycle. If the client-side verify callback
- * fails (network issue, browser close, etc.), this webhook ensures the
- * subscription is still activated.
+ * This route is the single authoritative webhook receiver for Razorpay.
+ * The legacy Supabase Edge Function `payments` handleWebhook path is
+ * disabled (see supabase/functions/payments/index.ts cleanup in the same PR).
  *
  * Handles:
- * - payment.captured → activate subscription (idempotent)
- * - payment.failed → record failure
- * - subscription.cancelled/expired → downgrade to free
+ *   - payment.captured               → record payment, activate (yearly/one-time)
+ *   - payment.failed                 → record failure
+ *   - subscription.authenticated     → log only (pending row already present)
+ *   - subscription.activated         → activate (first-charge success)
+ *   - subscription.charged           → renewal (reuse activate_subscription)
+ *   - subscription.halted            → set status=halted, downgrade
+ *   - subscription.cancelled         → set status=cancelled (access until period end)
+ *   - subscription.expired           → set status=expired, downgrade
+ *   - subscription.completed         → mark completed, downgrade
  *
- * All writes are idempotent — safe for duplicate webhook deliveries.
+ * Student resolution order (architect C3):
+ *   1. event.notes.student_id
+ *   2. student_subscriptions.razorpay_subscription_id = rzSubId
+ *   3. students.auth_user_id = event.notes.user_id
+ *   4. All failed → logOpsEvent critical + return 500 (so Razorpay retries).
+ *
+ * All writes are idempotent.
  */
 
 /** Strip billing-cycle suffix and map legacy aliases to canonical plan code. */
@@ -24,6 +38,129 @@ function canonicalizePlan(raw: string): string {
     .replace(/^ultimate$/, 'unlimited')
     .replace(/^basic$/, 'starter')
     .replace(/^premium$/, 'pro');
+}
+
+type ResolvedStudent = {
+  student_id: string;
+  /** Which branch succeeded — useful for ops metrics. */
+  via: 'notes_student_id' | 'rz_sub_id' | 'notes_user_id';
+};
+
+/**
+ * Three-step student resolution per architect C3.
+ * Returns null if all three branches fail.
+ */
+async function resolveStudent(
+  admin: SupabaseClient,
+  opts: {
+    notesStudentId?: string;
+    rzSubId?: string;
+    notesUserId?: string;
+  }
+): Promise<ResolvedStudent | null> {
+  // (1) notes.student_id — fast path, canonical.
+  if (opts.notesStudentId) {
+    const { data } = await admin
+      .from('students')
+      .select('id')
+      .eq('id', opts.notesStudentId)
+      .maybeSingle();
+    if (data?.id) return { student_id: data.id, via: 'notes_student_id' };
+  }
+
+  // (2) student_subscriptions.razorpay_subscription_id
+  if (opts.rzSubId) {
+    const { data } = await admin
+      .from('student_subscriptions')
+      .select('student_id')
+      .eq('razorpay_subscription_id', opts.rzSubId)
+      .maybeSingle();
+    if (data?.student_id) return { student_id: data.student_id, via: 'rz_sub_id' };
+  }
+
+  // (3) students.auth_user_id = notes.user_id (legacy).
+  if (opts.notesUserId) {
+    const { data } = await admin
+      .from('students')
+      .select('id')
+      .eq('auth_user_id', opts.notesUserId)
+      .maybeSingle();
+    if (data?.id) return { student_id: data.id, via: 'notes_user_id' };
+  }
+
+  return null;
+}
+
+/** Downgrade helper with plan-downgrade-race guard (architect risk #1). */
+async function downgradeIfMatchingSub(
+  admin: SupabaseClient,
+  studentId: string,
+  cancelledSubId: string,
+  newStatus: 'cancelled' | 'expired' | 'halted' | 'completed',
+  eventType: string,
+): Promise<'downgraded' | 'stale_cancel_ignored'> {
+  const { data: current } = await admin
+    .from('student_subscriptions')
+    .select('razorpay_subscription_id')
+    .eq('student_id', studentId)
+    .maybeSingle();
+
+  // If current row references a DIFFERENT sub_id, this cancel is stale.
+  if (current?.razorpay_subscription_id && current.razorpay_subscription_id !== cancelledSubId) {
+    await logOpsEvent({
+      category: 'payment',
+      severity: 'warning',
+      source: 'webhook/route.ts',
+      message: 'stale_cancel_ignored',
+      context: {
+        event_type: eventType,
+        student_id: studentId,
+        cancelled_sub_id: cancelledSubId,
+        current_sub_id: current.razorpay_subscription_id,
+      },
+    });
+    return 'stale_cancel_ignored';
+  }
+
+  await admin
+    .from('students')
+    .update({ subscription_plan: 'free' })
+    .eq('id', studentId);
+
+  await admin
+    .from('student_subscriptions')
+    .update({
+      plan_code: 'free',
+      status: newStatus,
+      cancelled_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('student_id', studentId);
+
+  return 'downgraded';
+}
+
+/** Central handler for unresolved-student webhook events. */
+async function handleUnresolved(
+  eventType: string,
+  rzSubId: string | undefined,
+  rzPaymentId: string | undefined,
+  notes: Record<string, unknown>,
+): Promise<NextResponse> {
+  await logOpsEvent({
+    category: 'payment',
+    severity: 'critical',
+    source: 'webhook/route.ts',
+    message: 'webhook student_unresolved',
+    context: {
+      event_type: eventType,
+      rz_sub_id: rzSubId ?? null,
+      razorpay_payment_id: rzPaymentId ?? null,
+      notes_keys: Object.keys(notes ?? {}),
+    },
+  });
+  // Return 500 so Razorpay retries (5xx = retry, 4xx = no retry).
+  return NextResponse.json({ error: 'student_unresolved' }, { status: 500 });
 }
 
 export async function POST(request: NextRequest) {
@@ -36,20 +173,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Not configured' }, { status: 400 });
     }
 
-    // Verify webhook signature (P11: timing-safe via extracted utility)
+    // Verify webhook signature (P11: timing-safe via extracted utility).
+    // This MUST run before any other processing.
     if (!verifyRazorpaySignature(body, signature, webhookSecret)) {
-      console.error('Webhook signature mismatch');
+      logger.error('Webhook signature mismatch');
       return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
     }
 
     const event = JSON.parse(body);
-    const eventType = event.event;
+    const eventType: string = event.event;
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !serviceKey) {
-      console.error('webhook: MISSING ENV VARS — SUPABASE_SERVICE_ROLE_KEY:', !!serviceKey, 'URL:', !!supabaseUrl);
+      logger.error('webhook: MISSING ENV VARS', { hasServiceKey: !!serviceKey, hasUrl: !!supabaseUrl });
       return NextResponse.json({ error: 'Server not configured' }, { status: 503 });
     }
 
@@ -57,169 +195,287 @@ export async function POST(request: NextRequest) {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    // ── payment.captured: activate subscription (safety net) ──
+    // ══════════════════════════════════════════════════════════
+    // PAYMENT EVENTS
+    // ══════════════════════════════════════════════════════════
+
     if (eventType === 'payment.captured') {
       const payment = event.payload.payment.entity;
       const orderId = payment.order_id;
       const paymentId = payment.id;
-      const userId = payment.notes?.user_id;
-      const planCode = payment.notes?.plan_code;
-      const billingCycle = payment.notes?.billing_cycle || 'monthly';
+      const notes = payment.notes ?? {};
+      const rawPlan = notes.plan_code;
+      const billingCycle = notes.billing_cycle || 'monthly';
+      const planCode = rawPlan ? canonicalizePlan(rawPlan) : null;
 
-      console.log(`Webhook: payment.captured ${paymentId}, order: ${orderId}, plan: ${planCode}`);
+      logger.info('Webhook: payment.captured', { paymentId, orderId, planCode });
 
-      if (userId && planCode) {
-        // Check if already processed (idempotency)
-        const { data: existing } = await admin
-          .from('payment_history')
-          .select('id, status')
-          .eq('razorpay_payment_id', paymentId)
-          .limit(1);
+      if (!planCode) return NextResponse.json({ received: true, note: 'no_plan' });
 
-        if (existing && existing.length > 0 && existing[0].status === 'captured') {
-          console.log(`Webhook: payment ${paymentId} already processed, skipping`);
-          return NextResponse.json({ received: true, note: 'already_processed' });
-        }
+      // Idempotency: skip if already captured.
+      const { data: existing } = await admin
+        .from('payment_history')
+        .select('id, status')
+        .eq('razorpay_payment_id', paymentId)
+        .limit(1);
+      if (existing && existing.length > 0 && existing[0].status === 'captured') {
+        return NextResponse.json({ received: true, note: 'already_processed' });
+      }
 
-        // Resolve student's internal ID (needed for both payment_history and student_subscriptions)
-        const { data: studentRow } = await admin
-          .from('students')
-          .select('id')
-          .eq('auth_user_id', userId)
-          .single();
+      const resolved = await resolveStudent(admin, {
+        notesStudentId: notes.student_id,
+        notesUserId: notes.user_id,
+      });
+      if (!resolved) {
+        return handleUnresolved(eventType, undefined, paymentId, notes);
+      }
 
-        // Record payment if not already recorded
-        if ((!existing || existing.length === 0) && studentRow) {
-          await admin.from('payment_history').insert({
-            student_id: studentRow.id,
-            razorpay_payment_id: paymentId,
-            razorpay_order_id: orderId,
-            plan_code: planCode,
-            billing_cycle: billingCycle,
-            currency: payment.currency || 'INR',
-            amount: payment.amount,
-            status: 'captured',
-            payment_method: 'razorpay',
-            notes: { source: 'webhook' },
-          });
-        }
+      // Record payment (idempotent via payment_id).
+      if (!existing || existing.length === 0) {
+        await admin.from('payment_history').insert({
+          student_id: resolved.student_id,
+          razorpay_payment_id: paymentId,
+          razorpay_order_id: orderId,
+          plan_code: planCode,
+          billing_cycle: billingCycle,
+          currency: payment.currency || 'INR',
+          amount: payment.amount,
+          status: 'captured',
+          payment_method: 'razorpay',
+          notes: { source: 'webhook' },
+        });
+      }
 
-        // Activate subscription via RPC (idempotent — upserts both tables)
+      // Activate subscription (idempotent — upserts both tables atomically via RPC).
+      const authUserId = notes.user_id;
+      if (authUserId) {
         const { error: rpcError } = await admin.rpc('activate_subscription', {
-          p_auth_user_id: userId,
+          p_auth_user_id: authUserId,
           p_plan_code: planCode,
           p_billing_cycle: billingCycle,
           p_razorpay_payment_id: paymentId,
           p_razorpay_order_id: orderId,
         });
-
         if (rpcError) {
-          console.error(`Webhook: activate_subscription RPC failed for ${userId}:`, rpcError.message);
-
-          // Fallback: directly update both tables so entitlement is never left stale
+          logger.error('Webhook: activate_subscription RPC failed', { error: rpcError.message, authUserId });
+          // Fallback patches both tables — tracked risk per P11.
           await admin
             .from('students')
             .update({ subscription_plan: planCode })
-            .eq('auth_user_id', userId);
+            .eq('id', resolved.student_id);
+          await admin
+            .from('student_subscriptions')
+            .upsert(
+              {
+                student_id: resolved.student_id,
+                plan_code: planCode,
+                status: 'active',
+                updated_at: new Date().toISOString(),
+              },
+              { onConflict: 'student_id' },
+            );
+        }
+      }
+      return NextResponse.json({ received: true });
+    }
 
-          // Sync student_subscriptions.plan_code (the authoritative source for Foxy limits)
-          const studentId = studentRow?.id;
-          if (studentId) {
-            const canonical = canonicalizePlan(planCode);
+    if (eventType === 'payment.failed') {
+      const payment = event.payload.payment.entity;
+      const notes = payment.notes ?? {};
+      logger.info('Webhook: payment.failed', { paymentId: payment.id, reason: payment.error_description });
+
+      const resolved = await resolveStudent(admin, {
+        notesStudentId: notes.student_id,
+        notesUserId: notes.user_id,
+      });
+      if (!resolved) {
+        // Failed payments with unresolved students are less critical — log at error, don't 500.
+        await logOpsEvent({
+          category: 'payment',
+          severity: 'error',
+          source: 'webhook/route.ts',
+          message: 'payment.failed student_unresolved',
+          context: { razorpay_payment_id: payment.id, notes_keys: Object.keys(notes) },
+        });
+        return NextResponse.json({ received: true, note: 'student_unresolved' });
+      }
+
+      const rawPlan = notes.plan_code;
+      // Use canonical 'free' rather than 'unknown' so the row passes any future
+      // CHECK constraint on plan_code IN ('free','starter','pro','unlimited').
+      // Architect re-review condition (2026-04-15).
+      const planCode = rawPlan ? canonicalizePlan(rawPlan) : 'free';
+      const { error: failInsertErr } = await admin.from('payment_history').insert({
+        student_id: resolved.student_id,
+        razorpay_payment_id: payment.id,
+        razorpay_order_id: payment.order_id,
+        plan_code: planCode,
+        billing_cycle: notes.billing_cycle || 'monthly',
+        currency: payment.currency || 'INR',
+        amount: payment.amount || 0,
+        status: 'failed',
+        payment_method: 'razorpay',
+        notes: { source: 'webhook', error: payment.error_description },
+      });
+      if (failInsertErr && !failInsertErr.message.includes('duplicate')) {
+        logger.error('Webhook: failed payment insert error', { error: failInsertErr.message });
+      }
+      return NextResponse.json({ received: true });
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // SUBSCRIPTION EVENTS (monthly recurring)
+    // ══════════════════════════════════════════════════════════
+    const subEvents = new Set([
+      'subscription.authenticated',
+      'subscription.activated',
+      'subscription.charged',
+      'subscription.halted',
+      'subscription.cancelled',
+      'subscription.expired',
+      'subscription.completed',
+    ]);
+
+    if (subEvents.has(eventType)) {
+      const subscription = event.payload?.subscription?.entity;
+      const paymentEntity = event.payload?.payment?.entity;
+      const rzSubId: string | undefined = subscription?.id;
+      const notes = subscription?.notes ?? paymentEntity?.notes ?? {};
+
+      const resolved = await resolveStudent(admin, {
+        notesStudentId: notes.student_id,
+        rzSubId,
+        notesUserId: notes.user_id,
+      });
+      if (!resolved) {
+        return handleUnresolved(eventType, rzSubId, paymentEntity?.id, notes);
+      }
+
+      const rawPlan = notes.plan_code;
+      const planCode = rawPlan ? canonicalizePlan(rawPlan) : null;
+      const authUserId: string | undefined = notes.user_id;
+
+      logger.info(`Webhook: ${eventType}`, {
+        rzSubId, resolvedVia: resolved.via, studentId: resolved.student_id, planCode,
+      });
+
+      // ── subscription.authenticated: payment method approved, awaiting first charge.
+      if (eventType === 'subscription.authenticated') {
+        // Pending row already exists from subscribe-route. Nothing to do — just ACK.
+        return NextResponse.json({ received: true });
+      }
+
+      // ── subscription.activated / subscription.charged: activate or renew.
+      if (eventType === 'subscription.activated' || eventType === 'subscription.charged') {
+        if (!planCode) {
+          return NextResponse.json({ received: true, note: 'no_plan_in_notes' });
+        }
+
+        // Record payment if present (subscription.charged carries a payment entity).
+        if (paymentEntity?.id) {
+          const { data: existing } = await admin
+            .from('payment_history')
+            .select('id, status')
+            .eq('razorpay_payment_id', paymentEntity.id)
+            .limit(1);
+          if (!existing || existing.length === 0) {
+            await admin.from('payment_history').insert({
+              student_id: resolved.student_id,
+              razorpay_payment_id: paymentEntity.id,
+              razorpay_order_id: paymentEntity.order_id,
+              plan_code: planCode,
+              billing_cycle: 'monthly',
+              currency: paymentEntity.currency || 'INR',
+              amount: paymentEntity.amount,
+              status: 'captured',
+              payment_method: 'razorpay',
+              notes: { source: 'webhook', event: eventType, rz_sub_id: rzSubId },
+            });
+          }
+        }
+
+        // Activate via RPC. We require authUserId here — if absent, do a direct
+        // upsert to ensure entitlement is still granted.
+        if (authUserId) {
+          const { error: rpcError } = await admin.rpc('activate_subscription', {
+            p_auth_user_id: authUserId,
+            p_plan_code: planCode,
+            p_billing_cycle: 'monthly',
+            p_razorpay_payment_id: paymentEntity?.id ?? null,
+            p_razorpay_subscription_id: rzSubId ?? null,
+          });
+          if (rpcError) {
+            logger.error('Webhook: activate_subscription RPC failed', {
+              error: rpcError.message, eventType, rzSubId,
+            });
+            // Fallback direct writes — tracked risk per P11.
+            await admin
+              .from('students')
+              .update({ subscription_plan: planCode })
+              .eq('id', resolved.student_id);
             await admin
               .from('student_subscriptions')
               .upsert(
                 {
-                  student_id: studentId,
-                  plan_code: canonical,
+                  student_id: resolved.student_id,
+                  plan_code: planCode,
                   status: 'active',
+                  billing_cycle: 'monthly',
+                  razorpay_subscription_id: rzSubId,
                   updated_at: new Date().toISOString(),
                 },
                 { onConflict: 'student_id' },
               );
           }
         } else {
-          console.log(`Webhook: subscription activated for ${userId} → ${planCode}`);
+          // No auth_user_id in notes — direct upsert against resolved student.
+          await admin
+            .from('student_subscriptions')
+            .upsert(
+              {
+                student_id: resolved.student_id,
+                plan_code: planCode,
+                status: 'active',
+                billing_cycle: 'monthly',
+                razorpay_subscription_id: rzSubId,
+                updated_at: new Date().toISOString(),
+              },
+              { onConflict: 'student_id' },
+            );
+        }
+        return NextResponse.json({ received: true });
+      }
+
+      // ── subscription.halted: payment retries exhausted.
+      if (eventType === 'subscription.halted') {
+        if (rzSubId) {
+          const result = await downgradeIfMatchingSub(admin, resolved.student_id, rzSubId, 'halted', eventType);
+          return NextResponse.json({ received: true, note: result });
         }
       }
-    }
 
-    // ── payment.failed: record failure ──
-    if (eventType === 'payment.failed') {
-      const payment = event.payload.payment.entity;
-      console.log(`Webhook: payment.failed ${payment.id}, reason: ${payment.error_description}`);
-
-      const userId = payment.notes?.user_id;
-      if (userId) {
-        const { data: studentRow } = await admin
-          .from('students')
-          .select('id')
-          .eq('auth_user_id', userId)
-          .single();
-
-        if (studentRow) {
-          const { error: failInsertErr } = await admin.from('payment_history').insert({
-            student_id: studentRow.id,
-            razorpay_payment_id: payment.id,
-            razorpay_order_id: payment.order_id,
-            plan_code: payment.notes?.plan_code || 'unknown',
-            billing_cycle: payment.notes?.billing_cycle || 'monthly',
-            currency: payment.currency || 'INR',
-            amount: payment.amount || 0,
-            status: 'failed',
-            payment_method: 'razorpay',
-            notes: { source: 'webhook', error: payment.error_description },
-          });
-          if (failInsertErr && !failInsertErr.message.includes('duplicate')) {
-            console.error('Webhook: failed payment insert error:', failInsertErr.message);
-          }
+      // ── subscription.cancelled / expired / completed: downgrade with race guard.
+      if (eventType === 'subscription.cancelled' ||
+          eventType === 'subscription.expired' ||
+          eventType === 'subscription.completed') {
+        if (rzSubId) {
+          const newStatus =
+            eventType === 'subscription.cancelled' ? 'cancelled'
+            : eventType === 'subscription.expired'  ? 'expired'
+            : 'completed';
+          const result = await downgradeIfMatchingSub(admin, resolved.student_id, rzSubId, newStatus, eventType);
+          return NextResponse.json({ received: true, note: result });
         }
       }
+
+      return NextResponse.json({ received: true });
     }
 
-    // ── subscription.cancelled / subscription.expired: downgrade to free ──
-    if (eventType === 'subscription.cancelled' || eventType === 'subscription.expired') {
-      const subscription = event.payload.subscription?.entity;
-      const userId = subscription?.notes?.user_id;
-
-      if (userId) {
-        console.log(`Webhook: ${eventType} for user ${userId}`);
-
-        // Resolve student ID first — never use nested awaits inside query args
-        const { data: studentRow } = await admin
-          .from('students')
-          .select('id')
-          .eq('auth_user_id', userId)
-          .single();
-
-        const studentId = studentRow?.id;
-        if (!studentId) {
-          console.error(`Webhook: ${eventType} — no student found for auth_user_id ${userId}`);
-          return NextResponse.json({ received: true, note: 'student_not_found' });
-        }
-
-        // Downgrade students.subscription_plan
-        await admin
-          .from('students')
-          .update({ subscription_plan: 'free' })
-          .eq('id', studentId);
-
-        // Downgrade student_subscriptions.plan_code (authoritative for Foxy)
-        // Without this, the student retains premium Foxy access after cancellation.
-        await admin
-          .from('student_subscriptions')
-          .update({
-            plan_code: 'free',
-            status: eventType === 'subscription.cancelled' ? 'cancelled' : 'expired',
-            cancelled_at: new Date().toISOString(),
-          })
-          .eq('student_id', studentId);
-      }
-    }
-
-    return NextResponse.json({ received: true });
+    // Unknown event type — ACK and ignore.
+    return NextResponse.json({ received: true, note: 'unhandled_event_type', event_type: eventType });
   } catch (err) {
-    console.error('Webhook error:', err);
+    logger.error('Webhook error', { error: err instanceof Error ? err : new Error(String(err)) });
+    // 500 so Razorpay retries.
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
 }
