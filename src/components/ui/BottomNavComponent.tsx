@@ -229,7 +229,7 @@ export default function BottomNavComponent() {
                     onClick={() => { setShowMore(false); router.push(item.href); }}
                     className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl text-left transition-all active:scale-[0.98]"
                     style={{
-                      background: active ? 'rgba(232,88,28,0.08)' : 'transparent',
+                      background: active ? 'rgb(var(--orange-rgb) / 0.08)' : 'transparent',
                       color: active ? 'var(--orange)' : 'var(--text-2)',
                     }}
                   >
@@ -312,9 +312,9 @@ export default function BottomNavComponent() {
                     className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl shadow-lg"
                     style={{
                       background: active
-                        ? 'linear-gradient(135deg, #E8581C, #F5A623)'
-                        : 'linear-gradient(135deg, #E8581C, #D84315)',
-                      boxShadow: '0 4px 16px rgba(232,88,28,0.35)',
+                        ? 'linear-gradient(135deg, var(--orange), var(--gold))'
+                        : 'linear-gradient(135deg, var(--orange), #D84315)',
+                      boxShadow: '0 4px 16px rgb(var(--orange-rgb) / 0.35)',
                     }}
                   >
                     {item.icon}
@@ -345,7 +345,7 @@ export default function BottomNavComponent() {
                     aria-hidden="true"
                     style={{
                       transform: active ? 'scale(1.15)' : 'scale(1)',
-                      filter: active ? 'drop-shadow(0 0 6px rgba(232, 88, 28, 0.35))' : 'none',
+                      filter: active ? 'drop-shadow(0 0 6px rgb(var(--orange-rgb) / 0.35))' : 'none',
                     }}
                   >
                     {active ? item.activeIcon : item.icon}
@@ -464,7 +464,7 @@ export default function BottomNavComponent() {
                         className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-all"
                         style={{
                           background: active
-                            ? isFoxy ? 'rgba(232,88,28,0.12)' : 'rgba(232,88,28,0.06)'
+                            ? isFoxy ? 'rgb(var(--orange-rgb) / 0.12)' : 'rgb(var(--orange-rgb) / 0.06)'
                             : 'transparent',
                           color: active ? 'var(--orange)' : 'var(--text-2)',
                           fontWeight: active ? 600 : 500,

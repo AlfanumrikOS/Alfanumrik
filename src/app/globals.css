@@ -9,6 +9,7 @@
 
   /* Brand */
   --orange: #E8581C;
+  --orange-rgb: 232, 88, 28;        /* use as rgb(var(--orange-rgb) / <alpha>) for opacity stacks */
   --orange-light: #FF7A3D;
   --gold: #F5A623;
   --teal: #0891B2;
