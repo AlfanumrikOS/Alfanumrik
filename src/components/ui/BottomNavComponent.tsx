@@ -13,6 +13,24 @@ import { useDashboardData } from '@/lib/swr';
  * - Every page reachable in ≤ 2 taps
  */
 
+/** Pure helper: determine whether a nav item is grade-locked for a student.
+ *  Exported for unit testing the grade-gating policy without rendering the
+ *  full nav shell. */
+export interface NavGradeGatedItem {
+  gradeMin?: number;
+  [key: string]: unknown;
+}
+export function getItemLockForGrade(
+  item: NavGradeGatedItem | null | undefined,
+  studentGrade: number,
+): { locked: boolean; gradeMin?: number } {
+  const gMin = item?.gradeMin;
+  if (typeof gMin === 'number' && studentGrade < gMin) {
+    return { locked: true, gradeMin: gMin };
+  }
+  return { locked: false };
+}
+
 const CORE_TABS = [
   { href: '/dashboard', icon: '🏠', activeIcon: '🏠', label: 'Home', labelHi: 'होम' },
   { href: '/quiz', icon: '✏️', activeIcon: '✏️', label: 'Practice', labelHi: 'अभ्यास' },
@@ -163,16 +181,19 @@ export default function BottomNavComponent() {
 
   const tabs = getCoreTabs(activeRole);
   const allSidebarSections = getSidebarSections(activeRole);
-  // Filter by grade for grade-gated sections and items (PYQ, Mock Exam: grade 9+)
+  // Grade-gated items (PYQ, Mock Exam: grade 9+) are now SHOWN as visibly locked
+  // instead of silently hidden — surfaces future value for younger students. See
+  // Phase 5B UX mission: "locked state > missing state".
   const studentGrade = parseInt((auth as any)?.student?.grade ?? '6', 10);
+  const getItemLock = (item: any) => getItemLockForGrade(item, studentGrade);
+  // Sidebar SECTION-level gating (rare) still filters the section entirely —
+  // a whole-section lockout is too heavy to render as locked items.
   const sidebarSections = allSidebarSections.filter(s => {
     const gMin = (s as any).gradeMin;
     return gMin == null || studentGrade >= gMin;
   });
-  const moreItems = getMoreItems(activeRole).filter(item => {
-    const gMin = (item as any).gradeMin;
-    return gMin == null || studentGrade >= gMin;
-  });
+  // Items are never filtered here; locked state is applied at render time.
+  const moreItems = getMoreItems(activeRole);
 
   // Due-review count for the Review tab badge (SWR-cached — no extra request if dashboard already loaded)
   const { data: dashData } = useDashboardData((auth as any)?.student?.id);
@@ -182,7 +203,8 @@ export default function BottomNavComponent() {
   const streakCount: number = (auth as any)?.snapshot?.current_streak ?? 0;
 
   const isActive = (href: string) => pathname === href || (href !== '/' && pathname.startsWith(href));
-  const isMoreActive = moreItems.some(m => isActive(m.href));
+  // isMoreActive should only consider items the user can actually reach.
+  const isMoreActive = moreItems.some(m => !getItemLock(m).locked && isActive(m.href));
   const hasMultipleRoles = roles.length > 1;
 
   const handleRoleSwitch = (role: UserRole) => {
@@ -222,20 +244,45 @@ export default function BottomNavComponent() {
             </div>
             <div className="px-5 pb-4 space-y-1">
               {moreItems.map(item => {
-                const active = isActive(item.href);
+                const lock = getItemLock(item);
+                const active = !lock.locked && isActive(item.href);
+                const gradeChipLabel = lock.locked
+                  ? (isHi ? `कक्षा ${lock.gradeMin}+` : `Grade ${lock.gradeMin}+`)
+                  : null;
                 return (
                   <button
                     key={item.href}
-                    onClick={() => { setShowMore(false); router.push(item.href); }}
+                    type="button"
+                    onClick={lock.locked
+                      ? undefined
+                      : () => { setShowMore(false); router.push(item.href); }}
+                    aria-disabled={lock.locked || undefined}
+                    aria-label={lock.locked
+                      ? `${isHi ? item.labelHi : item.label} — ${isHi ? 'अभी उपलब्ध नहीं' : 'locked'} · ${gradeChipLabel}`
+                      : undefined}
                     className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl text-left transition-all active:scale-[0.98]"
                     style={{
                       background: active ? 'rgb(var(--orange-rgb) / 0.08)' : 'transparent',
-                      color: active ? 'var(--orange)' : 'var(--text-2)',
+                      color: lock.locked ? 'var(--text-3)' : (active ? 'var(--orange)' : 'var(--text-2)'),
+                      opacity: lock.locked ? 0.75 : 1,
+                      cursor: lock.locked ? 'not-allowed' : 'pointer',
                     }}
                   >
-                    <span className="text-xl w-7 text-center">{item.icon}</span>
+                    <span className="text-xl w-7 text-center" aria-hidden="true">{item.icon}</span>
                     <span className="text-sm font-semibold">{isHi ? item.labelHi : item.label}</span>
-                    {item.href === '/review' && dueCount > 0 && activeRole === 'student' ? (
+                    {lock.locked ? (
+                      <span
+                        className="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold"
+                        style={{
+                          background: 'var(--surface-3)',
+                          color: 'var(--text-3)',
+                          border: '1px solid var(--border)',
+                        }}
+                      >
+                        <span aria-hidden="true">🔒</span>
+                        {gradeChipLabel}
+                      </span>
+                    ) : item.href === '/review' && dueCount > 0 && activeRole === 'student' ? (
                       <span className="ml-auto min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[9px] font-bold text-white px-1"
                         style={{ background: '#DC2626' }}>
                         {dueCount > 9 ? '9+' : dueCount}
@@ -435,7 +482,7 @@ export default function BottomNavComponent() {
           <div className="space-y-5">
             {sidebarSections.map(section => {
               const isSectionCollapsed = !collapsed && collapsedSections[section.title];
-              const hasActiveItem = section.items.some(item => isActive(item.href));
+              const hasActiveItem = section.items.some(item => !getItemLock(item).locked && isActive(item.href));
               return (
               <div key={section.title}>
                 {!collapsed && <button
@@ -449,31 +496,54 @@ export default function BottomNavComponent() {
                   </span>
                 </button>}
                 {!isSectionCollapsed && <div className="space-y-0.5">
-                  {section.items.filter(item => {
-                    const gMin = (item as any).gradeMin;
-                    return gMin == null || studentGrade >= gMin;
-                  }).map(item => {
-                    const active = isActive(item.href);
+                  {section.items.map(item => {
+                    const lock = getItemLock(item);
+                    const active = !lock.locked && isActive(item.href);
                     const isFoxy = item.href === '/foxy';
                     const isReview = item.href === '/review';
-                    const showReviewBadge = isReview && dueCount > 0 && activeRole === 'student';
+                    const showReviewBadge = !lock.locked && isReview && dueCount > 0 && activeRole === 'student';
+                    const gradeChipLabel = lock.locked
+                      ? (isHi ? `कक्षा ${lock.gradeMin}+` : `Grade ${lock.gradeMin}+`)
+                      : null;
                     return (
                       <button
                         key={item.href}
-                        onClick={() => router.push(item.href)}
+                        type="button"
+                        onClick={lock.locked ? undefined : () => router.push(item.href)}
+                        aria-disabled={lock.locked || undefined}
+                        aria-label={lock.locked
+                          ? `${isHi ? item.labelHi : item.label} — ${isHi ? 'अभी उपलब्ध नहीं' : 'locked'} · ${gradeChipLabel}`
+                          : undefined}
+                        title={lock.locked && !collapsed
+                          ? (isHi ? `कक्षा ${lock.gradeMin} में अनलॉक होगा` : `Unlocks in grade ${lock.gradeMin}`)
+                          : undefined}
                         className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-all"
                         style={{
                           background: active
                             ? isFoxy ? 'rgb(var(--orange-rgb) / 0.12)' : 'rgb(var(--orange-rgb) / 0.06)'
                             : 'transparent',
-                          color: active ? 'var(--orange)' : 'var(--text-2)',
+                          color: lock.locked ? 'var(--text-3)' : (active ? 'var(--orange)' : 'var(--text-2)'),
                           fontWeight: active ? 600 : 500,
                           fontSize: '14px',
+                          opacity: lock.locked ? 0.7 : 1,
+                          cursor: lock.locked ? 'not-allowed' : 'pointer',
                         }}
                       >
-                        <span className="text-lg w-6 text-center">{item.icon}</span>
+                        <span className="text-lg w-6 text-center" aria-hidden="true">{item.icon}</span>
                         {!collapsed && <span>{isHi ? item.labelHi : item.label}</span>}
-                        {showReviewBadge && !collapsed ? (
+                        {lock.locked && !collapsed ? (
+                          <span
+                            className="ml-auto inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-bold"
+                            style={{
+                              background: 'var(--surface-3)',
+                              color: 'var(--text-3)',
+                              border: '1px solid var(--border)',
+                            }}
+                          >
+                            <span aria-hidden="true">🔒</span>
+                            {gradeChipLabel}
+                          </span>
+                        ) : showReviewBadge && !collapsed ? (
                           <span className="ml-auto min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[9px] font-bold text-white px-1"
                             style={{ background: '#DC2626' }}>
                             {dueCount > 9 ? '9+' : dueCount}
