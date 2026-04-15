@@ -1,10 +1,12 @@
 {
+  "root": true,
   "extends": "next/core-web-vitals",
-  "plugins": ["@typescript-eslint"],
+  "plugins": ["@typescript-eslint", "alfanumrik"],
   "rules": {
     "@typescript-eslint/no-explicit-any": "off",
     "@next/next/no-img-element": "warn",
     "react/no-unescaped-entities": "warn",
-    "no-console": ["warn", { "allow": ["warn", "error"] }]
+    "no-console": ["warn", { "allow": ["warn", "error"] }],
+    "alfanumrik/no-raw-subject-imports": "warn"
   }
 }
