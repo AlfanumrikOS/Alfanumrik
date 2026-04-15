@@ -13,8 +13,10 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
-import { Ratelimit } from '@upstash/ratelimit';
-import { Redis } from '@upstash/redis';
+// Upstash types only — actual modules are dynamic-imported inside ensureUpstash()
+// to keep them out of the middleware's synchronous startup path (P10 budget).
+import type { Ratelimit as RatelimitType } from '@upstash/ratelimit';
+import type { Redis as RedisType } from '@upstash/redis';
 /* ═══════════════════════════════════════════════════════════════
  * PROXY — Security Hardening + Auth Session Refresh
  * Next.js 16 proxy — exported as both proxy (primary) and middleware (compat alias)
@@ -36,28 +38,48 @@ const RATE_LIMIT_MAX = 200;       // 200 requests per minute per IP (each page l
 const RATE_LIMIT_PARENT_MAX = 20; // 20 parent requests per minute per IP
 const RATE_LIMIT_ADMIN_MAX = 60;  // 60 requests per minute for /internal/admin/*
 
-// Distributed rate limiter via Upstash Redis (works across all Vercel instances)
-let redisClient: Redis | null = null;
-let redisRateLimiter: Ratelimit | null = null;
-let redisParentLimiter: Ratelimit | null = null;
-let redisAdminLimiter: Ratelimit | null = null;
+// Distributed rate limiter via Upstash Redis (works across all Vercel instances).
+// Modules are lazy-loaded on first use to keep them off the middleware's
+// synchronous startup path. Behavior is identical to static init: if env vars
+// are missing or construction throws, we fall back to in-memory limiting.
+let redisClient: RedisType | null = null;
+let redisRateLimiter: RatelimitType | null = null;
+let redisParentLimiter: RatelimitType | null = null;
+let redisAdminLimiter: RatelimitType | null = null;
+let upstashInitPromise: Promise<void> | null = null;
+let upstashInitialized = false;
 
-try {
-  if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
-    redisClient = new Redis({
-      url: process.env.UPSTASH_REDIS_REST_URL,
-      token: process.env.UPSTASH_REDIS_REST_TOKEN,
-    });
-    redisRateLimiter = new Ratelimit({ redis: redisClient, limiter: Ratelimit.slidingWindow(RATE_LIMIT_MAX, '1 m'), prefix: 'rl:general' });
-    redisParentLimiter = new Ratelimit({ redis: redisClient, limiter: Ratelimit.slidingWindow(RATE_LIMIT_PARENT_MAX, '1 m'), prefix: 'rl:parent' });
-    redisAdminLimiter = new Ratelimit({ redis: redisClient, limiter: Ratelimit.slidingWindow(RATE_LIMIT_ADMIN_MAX, '1 m'), prefix: 'rl:admin' });
-  }
-} catch {
-  // Redis initialization failed (invalid URL, etc.) — fall back to in-memory
-  redisClient = null;
-  redisRateLimiter = null;
-  redisParentLimiter = null;
-  redisAdminLimiter = null;
+async function ensureUpstash(): Promise<void> {
+  if (upstashInitialized) return;
+  if (upstashInitPromise) return upstashInitPromise;
+
+  upstashInitPromise = (async () => {
+    try {
+      if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+        const [{ Redis }, { Ratelimit }] = await Promise.all([
+          import('@upstash/redis'),
+          import('@upstash/ratelimit'),
+        ]);
+        redisClient = new Redis({
+          url: process.env.UPSTASH_REDIS_REST_URL,
+          token: process.env.UPSTASH_REDIS_REST_TOKEN,
+        });
+        redisRateLimiter = new Ratelimit({ redis: redisClient, limiter: Ratelimit.slidingWindow(RATE_LIMIT_MAX, '1 m'), prefix: 'rl:general' });
+        redisParentLimiter = new Ratelimit({ redis: redisClient, limiter: Ratelimit.slidingWindow(RATE_LIMIT_PARENT_MAX, '1 m'), prefix: 'rl:parent' });
+        redisAdminLimiter = new Ratelimit({ redis: redisClient, limiter: Ratelimit.slidingWindow(RATE_LIMIT_ADMIN_MAX, '1 m'), prefix: 'rl:admin' });
+      }
+    } catch {
+      // Redis initialization failed (invalid URL, module load, etc.) — fall back to in-memory
+      redisClient = null;
+      redisRateLimiter = null;
+      redisParentLimiter = null;
+      redisAdminLimiter = null;
+    } finally {
+      upstashInitialized = true;
+    }
+  })();
+
+  return upstashInitPromise;
 }
 
 // In-memory fallback if Upstash not configured
@@ -92,6 +114,7 @@ function checkRateLimitLocal(key: string, max: number): { allowed: boolean; rema
 }
 
 async function checkRateLimit(key: string, max: number, type: 'general' | 'parent' | 'admin' = 'general'): Promise<{ allowed: boolean; remaining: number }> {
+  await ensureUpstash();
   const limiter = type === 'parent' ? redisParentLimiter : type === 'admin' ? redisAdminLimiter : redisRateLimiter;
   if (limiter) {
     try {
@@ -122,6 +145,8 @@ async function validateSessionCached(sessionId: string): Promise<boolean | null>
   if (cached && Date.now() - cached.checkedAt < SESSION_CACHE_TTL) {
     return cached.valid;
   }
+
+  await ensureUpstash();
 
   // Tier 2: Redis cache (shared across Vercel instances)
   if (redisClient) {
