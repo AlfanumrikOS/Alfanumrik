@@ -12,6 +12,7 @@ import { calculateLevel, xpToNextLevel, getLevelName } from '@/lib/xp-rules';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import type { StudentLearningProfile, CurriculumTopic } from '@/lib/types';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
+import { ReselectBanner } from '@/components/subjects/ReselectBanner';
 import { PlanBadge } from '@/components/PlanBadge';
 import QuickActions from '@/components/dashboard/QuickActions';
 import SubjectProgress from '@/components/dashboard/SubjectProgress';
@@ -646,6 +647,12 @@ export default function Dashboard() {
             </div>
             <span className="text-[var(--text-3)]">→</span>
           </button>
+        )}
+
+        {/* Reselect banner — shown when the student has zero unlocked subjects
+            (e.g. legacy account after grade change or plan downgrade). */}
+        {allowedSubjects.length === 0 && (
+          <ReselectBanner isHi={isHi} onReselect={() => setShowSubjectPicker(true)} />
         )}
 
         {/* My Subjects (only student's chosen subjects) */}
