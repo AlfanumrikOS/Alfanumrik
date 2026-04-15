@@ -135,6 +135,102 @@ export async function POST(request: NextRequest) {
           );
         }
       }
+
+      // Subject governance: validate subjects_taught against active master list.
+      // The teacher record doesn't exist yet, so we cannot use validateSubjectsBulk
+      // (which requires a student_id). Instead, query the subjects master table
+      // directly and verify every requested code is present and active.
+      const subjectsTaught = body.subjects_taught;
+      if (Array.isArray(subjectsTaught) && subjectsTaught.length > 0) {
+        if (!subjectsTaught.every((s) => typeof s === 'string' && s.trim().length > 0)) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: 'subjects_taught must contain only non-empty strings',
+              code: 'INVALID_SUBJECTS_TAUGHT',
+            },
+            { status: 400 }
+          );
+        }
+        const bootstrapAdmin = getSupabaseAdmin();
+        const { data: activeSubjects, error: subjectsErr } = await bootstrapAdmin
+          .from('subjects')
+          .select('code')
+          .eq('is_active', true);
+        if (subjectsErr) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: 'Failed to load subject master list',
+              code: 'SUBJECTS_LOOKUP_FAILED',
+            },
+            { status: 500 }
+          );
+        }
+        const allowedCodes = new Set((activeSubjects ?? []).map((r: { code: string }) => r.code));
+        for (const s of subjectsTaught as string[]) {
+          if (!allowedCodes.has(s)) {
+            return NextResponse.json(
+              {
+                error: 'subject_not_allowed',
+                subject: s,
+                reason: 'inactive',
+                allowed: Array.from(allowedCodes),
+              },
+              { status: 422 }
+            );
+          }
+        }
+      }
+    }
+
+    // Student: if client supplies selected_subjects, reject unknown codes using
+    // the active subjects master table (student record does not exist yet so
+    // we cannot call get_available_subjects). Governance by grade/plan is
+    // re-applied post-bootstrap via /api/student/preferences.
+    if (role === 'student') {
+      const selectedSubjects = body.selected_subjects;
+      if (Array.isArray(selectedSubjects) && selectedSubjects.length > 0) {
+        if (!selectedSubjects.every((s) => typeof s === 'string' && s.trim().length > 0)) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: 'selected_subjects must contain only non-empty strings',
+              code: 'INVALID_SELECTED_SUBJECTS',
+            },
+            { status: 400 }
+          );
+        }
+        const bootstrapAdmin = getSupabaseAdmin();
+        const { data: activeSubjects, error: subjectsErr } = await bootstrapAdmin
+          .from('subjects')
+          .select('code')
+          .eq('is_active', true);
+        if (subjectsErr) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: 'Failed to load subject master list',
+              code: 'SUBJECTS_LOOKUP_FAILED',
+            },
+            { status: 500 }
+          );
+        }
+        const allowedCodes = new Set((activeSubjects ?? []).map((r: { code: string }) => r.code));
+        for (const s of selectedSubjects as string[]) {
+          if (!allowedCodes.has(s)) {
+            return NextResponse.json(
+              {
+                error: 'subject_not_allowed',
+                subject: s,
+                reason: 'inactive',
+                allowed: Array.from(allowedCodes),
+              },
+              { status: 422 }
+            );
+          }
+        }
+      }
     }
 
     // 3. Call the bootstrap RPC via admin client (bypasses RLS for profile creation reliability)

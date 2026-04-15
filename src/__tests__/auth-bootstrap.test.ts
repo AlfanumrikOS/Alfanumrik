@@ -18,7 +18,44 @@ import { NextRequest } from 'next/server';
 const mockGetUser = vi.fn();
 const mockRpc = vi.fn();
 const mockInsert = vi.fn().mockReturnValue({ catch: vi.fn() });
-const mockFrom = vi.fn().mockReturnValue({ insert: mockInsert });
+// Default mockFrom: supports .insert (for audit log) and .select().eq() for
+// subjects master lookup (used by C3 subject governance guard).
+const makeFromHandler = (subjectRows: Array<{ code: string }> | null = null) =>
+  vi.fn((table: string) => {
+    if (table === 'subjects') {
+      return {
+        select: () => ({
+          eq: () =>
+            Promise.resolve({
+              data:
+                subjectRows ??
+                [
+                  // Canonical subject codes seeded by subject governance migration
+                  { code: 'math' },
+                  { code: 'science' },
+                  { code: 'english' },
+                  { code: 'hindi' },
+                  { code: 'social_studies' },
+                  { code: 'sanskrit' },
+                  { code: 'physics' },
+                  { code: 'chemistry' },
+                  { code: 'biology' },
+                  { code: 'computer_science' },
+                  { code: 'economics' },
+                  { code: 'accountancy' },
+                  { code: 'business_studies' },
+                  { code: 'history_sr' },
+                  { code: 'geography' },
+                  { code: 'political_science' },
+                ],
+              error: null,
+            }),
+        }),
+      };
+    }
+    return { insert: mockInsert };
+  });
+const mockFrom = makeFromHandler();
 
 // Mock createSupabaseServerClient (session-based, respects RLS)
 vi.mock('@/lib/supabase-server', () => ({
@@ -83,7 +120,9 @@ describe('POST /api/auth/bootstrap', () => {
     });
     // Default: audit log insert succeeds
     mockInsert.mockReturnValue({ catch: vi.fn() });
-    mockFrom.mockReturnValue({ insert: mockInsert });
+    // Reset from() handler to the default (supports insert + subjects lookup)
+    const defaultHandler = makeFromHandler();
+    mockFrom.mockImplementation(defaultHandler as any);
 
     const mod = await import('@/app/api/auth/bootstrap/route');
     POST = mod.POST;
@@ -326,12 +365,12 @@ describe('POST /api/auth/bootstrap', () => {
   // ── Teacher bootstrap ──
 
   describe('Teacher bootstrap', () => {
-    it('creates teacher profile with school and subjects', async () => {
+    it('creates teacher profile with school and subjects (canonical codes)', async () => {
       const request = createBootstrapRequest({
         role: 'teacher',
         name: 'Ms. Priya Verma',
         school_name: 'Delhi Public School',
-        subjects_taught: ['Mathematics', 'Science'],
+        subjects_taught: ['math', 'science'],
         grades_taught: ['9', '10'],
       });
       const response = await POST(request);
@@ -343,9 +382,24 @@ describe('POST /api/auth/bootstrap', () => {
         p_role: 'teacher',
         p_name: 'Ms. Priya Verma',
         p_school_name: 'Delhi Public School',
-        p_subjects_taught: ['Mathematics', 'Science'],
+        p_subjects_taught: ['math', 'science'],
         p_grades_taught: ['9', '10'],
       }));
+    });
+
+    it('rejects subjects_taught with non-canonical code (e.g. "Mathematics") with 422', async () => {
+      const request = createBootstrapRequest({
+        role: 'teacher',
+        name: 'Ms. Priya Verma',
+        school_name: 'Delhi Public School',
+        subjects_taught: ['Mathematics'], // not in active subjects master
+        grades_taught: ['9'],
+      });
+      const response = await POST(request);
+      expect(response.status).toBe(422);
+      const json = await response.json();
+      expect(json.error).toBe('subject_not_allowed');
+      expect(json.subject).toBe('Mathematics');
     });
 
     it('returns redirect=/teacher', async () => {
