@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, Button, StatCard, BottomNav } from '@/components/ui';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
-import { SUBJECT_META } from '@/lib/constants';
+import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import {
   BLOOM_CONFIG, BLOOM_LEVELS,
   type BloomLevel, type CognitiveLoadState,
@@ -152,7 +152,8 @@ export default function QuizResults({
 
   const formatTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
 
-  const subMeta = SUBJECT_META.find(s => s.code === selectedSubject);
+  const { unlocked: allowedSubjects } = useAllowedSubjects();
+  const subMeta = allowedSubjects.find(s => s.code === selectedSubject);
   const pct = results.score_percent;
   const grade = pct >= 90 ? 'A+' : pct >= 80 ? 'A' : pct >= 70 ? 'B' : pct >= 60 ? 'C' : pct >= 40 ? 'D' : 'F';
   const emoji = pct >= 80 ? '🏆' : pct >= 60 ? '👍' : pct >= 40 ? '💪' : '📚';

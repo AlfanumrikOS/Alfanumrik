@@ -4,6 +4,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+// Teacher portal shows the full CBSE subject catalogue regardless of any single
+// student's grade/plan. useAllowedSubjects() is student-scoped, so we still
+// read the compat shim here until a teacher-scoped subjects service ships.
+// eslint-disable-next-line alfanumrik/no-raw-subject-imports
 import { SUBJECT_META } from '@/lib/constants';
 import { VALID_GRADES } from '@/lib/identity';
 import { BottomNav } from '@/components/ui';

@@ -9,7 +9,7 @@ import { submitQuizResults, saveCognitiveMetrics, saveQuestionResponses, supabas
 import { assembleQuiz } from '@/lib/quiz-assembler';
 import { XP_RULES } from '@/lib/xp-rules';
 import { Card, Button, ProgressBar, LoadingFoxy } from '@/components/ui';
-import { SUBJECT_META } from '@/lib/constants';
+import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import QuizSetup from '@/components/quiz/QuizSetup';
 import FeedbackOverlay from '@/components/quiz/FeedbackOverlay';
 
@@ -60,6 +60,7 @@ const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
 
 export default function QuizPage() {
   const { student, isLoggedIn, isLoading, isHi, refreshSnapshot, activeRole } = useAuth();
+  const { unlocked: allowedSubjects } = useAllowedSubjects();
   const router = useRouter();
 
   // Setup state
@@ -116,7 +117,8 @@ export default function QuizPage() {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
     const subj = params.get('subject');
-    if (subj && SUBJECT_META.find(s => s.code === subj)) {
+    if (subj) {
+      // Accept the URL-provided subject; the server will validate on quiz start.
       setSelectedSubject(subj);
       setInitialSubject(subj);
     }
@@ -404,7 +406,7 @@ export default function QuizPage() {
           return;
         }
 
-        const subMeta = SUBJECT_META.find(s => s.code === selectedSubject);
+        const subMeta = allowedSubjects.find(s => s.code === selectedSubject);
         const res = await submitQuizResults(
           student!.id,
           selectedSubject!,
@@ -509,7 +511,7 @@ export default function QuizPage() {
 
   if (isLoading || !student) return <LoadingFoxy />;
 
-  const subMeta = SUBJECT_META.find(s => s.code === selectedSubject);
+  const subMeta = allowedSubjects.find(s => s.code === selectedSubject);
   const q = questions[currentIdx];
   const opts = q ? parseOptions(q.options) : [];
   const progress = questions.length > 0 ? ((currentIdx + (showExplanation ? 1 : 0)) / questions.length) * 100 : 0;

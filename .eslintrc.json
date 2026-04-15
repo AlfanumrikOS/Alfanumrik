@@ -7,6 +7,6 @@
     "@next/next/no-img-element": "warn",
     "react/no-unescaped-entities": "warn",
     "no-console": ["warn", { "allow": ["warn", "error"] }],
-    "alfanumrik/no-raw-subject-imports": "warn"
+    "alfanumrik/no-raw-subject-imports": "error"
   }
 }

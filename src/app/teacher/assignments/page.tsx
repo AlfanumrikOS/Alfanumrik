@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+// Teacher portal — uses full CBSE master list (not student-scoped).
+// eslint-disable-next-line alfanumrik/no-raw-subject-imports
 import { SUBJECT_META } from '@/lib/constants';
 import { VALID_GRADES } from '@/lib/identity';
 import { BottomNav } from '@/components/ui';

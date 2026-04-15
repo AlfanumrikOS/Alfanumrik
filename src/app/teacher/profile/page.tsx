@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+// Teacher profile — full CBSE master list, not student-scoped.
+// eslint-disable-next-line alfanumrik/no-raw-subject-imports
 import { SUBJECT_META } from '@/lib/constants';
 import { BottomNav } from '@/components/ui';
 

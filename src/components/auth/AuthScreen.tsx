@@ -15,7 +15,12 @@
  */
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { SUPABASE_URL, SUPABASE_ANON_KEY, SUBJECT_META } from '@/lib/constants';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@/lib/constants';
+// AuthScreen is pre-login: no Supabase user, so useAllowedSubjects() cannot
+// run. Teachers signing up pick subjects from the full CBSE master list, which
+// the compat shim exposes here.
+// eslint-disable-next-line alfanumrik/no-raw-subject-imports
+import { SUBJECT_META } from '@/lib/constants';
 import { validatePassword } from '@/lib/sanitize';
 
 const AUTH_GRADES = ['6', '7', '8', '9', '10', '11', '12'];
