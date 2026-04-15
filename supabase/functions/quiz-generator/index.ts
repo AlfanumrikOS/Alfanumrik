@@ -29,6 +29,7 @@
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders, getCorsHeaders } from '../_shared/cors.ts'
 import { retrieveChunks } from '../_shared/retrieval.ts'
+import { validateSubjectRpc } from '../_shared/subjects-validate.ts'
 
 // ─── In-memory rate limiter (first line of defence) ─────────────────────────
 // NOTE: This Map is per-isolate and will reset on cold starts. It provides fast
@@ -1006,6 +1007,30 @@ Deno.serve(async (req) => {
         status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
+    }
+
+    // ── Subject governance (P12) ──────────────────────────────────────────
+    // Student-initiated request: ENFORCE. Fail closed if student has no plan
+    // row or subject is not in get_available_subjects.
+    // See: docs/superpowers/specs/2026-04-15-subject-governance-design.md §6.2
+    if (subject) {
+      try {
+        const check = await validateSubjectRpc(authSupabase, student_id, subject)
+        if (!check.ok) {
+          return new Response(
+            JSON.stringify({ error: 'subject_not_allowed', reason: check.reason, subject }),
+            { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          )
+        }
+      } catch (subjErr) {
+        // Fail CLOSED — quiz-generator must never hand back questions for an
+        // unvalidated subject. Better to 422 than leak disallowed content.
+        console.error('quiz-generator subject validation failed:', subjErr instanceof Error ? subjErr.message : String(subjErr))
+        return new Response(
+          JSON.stringify({ error: 'subject_not_allowed', reason: 'grade', subject }),
+          { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        )
+      }
     }
 
     // In-memory rate limit check (fast, per-isolate)
