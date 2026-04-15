@@ -15,6 +15,9 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
+// P12: teachers should only see subjects each student is currently enrolled in
+// (grade-map ∩ plan). See:
+//   docs/superpowers/specs/2026-04-15-subject-governance-design.md §6.2
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -257,15 +260,42 @@ async function handleGetAlerts(
       .select('student_id, subject, total_questions_asked, total_questions_answered_correctly, xp, streak_days')
       .in('student_id', studentIds)
 
+    // P12: Pre-compute allowed subjects per student so the teacher view only
+    // surfaces alerts for subjects the student is currently enrolled in.
+    const allowedBySid = new Map<string, Set<string>>()
+    for (const sid of studentIds) {
+      try {
+        const { data: allowedRows } = await supabase.rpc('get_available_subjects', { p_student_id: sid })
+        if (Array.isArray(allowedRows)) {
+          allowedBySid.set(
+            sid,
+            new Set(
+              (allowedRows as Array<{ code: string; is_locked: boolean }>)
+                .filter((r) => !r.is_locked)
+                .map((r) => r.code),
+            ),
+          )
+        }
+      } catch {
+        // If RPC fails for one student, leave them absent; alerts for them
+        // will be hidden below (fail closed).
+      }
+    }
+
     if (profiles) {
       for (const p of profiles) {
         const student = students.find(s => s.id === p.student_id)
         if (!student || p.total_questions_asked < 5) continue
 
+        // Subject-scoped alerts (accuracy) must be gated by the student's
+        // current subject entitlement; streak alerts below are subject-free.
+        const allowed = allowedBySid.get(p.student_id)
+        const subjectAllowed = allowed ? allowed.has(String(p.subject)) : false
+
         const accuracy = p.total_questions_answered_correctly / p.total_questions_asked
         const name = student.name || 'Student'
 
-        if (accuracy < 0.3) {
+        if (subjectAllowed && accuracy < 0.3) {
           alerts.push({
             id: `alert-${p.student_id}-${p.subject}-critical`,
             severity: 'critical',
@@ -275,7 +305,7 @@ async function handleGetAlerts(
             student_id: p.student_id,
             student_name: name,
           })
-        } else if (accuracy < 0.5) {
+        } else if (subjectAllowed && accuracy < 0.5) {
           alerts.push({
             id: `alert-${p.student_id}-${p.subject}-high`,
             severity: 'high',
