@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useSubjectLookup } from '@/lib/useSubjectLookup';
 
 /* ═══════════════════════════════════════════════════════════════
    ConversationManager — Sidebar with organized chat sessions
@@ -19,22 +20,19 @@ export interface ConversationSummary {
   isActive: boolean;
 }
 
-interface SubjectConfig {
-  name: string;
-  icon: string;
-  color: string;
-}
-
-const SUBJECTS: Record<string, SubjectConfig> = {
-  math: { name: 'Mathematics', icon: '\u2211', color: '#3B82F6' },
-  science: { name: 'Science', icon: '\u269B', color: '#10B981' },
-  english: { name: 'English', icon: 'Aa', color: '#8B5CF6' },
-  hindi: { name: 'Hindi', icon: '\u0905', color: '#F59E0B' },
-  physics: { name: 'Physics', icon: '\u26A1', color: '#EF4444' },
-  chemistry: { name: 'Chemistry', icon: '\u2697', color: '#06B6D4' },
-  biology: { name: 'Biology', icon: '\u2695', color: '#22C55E' },
-  social_studies: { name: 'Social Studies', icon: '\uD83C\uDF0D', color: '#D97706' },
-  coding: { name: 'Coding', icon: '\uD83D\uDCBB', color: '#6366F1' },
+// Minimal fallback used only by non-hook callers (generateTitle, which runs
+// outside the React render tree). Subject display inside components resolves
+// icon/color/name via useSubjectLookup() so it reflects the admin-curated list.
+const FALLBACK_SUBJECT_NAMES: Record<string, string> = {
+  math: 'Mathematics',
+  science: 'Science',
+  english: 'English',
+  hindi: 'Hindi',
+  physics: 'Physics',
+  chemistry: 'Chemistry',
+  biology: 'Biology',
+  social_studies: 'Social Studies',
+  coding: 'Coding',
 };
 
 /* ─── Relative time ─── */
@@ -55,14 +53,15 @@ function relativeTime(dateStr: string, isHi: boolean): string {
 
 export function generateTitle(messages: Array<{ role: string; content: string }>, subject: string): string {
   const firstUserMsg = messages.find(m => m.role === 'student' || m.role === 'user');
-  if (!firstUserMsg) return SUBJECTS[subject]?.name || 'New Chat';
+  const subjectLabel = FALLBACK_SUBJECT_NAMES[subject] || subject || 'New Chat';
+  if (!firstUserMsg) return subjectLabel;
   // Extract meaningful title: strip common prefixes, truncate
   let title = firstUserMsg.content
     .replace(/^(teach me about|explain|help me with|mujhe sikhao|samjhao):\s*/i, '')
     .replace(/\(Chapter \d+\)/i, '')
     .trim();
   if (title.length > 50) title = title.substring(0, 47) + '...';
-  return title || SUBJECTS[subject]?.name || 'New Chat';
+  return title || subjectLabel;
 }
 
 /* ─── Consolidated mode config ─── */
@@ -145,6 +144,7 @@ export function ConversationManager({
   const [searchQuery, setSearchQuery] = useState('');
   const [collapsedSubjects, setCollapsedSubjects] = useState<Set<string>>(new Set());
   const searchRef = useRef<HTMLInputElement>(null);
+  const lookupSubject = useSubjectLookup();
 
   // Filter conversations by search
   const filtered = useMemo(() => {
@@ -189,10 +189,12 @@ export function ConversationManager({
     subjects.sort((a, b) => {
       if (a === activeSubject) return -1;
       if (b === activeSubject) return 1;
-      return (SUBJECTS[a]?.name || a).localeCompare(SUBJECTS[b]?.name || b);
+      return (lookupSubject(a)?.name || FALLBACK_SUBJECT_NAMES[a] || a).localeCompare(
+        lookupSubject(b)?.name || FALLBACK_SUBJECT_NAMES[b] || b,
+      );
     });
     return subjects.map(s => ({ subject: s, chapters: subjectMap[s] })) as SubjectGroup[];
-  }, [filtered, activeSubject, isHi]);
+  }, [filtered, activeSubject, isHi, lookupSubject]);
 
   // Auto-collapse inactive subjects, expand active subject
   useEffect(() => {
@@ -319,7 +321,10 @@ export function ConversationManager({
           </div>
         ) : (
           subjectGroups.map(group => {
-            const subCfg = SUBJECTS[group.subject];
+            const resolved = lookupSubject(group.subject);
+            const subCfg = resolved
+              ? { name: resolved.name, icon: resolved.icon, color: resolved.color }
+              : undefined;
             const isCollapsed = collapsedSubjects.has(group.subject);
             const totalConvs = Object.values(group.chapters).reduce((sum, c) => sum + c.length, 0);
             const isActiveSubject = group.subject === activeSubject;

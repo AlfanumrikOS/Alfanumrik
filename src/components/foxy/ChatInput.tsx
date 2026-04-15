@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, memo, useEffect } from 'react';
+import { useSubjectLookup } from '@/lib/useSubjectLookup';
 
 // Web Speech API types (not in default TS lib)
 interface SpeechRecognitionEvent extends Event {
@@ -44,19 +45,8 @@ export const MATH_SYMBOL_TABS = [
   { id: 'sub', label: 'Sub', emoji: 'x₂', symbols: ['₀', '₁', '₂', '₃', '₄', '₅', '₆', '₇', '₈', '₉'] },
 ];
 
-const SUBJECTS: Record<string, { icon: string; color: string }> = {
-  math: { icon: '∑', color: '#3B82F6' },
-  science: { icon: '⚛', color: '#10B981' },
-  english: { icon: 'Aa', color: '#8B5CF6' },
-  hindi: { icon: 'अ', color: '#F59E0B' },
-  physics: { icon: '⚡', color: '#EF4444' },
-  chemistry: { icon: '⚗', color: '#06B6D4' },
-  biology: { icon: '⚕', color: '#22C55E' },
-  social_studies: { icon: '🌍', color: '#D97706' },
-  coding: { icon: '💻', color: '#6366F1' },
-};
-
-const DEFAULT_CONFIG = SUBJECTS.science;
+// Fallback used only until the subjects service hook resolves.
+const DEFAULT_CONFIG = { icon: '⚛', color: '#10B981' };
 
 export interface ChatInputProps {
   onSubmit: (t: string, image?: File | null) => void;
@@ -77,7 +67,10 @@ export const ChatInput = memo(function ChatInput({ onSubmit, subjectKey, disable
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
-  const cfg = subjectConfig || SUBJECTS[subjectKey] || DEFAULT_CONFIG;
+  const lookupSubject = useSubjectLookup();
+  const resolved = lookupSubject(subjectKey);
+  const cfg = subjectConfig
+    || (resolved ? { icon: resolved.icon, color: resolved.color } : DEFAULT_CONFIG);
 
   // Clean up speech recognition on unmount
   useEffect(() => {
