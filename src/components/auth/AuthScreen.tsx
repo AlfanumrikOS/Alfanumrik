@@ -16,10 +16,7 @@
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@/lib/constants';
-// AuthScreen is pre-login: no Supabase user, so useAllowedSubjects() cannot
-// run. Teachers signing up pick subjects from the full CBSE master list, which
-// the compat shim exposes here.
-// eslint-disable-next-line alfanumrik/no-raw-subject-imports
+// eslint-disable-next-line alfanumrik/no-raw-subject-imports -- AuthScreen is pre-login: no session yet, so neither useAllowedSubjects (student) nor useTeacherAllowedSubjects can run. Static SUBJECT_META is the correct data source for signup subject selection.
 import { SUBJECT_META } from '@/lib/constants';
 import { validatePassword } from '@/lib/sanitize';
 

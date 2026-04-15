@@ -4,11 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-// Teacher portal shows the full CBSE subject catalogue regardless of any single
-// student's grade/plan. useAllowedSubjects() is student-scoped, so we still
-// read the compat shim here until a teacher-scoped subjects service ships.
-// eslint-disable-next-line alfanumrik/no-raw-subject-imports
-import { SUBJECT_META } from '@/lib/constants';
+import { useTeacherAllowedSubjects } from '@/lib/useTeacherAllowedSubjects';
 import { VALID_GRADES } from '@/lib/identity';
 import { BottomNav } from '@/components/ui';
 
@@ -64,6 +60,7 @@ const pageStyle: React.CSSProperties = {
 
 export default function TeacherClassesPage() {
   const { teacher, isLoading: authLoading, isLoggedIn, activeRole, isHi } = useAuth();
+  const { subjects } = useTeacherAllowedSubjects();
   const router = useRouter();
 
   const [classes, setClasses] = useState<ClassData[]>([]);
@@ -228,7 +225,7 @@ export default function TeacherClassesPage() {
     return tt(isHi, `${days}d ago`, `${days} दिन पहले`);
   };
 
-  const getSubjectMeta = (code?: string) => SUBJECT_META.find(s => s.code === code);
+  const getSubjectMeta = (code?: string) => subjects.find(s => s.code === code);
 
   // Loading state
   if (loading) {
@@ -932,7 +929,7 @@ export default function TeacherClassesPage() {
                   cursor: 'pointer',
                 }}
               >
-                {SUBJECT_META.map(s => (
+                {subjects.map(s => (
                   <option key={s.code} value={s.code}>{s.icon} {s.name}</option>
                 ))}
               </select>
