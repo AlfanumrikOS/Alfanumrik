@@ -138,7 +138,7 @@ test.describe('Subject Governance: E2E', () => {
 
     // Legacy student: grade 6, free plan, but selected_subjects contains
     // physics + accountancy (invalid pre-migration state).
-    let patchedSelection: string[] | null = null;
+    let patchedSelection = null as string[] | null;
     await page.route('**/rest/v1/students**', async (route) => {
       const method = route.request().method();
       if (method === 'GET') {
@@ -220,9 +220,10 @@ test.describe('Subject Governance: E2E', () => {
     await expect(page.locator('text=/physics/i')).toHaveCount(0);
 
     // Selection write (if reached) must not include physics/accountancy.
-    if (patchedSelection) {
-      expect(patchedSelection).not.toContain('physics');
-      expect(patchedSelection).not.toContain('accountancy');
+    const sel = patchedSelection as string[] | null;
+    if (sel) {
+      expect(sel).not.toContain('physics');
+      expect(sel).not.toContain('accountancy');
     }
   });
 
