@@ -21,6 +21,51 @@ function subjectNotAllowedResponse(error: {
   );
 }
 
+/**
+ * Recovery-mode helper: validates the (grade, subject, chapter) academic
+ * scope via the validate_academic_scope RPC. Returns null when the scope is
+ * valid, OR a NextResponse with a 422 + structured reason when invalid.
+ *
+ * Reasons surfaced (mirrors the RPC):
+ *   - student_not_found
+ *   - grade_mismatch
+ *   - subject_not_allowed   (covers both grade gating and plan gating)
+ *   - chapter_not_in_subject
+ */
+async function rejectIfInvalidScope(
+  studentId: string,
+  grade: string,
+  subject: string,
+  chapter: number | null,
+): Promise<NextResponse | null> {
+  const { data, error } = await supabaseAdmin.rpc('validate_academic_scope', {
+    p_student_id:     studentId,
+    p_grade:          grade,
+    p_subject:        subject,
+    p_chapter_number: chapter,
+  });
+  if (error) {
+    logger.error('validate_academic_scope_rpc_failed', {
+      error: new Error(error.message),
+      studentId, grade, subject, chapter,
+    });
+    return NextResponse.json(
+      { error: 'scope_validation_failed', message: error.message },
+      { status: 500 },
+    );
+  }
+  const v = (data ?? {}) as { ok?: boolean; reason?: string; [k: string]: unknown };
+  if (v.ok === true) return null;
+  return NextResponse.json(
+    {
+      error: 'invalid_academic_scope',
+      reason: v.reason ?? 'unknown',
+      detail: v,
+    },
+    { status: 422 },
+  );
+}
+
 // ─── Constants ──────────────────────────────────────────────────
 
 const VALID_GRADES = ['6', '7', '8', '9', '10', '11', '12'];
@@ -189,6 +234,23 @@ export async function GET(request: NextRequest) {
     });
     if (!subjectValidation.ok) return subjectNotAllowedResponse(subjectValidation.error);
 
+    // 4c. Academic-scope validation — for actions that take a chapter, also
+    //     verify the chapter belongs to the (subject, grade) triple. The
+    //     `questions` action accepts an optional chapter via query string;
+    //     other actions don't carry chapter context here.
+    if (action === 'questions') {
+      const chapterParam = new URL(request.url).searchParams.get('chapter');
+      const chapterForScope = chapterParam ? parseInt(chapterParam, 10) : null;
+      if (chapterParam && (Number.isNaN(chapterForScope!) || chapterForScope! < 1)) {
+        return NextResponse.json(
+          { success: false, error: 'chapter must be a positive integer.' },
+          { status: 400 },
+        );
+      }
+      const scopeReject = await rejectIfInvalidScope(studentId, grade, subject, chapterForScope);
+      if (scopeReject) return scopeReject;
+    }
+
     // 5. Dispatch by action
     switch (action) {
       case 'questions':
@@ -302,6 +364,20 @@ export async function POST(request: NextRequest) {
       supabase: supabaseAdmin,
     });
     if (!subjectValidation.ok) return subjectNotAllowedResponse(subjectValidation.error);
+
+    // 6c. Academic-scope validation per chapter (if chapters provided)
+    //     The exam-generation contract: every chapter must belong to (subject, grade).
+    //     We validate them one-by-one rather than a single triple call so the error
+    //     message can name the offending chapter.
+    if (Array.isArray(chapters) && chapters.length > 0) {
+      for (const ch of chapters) {
+        const reject = await rejectIfInvalidScope(studentId, grade, subject, ch);
+        if (reject) return reject;
+      }
+    } else {
+      const reject = await rejectIfInvalidScope(studentId, grade, subject, null);
+      if (reject) return reject;
+    }
 
     // 7. Call RPC to generate exam paper
     const { data, error } = await supabaseAdmin.rpc('generate_exam_paper', {
@@ -434,7 +510,33 @@ async function handleGetQuestions(
     );
   }
 
-  return NextResponse.json({ success: true, questions: data ?? [] });
+  // Strict scope contract (recovery mode): when the caller specified a
+  // chapter, every returned question MUST be from that chapter. We do NOT
+  // silently broaden. If the RPC returns cross-chapter rows, drop them and
+  // fall through to the insufficient-questions path below.
+  let questions: Array<Record<string, unknown>> = Array.isArray(data) ? data : [];
+  if (chapter != null) {
+    questions = questions.filter((q) => Number(q.chapter_number) === chapter);
+  }
+
+  // If the chapter was specified and we don't have enough valid in-scope
+  // questions, return a structured 422 with { available, requested }. The
+  // UI must show a "try another chapter" affordance — never fake a quiz.
+  if (chapter != null && questions.length < count) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'insufficient_questions_in_scope',
+        error_hi: 'Is chapter mein itne questions available nahi hain.',
+        available: questions.length,
+        requested: count,
+        scope: { subject, grade, chapter },
+      },
+      { status: 422 },
+    );
+  }
+
+  return NextResponse.json({ success: true, questions });
 }
 
 /**

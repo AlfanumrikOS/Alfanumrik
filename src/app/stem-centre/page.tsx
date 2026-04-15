@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useState, useEffect, useCallback, useMemo, Suspense } from 'react';
 import dynamic from 'next/dynamic';
 import SimulationSkeleton from '@/components/simulations/SimulationSkeleton';
 import { useRouter } from 'next/navigation';
@@ -10,6 +10,7 @@ import { BUILT_IN_SIMULATIONS, type BuiltInSimulation } from '@/components/simul
 import type { ExperimentResult } from '@/components/stem/GuidedExperiment';
 import { getExperimentForSimulation } from '@/components/stem/experiments';
 import { isPremium } from '@/lib/plans';
+import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import Link from 'next/link';
 
 // Lazy-load GuidedExperiment — only rendered when a lab with a guided experiment is active
@@ -40,9 +41,16 @@ type ActiveLab =
   | { type: 'builtin'; sim: BuiltInSimulation }
   | { type: 'db'; sim: DbSimulation };
 
-/* ─── Constants ─── */
-const SUBJECT_TABS = [
-  { code: 'all', en: 'All Subjects', hi: 'सभी विषय', emoji: '📚' },
+/* ─── Constants ───
+ * STEM_SUBJECT_SUBSET is the closed set of subject codes that have STEM
+ * simulations/experiments. It is NOT a subject catalogue — it is a filter
+ * applied on top of useAllowedSubjects() so a Class 6 student's tab row is
+ * the intersection of:
+ *   (their grade-plan-stream allowed subjects) ∩ (STEM-capable subjects).
+ * Display metadata (Hindi label, emoji) is carried here because STEM has
+ * a bespoke compact label ("CS") that differs from the global subject name.
+ */
+const STEM_SUBJECT_SUBSET: Array<{ code: string; en: string; hi: string; emoji: string }> = [
   { code: 'math', en: 'Math', hi: 'गणित', emoji: '📐' },
   { code: 'science', en: 'Science', hi: 'विज्ञान', emoji: '🔬' },
   { code: 'physics', en: 'Physics', hi: 'भौतिकी', emoji: '⚡' },
@@ -51,6 +59,7 @@ const SUBJECT_TABS = [
   { code: 'coding', en: 'Coding', hi: 'कोडिंग', emoji: '</>' },
   { code: 'computer_science', en: 'CS', hi: 'कम्प्यूटर', emoji: '💻' },
 ];
+const ALL_TAB = { code: 'all', en: 'All Subjects', hi: 'सभी विषय', emoji: '📚' };
 
 const DIFFICULTY_LABEL: Record<number, string> = { 1: 'Easy', 2: 'Medium', 3: 'Hard', 4: 'Advanced', 5: 'Expert' };
 const DIFFICULTY_COLOR: Record<number, string> = { 1: 'bg-green-100 text-green-700', 2: 'bg-blue-100 text-blue-700', 3: 'bg-yellow-100 text-yellow-700', 4: 'bg-red-100 text-red-700', 5: 'bg-purple-100 text-purple-700' };
@@ -59,13 +68,6 @@ const BLOOM_COLOR: Record<string, string> = {
   apply: 'bg-green-100 text-green-600', analyze: 'bg-yellow-100 text-yellow-700',
   evaluate: 'bg-red-100 text-red-600', create: 'bg-purple-100 text-purple-700',
 };
-
-function getSubjectsForGrade(grade: string): string[] {
-  const g = parseInt(grade, 10);
-  if (g >= 6 && g <= 8) return ['all', 'math', 'science', 'coding'];
-  if (g >= 9 && g <= 10) return ['all', 'math', 'science', 'physics', 'chemistry', 'biology', 'computer_science'];
-  return ['all', 'math', 'physics', 'chemistry', 'biology', 'computer_science'];
-}
 
 /* ─── Page ─── */
 export default function STEMCentrePage() {
@@ -81,6 +83,13 @@ export default function STEMCentrePage() {
   const [saveError, setSaveError] = useState('');
 
   const grade = student?.grade || '10';
+
+  // Source of truth: /api/student/subjects → get_available_subjects RPC.
+  // Intersects grade ∩ plan ∩ stream server-side. STEM tab row is then
+  // the intersection of (allowed) ∩ (STEM_SUBJECT_SUBSET), plus the "all"
+  // pseudo-tab. A Class 6 free-plan student will only ever see the
+  // subset that their plan unlocks AND that has STEM content.
+  const { unlocked: allowedSubjects } = useAllowedSubjects();
 
   const saveObservation = useCallback(async (params: {
     type: 'simple' | 'guided';
@@ -117,8 +126,12 @@ export default function STEMCentrePage() {
     setTimeout(() => setSaveSuccess(false), 3000);
     return true;
   }, [student?.id, grade, isHi]);
-  const availableSubjects = getSubjectsForGrade(grade);
-  const tabs = SUBJECT_TABS.filter(t => availableSubjects.includes(t.code));
+  const allowedCodes = useMemo(() => new Set(allowedSubjects.map(s => s.code)), [allowedSubjects]);
+  const tabs = useMemo(
+    () => [ALL_TAB, ...STEM_SUBJECT_SUBSET.filter(t => allowedCodes.has(t.code))],
+    [allowedCodes],
+  );
+  const availableSubjectCodes = useMemo(() => tabs.map(t => t.code), [tabs]);
 
   // Auth redirect
   useEffect(() => {
@@ -154,10 +167,10 @@ export default function STEMCentrePage() {
     return true;
   });
 
-  // Reset subject if not available for grade
+  // Reset subject if not available for grade ∩ plan ∩ STEM subset.
   useEffect(() => {
-    if (!availableSubjects.includes(subject)) setSubject('all');
-  }, [grade, availableSubjects, subject]);
+    if (!availableSubjectCodes.includes(subject)) setSubject('all');
+  }, [grade, availableSubjectCodes, subject]);
 
   if (authLoading) {
     return (

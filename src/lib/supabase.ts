@@ -841,19 +841,33 @@ export async function getChapterQuestions(subject: string, grade: string, chapte
  * Both tables were 1:1 on chapter_number+title after the NCERT 2024 refresh,
  * but chapters is the source of truth and gets rebuilt when content re-indexes.
  */
-export async function getChaptersForSubject(subject: string, grade: string) {
-  const { data: subjectRow } = await supabase.from('subjects').select('id').eq('code', subject).single();
-  if (!subjectRow) return [];
-  const { data, error } = await supabase
-    .from('chapters')
-    .select('chapter_number, title')
-    .eq('is_active', true)
-    .eq('grade', grade)
-    .eq('subject_id', subjectRow.id)
-    .not('chapter_number', 'is', null)
-    .order('chapter_number');
-  if (error) console.error('getChaptersForSubject:', error.message);
-  return (data ?? []) as Array<{ chapter_number: number; title: string }>;
+/**
+ * Recovery-mode (compat shim). Delegates to GET /api/student/chapters,
+ * which is governed by available_chapters_for_student_subject RPC and
+ * therefore enforces grade ∩ plan ∩ stream ∩ is_content_ready. The
+ * `grade` arg is now ignored — the server resolves the student's grade
+ * from auth context and refuses cross-grade requests.
+ *
+ * New code MUST call `useAllowedChapters(subject)` from
+ * '@/lib/useAllowedChapters' instead.
+ *
+ * @deprecated Use `useAllowedChapters` from '@/lib/useAllowedChapters'.
+ */
+export async function getChaptersForSubject(subject: string, _grade: string) {
+  void _grade;
+  try {
+    const r = await fetch(`/api/student/chapters?subject=${encodeURIComponent(subject)}`);
+    if (!r.ok) {
+      // 422 = subject not allowed for this student; 401 = unauthenticated.
+      // Either way the correct UI behavior is "no chapters available".
+      return [] as Array<{ chapter_number: number; title: string }>;
+    }
+    const body = (await r.json()) as { chapters?: Array<{ chapter_number: number; title: string }> };
+    return body.chapters ?? [];
+  } catch (e) {
+    console.error('getChaptersForSubject(compat):', e instanceof Error ? e.message : String(e));
+    return [];
+  }
 }
 
 // ─── Topic Diagrams ──────────────────────────────────────
