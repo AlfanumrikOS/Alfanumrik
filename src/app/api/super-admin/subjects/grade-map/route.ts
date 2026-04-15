@@ -1,12 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
-  authorizeAdmin,
   logAdminAudit,
   supabaseAdminHeaders,
   supabaseAdminUrl,
+  type AdminAuth,
 } from '../../../../../lib/admin-auth';
+import { authorizeRequest, type AuthorizationResult } from '../../../../../lib/rbac';
 import { isValidGrade } from '../../../../../lib/validation';
 import { z } from 'zod';
+
+function asAdminAudit(auth: AuthorizationResult): AdminAuth {
+  return {
+    authorized: true,
+    userId: auth.userId!,
+    adminId: auth.userId!,
+    email: '',
+    name: '',
+    adminLevel: auth.roles.includes('super_admin') ? 'super_admin' : 'admin',
+  };
+}
 
 /**
  * Grade × Subject Map API — declares which subjects exist for each
@@ -54,8 +66,8 @@ async function subjectExists(code: string): Promise<boolean> {
 
 // GET — list all rows
 export async function GET(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
-  if (!auth.authorized) return auth.response;
+  const auth = await authorizeRequest(request, 'super_admin.subjects.manage');
+  if (!auth.authorized) return auth.errorResponse!;
 
   try {
     const fields = 'id,grade,subject_code,stream,is_core,min_questions_seeded,created_at,updated_at';
@@ -84,8 +96,8 @@ export async function GET(request: NextRequest) {
 
 // PUT — upsert a row by (grade, subject_code, stream)
 export async function PUT(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
-  if (!auth.authorized) return auth.response;
+  const auth = await authorizeRequest(request, 'super_admin.subjects.manage');
+  if (!auth.authorized) return auth.errorResponse!;
 
   try {
     const body = await request.json().catch(() => null);
@@ -145,7 +157,7 @@ export async function PUT(request: NextRequest) {
     const row = Array.isArray(upserted) ? upserted[0] : upserted;
 
     await logAdminAudit(
-      auth,
+      asAdminAudit(auth),
       'grade_subject_map.upserted',
       'grade_subject_map',
       row?.id || `${data.grade}:${data.subject_code}:${stream}`,
@@ -163,8 +175,8 @@ export async function PUT(request: NextRequest) {
 
 // DELETE — remove by id or by (grade, subject_code, stream)
 export async function DELETE(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
-  if (!auth.authorized) return auth.response;
+  const auth = await authorizeRequest(request, 'super_admin.subjects.manage');
+  if (!auth.authorized) return auth.errorResponse!;
 
   try {
     const body = await request.json().catch(() => null);
@@ -207,7 +219,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     await logAdminAudit(
-      auth,
+      asAdminAudit(auth),
       'grade_subject_map.deleted',
       'grade_subject_map',
       Array.isArray(deleted) ? deleted[0]?.id || '' : '',

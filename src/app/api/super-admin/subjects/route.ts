@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
-  authorizeAdmin,
   logAdminAudit,
   supabaseAdminHeaders,
   supabaseAdminUrl,
+  type AdminAuth,
 } from '../../../../lib/admin-auth';
+import { authorizeRequest, type AuthorizationResult } from '../../../../lib/rbac';
 import { validateBody } from '../../../../lib/validation';
 import { z } from 'zod';
 
@@ -12,15 +13,26 @@ import { z } from 'zod';
  * Subjects Master API — list / create CBSE-aligned subjects.
  *
  * Phase E (Subject Governance). All mutations are audit-logged via
- * logAdminAudit() and require a valid admin session via authorizeAdmin().
- *
- * Authorization fallback note:
- *   The plan asks for `super_admin.subjects.manage` permission code, but the
- *   existing super-admin surface uses session-based `authorizeAdmin()` rather
- *   than `authorizeRequest(permissionCode)`. We follow the existing pattern
- *   for consistency. When architect adds the dedicated permission code in a
- *   follow-up migration, the gate can be tightened here.
+ * logAdminAudit() and require the `super_admin.subjects.manage` permission
+ * (granted to super_admin + admin roles — migration 20260415000011).
  */
+
+/**
+ * Adapter: logAdminAudit() expects the legacy AdminAuth shape with
+ * name/email/adminLevel fields; authorizeRequest() returns only
+ * userId/roles/permissions. We synthesise a minimal AdminAuth from the
+ * RBAC result. admin_id (audit table column) is populated from userId.
+ */
+function asAdminAudit(auth: AuthorizationResult): AdminAuth {
+  return {
+    authorized: true,
+    userId: auth.userId!,
+    adminId: auth.userId!,
+    email: '',
+    name: '',
+    adminLevel: auth.roles.includes('super_admin') ? 'super_admin' : 'admin',
+  };
+}
 
 const SNAKE_CASE = /^[a-z][a-z0-9_]{1,63}$/;
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
@@ -37,8 +49,8 @@ const createSubjectSchema = z.object({
 
 // GET — list all subjects (active + inactive)
 export async function GET(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
-  if (!auth.authorized) return auth.response;
+  const auth = await authorizeRequest(request, 'super_admin.subjects.manage');
+  if (!auth.authorized) return auth.errorResponse!;
 
   try {
     const fields =
@@ -66,8 +78,8 @@ export async function GET(request: NextRequest) {
 
 // POST — create new subject
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
-  if (!auth.authorized) return auth.response;
+  const auth = await authorizeRequest(request, 'super_admin.subjects.manage');
+  if (!auth.authorized) return auth.errorResponse!;
 
   try {
     const body = await request.json().catch(() => null);
@@ -121,7 +133,7 @@ export async function POST(request: NextRequest) {
     const created = await res.json();
     const row = Array.isArray(created) ? created[0] : created;
 
-    await logAdminAudit(auth, 'subject.master.created', 'subjects', code, {
+    await logAdminAudit(asAdminAudit(auth), 'subject.master.created', 'subjects', code, {
       subject: row,
     });
 

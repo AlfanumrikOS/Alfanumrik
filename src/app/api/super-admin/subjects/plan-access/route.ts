@@ -1,11 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
-  authorizeAdmin,
   logAdminAudit,
   supabaseAdminHeaders,
   supabaseAdminUrl,
+  type AdminAuth,
 } from '../../../../../lib/admin-auth';
+import { authorizeRequest, type AuthorizationResult } from '../../../../../lib/rbac';
 import { z } from 'zod';
+
+function asAdminAudit(auth: AuthorizationResult): AdminAuth {
+  return {
+    authorized: true,
+    userId: auth.userId!,
+    adminId: auth.userId!,
+    email: '',
+    name: '',
+    adminLevel: auth.roles.includes('super_admin') ? 'super_admin' : 'admin',
+  };
+}
 
 /**
  * Plan × Subject Access API — controls which subjects each subscription
@@ -69,8 +81,8 @@ async function subjectExists(code: string): Promise<boolean> {
 
 // GET — list pairs + plans with caps
 export async function GET(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
-  if (!auth.authorized) return auth.response;
+  const auth = await authorizeRequest(request, 'super_admin.subjects.manage');
+  if (!auth.authorized) return auth.errorResponse!;
 
   try {
     const [pairsRes, plansRes] = await Promise.all([
@@ -113,8 +125,8 @@ export async function GET(request: NextRequest) {
 
 // PUT — upsert pair OR update cap
 export async function PUT(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
-  if (!auth.authorized) return auth.response;
+  const auth = await authorizeRequest(request, 'super_admin.subjects.manage');
+  if (!auth.authorized) return auth.errorResponse!;
 
   try {
     const body = await request.json().catch(() => null);
@@ -176,7 +188,7 @@ export async function PUT(request: NextRequest) {
       const row = Array.isArray(upserted) ? upserted[0] : upserted;
 
       await logAdminAudit(
-        auth,
+        asAdminAudit(auth),
         'plan_subject_access.upserted',
         'plan_subject_access',
         `${data.plan_code}:${data.subject_code}`,
@@ -211,7 +223,7 @@ export async function PUT(request: NextRequest) {
     const row = Array.isArray(updated) ? updated[0] : updated;
 
     await logAdminAudit(
-      auth,
+      asAdminAudit(auth),
       'subscription_plans.cap_updated',
       'subscription_plans',
       data.plan_code,
@@ -229,8 +241,8 @@ export async function PUT(request: NextRequest) {
 
 // DELETE — remove a pair
 export async function DELETE(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
-  if (!auth.authorized) return auth.response;
+  const auth = await authorizeRequest(request, 'super_admin.subjects.manage');
+  if (!auth.authorized) return auth.errorResponse!;
 
   try {
     const body = await request.json().catch(() => null);
@@ -267,7 +279,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     await logAdminAudit(
-      auth,
+      asAdminAudit(auth),
       'plan_subject_access.deleted',
       'plan_subject_access',
       `${plan_code}:${subject_code}`,

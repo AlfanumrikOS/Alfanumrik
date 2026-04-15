@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authorizeAdmin } from '../../../../../lib/admin-auth';
+import { authorizeRequest } from '../../../../../lib/rbac';
 import { supabaseAdmin } from '../../../../../lib/supabase-admin';
 
 /**
@@ -52,8 +52,8 @@ function toCsv(rows: ViolationRow[]): string {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
-  if (!auth.authorized) return auth.response;
+  const auth = await authorizeRequest(request, 'super_admin.subjects.manage');
+  if (!auth.authorized) return auth.errorResponse!;
 
   try {
     const sp = new URL(request.url).searchParams;

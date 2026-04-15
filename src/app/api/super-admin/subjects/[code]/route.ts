@@ -1,12 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
-  authorizeAdmin,
   logAdminAudit,
   supabaseAdminHeaders,
   supabaseAdminUrl,
+  type AdminAuth,
 } from '../../../../../lib/admin-auth';
+import { authorizeRequest, type AuthorizationResult } from '../../../../../lib/rbac';
 import { validateBody } from '../../../../../lib/validation';
 import { z } from 'zod';
+
+/**
+ * Adapter: logAdminAudit() expects the legacy AdminAuth shape with
+ * name/email/adminLevel fields; authorizeRequest() returns only
+ * userId/roles/permissions. admin_id is populated from userId.
+ */
+function asAdminAudit(auth: AuthorizationResult): AdminAuth {
+  return {
+    authorized: true,
+    userId: auth.userId!,
+    adminId: auth.userId!,
+    email: '',
+    name: '',
+    adminLevel: auth.roles.includes('super_admin') ? 'super_admin' : 'admin',
+  };
+}
 
 /**
  * Subjects Master API — update / soft-deactivate a subject.
@@ -51,8 +68,8 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ code: string }> }
 ) {
-  const auth = await authorizeAdmin(request);
-  if (!auth.authorized) return auth.response;
+  const auth = await authorizeRequest(request, 'super_admin.subjects.manage');
+  if (!auth.authorized) return auth.errorResponse!;
 
   const { code } = await params;
   if (!code || !SNAKE_CASE.test(code)) {
@@ -95,7 +112,7 @@ export async function PATCH(
     const updated = await res.json();
     const row = Array.isArray(updated) ? updated[0] : updated;
 
-    await logAdminAudit(auth, 'subject.master.updated', 'subjects', code, {
+    await logAdminAudit(asAdminAudit(auth), 'subject.master.updated', 'subjects', code, {
       updates: validation.data,
       previous_state: previous,
     });
@@ -114,8 +131,8 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ code: string }> }
 ) {
-  const auth = await authorizeAdmin(request);
-  if (!auth.authorized) return auth.response;
+  const auth = await authorizeRequest(request, 'super_admin.subjects.manage');
+  if (!auth.authorized) return auth.errorResponse!;
 
   const { code } = await params;
   if (!code || !SNAKE_CASE.test(code)) {
@@ -148,7 +165,7 @@ export async function DELETE(
     const updated = await res.json();
     const row = Array.isArray(updated) ? updated[0] : updated;
 
-    await logAdminAudit(auth, 'subject.master.toggled', 'subjects', code, {
+    await logAdminAudit(asAdminAudit(auth), 'subject.master.toggled', 'subjects', code, {
       from_active: previous.is_active,
       to_active: false,
     });

@@ -1,11 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
-  authorizeAdmin,
   logAdminAudit,
   isValidUUID,
+  type AdminAuth,
 } from '../../../../../../lib/admin-auth';
+import { authorizeRequest, type AuthorizationResult } from '../../../../../../lib/rbac';
 import { supabaseAdmin } from '../../../../../../lib/supabase-admin';
 import { z } from 'zod';
+
+function asAdminAudit(auth: AuthorizationResult): AdminAuth {
+  return {
+    authorized: true,
+    userId: auth.userId!,
+    adminId: auth.userId!,
+    email: '',
+    name: '',
+    adminLevel: auth.roles.includes('super_admin') ? 'super_admin' : 'admin',
+  };
+}
 
 /**
  * Admin override of a student's subject enrollment.
@@ -77,8 +89,8 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await authorizeAdmin(request);
-  if (!auth.authorized) return auth.response;
+  const auth = await authorizeRequest(request, 'super_admin.subjects.manage');
+  if (!auth.authorized) return auth.errorResponse!;
 
   const { id: studentId } = await params;
   if (!isValidUUID(studentId)) {
@@ -208,7 +220,7 @@ export async function PATCH(
     };
 
     await logAdminAudit(
-      auth,
+      asAdminAudit(auth),
       force ? 'subject_enrollment.admin_edit_forced' : 'subject_enrollment.admin_edit',
       'student_subject_enrollment',
       studentId,

@@ -5,7 +5,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  *
  * Focus:
  *  - Each route exports the expected handler(s).
- *  - Each route returns 401 when authorizeAdmin denies.
+ *  - Each route returns 401 when authorizeRequest denies (profile route
+ *    still uses authorizeAdmin — untouched by this phase).
  *  - Each mutation calls logAdminAudit when authorized + happy path.
  *
  * Per the agent contract: focus on authz + audit log call + status codes,
@@ -15,6 +16,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // ─── Shared mocks ────────────────────────────────────────────────────
 
 const mockAuthorizeAdmin = vi.fn();
+const mockAuthorizeRequest = vi.fn();
 const mockLogAdminAudit = vi.fn().mockResolvedValue(undefined);
 
 vi.mock('@/lib/admin-auth', async () => {
@@ -28,6 +30,16 @@ vi.mock('@/lib/admin-auth', async () => {
     supabaseAdminUrl: (table: string, params?: string) =>
       `https://test.supabase.co/rest/v1/${table}${params ? `?${params}` : ''}`,
     NextResponse,
+  };
+});
+
+// The 6 subject-governance routes now gate on the
+// `super_admin.subjects.manage` permission via authorizeRequest() from
+// @/lib/rbac. We mock that directly so tests don't need to exercise the
+// full permission lookup path.
+vi.mock('@/lib/rbac', async () => {
+  return {
+    authorizeRequest: mockAuthorizeRequest,
   };
 });
 
@@ -58,7 +70,30 @@ function setOkFetch(payload: unknown, status: number = 200) {
   ) as unknown as typeof fetch;
 }
 
+// Shape returned by authorizeRequest() (used by the 6 subject routes)
 const AUTH_OK = {
+  authorized: true as const,
+  userId: '11111111-1111-1111-1111-111111111111',
+  studentId: null,
+  roles: ['super_admin'],
+  permissions: ['super_admin.subjects.manage'],
+};
+
+const AUTH_DENIED = () => ({
+  authorized: false as const,
+  userId: null,
+  studentId: null,
+  roles: [],
+  permissions: [],
+  errorResponse: new Response(JSON.stringify({ error: 'Unauthorized' }), {
+    status: 401,
+    headers: { 'Content-Type': 'application/json' },
+  }),
+});
+
+// Legacy shape returned by authorizeAdmin() — still used by the
+// /students/[id]/profile route (outside Phase-E tightening scope).
+const AUTH_OK_ADMIN = {
   authorized: true as const,
   userId: '11111111-1111-1111-1111-111111111111',
   adminId: '22222222-2222-2222-2222-222222222222',
@@ -67,7 +102,7 @@ const AUTH_OK = {
   adminLevel: 'super',
 };
 
-const AUTH_DENIED = async () => {
+const AUTH_DENIED_ADMIN = async () => {
   const { NextResponse } = await import('next/server');
   return {
     authorized: false as const,
@@ -92,14 +127,14 @@ beforeEach(() => {
 
 describe('super-admin/subjects route', () => {
   it('GET returns 401 when admin auth fails', async () => {
-    mockAuthorizeAdmin.mockResolvedValueOnce(await AUTH_DENIED());
+    mockAuthorizeRequest.mockResolvedValueOnce(AUTH_DENIED());
     const { GET } = await import('@/app/api/super-admin/subjects/route');
     const res = await GET(jsonRequest('http://test/api/super-admin/subjects', 'GET') as any);
     expect(res.status).toBe(401);
   });
 
   it('POST creates a subject and writes audit log', async () => {
-    mockAuthorizeAdmin.mockResolvedValueOnce(AUTH_OK);
+    mockAuthorizeRequest.mockResolvedValueOnce(AUTH_OK);
     // 1st fetch: uniqueness check (returns empty array — code free)
     // 2nd fetch: insert (returns the created row)
     const fetchMock = vi
@@ -120,7 +155,7 @@ describe('super-admin/subjects route', () => {
     );
     expect(res.status).toBe(201);
     expect(mockLogAdminAudit).toHaveBeenCalledWith(
-      AUTH_OK,
+      expect.objectContaining({ userId: AUTH_OK.userId, adminId: AUTH_OK.userId }),
       'subject.master.created',
       'subjects',
       'physics',
@@ -129,7 +164,7 @@ describe('super-admin/subjects route', () => {
   });
 
   it('POST rejects malformed snake_case', async () => {
-    mockAuthorizeAdmin.mockResolvedValueOnce(AUTH_OK);
+    mockAuthorizeRequest.mockResolvedValueOnce(AUTH_OK);
     const { POST } = await import('@/app/api/super-admin/subjects/route');
     const res = await POST(
       jsonRequest('http://test/api/super-admin/subjects', 'POST', {
@@ -145,7 +180,7 @@ describe('super-admin/subjects route', () => {
 
 describe('super-admin/subjects/[code] route', () => {
   it('PATCH returns 401 when admin auth fails', async () => {
-    mockAuthorizeAdmin.mockResolvedValueOnce(await AUTH_DENIED());
+    mockAuthorizeRequest.mockResolvedValueOnce(AUTH_DENIED());
     const { PATCH } = await import('@/app/api/super-admin/subjects/[code]/route');
     const res = await PATCH(
       jsonRequest('http://test/api/super-admin/subjects/physics', 'PATCH', { name: 'X' }) as any,
@@ -155,7 +190,7 @@ describe('super-admin/subjects/[code] route', () => {
   });
 
   it('DELETE soft-inactivates and writes subject.master.toggled audit', async () => {
-    mockAuthorizeAdmin.mockResolvedValueOnce(AUTH_OK);
+    mockAuthorizeRequest.mockResolvedValueOnce(AUTH_OK);
     // 1st: fetch existing subject; 2nd: PATCH update
     const fetchMock = vi
       .fn()
@@ -180,7 +215,7 @@ describe('super-admin/subjects/[code] route', () => {
     );
     expect(res.status).toBe(200);
     expect(mockLogAdminAudit).toHaveBeenCalledWith(
-      AUTH_OK,
+      expect.objectContaining({ userId: AUTH_OK.userId, adminId: AUTH_OK.userId }),
       'subject.master.toggled',
       'subjects',
       'physics',
@@ -193,7 +228,7 @@ describe('super-admin/subjects/[code] route', () => {
 
 describe('super-admin/subjects/grade-map route', () => {
   it('GET returns 401 when admin auth fails', async () => {
-    mockAuthorizeAdmin.mockResolvedValueOnce(await AUTH_DENIED());
+    mockAuthorizeRequest.mockResolvedValueOnce(AUTH_DENIED());
     const { GET } = await import('@/app/api/super-admin/subjects/grade-map/route');
     const res = await GET(
       jsonRequest('http://test/api/super-admin/subjects/grade-map', 'GET') as any
@@ -202,7 +237,7 @@ describe('super-admin/subjects/grade-map route', () => {
   });
 
   it('PUT upserts a row and writes audit log', async () => {
-    mockAuthorizeAdmin.mockResolvedValueOnce(AUTH_OK);
+    mockAuthorizeRequest.mockResolvedValueOnce(AUTH_OK);
     // 1st: subject existence check; 2nd: upsert
     const fetchMock = vi
       .fn()
@@ -227,7 +262,7 @@ describe('super-admin/subjects/grade-map route', () => {
     );
     expect(res.status).toBe(200);
     expect(mockLogAdminAudit).toHaveBeenCalledWith(
-      AUTH_OK,
+      expect.objectContaining({ userId: AUTH_OK.userId, adminId: AUTH_OK.userId }),
       'grade_subject_map.upserted',
       'grade_subject_map',
       expect.any(String),
@@ -240,7 +275,7 @@ describe('super-admin/subjects/grade-map route', () => {
 
 describe('super-admin/subjects/plan-access route', () => {
   it('GET returns 401 when admin auth fails', async () => {
-    mockAuthorizeAdmin.mockResolvedValueOnce(await AUTH_DENIED());
+    mockAuthorizeRequest.mockResolvedValueOnce(AUTH_DENIED());
     const { GET } = await import('@/app/api/super-admin/subjects/plan-access/route');
     const res = await GET(
       jsonRequest('http://test/api/super-admin/subjects/plan-access', 'GET') as any
@@ -249,7 +284,7 @@ describe('super-admin/subjects/plan-access route', () => {
   });
 
   it('PUT cap action updates plan max_subjects and audits', async () => {
-    mockAuthorizeAdmin.mockResolvedValueOnce(AUTH_OK);
+    mockAuthorizeRequest.mockResolvedValueOnce(AUTH_OK);
     // 1st: planExists check; 2nd: PATCH update
     const fetchMock = vi
       .fn()
@@ -269,7 +304,7 @@ describe('super-admin/subjects/plan-access route', () => {
     );
     expect(res.status).toBe(200);
     expect(mockLogAdminAudit).toHaveBeenCalledWith(
-      AUTH_OK,
+      expect.objectContaining({ userId: AUTH_OK.userId, adminId: AUTH_OK.userId }),
       'subscription_plans.cap_updated',
       'subscription_plans',
       'pro',
@@ -282,7 +317,7 @@ describe('super-admin/subjects/plan-access route', () => {
 
 describe('super-admin/subjects/violations route', () => {
   it('GET returns 401 when admin auth fails', async () => {
-    mockAuthorizeAdmin.mockResolvedValueOnce(await AUTH_DENIED());
+    mockAuthorizeRequest.mockResolvedValueOnce(AUTH_DENIED());
     const { GET } = await import('@/app/api/super-admin/subjects/violations/route');
     const res = await GET(
       jsonRequest('http://test/api/super-admin/subjects/violations', 'GET') as any
@@ -291,7 +326,7 @@ describe('super-admin/subjects/violations route', () => {
   });
 
   it('GET returns JSON shape on happy path (empty violations)', async () => {
-    mockAuthorizeAdmin.mockResolvedValueOnce(AUTH_OK);
+    mockAuthorizeRequest.mockResolvedValueOnce(AUTH_OK);
     // New implementation (migration 20260415000010) calls get_subject_violations
     // directly — no from() fallback path.
     mockRpc.mockResolvedValueOnce({ data: [], error: null });
@@ -311,7 +346,7 @@ describe('super-admin/subjects/violations route', () => {
   });
 
   it('GET returns 500 on RPC error', async () => {
-    mockAuthorizeAdmin.mockResolvedValueOnce(AUTH_OK);
+    mockAuthorizeRequest.mockResolvedValueOnce(AUTH_OK);
     mockRpc.mockResolvedValueOnce({ data: null, error: { message: 'rpc missing' } });
     const { GET } = await import('@/app/api/super-admin/subjects/violations/route');
     const res = await GET(
@@ -321,7 +356,7 @@ describe('super-admin/subjects/violations route', () => {
   });
 
   it('GET with format=csv returns text/csv and correct headers', async () => {
-    mockAuthorizeAdmin.mockResolvedValueOnce(AUTH_OK);
+    mockAuthorizeRequest.mockResolvedValueOnce(AUTH_OK);
     mockRpc.mockResolvedValueOnce({
       data: [
         {
@@ -354,7 +389,7 @@ describe('super-admin/students/[id]/subjects route', () => {
   const STUDENT_ID = '33333333-3333-3333-3333-333333333333';
 
   it('PATCH returns 401 when admin auth fails', async () => {
-    mockAuthorizeAdmin.mockResolvedValueOnce(await AUTH_DENIED());
+    mockAuthorizeRequest.mockResolvedValueOnce(AUTH_DENIED());
     const { PATCH } = await import('@/app/api/super-admin/students/[id]/subjects/route');
     const res = await PATCH(
       jsonRequest('http://test/api/super-admin/students/x/subjects', 'PATCH', {
@@ -367,7 +402,7 @@ describe('super-admin/students/[id]/subjects route', () => {
   });
 
   it('PATCH rejects short reason with 400', async () => {
-    mockAuthorizeAdmin.mockResolvedValueOnce(AUTH_OK);
+    mockAuthorizeRequest.mockResolvedValueOnce(AUTH_OK);
     const { PATCH } = await import('@/app/api/super-admin/students/[id]/subjects/route');
     const res = await PATCH(
       jsonRequest('http://test/api/super-admin/students/x/subjects', 'PATCH', {
@@ -380,7 +415,7 @@ describe('super-admin/students/[id]/subjects route', () => {
   });
 
   it('PATCH happy path writes admin_edit audit', async () => {
-    mockAuthorizeAdmin.mockResolvedValueOnce(AUTH_OK);
+    mockAuthorizeRequest.mockResolvedValueOnce(AUTH_OK);
 
     // Sequence of from() calls inside the route:
     //   1. subjects (verifySubjectsExist)
@@ -443,7 +478,7 @@ describe('super-admin/students/[id]/subjects route', () => {
 
     expect(res.status).toBe(200);
     expect(mockLogAdminAudit).toHaveBeenCalledWith(
-      AUTH_OK,
+      expect.objectContaining({ userId: AUTH_OK.userId, adminId: AUTH_OK.userId }),
       'subject_enrollment.admin_edit',
       'student_subject_enrollment',
       STUDENT_ID,
@@ -458,7 +493,7 @@ describe('super-admin/students/[id]/profile route — Phase E additive fields', 
   const STUDENT_ID = '44444444-4444-4444-4444-444444444444';
 
   it('GET returns 401 when admin auth fails', async () => {
-    mockAuthorizeAdmin.mockResolvedValueOnce(await AUTH_DENIED());
+    mockAuthorizeAdmin.mockResolvedValueOnce(await AUTH_DENIED_ADMIN());
     const { GET } = await import('@/app/api/super-admin/students/[id]/profile/route');
     const res = await GET(
       jsonRequest(`http://test/api/super-admin/students/${STUDENT_ID}/profile`, 'GET') as any,
@@ -468,7 +503,7 @@ describe('super-admin/students/[id]/profile route — Phase E additive fields', 
   });
 
   it('GET surfaces selected_subjects, preferred_subject, stream at top level', async () => {
-    mockAuthorizeAdmin.mockResolvedValueOnce(AUTH_OK);
+    mockAuthorizeAdmin.mockResolvedValueOnce(AUTH_OK_ADMIN);
 
     // Minimal stubs for the 10 parallel queries in the route
     const studentRow = {
