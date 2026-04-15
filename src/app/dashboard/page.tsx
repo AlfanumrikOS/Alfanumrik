@@ -831,14 +831,16 @@ export default function Dashboard() {
           </button>
         )}
 
-        {/* Reselect banner — shown when the student has zero unlocked subjects
-            (e.g. legacy account after grade change or plan downgrade). */}
-        {allowedSubjects.length === 0 && (
+        {/* Reselect banner — shown when:
+            (a) the student has zero unlocked subjects (legacy grade/plan drift), OR
+            (b) the student hasn't selected any subjects yet (new account / free plan
+                that skipped picker / F2-migrated account that lost all to archive). */}
+        {(allowedSubjects.length === 0 || selectedSubjects.length === 0) && (
           <ReselectBanner isHi={isHi} onReselect={() => setShowSubjectPicker(true)} />
         )}
 
         {/* My Subjects (only student's chosen subjects) */}
-        {allowedSubjects.length > 0 && (
+        {allowedSubjects.length > 0 && selectedSubjects.length > 0 && (
           <div>
             <div className="flex items-center justify-between mb-2">
               <SectionHeader icon="📚">{isHi ? 'मेरे विषय' : 'My Subjects'}</SectionHeader>
