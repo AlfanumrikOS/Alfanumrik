@@ -107,7 +107,7 @@ export const ROLE_CONFIG = {
       { href: '/dashboard', icon: '⬡', label: 'Home', labelHi: 'होम' },
       { href: '/learn', icon: '📚', label: 'Chapters', labelHi: 'अध्याय' },
       { href: '/foxy', icon: '🦊', label: 'Foxy', labelHi: 'फॉक्सी' },
-      { href: '/stem-centre', icon: '🔬', label: 'STEM Centre', labelHi: 'स्टेम सेंटर' },
+      { href: '/stem-centre', icon: '🔬', label: 'STEM Lab', labelHi: 'STEM लैब' },
       { href: '/progress', icon: '📈', label: 'Progress', labelHi: 'प्रगति' },
       { href: '/leaderboard', icon: '🏆', label: 'Ranks', labelHi: 'रैंक' },
       { href: '/review', icon: '🔄', label: 'Review', labelHi: 'रिव्यू' },

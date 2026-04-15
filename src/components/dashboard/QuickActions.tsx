@@ -4,12 +4,12 @@ import { useRouter } from 'next/navigation';
 import { SectionHeader, ActionTile } from '@/components/ui';
 
 const QUICK_ACTIONS = [
+  { href: '/quiz', icon: '⚡', label: 'Quiz', labelHi: 'क्विज़', color: '#F97316' },
   { href: '/learn', icon: '📖', label: 'Chapters', labelHi: 'अध्याय', color: '#2563EB' },
   { href: '/foxy', icon: '🦊', label: 'Ask Foxy', labelHi: 'फॉक्सी से पूछो', color: '#7C3AED' },
-  { href: '/stem-centre', icon: '🔬', label: 'STEM Centre', labelHi: 'स्टेम सेंटर', color: '#0891B2' },
   { href: '/review', icon: '🔄', label: 'Revise', labelHi: 'रिव्यू', color: '#0D9488' },
-  { href: '/scan', icon: '📷', label: 'Scan', labelHi: 'स्कैन', color: '#059669' },
   { href: '/exams', icon: '📋', label: 'Exams', labelHi: 'परीक्षाएँ', color: '#DC2626' },
+  { href: '/scan', icon: '📷', label: 'Scan', labelHi: 'स्कैन', color: '#059669' },
 ];
 
 interface QuickActionsProps {
@@ -20,8 +20,8 @@ export default function QuickActions({ isHi }: QuickActionsProps) {
   const router = useRouter();
 
   return (
-    <nav aria-label={isHi ? 'त्वरित क्रियाएँ' : 'Quick Actions'}>
-      <SectionHeader icon="⚡">{isHi ? 'त्वरित क्रियाएँ' : 'Quick Actions'}</SectionHeader>
+    <nav aria-label={isHi ? 'शॉर्टकट' : 'Shortcuts'}>
+      <SectionHeader icon="🔗">{isHi ? 'शॉर्टकट' : 'Shortcuts'}</SectionHeader>
       <div className="grid grid-cols-3 gap-2">
         {QUICK_ACTIONS.map((a) => (
           <ActionTile

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, Suspense } from 'react';
 import dynamic from 'next/dynamic';
+import SimulationSkeleton from '@/components/simulations/SimulationSkeleton';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -169,24 +170,24 @@ export default function STEMCentrePage() {
     );
   }
 
-  /* ─── Plan Gate: STEM Centre requires Starter+ ─── */
+  /* ─── Plan Gate: STEM Lab requires Starter+ ─── */
   if (student && !isPremium(student.subscription_plan)) {
     return (
       <div className="min-h-screen bg-[#FFF8F0] flex items-center justify-center px-4">
         <div className="max-w-md w-full bg-white rounded-2xl shadow-lg border border-orange-100 p-6 text-center">
           <div className="text-5xl mb-4">🔬</div>
           <h1 className="text-xl font-bold text-gray-900 font-[Sora] mb-2">
-            {isHi ? 'स्टेम सेंटर' : 'STEM Centre'}
+            {isHi ? 'STEM लैब' : 'STEM Lab'}
           </h1>
           <p className="text-sm text-gray-600 mb-4">
             {isHi
-              ? 'इंटरैक्टिव लैब्स, सिमुलेशन और गाइडेड प्रयोगों के साथ विज्ञान और गणित को जीवंत बनाएं।'
-              : 'Bring science and math to life with interactive labs, simulations, and guided experiments.'}
+              ? 'STEM लैब्स, सिमुलेशन और गाइडेड प्रयोगों के साथ विज्ञान और गणित को जीवंत बनाएं।'
+              : 'Bring science and math to life with STEM labs, simulations, and guided experiments.'}
           </p>
 
           <div className="bg-orange-50 rounded-xl p-4 mb-5 text-left">
             <p className="text-xs font-semibold text-orange-700 mb-2">
-              {isHi ? 'स्टेम सेंटर में शामिल है:' : 'STEM Centre includes:'}
+              {isHi ? 'STEM लैब में शामिल है:' : 'STEM Lab includes:'}
             </p>
             <ul className="space-y-1.5">
               {[
@@ -205,8 +206,8 @@ export default function STEMCentrePage() {
 
           <p className="text-xs text-gray-500 mb-4">
             {isHi
-              ? 'स्टेम सेंटर Starter योजना और उससे ऊपर के लिए उपलब्ध है।'
-              : 'STEM Centre is available on the Starter plan and above.'}
+              ? 'STEM लैब Starter योजना और उससे ऊपर के लिए उपलब्ध है।'
+              : 'STEM Lab is available on the Starter plan and above.'}
           </p>
 
           <Link
@@ -234,7 +235,7 @@ export default function STEMCentrePage() {
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold text-gray-900 font-[Sora]">
-              🔬 {isHi ? 'स्टेम सेंटर' : 'STEM Centre'}
+              🔬 {isHi ? 'STEM लैब' : 'STEM Lab'}
             </h1>
             <p className="text-xs text-gray-500">
               {isHi ? `कक्षा ${grade} — प्रयोग और सिमुलेशन` : `Grade ${grade} — Experiments & Simulations`}
@@ -269,7 +270,7 @@ export default function STEMCentrePage() {
           const simId = activeLab.sim.id;
           const experiment = getExperimentForSimulation(simId, grade);
           const simNode = activeLab.type === 'builtin' ? (
-            <Suspense fallback={<div className="text-4xl animate-pulse">🔬</div>}>
+            <Suspense fallback={<SimulationSkeleton />}>
               <activeLab.sim.component />
             </Suspense>
           ) : activeLab.sim.widget_code ? (
@@ -419,12 +420,22 @@ export default function STEMCentrePage() {
         )}
 
         {/* Empty State */}
-        {!loading && builtInFiltered.length === 0 && dbSims.length === 0 && (
-          <div className="text-center py-16">
-            <div className="text-5xl mb-3">🔍</div>
-            <p className="text-gray-500 font-medium">{isHi ? 'इस फ़िल्टर के लिए कोई लैब नहीं मिला' : 'No labs found for this filter'}</p>
-            <button onClick={() => setSubject('all')} className="mt-3 text-orange-500 text-sm font-medium hover:underline">
-              {isHi ? 'सभी विषय दिखाएं' : 'Show all subjects'}
+        {!loading && !activeLab && builtInFiltered.length === 0 && dbSims.length === 0 && (
+          <div className="text-center py-16 max-w-xs mx-auto">
+            <div className="text-5xl mb-3">🔬</div>
+            <h3 className="text-gray-900 font-bold text-base mb-2">
+              {isHi ? 'इस फ़िल्टर के लिए कोई लैब नहीं मिला' : 'No labs found for this filter'}
+            </h3>
+            <p className="text-gray-500 text-sm mb-4">
+              {isHi
+                ? 'कोई अन्य विषय चुनें या सभी विषय देखें। हम जल्द ही और लैब्स जोड़ रहे हैं!'
+                : 'Try another subject or view all subjects. We\'re adding more labs soon!'}
+            </p>
+            <button
+              onClick={() => setSubject('all')}
+              className="px-5 py-2.5 min-h-[44px] bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-sm font-semibold transition-colors active:scale-[0.98]"
+            >
+              {isHi ? '📚 सभी विषय दिखाएं' : '📚 Show All Subjects'}
             </button>
           </div>
         )}

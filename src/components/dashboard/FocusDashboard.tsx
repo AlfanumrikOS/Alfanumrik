@@ -358,31 +358,6 @@ export default function FocusDashboard({
           )}
         </div>
       </div>
-      {/* ── NCERT Practice quick-link (secondary, below main card) ── */}
-      <button
-        onClick={() => router.push('/quiz/ncert')}
-        className="mt-3 w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-left transition-all active:scale-[0.98]"
-        style={{
-          border: '1.5px solid var(--border)',
-          background: 'var(--surface-1)',
-        }}
-      >
-        <span
-          className="w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0"
-          style={{ background: '#16A34A14', color: '#16A34A' }}
-        >
-          📚
-        </span>
-        <div className="flex-1 min-w-0">
-          <div className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>
-            {isHi ? 'NCERT अभ्यास' : 'NCERT Practice'}
-          </div>
-          <div className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>
-            {isHi ? 'MCQ · लघु उत्तर · दीर्घ उत्तर — CBSE शैली' : 'MCQ · Short Answer · Long Answer — CBSE style'}
-          </div>
-        </div>
-        <span style={{ color: 'var(--text-3)', fontSize: 18 }}>›</span>
-      </button>
     </section>
   );
 }

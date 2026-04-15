@@ -1,4 +1,19 @@
 /**
+ * ⚠️ DEPRECATED — Legacy Foxy Tutor Edge Function
+ *
+ * This Edge Function is being replaced by src/app/api/foxy/route.ts
+ * which uses the new AI orchestration layer (src/lib/ai/).
+ *
+ * DO NOT add new features here. All new Foxy features go in:
+ * - src/lib/ai/workflows/ (workflow logic)
+ * - src/lib/ai/prompts/ (prompt templates)
+ * - src/app/api/foxy/route.ts (API endpoint)
+ *
+ * This file will be removed once all traffic is migrated.
+ * Migration status: API route is primary, Edge Function is fallback.
+ */
+
+/**
  * foxy-tutor – Alfanumrik Edge Function
  *
  * AI Tutoring endpoint for the Foxy Learning Companion.

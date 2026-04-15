@@ -39,7 +39,7 @@ export function getAIConfig(): AIConfig {
     ragMinQuality: 0.4,
     // Feature flags — these are local overrides. Production flags use
     // the DB-backed feature flag system (src/lib/feature-flags.ts).
-    enableIntentRouter: process.env.AI_ENABLE_INTENT_ROUTER === 'true',
+    enableIntentRouter: process.env.AI_ENABLE_INTENT_ROUTER !== 'false', // ON by default
     enableOutputValidation: process.env.AI_ENABLE_OUTPUT_VALIDATION !== 'false', // on by default
     enableTracing: process.env.AI_ENABLE_TRACING !== 'false', // on by default
   };

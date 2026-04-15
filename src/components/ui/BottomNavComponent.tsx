@@ -15,50 +15,48 @@ import { useDashboardData } from '@/lib/swr';
 
 const CORE_TABS = [
   { href: '/dashboard', icon: '🏠', activeIcon: '🏠', label: 'Home', labelHi: 'होम' },
-  // 'Learn' routes to the subject/chapter browser — NOT study-plan
-  { href: '/learn', icon: '📖', activeIcon: '📖', label: 'Learn', labelHi: 'सीखो' },
+  { href: '/quiz', icon: '✏️', activeIcon: '✏️', label: 'Practice', labelHi: 'अभ्यास' },
   { href: '/foxy', icon: '🦊', activeIcon: '🦊', label: 'Foxy', labelHi: 'फॉक्सी', isFab: true },
-  // Review is a daily habit — promoted to core tab with due-count badge
-  { href: '/review', icon: '🔄', activeIcon: '🔄', label: 'Review', labelHi: 'रिव्यू' },
-  { href: '/quiz', icon: '⚡', activeIcon: '⚡', label: 'Quiz', labelHi: 'क्विज़' },
+  { href: '/progress', icon: '📈', activeIcon: '📈', label: 'Progress', labelHi: 'प्रगति' },
 ];
 
 const MORE_ITEMS = [
+  { href: '/simulations', icon: '🔬', label: 'STEM Lab', labelHi: 'STEM लैब' },
+  { href: '/pyq', icon: '📄', label: 'PYQ Papers', labelHi: 'पिछले साल के प्रश्न', gradeMin: 9 },
+  { href: '/mock-exam', icon: '📋', label: 'Mock Exam', labelHi: 'मॉक परीक्षा', gradeMin: 9 },
   { href: '/study-plan', icon: '📅', label: 'Study Plan', labelHi: 'स्टडी प्लान' },
+  { href: '/leaderboard', icon: '🏆', label: 'Leaderboard', labelHi: 'लीडरबोर्ड' },
+  { href: '/learn', icon: '📚', label: 'Subjects & Chapters', labelHi: 'विषय और अध्याय' },
+  { href: '/review', icon: '🔄', label: 'Flashcard Review', labelHi: 'फ्लैशकार्ड रिव्यू' },
   { href: '/profile', icon: '👤', label: 'Profile', labelHi: 'प्रोफ़ाइल' },
-  { href: '/simulations', icon: '🔬', label: 'Interactive Lab', labelHi: 'इंटरैक्टिव लैब' },
-  { href: '/challenge', icon: '⚔️', label: 'Challenge Friends', labelHi: 'दोस्तों को चैलेंज करो' },
-  { href: '/leaderboard', icon: '🏆', label: 'Rankings & Compete', labelHi: 'रैंकिंग और प्रतियोगिता' },
-  { href: '/progress', icon: '📈', label: 'My Progress', labelHi: 'मेरी प्रगति' },
-  { href: '/notifications', icon: '🔔', label: 'Notifications', labelHi: 'सूचनाएँ' },
+  { href: '/notifications', icon: '🔔', label: 'Settings & Notifications', labelHi: 'सेटिंग्स और सूचनाएँ' },
   { href: '/help', icon: '❓', label: 'Help & Support', labelHi: 'सहायता और सपोर्ट' },
 ];
 
 const SIDEBAR_SECTIONS = [
   {
-    title: 'Main', titleHi: 'मुख्य',
+    title: 'Home', titleHi: 'होम',
     items: [
       { href: '/dashboard', icon: '🏠', label: 'Home', labelHi: 'होम' },
       { href: '/foxy', icon: '🦊', label: 'Foxy AI Tutor', labelHi: 'फॉक्सी AI ट्यूटर' },
-    ],
-  },
-  {
-    title: 'Study', titleHi: 'पढ़ाई',
-    items: [
-      { href: '/learn', icon: '📖', label: 'Subjects & Chapters', labelHi: 'विषय और अध्याय' },
-      { href: '/study-plan', icon: '📅', label: 'Study Plan', labelHi: 'अध्ययन योजना' },
-      { href: '/simulations', icon: '🔬', label: 'Interactive Lab', labelHi: 'इंटरैक्टिव लैब' },
-      { href: '/quiz', icon: '⚡', label: 'Quick Quiz', labelHi: 'क्विज़' },
-      { href: '/review', icon: '🔄', label: 'Flashcard Review', labelHi: 'फ्लैशकार्ड रिव्यू' },
-    ],
-  },
-  {
-    title: 'Track', titleHi: 'ट्रैक',
-    items: [
       { href: '/progress', icon: '📈', label: 'My Progress', labelHi: 'मेरी प्रगति' },
-      { href: '/challenge', icon: '⚔️', label: 'Challenge Friends', labelHi: 'दोस्तों को चैलेंज करो' },
-      { href: '/leaderboard', icon: '🏆', label: 'Rankings', labelHi: 'रैंकिंग' },
-      { href: '/notifications', icon: '🔔', label: 'Notifications', labelHi: 'सूचनाएँ' },
+    ],
+  },
+  {
+    title: 'Practice', titleHi: 'अभ्यास',
+    items: [
+      { href: '/quiz', icon: '✏️', label: 'Practice', labelHi: 'अभ्यास' },
+      { href: '/simulations', icon: '🔬', label: 'STEM Lab', labelHi: 'STEM लैब' },
+      { href: '/pyq', icon: '📄', label: 'PYQ Papers', labelHi: 'पिछले साल के प्रश्न', gradeMin: 9 },
+      { href: '/mock-exam', icon: '📋', label: 'Mock Exam', labelHi: 'मॉक परीक्षा', gradeMin: 9 },
+    ],
+  },
+  {
+    title: 'Review', titleHi: 'रिव्यू',
+    items: [
+      { href: '/learn', icon: '📚', label: 'Subjects & Chapters', labelHi: 'विषय और अध्याय' },
+      { href: '/study-plan', icon: '📅', label: 'Study Plan', labelHi: 'अध्ययन योजना' },
+      { href: '/review', icon: '🔄', label: 'Flashcard Review', labelHi: 'फ्लैशकार्ड रिव्यू' },
     ],
   },
   {
@@ -147,7 +145,7 @@ export default function BottomNavComponent() {
   const [showMore, setShowMore] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   // Hick's Law: collapse secondary sidebar sections by default to reduce choices
-  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({ Track: true, Account: true });
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({ Account: true });
   const moreSheetRef = useRef<HTMLDivElement>(null);
 
   // Focus management and keyboard support for More sheet
@@ -164,8 +162,17 @@ export default function BottomNavComponent() {
   }, [showMore]);
 
   const tabs = getCoreTabs(activeRole);
-  const moreItems = getMoreItems(activeRole);
-  const sidebarSections = getSidebarSections(activeRole);
+  const allSidebarSections = getSidebarSections(activeRole);
+  // Filter by grade for grade-gated sections and items (PYQ, Mock Exam: grade 9+)
+  const studentGrade = parseInt((auth as any)?.student?.grade ?? '6', 10);
+  const sidebarSections = allSidebarSections.filter(s => {
+    const gMin = (s as any).gradeMin;
+    return gMin == null || studentGrade >= gMin;
+  });
+  const moreItems = getMoreItems(activeRole).filter(item => {
+    const gMin = (item as any).gradeMin;
+    return gMin == null || studentGrade >= gMin;
+  });
 
   // Due-review count for the Review tab badge (SWR-cached — no extra request if dashboard already loaded)
   const { data: dashData } = useDashboardData((auth as any)?.student?.id);
@@ -225,7 +232,14 @@ export default function BottomNavComponent() {
                   >
                     <span className="text-xl w-7 text-center">{item.icon}</span>
                     <span className="text-sm font-semibold">{isHi ? item.labelHi : item.label}</span>
-                    {active && <span className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: 'var(--orange)' }} />}
+                    {item.href === '/review' && dueCount > 0 && activeRole === 'student' ? (
+                      <span className="ml-auto min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[9px] font-bold text-white px-1"
+                        style={{ background: '#DC2626' }}>
+                        {dueCount > 9 ? '9+' : dueCount}
+                      </span>
+                    ) : active ? (
+                      <span className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: 'var(--orange)' }} />
+                    ) : null}
                   </button>
                 );
               })}
@@ -313,13 +327,11 @@ export default function BottomNavComponent() {
             }
 
             /* ── Regular tabs ── */
-            const isReviewTab = item.href === '/review';
-            const showBadge = isReviewTab && dueCount > 0 && activeRole === 'student';
             return (
               <button
                 key={item.href}
                 onClick={() => router.push(item.href)}
-                aria-label={`${item.label}${showBadge ? ` (${dueCount} due)` : ''}`}
+                aria-label={item.label}
                 aria-current={active ? 'page' : undefined}
                 className="flex flex-col items-center gap-1 min-w-[56px] py-2 transition-all relative"
                 style={{ color: active ? 'var(--orange)' : 'var(--text-3)' }}
@@ -335,15 +347,6 @@ export default function BottomNavComponent() {
                   >
                     {active ? item.activeIcon : item.icon}
                   </span>
-                  {showBadge && (
-                    <span
-                      className="absolute -top-1.5 -right-2 min-w-[16px] h-[16px] rounded-full flex items-center justify-center text-[9px] font-bold text-white leading-none px-1"
-                      style={{ background: '#DC2626', boxShadow: '0 1px 4px rgba(220,38,38,0.5)' }}
-                      aria-hidden="true"
-                    >
-                      {dueCount > 9 ? '9+' : dueCount}
-                    </span>
-                  )}
                 </span>
                 <span className="text-[11px] font-semibold tracking-wide">
                   {isHi ? item.labelHi : item.label}
@@ -433,9 +436,14 @@ export default function BottomNavComponent() {
                   </span>
                 </button>}
                 {!isSectionCollapsed && <div className="space-y-0.5">
-                  {section.items.map(item => {
+                  {section.items.filter(item => {
+                    const gMin = (item as any).gradeMin;
+                    return gMin == null || studentGrade >= gMin;
+                  }).map(item => {
                     const active = isActive(item.href);
                     const isFoxy = item.href === '/foxy';
+                    const isReview = item.href === '/review';
+                    const showReviewBadge = isReview && dueCount > 0 && activeRole === 'student';
                     return (
                       <button
                         key={item.href}
@@ -452,9 +460,14 @@ export default function BottomNavComponent() {
                       >
                         <span className="text-lg w-6 text-center">{item.icon}</span>
                         {!collapsed && <span>{isHi ? item.labelHi : item.label}</span>}
-                        {active && !collapsed && (
+                        {showReviewBadge && !collapsed ? (
+                          <span className="ml-auto min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[9px] font-bold text-white px-1"
+                            style={{ background: '#DC2626' }}>
+                            {dueCount > 9 ? '9+' : dueCount}
+                          </span>
+                        ) : active && !collapsed ? (
                           <span className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: 'var(--orange)' }} />
-                        )}
+                        ) : null}
                       </button>
                     );
                   })}

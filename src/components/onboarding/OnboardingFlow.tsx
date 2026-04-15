@@ -196,7 +196,7 @@ export default function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
             <p className="text-sm text-[var(--text-2)] mt-2 max-w-xs mx-auto">
               {isHi
                 ? 'एक छोटा क्विज़ लो ताकि मैं समझ सकूँ तुम कहाँ हो। या सीधे मुझसे बात करो!'
-                : "Take a quick quiz so I know where you stand. Or just start talking to me!"}
+                : "Take a quiz so I know where you stand. Or just start talking to me!"}
             </p>
 
             {saveError && (

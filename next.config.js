@@ -41,13 +41,7 @@ const nextConfig = {
     ],
   },
   async redirects() {
-    return [
-      {
-        source: '/quiz',
-        destination: '/foxy',
-        permanent: false,
-      },
-    ];
+    return [];
   },
   async headers() {
     return [

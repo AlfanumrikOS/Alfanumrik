@@ -554,7 +554,7 @@ function WelcomeContent() {
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {[
               { icon: '🦊', title: 'Foxy AI Tutor', titleHi: 'Foxy AI ट्यूटर', desc: 'Ask any doubt in Hindi or English. Get step-by-step explanations grounded in NCERT — not random internet answers.', descHi: 'कोई भी सवाल हिन्दी या अंग्रेज़ी में पूछो। NCERT पर आधारित स्टेप-बाय-स्टेप जवाब पाओ — रैंडम इंटरनेट जवाब नहीं।', color: '#E8581C' },
-              { icon: '🔬', title: '19 Interactive Simulations', titleHi: '19 इंटरैक्टिव सिमुलेशन', desc: 'Physics, Chemistry, Math — explore concepts hands-on. From Newton\'s Laws to Chemical Balancing to Integration.', descHi: 'भौतिकी, रसायन, गणित — कॉन्सेप्ट हाथों-हाथ समझो। न्यूटन के नियमों से लेकर रासायनिक संतुलन और इंटीग्रेशन तक।', color: '#7C3AED' },
+              { icon: '🔬', title: '115 STEM Lab Experiments', titleHi: '115 STEM Lab प्रयोग', desc: 'Physics, Chemistry, Math — explore concepts hands-on. From Newton\'s Laws to Chemical Balancing to Integration.', descHi: 'भौतिकी, रसायन, गणित — कॉन्सेप्ट हाथों-हाथ समझो। न्यूटन के नियमों से लेकर रासायनिक संतुलन और इंटीग्रेशन तक।', color: '#7C3AED' },
               { icon: '⚡', title: 'Bloom-Aware Quizzes', titleHi: 'Bloom\'s-आधारित क्विज़', desc: 'Questions adapt to your level. Master "remember" before "apply". Board-exam patterns built into every quiz.', descHi: 'सवाल आपके स्तर के अनुसार बदलते हैं। पहले "याद करो" फिर "लागू करो"। हर क्विज़ में बोर्ड परीक्षा पैटर्न शामिल।', color: '#2563EB' },
               { icon: '📊', title: 'Parent Dashboard', titleHi: 'पैरेंट डैशबोर्ड', desc: 'See your child\'s progress in plain language. "Doing well" or "needs help" — not confusing graphs.', descHi: 'अपने बच्चे की प्रगति सरल भाषा में देखें। "अच्छा कर रहा है" या "मदद चाहिए" — भ्रमित करने वाले ग्राफ नहीं।', color: '#16A34A' },
               { icon: '👩‍🏫', title: 'Teacher Command Center', titleHi: 'टीचर कमांड सेंटर', desc: 'See which students need help. Get AI-powered intervention suggestions. Save hours every week.', descHi: 'देखें किन छात्रों को मदद चाहिए। AI-संचालित हस्तक्षेप सुझाव पाएँ। हर हफ्ते घंटों की बचत।', color: '#D97706' },
@@ -639,7 +639,7 @@ function WelcomeContent() {
                   { en: 'AI Tutor (Foxy) — 16 subjects, Hindi + English', hi: 'AI ट्यूटर (Foxy) — 16 विषय, हिन्दी + अंग्रेज़ी' },
                   { en: 'Adaptive quizzes with Bloom\'s taxonomy', hi: 'Bloom\'s टैक्सोनॉमी के साथ अडैप्टिव क्विज़' },
                   { en: 'Spaced repetition for revision', hi: 'रिवीज़न के लिए स्पेस्ड रिपिटिशन' },
-                  { en: 'STEM Centre with 19 interactive simulations', hi: '19 इंटरैक्टिव सिमुलेशन के साथ STEM सेंटर' },
+                  { en: 'STEM Lab with 115 experiments across Physics, Chemistry & Math', hi: '115 प्रयोगों के साथ STEM लैब — भौतिकी, रसायन और गणित' },
                   { en: 'Progress tracking with mastery data', hi: 'mastery डेटा के साथ प्रगति ट्रैकिंग' },
                   { en: 'Parent dashboard with weekly reports', hi: 'साप्ताहिक रिपोर्ट के साथ पैरेंट डैशबोर्ड' },
                   { en: 'Teacher portal with class management', hi: 'क्लास मैनेजमेंट के साथ टीचर पोर्टल' },

@@ -45,7 +45,8 @@ export { saveTrace, flagContent } from './tools/save-trace';
 export { TraceLogger, logTrace } from './tracing/trace-logger';
 
 // ─── Workflows ──────────────────────────────────────────────────────────────
-export { classifyIntent, routeIntent } from './workflows/foxy-router';
+export { classifyIntent, routeIntent, runFoxyGraph } from './workflows/foxy-router';
+export type { FoxyState } from './workflows/foxy-router';
 export { runExplainWorkflow } from './workflows/explain';
 export { runDoubtWorkflow } from './workflows/doubt-solve';
 export { runQuizGenerateWorkflow } from './workflows/quiz-generate';

@@ -343,6 +343,12 @@ export async function proxy(request: NextRequest) {
   // Cookie-based checks here broke signInWithPassword() flow because that method
   // stores tokens in localStorage, not cookies. DO NOT re-add cookie-based
   // route protection without first migrating the browser client to @supabase/ssr.
+  //
+  // STUDENT_PROTECTED routes (documented here for reference; enforcement is client-side):
+  // '/dashboard', '/quiz', '/foxy', '/progress', '/learn',
+  // '/profile', '/reports', '/study-plan', '/review', '/scan',
+  // '/notifications', '/exams', '/leaderboard', '/hpc', '/simulations',
+  // '/stem-centre', '/research', '/billing'
 
   // ── Layer 2: Block common bot/scanner paths early ──
   if (
@@ -552,7 +558,7 @@ function addSecurityHeaders(response: NextResponse, request: NextRequest): NextR
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|manifest.json|sw.js|icons/).*)',
+    '/((?!_next/static|_next/image|favicon.ico|manifest.json|sw.js|icons|robots.txt).*)',
   ],
 };
 
