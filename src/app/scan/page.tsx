@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { Card, Button, SectionHeader, LoadingFoxy, BottomNav, Badge } from '@/components/ui';
-import { SUBJECT_META } from '@/lib/constants';
+import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 
 /* ─── Types ─── */
@@ -46,6 +46,7 @@ type ProcessingState = 'idle' | 'uploading' | 'processing' | 'results' | 'error'
 
 export default function ScanPage() {
   const { student, isLoggedIn, isLoading, isHi } = useAuth();
+  const { unlocked: allowedSubjects } = useAllowedSubjects();
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -247,7 +248,7 @@ export default function ScanPage() {
     setErrorMessage('');
   };
 
-  const getSubjectMeta = (code: string) => SUBJECT_META.find(s => s.code === code);
+  const getSubjectMeta = (code: string) => allowedSubjects.find(s => s.code === code);
 
   if (isLoading || !student) return <LoadingFoxy />;
 

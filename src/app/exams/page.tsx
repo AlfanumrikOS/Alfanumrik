@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { Card, Button, ProgressBar, SectionHeader, LoadingFoxy, BottomNav, Badge } from '@/components/ui';
-import { SUBJECT_META } from '@/lib/constants';
+import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 
 /* ─── Types ─── */
@@ -45,6 +45,7 @@ const EXAM_TYPES = [
 
 export default function ExamsPage() {
   const { student, isLoggedIn, isLoading, isHi } = useAuth();
+  const { unlocked: allowedSubjects } = useAllowedSubjects();
   const router = useRouter();
 
   // Exam list
@@ -213,7 +214,7 @@ export default function ExamsPage() {
     return Math.ceil(diff / (1000 * 60 * 60 * 24));
   };
 
-  const getSubjectMeta = (code: string) => SUBJECT_META.find(s => s.code === code);
+  const getSubjectMeta = (code: string) => allowedSubjects.find(s => s.code === code);
 
   const getChaptersProgress = (chapters: ExamChapter[]) => {
     if (!chapters || chapters.length === 0) return 0;
@@ -315,7 +316,7 @@ export default function ExamsPage() {
                 {isHi ? 'विषय चुनें' : 'Select Subject'}
               </p>
               <div className="grid grid-cols-3 gap-2">
-                {SUBJECT_META.slice(0, 9).map(s => (
+                {allowedSubjects.map(s => (
                   <button
                     key={s.code}
                     onClick={() => setSelectedSubject(s.code)}
