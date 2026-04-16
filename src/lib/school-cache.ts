@@ -14,7 +14,7 @@
  *
  *   // Read with tenant-aware key
  *   const key = schoolCacheKey(schoolId, 'leaderboard');
- *   const data = await cacheGetAsync<LeaderboardData>(key);
+ *   const data = cacheGet<LeaderboardData>(key);
  *
  *   // Get-or-fetch with tenant scope
  *   const roster = await schoolCacheFetch(schoolId, 'roster', CACHE_TTL.SHORT, fetchRoster);
@@ -24,10 +24,10 @@
  */
 
 import {
-  cacheGetAsync,
-  cacheSetAsync,
-  cacheDeleteAsync,
-  cacheInvalidatePrefixAsync,
+  cacheGet,
+  cacheSet,
+  cacheDelete,
+  cacheInvalidatePrefix,
   cacheStats,
   CACHE_TTL,
 } from '@/lib/cache';
@@ -71,7 +71,7 @@ export async function schoolCacheGet<T>(
   dataKey: string,
 ): Promise<T | null> {
   const key = schoolCacheKey(schoolId, dataKey);
-  const result = await cacheGetAsync<T>(key);
+  const result = cacheGet<T>(key);
 
   if (schoolId) {
     if (result !== null) {
@@ -86,16 +86,16 @@ export async function schoolCacheGet<T>(
 
 /**
  * Set a cached value scoped to a school tenant.
- * Writes to both in-memory and Redis (via cacheSetAsync).
+ * Writes to both in-memory and Redis (via cacheSet).
  */
 export async function schoolCacheSet<T>(
   schoolId: string | null,
   dataKey: string,
   data: T,
-  ttlMs: number = CACHE_TTL.TENANT,
+  ttlMs: number = CACHE_TTL.SHORT,
 ): Promise<void> {
   const key = schoolCacheKey(schoolId, dataKey);
-  await cacheSetAsync(key, data, ttlMs);
+  cacheSet(key, data, ttlMs);
 }
 
 /**
@@ -106,7 +106,7 @@ export async function schoolCacheDelete(
   dataKey: string,
 ): Promise<void> {
   const key = schoolCacheKey(schoolId, dataKey);
-  await cacheDeleteAsync(key);
+  cacheDelete(key);
 }
 
 /**
@@ -141,7 +141,7 @@ export async function schoolCacheFetch<T>(
  * - Admin force-refreshes school data
  */
 export async function invalidateSchoolCache(schoolId: string): Promise<void> {
-  await cacheInvalidatePrefixAsync(`t:${schoolId}:`);
+  cacheInvalidatePrefix(`t:${schoolId}:`);
   // Also clear per-school stats on invalidation
   _schoolStats.delete(schoolId);
 }
@@ -157,7 +157,7 @@ export async function invalidateSchoolCache(schoolId: string): Promise<void> {
  * keys. For immediate cross-school invalidation, iterate known school IDs.
  */
 export async function invalidateGlobalCacheKey(dataKey: string): Promise<void> {
-  await cacheDeleteAsync(`g:${dataKey}`);
+  cacheDelete(`g:${dataKey}`);
 }
 
 // ── Stats ──
