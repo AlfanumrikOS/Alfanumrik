@@ -5,9 +5,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  *
  * Tests authorizeSchoolAdmin() from @/lib/school-admin-auth.
  * This function wraps RBAC authorizeRequest() with school-scoped resolution:
- *   1. Verify user has the required permission
- *   2. Resolve which school they administer (school_admins or teachers table)
- *   3. Return schoolId for query scoping
+ *   1. Verify JWT + RBAC permission via authorizeRequest()
+ *   2. Look up school_admins record to get school_id (Strategy 1)
+ *   3. Fall back to teachers table if no school_admins record (Strategy 2)
+ *   4. Return schoolId for tenant-scoped queries
  *
  * All Supabase calls are mocked -- never hits real DB.
  */
@@ -23,15 +24,16 @@ vi.mock('@/lib/rbac', () => ({
 // Build a chainable mock that tracks the call sequence and returns at maybeSingle
 function createChainableMock(resolvedValue: { data: unknown; error: unknown }) {
   const chain: Record<string, unknown> = {};
-  const self = () => chain;
   chain.select = vi.fn().mockReturnValue(chain);
   chain.eq = vi.fn().mockReturnValue(chain);
   chain.not = vi.fn().mockReturnValue(chain);
   chain.limit = vi.fn().mockReturnValue(chain);
   chain.maybeSingle = vi.fn().mockResolvedValue(resolvedValue);
+  chain.single = vi.fn().mockResolvedValue(resolvedValue);
   return chain;
 }
 
+// The actual code queries: school_admins then teachers (fallback)
 let schoolAdminsChain: ReturnType<typeof createChainableMock>;
 let teachersChain: ReturnType<typeof createChainableMock>;
 
@@ -107,6 +109,7 @@ describe('authorizeSchoolAdmin', () => {
       expect(result.authorized).toBe(false);
       const failure = result as SchoolAdminAuthFailure;
       expect(failure.errorResponse).toBeDefined();
+      // The actual code wraps the RBAC failure in its own NextResponse with code
       const body = await failure.errorResponse.json();
       expect(body.code).toBe('AUTH_REQUIRED');
       expect(failure.errorResponse.status).toBe(401);
@@ -119,6 +122,7 @@ describe('authorizeSchoolAdmin', () => {
 
       expect(result.authorized).toBe(false);
       const failure = result as SchoolAdminAuthFailure;
+      // The actual code uses auth.errorResponse?.status || 401
       expect(failure.errorResponse.status).toBe(403);
     });
 
@@ -201,6 +205,7 @@ describe('authorizeSchoolAdmin', () => {
     it('returns 500 when resolveSchoolId throws an unexpected error', async () => {
       mockAuthorized('user-error');
       schoolAdminsChain = createChainableMock({ data: null, error: null });
+      // Make maybeSingle throw to trigger the catch block in authorizeSchoolAdmin
       (schoolAdminsChain.maybeSingle as ReturnType<typeof vi.fn>).mockRejectedValue(
         new Error('DB connection failed')
       );
