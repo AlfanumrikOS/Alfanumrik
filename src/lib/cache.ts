@@ -149,4 +149,123 @@ export const CACHE_TTL = {
   USER: 30 * 1000,
   /** 24 hours — for truly static data (curriculum structure) */
   LONG: 24 * 60 * 60 * 1000,
+  /** 10 minutes — for tenant/school configuration */
+  TENANT: 10 * 60 * 1000,
 } as const;
+
+// ── Async L2 (Redis) Cache Functions ──
+// These check in-memory L1 first, then fall through to Redis L2.
+// Redis failures degrade gracefully — L1 still works.
+
+import { getRedis } from '@/lib/redis';
+
+/** L1 backfill TTL when promoting from Redis L2 (60 seconds) */
+const L2_BACKFILL_TTL = 60_000;
+
+/**
+ * Async cache get — checks in-memory L1 first, then Redis L2.
+ * Drop-in async replacement for cacheGet.
+ */
+export async function cacheGetAsync<T>(key: string): Promise<T | null> {
+  // L1: in-memory (fastest)
+  const local = cacheGet<T>(key);
+  if (local !== null) return local;
+
+  // L2: Redis
+  const redis = getRedis();
+  if (redis) {
+    try {
+      const val = await redis.get<T>(key);
+      if (val !== null && val !== undefined) {
+        // Backfill L1 with shorter TTL so subsequent reads are fast
+        cacheSet(key, val, L2_BACKFILL_TTL);
+        return val;
+      }
+    } catch {
+      // Redis failure — treat as cache miss
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Async cache set — writes to both in-memory L1 and Redis L2.
+ */
+export async function cacheSetAsync<T>(key: string, data: T, ttlMs: number): Promise<void> {
+  // Always write L1
+  cacheSet(key, data, ttlMs);
+
+  // Best-effort L2 write
+  const redis = getRedis();
+  if (redis) {
+    try {
+      await redis.set(key, JSON.stringify(data), { ex: Math.ceil(ttlMs / 1000) });
+    } catch {
+      // Redis failure — L1 still has the data
+    }
+  }
+}
+
+/**
+ * Async cache delete — removes from both in-memory L1 and Redis L2.
+ */
+export async function cacheDeleteAsync(key: string): Promise<void> {
+  cacheDelete(key);
+
+  const redis = getRedis();
+  if (redis) {
+    try {
+      await redis.del(key);
+    } catch {
+      // Best effort — key will expire via TTL
+    }
+  }
+}
+
+/**
+ * Async prefix invalidation — removes matching keys from both L1 and Redis L2.
+ * Uses Redis SCAN to avoid blocking the server on large keyspaces.
+ */
+export async function cacheInvalidatePrefixAsync(prefix: string): Promise<void> {
+  // Always invalidate L1
+  cacheInvalidatePrefix(prefix);
+
+  // Best-effort L2 invalidation via SCAN + DEL
+  const redis = getRedis();
+  if (redis) {
+    try {
+      let cursor: string | number = 0;
+      do {
+        const result: [string, string[]] = await redis.scan(cursor, {
+          match: `${prefix}*`,
+          count: 100,
+        });
+        cursor = parseInt(result[0], 10);
+        const keys = result[1];
+        if (keys.length > 0) {
+          await Promise.all(keys.map((k) => redis.del(k)));
+        }
+      } while (cursor !== 0);
+    } catch {
+      // Best effort — keys will expire via TTL
+    }
+  }
+}
+
+/**
+ * Async get-or-fetch with L1+L2 caching.
+ * Checks in-memory first, then Redis, then calls fetcher.
+ */
+export async function cacheFetchAsync<T>(
+  key: string,
+  ttlMs: number,
+  fetcher: () => Promise<T>,
+): Promise<T> {
+  const cached = await cacheGetAsync<T>(key);
+  if (cached !== null) return cached;
+
+  const data = await fetcher();
+  await cacheSetAsync(key, data, ttlMs);
+  return data;
+}

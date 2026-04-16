@@ -24,10 +24,10 @@
  */
 
 import {
-  cacheGet,
-  cacheSet,
-  cacheDelete,
-  cacheInvalidatePrefix,
+  cacheGetAsync,
+  cacheSetAsync,
+  cacheDeleteAsync,
+  cacheInvalidatePrefixAsync,
   cacheStats,
   CACHE_TTL,
 } from '@/lib/cache';
@@ -71,7 +71,7 @@ export async function schoolCacheGet<T>(
   dataKey: string,
 ): Promise<T | null> {
   const key = schoolCacheKey(schoolId, dataKey);
-  const result = cacheGet<T>(key);
+  const result = await cacheGetAsync<T>(key);
 
   if (schoolId) {
     if (result !== null) {
@@ -95,7 +95,7 @@ export async function schoolCacheSet<T>(
   ttlMs: number = CACHE_TTL.SHORT,
 ): Promise<void> {
   const key = schoolCacheKey(schoolId, dataKey);
-  cacheSet(key, data, ttlMs);
+  await cacheSetAsync(key, data, ttlMs);
 }
 
 /**
@@ -106,7 +106,7 @@ export async function schoolCacheDelete(
   dataKey: string,
 ): Promise<void> {
   const key = schoolCacheKey(schoolId, dataKey);
-  cacheDelete(key);
+  await cacheDeleteAsync(key);
 }
 
 /**
@@ -141,7 +141,7 @@ export async function schoolCacheFetch<T>(
  * - Admin force-refreshes school data
  */
 export async function invalidateSchoolCache(schoolId: string): Promise<void> {
-  cacheInvalidatePrefix(`t:${schoolId}:`);
+  await cacheInvalidatePrefixAsync(`t:${schoolId}:`);
   // Also clear per-school stats on invalidation
   _schoolStats.delete(schoolId);
 }
@@ -157,7 +157,7 @@ export async function invalidateSchoolCache(schoolId: string): Promise<void> {
  * keys. For immediate cross-school invalidation, iterate known school IDs.
  */
 export async function invalidateGlobalCacheKey(dataKey: string): Promise<void> {
-  cacheDelete(`g:${dataKey}`);
+  await cacheDeleteAsync(`g:${dataKey}`);
 }
 
 // ── Stats ──
