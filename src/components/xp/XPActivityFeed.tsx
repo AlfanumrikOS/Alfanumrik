@@ -127,7 +127,7 @@ export default function XPActivityFeed({ studentId, isHi, limit = 20 }: XPActivi
   if (error) {
     return (
       <Card>
-        <p className="text-sm text-center py-4" style={{ color: '#DC2626' }}>
+        <p className="text-sm text-center py-4 text-red-600">
           {error}
         </p>
       </Card>
