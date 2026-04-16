@@ -26,6 +26,142 @@ async function supabaseRest(table: string, params: string = '') {
   });
 }
 
+// ── Cached fast-path ─────────────────────────────────────────────────
+//
+// When `?source=cached` is passed, read the latest pre-computed B2B metrics
+// snapshot from `platform_health_snapshots` (written by the daily school-
+// operations cron, Step 5). This avoids fetching 50K students + 100K quiz
+// sessions into memory at query time.
+//
+// The response shape is a subset of the full live response: it includes
+// per-school engagement/quiz metrics but omits churn signals and cohort
+// analysis (which require cross-referencing raw session timestamps).
+
+interface CachedSchoolMetric {
+  school_id: string;
+  active_students: number;
+  quiz_sessions_7d: number;
+  avg_score_7d: number;
+  active_classes: number;
+}
+
+interface CachedSnapshotMetadata {
+  type: string;
+  snapshot_date: string;
+  computed_at: string;
+  school_count: number;
+  schools: CachedSchoolMetric[];
+}
+
+async function getCachedB2BMetrics(): Promise<NextResponse | null> {
+  try {
+    // Fetch the latest b2b_daily_metrics snapshot (last 48h for safety)
+    const since = new Date(Date.now() - 48 * 3600000).toISOString();
+    const params = [
+      'select=snapshot_at,metadata',
+      `snapshot_at=gte.${since}`,
+      'metadata->>type=eq.b2b_daily_metrics',
+      'order=snapshot_at.desc',
+      'limit=1',
+    ].join('&');
+
+    const res = await fetch(supabaseAdminUrl('platform_health_snapshots', params), {
+      headers: supabaseAdminHeaders(),
+    });
+
+    if (!res.ok) return null;
+
+    const rows = await res.json();
+    if (!Array.isArray(rows) || rows.length === 0) return null;
+
+    const snapshot = rows[0];
+    const meta = snapshot.metadata as CachedSnapshotMetadata;
+    if (!meta || meta.type !== 'b2b_daily_metrics' || !Array.isArray(meta.schools)) {
+      return null;
+    }
+
+    // Enrich cached metrics with school static data (name, code, city, etc.)
+    // This is a lightweight query — only school metadata, no student/quiz rows.
+    const schoolsRes = await supabaseRest(
+      'schools',
+      'select=id,name,code,city,state,board,school_type,subscription_plan,is_active,max_students,created_at&deleted_at=is.null&order=created_at.desc&limit=1000',
+    );
+    const schools = await safeJson<{
+      id: string; name: string; code: string; city?: string; state?: string;
+      board?: string; school_type?: string; subscription_plan?: string;
+      is_active?: boolean; max_students?: number; created_at: string;
+    }>(schoolsRes);
+
+    const schoolMap = new Map(schools.map((s) => [s.id, s]));
+
+    // Build enriched per-school metrics from cache + school metadata
+    const schoolMetrics = meta.schools.map((cached) => {
+      const school = schoolMap.get(cached.school_id);
+      const maxStudents = school?.max_students || 0;
+      const seatUtilization = maxStudents > 0
+        ? Math.round((cached.active_students / maxStudents) * 100)
+        : 0;
+
+      // Engagement rate: active students who took quizzes / total active
+      const engagementRate = cached.active_students > 0 && cached.quiz_sessions_7d > 0
+        ? Math.min(100, Math.round((cached.quiz_sessions_7d / (cached.active_students * 7)) * 100))
+        : 0;
+
+      // Simplified health score from cached data
+      const healthScore = Math.round(
+        engagementRate * 0.4 + Math.min(cached.avg_score_7d, 100) * 0.3 + Math.min(seatUtilization, 100) * 0.3,
+      );
+
+      return {
+        id: cached.school_id,
+        name: school?.name || '',
+        code: school?.code || '',
+        city: school?.city || '',
+        state: school?.state || '',
+        board: school?.board || '',
+        is_active: school?.is_active !== false,
+        subscription_plan: school?.subscription_plan || 'free',
+        enrolled_students: cached.active_students,
+        max_students: maxStudents,
+        active_students: cached.active_students,
+        engagement_rate: engagementRate,
+        avg_score: cached.avg_score_7d,
+        quiz_completion: cached.quiz_sessions_7d,
+        active_classes: cached.active_classes,
+        seat_utilization: seatUtilization,
+        health_score: healthScore,
+        created_at: school?.created_at || '',
+      };
+    });
+
+    // Aggregate totals
+    const totalSeats = schools.reduce((sum, s) => sum + (s.max_students || 0), 0);
+    const totalEnrolled = schoolMetrics.reduce((sum, s) => sum + s.enrolled_students, 0);
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        source: 'cached',
+        snapshot_date: meta.snapshot_date,
+        computed_at: meta.computed_at,
+        revenue: {
+          mrr: 0,      // Revenue data not pre-computed — use live source for billing data
+          arr: 0,
+          avg_revenue_per_student: 0,
+          total_seats: totalSeats,
+          total_enrolled: totalEnrolled,
+        },
+        growth: null,        // Not available in cached mode
+        schools: schoolMetrics,
+        cohorts: null,       // Not available in cached mode
+        churn_risks: null,   // Not available in cached mode
+      },
+    });
+  } catch {
+    return null; // Fall through to live computation
+  }
+}
+
 // ── GET /api/super-admin/analytics-v2/b2b ─────────────────────────
 
 export async function GET(request: NextRequest) {
@@ -33,6 +169,13 @@ export async function GET(request: NextRequest) {
   if (!auth.authorized) return auth.response;
 
   try {
+    // Fast-path: return pre-computed metrics if ?source=cached
+    const source = request.nextUrl.searchParams.get('source');
+    if (source === 'cached') {
+      const cached = await getCachedB2BMetrics();
+      if (cached) return cached;
+      // If no cached data available, fall through to live computation
+    }
     const now = new Date();
     const since30d = new Date(now.getTime() - 30 * 86400000).toISOString();
     const since60d = new Date(now.getTime() - 60 * 86400000).toISOString();

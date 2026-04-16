@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import { authenticateApiKey } from '@/lib/school-api-auth';
+import { checkApiRateLimit } from '@/lib/api-rate-limit';
 
 /**
  * GET /api/v1/school/students — Public API for ERP integration
@@ -31,6 +32,23 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(
         { success: false, error: 'API key does not have students.read permission' },
         { status: 403 }
+      );
+    }
+
+    // Per-API-key rate limiting (100 req/min default)
+    const rateLimit = await checkApiRateLimit(auth.keyId);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { success: false, error: 'Rate limit exceeded' },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(Math.max(1, rateLimit.resetAt - Math.ceil(Date.now() / 1000))),
+            'X-RateLimit-Limit': '100',
+            'X-RateLimit-Remaining': '0',
+            'X-RateLimit-Reset': String(rateLimit.resetAt),
+          },
+        }
       );
     }
 
@@ -65,6 +83,13 @@ export async function GET(request: NextRequest) {
 
     const { data: students, error, count } = await query;
 
+    // Rate limit headers attached to every response
+    const rlHeaders = {
+      'X-RateLimit-Limit': '100',
+      'X-RateLimit-Remaining': String(rateLimit.remaining),
+      'X-RateLimit-Reset': String(rateLimit.resetAt),
+    };
+
     if (error) {
       logger.error('public_school_students_error', {
         error: new Error(error.message),
@@ -74,22 +99,25 @@ export async function GET(request: NextRequest) {
       });
       return NextResponse.json(
         { success: false, error: 'Failed to fetch students' },
-        { status: 500 }
+        { status: 500, headers: rlHeaders }
       );
     }
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        students: students ?? [],
-        pagination: {
-          page,
-          limit,
-          total: count ?? 0,
-          total_pages: count ? Math.ceil(count / limit) : 0,
+    return NextResponse.json(
+      {
+        success: true,
+        data: {
+          students: students ?? [],
+          pagination: {
+            page,
+            limit,
+            total: count ?? 0,
+            total_pages: count ? Math.ceil(count / limit) : 0,
+          },
         },
       },
-    });
+      { headers: rlHeaders }
+    );
   } catch (err) {
     logger.error('public_school_students_get_error', {
       error: err instanceof Error ? err : new Error(String(err)),

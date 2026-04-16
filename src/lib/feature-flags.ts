@@ -150,3 +150,22 @@ export async function getFeatureFlagsSimple(): Promise<Record<string, boolean>> 
   }
   return result;
 }
+
+// ─── Flag Registries ──────────────────────────────────────────────────────────
+
+/**
+ * Maintenance banner flag. When enabled, a dismissible amber banner is shown
+ * across all portals (student, parent, teacher, admin).
+ *
+ * Enable via super-admin console or direct DB:
+ *   UPDATE feature_flags
+ *   SET is_enabled = true,
+ *       metadata = '{"message_en":"Scheduled maintenance 10-11 PM IST","message_hi":"रखरखाव 10-11 PM IST"}'
+ *   WHERE flag_name = 'maintenance_banner';
+ *
+ * The MaintenanceBanner component reads `is_enabled` + `metadata.message_en/message_hi`
+ * directly from the client Supabase instance (public read via RLS).
+ */
+export const MAINTENANCE_FLAGS = {
+  MAINTENANCE_BANNER: 'maintenance_banner',
+} as const;

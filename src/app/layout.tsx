@@ -7,6 +7,7 @@ import RegisterSW from '@/lib/RegisterSW';
 import CookieConsent from '@/components/CookieConsent';
 import JsonLd from '@/components/JsonLd';
 import NetworkStatus from '@/components/NetworkStatus';
+import MaintenanceBanner from '@/components/MaintenanceBanner';
 import DemoModeWrapper from '@/components/DemoModeWrapper';
 
 export const metadata: Metadata = {
@@ -84,6 +85,7 @@ export default function RootLayout({
         <SchoolProvider>
           <AuthProvider>
             <NetworkStatus />
+            <MaintenanceBanner />
             <ErrorBoundary>
               <div id="main-content" className="app-shell">{children}</div>
             </ErrorBoundary>

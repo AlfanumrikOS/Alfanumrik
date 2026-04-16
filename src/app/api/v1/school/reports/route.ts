@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import { authenticateApiKey } from '@/lib/school-api-auth';
+import { checkApiRateLimit } from '@/lib/api-rate-limit';
 
 /**
  * GET /api/v1/school/reports — Public API for school reports (ERP integration)
@@ -32,6 +33,23 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Per-API-key rate limiting (100 req/min default)
+    const rateLimit = await checkApiRateLimit(auth.keyId);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { success: false, error: 'Rate limit exceeded' },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(Math.max(1, rateLimit.resetAt - Math.ceil(Date.now() / 1000))),
+            'X-RateLimit-Limit': '100',
+            'X-RateLimit-Remaining': '0',
+            'X-RateLimit-Reset': String(rateLimit.resetAt),
+          },
+        }
+      );
+    }
+
     const { searchParams } = new URL(request.url);
     const reportType = searchParams.get('type') || 'overview';
 
@@ -44,14 +62,21 @@ export async function GET(request: NextRequest) {
 
     const supabase = getSupabaseAdmin();
 
+    let res: NextResponse;
     if (reportType === 'overview') {
-      return await handleOverviewReport(supabase, auth.schoolId, auth.keyId);
+      res = await handleOverviewReport(supabase, auth.schoolId, auth.keyId);
+    } else {
+      // student_summary
+      const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
+      const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '50', 10)));
+      res = await handleStudentSummaryReport(supabase, auth.schoolId, auth.keyId, page, limit);
     }
 
-    // student_summary
-    const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
-    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '50', 10)));
-    return await handleStudentSummaryReport(supabase, auth.schoolId, auth.keyId, page, limit);
+    // Attach rate limit headers to every response
+    res.headers.set('X-RateLimit-Limit', '100');
+    res.headers.set('X-RateLimit-Remaining', String(rateLimit.remaining));
+    res.headers.set('X-RateLimit-Reset', String(rateLimit.resetAt));
+    return res;
   } catch (err) {
     logger.error('public_school_reports_get_error', {
       error: err instanceof Error ? err : new Error(String(err)),

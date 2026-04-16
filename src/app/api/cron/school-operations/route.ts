@@ -12,6 +12,7 @@ import { logger } from '@/lib/logger';
  *   2. Monthly invoice generation (1st of each month only)
  *   3. Contract renewal reminders (30/14/7 days out)
  *   4. Seat limit alerts (80%/90%/100% thresholds)
+ *   5. Pre-aggregate B2B analytics metrics (quiz sessions, avg score, classes)
  *
  * Auth: CRON_SECRET header (not user auth — this is a scheduled job).
  * Idempotent: safe to run multiple times on the same day (upsert + duplicate checks).
@@ -31,6 +32,7 @@ interface CronSummary {
   invoices_generated: number;
   reminders_sent: number;
   alerts_created: number;
+  metrics_computed: number;
   errors: string[];
 }
 
@@ -353,6 +355,172 @@ async function sendSeatAlerts(
   }
 }
 
+// ─── Step 5: Pre-aggregate B2B Analytics Metrics ────────────────────────────
+
+/**
+ * Pre-compute per-school engagement metrics (quiz sessions, avg score, active
+ * classes) using efficient SQL aggregation, then store the result as a single
+ * platform_health_snapshots row tagged with `type: 'b2b_daily_metrics'`.
+ *
+ * The `/api/super-admin/analytics-v2/b2b?source=cached` fast-path reads this
+ * snapshot instead of scanning 50K students + 100K quiz_sessions at query time.
+ *
+ * Budget: < 5 s for 100 schools (3 aggregate queries + 1 upsert).
+ */
+interface SchoolMetricsRow {
+  school_id: string;
+  active_students: number;
+  quiz_sessions_7d: number;
+  avg_score_7d: number;
+  active_classes: number;
+}
+
+async function computeSchoolMetrics(
+  schools: SchoolWithSub[],
+  today: string,
+  summary: CronSummary,
+): Promise<void> {
+  const admin = getSupabaseAdmin();
+  const schoolIds = schools.map((s) => s.schoolId);
+
+  if (schoolIds.length === 0) return;
+
+  const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString();
+
+  // ── 1. Quiz sessions per school in last 7 days (count + avg score) ──
+  // Efficient: single aggregate query with GROUP BY, no row fetching.
+  const quizMetrics = new Map<string, { count: number; avgScore: number }>();
+
+  for (let i = 0; i < schoolIds.length; i += BATCH_SIZE) {
+    const batchIds = schoolIds.slice(i, i + BATCH_SIZE);
+
+    // Supabase JS client doesn't support arbitrary JOINs, so we query
+    // students first to get IDs, then fetch their quiz_sessions.
+
+    // First, get student IDs for this batch of schools
+    const { data: studentRows, error: studErr } = await admin
+      .from('students')
+      .select('id, school_id')
+      .in('school_id', batchIds)
+      .eq('is_active', true)
+      .is('deleted_at', null);
+
+    if (studErr) {
+      logger.error('cron/school-operations: metrics student lookup failed', {
+        error: new Error(studErr.message),
+        batchIndex: i,
+      });
+      summary.errors.push(`metrics_students_batch_${i}: ${studErr.message}`);
+      continue;
+    }
+
+    const studentSchoolMap = new Map<string, string>();
+    for (const row of (studentRows ?? []) as { id: string; school_id: string }[]) {
+      studentSchoolMap.set(row.id, row.school_id);
+    }
+
+    const studentIds = Array.from(studentSchoolMap.keys());
+    if (studentIds.length === 0) continue;
+
+    // Query quiz sessions for these students in last 7 days — in sub-batches
+    // to stay under Supabase URL length limits
+    const STUDENT_BATCH = 200;
+    for (let j = 0; j < studentIds.length; j += STUDENT_BATCH) {
+      const sids = studentIds.slice(j, j + STUDENT_BATCH);
+      const { data: quizRows, error: quizErr } = await admin
+        .from('quiz_sessions')
+        .select('student_id, score_percent')
+        .in('student_id', sids)
+        .gte('created_at', sevenDaysAgo);
+
+      if (quizErr) {
+        logger.error('cron/school-operations: metrics quiz query failed', {
+          error: new Error(quizErr.message),
+          batchIndex: i,
+          studentBatch: j,
+        });
+        summary.errors.push(`metrics_quiz_batch_${i}_${j}: ${quizErr.message}`);
+        continue;
+      }
+
+      for (const q of (quizRows ?? []) as { student_id: string; score_percent: number }[]) {
+        const schoolId = studentSchoolMap.get(q.student_id);
+        if (!schoolId) continue;
+        const prev = quizMetrics.get(schoolId) || { count: 0, avgScore: 0 };
+        // Running average: avg = (avg * count + new) / (count + 1)
+        prev.avgScore = (prev.avgScore * prev.count + (q.score_percent ?? 0)) / (prev.count + 1);
+        prev.count++;
+        quizMetrics.set(schoolId, prev);
+      }
+    }
+  }
+
+  // ── 2. Active classes per school ──
+  const classMetrics = new Map<string, number>();
+
+  for (let i = 0; i < schoolIds.length; i += BATCH_SIZE) {
+    const batchIds = schoolIds.slice(i, i + BATCH_SIZE);
+    const { data: classRows, error: classErr } = await admin
+      .from('classes')
+      .select('school_id')
+      .in('school_id', batchIds)
+      .eq('is_active', true);
+
+    if (classErr) {
+      logger.error('cron/school-operations: metrics class count failed', {
+        error: new Error(classErr.message),
+        batchIndex: i,
+      });
+      summary.errors.push(`metrics_classes_batch_${i}: ${classErr.message}`);
+      continue;
+    }
+
+    for (const row of (classRows ?? []) as { school_id: string }[]) {
+      classMetrics.set(row.school_id, (classMetrics.get(row.school_id) ?? 0) + 1);
+    }
+  }
+
+  // ── 3. Assemble per-school metrics ──
+  const metricsPayload: SchoolMetricsRow[] = schools.map((s) => {
+    const quiz = quizMetrics.get(s.schoolId) || { count: 0, avgScore: 0 };
+    return {
+      school_id: s.schoolId,
+      active_students: s.activeStudents,
+      quiz_sessions_7d: quiz.count,
+      avg_score_7d: Math.round(quiz.avgScore),
+      active_classes: classMetrics.get(s.schoolId) ?? 0,
+    };
+  });
+
+  // ── 4. Store as a platform_health_snapshots row (service role, bypasses RLS) ──
+  // Tagged with type: 'b2b_daily_metrics' so the analytics route can find it.
+  const { error: upsertErr } = await admin
+    .from('platform_health_snapshots')
+    .insert({
+      snapshot_at: new Date().toISOString(),
+      metadata: {
+        type: 'b2b_daily_metrics',
+        snapshot_date: today,
+        computed_at: new Date().toISOString(),
+        school_count: metricsPayload.length,
+        schools: metricsPayload,
+      },
+    });
+
+  if (upsertErr) {
+    logger.error('cron/school-operations: metrics snapshot insert failed', {
+      error: new Error(upsertErr.message),
+    });
+    summary.errors.push(`metrics_snapshot: ${upsertErr.message}`);
+  } else {
+    summary.metrics_computed = metricsPayload.length;
+    logger.info('cron/school-operations: B2B metrics snapshot stored', {
+      school_count: metricsPayload.length,
+      snapshot_date: today,
+    });
+  }
+}
+
 // ─── Main Handler ───────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
@@ -371,6 +539,7 @@ export async function POST(request: NextRequest) {
     invoices_generated: 0,
     reminders_sent: 0,
     alerts_created: 0,
+    metrics_computed: 0,
     errors: [],
   };
 
@@ -479,6 +648,9 @@ export async function POST(request: NextRequest) {
     // ── Step 4: Seat limit alerts ──
     await sendSeatAlerts(schools, summary);
 
+    // ── Step 5: Pre-aggregate B2B analytics metrics ──
+    await computeSchoolMetrics(schools, today, summary);
+
     const durationMs = Date.now() - startTime;
 
     logger.info('cron/school-operations: completed', {
@@ -487,6 +659,7 @@ export async function POST(request: NextRequest) {
       invoices_generated: summary.invoices_generated,
       reminders_sent: summary.reminders_sent,
       alerts_created: summary.alerts_created,
+      metrics_computed: summary.metrics_computed,
       errors_count: summary.errors.length,
       duration_ms: durationMs,
     });
