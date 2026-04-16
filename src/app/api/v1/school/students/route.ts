@@ -1,56 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
-
-/**
- * Authenticate an incoming request using a school API key.
- *
- * Expects: Authorization: Bearer sk_school_...
- * Verifies: SHA-256 hash matches, key is active, not expired.
- * Returns school_id + key permissions on success, null on failure.
- */
-async function authenticateApiKey(
-  request: NextRequest
-): Promise<{ schoolId: string; keyId: string; permissions: string[] } | null> {
-  const authHeader = request.headers.get('Authorization');
-  if (!authHeader?.startsWith('Bearer sk_school_')) return null;
-
-  const key = authHeader.replace('Bearer ', '');
-
-  // SHA-256 hash the provided key (Edge-compatible)
-  const encoder = new TextEncoder();
-  const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(key));
-  const keyHash = Array.from(new Uint8Array(hashBuffer))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-
-  const supabase = getSupabaseAdmin();
-
-  const { data } = await supabase
-    .from('school_api_keys')
-    .select('id, school_id, permissions, expires_at')
-    .eq('key_hash', keyHash)
-    .eq('is_active', true)
-    .single();
-
-  if (!data) return null;
-
-  // Check expiration
-  if (data.expires_at && new Date(data.expires_at) < new Date()) return null;
-
-  // Update last_used_at (fire and forget — don't block the response)
-  supabase
-    .from('school_api_keys')
-    .update({ last_used_at: new Date().toISOString() })
-    .eq('id', data.id)
-    .then(() => {});
-
-  return {
-    schoolId: data.school_id,
-    keyId: data.id,
-    permissions: data.permissions ?? [],
-  };
-}
+import { authenticateApiKey } from '@/lib/school-api-auth';
 
 /**
  * GET /api/v1/school/students — Public API for ERP integration
