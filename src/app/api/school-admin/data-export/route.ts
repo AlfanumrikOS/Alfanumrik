@@ -211,30 +211,30 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate the CSV
+    const schoolId = auth.schoolId!;
     let csvContent: string;
     switch (exportType) {
       case 'students':
-        csvContent = await exportStudents(auth.schoolId);
+        csvContent = await exportStudents(schoolId);
         break;
       case 'quiz_results':
-        csvContent = await exportQuizResults(auth.schoolId);
+        csvContent = await exportQuizResults(schoolId);
         break;
       case 'progress':
-        csvContent = await exportProgress(auth.schoolId);
+        csvContent = await exportProgress(schoolId);
         break;
       case 'full':
-        csvContent = await exportFull(auth.schoolId);
+        csvContent = await exportFull(schoolId);
         break;
     }
 
     // Log the export action for audit trail
-    const ipAddress = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null;
+    const ipAddress = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || undefined;
     await logSchoolAudit({
-      schoolId: auth.schoolId,
-      actorId: auth.userId,
+      schoolId: schoolId,
+      actorId: auth.userId || '',
       action: 'data.exported',
       resourceType: 'export',
-      resourceId: exportType,
       metadata: { export_type: exportType },
       ipAddress,
     });

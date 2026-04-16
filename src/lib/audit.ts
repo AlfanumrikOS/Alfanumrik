@@ -216,3 +216,46 @@ export async function auditDenied(
     metadata,
   });
 }
+
+// ── School-Scoped Audit Logging (Phase 3C) ──────────────────
+
+export const SCHOOL_AUDIT_ACTIONS = [
+  'teacher.invited', 'teacher.deactivated', 'student.invited', 'student.deactivated',
+  'branding.updated', 'announcement.published', 'announcement.deleted',
+  'exam.scheduled', 'exam.cancelled', 'content.approved', 'content.rejected',
+  'api_key.generated', 'api_key.revoked', 'data.exported', 'settings.updated',
+] as const;
+
+export type SchoolAuditAction = (typeof SCHOOL_AUDIT_ACTIONS)[number];
+
+interface SchoolAuditEntry {
+  schoolId: string;
+  actorId: string;
+  action: string;
+  resourceType?: string;
+  resourceId?: string;
+  metadata?: Record<string, unknown>;
+  ipAddress?: string;
+}
+
+/**
+ * Log a school-scoped audit event to the school_audit_log table.
+ * Fire-and-forget — failures never break the main operation.
+ */
+export async function logSchoolAudit(entry: SchoolAuditEntry): Promise<void> {
+  try {
+    const { getSupabaseAdmin } = await import('@/lib/supabase-admin');
+    const supabase = getSupabaseAdmin();
+    await supabase.from('school_audit_log').insert({
+      school_id: entry.schoolId,
+      actor_id: entry.actorId,
+      action: entry.action,
+      resource_type: entry.resourceType || null,
+      resource_id: entry.resourceId || null,
+      metadata: entry.metadata || {},
+      ip_address: entry.ipAddress || null,
+    });
+  } catch {
+    // Audit failures must never block the main operation
+  }
+}

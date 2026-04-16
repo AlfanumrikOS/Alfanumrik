@@ -23,6 +23,7 @@ interface Invoice {
   razorpay_invoice_id: string | null;
   created_at: string;
   updated_at: string;
+  [key: string]: unknown;
 }
 
 interface School {
