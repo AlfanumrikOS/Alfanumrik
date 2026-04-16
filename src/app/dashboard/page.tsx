@@ -12,6 +12,7 @@ import { calculateLevel, xpToNextLevel, getLevelName } from '@/lib/xp-rules';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import type { StudentLearningProfile, Subject, CurriculumTopic } from '@/lib/types';
 import { SUBJECT_META, GRADE_SUBJECTS } from '@/lib/constants';
+import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { PlanBadge } from '@/components/PlanBadge';
 import QuickActions from '@/components/dashboard/QuickActions';
 import SubjectProgress from '@/components/dashboard/SubjectProgress';
@@ -35,6 +36,7 @@ const BLOOM_LABELS: Record<string, { icon: string; label: string; labelHi: strin
 export default function Dashboard() {
   const { student, snapshot, isLoggedIn, isLoading, isHi, language, setLanguage, refreshSnapshot, activeRole } = useAuth();
   const router = useRouter();
+  const { unlocked: allowedSubjects } = useAllowedSubjects();
   const [profiles, setProfiles] = useState<StudentLearningProfile[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [nextTopics, setNextTopics] = useState<CurriculumTopic[]>([]);
