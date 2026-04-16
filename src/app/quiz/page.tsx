@@ -56,6 +56,57 @@ interface Response {
 }
 
 const VALID_QUIZ_COUNTS = [5, 10, 15, 20] as const;
+
+/** Parse options from string or array format */
+function parseOptions(opts: string|string[]) {
+  if (Array.isArray(opts)) return opts;
+  try { return JSON.parse(opts); } catch { return []; }
+}
+
+/* ═══ OPTION SHUFFLE — Anti-pattern exploitation (P3/P6) ═══
+ * 57.5% of questions had correct_answer_index=1. Students picked B and scored 57%.
+ * Fix: deterministic shuffle at serve time using question ID as seed.
+ */
+function seededShuffle(arr: string[], seed: string) {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = ((hash << 5) - hash + seed.charCodeAt(i)) | 0;
+  }
+  const indices = arr.map((_, i) => i);
+  for (let i = indices.length - 1; i > 0; i--) {
+    hash = ((hash * 1103515245 + 12345) & 0x7fffffff);
+    const j = hash % (i + 1);
+    [indices[i], indices[j]] = [indices[j], indices[i]];
+  }
+  return { shuffled: indices.map(i => arr[i]), indexMap: indices };
+}
+
+function buildShuffleMaps(questions: Array<{id:string;question_text:string;options:string|string[];correct_answer_index:number}>) {
+  return questions.map(q => {
+    const opts = parseOptions(q.options);
+    if (opts.length !== 4 || typeof q.correct_answer_index !== 'number') return null;
+    const seed = q.id + (q.question_text || '').slice(0, 20);
+    const { indexMap } = seededShuffle(opts, seed);
+    return indexMap;
+  });
+}
+
+function getShuffledOptions(q: {options:string|string[]}, shuffleMap: number[]|null) {
+  const opts = parseOptions(q.options);
+  if (!shuffleMap || opts.length !== 4) return opts;
+  return shuffleMap.map(origIdx => opts[origIdx]);
+}
+
+function shuffledToOriginal(displayIdx: number, shuffleMap: number[]|null) {
+  if (!shuffleMap) return displayIdx;
+  return shuffleMap[displayIdx];
+}
+
+function originalToShuffled(origIdx: number, shuffleMap: number[]|null) {
+  if (!shuffleMap) return origIdx;
+  return shuffleMap.indexOf(origIdx);
+}
+
 const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
 
 export default function QuizPage() {
@@ -83,6 +134,7 @@ export default function QuizPage() {
 
   // Quiz state
   const [questions, setQuestions] = useState<Question[]>([]);
+  const [shuffleMaps, setShuffleMaps] = useState<Array<number[] | null>>([]);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [responses, setResponses] = useState<Response[]>([]);
@@ -266,6 +318,7 @@ export default function QuizPage() {
 
       const qs = result.questions;
       setQuestions(qs);
+      setShuffleMaps(buildShuffleMaps(qs));
       setCurrentIdx(0);
       setResponses([]);
       setSelectedOption(null);
@@ -284,10 +337,7 @@ export default function QuizPage() {
     setLoading(false);
   }, [selectedSubject, student, questionCount, selectedDifficulty, selectedChapter, isHi]);
 
-  const parseOptions = (opts: string | string[]): string[] => {
-    if (Array.isArray(opts)) return opts;
-    try { return JSON.parse(opts); } catch { return []; }
-  };
+  // parseOptions is now a module-level function (used by shuffle logic)
 
   const selectAnswer = (optIdx: number) => {
     if (showExplanation) return;
@@ -547,7 +597,7 @@ export default function QuizPage() {
 
   const subMeta = allowedSubjects.find(s => s.code === selectedSubject);
   const q = questions[currentIdx];
-  const opts = q ? parseOptions(q.options) : [];
+  const opts = q ? getShuffledOptions(q, shuffleMaps[currentIdx] ?? null) : [];
   const progress = questions.length > 0 ? ((currentIdx + (showExplanation ? 1 : 0)) / questions.length) * 100 : 0;
   const correctSoFar = responses.filter(r => r.is_correct).length;
 
@@ -597,6 +647,7 @@ export default function QuizPage() {
   // ═══ QUIZ SCREEN ═══
   if (screen === 'quiz' && q) {
     const isAnswered = showExplanation;
+    const currentShuffleMap = shuffleMaps[currentIdx] ?? null;
     const isCorrect = selectedOption === q.correct_answer_index;
 
     return (
@@ -681,11 +732,11 @@ export default function QuizPage() {
 
           {/* Options */}
           <div className="space-y-2.5">
-            {opts.map((opt, idx) => {
+            {opts.map((opt: string, idx: number) => {
               const letter = OPTION_LETTERS[idx] || String(idx + 1);
               const optText = opt.replace(/^[A-D][\.\)]\s*/, '');
               const isSelected = selectedOption === idx;
-              const isCorrectOpt = idx === q.correct_answer_index;
+              const isCorrectOpt = idx === originalToShuffled(q.correct_answer_index, shuffleMaps[currentIdx] ?? null);
 
               let bg = 'var(--surface-1)';
               let border = 'var(--border)';
