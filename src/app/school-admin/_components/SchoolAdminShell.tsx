@@ -16,6 +16,8 @@ const NAV_ITEMS = [
   { href: '/school-admin/announcements', label: 'Announcements', labelHi: 'घोषणाएँ', icon: '⊜' },
   { href: '/school-admin/parents', label: 'Parents', labelHi: 'अभिभावक', icon: '⊗' },
   { href: '/school-admin/reports', label: 'Reports', labelHi: 'रिपोर्ट', icon: '⊘' },
+  { href: '/school-admin/content', label: 'Content', labelHi: 'सामग्री', icon: '⊠' },
+  { href: '/school-admin/exams', label: 'Exams', labelHi: 'परीक्षा', icon: '⊙' },
   { href: '/school-admin/setup', label: 'Branding', labelHi: 'ब्रांडिंग', icon: '◎' },
   { href: '/school-admin/enroll', label: 'Enrollment', labelHi: 'नामांकन', icon: '◉' },
 ];
