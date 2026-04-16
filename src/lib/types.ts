@@ -518,3 +518,39 @@ export interface QuizChallenge {
   challenger_name?: string;
   opponent_name?: string;
 }
+
+/* ─── Tenant / Multi-Tenant Types ─── */
+
+export interface SchoolBranding {
+  logoUrl: string | null;
+  primaryColor: string;
+  secondaryColor: string;
+  tagline: string | null;
+  faviconUrl: string | null;
+  showPoweredBy: boolean;
+}
+
+export interface TenantContext {
+  schoolId: string | null;
+  schoolSlug: string | null;
+  schoolName: string | null;
+  plan: string;
+  isActive: boolean;
+  branding: SchoolBranding;
+}
+
+export const NULL_TENANT: TenantContext = {
+  schoolId: null,
+  schoolSlug: null,
+  schoolName: null,
+  plan: 'free',
+  isActive: true,
+  branding: {
+    logoUrl: null,
+    primaryColor: '#7C3AED',
+    secondaryColor: '#F97316',
+    tagline: null,
+    faviconUrl: null,
+    showPoweredBy: false,
+  },
+};
