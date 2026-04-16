@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import Link from 'next/link';
 import { useAuth } from '@/lib/AuthContext';
 import { useTenant } from '@/lib/tenant-context';
 import { supabase } from '@/lib/supabase';
@@ -98,19 +99,28 @@ export default function NotificationCenter({ maxItems = 10 }: Props) {
     return () => { supabase.removeChannel(channel); };
   }, [authUserId, maxItems]);
 
-  // Close on outside click
+  // Close on outside click or Escape key
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
+    const handleClickOutside = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setOpen(false);
       }
     };
-    if (open) document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    if (open) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleEscape);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
   }, [open]);
 
   const markRead = async (id: string) => {
-    await supabase.from('notifications').update({ is_read: true, read_at: new Date().toISOString() }).eq('id', id);
+    await supabase.from('notifications').update({ is_read: true, read_at: new Date().toISOString() }).eq('id', id).eq('recipient_id', authUserId);
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
     setUnreadCount(prev => Math.max(0, prev - 1));
   };
@@ -215,7 +225,7 @@ export default function NotificationCenter({ maxItems = 10 }: Props) {
           </div>
 
           {/* Footer */}
-          <a
+          <Link
             href="/notifications"
             style={{
               display: 'block', padding: '10px 16px', borderTop: '1px solid #e5e7eb',
@@ -223,7 +233,7 @@ export default function NotificationCenter({ maxItems = 10 }: Props) {
             }}
           >
             {t(isHi, 'See all notifications', 'सभी सूचनाएँ देखें')}
-          </a>
+          </Link>
         </div>
       )}
     </div>

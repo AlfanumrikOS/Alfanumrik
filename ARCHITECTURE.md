@@ -40,8 +40,8 @@
 │  ┌──────────────────────┐  ┌─────────────────────────────────┐  │
 │  │   Supabase (Postgres) │  │  Supabase Realtime              │  │
 │  │                       │  │  • Quiz live updates             │  │
-│  │  • 40+ tables         │  │  • Leaderboard changes           │  │
-│  │  • 148+ RLS policies  │  │  • Notification delivery         │  │
+│  │  • 90+ tables         │  │  • Leaderboard changes           │  │
+│  │  • 235+ RLS policies  │  │  • Notification delivery         │  │
 │  │  • pgvector (RAG)     │  │                                  │  │
 │  │  • BRIN + B-tree idx  │  │  ┌────────────────────────────┐  │  │
 │  │  • SM-2 / BKT / IRT   │  │  │  Supabase Storage          │  │  │
@@ -52,7 +52,7 @@
 │  │   External AI APIs    │                                       │
 │  │  • Claude Haiku (chat)│  ┌─────────────────────────────────┐  │
 │  │  • Razorpay (Payments) │  │  External Services               │  │
-│  │  • RAG embeddings     │  │  • Resend (email)                │  │
+│  │  • RAG embeddings     │  │  • Mailgun (email)               │  │
 │  └──────────────────────┘  │  • Vercel Analytics               │  │
 │                             │  • Vercel Speed Insights          │  │
 │                             └─────────────────────────────────┘  │
@@ -63,7 +63,7 @@
 
 | Layer | Technology | Why |
 |-------|-----------|-----|
-| **Frontend** | Next.js 14 (App Router) | SSR + ISR + Edge middleware |
+| **Frontend** | Next.js 16.2 (App Router) | SSR + ISR + Edge middleware |
 | **UI** | Tailwind CSS + custom components | Zero runtime CSS, 7 dependencies |
 | **State** | SWR + React Context | Stale-while-revalidate for flaky networks |
 | **Auth** | Supabase Auth (PKCE) | Email/password + OAuth, RLS integration |
@@ -72,8 +72,8 @@
 | **AI** | Claude Haiku | Low-latency, cost-effective tutoring |
 | **Payments** | Razorpay | INR payments with order+verify+webhook |
 | **Hosting** | Vercel | Auto-scaling, edge network, ISR |
-| **Email** | Resend | Transactional emails (auth, reports) |
-| **Monitoring** | Vercel Analytics + custom logging | Performance + error tracking |
+| **Email** | Mailgun | Transactional emails via Mailgun (Sinch) |
+| **Monitoring** | Sentry (client/server/edge) + Vercel Analytics | Performance + error tracking |
 | **PWA** | Service Worker v3 | Offline-first for Indian networks |
 
 ## 3. Scaling Strategy for 5,000 Concurrent Students
@@ -197,7 +197,7 @@ ISR (Incremental Static Regeneration):
 │  └── 5-minute permission cache               │
 │                                               │
 │  Layer 5: Database (RLS)                      │
-│  ├── 148+ row-level security policies        │
+│  ├── 235+ row-level security policies        │
 │  ├── Student isolation (own data only)       │
 │  ├── Guardian access (linked children)       │
 │  ├── Teacher access (assigned students)      │
@@ -252,7 +252,7 @@ ISR (Incremental Static Regeneration):
 | Supabase | Pro | $25 |
 | Claude API (Haiku) | Pay-per-use | ~$300 |
 | Razorpay (Payments) | Live | Usage-based |
-| Resend (Email) | Free tier | $0 |
+| Mailgun (Email) | Flex/Foundation | ~$0-35 |
 | Domain + DNS | Annual | ~$2/mo |
 | **Total** | | **~$352/mo** |
 
@@ -299,7 +299,7 @@ Developer Push → GitHub Actions CI
 
 ## 10. Production Checklist
 
-- [x] RLS policies on all tables (148+)
+- [x] RLS policies on all tables (235+)
 - [x] RBAC with 71 permissions
 - [x] Security headers (CSP, HSTS, X-Frame)
 - [x] Rate limiting (middleware)

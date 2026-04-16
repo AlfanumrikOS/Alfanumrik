@@ -6,8 +6,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  * Tests authorizeSchoolAdmin() from @/lib/school-admin-auth.
  * This function wraps RBAC authorizeRequest() with school-scoped resolution:
  *   1. Verify JWT + RBAC permission via authorizeRequest()
- *   2. Look up school_admins record to get school_id (Strategy 1)
- *   3. Fall back to teachers table if no school_admins record (Strategy 2)
+ *   2. Look up school_admins record to get school_id
+ *   3. Verify the linked school is active
  *   4. Return schoolId for tenant-scoped queries
  *
  * All Supabase calls are mocked -- never hits real DB.
@@ -33,13 +33,13 @@ function createChainableMock(resolvedValue: { data: unknown; error: unknown }) {
   return chain;
 }
 
-// The actual code queries: school_admins then teachers (fallback)
+// The actual code queries: school_admins then schools (to verify active)
 let schoolAdminsChain: ReturnType<typeof createChainableMock>;
-let teachersChain: ReturnType<typeof createChainableMock>;
+let schoolsChain: ReturnType<typeof createChainableMock>;
 
 const mockFrom = vi.fn().mockImplementation((table: string) => {
   if (table === 'school_admins') return schoolAdminsChain;
-  if (table === 'teachers') return teachersChain;
+  if (table === 'schools') return schoolsChain;
   return createChainableMock({ data: null, error: null });
 });
 
@@ -58,7 +58,7 @@ vi.mock('@/lib/logger', () => ({
 
 // Import after mocks are set up
 import { authorizeSchoolAdmin } from '@/lib/school-admin-auth';
-import type { SchoolAdminAuth, SchoolAdminAuthFailure } from '@/lib/school-admin-auth';
+import type { SchoolAdminAuthResult } from '@/lib/school-admin-auth';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -93,9 +93,9 @@ function mockUnauthorized(status = 401) {
 describe('authorizeSchoolAdmin', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Default: no records found in either table
+    // Default: no records found
     schoolAdminsChain = createChainableMock({ data: null, error: null });
-    teachersChain = createChainableMock({ data: null, error: null });
+    schoolsChain = createChainableMock({ data: { id: 'school-abc', is_active: true }, error: null });
   });
 
   // ── Unauthorized: no JWT / failed RBAC ────────────────────────────────────
@@ -104,57 +104,54 @@ describe('authorizeSchoolAdmin', () => {
     it('when RBAC authorizeRequest fails (no JWT)', async () => {
       mockUnauthorized(401);
 
-      const result = await authorizeSchoolAdmin(makeRequest(), 'class.manage');
+      const result: SchoolAdminAuthResult = await authorizeSchoolAdmin(makeRequest(), 'class.manage');
 
       expect(result.authorized).toBe(false);
-      const failure = result as SchoolAdminAuthFailure;
-      expect(failure.errorResponse).toBeDefined();
-      // The actual code wraps the RBAC failure in its own NextResponse with code
-      const body = await failure.errorResponse.json();
-      expect(body.code).toBe('AUTH_REQUIRED');
-      expect(failure.errorResponse.status).toBe(401);
+      expect(result.errorResponse).toBeDefined();
+      // The RBAC errorResponse is passed through directly (plain text Response)
+      expect(result.errorResponse!.status).toBe(401);
     });
 
     it('when user lacks the required permission', async () => {
       mockUnauthorized(403);
 
-      const result = await authorizeSchoolAdmin(makeRequest(), 'institution.view_reports');
+      const result: SchoolAdminAuthResult = await authorizeSchoolAdmin(makeRequest(), 'institution.view_reports');
 
       expect(result.authorized).toBe(false);
-      const failure = result as SchoolAdminAuthFailure;
-      // The actual code uses auth.errorResponse?.status || 401
-      expect(failure.errorResponse.status).toBe(403);
+      expect(result.errorResponse!.status).toBe(403);
     });
 
-    it('when authorizeRequest returns authorized but no userId', async () => {
-      mockAuthorizeRequest.mockResolvedValue({
-        authorized: true,
-        userId: null, // edge case: authorized but missing userId
-        studentId: null,
-        roles: ['institution_admin'],
-        permissions: ['class.manage'],
+    it('when user is not in school_admins table', async () => {
+      mockAuthorized('user-no-school');
+      // school_admins returns null (default from beforeEach)
+
+      const result: SchoolAdminAuthResult = await authorizeSchoolAdmin(makeRequest(), 'class.manage');
+
+      expect(result.authorized).toBe(false);
+      const body = await result.errorResponse!.json();
+      expect(body.success).toBe(false);
+      expect(body.error).toBe('Not a school administrator');
+      expect(result.errorResponse!.status).toBe(403);
+    });
+
+    it('when school is not active', async () => {
+      mockAuthorized('user-inactive-school');
+      schoolAdminsChain = createChainableMock({
+        data: { id: 'admin-1', school_id: 'school-inactive', is_active: true },
+        error: null,
+      });
+      schoolsChain = createChainableMock({
+        data: { id: 'school-inactive', is_active: false },
+        error: null,
       });
 
-      const result = await authorizeSchoolAdmin(makeRequest(), 'class.manage');
+      const result: SchoolAdminAuthResult = await authorizeSchoolAdmin(makeRequest(), 'class.manage');
 
       expect(result.authorized).toBe(false);
-      const failure = result as SchoolAdminAuthFailure;
-      const body = await failure.errorResponse.json();
-      expect(body.code).toBe('NO_USER_ID');
-      expect(failure.errorResponse.status).toBe(401);
-    });
-
-    it('when user is not in school_admins or teachers table', async () => {
-      mockAuthorized('user-no-school');
-      // Both chains return null data (default from beforeEach)
-
-      const result = await authorizeSchoolAdmin(makeRequest(), 'class.manage');
-
-      expect(result.authorized).toBe(false);
-      const failure = result as SchoolAdminAuthFailure;
-      const body = await failure.errorResponse.json();
-      expect(body.code).toBe('NO_SCHOOL');
-      expect(failure.errorResponse.status).toBe(403);
+      const body = await result.errorResponse!.json();
+      expect(body.success).toBe(false);
+      expect(body.error).toBe('School is not active');
+      expect(result.errorResponse!.status).toBe(403);
     });
   });
 
@@ -165,58 +162,75 @@ describe('authorizeSchoolAdmin', () => {
       const schoolId = 'school-abc-123';
       mockAuthorized('user-admin-1');
       schoolAdminsChain = createChainableMock({
-        data: { school_id: schoolId },
+        data: { id: 'admin-rec-1', school_id: schoolId, is_active: true },
+        error: null,
+      });
+      schoolsChain = createChainableMock({
+        data: { id: schoolId, is_active: true },
         error: null,
       });
 
-      const result = await authorizeSchoolAdmin(makeRequest(), 'class.manage');
+      const result: SchoolAdminAuthResult = await authorizeSchoolAdmin(makeRequest(), 'class.manage');
 
       expect(result.authorized).toBe(true);
-      const success = result as SchoolAdminAuth;
-      expect(success.schoolId).toBe(schoolId);
-      expect(success.userId).toBe('user-admin-1');
-      expect(success.roles).toEqual(['institution_admin']);
-      expect(success.permissions).toContain('class.manage');
-    });
-
-    it('falls back to teachers table when school_admins has no match', async () => {
-      const schoolId = 'school-via-teacher';
-      mockAuthorized('user-teacher-1');
-      // school_admins returns null
-      schoolAdminsChain = createChainableMock({ data: null, error: null });
-      // teachers returns the school
-      teachersChain = createChainableMock({
-        data: { school_id: schoolId },
-        error: null,
-      });
-
-      const result = await authorizeSchoolAdmin(makeRequest(), 'class.manage');
-
-      expect(result.authorized).toBe(true);
-      const success = result as SchoolAdminAuth;
-      expect(success.schoolId).toBe(schoolId);
-      expect(success.userId).toBe('user-teacher-1');
+      expect(result.schoolId).toBe(schoolId);
+      expect(result.userId).toBe('user-admin-1');
+      expect(result.schoolAdminId).toBe('admin-rec-1');
     });
   });
 
   // ── Error handling ────────────────────────────────────────────────────────
 
   describe('error handling', () => {
-    it('returns 500 when resolveSchoolId throws an unexpected error', async () => {
+    it('returns 500 when school_admins query fails', async () => {
       mockAuthorized('user-error');
-      schoolAdminsChain = createChainableMock({ data: null, error: null });
-      // Make maybeSingle throw to trigger the catch block in authorizeSchoolAdmin
-      (schoolAdminsChain.maybeSingle as ReturnType<typeof vi.fn>).mockRejectedValue(
-        new Error('DB connection failed')
-      );
+      schoolAdminsChain = createChainableMock({
+        data: null,
+        error: { message: 'DB connection failed' },
+      });
 
-      const result = await authorizeSchoolAdmin(makeRequest(), 'class.manage');
+      const result: SchoolAdminAuthResult = await authorizeSchoolAdmin(makeRequest(), 'class.manage');
 
       expect(result.authorized).toBe(false);
-      const failure = result as SchoolAdminAuthFailure;
-      expect(failure.errorResponse.status).toBe(500);
-      const body = await failure.errorResponse.json();
-      expect(body.code).toBe('AUTH_ERROR');
+      expect(result.errorResponse!.status).toBe(500);
+      const body = await result.errorResponse!.json();
+      expect(body.success).toBe(false);
+      expect(body.error).toBe('Failed to verify school admin status');
+    });
+
+    it('returns 500 when schools query fails', async () => {
+      mockAuthorized('user-school-err');
+      schoolAdminsChain = createChainableMock({
+        data: { id: 'admin-1', school_id: 'school-err', is_active: true },
+        error: null,
+      });
+      schoolsChain = createChainableMock({
+        data: null,
+        error: { message: 'School lookup failed' },
+      });
+
+      const result: SchoolAdminAuthResult = await authorizeSchoolAdmin(makeRequest(), 'class.manage');
+
+      expect(result.authorized).toBe(false);
+      expect(result.errorResponse!.status).toBe(500);
+      const body = await result.errorResponse!.json();
+      expect(body.success).toBe(false);
+      expect(body.error).toBe('Failed to verify school status');
+    });
+
+    it('returns 500 when maybeSingle throws an unexpected error', async () => {
+      mockAuthorized('user-throw');
+      (schoolAdminsChain.maybeSingle as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new Error('Unexpected crash')
+      );
+
+      const result: SchoolAdminAuthResult = await authorizeSchoolAdmin(makeRequest(), 'class.manage');
+
+      expect(result.authorized).toBe(false);
+      expect(result.errorResponse!.status).toBe(500);
+      const body = await result.errorResponse!.json();
+      expect(body.success).toBe(false);
+      expect(body.error).toBe('Authorization failed');
     });
   });
 
@@ -237,33 +251,30 @@ describe('authorizeSchoolAdmin', () => {
     it('queries school_admins with auth_user_id and is_active=true', async () => {
       mockAuthorized('user-verify-query');
       schoolAdminsChain = createChainableMock({
-        data: { school_id: 'school-x' },
+        data: { id: 'admin-1', school_id: 'school-x', is_active: true },
         error: null,
       });
 
       await authorizeSchoolAdmin(makeRequest(), 'class.manage');
 
       expect(mockFrom).toHaveBeenCalledWith('school_admins');
-      expect(schoolAdminsChain.select).toHaveBeenCalledWith('school_id');
+      expect(schoolAdminsChain.select).toHaveBeenCalledWith('id, school_id, is_active');
       expect(schoolAdminsChain.eq).toHaveBeenCalledWith('auth_user_id', 'user-verify-query');
       expect(schoolAdminsChain.eq).toHaveBeenCalledWith('is_active', true);
     });
 
-    it('queries teachers table only after school_admins returns no match', async () => {
-      mockAuthorized('user-fallback');
-      // school_admins: no match
-      schoolAdminsChain = createChainableMock({ data: null, error: null });
-      // teachers: match
-      teachersChain = createChainableMock({
-        data: { school_id: 'school-teacher-fallback' },
+    it('queries schools table to verify school is active', async () => {
+      mockAuthorized('user-verify-school');
+      schoolAdminsChain = createChainableMock({
+        data: { id: 'admin-1', school_id: 'school-verify', is_active: true },
         error: null,
       });
 
       await authorizeSchoolAdmin(makeRequest(), 'class.manage');
 
-      // Both tables should be queried
-      expect(mockFrom).toHaveBeenCalledWith('school_admins');
-      expect(mockFrom).toHaveBeenCalledWith('teachers');
+      expect(mockFrom).toHaveBeenCalledWith('schools');
+      expect(schoolsChain.select).toHaveBeenCalledWith('id, is_active');
+      expect(schoolsChain.eq).toHaveBeenCalledWith('id', 'school-verify');
     });
   });
 });
