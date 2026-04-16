@@ -77,18 +77,21 @@ export default function SchoolAnnouncementBanner({
   // Check localStorage for dismissed state on mount
   useEffect(() => {
     if (!announcement) return;
-    try {
-      const key = `${DISMISS_KEY_PREFIX}${announcement.id}`;
-      if (localStorage.getItem(key) === 'true') {
-        setDismissed(announcement.id);
-      }
-    } catch {
-      // localStorage unavailable (privacy mode, restricted environments)
+    const key = `${DISMISS_KEY_PREFIX}${announcement.id}`;
+    if (localStorage.getItem(key) === 'true') {
+      setDismissed(announcement.id);
     }
   }, [announcement]);
 
+  // Loading skeleton to prevent CLS
+  if (isLoading) {
+    return (
+      <div className="w-full rounded-2xl animate-pulse" style={{ background: '#f3f4f6', height: 80 }} />
+    );
+  }
+
   // Nothing to show
-  if (isLoading || !announcement || dismissed === announcement?.id) {
+  if (!announcement || dismissed === announcement?.id) {
     return null;
   }
 
@@ -99,12 +102,8 @@ export default function SchoolAnnouncementBanner({
   const bodyPreview = body.length > 120 ? body.slice(0, 117) + '...' : body;
 
   function handleDismiss() {
-    try {
-      const key = `${DISMISS_KEY_PREFIX}${announcement!.id}`;
-      localStorage.setItem(key, 'true');
-    } catch {
-      // localStorage unavailable
-    }
+    const key = `${DISMISS_KEY_PREFIX}${announcement!.id}`;
+    localStorage.setItem(key, 'true');
     setDismissed(announcement!.id);
   }
 

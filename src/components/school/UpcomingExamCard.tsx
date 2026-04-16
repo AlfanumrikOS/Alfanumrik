@@ -105,8 +105,15 @@ export default function UpcomingExamCard({ isHi, accentColor = '#7C3AED' }: Upco
     },
   );
 
+  // Loading skeleton to prevent CLS
+  if (isLoading) {
+    return (
+      <div className="w-full rounded-2xl animate-pulse" style={{ background: '#f3f4f6', height: 72 }} />
+    );
+  }
+
   // Nothing to show
-  if (isLoading || !exams || exams.length === 0) {
+  if (!exams || exams.length === 0) {
     return null;
   }
 

@@ -1,40 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
-
-/* ─── Rate Limiting (in-memory, per-instance) ─── */
-
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
-
-const RATE_LIMIT_MAX = 5;
-const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
-
-function isRateLimited(ip: string): boolean {
-  const now = Date.now();
-  const entry = rateLimitMap.get(ip);
-
-  if (!entry || now > entry.resetAt) {
-    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
-    return false;
-  }
-
-  entry.count++;
-  if (entry.count > RATE_LIMIT_MAX) {
-    return true;
-  }
-
-  return false;
-}
-
-// Periodic cleanup to prevent memory leak (every 10 min)
-setInterval(() => {
-  const now = Date.now();
-  for (const [ip, entry] of rateLimitMap) {
-    if (now > entry.resetAt) {
-      rateLimitMap.delete(ip);
-    }
-  }
-}, 10 * 60 * 1000);
+import { checkApiRateLimit } from '@/lib/api-rate-limit';
 
 /* ─── Slug Generation ─── */
 
@@ -74,10 +41,17 @@ export async function POST(request: NextRequest) {
     request.headers.get('x-real-ip') ||
     'unknown';
 
-  if (isRateLimited(ip)) {
+  const rateCheck = await checkApiRateLimit(`trial:${ip}`, 5, 60 * 60 * 1000);
+  if (!rateCheck.allowed) {
     return NextResponse.json(
       { success: false, error: 'Too many signup requests. Please try again later.' },
-      { status: 429 }
+      {
+        status: 429,
+        headers: {
+          'Retry-After': String(Math.max(0, rateCheck.resetAt - Math.ceil(Date.now() / 1000))),
+          'X-RateLimit-Remaining': '0',
+        },
+      }
     );
   }
 

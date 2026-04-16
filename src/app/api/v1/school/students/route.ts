@@ -14,7 +14,8 @@ import { checkApiRateLimit } from '@/lib/api-rate-limit';
  *   ?limit=    — items per page (default 50, max 100)
  *
  * Returns: student list scoped to the API key's school_id
- * Fields: id, name, grade (string per P5), email, is_active, xp_total, last_active
+ * Fields: id, name, grade (string per P5), is_active, xp_total, last_active
+ * Note: email intentionally excluded (P13: no PII exposure through public APIs)
  */
 export async function GET(request: NextRequest) {
   try {
@@ -72,7 +73,7 @@ export async function GET(request: NextRequest) {
     // Query students scoped to the API key's school_id
     let query = supabase
       .from('students')
-      .select('id, name, grade, email, is_active, xp_total, last_active', { count: 'exact' })
+      .select('id, name, grade, is_active, xp_total, last_active', { count: 'exact' })
       .eq('school_id', auth.schoolId)
       .order('name', { ascending: true })
       .range(offset, offset + limit - 1);

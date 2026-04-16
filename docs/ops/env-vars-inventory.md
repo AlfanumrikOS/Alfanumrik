@@ -21,7 +21,7 @@
 ### Admin (Critical — admin panel inaccessible without this)
 | Variable | Scope | Description | Validated |
 |----------|-------|-------------|-----------|
-| `SUPER_ADMIN_SECRET` | Server only | Admin panel access gate | Yes (env-validation.ts) |
+| `SUPER_ADMIN_SECRET` | Server only | DEPRECATED — admin auth migrated to session-based | No (legacy) |
 
 ## Optional Variables (Degraded but functional without these)
 

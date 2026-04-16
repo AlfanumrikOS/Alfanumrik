@@ -150,11 +150,12 @@ describe('SchoolAnnouncementBanner', () => {
     mockSWRLoading = false;
   });
 
-  it('returns null when loading', async () => {
+  it('shows skeleton when loading', async () => {
     mockSWRLoading = true;
     const { default: SchoolAnnouncementBanner } = await import('@/components/school/SchoolAnnouncementBanner');
     const { container } = render(React.createElement(SchoolAnnouncementBanner, { isHi: false }));
-    expect(container.innerHTML).toBe('');
+    // Component now shows a skeleton placeholder instead of null
+    expect(container.innerHTML).not.toBe('');
   });
 
   it('returns null when no announcement', async () => {
@@ -272,11 +273,12 @@ describe('UpcomingExamCard', () => {
     mockSWRLoading = false;
   });
 
-  it('returns null when loading', async () => {
+  it('shows skeleton when loading', async () => {
     mockSWRLoading = true;
     const { default: UpcomingExamCard } = await import('@/components/school/UpcomingExamCard');
     const { container } = render(React.createElement(UpcomingExamCard, { isHi: false }));
-    expect(container.innerHTML).toBe('');
+    // Component now shows a skeleton placeholder instead of null
+    expect(container.innerHTML).not.toBe('');
   });
 
   it('returns null when no exams', async () => {

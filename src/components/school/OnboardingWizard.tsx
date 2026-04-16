@@ -252,18 +252,31 @@ function BrandingStep({ isHi, onNext, onBack }: BrandingStepProps) {
             color: 'var(--text-1, #111)',
           }}
         />
-        {/* Logo preview */}
+        {/* Logo preview — only render for validated https:// URLs */}
         {logoUrl && (
           <div className="mt-2 flex items-center gap-2">
-            <img
-              src={logoUrl}
-              alt={t(isHi, 'Logo preview', 'लोगो पूर्वावलोकन')}
-              className="w-10 h-10 rounded-lg object-contain"
-              style={{ border: '1px solid var(--border, #e5e7eb)' }}
-              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-            />
+            {logoUrl.startsWith('https://') ? (
+              <img
+                src={logoUrl}
+                alt={t(isHi, 'Logo preview', 'लोगो पूर्वावलोकन')}
+                className="w-10 h-10 rounded-lg object-contain"
+                style={{ border: '1px solid var(--border, #e5e7eb)' }}
+                referrerPolicy="no-referrer"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+              />
+            ) : (
+              <div
+                className="w-10 h-10 rounded-lg flex items-center justify-center text-xs"
+                style={{ border: '1px solid var(--border, #e5e7eb)', background: 'var(--surface-2, #f5f5f5)', color: 'var(--text-4, #999)' }}
+              >
+                ?
+              </div>
+            )}
             <span className="text-xs" style={{ color: 'var(--text-3, #666)' }}>
-              {t(isHi, 'Preview', 'पूर्वावलोकन')}
+              {logoUrl.startsWith('https://')
+                ? t(isHi, 'Preview', 'पूर्वावलोकन')
+                : t(isHi, 'URL must start with https://', 'URL https:// से शुरू होना चाहिए')
+              }
             </span>
           </div>
         )}
@@ -780,11 +793,14 @@ function InviteCodesStep({ isHi, onComplete, onBack }: InviteCodesStepProps) {
       textArea.style.position = 'fixed';
       textArea.style.opacity = '0';
       document.body.appendChild(textArea);
-      textArea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textArea);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      try {
+        textArea.select();
+        document.execCommand('copy');
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } finally {
+        document.body.removeChild(textArea);
+      }
     }
   };
 

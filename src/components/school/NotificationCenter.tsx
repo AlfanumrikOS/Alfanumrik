@@ -52,13 +52,13 @@ interface Props {
  */
 export default function NotificationCenter({ maxItems = 10 }: Props) {
   const { authUserId, isHi } = useAuth();
-  const tenant = useTenant();
+  const { branding } = useTenant();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const primaryColor = tenant.branding.primaryColor;
+  const primaryColor = branding.primaryColor;
 
   const fetchNotifications = useCallback(async () => {
     if (!authUserId) return;
@@ -180,7 +180,7 @@ export default function NotificationCenter({ maxItems = 10 }: Props) {
           </div>
 
           {/* List */}
-          <div style={{ overflowY: 'auto', maxHeight: 380 }}>
+          <div style={{ overflowY: 'auto', maxHeight: 380 }} role="list">
             {loading ? (
               <div style={{ padding: 24, textAlign: 'center', color: '#888', fontSize: 13 }}>
                 {t(isHi, 'Loading...', 'लोड हो रहा है...')}
@@ -192,18 +192,16 @@ export default function NotificationCenter({ maxItems = 10 }: Props) {
             ) : (
               notifications.map(n => {
                 const config = TYPE_CONFIG[n.notification_type || 'default'] || TYPE_CONFIG.default;
-                return (
-                  <div
-                    key={n.id}
-                    onClick={() => { if (!n.is_read) markRead(n.id); }}
-                    style={{
-                      padding: '12px 16px', borderBottom: '1px solid #f3f4f6',
-                      cursor: n.is_read ? 'default' : 'pointer',
-                      borderLeft: n.is_read ? '3px solid transparent' : `3px solid ${config.color}`,
-                      background: n.is_read ? '#fff' : '#f8fafc',
-                      display: 'flex', gap: 10, alignItems: 'flex-start',
-                    }}
-                  >
+                const itemStyle: React.CSSProperties = {
+                  padding: '12px 16px', borderBottom: '1px solid #f3f4f6',
+                  cursor: n.is_read ? 'default' : 'pointer',
+                  borderLeft: n.is_read ? '3px solid transparent' : `3px solid ${config.color}`,
+                  background: n.is_read ? '#fff' : '#f8fafc',
+                  display: 'flex', gap: 10, alignItems: 'flex-start',
+                  width: '100%', textAlign: 'left', font: 'inherit',
+                };
+                const content = (
+                  <>
                     <span style={{ fontSize: 16, flexShrink: 0 }}>{config.icon}</span>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: n.is_read ? 400 : 600, color: '#111' }}>
@@ -218,7 +216,22 @@ export default function NotificationCenter({ maxItems = 10 }: Props) {
                         {timeAgo(n.created_at, isHi)}
                       </div>
                     </div>
+                  </>
+                );
+
+                return n.is_read ? (
+                  <div key={n.id} role="listitem" style={itemStyle}>
+                    {content}
                   </div>
+                ) : (
+                  <button
+                    key={n.id}
+                    type="button"
+                    onClick={() => markRead(n.id)}
+                    style={itemStyle}
+                  >
+                    {content}
+                  </button>
                 );
               })
             )}

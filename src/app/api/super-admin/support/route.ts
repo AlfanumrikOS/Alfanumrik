@@ -109,9 +109,12 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'Missing "student_id" param.' }, { status: 400 });
       }
 
+      // Migration note: class_students (legacy) → class_enrollments (Phase 2).
+      // class_enrollments has is_active column for soft-delete support.
+      // TODO: Once class_students is fully deprecated, remove this comment.
       const res = await supabaseRest(
-        'class_students',
-        `select=*,classes(id,name,grade,section,subject_code,teacher_id)&student_id=eq.${encodeURIComponent(studentId)}&order=created_at.desc`,
+        'class_enrollments',
+        `select=*,classes(id,name,grade,section,subject_code,teacher_id)&student_id=eq.${encodeURIComponent(studentId)}&is_active=eq.true&order=created_at.desc`,
       );
 
       if (!res.ok) {
@@ -190,7 +193,8 @@ export async function POST(request: NextRequest) {
 
       const TABLE_MAP: Record<string, string> = {
         parent_link: 'guardian_student_links',
-        class_enrollment: 'class_students',
+        // Migration note: class_students (legacy) → class_enrollments (Phase 2).
+        class_enrollment: 'class_enrollments',
       };
 
       const ALLOWED_FIELDS: Record<string, string[]> = {

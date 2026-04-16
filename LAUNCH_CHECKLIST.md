@@ -9,7 +9,7 @@
 - [ ] RAZORPAY_WEBHOOK_SECRET — Razorpay webhook secret
 - [ ] UPSTASH_REDIS_REST_URL — Redis for rate limiting
 - [ ] UPSTASH_REDIS_REST_TOKEN — Redis token
-- [ ] SUPER_ADMIN_SECRET — Admin panel access
+- [ ] SUPER_ADMIN_SECRET — DEPRECATED (admin auth migrated to session-based)
 
 ## Razorpay Dashboard
 - [ ] Webhook URL set to https://alfanumrik.com/api/payments/webhook

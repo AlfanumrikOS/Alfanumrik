@@ -88,10 +88,14 @@ export async function POST(request: Request) {
     }
 
     // Get all students in the class
+    // Migration note: class_students (legacy) → class_enrollments (Phase 2).
+    // class_enrollments has is_active column; filter active enrollments only.
+    // TODO: Once class_students is fully deprecated, remove this comment.
     const { data: students } = await supabaseAdmin
-      .from('class_students')
+      .from('class_enrollments')
       .select('student_id')
-      .eq('class_id', body.class_id);
+      .eq('class_id', body.class_id)
+      .eq('is_active', true);
 
     if (!students || students.length === 0) {
       return NextResponse.json(

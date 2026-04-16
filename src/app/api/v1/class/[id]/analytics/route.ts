@@ -63,10 +63,14 @@ export async function GET(
     }
 
     // Get student IDs in the class
+    // Migration note: class_students (legacy) → class_enrollments (Phase 2).
+    // class_enrollments has is_active column; filter active enrollments only.
+    // TODO: Once class_students is fully deprecated, remove this comment.
     const { data: classStudents } = await supabaseAdmin
-      .from('class_students')
+      .from('class_enrollments')
       .select('student_id')
-      .eq('class_id', classId);
+      .eq('class_id', classId)
+      .eq('is_active', true);
 
     if (!classStudents || classStudents.length === 0) {
       return NextResponse.json({
