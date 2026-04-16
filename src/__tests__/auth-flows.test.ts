@@ -78,12 +78,12 @@ describe('proxy.ts — structural integrity', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// middleware.ts — auth, rate limiting, bot detection, tenant resolution
+// middleware.ts — MUST NOT EXIST in Next.js 16
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('middleware.ts — exists with security layers and tenant resolution', () => {
-  it('src/middleware.ts exists', () => {
-    expect(fileExists('src/middleware.ts')).toBe(true);
+describe('middleware.ts — must NOT exist (Next.js 16 uses proxy.ts exclusively)', () => {
+  it('src/middleware.ts does NOT exist', () => {
+    expect(fileExists('src/middleware.ts')).toBe(false);
   });
 });
 
