@@ -259,18 +259,73 @@ async function getSchoolBySlug(
     const ttl = data ? 5 * 60_000 : 60_000;
     schoolCache.set(slug, { data, expires: Date.now() + ttl });
 
-    // Evict stale entries to prevent unbounded growth
-    if (schoolCache.size > 500) {
-      const now = Date.now();
-      for (const [k, v] of schoolCache.entries()) {
-        if (v.expires < now) schoolCache.delete(k);
-      }
-    }
-
+    evictStaleSchoolCache();
     return data;
   } catch {
     return null;
   }
+}
+
+/**
+ * Resolve a custom domain (e.g., learn.dps.com) to a school config.
+ * Uses the schools.custom_domain column + domain_verified check.
+ */
+async function getSchoolByCustomDomain(
+  domain: string,
+  sbUrl: string,
+  sbKey: string
+): Promise<SchoolConfig | null> {
+  const cacheKey = `domain:${domain}`;
+  const cached = schoolCache.get(cacheKey);
+  if (cached && cached.expires > Date.now()) return cached.data;
+
+  try {
+    const url = `${sbUrl}/rest/v1/schools?custom_domain=eq.${encodeURIComponent(domain)}&is_active=eq.true&domain_verified=eq.true&select=id,name,slug,logo_url,primary_color,secondary_color,tagline,settings&limit=1`;
+    const res = await fetch(url, {
+      headers: {
+        'apikey': sbKey,
+        'Authorization': `Bearer ${sbKey}`,
+      },
+    });
+
+    if (!res.ok) {
+      schoolCache.set(cacheKey, { data: null, expires: Date.now() + 60_000 });
+      return null;
+    }
+
+    const rows = await res.json();
+    const data: SchoolConfig | null = rows?.[0] ?? null;
+
+    const ttl = data ? 5 * 60_000 : 60_000;
+    schoolCache.set(cacheKey, { data, expires: Date.now() + ttl });
+
+    evictStaleSchoolCache();
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+function evictStaleSchoolCache(): void {
+  if (schoolCache.size > 500) {
+    const now = Date.now();
+    for (const [k, v] of schoolCache.entries()) {
+      if (v.expires < now) schoolCache.delete(k);
+    }
+  }
+}
+
+/** Known B2C hostnames — no tenant resolution needed */
+const B2C_HOSTS = new Set([
+  'alfanumrik.com', 'www.alfanumrik.com', 'app.alfanumrik.com',
+  'alfanumrik.vercel.app', 'alfanumrik-ten.vercel.app',
+]);
+
+function isB2CHost(host: string): boolean {
+  const h = host.split(':')[0].toLowerCase();
+  if (h === 'localhost' || h.startsWith('localhost')) return true;
+  if (h.endsWith('.vercel.app')) return true;
+  return B2C_HOSTS.has(h);
 }
 
 export async function proxy(request: NextRequest) {
@@ -291,26 +346,51 @@ export async function proxy(request: NextRequest) {
   const origin = request.headers.get('origin') || '';
   const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
 
-  // ── Layer 0: Subdomain → School resolution (white-label) ──
-  // Extract subdomain early (before auth) so school headers are available
-  // to all downstream layers and client-side SchoolContext.
+  // ── Layer 0: Subdomain / Custom Domain → School resolution (white-label) ──
+  // Extract subdomain or custom domain early (before auth) so school headers
+  // are available to all downstream layers and client-side SchoolContext.
+  // B2C domains (alfanumrik.com, www, app, localhost, *.vercel.app) skip this entirely.
   const host = request.headers.get('host') || '';
   const subdomain = extractSubdomain(host);
   let schoolConfig: SchoolConfig | null = null;
+  let isExplicitTenantRequest = false; // true when host is a school subdomain or custom domain
 
-  if (subdomain) {
+  if (!isB2CHost(host)) {
     const sbUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const sbKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    if (sbUrl && sbKey) {
-      schoolConfig = await getSchoolBySlug(subdomain, sbUrl, sbKey);
 
-      // Add school subdomain to allowed origins for CORS
+    if (sbUrl && sbKey) {
+      if (subdomain) {
+        // Try slug-based resolution (*.alfanumrik.com)
+        schoolConfig = await getSchoolBySlug(subdomain, sbUrl, sbKey);
+        isExplicitTenantRequest = true;
+      } else {
+        // Try custom domain resolution (learn.dps.com)
+        const normalizedHost = host.split(':')[0].toLowerCase();
+        schoolConfig = await getSchoolByCustomDomain(normalizedHost, sbUrl, sbKey);
+        isExplicitTenantRequest = true;
+      }
+
+      // Add school origin to CORS for this request
       if (schoolConfig) {
-        ALLOWED_ORIGINS.push(`https://${subdomain}.alfanumrik.com`);
-        if (process.env.NODE_ENV !== 'production') {
-          ALLOWED_ORIGINS.push(`http://${subdomain}.localhost:3000`);
+        if (subdomain) {
+          ALLOWED_ORIGINS.push(`https://${subdomain}.alfanumrik.com`);
+          if (process.env.NODE_ENV !== 'production') {
+            ALLOWED_ORIGINS.push(`http://${subdomain}.localhost:3000`);
+          }
+        }
+        if (origin && !ALLOWED_ORIGINS.includes(origin)) {
+          ALLOWED_ORIGINS.push(origin);
         }
       }
+    }
+
+    // If this is an explicit tenant request but no school found → 404
+    if (isExplicitTenantRequest && !schoolConfig) {
+      return new NextResponse(
+        '<html><body style="background:#0f0f0f;color:#e0e0e0;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><div style="font-size:48px;margin-bottom:16px">🏫</div><h1 style="font-size:20px;margin-bottom:8px">School Not Found</h1><p style="color:#888;font-size:14px">This school is not registered on Alfanumrik.</p><a href="https://alfanumrik.com" style="color:#7C3AED;margin-top:16px;display:inline-block">Go to Alfanumrik →</a></div></body></html>',
+        { status: 404, headers: { 'Content-Type': 'text/html' } }
+      );
     }
   }
 
@@ -401,6 +481,7 @@ export async function proxy(request: NextRequest) {
 
   // ── Inject school config headers (after response is created) ──
   // These headers are read by /api/school-config and forwarded to SchoolContext.
+  // Also injected into request headers for API routes to consume via tenantFromHeaders().
   if (schoolConfig) {
     response.headers.set('x-school-id', schoolConfig.id);
     response.headers.set('x-school-name', encodeURIComponent(schoolConfig.name));
@@ -408,6 +489,7 @@ export async function proxy(request: NextRequest) {
     response.headers.set('x-school-logo', schoolConfig.logo_url || '');
     response.headers.set('x-school-primary-color', schoolConfig.primary_color || '#7C3AED');
     response.headers.set('x-school-secondary-color', schoolConfig.secondary_color || '#F97316');
+    response.headers.set('x-school-tagline', encodeURIComponent(schoolConfig.tagline || ''));
   }
 
   // ── Layer 0.8: Session Validation (device limit enforcement) ──
