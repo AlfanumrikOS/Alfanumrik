@@ -475,12 +475,13 @@ export async function getCmeNextAction(
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
+        apikey: supabaseAnonKey, // Required by Supabase Edge Functions for JWT verification
       },
       body: JSON.stringify({
         action: 'get_next_action',
         subject_id: subjectRow.id,
       }),
-    }, 8000); // 8s timeout — best-effort, non-blocking
+    }, 10000);
 
     if (!res.ok) return null;
     const data = await res.json();
