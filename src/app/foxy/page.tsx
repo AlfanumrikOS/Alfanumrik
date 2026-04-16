@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { SUPABASE_URL, SUPABASE_ANON_KEY, GRADE_SUBJECTS } from '@/lib/constants';
+import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { BottomNav } from '@/components/ui';
 import { LESSON_STEPS, getLessonStepPrompt, getNextLessonStep, type LessonStep, type LessonState } from '@/lib/cognitive-engine';
 import { checkDailyUsage, clearUsageCache, type UsageResult } from '@/lib/usage';
@@ -298,6 +299,7 @@ const REPORT_REASONS = [
 export default function FoxyPage() {
   const { student: authStudent, isLoggedIn, isLoading: authLoading } = useAuth();
   const router = useRouter();
+  const { unlocked: allowedSubjects } = useAllowedSubjects();
 
   // Core state
   const [student, setStudent] = useState<any>(null);

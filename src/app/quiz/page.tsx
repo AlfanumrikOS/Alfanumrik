@@ -10,6 +10,7 @@ import { getQuizQuestionsV2, submitQuizResults, saveCognitiveMetrics, saveQuesti
 import { XP_RULES } from '@/lib/xp-rules';
 import { Card, Button, ProgressBar, LoadingFoxy } from '@/components/ui';
 import { SUBJECT_META } from '@/lib/constants';
+import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import QuizSetup from '@/components/quiz/QuizSetup';
 import FeedbackOverlay from '@/components/quiz/FeedbackOverlay';
 import WrittenAnswerInput from '@/components/quiz/ncert/WrittenAnswerInput';
@@ -123,6 +124,7 @@ const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
 export default function QuizPage() {
   const { student, snapshot, isLoggedIn, isLoading, isHi, refreshSnapshot, activeRole } = useAuth();
   const router = useRouter();
+  const { unlocked: allowedSubjects } = useAllowedSubjects();
 
   // Setup state
   const [screen, setScreen] = useState<Screen>('select');
