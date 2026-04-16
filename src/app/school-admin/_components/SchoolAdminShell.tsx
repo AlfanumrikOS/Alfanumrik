@@ -53,9 +53,14 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
         .single()
         .then(({ data }) => {
           if (data?.schools && typeof data.schools === 'object') {
-            const s = data.schools as { name: string; logo_url: string | null; primary_color: string | null };
-            setSchoolName(s.name);
-            if (s.logo_url) setLogoUrl(s.logo_url);
+            // Supabase FK join may return array or object depending on relation type
+            const raw = data.schools as unknown;
+            const s = Array.isArray(raw) ? raw[0] : raw;
+            if (s && typeof s === 'object' && 'name' in s) {
+              const school = s as { name: string; logo_url: string | null; primary_color: string | null };
+              setSchoolName(school.name);
+              if (school.logo_url) setLogoUrl(school.logo_url);
+            }
           }
         });
     }
