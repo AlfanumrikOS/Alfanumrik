@@ -46,7 +46,6 @@ export interface Subject {
   id: string;
   code: string;
   name: string;
-  name_hi: string | null;
   icon: string;
   color: string;
   is_active: boolean;

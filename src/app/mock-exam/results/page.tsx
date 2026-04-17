@@ -4,7 +4,7 @@ import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { Card, Button, ProgressBar } from '@/components/ui';
-import { useSubjectLookup } from '@/lib/useSubjectLookup';
+import { SUBJECT_META } from '@/lib/constants';
 
 const SECTIONS = [
   { key: 'A', label: 'Section A', labelHi: 'खंड अ', marks: 1, count: 20 },
@@ -48,10 +48,6 @@ function MockExamResultsInner() {
   const rawData = params.get('data');
 
   const [resultData, setResultData] = useState<ResultData | null>(null);
-  // Subject display metadata — resolved from the same grade-/plan-gated source
-  // of truth as the rest of the app. Null when the subject is not in the user's
-  // allowed set (rare post-exam, but safe — display falls back to raw code).
-  const lookupSubject = useSubjectLookup();
 
   useEffect(() => {
     if (!rawData) return;
@@ -80,7 +76,7 @@ function MockExamResultsInner() {
   const pct = Math.round((correct / total) * 100);
   const gradeColor = getGradeColor(pct);
   const gradeLabel = getGradeLabel(pct, isHi);
-  const subjectMeta = lookupSubject(subject);
+  const subjectMeta = SUBJECT_META.find(s => s.code === subject);
 
   return (
     <div className="min-h-screen pb-24" style={{ background: 'var(--warm-cream, #FFF9F0)' }}>
@@ -92,7 +88,7 @@ function MockExamResultsInner() {
             {isHi ? 'परीक्षा परिणाम' : 'Exam Results'}
           </h1>
           <p className="text-xs" style={{ color: 'var(--text-2)' }}>
-            {subjectMeta?.icon} {isHi ? subjectMeta?.nameHi || subjectMeta?.name : subjectMeta?.name}
+            {subjectMeta?.icon} {subjectMeta?.name}
             {isAuto && <span className="ml-2 px-2 py-0.5 rounded-full text-[10px]" style={{ background: '#FEF2F2', color: '#DC2626' }}>
               {isHi ? 'समय समाप्त' : 'Time expired'}
             </span>}

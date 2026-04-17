@@ -5,8 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { Card, Button, ProgressBar } from '@/components/ui';
-import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
-import { useSubjectLookup } from '@/lib/useSubjectLookup';
+import { SUBJECT_META, GRADE_SUBJECTS } from '@/lib/constants';
 
 const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
 const PYQ_YEARS = Array.from({ length: 11 }, (_, i) => 2025 - i); // 2025 down to 2015
@@ -55,11 +54,9 @@ export default function PYQPage() {
   }, [isLoading, isLoggedIn, activeRole, router]);
 
   const grade = student?.grade ?? '9';
-  // Source of truth: /api/student/subjects → get_available_subjects RPC.
-  // Intersects grade ∩ plan ∩ stream server-side. PYQ practice only exposes
-  // subjects the student can actually drill.
-  const { unlocked: availableSubjects, isLoading: subjectsLoading } = useAllowedSubjects();
-  const lookupSubject = useSubjectLookup();
+  const availableSubjects = SUBJECT_META.filter(s =>
+    (GRADE_SUBJECTS[grade] ?? GRADE_SUBJECTS['9']).includes(s.code)
+  );
 
   const startPractice = useCallback(async () => {
     if (!selectedSubject || !selectedYear) return;
@@ -142,7 +139,7 @@ export default function PYQPage() {
     setNoQuestions(false);
   };
 
-  const subjectMeta = selectedSubject ? lookupSubject(selectedSubject) : null;
+  const subjectMeta = SUBJECT_META.find(s => s.code === selectedSubject);
 
   /* ─── Loading ─── */
   if (isLoading) {
@@ -179,37 +176,23 @@ export default function PYQPage() {
             <h2 className="font-semibold text-base mb-3" style={{ color: 'var(--text-1)' }}>
               {isHi ? '1. विषय चुनें' : '1. Choose Subject'}
             </h2>
-            {subjectsLoading && availableSubjects.length === 0 ? (
-              <div className="text-center py-8 text-sm" style={{ color: 'var(--text-2)' }}>
-                {isHi ? 'विषय लोड हो रहे हैं…' : 'Loading subjects…'}
-              </div>
-            ) : availableSubjects.length === 0 ? (
-              <div className="text-center py-8 text-sm" style={{ color: 'var(--text-2)' }}>
-                {isHi
-                  ? 'आपकी कक्षा और योजना के लिए कोई विषय उपलब्ध नहीं है।'
-                  : 'No subjects available for your grade and plan.'}
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-3">
-                {availableSubjects.map(s => (
-                  <button
-                    key={s.code}
-                    onClick={() => setSelectedSubject(s.code)}
-                    className="flex items-center gap-2 p-3 rounded-2xl text-left transition-all"
-                    style={{
-                      background: selectedSubject === s.code ? s.color + '20' : 'var(--surface-1)',
-                      border: `2px solid ${selectedSubject === s.code ? s.color : 'var(--border)'}`,
-                      color: 'var(--text-1)',
-                    }}
-                  >
-                    <span className="text-2xl" style={{ color: s.color }}>{s.icon}</span>
-                    <span className="font-medium text-sm">
-                      {isHi ? s.nameHi || s.name : s.name}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
+            <div className="grid grid-cols-2 gap-3">
+              {availableSubjects.map(s => (
+                <button
+                  key={s.code}
+                  onClick={() => setSelectedSubject(s.code)}
+                  className="flex items-center gap-2 p-3 rounded-2xl text-left transition-all"
+                  style={{
+                    background: selectedSubject === s.code ? s.color + '20' : 'var(--surface-1)',
+                    border: `2px solid ${selectedSubject === s.code ? s.color : 'var(--border)'}`,
+                    color: 'var(--text-1)',
+                  }}
+                >
+                  <span className="text-2xl" style={{ color: s.color }}>{s.icon}</span>
+                  <span className="font-medium text-sm">{s.name}</span>
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Year Picker */}
@@ -296,7 +279,7 @@ export default function PYQPage() {
             </button>
             <div className="text-center">
               <p className="text-xs font-medium" style={{ color: 'var(--text-2)' }}>
-                {subjectMeta?.icon} {isHi ? subjectMeta?.nameHi || subjectMeta?.name : subjectMeta?.name} · {selectedYear}
+                {subjectMeta?.icon} {subjectMeta?.name} · {selectedYear}
                 {noQuestions && <span className="ml-2 text-xs px-2 py-0.5 rounded-full" style={{ background: '#FFF3CD', color: '#856404' }}>
                   {isHi ? 'प्रश्न बैंक से' : 'From question bank'}
                 </span>}
@@ -442,7 +425,7 @@ export default function PYQPage() {
           </p>
           <ProgressBar value={pct} />
           <div className="mt-4 text-sm" style={{ color: 'var(--text-2)' }}>
-            {isHi ? subjectMeta?.nameHi || subjectMeta?.name : subjectMeta?.name} · {selectedYear}
+            {subjectMeta?.name} · {selectedYear}
             {noQuestions && ` (${isHi ? 'प्रश्न बैंक' : 'Question Bank'})`}
           </div>
         </Card>

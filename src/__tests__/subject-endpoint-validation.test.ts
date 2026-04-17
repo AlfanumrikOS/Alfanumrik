@@ -207,10 +207,6 @@ const scenarios: Scenario[] = [
       authorizedAs('s1');
       setFromResult('students', { data: { id: 's1', grade: '10' }, error: null });
       mockGetAvailableSubjects(allowed ? ['math', 'physics'] : ['math']);
-      // Recovery-mode: /api/quiz now also calls validate_academic_scope.
-      // For the "allowed" case the scope must validate ok; the per-route
-      // subject check still drives the 422 in the "denied" case.
-      setRpcResult('validate_academic_scope', { data: { ok: allowed }, error: null });
       const { GET } = await import('@/app/api/quiz/route');
       const req = new NextRequest(
         'http://localhost/api/quiz?action=questions&subject=physics&grade=10',
@@ -228,7 +224,6 @@ const scenarios: Scenario[] = [
       authorizedAs('s1');
       setFromResult('students', { data: { id: 's1', grade: '10' }, error: null });
       mockGetAvailableSubjects(allowed ? ['math', 'physics'] : ['math']);
-      setRpcResult('validate_academic_scope', { data: { ok: allowed }, error: null });
       const { POST } = await import('@/app/api/quiz/route');
       const req = makeJsonRequest(
         'http://localhost/api/quiz',

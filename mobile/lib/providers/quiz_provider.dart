@@ -204,20 +204,19 @@ class QuizNotifier extends Notifier<QuizState> {
     result.when(
       success: (quizResult) {
         state = state.copyWith(result: quizResult, isSubmitting: false);
-        // Refresh dashboard to show updated coins/score
+        // Refresh dashboard to show updated XP
         ref.read(dashboardProvider.notifier).refresh();
       },
       failure: (msg) {
         // RPC failed — show a zero-score result so the student at least sees
-        // the quiz ended. Do NOT compute XP/coins locally; values will be 0
-        // to avoid awarding unverified rewards (P2).
+        // the quiz ended. Do NOT compute XP locally; values will be 0 to
+        // avoid awarding unverified XP (P2).
         state = state.copyWith(
           result: QuizResult(
             totalQuestions: state.questions.length,
             correctAnswers: 0,
             scorePercent: 0,
             xpEarned: 0,
-            coinsEarned: 0,
             timeTaken: timeTaken,
           ),
           isSubmitting: false,

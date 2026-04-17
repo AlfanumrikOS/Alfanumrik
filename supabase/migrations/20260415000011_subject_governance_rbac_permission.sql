@@ -20,20 +20,19 @@
 --
 -- Per `.claude/CLAUDE.md` ("User Approval Required For → RBAC role or
 -- permission additions"), new permission codes must be approved by the user
--- before seeding.  User approval was given on 2026-04-15 and the migration
--- was applied to production via mcp apply_migration on the same day
--- (registry version 20260415122242).  Verified post-apply:
---   SELECT r.name, p.code FROM role_permissions rp
---     JOIN roles r ON r.id=rp.role_id
---     JOIN permissions p ON p.id=rp.permission_id
---    WHERE p.code='super_admin.subjects.manage';
---   → returns rows for both 'admin' and 'super_admin'.
+-- before seeding.  This migration is therefore staged as a file on disk but
+-- NOT yet applied.  It is safe to apply any time — the INSERTs are idempotent
+-- via ON CONFLICT DO NOTHING and no existing rows are modified.
 --
--- The 7 super-admin API routes listed above were updated in the same
--- session to call:
+-- ─── After applying, the 7 API routes above must be updated ──────────────────
+-- Replace:
+--     const authCheck = await authorizeAdmin(request);
+--     if (!authCheck.authorized) return authCheck.response;
+-- with:
 --     const auth = await authorizeRequest(request, 'super_admin.subjects.manage');
 --     if (!auth.authorized) return auth.errorResponse!;
--- Verified by grepping src/app/api/super-admin/{subjects,students/[id]/subjects}/.
+-- to actually gate enforcement on the new permission.  Until both the migration
+-- is applied AND the routes are refactored, behaviour is unchanged.
 --
 -- Role assignment:
 --   super_admin — granted explicitly below (plus the runtime wildcard bypass

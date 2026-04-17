@@ -10,7 +10,6 @@ import { GRADES, BOARDS, LANGUAGES } from '@/lib/constants';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { PlanBadge } from '@/components/PlanBadge';
 import { isSoundEnabled, setSoundEnabled, playSound } from '@/lib/sounds';
-import StreakBadge from '@/components/challenge/StreakBadge';
 
 function SoundToggle() {
   const [on, setOn] = useState(() => isSoundEnabled());
@@ -192,7 +191,6 @@ export default function ProfilePage() {
   const [achievements, setAchievements] = useState<any[]>([]);
   const [allAchievements, setAllAchievements] = useState<any[]>([]);
   const [quizStats, setQuizStats] = useState({ total: 0, avgScore: 0, bestScore: 0, totalXpFromQuiz: 0 });
-  const [challengeStreak, setChallengeStreak] = useState<{ current: number; best: number; badges: string[] } | null>(null);
 
   // Edit form state
   const [editName, setEditName] = useState('');
@@ -265,24 +263,6 @@ export default function ProfilePage() {
       const best = Math.max(...qs.map(q => q.score_percent || 0));
       const xp = qs.reduce((a, q) => a + (q.score || 0), 0);
       setQuizStats({ total: qs.length, avgScore: avg, bestScore: best, totalXpFromQuiz: xp });
-    }
-
-    // Challenge streak
-    try {
-      const { data: streakData } = await supabase
-        .from('challenge_streaks')
-        .select('current_streak, best_streak, badges')
-        .eq('student_id', student.id)
-        .single();
-      if (streakData) {
-        setChallengeStreak({
-          current: streakData.current_streak ?? 0,
-          best: streakData.best_streak ?? 0,
-          badges: Array.isArray(streakData.badges) ? streakData.badges : [],
-        });
-      }
-    } catch {
-      // No streak data yet -- that is fine
     }
   }, [student]);
 
@@ -527,22 +507,6 @@ export default function ProfilePage() {
                 <span className="text-sm font-bold">🔥 {streak}</span>
                 <span className="text-sm font-bold" style={{ color: 'var(--teal)' }}>{mastered} mastered</span>
               </div>
-              {/* Daily Challenge Streak */}
-              {challengeStreak && challengeStreak.current > 0 && (
-                <div className="mt-3 flex items-center gap-3 flex-wrap">
-                  <StreakBadge streak={challengeStreak.current} badges={challengeStreak.badges} isHi={isHi} size="lg" />
-                  {challengeStreak.best > 0 && (
-                    <span className="text-xs text-[var(--text-3)]">
-                      {isHi ? `सबसे लंबी स्ट्रीक: ${challengeStreak.best} दिन` : `Best streak: ${challengeStreak.best} days`}
-                    </span>
-                  )}
-                </div>
-              )}
-              {(!challengeStreak || challengeStreak.current <= 0) && (
-                <p className="text-xs text-[var(--text-3)] mt-2 opacity-60">
-                  {isHi ? 'डेली चैलेंज स्ट्रीक शुरू करो!' : 'Start a daily challenge streak!'}
-                </p>
-              )}
             </div>
           </div>
         </Card>

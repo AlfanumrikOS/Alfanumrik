@@ -393,17 +393,9 @@ class _ResultScreen extends ConsumerWidget {
                       value: '${result.correctAnswers}/${result.totalQuestions}',
                       color: AppColors.success,
                     ),
-                    // Show Foxy Coins when the server returns them,
-                    // otherwise fall back to legacy XP display.
-                    // TODO(mobile-sync): Remove XP fallback once
-                    // server fully migrates to Foxy Coins.
                     _ResultStat(
-                      label: result.coinsEarned > 0
-                          ? 'Coins Earned'
-                          : 'XP Earned',
-                      value: result.coinsEarned > 0
-                          ? '+${result.coinsEarned}'
-                          : '+${result.xpEarned}',
+                      label: 'XP Earned',
+                      value: '+${result.xpEarned}',
                       color: AppColors.xpGold,
                     ),
                     _ResultStat(

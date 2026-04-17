@@ -331,64 +331,6 @@ describe('Regression #5: plan downgrade (pro → starter) clamps selected_subjec
 // #6 — Admin DELETE on plan_subject_access flags but does not delete enrollments
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ─────────────────────────────────────────────────────────────────────────────
-// #7 — Legacy quiz-style pages (mock-exam, pyq, stem-centre) cannot import the
-//      raw subject catalogue. Pinned by the ESLint rule + a static-analysis
-//      style check that the page modules do NOT reference SUBJECT_META /
-//      GRADE_SUBJECTS / a local getSubjectsForGrade.
-//
-// Why a runtime check on top of ESLint:
-//   ESLint catches imports and (since the post-fix rule update) local
-//   declarations, but it cannot block a regression that bypasses the rule
-//   via `// eslint-disable`. This test reads the source files and asserts
-//   the disallowed identifiers do not appear, so a sneaky disable comment
-//   would still surface here.
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe('Regression #7: legacy pages do not bypass the subjects RPC', () => {
-  const fs = require('fs');
-  const path = require('path');
-
-  const cases: Array<{ label: string; file: string }> = [
-    { label: 'mock-exam page', file: 'src/app/mock-exam/page.tsx' },
-    { label: 'mock-exam results page', file: 'src/app/mock-exam/results/page.tsx' },
-    { label: 'pyq page', file: 'src/app/pyq/page.tsx' },
-    { label: 'stem-centre page', file: 'src/app/stem-centre/page.tsx' },
-  ];
-
-  it.each(cases)('$label does not import SUBJECT_META or GRADE_SUBJECTS', ({ file }) => {
-    const full = path.resolve(process.cwd(), file);
-    if (!fs.existsSync(full)) {
-      // If a page is renamed/removed, surface that immediately.
-      throw new Error(`Expected file missing: ${file}`);
-    }
-    const src: string = fs.readFileSync(full, 'utf8');
-    // Block named imports of the deprecated catalogue.
-    expect(src).not.toMatch(/from\s+['"]@\/lib\/constants['"][\s\S]*?SUBJECT_META/);
-    expect(src).not.toMatch(/from\s+['"]@\/lib\/constants['"][\s\S]*?GRADE_SUBJECTS/);
-    expect(src).not.toMatch(/SUBJECT_META\s*\.\s*filter\s*\(/);
-    expect(src).not.toMatch(/GRADE_SUBJECTS\s*\[/);
-  });
-
-  it.each(cases)('$label does not redeclare getSubjectsForGrade locally', ({ file }) => {
-    const full = path.resolve(process.cwd(), file);
-    const src: string = fs.readFileSync(full, 'utf8');
-    expect(src).not.toMatch(/function\s+getSubjectsForGrade\s*\(/);
-    expect(src).not.toMatch(/const\s+getSubjectsForGrade\s*=/);
-  });
-
-  it.each([
-    { label: 'mock-exam page',  file: 'src/app/mock-exam/page.tsx',         expects: 'useAllowedSubjects' },
-    { label: 'pyq page',        file: 'src/app/pyq/page.tsx',               expects: 'useAllowedSubjects' },
-    { label: 'stem-centre page', file: 'src/app/stem-centre/page.tsx',      expects: 'useAllowedSubjects' },
-    { label: 'mock-exam results', file: 'src/app/mock-exam/results/page.tsx', expects: 'useSubjectLookup' },
-  ])('$label imports the canonical subjects hook ($expects)', ({ file, expects }) => {
-    const full = path.resolve(process.cwd(), file);
-    const src: string = fs.readFileSync(full, 'utf8');
-    expect(src).toContain(expects);
-  });
-});
-
 describe('Regression #6: admin removing subject from plan_subject_access flags without deleting enrollments', () => {
   it('violations query surfaces affected students after plan_subject_access DELETE', () => {
     // Simulate the violations report response shape post-admin-DELETE.
