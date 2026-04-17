@@ -4,6 +4,7 @@ import { createSupabaseServerClient } from '@/lib/supabase-server';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { getAllowedSubjectsForStudent } from '@/lib/subjects';
 import { logger } from '@/lib/logger';
+// eslint-disable-next-line alfanumrik/no-raw-subject-imports -- legacy fallback path when governance tables unavailable
 import { GRADE_SUBJECTS, SUBJECT_META } from '@/lib/constants';
 import type { Subject } from '@/lib/subjects.types';
 
