@@ -26,6 +26,8 @@ import PendingLinkApproval, { type PendingLink } from '@/components/dashboard/Pe
 import ScoreHero from '@/components/score/ScoreHero';
 import ScoreCard from '@/components/score/ScoreCard';
 import CoinBalance from '@/components/coins/CoinBalance';
+import DailyChallengeCard from '@/components/challenge/DailyChallengeCard';
+import ChallengeStreakBadge from '@/components/challenge/StreakBadge';
 
 
 const BLOOM_LABELS: Record<string, { icon: string; label: string; labelHi: string }> = {
@@ -72,6 +74,15 @@ export default function Dashboard() {
     level_name: string;
   }>>([]);
   const [coinBalance, setCoinBalance] = useState<number>(0);
+
+  // Daily challenge (Concept Chain) state
+  const [challengeUnlocked, setChallengeUnlocked] = useState(false);
+  const [challengeStreak, setChallengeStreak] = useState(0);
+  const [challengeSolved, setChallengeSolved] = useState(false);
+  const [todaySubject, setTodaySubject] = useState<string | undefined>();
+  const [todaySubjectHi, setTodaySubjectHi] = useState<string | undefined>();
+  const [todayTopic, setTodayTopic] = useState<string | undefined>();
+  const [challengeBadges, setChallengeBadges] = useState<string[]>([]);
 
   // Stream selector — grades 11-12 only, persisted to localStorage
   const [selectedStream, setSelectedStream] = useState<'science' | 'commerce' | 'humanities' | null>(null);
@@ -252,6 +263,98 @@ export default function Dashboard() {
   useEffect(() => {
     if (student) { fetchPendingLinks(); }
   }, [student?.id, fetchPendingLinks]);
+
+  // Fetch daily challenge state for Concept Chain widget
+  useEffect(() => {
+    if (!student) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        // Get today in IST
+        const now = new Date();
+        const ist = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
+        const today = ist.toISOString().slice(0, 10);
+
+        // Parallel: challenge, streak, attempt, unlock check
+        const [challengeRes, streakRes, attemptRes] = await Promise.all([
+          supabase
+            .from('daily_challenges')
+            .select('subject, subject_hi, topic')
+            .eq('grade', student.grade)
+            .eq('challenge_date', today)
+            .in('status', ['approved', 'live', 'auto_generated'])
+            .limit(1)
+            .maybeSingle(),
+          supabase
+            .from('challenge_streaks')
+            .select('current_streak, badges')
+            .eq('student_id', student.id)
+            .limit(1)
+            .maybeSingle(),
+          supabase
+            .from('challenge_attempts')
+            .select('solved')
+            .eq('student_id', student.id)
+            .eq('challenge_date', today)
+            .limit(1)
+            .maybeSingle(),
+        ]);
+
+        if (cancelled) return;
+
+        // Subject/topic from today's challenge
+        if (challengeRes.data) {
+          setTodaySubject(challengeRes.data.subject ?? undefined);
+          setTodaySubjectHi(challengeRes.data.subject_hi ?? undefined);
+          setTodayTopic(challengeRes.data.topic ?? undefined);
+        }
+
+        // Streak
+        if (streakRes.data) {
+          setChallengeStreak(streakRes.data.current_streak ?? 0);
+          setChallengeBadges(streakRes.data.badges ?? []);
+        }
+
+        // Solved status
+        if (attemptRes.data && attemptRes.data.solved) {
+          setChallengeSolved(true);
+          setChallengeUnlocked(true);
+          return;
+        }
+
+        // Unlock check: quiz session today with >= 5 questions
+        const todayStart = `${today}T00:00:00+05:30`;
+        const { data: quizToday } = await supabase
+          .from('quiz_sessions')
+          .select('id')
+          .eq('student_id', student.id)
+          .gte('created_at', todayStart)
+          .eq('status', 'completed')
+          .gte('total_questions', 5)
+          .limit(1);
+
+        if (cancelled) return;
+
+        if (quizToday && quizToday.length > 0) {
+          setChallengeUnlocked(true);
+        } else if (student.created_at) {
+          // Grace period check
+          const createdDate = new Date(student.created_at);
+          const daysSince = Math.floor(
+            (now.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24)
+          );
+          if (daysSince <= 3) {
+            setChallengeUnlocked(true);
+          }
+        }
+      } catch {
+        // Non-fatal: challenge card defaults to locked/hidden
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [student?.id, student?.grade, student?.created_at]);
 
   // Stream selector: show picker on first visit for grades 11-12
   useEffect(() => {
@@ -534,6 +637,21 @@ export default function Dashboard() {
           grade={student.grade}
           studentId={student.id}
         />
+
+        {/* ═══ CONCEPT CHAIN DAILY CHALLENGE — links to /challenge ═══ */}
+        {todaySubject && (
+          <DailyChallengeCard
+            studentId={student.id}
+            grade={student.grade}
+            isHi={isHi}
+            isUnlocked={challengeUnlocked}
+            streak={challengeStreak}
+            todaySubject={todaySubject}
+            todaySubjectHi={todaySubjectHi}
+            todayTopic={todayTopic}
+            isSolved={challengeSolved}
+          />
+        )}
 
         {/* ═══ FIRST-TIME WELCOME — always visible for new students ═══ */}
         {totalXp === 0 && profiles.length <= 1 && (
