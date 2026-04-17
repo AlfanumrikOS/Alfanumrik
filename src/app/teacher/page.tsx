@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { supabaseUrl as SUPABASE_URL, supabaseAnonKey as SUPABASE_ANON } from '@/lib/supabase';
 import type { HeatmapData, HeatmapCell, HeatmapRow, RiskAlert } from '@/lib/types';
 import { BottomNav } from '@/components/ui';
+import { SUBJECT_ROTATION } from '@/lib/challenge-config';
 
 // ============================================================
 // BILINGUAL HELPERS (P7)
@@ -51,6 +52,15 @@ interface PollData {
 
 interface PollResults {
   accuracy_pct: number;
+}
+
+interface ChallengeClassData {
+  todaySubject: string;
+  todaySubjectLabel: string;
+  solvedToday: number;
+  totalStudents: number;
+  avgStreak: number;
+  topStreakers: { name: string; streak: number }[];
 }
 
 async function api(action: string, params: Record<string, unknown> = {}) {
@@ -266,6 +276,7 @@ export default function TeacherPage() {
   const [alerts, setAlerts] = useState<RiskAlert[]>([]);
   const [tab, setTab] = useState('heatmap');
   const [loading, setLoading] = useState(true);
+  const [challengeData, setChallengeData] = useState<ChallengeClassData | null>(null);
 
   // Get teacher_id from auth session (no more hardcoded IDs)
   const teacherId = teacher?.id || '';
@@ -289,6 +300,56 @@ export default function TeacherPage() {
         api('get_alerts', { teacher_id: teacherId, class_id: firstClassId }),
       ]);
       setHeatmap(h); setAlerts(a.alerts || []);
+
+      // Load daily challenge data for the class
+      try {
+        const todayDow = new Date().getDay();
+        const rotation = SUBJECT_ROTATION[todayDow];
+        const todaySubject = rotation?.subject ?? 'mixed';
+        const todayLabel = rotation?.labelEn ?? 'Daily Challenge';
+        const todayStr = new Date().toISOString().split('T')[0];
+
+        // Use the teacher-dashboard edge function to get student IDs in class,
+        // then query challenge tables. If challenge endpoints don't exist in the
+        // edge function, fall back to graceful empty state.
+        let challengeResult: ChallengeClassData | null = null;
+        try {
+          const cData = await api('get_challenge_summary', {
+            teacher_id: teacherId,
+            class_id: firstClassId,
+            date: todayStr,
+          });
+          if (cData) {
+            challengeResult = {
+              todaySubject,
+              todaySubjectLabel: todayLabel,
+              solvedToday: cData.solved_today ?? 0,
+              totalStudents: d?.stats?.total_students ?? 0,
+              avgStreak: cData.avg_streak ?? 0,
+              topStreakers: Array.isArray(cData.top_streakers)
+                ? cData.top_streakers.slice(0, 5).map((s: any) => ({
+                    name: s.name ?? '?',
+                    streak: s.current_streak ?? 0,
+                  }))
+                : [],
+            };
+          }
+        } catch {
+          // Edge function may not support this action yet -- use static defaults
+          challengeResult = {
+            todaySubject,
+            todaySubjectLabel: todayLabel,
+            solvedToday: 0,
+            totalStudents: d?.stats?.total_students ?? 0,
+            avgStreak: 0,
+            topStreakers: [],
+          };
+        }
+        setChallengeData(challengeResult);
+      } catch {
+        // Challenge data is optional -- gracefully degrade
+        setChallengeData(null);
+      }
     }
     setLoading(false);
   }, [teacherId]);
@@ -426,6 +487,77 @@ export default function TeacherPage() {
           <p className="text-[13px] text-emerald-400 m-0 font-medium">
             {tt(isHi, 'All students are on track. No urgent issues detected.', 'सभी छात्र सही दिशा में हैं। कोई तत्काल समस्या नहीं मिली।')}
           </p>
+        </div>
+      )}
+
+      {/* ═══ Daily Challenge Card ═══ */}
+      {challengeData && (
+        <div className="bg-slate-900 rounded-[14px] px-5 py-4 border border-orange-900/30 mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-[15px] font-semibold text-orange-400 m-0 flex items-center gap-2">
+              <span>🔥</span>
+              {tt(isHi, 'डेली चैलेंज', 'Daily Challenge')}
+            </h3>
+            <span className="text-xs py-0.5 px-2.5 rounded-full bg-orange-500/10 text-orange-400 font-semibold">
+              {isHi ? (SUBJECT_ROTATION[new Date().getDay()]?.labelHi ?? 'आज का चैलेंज') : challengeData.todaySubjectLabel}
+            </span>
+          </div>
+
+          {/* Stats row */}
+          <div className="grid grid-cols-3 gap-3 mb-3">
+            <div className="bg-slate-800/60 rounded-lg py-2.5 px-3 text-center">
+              <p className="text-orange-400 text-lg font-bold m-0">
+                {challengeData.solvedToday}/{challengeData.totalStudents}
+              </p>
+              <p className="text-[10px] text-slate-500 m-0 mt-0.5">
+                {tt(isHi, 'आज हल किया', 'Solved today')}
+              </p>
+            </div>
+            <div className="bg-slate-800/60 rounded-lg py-2.5 px-3 text-center">
+              <p className="text-orange-400 text-lg font-bold m-0">
+                {challengeData.avgStreak}
+              </p>
+              <p className="text-[10px] text-slate-500 m-0 mt-0.5">
+                {tt(isHi, 'औसत स्ट्रीक (दिन)', 'Avg streak (days)')}
+              </p>
+            </div>
+            <div className="bg-slate-800/60 rounded-lg py-2.5 px-3 text-center">
+              <p className="text-orange-400 text-lg font-bold m-0">
+                {challengeData.totalStudents > 0
+                  ? Math.round((challengeData.solvedToday / challengeData.totalStudents) * 100)
+                  : 0}%
+              </p>
+              <p className="text-[10px] text-slate-500 m-0 mt-0.5">
+                {tt(isHi, 'भागीदारी', 'Participation')}
+              </p>
+            </div>
+          </div>
+
+          {/* Top streakers */}
+          {challengeData.topStreakers.length > 0 ? (
+            <div>
+              <p className="text-[11px] text-slate-500 uppercase tracking-wide mb-2 m-0">
+                {tt(isHi, 'टॉप स्ट्रीक', 'Top Streaks')}
+              </p>
+              <div className="flex flex-col gap-1.5">
+                {challengeData.topStreakers.map((s, i) => (
+                  <div key={i} className="flex items-center gap-2 bg-slate-800/40 rounded-lg py-1.5 px-3">
+                    <span className="text-sm w-6 text-center flex-shrink-0">
+                      {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}
+                    </span>
+                    <span className="text-[13px] text-slate-200 flex-1 truncate">{s.name}</span>
+                    <span className="text-[13px] font-semibold text-orange-400">
+                      🔥 {s.streak} {tt(isHi, 'दिन', 'days')}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="text-[13px] text-slate-500 italic m-0">
+              {tt(isHi, 'अभी कोई चैलेंज डेटा नहीं', 'No challenge data yet')}
+            </p>
+          )}
         </div>
       )}
 

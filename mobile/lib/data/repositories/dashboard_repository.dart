@@ -16,6 +16,11 @@ class DashboardRepository {
 
   /// Fetch all dashboard data in a single RPC call.
   /// Falls back to parallel queries if RPC not available.
+  ///
+  /// TODO(mobile-sync): When the backend migrates `get_dashboard_data` to
+  /// return Performance Score (0-100) instead of unbounded XP, update
+  /// [DashboardData.fromJson] to parse `performance_score` and
+  /// `foxy_coins` fields. See web `score-config.ts` and `coin-rules.ts`.
   Future<ApiResult<DashboardData>> getDashboardData(String studentId) async {
     try {
       // Try cache first
@@ -39,6 +44,9 @@ class DashboardRepository {
       }
 
       // Fallback: parallel queries
+      // TODO(mobile-sync): When Performance Score is live, query
+      // `student_subject_scores` table for per-subject scores, and
+      // `students.foxy_coins` for coin balance.
       final results = await Future.wait([
         _client
             .from('students')
@@ -52,9 +60,10 @@ class DashboardRepository {
             .eq('usage_date', DateTime.now().toIso8601String().substring(0, 10))
             .maybeSingle(),
         _client
-            .from('quiz_attempts')
-            .select('score, created_at')
+            .from('quiz_sessions')
+            .select('score_percent, created_at')
             .eq('student_id', studentId)
+            .eq('is_completed', true)
             .order('created_at', ascending: false)
             .limit(20),
       ]);
@@ -65,7 +74,7 @@ class DashboardRepository {
 
       final avgScore = quizData.isNotEmpty
           ? quizData
-                  .map((q) => (q['score'] as num?)?.toDouble() ?? 0)
+                  .map((q) => (q['score_percent'] as num?)?.toDouble() ?? 0)
                   .reduce((a, b) => a + b) /
               quizData.length
           : 0.0;
@@ -92,7 +101,7 @@ class DashboardRepository {
     }
   }
 
-  /// Invalidate dashboard cache (e.g., after XP earned)
+  /// Invalidate dashboard cache (e.g., after earning coins or completing quiz)
   Future<void> invalidate(String studentId) async {
     await _cache.remove('dashboard_$studentId');
   }

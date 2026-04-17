@@ -5,19 +5,50 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { getLeaderboard, getCompetitions, joinCompetition, getCompetitionLeaderboard, getHallOfFame, supabase } from '@/lib/supabase';
 import { Card, Button, SectionHeader, LoadingFoxy, BottomNav, Avatar, EmptyState } from '@/components/ui';
+import { getLevelFromScore } from '@/lib/score-config';
 import type { LeaderboardEntry } from '@/lib/types';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
+import StreakBadge from '@/components/challenge/StreakBadge';
+import { STREAK_VISIBILITY_THRESHOLD } from '@/lib/challenge-config';
 
 // These types come from dynamic RPC responses with many optional fields
 type RPCRecord = Record<string, any>; // eslint-disable-line
 
-type Tab = 'ranks' | 'compete' | 'fame' | 'titles';
+type Tab = 'ranks' | 'compete' | 'fame' | 'titles' | 'streaks';
+
+/** Entry for the streaks leaderboard tab */
+interface StreakLeaderEntry {
+  student_id: string;
+  current_streak: number;
+  best_streak: number;
+  badges: string[];
+  student_name: string;
+  student_avatar?: string;
+}
+
+/** Extended entry with Performance Score fields when available */
+interface PerformanceRankEntry extends LeaderboardEntry {
+  performance_score?: number;  // 0-100 overall average
+  level_name?: string;
+  foxy_coins?: number;
+}
 
 const PERIODS = [
   { id: 'weekly', label: 'This Week', labelHi: 'इस हफ़्ते' },
   { id: 'monthly', label: 'This Month', labelHi: 'इस महीने' },
   { id: 'all', label: 'All Time', labelHi: 'कुल' },
 ] as const;
+
+/**
+ * Color for a Performance Score (0-100), matching ScoreCard bands.
+ */
+function getScoreColor(score: number): string {
+  if (score >= 90) return '#7C3AED'; // purple
+  if (score >= 75) return '#10B981'; // green
+  if (score >= 50) return '#F59E0B'; // yellow
+  if (score >= 35) return '#F97316'; // orange
+  return '#EF4444';                  // red
+}
 
 const MEDALS = ['🥇', '🥈', '🥉'];
 const RANK_COLORS = ['#F5A623', '#9CA3AF', '#CD7F32'];
@@ -45,7 +76,8 @@ export default function LeaderboardPage() {
 
   const [tab, setTab] = useState<Tab>('ranks');
   const [period, setPeriod] = useState('weekly');
-  const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
+  const [entries, setEntries] = useState<PerformanceRankEntry[]>([]);
+  const [usePerformanceScores, setUsePerformanceScores] = useState(false);
   const [competitions, setCompetitions] = useState<RPCRecord[]>([]);
   const [fame, setFame] = useState<RPCRecord[]>([]);
   const [titles, setTitles] = useState<RPCRecord[]>([]);
@@ -53,18 +85,103 @@ export default function LeaderboardPage() {
   const [joining, setJoining] = useState<string | null>(null);
   const [selectedComp, setSelectedComp] = useState<RPCRecord | null>(null);
   const [compLeaderboard, setCompLeaderboard] = useState<RPCRecord[]>([]);
+  const [streakEntries, setStreakEntries] = useState<StreakLeaderEntry[]>([]);
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/login');
   }, [isLoading, isLoggedIn, router]);
 
-  // Load rankings
+  // Load rankings — tries Performance Score system first, falls back to XP
   const loadRanks = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await getLeaderboard(period, 50);
-      setEntries(Array.isArray(data) ? data : []);
-    } catch (e) { console.error('Failed to load rankings:', e); setEntries([]); }
+      // Step 1: Load XP-based rankings (existing system, always works)
+      const xpData = await getLeaderboard(period, 50);
+      const xpEntries: PerformanceRankEntry[] = Array.isArray(xpData) ? xpData : [];
+
+      // Step 2: Try to enrich with Performance Scores from performance_scores table
+      // For "All Time" use current performance_scores; for weekly/monthly use score_history
+      let perfMap: Map<string, { avgScore: number; levelName: string }> | null = null;
+
+      try {
+        if (period === 'all') {
+          // Current snapshot from performance_scores
+          const { data: perfData } = await supabase
+            .from('performance_scores')
+            .select('student_id, overall_score, level_name');
+          if (perfData && perfData.length > 0) {
+            // Average all subjects per student
+            const studentScores: Record<string, { total: number; count: number; levels: string[] }> = {};
+            for (const row of perfData) {
+              if (!studentScores[row.student_id]) {
+                studentScores[row.student_id] = { total: 0, count: 0, levels: [] };
+              }
+              studentScores[row.student_id].total += Number(row.overall_score);
+              studentScores[row.student_id].count += 1;
+              studentScores[row.student_id].levels.push(row.level_name);
+            }
+            perfMap = new Map();
+            for (const [sid, agg] of Object.entries(studentScores)) {
+              const avg = Math.round(agg.total / agg.count);
+              perfMap.set(sid, { avgScore: avg, levelName: getLevelFromScore(avg) });
+            }
+          }
+        } else {
+          // For weekly/monthly, use score_history
+          const since = new Date();
+          since.setDate(since.getDate() - (period === 'monthly' ? 30 : 7));
+          const { data: histData } = await supabase
+            .from('score_history')
+            .select('student_id, score, recorded_at')
+            .gte('recorded_at', since.toISOString().split('T')[0]);
+          if (histData && histData.length > 0) {
+            // For each student, collect all scores then average
+            const latestPerStudent: Record<string, { scores: number[] }> = {};
+            for (const row of histData) {
+              const key = `${row.student_id}`;
+              if (!latestPerStudent[key]) latestPerStudent[key] = { scores: [] };
+              latestPerStudent[key].scores.push(Number(row.score));
+            }
+            perfMap = new Map();
+            for (const [sid, agg] of Object.entries(latestPerStudent)) {
+              if (agg.scores.length > 0) {
+                const avg = Math.round(agg.scores.reduce((a, b) => a + b, 0) / agg.scores.length);
+                perfMap.set(sid, { avgScore: avg, levelName: getLevelFromScore(avg) });
+              }
+            }
+          }
+        }
+      } catch {
+        // Performance score fetch failed — gracefully fall back to XP-only
+        perfMap = null;
+      }
+
+      // Step 3: Merge and rank
+      if (perfMap && perfMap.size > 0) {
+        // Enrich XP entries with performance scores
+        const enriched: PerformanceRankEntry[] = xpEntries.map((e) => {
+          const perf = perfMap!.get(e.student_id);
+          return {
+            ...e,
+            performance_score: perf?.avgScore,
+            level_name: perf?.levelName,
+            foxy_coins: e.total_xp, // XP becomes "Foxy Coins" label
+          };
+        });
+        // Re-sort by performance_score DESC (students with scores first, then by XP)
+        enriched.sort((a, b) => {
+          const aScore = a.performance_score ?? -1;
+          const bScore = b.performance_score ?? -1;
+          if (aScore !== bScore) return bScore - aScore;
+          return (b.total_xp ?? 0) - (a.total_xp ?? 0);
+        });
+        setEntries(enriched);
+        setUsePerformanceScores(true);
+      } else {
+        setEntries(xpEntries);
+        setUsePerformanceScores(false);
+      }
+    } catch (e) { console.error('Failed to load rankings:', e); setEntries([]); setUsePerformanceScores(false); }
     setLoading(false);
   }, [period]);
 
@@ -100,13 +217,43 @@ export default function LeaderboardPage() {
     setLoading(false);
   }, [student]);
 
+  // Load streaks leaderboard
+  const loadStreaks = useCallback(async () => {
+    if (!student) return;
+    setLoading(true);
+    try {
+      const { data } = await supabase
+        .from('challenge_streaks')
+        .select('student_id, current_streak, best_streak, badges, students!inner(name, avatar_url)')
+        .gte('current_streak', STREAK_VISIBILITY_THRESHOLD)
+        .order('current_streak', { ascending: false })
+        .limit(50);
+
+      if (data && data.length > 0) {
+        const mapped: StreakLeaderEntry[] = data.map((row: any) => ({
+          student_id: row.student_id,
+          current_streak: row.current_streak,
+          best_streak: row.best_streak,
+          badges: Array.isArray(row.badges) ? row.badges : [],
+          student_name: (row.students as any)?.name ?? '?',
+          student_avatar: (row.students as any)?.avatar_url,
+        }));
+        setStreakEntries(mapped);
+      } else {
+        setStreakEntries([]);
+      }
+    } catch { setStreakEntries([]); }
+    setLoading(false);
+  }, [student]);
+
   useEffect(() => {
     if (!student) return;
     if (tab === 'ranks') loadRanks();
     else if (tab === 'compete') loadCompetitions();
     else if (tab === 'fame') loadFame();
     else if (tab === 'titles') loadTitles();
-  }, [tab, student, loadRanks, loadCompetitions, loadFame, loadTitles]);
+    else if (tab === 'streaks') loadStreaks();
+  }, [tab, student, loadRanks, loadCompetitions, loadFame, loadTitles, loadStreaks]);
 
   useEffect(() => { if (student && tab === 'ranks') loadRanks(); }, [period, student, tab, loadRanks]);
 
@@ -141,6 +288,7 @@ export default function LeaderboardPage() {
   const TABS: { id: Tab; label: string; labelHi: string; icon: string }[] = [
     { id: 'ranks', label: 'Rankings', labelHi: 'रैंकिंग', icon: '🏆' },
     { id: 'compete', label: 'Compete', labelHi: 'प्रतियोगिता', icon: '⚔️' },
+    { id: 'streaks', label: 'Streaks', labelHi: 'स्ट्रीक', icon: '🔥' },
     { id: 'fame', label: 'Hall of Fame', labelHi: 'गौरव गाथा', icon: '👑' },
     { id: 'titles', label: 'My Titles', labelHi: 'मेरे खिताब', icon: '🎖️' },
   ];
@@ -222,16 +370,33 @@ export default function LeaderboardPage() {
                   </div>
                   <div className="flex-1">
                     <div className="text-sm font-bold">{isHi ? 'तुम्हारी रैंक' : 'Your Rank'}</div>
-                    <div className="text-xs text-[var(--text-3)]">
-                      {entries[myRank]?.total_xp?.toLocaleString() ?? 0} XP · {entries[myRank]?.accuracy ?? 0}% {isHi ? 'सटीकता' : 'accuracy'}
-                    </div>
+                    {usePerformanceScores && entries[myRank]?.performance_score != null ? (
+                      <div className="text-xs text-[var(--text-3)]">
+                        <span className="font-semibold" style={{ color: getScoreColor(entries[myRank].performance_score!) }}>
+                          {entries[myRank].performance_score}/100
+                        </span>
+                        {' '}{isHi ? 'प्रदर्शन स्कोर' : 'Performance Score'}
+                        {entries[myRank].foxy_coins != null && (
+                          <span> · {entries[myRank].foxy_coins?.toLocaleString()} Foxy Coins</span>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-[var(--text-3)]">
+                        {entries[myRank]?.total_xp?.toLocaleString() ?? 0} XP · {entries[myRank]?.accuracy ?? 0}% {isHi ? 'सटीकता' : 'accuracy'}
+                      </div>
+                    )}
+                    {entries[myRank]?.level_name && usePerformanceScores && (
+                      <div className="text-xs mt-0.5 font-semibold" style={{ color: getScoreColor(entries[myRank].performance_score ?? 0) }}>
+                        {entries[myRank].level_name}
+                      </div>
+                    )}
                     {entries[myRank]?.top_title && (
                       <div className="text-xs mt-1 font-semibold" style={{ color: 'var(--purple)' }}>
-                        🎖️ {entries[myRank].top_title}
+                        {entries[myRank].top_title}
                       </div>
                     )}
                   </div>
-                  <span className="text-3xl">{myRank < 3 ? MEDALS[myRank] : '⭐'}</span>
+                  <span className="text-3xl">{myRank < 3 ? MEDALS[myRank] : ''}</span>
                 </div>
               </Card>
             )}
@@ -244,6 +409,7 @@ export default function LeaderboardPage() {
                   if (!e) return null;
                   const isMe = e.student_id === student.id;
                   const height = idx === 0 ? 'h-28' : idx === 1 ? 'h-20' : 'h-16';
+                  const hasPerf = usePerformanceScores && e.performance_score != null;
                   return (
                     <div key={idx} className="flex flex-col items-center" style={{ width: idx === 0 ? '40%' : '30%' }}>
                       <div className={`text-${idx === 0 ? '3xl' : '2xl'} mb-1`}>{MEDALS[idx]}</div>
@@ -252,11 +418,20 @@ export default function LeaderboardPage() {
                         {e.name}{isMe ? (isHi ? ' (तुम)' : ' (You)') : ''}
                       </div>
                       <div className="text-xs text-[var(--text-3)]">Gr {e.grade}</div>
-                      <div className={`w-full ${height} rounded-t-xl mt-2 flex items-end justify-center pb-2`}
+                      <div className={`w-full ${height} rounded-t-xl mt-2 flex flex-col items-center justify-end pb-2`}
                         style={{ background: `${RANK_COLORS[idx]}20`, border: `1.5px solid ${RANK_COLORS[idx]}40` }}>
-                        <span className="text-sm font-bold" style={{ color: RANK_COLORS[idx] }}>
-                          {e.total_xp?.toLocaleString()} XP
-                        </span>
+                        {hasPerf ? (
+                          <>
+                            <span className="text-lg font-bold" style={{ color: getScoreColor(e.performance_score!) }}>
+                              {e.performance_score}
+                            </span>
+                            <span className="text-[10px] text-[var(--text-3)]">/100</span>
+                          </>
+                        ) : (
+                          <span className="text-sm font-bold" style={{ color: RANK_COLORS[idx] }}>
+                            {e.total_xp?.toLocaleString()} XP
+                          </span>
+                        )}
                       </div>
                     </div>
                   );
@@ -274,10 +449,10 @@ export default function LeaderboardPage() {
               <EmptyState
                 icon="🏆"
                 title={isHi ? 'अभी कोई रैंकिंग नहीं' : 'No rankings yet'}
-                description={isHi ? 'क्विज़ खेलो और XP कमाओ — रैंकिंग में ऊपर चढ़ो!' : 'Take quizzes and earn XP to climb the ranks!'}
+                description={isHi ? 'क्विज़ खेलो और अपना Performance Score बढ़ाओ — रैंकिंग में ऊपर चढ़ो!' : 'Take quizzes to boost your Performance Score and climb the ranks!'}
                 action={
                   <Button onClick={() => router.push('/quiz')}>
-                    {isHi ? 'क्विज़ शुरू करो' : 'Start a Quiz'} ⚡
+                    {isHi ? 'क्विज़ शुरू करो' : 'Start a Quiz'}
                   </Button>
                 }
               />
@@ -289,6 +464,7 @@ export default function LeaderboardPage() {
                 <div className="space-y-3">
                   {entries.map((entry, idx) => {
                     const isMe = entry.student_id === student.id;
+                    const hasPerf = usePerformanceScores && entry.performance_score != null;
                     return (
                       <Card key={entry.student_id}
                         className={`!p-4 flex items-center gap-3 ${isMe ? 'ring-2 ring-[var(--orange)]' : ''}`}>
@@ -307,17 +483,38 @@ export default function LeaderboardPage() {
                             {entry.school && ` · ${entry.school}`}
                             {entry.city && ` · ${entry.city}`}
                           </div>
+                          {hasPerf && entry.level_name && (
+                            <div className="text-xs font-semibold mt-0.5" style={{ color: getScoreColor(entry.performance_score!) }}>
+                              {entry.level_name}
+                            </div>
+                          )}
                           {entry.top_title && (
                             <div className="text-xs font-semibold mt-0.5" style={{ color: 'var(--purple)' }}>
-                              🎖️ {entry.top_title}
+                              {entry.top_title}
                             </div>
                           )}
                         </div>
                         <div className="text-right flex-shrink-0">
-                          <div className="text-sm font-bold gradient-text">{entry.total_xp?.toLocaleString()}</div>
-                          <div className="text-xs text-[var(--text-3)]">
-                            {entry.accuracy}% · 🔥{entry.streak}
-                          </div>
+                          {hasPerf ? (
+                            <>
+                              <div className="text-lg font-bold" style={{ color: getScoreColor(entry.performance_score!) }}>
+                                {entry.performance_score}
+                              </div>
+                              <div className="text-[10px] text-[var(--text-3)]">/100</div>
+                              {entry.foxy_coins != null && (
+                                <div className="text-[10px] text-[var(--text-3)] mt-0.5">
+                                  {entry.foxy_coins.toLocaleString()} Foxy Coins
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              <div className="text-sm font-bold gradient-text">{entry.total_xp?.toLocaleString()}</div>
+                              <div className="text-xs text-[var(--text-3)]">
+                                {entry.accuracy}% {'\u00B7'} {entry.streak}
+                              </div>
+                            </>
+                          )}
                         </div>
                       </Card>
                     );
@@ -624,6 +821,69 @@ export default function LeaderboardPage() {
                   ))}
                 </div>
               </div>
+            )}
+          </>
+        )}
+
+        {/* ═══ STREAKS TAB ═══ */}
+        {tab === 'streaks' && (
+          <>
+            {loading ? (
+              <div className="text-center py-12">
+                <div className="text-4xl animate-float mb-3">🔥</div>
+                <p className="text-sm text-[var(--text-3)]">{isHi ? 'स्ट्रीक लोड हो रही हैं...' : 'Loading streaks...'}</p>
+              </div>
+            ) : streakEntries.length === 0 ? (
+              <EmptyState
+                icon="🔥"
+                title={isHi ? 'अभी कोई सक्रिय स्ट्रीक नहीं' : 'No active streaks yet'}
+                description={isHi ? 'आज अपनी स्ट्रीक शुरू करो! रोज़ डेली चैलेंज हल करो।' : 'Start yours today! Solve the daily challenge every day.'}
+                action={
+                  <Button onClick={() => router.push('/dashboard')}>
+                    {isHi ? 'डेली चैलेंज खेलो' : 'Play Daily Challenge'}
+                  </Button>
+                }
+              />
+            ) : (
+              <>
+                <SectionHeader icon="🔥">
+                  {isHi ? `टॉप स्ट्रीक (${streakEntries.length})` : `Top Streaks (${streakEntries.length})`}
+                </SectionHeader>
+                <div className="space-y-3">
+                  {streakEntries.map((entry, idx) => {
+                    const isMe = entry.student_id === student.id;
+                    return (
+                      <Card key={entry.student_id}
+                        className={`!p-4 flex items-center gap-3 ${isMe ? 'ring-2 ring-[var(--orange)]' : ''}`}>
+                        <div className="w-8 text-center flex-shrink-0">
+                          {idx < 3 ? <span className="text-xl">{MEDALS[idx]}</span>
+                            : <span className="text-sm font-bold text-[var(--text-3)]">#{idx + 1}</span>}
+                        </div>
+                        <Avatar name={entry.student_name} size={36} />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-semibold truncate">
+                            {entry.student_name}
+                            {isMe && <span className="text-xs text-[var(--orange)] ml-1">({isHi ? 'तुम' : 'You'})</span>}
+                          </div>
+                          <div className="mt-1">
+                            <StreakBadge streak={entry.current_streak} badges={entry.badges} isHi={isHi} size="sm" />
+                          </div>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <div className="text-lg font-bold" style={{ color: '#F97316' }}>
+                            {isHi ? `${entry.current_streak} दिन` : `Day ${entry.current_streak}`}
+                          </div>
+                          {entry.best_streak > entry.current_streak && (
+                            <div className="text-[10px] text-[var(--text-3)]">
+                              {isHi ? `सर्वश्रेष्ठ: ${entry.best_streak}` : `Best: ${entry.best_streak}`}
+                            </div>
+                          )}
+                        </div>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </>
             )}
           </>
         )}

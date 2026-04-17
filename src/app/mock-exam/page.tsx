@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { Card, Button } from '@/components/ui';
-import { SUBJECT_META, GRADE_SUBJECTS } from '@/lib/constants';
+import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
+import { useSubjectLookup } from '@/lib/useSubjectLookup';
 
 const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
 
@@ -112,9 +113,12 @@ export default function MockExamPage() {
   }, [questions, responses, selectedSubject]);
 
   const grade = student?.grade ?? '11';
-  const availableSubjects = SUBJECT_META.filter(s =>
-    (GRADE_SUBJECTS[grade] ?? GRADE_SUBJECTS['11']).includes(s.code)
-  );
+  // Source of truth: /api/student/subjects → get_available_subjects RPC.
+  // Intersects grade ∩ plan ∩ stream server-side. Mock exam only exposes
+  // unlocked (plan-available) subjects so a Class 6 free student never sees
+  // senior/commerce cards they cannot use.
+  const { unlocked: availableSubjects, isLoading: subjectsLoading } = useAllowedSubjects();
+  const lookupSubject = useSubjectLookup();
 
   const startExam = useCallback(async () => {
     if (!selectedSubject) return;
@@ -192,7 +196,7 @@ export default function MockExamPage() {
     router.push('/mock-exam/results?data=' + encodeURIComponent(buildResultsParam()));
   };
 
-  const subjectMeta = SUBJECT_META.find(s => s.code === selectedSubject);
+  const subjectMeta = selectedSubject ? lookupSubject(selectedSubject) : null;
   const answeredCount = Object.keys(responses).length;
   const isLowTime = timeLeft <= 600;
 
@@ -248,22 +252,36 @@ export default function MockExamPage() {
             <h2 className="font-semibold text-base mb-3" style={{ color: 'var(--text-1)' }}>
               {isHi ? 'विषय चुनें' : 'Choose Subject'}
             </h2>
-            <div className="grid grid-cols-2 gap-3">
-              {availableSubjects.map(s => (
-                <button
-                  key={s.code}
-                  onClick={() => setSelectedSubject(s.code)}
-                  className="flex items-center gap-2 p-3 rounded-2xl text-left transition-all"
-                  style={{
-                    background: selectedSubject === s.code ? s.color + '20' : 'var(--surface-1)',
-                    border: `2px solid ${selectedSubject === s.code ? s.color : 'var(--border)'}`,
-                  }}
-                >
-                  <span className="text-2xl" style={{ color: s.color }}>{s.icon}</span>
-                  <span className="font-medium text-sm" style={{ color: 'var(--text-1)' }}>{s.name}</span>
-                </button>
-              ))}
-            </div>
+            {subjectsLoading && availableSubjects.length === 0 ? (
+              <div className="text-center py-8 text-sm" style={{ color: 'var(--text-2)' }}>
+                {isHi ? 'विषय लोड हो रहे हैं…' : 'Loading subjects…'}
+              </div>
+            ) : availableSubjects.length === 0 ? (
+              <div className="text-center py-8 text-sm" style={{ color: 'var(--text-2)' }}>
+                {isHi
+                  ? 'आपकी कक्षा और योजना के लिए कोई विषय उपलब्ध नहीं है।'
+                  : 'No subjects available for your grade and plan.'}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                {availableSubjects.map(s => (
+                  <button
+                    key={s.code}
+                    onClick={() => setSelectedSubject(s.code)}
+                    className="flex items-center gap-2 p-3 rounded-2xl text-left transition-all"
+                    style={{
+                      background: selectedSubject === s.code ? s.color + '20' : 'var(--surface-1)',
+                      border: `2px solid ${selectedSubject === s.code ? s.color : 'var(--border)'}`,
+                    }}
+                  >
+                    <span className="text-2xl" style={{ color: s.color }}>{s.icon}</span>
+                    <span className="font-medium text-sm" style={{ color: 'var(--text-1)' }}>
+                      {isHi ? s.nameHi || s.name : s.name}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {selectedSubject && (

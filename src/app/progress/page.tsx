@@ -6,9 +6,42 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/AuthContext';
 import { getStudentProfiles, getSubjects, getBloomProgression, getLearningVelocity, getKnowledgeGaps, supabase } from '@/lib/supabase';
 import { BLOOM_CONFIG, BLOOM_LEVELS, BLOOM_ORDER, getHighestMasteredBloom, predictMasteryDate } from '@/lib/cognitive-engine';
+import { getLevelFromScore } from '@/lib/score-config';
 import type { BloomLevel, KnowledgeGap, LearningVelocity, CognitiveSessionMetrics, StudentLearningProfile, Subject } from '@/lib/types';
 import { Card, Badge, ProgressBar, SectionHeader, StatCard, MasteryRing, LoadingFoxy, BottomNav, Button, EmptyState } from '@/components/ui';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
+import ScoreHero from '@/components/score/ScoreHero';
+import ScoreCard from '@/components/score/ScoreCard';
+import CoinBalance from '@/components/coins/CoinBalance';
+
+/* ── Types for new Performance Score data ── */
+interface PerformanceScoreRow {
+  id: string;
+  student_id: string;
+  subject: string;
+  overall_score: number;
+  performance_component: number;
+  behavior_component: number;
+  level_name: string;
+  updated_at: string;
+}
+
+interface ScoreHistoryRow {
+  id: string;
+  student_id: string;
+  subject: string;
+  score: number;
+  recorded_at: string;
+}
+
+interface DecayTopic {
+  id: string;
+  topic_id: string;
+  topic: string;
+  subject: string;
+  mastery_probability: number;
+  next_review_at: string | null;
+}
 
 /* ── Helpers ── */
 const SEVERITY_COLORS: Record<string, string> = {
@@ -24,6 +57,71 @@ function formatDate(d: Date | string | null): string {
   if (!d) return '---';
   const date = typeof d === 'string' ? new Date(d) : d;
   return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+/* ── Score Trend Sparkline — inline SVG, no chart library (P10) ── */
+function ScoreTrendSparkline({ datapoints, isHi }: { datapoints: ScoreHistoryRow[]; isHi: boolean }) {
+  if (!datapoints || datapoints.length < 2) {
+    return (
+      <span className="text-[10px] text-[var(--text-3)]">
+        {isHi ? 'अभी तक ट्रेंड नहीं' : 'No trend yet'}
+      </span>
+    );
+  }
+
+  const sorted = [...datapoints].sort((a, b) =>
+    new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime()
+  );
+  // Take last 4 data points for a compact visualization
+  const recent = sorted.slice(-4);
+  const width = 72;
+  const height = 28;
+  const padding = 4;
+  const drawWidth = width - padding * 2;
+  const drawHeight = height - padding * 2;
+  const maxScore = Math.max(...recent.map((d) => d.score), 1);
+  const minScore = Math.min(...recent.map((d) => d.score));
+  const range = Math.max(maxScore - minScore, 1);
+  const step = drawWidth / Math.max(recent.length - 1, 1);
+
+  // Determine trend direction
+  const first = recent[0].score;
+  const last = recent[recent.length - 1].score;
+  const isUp = last > first;
+  const isFlat = last === first;
+  const strokeColor = isUp ? '#10B981' : isFlat ? '#6B7280' : '#EF4444';
+
+  const points = recent.map((d, i) => {
+    const x = padding + i * step;
+    const y = padding + drawHeight - ((d.score - minScore) / range) * drawHeight;
+    return `${x},${y}`;
+  }).join(' ');
+
+  return (
+    <div className="flex items-center gap-1">
+      <svg width={width} height={height} className="inline-block" aria-hidden="true">
+        <polyline
+          points={points}
+          fill="none"
+          stroke={strokeColor}
+          strokeWidth={2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {/* Dots at each data point */}
+        {recent.map((d, i) => {
+          const x = padding + i * step;
+          const y = padding + drawHeight - ((d.score - minScore) / range) * drawHeight;
+          return (
+            <circle key={d.id} cx={x} cy={y} r={2.5} fill={strokeColor} />
+          );
+        })}
+      </svg>
+      <span className="text-[10px] font-semibold" style={{ color: strokeColor }}>
+        {isUp ? '+' : ''}{Math.round(last - first)}
+      </span>
+    </div>
+  );
 }
 
 /* ── Bloom Mastery Heatmap for a single subject ── */
@@ -164,9 +262,9 @@ function SessionMetricCard({ session, isHi }: { session: CognitiveSessionMetrics
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   PROGRESS PAGE — Alfanumrik 2.0 with Cognitive Analytics
-   ═══════════════════════════════════════════════════════════════ */
+/* =================================================================
+   PROGRESS PAGE -- Performance Score System + Cognitive Analytics
+   ================================================================= */
 
 export default function ProgressPage() {
   const { student, snapshot, isLoggedIn, isLoading, isHi, refreshSnapshot } = useAuth();
@@ -179,6 +277,13 @@ export default function ProgressPage() {
   const [knowledgeGaps, setKnowledgeGaps] = useState<KnowledgeGap[]>([]);
   const [sessionMetrics, setSessionMetrics] = useState<CognitiveSessionMetrics[]>([]);
   const [activeTab, setActiveTab] = useState<'overview' | 'cognitive'>('overview');
+
+  // Performance Score state
+  const [perfScores, setPerfScores] = useState<PerformanceScoreRow[]>([]);
+  const [scoreHistory, setScoreHistory] = useState<ScoreHistoryRow[]>([]);
+  const [coinBalance, setCoinBalance] = useState<number>(0);
+  const [decayTopics, setDecayTopics] = useState<DecayTopic[]>([]);
+  const [perfLoading, setPerfLoading] = useState(true);
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/login');
@@ -195,15 +300,9 @@ export default function ProgressPage() {
     });
 
     // Cognitive 2.0 data
-    getBloomProgression(student.id).then(setBloomData).catch((err: unknown) => {
-      console.warn('[progress] bloom progression fetch failed:', err instanceof Error ? err.message : String(err));
-    });
-    getLearningVelocity(student.id).then(setVelocityData).catch((err: unknown) => {
-      console.warn('[progress] learning velocity fetch failed:', err instanceof Error ? err.message : String(err));
-    });
-    getKnowledgeGaps(student.id, undefined, 20).then(setKnowledgeGaps).catch((err: unknown) => {
-      console.warn('[progress] knowledge gaps fetch failed:', err instanceof Error ? err.message : String(err));
-    });
+    getBloomProgression(student.id).then(setBloomData).catch(() => {});
+    getLearningVelocity(student.id).then(setVelocityData).catch(() => {});
+    getKnowledgeGaps(student.id, undefined, 20).then(setKnowledgeGaps).catch(() => {});
 
     // Cognitive session metrics
     supabase
@@ -213,6 +312,55 @@ export default function ProgressPage() {
       .order('created_at', { ascending: false })
       .limit(10)
       .then(({ data }) => setSessionMetrics((data as CognitiveSessionMetrics[]) ?? []));
+
+    // Performance Scores
+    setPerfLoading(true);
+    Promise.all([
+      // Fetch performance_scores for this student
+      supabase
+        .from('performance_scores')
+        .select('id, student_id, subject, overall_score, performance_component, behavior_component, level_name, updated_at')
+        .eq('student_id', student.id),
+      // Fetch score_history for the last 30 days
+      supabase
+        .from('score_history')
+        .select('id, student_id, subject, score, recorded_at')
+        .eq('student_id', student.id)
+        .gte('recorded_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
+        .order('recorded_at', { ascending: true }),
+      // Fetch coin balance
+      supabase
+        .from('coin_balances')
+        .select('balance')
+        .eq('student_id', student.id)
+        .single(),
+      // Fetch decaying topics (concept_mastery with low mastery_probability and overdue review)
+      supabase
+        .from('concept_mastery')
+        .select('id, topic_id, mastery_probability, next_review_at')
+        .eq('student_id', student.id)
+        .lt('mastery_probability', 0.5)
+        .order('mastery_probability', { ascending: true })
+        .limit(8),
+    ]).then(([perfRes, histRes, coinRes, decayRes]) => {
+      setPerfScores((perfRes.data as PerformanceScoreRow[]) ?? []);
+      setScoreHistory((histRes.data as ScoreHistoryRow[]) ?? []);
+      setCoinBalance(coinRes.data?.balance ?? 0);
+      // Map decay data, using topic_id as the topic name for now
+      const decayData = (decayRes.data ?? []).map((d: any) => ({
+        id: d.id,
+        topic_id: d.topic_id,
+        topic: d.topic_id, // We'll resolve names if available
+        subject: '',
+        mastery_probability: d.mastery_probability ?? 0,
+        next_review_at: d.next_review_at,
+      }));
+      setDecayTopics(decayData);
+      setPerfLoading(false);
+    }).catch(() => {
+      setPerfLoading(false);
+    });
+
     // eslint-disable-next-line react-hooks/exhaustive-deps -- depend on student.id to avoid re-running on object reference changes
   }, [student?.id]);
 
@@ -225,6 +373,27 @@ export default function ProgressPage() {
   const totalCorrect = profiles.reduce((a, p) => a + (p.total_questions_answered_correctly ?? 0), 0);
   const totalAsked = profiles.reduce((a, p) => a + (p.total_questions_asked ?? 0), 0);
   const accuracy = totalAsked > 0 ? Math.round((totalCorrect / totalAsked) * 100) : 0;
+
+  /* ── Performance Score aggregates ── */
+  const overallPerfScore = perfScores.length > 0
+    ? Math.round(perfScores.reduce((a, p) => a + Number(p.overall_score), 0) / perfScores.length)
+    : 0;
+  const overallLevelName = getLevelFromScore(overallPerfScore);
+  const hasPerfScores = perfScores.length > 0;
+
+  /* ── Score history grouped by subject ── */
+  const historyBySubject = new Map<string, ScoreHistoryRow[]>();
+  for (const row of scoreHistory) {
+    if (!historyBySubject.has(row.subject)) historyBySubject.set(row.subject, []);
+    historyBySubject.get(row.subject)!.push(row);
+  }
+
+  /* ── Previous score for trend arrows (use oldest point in 30-day history) ── */
+  function getPreviousScore(subjectCode: string): number | undefined {
+    const hist = historyBySubject.get(subjectCode);
+    if (!hist || hist.length < 2) return undefined;
+    return Number(hist[0].score);
+  }
 
   /* ── Bloom aggregate: transform DB rows into per-level mastery data ── */
   const bloomFlattened = bloomData.flatMap((b: Record<string, unknown>) =>
@@ -276,14 +445,25 @@ export default function ProgressPage() {
     bloomBySubject.get(subj)!.push(row);
   }
 
+  /* ── Helper to find subject metadata ── */
+  function getSubjectMeta(code: string) {
+    return subjects.find((s) => s.code === code);
+  }
+
   return (
     <div className="mesh-bg min-h-dvh pb-nav">
       <header className="page-header">
         <div className="page-header-inner flex items-center gap-3">
           <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)]">&larr;</button>
           <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
-            {isHi ? 'प्रगति 2.0' : 'Progress 2.0'}
+            {isHi ? 'प्रगति' : 'Progress'}
           </h1>
+          {/* Foxy Coins in header */}
+          <div className="ml-auto">
+            <Link href="/foxy">
+              <CoinBalance balance={coinBalance} isHi={isHi} />
+            </Link>
+          </div>
         </div>
       </header>
 
@@ -313,13 +493,13 @@ export default function ProgressPage() {
           </button>
         </div>
 
-        {/* ══════════════════════════════════════════════════════════
-           OVERVIEW TAB — Enhanced Stats + Subject Progress
-           ══════════════════════════════════════════════════════════ */}
+        {/* ==============================================================
+           OVERVIEW TAB -- Performance Scores + Subject Progress
+           ============================================================== */}
         {activeTab === 'overview' && (
           <>
-            {/* ═══ EMPTY STATE — show when student has zero quiz history ═══ */}
-            {totalSessions === 0 ? (
+            {/* === EMPTY STATE -- show when student has zero quiz history === */}
+            {totalSessions === 0 && !hasPerfScores ? (
               <Card className="!p-6 text-center">
                 <div className="text-5xl mb-3">📊</div>
                 <h2 className="text-lg font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
@@ -327,12 +507,12 @@ export default function ProgressPage() {
                 </h2>
                 <p className="text-sm text-[var(--text-2)] max-w-xs mx-auto leading-relaxed mb-2">
                   {isHi
-                    ? 'पहला क्विज़ लो और Foxy तुम्हारी सटीकता, XP, और विषय-वार महारत track करेगा।'
-                    : 'Take your first quiz and Foxy will track your accuracy, XP, and subject-wise mastery.'}
+                    ? 'पहला क्विज़ लो और Foxy तुम्हारी सटीकता, स्कोर, और विषय-वार महारत track करेगा।'
+                    : 'Take your first quiz and Foxy will track your accuracy, score, and subject-wise mastery.'}
                 </p>
                 <div className="flex flex-col items-center gap-3 mt-4 rounded-xl p-4" style={{ background: 'var(--surface-2)' }}>
                   <div className="flex items-center gap-4 text-xs text-[var(--text-3)]">
-                    <span>🎯 {isHi ? 'सटीकता' : 'Accuracy'}</span>
+                    <span>🎯 {isHi ? 'स्कोर' : 'Score'}</span>
                     <span>🔥 {isHi ? 'स्ट्रीक' : 'Streak'}</span>
                     <span>🧠 {isHi ? 'Bloom विश्लेषण' : "Bloom's Analysis"}</span>
                   </div>
@@ -351,52 +531,129 @@ export default function ProgressPage() {
               </Card>
             ) : (
               <>
-                {/* ═══ NEW STUDENT GUIDANCE — shown when < 3 quizzes taken ═══ */}
-                {totalSessions > 0 && totalSessions < 3 && (
-                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 text-center mb-2">
-                    <div className="text-3xl mb-2">📊</div>
-                    <h3 className="font-semibold text-blue-800 mb-1">
-                      {isHi ? 'अपना लर्निंग डैशबोर्ड अनलॉक करो' : 'Unlock Your Learning Dashboard'}
-                    </h3>
-                    <p className="text-sm text-blue-600 mb-3">
-                      {isHi
-                        ? `${3 - totalSessions} और क्विज़ दो और अपनी प्रगति देखो`
-                        : `Complete ${3 - totalSessions} more quiz${3 - totalSessions > 1 ? 'zes' : ''} to see your full progress`}
-                    </p>
-                    <div className="w-full bg-blue-200 rounded-full h-2 mb-3">
-                      <div className="bg-blue-600 h-2 rounded-full transition-all" style={{ width: `${(totalSessions / 3) * 100}%` }} />
+                {/* ===========================================================
+                    PERFORMANCE SCORE HERO -- Overall Score (0-100)
+                    =========================================================== */}
+                <Card className="!p-4">
+                  {perfLoading ? (
+                    <div className="flex flex-col items-center py-6">
+                      <div className="w-20 h-20 rounded-full animate-pulse" style={{ background: 'var(--surface-2)' }} />
+                      <div className="w-32 h-4 mt-3 rounded animate-pulse" style={{ background: 'var(--surface-2)' }} />
                     </div>
-                    <Button variant="primary" size="sm" onClick={() => router.push('/quiz')}>
-                      {isHi ? '⚡ क्विज़ शुरू करो' : '⚡ Start a Quiz'}
-                    </Button>
+                  ) : hasPerfScores ? (
+                    <ScoreHero
+                      overallScore={overallPerfScore}
+                      levelName={overallLevelName}
+                      isHi={isHi}
+                    />
+                  ) : (
+                    <div className="text-center py-4">
+                      <MasteryRing value={accuracy} size={80} strokeWidth={6}>
+                        <div className="text-center">
+                          <div className="text-lg font-bold" style={{ color: accuracy >= 70 ? 'var(--green)' : accuracy >= 40 ? 'var(--orange)' : '#DC2626' }}>{accuracy}%</div>
+                        </div>
+                      </MasteryRing>
+                      <p className="text-sm font-semibold mt-2" style={{ fontFamily: 'var(--font-display)' }}>
+                        {isHi ? 'कुल सटीकता' : 'Overall Accuracy'}
+                      </p>
+                      <p className="text-xs text-[var(--text-3)] mt-1">
+                        {isHi
+                          ? 'Performance Score जल्द ही calculate होगा'
+                          : 'Performance Score will be calculated soon'}
+                      </p>
+                    </div>
+                  )}
+                </Card>
+
+                {/* ===========================================================
+                    SUBJECT SCORE CARDS -- ScoreCard per subject
+                    =========================================================== */}
+                {hasPerfScores && (
+                  <div>
+                    <SectionHeader icon="📊">
+                      {isHi ? 'विषयवार Performance Score' : 'Subject Performance Scores'}
+                    </SectionHeader>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {perfScores.map((ps) => {
+                        const meta = getSubjectMeta(ps.subject);
+                        const hist = historyBySubject.get(ps.subject);
+                        return (
+                          <div key={ps.id} className="space-y-1">
+                            <ScoreCard
+                              subject={meta?.name ?? ps.subject}
+                              subjectHi={meta?.name_hi ?? meta?.name ?? ps.subject}
+                              score={Number(ps.overall_score)}
+                              previousScore={getPreviousScore(ps.subject) != null ? getPreviousScore(ps.subject) : undefined}
+                              isHi={isHi}
+                            />
+                            {/* Score trend sparkline below each card */}
+                            {hist && hist.length >= 2 && (
+                              <div className="flex items-center gap-2 px-2">
+                                <span className="text-[10px] text-[var(--text-3)]">
+                                  {isHi ? '30 दिन का ट्रेंड' : '30-day trend'}
+                                </span>
+                                <ScoreTrendSparkline datapoints={hist} isHi={isHi} />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
 
-                {/* ═══ MASTERY HERO — overall accuracy ring + key stats ═══ */}
-                <Card className="!p-6">
-                  <div className="flex items-center gap-5">
-                    <MasteryRing value={accuracy} size={80} strokeWidth={6}>
-                      <div className="text-center">
-                        <div className="text-lg font-bold" style={{ color: accuracy >= 70 ? 'var(--green)' : accuracy >= 40 ? 'var(--orange)' : '#DC2626' }}>{accuracy}%</div>
-                      </div>
-                    </MasteryRing>
-                    <div className="flex-1">
-                      <h2 className="text-base font-bold" style={{ fontFamily: 'var(--font-display)' }}>
-                        {isHi ? 'कुल सटीकता' : 'Overall Accuracy'}
-                      </h2>
-                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-2 text-xs">
-                        <span className="text-[var(--text-3)]">{isHi ? 'कुल XP' : 'Total XP'}</span>
-                        <span className="font-semibold text-right" style={{ color: 'var(--orange)' }}>{totalXp.toLocaleString()}</span>
-                        <span className="text-[var(--text-3)]">{isHi ? 'पढ़ाई का समय' : 'Study Time'}</span>
-                        <span className="font-semibold text-right">{totalMinutes}m</span>
-                        <span className="text-[var(--text-3)]">{isHi ? 'सत्र' : 'Sessions'}</span>
-                        <span className="font-semibold text-right">{totalSessions}</span>
-                      </div>
+                {/* ===========================================================
+                    DECAY ALERTS -- Topics needing revision
+                    =========================================================== */}
+                {decayTopics.length > 0 && (
+                  <div>
+                    <SectionHeader icon="🔄">
+                      {isHi ? 'जिन विषयों को revision की ज़रूरत है' : 'Topics that need revision'}
+                    </SectionHeader>
+                    <div className="space-y-2">
+                      {decayTopics.map((dt) => {
+                        const retentionPct = Math.round((dt.mastery_probability ?? 0) * 100);
+                        const isLow = retentionPct < 30;
+                        return (
+                          <Card key={dt.id} className="!p-3">
+                            <div className="flex items-center gap-3">
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-semibold truncate">{dt.topic}</div>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <div className="flex-1 h-1.5 rounded-full" style={{ background: 'var(--surface-2)' }}>
+                                    <div
+                                      className="h-full rounded-full transition-all"
+                                      style={{
+                                        width: `${retentionPct}%`,
+                                        background: isLow ? '#EF4444' : '#F59E0B',
+                                      }}
+                                    />
+                                  </div>
+                                  <span className="text-[10px] font-semibold shrink-0" style={{ color: isLow ? '#EF4444' : '#F59E0B' }}>
+                                    {retentionPct}% {isHi ? 'याद' : 'retained'}
+                                  </span>
+                                </div>
+                              </div>
+                              <Button
+                                variant="soft"
+                                size="sm"
+                                color="var(--orange)"
+                                onClick={() => router.push(`/foxy?topic=${encodeURIComponent(dt.topic)}`)}
+                                className="shrink-0"
+                              >
+                                {isHi ? 'अभी revision करो' : 'Revise Now'}
+                              </Button>
+                            </div>
+                          </Card>
+                        );
+                      })}
                     </div>
                   </div>
-                </Card>
+                )}
 
-                {/* ═══ SUBJECT MASTERY — rings per subject ═══ */}
+                {/* ===========================================================
+                    SUBJECT MASTERY -- rings per subject (existing)
+                    =========================================================== */}
                 <div>
                   <SectionHeader icon="📚">{isHi ? 'विषयवार महारत' : 'Subject Mastery'}</SectionHeader>
                   {profiles.length === 0 ? (
@@ -420,9 +677,11 @@ export default function ProgressPage() {
                               <span className="text-base">{meta?.icon ?? '📚'}</span>
                             </MasteryRing>
                             <div className="flex-1 min-w-0">
-                              <div className="font-semibold text-sm">{meta?.name ?? p.subject}</div>
+                              <div className="font-semibold text-sm">
+                                {isHi ? (meta?.name_hi ?? meta?.name ?? p.subject) : (meta?.name ?? p.subject)}
+                              </div>
                               <div className="text-xs text-[var(--text-3)]">
-                                Lv{p.level} · {p.xp} XP · {correctPct}% {isHi ? 'सटीकता' : 'accuracy'}
+                                {correctPct}% {isHi ? 'सटीकता' : 'accuracy'} · {p.total_sessions} {isHi ? 'सत्र' : 'sessions'}
                               </div>
                             </div>
                             <div className="text-right">
@@ -470,10 +729,33 @@ export default function ProgressPage() {
                     </div>
                   </div>
                 )}
+
+                {/* === LEGACY XP (smaller section at bottom) === */}
+                {totalXp > 0 && (
+                  <div>
+                    <SectionHeader icon="⭐">{isHi ? 'XP सारांश' : 'XP Summary'}</SectionHeader>
+                    <Card className="!p-3">
+                      <div className="grid grid-cols-3 gap-3 text-center">
+                        <div>
+                          <div className="text-lg font-bold" style={{ color: 'var(--orange)' }}>{totalXp.toLocaleString()}</div>
+                          <div className="text-[10px] text-[var(--text-3)]">{isHi ? 'कुल XP' : 'Total XP'}</div>
+                        </div>
+                        <div>
+                          <div className="text-lg font-bold">{totalMinutes}m</div>
+                          <div className="text-[10px] text-[var(--text-3)]">{isHi ? 'पढ़ाई का समय' : 'Study Time'}</div>
+                        </div>
+                        <div>
+                          <div className="text-lg font-bold">{totalSessions}</div>
+                          <div className="text-[10px] text-[var(--text-3)]">{isHi ? 'सत्र' : 'Sessions'}</div>
+                        </div>
+                      </div>
+                    </Card>
+                  </div>
+                )}
               </>
             )}
 
-            {/* ═══ NEP Holistic Progress Card link ═══ */}
+            {/* === NEP Holistic Progress Card link === */}
             {totalSessions > 0 && (
               <Link href="/hpc" className="block">
                 <Card className="!p-4 flex items-center gap-3 hover:shadow-md transition-shadow">
@@ -493,9 +775,9 @@ export default function ProgressPage() {
           </>
         )}
 
-        {/* ══════════════════════════════════════════════════════════
-           COGNITIVE TAB — Gaps, Velocity, Sessions
-           ══════════════════════════════════════════════════════════ */}
+        {/* ==============================================================
+           COGNITIVE TAB -- Gaps, Velocity, Sessions
+           ============================================================== */}
         {activeTab === 'cognitive' && (
           <>
             {/* Learning Velocity */}

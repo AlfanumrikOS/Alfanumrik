@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAuth } from '@/lib/AuthContext';
+import { supabase } from '@/lib/supabase';
+import { getLevelFromScore } from '@/lib/score-config';
 import { REPORT_MONTHS_COUNT } from '@/lib/constants';
 import { BottomNav } from '@/components/ui';
 
@@ -568,6 +570,98 @@ function InsightsSection({ insights, tips, isHi = false }: { insights: Array<str
 }
 
 // ============================================================
+// PERFORMANCE SCORE TREND SECTION
+// ============================================================
+interface ScoreTrendEntry {
+  subject: string;
+  currentScore: number;
+  previousScore: number | null;
+  levelName: string;
+}
+
+function PerformanceScoreTrends({ trends, isHi = false }: { trends: ScoreTrendEntry[]; isHi?: boolean }) {
+  if (!trends || trends.length === 0) return null;
+
+  const avgCurrent = Math.round(trends.reduce((s, t) => s + t.currentScore, 0) / trends.length);
+
+  return (
+    <div style={cardStyle}>
+      <h3 style={cardTitle}>
+        {t(isHi, 'Performance Score Trends', 'प्रदर्शन स्कोर रुझान')}
+      </h3>
+      <p style={{ fontSize: 13, color: '#64748B', marginBottom: 14, lineHeight: 1.5 }}>
+        {t(isHi,
+          `समग्र औसत: ${avgCurrent}/100 — ${getLevelFromScore(avgCurrent)}`,
+          `Overall average: ${avgCurrent}/100 — ${getLevelFromScore(avgCurrent)}`
+        )}
+      </p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {trends.map((tr) => {
+          const delta = tr.previousScore != null ? tr.currentScore - tr.previousScore : null;
+          const deltaColor = delta != null ? (delta > 0 ? '#16A34A' : delta < 0 ? '#EF4444' : '#64748B') : '#64748B';
+          const barColor = tr.currentScore >= 75 ? '#16A34A' : tr.currentScore >= 50 ? '#D97706' : '#EF4444';
+          const subjectHiMap: Record<string, string> = {
+            math: 'गणित', science: 'विज्ञान', english: 'अंग्रेज़ी',
+            hindi: 'हिंदी', social: 'सामाजिक विज्ञान', evs: 'पर्यावरण',
+            physics: 'भौतिकी', chemistry: 'रसायन', biology: 'जीवविज्ञान',
+          };
+          const subKey = tr.subject.toLowerCase();
+          const displaySubject = isHi ? (subjectHiMap[subKey] || tr.subject) : tr.subject;
+
+          return (
+            <div key={tr.subject} style={{
+              padding: '12px 14px',
+              backgroundColor: '#F8FAFC',
+              borderRadius: 10,
+              borderLeft: `3px solid ${barColor}`,
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <div>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: '#1E293B' }}>{displaySubject}</span>
+                  <span style={{ fontSize: 11, color: '#94A3B8', marginLeft: 8 }}>{tr.levelName}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 18, fontWeight: 800, color: barColor }}>{tr.currentScore}</span>
+                  <span style={{ fontSize: 11, color: '#94A3B8' }}>/100</span>
+                </div>
+              </div>
+              {/* Progress bar */}
+              <div style={{ height: 6, backgroundColor: '#E2E8F0', borderRadius: 3, overflow: 'hidden', marginBottom: 4 }}>
+                <div style={{
+                  height: '100%',
+                  width: `${tr.currentScore}%`,
+                  backgroundColor: barColor,
+                  borderRadius: 3,
+                  transition: 'width 0.5s ease',
+                }} />
+              </div>
+              {/* Delta line */}
+              {delta != null && (
+                <div style={{ fontSize: 12, color: deltaColor, fontWeight: 600 }}>
+                  {delta > 0 ? '\u2B06\uFE0F' : delta < 0 ? '\u2B07\uFE0F' : '\u2796'}
+                  {' '}
+                  {delta > 0
+                    ? t(isHi, `${delta} अंक ऊपर पिछले सप्ताह से`, `Up ${delta} point${delta !== 1 ? 's' : ''} from last week`)
+                    : delta < 0
+                    ? t(isHi, `${Math.abs(delta)} अंक नीचे पिछले सप्ताह से`, `Down ${Math.abs(delta)} point${Math.abs(delta) !== 1 ? 's' : ''} from last week`)
+                    : t(isHi, 'पिछले सप्ताह जैसा ही', 'Same as last week')
+                  }
+                </div>
+              )}
+              {delta == null && (
+                <div style={{ fontSize: 11, color: '#94A3B8' }}>
+                  {t(isHi, 'पिछले सप्ताह का डेटा उपलब्ध नहीं', 'No data from last week')}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // PDF DOWNLOAD HELPERS
 // ============================================================
 function downloadReportPDF(studentName: string, grade: string, reportData: ReportData | null) {
@@ -1111,6 +1205,7 @@ export default function ParentReportsPage() {
   const [checking, setChecking] = useState(true);
   const [loading, setLoading] = useState(true);
   const [report, setReport] = useState<ReportData | null>(null);
+  const [scoreTrends, setScoreTrends] = useState<ScoreTrendEntry[]>([]);
   const [error, setError] = useState('');
   const [dateRange, setDateRange] = useState<'week' | 'month' | 'all'>('week');
   const [viewMode, setViewMode] = useState<'weekly' | 'monthly'>('weekly');
@@ -1188,6 +1283,63 @@ export default function ParentReportsPage() {
     } catch (err) {
       setError(isHi ? 'रिपोर्ट लोड नहीं हो सकी। कृपया बाद में फिर कोशिश करें।' : 'Could not load report. Please try again later.');
     }
+
+    // Fetch Performance Score trends from score_history + performance_scores
+    // RLS handles parent access via guardian_student_links policies
+    try {
+      // Get current scores
+      const { data: currentScores } = await supabase
+        .from('performance_scores')
+        .select('subject, overall_score, level_name')
+        .eq('student_id', student.id);
+
+      if (currentScores && currentScores.length > 0) {
+        // Get previous week scores for trend comparison
+        const oneWeekAgo = new Date();
+        oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+        const twoWeeksAgo = new Date();
+        twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+
+        const { data: histData } = await supabase
+          .from('score_history')
+          .select('subject, score, recorded_at')
+          .eq('student_id', student.id)
+          .gte('recorded_at', twoWeeksAgo.toISOString().split('T')[0])
+          .lt('recorded_at', oneWeekAgo.toISOString().split('T')[0])
+          .order('recorded_at', { ascending: false });
+
+        // Build a map of previous week's latest score per subject
+        const prevScoreMap: Record<string, number> = {};
+        if (histData) {
+          for (const row of histData) {
+            const subj = String(row.subject);
+            // Take the first (most recent) entry per subject
+            if (!(subj in prevScoreMap)) {
+              prevScoreMap[subj] = Number(row.score);
+            }
+          }
+        }
+
+        const trends: ScoreTrendEntry[] = currentScores.map((cs: Record<string, unknown>) => {
+          const subject = String(cs.subject || '');
+          const currentScore = Number(cs.overall_score ?? 0);
+          const prev = prevScoreMap[subject];
+          return {
+            subject,
+            currentScore: Math.round(currentScore),
+            previousScore: prev != null ? Math.round(prev) : null,
+            levelName: String(cs.level_name || getLevelFromScore(currentScore)),
+          };
+        });
+        setScoreTrends(trends);
+      } else {
+        setScoreTrends([]);
+      }
+    } catch {
+      // Non-fatal: score trends are additive
+      setScoreTrends([]);
+    }
+
     setLoading(false);
   }, [guardian, student, dateRange, isHi]);
 
@@ -1415,6 +1567,14 @@ export default function ParentReportsPage() {
                 />
               </div>
             </div>
+
+            {/* ── 1b. PERFORMANCE SCORE TRENDS ── */}
+            {scoreTrends.length > 0 && (
+              <div style={{ marginBottom: 20 }}>
+                <div style={sectionHeading}>{t(isHi, 'Performance Score', 'प्रदर्शन स्कोर')}</div>
+                <PerformanceScoreTrends trends={scoreTrends} isHi={isHi} />
+              </div>
+            )}
 
             {/* ── 2. SUBJECT-WISE PERFORMANCE ── */}
             <div style={{ marginBottom: 20 }}>

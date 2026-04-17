@@ -9,6 +9,7 @@ import { Card, StatCard, ProgressBar, SectionHeader, SubjectChip, Avatar, Bottom
 import TrustFooter from '@/components/TrustFooter';
 import { DashboardSkeleton } from '@/components/Skeleton';
 import { calculateLevel, xpToNextLevel, getLevelName } from '@/lib/xp-rules';
+import { getLevelFromScore } from '@/lib/score-config';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import type { StudentLearningProfile, CurriculumTopic } from '@/lib/types';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
@@ -22,6 +23,11 @@ import ExamReadiness from '@/components/dashboard/ExamReadiness';
 import DailyChallenge from '@/components/dashboard/DailyChallenge';
 import FocusDashboard from '@/components/dashboard/FocusDashboard';
 import PendingLinkApproval, { type PendingLink } from '@/components/dashboard/PendingLinkApproval';
+import ScoreHero from '@/components/score/ScoreHero';
+import ScoreCard from '@/components/score/ScoreCard';
+import CoinBalance from '@/components/coins/CoinBalance';
+import DailyChallengeCard from '@/components/challenge/DailyChallengeCard';
+import ChallengeStreakBadge from '@/components/challenge/StreakBadge';
 
 
 const BLOOM_LABELS: Record<string, { icon: string; label: string; labelHi: string }> = {
@@ -60,6 +66,23 @@ export default function Dashboard() {
   // This is the real adaptive mastery signal, not the XP/accuracy proxy.
   const [bktMastery, setBktMastery] = useState<Record<string, number>>({});
   const [pendingLinks, setPendingLinks] = useState<PendingLink[]>([]);
+
+  // Performance Score system state
+  const [perfScores, setPerfScores] = useState<Array<{
+    subject: string;
+    overall_score: number;
+    level_name: string;
+  }>>([]);
+  const [coinBalance, setCoinBalance] = useState<number>(0);
+
+  // Daily challenge (Concept Chain) state
+  const [challengeUnlocked, setChallengeUnlocked] = useState(false);
+  const [challengeStreak, setChallengeStreak] = useState(0);
+  const [challengeSolved, setChallengeSolved] = useState(false);
+  const [todaySubject, setTodaySubject] = useState<string | undefined>();
+  const [todaySubjectHi, setTodaySubjectHi] = useState<string | undefined>();
+  const [todayTopic, setTodayTopic] = useState<string | undefined>();
+  const [challengeBadges, setChallengeBadges] = useState<string[]>([]);
 
   // Stream selector — grades 11-12 only, persisted to localStorage
   const [selectedStream, setSelectedStream] = useState<'science' | 'commerce' | 'humanities' | null>(null);
@@ -122,6 +145,37 @@ export default function Dashboard() {
     } catch {
       // Non-fatal: falls back to XP-based progress bar
     }
+    // Fetch Performance Scores per subject from performance_scores table
+    try {
+      const { data: psData } = await supabase
+        .from('performance_scores')
+        .select('subject, overall_score, level_name')
+        .eq('student_id', student.id);
+      if (psData && psData.length > 0) {
+        setPerfScores(psData.map((row: any) => ({
+          subject: row.subject as string,
+          overall_score: Number(row.overall_score) || 0,
+          level_name: (row.level_name as string) || 'Curious Cub',
+        })));
+      }
+    } catch {
+      // Non-fatal: falls back to showing score of 0
+    }
+
+    // Fetch Foxy Coin balance from coin_balances table
+    try {
+      const { data: cbData } = await supabase
+        .from('coin_balances')
+        .select('balance')
+        .eq('student_id', student.id)
+        .single();
+      if (cbData) {
+        setCoinBalance(Number(cbData.balance) || 0);
+      }
+    } catch {
+      // Non-fatal: coin balance defaults to 0
+    }
+
     const rawSelected = (student.selected_subjects || [student.preferred_subject].filter(Boolean)) as string[];
     setSelectedSubjects(rawSelected);
     generateNotifications(student.id).catch((err: unknown) => {
@@ -212,6 +266,98 @@ export default function Dashboard() {
     if (student) { fetchPendingLinks(); }
   }, [student?.id, fetchPendingLinks]);
 
+  // Fetch daily challenge state for Concept Chain widget
+  useEffect(() => {
+    if (!student) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        // Get today in IST
+        const now = new Date();
+        const ist = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
+        const today = ist.toISOString().slice(0, 10);
+
+        // Parallel: challenge, streak, attempt, unlock check
+        const [challengeRes, streakRes, attemptRes] = await Promise.all([
+          supabase
+            .from('daily_challenges')
+            .select('subject, subject_hi, topic')
+            .eq('grade', student.grade)
+            .eq('challenge_date', today)
+            .in('status', ['approved', 'live', 'auto_generated'])
+            .limit(1)
+            .maybeSingle(),
+          supabase
+            .from('challenge_streaks')
+            .select('current_streak, badges')
+            .eq('student_id', student.id)
+            .limit(1)
+            .maybeSingle(),
+          supabase
+            .from('challenge_attempts')
+            .select('solved')
+            .eq('student_id', student.id)
+            .eq('challenge_date', today)
+            .limit(1)
+            .maybeSingle(),
+        ]);
+
+        if (cancelled) return;
+
+        // Subject/topic from today's challenge
+        if (challengeRes.data) {
+          setTodaySubject(challengeRes.data.subject ?? undefined);
+          setTodaySubjectHi(challengeRes.data.subject_hi ?? undefined);
+          setTodayTopic(challengeRes.data.topic ?? undefined);
+        }
+
+        // Streak
+        if (streakRes.data) {
+          setChallengeStreak(streakRes.data.current_streak ?? 0);
+          setChallengeBadges(streakRes.data.badges ?? []);
+        }
+
+        // Solved status
+        if (attemptRes.data && attemptRes.data.solved) {
+          setChallengeSolved(true);
+          setChallengeUnlocked(true);
+          return;
+        }
+
+        // Unlock check: quiz session today with >= 5 questions
+        const todayStart = `${today}T00:00:00+05:30`;
+        const { data: quizToday } = await supabase
+          .from('quiz_sessions')
+          .select('id')
+          .eq('student_id', student.id)
+          .gte('created_at', todayStart)
+          .eq('status', 'completed')
+          .gte('total_questions', 5)
+          .limit(1);
+
+        if (cancelled) return;
+
+        if (quizToday && quizToday.length > 0) {
+          setChallengeUnlocked(true);
+        } else if (student.created_at) {
+          // Grace period check
+          const createdDate = new Date(student.created_at);
+          const daysSince = Math.floor(
+            (now.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24)
+          );
+          if (daysSince <= 3) {
+            setChallengeUnlocked(true);
+          }
+        }
+      } catch {
+        // Non-fatal: challenge card defaults to locked/hidden
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [student?.id, student?.grade, student?.created_at]);
+
   // Stream selector: show picker on first visit for grades 11-12
   useEffect(() => {
     if (!student) return;
@@ -250,6 +396,12 @@ export default function Dashboard() {
   const currentXp = current?.xp ?? 0;
   const currentLevel = current?.level ?? 1;
   const meta = allowedSubjects.find((s) => s.code === student.preferred_subject);
+
+  // Compute overall Performance Score across all subjects
+  const overallPerfScore = perfScores.length > 0
+    ? Math.round(perfScores.reduce((sum, ps) => sum + ps.overall_score, 0) / perfScores.length)
+    : 0;
+  const overallPerfLevel = getLevelFromScore(overallPerfScore);
 
   // Filter subjects by stream for grades 11-12
   const streamFilteredSubjects = (() => {
@@ -340,6 +492,7 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <CoinBalance balance={coinBalance} isHi={isHi} />
             <button
               onClick={() => setLanguage(language === 'hi' ? 'en' : 'hi')}
               className="text-xs px-3 py-1.5 rounded-xl border transition-colors"
@@ -486,6 +639,21 @@ export default function Dashboard() {
           grade={student.grade}
           studentId={student.id}
         />
+
+        {/* ═══ CONCEPT CHAIN DAILY CHALLENGE — links to /challenge ═══ */}
+        {todaySubject && (
+          <DailyChallengeCard
+            studentId={student.id}
+            grade={student.grade}
+            isHi={isHi}
+            isUnlocked={challengeUnlocked}
+            streak={challengeStreak}
+            todaySubject={todaySubject}
+            todaySubjectHi={todaySubjectHi}
+            todayTopic={todayTopic}
+            isSolved={challengeSolved}
+          />
+        )}
 
         {/* ═══ FIRST-TIME WELCOME — always visible for new students ═══ */}
         {totalXp === 0 && profiles.length <= 1 && (
@@ -673,52 +841,43 @@ export default function Dashboard() {
           </button>
         )}
 
-        {/* XP Hero */}
+        {/* ═══ PERFORMANCE SCORE HERO ═══ */}
         <Card accent={meta?.color}>
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-2xl">{meta?.icon ?? '📚'}</span>
-                <span className="font-semibold text-sm text-[var(--text-2)]">
-                  {meta?.name ?? student.preferred_subject} · Grade {student.grade}
-                </span>
-              </div>
-              <div className="text-3xl md:text-4xl font-bold mt-1" style={{ fontFamily: 'var(--font-display)' }}>
-                <span className="gradient-text">{totalXp.toLocaleString()}</span>
-                <span className="text-base text-[var(--text-3)] ml-1">XP</span>
-              </div>
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-2">
+              <span className="text-2xl">{meta?.icon ?? '📚'}</span>
+              <span className="font-semibold text-sm text-[var(--text-2)]">
+                {meta?.name ?? student.preferred_subject} · {isHi ? `कक्षा ${student.grade}` : `Grade ${student.grade}`}
+              </span>
             </div>
-            <div className="text-right">
-              <div className="flex items-center gap-1 justify-end">
-                <span className="text-xl streak-flame">🔥</span>
-                <span className="text-2xl font-bold">{streak}</span>
-              </div>
-              <div className="text-xs text-[var(--text-3)]">{isHi ? 'दिन' : 'day streak'}</div>
-              {velocityTrend && (
-                <div className="text-xs mt-1" style={{ color: velocityTrend === 'fast' ? '#16A34A' : velocityTrend === 'steady' ? '#F59E0B' : '#EF4444' }}>
-                  {velocityTrend === 'fast' ? '↑' : velocityTrend === 'steady' ? '→' : '↓'} {isHi ? (velocityTrend === 'fast' ? 'तेज़' : velocityTrend === 'steady' ? 'स्थिर' : 'धीमा') : velocityTrend}
-                </div>
-              )}
+            <div className="flex items-center gap-1">
+              <span className="text-xl streak-flame">🔥</span>
+              <span className="text-2xl font-bold">{streak}</span>
+              <span className="text-xs text-[var(--text-3)] ml-0.5">{isHi ? 'दिन' : 'days'}</span>
             </div>
           </div>
-          {(() => {
-            const lvl = calculateLevel(totalXp);
-            const prog = xpToNextLevel(totalXp);
-            const lvlName = getLevelName(lvl);
-            return (
-              <>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[11px] font-bold" style={{ color: meta?.color || 'var(--orange)' }}>
-                    {isHi ? `स्तर ${lvl}` : `Level ${lvl}`} · {lvlName}
-                  </span>
-                  <span className="text-[10px] text-[var(--text-3)]">{prog.current}/{prog.needed} XP</span>
-                </div>
-                <ProgressBar value={prog.progress} color={meta?.color} />
-              </>
-            );
-          })()}
-          <div className="grid-stats mt-4">
-            {/* CBSE/Exam readiness FIRST — it's the metric students actually care about */}
+
+          <ScoreHero
+            overallScore={overallPerfScore}
+            levelName={overallPerfLevel}
+            isHi={isHi}
+          />
+
+          {velocityTrend && (
+            <div className="text-xs text-center -mt-1 mb-2" style={{ color: velocityTrend === 'fast' ? '#16A34A' : velocityTrend === 'steady' ? '#F59E0B' : '#EF4444' }}>
+              {velocityTrend === 'fast' ? '↑' : velocityTrend === 'steady' ? '→' : '↓'} {isHi ? (velocityTrend === 'fast' ? 'तेज़ गति' : velocityTrend === 'steady' ? 'स्थिर गति' : 'धीमी गति') : (velocityTrend === 'fast' ? 'Fast pace' : velocityTrend === 'steady' ? 'Steady pace' : 'Slow pace')}
+            </div>
+          )}
+
+          {/* Legacy XP — shown smaller during migration period */}
+          <div className="flex items-center justify-center gap-1 mb-3 text-xs text-[var(--text-3)]">
+            <span className="gradient-text font-bold">{totalXp.toLocaleString()}</span>
+            <span>XP</span>
+            <span className="mx-1">·</span>
+            <span>{isHi ? `स्तर ${calculateLevel(totalXp)}` : `Level ${calculateLevel(totalXp)}`}</span>
+          </div>
+
+          <div className="grid-stats">
             {cbseReadiness !== null && (
               <StatCard
                 icon="🎯"
@@ -748,6 +907,29 @@ export default function Dashboard() {
             )}
           </div>
         </Card>
+
+        {/* ═══ SUBJECT PERFORMANCE SCORES GRID ═══ */}
+        {perfScores.length > 0 && (
+          <div>
+            <SectionHeader icon="📊">{isHi ? 'विषय स्कोर' : 'Subject Scores'}</SectionHeader>
+            <div className="grid grid-cols-2 gap-3">
+              {perfScores
+                .filter(ps => selectedSubjects.includes(ps.subject))
+                .map(ps => {
+                  const subjectMeta = allowedSubjects.find(s => s.code === ps.subject);
+                  return (
+                    <ScoreCard
+                      key={ps.subject}
+                      subject={subjectMeta?.name ?? ps.subject}
+                      subjectHi={subjectMeta?.nameHi ?? ps.subject}
+                      score={ps.overall_score}
+                      isHi={isHi}
+                    />
+                  );
+                })}
+            </div>
+          </div>
+        )}
 
         {/* Error Breakdown */}
         {errorBreakdown && (

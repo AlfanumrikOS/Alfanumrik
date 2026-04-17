@@ -12,6 +12,7 @@
  */
 
 import { supabase } from './supabase';
+import { checkPlanGate, type PlanGateResult } from '@/lib/plan-gate';
 
 // ─── Limits by subscription plan ─────────────────────────────
 
@@ -182,4 +183,42 @@ export async function getDailyUsageSummary(
   }
 
   return result;
+}
+
+// ─── Plan-Gate-Aware Usage Check ────────────────────────────
+
+const FEATURE_TO_PERMISSION: Record<Feature, string> = {
+  foxy_chat: 'foxy.chat',
+  quiz: 'quiz.attempt',
+};
+
+/**
+ * Check usage via the RBAC plan-gate system first, falling back to
+ * the legacy checkDailyUsage when no permission mapping exists or
+ * when the plan-gate call fails.
+ */
+export async function checkUsageWithPlanGate(
+  userId: string,
+  feature: Feature,
+  plan: string = 'free',
+): Promise<UsageResult> {
+  const permissionCode = FEATURE_TO_PERMISSION[feature];
+  if (!permissionCode) return checkDailyUsage(userId, feature, plan);
+
+  try {
+    const result: PlanGateResult = await checkPlanGate(userId, permissionCode, plan);
+
+    if (result.code === 'PLAN_UPGRADE_REQUIRED') {
+      return { allowed: false, remaining: 0, limit: 0, count: 0 };
+    }
+
+    return {
+      allowed: result.granted,
+      remaining: result.remaining ?? 999999,
+      limit: result.limit ?? 999999,
+      count: result.count ?? 0,
+    };
+  } catch {
+    return checkDailyUsage(userId, feature, plan);
+  }
 }

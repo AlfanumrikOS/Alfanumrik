@@ -1,31 +1,24 @@
 /**
- * ALFANUMRIK — Guaranteed Count Quiz Assembler
+ * ALFANUMRIK — Guaranteed Count Quiz Assembler (recovery-mode tightened)
  *
- * ROOT CAUSE this fixes: every function in the quiz pipeline returned "up to N"
- * questions without filling deficits. 5 failure points silently reduced count:
- *   1. Mixed mode split: either MCQ or written can return fewer
- *   2. getQuizQuestionsV2(): returns "up to" count, not guaranteed
- *   3. NCERT question fetch: seen-question dedup reduces below count
- *   4. isValidQuestion filter: removes bad questions without replacement
- *   5. Final concat+slice on a short array returns short array, no error
- *
- * FIX: 4-rung fallback ladder that progressively relaxes soft rules
- * (seen-question exclusion, difficulty, chapter) while keeping hard rules
- * (subject+grade match, question quality, 4 valid MCQ options).
- *
- * HARD RULES (never relax):
+ * Hard rules (NEVER relaxed):
  *   - Subject + grade must match
+ *   - **Chapter must match when caller specified one** (recovery-mode change)
  *   - MCQ must have 4 valid options + correct index 0-3
  *   - Question text must be non-empty, no template markers
  *   - Final count MUST equal requested count (or explicit failure)
  *
- * SOFT RULES (relax in order):
+ * Soft rules (relax in order):
  *   Rung 1: Allow previously seen questions (drop dedup)
  *   Rung 2: Relax difficulty targeting (any difficulty)
- *   Rung 3: Relax chapter filter (any chapter in subject)
+ *   ★ Rung 3 was previously: relax chapter filter. REMOVED — silently swapping
+ *     the chapter the student picked is a quiz-integrity violation. If a
+ *     specific chapter is short, the assembler now returns success: false with
+ *     `returnedCount` and the UI surfaces a structured "try another chapter or
+ *     all chapters" affordance.
  *
- * If count still can't be met after all rungs: explicit failure with message,
- * never a silent partial quiz.
+ * If count still can't be met after Rungs 0-2: explicit failure with
+ * `success: false`, never a silent partial quiz, never a wrong-chapter quiz.
  */
 
 import { getQuizQuestionsV2 } from '@/lib/supabase';
@@ -268,39 +261,29 @@ export async function assembleQuiz(params: AssembleQuizParams): Promise<Assemble
     deficit = requestedCount - allQuestions.length;
   }
 
-  // RUNG 3: Relax chapter filter (any chapter in subject)
-  if (deficit > 0 && chapter != null) {
-    fallbackRung = 3;
-    try {
-      const anyChapter = await getQuizQuestionsV2(
-        subject, grade, deficit * 2 + 10, 'mixed', null, questionTypes
-      );
-      if (Array.isArray(anyChapter) && anyChapter.length > 0) {
-        const existingIds = new Set(allQuestions.map(q => q.id || q.question_text?.trim().toLowerCase().slice(0, 80)));
-        for (const q of anyChapter) {
-          if (allQuestions.length >= requestedCount) break;
-          const key = q.id || q.question_text?.trim().toLowerCase().slice(0, 80);
-          if (existingIds.has(key)) continue;
-          const { valid } = validateQuestion(q);
-          if (valid) {
-            allQuestions.push(q);
-            existingIds.add(key);
-            stats.fallbackFetched++;
-          }
-        }
-      }
-    } catch (e) {
-      logger.warn('quiz_assembler_rung3_failed', {
-        error: e instanceof Error ? e.message : String(e),
-        subject, grade, deficit,
+  // RUNG 3 REMOVED (recovery-mode):
+  // Previously this rung relaxed the chapter filter and silently pulled
+  // questions from any chapter in the subject. That violated quiz-integrity
+  // contract: a student who picked Chapter 5 could end up answering Chapter 9
+  // questions while the UI claimed it was a Chapter 5 quiz. Now: if the
+  // chapter is specified and we can't fill the count, we fail loudly.
+  // Surface chapter-deficit explicitly so the UI can render a structured
+  // "try another chapter or pick all chapters" affordance.
+
+  // Hard scope guard: if a chapter was specified, drop ANY question that
+  // doesn't match. This is defence-in-depth against an upstream RPC that
+  // broadens silently. Combined with the API route's chapter filter on the
+  // final response, the chapter contract is enforced at three layers.
+  if (chapter != null) {
+    const before = allQuestions.length;
+    allQuestions = allQuestions.filter(q =>
+      typeof q.chapter_number === 'number' && q.chapter_number === chapter
+    );
+    if (allQuestions.length < before) {
+      logger.warn('quiz_assembler_dropped_cross_chapter_questions', {
+        subject, grade, chapter, dropped: before - allQuestions.length,
       });
     }
-    deficit = requestedCount - allQuestions.length;
-  }
-
-  // If still short and chapter was already null, note it
-  if (deficit > 0 && chapter == null && fallbackRung < 3) {
-    fallbackRung = 3; // Mark that we exhausted chapter relaxation path
   }
 
   // Final trim to exact count (in case we overfetched)

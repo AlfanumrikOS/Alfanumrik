@@ -12,6 +12,7 @@ import {
 import { shareResult, quizShareMessage } from '@/lib/share';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { getLevelFromScore } from '@/lib/score-config';
 import NextActionCard from '@/components/quiz/NextActionCard';
 import CelebrationOverlay from '@/components/quiz/CelebrationOverlay';
 import type { ErrorType } from '@/lib/cognitive-engine';
@@ -91,6 +92,35 @@ export default function QuizResults({
   const [flashcardCount, setFlashcardCount] = useState(0);
   const [flashcardBanner, setFlashcardBanner] = useState(false);
   const flashcardCreated = useRef(false);
+
+  // Performance Score delta: fetched from performance_scores table (display-only)
+  const [perfScoreInfo, setPerfScoreInfo] = useState<{
+    currentScore: number;
+    levelName: string;
+  } | null>(null);
+
+  // Fetch the current Performance Score for this subject after quiz submission
+  useEffect(() => {
+    if (!student?.id || !selectedSubject) return;
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('performance_scores')
+          .select('overall_score, level_name')
+          .eq('student_id', student.id)
+          .eq('subject', selectedSubject)
+          .single();
+        if (data) {
+          setPerfScoreInfo({
+            currentScore: Number(data.overall_score) || 0,
+            levelName: (data.level_name as string) || getLevelFromScore(Number(data.overall_score) || 0),
+          });
+        }
+      } catch {
+        // Non-fatal: score delta display is informational only
+      }
+    })();
+  }, [student?.id, selectedSubject]);
 
   const parseOptions = (opts: string | string[]): string[] => {
     if (Array.isArray(opts)) return opts;
@@ -371,6 +401,53 @@ export default function QuizResults({
             </Card>
           );
         })()}
+
+        {/* ── Performance Score update hint ── */}
+        {selectedSubject && (
+          <div
+            className="rounded-xl p-3 flex items-center gap-3"
+            style={{
+              background: 'rgba(124, 58, 237, 0.05)',
+              border: '1px solid rgba(124, 58, 237, 0.12)',
+            }}
+          >
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+              style={{ background: 'rgba(124, 58, 237, 0.10)' }}
+            >
+              <span className="text-lg font-bold" style={{ color: '#7C3AED', fontFamily: 'var(--font-display)' }}>
+                {perfScoreInfo ? perfScoreInfo.currentScore : '--'}
+              </span>
+            </div>
+            <div className="flex-1 min-w-0">
+              {perfScoreInfo ? (
+                <>
+                  <p className="text-xs font-semibold" style={{ color: '#7C3AED' }}>
+                    {isHi
+                      ? `${subMeta?.name ?? selectedSubject}: ${perfScoreInfo.levelName}`
+                      : `${subMeta?.name ?? selectedSubject}: ${perfScoreInfo.levelName}`}
+                  </p>
+                  <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-3)' }}>
+                    {isHi
+                      ? 'तुम्हारा Performance Score जल्द अपडेट होगा'
+                      : 'Your Performance Score will update shortly'}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs font-semibold" style={{ color: '#7C3AED' }}>
+                    {isHi ? 'Performance Score' : 'Performance Score'}
+                  </p>
+                  <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-3)' }}>
+                    {isHi
+                      ? 'तुम्हारा स्कोर जल्द अपडेट होगा'
+                      : 'Your score will update shortly'}
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* ── Ask Foxy about your weakest topic ── */}
         {(() => {
