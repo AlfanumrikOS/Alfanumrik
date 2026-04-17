@@ -539,6 +539,356 @@ describe('Protected route session requirement', () => {
 
 // ─── Timing-Safe Comparison Pattern ─────────────────────────
 
+// ─── F1: getUser() Crash Protection ─────────────────────────
+
+describe('F1: getUser() crash protection logic', () => {
+  /**
+   * Replicates the try/catch decision logic added to src/proxy.ts Layer 0.
+   * The middleware now swallows errors from supabase.auth.getUser() and sets
+   * an `x-auth-degraded: true` response header unless the error is the normal
+   * "no session" case (AuthSessionMissingError).
+   */
+  type FakeGetUserOutcome =
+    | { ok: true; userId: string | null }
+    | { ok: false; errorName: string; errorMessage: string }
+    | { throw: Error };
+
+  interface AuthState {
+    authUserId: string | null;
+    authDegraded: boolean;
+  }
+
+  function simulateAuthLayer(outcome: FakeGetUserOutcome): AuthState {
+    const state: AuthState = { authUserId: null, authDegraded: false };
+    try {
+      if ('throw' in outcome) throw outcome.throw;
+      if (outcome.ok) {
+        state.authUserId = outcome.userId;
+      } else {
+        const isNoSession = outcome.errorName === 'AuthSessionMissingError';
+        if (!isNoSession) {
+          state.authDegraded = true;
+        }
+      }
+    } catch {
+      state.authDegraded = true;
+    }
+    return state;
+  }
+
+  it('does not mark degraded when getUser returns AuthSessionMissingError', () => {
+    const state = simulateAuthLayer({
+      ok: false,
+      errorName: 'AuthSessionMissingError',
+      errorMessage: 'Auth session missing!',
+    });
+    expect(state.authDegraded).toBe(false);
+    expect(state.authUserId).toBeNull();
+  });
+
+  it('marks degraded when getUser returns a non-session error', () => {
+    const state = simulateAuthLayer({
+      ok: false,
+      errorName: 'AuthRetryableFetchError',
+      errorMessage: 'Network error',
+    });
+    expect(state.authDegraded).toBe(true);
+    expect(state.authUserId).toBeNull();
+  });
+
+  it('marks degraded when getUser throws unexpectedly (network/crash)', () => {
+    const state = simulateAuthLayer({ throw: new Error('ECONNREFUSED') });
+    expect(state.authDegraded).toBe(true);
+    expect(state.authUserId).toBeNull();
+  });
+
+  it('marks degraded on TypeError (corrupted JWT / malformed cookie)', () => {
+    const err = new TypeError('Invalid JWT');
+    const state = simulateAuthLayer({ throw: err });
+    expect(state.authDegraded).toBe(true);
+  });
+
+  it('does NOT mark degraded on a valid session', () => {
+    const state = simulateAuthLayer({ ok: true, userId: 'user-123' });
+    expect(state.authDegraded).toBe(false);
+    expect(state.authUserId).toBe('user-123');
+  });
+
+  it('does NOT mark degraded when no user (ok=true, userId=null)', () => {
+    // Happy "logged out" case: getUser() succeeded but returned no user.
+    const state = simulateAuthLayer({ ok: true, userId: null });
+    expect(state.authDegraded).toBe(false);
+    expect(state.authUserId).toBeNull();
+  });
+
+  it('sets x-auth-degraded header when authDegraded is true', () => {
+    // Emulates the response-header assignment from proxy.ts:
+    //   if (authDegraded) response.headers.set('x-auth-degraded', 'true').
+    const headers = new Headers();
+    const authDegraded = true;
+    if (authDegraded) headers.set('x-auth-degraded', 'true');
+    expect(headers.get('x-auth-degraded')).toBe('true');
+  });
+
+  it('does NOT set x-auth-degraded header when authDegraded is false', () => {
+    const headers = new Headers();
+    const authDegraded = false;
+    if (authDegraded) headers.set('x-auth-degraded', 'true');
+    expect(headers.get('x-auth-degraded')).toBeNull();
+  });
+});
+
+// ─── F1: proxy.ts source-level structural assertions ────────
+describe('F1: proxy.ts source structure', () => {
+  it('wraps supabase.auth.getUser() in a try/catch', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const file = fs.readFileSync(path.resolve(process.cwd(), 'src/proxy.ts'), 'utf-8');
+    // The file must contain both a try block and a catch block around getUser.
+    expect(file).toMatch(/try\s*\{[\s\S]*supabase\.auth\.getUser\(\)[\s\S]*\}\s*catch/);
+    expect(file).toContain("message: 'middleware_auth_crash'");
+  });
+
+  it('treats AuthSessionMissingError as normal (not degraded)', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const file = fs.readFileSync(path.resolve(process.cwd(), 'src/proxy.ts'), 'utf-8');
+    expect(file).toContain('AuthSessionMissingError');
+    expect(file).toMatch(/isNoSession/);
+  });
+
+  it('sets x-auth-degraded response header when auth is degraded', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const file = fs.readFileSync(path.resolve(process.cwd(), 'src/proxy.ts'), 'utf-8');
+    expect(file).toContain("'x-auth-degraded'");
+    expect(file).toMatch(/authDegraded\s*=\s*true/);
+  });
+});
+
+// ─── F4: Role-based route protection ─────────────────────────
+
+describe('F4: middleware-helpers findRouteRule', () => {
+  it('matches /parent/children to parent rule', async () => {
+    const { findRouteRule } = await import('@/lib/middleware-helpers');
+    const rule = findRouteRule('/parent/children');
+    expect(rule).not.toBeNull();
+    expect(rule!.allowed).toContain('guardian');
+    expect(rule!.allowed).toContain('admin');
+    expect(rule!.allowed).toContain('super_admin');
+  });
+
+  it('exempts the /parent login page itself', async () => {
+    const { findRouteRule } = await import('@/lib/middleware-helpers');
+    // /parent (exact) is exempt — public login form.
+    expect(findRouteRule('/parent')).toBeNull();
+    // But /parent/anything IS protected.
+    expect(findRouteRule('/parent/children')).not.toBeNull();
+  });
+
+  it('matches /teacher/* to teacher rule', async () => {
+    const { findRouteRule } = await import('@/lib/middleware-helpers');
+    const rule = findRouteRule('/teacher');
+    expect(rule).not.toBeNull();
+    expect(rule!.allowed).toEqual(expect.arrayContaining(['teacher', 'admin', 'super_admin']));
+    expect(rule!.allowed).not.toContain('student');
+    expect(rule!.allowed).not.toContain('guardian');
+  });
+
+  it('matches /super-admin/* to admin+super_admin rule', async () => {
+    const { findRouteRule } = await import('@/lib/middleware-helpers');
+    const rule = findRouteRule('/super-admin/users');
+    expect(rule).not.toBeNull();
+    expect(rule!.allowed).toEqual(['admin', 'super_admin']);
+    expect(rule!.allowed).not.toContain('teacher');
+    expect(rule!.allowed).not.toContain('student');
+  });
+
+  it('matches /school-admin/* to institution_admin rule', async () => {
+    const { findRouteRule } = await import('@/lib/middleware-helpers');
+    const rule = findRouteRule('/school-admin/classes');
+    expect(rule).not.toBeNull();
+    expect(rule!.allowed).toContain('institution_admin');
+    expect(rule!.allowed).toContain('admin');
+    expect(rule!.allowed).toContain('super_admin');
+  });
+
+  it('returns null for non-role-gated routes', async () => {
+    const { findRouteRule } = await import('@/lib/middleware-helpers');
+    expect(findRouteRule('/dashboard')).toBeNull();
+    expect(findRouteRule('/foxy')).toBeNull();
+    expect(findRouteRule('/login')).toBeNull();
+    expect(findRouteRule('/api/v1/health')).toBeNull();
+  });
+});
+
+describe('F4: middleware-helpers destinationForRole', () => {
+  it('maps each role to its correct portal', async () => {
+    const { destinationForRole } = await import('@/lib/middleware-helpers');
+    expect(destinationForRole('student')).toBe('/dashboard');
+    expect(destinationForRole('teacher')).toBe('/teacher');
+    expect(destinationForRole('guardian')).toBe('/parent');
+    expect(destinationForRole('institution_admin')).toBe('/school-admin');
+    expect(destinationForRole('admin')).toBe('/super-admin');
+    expect(destinationForRole('super_admin')).toBe('/super-admin');
+  });
+
+  it('maps "none" (unonboarded) to /onboarding', async () => {
+    const { destinationForRole } = await import('@/lib/middleware-helpers');
+    expect(destinationForRole('none')).toBe('/onboarding');
+  });
+});
+
+describe('F4: role-based redirect decision', () => {
+  /**
+   * Replicates the Layer 0.65 decision in src/proxy.ts:
+   *   - Unauthenticated / authDegraded → allow (fail open).
+   *   - Authenticated + role === 'none' → redirect /onboarding.
+   *   - Authenticated + role not in rule.allowed → redirect to destinationForRole.
+   *   - Authenticated + role in rule.allowed → allow.
+   */
+  interface RouteProtectDecision {
+    action: 'allow' | 'redirect';
+    to?: string;
+  }
+
+  type MWRole = 'student' | 'teacher' | 'guardian' | 'institution_admin' | 'admin' | 'super_admin' | 'none';
+
+  function decide(
+    path: string,
+    role: MWRole | null,
+    authUserId: string | null,
+    authDegraded: boolean,
+    rules: { prefix: string; allowed: string[]; exemptExactMatch?: boolean }[],
+    destForRole: (r: string) => string,
+  ): RouteProtectDecision {
+    let rule: { prefix: string; allowed: string[]; exemptExactMatch?: boolean } | null = null;
+    for (const r of rules) {
+      if (r.exemptExactMatch && path === r.prefix) continue;
+      if (path === r.prefix || path.startsWith(r.prefix + '/')) {
+        rule = r;
+        break;
+      }
+    }
+    if (!rule) return { action: 'allow' };
+    if (!authUserId || authDegraded) return { action: 'allow' };
+    if (role === null) return { action: 'allow' };
+    if (role === 'none') return { action: 'redirect', to: '/onboarding' };
+    if (!rule.allowed.includes(role)) {
+      const dest = destForRole(role);
+      const loopSafe = path === dest || path.startsWith(dest + '/') ? '/dashboard' : dest;
+      return { action: 'redirect', to: loopSafe };
+    }
+    return { action: 'allow' };
+  }
+
+  const RULES = [
+    { prefix: '/parent', allowed: ['guardian', 'admin', 'super_admin'], exemptExactMatch: true },
+    { prefix: '/teacher', allowed: ['teacher', 'admin', 'super_admin'] },
+    { prefix: '/super-admin', allowed: ['admin', 'super_admin'] },
+    { prefix: '/school-admin', allowed: ['institution_admin', 'admin', 'super_admin'] },
+  ];
+
+  const DEST: Record<string, string> = {
+    student: '/dashboard',
+    teacher: '/teacher',
+    guardian: '/parent',
+    institution_admin: '/school-admin',
+    admin: '/super-admin',
+    super_admin: '/super-admin',
+  };
+  const destFn = (r: string) => DEST[r] || '/dashboard';
+
+  it('student accessing /parent/children → redirect to /dashboard', () => {
+    const d = decide('/parent/children', 'student', 'user-1', false, RULES, destFn);
+    expect(d.action).toBe('redirect');
+    expect(d.to).toBe('/dashboard');
+  });
+
+  it('teacher accessing /super-admin → redirect to /teacher', () => {
+    const d = decide('/super-admin', 'teacher', 'user-1', false, RULES, destFn);
+    expect(d.action).toBe('redirect');
+    expect(d.to).toBe('/teacher');
+  });
+
+  it('guardian accessing /teacher → redirect to /parent', () => {
+    const d = decide('/teacher/classes', 'guardian', 'user-1', false, RULES, destFn);
+    expect(d.action).toBe('redirect');
+    expect(d.to).toBe('/parent');
+  });
+
+  it('student accessing /school-admin → redirect to /dashboard', () => {
+    const d = decide('/school-admin/api-keys', 'student', 'user-1', false, RULES, destFn);
+    expect(d.action).toBe('redirect');
+    expect(d.to).toBe('/dashboard');
+  });
+
+  it('admin can access ALL protected portals', () => {
+    for (const path of ['/parent/children', '/teacher/classes', '/super-admin/users', '/school-admin/api-keys']) {
+      const d = decide(path, 'admin', 'user-1', false, RULES, destFn);
+      expect(d.action).toBe('allow');
+    }
+  });
+
+  it('super_admin can access ALL protected portals', () => {
+    for (const path of ['/parent/children', '/teacher/classes', '/super-admin/users', '/school-admin/api-keys']) {
+      const d = decide(path, 'super_admin', 'user-1', false, RULES, destFn);
+      expect(d.action).toBe('allow');
+    }
+  });
+
+  it('teacher allowed on /teacher', () => {
+    const d = decide('/teacher/classes', 'teacher', 'user-1', false, RULES, destFn);
+    expect(d.action).toBe('allow');
+  });
+
+  it('guardian allowed on /parent/reports', () => {
+    const d = decide('/parent/reports', 'guardian', 'user-1', false, RULES, destFn);
+    expect(d.action).toBe('allow');
+  });
+
+  it('institution_admin allowed on /school-admin', () => {
+    const d = decide('/school-admin', 'institution_admin', 'user-1', false, RULES, destFn);
+    expect(d.action).toBe('allow');
+  });
+
+  it('unauthenticated user → allow (other layers handle cookie redirect)', () => {
+    // Layer 0.65 must NOT redirect unauthenticated users — Layer 0.6/0.7 do.
+    const d = decide('/parent/children', null, null, false, RULES, destFn);
+    expect(d.action).toBe('allow');
+  });
+
+  it('authDegraded → allow (fail open, do not lock users out on infra error)', () => {
+    const d = decide('/super-admin/users', 'student', 'user-1', true, RULES, destFn);
+    expect(d.action).toBe('allow');
+  });
+
+  it('role === null (lookup failed) → allow (fail open)', () => {
+    const d = decide('/teacher/classes', null, 'user-1', false, RULES, destFn);
+    expect(d.action).toBe('allow');
+  });
+
+  it('role === "none" (not onboarded) → redirect to /onboarding', () => {
+    const d = decide('/teacher/classes', 'none', 'user-1', false, RULES, destFn);
+    expect(d.action).toBe('redirect');
+    expect(d.to).toBe('/onboarding');
+  });
+
+  it('/parent (exact match) is public — all roles allowed through', () => {
+    expect(decide('/parent', 'student', 'user-1', false, RULES, destFn).action).toBe('allow');
+    expect(decide('/parent', null, null, false, RULES, destFn).action).toBe('allow');
+  });
+
+  it('loop safety — falls back to /dashboard if destination is inside same rule', () => {
+    // Contrived: if destinationForRole ever returned a path inside the rule,
+    // the loop-safe fallback is /dashboard.
+    const weirdDest = (_r: string) => '/super-admin';
+    const d = decide('/super-admin/users', 'student', 'user-1', false, RULES, weirdDest);
+    expect(d.action).toBe('redirect');
+    expect(d.to).toBe('/dashboard');
+  });
+});
+
 describe('Timing-safe string comparison', () => {
   // Re-implement the timingSafeEqual from middleware for testing.
   // Note: when lengths differ, set mismatch=1 BEFORE comparing bytes

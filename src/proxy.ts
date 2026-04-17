@@ -17,6 +17,12 @@ import { createServerClient } from '@supabase/ssr';
 // to keep them out of the middleware's synchronous startup path (P10 budget).
 import type { Ratelimit as RatelimitType } from '@upstash/ratelimit';
 import type { Redis as RedisType } from '@upstash/redis';
+import {
+  getUserRoleFromCache,
+  findRouteRule,
+  destinationForRole,
+  type MiddlewareRole,
+} from '@/lib/middleware-helpers';
 /* ═══════════════════════════════════════════════════════════════
  * PROXY — Security Hardening + Auth Session Refresh
  * Next.js 16 proxy — exported as both proxy (primary) and middleware (compat alias)
@@ -483,6 +489,14 @@ export async function proxy(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
+  // Track the authenticated user id (if any) and whether auth is degraded.
+  // authUserId is consumed by Layer 0.65 (role-based route protection).
+  // authDegraded is forwarded as `x-auth-degraded: true` so downstream API
+  // handlers know Supabase was unreachable (they must still run their own
+  // authorizeRequest() check, but can choose to emit a softer error surface).
+  let authUserId: string | null = null;
+  let authDegraded = false;
+
   if (supabaseUrl && supabaseKey) {
     const supabase = createServerClient(supabaseUrl, supabaseKey, {
       cookies: {
@@ -500,8 +514,108 @@ export async function proxy(request: NextRequest) {
         },
       },
     });
-    // Refresh the session — this extends the cookie expiry
-    await supabase.auth.getUser();
+
+    // Refresh the session — this extends the cookie expiry.
+    // DEFENSIVE: a Supabase outage here used to crash the middleware,
+    // taking down EVERY request (including public pages, health checks,
+    // and login). We now swallow errors and continue without a user —
+    // API routes will still enforce auth via authorizeRequest(), and
+    // unauthenticated page requests still hit the downstream cookie checks.
+    try {
+      const { data, error } = await supabase.auth.getUser();
+      if (error) {
+        // getUser() returns an error on invalid/expired JWT, network failure,
+        // or service outage. AuthSessionMissingError is the normal "no session"
+        // case and should NOT be flagged as degraded.
+        const errName = (error as { name?: string } | null)?.name ?? '';
+        const isNoSession = errName === 'AuthSessionMissingError';
+        if (!isNoSession) {
+          authDegraded = true;
+          // Best-effort structured log. We avoid importing @/lib/logger in the
+          // middleware synchronous path (logger pulls in Sentry + redactor =
+          // too heavy for middleware bundle). A plain console.warn in the Edge
+          // runtime is captured by Vercel logs.
+          console.warn(JSON.stringify({
+            level: 'warn',
+            message: 'middleware_auth_degraded',
+            route: path,
+            errorName: errName || 'unknown',
+            errorMessage: (error as { message?: string } | null)?.message ?? 'unknown',
+          }));
+        }
+      } else {
+        authUserId = data?.user?.id ?? null;
+      }
+    } catch (err) {
+      // Network error, Supabase outage, or any other unexpected throw.
+      // Fail-open: continue without a user. Downstream auth checks still run.
+      authDegraded = true;
+      console.warn(JSON.stringify({
+        level: 'warn',
+        message: 'middleware_auth_crash',
+        route: path,
+        error: err instanceof Error ? err.message : String(err),
+      }));
+    }
+  }
+
+  // Forward degraded-auth signal to downstream handlers (API routes, server
+  // components). They can read this from request.headers.get('x-auth-degraded').
+  if (authDegraded) {
+    response.headers.set('x-auth-degraded', 'true');
+  }
+
+  // ── Layer 0.65: Role-based route protection (server-side) ──
+  // Defense in depth: client-side AuthContext + useRequireAuth hooks already
+  // redirect on role mismatch, but they are NOT a security boundary. A crafted
+  // request (curl, disabled JS) can still hit /parent/children, /teacher/*,
+  // /super-admin/*, /school-admin/*. This layer enforces the role gate
+  // server-side BEFORE any SSR renders or data fetches.
+  //
+  // Role source: getUserRoleFromCache() — Upstash Redis (60s TTL) → in-memory
+  // cache → get_user_role RPC via PostgREST. Adds at most one DB round-trip
+  // per minute per user.
+  //
+  // Fail-open policy: if role lookup returns null (infra error), we ALLOW
+  // the request through. RLS + API route authorizeRequest() remain the true
+  // auth boundaries. Locking users out on transient DB failures would be a
+  // worse UX than the marginal security risk of a temporary client-side
+  // fallback.
+  const routeRule = findRouteRule(path);
+  if (routeRule) {
+    // Only enforce if we actually have an authenticated user AND auth wasn't
+    // degraded. Unauthenticated visitors are handled by Layer 0.6 (cookie
+    // check for /parent/children etc.) and Layer 0.7 (/school-admin cookie
+    // check).  Skipping when authDegraded avoids false-positive lockouts
+    // during Supabase outages.
+    if (authUserId && !authDegraded) {
+      const role: MiddlewareRole | null = await getUserRoleFromCache(authUserId);
+
+      // role === null → lookup failed, fail-open (do nothing).
+      if (role !== null) {
+        if (role === 'none') {
+          // Authenticated but not yet onboarded (no student/teacher/guardian
+          // record and no elevated role). Send them through the onboarding
+          // flow rather than deep-linking into a portal they can't use.
+          const onboardingUrl = new URL('/onboarding', request.url);
+          return NextResponse.redirect(onboardingUrl);
+        }
+
+        if (!routeRule.allowed.includes(role)) {
+          // User is authenticated with a real role, but the role doesn't
+          // match this portal. Redirect to THEIR correct portal — NOT back
+          // to /login (they're already logged in).
+          const dest = destinationForRole(role);
+          // Guard against redirect loops: if the user's destination IS
+          // under the same rule (shouldn't happen, but defend anyway),
+          // fall back to /dashboard.
+          const loopSafe = (path === dest || path.startsWith(dest + '/'))
+            ? '/dashboard'
+            : dest;
+          return NextResponse.redirect(new URL(loopSafe, request.url));
+        }
+      }
+    }
   }
 
   // ── Inject school config headers (after response is created) ──

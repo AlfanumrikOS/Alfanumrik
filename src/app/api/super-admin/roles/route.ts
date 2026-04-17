@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../lib/admin-auth';
+import { invalidateForSecurityEvent } from '@/lib/rbac';
+import { logger } from '@/lib/logger';
 
 async function query(table: string, params: string) {
   const res = await fetch(supabaseAdminUrl(table, params), { headers: supabaseAdminHeaders() });
@@ -70,6 +72,15 @@ export async function POST(request: NextRequest) {
     }
 
     await logAdminAudit(auth, 'role.assigned', 'user_roles', auth_user_id, { role_name });
+
+    // Invalidate permission cache — best-effort, must not block response
+    invalidateForSecurityEvent([auth_user_id], 'role_granted').catch((err) => {
+      logger.error('rbac_cache_invalidation_failed', {
+        error: err instanceof Error ? err : new Error(String(err)),
+        route: '/api/super-admin/roles',
+      });
+    });
+
     return NextResponse.json({ success: true }, { status: 201 });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 });
@@ -93,6 +104,19 @@ export async function DELETE(request: NextRequest) {
     const deleted = await res.json();
     const detail = Array.isArray(deleted) && deleted.length > 0 ? deleted[0] : {};
     await logAdminAudit(auth, 'role.revoked', 'user_roles', user_role_id, { auth_user_id: detail.auth_user_id });
+
+    // SECURITY: Invalidate permission cache so the revoked role stops being
+    // enforced within the cache TTL (otherwise revoked access persists up to
+    // 5 minutes on server + 5 minutes on client). Best-effort; must not block.
+    if (detail.auth_user_id) {
+      invalidateForSecurityEvent([detail.auth_user_id], 'role_revoked').catch((err) => {
+        logger.error('rbac_cache_invalidation_failed', {
+          error: err instanceof Error ? err : new Error(String(err)),
+          route: '/api/super-admin/roles',
+        });
+      });
+    }
+
     return NextResponse.json({ success: true });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 });
