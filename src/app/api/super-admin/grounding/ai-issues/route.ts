@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { logOpsEvent } from '@/lib/ops-events';
 
 /**
  * GET /api/super-admin/grounding/ai-issues
@@ -136,6 +137,146 @@ export async function GET(request: NextRequest) {
         truncated: enriched.length === limit,
       },
     });
+  } catch (err) {
+    return NextResponse.json(
+      { success: false, error: err instanceof Error ? err.message : 'Internal error' },
+      { status: 500 },
+    );
+  }
+}
+
+/**
+ * POST /api/super-admin/grounding/ai-issues
+ *
+ * Resolve an ai_issue_report.
+ * Body: { action: 'resolve', payload: { id, admin_resolution, admin_notes? } }
+ *
+ * admin_resolution must be one of the CHECK constraint values from migration
+ * 20260418100400_feedback_and_failures.sql:
+ *   'bad_chunk' | 'bad_prompt' | 'bad_question' | 'infra' | 'no_issue' | 'pending'
+ *
+ * Writes an ops_events row (category='grounding.admin_action',
+ * source='super-admin.ai-issues').
+ *
+ * Auth: super_admin.access permission.
+ */
+
+type PostAction = 'resolve';
+const VALID_ACTIONS: readonly PostAction[] = ['resolve'];
+
+const VALID_RESOLUTIONS = [
+  'bad_chunk',
+  'bad_prompt',
+  'bad_question',
+  'infra',
+  'no_issue',
+  'pending',
+] as const;
+type AdminResolution = (typeof VALID_RESOLUTIONS)[number];
+
+function isUuid(v: unknown): v is string {
+  return typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+}
+
+function isResolution(v: unknown): v is AdminResolution {
+  return typeof v === 'string' && (VALID_RESOLUTIONS as readonly string[]).includes(v);
+}
+
+export async function POST(request: NextRequest) {
+  const auth = await authorizeRequest(request, 'super_admin.access');
+  if (!auth.authorized) return auth.errorResponse!;
+
+  let body: { action?: unknown; payload?: unknown };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      { success: false, error: 'Invalid JSON body' },
+      { status: 400 },
+    );
+  }
+
+  const action = body.action;
+  if (typeof action !== 'string' || !VALID_ACTIONS.includes(action as PostAction)) {
+    return NextResponse.json(
+      { success: false, error: `Invalid action. Expected one of: ${VALID_ACTIONS.join(', ')}` },
+      { status: 400 },
+    );
+  }
+
+  const payload = (body.payload && typeof body.payload === 'object')
+    ? body.payload as Record<string, unknown>
+    : {};
+
+  try {
+    if (action === 'resolve') {
+      const id = payload.id;
+      const admin_resolution = payload.admin_resolution;
+      const admin_notes = typeof payload.admin_notes === 'string' ? payload.admin_notes : null;
+
+      if (!isUuid(id)) {
+        return NextResponse.json(
+          { success: false, error: 'resolve requires payload.id (uuid)' },
+          { status: 400 },
+        );
+      }
+      if (!isResolution(admin_resolution)) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              `resolve requires payload.admin_resolution ∈ {${VALID_RESOLUTIONS.join(', ')}}`,
+          },
+          { status: 400 },
+        );
+      }
+
+      const nowIso = new Date().toISOString();
+      const { error } = await supabaseAdmin
+        .from('ai_issue_reports')
+        .update({
+          admin_resolution,
+          admin_notes,
+          resolved_by: auth.userId,
+          resolved_at: nowIso,
+        })
+        .eq('id', id);
+
+      if (error) {
+        return NextResponse.json(
+          { success: false, error: `resolve failed: ${error.message}` },
+          { status: 500 },
+        );
+      }
+
+      await logOpsEvent({
+        category: 'grounding.admin_action',
+        source: 'super-admin.ai-issues',
+        severity: 'info',
+        message: `ai_issue_report ${id} resolved (${admin_resolution})`,
+        subjectType: 'ai_issue_report',
+        subjectId: id,
+        context: {
+          action,
+          admin_resolution,
+          admin_user_id: auth.userId,
+          // admin_notes intentionally not logged to ops_events to avoid
+          // bleeding free-text into observability (P13 defence-in-depth).
+          has_notes: !!admin_notes,
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        data: { action, id, admin_resolution, resolved_at: nowIso },
+      });
+    }
+
+    // Unreachable — action validated above.
+    return NextResponse.json(
+      { success: false, error: 'Invalid action' },
+      { status: 400 },
+    );
   } catch (err) {
     return NextResponse.json(
       { success: false, error: err instanceof Error ? err.message : 'Internal error' },
