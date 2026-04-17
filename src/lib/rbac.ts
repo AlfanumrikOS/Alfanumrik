@@ -618,6 +618,13 @@ export const PERMISSIONS = {
   INSTITUTION_VIEW_ANALYTICS: 'institution.view_analytics',
   INSTITUTION_MANAGE_TEACHERS: 'institution.manage_teachers',
 
+  // ── Tutor ──────────────────────────────────────────────
+  TUTOR_VIEW_STUDENT: 'tutor.view_student',
+  TUTOR_PROVIDE_FEEDBACK: 'tutor.provide_feedback',
+  TUTOR_VIEW_ANALYTICS: 'tutor.view_analytics',
+  TUTOR_CREATE_WORKSHEET: 'tutor.create_worksheet',
+  TUTOR_ASSIGN_WORKSHEET: 'tutor.assign_worksheet',
+
   // ── Super-admin subject governance (Phase E) ─────────────
   // Granted to: super_admin (and admin, defensively).  Gates the 7 routes
   // under /api/super-admin/subjects/** and /api/super-admin/students/[id]/subjects.
