@@ -39,13 +39,32 @@ flutter build apk --debug
 echo "✅ Debug APK built"
 
 # Build release APKs (split by ABI)
+# All secrets MUST come from the environment — no hardcoded production URLs
+# or keys. Export these before running the script:
+#
+#   export SUPABASE_URL="https://<project>.supabase.co"
+#   export SUPABASE_ANON_KEY="<anon-key>"
+#   export RAZORPAY_KEY_ID="<rzp-key-id>"
+#
+# If SUPABASE_URL is unset the build fails fast rather than silently pointing
+# at the wrong environment.
+if [ -z "${SUPABASE_URL:-}" ]; then
+    echo "❌ SUPABASE_URL env var is required. Export it before running this script."
+    echo "   Example: export SUPABASE_URL=https://your-project.supabase.co"
+    exit 1
+fi
+if [ -z "${SUPABASE_ANON_KEY:-}" ]; then
+    echo "❌ SUPABASE_ANON_KEY env var is required."
+    exit 1
+fi
+
 echo ""
 echo "🚀 Building release APKs (split by ABI)..."
 flutter build apk --release --split-per-abi \
-    --dart-define=SUPABASE_URL=https://shktyoxqhundlvkiwguu.supabase.co \
-    --dart-define=SUPABASE_ANON_KEY="${SUPABASE_ANON_KEY:-PUT_YOUR_KEY_HERE}" \
-    --dart-define=RAZORPAY_KEY_ID="${RAZORPAY_KEY_ID:-PUT_YOUR_KEY_HERE}" \
-    --dart-define=API_BASE_URL=https://alfanumrik.com/api
+    --dart-define=SUPABASE_URL="${SUPABASE_URL}" \
+    --dart-define=SUPABASE_ANON_KEY="${SUPABASE_ANON_KEY}" \
+    --dart-define=RAZORPAY_KEY_ID="${RAZORPAY_KEY_ID:-}" \
+    --dart-define=API_BASE_URL="${API_BASE_URL:-https://alfanumrik.com/api}"
 
 echo ""
 echo "================================"
