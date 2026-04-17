@@ -33,8 +33,10 @@ jobs:
           FOUND=0
 
           # Patterns that indicate leaked secrets
-          # Exclude: placeholder values in CI env, test fixtures, lock files, .env.example
-          EXCLUDE_PATTERN="ci.yml|deploy-production.yml|deploy-staging.yml|package-lock.json|\.env\.example|\.env\.local\.example|node_modules"
+          # Exclude: placeholder values in CI env, test fixtures, lock files, .env.example,
+          # test files with deliberate fake credentials for redaction/mock tests,
+          # documentation examples, and worktree copies.
+          EXCLUDE_PATTERN="ci.yml|deploy-production.yml|deploy-staging.yml|package-lock.json|\.env\.example|\.env\.local\.example|node_modules|__tests__/|\.test\.(ts|tsx|js|jsx)|\.spec\.(ts|tsx|js|jsx)|e2e/|docs/|\.claude/worktrees/|coverage/"
 
           for PATTERN in \
             'sk_live_[a-zA-Z0-9]{20,}' \
