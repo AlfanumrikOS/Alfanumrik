@@ -7,6 +7,33 @@ import { type ReactNode } from 'react';
    Supports tutor/student roles, feedback
    ═══════════════════════════════════════════════════════════════ */
 
+/**
+ * Grounding status — mirrors the server's Phase 3 contract:
+ *   grounded      : answer is supported by retrieved NCERT chunks (confidence ≥ threshold)
+ *   unverified    : answer generated but low-confidence — show caution banner
+ *   hard-abstain  : service refused to answer — show fallback card
+ */
+export type GroundingStatus = 'grounded' | 'unverified' | 'hard-abstain';
+
+/** Abstain reason surfaced from the grounded-answer service. */
+export type AbstainReason =
+  | 'chapter_not_ready'
+  | 'no_chunks_retrieved'
+  | 'low_similarity'
+  | 'no_supporting_chunks'
+  | 'scope_mismatch'
+  | 'upstream_error'
+  | 'circuit_open';
+
+/** Suggested alternative chapter/topic when the requested one isn't ready. */
+export interface SuggestedAlternative {
+  grade: string;
+  subject_code: string;
+  chapter_number: number;
+  chapter_title: string;
+  rag_status: 'ready';
+}
+
 interface ChatBubbleProps {
   role: 'student' | 'tutor';
   content: ReactNode;
@@ -22,6 +49,14 @@ interface ChatBubbleProps {
   onReport: () => void;
   /** Called when the student taps 🔊 to replay this message via TTS */
   onSpeak?: () => void;
+  /** Grounding verdict from the grounded-answer service (tutor bubbles only) */
+  groundingStatus?: GroundingStatus;
+  /** Trace id for debugging — shown in tooltip when set */
+  traceId?: string;
+  /** Abstain reason — only set when groundingStatus === 'hard-abstain' */
+  abstainReason?: AbstainReason;
+  /** Suggested alternatives — only set when groundingStatus === 'hard-abstain' */
+  suggestedAlternatives?: SuggestedAlternative[];
 }
 
 export function ChatBubble({
@@ -37,9 +72,15 @@ export function ChatBubble({
   onFeedback,
   onReport,
   onSpeak,
+  groundingStatus,
+  traceId,
+  abstainReason,
+  suggestedAlternatives,
 }: ChatBubbleProps) {
   const isTutor = role === 'tutor';
   const time = new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const showUnverifiedBanner = isTutor && groundingStatus === 'unverified';
+  const showHardAbstainCard = isTutor && groundingStatus === 'hard-abstain';
 
   return (
     <div className="mb-4 w-full animate-slide-up">
@@ -66,27 +107,86 @@ export function ChatBubble({
         <span className="text-[10px] text-[var(--text-3)]">{time}</span>
 
         {isTutor && (
-          <span className="ml-auto px-1.5 py-0.5 rounded text-[8px] font-semibold"
-            style={{ background: 'var(--surface-2)', color: 'var(--text-3)', border: '1px solid var(--border)' }}>
+          <span
+            className="ml-auto px-1.5 py-0.5 rounded text-[8px] font-semibold"
+            style={{ background: 'var(--surface-2)', color: 'var(--text-3)', border: '1px solid var(--border)' }}
+            title={traceId ? `trace: ${traceId}` : undefined}
+          >
             🤖 AI
           </span>
         )}
 
       </div>
 
-      {/* Message body */}
-      <div
-        className="w-full rounded-2xl px-4 py-3 text-sm leading-relaxed overflow-hidden min-w-0"
-        style={{
-          background: isTutor ? 'var(--surface-1)' : `${color}08`,
-          color: 'var(--text-1)',
-          border: isTutor
-            ? reported ? '1.5px solid color-mix(in srgb, var(--danger) 25%, transparent)' : '1px solid var(--border)'
-            : `1.5px solid ${color}20`,
-        }}
-      >
-        {content}
-      </div>
+      {/* TODO Task 3.11: replace with <UnverifiedBanner /> */}
+      {showUnverifiedBanner && (
+        <div
+          data-testid="unverified-banner"
+          role="status"
+          className="mb-2 rounded-xl px-3 py-2 text-xs flex items-start gap-2"
+          style={{
+            background: 'color-mix(in srgb, #F59E0B 10%, transparent)',
+            border: '1px solid color-mix(in srgb, #F59E0B 35%, transparent)',
+            color: '#92400E',
+          }}
+        >
+          <span aria-hidden>⚠️</span>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold">Low-confidence answer</p>
+            <p className="text-[11px] opacity-80">
+              Foxy found limited NCERT reference material for this question. Double-check with your textbook.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* TODO Task 3.12: replace with <HardAbstainCard /> */}
+      {showHardAbstainCard && (
+        <div
+          data-testid="hard-abstain-card"
+          role="status"
+          className="mb-2 rounded-xl px-3 py-3 text-xs"
+          style={{
+            background: 'var(--surface-2)',
+            border: '1px dashed var(--border)',
+            color: 'var(--text-2)',
+          }}
+        >
+          <p className="font-semibold mb-1">Foxy can&apos;t answer this yet</p>
+          <p className="text-[11px] opacity-80">
+            {abstainReason === 'chapter_not_ready'
+              ? 'This chapter hasn\'t been added to Foxy\'s reference library yet.'
+              : abstainReason === 'circuit_open' || abstainReason === 'upstream_error'
+                ? 'Foxy is temporarily unavailable. Please try again in a moment.'
+                : 'Foxy couldn\'t find enough NCERT material to answer confidently.'}
+          </p>
+          {suggestedAlternatives && suggestedAlternatives.length > 0 && (
+            <ul className="mt-2 space-y-1">
+              {suggestedAlternatives.slice(0, 3).map((alt) => (
+                <li key={`${alt.subject_code}-${alt.chapter_number}`} className="text-[11px]">
+                  Try: Ch. {alt.chapter_number} — {alt.chapter_title}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {/* Message body — suppressed on hard-abstain since content is empty */}
+      {!showHardAbstainCard && (
+        <div
+          className="w-full rounded-2xl px-4 py-3 text-sm leading-relaxed overflow-hidden min-w-0"
+          style={{
+            background: isTutor ? 'var(--surface-1)' : `${color}08`,
+            color: 'var(--text-1)',
+            border: isTutor
+              ? reported ? '1.5px solid color-mix(in srgb, var(--danger) 25%, transparent)' : '1px solid var(--border)'
+              : `1.5px solid ${color}20`,
+          }}
+        >
+          {content}
+        </div>
+      )}
 
       {/* Action bar for tutor messages */}
       {isTutor && rawContent !== 'Oops! Please try again.' && (
