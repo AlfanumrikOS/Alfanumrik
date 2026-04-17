@@ -785,6 +785,7 @@ describe('Section 3: Adaptive Pipeline Integration', () => {
     });
 
     it('calls Voyage AI API for embeddings', () => {
+      // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- TODO(phase-4-cleanup): remove when legacy ncert-retriever is deleted.
       expect(retrieverSource).toContain('api.voyageai.com/v1/embeddings');
     });
 

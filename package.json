@@ -14,7 +14,7 @@
     "analyze": "cross-env ANALYZE=true next build",
     "check:bundle-size": "node scripts/check-bundle-size.mjs",
     "check:config-parity": "bash scripts/check-config-parity.sh",
-    "lint:ai-boundary": "bash scripts/check-config-parity.sh",
+    "lint:ai-boundary": "bash scripts/check-config-parity.sh && eslint --config .eslintrc.ai-boundary.json --ext .ts,.tsx src supabase/functions",
     "test:coverage": "vitest run --coverage",
     "type-check": "tsc --noEmit"
   },

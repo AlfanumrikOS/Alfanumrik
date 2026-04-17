@@ -304,6 +304,7 @@ EVALUATE and respond in this EXACT JSON format (no extra text):
   "grade": "<Excellent|Good|Satisfactory|Needs Improvement>"
 }`
 
+  // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- TODO(phase-4-cleanup): ncert-question-engine grades answers; route through grounded-answer when a grading-specific template is available.
   const aiResp = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {

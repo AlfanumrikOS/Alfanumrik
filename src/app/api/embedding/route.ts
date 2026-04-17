@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
 
 const VOYAGE_API_KEY = process.env.VOYAGE_API_KEY;
+// eslint-disable-next-line alfanumrik/no-direct-ai-calls -- TODO(phase-4-cleanup): this embedding proxy predates grounded-answer; delete once all callers route through the service.
 const VOYAGE_ENDPOINT = 'https://api.voyageai.com/v1/embeddings';
 
 export async function POST(request: NextRequest) {

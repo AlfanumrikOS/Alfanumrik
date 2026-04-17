@@ -272,6 +272,7 @@ async function callClaude(
   const timeoutId = setTimeout(() => controller.abort(), 45_000) // 45 s for bulk calls
 
   try {
+    // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- TODO(phase-4-cleanup): bulk-question-gen is a batch back-office ingestion path that predates grounded-answer; route through service when bulk grounding API is added.
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {

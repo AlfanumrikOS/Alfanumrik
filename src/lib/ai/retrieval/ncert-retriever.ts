@@ -29,6 +29,7 @@ export async function generateEmbedding(text: string): Promise<number[] | null> 
   }
 
   try {
+    // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- TODO(phase-4-cleanup): delete ncert-retriever when Foxy flag ff_foxy_grounded_only flips on and legacy retriever is no longer called.
     const res = await fetch('https://api.voyageai.com/v1/embeddings', {
       method: 'POST',
       headers: {

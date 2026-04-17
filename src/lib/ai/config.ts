@@ -30,6 +30,7 @@ export function getAIConfig(): AIConfig {
     primaryModel: HAIKU,
     fallbackModel: SONNET,
     apiKey: process.env.ANTHROPIC_API_KEY ?? '',
+    // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- TODO(phase-4-cleanup): remove legacy AI config once ff_foxy_grounded_only is removed; callers must use grounded-answer service.
     apiBaseUrl: 'https://api.anthropic.com/v1',
     apiVersion: '2023-06-01',
     voyageApiKey: process.env.VOYAGE_API_KEY ?? null,

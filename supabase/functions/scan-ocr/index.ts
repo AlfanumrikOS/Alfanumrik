@@ -339,6 +339,7 @@ ${scan.normalized_text.slice(0, 4000)}
 
 Based on this scanned document, help the student with their question. Be clear, educational, and encouraging. If the text seems like exam questions, help solve them step by step. If it's textbook content, explain it simply.`
 
+      // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- TODO(phase-4-cleanup): scan-ocr answers questions from uploaded images; route through grounded-answer when a vision-input template is added.
       const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {

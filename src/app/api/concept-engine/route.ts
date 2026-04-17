@@ -120,6 +120,7 @@ async function generateQueryEmbedding(text: string): Promise<number[] | null> {
   const voyageKey = process.env.VOYAGE_API_KEY;
   if (!voyageKey) return null;
   try {
+    // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- TODO(phase-4-cleanup): route concept-engine embeddings through grounded-answer service once ff_foxy_grounded_only is removed.
     const res = await fetch('https://api.voyageai.com/v1/embeddings', {
       method: 'POST',
       headers: {
