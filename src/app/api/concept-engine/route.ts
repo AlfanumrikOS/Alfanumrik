@@ -187,6 +187,7 @@ async function handleChapter(
       }),
       // 5. Semantic search for additional relevant chunks
       embedding
+        // eslint-disable-next-line alfanumrik/no-direct-rag-rpc -- TODO(phase-4-cleanup): concept-engine retrieval predates grounded-answer; migrate to grounded-client.callGroundedAnswer() when concept-generation prompts are defined as templates.
         ? supabaseAdmin.rpc('match_rag_chunks', {
             query_text: semanticQuery,
             p_subject: subject,
@@ -488,6 +489,7 @@ async function handleSearchLegacy(
     rpcParams.p_content_type = contentType;
   }
 
+  // eslint-disable-next-line alfanumrik/no-direct-rag-rpc -- TODO(phase-4-cleanup): concept-engine search helper — route through grounded-client.callGroundedAnswer() when search template is defined.
   const { data, error } = await supabaseAdmin.rpc('match_rag_chunks', rpcParams);
 
   if (error) {

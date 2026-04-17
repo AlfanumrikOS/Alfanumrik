@@ -223,6 +223,7 @@ async function fetchRAGContext(
   query: string, subject: string, grade: string, board: string | null = null,
 ): Promise<string | null> {
   try {
+    // eslint-disable-next-line alfanumrik/no-direct-rag-rpc -- TODO(phase-4-cleanup): delete foxy-tutor Edge Function once ff_foxy_grounded_only defaults to true; all Foxy traffic routes through /api/foxy + grounded-answer.
     const { data, error } = await supabase.rpc('match_rag_chunks', {
       query_text: query, p_subject: subject, p_grade: grade,
       match_count: 3, p_board: board, p_min_quality: 0.5,

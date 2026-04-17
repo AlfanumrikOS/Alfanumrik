@@ -101,6 +101,7 @@ export async function retrieveNcertChunks(query: RetrievalQuery): Promise<Retrie
     const chapterTitle: string | null =
       chapterArg && chapterNum === null ? chapterArg : null;
 
+    // eslint-disable-next-line alfanumrik/no-direct-rag-rpc -- TODO(phase-4-cleanup): delete ncert-retriever when Foxy flag ff_foxy_grounded_only defaults to true; grounded-answer service calls match_rag_chunks_ncert internally.
     const { data: rows, error: rpcError } = await supabaseAdmin.rpc('match_rag_chunks_ncert', {
       query_text:        enrichedQuery,
       p_subject_code:    query.subject,

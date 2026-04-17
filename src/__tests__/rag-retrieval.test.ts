@@ -114,6 +114,7 @@ async function fetchRAGContextTestable(
       if (contentType) rpcParams.p_content_type = contentType;
       if (queryEmbedding) rpcParams.query_embedding = JSON.stringify(queryEmbedding);
 
+      // eslint-disable-next-line alfanumrik/no-direct-rag-rpc -- TODO(phase-4-cleanup): this test validates the RPC shape directly; migrate to call grounded-client.callGroundedAnswer() once all retrievers route through the service.
       const result = await (supabase as SupabaseClient).rpc('match_rag_chunks', rpcParams);
       data = result.data;
       error = result.error;

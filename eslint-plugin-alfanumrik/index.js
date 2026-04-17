@@ -15,6 +15,7 @@ const noRawSubjectImports = require('./no-raw-subject-imports');
 // Grounding-boundary rules live at the repo root under eslint-rules/
 // so they can be tested and referenced without mixing with subject rules.
 const noDirectAiCalls = require(path.join(__dirname, '..', 'eslint-rules', 'no-direct-ai-calls'));
+const noDirectRagRpc = require(path.join(__dirname, '..', 'eslint-rules', 'no-direct-rag-rpc'));
 
 module.exports = {
   rules: {
@@ -22,7 +23,8 @@ module.exports = {
     // "main: no-raw-subject-imports.js" path still resolves for any legacy
     // consumers).
     'no-raw-subject-imports': noRawSubjectImports.rules['no-raw-subject-imports'],
-    // New grounding-boundary rule (Task 3.18)
+    // Grounding-boundary rules (Tasks 3.18 / 3.19)
     'no-direct-ai-calls': noDirectAiCalls,
+    'no-direct-rag-rpc': noDirectRagRpc,
   },
 };

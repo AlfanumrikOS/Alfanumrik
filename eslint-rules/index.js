@@ -13,6 +13,6 @@
 module.exports = {
   rules: {
     'no-direct-ai-calls': require('./no-direct-ai-calls'),
-    // 'no-direct-rag-rpc' is added in Task 3.19.
+    'no-direct-rag-rpc': require('./no-direct-rag-rpc'),
   },
 };

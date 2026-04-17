@@ -2,7 +2,8 @@
   "root": true,
   "extends": "./.eslintrc.json",
   "rules": {
-    "alfanumrik/no-direct-ai-calls": "error"
+    "alfanumrik/no-direct-ai-calls": "error",
+    "alfanumrik/no-direct-rag-rpc": "error"
   },
   "overrides": [
     {
