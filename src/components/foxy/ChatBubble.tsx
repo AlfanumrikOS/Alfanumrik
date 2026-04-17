@@ -2,6 +2,7 @@
 
 import { type ReactNode } from 'react';
 import { UnverifiedBanner } from '@/components/foxy/UnverifiedBanner';
+import { HardAbstainCard } from '@/components/grounding/HardAbstainCard';
 
 /* ═══════════════════════════════════════════════════════════════
    ChatBubble — Message bubble for Foxy conversations
@@ -121,36 +122,11 @@ export function ChatBubble({
 
       {showUnverifiedBanner && <UnverifiedBanner traceId={traceId} />}
 
-      {/* TODO Task 3.12: replace with <HardAbstainCard /> */}
-      {showHardAbstainCard && (
-        <div
-          data-testid="hard-abstain-card"
-          role="status"
-          className="mb-2 rounded-xl px-3 py-3 text-xs"
-          style={{
-            background: 'var(--surface-2)',
-            border: '1px dashed var(--border)',
-            color: 'var(--text-2)',
-          }}
-        >
-          <p className="font-semibold mb-1">Foxy can&apos;t answer this yet</p>
-          <p className="text-[11px] opacity-80">
-            {abstainReason === 'chapter_not_ready'
-              ? 'This chapter hasn\'t been added to Foxy\'s reference library yet.'
-              : abstainReason === 'circuit_open' || abstainReason === 'upstream_error'
-                ? 'Foxy is temporarily unavailable. Please try again in a moment.'
-                : 'Foxy couldn\'t find enough NCERT material to answer confidently.'}
-          </p>
-          {suggestedAlternatives && suggestedAlternatives.length > 0 && (
-            <ul className="mt-2 space-y-1">
-              {suggestedAlternatives.slice(0, 3).map((alt) => (
-                <li key={`${alt.subject_code}-${alt.chapter_number}`} className="text-[11px]">
-                  Try: Ch. {alt.chapter_number} — {alt.chapter_title}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+      {showHardAbstainCard && abstainReason && (
+        <HardAbstainCard
+          reason={abstainReason}
+          alternatives={suggestedAlternatives}
+        />
       )}
 
       {/* Message body — suppressed on hard-abstain since content is empty */}
