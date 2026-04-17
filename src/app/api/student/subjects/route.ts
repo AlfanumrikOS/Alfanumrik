@@ -1,49 +1,37 @@
 // src/app/api/student/subjects/route.ts
+//
+// GET /api/student/subjects
+//
+// Returns the list of subjects the authenticated student can access, sourced
+// from the cbse_syllabus Layer-2 SSoT via get_available_subjects_v2().
+//
+// Phase 3 change (spec §5.1, §7):
+//   Removed the soft-fail fallback to GRADE_SUBJECTS + SUBJECT_META. An RPC
+//   failure NOW returns 500 { error: 'service_unavailable' } instead of
+//   silently returning a (possibly stale) constants-derived list. Explicit
+//   failure is required because the legacy path could surface subjects that
+//   have no NCERT content ready — which violates P12 (AI safety).
+//
+// GRADE_SUBJECTS/SUBJECT_META are retained in @/lib/constants temporarily;
+// TODO-1 tracks their full removal.
+
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
-import { getAllowedSubjectsForStudent } from '@/lib/subjects';
 import { logger } from '@/lib/logger';
-// eslint-disable-next-line alfanumrik/no-raw-subject-imports -- legacy fallback path when governance tables unavailable
-import { GRADE_SUBJECTS, SUBJECT_META } from '@/lib/constants';
-import type { Subject } from '@/lib/subjects.types';
 
 export const runtime = 'nodejs';
 
-// Hindi name fallback for legacy path (governance tables unavailable)
-const SUBJECT_NAME_HI: Record<string, string> = {
-  math: 'गणित', science: 'विज्ञान', english: 'अंग्रेज़ी', hindi: 'हिंदी',
-  social_studies: 'सामाजिक विज्ञान', physics: 'भौतिक विज्ञान', chemistry: 'रसायन विज्ञान',
-  biology: 'जीव विज्ञान', computer_science: 'कंप्यूटर विज्ञान', economics: 'अर्थशास्त्र',
-  accountancy: 'लेखा-शास्त्र', business_studies: 'व्यवसाय अध्ययन',
-  political_science: 'राजनीति विज्ञान', history_sr: 'इतिहास', geography: 'भूगोल',
-  coding: 'कोडिंग',
-};
-
-function buildLegacySubjects(grade: string): Subject[] {
-  const metaMap = new Map(SUBJECT_META.map(s => [s.code as string, s]));
-  const codes = GRADE_SUBJECTS[grade] ?? GRADE_SUBJECTS['9'] ?? [];
-  return codes
-    .filter(code => metaMap.has(code))
-    .map(code => {
-      const m = metaMap.get(code)!;
-      return {
-        code: m.code,
-        name: m.name,
-        nameHi: SUBJECT_NAME_HI[m.code] ?? m.name,
-        icon: m.icon,
-        color: m.color,
-        subjectKind: 'cbse_core' as const,
-        isCore: true,
-        isLocked: false,
-      };
-    });
+interface SubjectV2Row {
+  subject_code: string;
+  subject_display: string;
+  subject_display_hi: string | null;
+  ready_chapter_count: number;
 }
 
 export async function GET(request: NextRequest) {
   try {
-    // Auth: try Bearer token first (client sends from localStorage),
-    // fall back to cookie-based session.
+    // Auth: Bearer token first (client sends from localStorage), then cookie.
     let userId: string | null = null;
 
     const authHeader = request.headers.get('authorization');
@@ -55,42 +43,51 @@ export async function GET(request: NextRequest) {
     }
 
     if (!userId) {
-      // Cookie fallback (works when middleware syncs tokens to cookies)
       const supabase = await createSupabaseServerClient();
       const { data: { user } } = await supabase.auth.getUser();
       if (user) userId = user.id;
     }
 
-    if (!userId) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+    if (!userId) {
+      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+    }
 
-    // Use admin client for the RPC call (service_role bypasses RLS)
+    // Admin client for RPC (bypasses RLS; the RPC enforces caller ownership
+    // internally via (students.id OR students.auth_user_id) = p_student_id).
     const supabase = getSupabaseAdmin();
 
-    // Try governed subject list first
-    try {
-      const subjects = await getAllowedSubjectsForStudent(userId, { supabase });
-      return NextResponse.json({ subjects });
-    } catch (govErr) {
-      // Governance RPCs unavailable — fall back to legacy constants
-      logger.warn('subjects.governance_fallback', {
+    const { data, error } = await supabase.rpc('get_available_subjects_v2', {
+      p_student_id: userId,
+    });
+
+    if (error) {
+      logger.error('subjects.v2_rpc_failed', {
         userId,
-        error: govErr instanceof Error ? govErr.message : String(govErr),
-        note: 'Falling back to GRADE_SUBJECTS — governance migrations may not be applied',
+        rpcError: error.message,
       });
-
-      // Look up student grade for correct subject list
-      let grade = '9'; // safe default
-      try {
-        const { data: student } = await supabase
-          .from('students')
-          .select('grade')
-          .eq('auth_user_id', userId)
-          .maybeSingle();
-        if (student?.grade) grade = String(student.grade);
-      } catch { /* use default grade */ }
-
-      return NextResponse.json({ subjects: buildLegacySubjects(grade) });
+      return NextResponse.json(
+        { error: 'service_unavailable' },
+        { status: 500 },
+      );
     }
+
+    const rows = (data ?? []) as SubjectV2Row[];
+
+    // Empty result = student has no ready subjects yet. This is a legitimate
+    // state (e.g. new grade with ingestion pending) and is returned as 200
+    // with an empty array — the client shows an "no content yet" banner.
+    // If the student row itself is missing the RPC also returns empty, so we
+    // cannot distinguish "missing student" from "no ready content"; both
+    // surface as an empty subjects list which is safe.
+
+    const subjects = rows.map((r) => ({
+      code: r.subject_code,
+      name: r.subject_display,
+      nameHi: r.subject_display_hi ?? r.subject_display,
+      readyChapterCount: r.ready_chapter_count,
+    }));
+
+    return NextResponse.json({ subjects });
   } catch (e) {
     logger.error('subjects.list_failed', { err: String(e) });
     return NextResponse.json({ error: 'internal_error' }, { status: 500 });
