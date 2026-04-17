@@ -8,6 +8,12 @@ describe('syllabus status triggers', () => {
   };
 
   beforeAll(async () => {
+    // Pollution guard: clean up any leftover rows from a previously-crashed run
+    // before inserting. Without this, a UNIQUE violation kills the whole suite.
+    await supabaseAdmin.from('cbse_syllabus').delete().match(testRow);
+    await supabaseAdmin.from('rag_content_chunks').delete().match({
+      subject_code: 'science_trigger_test', chapter_number: 777,
+    });
     await supabaseAdmin.from('cbse_syllabus').insert(testRow);
   });
 

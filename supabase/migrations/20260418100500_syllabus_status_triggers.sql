@@ -14,11 +14,16 @@ DECLARE
   v_questions int;
   v_status text;
 BEGIN
+  -- is_active = true filter matches the rest of the RAG codebase
+  -- (20260403000001_fix_rag_vector_search.sql, 20260403700000, etc.):
+  -- soft-deleted chunks must not be counted toward cbse_syllabus.chunk_count
+  -- or rag_status could falsely report 'ready' while retrieval sees fewer chunks.
   SELECT count(*) INTO v_chunks
     FROM rag_content_chunks
     WHERE grade_short = p_grade
       AND subject_code = p_subject_code
-      AND chapter_number = p_chapter_number;
+      AND chapter_number = p_chapter_number
+      AND is_active = true;
 
   SELECT count(*) INTO v_questions
     FROM question_bank

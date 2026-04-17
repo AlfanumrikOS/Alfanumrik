@@ -9,7 +9,7 @@ describe('question_bank verification columns', () => {
       correct_answer_index: 0,
       explanation: 'Test explanation that is long enough to pass validation.',
       subject: 'science', grade: '10', chapter_number: 1,
-      difficulty: 'medium', bloom_level: 'understand',
+      difficulty: 2, bloom_level: 'understand',
     }).select('verification_state, verified_against_ncert').single();
     expect(error).toBeNull();
     expect(data!.verification_state).toBe('legacy_unverified');
@@ -21,7 +21,7 @@ describe('question_bank verification columns', () => {
       question_text: 'Test.', options: ['A','B','C','D'],
       correct_answer_index: 0, explanation: 'x',
       subject: 'science', grade: '10', chapter_number: 1,
-      difficulty: 'medium', bloom_level: 'understand',
+      difficulty: 2, bloom_level: 'understand',
       verification_state: 'bogus',
     });
     expect(error).not.toBeNull();
