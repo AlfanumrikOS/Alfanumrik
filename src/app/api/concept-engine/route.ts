@@ -3,6 +3,9 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 import { authorizeRequest } from '@/lib/rbac';
 import { logger } from '@/lib/logger';
 import { validateSubjectWrite } from '@/lib/subjects';
+import { isFeatureEnabled } from '@/lib/feature-flags';
+import { callGroundedAnswer, type GroundedRequest } from '@/lib/ai/grounded-client';
+import { PER_PLAN_TIMEOUT_MS } from '@/lib/grounding-config';
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -333,12 +336,138 @@ async function handleChapter(
 
 /**
  * action=search — Semantic search across RAG chunks using Voyage embeddings.
+ *
+ * Feature-flag gated: when `ff_grounded_ai_concept_engine` is ON, routes
+ * through the grounded-answer service with `retrieve_only: true`. When OFF,
+ * falls back to the legacy direct Voyage + match_rag_chunks path. The legacy
+ * path is the Phase 3 kill switch and is deleted in Phase 4.
  */
 async function handleSearch(
   grade: string,
   subject: string,
   query: string,
-  contentType: string | null
+  contentType: string | null,
+  userId: string | null,
+  plan: string,
+) {
+  const useGroundedService = await isFeatureEnabled('ff_grounded_ai_concept_engine', {
+    role: 'student',
+    userId: userId ?? undefined,
+  });
+
+  if (useGroundedService) {
+    return handleSearchViaGrounded(grade, subject, query, contentType, plan);
+  }
+  return handleSearchLegacy(grade, subject, query, contentType);
+}
+
+/**
+ * Grounded-answer path (retrieve_only=true). The service runs Voyage +
+ * match_rag_chunks with the same RPC, but inside the shared Edge Function
+ * so circuit-breaker, timeout, and cache behavior stay consistent across
+ * all surface routes.
+ *
+ * system_prompt_template is unused when retrieve_only=true but the validator
+ * requires it to be a registered template — pass foxy_tutor_v1.
+ */
+async function handleSearchViaGrounded(
+  grade: string,
+  subject: string,
+  query: string,
+  contentType: string | null,
+  plan: string,
+) {
+  const groundedRequest: GroundedRequest = {
+    caller: 'concept-engine',
+    student_id: null,
+    query,
+    scope: {
+      board: 'CBSE',
+      grade,
+      subject_code: subject,
+      chapter_number: null,
+      chapter_title: null,
+    },
+    mode: 'soft',
+    generation: {
+      model_preference: 'auto',
+      max_tokens: 1,
+      temperature: 0,
+      // Unused when retrieve_only=true, but validator requires a registered
+      // template name. foxy_tutor_v1 is the canonical placeholder.
+      system_prompt_template: 'foxy_tutor_v1',
+      template_variables: {},
+    },
+    retrieval: { match_count: 10 },
+    retrieve_only: true,
+    timeout_ms: PER_PLAN_TIMEOUT_MS[plan] ?? 20000,
+  };
+
+  const hopTimeoutMs = (PER_PLAN_TIMEOUT_MS[plan] ?? 20000) + 2000;
+  const grounded = await callGroundedAnswer(groundedRequest, { hopTimeoutMs });
+
+  if (!grounded.grounded) {
+    // Abstain — return empty results but preserve traceId for debugging.
+    // chapter_not_ready / no_chunks_retrieved are the expected paths here
+    // (service did retrieval but found nothing).
+    logger.info('concept_engine_grounded_abstain', {
+      grade,
+      subject,
+      query,
+      abstainReason: grounded.abstain_reason,
+      traceId: grounded.trace_id,
+    });
+    return NextResponse.json({
+      success: true,
+      data: {
+        query,
+        grade,
+        subject,
+        content_type: contentType,
+        results: [] as SearchResult[],
+        total_results: 0,
+        has_embedding: true,
+        traceId: grounded.trace_id,
+        abstainReason: grounded.abstain_reason,
+      },
+    });
+  }
+
+  // Map citations → SearchResult[] for backward compat with existing clients.
+  // Citation shape intentionally differs from match_rag_chunks row shape; the
+  // mapping below preserves the subset the concept-engine client reads.
+  const results: SearchResult[] = grounded.citations.map((c) => ({
+    id: c.chunk_id,
+    content: c.excerpt,
+    chapter_title: c.chapter_title,
+    topic: null,                 // Citation doesn't carry topic
+    concept: null,               // Citation doesn't carry concept
+    similarity: c.similarity,
+    media_url: c.media_url,
+    content_type: c.media_url ? 'diagram' : 'content',
+  }));
+
+  return NextResponse.json({
+    success: true,
+    data: {
+      query,
+      grade,
+      subject,
+      content_type: contentType,
+      results,
+      total_results: results.length,
+      has_embedding: true,
+      traceId: grounded.trace_id,
+    },
+  });
+}
+
+/** Legacy direct Voyage + match_rag_chunks path (kill-switch fallback). */
+async function handleSearchLegacy(
+  grade: string,
+  subject: string,
+  query: string,
+  contentType: string | null,
 ) {
   // Generate Voyage embedding for the query
   const embedding = await generateQueryEmbedding(query);
@@ -634,6 +763,7 @@ export async function GET(request: Request) {
         );
       }
 
+      let studentPlan = 'free';
       if (auth.studentId) {
         const v = await validateSubjectWrite(auth.studentId, subject.trim(), {
           supabase: supabaseAdmin,
@@ -649,9 +779,35 @@ export async function GET(request: Request) {
             { status: 422 },
           );
         }
+
+        // Best-effort plan lookup for per-plan timeout. Non-fatal: on error we
+        // fall through with the 'free' default which picks the tightest
+        // timeout — conservative for the student.
+        try {
+          const { data: studentRow } = await supabaseAdmin
+            .from('students')
+            .select('subscription_plan')
+            .eq('id', auth.studentId)
+            .single();
+          if (studentRow?.subscription_plan) {
+            const raw = String(studentRow.subscription_plan);
+            studentPlan = raw
+              .replace(/_(monthly|yearly)$/, '')
+              .replace(/^basic$/, 'starter')
+              .replace(/^premium$/, 'pro')
+              .replace(/^ultimate$/, 'unlimited');
+          }
+        } catch { /* use default */ }
       }
 
-      return handleSearch(grade, subject.trim(), query.trim(), contentType);
+      return handleSearch(
+        grade,
+        subject.trim(),
+        query.trim(),
+        contentType,
+        auth.userId ?? null,
+        studentPlan,
+      );
     }
 
     // ── action=quiz-pool ──
