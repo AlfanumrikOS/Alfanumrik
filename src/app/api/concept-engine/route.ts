@@ -120,6 +120,7 @@ async function generateQueryEmbedding(text: string): Promise<number[] | null> {
   const voyageKey = process.env.VOYAGE_API_KEY;
   if (!voyageKey) return null;
   try {
+    // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- TODO(phase-4-cleanup): route concept-engine embeddings through grounded-answer service once ff_foxy_grounded_only is removed.
     const res = await fetch('https://api.voyageai.com/v1/embeddings', {
       method: 'POST',
       headers: {
@@ -186,6 +187,7 @@ async function handleChapter(
       }),
       // 5. Semantic search for additional relevant chunks
       embedding
+        // eslint-disable-next-line alfanumrik/no-direct-rag-rpc -- TODO(phase-4-cleanup): concept-engine retrieval predates grounded-answer; migrate to grounded-client.callGroundedAnswer() when concept-generation prompts are defined as templates.
         ? supabaseAdmin.rpc('match_rag_chunks', {
             query_text: semanticQuery,
             p_subject: subject,
@@ -487,6 +489,7 @@ async function handleSearchLegacy(
     rpcParams.p_content_type = contentType;
   }
 
+  // eslint-disable-next-line alfanumrik/no-direct-rag-rpc -- TODO(phase-4-cleanup): concept-engine search helper — route through grounded-client.callGroundedAnswer() when search template is defined.
   const { data, error } = await supabaseAdmin.rpc('match_rag_chunks', rpcParams);
 
   if (error) {

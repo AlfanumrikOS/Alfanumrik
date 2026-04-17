@@ -535,6 +535,7 @@ Use unique string IDs like "s1", "s2", etc. for each item.
 Return ONLY valid JSON, no markdown.`
 
   try {
+    // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- TODO(phase-4-cleanup): daily-cron generates morning nudges without RAG; either route through grounded-answer non-retrieval mode or keep as-is (cron is not student-facing at call time).
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {

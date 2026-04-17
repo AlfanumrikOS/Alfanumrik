@@ -444,6 +444,7 @@ Return ONLY valid JSON with this exact structure:
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 15_000)
 
+    // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- TODO(phase-4-cleanup): parent-report-generator is analytics narrative generation, not student-facing; exempt from grounded-answer routing.
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {

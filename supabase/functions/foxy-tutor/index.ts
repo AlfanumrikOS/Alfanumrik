@@ -223,6 +223,7 @@ async function fetchRAGContext(
   query: string, subject: string, grade: string, board: string | null = null,
 ): Promise<string | null> {
   try {
+    // eslint-disable-next-line alfanumrik/no-direct-rag-rpc -- TODO(phase-4-cleanup): delete foxy-tutor Edge Function once ff_foxy_grounded_only defaults to true; all Foxy traffic routes through /api/foxy + grounded-answer.
     const { data, error } = await supabase.rpc('match_rag_chunks', {
       query_text: query, p_subject: subject, p_grade: grade,
       match_count: 3, p_board: board, p_min_quality: 0.5,
@@ -385,6 +386,7 @@ Deno.serve(async (req: Request) => {
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), 20_000)
       try {
+        // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- TODO(phase-4-cleanup): delete foxy-tutor Edge Function once ff_foxy_grounded_only defaults to true; all Foxy traffic flows through /api/foxy + grounded-answer.
         return await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: { 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },

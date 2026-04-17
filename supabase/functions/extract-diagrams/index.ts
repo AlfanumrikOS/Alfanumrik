@@ -166,6 +166,7 @@ Respond as a JSON array matching the input order. Each element: {"caption": "...
     .join('\n\n')
 
   try {
+    // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- TODO(phase-4-cleanup): extract-diagrams is ingestion/content preparation, not student-facing. Exempt from grounded-answer routing.
     const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {

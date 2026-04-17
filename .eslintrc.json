@@ -7,7 +7,9 @@
     "@next/next/no-img-element": "warn",
     "react/no-unescaped-entities": "warn",
     "no-console": ["warn", { "allow": ["warn", "error"] }],
-    "alfanumrik/no-raw-subject-imports": "error"
+    "alfanumrik/no-raw-subject-imports": "error",
+    "alfanumrik/no-direct-ai-calls": "off",
+    "alfanumrik/no-direct-rag-rpc": "off"
   },
   "overrides": [
     {

@@ -331,6 +331,7 @@ async function callClaude(prompt: string, maxTokens: number, systemPrompt: strin
   const timeout = setTimeout(() => controller.abort(), 25000)
 
   try {
+    // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- TODO(phase-4-cleanup): ncert-solver already routes through grounded-answer behind ff_ncert_grounded flag; delete this fallback call once flag defaults to true.
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {

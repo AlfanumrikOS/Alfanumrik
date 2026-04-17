@@ -126,6 +126,7 @@ async function extractQAFromContent(chapterText: string): Promise<QAItem[]> {
   const timeoutId = setTimeout(() => controller.abort(), CLAUDE_TIMEOUT_MS)
 
   try {
+    // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- TODO(phase-4-cleanup): embed-ncert-qa is ingestion-time content preparation; not student-facing. Consider routing through shared embeddings client but not the grounded-answer pipeline.
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {

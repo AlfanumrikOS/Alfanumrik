@@ -382,6 +382,7 @@ describe('e) AI Config (getAIConfig)', () => {
     expect(config).toBeDefined();
     expect(config.primaryModel).toBeDefined();
     expect(config.fallbackModel).toBeDefined();
+    // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- TODO(phase-4-cleanup): remove when legacy AI config object is deleted.
     expect(config.apiBaseUrl).toBe('https://api.anthropic.com/v1');
     expect(config.apiVersion).toBeTruthy();
     expect(config.embeddingModel).toBe('voyage-3');

@@ -112,6 +112,7 @@ async function callClaude(
   const timeout = setTimeout(() => controller.abort(), CLAUDE_TIMEOUT_MS)
 
   try {
+    // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- TODO(phase-4-cleanup): generate-answers is ingestion/authoring-time, not student-facing.
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
