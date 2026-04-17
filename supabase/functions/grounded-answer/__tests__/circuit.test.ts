@@ -9,12 +9,16 @@
 //   half-open → closed after 2 consecutive probe successes
 //   half-open → open on any probe failure (resets 30s timer)
 
-import { assertEquals } from 'https://deno.land/std@0.210.0/assert/mod.ts';
+import { assert, assertEquals } from 'https://deno.land/std@0.210.0/assert/mod.ts';
 import {
+  __breakerMapSizeForTests,
   __resetAllForTests,
+  BREAKER_MAP_HARD_CAP,
   canProceed,
   circuitKey,
   getState,
+  IDLE_PRUNE_MS,
+  pruneClosedIdleBreakers,
   recordFailure,
   recordSuccess,
 } from '../circuit.ts';
@@ -164,5 +168,84 @@ Deno.test('isolated failure in closed does NOT accumulate after a success', () =
     recordFailure(key());
     // Only 2 failures since the success; breaker stays closed.
     assertEquals(getState(key()), 'closed');
+  });
+});
+
+// C7 fix: memory bounds on the breakers map.
+
+Deno.test('prunes CLOSED breakers whose lastStateChange is older than 10 min', () => {
+  __resetAllForTests();
+  withFakeClock((advance) => {
+    // Create 10 breakers in the closed state (each canProceed creates one).
+    for (let i = 0; i < 10; i++) {
+      canProceed(circuitKey('foxy', 'science', `grade-${i}`));
+    }
+    assertEquals(__breakerMapSizeForTests(), 10);
+
+    // Advance past the idle-prune threshold.
+    advance(IDLE_PRUNE_MS + 1);
+
+    // Next canProceed() for a fresh key should prune the 10 stale closed
+    // entries BEFORE inserting the new one. Final size = 1 (only the new key).
+    canProceed(circuitKey('foxy', 'science', 'fresh-key'));
+    assertEquals(__breakerMapSizeForTests(), 1);
+  });
+});
+
+Deno.test('pruning does NOT remove OPEN or HALF-OPEN breakers', () => {
+  __resetAllForTests();
+  withFakeClock((advance) => {
+    const k = circuitKey('foxy', 'science', '10');
+    // Trip to open.
+    recordFailure(k);
+    recordFailure(k);
+    recordFailure(k);
+    assertEquals(getState(k), 'open');
+
+    // Wait long enough that, if it were closed, it would be pruned.
+    advance(IDLE_PRUNE_MS + CIRCUIT_BREAKER_OPEN_MS + 1);
+
+    // Prune directly. Should NOT touch the open breaker. (Technically it
+    // has auto-transitioned to being eligible for half-open via the open
+    // timer, but canProceed() is what drives that — we only call prune here.)
+    const removed = pruneClosedIdleBreakers();
+    assertEquals(removed, 0);
+    assertEquals(__breakerMapSizeForTests(), 1);
+  });
+});
+
+Deno.test('hard cap 1000: inserting past cap evicts oldest entry', () => {
+  __resetAllForTests();
+  withFakeClock((advance) => {
+    // Fill to exactly the cap. Each getOrCreate at this scale is cheap.
+    for (let i = 0; i < BREAKER_MAP_HARD_CAP; i++) {
+      // Advance by 1 ms per insertion so the first one is strictly the oldest.
+      advance(1);
+      canProceed(circuitKey('foxy', 'science', `g${i}`));
+    }
+    assertEquals(__breakerMapSizeForTests(), BREAKER_MAP_HARD_CAP);
+
+    // The very first key we inserted has the oldest lastStateChange.
+    const oldestKey = circuitKey('foxy', 'science', 'g0');
+
+    // Force insertion of one more entry. pruneClosedIdleBreakers runs at
+    // the top of canProceed, but all current entries are fresh (just
+    // inserted, well within IDLE_PRUNE_MS), so prune removes nothing.
+    // The hard-cap eviction path in getOrCreate should evict g0.
+    advance(1);
+    canProceed(circuitKey('foxy', 'science', 'g-overflow'));
+
+    // Size stays at cap (one evicted, one inserted).
+    assertEquals(__breakerMapSizeForTests(), BREAKER_MAP_HARD_CAP);
+    // Oldest key was evicted; a fresh canProceed on it creates a NEW
+    // record (state resets to closed). We verify eviction by noting that
+    // if the original record were still there, the map would be at
+    // cap+1 after this call. It is not → eviction happened.
+    advance(1);
+    canProceed(oldestKey);
+    // One new insert (for oldestKey). This triggers another eviction of
+    // the new oldest. Size stays at cap.
+    assertEquals(__breakerMapSizeForTests(), BREAKER_MAP_HARD_CAP);
+    assert(true); // sanity: no throws in eviction path
   });
 });

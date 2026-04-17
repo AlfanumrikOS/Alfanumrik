@@ -1,7 +1,7 @@
 // supabase/functions/grounded-answer/__tests__/pipeline.test.ts
-// Integration test for the end-to-end pipeline in index.ts.
-// Runs in Deno with upstream fetches stubbed and the Supabase client
-// replaced via __setSupabaseClientForTests.
+// Integration test for the end-to-end pipeline in pipeline.ts (re-exported
+// from index.ts). Runs in Deno with upstream fetches stubbed and the
+// Supabase client replaced via __setSupabaseClientForTests.
 //
 // High-value scenarios per spec §6.4:
 //   1. chapter_not_ready → abstain + trace written
@@ -19,6 +19,7 @@
 
 import { assert, assertEquals } from 'https://deno.land/std@0.210.0/assert/mod.ts';
 import {
+  handleRequest,
   runPipeline,
   __setSupabaseClientForTests,
   __resetFeatureFlagCacheForTests,
@@ -443,6 +444,82 @@ Deno.test('retrieve_only with 0 chunks → abstain no_chunks_retrieved', async (
     assertEquals(resp.abstain_reason, 'no_chunks_retrieved');
     assertEquals(resp.trace_id, 'trace-ro-empty');
   }
+});
+
+// C1 fix: scope_mismatch is distinct from no_chunks_retrieved.
+// When the RPC returns rows but ALL of them get dropped by scope
+// verification (e.g. silent RPC broadening), we should surface
+// scope_mismatch so alerts can distinguish "upstream bug" from
+// "legitimately empty chapter."
+Deno.test('scope_mismatch: all retrieved chunks dropped for wrong chapter → abstain scope_mismatch', async () => {
+  // 5 chunks, all with chapter_number=9 — request scope is chapter 1.
+  // retrieval.ts drops all 5 (scopeDrops=5, chunks.length=0).
+  // pipeline.ts should emit abstain_reason='scope_mismatch'.
+  __setSupabaseClientForTests(
+    buildSbStub({
+      chapter_ready: true,
+      flag_enabled: true,
+      chunks: [1, 2, 3, 4, 5].map((n) => ({
+        id: `wrong-${n}`,
+        content: `Off-scope content ${n}`,
+        chapter_number: 9, // request is chapter 1
+        chapter_title: 'Wrong Chapter',
+        page_number: n,
+        similarity: 0.9,
+      })),
+      trace_insert_id: 'trace-scope-mismatch',
+    }),
+  );
+  __resetFeatureFlagCacheForTests();
+  __clearCacheForTests();
+  __resetCircuitsForTests();
+
+  const resp = await runPipeline(
+    makeRequest(), // scope.chapter_number = 1
+    Date.now(),
+    'anthropic-key',
+    '',
+  );
+  assertEquals(resp.grounded, false);
+  if (!resp.grounded) {
+    assertEquals(resp.abstain_reason, 'scope_mismatch');
+    assertEquals(resp.trace_id, 'trace-scope-mismatch');
+  }
+});
+
+// C10 fix: handleRequest wraps runPipeline in try/catch. If the pipeline
+// throws (simulated here by making the supabase stub's from() throw),
+// handleRequest must return a structured upstream_error abstain with
+// HTTP 500 — NOT a Deno default error page.
+Deno.test('handleRequest: pipeline throws → 500 with structured upstream_error abstain', async () => {
+  // deno-lint-ignore no-explicit-any
+  const throwingSb: any = {
+    from() {
+      throw new Error('simulated: loadTemplate threw (e.g. missing .txt file)');
+    },
+    rpc() {
+      throw new Error('simulated: RPC layer dead');
+    },
+  };
+  __setSupabaseClientForTests(throwingSb);
+  __resetFeatureFlagCacheForTests();
+  __clearCacheForTests();
+  __resetCircuitsForTests();
+
+  const req = new Request('http://test/grounded-answer', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(makeRequest()),
+  });
+  const resp = await handleRequest(req);
+
+  assertEquals(resp.status, 500);
+  const body = await resp.json();
+  assertEquals(body.grounded, false);
+  assertEquals(body.abstain_reason, 'upstream_error');
+  assertEquals(Array.isArray(body.suggested_alternatives), true);
+  assert(typeof body.trace_id === 'string');
+  assert(typeof body.meta?.latency_ms === 'number');
 });
 
 Deno.test('retrieve_only respects scope verification (wrong-chapter chunks dropped)', async () => {
