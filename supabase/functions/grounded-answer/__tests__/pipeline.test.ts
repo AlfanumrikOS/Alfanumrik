@@ -23,6 +23,8 @@ import {
   __setSupabaseClientForTests,
   __resetFeatureFlagCacheForTests,
 } from '../index.ts';
+import { __clearCacheForTests } from '../cache.ts';
+import { __resetAllForTests as __resetCircuitsForTests } from '../circuit.ts';
 import type { GroundedRequest } from '../types.ts';
 
 // ── Upstream fetch stub ──────────────────────────────────────────────────────
@@ -233,6 +235,8 @@ Deno.test('chapter_not_ready → trace written, abstain returned', async () => {
     }),
   );
   __resetFeatureFlagCacheForTests();
+  __clearCacheForTests();
+  __resetCircuitsForTests();
 
   const started = Date.now();
   const resp = await runPipeline(makeRequest(), started, 'anthropic-key', 'voyage-key');
@@ -255,6 +259,8 @@ Deno.test('strict happy path → grounded:true with citations', async () => {
     }),
   );
   __resetFeatureFlagCacheForTests();
+  __clearCacheForTests();
+  __resetCircuitsForTests();
   installFetchStub({
     voyage: voyageOk,
     claude: [
@@ -293,6 +299,8 @@ Deno.test('strict grounding check fail → abstain no_supporting_chunks', async 
     }),
   );
   __resetFeatureFlagCacheForTests();
+  __clearCacheForTests();
+  __resetCircuitsForTests();
   installFetchStub({
     voyage: voyageOk,
     claude: [
@@ -329,6 +337,8 @@ Deno.test('retrieve_only=true → skips Claude, returns grounded with citations 
     }),
   );
   __resetFeatureFlagCacheForTests();
+  __clearCacheForTests();
+  __resetCircuitsForTests();
 
   // No fetch stub — if Claude is called, fetch will hit the restored
   // original and blow up during a unit-test run; we want that signal.
@@ -359,6 +369,8 @@ Deno.test('soft mode with 2 chunks → grounded, no grounding check, confidence 
     }),
   );
   __resetFeatureFlagCacheForTests();
+  __clearCacheForTests();
+  __resetCircuitsForTests();
   installFetchStub({
     voyage: voyageOk,
     claude: [
@@ -396,6 +408,8 @@ Deno.test('feature flag disabled → abstain upstream_error, no upstream calls',
     }),
   );
   __resetFeatureFlagCacheForTests();
+  __clearCacheForTests();
+  __resetCircuitsForTests();
 
   const resp = await runPipeline(makeRequest(), Date.now(), 'anthropic-key', 'voyage-key');
   assertEquals(resp.grounded, false);

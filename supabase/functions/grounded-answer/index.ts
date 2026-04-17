@@ -43,6 +43,7 @@ import {
   recordFailure,
   recordSuccess,
 } from './circuit.ts';
+import { buildCacheKey, getFromCache, putInCache } from './cache.ts';
 import {
   STRICT_MIN_SIMILARITY,
   SOFT_MIN_SIMILARITY,
@@ -225,6 +226,22 @@ export async function runPipeline(
       traceId,
       startedAt,
     );
+  }
+
+  // Step 2b. Cache lookup (spec §6.9). Only grounded:true responses live
+  // in the cache; miss on retrieve_only (concept-engine wants fresh data).
+  // Cache hits do not write a new trace row — see cache.ts comment.
+  if (!request.retrieve_only) {
+    const cacheKey = await buildCacheKey(request.query, request.scope, request.mode);
+    const hit = getFromCache(cacheKey);
+    if (hit && hit.grounded) {
+      console.log('cache_hit', {
+        caller: request.caller,
+        grade: request.scope.grade,
+        subject: request.scope.subject_code,
+      });
+      return hit;
+    }
   }
 
   // Step 3. Global kill switch (ff_grounded_ai_enabled).
@@ -531,7 +548,7 @@ export async function runPipeline(
   traceRow.output_tokens = claude.outputTokens;
   const traceId = await writeTrace(sb, traceRow);
 
-  return {
+  const response: GroundedResponse = {
     grounded: true,
     answer: claude.content,
     citations,
@@ -543,6 +560,13 @@ export async function runPipeline(
       latency_ms: Date.now() - startedAt,
     },
   };
+
+  // Cache the grounded response. retrieve_only responses skip the cache
+  // because concept-engine expects fresh retrieval on every call.
+  const cacheKey = await buildCacheKey(request.query, request.scope, request.mode);
+  putInCache(cacheKey, response);
+
+  return response;
 }
 
 /**
