@@ -125,7 +125,7 @@ export async function getOverride(
 
   if (error) {
     logger.error('plan_gate_override_query_failed', {
-      error: error instanceof Error ? error : new Error(error.message ?? String(error)),
+      error: error instanceof Error ? error : new Error(String(error)),
       route: 'plan-gate',
       plan,
       permissionCode,
@@ -203,7 +203,7 @@ export async function checkPlanGate(
 
       if (rpcError) {
         logger.error('plan_gate_rpc_failed', {
-          error: rpcError instanceof Error ? rpcError : new Error(rpcError.message ?? String(rpcError)),
+          error: rpcError instanceof Error ? rpcError : new Error(String(rpcError)),
           route: 'plan-gate',
           userId,
           permissionCode,

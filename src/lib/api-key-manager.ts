@@ -156,12 +156,10 @@ export async function validateApiKey(
     }
 
     // Update last_used_at (fire-and-forget)
-    supabase
+    void supabase
       .from('school_api_keys')
       .update({ last_used_at: new Date().toISOString() })
-      .eq('id', data.id)
-      .then(() => {})
-      .catch(() => {});
+      .eq('id', data.id);
 
     return {
       valid: true,

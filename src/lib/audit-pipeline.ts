@@ -140,7 +140,7 @@ export async function captureBeforeSnapshot(
       table,
       resourceId,
       capturedAt: new Date().toISOString(),
-      data: error ? null : (data as Record<string, unknown>),
+      data: error ? null : (data as unknown as Record<string, unknown>),
     };
   } catch {
     return {
