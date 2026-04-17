@@ -44,9 +44,10 @@ class AppColors {
   static const Color socialStudiesColor = Color(0xFF78716C);
   static const Color codingColor = Color(0xFF06B6D4);
 
-  // XP / Gamification
+  // XP / Gamification / Foxy Coins
   static const Color xpGold = Color(0xFFFBBF24);
   static const Color xpBronze = Color(0xFFCD7F32);
+  static const Color foxyCoins = Color(0xFFF59E0B); // Amber for Foxy Coins
 
   // Plan badge colors
   static const Color planFree = Color(0xFF94A3B8);

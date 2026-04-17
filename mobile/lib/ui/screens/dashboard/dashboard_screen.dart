@@ -109,20 +109,38 @@ class DashboardScreen extends ConsumerWidget {
                         padding: const EdgeInsets.all(16),
                         child: Column(
                           children: [
-                            // XP + Level + Streak row
+                            // Stats row: Performance Score / Coins / Streak
+                            // TODO(mobile-sync): Once the backend returns
+                            // `performance_score` and `foxy_coins`, replace
+                            // the XP stat with Performance Score and add a
+                            // Foxy Coins balance card. The data model already
+                            // supports both via DashboardData.performanceScore
+                            // and DashboardData.foxyCoins.
                             Row(
                               children: [
+                                // Show Performance Score when available,
+                                // otherwise legacy XP.
                                 _StatCard(
-                                  emoji: '⭐',
-                                  value: '${dash.xpTotal}',
-                                  label: 'XP',
+                                  emoji: dash.performanceScore > 0
+                                      ? '📊'
+                                      : '⭐',
+                                  value: dash.performanceScore > 0
+                                      ? '${dash.performanceScore.round()}'
+                                      : '${dash.xpTotal}',
+                                  label: dash.performanceScore > 0
+                                      ? 'Score'
+                                      : 'XP',
                                   color: AppColors.xpGold,
                                 ),
                                 const SizedBox(width: 10),
                                 _StatCard(
                                   emoji: '🏆',
-                                  value: 'Lv ${dash.level}',
-                                  label: dash.levelName,
+                                  value: dash.performanceScore > 0
+                                      ? dash.levelName
+                                      : 'Lv ${dash.level}',
+                                  label: dash.performanceScore > 0
+                                      ? 'Level'
+                                      : dash.levelName,
                                   color: AppColors.accent,
                                 ),
                                 const SizedBox(width: 10),
@@ -136,6 +154,8 @@ class DashboardScreen extends ConsumerWidget {
                             ),
                             const SizedBox(height: 10),
                             // Level progress bar
+                            // Progress bar: shows Performance Score (0-100)
+                            // when available, otherwise legacy XP progress.
                             Container(
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
@@ -150,7 +170,9 @@ class DashboardScreen extends ConsumerWidget {
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
                                       Text(
-                                        'Level ${dash.level} Progress',
+                                        dash.performanceScore > 0
+                                            ? 'Performance Score'
+                                            : 'Level ${dash.level} Progress',
                                         style: const TextStyle(
                                           fontSize: 12,
                                           fontWeight: FontWeight.w600,
@@ -158,7 +180,9 @@ class DashboardScreen extends ConsumerWidget {
                                         ),
                                       ),
                                       Text(
-                                        '${(dash.levelProgress * 100).toInt()}%',
+                                        dash.performanceScore > 0
+                                            ? '${dash.performanceScore.round()}/100'
+                                            : '${(dash.levelProgress * 100).toInt()}%',
                                         style: const TextStyle(
                                           fontSize: 12,
                                           fontWeight: FontWeight.w700,

@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/cache/cache_manager.dart';
+import '../../core/constants/coin_rules.dart';
 import '../../core/network/api_result.dart';
 import '../models/chapter.dart';
 
@@ -89,7 +90,15 @@ class LearningRepository {
     }
   }
 
-  /// Mark topic as completed + earn XP
+  /// Mark topic as completed and award Foxy Coins.
+  ///
+  /// Awards [CoinRewards.studyTaskComplete] coins via the `add_xp` RPC.
+  /// The RPC name is legacy — it handles both XP and Foxy Coins depending
+  /// on the server version. The amount matches web `coin-rules.ts`
+  /// `study_task_complete = 5`.
+  ///
+  /// TODO(mobile-sync): Rename RPC call from `add_xp` to `award_coins`
+  /// when the backend migrates.
   Future<ApiResult<void>> markCompleted({
     required String studentId,
     required String topicId,
@@ -102,15 +111,17 @@ class LearningRepository {
         'completed_at': DateTime.now().toIso8601String(),
       });
 
-      // Award XP
+      // Award Foxy Coins (CoinRewards.studyTaskComplete = 5)
+      // Using add_xp RPC for backward compatibility — server routes this
+      // to the appropriate reward system.
       try {
         await _client.rpc('add_xp', params: {
           'p_student_id': studentId,
-          'p_amount': 10,
+          'p_amount': CoinRewards.studyTaskComplete,
           'p_source': 'topic_mastered',
         });
       } catch (_) {
-        // XP is best-effort
+        // Coin award is best-effort
       }
 
       return const ApiSuccess(null);
