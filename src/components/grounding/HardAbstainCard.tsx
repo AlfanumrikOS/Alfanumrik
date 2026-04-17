@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import type { AbstainReason, SuggestedAlternative } from '@/components/foxy/ChatBubble';
+import { AlternativesGrid } from '@/components/grounding/AlternativesGrid';
 
 /* ═══════════════════════════════════════════════════════════════
    HardAbstainCard — shown above tutor bubbles when the grounded
@@ -131,33 +132,15 @@ export function HardAbstainCard({
             </p>
 
             {alternatives && alternatives.length > 0 && (
-              <ul className="mt-3 space-y-2">
-                {alternatives.slice(0, 3).map((alt) => (
-                  <li key={`${alt.subject_code}-${alt.chapter_number}`}>
-                    <button
-                      type="button"
-                      onClick={() => onPickAlternative?.(alt)}
-                      className="w-full rounded-lg border border-purple-200 bg-white px-3 py-2 text-left text-[11px] font-medium text-purple-900 transition active:scale-[0.98] hover:border-purple-400 hover:bg-purple-100"
-                    >
-                      <span className="font-semibold">Ch. {alt.chapter_number}</span>
-                      <span className="mx-1">—</span>
-                      <span>{alt.chapter_title}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            {typeof totalReady === 'number' && alternatives && totalReady > alternatives.length && onShowAllAlternatives && (
-              <button
-                type="button"
-                onClick={onShowAllAlternatives}
-                className="mt-2 text-[11px] font-semibold text-purple-700 underline underline-offset-2 hover:text-purple-900"
-              >
-                {isHi
-                  ? `Saare ${totalReady} ready chapters dikhaiye →`
-                  : `See all ${totalReady} ready chapters →`}
-              </button>
+              <div className="mt-3">
+                <AlternativesGrid
+                  alternatives={alternatives}
+                  totalReady={totalReady}
+                  onPick={(alt) => onPickAlternative?.(alt)}
+                  onShowAll={onShowAllAlternatives}
+                  tone="purple"
+                />
+              </div>
             )}
 
             {onRequestContent && (
@@ -195,21 +178,15 @@ export function HardAbstainCard({
           </p>
 
           {alternatives && alternatives.length > 0 && (
-            <ul className="mt-3 space-y-2">
-              {alternatives.slice(0, 3).map((alt) => (
-                <li key={`${alt.subject_code}-${alt.chapter_number}`}>
-                  <button
-                    type="button"
-                    onClick={() => onPickAlternative?.(alt)}
-                    className="w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-left text-[11px] font-medium text-amber-900 transition active:scale-[0.98] hover:border-amber-400 hover:bg-amber-100"
-                  >
-                    <span className="font-semibold">Ch. {alt.chapter_number}</span>
-                    <span className="mx-1">—</span>
-                    <span>{alt.chapter_title}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <div className="mt-3">
+              <AlternativesGrid
+                alternatives={alternatives}
+                totalReady={totalReady}
+                onPick={(alt) => onPickAlternative?.(alt)}
+                onShowAll={onShowAllAlternatives}
+                tone="amber"
+              />
+            </div>
           )}
         </div>
       </div>
