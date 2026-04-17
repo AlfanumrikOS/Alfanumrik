@@ -450,7 +450,14 @@ export default function QuizPage() {
   const confirmAnswer = () => {
     if (selectedOption === null) return;
     const q = questions[currentIdx];
-    const isCorrect = selectedOption === q.correct_answer_index;
+    // P1 score-accuracy fix: selectedOption is the SHUFFLED display index the
+    // student clicked; q.correct_answer_index is the ORIGINAL index before
+    // shuffle. Must map through the active shuffle before comparing, otherwise
+    // scoring disagrees with the green-check rendering (see line ~1059 which
+    // correctly applies originalToShuffled). Bug surfaced 2026-04-18:
+    // student picks the visually-correct option and sees "Incorrect".
+    const originalPicked = shuffledToOriginal(selectedOption, shuffleMaps[currentIdx] ?? null);
+    const isCorrect = originalPicked === q.correct_answer_index;
 
     // Emotional feedback — sound + Foxy reaction
     const fb = isCorrect ? onCorrectAnswer(feedbackState) : onWrongAnswer(feedbackState);
@@ -947,7 +954,14 @@ export default function QuizPage() {
   if (screen === 'quiz' && q) {
     const isAnswered = showExplanation;
     const currentShuffleMap = shuffleMaps[currentIdx] ?? null;
-    const isCorrect = selectedOption === q.correct_answer_index;
+    // P1 score-accuracy fix: map shuffled-index (selectedOption) through the
+    // shuffle to compare with q.correct_answer_index (original index).
+    // Line 1059's isCorrectOpt uses originalToShuffled correctly; this mirror
+    // must use shuffledToOriginal so the banner matches the highlight.
+    const originalPicked = selectedOption !== null
+      ? shuffledToOriginal(selectedOption, currentShuffleMap)
+      : null;
+    const isCorrect = originalPicked === q.correct_answer_index;
 
     return (
       <div className="mesh-bg min-h-dvh flex flex-col focus-screen">
