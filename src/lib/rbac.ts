@@ -20,33 +20,22 @@ import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import { Redis } from '@upstash/redis';
 
-// ─── Types ───────────────────────────────────────────────────
+// ─── Types (canonical definitions in rbac-types.ts) ─────────
+// Re-exported here for backward compatibility: any module importing
+// types from '@/lib/rbac' continues to work unchanged.
 
-export type RoleName = 'student' | 'parent' | 'teacher' | 'tutor' | 'admin' | 'super_admin';
+export type {
+  RoleName,
+  OwnershipType,
+  RoleInfo,
+  UserPermissions,
+  ResolutionContext,
+  ResolutionTrace,
+  AuthorizationResult,
+  ResourceAccessCheck,
+} from '@/lib/rbac-types';
 
-export type OwnershipType = 'own' | 'linked' | 'assigned' | 'any';
-
-export interface UserPermissions {
-  roles: Array<{ name: RoleName; display_name: string; hierarchy_level: number }>;
-  permissions: string[];
-}
-
-export interface AuthorizationResult {
-  authorized: boolean;
-  userId: string | null;
-  studentId: string | null;
-  roles: RoleName[];
-  permissions: string[];
-  errorResponse?: Response;
-  reason?: string;
-}
-
-export interface ResourceAccessCheck {
-  resourceType: string;
-  resourceId?: string;
-  ownerId?: string;
-  ownershipType: OwnershipType;
-}
+import type { RoleName, UserPermissions, AuthorizationResult } from '@/lib/rbac-types';
 
 // ─── Server-side Supabase client ─────────────────────────────
 
@@ -59,7 +48,8 @@ function getServiceClient() {
 // Falls back to in-memory if Redis env vars are absent (local dev).
 
 const CACHE_TTL_SECS = 5 * 60; // 5 minutes
-const CACHE_KEY = (uid: string) => `rbac:perms:${uid}`;
+const CACHE_KEY = (uid: string, schoolId?: string | null) =>
+  schoolId ? `rbac:perms:${uid}:school:${schoolId}` : `rbac:perms:${uid}:platform`;
 
 let _redis: Redis | null = null;
 function getRedis(): Redis | null {
@@ -74,33 +64,45 @@ function getRedis(): Redis | null {
 // In-memory fallback for dev/test environments without Redis
 const _localCache = new Map<string, { data: UserPermissions; expires: number }>();
 
-async function getCachedPermissions(userId: string): Promise<UserPermissions | null> {
+async function getCachedPermissions(userId: string, schoolId?: string | null): Promise<UserPermissions | null> {
+  const cacheKey = CACHE_KEY(userId, schoolId);
   const redis = getRedis();
+  // Check taint marker first (instant invalidation for security events)
   if (redis) {
     try {
-      const raw = await redis.get<UserPermissions>(CACHE_KEY(userId));
-      return raw ?? null;
-    } catch {
-      // Redis unavailable — fall through to local cache
-    }
+      const tainted = await redis.get(`rbac:tainted:${userId}`);
+      if (tainted) {
+        _localCache.delete(cacheKey);
+        return null; // Force fresh DB lookup
+      }
+    } catch { /* Redis unavailable — proceed with local cache */ }
   }
-  const local = _localCache.get(userId);
+  // Try Redis cache
+  if (redis) {
+    try {
+      const raw = await redis.get<UserPermissions>(cacheKey);
+      return raw ?? null;
+    } catch { /* fall through */ }
+  }
+  // Fallback: in-memory cache
+  const local = _localCache.get(cacheKey);
   if (local && local.expires > Date.now()) return local.data;
-  if (local) _localCache.delete(userId);
+  if (local) _localCache.delete(cacheKey);
   return null;
 }
 
-async function setCachedPermissions(userId: string, data: UserPermissions): Promise<void> {
+async function setCachedPermissions(userId: string, data: UserPermissions, schoolId?: string | null): Promise<void> {
+  const key = CACHE_KEY(userId, schoolId);
   const redis = getRedis();
   if (redis) {
     try {
-      await redis.set(CACHE_KEY(userId), data, { ex: CACHE_TTL_SECS });
+      await redis.set(key, data, { ex: CACHE_TTL_SECS });
       return;
     } catch {
       // Redis write failed — fall through to local cache
     }
   }
-  _localCache.set(userId, { data, expires: Date.now() + CACHE_TTL_SECS * 1000 });
+  _localCache.set(key, { data, expires: Date.now() + CACHE_TTL_SECS * 1000 });
   if (_localCache.size > 200) {
     const now = Date.now();
     for (const [k, v] of _localCache.entries()) {
@@ -114,7 +116,51 @@ export async function invalidatePermissionCache(userId: string): Promise<void> {
   if (redis) {
     try { await redis.del(CACHE_KEY(userId)); } catch { /* ignore */ }
   }
-  _localCache.delete(userId);
+  // Clear all local cache entries for this user (platform + school variants)
+  for (const key of Array.from(_localCache.keys())) {
+    if (key.startsWith(`rbac:perms:${userId}:`)) {
+      _localCache.delete(key);
+    }
+  }
+}
+
+/**
+ * Invalidate permission caches for multiple users due to a security event.
+ * Sets a short-lived taint marker in Redis so that even cached entries
+ * are bypassed until the marker expires (5 seconds).
+ * Fires a cache_invalidation audit event (best-effort).
+ */
+export async function invalidateForSecurityEvent(
+  userIds: string[],
+  reason: string = 'security_event',
+): Promise<void> {
+  const redis = getRedis();
+  for (const userId of userIds) {
+    if (redis) {
+      try {
+        await redis.del(CACHE_KEY(userId));
+        await redis.set(`rbac:tainted:${userId}`, '1', { ex: 5 });
+      } catch { /* Redis unavailable */ }
+    }
+    // Clear all local cache entries for this user (platform + school variants)
+    for (const key of Array.from(_localCache.keys())) {
+      if (key.startsWith(`rbac:perms:${userId}:`)) {
+        _localCache.delete(key);
+      }
+    }
+  }
+  // Fire-and-forget audit event
+  try {
+    const { writeAuditEvent } = await import('@/lib/audit-pipeline');
+    await writeAuditEvent({
+      eventType: 'cache_invalidation',
+      actorUserId: null,
+      action: 'revoke',
+      result: 'granted',
+      resourceType: 'permission_cache',
+      metadata: { userIds, reason },
+    });
+  } catch { /* Audit write failed — not critical */ }
 }
 
 // ─── Core Permission Functions ───────────────────────────────
@@ -122,27 +168,34 @@ export async function invalidatePermissionCache(userId: string): Promise<void> {
 /**
  * Get all permissions for a user (server-side, with caching).
  */
-export async function getUserPermissions(authUserId: string): Promise<UserPermissions> {
-  const cached = await getCachedPermissions(authUserId);
+export async function getUserPermissions(
+  authUserId: string,
+  schoolId?: string | null,
+): Promise<UserPermissions> {
+  const cached = await getCachedPermissions(authUserId, schoolId);
   if (cached) return cached;
 
   const supabase = getServiceClient();
-  const { data, error } = await supabase.rpc('get_user_permissions', { p_auth_user_id: authUserId });
+  const rpcParams: Record<string, string> = { p_auth_user_id: authUserId };
+  if (schoolId) rpcParams.p_school_id = schoolId;
+
+  const { data, error } = await supabase.rpc('get_user_permissions', rpcParams);
 
   if (error || !data) {
-    logger.error('rbac_permissions_failed', { error: error ? new Error(error.message) : new Error('unknown'), route: 'rbac' });
-    // Throw instead of returning empty permissions to prevent false 403 errors.
-    // Returning empty roles/permissions would cause authorizeRequest() to respond
-    // with "No roles assigned" (403), when the real issue is a database error (500).
+    logger.error('rbac_permissions_failed', {
+      error: error ? new Error(error.message) : new Error('unknown'),
+      route: 'rbac',
+    });
     throw new Error(`Permission lookup failed: ${error?.message ?? 'no data returned'}`);
   }
 
   const result: UserPermissions = {
     roles: data.roles || [],
     permissions: data.permissions || [],
+    schoolId: schoolId ?? null,
   };
 
-  await setCachedPermissions(authUserId, result);
+  await setCachedPermissions(authUserId, result, schoolId);
   return result;
 }
 
@@ -193,6 +246,27 @@ export async function canAccessStudent(authUserId: string, studentId: string): P
 
   // Admin/super_admin can access any student
   if (perms.roles.some(r => r.name === 'admin' || r.name === 'super_admin')) return true;
+
+  // Institution admin: can access students in their school
+  if (perms.roles.some(r => r.name === 'institution_admin')) {
+    const { data: studentSchool } = await supabase
+      .from('students')
+      .select('school_id')
+      .eq('id', studentId)
+      .maybeSingle();
+
+    if (studentSchool?.school_id) {
+      const { data: membership } = await supabase
+        .from('school_memberships')
+        .select('id')
+        .eq('auth_user_id', authUserId)
+        .eq('school_id', studentSchool.school_id)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (membership) return true;
+    }
+  }
 
   // Student: can only access own data
   const { data: ownStudent } = await supabase
@@ -303,6 +377,7 @@ export async function authorizeRequest(
   options?: {
     requireStudentId?: boolean;
     resourceCheck?: { type: string; id: string };
+    context?: { schoolId?: string };
   }
 ): Promise<AuthorizationResult> {
   // 1. Extract auth token
@@ -358,14 +433,12 @@ export async function authorizeRequest(
     };
   }
 
-  // 2. Get user permissions
+  // 2. Get user permissions (school-scoped if context provided)
   let perms: UserPermissions;
   try {
-    perms = await getUserPermissions(authUserId);
+    perms = await getUserPermissions(authUserId, options?.context?.schoolId);
   } catch (permError) {
-    // Database/RPC failure — return 500 instead of misleading 403.
-    // This prevents SWR from retrying on what it thinks is a client error.
-    logger.error('rbac_authorize_permissions_failed', {
+    logger.error('rbac_authorize_perm_lookup_failed', {
       error: permError instanceof Error ? permError : new Error(String(permError)),
       route: 'rbac',
     });
@@ -375,14 +448,11 @@ export async function authorizeRequest(
       studentId: null,
       roles: [],
       permissions: [],
-      errorResponse: new Response(JSON.stringify({
-        error: 'Permission check failed',
-        code: 'PERMISSION_LOOKUP_ERROR',
-      }), {
+      errorResponse: new Response(JSON.stringify({ error: 'Permission lookup failed', code: 'PERM_LOOKUP_ERROR' }), {
         status: 500,
         headers: { 'Content-Type': 'application/json' },
       }),
-      reason: 'Permission lookup failed due to server error',
+      reason: 'Permission lookup failed',
     };
   }
 
@@ -478,6 +548,7 @@ export async function authorizeRequest(
     studentId,
     roles: perms.roles.map(r => r.name as RoleName),
     permissions: perms.permissions,
+    schoolId: options?.context?.schoolId ?? null,
   };
 }
 
@@ -601,6 +672,13 @@ export const PERMISSIONS = {
   INSTITUTION_MANAGE: 'institution.manage',
   INSTITUTION_VIEW_ANALYTICS: 'institution.view_analytics',
   INSTITUTION_MANAGE_TEACHERS: 'institution.manage_teachers',
+
+  // ── Tutor ──────────────────────────────────────────────
+  TUTOR_VIEW_STUDENT: 'tutor.view_student',
+  TUTOR_PROVIDE_FEEDBACK: 'tutor.provide_feedback',
+  TUTOR_VIEW_ANALYTICS: 'tutor.view_analytics',
+  TUTOR_CREATE_WORKSHEET: 'tutor.create_worksheet',
+  TUTOR_ASSIGN_WORKSHEET: 'tutor.assign_worksheet',
 
   // ── Super-admin subject governance (Phase E) ─────────────
   // Granted to: super_admin (and admin, defensively).  Gates the 7 routes

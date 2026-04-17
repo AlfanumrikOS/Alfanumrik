@@ -1074,15 +1074,26 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   }> = [];
 
   try {
-    const { data: chunks, error: ragError } = await supabaseAdmin.rpc('match_rag_chunks', {
-      query_text: embeddingQuery,
-      p_subject: subject,
-      p_grade: grade,
-      match_count: RAG_MATCH_COUNT,
-      p_chapter: chapter,
-      query_embedding: embedding,
-      p_board: board,
-      p_min_quality: RAG_MIN_QUALITY,
+    // NCERT-pinned RPC: hardcoded source='ncert_2025' so non-NCERT chunks
+    // can never reach the student. subject is the snake_case code from
+    // get_available_subjects (matches rag_content_chunks.subject_code 1:1).
+    // p_chapter is split into number-vs-title for the new RPC contract.
+    const chapterArg: string | null = chapter ?? null;
+    const chapterNum: number | null =
+      chapterArg && /^\d+$/.test(chapterArg) ? parseInt(chapterArg, 10) : null;
+    const chapterTitle: string | null =
+      chapterArg && chapterNum === null ? chapterArg : null;
+    void board; // board is no longer relevant — NCERT only
+
+    const { data: chunks, error: ragError } = await supabaseAdmin.rpc('match_rag_chunks_ncert', {
+      query_text:        embeddingQuery,
+      p_subject_code:    subject,
+      p_grade:           grade,
+      match_count:       RAG_MATCH_COUNT,
+      p_chapter_number:  chapterNum,
+      p_chapter_title:   chapterTitle,
+      p_min_quality:     RAG_MIN_QUALITY,
+      query_embedding:   embedding,
     });
 
     if (ragError) {
@@ -1093,7 +1104,21 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         chapter,
       });
     } else if (chunks) {
-      ragChunks = chunks as typeof ragChunks;
+      // Normalize new-RPC field names → existing consumer shape.
+      // Old RPC returned `chapter` (text); new returns `chapter_title` + `chapter_number`.
+      ragChunks = (chunks as Array<Record<string, unknown>>).map((c) => ({
+        id: String(c.id ?? ''),
+        content: String(c.content ?? ''),
+        subject: subject,
+        chapter:
+          c.chapter_title != null
+            ? String(c.chapter_title)
+            : c.chapter_number != null
+              ? `Chapter ${c.chapter_number}`
+              : undefined,
+        page_number: typeof c.page_number === 'number' ? c.page_number : undefined,
+        similarity: typeof c.similarity === 'number' ? c.similarity : 0,
+      }));
     }
   } catch (ragErr) {
     logger.warn('foxy_rag_rpc_exception', {

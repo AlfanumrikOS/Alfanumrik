@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/coin_rules.dart';
 import '../../../providers/learning_provider.dart';
 import '../../../providers/auth_provider.dart';
 import '../../widgets/loading_widget.dart';
@@ -163,8 +164,8 @@ class ConceptScreen extends ConsumerWidget {
 
                             if (context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Topic completed! +10 XP'),
+                                SnackBar(
+                                  content: Text('Topic completed! +${CoinRewards.studyTaskComplete} Foxy Coins'),
                                   duration: Duration(seconds: 2),
                                 ),
                               );

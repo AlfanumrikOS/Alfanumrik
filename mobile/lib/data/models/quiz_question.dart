@@ -59,9 +59,20 @@ class QuizQuestion extends Equatable {
 class QuizResult extends Equatable {
   final int totalQuestions;
   final int correctAnswers;
-  /// Score percentage as returned by the server (already rounded — P1).
+
+  /// Score percentage as returned by the server (already rounded -- P1).
   final int scorePercent;
+
+  /// @deprecated Legacy XP earned. Kept for backward compatibility during
+  /// migration. New code should use [coinsEarned] once the server returns
+  /// `coins_earned`. See web `coin-rules.ts` for the canonical values.
   final int xpEarned;
+
+  /// Foxy Coins earned for this quiz (from `coin-rules.ts`).
+  /// Falls back to 0 when the server has not yet been migrated to return
+  /// `coins_earned` in the RPC response.
+  final int coinsEarned;
+
   final Duration timeTaken;
   final String? sessionId;
   final bool flagged;
@@ -71,12 +82,18 @@ class QuizResult extends Equatable {
     required this.correctAnswers,
     required this.scorePercent,
     required this.xpEarned,
+    this.coinsEarned = 0,
     required this.timeTaken,
     this.sessionId,
     this.flagged = false,
   });
 
   /// Build from the JSONB map returned by submit_quiz_results RPC.
+  ///
+  /// The RPC currently returns `xp_earned`. When the server migrates to
+  /// Foxy Coins it will also return `coins_earned`. We read both — the
+  /// caller should prefer [coinsEarned] when available, falling back to
+  /// [xpEarned] during the transition.
   factory QuizResult.fromRpc(
     Map<String, dynamic> rpc,
     Duration timeTaken,
@@ -85,7 +102,8 @@ class QuizResult extends Equatable {
       totalQuestions: (rpc['total'] as num).toInt(),
       correctAnswers: (rpc['correct'] as num).toInt(),
       scorePercent: (rpc['score_percent'] as num).toInt(),
-      xpEarned: (rpc['xp_earned'] as num).toInt(),
+      xpEarned: (rpc['xp_earned'] as num?)?.toInt() ?? 0,
+      coinsEarned: (rpc['coins_earned'] as num?)?.toInt() ?? 0,
       timeTaken: timeTaken,
       sessionId: rpc['session_id'] as String?,
       flagged: rpc['flagged'] as bool? ?? false,
@@ -102,5 +120,5 @@ class QuizResult extends Equatable {
   }
 
   @override
-  List<Object?> get props => [totalQuestions, correctAnswers, scorePercent, xpEarned];
+  List<Object?> get props => [totalQuestions, correctAnswers, scorePercent, xpEarned, coinsEarned];
 }

@@ -48,8 +48,8 @@ class AuthRepository {
         'board': 'CBSE',
         'role': 'student',
         'plan_code': 'free',
-        'xp_total': 0,
-        'level': 1,
+        'xp_total': 0, // Legacy; Performance Score is computed server-side
+        'level': 1,   // Legacy; level derived from Performance Score via score-config
       };
 
       final res = await _client

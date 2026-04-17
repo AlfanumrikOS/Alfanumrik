@@ -1,8 +1,12 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { getLevelFromScore } from '@/lib/score-config';
+
+const ScoreCard = dynamic(() => import('@/components/score/ScoreCard'), { ssr: false });
 
 // ============================================================
 // BILINGUAL HELPERS (P7)
@@ -433,12 +437,20 @@ function ChildSelectorPills({
 // ============================================================
 // MAIN DASHBOARD
 // ============================================================
+/** Performance score row from the performance_scores table */
+interface PerfScoreRow {
+  subject: string;
+  overall_score: number;
+  level_name: string;
+}
+
 function Dashboard({ guardian, initialStudent, allChildren, isHi }: { guardian: ParentSession; initialStudent: StudentSession; allChildren: StudentSession[]; isHi: boolean }) {
   const [dash, setDash] = useState<DashboardData | null>(null);
   const [tips, setTips] = useState<ParentTip[]>([]);
   const [loading, setLoading] = useState(true);
   const [showTips, setShowTips] = useState(false);
   const [selectedChildIdx, setSelectedChildIdx] = useState(0);
+  const [perfScores, setPerfScores] = useState<PerfScoreRow[]>([]);
 
   // Derive current student from selectedChildIdx
   const children = allChildren.length > 0 ? allChildren : [initialStudent];
@@ -451,6 +463,26 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi }: { guardian: 
       api('get_tips'),
     ]);
     setDash(d); setTips(tipRes.tips || []);
+
+    // Fetch Performance Scores for this child (RLS handles parent access via guardian_student_links)
+    try {
+      const { data: psData } = await supabase
+        .from('performance_scores')
+        .select('subject, overall_score, level_name')
+        .eq('student_id', student.id);
+      if (psData && psData.length > 0) {
+        setPerfScores(psData.map((r: Record<string, unknown>) => ({
+          subject: String(r.subject || ''),
+          overall_score: Number(r.overall_score ?? 0),
+          level_name: String(r.level_name || getLevelFromScore(Number(r.overall_score ?? 0))),
+        })));
+      } else {
+        setPerfScores([]);
+      }
+    } catch {
+      setPerfScores([]);
+    }
+
     setLoading(false);
   }, [student.id, guardian.id]);
 
@@ -627,6 +659,50 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi }: { guardian: 
         <Stat icon="&#x1F4AC;" label={t(isHi, 'Foxy chats', 'Foxy चैट')} value={s.totalChats || 0} color="#EC4899" />
         <Stat icon="&#x1F4CA;" label={t(isHi, 'Avg score', 'औसत स्कोर')} value={`${s.avgScore || 0}%`} color="#2563EB" />
       </div>
+
+      {/* ── Performance Scores Section ── */}
+      {perfScores.length > 0 && (
+        <div className="bg-white rounded-[14px] px-[18px] py-4 border border-orange-200 mb-4">
+          <h3 className="text-[15px] font-semibold text-gray-900 mb-3">
+            {t(isHi, 'Performance Scores', 'प्रदर्शन स्कोर')}
+          </h3>
+          <p className="text-[13px] text-gray-500 mb-3 leading-relaxed">
+            {(() => {
+              // Find the highest score subject for the summary line
+              const sorted = [...perfScores].sort((a, b) => b.overall_score - a.overall_score);
+              const top = sorted[0];
+              const avg = Math.round(perfScores.reduce((sum, p) => sum + p.overall_score, 0) / perfScores.length);
+              if (top) {
+                return isHi
+                  ? `अगर ${childName} आज ${top.subject} की परीक्षा दे, तो संभावित स्कोर लगभग ${top.overall_score}/100 होगा। कुल औसत: ${avg}/100`
+                  : `If ${childName} took the ${top.subject} exam today, they'd likely score around ${top.overall_score}/100. Overall average: ${avg}/100`;
+              }
+              return '';
+            })()}
+          </p>
+          <div className="grid grid-cols-1 gap-3">
+            {perfScores.map((ps) => {
+              // Map common subjects to Hindi names
+              const subjectHiMap: Record<string, string> = {
+                math: 'गणित', science: 'विज्ञान', english: 'अंग्रेज़ी',
+                hindi: 'हिंदी', social: 'सामाजिक विज्ञान', evs: 'पर्यावरण',
+                physics: 'भौतिकी', chemistry: 'रसायन', biology: 'जीवविज्ञान',
+              };
+              const subjectKey = ps.subject.toLowerCase();
+              const subjectHi = subjectHiMap[subjectKey] || ps.subject;
+              return (
+                <ScoreCard
+                  key={ps.subject}
+                  subject={ps.subject}
+                  subjectHi={subjectHi}
+                  score={ps.overall_score}
+                  isHi={isHi}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Weekly Activity */}
       {dash.dailyActivity && <WeeklyChart data={dash.dailyActivity} />}

@@ -89,15 +89,26 @@ export async function retrieveNcertChunks(query: RetrievalQuery): Promise<Retrie
 
     const embedding = await generateEmbedding(enrichedQuery);
 
-    const { data: rows, error: rpcError } = await supabaseAdmin.rpc('match_rag_chunks', {
-      query_text: enrichedQuery,
-      p_subject: query.subject,
-      p_grade: query.grade,
-      match_count: matchCount,
-      p_chapter: query.chapter ?? null,
-      query_embedding: embedding,
-      p_board: query.board ?? 'CBSE',
-      p_min_quality: minQuality,
+    // NCERT-pinned RPC: hardcodes source='ncert_2025' so no non-NCERT chunk
+    // can ever surface. subject_code (snake_case) and grade_short (P5) are
+    // the canonical RAG join keys; the V1 Title-Case CASE statement is gone.
+    // p_chapter is parsed as an integer when possible (RPC accepts either
+    // chapter_number int or chapter_title string).
+    const chapterArg: string | null = query.chapter ?? null;
+    const chapterNum: number | null =
+      chapterArg && /^\d+$/.test(chapterArg) ? parseInt(chapterArg, 10) : null;
+    const chapterTitle: string | null =
+      chapterArg && chapterNum === null ? chapterArg : null;
+
+    const { data: rows, error: rpcError } = await supabaseAdmin.rpc('match_rag_chunks_ncert', {
+      query_text:        enrichedQuery,
+      p_subject_code:    query.subject,
+      p_grade:           query.grade,
+      match_count:       matchCount,
+      p_chapter_number:  chapterNum,
+      p_chapter_title:   chapterTitle,
+      p_min_quality:     minQuality,
+      query_embedding:   embedding,
     });
 
     if (rpcError) {
@@ -109,12 +120,19 @@ export async function retrieveNcertChunks(query: RetrievalQuery): Promise<Retrie
       return { chunks: [], contextText: '', error: rpcError.message };
     }
 
-    // Map raw DB rows to typed chunks
+    // Map raw DB rows to typed chunks. Note: the RPC returns `chapter_title`
+    // and `chapter_number` (not `chapter`) — the previous mapper read
+    // `row.chapter` and silently produced undefined for every chunk. Fixed.
     const chunks: RetrievedChunk[] = (rows ?? []).map((row: Record<string, unknown>) => ({
       id: String(row.id ?? ''),
       content: String(row.content ?? ''),
       subject: String(row.subject ?? query.subject),
-      chapter: row.chapter_title != null ? String(row.chapter_title) : (row.chapter != null ? String(row.chapter) : undefined),
+      chapter:
+        row.chapter_title != null
+          ? String(row.chapter_title)
+          : row.chapter_number != null
+            ? `Chapter ${row.chapter_number}`
+            : undefined,
       pageNumber: typeof row.page_number === 'number' ? row.page_number : undefined,
       similarity: typeof row.similarity === 'number' ? row.similarity : 0,
       contentType: row.content_type != null ? String(row.content_type) : undefined,
