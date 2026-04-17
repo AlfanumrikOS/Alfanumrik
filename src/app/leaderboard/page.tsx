@@ -8,11 +8,23 @@ import { Card, Button, SectionHeader, LoadingFoxy, BottomNav, Avatar, EmptyState
 import { getLevelFromScore } from '@/lib/score-config';
 import type { LeaderboardEntry } from '@/lib/types';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
+import StreakBadge from '@/components/challenge/StreakBadge';
+import { STREAK_VISIBILITY_THRESHOLD } from '@/lib/challenge-config';
 
 // These types come from dynamic RPC responses with many optional fields
 type RPCRecord = Record<string, any>; // eslint-disable-line
 
-type Tab = 'ranks' | 'compete' | 'fame' | 'titles';
+type Tab = 'ranks' | 'compete' | 'fame' | 'titles' | 'streaks';
+
+/** Entry for the streaks leaderboard tab */
+interface StreakLeaderEntry {
+  student_id: string;
+  current_streak: number;
+  best_streak: number;
+  badges: string[];
+  student_name: string;
+  student_avatar?: string;
+}
 
 /** Extended entry with Performance Score fields when available */
 interface PerformanceRankEntry extends LeaderboardEntry {
@@ -73,6 +85,7 @@ export default function LeaderboardPage() {
   const [joining, setJoining] = useState<string | null>(null);
   const [selectedComp, setSelectedComp] = useState<RPCRecord | null>(null);
   const [compLeaderboard, setCompLeaderboard] = useState<RPCRecord[]>([]);
+  const [streakEntries, setStreakEntries] = useState<StreakLeaderEntry[]>([]);
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/login');
@@ -204,13 +217,43 @@ export default function LeaderboardPage() {
     setLoading(false);
   }, [student]);
 
+  // Load streaks leaderboard
+  const loadStreaks = useCallback(async () => {
+    if (!student) return;
+    setLoading(true);
+    try {
+      const { data } = await supabase
+        .from('challenge_streaks')
+        .select('student_id, current_streak, best_streak, badges, students!inner(name, avatar_url)')
+        .gte('current_streak', STREAK_VISIBILITY_THRESHOLD)
+        .order('current_streak', { ascending: false })
+        .limit(50);
+
+      if (data && data.length > 0) {
+        const mapped: StreakLeaderEntry[] = data.map((row: any) => ({
+          student_id: row.student_id,
+          current_streak: row.current_streak,
+          best_streak: row.best_streak,
+          badges: Array.isArray(row.badges) ? row.badges : [],
+          student_name: (row.students as any)?.name ?? '?',
+          student_avatar: (row.students as any)?.avatar_url,
+        }));
+        setStreakEntries(mapped);
+      } else {
+        setStreakEntries([]);
+      }
+    } catch { setStreakEntries([]); }
+    setLoading(false);
+  }, [student]);
+
   useEffect(() => {
     if (!student) return;
     if (tab === 'ranks') loadRanks();
     else if (tab === 'compete') loadCompetitions();
     else if (tab === 'fame') loadFame();
     else if (tab === 'titles') loadTitles();
-  }, [tab, student, loadRanks, loadCompetitions, loadFame, loadTitles]);
+    else if (tab === 'streaks') loadStreaks();
+  }, [tab, student, loadRanks, loadCompetitions, loadFame, loadTitles, loadStreaks]);
 
   useEffect(() => { if (student && tab === 'ranks') loadRanks(); }, [period, student, tab, loadRanks]);
 
@@ -245,6 +288,7 @@ export default function LeaderboardPage() {
   const TABS: { id: Tab; label: string; labelHi: string; icon: string }[] = [
     { id: 'ranks', label: 'Rankings', labelHi: 'रैंकिंग', icon: '🏆' },
     { id: 'compete', label: 'Compete', labelHi: 'प्रतियोगिता', icon: '⚔️' },
+    { id: 'streaks', label: 'Streaks', labelHi: 'स्ट्रीक', icon: '🔥' },
     { id: 'fame', label: 'Hall of Fame', labelHi: 'गौरव गाथा', icon: '👑' },
     { id: 'titles', label: 'My Titles', labelHi: 'मेरे खिताब', icon: '🎖️' },
   ];
@@ -758,6 +802,69 @@ export default function LeaderboardPage() {
                   ))}
                 </div>
               </div>
+            )}
+          </>
+        )}
+
+        {/* ═══ STREAKS TAB ═══ */}
+        {tab === 'streaks' && (
+          <>
+            {loading ? (
+              <div className="text-center py-12">
+                <div className="text-4xl animate-float mb-3">🔥</div>
+                <p className="text-sm text-[var(--text-3)]">{isHi ? 'स्ट्रीक लोड हो रही हैं...' : 'Loading streaks...'}</p>
+              </div>
+            ) : streakEntries.length === 0 ? (
+              <EmptyState
+                icon="🔥"
+                title={isHi ? 'अभी कोई सक्रिय स्ट्रीक नहीं' : 'No active streaks yet'}
+                description={isHi ? 'आज अपनी स्ट्रीक शुरू करो! रोज़ डेली चैलेंज हल करो।' : 'Start yours today! Solve the daily challenge every day.'}
+                action={
+                  <Button onClick={() => router.push('/dashboard')}>
+                    {isHi ? 'डेली चैलेंज खेलो' : 'Play Daily Challenge'}
+                  </Button>
+                }
+              />
+            ) : (
+              <>
+                <SectionHeader icon="🔥">
+                  {isHi ? `टॉप स्ट्रीक (${streakEntries.length})` : `Top Streaks (${streakEntries.length})`}
+                </SectionHeader>
+                <div className="space-y-3">
+                  {streakEntries.map((entry, idx) => {
+                    const isMe = entry.student_id === student.id;
+                    return (
+                      <Card key={entry.student_id}
+                        className={`!p-4 flex items-center gap-3 ${isMe ? 'ring-2 ring-[var(--orange)]' : ''}`}>
+                        <div className="w-8 text-center flex-shrink-0">
+                          {idx < 3 ? <span className="text-xl">{MEDALS[idx]}</span>
+                            : <span className="text-sm font-bold text-[var(--text-3)]">#{idx + 1}</span>}
+                        </div>
+                        <Avatar name={entry.student_name} size={36} />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-semibold truncate">
+                            {entry.student_name}
+                            {isMe && <span className="text-xs text-[var(--orange)] ml-1">({isHi ? 'तुम' : 'You'})</span>}
+                          </div>
+                          <div className="mt-1">
+                            <StreakBadge streak={entry.current_streak} badges={entry.badges} isHi={isHi} size="sm" />
+                          </div>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <div className="text-lg font-bold" style={{ color: '#F97316' }}>
+                            {isHi ? `${entry.current_streak} दिन` : `Day ${entry.current_streak}`}
+                          </div>
+                          {entry.best_streak > entry.current_streak && (
+                            <div className="text-[10px] text-[var(--text-3)]">
+                              {isHi ? `सर्वश्रेष्ठ: ${entry.best_streak}` : `Best: ${entry.best_streak}`}
+                            </div>
+                          )}
+                        </div>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </>
             )}
           </>
         )}
