@@ -418,3 +418,88 @@ Deno.test('feature flag disabled → abstain upstream_error, no upstream calls',
     assertEquals(resp.trace_id, 'trace-off');
   }
 });
+
+Deno.test('retrieve_only with 0 chunks → abstain no_chunks_retrieved', async () => {
+  __setSupabaseClientForTests(
+    buildSbStub({
+      chapter_ready: true,
+      flag_enabled: true,
+      chunks: [],
+      trace_insert_id: 'trace-ro-empty',
+    }),
+  );
+  __resetFeatureFlagCacheForTests();
+  __clearCacheForTests();
+  __resetCircuitsForTests();
+
+  const resp = await runPipeline(
+    makeRequest({ retrieve_only: true }),
+    Date.now(),
+    'anthropic-key',
+    '',
+  );
+  assertEquals(resp.grounded, false);
+  if (!resp.grounded) {
+    assertEquals(resp.abstain_reason, 'no_chunks_retrieved');
+    assertEquals(resp.trace_id, 'trace-ro-empty');
+  }
+});
+
+Deno.test('retrieve_only respects scope verification (wrong-chapter chunks dropped)', async () => {
+  // RPC returns 3 chunks, but 2 of them are chapter_number=5 while the
+  // request scope is chapter_number=1. retrieval.ts must drop the off-scope
+  // ones. Only the 1 in-scope chunk should flow through to citations.
+  __setSupabaseClientForTests(
+    buildSbStub({
+      chapter_ready: true,
+      flag_enabled: true,
+      chunks: [
+        {
+          id: 'c-ok',
+          content: 'Valid chunk for chapter 1',
+          chapter_number: 1,
+          chapter_title: 'Light Reflection',
+          page_number: 3,
+          similarity: 0.9,
+        },
+        {
+          id: 'c-wrong-1',
+          content: 'Off-scope chunk',
+          chapter_number: 5,
+          chapter_title: 'Other Chapter',
+          page_number: 1,
+          similarity: 0.95,
+        },
+        {
+          id: 'c-wrong-2',
+          content: 'Another off-scope chunk',
+          chapter_number: 5,
+          chapter_title: 'Other Chapter',
+          page_number: 2,
+          similarity: 0.92,
+        },
+      ],
+      trace_insert_id: 'trace-ro-scope',
+    }),
+  );
+  __resetFeatureFlagCacheForTests();
+  __clearCacheForTests();
+  __resetCircuitsForTests();
+
+  const resp = await runPipeline(
+    makeRequest({ retrieve_only: true }),
+    Date.now(),
+    'anthropic-key',
+    '',
+  );
+  assertEquals(resp.grounded, true);
+  if (resp.grounded) {
+    assertEquals(resp.citations.length, 1);
+    assertEquals(resp.citations[0].chunk_id, 'c-ok');
+    assertEquals(resp.citations[0].chapter_number, 1);
+    assertEquals(resp.answer, '');
+    // Full citation metadata preserved
+    assertEquals(resp.citations[0].page_number, 3);
+    assert(resp.citations[0].excerpt.length > 0);
+  }
+});

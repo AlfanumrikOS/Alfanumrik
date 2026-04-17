@@ -312,6 +312,16 @@ export async function runPipeline(
   // Step 7. retrieve_only branch: skip Claude + grounding check, just
   // return citations so the caller (concept-engine) can use them to
   // drive downstream retrieval logic. Spec §6.1 retrieve_only flag.
+  //
+  // Hardening invariants (Task 2.11):
+  //   - No Claude call, no grounding check (no answer text to verify).
+  //   - Scope verification still applies because retrieval.ts runs it
+  //     unconditionally (chapter/grade/subject drops pre-filter chunks).
+  //   - Citations carry full metadata (chunk_id, chapter, page, similarity,
+  //     excerpt, media_url) — identical shape to the grounded-answer path.
+  //   - Trace row: grounded=true, claude_model=null, prompt_template_id
+  //     copied from request (even though no prompt was rendered), and
+  //     groundingCheckPassRatio=1 in confidence.
   if (request.retrieve_only) {
     if (chunks.length === 0) {
       const queryHash = await queryHashPromise;
