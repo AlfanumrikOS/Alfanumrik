@@ -1,27 +1,14 @@
 'use client';
 
+import { useSubjectLookup } from '@/lib/useSubjectLookup';
+
 /* ═══════════════════════════════════════════════════════════════
    ConversationHeader — Active conversation context bar
    Shows current topic, subject, mode badge, and quick actions
    ═══════════════════════════════════════════════════════════════ */
 
-interface SubjectConfig {
-  name: string;
-  icon: string;
-  color: string;
-}
-
-const SUBJECTS: Record<string, SubjectConfig> = {
-  math: { name: 'Mathematics', icon: '\u2211', color: '#3B82F6' },
-  science: { name: 'Science', icon: '\u269B', color: '#10B981' },
-  english: { name: 'English', icon: 'Aa', color: '#8B5CF6' },
-  hindi: { name: 'Hindi', icon: '\u0905', color: '#F59E0B' },
-  physics: { name: 'Physics', icon: '\u26A1', color: '#EF4444' },
-  chemistry: { name: 'Chemistry', icon: '\u2697', color: '#06B6D4' },
-  biology: { name: 'Biology', icon: '\u2695', color: '#22C55E' },
-  social_studies: { name: 'Social Studies', icon: '\uD83C\uDF0D', color: '#D97706' },
-  coding: { name: 'Coding', icon: '\uD83D\uDCBB', color: '#6366F1' },
-};
+// Fallback for the brief first-paint window before useAllowedSubjects resolves.
+const FALLBACK_SUBJECT = { name: 'Science', icon: '\u269B', color: '#10B981' };
 
 interface ConversationHeaderProps {
   title: string;
@@ -58,7 +45,11 @@ export function ConversationHeader({
   topicTitle,
   chapterNumber,
 }: ConversationHeaderProps) {
-  const cfg = SUBJECTS[subject] || SUBJECTS.science;
+  const lookupSubject = useSubjectLookup();
+  const resolved = lookupSubject(subject);
+  const cfg = resolved
+    ? { name: resolved.name, icon: resolved.icon, color: resolved.color }
+    : FALLBACK_SUBJECT;
   const modeInfo = MODE_LABELS[mode] || MODE_LABELS.ask;
 
   return (

@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { Card, Button, BottomNav } from '@/components/ui';
-import { SUBJECT_META } from '@/lib/constants';
 import { getChaptersForSubject } from '@/lib/supabase';
+import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 
 type QuizMode = 'practice' | 'cognitive' | 'exam';
 
@@ -84,7 +84,9 @@ export default function QuizSetup({
   const [chapters, setChapters] = useState<Array<{ chapter_number: number; title: string }>>([]);
   const [chaptersLoading, setChaptersLoading] = useState(false);
 
-  const subMeta = SUBJECT_META.find(s => s.code === selectedSubject);
+  // Allowed subjects — grade + plan aware, comes from subjects service.
+  const { unlocked: allowedSubjects } = useAllowedSubjects();
+  const subMeta = allowedSubjects.find(s => s.code === selectedSubject);
 
   // Load chapters when subject changes
   useEffect(() => {
@@ -123,7 +125,7 @@ export default function QuizSetup({
 
   // Quick-start: subject + chapter already known → show a 1-confirm screen
   if (hasContext && !showFullSetup) {
-    const subMeta = SUBJECT_META.find(s => s.code === selectedSubject);
+    const subMeta = allowedSubjects.find(s => s.code === selectedSubject);
     return (
       <div className="mesh-bg min-h-dvh pb-nav">
         <header className="page-header">
@@ -302,7 +304,7 @@ export default function QuizSetup({
             {isHi ? '1. विषय चुनो' : '1. Choose your subject'}
           </p>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            {SUBJECT_META.slice(0, 9).map(s => (
+            {allowedSubjects.map(s => (
               <button
                 key={s.code}
                 onClick={() => setSelectedSubject(s.code)}

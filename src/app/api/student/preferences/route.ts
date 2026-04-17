@@ -21,6 +21,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest, logAudit } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { validateSubjectWrite } from '@/lib/subjects';
 
 const VALID_ACTIONS = ['set_preferred_subject', 'set_selected_subjects', 'dismiss_nudge'] as const;
 type Action = typeof VALID_ACTIONS[number];
@@ -58,6 +59,20 @@ export async function PATCH(request: NextRequest) {
           return err('subject must be a non-empty string', 400);
         }
 
+        // Subject governance: validate against student's allowed subjects
+        const validation = await validateSubjectWrite(studentId, subject, { supabase: supabaseAdmin });
+        if (!validation.ok) {
+          return NextResponse.json(
+            {
+              error: validation.error.code,
+              subject: validation.error.subject,
+              reason: validation.error.reason,
+              allowed: validation.error.allowed,
+            },
+            { status: 422 },
+          );
+        }
+
         const { error } = await supabaseAdmin
           .from('students')
           .update({ preferred_subject: subject, updated_at: new Date().toISOString() })
@@ -91,19 +106,49 @@ export async function PATCH(request: NextRequest) {
         if (typeof preferred !== 'string') {
           return err('preferred_subject must be a string', 400);
         }
+        if (!subjects.every((s) => typeof s === 'string' && s.trim().length > 0)) {
+          return err('subjects must contain only non-empty strings', 400);
+        }
 
-        const { error } = await supabaseAdmin
-          .from('students')
-          .update({
-            selected_subjects: subjects,
-            preferred_subject: preferred,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', studentId);
+        // Subject governance: route through set_student_subjects RPC, which
+        // enforces grade/stream/plan/max-subjects rules server-side atomically.
+        const { error: rpcError } = await supabaseAdmin.rpc('set_student_subjects', {
+          p_student_id: studentId,
+          p_subjects: subjects,
+          p_preferred: preferred,
+        });
 
-        if (error) {
-          logger.error('student_preferences_set_subjects_failed', {
-            error: new Error(error.message),
+        if (rpcError) {
+          const msg = rpcError.message || '';
+          if (msg.includes('subject_not_allowed')) {
+            // Surface the offending subject + allowed set so the UI can
+            // correct the selection without a second round-trip.
+            return NextResponse.json(
+              {
+                error: 'subject_not_allowed',
+                detail: msg,
+              },
+              { status: 422 },
+            );
+          }
+          if (msg.includes('max_subjects_exceeded')) {
+            return NextResponse.json(
+              {
+                error: 'max_subjects_exceeded',
+                detail: msg,
+              },
+              { status: 422 },
+            );
+          }
+          if (msg.includes('not_authorized')) {
+            return NextResponse.json(
+              { error: 'not_authorized', detail: msg },
+              { status: 403 },
+            );
+          }
+
+          logger.error('student_preferences_set_subjects_rpc_failed', {
+            error: new Error(msg),
             studentId,
           });
           return err('Failed to update selected subjects', 500);

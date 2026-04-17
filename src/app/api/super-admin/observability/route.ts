@@ -11,6 +11,65 @@ async function countRows(table: string, filter?: string): Promise<number> {
   } catch { return -1; }
 }
 
+/**
+ * Payment integrity block — surfaces the metrics defined by ops:
+ *   stuck_count:           student_subscriptions pending >10 min
+ *   oldest_stuck_at:       oldest pending created_at (ISO)
+ *   drift_last_hour:       ops_events drift alerts in last hour
+ *   webhook_unresolved_24h: ops_events webhook unresolved in last 24h
+ */
+async function paymentIntegritySnapshot(): Promise<{
+  stuck_count: number;
+  oldest_stuck_at: string | null;
+  drift_last_hour: number;
+  webhook_unresolved_24h: number;
+}> {
+  try {
+    const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const since24h = new Date(Date.now() - 86400000).toISOString();
+
+    const [stuckCount, driftCount, unresolvedCount] = await Promise.all([
+      countRows('student_subscriptions', `status=eq.pending&created_at=lt.${tenMinAgo}`),
+      countRows(
+        'ops_events',
+        `category=eq.payment&message=eq.razorpay_vs_db_drift&occurred_at=gte.${oneHourAgo}`,
+      ),
+      countRows(
+        'ops_events',
+        `category=eq.payment&message=eq.webhook+student_unresolved&occurred_at=gte.${since24h}`,
+      ),
+    ]);
+
+    // Oldest stuck pending row.
+    let oldestStuckAt: string | null = null;
+    try {
+      const res = await fetch(
+        supabaseAdminUrl(
+          'student_subscriptions',
+          `select=created_at&status=eq.pending&order=created_at.asc&limit=1`,
+        ),
+        { headers: supabaseAdminHeaders() },
+      );
+      if (res.ok) {
+        const rows = (await res.json()) as Array<{ created_at: string }>;
+        oldestStuckAt = rows[0]?.created_at ?? null;
+      }
+    } catch { /* best-effort */ }
+
+    return {
+      stuck_count: stuckCount,
+      oldest_stuck_at: oldestStuckAt,
+      drift_last_hour: driftCount,
+      webhook_unresolved_24h: unresolvedCount,
+    };
+  } catch {
+    return {
+      stuck_count: -1, oldest_stuck_at: null, drift_last_hour: -1, webhook_unresolved_24h: -1,
+    };
+  }
+}
+
 export async function GET(request: NextRequest) {
   const auth = await authorizeAdmin(request);
   if (!auth.authorized) return auth.response;
@@ -24,7 +83,7 @@ export async function GET(request: NextRequest) {
              activeStudents24h, activeStudents7d,
              quizzes24h, chats24h, failedJobs, pendingJobs,
              auditEntries24h, totalQuestions, totalTopics,
-             flagsEnabled, flagsTotal] = await Promise.all([
+             flagsEnabled, flagsTotal, paymentIntegrity] = await Promise.all([
         countRows('students', 'deleted_at=is.null'),
         countRows('teachers'),
         countRows('guardians'),
@@ -39,6 +98,7 @@ export async function GET(request: NextRequest) {
         countRows('curriculum_topics', 'deleted_at=is.null'),
         countRows('feature_flags', 'is_enabled=eq.true'),
         countRows('feature_flags'),
+        paymentIntegritySnapshot(),
       ]);
 
       return {
@@ -48,6 +108,7 @@ export async function GET(request: NextRequest) {
         content: { topics: totalTopics, questions: totalQuestions },
         jobs: { failed: failedJobs, pending: pendingJobs },
         feature_flags: { enabled: flagsEnabled, total: flagsTotal },
+        payment_integrity: paymentIntegrity,
         cache: cacheStats(),
       };
     });

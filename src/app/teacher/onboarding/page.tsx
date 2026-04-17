@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { SUBJECT_META } from '@/lib/constants';
+import { useTeacherAllowedSubjects } from '@/lib/useTeacherAllowedSubjects';
 import { VALID_GRADES } from '@/lib/identity';
 
 // ============================================================
@@ -91,6 +91,7 @@ function Dots({ step, total }: { step: number; total: number }) {
 
 export default function TeacherOnboardingPage() {
   const { teacher, isLoading: authLoading, isLoggedIn, activeRole, isHi } = useAuth();
+  const { subjects } = useTeacherAllowedSubjects();
   const router = useRouter();
 
   const [step, setStep] = useState(1);
@@ -192,7 +193,7 @@ export default function TeacherOnboardingPage() {
   }
 
   const teacherName = teacher?.name || tt(isHi, 'Teacher', 'शिक्षक');
-  const subjectMeta = SUBJECT_META.find(s => s.code === formSubject);
+  const subjectMeta = subjects.find(s => s.code === formSubject);
 
   return (
     <div style={pageStyle}>
@@ -289,7 +290,7 @@ export default function TeacherOnboardingPage() {
           <label style={{ display: 'block', marginBottom: 20 }}>
             <span style={labelStyle}>{tt(isHi, 'Subject', 'विषय')}</span>
             <select value={formSubject} onChange={e => setFormSubject(e.target.value)} style={inputStyle}>
-              {SUBJECT_META.map(s => (
+              {subjects.map(s => (
                 <option key={s.code} value={s.code}>{s.icon} {s.name}</option>
               ))}
             </select>

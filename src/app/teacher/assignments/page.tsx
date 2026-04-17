@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { SUBJECT_META } from '@/lib/constants';
+import { useTeacherAllowedSubjects } from '@/lib/useTeacherAllowedSubjects';
 import { VALID_GRADES } from '@/lib/identity';
 import { BottomNav } from '@/components/ui';
 
@@ -103,6 +103,7 @@ const labelStyle: React.CSSProperties = {
 
 export default function AssignmentsPage() {
   const { teacher, isLoading: authLoading, isLoggedIn, activeRole, isHi } = useAuth();
+  const { subjects } = useTeacherAllowedSubjects();
   const router = useRouter();
   const searchParams = useSearchParams();
   const preselectedClass = searchParams.get('class') || '';
@@ -311,7 +312,7 @@ export default function AssignmentsPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
           {assignments.map((asgn, idx) => {
             const cls = classes.find(c => c.id === asgn.class_id);
-            const subj = SUBJECT_META.find(s => s.code === asgn.subject);
+            const subj = subjects.find(s => s.code === asgn.subject);
             const status = statusBadge(asgn.due_date);
             const pct = completionPct(asgn.assignment_submissions, cls?.student_count ?? 0);
 
@@ -456,7 +457,7 @@ export default function AssignmentsPage() {
             <label style={{ display: 'block', marginBottom: 14 }}>
               <span style={labelStyle}>{tt(isHi, 'Subject', 'विषय')}</span>
               <select value={formSubject} onChange={e => setFormSubject(e.target.value)} style={inputStyle}>
-                {SUBJECT_META.map(s => (
+                {subjects.map(s => (
                   <option key={s.code} value={s.code}>{s.icon} {s.name}</option>
                 ))}
               </select>

@@ -3,16 +3,16 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { supabase, getSubjects, getFeatureFlags, getNextTopics, generateNotifications } from '@/lib/supabase';
+import { supabase, getFeatureFlags, getNextTopics, generateNotifications } from '@/lib/supabase';
 import { useDashboardData } from '@/lib/swr';
 import { Card, StatCard, ProgressBar, SectionHeader, SubjectChip, Avatar, BottomNav, MasteryRing } from '@/components/ui';
 import TrustFooter from '@/components/TrustFooter';
 import { DashboardSkeleton } from '@/components/Skeleton';
 import { calculateLevel, xpToNextLevel, getLevelName } from '@/lib/xp-rules';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
-import type { StudentLearningProfile, Subject, CurriculumTopic } from '@/lib/types';
-import { SUBJECT_META, GRADE_SUBJECTS } from '@/lib/constants';
+import type { StudentLearningProfile, CurriculumTopic } from '@/lib/types';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
+import { ReselectBanner } from '@/components/subjects/ReselectBanner';
 import { PlanBadge } from '@/components/PlanBadge';
 import QuickActions from '@/components/dashboard/QuickActions';
 import SubjectProgress from '@/components/dashboard/SubjectProgress';
@@ -38,7 +38,6 @@ export default function Dashboard() {
   const router = useRouter();
   const { unlocked: allowedSubjects } = useAllowedSubjects();
   const [profiles, setProfiles] = useState<StudentLearningProfile[]>([]);
-  const [subjects, setSubjects] = useState<Subject[]>([]);
   const [nextTopics, setNextTopics] = useState<CurriculumTopic[]>([]);
   const [dueCount, setDueCount] = useState(0);
   const [flags, setFlags] = useState<Record<string, boolean>>({});
@@ -89,12 +88,10 @@ export default function Dashboard() {
 
   const loadStaticData = useCallback(async () => {
     if (!student) return;
-    const [subs, feats, nextTopicsResult] = await Promise.all([
-      getSubjects(),
+    const [feats, nextTopicsResult] = await Promise.all([
       getFeatureFlags(),
       getNextTopics(student.id, student.preferred_subject, student.grade),
     ]);
-    setSubjects(subs);
     setFlags(feats);
     setNextTopics(nextTopicsResult.slice(0, 3));
 
@@ -125,14 +122,23 @@ export default function Dashboard() {
     } catch {
       // Non-fatal: falls back to XP-based progress bar
     }
-    const gradeKey = (student.grade || '9').replace('Grade ', '').trim();
-    const gradeSubjects = GRADE_SUBJECTS[gradeKey] || GRADE_SUBJECTS['9'];
     const rawSelected = (student.selected_subjects || [student.preferred_subject].filter(Boolean)) as string[];
-    setSelectedSubjects(rawSelected.filter(s => gradeSubjects.includes(s)));
+    setSelectedSubjects(rawSelected);
     generateNotifications(student.id).catch((err: unknown) => {
       console.warn('[dashboard] notification generation failed:', err instanceof Error ? err.message : String(err));
     });
   }, [student]);
+
+  // Narrow selectedSubjects to only those the student is allowed — drops legacy
+  // grade/plan-mismatched codes once the subjects service hook has loaded.
+  useEffect(() => {
+    if (allowedSubjects.length === 0) return;
+    const allowedCodes = new Set(allowedSubjects.map(s => s.code));
+    setSelectedSubjects(prev => {
+      const next = prev.filter(code => allowedCodes.has(code));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [allowedSubjects]);
 
   // Process dashboard RPC data when SWR returns it
   useEffect(() => {
@@ -243,15 +249,15 @@ export default function Dashboard() {
   const current = profiles.find((p) => p.subject === student.preferred_subject);
   const currentXp = current?.xp ?? 0;
   const currentLevel = current?.level ?? 1;
-  const meta = subjects.find((s) => s.code === student.preferred_subject);
+  const meta = allowedSubjects.find((s) => s.code === student.preferred_subject);
 
   // Filter subjects by stream for grades 11-12
   const streamFilteredSubjects = (() => {
     const g = student?.grade ?? '9';
     if ((g === '11' || g === '12') && selectedStream) {
-      return subjects.filter(s => (STREAM_SUBJECTS[selectedStream] ?? []).includes(s.code));
+      return allowedSubjects.filter(s => (STREAM_SUBJECTS[selectedStream] ?? []).includes(s.code));
     }
-    return subjects;
+    return allowedSubjects;
   })();
 
   return (
@@ -778,7 +784,7 @@ export default function Dashboard() {
             <div className="space-y-2">
               {upcomingExams.map(exam => {
                 const isUrgent = exam.days_left <= 7;
-                const examMeta = SUBJECT_META.find(s => s.code === exam.subject);
+                const examMeta = allowedSubjects.find(s => s.code === exam.subject);
                 const typeLabel = exam.exam_type === 'unit_test' ? (isHi ? 'UT' : 'UT') : exam.exam_type === 'half_yearly' ? (isHi ? 'अर्ध-वार्षिक' : 'Half-Yearly') : (isHi ? 'वार्षिक' : 'Annual');
                 return (
                   <button key={exam.id} onClick={() => router.push(`/exams`)} className="w-full">
@@ -901,8 +907,16 @@ export default function Dashboard() {
           </button>
         )}
 
+        {/* Reselect banner — shown when:
+            (a) the student has zero unlocked subjects (legacy grade/plan drift), OR
+            (b) the student hasn't selected any subjects yet (new account / free plan
+                that skipped picker / F2-migrated account that lost all to archive). */}
+        {(allowedSubjects.length === 0 || selectedSubjects.length === 0) && (
+          <ReselectBanner isHi={isHi} onReselect={() => setShowSubjectPicker(true)} />
+        )}
+
         {/* My Subjects (only student's chosen subjects) */}
-        {subjects.length > 0 && (
+        {allowedSubjects.length > 0 && selectedSubjects.length > 0 && (
           <div>
             <div className="flex items-center justify-between mb-2">
               <SectionHeader icon="📚">{isHi ? 'मेरे विषय' : 'My Subjects'}</SectionHeader>
@@ -911,7 +925,7 @@ export default function Dashboard() {
               </button>
             </div>
             <div className="grid-subjects">
-              {subjects.filter(s => selectedSubjects.includes(s.code)).map((s) => (
+              {allowedSubjects.filter(s => selectedSubjects.includes(s.code)).map((s) => (
                 <SubjectChip
                   key={s.code}
                   icon={s.icon}
@@ -946,7 +960,7 @@ export default function Dashboard() {
               </div>
               <div className="flex-1 overflow-y-auto px-4 pb-4">
                 <div className="grid grid-cols-2 gap-2">
-                  {subjects.map((s) => {
+                  {allowedSubjects.map((s) => {
                     const sel = selectedSubjects.includes(s.code);
                     return (
                       <button key={s.code} onClick={() => {
@@ -983,7 +997,7 @@ export default function Dashboard() {
         {/* XP by Subject + BKT Mastery (only selected subjects) */}
         <SubjectProgress
           profiles={profiles}
-          subjects={subjects}
+          subjects={allowedSubjects}
           selectedSubjects={selectedSubjects}
           isHi={isHi}
           bktMastery={bktMastery}

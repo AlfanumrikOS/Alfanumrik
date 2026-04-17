@@ -59,6 +59,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { logOpsEvent } from '../_shared/ops-events.ts'
+import { validateSubjectRpc } from '../_shared/subjects-validate.ts'
 
 // ─── CORS ────────────────────────────────────────────────────────────────────
 const ALLOWED_ORIGINS = [
@@ -295,6 +296,30 @@ Deno.serve(async (req: Request) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
     const today = new Date().toISOString().slice(0, 10)
+
+    // ── Subject governance (P12) ──────────────────────────────────────────────
+    // Reject requests that address a subject the student is not enrolled in /
+    // whose plan does not unlock. See:
+    //   docs/superpowers/specs/2026-04-15-subject-governance-design.md §6.2
+    try {
+      const check = await validateSubjectRpc(supabase, student_id, subject)
+      if (!check.ok) {
+        return jsonResponse(
+          { error: 'subject_not_allowed', reason: check.reason, subject },
+          422,
+          {},
+          origin,
+        )
+      }
+    } catch (subjErr) {
+      console.error('subject validation failed:', subjErr instanceof Error ? subjErr.message : String(subjErr))
+      return jsonResponse(
+        { error: 'subject_not_allowed', reason: 'grade', subject },
+        422,
+        {},
+        origin,
+      )
+    }
 
     const studentResult = await supabase.from('students').select('subscription_plan, board')
       .eq('id', student_id).maybeSingle()

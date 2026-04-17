@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_colors.dart';
-import '../../../core/constants/grade_subjects.dart';
+import '../../../core/services/subjects_provider.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../providers/dashboard_provider.dart';
 import '../../widgets/loading_widget.dart';
@@ -201,30 +201,49 @@ class DashboardScreen extends ConsumerWidget {
                     ),
                   ),
 
-                  // Subject grid
+                  // Subject grid — driven by /api/student/subjects
                   SliverPadding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
-                    sliver: SliverGrid(
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        mainAxisSpacing: 10,
-                        crossAxisSpacing: 10,
-                        childAspectRatio: 1.6,
-                      ),
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final subjects = GradeSubjects.forGrade(student.gradeNumber);
-                          if (index >= subjects.length) return null;
-                          final subj = subjects[index];
-                          return _SubjectCard(
-                            name: subj.name,
-                            emoji: subj.emoji,
-                            code: subj.code,
-                            onTap: () => context.go('/learn/${subj.code}'),
-                          );
-                        },
-                        childCount: GradeSubjects.forGrade(student.gradeNumber).length,
-                      ),
+                    sliver: Consumer(
+                      builder: (context, ref, _) {
+                        final subjectsAsync = ref.watch(subjectsProvider);
+                        return subjectsAsync.when(
+                          loading: () => const SliverToBoxAdapter(
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(vertical: 12),
+                              child: ShimmerList(count: 2, itemHeight: 70),
+                            ),
+                          ),
+                          error: (e, _) => SliverToBoxAdapter(
+                            child: ErrorBanner(message: e.toString()),
+                          ),
+                          data: (subjects) => SliverGrid(
+                            gridDelegate:
+                                const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              mainAxisSpacing: 10,
+                              crossAxisSpacing: 10,
+                              childAspectRatio: 1.6,
+                            ),
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) {
+                                if (index >= subjects.length) return null;
+                                final subj = subjects[index];
+                                return _SubjectCard(
+                                  name: subj.name,
+                                  emoji: subj.icon,
+                                  code: subj.code,
+                                  isLocked: subj.isLocked,
+                                  onTap: () => subj.isLocked
+                                      ? context.push('/plans')
+                                      : context.go('/learn/${subj.code}'),
+                                );
+                              },
+                              childCount: subjects.length,
+                            ),
+                          ),
+                        );
+                      },
                     ),
                   ),
 
@@ -372,6 +391,7 @@ class _SubjectCard extends StatelessWidget {
   final String name;
   final String emoji;
   final String code;
+  final bool isLocked;
   final VoidCallback onTap;
 
   const _SubjectCard({
@@ -379,6 +399,7 @@ class _SubjectCard extends StatelessWidget {
     required this.emoji,
     required this.code,
     required this.onTap,
+    this.isLocked = false,
   });
 
   @override
@@ -397,7 +418,15 @@ class _SubjectCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(emoji, style: const TextStyle(fontSize: 24)),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(emoji, style: const TextStyle(fontSize: 24)),
+                if (isLocked)
+                  Icon(Icons.lock_outline_rounded,
+                      size: 14, color: color.withValues(alpha: 0.6)),
+              ],
+            ),
             const SizedBox(height: 6),
             Text(
               name,

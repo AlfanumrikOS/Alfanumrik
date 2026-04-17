@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
-import { SUBJECT_META } from '@/lib/constants';
+import { useTeacherAllowedSubjects } from '@/lib/useTeacherAllowedSubjects';
 import { BottomNav } from '@/components/ui';
 import { supabase } from '@/lib/supabase';
 import { VALID_GRADES } from '@/lib/identity';
@@ -115,6 +115,7 @@ const DEFAULT_BANK: Record<string, GeneratedQuestion[]> = {
 
 export default function TeacherWorksheetsPage() {
   const { teacher, isLoggedIn, isLoading: authLoading, activeRole, isHi } = useAuth();
+  const { subjects } = useTeacherAllowedSubjects();
   const router = useRouter();
 
   const [subject, setSubject] = useState('math');
@@ -221,7 +222,7 @@ export default function TeacherWorksheetsPage() {
 
     const entry: SavedWorksheet = {
       id: Date.now().toString(),
-      title: topic || `${SUBJECT_META.find(s => s.code === subject)?.name || subject} Worksheet`,
+      title: topic || `${subjects.find(s => s.code === subject)?.name || subject} Worksheet`,
       subject,
       grade,
       date: new Date().toLocaleDateString('en-IN'),
@@ -237,7 +238,7 @@ export default function TeacherWorksheetsPage() {
     setTimeout(() => { window.print(); setIsPrintView(false); }, 200);
   };
 
-  const subjectName = SUBJECT_META.find(s => s.code === subject)?.name || subject;
+  const subjectName = subjects.find(s => s.code === subject)?.name || subject;
 
   if (authLoading) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div style={{ fontSize: 48 }}>📝</div></div>;
 
@@ -267,7 +268,7 @@ export default function TeacherWorksheetsPage() {
               <div style={{ marginBottom: 16 }}>
                 <label style={{ fontSize: 12, fontWeight: 700, color: '#555', display: 'block', marginBottom: 8 }}>{tt(isHi, 'Subject', 'विषय')}</label>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {SUBJECT_META.filter(s => ['math', 'science', 'physics', 'chemistry', 'biology', 'english', 'hindi'].includes(s.code)).map(s => (
+                  {subjects.filter(s => ['math', 'science', 'physics', 'chemistry', 'biology', 'english', 'hindi'].includes(s.code)).map(s => (
                     <button key={s.code} onClick={() => setSubject(s.code)} style={{
                       padding: '7px 14px', borderRadius: 10, border: '1.5px solid',
                       borderColor: subject === s.code ? '#2563EB' : '#e0e0e0',

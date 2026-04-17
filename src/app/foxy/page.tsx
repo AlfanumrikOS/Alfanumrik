@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { SUPABASE_URL, SUPABASE_ANON_KEY, GRADE_SUBJECTS } from '@/lib/constants';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@/lib/constants';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { BottomNav } from '@/components/ui';
 import { LESSON_STEPS, getLessonStepPrompt, getNextLessonStep, type LessonStep, type LessonState } from '@/lib/cognitive-engine';
@@ -31,17 +31,8 @@ interface SubjectConfig {
   color: string;
 }
 
-const SUBJECTS: Record<string, SubjectConfig> = {
-  math: { name: 'Mathematics', icon: '∑', color: '#3B82F6' },
-  science: { name: 'Science', icon: '⚛', color: '#10B981' },
-  english: { name: 'English', icon: 'Aa', color: '#8B5CF6' },
-  hindi: { name: 'Hindi', icon: 'अ', color: '#F59E0B' },
-  physics: { name: 'Physics', icon: '⚡', color: '#EF4444' },
-  chemistry: { name: 'Chemistry', icon: '⚗', color: '#06B6D4' },
-  biology: { name: 'Biology', icon: '⚕', color: '#22C55E' },
-  social_studies: { name: 'Social Studies', icon: '🌍', color: '#D97706' },
-  coding: { name: 'Coding', icon: '💻', color: '#6366F1' },
-};
+// Fallback used only when the subjects service hook hasn't returned yet (first paint)
+const FALLBACK_SCIENCE: SubjectConfig = { name: 'Science', icon: '⚛', color: '#10B981' };
 
 const LANGS = [
   { code: 'en', label: 'EN' },
@@ -64,11 +55,6 @@ const FOXY_FACES: Record<string, string> = { idle: '🦊', thinking: '🤔', hap
 const MASTERY_COLORS: Record<string, string> = {
   not_started: '#9ca3af', beginner: '#F59E0B', developing: '#3B82F6', proficient: '#8B5CF6', mastered: '#10B981',
 };
-
-function getGradeSubjects(grade: string): string[] {
-  const g = grade.replace('Grade ', '').trim();
-  return GRADE_SUBJECTS[g] || GRADE_SUBJECTS['9'];
-}
 
 /* ══════════════════════════════════════════════════════════════
    API HELPERS — uses shared Supabase client, no hardcoded creds
@@ -301,6 +287,12 @@ export default function FoxyPage() {
   const router = useRouter();
   const { unlocked: allowedSubjects } = useAllowedSubjects();
 
+  // Allowed subjects come from the subjects service — respects grade, stream, plan,
+  // and the admin-curated master list. Build a lookup table for tab/dropdown rendering.
+  const SUBJECTS: Record<string, SubjectConfig> = Object.fromEntries(
+    allowedSubjects.map((s) => [s.code, { name: s.name, icon: s.icon, color: s.color } as SubjectConfig]),
+  );
+
   // Core state
   const [student, setStudent] = useState<any>(null);
   const [activeSubject, setActiveSubject] = useState('science');
@@ -443,6 +435,18 @@ export default function FoxyPage() {
 
   useEffect(() => { if (!authLoading && !isLoggedIn) router.replace('/login'); }, [authLoading, isLoggedIn, router]);
 
+  // If the student has no explicit subject selection, fall back to the full list of
+  // allowed subjects (grade + plan aware). Also narrows selections to allowed codes.
+  useEffect(() => {
+    if (allowedSubjects.length === 0) return;
+    const allowedCodes = new Set(allowedSubjects.map((s) => s.code));
+    setStudentSubs((prev) => {
+      if (prev.length === 0) return allowedSubjects.map((s) => s.code);
+      const filtered = prev.filter((c) => allowedCodes.has(c));
+      return filtered.length === prev.length ? prev : filtered;
+    });
+  }, [allowedSubjects]);
+
   // Fetch usage stats on mount and after student loads
   useEffect(() => {
     if (!student?.id) return;
@@ -459,7 +463,9 @@ export default function FoxyPage() {
     const saved = typeof window !== 'undefined' ? localStorage.getItem('alfanumrik_subject') : null;
     const subjectKey = saved || authStudent.preferred_subject || 'science';
     setActiveSubject(subjectKey);
-    setStudentSubs((authStudent.selected_subjects && authStudent.selected_subjects.length > 1) ? (authStudent.selected_subjects as string[]) : getGradeSubjects(grade));
+    // Prefer the student's own selected_subjects; otherwise leave empty and let the
+    // allowedSubjects sync effect below populate once the service hook resolves.
+    setStudentSubs((authStudent.selected_subjects as string[] | undefined) ?? []);
     (async () => {
       const recent = await fetchRecentSession(authStudent.id, subjectKey);
       if (recent) {
@@ -843,7 +849,7 @@ export default function FoxyPage() {
     }
   }, [lessonStep, lessonStepsCompleted, activeTopic, language, sendMessage]);
 
-  const cfg = SUBJECTS[activeSubject] || SUBJECTS.science;
+  const cfg = SUBJECTS[activeSubject] || SUBJECTS.science || FALLBACK_SCIENCE;
 
   if (authLoading || !student) return (
     <div className="mesh-bg min-h-dvh flex items-center justify-center">
@@ -906,7 +912,7 @@ export default function FoxyPage() {
           borderBottom: '1px solid var(--border)',
         }}
       >
-        {(studentSubs.length > 0 ? studentSubs : Object.keys(SUBJECTS)).map((key: string) => {
+        {(studentSubs.length > 0 ? studentSubs : allowedSubjects.map((s) => s.code)).map((key: string) => {
           const sub = SUBJECTS[key];
           if (!sub) return null;
           const isActive = activeSubject === key;

@@ -1,11 +1,13 @@
 'use client';
 
 import { Card, ProgressBar, SectionHeader } from '@/components/ui';
-import type { StudentLearningProfile, Subject } from '@/lib/types';
+import type { StudentLearningProfile } from '@/lib/types';
+
+type SubjectMeta = { code: string; name: string; icon: string; color: string };
 
 interface SubjectProgressProps {
   profiles: StudentLearningProfile[];
-  subjects: Subject[];
+  subjects: SubjectMeta[];
   selectedSubjects: string[];
   isHi: boolean;
   // BKT mastery: subject_code → average mastery_probability (0–100).

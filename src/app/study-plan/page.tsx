@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { getStudyPlan, generateStudyPlan, supabase } from '@/lib/supabase';
 import { Card, Button, ProgressBar, SectionHeader, LoadingFoxy, BottomNav } from '@/components/ui';
-import { SUBJECT_META } from '@/lib/constants';
+import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { BLOOM_CONFIG, type BloomLevel } from '@/lib/cognitive-engine';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 
@@ -77,6 +77,7 @@ const DAY_OPTIONS = [5, 7];
 
 export default function StudyPlanPage() {
   const { student, isLoggedIn, isLoading, isHi, refreshSnapshot } = useAuth();
+  const { unlocked: allowedSubjects } = useAllowedSubjects();
   const router = useRouter();
 
   const [plan, setPlan] = useState<Plan | null>(null);
@@ -305,7 +306,7 @@ export default function StudyPlanPage() {
                 {isHi ? '1. विषय चुनो' : '1. Choose subject'}
               </p>
               <div className="grid grid-cols-3 gap-2">
-                {SUBJECT_META.slice(0, 9).map(s => (
+                {allowedSubjects.map(s => (
                   <button
                     key={s.code}
                     onClick={() => setGenSubject(s.code)}

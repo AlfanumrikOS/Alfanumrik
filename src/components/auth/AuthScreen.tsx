@@ -15,7 +15,9 @@
  */
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { SUPABASE_URL, SUPABASE_ANON_KEY, SUBJECT_META } from '@/lib/constants';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@/lib/constants';
+// eslint-disable-next-line alfanumrik/no-raw-subject-imports -- AuthScreen is pre-login: no session yet, so neither useAllowedSubjects (student) nor useTeacherAllowedSubjects can run. Static SUBJECT_META is the correct data source for signup subject selection.
+import { SUBJECT_META } from '@/lib/constants';
 import { validatePassword } from '@/lib/sanitize';
 
 const AUTH_GRADES = ['6', '7', '8', '9', '10', '11', '12'];

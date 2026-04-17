@@ -12,6 +12,10 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
+// P12/P13: never surface stale/invalid subject data to a parent; see
+// docs/superpowers/specs/2026-04-15-subject-governance-design.md §6.2
+// validateSubjectRpc is per-subject; for the list filter we call the RPC
+// directly and intersect with selected_subjects.
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -349,6 +353,47 @@ async function getChildDashboardData(
     if (!subjectMap.has(subj)) subjectMap.set(subj, { quizzes: [] })
     subjectMap.get(subj)!.quizzes.push(q)
   }
+
+  // P12/P13: never surface stale/invalid subject data to a parent; see
+  // docs/superpowers/specs/2026-04-15-subject-governance-design.md §6.2
+  // Intersect selected_subjects AND quiz-derived subjects with the student's
+  // currently-valid subjects (grade-map ∩ plan). Record what was filtered
+  // out for ops visibility.
+  let allowedCodes: Set<string> | null = null
+  const staleSubjects: string[] = []
+  try {
+    const { data: allowedRows } = await supabase.rpc('get_available_subjects', {
+      p_student_id: student.id,
+    })
+    if (Array.isArray(allowedRows)) {
+      allowedCodes = new Set(
+        (allowedRows as Array<{ code: string; is_locked: boolean }>)
+          .filter((r) => !r.is_locked)
+          .map((r) => r.code),
+      )
+    }
+  } catch (subjErr) {
+    console.warn(
+      'parent-portal: get_available_subjects failed, returning unfiltered data:',
+      subjErr instanceof Error ? subjErr.message : String(subjErr),
+    )
+  }
+
+  const selected = Array.isArray(student.selected_subjects)
+    ? (student.selected_subjects as unknown[]).map((s) => String(s))
+    : []
+  if (allowedCodes) {
+    for (const s of selected) {
+      if (!allowedCodes.has(s)) staleSubjects.push(s)
+    }
+    for (const s of Array.from(subjectMap.keys())) {
+      if (!allowedCodes.has(s)) {
+        staleSubjects.push(s)
+        subjectMap.delete(s)
+      }
+    }
+  }
+
   const subjects = Array.from(subjectMap.keys())
 
   const subjectProgress = Array.from(subjectMap.entries()).map(([name, data]) => {
@@ -369,8 +414,12 @@ async function getChildDashboardData(
   const todayQuizzes = dailyActivity[dailyActivity.length - 1]?.quizzes || 0
   const todayStudyTime = dailyActivity[dailyActivity.length - 1]?.studyTime || 0
 
+  // De-duplicate stale list
+  const dedupedStale = Array.from(new Set(staleSubjects))
+
   return {
     id: student.id,
+    ...(dedupedStale.length > 0 ? { stale_subjects: dedupedStale } : {}),
     student: { name: student.name, grade: student.grade },
     name: student.name,
     grade: student.grade,

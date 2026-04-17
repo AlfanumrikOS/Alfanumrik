@@ -6,7 +6,8 @@ import { useAuth } from '@/lib/AuthContext';
 import { supabase, getStudentProfiles, getSubjects, studentJoinClass } from '@/lib/supabase';
 import { Card, Button, Input, Select, Avatar, SectionHeader, ProgressBar, StatCard, LoadingFoxy, BottomNav } from '@/components/ui';
 import TrustFooter from '@/components/TrustFooter';
-import { GRADES, BOARDS, LANGUAGES, SUBJECT_META, getSubjectsForGrade } from '@/lib/constants';
+import { GRADES, BOARDS, LANGUAGES } from '@/lib/constants';
+import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { PlanBadge } from '@/components/PlanBadge';
 import { isSoundEnabled, setSoundEnabled, playSound } from '@/lib/sounds';
 
@@ -178,6 +179,9 @@ const STUDY_HOURS = [
 export default function ProfilePage() {
   const { student, snapshot, isLoggedIn, isLoading, isHi, language, setLanguage, signOut, refreshStudent, refreshSnapshot } = useAuth();
   const router = useRouter();
+
+  // Allowed subjects from the subjects service — grade + stream + plan aware.
+  const { unlocked: allowedSubjects } = useAllowedSubjects();
 
   const [tab, setTab] = useState<Tab>('overview');
   const [saving, setSaving] = useState(false);
@@ -538,7 +542,7 @@ export default function ProfilePage() {
                   { l: isHi ? 'कक्षा' : 'Grade', v: `Grade ${student.grade}` },
                   { l: isHi ? 'बोर्ड' : 'Board', v: student.board ?? 'CBSE' },
                   { l: isHi ? 'भाषा' : 'Language', v: LANGUAGES.find(la => la.code === student.preferred_language)?.label ?? student.preferred_language },
-                  { l: isHi ? 'पसंदीदा विषय' : 'Preferred Subject', v: getSubjectsForGrade(student.grade).find(s => s.code === student.preferred_subject)?.name ?? SUBJECT_META.find(s => s.code === student.preferred_subject)?.name ?? student.preferred_subject ?? '—' },
+                  { l: isHi ? 'पसंदीदा विषय' : 'Preferred Subject', v: allowedSubjects.find(s => s.code === student.preferred_subject)?.name ?? student.preferred_subject ?? '—' },
                   { l: isHi ? 'स्कूल' : 'School', v: student.school_name ?? '—' },
                   { l: isHi ? 'शहर' : 'City', v: [student.city, student.state].filter(Boolean).join(', ') || '—' },
                   { l: isHi ? 'लक्ष्य' : 'Academic Goal', v: GOALS.find(g => g.value === student.academic_goal)?.label ?? student.academic_goal ?? '—' },
@@ -700,12 +704,21 @@ export default function ProfilePage() {
                     </p>
                   )}
                 </div>
-                <Select
-                  label={isHi ? 'पसंदीदा विषय' : 'Preferred Subject'}
-                  value={editSubject}
-                  onChange={setEditSubject}
-                  options={getSubjectsForGrade(editGrade).map(s => ({ value: s.code, label: `${s.icon} ${s.name}` }))}
-                />
+                <div>
+                  <Select
+                    label={isHi ? 'पसंदीदा विषय' : 'Preferred Subject'}
+                    value={editSubject}
+                    onChange={setEditSubject}
+                    options={allowedSubjects.map(s => ({ value: s.code, label: `${s.icon} ${s.name}` }))}
+                  />
+                  {editSubject && allowedSubjects.length > 0 && !allowedSubjects.some(s => s.code === editSubject) && (
+                    <p className="text-[11px] mt-1" style={{ color: 'var(--danger)' }}>
+                      {isHi
+                        ? 'यह विषय अब आपकी योजना पर उपलब्ध नहीं है — कोई नया चुनें'
+                        : 'This subject is no longer available on your plan — pick a new one'}
+                    </p>
+                  )}
+                </div>
                 <Select
                   label={isHi ? 'भाषा' : 'Language'}
                   value={editLang}

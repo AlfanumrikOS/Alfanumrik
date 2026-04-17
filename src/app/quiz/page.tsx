@@ -5,11 +5,10 @@ import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { track } from '@/lib/analytics';
-import { logger } from '@/lib/logger';
-import { getQuizQuestionsV2, submitQuizResults, saveCognitiveMetrics, saveQuestionResponses, processAdaptiveLearning, supabase, updateChapterProgress } from '@/lib/supabase';
+import { submitQuizResults, saveCognitiveMetrics, saveQuestionResponses, supabase, updateChapterProgress } from '@/lib/supabase';
+import { assembleQuiz } from '@/lib/quiz-assembler';
 import { XP_RULES } from '@/lib/xp-rules';
 import { Card, Button, ProgressBar, LoadingFoxy } from '@/components/ui';
-import { SUBJECT_META } from '@/lib/constants';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import QuizSetup from '@/components/quiz/QuizSetup';
 import FeedbackOverlay from '@/components/quiz/FeedbackOverlay';
@@ -119,10 +118,61 @@ function classifyQuizError(question: Question, response: Response): string {
 }
 
 const VALID_QUIZ_COUNTS = [5, 10, 15, 20] as const;
+
+/** Parse options from string or array format */
+function parseOptions(opts: string|string[]) {
+  if (Array.isArray(opts)) return opts;
+  try { return JSON.parse(opts); } catch { return []; }
+}
+
+/* ═══ OPTION SHUFFLE — Anti-pattern exploitation (P3/P6) ═══
+ * 57.5% of questions had correct_answer_index=1. Students picked B and scored 57%.
+ * Fix: deterministic shuffle at serve time using question ID as seed.
+ */
+function seededShuffle(arr: string[], seed: string) {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = ((hash << 5) - hash + seed.charCodeAt(i)) | 0;
+  }
+  const indices = arr.map((_, i) => i);
+  for (let i = indices.length - 1; i > 0; i--) {
+    hash = ((hash * 1103515245 + 12345) & 0x7fffffff);
+    const j = hash % (i + 1);
+    [indices[i], indices[j]] = [indices[j], indices[i]];
+  }
+  return { shuffled: indices.map(i => arr[i]), indexMap: indices };
+}
+
+function buildShuffleMaps(questions: Array<{id:string;question_text:string;options:string|string[];correct_answer_index:number}>) {
+  return questions.map(q => {
+    const opts = parseOptions(q.options);
+    if (opts.length !== 4 || typeof q.correct_answer_index !== 'number') return null;
+    const seed = q.id + (q.question_text || '').slice(0, 20);
+    const { indexMap } = seededShuffle(opts, seed);
+    return indexMap;
+  });
+}
+
+function getShuffledOptions(q: {options:string|string[]}, shuffleMap: number[]|null) {
+  const opts = parseOptions(q.options);
+  if (!shuffleMap || opts.length !== 4) return opts;
+  return shuffleMap.map(origIdx => opts[origIdx]);
+}
+
+function shuffledToOriginal(displayIdx: number, shuffleMap: number[]|null) {
+  if (!shuffleMap) return displayIdx;
+  return shuffleMap[displayIdx];
+}
+
+function originalToShuffled(origIdx: number, shuffleMap: number[]|null) {
+  if (!shuffleMap) return origIdx;
+  return shuffleMap.indexOf(origIdx);
+}
+
 const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
 
 export default function QuizPage() {
-  const { student, snapshot, isLoggedIn, isLoading, isHi, refreshSnapshot, activeRole } = useAuth();
+  const { student, isLoggedIn, isLoading, isHi, refreshSnapshot, activeRole } = useAuth();
   const router = useRouter();
   const { unlocked: allowedSubjects } = useAllowedSubjects();
 
@@ -163,6 +213,7 @@ export default function QuizPage() {
 
   // Quiz state
   const [questions, setQuestions] = useState<Question[]>([]);
+  const [shuffleMaps, setShuffleMaps] = useState<Array<number[] | null>>([]);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [responses, setResponses] = useState<Response[]>([]);
@@ -172,6 +223,7 @@ export default function QuizPage() {
   const [questionTimer, setQuestionTimer] = useState(0);
   const [loading, setLoading] = useState(false);
   const [noQuestionsError, setNoQuestionsError] = useState(false);
+  const [noQuestionsMessage, setNoQuestionsMessage] = useState('');
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const qTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -212,7 +264,8 @@ export default function QuizPage() {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
     const subj = params.get('subject');
-    if (subj && SUBJECT_META.find(s => s.code === subj)) {
+    if (subj) {
+      // Accept the URL-provided subject; the server will validate on quiz start.
       setSelectedSubject(subj);
       setInitialSubject(subj);
     }
@@ -329,50 +382,45 @@ export default function QuizPage() {
     }
     if (!subj || !student) return;
     setLoading(true);
-
-    // Map 'ncert' to all NCERT written question types (fetch in main quiz, no redirect)
-    const effectiveTypes = qTypes.length === 1 && qTypes[0] === 'ncert'
-      ? ['short_answer', 'long_answer', 'intext', 'exercise', 'example', 'hots', 'numerical']
-      : qTypes;
-
+    setNoQuestionsError(false);
+    setNoQuestionsMessage('');
     try {
       const diffModeMap: Record<string, string> = { '1': 'easy', '2': 'medium', '3': 'hard' };
       const diffMode = diff != null ? (diffModeMap[String(diff)] || 'mixed') : (opts?.quizMode === 'cognitive' ? 'progressive' : 'mixed');
 
-      // GUARANTEED COUNT ASSEMBLER — replaces scattered fetching
-      // Uses 4-rung fallback ladder to ensure exact count fulfillment.
-      // Never returns a partial quiz silently.
-      const { assembleQuiz } = await import('@/lib/quiz-assembler');
-      const assemblyResult = await assembleQuiz({
+      // Guaranteed Count Assembler — ensures exact requested count or explicit failure.
+      const result = await assembleQuiz({
         subject: subj,
         grade: student.grade,
         requestedCount: qCount,
         difficulty: diffMode,
         chapter: chapter ?? null,
-        questionTypes: effectiveTypes,
-        mode: quizMode,
+        questionTypes: ['mcq'],
+        mode: opts?.quizMode ?? quizMode,
       });
 
-      if (!assemblyResult.success) {
-        setNoQuestionsError(true);
+      if (!result.success) {
+        // Explicit failure — show message instead of silent partial quiz
+        if (result.returnedCount === 0) {
+          setNoQuestionsError(true);
+          setNoQuestionsMessage(
+            isHi ? 'इस विषय में अभी प्रश्न नहीं हैं।' : 'No questions available for this subject yet.'
+          );
+        } else {
+          setNoQuestionsError(true);
+          setNoQuestionsMessage(
+            isHi
+              ? `केवल ${result.returnedCount} प्रश्न उपलब्ध हैं (${qCount} चाहिए)। कृपया अन्य अध्याय या विषय आज़माएँ।`
+              : `Only ${result.returnedCount} questions available (${qCount} needed). Try another chapter or subject.`
+          );
+        }
         setLoading(false);
         return;
       }
 
-      const qs = assemblyResult.questions;
-
-      // If we still have fewer questions than requested after all fallbacks,
-      // proceed with what we have but log the gap
-      if (qs.length < qCount) {
-        logger.warn('quiz_pool_insufficient', {
-          requested: qCount,
-          available: qs.length,
-          subject: subj,
-          grade: student.grade,
-          chapter,
-        });
-      }
+      const qs = result.questions;
       setQuestions(qs);
+      setShuffleMaps(buildShuffleMaps(qs));
       setCurrentIdx(0);
       setResponses([]);
       setSelectedOption(null);
@@ -383,16 +431,16 @@ export default function QuizPage() {
       setScreen('quiz');
     } catch (e) {
       console.error('Quiz load error:', e);
-      alert(isHi ? 'क्विज़ लोड करने में समस्या हुई। कृपया फिर से कोशिश करें।' : 'Failed to load quiz. Please try again.');
+      setNoQuestionsError(true);
+      setNoQuestionsMessage(
+        isHi ? 'क्विज़ लोड करने में समस्या हुई। कृपया फिर से कोशिश करें।' : 'Failed to load quiz. Please try again.'
+      );
     }
     setLoading(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSubject, student, questionCount, selectedDifficulty, selectedChapter, selectedQuestionTypes, isHi, router]);
 
-  const parseOptions = (opts: string | string[]): string[] => {
-    if (Array.isArray(opts)) return opts;
-    try { return JSON.parse(opts); } catch { return []; }
-  };
+  // parseOptions is now a module-level function (used by shuffle logic)
 
   const selectAnswer = (optIdx: number) => {
     if (showExplanation) return;
@@ -647,7 +695,7 @@ export default function QuizPage() {
           return;
         }
 
-        const subMeta = SUBJECT_META.find(s => s.code === selectedSubject);
+        const subMeta = allowedSubjects.find(s => s.code === selectedSubject);
         const res = await submitQuizResults(
           student!.id,
           selectedSubject!,
@@ -685,29 +733,7 @@ export default function QuizPage() {
             console.warn('[quiz] saveQuestionResponses failed:', err instanceof Error ? err.message : String(err));
           });
 
-          // Fire-and-forget: update CME mastery state for adaptive question selection.
-          // Populates cme_concept_state so future quizzes adapt to the student's
-          // mastery level. Non-blocking — P1/P2/P3/P4 invariants untouched.
-          processAdaptiveLearning(
-            student!.id,
-            selectedSubject!,
-            student!.grade,
-            allResponses.map(r => ({
-              question_id: r.question_id,
-              is_correct: r.is_correct,
-              time_spent: r.time_spent,
-              selected_option: r.selected_option,
-            })),
-            questions.map(q => ({
-              id: q.id,
-              chapter_number: q.chapter_number,
-              difficulty: q.difficulty,
-              bloom_level: q.bloom_level,
-            })),
-            res.session_id,
-          ).catch((err: unknown) => {
-            console.warn('[quiz] processAdaptiveLearning failed:', err instanceof Error ? err.message : String(err));
-          });
+          // CME mastery state is updated server-side via atomic_quiz_profile_update RPC
         }
 
         // Save cognitive metrics for this session (cognitive mode only — tracks ZPD and fatigue)
@@ -805,7 +831,7 @@ export default function QuizPage() {
     setNetworkError(null);
     try {
       const allResponses = pendingSubmissionRef.current;
-      const subMeta = SUBJECT_META.find(s => s.code === selectedSubject);
+      const subMeta = allowedSubjects.find(s => s.code === selectedSubject);
       const res = await submitQuizResults(
         student.id,
         selectedSubject,
@@ -868,15 +894,15 @@ export default function QuizPage() {
 
   if (isLoading || !student) return <LoadingFoxy />;
 
-  const subMeta = SUBJECT_META.find(s => s.code === selectedSubject);
+  const subMeta = allowedSubjects.find(s => s.code === selectedSubject);
   const q = questions[currentIdx];
-  const opts = q ? parseOptions(q.options) : [];
+  const opts = q ? getShuffledOptions(q, shuffleMaps[currentIdx] ?? null) : [];
   const progress = questions.length > 0 ? ((currentIdx + (showExplanation ? 1 : 0)) / questions.length) * 100 : 0;
   const correctSoFar = responses.filter(r => r.is_correct).length;
 
   // ═══ NO QUESTIONS AVAILABLE — friendly empty state ═══
   if (noQuestionsError && screen === 'select') {
-    const errorSubMeta = SUBJECT_META.find(s => s.code === selectedSubject);
+    const errorSubMeta = allowedSubjects.find(s => s.code === selectedSubject);
     return (
       <div className="mesh-bg min-h-dvh flex flex-col items-center justify-center px-6 gap-5">
         <div className="text-5xl">📭</div>
@@ -920,6 +946,7 @@ export default function QuizPage() {
   // ═══ QUIZ SCREEN ═══
   if (screen === 'quiz' && q) {
     const isAnswered = showExplanation;
+    const currentShuffleMap = shuffleMaps[currentIdx] ?? null;
     const isCorrect = selectedOption === q.correct_answer_index;
 
     return (
@@ -1023,13 +1050,13 @@ export default function QuizPage() {
                 </div>
               </Card>
 
-              {/* Options */}
-              <div className="space-y-2.5">
-                {opts.map((opt, idx) => {
-                  const letter = OPTION_LETTERS[idx] || String(idx + 1);
-                  const optText = opt.replace(/^[A-D][\.\)]\s*/, '');
-                  const isSelected = selectedOption === idx;
-                  const isCorrectOpt = idx === q.correct_answer_index;
+          {/* Options */}
+          <div className="space-y-2.5">
+            {opts.map((opt: string, idx: number) => {
+              const letter = OPTION_LETTERS[idx] || String(idx + 1);
+              const optText = opt.replace(/^[A-D][\.\)]\s*/, '');
+              const isSelected = selectedOption === idx;
+              const isCorrectOpt = idx === originalToShuffled(q.correct_answer_index, shuffleMaps[currentIdx] ?? null);
 
                   let bg = 'var(--surface-1)';
                   let border = 'var(--border)';
@@ -1389,7 +1416,7 @@ export default function QuizPage() {
           selectedSubject={selectedSubject}
           studentName={student!.name}
           timer={timer}
-          isFirstQuiz={(snapshot?.quizzes_taken ?? 0) <= 1}
+          isFirstQuiz={false}
           onRetry={() => { setScreen('select'); setQuestions([]); setResponses([]); setResults(null); setNetworkError(null); pendingSubmissionRef.current = null; }}
           onGoHome={() => router.push('/dashboard')}
         />

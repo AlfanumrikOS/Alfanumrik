@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { shareResult, challengeInviteMessage, challengeResultMessage } from '@/lib/share';
-import { SUBJECT_META, GRADE_SUBJECTS } from '@/lib/constants';
+import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { Card, Button, Badge, Avatar, EmptyState, LoadingFoxy, SubjectChip } from '@/components/ui';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import type { QuizChallenge, ChallengeStatus } from '@/lib/types';
@@ -45,9 +45,8 @@ export default function ChallengeMode({ studentId, studentName, grade, isHi }: C
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
   const [questionCount, setQuestionCount] = useState<number>(10);
 
-  const availableSubjects = (GRADE_SUBJECTS[grade] || GRADE_SUBJECTS['9'])
-    .map(code => SUBJECT_META.find(s => s.code === code))
-    .filter(Boolean) as typeof SUBJECT_META[number][];
+  const { unlocked: allowedSubjects } = useAllowedSubjects();
+  const availableSubjects = allowedSubjects;
 
   // ─── My Record stats ───
   const myRecord = useMemo(() => {
@@ -152,7 +151,7 @@ export default function ChallengeMode({ studentId, studentName, grade, isHi }: C
 
       // Share the challenge via WhatsApp
       if (challenge?.share_code) {
-        const subjectName = SUBJECT_META.find(s => s.code === selectedSubject)?.name ?? selectedSubject;
+        const subjectName = allowedSubjects.find(s => s.code === selectedSubject)?.name ?? selectedSubject;
         await shareResult(challengeInviteMessage({
           studentName,
           subject: subjectName,
@@ -212,7 +211,7 @@ export default function ChallengeMode({ studentId, studentName, grade, isHi }: C
     const opponentName = iAmChallenger
       ? (challenge.opponent_name ?? (isHi ? 'प्रतिद्वंदी' : 'Opponent'))
       : (challenge.challenger_name ?? (isHi ? 'चैलेंजर' : 'Challenger'));
-    const subjectName = SUBJECT_META.find(s => s.code === challenge.subject)?.name ?? challenge.subject;
+    const subjectName = allowedSubjects.find(s => s.code === challenge.subject)?.name ?? challenge.subject;
 
     await shareResult(challengeResultMessage({
       studentName,
@@ -360,7 +359,7 @@ export default function ChallengeMode({ studentId, studentName, grade, isHi }: C
     const theirName = iAmChallenger
       ? (c.opponent_name ?? (isHi ? 'प्रतिद्वंदी' : 'Opponent'))
       : (c.challenger_name ?? (isHi ? 'चैलेंजर' : 'Challenger'));
-    const subjectMeta = SUBJECT_META.find(s => s.code === c.subject);
+    const subjectMeta = allowedSubjects.find(s => s.code === c.subject);
 
     return (
       <div className="space-y-5 animate-fade-in">
@@ -652,7 +651,7 @@ export default function ChallengeMode({ studentId, studentName, grade, isHi }: C
                   onShare={c.status === 'pending' && c.challenger_id === studentId
                     ? async () => {
                         if (!c.share_code) return;
-                        const subjectName = SUBJECT_META.find(s => s.code === c.subject)?.name ?? c.subject;
+                        const subjectName = allowedSubjects.find(s => s.code === c.subject)?.name ?? c.subject;
                         await shareResult(challengeInviteMessage({
                           studentName,
                           subject: subjectName,
@@ -687,7 +686,8 @@ interface ChallengeCardProps {
 function ChallengeCard({ challenge, studentId, isHi, onAccept, onView, onShare, onRematch }: ChallengeCardProps) {
   const c = challenge;
   const status = STATUS_CONFIG[c.status];
-  const subjectMeta = SUBJECT_META.find(s => s.code === c.subject);
+  const { unlocked: allowedSubjects } = useAllowedSubjects();
+  const subjectMeta = allowedSubjects.find(s => s.code === c.subject);
   const iAmChallenger = c.challenger_id === studentId;
   const opponentLabel = iAmChallenger
     ? (c.opponent_name ?? (c.opponent_id ? (isHi ? 'प्रतिद्वंदी' : 'Opponent') : (isHi ? 'कोई भी' : 'Anyone')))

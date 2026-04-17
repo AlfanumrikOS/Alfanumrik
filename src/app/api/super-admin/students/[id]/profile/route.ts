@@ -84,13 +84,10 @@ export async function GET(
         .eq('student_id', studentId),
 
       // 8. Class enrollments
-      // Migration note: class_students (legacy) → class_enrollments (Phase 2).
-      // TODO: Once class_students is fully deprecated, remove this comment.
       supabaseAdmin
-        .from('class_enrollments')
+        .from('class_students')
         .select('class_id, classes(id, name, grade, section)')
-        .eq('student_id', studentId)
-        .eq('is_active', true),
+        .eq('student_id', studentId),
 
       // 9. Subscription
       supabaseAdmin
@@ -158,6 +155,12 @@ export async function GET(
       // Non-fatal: bloom distribution may not be available
     }
 
+    // Phase E (Subject Governance): expose subject-related fields
+    const studentRow = studentRes.data as Record<string, unknown> | null;
+    const selected_subjects = (studentRow?.selected_subjects as string[] | null) ?? null;
+    const preferred_subject = (studentRow?.preferred_subject as string | null) ?? null;
+    const stream = (studentRow?.stream as string | null) ?? null;
+
     return NextResponse.json({
       student: studentRes.data,
       subjectMastery,
@@ -170,6 +173,10 @@ export async function GET(
       classLinks: classRes.data || [],
       subscription: subRes.data?.[0] || null,
       opsEvents: opsRes.data || [],
+      // Subject governance — additive top-level fields
+      selected_subjects,
+      preferred_subject,
+      stream,
     });
   } catch (err) {
     return NextResponse.json(

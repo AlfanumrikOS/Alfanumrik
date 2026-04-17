@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1'
+import { validateSubjectRpc } from '../_shared/subjects-validate.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -352,6 +353,46 @@ serve(async (req) => {
 
     const body = await req.json()
     const action = body.action
+
+    // ── Subject governance (P12) ──────────────────────────────────────────
+    // Any action that takes a subject_id (UUID) must resolve it to the
+    // subjects.code and run it through get_available_subjects. This blocks
+    // students from driving CME against a subject that is not in their grade
+    // map or not unlocked by their current plan.
+    // See: docs/superpowers/specs/2026-04-15-subject-governance-design.md §6.2
+    const SUBJECT_SCOPED_ACTIONS = new Set([
+      'get_next_action',
+      'get_concept_state',
+      'get_exam_readiness',
+    ])
+    if (SUBJECT_SCOPED_ACTIONS.has(action) && body.subject_id) {
+      try {
+        const { data: subjRow } = await supabase
+          .from('subjects')
+          .select('code')
+          .eq('id', body.subject_id)
+          .maybeSingle()
+        if (!subjRow?.code) {
+          return new Response(
+            JSON.stringify({ error: 'subject_not_allowed', reason: 'grade', subject: body.subject_id }),
+            { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          )
+        }
+        const check = await validateSubjectRpc(supabase, student.id, subjRow.code)
+        if (!check.ok) {
+          return new Response(
+            JSON.stringify({ error: 'subject_not_allowed', reason: check.reason, subject: subjRow.code }),
+            { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          )
+        }
+      } catch (subjErr) {
+        console.error('cme-engine subject validation failed:', subjErr instanceof Error ? subjErr.message : String(subjErr))
+        return new Response(
+          JSON.stringify({ error: 'subject_not_allowed', reason: 'grade', subject: body.subject_id }),
+          { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        )
+      }
+    }
 
     // ── GET_NEXT_ACTION ──
     if (action === 'get_next_action') {

@@ -42,10 +42,11 @@ describe('Production Regression Guards', () => {
   it('R-FOXY-01: RichContent uses ReactMarkdown not cleanMd', () => {
     const source = fs.readFileSync('src/components/foxy/RichContent.tsx', 'utf-8');
     expect(source).toContain('ReactMarkdown');
-    // Must NOT have the destructive cleanMd function
+    // Must NOT have the destructive cleanMd function that CREATES [FORMULA:] markers
     expect(source).not.toMatch(/function\s+cleanMd/);
-    // Must NOT convert backticks to [FORMULA:]
-    expect(source).not.toMatch(/replace\(.*`.*FORMULA/);
+    // Legacy [FORMULA:] → backtick cleanup is acceptable (restores proper markdown).
+    // What we prohibit is the creation direction: backtick → [FORMULA:].
+    expect(source).not.toMatch(/replace\(.*`[^)]*\[FORMULA:/);
   });
 
   // INCIDENT: AI evaluation failure silently marks student WRONG

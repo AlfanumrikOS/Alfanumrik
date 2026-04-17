@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const insertMock = vi.fn();
-vi.mock('@/lib/supabase-admin', () => ({
-  supabaseAdmin: {
+vi.mock('@supabase/supabase-js', () => ({
+  createClient: vi.fn(() => ({
     from: vi.fn(() => ({ insert: insertMock })),
-  },
+  })),
 }));
 
 const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -15,14 +15,24 @@ describe('logOpsEvent', () => {
   beforeEach(async () => {
     insertMock.mockReset();
     insertMock.mockResolvedValue({ error: null });
+    warnSpy.mockClear();
     vi.resetModules();
+    // Set required env vars for the createClient path
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://test.supabase.co';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-key';
     logOpsEvent = (await import('@/lib/ops-events')).logOpsEvent;
   });
 
-  afterEach(() => { warnSpy.mockClear(); });
+  afterEach(() => {
+    warnSpy.mockClear();
+    delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+  });
 
   it('builds the expected row shape for a minimal input', async () => {
     await logOpsEvent({ category: 'ai', source: 'claude.ts', severity: 'info', message: 'claude call ok' });
+    // Fire-and-forget for info — give it a tick
+    await new Promise(r => setTimeout(r, 10));
     expect(insertMock).toHaveBeenCalledTimes(1);
     const row = insertMock.mock.calls[0][0];
     expect(row).toMatchObject({ category: 'ai', source: 'claude.ts', severity: 'info', message: 'claude call ok', subject_type: null, subject_id: null, request_id: null });
@@ -73,7 +83,7 @@ describe('logOpsEvent', () => {
 
   it('uses provided occurredAt when given', async () => {
     const when = new Date('2026-01-01T12:00:00Z');
-    await logOpsEvent({ category: 'ai', source: 'claude.ts', severity: 'info', message: 'ok', occurredAt: when });
+    await logOpsEvent({ category: 'ai', source: 'claude.ts', severity: 'error', message: 'ok', occurredAt: when });
     const row = insertMock.mock.calls[0][0];
     expect(row.occurred_at).toBe('2026-01-01T12:00:00.000Z');
   });

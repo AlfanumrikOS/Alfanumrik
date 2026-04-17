@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { SUBJECT_META } from '@/lib/constants';
+import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 
 interface ChapterProgress {
   chapter_number: number;
@@ -55,7 +55,8 @@ export default function NCERTCoverageMap({ studentId, subject, grade, onChapterC
   const [chapters, setChapters]   = useState<ChapterStat[]>([]);
   const [loading, setLoading]     = useState(true);
 
-  const subjectMeta = SUBJECT_META.find(s => s.code === subject);
+  const { unlocked: allowedSubjects } = useAllowedSubjects();
+  const subjectMeta = allowedSubjects.find(s => s.code === subject);
 
   useEffect(() => {
     async function load() {

@@ -601,6 +601,16 @@ export const PERMISSIONS = {
   INSTITUTION_MANAGE: 'institution.manage',
   INSTITUTION_VIEW_ANALYTICS: 'institution.view_analytics',
   INSTITUTION_MANAGE_TEACHERS: 'institution.manage_teachers',
+
+  // ── Super-admin subject governance (Phase E) ─────────────
+  // Granted to: super_admin (and admin, defensively).  Gates the 7 routes
+  // under /api/super-admin/subjects/** and /api/super-admin/students/[id]/subjects.
+  // NOTE: seed migration `20260415000011_subject_governance_rbac_permission.sql`
+  // is staged but NOT yet applied — awaits user approval per CLAUDE.md RBAC
+  // policy.  Routes currently still authenticate via authorizeAdmin(); they
+  // will switch to authorizeRequest(request, 'super_admin.subjects.manage')
+  // once the migration runs.
+  SUPER_ADMIN_SUBJECTS_MANAGE: 'super_admin.subjects.manage',
 } as const;
 
 export type PermissionCode = typeof PERMISSIONS[keyof typeof PERMISSIONS];

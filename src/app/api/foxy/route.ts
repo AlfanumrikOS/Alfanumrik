@@ -22,6 +22,7 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import { isFeatureEnabled } from '@/lib/feature-flags';
 import { classifyIntent, routeIntent } from '@/lib/ai';
+import { validateSubjectWrite } from '@/lib/subjects';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -867,6 +868,25 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
 
   // 4. Resolve student ID and plan
   const studentId = auth.studentId!;
+
+  // Subject governance: reject before any subject-keyed retrieval / context load.
+  {
+    const subjectValidation = await validateSubjectWrite(studentId, subject, {
+      supabase: supabaseAdmin,
+    });
+    if (!subjectValidation.ok) {
+      return NextResponse.json(
+        {
+          error: subjectValidation.error.code,
+          subject: subjectValidation.error.subject,
+          reason: subjectValidation.error.reason,
+          allowed: subjectValidation.error.allowed,
+        },
+        { status: 422 },
+      );
+    }
+  }
+
   let plan = 'free';
   let academicGoal: string | null = null;
   try {

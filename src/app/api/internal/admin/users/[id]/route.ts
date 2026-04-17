@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdminSecret, logAdminAction } from '@/lib/admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
+import { validateSubjectWrite } from '@/lib/subjects';
 
 export const runtime = 'nodejs';
 
@@ -111,6 +112,25 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     if (Object.keys(safe).length === 0) {
       return NextResponse.json({ error: 'No valid fields' }, { status: 400 });
+    }
+
+    // Subject governance: if admin is updating preferred_subject, validate
+    // against the target student's allowed subject set.
+    if (typeof safe.preferred_subject === 'string' && safe.preferred_subject.length > 0) {
+      const validation = await validateSubjectWrite(id, safe.preferred_subject, {
+        supabase,
+      });
+      if (!validation.ok) {
+        return NextResponse.json(
+          {
+            error: validation.error.code,
+            subject: validation.error.subject,
+            reason: validation.error.reason,
+            allowed: validation.error.allowed,
+          },
+          { status: 422 },
+        );
+      }
     }
 
     const { error } = await supabase.from('students').update(safe).eq('id', id);

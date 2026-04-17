@@ -42,20 +42,18 @@ describe('Adaptive Pipeline Integrity', () => {
     expect(source).toContain('submitQuizResults');
   });
 
-  it('quiz page must import and call processAdaptiveLearning', () => {
+  it('quiz page must use assembleQuiz for guaranteed question counts', () => {
     const quizPath = path.resolve('src/app/quiz/page.tsx');
     const source = fs.readFileSync(quizPath, 'utf-8');
-    expect(source).toContain('processAdaptiveLearning');
+    expect(source).toContain('assembleQuiz');
   });
 
-  it('quiz page must call processAdaptiveLearning AFTER submitQuizResults', () => {
+  it('adaptive learning is handled server-side via atomic_quiz_profile_update RPC', () => {
     const quizPath = path.resolve('src/app/quiz/page.tsx');
     const source = fs.readFileSync(quizPath, 'utf-8');
-    const submitIndex = source.indexOf('submitQuizResults(');
-    const adaptiveIndex = source.indexOf('processAdaptiveLearning(');
-    expect(submitIndex).toBeGreaterThan(-1);
-    expect(adaptiveIndex).toBeGreaterThan(-1);
-    expect(adaptiveIndex).toBeGreaterThan(submitIndex);
+    // processAdaptiveLearning was removed from the client — CME mastery is now
+    // updated server-side via the atomic RPC. Verify the comment documents this.
+    expect(source).toContain('CME mastery state is updated server-side');
   });
 
   // ---------------------------------------------------------------

@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui';
-import { SUBJECT_META } from '@/lib/constants';
+import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 
 interface Task {
   id: string;
@@ -110,6 +110,7 @@ function pickFocusTopic(
 
 export default function TodaysFocus({ tasks, allTasks, isHi, knowledgeGaps, onMarkInProgress }: TodaysFocusProps) {
   const router = useRouter();
+  const { unlocked: allowedSubjects } = useAllowedSubjects();
 
   const today = new Date().toISOString().split('T')[0];
   const todayTasks = tasks.filter(t => t.scheduled_date === today);
@@ -127,7 +128,7 @@ export default function TodaysFocus({ tasks, allTasks, isHi, knowledgeGaps, onMa
   const estXp = incompleteTasks.reduce((a, t) => a + t.xp_reward, 0);
 
   // Subject meta for the focus topic
-  const focusSubjectMeta = focus ? SUBJECT_META.find(s => s.code === focus.subject) : null;
+  const focusSubjectMeta = focus ? allowedSubjects.find(s => s.code === focus.subject) : null;
 
   // Weekly completion streak
   const daysWithTasks = new Set(allTasks.map(t => t.scheduled_date));

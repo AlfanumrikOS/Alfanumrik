@@ -2,6 +2,24 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest, logAudit } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { validateSubjectWrite } from '@/lib/subjects';
+
+function subjectNotAllowedResponse(error: {
+  code: string;
+  subject: string;
+  reason: string;
+  allowed: string[];
+}) {
+  return NextResponse.json(
+    {
+      error: error.code,
+      subject: error.subject,
+      reason: error.reason,
+      allowed: error.allowed,
+    },
+    { status: 422 },
+  );
+}
 
 // ─── Constants ──────────────────────────────────────────────────
 
@@ -165,6 +183,12 @@ export async function GET(request: NextRequest) {
 
     const { studentId } = studentResult;
 
+    // 4b. Subject governance
+    const subjectValidation = await validateSubjectWrite(studentId, subject, {
+      supabase: supabaseAdmin,
+    });
+    if (!subjectValidation.ok) return subjectNotAllowedResponse(subjectValidation.error);
+
     // 5. Dispatch by action
     switch (action) {
       case 'questions':
@@ -272,6 +296,12 @@ export async function POST(request: NextRequest) {
     if (!studentResult.ok) return studentResult.response;
 
     const { studentId } = studentResult;
+
+    // 6b. Subject governance
+    const subjectValidation = await validateSubjectWrite(studentId, subject, {
+      supabase: supabaseAdmin,
+    });
+    if (!subjectValidation.ok) return subjectNotAllowedResponse(subjectValidation.error);
 
     // 7. Call RPC to generate exam paper
     const { data, error } = await supabaseAdmin.rpc('generate_exam_paper', {

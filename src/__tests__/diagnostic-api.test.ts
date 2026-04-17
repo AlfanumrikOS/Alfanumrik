@@ -212,14 +212,26 @@ describe('POST /api/diagnostic/start — grade validation (P5)', () => {
 describe('POST /api/diagnostic/start — subject validation', () => {
   beforeEach(() => { setAuthorized(); });
 
-  it('returns 400 when subject is invalid for the given grade', async () => {
+  it('returns 422 when subject is not allowed for the student (Phase C: validateSubjectWrite)', async () => {
+    // Phase C subject governance: after resolving the student, route calls
+    // get_available_subjects RPC. If the requested subject isn't in the allowed
+    // list (grade × stream × plan), the route returns 422 subject_not_allowed.
+    setFromResult('students', { data: { id: 'student-1', grade: '6' }, error: null });
+    // RPC returns only math + science for grade 6 — physics is not allowed.
+    setRpcResult({
+      data: [
+        { code: 'math', name: 'Math', name_hi: null, icon: '', color: '', subject_kind: 'cbse_core', is_core: true, is_locked: false },
+        { code: 'science', name: 'Science', name_hi: null, icon: '', color: '', subject_kind: 'cbse_core', is_core: true, is_locked: false },
+      ],
+      error: null,
+    });
     const { POST } = await import('@/app/api/diagnostic/start/route');
-    // Grade 6 only allows math, science — not physics
     const res = await POST(makeStartRequest({ grade: '6', subject: 'physics' }));
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
     const body = await res.json();
-    expect(body.success).toBe(false);
-    expect(body.code).toBe('INVALID_SUBJECT');
+    expect(body.error).toBe('subject_not_allowed');
+    expect(body.subject).toBe('physics');
+    expect(body.reason).toBe('grade');
   });
 
   it('returns 400 when subject is missing', async () => {
@@ -267,6 +279,14 @@ describe('POST /api/diagnostic/start — full success path', () => {
   beforeEach(() => {
     setAuthorized();
     setFromResult('students', { data: { id: 'student-1', grade: '9' }, error: null });
+    // Phase C: get_available_subjects RPC must return the requested subject as
+    // allowed (is_locked=false) for validateSubjectWrite to pass.
+    setRpcResult({
+      data: [
+        { code: 'math', name: 'Math', name_hi: null, icon: '', color: '', subject_kind: 'cbse_core', is_core: true, is_locked: false },
+      ],
+      error: null,
+    });
     // NOTE: table name is question_bank (not questions) per P-schema
     setFromResult('question_bank', {
       data: [

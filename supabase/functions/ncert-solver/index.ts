@@ -24,6 +24,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 import { fetchRAGContext } from '../_shared/rag-retrieval.ts'
+import { validateSubjectRpc } from '../_shared/subjects-validate.ts'
 
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY') || ''
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
@@ -96,6 +97,42 @@ Deno.serve(async (req) => {
 
     if (!question || !subject || !grade) {
       return errorResponse('question, subject, and grade are required', 400, origin)
+    }
+
+    // ── Subject governance (P12) ──
+    // Resolve the caller's student row and enforce subject availability via
+    // get_available_subjects. See:
+    //   docs/superpowers/specs/2026-04-15-subject-governance-design.md §6.2
+    try {
+      const { data: studentRow } = await supabase
+        .from('students')
+        .select('id')
+        .eq('auth_user_id', user.id)
+        .eq('is_active', true)
+        .is('deleted_at', null)
+        .maybeSingle()
+      if (!studentRow?.id) {
+        return jsonResponse(
+          { error: 'subject_not_allowed', reason: 'grade', subject },
+          422,
+          origin,
+        )
+      }
+      const check = await validateSubjectRpc(supabase, studentRow.id, subject)
+      if (!check.ok) {
+        return jsonResponse(
+          { error: 'subject_not_allowed', reason: check.reason, subject },
+          422,
+          origin,
+        )
+      }
+    } catch (subjErr) {
+      console.error('ncert-solver subject validation failed:', subjErr instanceof Error ? subjErr.message : String(subjErr))
+      return jsonResponse(
+        { error: 'subject_not_allowed', reason: 'grade', subject },
+        422,
+        origin,
+      )
     }
 
     // ── Circuit breaker check ──

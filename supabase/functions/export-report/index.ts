@@ -20,6 +20,8 @@
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
+// P12/P13: reports must never surface stale/invalid subjects. See:
+//   docs/superpowers/specs/2026-04-15-subject-governance-design.md §6.2
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -51,6 +53,33 @@ function toCSV(rows: Record<string, unknown>[]): string {
     ...rows.map((r) => headers.map((h) => escape(r[h])).join(',')),
   ]
   return BOM + lines.join('\r\n')
+}
+
+// ─── Subject governance helper ───────────────────────────────────────────────
+// Returns the set of subject codes currently valid (grade-map ∩ plan) for a
+// student. On RPC error, returns null → callers should treat as "unable to
+// filter" and log, but SHOULD still filter via the empty-set fallback when
+// privacy matters (we do so in the report functions below).
+async function getAllowedSubjectCodes(
+  supabase: SupabaseClient,
+  studentId: string,
+): Promise<Set<string> | null> {
+  try {
+    const { data, error } = await supabase.rpc('get_available_subjects', { p_student_id: studentId })
+    if (error) throw error
+    if (!Array.isArray(data)) return null
+    return new Set(
+      (data as Array<{ code: string; is_locked: boolean }>)
+        .filter((r) => !r.is_locked)
+        .map((r) => r.code),
+    )
+  } catch (err) {
+    console.warn(
+      'export-report: get_available_subjects failed:',
+      err instanceof Error ? err.message : String(err),
+    )
+    return null
+  }
 }
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
@@ -301,8 +330,17 @@ async function generateStudentHpcReport(
     .order('created_at', { ascending: false })
     .limit(20)
 
+  // P12: filter out stale/disallowed subjects before writing report rows.
+  const allowedCodes = await getAllowedSubjectCodes(supabase, studentId)
+  const isAllowed = (code: unknown): boolean => {
+    if (!allowedCodes) return true // RPC unavailable → don't over-filter
+    return code != null && allowedCodes.has(String(code))
+  }
+
   // Build flat HPC rows — one row per subject mastery
-  const profileRows = ((profiles ?? []) as Record<string, unknown>[]).map((p) => ({
+  const profileRows = ((profiles ?? []) as Record<string, unknown>[])
+    .filter((p) => isAllowed(p.subject))
+    .map((p) => ({
     student_id: studentId,
     student_name: (student as Record<string, unknown>).name,
     grade: (student as Record<string, unknown>).grade,
@@ -322,7 +360,13 @@ async function generateStudentHpcReport(
         : null,
   }))
 
-  const masteryData = ((masteryRows ?? []) as Record<string, unknown>[]).map((m) => {
+  const masteryData = ((masteryRows ?? []) as Record<string, unknown>[])
+    .filter((m) => {
+      const topic = m.curriculum_topics as Record<string, unknown> | null
+      const subjectInfo = topic?.subjects as Record<string, unknown> | null
+      return isAllowed(subjectInfo?.code)
+    })
+    .map((m) => {
     const topic = m.curriculum_topics as Record<string, unknown> | null
     const subjectInfo = topic?.subjects as Record<string, unknown> | null
     return {
@@ -344,7 +388,9 @@ async function generateStudentHpcReport(
     }
   })
 
-  const sessionData = ((recentSessions ?? []) as Record<string, unknown>[]).map((s) => ({
+  const sessionData = ((recentSessions ?? []) as Record<string, unknown>[])
+    .filter((s) => isAllowed(s.subject))
+    .map((s) => ({
     student_id: studentId,
     student_name: (student as Record<string, unknown>).name,
     grade: (student as Record<string, unknown>).grade,
@@ -386,7 +432,7 @@ async function generateParentWeeklyReport(
     .gte('created_at', sevenDaysAgo)
     .order('created_at', { ascending: false })
 
-  const sessionList = (sessions ?? []) as {
+  const rawSessionList = (sessions ?? []) as {
     id: string
     subject: string
     score_percent: number
@@ -394,6 +440,14 @@ async function generateParentWeeklyReport(
     time_taken_seconds: number
     created_at: string
   }[]
+
+  // P12: filter out sessions for subjects the student is not currently enrolled in.
+  const allowedCodes = await getAllowedSubjectCodes(supabase, studentId)
+  const isAllowed = (code: unknown): boolean => {
+    if (!allowedCodes) return true
+    return code != null && allowedCodes.has(String(code))
+  }
+  const sessionList = rawSessionList.filter((s) => isAllowed(s.subject))
 
   const totalXp = sessionList.reduce((s, q) => s + (q.xp_earned ?? 0), 0)
   const avgScore =
@@ -457,8 +511,17 @@ async function generateParentWeeklyReport(
     completed_at: s.created_at,
   }))
 
-  // Mastery gains rows
-  const masteryRows = ((newMastery ?? []) as Record<string, unknown>[]).map((m) => {
+  // Mastery gains rows — also filtered by currently-allowed subjects.
+  const masteryRows = ((newMastery ?? []) as Record<string, unknown>[])
+    .filter((m) => {
+      const topic = m.curriculum_topics as Record<string, unknown> | null
+      const subject = topic?.subjects as Record<string, unknown> | null
+      // subjects(name) is selected here, but we filter by code when available.
+      // If `code` was not selected, fall back to allowing the row (can't filter).
+      const code = (subject as { code?: string } | null)?.code
+      return code ? isAllowed(code) : true
+    })
+    .map((m) => {
     const topic = m.curriculum_topics as Record<string, unknown> | null
     const subject = topic?.subjects as Record<string, unknown> | null
     return {

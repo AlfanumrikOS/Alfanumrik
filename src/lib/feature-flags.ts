@@ -33,6 +33,20 @@ export function hashForRollout(userId: string, flagName: string): number {
   return Math.abs(hash) % 100;
 }
 
+/**
+ * Registry of flag names that payment-integrity code references.
+ * Defaults (when the flag is absent from the DB) are documented inline —
+ * `isFeatureEnabled` already returns false for unknown flags, but this
+ * registry keeps the source of truth close to the code that reads it.
+ *
+ * Seeded by migration 20260414120000_payment_subscribe_atomic_fix.sql.
+ */
+export const PAYMENT_FLAGS = {
+  /** Enables the reconcile_stuck_subscriptions action in the payments Edge Function.
+   *  Default: false (off). Flip via super-admin console after drift metrics confirmed. */
+  RECONCILE_STUCK_SUBSCRIPTIONS_ENABLED: 'reconcile_stuck_subscriptions_enabled',
+} as const;
+
 let _flagCache: FeatureFlagRow[] | null = null;
 let _flagCacheExpiry = 0;
 

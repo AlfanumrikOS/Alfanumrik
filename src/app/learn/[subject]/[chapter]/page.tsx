@@ -11,13 +11,9 @@ import {
   updateChapterProgress,
 } from '@/lib/supabase';
 import { Card, Button, ProgressBar, BottomNav, LoadingFoxy } from '@/components/ui';
-import { SUBJECT_META, getSubjectsForGrade } from '@/lib/constants';
+import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { BLOOM_CONFIG, type BloomLevel } from '@/lib/cognitive-engine';
 import type { CurriculumTopic } from '@/lib/types';
-import { getPlanConfig } from '@/lib/plans';
-
-// Must match the same limits used in learn/page.tsx
-const SUBJECT_LIMIT_BY_TIER: Record<number, number> = { 0: 2, 1: 4 };
 
 const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
 
@@ -55,6 +51,7 @@ export default function ChapterConceptPage() {
   const chapterNum = parseInt(params.chapter as string, 10);
 
   const { student, isLoggedIn, isLoading, isHi } = useAuth();
+  const { subjects: allSubjects, unlocked: allowedSubjects } = useAllowedSubjects();
 
   const [topics, setTopics] = useState<CurriculumTopic[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -66,25 +63,23 @@ export default function ChapterConceptPage() {
   const [completedCount, setCompletedCount] = useState(0);
   const [showCompletion, setShowCompletion] = useState(false);
 
-  const subMeta = SUBJECT_META.find(s => s.code === subject);
+  const subMeta = allSubjects.find(s => s.code === subject);
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/login');
   }, [isLoading, isLoggedIn, router]);
 
-  // Plan-gate: redirect to /learn if this subject is locked for the student's plan
+  // Plan-gate: redirect to /learn if this subject is locked for the student's plan.
+  // Wait until the subjects service has returned something before redirecting —
+  // otherwise a first-paint empty list would incorrectly bounce the student.
   useEffect(() => {
     if (!student || isLoading) return;
-    const plan = getPlanConfig(student.subscription_plan);
-    const subjectLimit = SUBJECT_LIMIT_BY_TIER[plan.tier] ?? Infinity;
-    if (subjectLimit === Infinity) return; // pro/unlimited — all subjects unlocked
-    const allowedCodes: string[] = getSubjectsForGrade(student.grade)
-      .slice(0, subjectLimit)
-      .map(s => s.code);
-    if (!allowedCodes.includes(subject)) {
+    if (allSubjects.length === 0) return;
+    const entry = allSubjects.find(s => s.code === subject);
+    if (!entry || entry.isLocked) {
       router.replace('/learn');
     }
-  }, [student, isLoading, subject, router]);
+  }, [student, isLoading, subject, allSubjects, router]);
 
   const load = useCallback(async () => {
     if (!student) return;

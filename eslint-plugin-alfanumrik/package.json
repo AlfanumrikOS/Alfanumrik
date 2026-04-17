@@ -1,0 +1,6 @@
+{
+  "name": "eslint-plugin-alfanumrik",
+  "version": "0.0.1",
+  "private": true,
+  "main": "no-raw-subject-imports.js"
+}

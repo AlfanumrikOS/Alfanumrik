@@ -4,13 +4,14 @@ import { useState } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { SUBJECT_META } from '@/lib/constants';
+import { useTeacherAllowedSubjects } from '@/lib/useTeacherAllowedSubjects';
 import { BottomNav } from '@/components/ui';
 
 const tt = (hi: boolean, en: string, hiText: string) => hi ? hiText : en;
 
 export default function TeacherProfilePage() {
   const { teacher, isLoggedIn, isLoading: authLoading, activeRole, signOut, isHi } = useAuth();
+  const { subjects } = useTeacherAllowedSubjects();
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState('');
@@ -56,7 +57,7 @@ export default function TeacherProfilePage() {
   };
 
   const subjectNames = (teacher?.subjects_taught || []).map(
-    (code: string) => SUBJECT_META.find(s => s.code === code)?.name || code
+    (code: string) => subjects.find(s => s.code === code)?.name || code
   );
 
   return (

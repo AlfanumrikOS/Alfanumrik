@@ -13,6 +13,35 @@ export const LANGUAGES = [
   { code: 'bn', label: 'Bengali', labelNative: 'বাংলা' },
 ] as const;
 
+/**
+ * Compat shim. The canonical subject catalogue lives in the database
+ * (`subjects` + `grade_subject_map` + `plan_subject_access`) and is served
+ * via `src/lib/subjects.ts` / `useAllowedSubjects()`.
+ *
+ * These exports remain only for:
+ *   (a) legacy callers that cannot yet use the hook (server-side bootstraps,
+ *       test fixtures, teacher-portal pickers still awaiting a teacher-scoped
+ *       service);
+ *   (b) mobile Flutter consumers that still read grade_subjects.dart until
+ *       Phase G ships.
+ *
+ * A soft dev-only deprecation warning fires once per module import.
+ * New code MUST use `useAllowedSubjects()` or `getAllowedSubjectsForStudent()`.
+ *
+ * @deprecated Use useAllowedSubjects() from '@/lib/useAllowedSubjects' instead.
+ */
+let _subjectDeprecationLogged = false;
+function _logSubjectDeprecation(name: string): void {
+  if (_subjectDeprecationLogged) return;
+  if (typeof process !== 'undefined' && process.env.NODE_ENV === 'production') return;
+  _subjectDeprecationLogged = true;
+  // eslint-disable-next-line no-console
+  console.warn(
+    `[deprecated] ${name} from @/lib/constants is a compat shim; use useAllowedSubjects() instead.`,
+  );
+}
+
+/** @deprecated Use useAllowedSubjects() from '@/lib/useAllowedSubjects'. */
 export const SUBJECT_META = [
   { code: 'math', name: 'Mathematics', icon: '∑', color: '#6C5CE7' },
   { code: 'science', name: 'Science', icon: '⚛', color: '#0891B2' },
@@ -32,19 +61,29 @@ export const SUBJECT_META = [
   { code: 'coding', name: 'Coding', icon: '</>', color: '#0984E3' },
 ] as const;
 
-/** Grade-specific subject availability — CBSE curriculum mapping */
-export const GRADE_SUBJECTS: Record<string, string[]> = {
-  '6':  ['math', 'science', 'english', 'hindi', 'social_studies', 'coding'],
-  '7':  ['math', 'science', 'english', 'hindi', 'social_studies', 'coding'],
-  '8':  ['math', 'science', 'english', 'hindi', 'social_studies', 'coding'],
-  '9':  ['math', 'science', 'english', 'hindi', 'social_studies', 'computer_science'],
-  '10': ['math', 'science', 'english', 'hindi', 'social_studies', 'computer_science'],
-  '11': ['math', 'physics', 'chemistry', 'biology', 'english', 'computer_science', 'economics', 'accountancy', 'business_studies', 'political_science', 'history_sr', 'geography'],
-  '12': ['math', 'physics', 'chemistry', 'biology', 'english', 'computer_science', 'economics', 'accountancy', 'business_studies', 'political_science', 'history_sr', 'geography'],
-};
+/**
+ * Grade-specific subject availability — CBSE curriculum mapping.
+ * @deprecated Use useAllowedSubjects() which enforces grade + stream + plan.
+ */
+export const GRADE_SUBJECTS: Record<string, string[]> = (() => {
+  _logSubjectDeprecation('GRADE_SUBJECTS');
+  return {
+    '6':  ['math', 'science', 'english', 'hindi', 'social_studies', 'coding'],
+    '7':  ['math', 'science', 'english', 'hindi', 'social_studies', 'coding'],
+    '8':  ['math', 'science', 'english', 'hindi', 'social_studies', 'coding'],
+    '9':  ['math', 'science', 'english', 'hindi', 'social_studies', 'computer_science'],
+    '10': ['math', 'science', 'english', 'hindi', 'social_studies', 'computer_science'],
+    '11': ['math', 'physics', 'chemistry', 'biology', 'english', 'computer_science', 'economics', 'accountancy', 'business_studies', 'political_science', 'history_sr', 'geography'],
+    '12': ['math', 'physics', 'chemistry', 'biology', 'english', 'computer_science', 'economics', 'accountancy', 'business_studies', 'political_science', 'history_sr', 'geography'],
+  };
+})();
 
-/** Get subjects available for a specific grade */
+/**
+ * Get subjects available for a specific grade.
+ * @deprecated Use useAllowedSubjects() instead.
+ */
 export function getSubjectsForGrade(grade: string): typeof SUBJECT_META[number][] {
+  _logSubjectDeprecation('getSubjectsForGrade');
   const g = grade.replace('Grade ', '').trim();
   const codes = GRADE_SUBJECTS[g] || GRADE_SUBJECTS['9']; // fallback to Grade 9
   return SUBJECT_META.filter(s => codes.includes(s.code));

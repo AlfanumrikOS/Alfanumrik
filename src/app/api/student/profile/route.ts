@@ -21,11 +21,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { validateSubjectWrite } from '@/lib/subjects';
 
 const ALLOWED_LANGUAGES = ['en', 'hi'];
 const ALLOWED_BOARDS = ['CBSE', 'ICSE', 'State Board'];
 const ALLOWED_GOALS = ['board_topper', 'school_topper', 'pass_comfortably', 'competitive_exam', 'olympiad', 'improve_basics'];
-const ALLOWED_SUBJECTS = ['math', 'science', 'physics', 'chemistry', 'biology', 'english', 'hindi', 'social_studies', 'coding'];
+// Subject allowlist removed — governance is enforced dynamically by
+// get_available_subjects (grade × stream × plan) via validateSubjectWrite.
 
 function err(message: string, status: number) {
   return NextResponse.json({ success: false, error: message }, { status });
@@ -112,14 +114,28 @@ export async function PATCH(request: NextRequest) {
     }
   }
 
-  // preferred_subject — always writable
+  // preferred_subject — validated dynamically via subject governance service
   if (preferred_subject !== undefined) {
-    if (typeof preferred_subject === 'string' && ALLOWED_SUBJECTS.includes(preferred_subject)) {
-      updatePayload.preferred_subject = preferred_subject;
-    } else if (preferred_subject === null || preferred_subject === '') {
+    if (preferred_subject === null || preferred_subject === '') {
       updatePayload.preferred_subject = null;
+    } else if (typeof preferred_subject === 'string' && preferred_subject.trim().length > 0) {
+      const validation = await validateSubjectWrite(studentId, preferred_subject, {
+        supabase: supabaseAdmin,
+      });
+      if (!validation.ok) {
+        return NextResponse.json(
+          {
+            error: validation.error.code,
+            subject: validation.error.subject,
+            reason: validation.error.reason,
+            allowed: validation.error.allowed,
+          },
+          { status: 422 },
+        );
+      }
+      updatePayload.preferred_subject = preferred_subject;
     } else {
-      return err(`preferred_subject must be one of: ${ALLOWED_SUBJECTS.join(', ')}`, 400);
+      return err('preferred_subject must be a string', 400);
     }
   }
 

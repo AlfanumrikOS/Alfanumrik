@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { authorizeRequest } from '@/lib/rbac';
 import { logger } from '@/lib/logger';
+import { validateSubjectWrite } from '@/lib/subjects';
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -581,6 +582,12 @@ export async function GET(request: Request) {
 
     // ── action=chapter ──
     if (action === 'chapter') {
+      // SECURITY (C5): auth gate — content.read required. Prior to C5 this
+      // branch was publicly readable; protected curriculum content and
+      // cached AI output must not leak to anonymous callers.
+      const auth = await authorizeRequest(request, 'content.read');
+      if (!auth.authorized) return auth.errorResponse!;
+
       const chapterNumber = validateChapterNumber(chapterParam);
       if (!chapterNumber) {
         return errorResponse(
@@ -588,11 +595,34 @@ export async function GET(request: Request) {
           400
         );
       }
+
+      // Subject governance — applied when the caller is a student.
+      if (auth.studentId) {
+        const v = await validateSubjectWrite(auth.studentId, subject.trim(), {
+          supabase: supabaseAdmin,
+        });
+        if (!v.ok) {
+          return NextResponse.json(
+            {
+              error: v.error.code,
+              subject: v.error.subject,
+              reason: v.error.reason,
+              allowed: v.error.allowed,
+            },
+            { status: 422 },
+          );
+        }
+      }
+
       return handleChapter(grade, subject.trim(), chapterNumber);
     }
 
     // ── action=search ──
     if (action === 'search') {
+      // SECURITY (C5): auth gate — content.read required.
+      const auth = await authorizeRequest(request, 'content.read');
+      if (!auth.authorized) return auth.errorResponse!;
+
       if (!query || query.trim().length === 0) {
         return errorResponse('Missing required parameter: query', 400);
       }
@@ -603,6 +633,24 @@ export async function GET(request: Request) {
           400
         );
       }
+
+      if (auth.studentId) {
+        const v = await validateSubjectWrite(auth.studentId, subject.trim(), {
+          supabase: supabaseAdmin,
+        });
+        if (!v.ok) {
+          return NextResponse.json(
+            {
+              error: v.error.code,
+              subject: v.error.subject,
+              reason: v.error.reason,
+              allowed: v.error.allowed,
+            },
+            { status: 422 },
+          );
+        }
+      }
+
       return handleSearch(grade, subject.trim(), query.trim(), contentType);
     }
 

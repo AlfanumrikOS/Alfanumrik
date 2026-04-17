@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { FoxyAvatar, Button, StepIndicator, SubjectChip } from '@/components/ui';
-import { GRADE_SUBJECTS } from '@/lib/constants';
+import { FoxyAvatar, Button, StepIndicator } from '@/components/ui';
+import StreamStep, { type Stream } from './StreamStep';
+import SubjectStep, { PLAN_SUBJECT_CAPS } from './SubjectStep';
 
 /**
  * OnboardingFlow — 3-step guided introduction for new students.
@@ -23,33 +24,28 @@ const GOALS = [
   { id: 'consistent', icon: '📅', label: 'Stay consistent daily', labelHi: 'हर दिन पढ़ाई करना' },
 ];
 
-// Minimal subject config for onboarding — full data loads after
-const SUBJECT_DISPLAY: Record<string, { icon: string; name: string; color: string }> = {
-  math: { icon: '∑', name: 'Math', color: '#6C5CE7' },
-  science: { icon: '⚛', name: 'Science', color: '#0891B2' },
-  physics: { icon: '⚡', name: 'Physics', color: '#2563EB' },
-  chemistry: { icon: '⚗', name: 'Chemistry', color: '#DC2626' },
-  biology: { icon: '🧬', name: 'Biology', color: '#16A34A' },
-  english: { icon: 'Aa', name: 'English', color: '#E17055' },
-  hindi: { icon: 'अ', name: 'Hindi', color: '#E84393' },
-  social_studies: { icon: '🌍', name: 'Social Studies', color: '#FDCB6E' },
-  coding: { icon: '💻', name: 'Coding', color: '#6366F1' },
-};
-
 interface OnboardingFlowProps {
   onComplete: () => void;
 }
 
+type StepId = 'intro' | 'goal' | 'stream' | 'subjects' | 'cta';
+
 export default function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   const { student, isHi } = useAuth();
   const router = useRouter();
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState<StepId>('intro');
   const [selectedGoal, setSelectedGoal] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
 
   const gradeKey = (student?.grade || '9').replace('Grade ', '').trim();
-  const gradeSubjects = GRADE_SUBJECTS[gradeKey] || GRADE_SUBJECTS['9'];
+  const needsStream = gradeKey === '11' || gradeKey === '12';
+  const [stream, setStream] = useState<Stream | null>(null);
+  const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
+  const planCap = useMemo(() => {
+    const plan = (student?.subscription_plan as keyof typeof PLAN_SUBJECT_CAPS | undefined) ?? 'free';
+    return PLAN_SUBJECT_CAPS[plan] ?? PLAN_SUBJECT_CAPS.free;
+  }, [student?.subscription_plan]);
 
   const saveAndFinish = async (route: string) => {
     if (!student) return;
@@ -64,8 +60,15 @@ export default function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
           response_value: selectedGoal,
         }).then(() => {});
       }
-      // Mark onboarding complete
-      const { error } = await supabase.from('students').update({ onboarding_completed: true }).eq('id', student.id);
+      // Mark onboarding complete and persist stream + selected_subjects (both optional
+      // columns — older rows just won't have them, which is fine for this migration).
+      const patch: Record<string, unknown> = { onboarding_completed: true };
+      if (needsStream && stream) patch.stream = stream;
+      if (selectedSubjects.length > 0) {
+        patch.selected_subjects = selectedSubjects;
+        patch.preferred_subject = selectedSubjects[0];
+      }
+      const { error } = await supabase.from('students').update(patch).eq('id', student.id);
       if (error) throw error;
       if (typeof window !== 'undefined') localStorage.setItem('alfanumrik_onboarded', 'true');
       onComplete();
@@ -82,13 +85,22 @@ export default function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   return (
     <div className="mesh-bg min-h-dvh flex flex-col items-center justify-center px-5 py-8">
       <div className="w-full max-w-sm">
-        {/* Step indicator */}
+        {/* Step indicator — total adjusts based on whether stream step is shown */}
         <div className="flex justify-center mb-8">
-          <StepIndicator total={3} current={step} />
+          <StepIndicator
+            total={needsStream ? 5 : 4}
+            current={
+              step === 'intro' ? 0
+              : step === 'goal' ? 1
+              : step === 'stream' ? 2
+              : step === 'subjects' ? (needsStream ? 3 : 2)
+              : (needsStream ? 4 : 3)
+            }
+          />
         </div>
 
         {/* ═══ STEP 1: Meet Foxy ═══ */}
-        {step === 0 && (
+        {step === 'intro' && (
           <div className="text-center animate-fade-in">
             <FoxyAvatar state="happy" size="lg" />
             <h1 className="text-xl font-bold mt-6" style={{ fontFamily: 'var(--font-display)' }}>
@@ -99,14 +111,14 @@ export default function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
                 ? 'मैं तुम्हारा study buddy हूँ। हर सवाल में, हर chapter में — मैं साथ रहूँगा।'
                 : "I'm your study buddy. Every question, every chapter — I'll be right here with you."}
             </p>
-            <Button variant="primary" size="lg" fullWidth className="mt-8" onClick={() => setStep(1)}>
+            <Button variant="primary" size="lg" fullWidth className="mt-8" onClick={() => setStep('goal')}>
               {isHi ? 'चलो शुरू करें!' : "Let's go!"}
             </Button>
           </div>
         )}
 
         {/* ═══ STEP 2: Set Your Goal ═══ */}
-        {step === 1 && (
+        {step === 'goal' && (
           <div className="animate-fade-in">
             <div className="text-center mb-6">
               <FoxyAvatar state="idle" size="md" />
@@ -138,12 +150,12 @@ export default function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
               fullWidth
               className="mt-6"
               disabled={!selectedGoal}
-              onClick={() => setStep(2)}
+              onClick={() => setStep(needsStream ? 'stream' : 'subjects')}
             >
               {isHi ? 'आगे बढ़ो' : 'Continue'}
             </Button>
             <button
-              onClick={() => setStep(0)}
+              onClick={() => setStep('intro')}
               className="w-full mt-3 text-sm text-[var(--text-3)] py-2 transition-colors"
             >
               {isHi ? '← वापस जाओ' : '← Go back'}
@@ -151,8 +163,31 @@ export default function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
           </div>
         )}
 
-        {/* ═══ STEP 3: First Action ═══ */}
-        {step === 2 && (
+        {/* ═══ STEP 3 (11/12 only): Stream ═══ */}
+        {step === 'stream' && (
+          <StreamStep
+            value={stream}
+            onChange={setStream}
+            onNext={() => setStep('subjects')}
+            onBack={() => setStep('goal')}
+            isHi={isHi}
+          />
+        )}
+
+        {/* ═══ STEP: Subjects ═══ */}
+        {step === 'subjects' && (
+          <SubjectStep
+            value={selectedSubjects}
+            onChange={setSelectedSubjects}
+            onNext={() => setStep('cta')}
+            onBack={() => setStep(needsStream ? 'stream' : 'goal')}
+            isHi={isHi}
+            maxSubjects={planCap}
+          />
+        )}
+
+        {/* ═══ FINAL STEP: First Action ═══ */}
+        {step === 'cta' && (
           <div className="text-center animate-fade-in">
             <FoxyAvatar state="encouraging" size="lg" />
             <h2 className="text-lg font-bold mt-6" style={{ fontFamily: 'var(--font-display)' }}>
@@ -183,7 +218,7 @@ export default function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
               </Button>
             </div>
             <button
-              onClick={() => setStep(1)}
+              onClick={() => setStep('subjects')}
               className="w-full mt-3 text-sm text-[var(--text-3)] py-2 transition-colors"
             >
               {isHi ? '← वापस जाओ' : '← Go back'}

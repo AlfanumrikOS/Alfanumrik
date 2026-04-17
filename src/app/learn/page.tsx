@@ -21,19 +21,13 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { getChaptersForSubject } from '@/lib/supabase';
 import { BottomNav, LoadingFoxy } from '@/components/ui';
-import { SUBJECT_META, getSubjectsForGrade } from '@/lib/constants';
+import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import { getPlanConfig } from '@/lib/plans';
 
-// Number of subjects unlocked per plan tier.
-// tier 2+ (pro/unlimited) = unlimited (Infinity).
-const SUBJECT_LIMIT_BY_TIER: Record<number, number> = {
-  0: 2, // free
-  1: 4, // starter
-};
-
 export default function LearnPage() {
   const { student, isLoggedIn, isLoading, isHi } = useAuth();
+  const { subjects: allSubjects, unlocked: allowedSubjects, locked: lockedSubjects } = useAllowedSubjects();
   const router = useRouter();
 
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
@@ -71,13 +65,10 @@ export default function LearnPage() {
 
   if (isLoading || !student) return <LoadingFoxy />;
 
-  const allSubjects = getSubjectsForGrade(student.grade);
+  // allSubjects / allowedSubjects / lockedSubjects now come from the subjects
+  // service hook above — plan + grade + stream gating lives on the server.
   const plan = getPlanConfig(student.subscription_plan);
-  const subjectLimit = SUBJECT_LIMIT_BY_TIER[plan.tier] ?? Infinity;
-  const allowedSubjects = subjectLimit === Infinity ? allSubjects : allSubjects.slice(0, subjectLimit);
-  const lockedSubjects = subjectLimit === Infinity ? [] : allSubjects.slice(subjectLimit);
-
-  const selectedMeta = SUBJECT_META.find(s => s.code === selectedSubject);
+  const selectedMeta = allSubjects.find(s => s.code === selectedSubject);
 
   // Guard: if selected subject is locked, reset selection
   if (selectedSubject && lockedSubjects.find(s => s.code === selectedSubject)) {
