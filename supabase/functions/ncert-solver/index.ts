@@ -25,6 +25,11 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 import { fetchRAGContext } from '../_shared/rag-retrieval.ts'
 import { validateSubjectRpc } from '../_shared/subjects-validate.ts'
+import {
+  callGroundedAnswer,
+  isFeatureFlagEnabled,
+  type GroundedRequest,
+} from '../_shared/grounded-client.ts'
 
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY') || ''
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
@@ -131,6 +136,100 @@ Deno.serve(async (req) => {
       return jsonResponse(
         { error: 'subject_not_allowed', reason: 'grade', subject },
         422,
+        origin,
+      )
+    }
+
+    // ── Phase 3: feature-flag-gated grounded-answer service path ──
+    // When ff_grounded_ai_ncert_solver is ON, delegate retrieval + Claude
+    // generation + abstain logic to the shared grounded-answer Edge
+    // Function. When OFF we fall through to the legacy inline pipeline
+    // below (circuit breaker → parse → retrieve → Claude → verify).
+    const useGroundedService = await isFeatureFlagEnabled('ff_grounded_ai_ncert_solver')
+    if (useGroundedService) {
+      const chapterNumParsed =
+        typeof chapter === 'string' && /^\d+$/.test(chapter) ? parseInt(chapter, 10) : null
+      const chapterTitle =
+        typeof chapter === 'string' && chapterNumParsed === null ? chapter : null
+
+      const groundedRequest: GroundedRequest = {
+        caller: 'ncert-solver',
+        student_id: null,
+        query: question,
+        scope: {
+          board: 'CBSE',
+          grade,
+          subject_code: subject,
+          chapter_number: chapterNumParsed,
+          chapter_title: chapterTitle,
+        },
+        mode: 'strict',
+        generation: {
+          model_preference: 'auto',
+          max_tokens: 1024,
+          temperature: 0.2,
+          system_prompt_template: 'ncert_solver_v1',
+          template_variables: {
+            grade,
+            subject,
+            chapter: chapter || 'all',
+          },
+        },
+        retrieval: { match_count: 6 },
+        timeout_ms: 30_000,
+      }
+
+      const grounded = await callGroundedAnswer(groundedRequest, { hopTimeoutMs: 35_000 })
+
+      if (!grounded.grounded) {
+        // Preserve the legacy "solution not available" client contract while
+        // enriching it with trace_id + suggested_alternatives from the new
+        // service. Existing clients that ignore the extra fields keep working.
+        return jsonResponse(
+          {
+            answer: '',
+            steps: [],
+            concept: '',
+            explanation: 'NCERT solution not available for this question.',
+            confidence: 0,
+            verified: false,
+            verification_issues: [`abstain:${grounded.abstain_reason}`],
+            solver_type: 'grounded_service',
+            question_type: 'unknown',
+            marks: marks ?? 0,
+            trace_id: grounded.trace_id,
+            abstain_reason: grounded.abstain_reason,
+            suggested_alternatives: grounded.suggested_alternatives,
+            flow: 'grounded-answer',
+          },
+          200,
+          origin,
+        )
+      }
+
+      // Service returned a grounded answer. Map to the legacy response shape
+      // so existing clients (Foxy, ncert-solver front-end) see no breakage.
+      // The service's rich citations are flattened into `explanation` / we
+      // also surface them as `citations` for clients that want them.
+      return jsonResponse(
+        {
+          answer: grounded.answer,
+          steps: [],
+          concept: '',
+          explanation: grounded.answer,
+          common_mistake: '',
+          formula_used: '',
+          confidence: grounded.confidence,
+          verified: true,
+          verification_issues: [],
+          solver_type: 'grounded_service',
+          question_type: 'unknown',
+          marks: marks ?? 0,
+          trace_id: grounded.trace_id,
+          citations: grounded.citations,
+          flow: 'grounded-answer',
+        },
+        200,
         origin,
       )
     }
