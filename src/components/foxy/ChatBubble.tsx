@@ -1,6 +1,7 @@
 'use client';
 
 import { type ReactNode } from 'react';
+import { UnverifiedBanner } from '@/components/foxy/UnverifiedBanner';
 
 /* ═══════════════════════════════════════════════════════════════
    ChatBubble — Message bubble for Foxy conversations
@@ -118,27 +119,7 @@ export function ChatBubble({
 
       </div>
 
-      {/* TODO Task 3.11: replace with <UnverifiedBanner /> */}
-      {showUnverifiedBanner && (
-        <div
-          data-testid="unverified-banner"
-          role="status"
-          className="mb-2 rounded-xl px-3 py-2 text-xs flex items-start gap-2"
-          style={{
-            background: 'color-mix(in srgb, #F59E0B 10%, transparent)',
-            border: '1px solid color-mix(in srgb, #F59E0B 35%, transparent)',
-            color: '#92400E',
-          }}
-        >
-          <span aria-hidden>⚠️</span>
-          <div className="flex-1 min-w-0">
-            <p className="font-semibold">Low-confidence answer</p>
-            <p className="text-[11px] opacity-80">
-              Foxy found limited NCERT reference material for this question. Double-check with your textbook.
-            </p>
-          </div>
-        </div>
-      )}
+      {showUnverifiedBanner && <UnverifiedBanner traceId={traceId} />}
 
       {/* TODO Task 3.12: replace with <HardAbstainCard /> */}
       {showHardAbstainCard && (
