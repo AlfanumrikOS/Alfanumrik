@@ -33,11 +33,16 @@ ALTER TABLE cbse_syllabus ENABLE ROW LEVEL SECURITY;
 CREATE POLICY cbse_syllabus_read_authenticated ON cbse_syllabus
   FOR SELECT USING (auth.role() = 'authenticated');
 
+-- Admin write policy follows the established admin_users pattern used across
+-- 30+ existing migrations (see 20260324070000_production_rbac_system.sql).
+-- Service role bypasses for Edge Function writes (backfill, triggers, admin UI
+-- APIs using supabaseAdmin). Active admin_users get full management rights.
+-- Finer-grained role distinctions (e.g., content_admin vs ops_admin) can be
+-- introduced in a follow-up migration if ops needs sub-role restrictions.
 CREATE POLICY cbse_syllabus_write_admin ON cbse_syllabus
   FOR ALL USING (
     auth.role() = 'service_role' OR
-    EXISTS (SELECT 1 FROM user_roles ur
-            WHERE ur.user_id = auth.uid() AND ur.role_code = 'content_admin')
+    auth.uid() IN (SELECT auth_user_id FROM admin_users WHERE is_active = true)
   );
 
 COMMENT ON TABLE cbse_syllabus IS

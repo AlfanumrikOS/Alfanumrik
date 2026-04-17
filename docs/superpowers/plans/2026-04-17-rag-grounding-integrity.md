@@ -188,12 +188,13 @@ ALTER TABLE cbse_syllabus ENABLE ROW LEVEL SECURITY;
 CREATE POLICY cbse_syllabus_read_authenticated ON cbse_syllabus
   FOR SELECT USING (auth.role() = 'authenticated');
 
--- Write: service role + content_admin role
+-- Admin write policy follows the established admin_users pattern used across
+-- existing RBAC migrations (see 20260324070000_production_rbac_system.sql).
+-- Service role bypasses for Edge Function writes; admin_users get full rights.
 CREATE POLICY cbse_syllabus_write_admin ON cbse_syllabus
   FOR ALL USING (
     auth.role() = 'service_role' OR
-    EXISTS (SELECT 1 FROM user_roles ur
-            WHERE ur.user_id = auth.uid() AND ur.role_code = 'content_admin')
+    auth.uid() IN (SELECT auth_user_id FROM admin_users WHERE is_active = true)
   );
 
 COMMENT ON TABLE cbse_syllabus IS
@@ -503,12 +504,14 @@ CREATE INDEX idx_traces_caller ON grounded_ai_traces (caller, created_at DESC);
 
 ALTER TABLE grounded_ai_traces ENABLE ROW LEVEL SECURITY;
 
+-- Admin read follows admin_users pattern. Service role (Edge Functions) writes;
+-- admin_users read for debug + investigation. See §5.4 privacy guarantee:
+-- full query/answer text lives only in foxy_chat_messages (student-RLS scoped),
+-- never here — so admin_users read of traces doesn't leak PII by itself.
 CREATE POLICY grounded_traces_read_admin ON grounded_ai_traces
   FOR SELECT USING (
     auth.role() = 'service_role' OR
-    EXISTS (SELECT 1 FROM user_roles ur
-            WHERE ur.user_id = auth.uid()
-              AND ur.role_code IN ('ops_admin','support_admin'))
+    auth.uid() IN (SELECT auth_user_id FROM admin_users WHERE is_active = true)
   );
 
 CREATE POLICY grounded_traces_insert_service ON grounded_ai_traces
@@ -633,8 +636,7 @@ CREATE POLICY content_requests_read_own ON content_requests
   FOR SELECT USING (
     auth.role() = 'service_role' OR
     student_id IN (SELECT id FROM students WHERE auth_user_id = auth.uid()) OR
-    EXISTS (SELECT 1 FROM user_roles ur
-            WHERE ur.user_id = auth.uid() AND ur.role_code = 'ops_admin')
+    auth.uid() IN (SELECT auth_user_id FROM admin_users WHERE is_active = true)
   );
 
 CREATE POLICY content_requests_insert_own ON content_requests
@@ -681,9 +683,7 @@ CREATE POLICY ai_issue_reports_read_own_or_admin ON ai_issue_reports
   FOR SELECT USING (
     auth.role() = 'service_role' OR
     student_id IN (SELECT id FROM students WHERE auth_user_id = auth.uid()) OR
-    EXISTS (SELECT 1 FROM user_roles ur
-            WHERE ur.user_id = auth.uid()
-              AND ur.role_code IN ('ops_admin','support_admin'))
+    auth.uid() IN (SELECT auth_user_id FROM admin_users WHERE is_active = true)
   );
 
 CREATE POLICY ai_issue_reports_insert_own ON ai_issue_reports
@@ -695,9 +695,7 @@ CREATE POLICY ai_issue_reports_insert_own ON ai_issue_reports
 CREATE POLICY ai_issue_reports_update_admin ON ai_issue_reports
   FOR UPDATE USING (
     auth.role() = 'service_role' OR
-    EXISTS (SELECT 1 FROM user_roles ur
-            WHERE ur.user_id = auth.uid()
-              AND ur.role_code IN ('ops_admin','support_admin'))
+    auth.uid() IN (SELECT auth_user_id FROM admin_users WHERE is_active = true)
   );
 
 -- rag_ingestion_failures: bad chunks land here, not in rag_content_chunks
@@ -716,8 +714,7 @@ ALTER TABLE rag_ingestion_failures ENABLE ROW LEVEL SECURITY;
 CREATE POLICY rag_ingestion_failures_read_admin ON rag_ingestion_failures
   FOR SELECT USING (
     auth.role() = 'service_role' OR
-    EXISTS (SELECT 1 FROM user_roles ur
-            WHERE ur.user_id = auth.uid() AND ur.role_code = 'ops_admin')
+    auth.uid() IN (SELECT auth_user_id FROM admin_users WHERE is_active = true)
   );
 ```
 
@@ -1566,8 +1563,7 @@ CREATE POLICY ff_pairs_read_all ON ff_grounded_ai_enforced_pairs
 CREATE POLICY ff_pairs_write_admin ON ff_grounded_ai_enforced_pairs
   FOR ALL USING (
     auth.role() = 'service_role' OR
-    EXISTS (SELECT 1 FROM user_roles ur
-            WHERE ur.user_id = auth.uid() AND ur.role_code = 'ops_admin')
+    auth.uid() IN (SELECT auth_user_id FROM admin_users WHERE is_active = true)
   );
 ```
 
