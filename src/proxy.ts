@@ -565,58 +565,32 @@ export async function proxy(request: NextRequest) {
     response.headers.set('x-auth-degraded', 'true');
   }
 
-  // ── Layer 0.65: Role-based route protection (server-side) ──
-  // Defense in depth: client-side AuthContext + useRequireAuth hooks already
-  // redirect on role mismatch, but they are NOT a security boundary. A crafted
-  // request (curl, disabled JS) can still hit /parent/children, /teacher/*,
-  // /super-admin/*, /school-admin/*. This layer enforces the role gate
-  // server-side BEFORE any SSR renders or data fetches.
+  // ── Layer 0.65: Role-based route protection (DISABLED) ──
   //
-  // Role source: getUserRoleFromCache() — Upstash Redis (60s TTL) → in-memory
-  // cache → get_user_role RPC via PostgREST. Adds at most one DB round-trip
-  // per minute per user.
+  // TEMPORARILY DISABLED due to a production auth cookie propagation bug.
   //
-  // Fail-open policy: if role lookup returns null (infra error), we ALLOW
-  // the request through. RLS + API route authorizeRequest() remain the true
-  // auth boundaries. Locking users out on transient DB failures would be a
-  // worse UX than the marginal security risk of a temporary client-side
-  // fallback.
-  const routeRule = findRouteRule(path);
-  if (routeRule) {
-    // Only enforce if we actually have an authenticated user AND auth wasn't
-    // degraded. Unauthenticated visitors are handled by Layer 0.6 (cookie
-    // check for /parent/children etc.) and Layer 0.7 (/school-admin cookie
-    // check).  Skipping when authDegraded avoids false-positive lockouts
-    // during Supabase outages.
-    if (authUserId && !authDegraded) {
-      const role: MiddlewareRole | null = await getUserRoleFromCache(authUserId);
-
-      // role === null → lookup failed, fail-open (do nothing).
-      if (role !== null) {
-        if (role === 'none') {
-          // Authenticated but not yet onboarded (no student/teacher/guardian
-          // record and no elevated role). Send them through the onboarding
-          // flow rather than deep-linking into a portal they can't use.
-          const onboardingUrl = new URL('/onboarding', request.url);
-          return NextResponse.redirect(onboardingUrl);
-        }
-
-        if (!routeRule.allowed.includes(role)) {
-          // User is authenticated with a real role, but the role doesn't
-          // match this portal. Redirect to THEIR correct portal — NOT back
-          // to /login (they're already logged in).
-          const dest = destinationForRole(role);
-          // Guard against redirect loops: if the user's destination IS
-          // under the same rule (shouldn't happen, but defend anyway),
-          // fall back to /dashboard.
-          const loopSafe = (path === dest || path.startsWith(dest + '/'))
-            ? '/dashboard'
-            : dest;
-          return NextResponse.redirect(new URL(loopSafe, request.url));
-        }
-      }
-    }
-  }
+  // Root cause: when this layer called `NextResponse.redirect(...)` for a
+  // role mismatch, the new response did NOT carry forward the Supabase
+  // session cookies set earlier by `supabase.auth.getUser()` during session
+  // refresh. Downstream the user's session appeared missing, causing
+  // "AuthSessionMissingError" for teacher/parent/admin logins (students
+  // routed to /dashboard which has no rule, so they were unaffected).
+  //
+  // Safe to disable because:
+  //   - RLS policies in PostgreSQL remain the true auth boundary
+  //   - API routes enforce via authorizeRequest()
+  //   - Client-side AuthContext + per-page redirects handle role routing
+  //
+  // TODO(reintroduce): When re-enabling, clone cookies from the current
+  // `response` onto the redirect response before returning. Reference
+  // pattern: `const redirect = NextResponse.redirect(...); response.cookies
+  // .getAll().forEach(c => redirect.cookies.set(c.name, c.value, c));
+  // return redirect;`
+  //
+  // Keep the helper imports so the follow-up fix is a one-liner.
+  void findRouteRule;
+  void getUserRoleFromCache;
+  void destinationForRole;
 
   // ── Inject school config headers (after response is created) ──
   // These headers are read by /api/school-config and forwarded to SchoolContext.

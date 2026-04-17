@@ -262,58 +262,26 @@ export async function GET(request: NextRequest) {
         return signupResponse;
       }
       // Default: redirect to the `next` param if explicitly set, otherwise
-      // resolve a role-appropriate destination. This prevents teachers/parents
-      // from flashing the student dashboard before client-side redirect.
+      // '/dashboard' (the original pre-RBAC behavior). The role-aware default
+      // redirect was disabled to fix an auth cookie propagation issue that
+      // broke login for teacher/parent/admin/super_admin users. Client-side
+      // AuthContext + per-page redirects handle role-specific routing once
+      // the user lands on /dashboard.
       //
       // Validate `next` to prevent open redirect attacks:
       // - Must start with exactly one /
       // - Must not contain protocol-relative URLs (//), encoded slashes (%2f),
       //   backslashes, or javascript: URIs
       // - Only use trusted x-forwarded-host from Vercel (not arbitrary proxies)
-      let resolvedNext = next;
       let defaultUserId: string | null = null;
-
-      // Get user once — used for both role lookup and session registration
-      let defaultUser: { id: string } | null = null;
       try {
         const { data: { user } } = await supabase.auth.getUser();
-        defaultUser = user ? { id: user.id } : null;
-        if (defaultUser) defaultUserId = defaultUser.id;
+        if (user) defaultUserId = user.id;
       } catch {
         // Non-blocking — fall through to default redirect
       }
 
-      // When `next` was NOT explicitly provided, resolve by role.
-      // P15 (Onboarding Integrity): login must never break — ALL failure paths
-      // fall back to `/dashboard` (the previous behavior).
-      if (nextParam === null && defaultUserId) {
-        try {
-          const { getSupabaseAdmin } = await import('@/lib/supabase-admin');
-          const admin = getSupabaseAdmin();
-          const { data: roleData, error: roleErr } = await admin.rpc('get_user_role', {
-            p_auth_user_id: defaultUserId,
-          });
-
-          if (!roleErr && roleData && typeof roleData === 'object') {
-            const rd = roleData as { primary_role?: string };
-            const primary = rd.primary_role;
-            if (primary && primary !== 'none') {
-              resolvedNext = getRoleDestination(primary);
-            } else if (primary === 'none') {
-              resolvedNext = '/onboarding';
-            }
-            // else: primary missing — keep resolvedNext as '/dashboard'
-          }
-        } catch (roleLookupErr) {
-          // Role lookup failed — keep the default '/dashboard' fallback
-          console.warn(
-            '[Auth Callback] Role lookup failed, using default redirect:',
-            roleLookupErr instanceof Error ? roleLookupErr.message : roleLookupErr,
-          );
-        }
-      }
-
-      const safeNext = validateRedirectTarget(resolvedNext, '/dashboard');
+      const safeNext = validateRedirectTarget(next, '/dashboard');
 
       // Only trust Vercel's forwarded host header (x-vercel-forwarded-host),
       // not the generic x-forwarded-host which can be spoofed by proxies
