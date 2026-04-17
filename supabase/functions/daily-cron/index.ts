@@ -1,4 +1,4 @@
-// daily-cron v27 — adds nightly Performance Score recalculation.
+// daily-cron v28 — adds AI daily challenge generation and challenge streak management.
 // Previous: leaderboard gate >=50->>=2 students; all P5 steps: streaks, leaderboard, parent digest,
 // task cleanup, platform health snapshot, ml retrain trigger.
 // Secret: CRON_SECRET env var OR get_cron_secret() DB RPC fallback.
@@ -434,6 +434,370 @@ async function recalculatePerformanceScores(supabase: ReturnType<typeof createCl
   return upserted
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// Daily Challenge AI Generation
+// Generates one "concept chain" puzzle per grade for tomorrow using Claude.
+// Subject rotation: Mon=math, Tue=science, Wed=english, Thu=social_studies,
+// Fri=math, Sat=SKIP (personalized at query time), Sun=mixed.
+// Idempotent: uses ON CONFLICT (grade, challenge_date) DO UPDATE.
+// ──────────────────────────────────────────────────────────────────────────
+
+const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY') || ''
+
+// Day-of-week subject rotation (0=Sunday, 1=Monday, ... 6=Saturday)
+const DAY_SUBJECT_MAP: Record<number, string | null> = {
+  0: 'mixed',           // Sunday
+  1: 'math',            // Monday
+  2: 'science',         // Tuesday
+  3: 'english',         // Wednesday
+  4: 'social_studies',  // Thursday
+  5: 'math',            // Friday
+  6: null,              // Saturday — skip (personalized at query time)
+}
+
+const GRADES = ['6', '7', '8', '9', '10', '11', '12'] // P5: grades are strings
+
+interface ChainItem {
+  id: string
+  text: string
+  text_hi: string
+  position: number
+}
+
+interface ChallengePayload {
+  baseChain: ChainItem[]
+  distractors: ChainItem[]
+  explanation: string
+  explanationHi: string
+}
+
+function validateChallengePayload(raw: unknown): ChallengePayload | null {
+  if (!raw || typeof raw !== 'object') return null
+  const obj = raw as Record<string, unknown>
+
+  // Validate baseChain
+  if (!Array.isArray(obj.baseChain) || obj.baseChain.length !== 5) return null
+  const positions = new Set<number>()
+  for (const item of obj.baseChain) {
+    if (!item || typeof item !== 'object') return null
+    const it = item as Record<string, unknown>
+    if (typeof it.id !== 'string' || !it.id) return null
+    if (typeof it.text !== 'string' || !it.text) return null
+    if (typeof it.text_hi !== 'string' || !it.text_hi) return null
+    if (typeof it.position !== 'number' || it.position < 0 || it.position > 4) return null
+    positions.add(it.position)
+  }
+  if (positions.size !== 5) return null // must have exactly positions 0-4
+
+  // Validate distractors
+  if (!Array.isArray(obj.distractors) || obj.distractors.length !== 3) return null
+  for (const item of obj.distractors) {
+    if (!item || typeof item !== 'object') return null
+    const it = item as Record<string, unknown>
+    if (typeof it.id !== 'string' || !it.id) return null
+    if (typeof it.text !== 'string' || !it.text) return null
+    if (typeof it.text_hi !== 'string' || !it.text_hi) return null
+    if (it.position !== -1) return null
+  }
+
+  // Validate explanations
+  if (typeof obj.explanation !== 'string' || !obj.explanation) return null
+  if (typeof obj.explanationHi !== 'string' || !obj.explanationHi) return null
+
+  return {
+    baseChain: obj.baseChain as ChainItem[],
+    distractors: obj.distractors as ChainItem[],
+    explanation: obj.explanation as string,
+    explanationHi: obj.explanationHi as string,
+  }
+}
+
+async function callClaudeForChallenge(
+  grade: string,
+  subject: string,
+  topic: string,
+): Promise<ChallengePayload | null> {
+  if (!ANTHROPIC_API_KEY) {
+    console.warn('daily-cron: ANTHROPIC_API_KEY not set, skipping challenge generation')
+    return null
+  }
+
+  const prompt = `Generate a concept chain for CBSE Grade ${grade}, ${subject}, Topic: ${topic}.
+Return a JSON object with:
+- baseChain: array of exactly 5 objects, each with {id, text, text_hi, position} where position is 0-4 in correct order
+- distractors: array of exactly 3 objects, each with {id, text, text_hi, position: -1}
+- explanation: 2-sentence explanation of why this order is correct (English)
+- explanationHi: same explanation in Hindi
+
+The chain should test understanding of sequential processes, logical ordering, or cause-effect relationships.
+Items must be factually correct for CBSE curriculum.
+Use unique string IDs like "s1", "s2", etc. for each item.
+Return ONLY valid JSON, no markdown.`
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1024,
+        system: 'You are a CBSE curriculum expert. Generate educational concept chains for Indian students. Always respond with valid JSON only, no markdown fences.',
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    })
+
+    if (!response.ok) {
+      console.error(`daily-cron: Claude API error ${response.status} for grade ${grade}`)
+      return null
+    }
+
+    const data = await response.json()
+    const text = data.content?.[0]?.text
+    if (!text) {
+      console.error(`daily-cron: Empty Claude response for grade ${grade}`)
+      return null
+    }
+
+    // Strip any accidental markdown fences
+    const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
+    const parsed = JSON.parse(cleaned)
+    return validateChallengePayload(parsed)
+  } catch (err) {
+    console.error(`daily-cron: Claude call failed for grade ${grade}:`, err instanceof Error ? err.message : String(err))
+    return null
+  }
+}
+
+async function generateDailyChallenges(supabase: ReturnType<typeof createClient>): Promise<number> {
+  // Determine tomorrow's date and day-of-week
+  const tomorrow = new Date()
+  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1)
+  tomorrow.setUTCHours(0, 0, 0, 0)
+  const dayOfWeek = tomorrow.getUTCDay() // 0=Sun, 6=Sat
+  const tomorrowStr = tomorrow.toISOString().slice(0, 10)
+
+  const subject = DAY_SUBJECT_MAP[dayOfWeek]
+  if (subject === null) {
+    // Saturday: skip generation (personalized at query time)
+    console.log(`daily-cron: challenges — skipping Saturday (${tomorrowStr}), personalized at query time`)
+    return 0
+  }
+
+  // For "mixed" subject (Sunday), cycle through subjects per grade
+  const mixedSubjects = ['math', 'science', 'english', 'social_studies']
+
+  let generated = 0
+
+  for (const grade of GRADES) {
+    try {
+      const effectiveSubject = subject === 'mixed'
+        ? mixedSubjects[GRADES.indexOf(grade) % mixedSubjects.length]
+        : subject
+
+      // Try to get a chapter from the chapters table for this subject+grade
+      const { data: subjectRow } = await supabase
+        .from('subjects')
+        .select('id')
+        .eq('code', effectiveSubject)
+        .eq('is_active', true)
+        .maybeSingle()
+
+      let chapterTitle = effectiveSubject
+      let topic = effectiveSubject
+
+      if (subjectRow?.id) {
+        // Pick a random chapter for this subject+grade
+        const { data: chapters } = await supabase
+          .from('chapters')
+          .select('title, chapter_number')
+          .eq('subject_id', subjectRow.id)
+          .eq('grade', grade)
+          .eq('is_active', true)
+
+        if (chapters && chapters.length > 0) {
+          const randomChapter = chapters[Math.floor(Math.random() * chapters.length)]
+          chapterTitle = randomChapter.title
+          topic = randomChapter.title
+        }
+      }
+
+      // Call Claude to generate the chain
+      const payload = await callClaudeForChallenge(grade, effectiveSubject, topic)
+
+      if (!payload) {
+        console.warn(`daily-cron: challenges — failed to generate for grade ${grade}, subject ${effectiveSubject}`)
+        continue
+      }
+
+      // Upsert into daily_challenges
+      const { error: upsertErr } = await supabase
+        .from('daily_challenges')
+        .upsert(
+          {
+            grade,
+            subject: effectiveSubject,
+            chapter: chapterTitle,
+            topic,
+            challenge_date: tomorrowStr,
+            base_chain: payload.baseChain,
+            distractors: payload.distractors,
+            explanation: payload.explanation,
+            explanation_hi: payload.explanationHi,
+            status: 'auto_generated',
+          },
+          { onConflict: 'grade,challenge_date' },
+        )
+
+      if (upsertErr) {
+        console.error(`daily-cron: challenges — upsert error grade ${grade}: ${upsertErr.message}`)
+        continue
+      }
+
+      generated++
+    } catch (err) {
+      console.error(`daily-cron: challenges — grade ${grade} error:`, err instanceof Error ? err.message : String(err))
+      // Continue with other grades
+    }
+  }
+
+  console.log(`daily-cron: challenges — ${generated}/${GRADES.length} generated for ${tomorrowStr}`)
+  return generated
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Challenge Streak Management
+// Nightly check for students who missed yesterday's challenge.
+// Applies mercy-day logic (1 free miss per week per grade bracket) before
+// resetting streaks to 0.
+// Idempotent: safe to run twice — streaks already at 0 are not re-counted.
+// ──────────────────────────────────────────────────────────────────────────
+
+// Mercy-day limits by grade bracket: younger students get more forgiveness
+const MERCY_LIMIT_BY_GRADE: Record<string, number> = {
+  '6': 2, '7': 2, '8': 2,    // middle school: 2 mercy days/week
+  '9': 1, '10': 1,            // secondary: 1 mercy day/week
+  '11': 1, '12': 1,           // senior secondary: 1 mercy day/week
+}
+
+async function manageChallengeStreaks(supabase: ReturnType<typeof createClient>): Promise<number> {
+  const now = new Date()
+
+  // Yesterday's date
+  const yesterday = new Date(now)
+  yesterday.setUTCDate(yesterday.getUTCDate() - 1)
+  yesterday.setUTCHours(0, 0, 0, 0)
+  const yesterdayStr = yesterday.toISOString().slice(0, 10)
+
+  // This Monday (for mercy-week reset)
+  const thisMonday = new Date(now)
+  const currentDay = thisMonday.getUTCDay()
+  const diff = currentDay === 0 ? 6 : currentDay - 1 // Monday=0 offset
+  thisMonday.setUTCDate(thisMonday.getUTCDate() - diff)
+  thisMonday.setUTCHours(0, 0, 0, 0)
+  const thisMondayStr = thisMonday.toISOString().slice(0, 10)
+
+  // Step 1: Reset mercy_days_used_week for students whose mercy_week_start is before this Monday
+  const { error: resetErr } = await supabase
+    .from('challenge_streaks')
+    .update({ mercy_days_used_week: 0, mercy_week_start: thisMondayStr })
+    .lt('mercy_week_start', thisMondayStr)
+    .gt('mercy_days_used_week', 0)
+
+  // Also reset for students who have no mercy_week_start set yet
+  const { error: resetNullErr } = await supabase
+    .from('challenge_streaks')
+    .update({ mercy_days_used_week: 0, mercy_week_start: thisMondayStr })
+    .is('mercy_week_start', null)
+    .gt('current_streak', 0)
+
+  if (resetErr) console.warn(`daily-cron: streaks — mercy reset error: ${resetErr.message}`)
+  if (resetNullErr) console.warn(`daily-cron: streaks — mercy null reset error: ${resetNullErr.message}`)
+
+  // Step 2: Find active streaks that missed yesterday
+  // (current_streak > 0 AND last_challenge_date < yesterday)
+  const { data: atRiskStreaks, error: fetchErr } = await supabase
+    .from('challenge_streaks')
+    .select('student_id, current_streak, mercy_days_used_week, mercy_week_start')
+    .gt('current_streak', 0)
+    .lt('last_challenge_date', yesterdayStr)
+
+  if (fetchErr) throw new Error(`manageChallengeStreaks fetch: ${fetchErr.message}`)
+  if (!atRiskStreaks?.length) {
+    console.log('daily-cron: streaks — no at-risk streaks found')
+    return 0
+  }
+
+  // Step 3: Get student grades for mercy-limit lookup
+  const studentIds = atRiskStreaks.map((s: { student_id: string }) => s.student_id)
+  const studentGrades = new Map<string, string>()
+  const BATCH = 200
+  for (let i = 0; i < studentIds.length; i += BATCH) {
+    const batch = studentIds.slice(i, i + BATCH)
+    const { data: sData, error: sErr } = await supabase
+      .from('students')
+      .select('id, grade')
+      .in('id', batch)
+    if (sErr) console.warn(`daily-cron: streaks — student grade lookup: ${sErr.message}`)
+    if (sData) {
+      for (const s of sData as { id: string; grade: string }[]) {
+        studentGrades.set(s.id, s.grade)
+      }
+    }
+  }
+
+  let broken = 0
+  let mercyPreserved = 0
+
+  // Step 4: Process each at-risk streak
+  for (const streak of atRiskStreaks as {
+    student_id: string
+    current_streak: number
+    mercy_days_used_week: number
+    mercy_week_start: string | null
+  }[]) {
+    const grade = studentGrades.get(streak.student_id) ?? '10' // default to secondary
+    const mercyLimit = MERCY_LIMIT_BY_GRADE[grade] ?? 1
+
+    const mercyUsed = streak.mercy_days_used_week ?? 0
+
+    if (mercyUsed < mercyLimit) {
+      // Mercy: preserve streak, increment mercy_days_used_week
+      const { error: mercyErr } = await supabase
+        .from('challenge_streaks')
+        .update({
+          mercy_days_used_week: mercyUsed + 1,
+          mercy_week_start: streak.mercy_week_start ?? thisMondayStr,
+        })
+        .eq('student_id', streak.student_id)
+
+      if (mercyErr) {
+        console.warn(`daily-cron: streaks — mercy update error for ${streak.student_id}: ${mercyErr.message}`)
+      } else {
+        mercyPreserved++
+      }
+    } else {
+      // No mercy left: break streak
+      const { error: breakErr } = await supabase
+        .from('challenge_streaks')
+        .update({ current_streak: 0 })
+        .eq('student_id', streak.student_id)
+
+      if (breakErr) {
+        console.warn(`daily-cron: streaks — break error for ${streak.student_id}: ${breakErr.message}`)
+      } else {
+        broken++
+      }
+    }
+  }
+
+  console.log(`daily-cron: streaks — processed ${atRiskStreaks.length}: ${broken} broken, ${mercyPreserved} mercy-preserved`)
+  return atRiskStreaks.length
+}
+
 Deno.serve(async (req) => {
   if (req.method==='OPTIONS') return new Response('ok',{headers:corsHeaders})
   const t0=Date.now()
@@ -450,6 +814,8 @@ Deno.serve(async (req) => {
       ['health_snapshot',()=>recordHealthSnapshot(sb)],
       ['ml_retrain_new_responses',()=>triggerModelRetrainIfNeeded(sb)],
       ['performance_scores_recalculated',()=>recalculatePerformanceScores(sb)],
+      ['challenges_generated',()=>generateDailyChallenges(sb)],
+      ['streaks_managed',()=>manageChallengeStreaks(sb)],
     ]
     const settled=await Promise.allSettled(steps.map(([,fn])=>fn()))
     const results:Record<string,number>={};const errors:Record<string,string>={}
