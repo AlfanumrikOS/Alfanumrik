@@ -1,11 +1,11 @@
 # RLS Policy Matrix
 
 Last verified: 2026-04-02
-Source: 190 migration files in `supabase/migrations/`, 235 `CREATE POLICY` statements across 26 files
+Source: 265 migration files in `supabase/migrations/`, 440+ `CREATE POLICY` statements across 265 files
 
 ## Overview
 
-Alfanumrik uses Supabase Postgres Row Level Security (RLS) as the primary data access boundary. RLS is enabled on all tables. The policy count referenced in the codebase is "148+ policies" -- the actual count from migration files is approximately 235 `CREATE POLICY` statements (some are DROP + re-CREATE for the same policy name).
+Alfanumrik uses Supabase Postgres Row Level Security (RLS) as the primary data access boundary. RLS is enabled on all tables. The policy count referenced in the codebase is "440+ policies" -- the actual count from migration files is approximately 440+ `CREATE POLICY` statements (some are DROP + re-CREATE for the same policy name).
 
 Product invariant P8 states: "Client code never bypasses RLS. `supabase-admin.ts` is server-only. Every new table gets RLS + policies in the same migration."
 

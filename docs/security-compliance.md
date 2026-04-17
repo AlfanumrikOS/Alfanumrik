@@ -269,7 +269,7 @@ Middleware-level bot detection blocks:
 1. **Secret scanning**: Automated scan for leaked credentials
 2. **Type checking**: TypeScript compilation (`tsc --noEmit`)
 3. **Linting**: ESLint static analysis
-4. **Unit tests**: 633+ tests across 49+ files
+4. **Unit tests**: 2,511 tests across 84 files
 5. **Auth gate**: Verifies authentication patterns
 6. **Build verification**: Production build succeeds
 7. **Bundle size check**: Ensures size budgets are met

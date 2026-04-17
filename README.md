@@ -1,19 +1,21 @@
 # Alfanumrik Learning OS
 
-K-12 EdTech platform for CBSE students (grades 6-12) in India. Alfanumrik provides an AI-powered learning experience with adaptive quizzes, an AI tutor (Foxy), progress tracking, exam simulations, and a gamified XP system -- all built for Indian school networks on low-bandwidth connections.
+**v2.0.0** | K-12 EdTech platform for CBSE students (grades 6-12) in India.
+
+Alfanumrik provides an AI-powered learning experience with adaptive quizzes, an AI tutor (Foxy), progress tracking, exam simulations, interactive science/math simulations, and a gamified XP system -- all built for Indian school networks on low-bandwidth connections.
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
 | Frontend | Next.js 16.2 (App Router), React 18, Tailwind CSS 3.4, SWR |
-| Backend | Next.js API routes + Supabase Edge Functions (Deno) |
-| Database | Supabase PostgreSQL with RLS, RBAC (6 roles, 71 permissions), pgvector |
+| Backend | Next.js API routes (151 endpoints) + Supabase Edge Functions (29 functions, Deno) |
+| Database | Supabase PostgreSQL with RLS (440+ policies), RBAC (6 roles, 71 permissions), pgvector |
 | Auth | Supabase Auth (email/PKCE), JWT auto-refresh via middleware |
 | Payments | Razorpay (INR subscriptions) |
-| AI | Claude Haiku via Edge Functions (Foxy tutor, NCERT solver, quiz generator) |
+| AI | Claude via Edge Functions (Foxy tutor, NCERT solver, quiz generator, cognitive mastery engine) |
 | Mobile | Flutter 3.16+ / Dart 3.2+ with Riverpod and GoRouter |
-| Monitoring | Sentry (client/server/edge), Vercel Analytics |
+| Monitoring | Sentry (client/server/edge), Vercel Analytics, structured JSON logging |
 | Deployment | Vercel (bom1/Mumbai region), GitHub Actions CI/CD |
 
 ## Quick Start
@@ -73,26 +75,29 @@ The app runs at `http://localhost:3000`.
 ```
 src/
   app/              # Next.js App Router pages and API routes
-    api/            # Backend API routes (32+ endpoints)
+    api/            # Backend API routes (151 endpoints)
     dashboard/      # Student dashboard
     foxy/           # AI tutor chat interface
     learn/          # Learning content browser
-    parent/         # Parent portal (5 pages)
-    teacher/        # Teacher portal (6 pages)
+    simulations/    # Interactive science/math simulations (119 components)
+    parent/         # Parent portal (6 pages)
+    teacher/        # Teacher portal (8 pages)
     school-admin/   # School admin portal (B2B)
-    super-admin/    # Super admin panel (17 pages)
+    super-admin/    # Super admin panel (24 pages)
   components/       # Shared React components
     quiz/           # Quiz engine components
     ui/             # Design system primitives
     xp/             # XP and gamification widgets
   lib/              # Shared utilities, clients, and business logic
 supabase/
-  functions/        # Deno Edge Functions (24 functions)
-  migrations/       # PostgreSQL migrations (160+ files)
+  functions/        # Deno Edge Functions (29 functions)
+  migrations/       # PostgreSQL migrations (265 files)
 mobile/             # Flutter mobile app
 docs/               # Operational documentation
-e2e/                # Playwright E2E test specs
+e2e/                # Playwright E2E test specs (16 specs)
 ```
+
+753 TypeScript source files across the codebase.
 
 ## Multi-Portal Architecture
 
@@ -100,11 +105,58 @@ Alfanumrik serves five distinct user roles, each with dedicated routes:
 
 | Portal | Route | Purpose |
 |--------|-------|---------|
-| Student | `/dashboard`, `/foxy`, `/learn`, `/progress`, `/leaderboard`, `/exams` | Learning, quizzes, AI tutor, progress tracking |
+| Student | `/dashboard`, `/foxy`, `/learn`, `/progress`, `/leaderboard`, `/exams`, `/simulations` | Learning, quizzes, AI tutor, progress tracking, simulations |
 | Parent | `/parent/*` | Child monitoring, linked student progress |
 | Teacher | `/teacher/*` | Class management, student reports, assignments |
 | School Admin | `/school-admin/*` | B2B school management, analytics, billing |
 | Super Admin | `/super-admin/*` | Platform operations, user management, CMS, diagnostics |
+
+## AI Features
+
+Alfanumrik integrates Claude-powered AI across the learning experience:
+
+- **Foxy AI Tutor** -- CBSE curriculum-aligned conversational tutor that provides step-by-step guidance, adapts to the student's grade level, and enforces age-appropriate responses.
+- **NCERT Solver** -- Breaks down NCERT textbook questions with detailed, syllabus-accurate explanations.
+- **Quiz Generator** -- AI-powered adaptive quiz creation that generates questions matched to the student's proficiency and Bloom's taxonomy level.
+- **Cognitive Mastery Engine (CME)** -- BKT/IRT-based learner modeling that tracks knowledge state per topic, identifies gaps, and recommends next steps.
+- **RAG Pipeline** -- pgvector embeddings over NCERT content and question banks for retrieval-augmented generation, powering accurate and grounded AI responses.
+
+All AI responses are filtered for age-appropriateness (grades 6-12), scoped to the CBSE curriculum, and subject to daily usage limits per subscription plan.
+
+## Interactive Simulations
+
+119 interactive science and math simulations built as React components, covering topics across the CBSE curriculum. Simulations provide visual, hands-on learning experiences for concepts that benefit from interactive exploration.
+
+## Testing
+
+| Tool | Scope | Count |
+|------|-------|-------|
+| Vitest | Unit tests | 2,511 tests across 84 files |
+| Playwright | End-to-end tests | 16 specs |
+
+Coverage thresholds enforced in CI:
+
+- **Global**: 60% minimum
+- **`xp-rules.ts`**: 90% minimum
+- **`cognitive-engine.ts`**, **`exam-engine.ts`**: 80% minimum
+
+Run tests:
+
+```bash
+npm test                 # Unit tests
+npm run test:coverage    # Unit tests with coverage report
+npm run test:e2e         # E2E tests (auto-starts dev server)
+```
+
+## Security
+
+- **Row-Level Security (RLS)** on every database table (440+ policies) ensuring data isolation
+- **RBAC** with 6 roles and 71 permissions, enforced server-side via `authorizeRequest()`
+- **Rate limiting** via Upstash Redis with in-memory fallback for local development
+- **Bot detection** in middleware to block automated abuse
+- **PII redaction** in all structured logs -- passwords, tokens, emails, phone numbers, and API keys are never logged
+- **Razorpay webhook signature verification** before processing any payment event
+- **Sentry tunnel** routing to bypass ad-blockers without exposing DSN
 
 ## Documentation
 
@@ -132,6 +184,15 @@ cd mobile
 flutter pub get
 flutter run
 ```
+
+## Contributing
+
+Development is governed by product invariants defined in [.claude/CLAUDE.md](./.claude/CLAUDE.md). Key requirements:
+
+- **14 product invariants** (P1-P15) that cannot be violated -- covering score accuracy, XP economy, anti-cheat, atomic quiz submission, grade format, question quality, bilingual UI, RLS boundaries, RBAC enforcement, bundle budget, payment integrity, AI safety, data privacy, and review chain completeness.
+- **10-agent auto-delegation system** with domain ownership boundaries enforced by pre/post-edit hooks.
+- **Review chain requirements** -- changes to critical files trigger mandatory downstream reviews (e.g., scoring changes require testing, AI, backend, frontend, and mobile review).
+- **Release gates** -- type-check, lint, tests, build, and domain review must all pass before merge.
 
 ## License
 

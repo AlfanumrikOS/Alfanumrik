@@ -40,8 +40,8 @@
 │  ┌──────────────────────┐  ┌─────────────────────────────────┐  │
 │  │   Supabase (Postgres) │  │  Supabase Realtime              │  │
 │  │                       │  │  • Quiz live updates             │  │
-│  │  • 90+ tables         │  │  • Leaderboard changes           │  │
-│  │  • 235+ RLS policies  │  │  • Notification delivery         │  │
+│  │  • 120+ tables         │  │  • Leaderboard changes           │  │
+│  │  • 440+ RLS policies  │  │  • Notification delivery         │  │
 │  │  • pgvector (RAG)     │  │                                  │  │
 │  │  • BRIN + B-tree idx  │  │  ┌────────────────────────────┐  │  │
 │  │  • SM-2 / BKT / IRT   │  │  │  Supabase Storage          │  │  │
