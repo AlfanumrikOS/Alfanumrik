@@ -1,11 +1,42 @@
 'use client';
 
-import { type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
+import { UnverifiedBanner } from '@/components/foxy/UnverifiedBanner';
+import { HardAbstainCard } from '@/components/grounding/HardAbstainCard';
+import { ReportIssueModal } from '@/components/foxy/ReportIssueModal';
+import { useAuth } from '@/lib/AuthContext';
 
 /* ═══════════════════════════════════════════════════════════════
    ChatBubble — Message bubble for Foxy conversations
    Supports tutor/student roles, feedback
    ═══════════════════════════════════════════════════════════════ */
+
+/**
+ * Grounding status — mirrors the server's Phase 3 contract:
+ *   grounded      : answer is supported by retrieved NCERT chunks (confidence ≥ threshold)
+ *   unverified    : answer generated but low-confidence — show caution banner
+ *   hard-abstain  : service refused to answer — show fallback card
+ */
+export type GroundingStatus = 'grounded' | 'unverified' | 'hard-abstain';
+
+/** Abstain reason surfaced from the grounded-answer service. */
+export type AbstainReason =
+  | 'chapter_not_ready'
+  | 'no_chunks_retrieved'
+  | 'low_similarity'
+  | 'no_supporting_chunks'
+  | 'scope_mismatch'
+  | 'upstream_error'
+  | 'circuit_open';
+
+/** Suggested alternative chapter/topic when the requested one isn't ready. */
+export interface SuggestedAlternative {
+  grade: string;
+  subject_code: string;
+  chapter_number: number;
+  chapter_title: string;
+  rag_status: 'ready';
+}
 
 interface ChatBubbleProps {
   role: 'student' | 'tutor';
@@ -22,6 +53,18 @@ interface ChatBubbleProps {
   onReport: () => void;
   /** Called when the student taps 🔊 to replay this message via TTS */
   onSpeak?: () => void;
+  /** Grounding verdict from the grounded-answer service (tutor bubbles only) */
+  groundingStatus?: GroundingStatus;
+  /** Trace id for debugging — shown in tooltip when set */
+  traceId?: string;
+  /** Abstain reason — only set when groundingStatus === 'hard-abstain' */
+  abstainReason?: AbstainReason;
+  /** Suggested alternatives — only set when groundingStatus === 'hard-abstain' */
+  suggestedAlternatives?: SuggestedAlternative[];
+  /** Message id — passed through to ReportIssueModal for the ai_issue_reports FK. */
+  messageId?: string;
+  /** Question bank id — passed through to ReportIssueModal if the answer was a quiz question. */
+  questionBankId?: string;
 }
 
 export function ChatBubble({
@@ -37,9 +80,19 @@ export function ChatBubble({
   onFeedback,
   onReport,
   onSpeak,
+  groundingStatus,
+  traceId,
+  abstainReason,
+  suggestedAlternatives,
+  messageId,
+  questionBankId,
 }: ChatBubbleProps) {
+  const { isHi } = useAuth();
   const isTutor = role === 'tutor';
   const time = new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const showUnverifiedBanner = isTutor && groundingStatus === 'unverified';
+  const showHardAbstainCard = isTutor && groundingStatus === 'hard-abstain';
+  const [issueModalOpen, setIssueModalOpen] = useState(false);
 
   return (
     <div className="mb-4 w-full animate-slide-up">
@@ -66,27 +119,41 @@ export function ChatBubble({
         <span className="text-[10px] text-[var(--text-3)]">{time}</span>
 
         {isTutor && (
-          <span className="ml-auto px-1.5 py-0.5 rounded text-[8px] font-semibold"
-            style={{ background: 'var(--surface-2)', color: 'var(--text-3)', border: '1px solid var(--border)' }}>
+          <span
+            className="ml-auto px-1.5 py-0.5 rounded text-[8px] font-semibold"
+            style={{ background: 'var(--surface-2)', color: 'var(--text-3)', border: '1px solid var(--border)' }}
+            title={traceId ? `trace: ${traceId}` : undefined}
+          >
             🤖 AI
           </span>
         )}
 
       </div>
 
-      {/* Message body */}
-      <div
-        className="w-full rounded-2xl px-4 py-3 text-sm leading-relaxed overflow-hidden min-w-0"
-        style={{
-          background: isTutor ? 'var(--surface-1)' : `${color}08`,
-          color: 'var(--text-1)',
-          border: isTutor
-            ? reported ? '1.5px solid color-mix(in srgb, var(--danger) 25%, transparent)' : '1px solid var(--border)'
-            : `1.5px solid ${color}20`,
-        }}
-      >
-        {content}
-      </div>
+      {showUnverifiedBanner && <UnverifiedBanner traceId={traceId} />}
+
+      {showHardAbstainCard && abstainReason && (
+        <HardAbstainCard
+          reason={abstainReason}
+          alternatives={suggestedAlternatives}
+        />
+      )}
+
+      {/* Message body — suppressed on hard-abstain since content is empty */}
+      {!showHardAbstainCard && (
+        <div
+          className="w-full rounded-2xl px-4 py-3 text-sm leading-relaxed overflow-hidden min-w-0"
+          style={{
+            background: isTutor ? 'var(--surface-1)' : `${color}08`,
+            color: 'var(--text-1)',
+            border: isTutor
+              ? reported ? '1.5px solid color-mix(in srgb, var(--danger) 25%, transparent)' : '1px solid var(--border)'
+              : `1.5px solid ${color}20`,
+          }}
+        >
+          {content}
+        </div>
+      )}
 
       {/* Action bar for tutor messages */}
       {isTutor && rawContent !== 'Oops! Please try again.' && (
@@ -166,6 +233,27 @@ export function ChatBubble({
               </span>
             )}
         </div>
+      )}
+
+      {/* Small "Report an issue" link — opens the ai_issue_reports modal (Task 3.15) */}
+      {isTutor && (
+        <>
+          <button
+            type="button"
+            onClick={() => setIssueModalOpen(true)}
+            data-testid="report-issue-link"
+            className="mt-1 pl-1 text-[10px] text-[var(--text-3)] underline underline-offset-2 transition hover:text-[var(--text-2)]"
+          >
+            {isHi ? 'Is jawab mein problem report karein' : 'Report an issue with this answer'}
+          </button>
+          <ReportIssueModal
+            isOpen={issueModalOpen}
+            onClose={() => setIssueModalOpen(false)}
+            traceId={traceId}
+            messageId={messageId}
+            questionBankId={questionBankId}
+          />
+        </>
       )}
     </div>
   );

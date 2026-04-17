@@ -126,9 +126,28 @@ describe('Regression #4: chapter listing is governed via /api/student/chapters',
     expect(src).toMatch(/\/api\/student\/chapters\?subject=/);
   });
 
-  it('/api/student/chapters route delegates to available_chapters_for_student_subject', () => {
+  it('/api/student/chapters route delegates to available_chapters_for_student_subject_v2', () => {
     const src = read('src/app/api/student/chapters/route.ts');
-    expect(src).toMatch(/rpc\(\s*['"]available_chapters_for_student_subject['"]/);
+    // Phase 3: route now uses the v2 RPC backed by cbse_syllabus SSoT.
+    // See 20260418101000_subjects_chapters_rpcs_v2.sql.
+    expect(src).toMatch(/rpc\(\s*\n?\s*['"]available_chapters_for_student_subject_v2['"]/);
+  });
+
+  it('/api/student/chapters has NO soft-fail fallback to legacy chapters table', () => {
+    const src = read('src/app/api/student/chapters/route.ts');
+    // Soft-fail removed in Phase 3 — RPC failure must be explicit 500,
+    // not silent fallback to chapters/GRADE_SUBJECTS-derived data.
+    expect(src).not.toMatch(/\.from\(\s*['"]chapters['"]\s*\)/);
+    expect(src).toMatch(/service_unavailable/);
+  });
+
+  it('/api/student/subjects uses get_available_subjects_v2 (no GRADE_SUBJECTS fallback)', () => {
+    const src = read('src/app/api/student/subjects/route.ts');
+    expect(src).toMatch(/rpc\(\s*['"]get_available_subjects_v2['"]/);
+    // Soft-fall to the constants-derived list was removed — any legacy
+    // import of GRADE_SUBJECTS/SUBJECT_META is no longer used from this route.
+    expect(src).not.toMatch(/buildLegacySubjects/);
+    expect(src).toMatch(/service_unavailable/);
   });
 });
 

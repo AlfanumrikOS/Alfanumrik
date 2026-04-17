@@ -12,7 +12,8 @@ import { checkDailyUsage, clearUsageCache, type UsageResult } from '@/lib/usage'
 import { speak, isVoiceSupported } from '@/lib/voice';
 import { ConversationStarters } from '@/components/foxy/ConversationStarters';
 import { findSimulation, InlineSimulation } from '@/components/InlineSimulation';
-import { ChatBubble } from '@/components/foxy/ChatBubble';
+import { ChatBubble, type GroundingStatus, type AbstainReason, type SuggestedAlternative } from '@/components/foxy/ChatBubble';
+import { LoadingState } from '@/components/foxy/LoadingState';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import { RichContent } from '@/components/foxy/RichContent';
 import { ChatInput } from '@/components/foxy/ChatInput';
@@ -258,6 +259,13 @@ async function callFoxyTutor(params: Record<string, any>) {
       diagrams:   data.diagrams  || [],
       quota:      data.quotaRemaining,
       upgradePrompt: data.upgradePrompt || null,
+      // Phase 3: grounded-answer response metadata. Undefined when the server
+      // is running the legacy pre-3.2 flow; any tutor bubble without this
+      // metadata renders as a plain answer (no banner, no card).
+      groundingStatus:        data.groundingStatus as GroundingStatus | undefined,
+      traceId:                data.traceId as string | undefined,
+      abstainReason:          data.abstainReason as AbstainReason | undefined,
+      suggestedAlternatives:  data.suggestedAlternatives as SuggestedAlternative[] | undefined,
     };
   } catch (err) {
     console.error('[Foxy] Network error:', err);
@@ -270,7 +278,25 @@ async function callFoxyTutor(params: Record<string, any>) {
    ══════════════════════════════════════════════════════════════ */
 
 interface DiagramRef { url: string; title: string; pageNumber?: number; description: string; }
-interface ChatMessage { id: number; role: 'student' | 'tutor'; content: string; timestamp: string; xp?: number; feedback?: 'up' | 'down' | null; reported?: boolean; diagrams?: DiagramRef[]; imageUrl?: string; }
+interface ChatMessage {
+  id: number;
+  role: 'student' | 'tutor';
+  content: string;
+  timestamp: string;
+  xp?: number;
+  feedback?: 'up' | 'down' | null;
+  reported?: boolean;
+  diagrams?: DiagramRef[];
+  imageUrl?: string;
+  /** Grounding verdict — set only on tutor messages served from the grounded-answer service. */
+  groundingStatus?: GroundingStatus;
+  /** Server-side trace id — useful for debugging/reporting. */
+  traceId?: string;
+  /** Abstain reason (only present when groundingStatus === 'hard-abstain'). */
+  abstainReason?: AbstainReason;
+  /** Suggested alternative chapters (only present when groundingStatus === 'hard-abstain'). */
+  suggestedAlternatives?: SuggestedAlternative[];
+}
 
 const REPORT_REASONS = [
   { value: 'wrong_answer', label: '❌ Wrong answer', labelHi: '❌ गलत उत्तर' },
@@ -672,7 +698,18 @@ export default function FoxyPage() {
         setLoading(false);
         return;
       }
-      setMessages((p: ChatMessage[]) => [...p, { id: Date.now() + 1, role: 'tutor', content: resp.reply, timestamp: new Date().toISOString(), xp: resp.xp_earned, diagrams: resp.diagrams?.length > 0 ? resp.diagrams : undefined }]);
+      setMessages((p: ChatMessage[]) => [...p, {
+        id: Date.now() + 1,
+        role: 'tutor',
+        content: resp.reply,
+        timestamp: new Date().toISOString(),
+        xp: resp.xp_earned,
+        diagrams: resp.diagrams?.length > 0 ? resp.diagrams : undefined,
+        groundingStatus: resp.groundingStatus,
+        traceId: resp.traceId,
+        abstainReason: resp.abstainReason,
+        suggestedAlternatives: resp.suggestedAlternatives,
+      }]);
       // Soft upgrade prompt when quota is near exhaustion (user's choice, not forced)
       if (resp.upgradePrompt) {
         const up = resp.upgradePrompt;
@@ -1332,6 +1369,10 @@ export default function FoxyPage() {
                     onFeedback={(isUp) => handleFeedback(msg.id, isUp)}
                     onReport={() => openReport(msg.id)}
                     onSpeak={ttsSupported && msg.role === 'tutor' ? () => speakMessage(msg.content) : undefined}
+                    groundingStatus={msg.groundingStatus}
+                    traceId={msg.traceId}
+                    abstainReason={msg.abstainReason}
+                    suggestedAlternatives={msg.suggestedAlternatives}
                   />
                   {msg.role === 'tutor' && msg.diagrams && msg.diagrams.length > 0 && (
                     <div className="pl-11 -mt-1 mb-2 space-y-2">
@@ -1464,25 +1505,15 @@ export default function FoxyPage() {
               </div>
             )}
 
-            {/* Thinking */}
+            {/* Thinking — honest elapsed timer, no fake stages */}
             {loading && (
-              <div className="flex items-start gap-3 px-4 py-3">
-                <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
-                  <span className="text-lg animate-pulse">🦊</span>
-                </div>
-                <div className="bg-orange-50 rounded-xl px-4 py-3 max-w-[80%]" style={{ border: '1px solid var(--border)' }}>
-                  <div className="flex gap-1.5">
-                    <span className="w-2 h-2 bg-orange-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <span className="w-2 h-2 bg-orange-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <span className="w-2 h-2 bg-orange-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                  </div>
-                  <p className="text-xs text-orange-600 mt-1.5">
-                    {isProcessingImage
-                      ? (language === 'hi' ? '📷 फ़ोटो पढ़ रहे हैं...' : '📷 Reading your handwriting...')
-                      : (language === 'hi' ? 'फॉक्सी सोच रहा है...' : 'Foxy is thinking...')}
-                  </p>
-                </div>
-              </div>
+              <LoadingState
+                primaryLabel={
+                  isProcessingImage
+                    ? (language === 'hi' ? '📷 फ़ोटो पढ़ रहे हैं' : '📷 Reading your handwriting')
+                    : undefined
+                }
+              />
             )}
             <div ref={endRef} />
           </div>

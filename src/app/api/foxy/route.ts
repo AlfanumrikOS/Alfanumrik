@@ -1,19 +1,36 @@
 /**
  * /api/foxy — Foxy AI Tutor Chat Endpoint
  *
- * Architecture:
+ * Responsibilities that STAY in this route:
  *  1. RBAC auth guard (foxy.chat permission)
- *  2. Daily quota enforcement (foxy_chats_used in student_daily_usage)
- *  3. Session continuity (foxy_sessions table)
- *  4. Cognitive context loading — concept_mastery, knowledge_gaps, cme_error_log, CME next-action
- *  5. RAG retrieval — Voyage voyage-3 embedding → match_rag_chunks RPC
- *  6. Context-aware response — Claude claude-haiku-4-5-20251001 (fallback: claude-sonnet-4-20250514)
+ *  2. Subject governance (validateSubjectWrite)
+ *  3. Daily quota enforcement (atomic RPC + refund on upstream failures)
+ *  4. Session continuity (foxy_sessions table)
+ *  5. Cognitive context loading (CME tables) — not an AI concern
+ *  6. Multi-turn history load (foxy_chat_messages)
  *  7. Persist turn to foxy_chat_messages + cognitive action logging
  *  8. Audit log
+ *  9. Upgrade prompt computation
+ *
+ * Responsibilities that moved to supabase/functions/grounded-answer/ (Phase 2):
+ *  - Voyage embedding generation
+ *  - match_rag_chunks_ncert RPC
+ *  - Claude call with model fallback
+ *  - System prompt template resolution (foxy_tutor_v1)
+ *  - Circuit breaker / cache / timeouts for Voyage+Claude
+ *
+ * This route shells out to that service via callGroundedAnswer(). The inline
+ * legacy flow is preserved behind `ff_grounded_ai_foxy` as a kill switch for
+ * the Phase 3 rollout window.
  *
  * POST /api/foxy
  * Body: { message, subject, grade, chapter?, board?, sessionId?, mode? }
- * Response: { response, sources, sessionId, quotaRemaining, tokensUsed }
+ * Response (success):
+ *   { success, response, sources, diagrams?, sessionId, quotaRemaining,
+ *     tokensUsed, confidence?, groundingStatus, traceId, upgradePrompt? }
+ * Response (abstain / hard-abstain):
+ *   { success: true, response: '', groundingStatus: 'hard-abstain',
+ *     abstainReason, suggestedAlternatives, traceId }
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -21,8 +38,10 @@ import { authorizeRequest, logAudit } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import { isFeatureEnabled } from '@/lib/feature-flags';
-import { classifyIntent, routeIntent } from '@/lib/ai';
 import { validateSubjectWrite } from '@/lib/subjects';
+import { callGroundedAnswer, type GroundedRequest, type Citation, type SuggestedAlternative, type AbstainReason } from '@/lib/ai/grounded-client';
+import { PER_PLAN_TIMEOUT_MS, SOFT_CONFIDENCE_BANNER_THRESHOLD } from '@/lib/grounding-config';
+import { classifyIntent, routeIntent } from '@/lib/ai';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -31,8 +50,17 @@ const VALID_MODES = ['learn', 'explain', 'practice', 'revise'];
 const MAX_MESSAGE_LENGTH = 1000;
 const MAX_HISTORY_TURNS = 6;       // last 6 turns = 12 messages for context
 const RAG_MATCH_COUNT = 5;
-const RAG_MIN_QUALITY = 0.4;
 const SESSION_IDLE_MINUTES = 30;
+
+// Reasons for which we refund the quota (the student did not actually get
+// served an answer that consumed LLM tokens). Service-side validation errors
+// (scope_mismatch, low_similarity, no_supporting_chunks) are NOT refunded:
+// the service did run retrieval + possibly Claude on the student's behalf.
+const REFUND_ABSTAIN_REASONS: AbstainReason[] = [
+  'upstream_error',
+  'circuit_open',
+  'chapter_not_ready',
+];
 
 // Quota per plan per day
 const DAILY_QUOTA: Record<string, number> = {
@@ -42,23 +70,6 @@ const DAILY_QUOTA: Record<string, number> = {
   unlimited: 999999, // effectively unlimited
 };
 const DEFAULT_QUOTA = 10;
-
-// API timeout per plan (milliseconds) — paying students get more patience
-// Free: 8s (budget), Starter: 15s (good), Pro: 25s (premium), Unlimited: 30s (max)
-const VOYAGE_TIMEOUT: Record<string, number> = {
-  free: 8000,
-  starter: 15000,
-  pro: 25000,
-  unlimited: 30000,
-};
-const CLAUDE_TIMEOUT: Record<string, number> = {
-  free: 15000,
-  starter: 30000,
-  pro: 45000,
-  unlimited: 60000,
-};
-const DEFAULT_VOYAGE_TIMEOUT = 8000;
-const DEFAULT_CLAUDE_TIMEOUT = 15000;
 
 // Soft upgrade prompts — shown ONLY when quota is near exhaustion (not on errors)
 const UPGRADE_PROMPTS: Record<string, { threshold: number; message: string; messageHi: string; nextPlan: string }> = {
@@ -166,7 +177,6 @@ async function resolveSession(
   mode: string,
   providedSessionId: string | null,
 ): Promise<string> {
-  // If client provided a sessionId, verify it belongs to this student and is still active
   if (providedSessionId) {
     const cutoff = new Date(Date.now() - SESSION_IDLE_MINUTES * 60 * 1000).toISOString();
     const { data: existing } = await supabaseAdmin
@@ -178,17 +188,14 @@ async function resolveSession(
       .single();
 
     if (existing) {
-      // Touch last_active_at
       await supabaseAdmin
         .from('foxy_sessions')
         .update({ last_active_at: new Date().toISOString() })
         .eq('id', providedSessionId);
       return providedSessionId;
     }
-    // Session expired or not found — fall through to create new
   }
 
-  // Create a new session
   const { data: newSession, error } = await supabaseAdmin
     .from('foxy_sessions')
     .insert({
@@ -216,10 +223,9 @@ async function loadHistory(sessionId: string): Promise<ChatMessage[]> {
     .select('role, content')
     .eq('session_id', sessionId)
     .order('created_at', { ascending: false })
-    .limit(MAX_HISTORY_TURNS * 2); // 2 messages per turn
+    .limit(MAX_HISTORY_TURNS * 2);
 
   if (!messages || messages.length === 0) return [];
-  // Reverse so oldest first (correct for Claude messages array)
   return (messages as ChatMessage[]).reverse();
 }
 
@@ -230,8 +236,8 @@ async function loadCognitiveContext(
   subject: string,
   grade: string,
 ): Promise<CognitiveContext> {
+  void grade; // reserved for future grade-scoped mastery lookups
   try {
-    // Resolve subject code → subject UUID for filtering
     const { data: subjectRow } = await supabaseAdmin
       .from('subjects')
       .select('id')
@@ -239,9 +245,7 @@ async function loadCognitiveContext(
       .maybeSingle();
     const subjectId = subjectRow?.id ?? null;
 
-    // All queries run in parallel for < 100ms latency budget
-    const [masteryRes, gapsRes, revisionRes, errorsRes, cmeStateRes] = await Promise.all([
-      // concept_mastery: weak and strong topics for this subject
+    const [masteryRes, gapsRes, revisionRes, errorsRes] = await Promise.all([
       supabaseAdmin
         .from('concept_mastery')
         .select('mastery_probability, mastery_level, attempts, topic_id, curriculum_topics(title, subject_id)')
@@ -249,7 +253,6 @@ async function loadCognitiveContext(
         .order('mastery_probability', { ascending: true })
         .limit(30),
 
-      // knowledge_gaps: active prerequisite gaps
       supabaseAdmin
         .from('knowledge_gaps')
         .select('topic_id, prerequisite_topic_id, gap_type, is_resolved, description, curriculum_topics!knowledge_gaps_topic_id_fkey(title), prereq:curriculum_topics!knowledge_gaps_prerequisite_topic_id_fkey(title)')
@@ -257,7 +260,6 @@ async function loadCognitiveContext(
         .eq('is_resolved', false)
         .limit(5),
 
-      // concept_mastery: concepts due for spaced repetition review
       supabaseAdmin
         .from('concept_mastery')
         .select('mastery_probability, next_review_date, topic_id, curriculum_topics(title)')
@@ -267,24 +269,15 @@ async function loadCognitiveContext(
         .order('next_review_date', { ascending: true })
         .limit(5),
 
-      // cme_error_log: recent error patterns (last 30 days)
       supabaseAdmin
         .from('cme_error_log')
         .select('error_type')
         .eq('student_id', studentId)
         .gte('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()),
-
-      // cme_concept_state: for CME next-action computation (read mastery_mean for overall level)
-      supabaseAdmin
-        .from('cme_concept_state')
-        .select('concept_id, mastery_mean, current_retention')
-        .eq('student_id', studentId)
-        .limit(50),
     ]);
 
-    // Filter mastery results by subject
     const subjectMastery = (masteryRes.data ?? []).filter((m: any) => {
-      if (!subjectId) return true; // no subject filter if subject not found
+      if (!subjectId) return true;
       return m.curriculum_topics?.subject_id === subjectId;
     });
 
@@ -305,21 +298,18 @@ async function loadCognitiveContext(
         mastery: Math.round((m.mastery_probability ?? 0) * 100),
       }));
 
-    // Knowledge gaps
     const knowledgeGaps = (gapsRes.data ?? []).map((g: any) => ({
       target: g.curriculum_topics?.title ?? g.description ?? '',
       prerequisite: g.prereq?.title ?? '',
       gapType: g.gap_type ?? '',
     }));
 
-    // Revision due
     const revisionDue = (revisionRes.data ?? []).map((r: any) => ({
       title: r.curriculum_topics?.title ?? 'Unknown',
       lastReviewed: r.next_review_date ?? '',
       mastery: Math.round((r.mastery_probability ?? 0) * 100),
     }));
 
-    // Error pattern counts
     const errorCounts: Record<string, number> = {};
     for (const e of errorsRes.data ?? []) {
       errorCounts[e.error_type] = (errorCounts[e.error_type] || 0) + 1;
@@ -328,14 +318,13 @@ async function loadCognitiveContext(
       .map(([errorType, count]) => ({ errorType, count }))
       .sort((a, b) => b.count - a.count);
 
-    // Overall mastery level for this subject
     const avgMastery = subjectMastery.length > 0
       ? subjectMastery.reduce((s: number, m: any) => s + (m.mastery_probability ?? 0), 0) / subjectMastery.length
       : 0.5;
     const masteryLevel: CognitiveContext['masteryLevel'] =
       avgMastery < 0.4 ? 'low' : avgMastery < 0.7 ? 'medium' : 'high';
 
-    // Call CME for next-best-action (non-blocking — uses Edge Function)
+    // CME next-action (non-blocking)
     let nextAction: CognitiveContext['nextAction'] = null;
     if (subjectId) {
       try {
@@ -353,7 +342,7 @@ async function loadCognitiveContext(
               student_id: studentId,
               subject_id: subjectId,
             }),
-            signal: AbortSignal.timeout(3000), // 3s hard timeout for CME call
+            signal: AbortSignal.timeout(3000),
           });
           if (cmeRes.ok) {
             const cmeData = await cmeRes.json();
@@ -373,7 +362,6 @@ async function loadCognitiveContext(
 
     return { weakTopics, strongTopics, knowledgeGaps, revisionDue, recentErrors, nextAction, masteryLevel };
   } catch (err) {
-    // Return empty context on failure — Foxy still works, just without cognitive awareness
     logger.warn('foxy_cognitive_context_failed', {
       error: err instanceof Error ? err.message : String(err),
       studentId,
@@ -385,7 +373,6 @@ async function loadCognitiveContext(
 // ─── Helper: build cognitive prompt section from CME data ───────────────────
 
 function buildCognitivePromptSection(ctx: CognitiveContext): string {
-  // If no cognitive data loaded, return empty string (no noise in prompt)
   if (
     ctx.weakTopics.length === 0 &&
     ctx.strongTopics.length === 0 &&
@@ -442,7 +429,6 @@ function buildCognitivePromptSection(ctx: CognitiveContext): string {
     sections.push(`Reason: ${ctx.nextAction.reason}`);
   }
 
-  // Cognitive load instructions based on overall mastery level
   sections.push('\n=== COGNITIVE LOAD INSTRUCTIONS ===');
   if (ctx.masteryLevel === 'low') {
     sections.push('Student is STRUGGLING. Instructions:');
@@ -470,6 +456,22 @@ function buildCognitivePromptSection(ctx: CognitiveContext): string {
   return sections.join('\n');
 }
 
+// ─── Academic goal → prompt instruction mapping ──────────────────────────────
+const GOAL_PROMPT_MAP: Record<string, string> = {
+  board_topper: 'Board Topper (90%+). Teach with depth, cover edge cases, use HOTS-style questioning, and push for thorough understanding.',
+  school_topper: 'School Topper. Focus on strong conceptual clarity and application-based questions beyond rote learning.',
+  pass_comfortably: 'Pass Comfortably. Keep explanations simple and confidence-building. Focus on frequently-tested topics and basic numericals.',
+  competitive_exam: 'Competitive Exam Prep (JEE/NEET/Olympiad). Go beyond NCERT where relevant, include tricky problems and conceptual depth.',
+  olympiad: 'Olympiad Preparation. Challenge with advanced reasoning, logical puzzles, and problems that require creative thinking.',
+  improve_basics: 'Improve Basics. Be extra patient, use analogies and visuals, break complex topics into tiny steps, and reinforce fundamentals.',
+};
+
+function buildAcademicGoalSection(goal: string | null): string {
+  if (!goal) return '';
+  const instruction = GOAL_PROMPT_MAP[goal] ?? goal;
+  return `\n## Student's Academic Goal: ${instruction}\n`;
+}
+
 // ─── Helper: check and increment daily quota (atomic via RPC) ────────────────
 
 async function checkAndIncrementQuota(
@@ -478,9 +480,8 @@ async function checkAndIncrementQuota(
 ): Promise<{ allowed: boolean; remaining: number }> {
   const normalizedPlan = normalizePlan(plan);
   const limit = DAILY_QUOTA[normalizedPlan] ?? DEFAULT_QUOTA;
-  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+  const today = new Date().toISOString().split('T')[0];
 
-  // Single atomic DB transaction — avoids TOCTOU race between check and increment
   const { data: rows, error } = await supabaseAdmin.rpc('check_and_record_usage', {
     p_student_id: studentId,
     p_feature: 'foxy_chat',
@@ -489,7 +490,6 @@ async function checkAndIncrementQuota(
   });
 
   if (error) {
-    // Fail closed: deny if usage tracking fails
     logger.error('foxy_quota_check_failed', { error: error.message, studentId });
     return { allowed: false, remaining: 0 };
   }
@@ -502,294 +502,123 @@ async function checkAndIncrementQuota(
   return { allowed: true, remaining: Math.max(0, limit - (row.current_count ?? 0)) };
 }
 
-// ─── Helper: generate Voyage embedding ───────────────────────────────────────
-
-async function generateEmbedding(text: string, timeoutMs: number = 15000): Promise<number[] | null> {
-  if (!process.env.VOYAGE_API_KEY) return null;
+/**
+ * Refund one foxy_chat usage count on the student's daily usage row. Called
+ * after an upstream failure (circuit open, grounded-answer service down,
+ * chapter not yet ingested) so the student doesn't "lose" a message to an
+ * error they didn't cause. Best-effort — a DB failure here is logged but
+ * doesn't propagate.
+ */
+async function refundQuota(studentId: string, feature: string): Promise<void> {
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-    const res = await fetch('https://api.voyageai.com/v1/embeddings', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${process.env.VOYAGE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'voyage-3',
-        input: [text],
-        output_dimension: 1024,
-      }),
-      signal: controller.signal,
-    });
-    clearTimeout(timer);
-
-    if (!res.ok) {
-      logger.warn('foxy_voyage_http_error', { status: res.status, timeoutMs });
-      return null;
+    const today = new Date().toISOString().split('T')[0];
+    const { data: row } = await supabaseAdmin
+      .from('student_daily_usage')
+      .select('usage_count')
+      .eq('student_id', studentId)
+      .eq('feature', feature)
+      .eq('usage_date', today)
+      .single();
+    if (row && typeof row.usage_count === 'number' && row.usage_count > 0) {
+      await supabaseAdmin
+        .from('student_daily_usage')
+        .update({ usage_count: row.usage_count - 1, updated_at: new Date().toISOString() })
+        .eq('student_id', studentId)
+        .eq('feature', feature)
+        .eq('usage_date', today);
     }
-    const body = await res.json();
-    return body?.data?.[0]?.embedding ?? null;
   } catch (err) {
-    const isTimeout = err instanceof Error && err.name === 'AbortError';
-    logger.warn('foxy_voyage_embedding_failed', {
+    logger.warn('foxy_quota_refund_failed', {
       error: err instanceof Error ? err.message : String(err),
-      isTimeout,
-      timeoutMs,
+      studentId,
+      feature,
     });
-    if (isTimeout) {
-      // Timeout is NOT acceptable for paying users — retry once with extended timeout
-      try {
-        const retryRes = await fetch('https://api.voyageai.com/v1/embeddings', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${process.env.VOYAGE_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'voyage-3',
-            input: [text],
-            output_dimension: 1024,
-          }),
-          signal: AbortSignal.timeout(timeoutMs * 2), // double the timeout for retry
-        });
-        if (retryRes.ok) {
-          const retryBody = await retryRes.json();
-          return retryBody?.data?.[0]?.embedding ?? null;
-        }
-      } catch {
-        // Second attempt also failed — fall through to null
-      }
-    }
-    return null;
   }
 }
 
-// ─── Helper: call Claude ──────────────────────────────────────────────────────
+// ─── Legacy-flow delegate (kill-switch path) ────────────────────────────────
+//
+// When `ff_grounded_ai_foxy` is OFF we still want a working Foxy. The inline
+// Voyage+Claude pipeline has been deleted from this route; the fallback now
+// delegates to the existing intent-router workflow (src/lib/ai/) which is
+// independent of the grounded-answer service and has been the production path
+// behind `ai_intent_router` for several weeks. If ops need to roll back
+// further than the intent router (e.g., if the AI layer itself breaks), the
+// foxy-tutor Edge Function can be re-invoked via the mobile/Flutter code path
+// until Phase 4 deletion lands.
 
-// Model preference order: try Haiku first (fast, cheap, confirmed working in
-// existing Edge Functions), then fall back to Sonnet if Haiku is unavailable.
-const CLAUDE_MODELS = [
-  'claude-haiku-4-5-20251001',   // fast, cheap — used by all other Edge Functions
-  'claude-sonnet-4-20250514',    // fallback — more capable but slower
-];
-
-async function callClaude(
-  systemPrompt: string,
-  history: ChatMessage[],
-  userMessage: string,
-  imageData?: { base64: string; mediaType: string } | null,
-): Promise<{ content: string; tokensUsed: number; model: string }> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error('ANTHROPIC_API_KEY not configured');
-
-  const keyPrefix = apiKey.slice(0, 12);
-
-  // Build the user message content — with optional image for Claude Vision
-  let userContent: any;
-  if (imageData?.base64) {
-    // Claude Vision: multi-modal message with image + text
-    userContent = [
-      {
-        type: 'image',
-        source: {
-          type: 'base64',
-          media_type: imageData.mediaType || 'image/jpeg',
-          data: imageData.base64,
-        },
-      },
-      {
-        type: 'text',
-        text: userMessage,
-      },
-    ];
-  } else {
-    userContent = userMessage;
-  }
-
-  const messages = [
-    ...history,
-    { role: 'user' as const, content: userContent },
-  ];
-
-  let lastError = 'Claude API unavailable';
-
-  for (const model of CLAUDE_MODELS) {
-    logger.info('foxy_claude_attempt', { keyPrefix, model });
-
-    // 30-second hard timeout per attempt
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 30_000);
-
-    try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        signal: controller.signal,
-        method: 'POST',
-        headers: {
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model,
-          max_tokens: 1024,
-          system: systemPrompt,
-          messages,
-        }),
-      });
-
-      clearTimeout(timer);
-
-      if (!res.ok) {
-        const errBody = await res.text().catch(() => '');
-        lastError = `Claude API error ${res.status} [${model}]: ${errBody.slice(0, 300)}`;
-        logger.error('foxy_claude_http_error', {
-          httpStatus: res.status,
-          errorBody: errBody.slice(0, 500),
-          keyPrefix,
-          model,
-        });
-
-        // Persist to audit_logs so admin can query via Supabase (non-fatal)
-        try {
-          await supabaseAdmin.from('audit_logs').insert({
-            auth_user_id: null,
-            action: 'foxy.diag.claude_error',
-            resource_type: 'diagnostic',
-            details: {
-              httpStatus: res.status,
-              errorBody: errBody.slice(0, 500),
-              keyPrefix,
-              model,
-            },
-          });
-        } catch { /* non-fatal */ }
-
-        // Auth errors (401/403) won't be fixed by trying a different model — stop immediately
-        if (res.status === 401 || res.status === 403) {
-          throw new Error(lastError);
-        }
-        // For 404 (model not found) or 529 (overloaded), try the next model
-        continue;
-      }
-
-      const data = await res.json();
-      const content = data?.content?.[0]?.text ?? '';
-      const tokensUsed = (data?.usage?.input_tokens ?? 0) + (data?.usage?.output_tokens ?? 0);
-      return { content, tokensUsed, model };
-
-    } catch (fetchErr) {
-      clearTimeout(timer);
-      if (fetchErr instanceof Error && fetchErr.name === 'AbortError') {
-        lastError = `Claude API timeout after 30s [${model}]`;
-        logger.error('foxy_claude_timeout', { model, keyPrefix });
-        continue; // try next model
-      }
-      // Re-throw network errors and intentional throws (e.g. 401/403)
-      throw fetchErr;
-    }
-  }
-
-  logger.error('foxy_claude_all_models_failed', {
-    modelsAttempted: CLAUDE_MODELS,
-    lastError,
+async function runLegacyFoxyFlow(params: {
+  studentId: string;
+  resolvedSessionId: string;
+  message: string;
+  subject: string;
+  grade: string;
+  chapter: string | null;
+  board: string;
+  mode: string;
+  academicGoal: string | null;
+  history: ChatMessage[];
+}): Promise<{
+  response: string;
+  sources: RagSource[];
+  diagrams: DiagramRef[];
+  tokensUsed: number;
+  model: string;
+  traceId: string;
+  intent: string;
+}> {
+  const classification = await classifyIntent(params.message, params.subject, params.grade, params.mode);
+  const result = await routeIntent(classification.intent, params.message, {
+    subject: params.subject,
+    grade: params.grade,
+    board: params.board,
+    chapter: params.chapter,
+    mode: params.mode,
+    history: params.history,
+    academicGoal: params.academicGoal,
+    studentId: params.studentId,
+    sessionId: params.resolvedSessionId,
   });
-  throw new Error(lastError);
-}
 
-// ─── Academic goal → prompt instruction mapping ──────────────────────────────
-const GOAL_PROMPT_MAP: Record<string, string> = {
-  board_topper: 'Board Topper (90%+). Teach with depth, cover edge cases, use HOTS-style questioning, and push for thorough understanding.',
-  school_topper: 'School Topper. Focus on strong conceptual clarity and application-based questions beyond rote learning.',
-  pass_comfortably: 'Pass Comfortably. Keep explanations simple and confidence-building. Focus on frequently-tested topics and basic numericals.',
-  competitive_exam: 'Competitive Exam Prep (JEE/NEET/Olympiad). Go beyond NCERT where relevant, include tricky problems and conceptual depth.',
-  olympiad: 'Olympiad Preparation. Challenge with advanced reasoning, logical puzzles, and problems that require creative thinking.',
-  improve_basics: 'Improve Basics. Be extra patient, use analogies and visuals, break complex topics into tiny steps, and reinforce fundamentals.',
-};
+  const sources: RagSource[] = result.sources.map((c) => ({
+    chunk_id: c.id,
+    subject: c.subject,
+    chapter: c.chapter,
+    page_number: c.pageNumber,
+    similarity: c.similarity,
+    content_preview: c.content.slice(0, 150),
+    media_url: c.mediaUrl || null,
+  }));
 
-// ─── Build system prompt ──────────────────────────────────────────────────────
+  const diagrams: DiagramRef[] = result.sources
+    .filter((c) => c.mediaUrl)
+    .map((c) => ({
+      url: c.mediaUrl!,
+      title: c.chapter || params.subject,
+      pageNumber: c.pageNumber,
+      description: c.mediaDescription || `NCERT ${params.subject} ${c.chapter || ''}`.trim(),
+    }));
 
-function buildSystemPrompt(
-  subject: string,
-  grade: string,
-  board: string,
-  chapter: string | null,
-  mode: string,
-  ragChunks: Array<{ content: string; chapter?: string; page_number?: number; media_url?: string | null; media_description?: string | null }>,
-  academicGoal?: string | null,
-  cognitiveCtx?: CognitiveContext | null,
-): string {
-  const contextSection =
-    ragChunks.length > 0
-      ? `\n\n## NCERT Reference Material\n${ragChunks
-          .map((c, i) => {
-            let entry = `[${i + 1}] ${c.chapter ? `Chapter: ${c.chapter}` : ''}${c.page_number ? ` (p.${c.page_number})` : ''}\n${c.content}`;
-            if (c.media_url) {
-              const desc = c.media_description || `NCERT ${c.chapter || subject}`;
-              entry += `\n[Diagram available: ${desc}${c.page_number ? ` - see attached figure from NCERT page ${c.page_number}` : ''}]`;
-            }
-            return entry;
-          })
-          .join('\n\n')}`
-      : '';
-
-  const cognitiveSection = cognitiveCtx
-    ? buildCognitivePromptSection(cognitiveCtx)
-    : '';
-
-  const modeInstruction: Record<string, string> = {
-    learn: 'Explain concepts clearly and build understanding step by step.',
-    explain: 'Give a detailed explanation with examples from everyday Indian life.',
-    practice: 'Ask follow-up questions to test understanding. If the student answers, evaluate and give feedback.',
-    revise: 'Provide a concise revision summary with key points and formulas.',
+  return {
+    response: result.response,
+    sources,
+    diagrams,
+    tokensUsed: result.tokensUsed,
+    model: result.model,
+    traceId: result.traceId,
+    intent: classification.intent,
   };
-
-  return `You are Foxy, a friendly AI tutor for Indian CBSE students. You are helping a Grade ${grade} student with ${subject}${chapter ? `, Chapter: ${chapter}` : ''} (Board: ${board}).
-
-## Your Persona
-- Warm, encouraging, and patient — like a knowledgeable elder sibling
-- Use simple English; occasionally mix in Hindi words (e.g., "Bilkul sahi!" = "Absolutely correct!")
-- Relate examples to Indian daily life, festivals, and familiar contexts
-- Never give the answer outright for practice questions — guide the student to think
-- Keep responses concise (3–5 sentences for explanations, numbered steps for processes)
-- If a question is off-topic or inappropriate, gently redirect to the subject
-
-## Mode: ${mode.toUpperCase()}
-${modeInstruction[mode] ?? modeInstruction.learn}
-
-## Important Rules
-- Only teach from CBSE ${board} Grade ${grade} ${subject} syllabus
-- If you cite information, it must come from the Reference Material below
-- Never invent facts, formulas, or historical dates
-- If the student seems frustrated, be extra encouraging
-
-## Formatting Rules
-- Use standard markdown: **bold** for key terms, *italic* for emphasis
-- Use LaTeX for math: inline $x^2$ and block $$\\frac{a}{b}$$
-- Use markdown tables for structured data (place values, comparisons, element properties)
-- Use numbered lists for steps and procedures
-- Use bullet lists for properties and features
-- Use > blockquote for NCERT textbook excerpts or important definitions
-- Use \`code\` for short formulas and \`\`\`code blocks\`\`\` for multi-line formulas/equations
-- Do NOT use ASCII art or Unicode block characters for diagrams
-- Keep responses concise and well-structured with clear headings
-${academicGoal ? `\n## Student's Academic Goal: ${GOAL_PROMPT_MAP[academicGoal] ?? academicGoal}\n` : ''}${cognitiveSection ? `\n${cognitiveSection}\n` : ''}${contextSection}`;
 }
 
 // ─── POST handler ─────────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest): Promise<Response> {
   // TOP-LEVEL SAFETY NET — no unhandled exception can crash Foxy.
-  // Individual sections have their own try-catches, but gaps between them
-  // previously caused invisible 500 errors ("Something went wrong").
-  // This catch-all ensures: (1) error is LOGGED, (2) student gets 503 not 500.
   try {
-  return await handleFoxyPost(request);
+    return await handleFoxyPost(request);
   } catch (topLevelErr) {
     const diagMsg = topLevelErr instanceof Error ? topLevelErr.message : String(topLevelErr);
     console.error('[FOXY CRITICAL] Unhandled exception in POST handler:', diagMsg);
-    // Log to ops_events so it's visible in the Observability Console
     try {
       const { logOpsEvent } = await import('@/lib/ops-events');
       await logOpsEvent({
@@ -811,13 +640,19 @@ export async function POST(request: NextRequest): Promise<Response> {
 
 async function handleFoxyPost(request: NextRequest): Promise<Response> {
   // 0. Config validation — fail fast with clear diagnostic
-  if (!process.env.ANTHROPIC_API_KEY) {
-    logger.error('foxy_config_missing', { variable: 'ANTHROPIC_API_KEY' });
+  // ANTHROPIC_API_KEY lives on the Edge Function side now, but the service-role
+  // key MUST be set for callGroundedAnswer() to auth against the Edge Function.
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.NEXT_PUBLIC_SUPABASE_URL) {
+    logger.error('foxy_config_missing', {
+      variable: !process.env.SUPABASE_SERVICE_ROLE_KEY
+        ? 'SUPABASE_SERVICE_ROLE_KEY'
+        : 'NEXT_PUBLIC_SUPABASE_URL',
+    });
     return errorJson(
       'Foxy is not configured. Please contact support.',
       'Foxy configure nahi hai. Support se sampark karein.',
       503,
-      { _diag: 'ANTHROPIC_API_KEY is not set in environment' },
+      { _diag: 'Supabase env vars not set' },
     );
   }
 
@@ -843,11 +678,6 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   const sessionId = typeof body.sessionId === 'string' ? body.sessionId.trim() || null : null;
   const mode = typeof body.mode === 'string' && VALID_MODES.includes(body.mode) ? body.mode : 'learn';
 
-  // Claude Vision: optional image for handwriting recognition
-  const imageBase64 = typeof body.image_base64 === 'string' ? body.image_base64 : null;
-  const imageMediaType = typeof body.image_media_type === 'string' ? body.image_media_type : 'image/jpeg';
-  const imageData = imageBase64 ? { base64: imageBase64, mediaType: imageMediaType } : null;
-
   // 3. Validate inputs
   if (!message) {
     return errorJson('Message is required.', 'Message likhna zaroori hai.', 400);
@@ -869,9 +699,6 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   // 4. Resolve student ID and plan
   const studentId = auth.studentId!;
 
-  // Subject governance: reject before any subject-keyed retrieval / context load.
-  // Soft-fail: if governance RPCs are unavailable (migrations not applied), proceed
-  // without gating. Governance rejections ({ ok: false }) still block correctly.
   try {
     const subjectValidation = await validateSubjectWrite(studentId, subject, {
       supabase: supabaseAdmin,
@@ -938,79 +765,75 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     );
   }
 
-  // 6b. Intent Router (feature-flagged)
-  // When enabled, classifies the student's intent and routes through the
-  // unified AI layer (src/lib/ai/) for structured workflows, output validation,
-  // and tracing. Falls back to the existing inline flow on any error.
-  const useIntentRouter = await isFeatureEnabled('ai_intent_router', {
+  // 7. Load cognitive context + history (parallel, non-fatal on failure)
+  let cognitiveCtx: CognitiveContext = EMPTY_COGNITIVE_CONTEXT;
+  let history: ChatMessage[] = [];
+  try {
+    const [ctx, hist] = await Promise.all([
+      loadCognitiveContext(studentId, subject, grade),
+      loadHistory(resolvedSessionId),
+    ]);
+    cognitiveCtx = ctx;
+    history = hist;
+  } catch (ctxErr) {
+    logger.warn('foxy_context_load_failed', {
+      error: ctxErr instanceof Error ? ctxErr.message : String(ctxErr),
+      studentId,
+    });
+  }
+
+  // 8. Feature-flag gated: use grounded-answer service OR legacy inline flow.
+  // `ff_grounded_ai_foxy` is the Phase 3 kill switch. When OFF we fall back to
+  // the existing intent-router (src/lib/ai/workflows/*) which has been the
+  // production path behind `ai_intent_router` and is independent of the new
+  // Edge Function.
+  const useGroundedService = await isFeatureEnabled('ff_grounded_ai_foxy', {
     role: 'student',
     userId: auth.userId!,
   });
 
-  if (useIntentRouter) {
+  if (!useGroundedService) {
+    // ─── Legacy flow (kill-switch path) ────────────────────────────────────
     try {
-      const history = await loadHistory(resolvedSessionId);
-
-      const classification = await classifyIntent(message, subject, grade, mode);
-      logger.info('foxy_intent_classified', {
-        intent: classification.intent,
-        confidence: classification.confidence,
+      const legacy = await runLegacyFoxyFlow({
         studentId,
-      });
-
-      const result = await routeIntent(classification.intent, message, {
+        resolvedSessionId,
+        message,
         subject,
         grade,
-        board,
         chapter,
+        board,
         mode,
-        history,
         academicGoal,
-        studentId,
-        sessionId: resolvedSessionId,
+        history,
       });
 
-      // Persist conversation turns
+      // Persist turns (non-fatal)
       const now = new Date().toISOString();
-      const sources = result.sources.map((c) => ({
-        chunk_id: c.id,
-        subject: c.subject,
-        chapter: c.chapter,
-        page_number: c.pageNumber,
-        similarity: c.similarity,
-        content_preview: c.content.slice(0, 150),
-        media_url: c.mediaUrl || null,
-      }));
-
-      const routerDiagrams: DiagramRef[] = result.sources
-        .filter((c) => c.mediaUrl)
-        .map((c) => ({
-          url: c.mediaUrl!,
-          title: c.chapter || subject,
-          pageNumber: c.pageNumber,
-          description: c.mediaDescription || `NCERT ${subject} ${c.chapter || ''}`.trim(),
-        }));
-
-      await supabaseAdmin.from('foxy_chat_messages').insert([
-        {
-          session_id: resolvedSessionId,
-          student_id: studentId,
-          role: 'user',
-          content: message,
-          sources: null,
-          tokens_used: null,
-          created_at: now,
-        },
-        {
-          session_id: resolvedSessionId,
-          student_id: studentId,
-          role: 'assistant',
-          content: result.response,
-          sources: sources.length > 0 ? sources : null,
-          tokens_used: result.tokensUsed,
-          created_at: new Date(Date.now() + 1).toISOString(),
-        },
-      ]);
+      try {
+        await supabaseAdmin.from('foxy_chat_messages').insert([
+          {
+            session_id: resolvedSessionId,
+            student_id: studentId,
+            role: 'user',
+            content: message,
+            sources: null,
+            tokens_used: null,
+            created_at: now,
+          },
+          {
+            session_id: resolvedSessionId,
+            student_id: studentId,
+            role: 'assistant',
+            content: legacy.response,
+            sources: legacy.sources.length > 0 ? legacy.sources : null,
+            tokens_used: legacy.tokensUsed,
+            created_at: new Date(Date.now() + 1).toISOString(),
+          },
+        ]);
+      } catch (saveErr) {
+        console.warn('[foxy] legacy message save failed:', saveErr instanceof Error ? saveErr.message : String(saveErr));
+      }
 
       logAudit(auth.userId!, {
         action: 'foxy.chat',
@@ -1018,208 +841,160 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         resourceId: resolvedSessionId,
         details: {
           subject, grade, chapter, mode,
-          intent: classification.intent,
-          confidence: classification.confidence,
-          tokensUsed: result.tokensUsed,
-          model: result.model,
-          traceId: result.traceId,
-          ragChunksFound: result.sources.length,
-          router: true,
+          intent: legacy.intent,
+          tokensUsed: legacy.tokensUsed,
+          model: legacy.model,
+          traceId: legacy.traceId,
+          ragChunksFound: legacy.sources.length,
+          flow: 'legacy-intent-router',
         },
       });
 
       return NextResponse.json({
         success: true,
-        response: result.response,
-        sources: sources,
-        diagrams: routerDiagrams,
+        response: legacy.response,
+        sources: legacy.sources,
+        diagrams: legacy.diagrams,
         sessionId: resolvedSessionId,
         quotaRemaining: remaining,
-        tokensUsed: result.tokensUsed,
-        intent: classification.intent,
+        tokensUsed: legacy.tokensUsed,
+        groundingStatus: 'grounded' as const,
+        traceId: legacy.traceId,
       });
-    } catch (routerErr) {
-      // Intent router failed — fall through to existing inline flow
-      logger.warn('foxy_intent_router_fallback', {
-        error: routerErr instanceof Error ? routerErr.message : String(routerErr),
+    } catch (legacyErr) {
+      logger.error('foxy_legacy_flow_failed', {
+        error: legacyErr instanceof Error ? legacyErr : new Error(String(legacyErr)),
         studentId,
       });
+      // Refund quota — student didn't get a usable answer.
+      await refundQuota(studentId, 'foxy_chat');
+      return errorJson(
+        'Foxy is temporarily unavailable. Please try again in a moment.',
+        'Foxy abhi available nahi hai. Thodi der mein dobara try karein.',
+        503,
+      );
     }
   }
 
-  // ─── Existing inline flow (default, or fallback from intent router) ────────
+  // ─── Grounded-answer service path (default) ──────────────────────────────
+  const chapterNum: number | null =
+    chapter && /^\d+$/.test(chapter) ? parseInt(chapter, 10) : null;
+  const chapterTitle: string | null =
+    chapter && chapterNum === null ? chapter : null;
 
-  // 7. Load cognitive context + generate embedding in parallel
-  // Timeouts are plan-aware: paying students get longer timeouts + automatic retry
-  const voyageTimeout = VOYAGE_TIMEOUT[plan] ?? DEFAULT_VOYAGE_TIMEOUT;
-  const embeddingQuery = `${subject} grade ${grade}${chapter ? ` chapter ${chapter}` : ''}: ${message}`;
-  let embedding: number[] | null = null;
-  let cognitiveCtx: CognitiveContext = EMPTY_COGNITIVE_CONTEXT;
-  try {
-    const [emb, ctx] = await Promise.all([
-      generateEmbedding(embeddingQuery, voyageTimeout),
-      loadCognitiveContext(studentId, subject, grade),
-    ]);
-    embedding = emb;
-    cognitiveCtx = ctx;
-  } catch (embErr) {
-    logger.warn('foxy_embedding_or_cognitive_failed', {
-      error: embErr instanceof Error ? embErr.message : String(embErr),
-      studentId, subject, grade, plan, voyageTimeout,
-    });
-    // Non-fatal: RAG falls back to text search, cognitive context empty
-  }
-
-  // 8. RAG retrieval via match_rag_chunks RPC
-  let ragChunks: Array<{
-    id: string;
-    content: string;
-    subject: string;
-    chapter?: string;
-    page_number?: number;
-    similarity: number;
-    media_url?: string | null;
-    media_description?: string | null;
-  }> = [];
-
-  try {
-    // NCERT-pinned RPC: hardcoded source='ncert_2025' so non-NCERT chunks
-    // can never reach the student. subject is the snake_case code from
-    // get_available_subjects (matches rag_content_chunks.subject_code 1:1).
-    // p_chapter is split into number-vs-title for the new RPC contract.
-    const chapterArg: string | null = chapter ?? null;
-    const chapterNum: number | null =
-      chapterArg && /^\d+$/.test(chapterArg) ? parseInt(chapterArg, 10) : null;
-    const chapterTitle: string | null =
-      chapterArg && chapterNum === null ? chapterArg : null;
-    void board; // board is no longer relevant — NCERT only
-
-    const { data: chunks, error: ragError } = await supabaseAdmin.rpc('match_rag_chunks_ncert', {
-      query_text:        embeddingQuery,
-      p_subject_code:    subject,
-      p_grade:           grade,
-      match_count:       RAG_MATCH_COUNT,
-      p_chapter_number:  chapterNum,
-      p_chapter_title:   chapterTitle,
-      p_min_quality:     RAG_MIN_QUALITY,
-      query_embedding:   embedding,
-    });
-
-    if (ragError) {
-      logger.warn('foxy_rag_retrieval_failed', {
-        error: ragError.message,
-        subject,
+  const groundedRequest: GroundedRequest = {
+    caller: 'foxy',
+    student_id: studentId,
+    query: message,
+    scope: {
+      board: 'CBSE',
+      grade,
+      subject_code: subject,
+      chapter_number: chapterNum,
+      chapter_title: chapterTitle,
+    },
+    mode: 'soft',
+    generation: {
+      model_preference: 'auto',
+      max_tokens: 1024,
+      temperature: 0.3,
+      system_prompt_template: 'foxy_tutor_v1',
+      template_variables: {
         grade,
-        chapter,
-      });
-    } else if (chunks) {
-      // Normalize new-RPC field names → existing consumer shape.
-      // Old RPC returned `chapter` (text); new returns `chapter_title` + `chapter_number`.
-      ragChunks = (chunks as Array<Record<string, unknown>>).map((c) => ({
-        id: String(c.id ?? ''),
-        content: String(c.content ?? ''),
-        subject: subject,
-        chapter:
-          c.chapter_title != null
-            ? String(c.chapter_title)
-            : c.chapter_number != null
-              ? `Chapter ${c.chapter_number}`
-              : undefined,
-        page_number: typeof c.page_number === 'number' ? c.page_number : undefined,
-        similarity: typeof c.similarity === 'number' ? c.similarity : 0,
-      }));
+        subject,
+        chapter: chapter ?? '',
+        mode,
+        academic_goal_section: buildAcademicGoalSection(academicGoal),
+        cognitive_context_section: buildCognitivePromptSection(cognitiveCtx),
+        history_messages: JSON.stringify(history),
+        board,
+      },
+    },
+    retrieval: { match_count: RAG_MATCH_COUNT },
+    timeout_ms: PER_PLAN_TIMEOUT_MS[plan] ?? 20000,
+  };
+
+  // Hop timeout = service timeout + 2s buffer so we let the service return its
+  // own abstain payload rather than giving up at the transport layer.
+  const hopTimeoutMs = (PER_PLAN_TIMEOUT_MS[plan] ?? 20000) + 2000;
+  const grounded = await callGroundedAnswer(groundedRequest, { hopTimeoutMs });
+
+  // ─── Handle abstain ──────────────────────────────────────────────────────
+  if (!grounded.grounded) {
+    if (REFUND_ABSTAIN_REASONS.includes(grounded.abstain_reason)) {
+      await refundQuota(studentId, 'foxy_chat');
     }
-  } catch (ragErr) {
-    logger.warn('foxy_rag_rpc_exception', {
-      error: ragErr instanceof Error ? ragErr.message : String(ragErr),
-    });
-    // Non-fatal: proceed with no context
-  }
 
-  // 9. Load conversation history for multi-turn context (non-fatal)
-  let history: ChatMessage[] = [];
-  try {
-    history = await loadHistory(resolvedSessionId);
-  } catch (histErr) {
-    console.warn('[foxy] history load failed:', histErr instanceof Error ? histErr.message : String(histErr));
-  }
-
-  // 10. Build system prompt with RAG context + cognitive context
-  const systemPrompt = buildSystemPrompt(
-    subject, grade, board, chapter, mode, ragChunks, academicGoal, cognitiveCtx,
-  );
-
-  // 11. Call Claude
-  let assistantResponse: string;
-  let tokensUsed = 0;
-  try {
-    const result = await callClaude(systemPrompt, history, message, imageData);
-    assistantResponse = result.content;
-    tokensUsed = result.tokensUsed;
-    logger.info('foxy_claude_ok', {
-      model: result.model,
-      tokensUsed,
-      cognitiveContextLoaded: cognitiveCtx.weakTopics.length > 0 || cognitiveCtx.nextAction !== null,
-      masteryLevel: cognitiveCtx.masteryLevel,
-    });
-  } catch (claudeErr) {
-    logger.error('foxy_claude_api_failed', {
-      error: claudeErr instanceof Error ? claudeErr : new Error(String(claudeErr)),
+    logger.info('foxy_grounded_abstain', {
       studentId,
       subject,
       grade,
+      chapter,
+      abstainReason: grounded.abstain_reason,
+      traceId: grounded.trace_id,
+      latencyMs: grounded.meta.latency_ms,
     });
-    // Decrement quota since we couldn't serve the response — best-effort
-    try {
-      const today = new Date().toISOString().split('T')[0];
-      const { data: row } = await supabaseAdmin
-        .from('student_daily_usage')
-        .select('usage_count')
-        .eq('student_id', studentId)
-        .eq('feature', 'foxy_chat')
-        .eq('usage_date', today)
-        .single();
-      if (row && typeof row.usage_count === 'number' && row.usage_count > 0) {
-        await supabaseAdmin
-          .from('student_daily_usage')
-          .update({ usage_count: row.usage_count - 1, updated_at: new Date().toISOString() })
-          .eq('student_id', studentId)
-          .eq('feature', 'foxy_chat')
-          .eq('usage_date', today);
-      }
-    } catch { /* Non-fatal */ }
-    // TEMPORARY DIAGNOSTIC: expose exact error so admin can identify root cause
-    const diagMsg = claudeErr instanceof Error ? claudeErr.message : String(claudeErr);
-    return errorJson(
-      'Foxy is temporarily unavailable. Please try again in a moment.',
-      'Foxy abhi available nahi hai. Thodi der mein dobara try karein.',
-      503,
-      { _diag: diagMsg.slice(0, 300) },
-    );
+
+    logAudit(auth.userId!, {
+      action: 'foxy.chat.abstain',
+      resourceType: 'foxy_sessions',
+      resourceId: resolvedSessionId,
+      details: {
+        subject, grade, chapter, mode,
+        abstainReason: grounded.abstain_reason,
+        traceId: grounded.trace_id,
+      },
+    });
+
+    const suggestedAlternatives: SuggestedAlternative[] = grounded.suggested_alternatives;
+
+    // Compute a fresh quotaRemaining (if we refunded, the student gets the
+    // message back; otherwise the existing `remaining` value is still correct
+    // since check_and_record_usage returned post-increment count).
+    const effectiveRemaining = REFUND_ABSTAIN_REASONS.includes(grounded.abstain_reason)
+      ? remaining + 1
+      : remaining;
+
+    return NextResponse.json({
+      success: true,
+      response: '',
+      sources: [] as RagSource[],
+      diagrams: [] as DiagramRef[],
+      sessionId: resolvedSessionId,
+      quotaRemaining: effectiveRemaining,
+      tokensUsed: 0,
+      groundingStatus: 'hard-abstain' as const,
+      abstainReason: grounded.abstain_reason,
+      suggestedAlternatives,
+      traceId: grounded.trace_id,
+    });
   }
 
-  // 12. Build sources and diagrams arrays
-  const now = new Date().toISOString();
-  const sources: RagSource[] = ragChunks.map((c) => ({
-    chunk_id: c.id,
-    subject: c.subject,
-    chapter: c.chapter,
-    page_number: c.page_number,
+  // ─── Grounded response — normalize + persist ─────────────────────────────
+  const isUnverified = grounded.confidence < SOFT_CONFIDENCE_BANNER_THRESHOLD;
+
+  // Convert Citation[] → RagSource[] for backward-compat with existing clients.
+  const sources: RagSource[] = grounded.citations.map((c: Citation) => ({
+    chunk_id: c.chunk_id,
+    subject,
+    chapter: c.chapter_title || (c.chapter_number ? `Chapter ${c.chapter_number}` : undefined),
+    page_number: c.page_number ?? undefined,
     similarity: c.similarity,
-    content_preview: c.content.slice(0, 150),
-    media_url: c.media_url || null,
+    content_preview: c.excerpt.slice(0, 150),
+    media_url: c.media_url,
   }));
 
-  const diagrams: DiagramRef[] = ragChunks
-    .filter((c) => c.media_url)
-    .map((c) => ({
+  const diagrams: DiagramRef[] = grounded.citations
+    .filter((c: Citation) => c.media_url)
+    .map((c: Citation) => ({
       url: c.media_url!,
-      title: c.chapter || subject,
-      pageNumber: c.page_number,
-      description: c.media_description || `NCERT ${subject} ${c.chapter || ''}`.trim(),
+      title: c.chapter_title || subject,
+      pageNumber: c.page_number ?? undefined,
+      description: `NCERT ${subject} ${c.chapter_title || ''}`.trim(),
     }));
 
-  // 12b. Persist both turns to foxy_chat_messages (non-fatal — response already generated)
+  // Persist both turns (non-fatal — response already generated)
+  const now = new Date().toISOString();
   try {
     await supabaseAdmin.from('foxy_chat_messages').insert([
       {
@@ -1235,18 +1010,17 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         session_id: resolvedSessionId,
         student_id: studentId,
         role: 'assistant',
-        content: assistantResponse,
+        content: grounded.answer,
         sources: sources.length > 0 ? sources : null,
-        tokens_used: tokensUsed,
-        created_at: new Date(Date.now() + 1).toISOString(), // ensure ordering
+        tokens_used: grounded.meta.tokens_used,
+        created_at: new Date(Date.now() + 1).toISOString(),
       },
     ]);
   } catch (saveErr) {
-    // Message save failure must NOT crash the route — the response is already ready
     console.warn('[foxy] message save failed:', saveErr instanceof Error ? saveErr.message : String(saveErr));
   }
 
-  // 13. Post-response cognitive logging (fire-and-forget — non-blocking)
+  // Post-response cognitive logging (fire-and-forget)
   if (cognitiveCtx.nextAction) {
     Promise.resolve(
       supabaseAdmin
@@ -1254,17 +1028,16 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         .insert({
           student_id: studentId,
           action_type: cognitiveCtx.nextAction.actionType,
-          concept_id: null, // concept_id is UUID; conceptName may be a title string
+          concept_id: null,
           reason: cognitiveCtx.nextAction.reason,
           was_followed: true,
           outcome: 'foxy_responded',
         }),
     ).catch((err: unknown) => {
       console.warn('[foxy] cognitive action log failed:', err instanceof Error ? err.message : String(err));
-    }); // fire-and-forget
+    });
   }
 
-  // Update foxy_sessions with cognitive tracking metadata
   Promise.resolve(
     supabaseAdmin
       .from('foxy_sessions')
@@ -1275,26 +1048,30 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
       .eq('id', resolvedSessionId),
   ).catch((err: unknown) => {
     console.warn('[foxy] session cognitive update failed:', err instanceof Error ? err.message : String(err));
-  }); // fire-and-forget
+  });
 
-  // 14. Audit log
   logAudit(auth.userId!, {
     action: 'foxy.chat',
     resourceType: 'foxy_sessions',
     resourceId: resolvedSessionId,
     details: {
-      subject, grade, chapter, mode, tokensUsed,
-      ragChunksFound: ragChunks.length,
+      subject, grade, chapter, mode,
+      tokensUsed: grounded.meta.tokens_used,
+      model: grounded.meta.claude_model,
+      traceId: grounded.trace_id,
+      confidence: grounded.confidence,
+      ragChunksFound: grounded.citations.length,
       cognitiveContextLoaded: true,
       masteryLevel: cognitiveCtx.masteryLevel,
       weakTopicCount: cognitiveCtx.weakTopics.length,
       knowledgeGapCount: cognitiveCtx.knowledgeGaps.length,
       revisionDueCount: cognitiveCtx.revisionDue.length,
       cmeAction: cognitiveCtx.nextAction?.actionType ?? null,
+      flow: 'grounded-answer',
     },
   });
 
-  // 15. Build soft upgrade prompt if quota near exhaustion
+  // Build soft upgrade prompt if quota near exhaustion
   const limit = DAILY_QUOTA[plan] ?? DEFAULT_QUOTA;
   const upgradeConfig = UPGRADE_PROMPTS[plan];
   let upgradePrompt: { message: string; messageHi: string; nextPlan: string; remaining: number } | null = null;
@@ -1307,15 +1084,17 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     };
   }
 
-  // 16. Return response
   return NextResponse.json({
     success: true,
-    response: assistantResponse,
+    response: grounded.answer,
     sources,
     diagrams,
     sessionId: resolvedSessionId,
     quotaRemaining: remaining,
-    tokensUsed,
+    tokensUsed: grounded.meta.tokens_used,
+    confidence: grounded.confidence,
+    groundingStatus: isUnverified ? ('unverified' as const) : ('grounded' as const),
+    traceId: grounded.trace_id,
     ...(upgradePrompt ? { upgradePrompt } : {}),
   });
 }
@@ -1337,7 +1116,6 @@ export async function GET(request: NextRequest): Promise<Response> {
 
   const studentId = auth.studentId!;
 
-  // Verify session belongs to this student
   const { data: session } = await supabaseAdmin
     .from('foxy_sessions')
     .select('id, subject, grade, chapter, mode, created_at')
