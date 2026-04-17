@@ -134,38 +134,63 @@ describe('F5: auth callback role-aware redirect', () => {
 });
 
 // ─── Source-level structural assertions ──────────────────────
+//
+// History: the default (non-signup) path previously called the get_user_role
+// RPC and routed teachers/parents/admins to their role-specific dashboards.
+// That was disabled (see route.ts lines 264-275) because it caused an auth
+// cookie propagation issue for non-student roles. Default-path role routing
+// now lives in AuthContext + per-page client redirects. These source
+// assertions verify the CURRENT contract, not the historical one.
 
 describe('F5: auth/callback/route.ts source structure', () => {
-  it('calls get_user_role RPC when next is not provided', async () => {
+  it('imports role-destination helper and redirect validator from identity module', async () => {
     const fs = await import('fs');
     const path = await import('path');
     const file = fs.readFileSync(
       path.resolve(process.cwd(), 'src/app/auth/callback/route.ts'),
       'utf-8'
     );
-    expect(file).toContain("'get_user_role'");
-    expect(file).toContain('nextParam === null');
+    expect(file).toContain('getRoleDestination');
+    expect(file).toContain('validateRedirectTarget');
+    expect(file).toContain("from '@/lib/identity'");
   });
 
-  it('falls back to /dashboard on RPC failure (P15: Onboarding Integrity)', async () => {
+  it('falls back to /dashboard on auth failure or missing next (P15: Onboarding Integrity)', async () => {
     const fs = await import('fs');
     const path = await import('path');
     const file = fs.readFileSync(
       path.resolve(process.cwd(), 'src/app/auth/callback/route.ts'),
       'utf-8'
     );
-    // The file must document AND implement the dashboard fallback.
-    expect(file).toContain('/dashboard');
-    expect(file).toMatch(/Role lookup failed/);
+    // The file must document AND implement the dashboard fallback:
+    // - validateRedirectTarget is called with '/dashboard' as the safe default
+    // - nextParam defaults to '/dashboard' when the query param is absent
+    expect(file).toContain("validateRedirectTarget(next, '/dashboard')");
+    expect(file).toContain("nextParam ?? '/dashboard'");
   });
 
-  it('uses getRoleDestination to map role → path (no hardcoded /parent, /teacher strings in redirect logic)', async () => {
+  it('uses getRoleDestination on the signup path (role-aware destination after email confirmation)', async () => {
     const fs = await import('fs');
     const path = await import('path');
     const file = fs.readFileSync(
       path.resolve(process.cwd(), 'src/app/auth/callback/route.ts'),
       'utf-8'
     );
-    expect(file).toContain('getRoleDestination(primary)');
+    // After signup email confirmation, role is determined from bootstrap
+    // result and routed via getRoleDestination(redirectRole). This is the
+    // ONLY place the auth callback maps role → path; default-path role
+    // routing now lives in client-side AuthContext.
+    expect(file).toContain('getRoleDestination(redirectRole)');
+  });
+
+  it('validates the next= parameter against open-redirect attacks', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const file = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/app/auth/callback/route.ts'),
+      'utf-8'
+    );
+    // Open-redirect guard: validateRedirectTarget must be used, not raw `next`.
+    expect(file).toMatch(/validateRedirectTarget\s*\(\s*next\s*,/);
   });
 });
