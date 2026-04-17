@@ -6,12 +6,26 @@
 // circuit breaker) live in sibling files and are wired in by later tasks.
 //
 // Contract: spec §6.1 request/response shape.
-// Current state (Task 2.1): validates request → returns 400 on bad input
-// or 501 "not_implemented_yet" on valid input. Pipeline stages come next.
+// Current state (Task 2.2): validates request → runs coverage precheck.
+// If the chapter is not ready, returns abstain(chapter_not_ready) with up
+// to 3 suggested alternatives. Valid+covered requests fall through to 501
+// until Task 2.3+ wire in Voyage/Claude.
 
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { validateRequest } from './validators.ts';
+import { checkCoverage } from './coverage.ts';
+import { buildAbstainResponse } from './abstain.ts';
+
+// Service-role client: this function runs server-side only and needs to
+// read cbse_syllabus regardless of the calling user's RLS context.
+const sb = createClient(
+  Deno.env.get('SUPABASE_URL')!,
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+);
 
 Deno.serve(async (req) => {
+  const started = Date.now();
+
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 });
   }
@@ -28,14 +42,33 @@ Deno.serve(async (req) => {
     return jsonResponse(400, { error: `invalid_request:${error!.field}` });
   }
 
+  // Phase 2.2 — coverage precheck. Short-circuits before Voyage/Claude.
+  const coverage = await checkCoverage(sb, {
+    grade: request.scope.grade,
+    subject_code: request.scope.subject_code,
+    chapter_number: request.scope.chapter_number,
+  });
+
+  if (!coverage.ready) {
+    // trace_id placeholder — Task 2.8 replaces with real trace write.
+    return jsonResponse(
+      200,
+      buildAbstainResponse(
+        coverage.abstain_reason!,
+        coverage.alternatives,
+        'pending',
+        started,
+      ),
+    );
+  }
+
   // TODO (subsequent tasks): dispatch to pipeline
-  //   - Task 2.2: coverage precheck
   //   - Task 2.3: Voyage embedding
   //   - Task 2.4: retrieval + scope verification
   //   - Task 2.5: Claude call with model fallback
   //   - Task 2.6: grounding check (strict mode)
   //   - Task 2.7: confidence + citations
-  //   - Task 2.8: trace write
+  //   - Task 2.8: trace write (replaces 'pending')
   //   - Task 2.9: circuit breaker
   //   - Task 2.10: timeout budget + cache
   //   - Task 2.11: retrieve_only mode
