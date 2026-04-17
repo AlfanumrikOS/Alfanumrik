@@ -152,6 +152,17 @@ export interface QuizResponse {
   selected_option: string | number;
   is_correct: boolean;
   time_spent?: number;
+  /**
+   * P1 shuffle/index mismatch fix (migration 20260418110000).
+   * The 4-integer permutation used to render MCQ options on this question,
+   * or `null` when no shuffle was applied (mobile, diagnostic, mock-exam,
+   * pyq, learn surfaces). The `submit_quiz_results` RPC uses this to
+   * translate `selected_option` (shuffled display index) back to the
+   * original pre-shuffle index before comparing with
+   * `question_bank.correct_answer_index`.
+   * Optional — omitted payloads are treated as null server-side.
+   */
+  shuffle_map?: number[] | null;
 }
 
 /* ── Mastery ── */
