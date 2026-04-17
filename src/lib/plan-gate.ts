@@ -125,7 +125,7 @@ export async function getOverride(
 
   if (error) {
     logger.error('plan_gate_override_query_failed', {
-      error: error instanceof Error ? error : new Error(String(error)),
+      error: error instanceof Error ? error : new Error(String((error as { message?: string })?.message ?? error)),
       route: 'plan-gate',
       plan,
       permissionCode,
