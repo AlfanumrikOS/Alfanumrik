@@ -45,14 +45,13 @@ async function rejectIfInvalidScope(
     p_chapter_number: chapter,
   });
   if (error) {
-    logger.error('validate_academic_scope_rpc_failed', {
-      error: new Error(error.message),
+    // Soft-fail: governance RPC unavailable, allow request through
+    logger.warn('validate_academic_scope_unavailable', {
+      rpcError: error.message,
       studentId, grade, subject, chapter,
+      note: 'Proceeding without scope validation — governance migrations may not be applied',
     });
-    return NextResponse.json(
-      { error: 'scope_validation_failed', message: error.message },
-      { status: 500 },
-    );
+    return null; // Allow through
   }
   const v = (data ?? {}) as { ok?: boolean; reason?: string; [k: string]: unknown };
   if (v.ok === true) return null;
@@ -228,11 +227,19 @@ export async function GET(request: NextRequest) {
 
     const { studentId } = studentResult;
 
-    // 4b. Subject governance
-    const subjectValidation = await validateSubjectWrite(studentId, subject, {
-      supabase: supabaseAdmin,
-    });
-    if (!subjectValidation.ok) return subjectNotAllowedResponse(subjectValidation.error);
+    // 4b. Subject governance (soft-fail when RPCs unavailable)
+    try {
+      const subjectValidation = await validateSubjectWrite(studentId, subject, {
+        supabase: supabaseAdmin,
+      });
+      if (!subjectValidation.ok) return subjectNotAllowedResponse(subjectValidation.error);
+    } catch (govErr) {
+      logger.warn('quiz_subject_governance_unavailable', {
+        error: govErr instanceof Error ? govErr.message : String(govErr),
+        subject, studentId, handler: 'GET',
+        note: 'Proceeding without subject governance — migrations may not be applied',
+      });
+    }
 
     // 4c. Academic-scope validation — for actions that take a chapter, also
     //     verify the chapter belongs to the (subject, grade) triple. The
@@ -359,11 +366,19 @@ export async function POST(request: NextRequest) {
 
     const { studentId } = studentResult;
 
-    // 6b. Subject governance
-    const subjectValidation = await validateSubjectWrite(studentId, subject, {
-      supabase: supabaseAdmin,
-    });
-    if (!subjectValidation.ok) return subjectNotAllowedResponse(subjectValidation.error);
+    // 6b. Subject governance (soft-fail when RPCs unavailable)
+    try {
+      const subjectValidation = await validateSubjectWrite(studentId, subject, {
+        supabase: supabaseAdmin,
+      });
+      if (!subjectValidation.ok) return subjectNotAllowedResponse(subjectValidation.error);
+    } catch (govErr) {
+      logger.warn('quiz_subject_governance_unavailable', {
+        error: govErr instanceof Error ? govErr.message : String(govErr),
+        subject, studentId, handler: 'POST',
+        note: 'Proceeding without subject governance — migrations may not be applied',
+      });
+    }
 
     // 6c. Academic-scope validation per chapter (if chapters provided)
     //     The exam-generation contract: every chapter must belong to (subject, grade).

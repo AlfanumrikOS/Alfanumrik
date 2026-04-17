@@ -870,7 +870,9 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   const studentId = auth.studentId!;
 
   // Subject governance: reject before any subject-keyed retrieval / context load.
-  {
+  // Soft-fail: if governance RPCs are unavailable (migrations not applied), proceed
+  // without gating. Governance rejections ({ ok: false }) still block correctly.
+  try {
     const subjectValidation = await validateSubjectWrite(studentId, subject, {
       supabase: supabaseAdmin,
     });
@@ -885,6 +887,13 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         { status: 422 },
       );
     }
+  } catch (govErr) {
+    logger.warn('foxy_subject_governance_unavailable', {
+      error: govErr instanceof Error ? govErr.message : String(govErr),
+      subject,
+      studentId,
+      note: 'Proceeding without subject governance — migrations may not be applied',
+    });
   }
 
   let plan = 'free';
