@@ -35,6 +35,11 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
+import {
+  callGroundedAnswer,
+  isFeatureFlagEnabled,
+  type GroundedRequest,
+} from '../_shared/grounded-client.ts'
 
 // ─── Environment ──────────────────────────────────────────────────────────────
 const ANTHROPIC_API_KEY   = Deno.env.get('ANTHROPIC_API_KEY')   || ''
@@ -334,6 +339,326 @@ function extractJsonArray(text: string): unknown[] | null {
   }
 }
 
+// ─── Two-pass grounded generation + verification (Phase 3) ───────────────────
+//
+// When ff_grounded_ai_quiz_generator is ON, bulk-question-gen routes through
+// the grounded-answer Edge Function for BOTH the draft question AND the
+// verification pass. The verifier's job is to confirm that the draft
+// question's claimed correct answer is supported by the NCERT chunks the
+// generator cited. See spec §7.2.
+//
+// Contract with the verifier template (quiz_answer_verifier_v1):
+//   query: JSON representation of { question_text, options, correct_answer_index }
+//   → JSON response: { verified, reason, correct_option_index, supporting_chunk_ids }
+//
+// verification_state mapping:
+//   verified=true  AND correct_option_index === draft.correct_answer_index → 'verified'
+//   everything else (disagreement, parse error, abstain)                    → 'failed'
+//
+// Failed rows stay in question_bank with verified_against_ncert=false so
+// admin review can intervene; they are NOT served to students because
+// idx_question_bank_verified filters on verified_against_ncert=true.
+
+interface DraftQuestionFromService {
+  question_text: string
+  options: string[]
+  correct_answer_index: number
+  explanation: string
+  difficulty?: string | number
+  bloom_level?: string
+  supporting_chunk_ids?: string[]
+}
+
+interface VerifierResponse {
+  verified: boolean
+  reason: string
+  correct_option_index: number | null
+  supporting_chunk_ids: string[]
+}
+
+/**
+ * Format a draft question for the verifier prompt template. The template
+ * receives this as the {{question_json}} variable embedded inside the
+ * verifier's system prompt.
+ */
+function formatForVerification(draft: DraftQuestionFromService): string {
+  return JSON.stringify({
+    question_text: draft.question_text,
+    options: draft.options,
+    claimed_correct_answer_index: draft.correct_answer_index,
+  })
+}
+
+/**
+ * Map the verifier-flavoured difficulty strings back to the question_bank
+ * numeric scale used by the legacy path (1=easy, 3=medium, 5=hard).
+ */
+function normaliseDifficulty(raw: string | number | undefined, fallback: number): number {
+  if (typeof raw === 'number' && Number.isInteger(raw) && raw >= 1 && raw <= 5) return raw
+  if (typeof raw === 'string') {
+    const lower = raw.toLowerCase()
+    if (lower === 'easy') return 1
+    if (lower === 'medium') return 3
+    if (lower === 'hard') return 5
+  }
+  return fallback
+}
+
+/**
+ * Parse the generator's JSON answer. Returns null if parse fails or if the
+ * service returned the sentinel `{"error": "insufficient_source"}` payload.
+ */
+function parseDraftJson(rawAnswer: string): DraftQuestionFromService | null {
+  let parsed: unknown
+  try {
+    // The generator is instructed to return strict JSON. Some Claude runs
+    // still wrap it in ```json fences — strip both patterns defensively.
+    const stripped = rawAnswer
+      .replace(/^```json\s*/i, '')
+      .replace(/^```\s*/, '')
+      .replace(/\s*```$/, '')
+      .trim()
+    parsed = JSON.parse(stripped)
+  } catch {
+    return null
+  }
+  if (!parsed || typeof parsed !== 'object') return null
+  const obj = parsed as Record<string, unknown>
+  if ('error' in obj) return null // insufficient_source sentinel
+  if (typeof obj.question_text !== 'string') return null
+  if (!Array.isArray(obj.options) || obj.options.length !== 4) return null
+  if (!obj.options.every((o) => typeof o === 'string')) return null
+  if (typeof obj.correct_answer_index !== 'number') return null
+  if (
+    !Number.isInteger(obj.correct_answer_index) ||
+    obj.correct_answer_index < 0 ||
+    obj.correct_answer_index > 3
+  ) {
+    return null
+  }
+  if (typeof obj.explanation !== 'string') return null
+  return {
+    question_text: obj.question_text,
+    options: obj.options as string[],
+    correct_answer_index: obj.correct_answer_index,
+    explanation: obj.explanation,
+    difficulty: obj.difficulty as string | number | undefined,
+    bloom_level: obj.bloom_level as string | undefined,
+    supporting_chunk_ids: Array.isArray(obj.supporting_chunk_ids)
+      ? (obj.supporting_chunk_ids as string[])
+      : undefined,
+  }
+}
+
+function parseVerifierJson(rawAnswer: string): VerifierResponse | null {
+  try {
+    const stripped = rawAnswer
+      .replace(/^```json\s*/i, '')
+      .replace(/^```\s*/, '')
+      .replace(/\s*```$/, '')
+      .trim()
+    const parsed = JSON.parse(stripped) as Record<string, unknown>
+    if (typeof parsed.verified !== 'boolean') return null
+    const reason = typeof parsed.reason === 'string' ? parsed.reason : ''
+    const idxRaw = parsed.correct_option_index
+    const correct_option_index: number | null =
+      idxRaw === null
+        ? null
+        : typeof idxRaw === 'number' && Number.isInteger(idxRaw) && idxRaw >= 0 && idxRaw <= 3
+        ? idxRaw
+        : null
+    const supporting_chunk_ids = Array.isArray(parsed.supporting_chunk_ids)
+      ? (parsed.supporting_chunk_ids as string[]).filter((x) => typeof x === 'string')
+      : []
+    return {
+      verified: parsed.verified,
+      reason,
+      correct_option_index,
+      supporting_chunk_ids,
+    }
+  } catch {
+    return null
+  }
+}
+
+interface GroundedInsertRow {
+  question_text: string
+  options: string[]
+  correct_answer_index: number
+  explanation: string
+  hint: string
+  difficulty: number
+  bloom_level: string
+  subject: string
+  grade: string
+  chapter_title: string
+  topic_id?: string
+  chapter_number?: number
+  source: string
+  is_active: boolean
+  created_at: string
+  verification_state: 'verified' | 'failed'
+  verified_against_ncert: boolean
+  verifier_chunk_ids: string[] | null
+  verifier_model: string | null
+  verifier_trace_id: string | null
+  verified_at: string
+  verifier_failure_reason?: string
+}
+
+async function generateAndVerifyOne(params: {
+  grade: string
+  subject: string
+  chapter: string
+  chapterNumber: number | null
+  chapterId: string | null
+  bloomLevel: string
+  fallbackDifficulty: number
+}): Promise<
+  | { ok: true; row: GroundedInsertRow }
+  | { ok: false; reason: string }
+> {
+  const { grade, subject, chapter, chapterNumber, chapterId, bloomLevel, fallbackDifficulty } =
+    params
+
+  // ── Pass 1: generator (strict mode) ────────────────────────────────────
+  const generatorRequest: GroundedRequest = {
+    caller: 'quiz-generator',
+    student_id: null,
+    query: `Generate one CBSE ${bloomLevel}-level MCQ for Grade ${grade} ${subject} on the topic: ${chapter}.`,
+    scope: {
+      board: 'CBSE',
+      grade,
+      subject_code: subject,
+      chapter_number: chapterNumber,
+      chapter_title: chapter,
+    },
+    mode: 'strict',
+    generation: {
+      model_preference: 'auto',
+      max_tokens: 1024,
+      temperature: 0.3,
+      system_prompt_template: 'quiz_question_generator_v1',
+      template_variables: {
+        grade,
+        subject,
+        chapter_suffix: chapter ? ` (Chapter: ${chapter})` : '',
+      },
+    },
+    retrieval: { match_count: 6 },
+    timeout_ms: 45_000,
+  }
+
+  const draftResp = await callGroundedAnswer(generatorRequest, { hopTimeoutMs: 50_000 })
+  if (!draftResp.grounded) {
+    return { ok: false, reason: `generator_abstain:${draftResp.abstain_reason}` }
+  }
+
+  const draft = parseDraftJson(draftResp.answer)
+  if (!draft) {
+    return { ok: false, reason: 'generator_parse_error' }
+  }
+
+  // ── Pass 2: verifier (strict mode) ────────────────────────────────────
+  const verifierRequest: GroundedRequest = {
+    caller: 'quiz-generator',
+    student_id: null,
+    query: formatForVerification(draft),
+    scope: {
+      board: 'CBSE',
+      grade,
+      subject_code: subject,
+      chapter_number: chapterNumber,
+      chapter_title: chapter,
+    },
+    mode: 'strict',
+    generation: {
+      model_preference: 'auto',
+      max_tokens: 512,
+      temperature: 0,
+      system_prompt_template: 'quiz_answer_verifier_v1',
+      template_variables: {
+        grade,
+        subject,
+        chapter_suffix: chapter ? ` (Chapter: ${chapter})` : '',
+        question_json: formatForVerification(draft),
+      },
+    },
+    retrieval: { match_count: 6 },
+    timeout_ms: 20_000,
+  }
+
+  const verifyResp = await callGroundedAnswer(verifierRequest, { hopTimeoutMs: 25_000 })
+
+  let verificationState: 'verified' | 'failed' = 'failed'
+  let verifyFailureReason: string | undefined
+  let verifierChunkIds: string[] = []
+  let verifierModel: string | null = null
+  let verifierTraceId: string | null = null
+
+  // verifier_trace_id is a uuid column. Reject the client-synthesized
+  // non-UUID sentinel trace ids (config-missing / hop-timeout / service-*).
+  const UUID_RE_TRACE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  const safeTraceId = (id: string | undefined): string | null =>
+    id && UUID_RE_TRACE.test(id) ? id : null
+
+  if (!verifyResp.grounded) {
+    verifyFailureReason = `verifier_abstain:${verifyResp.abstain_reason}`
+    verifierTraceId = safeTraceId(verifyResp.trace_id)
+  } else {
+    const parsedVerify = parseVerifierJson(verifyResp.answer)
+    verifierModel = verifyResp.meta.claude_model
+    verifierTraceId = safeTraceId(verifyResp.trace_id)
+    if (!parsedVerify) {
+      verifyFailureReason = 'verifier_parse_error'
+    } else if (
+      parsedVerify.verified &&
+      parsedVerify.correct_option_index === draft.correct_answer_index
+    ) {
+      verificationState = 'verified'
+      verifierChunkIds = parsedVerify.supporting_chunk_ids
+    } else {
+      verifyFailureReason = `verifier_disagree: ${parsedVerify.reason}`.slice(0, 300)
+      verifierChunkIds = parsedVerify.supporting_chunk_ids
+    }
+  }
+
+  const chapterId_trimmed = chapterId?.trim().slice(0, 36) || null
+
+  // UUID validation. If `verifier_chunk_ids` comes back with non-UUID strings
+  // (unlikely but possible under malformed Claude output), drop them so the
+  // uuid[] column insert doesn't error. See question_bank.verifier_chunk_ids.
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  const cleanChunkIds = verifierChunkIds.filter((x) => UUID_RE.test(x))
+
+  const row: GroundedInsertRow = {
+    question_text: draft.question_text.trim(),
+    options: draft.options.map((o) => o.trim()),
+    correct_answer_index: draft.correct_answer_index,
+    explanation: draft.explanation.trim(),
+    hint: '', // generator doesn't produce a hint in grounded mode
+    difficulty: normaliseDifficulty(draft.difficulty, fallbackDifficulty),
+    bloom_level: (draft.bloom_level ?? bloomLevel).toLowerCase(),
+    subject,
+    grade,
+    chapter_title: chapter,
+    ...(chapterId_trimmed ? { topic_id: chapterId_trimmed } : {}),
+    ...(chapterNumber !== null ? { chapter_number: chapterNumber } : {}),
+    source: 'ai_generated_grounded',
+    is_active: verificationState === 'verified',
+    created_at: new Date().toISOString(),
+    verification_state: verificationState,
+    verified_against_ncert: verificationState === 'verified',
+    verifier_chunk_ids: cleanChunkIds.length > 0 ? cleanChunkIds : null,
+    verifier_model: verifierModel,
+    verifier_trace_id: verifierTraceId,
+    verified_at: new Date().toISOString(),
+    ...(verifyFailureReason ? { verifier_failure_reason: verifyFailureReason } : {}),
+  }
+
+  return { ok: true, row }
+}
+
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
@@ -430,6 +755,105 @@ Deno.serve(async (req: Request) => {
     const safeChapter = chapter.replace(/<[^>]*>/g, '').replace(/[{}`]/g, '').trim().slice(0, 200)
     const safeChapterId = typeof chapter_id === 'string' ? chapter_id.trim().slice(0, 36) : null
 
+    // ── Phase 3: feature-flag-gated two-pass grounded path ──────────────────
+    // When ff_grounded_ai_quiz_generator is ON, generate each question via
+    // the grounded-answer service (pass 1) and verify via a second grounded
+    // call (pass 2). Results are inserted with verification_state='verified'
+    // or 'failed' so admin review can triage failures. When the flag is OFF
+    // we fall through to the legacy single-pass Claude path below.
+    const useGroundedService = await isFeatureFlagEnabled('ff_grounded_ai_quiz_generator')
+
+    if (useGroundedService) {
+      const chapterNumberParsed = /^\d+$/.test(safeChapter) ? parseInt(safeChapter, 10) : null
+
+      // Serial calls — service runs its own circuit breaker; 50 × 2 passes
+      // is ~100 sub-requests so keep strict sequence for clarity and to
+      // avoid hitting Claude rate limits.
+      const resultRows: GroundedInsertRow[] = []
+      const rejectionReasons: string[] = []
+      for (let i = 0; i < count; i++) {
+        const outcome = await generateAndVerifyOne({
+          grade,
+          subject: safeSubject,
+          chapter: safeChapter,
+          chapterNumber: chapterNumberParsed,
+          chapterId: safeChapterId,
+          bloomLevel,
+          fallbackDifficulty: difficulty,
+        })
+        if (outcome.ok) {
+          resultRows.push(outcome.row)
+        } else {
+          rejectionReasons.push(outcome.reason)
+        }
+      }
+
+      if (resultRows.length === 0) {
+        return jsonResponse(
+          {
+            generated: 0,
+            inserted: 0,
+            rejected: rejectionReasons.length,
+            rejection_reasons: rejectionReasons,
+            warning: 'All grounded generations failed. See rejection_reasons.',
+          },
+          200,
+          {},
+          origin,
+        )
+      }
+
+      const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+      const { data: insertedRows, error: insertError } = await adminClient
+        .from('question_bank')
+        .insert(resultRows)
+        .select()
+
+      if (insertError) {
+        console.error('bulk-question-gen (grounded): DB insert failed:', insertError.message)
+        return errorResponse(`Database insert failed: ${insertError.message}`, 500, origin)
+      }
+
+      const insertedArr = (insertedRows || []) as InsertedQuestion[]
+      const verifiedCount = resultRows.filter((r) => r.verification_state === 'verified').length
+      const failedCount = resultRows.length - verifiedCount
+
+      console.warn(JSON.stringify({
+        event:         'bulk_question_gen_grounded',
+        function_name: 'bulk-question-gen',
+        flow:          'grounded-two-pass',
+        grade,
+        subject:       safeSubject,
+        chapter:       safeChapter,
+        requested:     count,
+        generated:     resultRows.length,
+        inserted:      insertedArr.length,
+        verified:      verifiedCount,
+        failed:        failedCount,
+        rejected:      rejectionReasons.length,
+        difficulty,
+        bloom_level:   bloomLevel,
+        ts:            new Date().toISOString(),
+      }))
+
+      return jsonResponse(
+        {
+          generated: resultRows.length,
+          inserted: insertedArr.length,
+          verified: verifiedCount,
+          failed: failedCount,
+          rejected: rejectionReasons.length,
+          rejection_reasons: rejectionReasons.length > 0 ? rejectionReasons : undefined,
+          questions: insertedArr,
+          flow: 'grounded-two-pass',
+        },
+        200,
+        {},
+        origin,
+      )
+    }
+
+    // ── Legacy single-pass Claude path (kill-switch fallback) ───────────────
     // ── 3. Build prompts ────────────────────────────────────────────────────
     const systemPrompt = buildSystemPrompt(grade, safeSubject)
     const userPrompt   = buildPrompt(grade, safeSubject, safeChapter, count, difficulty, bloomLevel)
