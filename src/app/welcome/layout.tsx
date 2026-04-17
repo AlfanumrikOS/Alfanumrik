@@ -2,15 +2,15 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
 export const metadata: Metadata = {
-  title: 'Alfanumrik — Adaptive Learning Platform for CBSE Students India',
+  title: 'Alfanumrik — What if your child walked into every exam prepared?',
   description:
-    'Alfanumrik is a structured learning system for CBSE students in Grades 6–12. Improve concept clarity, retention, and exam performance with personalized practice and progress tracking.',
+    'Alfanumrik is a structured learning system for CBSE students in Grades 6–12. Replaces guesswork with real concept clarity, targeted practice, and daily progress tracking — in Hindi and English.',
   keywords:
-    'adaptive learning platform India, personalized learning for students, CBSE learning platform, improve student performance, online learning system for schools, exam preparation platform India, concept-based learning, structured learning system, student progress tracking, practice and revision system',
+    'CBSE learning platform, adaptive learning India, exam preparation CBSE, concept clarity students, parent dashboard education, AI tutor Hindi English, structured learning system, board exam preparation, NCERT aligned platform, online education India',
   openGraph: {
-    title: 'Alfanumrik — Structured Learning That Actually Works',
+    title: 'Alfanumrik — What if your child walked into every exam prepared?',
     description:
-      'A personalized learning platform for CBSE students. Clear concepts, smart practice, real progress. Grades 6–12 in Hindi & English.',
+      'Structured learning that replaces guesswork with concept clarity. CBSE Grades 6–12 in Hindi & English. Free to start.',
     url: 'https://alfanumrik.com/welcome',
     locale: 'en_IN',
     type: 'website',
@@ -18,8 +18,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Alfanumrik — Improve Student Performance in CBSE',
-    description: 'Structured learning, smart practice, real progress tracking. CBSE Grades 6–12.',
+    title: 'Alfanumrik — Structured Learning for CBSE Students',
+    description:
+      'What if your child walked into every exam prepared? Concept clarity, targeted practice, daily progress. Grades 6–12.',
   },
   alternates: { canonical: 'https://alfanumrik.com/welcome' },
 };
