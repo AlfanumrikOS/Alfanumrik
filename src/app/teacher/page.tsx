@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
-import { supabaseUrl as SUPABASE_URL, supabaseAnonKey as SUPABASE_ANON } from '@/lib/supabase';
+import { supabase, supabaseUrl as SUPABASE_URL, supabaseAnonKey as SUPABASE_ANON } from '@/lib/supabase';
 import type { HeatmapData, HeatmapCell, HeatmapRow, RiskAlert } from '@/lib/types';
 import { BottomNav } from '@/components/ui';
 import { SUBJECT_ROTATION } from '@/lib/challenge-config';
@@ -64,9 +64,21 @@ interface ChallengeClassData {
 }
 
 async function api(action: string, params: Record<string, unknown> = {}) {
+  // Build headers — always include apikey; add Bearer token when a session exists
+  // so the teacher-dashboard Edge Function can authenticate the caller via JWT.
+  // Pattern mirrors chatWithFoxy() in src/lib/supabase.ts.
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    apikey: SUPABASE_ANON,
+  };
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+  } catch { /* fall through — edge function may still accept apikey */ }
+
   const res = await fetch(`${SUPABASE_URL}/functions/v1/teacher-dashboard`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON },
+    headers,
     body: JSON.stringify({ action, ...params }),
   });
   if (!res.ok) {
@@ -289,69 +301,83 @@ export default function TeacherPage() {
   }, [authLoading, isLoggedIn, activeRole, teacher, router]);
 
   const load = useCallback(async () => {
-    if (!teacherId) return;
+    // If AuthContext hasn't produced a teacher yet, stop the spinner so the
+    // empty-state render path can take over. When teacherId later becomes
+    // available, this callback's deps change and the effect re-runs.
+    if (!teacherId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    const d = await api('get_dashboard', { teacher_id: teacherId });
-    setDash(d);
-    const firstClassId = d?.classes?.[0]?.id;
-    if (firstClassId) {
-      const [h, a] = await Promise.all([
-        api('get_heatmap', { teacher_id: teacherId, class_id: firstClassId, subject: 'math' }),
-        api('get_alerts', { teacher_id: teacherId, class_id: firstClassId }),
-      ]);
-      setHeatmap(h); setAlerts(a.alerts || []);
+    try {
+      const d = await api('get_dashboard', { teacher_id: teacherId });
+      setDash(d);
+      const firstClassId = d?.classes?.[0]?.id;
+      if (firstClassId) {
+        const [h, a] = await Promise.all([
+          api('get_heatmap', { teacher_id: teacherId, class_id: firstClassId, subject: 'math' }),
+          api('get_alerts', { teacher_id: teacherId, class_id: firstClassId }),
+        ]);
+        setHeatmap(h); setAlerts(a.alerts || []);
 
-      // Load daily challenge data for the class
-      try {
-        const todayDow = new Date().getDay();
-        const rotation = SUBJECT_ROTATION[todayDow];
-        const todaySubject = rotation?.subject ?? 'mixed';
-        const todayLabel = rotation?.labelEn ?? 'Daily Challenge';
-        const todayStr = new Date().toISOString().split('T')[0];
-
-        // Use the teacher-dashboard edge function to get student IDs in class,
-        // then query challenge tables. If challenge endpoints don't exist in the
-        // edge function, fall back to graceful empty state.
-        let challengeResult: ChallengeClassData | null = null;
+        // Load daily challenge data for the class
         try {
-          const cData = await api('get_challenge_summary', {
-            teacher_id: teacherId,
-            class_id: firstClassId,
-            date: todayStr,
-          });
-          if (cData) {
+          const todayDow = new Date().getDay();
+          const rotation = SUBJECT_ROTATION[todayDow];
+          const todaySubject = rotation?.subject ?? 'mixed';
+          const todayLabel = rotation?.labelEn ?? 'Daily Challenge';
+          const todayStr = new Date().toISOString().split('T')[0];
+
+          // Use the teacher-dashboard edge function to get student IDs in class,
+          // then query challenge tables. If challenge endpoints don't exist in the
+          // edge function, fall back to graceful empty state.
+          let challengeResult: ChallengeClassData | null = null;
+          try {
+            const cData = await api('get_challenge_summary', {
+              teacher_id: teacherId,
+              class_id: firstClassId,
+              date: todayStr,
+            });
+            if (cData) {
+              challengeResult = {
+                todaySubject,
+                todaySubjectLabel: todayLabel,
+                solvedToday: cData.solved_today ?? 0,
+                totalStudents: d?.stats?.total_students ?? 0,
+                avgStreak: cData.avg_streak ?? 0,
+                topStreakers: Array.isArray(cData.top_streakers)
+                  ? cData.top_streakers.slice(0, 5).map((s: any) => ({
+                      name: s.name ?? '?',
+                      streak: s.current_streak ?? 0,
+                    }))
+                  : [],
+              };
+            }
+          } catch {
+            // Edge function may not support this action yet -- use static defaults
             challengeResult = {
               todaySubject,
               todaySubjectLabel: todayLabel,
-              solvedToday: cData.solved_today ?? 0,
+              solvedToday: 0,
               totalStudents: d?.stats?.total_students ?? 0,
-              avgStreak: cData.avg_streak ?? 0,
-              topStreakers: Array.isArray(cData.top_streakers)
-                ? cData.top_streakers.slice(0, 5).map((s: any) => ({
-                    name: s.name ?? '?',
-                    streak: s.current_streak ?? 0,
-                  }))
-                : [],
+              avgStreak: 0,
+              topStreakers: [],
             };
           }
+          setChallengeData(challengeResult);
         } catch {
-          // Edge function may not support this action yet -- use static defaults
-          challengeResult = {
-            todaySubject,
-            todaySubjectLabel: todayLabel,
-            solvedToday: 0,
-            totalStudents: d?.stats?.total_students ?? 0,
-            avgStreak: 0,
-            topStreakers: [],
-          };
+          // Challenge data is optional -- gracefully degrade
+          setChallengeData(null);
         }
-        setChallengeData(challengeResult);
-      } catch {
-        // Challenge data is optional -- gracefully degrade
-        setChallengeData(null);
       }
+    } catch (err) {
+      // Surface the failure to the console but always release the spinner in
+      // the finally block so the user sees an empty/retry state instead of
+      // hanging forever.
+      console.error('Teacher dashboard load failed:', err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [teacherId]);
 
   useEffect(() => { load(); }, [load]);
@@ -367,6 +393,30 @@ export default function TeacherPage() {
         <div className="w-10 h-10 border-[3px] border-slate-800 border-t-indigo-500 rounded-full mx-auto mb-4 animate-spin" />
         {tt(isHi, 'Loading teacher dashboard...', 'शिक्षक डैशबोर्ड लोड हो रहा है...')}
       </div>
+    </div>
+  );
+
+  // Defensive: if loading finished but we still have no teacher profile (AuthContext
+  // hasn't caught up, or the session expired), show a friendly retry state instead
+  // of rendering against null data and crashing downstream.
+  if (!teacher) return (
+    <div className="max-w-[960px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-slate-200 bg-[#0B1120] min-h-screen">
+      <div className="text-center py-20">
+        <div className="text-5xl mb-4">&#x1F464;</div>
+        <h2 className="text-xl font-bold text-slate-100 mb-2">
+          {tt(isHi, 'Setting up your teacher account', 'आपका शिक्षक खाता सेट हो रहा है')}
+        </h2>
+        <p className="text-sm text-slate-500 mb-5 max-w-[360px] mx-auto">
+          {tt(isHi,
+            'Please refresh in a moment. If this persists, try signing out and back in.',
+            'कृपया एक क्षण में रिफ्रेश करें। यदि यह बना रहे, तो साइन आउट करके फिर से लॉग इन करें।'
+          )}
+        </p>
+        <button onClick={() => window.location.reload()} className="py-2.5 px-6 bg-indigo-500 text-white border-none rounded-lg text-sm font-semibold cursor-pointer">
+          {tt(isHi, 'Refresh', 'रिफ्रेश')}
+        </button>
+      </div>
+      <BottomNav />
     </div>
   );
 
