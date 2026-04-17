@@ -13,6 +13,7 @@ import { speak, isVoiceSupported } from '@/lib/voice';
 import { ConversationStarters } from '@/components/foxy/ConversationStarters';
 import { findSimulation, InlineSimulation } from '@/components/InlineSimulation';
 import { ChatBubble, type GroundingStatus, type AbstainReason, type SuggestedAlternative } from '@/components/foxy/ChatBubble';
+import { LoadingState } from '@/components/foxy/LoadingState';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import { RichContent } from '@/components/foxy/RichContent';
 import { ChatInput } from '@/components/foxy/ChatInput';
@@ -1504,25 +1505,15 @@ export default function FoxyPage() {
               </div>
             )}
 
-            {/* Thinking */}
+            {/* Thinking — honest elapsed timer, no fake stages */}
             {loading && (
-              <div className="flex items-start gap-3 px-4 py-3">
-                <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
-                  <span className="text-lg animate-pulse">🦊</span>
-                </div>
-                <div className="bg-orange-50 rounded-xl px-4 py-3 max-w-[80%]" style={{ border: '1px solid var(--border)' }}>
-                  <div className="flex gap-1.5">
-                    <span className="w-2 h-2 bg-orange-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <span className="w-2 h-2 bg-orange-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <span className="w-2 h-2 bg-orange-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                  </div>
-                  <p className="text-xs text-orange-600 mt-1.5">
-                    {isProcessingImage
-                      ? (language === 'hi' ? '📷 फ़ोटो पढ़ रहे हैं...' : '📷 Reading your handwriting...')
-                      : (language === 'hi' ? 'फॉक्सी सोच रहा है...' : 'Foxy is thinking...')}
-                  </p>
-                </div>
-              </div>
+              <LoadingState
+                primaryLabel={
+                  isProcessingImage
+                    ? (language === 'hi' ? '📷 फ़ोटो पढ़ रहे हैं' : '📷 Reading your handwriting')
+                    : undefined
+                }
+              />
             )}
             <div ref={endRef} />
           </div>
