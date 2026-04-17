@@ -3,9 +3,12 @@
 class ApiConstants {
   ApiConstants._();
 
+  // SUPABASE_URL must be provided at build time via --dart-define.
+  // Leaving no production URL as the default prevents accidental writes to
+  // production from an unconfigured local build.
   static const String supabaseUrl = String.fromEnvironment(
     'SUPABASE_URL',
-    defaultValue: 'https://shktyoxqhundlvkiwguu.supabase.co',
+    defaultValue: '',
   );
 
   static const String supabaseAnonKey = String.fromEnvironment(
