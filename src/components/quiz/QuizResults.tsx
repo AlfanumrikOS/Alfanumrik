@@ -69,6 +69,19 @@ interface QuizResultsProps {
   isFirstQuiz?: boolean;
   onRetry: () => void;
   onGoHome: () => void;
+  /**
+   * Optional per-question shuffle maps aligned to `questions`.
+   *   shuffleMaps[i][displayIdx] === originalIdx
+   * When provided, the review screen renders options in the same shuffled
+   * order the student saw during the quiz, and highlights both the correct
+   * answer and the student's actual pick correctly. `response.selected_option`
+   * is interpreted as the SHUFFLED display index (the index the student
+   * clicked); `question.correct_answer_index` is the ORIGINAL pre-shuffle
+   * index. Without this prop, options render in original order and
+   * `selected_option` is interpreted directly as the original index — which
+   * is correct for surfaces that do not shuffle (diagnostic, pyq, mock-exam).
+   */
+  shuffleMaps?: Array<number[] | null>;
 }
 
 export default function QuizResults({
@@ -84,6 +97,7 @@ export default function QuizResults({
   isFirstQuiz = false,
   onRetry,
   onGoHome,
+  shuffleMaps,
 }: QuizResultsProps) {
   const router = useRouter();
   const { student } = useAuth();
@@ -649,8 +663,19 @@ export default function QuizResults({
               const resp = responses[idx];
               const correct = resp?.is_correct;
               const isExpanded = !correct || expandedCorrect.has(idx);
-              const opts = parseOptions(question.options);
-              const correctAnswerText = opts[question.correct_answer_index] || '';
+              const origOpts = parseOptions(question.options);
+              // P1 score-accuracy fix: if a shuffle map was provided, render
+              // options in the SAME order the student saw them during the
+              // quiz. `response.selected_option` is a shuffled display index
+              // in that case, so we must compare indices in the same space
+              // to highlight the student's actual pick correctly. Without a
+              // shuffle map we fall through to original-order rendering,
+              // which is the correct behavior for surfaces that don't shuffle.
+              const shuffleMap = shuffleMaps?.[idx] ?? null;
+              const opts = shuffleMap && origOpts.length === 4
+                ? shuffleMap.map(origIdx => origOpts[origIdx])
+                : origOpts;
+              const correctAnswerText = origOpts[question.correct_answer_index] || '';
               const questionText = isHi && question.question_hi ? question.question_hi : question.question_text;
               const explanation = isHi && question.explanation_hi ? question.explanation_hi : question.explanation;
               return (
@@ -763,7 +788,16 @@ export default function QuizResults({
                           {opts.length > 0 && (
                             <div className="space-y-1">
                               {opts.map((opt, oi) => {
-                                const isCorrectOpt = oi === question.correct_answer_index;
+                                // When a shuffle map is present, `oi` is a shuffled
+                                // display index. Map correct_answer_index (original)
+                                // onto the display axis so the ✓ lands on the right
+                                // option. response.selected_option is already in the
+                                // shuffled space (that's what the student clicked),
+                                // so compare display-to-display directly.
+                                const correctDisplayIdx = shuffleMap && origOpts.length === 4
+                                  ? shuffleMap.indexOf(question.correct_answer_index)
+                                  : question.correct_answer_index;
+                                const isCorrectOpt = oi === correctDisplayIdx;
                                 const isSelected = oi === resp?.selected_option;
                                 let bg = 'var(--surface-2)';
                                 let borderColor = 'transparent';

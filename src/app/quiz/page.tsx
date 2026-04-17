@@ -649,10 +649,17 @@ export default function QuizPage() {
         if (allResponses.length < questions.length) {
           const q = questions[currentIdx];
           if (isQuestionMCQ(q)) {
+            // P1 score-accuracy fix: selectedOption is the SHUFFLED display index;
+            // q.correct_answer_index is the ORIGINAL pre-shuffle index. Map through
+            // the active shuffle before comparing, otherwise is_correct silently
+            // corrupts scoring/XP/mastery (same bug class as commit aa4ed51).
+            const lastOriginalPicked = selectedOption !== null
+              ? shuffledToOriginal(selectedOption, shuffleMaps[currentIdx] ?? null)
+              : null;
             allResponses.push({
               question_id: q.id,
               selected_option: selectedOption!,
-              is_correct: selectedOption === q.correct_answer_index,
+              is_correct: lastOriginalPicked === q.correct_answer_index,
               time_spent: questionTimer,
             });
           }
@@ -798,10 +805,13 @@ export default function QuizPage() {
         if (pendingSubmissionRef.current.length < questions.length) {
           const q = questions[currentIdx];
           if (isQuestionMCQ(q) && selectedOption !== null) {
+            // P1 score-accuracy fix: map shuffled-display index back to original
+            // before comparing to q.correct_answer_index (see aa4ed51 context).
+            const retryOriginalPicked = shuffledToOriginal(selectedOption, shuffleMaps[currentIdx] ?? null);
             pendingSubmissionRef.current.push({
               question_id: q.id,
               selected_option: selectedOption,
-              is_correct: selectedOption === q.correct_answer_index,
+              is_correct: retryOriginalPicked === q.correct_answer_index,
               time_spent: questionTimer,
             });
           }
@@ -1424,6 +1434,7 @@ export default function QuizPage() {
           results={results}
           questions={questions}
           responses={responses}
+          shuffleMaps={shuffleMaps}
           isHi={isHi}
           quizMode={quizMode}
           cogLoad={cogLoad}
