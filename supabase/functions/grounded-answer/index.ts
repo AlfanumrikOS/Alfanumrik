@@ -38,6 +38,12 @@ import {
   type TraceRow,
 } from './trace.ts';
 import {
+  canProceed,
+  circuitKey,
+  recordFailure,
+  recordSuccess,
+} from './circuit.ts';
+import {
   STRICT_MIN_SIMILARITY,
   SOFT_MIN_SIMILARITY,
   STRICT_CONFIDENCE_ABSTAIN_THRESHOLD,
@@ -237,12 +243,38 @@ export async function runPipeline(
     request.retrieval.min_similarity_override ??
     (request.mode === 'strict' ? STRICT_MIN_SIMILARITY : SOFT_MIN_SIMILARITY);
 
-  // Step 5. Embedding (best effort).
+  // Step 4b. Circuit breaker check (spec §6.7). If the breaker is open for
+  // this (caller, subject, grade) key, skip all upstream calls and abstain
+  // immediately. Opens after 3 failures in 10s; half-opens after 30s.
+  const cKey = circuitKey(
+    request.caller,
+    request.scope.subject_code,
+    request.scope.grade,
+  );
+  if (!canProceed(cKey)) {
+    const queryHash = await queryHashPromise;
+    const traceRow = baseTraceRow(request, Date.now() - startedAt);
+    traceRow.query_hash = queryHash;
+    traceRow.grounded = false;
+    traceRow.abstain_reason = 'circuit_open';
+    const traceId = await writeTrace(sb, traceRow);
+    return buildAbstainResponse('circuit_open', [], traceId, startedAt);
+  }
+
+  // Step 5. Embedding (best effort). generateEmbedding returns null on
+  // any failure — we still call recordFailure so repeated Voyage outages
+  // eventually trip the breaker. A null embedding with a non-empty key
+  // indicates upstream failure (distinguish from missing-key skip).
+  const voyageWasReachable = voyageKey.length > 0;
   const embedding = await generateEmbedding(
     request.query,
     request.timeout_ms,
     voyageKey,
   );
+  if (voyageWasReachable) {
+    if (embedding == null) recordFailure(cKey);
+    else recordSuccess(cKey);
+  }
 
   // Step 6. Retrieve chunks.
   const { chunks } = await retrieveChunks(sb, {
@@ -372,6 +404,13 @@ export async function runPipeline(
     apiKey: anthropicKey,
     modelPreference: request.generation.model_preference,
   });
+  // auth_error is a config problem, not an upstream outage — don't trip
+  // the breaker on it (rotating keys would need admin intervention anyway).
+  if (!claude.ok && claude.reason !== 'auth_error') {
+    recordFailure(cKey);
+  } else if (claude.ok) {
+    recordSuccess(cKey);
+  }
 
   const queryHash = await queryHashPromise;
   const embeddingModel = embedding ? VOYAGE_MODEL_ID : null;
