@@ -57,8 +57,11 @@ jobs:
             fi
           done
 
-          # Check NEXT_PUBLIC_ vars don't contain secret-like values
-          NEXT_PUBLIC_SECRETS=$(grep -rn 'NEXT_PUBLIC_.*\(SERVICE_ROLE\|SECRET_KEY\|PRIVATE_KEY\)' . --include='*.ts' --include='*.tsx' --include='*.js' --include='*.env' 2>/dev/null | grep -vE "$EXCLUDE_PATTERN" || true)
+          # Check NEXT_PUBLIC_ vars don't contain secret-like values.
+          # Match only contiguous identifier names like NEXT_PUBLIC_MY_SERVICE_ROLE
+          # (no spaces / punctuation between), to avoid matching error strings that
+          # mention both NEXT_PUBLIC_SUPABASE_URL and SERVICE_ROLE_KEY separately.
+          NEXT_PUBLIC_SECRETS=$(grep -rnE 'NEXT_PUBLIC_[A-Z0-9_]*(SERVICE_ROLE|SECRET_KEY|PRIVATE_KEY)' . --include='*.ts' --include='*.tsx' --include='*.js' --include='*.env' 2>/dev/null | grep -vE "$EXCLUDE_PATTERN" || true)
           if [ -n "$NEXT_PUBLIC_SECRETS" ]; then
             echo "CRITICAL: NEXT_PUBLIC_ variable exposes a secret!"
             echo "$NEXT_PUBLIC_SECRETS"
