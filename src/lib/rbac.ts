@@ -76,14 +76,24 @@ const _localCache = new Map<string, { data: UserPermissions; expires: number }>(
 
 async function getCachedPermissions(userId: string): Promise<UserPermissions | null> {
   const redis = getRedis();
+  // Check taint marker first (instant invalidation for security events)
+  if (redis) {
+    try {
+      const tainted = await redis.get(`rbac:tainted:${userId}`);
+      if (tainted) {
+        _localCache.delete(userId);
+        return null; // Force fresh DB lookup
+      }
+    } catch { /* Redis unavailable — proceed with local cache */ }
+  }
+  // Try Redis cache
   if (redis) {
     try {
       const raw = await redis.get<UserPermissions>(CACHE_KEY(userId));
       return raw ?? null;
-    } catch {
-      // Redis unavailable — fall through to local cache
-    }
+    } catch { /* fall through */ }
   }
+  // Fallback: in-memory cache
   const local = _localCache.get(userId);
   if (local && local.expires > Date.now()) return local.data;
   if (local) _localCache.delete(userId);
@@ -115,6 +125,40 @@ export async function invalidatePermissionCache(userId: string): Promise<void> {
     try { await redis.del(CACHE_KEY(userId)); } catch { /* ignore */ }
   }
   _localCache.delete(userId);
+}
+
+/**
+ * Invalidate permission caches for multiple users due to a security event.
+ * Sets a short-lived taint marker in Redis so that even cached entries
+ * are bypassed until the marker expires (5 seconds).
+ * Fires a cache_invalidation audit event (best-effort).
+ */
+export async function invalidateForSecurityEvent(
+  userIds: string[],
+  reason: string = 'security_event',
+): Promise<void> {
+  const redis = getRedis();
+  for (const userId of userIds) {
+    if (redis) {
+      try {
+        await redis.del(CACHE_KEY(userId));
+        await redis.set(`rbac:tainted:${userId}`, '1', { ex: 5 });
+      } catch { /* Redis unavailable */ }
+    }
+    _localCache.delete(userId);
+  }
+  // Fire-and-forget audit event
+  try {
+    const { writeAuditEvent } = await import('@/lib/audit-pipeline');
+    await writeAuditEvent({
+      eventType: 'cache_invalidation',
+      actorUserId: null,
+      action: 'revoke',
+      result: 'granted',
+      resourceType: 'permission_cache',
+      metadata: { userIds, reason },
+    });
+  } catch { /* Audit write failed — not critical */ }
 }
 
 // ─── Core Permission Functions ───────────────────────────────
