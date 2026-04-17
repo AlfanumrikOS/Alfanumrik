@@ -1,8 +1,10 @@
 'use client';
 
-import { type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { UnverifiedBanner } from '@/components/foxy/UnverifiedBanner';
 import { HardAbstainCard } from '@/components/grounding/HardAbstainCard';
+import { ReportIssueModal } from '@/components/foxy/ReportIssueModal';
+import { useAuth } from '@/lib/AuthContext';
 
 /* ═══════════════════════════════════════════════════════════════
    ChatBubble — Message bubble for Foxy conversations
@@ -59,6 +61,10 @@ interface ChatBubbleProps {
   abstainReason?: AbstainReason;
   /** Suggested alternatives — only set when groundingStatus === 'hard-abstain' */
   suggestedAlternatives?: SuggestedAlternative[];
+  /** Message id — passed through to ReportIssueModal for the ai_issue_reports FK. */
+  messageId?: string;
+  /** Question bank id — passed through to ReportIssueModal if the answer was a quiz question. */
+  questionBankId?: string;
 }
 
 export function ChatBubble({
@@ -78,11 +84,15 @@ export function ChatBubble({
   traceId,
   abstainReason,
   suggestedAlternatives,
+  messageId,
+  questionBankId,
 }: ChatBubbleProps) {
+  const { isHi } = useAuth();
   const isTutor = role === 'tutor';
   const time = new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const showUnverifiedBanner = isTutor && groundingStatus === 'unverified';
   const showHardAbstainCard = isTutor && groundingStatus === 'hard-abstain';
+  const [issueModalOpen, setIssueModalOpen] = useState(false);
 
   return (
     <div className="mb-4 w-full animate-slide-up">
@@ -223,6 +233,27 @@ export function ChatBubble({
               </span>
             )}
         </div>
+      )}
+
+      {/* Small "Report an issue" link — opens the ai_issue_reports modal (Task 3.15) */}
+      {isTutor && (
+        <>
+          <button
+            type="button"
+            onClick={() => setIssueModalOpen(true)}
+            data-testid="report-issue-link"
+            className="mt-1 pl-1 text-[10px] text-[var(--text-3)] underline underline-offset-2 transition hover:text-[var(--text-2)]"
+          >
+            {isHi ? 'Is jawab mein problem report karein' : 'Report an issue with this answer'}
+          </button>
+          <ReportIssueModal
+            isOpen={issueModalOpen}
+            onClose={() => setIssueModalOpen(false)}
+            traceId={traceId}
+            messageId={messageId}
+            questionBankId={questionBankId}
+          />
+        </>
       )}
     </div>
   );
