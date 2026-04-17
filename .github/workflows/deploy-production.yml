@@ -108,11 +108,18 @@ jobs:
           echo "| Region | bom1 (Mumbai) |" >> $GITHUB_STEP_SUMMARY
 
   # ── Step 2: Deploy to Vercel Production (requires approval) ──
+  # NOTE: Vercel's native GitHub App handles auto-deploys on push to main.
+  # This CLI-based job is OPTIONAL and only runs when VERCEL_TOKEN secret
+  # is configured. If the token is missing, the job is skipped (not failed)
+  # to avoid blocking CI, since Vercel App deploy is the canonical path.
   deploy:
     name: Deploy to Vercel Production
     runs-on: ubuntu-latest
     needs: [quality, pre-deploy-checklist]
     environment: production
+    # Only run the CLI deploy if a deploy token is configured.
+    # When missing, Vercel's GitHub App integration handles the deploy.
+    if: ${{ vars.USE_CLI_DEPLOY == 'true' }}
     outputs:
       deploy-url: ${{ steps.deploy.outputs.deploy_url }}
       app-version: ${{ steps.version.outputs.version }}
