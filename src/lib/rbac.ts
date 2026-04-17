@@ -247,6 +247,27 @@ export async function canAccessStudent(authUserId: string, studentId: string): P
   // Admin/super_admin can access any student
   if (perms.roles.some(r => r.name === 'admin' || r.name === 'super_admin')) return true;
 
+  // Institution admin: can access students in their school
+  if (perms.roles.some(r => r.name === 'institution_admin')) {
+    const { data: studentSchool } = await supabase
+      .from('students')
+      .select('school_id')
+      .eq('id', studentId)
+      .maybeSingle();
+
+    if (studentSchool?.school_id) {
+      const { data: membership } = await supabase
+        .from('school_memberships')
+        .select('id')
+        .eq('auth_user_id', authUserId)
+        .eq('school_id', studentSchool.school_id)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (membership) return true;
+    }
+  }
+
   // Student: can only access own data
   const { data: ownStudent } = await supabase
     .from('students')

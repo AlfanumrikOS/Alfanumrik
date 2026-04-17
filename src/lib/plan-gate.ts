@@ -240,3 +240,59 @@ export async function checkPlanGate(
     return { granted: true };
   }
 }
+
+// ─── Parent Plan Gate ──────────────────────────────────────────
+
+/**
+ * Check plan gate for a parent permission.
+ * Resolves the child's plan and checks the mapped child permission.
+ *
+ * @param parentUserId - The parent's auth user ID
+ * @param parentPermission - e.g., 'child.download_report'
+ * @param childStudentId - The specific child being accessed
+ */
+export async function checkParentPlanGate(
+  parentUserId: string,
+  parentPermission: string,
+  childStudentId: string,
+): Promise<PlanGateResult> {
+  try {
+    const supabase = getSupabaseAdmin();
+
+    // 1. Look up the mapped child permission
+    const { data: mapping } = await supabase
+      .from('parent_plan_permission_map')
+      .select('required_child_permission')
+      .eq('parent_permission', parentPermission)
+      .maybeSingle();
+
+    if (!mapping) {
+      // No mapping = no plan restriction on this parent permission
+      return { granted: true };
+    }
+
+    // 2. Get the child's subscription plan
+    const { data: student } = await supabase
+      .from('students')
+      .select('subscription_plan')
+      .eq('id', childStudentId)
+      .maybeSingle();
+
+    if (!student) {
+      // Child not found — fail open
+      return { granted: true };
+    }
+
+    const childPlan = student.subscription_plan || 'free';
+
+    // 3. Check the child's plan against the mapped permission
+    return checkPlanGate(childStudentId, mapping.required_child_permission, childPlan);
+  } catch (e) {
+    logger.error('parent_plan_gate_failed', {
+      error: e instanceof Error ? e : new Error(String(e)),
+      route: 'plan-gate',
+    });
+    // Fail open
+    return { granted: true };
+  }
+}
