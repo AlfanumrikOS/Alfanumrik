@@ -77,6 +77,11 @@ export async function retrieveChunks(
   // deno-lint-ignore no-explicit-any
   let result: { data: any; error: any };
   try {
+    // Forward minSimilarity as the RPC's p_min_quality floor so the DB-side
+    // filter runs at the correct threshold per spec §6.4 step 3 (strict=0.75,
+    // soft=0.55). The post-retrieval scope-verification below is defense in
+    // depth on top of this. Callers that don't want DB-side filtering can
+    // pass minSimilarity=0.
     result = await sb.rpc('match_rag_chunks_ncert', {
       query_text: query,
       p_subject_code: scope.subject_code,
@@ -84,7 +89,7 @@ export async function retrieveChunks(
       match_count: matchCount,
       p_chapter_number: scope.chapter_number, // int | null — pass through as-is
       p_chapter_title: scope.chapter_title,   // string | null
-      p_min_quality: 0.4,
+      p_min_quality: minSimilarity,
       query_embedding: embedding,
     });
   } catch (err) {

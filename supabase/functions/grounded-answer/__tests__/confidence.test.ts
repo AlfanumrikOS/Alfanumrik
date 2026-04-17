@@ -30,7 +30,7 @@ Deno.test('formula: all 0s → 0', () => {
   assertEquals(score, 0);
 });
 
-Deno.test('formula: topSim=0.8, top3=0.7, 5/5, pass=1 → 0.77', () => {
+Deno.test('formula: topSim=0.8, top3=0.7, 5/5, pass=1 → 0.83', () => {
   // 0.4*0.8 + 0.3*0.7 + 0.2*1.0 + 0.1*1.0
   // = 0.32 + 0.21 + 0.2 + 0.1
   // = 0.83
