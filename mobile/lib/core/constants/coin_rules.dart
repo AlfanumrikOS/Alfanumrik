@@ -44,6 +44,12 @@ class CoinRewards {
 
   /// One-time per subject.
   static const int scoreCrosses90 = 200;
+
+  // Daily Challenge rewards
+  static const int challengeSolve = 15;
+  static const int challengeStreak7 = 25;
+  static const int challengeStreak30 = 100;
+  static const int challengeStreak100 = 500;
 }
 
 // ─── Foxy Coin Shop ──────────────────────────────────────

@@ -39,6 +39,11 @@ export const COIN_REWARDS = {
   study_plan_week:       30,
   score_crosses_80:     100,  // One-time per subject
   score_crosses_90:     200,  // One-time per subject
+  // Daily Challenge rewards
+  challenge_solve:        15,  // Solving the daily Concept Chain
+  challenge_streak_7:     25,  // 7-day challenge streak milestone
+  challenge_streak_30:   100,  // 30-day challenge streak milestone
+  challenge_streak_100:  500,  // 100-day challenge streak milestone
 } as const;
 
 export type CoinRewardId = keyof typeof COIN_REWARDS;
