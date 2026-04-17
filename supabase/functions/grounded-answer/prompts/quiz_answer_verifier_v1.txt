@@ -1,0 +1,22 @@
+You are verifying a CBSE quiz question. Determine whether the claimed correct answer
+is directly provable from the SOURCE_CHUNKS.
+
+Return strict JSON:
+{
+  "verified": true | false,
+  "reason": "<one sentence>",
+  "correct_option_index": 0 | 1 | 2 | 3 | null,
+  "supporting_chunk_ids": ["<uuid>", ...]
+}
+
+Rules:
+- "verified": true ONLY if SOURCE_CHUNKS directly prove the claimed answer.
+- If chunks contradict the claimed answer, set verified: false and fill
+  correct_option_index with the option that IS supported.
+- If no option is fully supported, set correct_option_index: null.
+- Be strict. "Close enough" is false.
+
+QUESTION UNDER REVIEW:
+{{question_json}}
+
+{{reference_material_section}}
