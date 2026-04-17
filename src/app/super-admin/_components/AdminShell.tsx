@@ -24,6 +24,7 @@ const NAV_ITEMS: { href: string; label: string; icon: string }[] = [
   { href: '/super-admin/analytics', label: 'Analytics', icon: '◍' },
   { href: '/super-admin/users', label: 'Users & Roles', icon: '⊕' },
   { href: '/super-admin/rbac', label: 'RBAC', icon: '⛊' },
+  { href: '/super-admin/oauth-apps', label: 'OAuth Apps', icon: '⊚' },
   { href: '/super-admin/subscriptions', label: 'Subscriptions', icon: '◈' },
   { href: '/super-admin/learning', label: 'Learning Intel', icon: '◉' },
   { href: '/super-admin/diagnostics', label: 'Diagnostics', icon: '⊘' },
