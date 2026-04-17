@@ -181,30 +181,30 @@ supabase functions deploy send-welcome-email --no-verify-jwt
 ```
 
 Then set secrets in **Supabase Dashboard → Edge Functions → Secrets**:
-- `RESEND_API_KEY` = your Resend API key (starts with `re_`)
+- `MAILGUN_API_KEY` = your Mailgun API key (starts with `re_`)
 
 ---
 
-## 4. Resend Setup (for custom email sending)
-1. Go to https://resend.com and create an account
-2. Get API key from https://resend.com/api-keys
-3. Add to Supabase Edge Functions Secrets as `RESEND_API_KEY`
+## 4. Mailgun Setup (for custom email sending)
+1. Go to https://mailgun.com and create an account
+2. Get API key from https://mailgun.com/api-keys
+3. Add to Supabase Edge Functions Secrets as `MAILGUN_API_KEY`
 
-**Emails will work immediately** using Resend's test sender (`onboarding@resend.dev`).
+**Emails will work immediately** using Mailgun's test sender (`onboarding@mailgun.org`).
 
 To send from `@alfanumrik.com` (recommended for production):
-4. In Resend → Domains → Add domain: `alfanumrik.com`
+4. In Mailgun → Domains → Add domain: `alfanumrik.com`
 5. Add these DNS records to your domain registrar (GoDaddy/Cloudflare):
-   - **DKIM**: 3 CNAME records Resend gives you
-   - **SPF**: TXT record `v=spf1 include:resend.dev ~all`
+   - **DKIM**: 3 CNAME records Mailgun gives you
+   - **SPF**: TXT record `v=spf1 include:mailgun.org ~all`
    - **DMARC**: TXT record `v=DMARC1; p=quarantine; rua=mailto:dmarc@alfanumrik.com; pct=100; adkim=s; aspf=s`
    - See `EMAIL_DELIVERABILITY.md` for full details and warm-up strategy
 6. Wait for verification (can take 5-60 minutes)
-7. Until verified, emails will still send via `onboarding@resend.dev`
+7. Until verified, emails will still send via `onboarding@mailgun.org`
 
 ---
 
-## 5. Auth Hooks (Optional - branded auth emails via Resend)
+## 5. Auth Hooks (Optional - branded auth emails via Mailgun)
 **IMPORTANT:** Only enable this AFTER Step 3 and 4 are done and working.
 If this hook is enabled but the edge function fails, auth emails won't be sent.
 

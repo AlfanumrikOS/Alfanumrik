@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { authorizeRequest, logAudit } from '@/lib/rbac';
+import { authorizeRequest, logAudit, invalidateForSecurityEvent } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import { isValidUUID } from '@/lib/sanitize';
@@ -223,6 +223,31 @@ export async function PATCH(request: Request) {
         permissions: body.permissions,
       },
     });
+
+    // SECURITY: Invalidate permission caches for every user holding this role.
+    // Without this, permission changes take up to 5 minutes to take effect.
+    // Best-effort; must not block response and must tolerate lookup failure.
+    (async () => {
+      try {
+        const { data: affectedUsers } = await supabaseAdmin
+          .from('user_roles')
+          .select('auth_user_id')
+          .eq('role_id', body.role_id);
+
+        const userIds = (affectedUsers || [])
+          .map((r) => r.auth_user_id)
+          .filter((id): id is string => typeof id === 'string' && id.length > 0);
+
+        if (userIds.length > 0) {
+          await invalidateForSecurityEvent(userIds, 'role_permissions_changed');
+        }
+      } catch (err) {
+        logger.error('rbac_cache_invalidation_failed', {
+          error: err instanceof Error ? err : new Error(String(err)),
+          route: '/api/v1/admin/roles',
+        });
+      }
+    })();
 
     return NextResponse.json({
       success: true,

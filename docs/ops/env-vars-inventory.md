@@ -3,7 +3,8 @@
 **Last verified**: 2026-04-18
 **Canonical reference**: [`ENVIRONMENT_SETUP.md`](../../ENVIRONMENT_SETUP.md) at repo root
 **Template**: [`.env.example`](../../.env.example)
-**Validator**: [`src/lib/env.ts`](../../src/lib/env.ts) (zod-based, typed accessors)
+**Primary validator**: [`src/lib/env.ts`](../../src/lib/env.ts) — zod-based, typed accessors; throws on missing required vars
+**Non-throwing validator**: [`src/lib/env-validation.ts`](../../src/lib/env-validation.ts) — returns a result object (use when you need to report missing vars without crashing)
 
 This file is the short-form ops catalog. The full operator guide, including
 step-by-step Vercel/Supabase/Mailgun/Razorpay setup, is `ENVIRONMENT_SETUP.md`.

@@ -155,12 +155,7 @@ export async function GET(
       // Non-fatal: bloom distribution may not be available
     }
 
-    // Phase E (Subject Governance): expose subject-related fields at the
-    // top level of the response. These columns already exist on `students`
-    // and are returned via the `student` object, but surfacing them as
-    // explicit top-level keys keeps the contract stable for the new admin
-    // panels (subjects matrix, override modal). Additive only — existing
-    // consumers reading `student.*` are unaffected.
+    // Phase E (Subject Governance): expose subject-related fields
     const studentRow = studentRes.data as Record<string, unknown> | null;
     const selected_subjects = (studentRow?.selected_subjects as string[] | null) ?? null;
     const preferred_subject = (studentRow?.preferred_subject as string | null) ?? null;

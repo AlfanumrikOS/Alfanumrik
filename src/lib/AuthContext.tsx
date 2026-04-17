@@ -13,7 +13,7 @@
  *
  * DO NOT: create middleware.ts, add client-side profile inserts, remove role tabs
  */
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { supabase, getStudentSnapshot } from './supabase';
 import { clearAllCache } from './swr';
 import type { Student, StudentSnapshot } from './types';
@@ -148,6 +148,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return next;
     });
   }, []);
+
+  // Guard against recursive fetchUser calls after bootstrap.
+  // Reset to false on each fresh fetchUser invocation; set to true after bootstrap attempt.
+  const bootstrapAttemptedRef = useRef(false);
 
   // B11: Use useCallback + roles dependency to prevent stale closure.
   // Without useCallback, event handlers that captured a previous version of
@@ -296,11 +300,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (detectedRoles.length > 0) {
           setRoles(detectedRoles);
           setActiveRoleState(detectedPrimary);
-        } else {
+        } else if (!bootstrapAttemptedRef.current) {
           // User is authenticated but has no profile yet.
           // B10: Route through /api/auth/bootstrap (server-side, admin client, idempotent)
           // instead of inserting directly via browser client (which bypasses RLS, triggers,
           // and onboarding_state creation).
+          // Guard: only attempt bootstrap once to prevent infinite recursion if
+          // bootstrap succeeds but the subsequent profile query still fails.
+          bootstrapAttemptedRef.current = true;
           const metaRole = user.user_metadata?.role as string | undefined;
           const metaName = user.user_metadata?.name as string || user.email?.split('@')[0] || 'Student';
           const metaGrade = user.user_metadata?.grade as string || '6';
@@ -334,7 +341,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             });
             if (res.ok) {
               bootstrapSucceeded = true;
-              // Re-run fetchUser to pick up newly created profile
+              // Re-run fetchUser ONE MORE TIME to pick up newly created profile.
+              // bootstrapAttemptedRef.current is already true, so the recursive call
+              // will skip this bootstrap block — preventing infinite recursion.
               await fetchUser();
               return; // fetchUser will set all state; don't double-set below
             }
@@ -352,6 +361,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setRoles([fallbackRole]);
             setActiveRoleState(fallbackRole);
           }
+        } else {
+          // Bootstrap was already attempted but profile still not found.
+          // Fall through to metadata-based fallback to avoid infinite loop.
+          const metaRole = user.user_metadata?.role as string | undefined;
+          console.warn('[Auth] Profile not found after bootstrap — using metadata fallback');
+          const fallbackRole: UserRole = metaRole === 'teacher' ? 'teacher'
+            : (metaRole === 'parent' || metaRole === 'guardian') ? 'guardian'
+            : 'student';
+          setRoles([fallbackRole]);
+          setActiveRoleState(fallbackRole);
         }
       }
     } catch (err) {
@@ -387,6 +406,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await fetch('/api/auth/session', { method: 'DELETE' });
     } catch { /* best-effort */ }
     await supabase.auth.signOut();
+    // Reset bootstrap guard so a new sign-in can trigger bootstrap if needed
+    bootstrapAttemptedRef.current = false;
     // Clear SWR cache to prevent data leakage between accounts on shared devices
     clearAllCache();
     setAuthUserId(null);
@@ -435,6 +456,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setGuardian(null);
         setRoles([]);
         setActiveRoleState('none');
+        bootstrapAttemptedRef.current = false;
       } else if (event === 'TOKEN_REFRESHED') {
         fetchUser();
       } else if (event === 'SIGNED_IN') {
@@ -442,12 +464,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Without this, pages like /dashboard see isLoading=false + isLoggedIn=false
         // during the gap between SIGNED_IN and fetchUser completion, and redirect to /.
         setIsLoading(true);
+        // Allow bootstrap for the new sign-in session
+        bootstrapAttemptedRef.current = false;
         // Register device session for 2-device limit enforcement
         fetch('/api/auth/session', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ device_label: navigator.userAgent }),
-        }).catch(() => {}); // Best-effort, non-blocking
+        }).catch((err: unknown) => {
+          console.warn('[auth-session] session POST failed:', err instanceof Error ? err.message : String(err));
+        }); // Best-effort, non-blocking
         fetchUser();
       }
     });

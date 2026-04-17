@@ -1,11 +1,12 @@
 'use client';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { useResponsiveCanvas } from '@/hooks/useResponsiveCanvas';
 
 export default function YoungDoubleSlitLab() {
   const [lambda, setLambda] = useState(550);
   const [d, setD] = useState(0.5);
   const [D, setD_] = useState(1.0);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { canvasRef, containerRef, size } = useResponsiveCanvas(2);
 
   const beta = (lambda * 1e-9 * D) / (d * 1e-3) * 1000; // fringe width in mm
 
@@ -27,7 +28,7 @@ export default function YoungDoubleSlitLab() {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d')!;
-    const W = canvas.width, H = canvas.height;
+    const W = size.width, H = size.height;
     ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = '#0a0a14';
     ctx.fillRect(0, 0, W, H);
@@ -106,13 +107,15 @@ export default function YoungDoubleSlitLab() {
     ctx.fillStyle = '#fbbf24';
     ctx.textAlign = 'right';
     ctx.fillText(`β`, screenX - 8, halfH + fringeSpacingPx / 2 + 4);
-  }, [lambda, d, D, lightColor]);
+  }, [lambda, d, D, lightColor, size, canvasRef]);
 
   return (
     <div style={{ background: 'var(--surface-1)', borderRadius: 12, padding: 16, maxWidth: 600, margin: '0 auto', fontFamily: 'inherit' }}>
       <h3 style={{ color: 'var(--text-1)', fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Young's Double Slit Lab</h3>
-      <canvas ref={canvasRef} width={560} height={280} style={{ width: '100%', borderRadius: 8, display: 'block' }} />
-      <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+      <div ref={containerRef} className="w-full" style={{ aspectRatio: '2/1' }}>
+        <canvas ref={canvasRef} className="rounded-lg" style={{ display: 'block' }} />
+      </div>
+      <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: 8 }}>
         <div>
           <label style={{ color: 'var(--text-2)', fontSize: 13 }}>λ: {lambda} nm <span style={{ display: 'inline-block', width: 12, height: 12, background: lightColor, borderRadius: 2, verticalAlign: 'middle' }} /></label>
           <input type="range" min={380} max={700} value={lambda} onChange={e => setLambda(+e.target.value)} style={{ width: '100%' }} />

@@ -13,6 +13,11 @@ import { logAudit } from '@/lib/rbac';
 export async function GET(request: NextRequest) {
   const auth = await authorizeSchoolAdmin(request, 'institution.manage');
   if (!auth.authorized) return auth.errorResponse;
+  if (!auth.schoolId || !auth.userId) {
+    return NextResponse.json({ error: 'Missing school context' }, { status: 400 });
+  }
+  const schoolId: string = auth.schoolId;
+  const userId: string = auth.userId;
 
   const params = new URL(request.url).searchParams;
   const action = params.get('action') || 'dashboard_stats';
@@ -20,7 +25,7 @@ export async function GET(request: NextRequest) {
   try {
     // ── Elevations ──────────────────────────────────────────
     if (action === 'elevations') {
-      let q = `select=*&order=created_at.desc&limit=50&school_id=eq.${encodeURIComponent(auth.schoolId)}`;
+      let q = `select=*&order=created_at.desc&limit=50&school_id=eq.${encodeURIComponent(schoolId)}`;
       const status = params.get('status');
       if (status) q += `&status=eq.${encodeURIComponent(status)}`;
 
@@ -34,7 +39,7 @@ export async function GET(request: NextRequest) {
     // ── Delegations ─────────────────────────────────────────
     if (action === 'delegations') {
       // Exclude token_hash from the response — security requirement
-      let q = `select=id,granter_user_id,grantee_user_id,school_id,permissions,status,use_count,max_uses,expires_at,created_at&order=created_at.desc&limit=50&school_id=eq.${encodeURIComponent(auth.schoolId)}`;
+      let q = `select=id,granter_user_id,grantee_user_id,school_id,permissions,status,use_count,max_uses,expires_at,created_at&order=created_at.desc&limit=50&school_id=eq.${encodeURIComponent(schoolId)}`;
       const status = params.get('status');
       if (status) q += `&status=eq.${encodeURIComponent(status)}`;
 
@@ -47,7 +52,7 @@ export async function GET(request: NextRequest) {
 
     // ── Approvals ───────────────────────────────────────────
     if (action === 'approvals') {
-      let q = `select=*&order=created_at.desc&limit=50&school_id=eq.${encodeURIComponent(auth.schoolId)}`;
+      let q = `select=*&order=created_at.desc&limit=50&school_id=eq.${encodeURIComponent(schoolId)}`;
       const status = params.get('status');
       if (status) q += `&status=eq.${encodeURIComponent(status)}`;
 
@@ -60,7 +65,7 @@ export async function GET(request: NextRequest) {
 
     // ── Dashboard Stats ─────────────────────────────────────
     if (action === 'dashboard_stats') {
-      const schoolFilter = `school_id=eq.${encodeURIComponent(auth.schoolId)}`;
+      const schoolFilter = `school_id=eq.${encodeURIComponent(schoolId)}`;
 
       const [elevRes, delRes, approvalRes] = await Promise.all([
         fetch(supabaseAdminUrl('role_elevations', `select=id&status=eq.active&${schoolFilter}`), {
@@ -107,6 +112,11 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const auth = await authorizeSchoolAdmin(request, 'institution.manage');
   if (!auth.authorized) return auth.errorResponse;
+  if (!auth.schoolId || !auth.userId) {
+    return NextResponse.json({ error: 'Missing school context' }, { status: 400 });
+  }
+  const schoolId: string = auth.schoolId;
+  const userId: string = auth.userId;
 
   try {
     const body = await request.json();
@@ -124,9 +134,9 @@ export async function POST(request: NextRequest) {
 
       // Validate delegation authority
       const validation = await validateDelegation({
-        granterId: auth.userId,
+        granterId: userId,
         action: 'elevate',
-        schoolId: auth.schoolId,
+        schoolId: schoolId,
         targetRoleId: elevatedRoleId,
         durationHours,
         reason,
@@ -142,8 +152,8 @@ export async function POST(request: NextRequest) {
       // If approval is required, create an approval request instead
       if (validation.requiresApproval) {
         const approvalResult = await requestApproval({
-          schoolId: auth.schoolId,
-          requestedBy: auth.userId,
+          schoolId: schoolId,
+          requestedBy: userId,
           action: 'elevate',
           targetUserId: userId,
           targetRoleId: elevatedRoleId,
@@ -167,21 +177,21 @@ export async function POST(request: NextRequest) {
       const result = await grantElevation({
         userId,
         elevatedRoleId,
-        grantedBy: auth.userId,
+        grantedBy: userId,
         reason,
         durationHours,
-        schoolId: auth.schoolId,
+        schoolId: schoolId,
       });
 
       if (!result.success) {
         return NextResponse.json({ success: false, error: result.error }, { status: 400 });
       }
 
-      await logAudit(auth.userId, {
+      await logAudit(userId, {
         action: 'grant_elevation',
         resourceType: 'role_elevation',
         resourceId: result.elevationId || '',
-        details: { userId, roleId: elevatedRoleId, schoolId: auth.schoolId },
+        details: { userId, roleId: elevatedRoleId, schoolId: schoolId },
         status: 'success',
       });
 
@@ -200,9 +210,9 @@ export async function POST(request: NextRequest) {
 
       // Validate delegation authority
       const validation = await validateDelegation({
-        granterId: auth.userId,
+        granterId: userId,
         action: 'delegate',
-        schoolId: auth.schoolId,
+        schoolId: schoolId,
         permissions,
       });
 
@@ -214,8 +224,8 @@ export async function POST(request: NextRequest) {
       }
 
       const result = await createDelegationToken({
-        granterUserId: auth.userId,
-        schoolId: auth.schoolId,
+        granterUserId: userId,
+        schoolId: schoolId,
         permissions,
         expiryDays: expiresInDays,
         granteeUserId: granteeUserId || null,
@@ -227,11 +237,11 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: result.error }, { status: 400 });
       }
 
-      await logAudit(auth.userId, {
+      await logAudit(userId, {
         action: 'create_delegation',
         resourceType: 'delegation_token',
         resourceId: result.tokenId || '',
-        details: { permissions, schoolId: auth.schoolId },
+        details: { permissions, schoolId: schoolId },
         status: 'success',
       });
 
@@ -252,17 +262,17 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const result = await revokeElevation(elevationId, auth.userId);
+      const result = await revokeElevation(elevationId, userId);
 
       if (!result.success) {
         return NextResponse.json({ success: false, error: result.error }, { status: 400 });
       }
 
-      await logAudit(auth.userId, {
+      await logAudit(userId, {
         action: 'revoke_elevation',
         resourceType: 'role_elevation',
         resourceId: elevationId,
-        details: { schoolId: auth.schoolId },
+        details: { schoolId: schoolId },
         status: 'success',
       });
 
@@ -279,17 +289,17 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const result = await revokeDelegationToken(tokenId, auth.userId);
+      const result = await revokeDelegationToken(tokenId, userId);
 
       if (!result.success) {
         return NextResponse.json({ success: false, error: result.error }, { status: 400 });
       }
 
-      await logAudit(auth.userId, {
+      await logAudit(userId, {
         action: 'revoke_delegation',
         resourceType: 'delegation_token',
         resourceId: tokenId,
-        details: { schoolId: auth.schoolId },
+        details: { schoolId: schoolId },
         status: 'success',
       });
 
@@ -306,17 +316,17 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const result = await approveRequest(approvalId, auth.userId, reason);
+      const result = await approveRequest(approvalId, userId, reason);
 
       if (!result.success) {
         return NextResponse.json({ success: false, error: result.error }, { status: 400 });
       }
 
-      await logAudit(auth.userId, {
+      await logAudit(userId, {
         action: 'approve_delegation_request',
         resourceType: 'delegation_approval',
         resourceId: approvalId,
-        details: { schoolId: auth.schoolId, reason: reason || null },
+        details: { schoolId: schoolId, reason: reason || null },
         status: 'success',
       });
 
@@ -333,17 +343,17 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const result = await rejectRequest(approvalId, auth.userId, reason);
+      const result = await rejectRequest(approvalId, userId, reason);
 
       if (!result.success) {
         return NextResponse.json({ success: false, error: result.error }, { status: 400 });
       }
 
-      await logAudit(auth.userId, {
+      await logAudit(userId, {
         action: 'reject_delegation_request',
         resourceType: 'delegation_approval',
         resourceId: approvalId,
-        details: { schoolId: auth.schoolId, reason },
+        details: { schoolId: schoolId, reason },
         status: 'success',
       });
 

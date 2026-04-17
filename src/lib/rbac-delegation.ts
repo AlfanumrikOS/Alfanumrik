@@ -23,7 +23,7 @@
 import { createHash, randomBytes } from 'crypto';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
-import { getUserPermissions } from '@/lib/rbac';
+import { getUserPermissions, invalidateForSecurityEvent } from '@/lib/rbac';
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -169,6 +169,17 @@ export async function createDelegationToken(
       });
     } catch {
       // Audit write failed — not critical
+    }
+
+    // Invalidate delegator cache so delegation takes effect immediately.
+    // Best-effort; failure must not cause the creation to fail.
+    try {
+      await invalidateForSecurityEvent([input.granterUserId], 'delegation_granted');
+    } catch (invErr) {
+      logger.error('rbac_delegation_cache_invalidation_failed', {
+        error: invErr instanceof Error ? invErr : new Error(String(invErr)),
+        route: 'rbac-delegation',
+      });
     }
 
     return { success: true, token: rawToken, tokenId: data.id };
@@ -357,6 +368,23 @@ export async function revokeDelegationToken(
       });
     } catch {
       // Audit write failed — not critical
+    }
+
+    // SECURITY: Invalidate caches for both the granter and the grantee so the
+    // revoked delegation is immediately enforced. Without this, the delegatee
+    // retains the delegated permissions for up to 5 minutes. Best-effort.
+    try {
+      const userIds: string[] = [];
+      if (token.granter_user_id) userIds.push(token.granter_user_id);
+      if (token.grantee_user_id) userIds.push(token.grantee_user_id);
+      if (userIds.length > 0) {
+        await invalidateForSecurityEvent(userIds, 'delegation_revoked');
+      }
+    } catch (invErr) {
+      logger.error('rbac_delegation_cache_invalidation_failed', {
+        error: invErr instanceof Error ? invErr : new Error(String(invErr)),
+        route: 'rbac-delegation',
+      });
     }
 
     return { success: true };

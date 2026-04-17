@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
 import DataTable, { Column } from '../_components/DataTable';
 import DetailDrawer from '../_components/DetailDrawer';
@@ -371,6 +372,14 @@ function UsersContent() {
                 {selectedUser.is_active !== false ? 'Ban User' : 'Unban User'}
               </button>
             </div>
+
+            {selectedUser.role === 'student' && selectedUser.id && (
+              <div style={{ marginTop: 12 }}>
+                <Link href={`/super-admin/students/${selectedUser.id}`} className="text-sm text-blue-600 hover:underline">
+                  View Full Profile &rarr;
+                </Link>
+              </div>
+            )}
 
             <div style={{ marginTop: 20, fontSize: 10, color: colors.text3 }}>
               ID: <code>{selectedUser.id}</code><br />

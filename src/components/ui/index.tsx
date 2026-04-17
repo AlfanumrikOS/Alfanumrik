@@ -1,6 +1,14 @@
 'use client';
 
-import { type ReactNode, type ButtonHTMLAttributes, type InputHTMLAttributes, useState, useEffect } from 'react';
+import {
+  type ReactNode,
+  type ButtonHTMLAttributes,
+  type InputHTMLAttributes,
+  type TextareaHTMLAttributes,
+  useId,
+  useState,
+  useEffect,
+} from 'react';
 
 /* ═══════════════════════════════════════════════════════════════
    ALFANUMRIK WONDER BLOCKS — Component Library
@@ -44,22 +52,207 @@ export function Card({ children, className = '', accent, onClick, hoverable }: C
   );
 }
 
+/* ─── Locked Card ─────────────────────────────────────────── */
+/** Use for grade-gated or plan-gated surfaces. Shows a visible "coming soon"
+ *  or "upgrade to unlock" state instead of silently hiding the feature. */
+interface LockedCardProps {
+  icon?: string;
+  title: ReactNode;
+  reason: ReactNode;
+  actionLabel?: ReactNode;
+  onAction?: () => void;
+  variant?: 'grade' | 'plan' | 'generic';
+  className?: string;
+}
+
+export function LockedCard({
+  icon,
+  title,
+  reason,
+  actionLabel,
+  onAction,
+  variant = 'generic',
+  className = '',
+}: LockedCardProps) {
+  const accent =
+    variant === 'plan' ? 'var(--purple)' :
+    variant === 'grade' ? 'var(--teal)' :
+    'var(--text-3)';
+  return (
+    <div
+      className={`rounded-2xl p-5 relative overflow-hidden ${className}`}
+      style={{
+        background: 'var(--surface-2)',
+        border: '1px dashed var(--border-mid)',
+      }}
+      aria-label={typeof title === 'string' ? `Locked: ${title}` : undefined}
+    >
+      <div className="flex items-start gap-3">
+        <div
+          className="flex items-center justify-center w-10 h-10 rounded-xl shrink-0"
+          style={{
+            background: 'var(--surface-1)',
+            border: '1px solid var(--border)',
+          }}
+          aria-hidden="true"
+        >
+          <span className="text-lg opacity-70">{icon ?? '🔒'}</span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="text-sm font-bold text-[var(--text-2)]" style={{ fontFamily: 'var(--font-display)' }}>
+              {title}
+            </h3>
+            <span
+              className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+              style={{ background: `${accent}15`, color: accent, border: `1px solid ${accent}30` }}
+            >
+              <span aria-hidden="true">🔒</span>
+              {variant === 'plan' ? 'Premium' : variant === 'grade' ? 'Unlocks later' : 'Locked'}
+            </span>
+          </div>
+          <p className="text-xs text-[var(--text-3)] mt-1 leading-relaxed">{reason}</p>
+          {actionLabel && onAction && (
+            <button
+              type="button"
+              onClick={onAction}
+              className="mt-3 inline-flex items-center gap-1 text-xs font-bold underline-offset-4 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2 rounded"
+              style={{ color: accent }}
+            >
+              {actionLabel} →
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Upgrade CTA ─────────────────────────────────────────── */
+/** Proactive upgrade entry point — distinct from <UpgradeModal>, which
+ *  fires on "daily limit reached". This component is for voluntary
+ *  discovery (nav pill, settings row, paywall peek). Routes to /pricing
+ *  by default, or fires onClick if provided.
+ *
+ *  `source` is a free-form analytics tag ("nav_more", "profile_row", etc.)
+ *  so we can measure where upgrades originate without bolting on a
+ *  per-call-site event. Callers that need an in-place limit-reached
+ *  checkout should keep using <UpgradeModal>. */
+interface UpgradeCTAProps {
+  variant?: 'pill' | 'card';
+  label?: ReactNode;
+  subtitle?: ReactNode;
+  source?: string;
+  href?: string;
+  onClick?: () => void;
+  className?: string;
+}
+
+export function UpgradeCTA({
+  variant = 'pill',
+  label,
+  subtitle,
+  source,
+  href = '/pricing',
+  onClick,
+  className = '',
+}: UpgradeCTAProps) {
+  const resolvedLabel = label ?? 'Upgrade';
+
+  const handleClick = (e: React.MouseEvent) => {
+    // Analytics hook: log-only (no PII), non-blocking. Callers that want
+    // custom routing pass onClick; we still log the source.
+    if (source && typeof window !== 'undefined') {
+      try {
+        // Use a harmless CustomEvent — whoever wires analytics (ops) can
+        // listen for this without this component taking a dependency on
+        // a specific analytics SDK.
+        window.dispatchEvent(new CustomEvent('alfanumrik:upgrade-cta-click', {
+          detail: { source, variant, timestamp: Date.now() },
+        }));
+      } catch { /* non-blocking */ }
+    }
+    if (onClick) {
+      e.preventDefault();
+      onClick();
+    }
+  };
+
+  if (variant === 'pill') {
+    return (
+      <a
+        href={href}
+        onClick={handleClick}
+        className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition-all hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${className}`}
+        style={{
+          background: 'linear-gradient(135deg, var(--purple), var(--purple-light))',
+          color: 'white',
+          boxShadow: '0 2px 8px rgb(var(--purple-rgb) / 0.25)',
+        }}
+        data-testid="upgrade-cta-pill"
+      >
+        <span aria-hidden="true">✨</span>
+        <span>{resolvedLabel}</span>
+      </a>
+    );
+  }
+
+  // card variant — larger, for settings/profile rows
+  return (
+    <a
+      href={href}
+      onClick={handleClick}
+      className={`block rounded-2xl p-4 transition-all hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--purple)] focus-visible:ring-offset-2 ${className}`}
+      style={{
+        background: 'linear-gradient(135deg, rgb(var(--purple-rgb) / 0.08), rgb(var(--orange-rgb) / 0.06))',
+        border: '1px solid rgb(var(--purple-rgb) / 0.2)',
+      }}
+      data-testid="upgrade-cta-card"
+    >
+      <div className="flex items-center gap-3">
+        <div
+          className="flex items-center justify-center w-10 h-10 rounded-xl shrink-0"
+          style={{
+            background: 'linear-gradient(135deg, var(--purple), var(--purple-light))',
+            color: 'white',
+          }}
+          aria-hidden="true"
+        >
+          <span className="text-lg">✨</span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-bold" style={{ color: 'var(--text-1)' }}>{resolvedLabel}</div>
+          {subtitle && (
+            <div className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>{subtitle}</div>
+          )}
+        </div>
+        <span className="text-xs font-bold" style={{ color: 'var(--purple)' }} aria-hidden="true">→</span>
+      </div>
+    </a>
+  );
+}
+
 /* ─── Button ──────────────────────────────────────────────── */
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'ghost' | 'soft';
+  variant?: 'primary' | 'ghost' | 'soft' | 'destructive' | 'link';
   size?: 'sm' | 'md' | 'lg';
   color?: string;
   fullWidth?: boolean;
+  loading?: boolean;
   children: ReactNode;
 }
+
+const BTN_FOCUS = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2';
 
 export function Button({
   variant = 'primary',
   size = 'md',
   color,
   fullWidth,
+  loading,
   children,
   className = '',
+  disabled,
   ...props
 }: ButtonProps) {
   const base = fullWidth ? 'w-full' : '';
@@ -69,11 +262,26 @@ export function Button({
     lg: 'text-base px-7 py-4 rounded-2xl',
   };
 
-  const disabledAttr = props.disabled ? { 'aria-disabled': true as const } : {};
+  const isDisabled = disabled || loading;
+  const disabledAttr = isDisabled ? { 'aria-disabled': true as const, disabled: true } : {};
+  const busyAttr = loading ? { 'aria-busy': true as const } : {};
+
+  const spinner = loading ? (
+    <span
+      className="inline-block w-3.5 h-3.5 rounded-full border-2 border-current border-r-transparent animate-spin"
+      aria-hidden="true"
+    />
+  ) : null;
 
   if (variant === 'primary') {
     return (
-      <button className={`btn-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2 ${sizeMap[size]} ${base} ${className}`} {...disabledAttr} {...props}>
+      <button
+        className={`btn-primary ${BTN_FOCUS} ${sizeMap[size]} ${base} ${className}`}
+        {...disabledAttr}
+        {...busyAttr}
+        {...props}
+      >
+        {spinner}
         {children}
       </button>
     );
@@ -81,7 +289,55 @@ export function Button({
 
   if (variant === 'ghost') {
     return (
-      <button className={`btn-ghost focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2 ${sizeMap[size]} ${base} ${className}`} {...disabledAttr} {...props}>
+      <button
+        className={`btn-ghost ${BTN_FOCUS} ${sizeMap[size]} ${base} ${className}`}
+        {...disabledAttr}
+        {...busyAttr}
+        {...props}
+      >
+        {spinner}
+        {children}
+      </button>
+    );
+  }
+
+  if (variant === 'destructive') {
+    return (
+      <button
+        className={`inline-flex items-center justify-center gap-2 font-semibold transition-all ${BTN_FOCUS} ${sizeMap[size]} ${base} ${className}`}
+        style={{
+          background: 'var(--danger, #DC2626)',
+          color: '#fff',
+          border: '1.5px solid transparent',
+          opacity: isDisabled ? 0.6 : 1,
+          cursor: isDisabled ? 'not-allowed' : 'pointer',
+        }}
+        {...disabledAttr}
+        {...busyAttr}
+        {...props}
+      >
+        {spinner}
+        {children}
+      </button>
+    );
+  }
+
+  if (variant === 'link') {
+    return (
+      <button
+        className={`inline-flex items-center gap-1 font-semibold underline-offset-4 hover:underline transition-colors ${BTN_FOCUS} ${base} ${className}`}
+        style={{
+          color: color ?? 'var(--orange)',
+          background: 'transparent',
+          padding: 0,
+          opacity: isDisabled ? 0.5 : 1,
+          cursor: isDisabled ? 'not-allowed' : 'pointer',
+        }}
+        {...disabledAttr}
+        {...busyAttr}
+        {...props}
+      >
+        {spinner}
         {children}
       </button>
     );
@@ -90,15 +346,19 @@ export function Button({
   // soft variant — colored background
   return (
     <button
-      className={`inline-flex items-center justify-center gap-2 font-semibold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2 ${sizeMap[size]} ${base} ${className}`}
+      className={`inline-flex items-center justify-center gap-2 font-semibold transition-all ${BTN_FOCUS} ${sizeMap[size]} ${base} ${className}`}
       style={{
         background: color ? `${color}12` : 'var(--surface-2)',
         border: `1.5px solid ${color ?? 'var(--border)'}30`,
         color: color ?? 'var(--text-1)',
+        opacity: isDisabled ? 0.6 : 1,
+        cursor: isDisabled ? 'not-allowed' : 'pointer',
       }}
       {...disabledAttr}
+      {...busyAttr}
       {...props}
     >
+      {spinner}
       {children}
     </button>
   );
@@ -162,6 +422,163 @@ export function Select({ label, value, onChange, options, className = '', disabl
           <option key={opt.value} value={opt.value}>{opt.label}</option>
         ))}
       </select>
+    </div>
+  );
+}
+
+/* ─── Textarea ────────────────────────────────────────────── */
+interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
+  label?: string;
+  error?: string;
+  helperText?: string;
+}
+
+export function Textarea({ label, error, helperText, className = '', id, ...props }: TextareaProps) {
+  const autoId = useId();
+  const fieldId = id ?? autoId;
+  const descId = error ? `${fieldId}-err` : helperText ? `${fieldId}-hint` : undefined;
+  return (
+    <div>
+      {label && (
+        <label htmlFor={fieldId} className="text-xs text-[var(--text-3)] mb-1.5 block ml-1 font-medium">
+          {label}
+        </label>
+      )}
+      <textarea
+        id={fieldId}
+        className={`input-base ${className}`}
+        aria-invalid={error ? 'true' : undefined}
+        aria-describedby={descId}
+        rows={props.rows ?? 4}
+        style={error ? { borderColor: 'var(--red, #DC2626)', boxShadow: '0 0 0 2px rgba(220,38,38,0.1)' } : undefined}
+        {...props}
+      />
+      {error && (
+        <p id={descId} className="text-xs mt-1 ml-1 font-medium" style={{ color: 'var(--red, #DC2626)' }} role="alert">
+          {error}
+        </p>
+      )}
+      {!error && helperText && (
+        <p id={descId} className="text-xs mt-1 ml-1 text-[var(--text-3)]">{helperText}</p>
+      )}
+    </div>
+  );
+}
+
+/* ─── Checkbox ────────────────────────────────────────────── */
+interface CheckboxProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'onChange'> {
+  label: ReactNode;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  helperText?: string;
+}
+
+export function Checkbox({ label, checked, onChange, helperText, id, disabled, className = '', ...props }: CheckboxProps) {
+  const autoId = useId();
+  const fieldId = id ?? autoId;
+  return (
+    <label
+      htmlFor={fieldId}
+      className={`flex items-start gap-2.5 cursor-pointer select-none ${disabled ? 'opacity-60 cursor-not-allowed' : ''} ${className}`}
+    >
+      <input
+        id={fieldId}
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        disabled={disabled}
+        className="mt-0.5 h-4 w-4 rounded accent-[var(--orange)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2"
+        {...props}
+      />
+      <span className="flex flex-col">
+        <span className="text-sm text-[var(--text-1)] font-medium leading-snug">{label}</span>
+        {helperText && <span className="text-xs text-[var(--text-3)] mt-0.5">{helperText}</span>}
+      </span>
+    </label>
+  );
+}
+
+/* ─── Toggle ──────────────────────────────────────────────── */
+interface ToggleProps {
+  label?: ReactNode;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  disabled?: boolean;
+  helperText?: string;
+  id?: string;
+  className?: string;
+}
+
+export function Toggle({ label, checked, onChange, disabled, helperText, id, className = '' }: ToggleProps) {
+  const autoId = useId();
+  const fieldId = id ?? autoId;
+  return (
+    <div className={`flex items-center justify-between gap-3 ${className}`}>
+      {label && (
+        <label htmlFor={fieldId} className="flex flex-col cursor-pointer select-none">
+          <span className="text-sm text-[var(--text-1)] font-medium">{label}</span>
+          {helperText && <span className="text-xs text-[var(--text-3)] mt-0.5">{helperText}</span>}
+        </label>
+      )}
+      <button
+        id={fieldId}
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-disabled={disabled || undefined}
+        onClick={() => !disabled && onChange(!checked)}
+        disabled={disabled}
+        className="relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2"
+        style={{
+          background: checked ? 'var(--orange)' : 'var(--surface-3)',
+          opacity: disabled ? 0.5 : 1,
+          cursor: disabled ? 'not-allowed' : 'pointer',
+        }}
+      >
+        <span
+          aria-hidden="true"
+          className="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform"
+          style={{ transform: checked ? 'translateX(22px)' : 'translateX(2px)', marginTop: 2 }}
+        />
+      </button>
+    </div>
+  );
+}
+
+/* ─── FormField ───────────────────────────────────────────── */
+/** Wrapper that pairs a label, help text, and error with any form control.
+ *  Preferred over writing bare <label> + input pairs. */
+interface FormFieldProps {
+  label?: ReactNode;
+  htmlFor?: string;
+  helperText?: ReactNode;
+  error?: ReactNode;
+  required?: boolean;
+  children: ReactNode;
+  className?: string;
+}
+
+export function FormField({ label, htmlFor, helperText, error, required, children, className = '' }: FormFieldProps) {
+  return (
+    <div className={`space-y-1 ${className}`}>
+      {label && (
+        <label
+          htmlFor={htmlFor}
+          className="text-xs text-[var(--text-3)] block ml-1 font-medium"
+        >
+          {label}
+          {required && <span className="ml-0.5" style={{ color: 'var(--red, #DC2626)' }} aria-hidden="true">*</span>}
+        </label>
+      )}
+      {children}
+      {error && (
+        <p className="text-xs ml-1 font-medium" style={{ color: 'var(--red, #DC2626)' }} role="alert">
+          {error}
+        </p>
+      )}
+      {!error && helperText && (
+        <p className="text-xs ml-1 text-[var(--text-3)]">{helperText}</p>
+      )}
     </div>
   );
 }

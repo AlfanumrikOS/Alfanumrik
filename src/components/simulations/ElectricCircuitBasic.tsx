@@ -529,11 +529,11 @@ export default function ElectricCircuitBasic() {
     <div
       ref={containerRef}
       style={{
-        minHeight: '100vh',
         background: `linear-gradient(135deg, ${COLORS.bg} 0%, #1e293b 100%)`,
         padding: '16px',
         fontFamily: "'Segoe UI', system-ui, -apple-system, sans-serif",
         color: COLORS.text,
+        borderRadius: '16px',
       }}
     >
       {/* Title */}

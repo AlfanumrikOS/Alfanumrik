@@ -204,6 +204,11 @@ async function callFoxyTutor(params: Record<string, any>) {
         board:     params.board     ?? null,
         sessionId: params.session_id ?? null, // map old param name to new
         mode:      params.mode      ?? 'learn',
+        // Claude Vision: send image directly for handwriting recognition
+        ...(params.image_base64 ? {
+          image_base64: params.image_base64,
+          image_media_type: params.image_media_type ?? 'image/jpeg',
+        } : {}),
       }),
     });
 
@@ -250,7 +255,9 @@ async function callFoxyTutor(params: Record<string, any>) {
       xp_earned:  0, // new route does not award per-message XP (XP via quiz/study plan)
       session_id: data.sessionId || null,
       sources:    data.sources   || [],
+      diagrams:   data.diagrams  || [],
       quota:      data.quotaRemaining,
+      upgradePrompt: data.upgradePrompt || null,
     };
   } catch (err) {
     console.error('[Foxy] Network error:', err);
@@ -262,7 +269,8 @@ async function callFoxyTutor(params: Record<string, any>) {
    MAIN FOXY PAGE
    ══════════════════════════════════════════════════════════════ */
 
-interface ChatMessage { id: number; role: 'student' | 'tutor'; content: string; timestamp: string; xp?: number; feedback?: 'up' | 'down' | null; reported?: boolean; }
+interface DiagramRef { url: string; title: string; pageNumber?: number; description: string; }
+interface ChatMessage { id: number; role: 'student' | 'tutor'; content: string; timestamp: string; xp?: number; feedback?: 'up' | 'down' | null; reported?: boolean; diagrams?: DiagramRef[]; imageUrl?: string; }
 
 const REPORT_REASONS = [
   { value: 'wrong_answer', label: '❌ Wrong answer', labelHi: '❌ गलत उत्तर' },
@@ -277,10 +285,10 @@ const REPORT_REASONS = [
 export default function FoxyPage() {
   const { student: authStudent, isLoggedIn, isLoading: authLoading } = useAuth();
   const router = useRouter();
+  const { unlocked: allowedSubjects } = useAllowedSubjects();
 
   // Allowed subjects come from the subjects service — respects grade, stream, plan,
   // and the admin-curated master list. Build a lookup table for tab/dropdown rendering.
-  const { unlocked: allowedSubjects } = useAllowedSubjects();
   const SUBJECTS: Record<string, SubjectConfig> = Object.fromEntries(
     allowedSubjects.map((s) => [s.code, { name: s.name, icon: s.icon, color: s.color } as SubjectConfig]),
   );
@@ -335,6 +343,9 @@ export default function FoxyPage() {
 
   // Save-to-flashcard — tracks which message IDs have been saved
   const [savedMessageIds, setSavedMessageIds] = useState<Set<number>>(new Set());
+
+  // Image upload — OCR processing indicator
+  const [isProcessingImage, setIsProcessingImage] = useState(false);
 
   // SEL mood check-in — shown once per day at session start
   const { shouldShow: shouldShowSEL, markShown: markSELShown } = useSELCheckIn(student?.id);
@@ -567,11 +578,11 @@ export default function FoxyPage() {
       const el = scrollContainerRef.current;
       if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
     });
-  }, [messages]);
+  }, [messages, loading]);
 
   // Send message with usage enforcement
-  const sendMessage = useCallback(async (text: string) => {
-    if (!text.trim()) return;
+  const sendMessage = useCallback(async (text: string, image?: File | null) => {
+    if (!text.trim() && !image) return;
     // Client-side length limit matching server-side MAX_MESSAGE_LENGTH
     if (text.length > 5000) {
       setMessages((p: ChatMessage[]) => [...p, { id: Date.now(), role: 'tutor', content: 'Message too long! Please keep it under 5000 characters.', timestamp: new Date().toISOString() }]);
@@ -593,13 +604,66 @@ export default function FoxyPage() {
       setChatUsage((prev: UsageResult | null) => prev ? { ...prev, count: prev.count + 1, remaining: Math.max(0, prev.remaining - 1), allowed: prev.count + 1 < prev.limit } : prev);
     }
 
-    setMessages((p: ChatMessage[]) => [...p, { id: Date.now(), role: 'student', content: text, timestamp: new Date().toISOString() }]);
-    setLoading(true); setFoxyState('thinking'); setShowTopicSheet(false);
+    // ── Image OCR processing ──
+    // When the student attaches a photo of handwritten work, convert to base64
+    // and send directly to the Foxy API which passes it to Claude Vision.
+    // Claude reads handwriting natively — far better than any OCR service.
+    let augmentedMessage = text;
+    let imagePreviewUrl: string | undefined;
+    let imageBase64: string | undefined;
+
+    if (image) {
+      // Create a preview URL to display in the chat bubble
+      imagePreviewUrl = URL.createObjectURL(image);
+
+      // Show the student message immediately with the image
+      setMessages((p: ChatMessage[]) => [...p, {
+        id: Date.now(),
+        role: 'student',
+        content: text || (language === 'hi' ? 'फ़ोटो अपलोड की' : 'Uploaded photo'),
+        timestamp: new Date().toISOString(),
+        imageUrl: imagePreviewUrl,
+      }]);
+      setLoading(true); setFoxyState('thinking'); setShowTopicSheet(false);
+      setIsProcessingImage(true);
+
+      try {
+        // Convert image to base64 for Claude Vision
+        const buffer = await image.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        imageBase64 = btoa(binary);
+        augmentedMessage = text || (language === 'hi'
+          ? 'मेरा लिखा हुआ उत्तर देखो और जाँचो।'
+          : 'Please look at my handwritten answer and check it.');
+      } catch (err) {
+        console.warn('[foxy] Image base64 conversion failed:', err);
+        augmentedMessage = text || (language === 'hi'
+          ? 'मैं अपना लिखा हुआ उत्तर दिखाना चाहता था।'
+          : 'I wanted to share my handwritten answer.');
+      } finally {
+        setIsProcessingImage(false);
+      }
+    } else {
+      // Text-only message — show immediately
+      setMessages((p: ChatMessage[]) => [...p, { id: Date.now(), role: 'student', content: text, timestamp: new Date().toISOString() }]);
+      setLoading(true); setFoxyState('thinking'); setShowTopicSheet(false);
+    }
+
     try {
       const selectedChapterTopics = selectedChapters.length > 0 ? topics.filter((t: any) => selectedChapters.includes(t.id)) : [];
       const chapCtx = selectedChapterTopics.length > 0 ? selectedChapterTopics.map((t: any) => `Ch ${t.chapter_number}: ${t.title}`).join(', ') : null;
       const chapterForSession = activeTopic?.title || (selectedChapterTopics.length === 1 ? selectedChapterTopics[0].title : null);
-      const resp = await callFoxyTutor({ message: text, student_id: student?.id || '', student_name: student?.name || 'Student', grade: studentGrade, subject: activeSubject, language, mode: sessionMode, topic_id: activeTopic?.id || null, topic_title: activeTopic?.title || null, chapter: chapterForSession, session_id: chatSessionId, selected_chapters: chapCtx });
+      const foxyParams: Record<string, any> = { message: augmentedMessage, student_id: student?.id || '', student_name: student?.name || 'Student', grade: studentGrade, subject: activeSubject, language, mode: sessionMode, topic_id: activeTopic?.id || null, topic_title: activeTopic?.title || null, chapter: chapterForSession, session_id: chatSessionId, selected_chapters: chapCtx };
+      // Pass image to Claude Vision when student uploads a photo
+      if (imageBase64) {
+        foxyParams.image_base64 = imageBase64;
+        foxyParams.image_media_type = image?.type || 'image/jpeg';
+      }
+      const resp = await callFoxyTutor(foxyParams);
       // Server confirmed daily limit reached — show UpgradeModal
       if (resp.limitReached) {
         setMessages((p: ChatMessage[]) => [...p, { id: Date.now() + 1, role: 'tutor', content: resp.reply, timestamp: new Date().toISOString() }]);
@@ -608,7 +672,18 @@ export default function FoxyPage() {
         setLoading(false);
         return;
       }
-      setMessages((p: ChatMessage[]) => [...p, { id: Date.now() + 1, role: 'tutor', content: resp.reply, timestamp: new Date().toISOString(), xp: resp.xp_earned }]);
+      setMessages((p: ChatMessage[]) => [...p, { id: Date.now() + 1, role: 'tutor', content: resp.reply, timestamp: new Date().toISOString(), xp: resp.xp_earned, diagrams: resp.diagrams?.length > 0 ? resp.diagrams : undefined }]);
+      // Soft upgrade prompt when quota is near exhaustion (user's choice, not forced)
+      if (resp.upgradePrompt) {
+        const up = resp.upgradePrompt;
+        const promptMsg = language === 'hi' ? up.messageHi : up.message;
+        setMessages((p: ChatMessage[]) => [...p, {
+          id: Date.now() + 2,
+          role: 'tutor',
+          content: `💡 ${promptMsg}`,
+          timestamp: new Date().toISOString(),
+        }]);
+      }
       if (resp.xp_earned > 0) setXpGained((p: number) => p + resp.xp_earned);
       if (resp.session_id) setChatSessionId(resp.session_id);
       setFoxyState('happy'); setTimeout(() => setFoxyState('idle'), 2000);
@@ -1235,7 +1310,17 @@ export default function FoxyPage() {
                 <div key={msg.id}>
                   <ChatBubble
                     role={msg.role}
-                    content={msg.role === 'tutor' ? <RichContent content={msg.content} subjectKey={activeSubject} /> : <div className="whitespace-pre-wrap">{msg.content}</div>}
+                    content={msg.role === 'tutor' ? <RichContent content={msg.content} subjectKey={activeSubject} /> : (
+                      <div>
+                        {msg.imageUrl && (
+                          <div className="mb-2 rounded-xl overflow-hidden max-w-[220px]">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={msg.imageUrl} alt={language === 'hi' ? 'अपलोड की गई फ़ोटो' : 'Uploaded photo'} className="w-full h-auto rounded-xl" />
+                          </div>
+                        )}
+                        <div className="whitespace-pre-wrap">{msg.content}</div>
+                      </div>
+                    )}
                     rawContent={msg.content}
                     timestamp={msg.timestamp}
                     studentName={student?.name}
@@ -1248,6 +1333,53 @@ export default function FoxyPage() {
                     onReport={() => openReport(msg.id)}
                     onSpeak={ttsSupported && msg.role === 'tutor' ? () => speakMessage(msg.content) : undefined}
                   />
+                  {msg.role === 'tutor' && msg.diagrams && msg.diagrams.length > 0 && (
+                    <div className="pl-11 -mt-1 mb-2 space-y-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>
+                        {language === 'hi' ? 'NCERT चित्र:' : 'NCERT Diagrams:'}
+                      </p>
+                      {msg.diagrams.map((d: DiagramRef, i: number) => (
+                        <a
+                          key={i}
+                          href={d.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-3 px-4 py-3 rounded-2xl text-left transition-all hover:brightness-95 active:scale-[0.98]"
+                          style={{
+                            background: `linear-gradient(135deg, ${cfg.color}08, ${cfg.color}04)`,
+                            border: `1.5px solid ${cfg.color}25`,
+                            boxShadow: `0 2px 8px ${cfg.color}08`,
+                          }}
+                        >
+                          <div
+                            className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                            style={{ background: `${cfg.color}12` }}
+                          >
+                            <span className="text-lg" style={{ color: cfg.color }}>📊</span>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-bold truncate" style={{ color: 'var(--text-1)' }}>
+                              {d.title}
+                            </p>
+                            {d.description && (
+                              <p className="text-[10px] mt-0.5 truncate" style={{ color: 'var(--text-3)' }}>
+                                {d.description}
+                              </p>
+                            )}
+                          </div>
+                          {d.pageNumber && (
+                            <span
+                              className="flex-shrink-0 text-[9px] font-bold px-2 py-1 rounded-lg"
+                              style={{ background: `${cfg.color}15`, color: cfg.color }}
+                            >
+                              p. {d.pageNumber}
+                            </span>
+                          )}
+                          <span className="flex-shrink-0 text-sm" style={{ color: cfg.color }}>↗</span>
+                        </a>
+                      ))}
+                    </div>
+                  )}
                   {msg.role === 'tutor' && !msg.reported && (
                     <div className="flex justify-start pl-11 -mt-2 mb-3">
                       <button
@@ -1334,11 +1466,21 @@ export default function FoxyPage() {
 
             {/* Thinking */}
             {loading && (
-              <div className="flex gap-2.5 items-center mb-4">
-                <div className="w-8 h-8 rounded-full flex items-center justify-center text-base shrink-0" style={{ background: 'linear-gradient(135deg, #E8590C, #F59E0B)', animation: 'pulse 1s infinite' }}>{FOXY_FACES.thinking}</div>
-                <div className="px-4 py-3 rounded-2xl rounded-bl-sm flex items-center gap-1.5" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
-                  {[0, 1, 2].map(i => <div key={i} className="w-2 h-2 rounded-full typing-dot" style={{ background: cfg.color, opacity: 0.6 }} />)}
-                  <span className="text-xs text-[var(--text-3)] ml-1.5">Foxy is thinking...</span>
+              <div className="flex items-start gap-3 px-4 py-3">
+                <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
+                  <span className="text-lg animate-pulse">🦊</span>
+                </div>
+                <div className="bg-orange-50 rounded-xl px-4 py-3 max-w-[80%]" style={{ border: '1px solid var(--border)' }}>
+                  <div className="flex gap-1.5">
+                    <span className="w-2 h-2 bg-orange-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <span className="w-2 h-2 bg-orange-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <span className="w-2 h-2 bg-orange-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                  </div>
+                  <p className="text-xs text-orange-600 mt-1.5">
+                    {isProcessingImage
+                      ? (language === 'hi' ? '📷 फ़ोटो पढ़ रहे हैं...' : '📷 Reading your handwriting...')
+                      : (language === 'hi' ? 'फॉक्सी सोच रहा है...' : 'Foxy is thinking...')}
+                  </p>
                 </div>
               </div>
             )}

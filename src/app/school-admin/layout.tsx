@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import SchoolAdminShell from './_components/SchoolAdminShell';
 
 export const metadata: Metadata = {
   title: 'School Admin Portal — Alfanumrik',
@@ -6,5 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function SchoolAdminLayout({ children }: { children: React.ReactNode }) {
-  return children;
+  return <SchoolAdminShell>{children}</SchoolAdminShell>;
 }

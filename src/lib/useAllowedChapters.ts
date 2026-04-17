@@ -21,8 +21,20 @@ export interface AllowedChapter {
   has_concepts: boolean;
 }
 
+// Auth tokens live in localStorage (no middleware to sync to cookies).
+// Send the access token as Bearer header so server routes can authenticate.
+import { supabase } from './supabase-client';
+
 const fetcher = async (url: string): Promise<{ chapters: AllowedChapter[] }> => {
-  const r = await fetch(url);
+  const headers: Record<string, string> = {};
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      headers['Authorization'] = `Bearer ${session.access_token}`;
+    }
+  } catch { /* proceed without — server will return 401 */ }
+
+  const r = await fetch(url, { headers });
   if (!r.ok) throw new Error(`chapters.fetch_failed:${r.status}`);
   return r.json();
 };

@@ -100,7 +100,13 @@ async function registerSessionOnResponse(
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl;
   const code = searchParams.get('code');
-  const next = searchParams.get('next') ?? '/dashboard';
+  // Preserve whether `next` was explicitly provided. If not, we will resolve
+  // a role-appropriate destination post-login (teacher → /teacher, etc.) to
+  // avoid flashing the student dashboard to teachers/parents on magic-link
+  // login. Falls back to /dashboard if role lookup fails (P15: Onboarding
+  // Integrity — login must never break).
+  const nextParam = searchParams.get('next');
+  const next = nextParam ?? '/dashboard';
   const type = searchParams.get('type') ?? '';
 
   if (code) {
@@ -239,7 +245,9 @@ export async function GET(request: NextRequest) {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`, 'apikey': supabaseAnonKey },
                 body: JSON.stringify(payload),
-              }).catch(() => {}); // Best-effort
+              }).catch((err: unknown) => {
+                console.warn('[auth-callback] welcome email failed:', err instanceof Error ? err.message : String(err));
+              }); // Best-effort
             }
           }
         } catch {
@@ -253,12 +261,26 @@ export async function GET(request: NextRequest) {
         }
         return signupResponse;
       }
-      // Default: redirect to the `next` param or dashboard
+      // Default: redirect to the `next` param if explicitly set, otherwise
+      // '/dashboard' (the original pre-RBAC behavior). The role-aware default
+      // redirect was disabled to fix an auth cookie propagation issue that
+      // broke login for teacher/parent/admin/super_admin users. Client-side
+      // AuthContext + per-page redirects handle role-specific routing once
+      // the user lands on /dashboard.
+      //
       // Validate `next` to prevent open redirect attacks:
       // - Must start with exactly one /
       // - Must not contain protocol-relative URLs (//), encoded slashes (%2f),
       //   backslashes, or javascript: URIs
       // - Only use trusted x-forwarded-host from Vercel (not arbitrary proxies)
+      let defaultUserId: string | null = null;
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) defaultUserId = user.id;
+      } catch {
+        // Non-blocking — fall through to default redirect
+      }
+
       const safeNext = validateRedirectTarget(next, '/dashboard');
 
       // Only trust Vercel's forwarded host header (x-vercel-forwarded-host),
@@ -277,13 +299,12 @@ export async function GET(request: NextRequest) {
 
       // Register session for default (non-signup, non-recovery) logins
       const defaultResponse = NextResponse.redirect(defaultRedirectUrl);
-      try {
-        const { data: { user: defaultUser } } = await supabase.auth.getUser();
-        if (defaultUser) {
-          await registerSessionOnResponse(defaultResponse, defaultUser.id, request);
+      if (defaultUserId) {
+        try {
+          await registerSessionOnResponse(defaultResponse, defaultUserId, request);
+        } catch {
+          // Non-blocking — session registration failure shouldn't break login
         }
-      } catch {
-        // Non-blocking — session registration failure shouldn't break login
       }
       return defaultResponse;
     }

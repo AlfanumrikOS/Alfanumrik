@@ -7,9 +7,9 @@
 ### Summary
 | Type | Tool | Files | Approx. Cases | CI Enforced |
 |---|---|---|---|---|
-| Unit / Logic | Vitest 4.1.0 | 26 | ~722 | Yes |
+| Unit / Logic | Vitest 4.1.0 | 27 | ~730 | Yes |
 | Component | @testing-library/react | (within unit files) | ~24 (smoke) | Yes |
-| E2E | Playwright 1.58.2 | 4 | ~20 | No (not in CI) |
+| E2E | Playwright 1.58.2 | 5 | ~25 | No (not in CI) |
 | Integration | None | 0 | 0 | N/A |
 | Visual regression | None | 0 | 0 | N/A |
 
@@ -43,6 +43,9 @@
 | `admin-control-plane.test.ts` | 12 | Admin control plane | -- |
 | `api.test.ts` | 8 | API smoke tests | -- |
 | `india.test.ts` | 7 | India locale specifics | -- |
+| `observability-migration-1a.test.ts` | 6 | Observability 1a migration (DB-gated) | -- |
+| `observability-migration-1b.test.ts` | 5 | Observability 1b alerting migration (DB-gated) | -- |
+| `bulk-actions-api.test.ts` | 20 | Bulk actions API validation & audit logging | R50, R51 |
 
 ### E2E Test Files (4 files in `e2e/`)
 
@@ -52,8 +55,11 @@
 | `navigation.spec.ts` | Route navigation and redirects | No |
 | `accessibility.spec.ts` | Accessibility checks | No |
 | `landing-seo.spec.ts` | SEO meta tags, structured data | No |
+| `observability-timeline.spec.ts` | Observability Console timeline, filters, drawer, export | Yes (super admin) |
+| `observability-rules.spec.ts` | Observability Console alert rules and channels management | Yes (super admin) |
+| `bulk-actions.spec.ts` | Bulk Actions page tabs and student selector | Yes (super admin) |
 
-All E2E tests currently test unauthenticated flows only.
+E2E tests are unauthenticated except `observability-timeline.spec.ts` and `observability-rules.spec.ts` which require `SUPER_ADMIN_EMAIL` and `SUPER_ADMIN_PASSWORD` env vars (skips without them).
 
 ## Vitest Configuration
 
@@ -172,10 +178,60 @@ All E2E tests currently test unauthenticated flows only.
 |---|---|---|---|
 | 35 | PII redacted in logs | Yes | `security.test.ts` |
 
+### Observability (Cut 1a)
+| # | Scenario | Test Exists | File |
+|---|---|---|---|
+| 36 | AI failure in claude.ts persists as an ops_event with category=ai, severity=error | Yes | `ops-events.test.ts` (writer) + `observability-migration-1a.test.ts` (persistence) |
+| 37 | PII is redacted before writing to ops_events | Yes | `ops-events.test.ts`, `ops-events-redactor.test.ts` |
+| 38 | cleanup_ops_events deletes info rows after 30 days and warning rows after 90 days; never deletes error/critical rows | Yes (DB-gated) | `observability-migration-1a.test.ts` |
+| 39 | Observability Console page loads and renders snapshot widgets | Yes (auth-gated) | `e2e/observability-timeline.spec.ts` |
+| 40 | Observability timeline loads with widgets for range=1h | Yes (auth-gated) | `e2e/observability-timeline.spec.ts` |
+| 41 | Free-text search on the observability timeline matches against message, subject_id, and request_id | Partial | Implementation verified by inspection; no dedicated search assertion test |
+
+### Observability (Cut 1b)
+| # | Scenario | Test Exists | File |
+|---|---|---|---|
+| 42 | Critical payment event (severity=critical, category=payment) fires the on-insert trigger and creates a pending alert_dispatch | Yes (DB-gated) | `observability-migration-1b.test.ts` |
+| 43 | Alert deliverer retries a failed dispatch up to 3 times, then buries with status=failed | Yes | `supabase/functions/alert-deliverer/index_test.ts` (Deno test) |
+| 44 | Alert rules and channels pages render with seeded data | Yes (auth-gated) | `e2e/observability-rules.spec.ts` |
+
+### Student Impersonation
+| # | Scenario | Test Exists | File |
+|---|---|---|---|
+| 45 | Impersonation sessions are audit-logged in admin_impersonation_sessions with start/end times and admin identity | Yes | `student-impersonation-api.test.ts` |
+| 46 | Support notes are append-only -- only GET and POST routes exist, no PUT/PATCH/DELETE | Yes | `student-notes-api.test.ts` + code inspection |
+| 47 | Live View iframe pages have no write endpoints -- all proxy routes are GET-only | Yes (by inspection) | Code inspection of `src/app/api/super-admin/students/[id]/{dashboard,progress,foxy-history,quiz-history}/route.ts` |
+
+### Payment Ops
+| # | Scenario | Test Exists | File |
+|---|---|---|---|
+| 48 | Payment reconciliation action is audit-logged in both ops_events (category=payment, source=payment-ops) and admin_audit_log | Yes | `payment-ops-api.test.ts` |
+| 49 | Stuck payment detection query matches the logic in reconcile_stuck_payments.sql: status=captured AND (plan IS NULL OR plan=free OR plan mismatch) | Yes | `payment-ops-api.test.ts` + code inspection of `src/app/api/super-admin/payment-ops/stuck/route.ts` |
+
+### Bulk Actions
+| # | Scenario | Test Exists | File |
+|---|---|---|---|
+| 50 | All bulk actions are audit-logged in both ops_events and admin_audit_log | Yes | `bulk-actions-api.test.ts` |
+| 51 | Bulk actions enforce max 500 student limit per batch | Yes | `bulk-actions-api.test.ts` |
+
+### Strategic Reports
+| # | Scenario | Test Exists | File |
+|---|---|---|---|
+| 52 | Cohort retention computes weekly/monthly retention from students.created_at + quiz_sessions activity | Yes | `strategic-reports-api.test.ts` + `e2e/strategic-reports.spec.ts` |
+| 53 | Bloom's distribution correctly joins quiz responses with question_bank bloom_level by grade | Yes | `strategic-reports-api.test.ts` + `e2e/strategic-reports.spec.ts` |
+| 54 | Control room refactor preserves all existing sections; 9 widget components render identical output to the original 719-line page | Yes | `e2e/control-room-refactor.spec.ts` |
+
 ### Catalog Summary
-- **35/35 scenarios have corresponding tests** at the unit level
-- **Gap**: No integration tests verify these invariants against real database/services
-- **Gap**: No E2E tests verify these invariants in a running application
+- **35/35 core scenarios have corresponding tests** at the unit level
+- **6 observability scenarios added (R36-R41)**: 4 fully covered, 1 partial, 1 DB-gated (skips without local Supabase)
+- **3 observability Cut 1b scenarios added (R42-R44)**: 2 DB/auth-gated, 1 Deno test
+- **3 impersonation scenarios added (R45-R47)**: R45 unit-tested, R46 unit-tested + inspected, R47 by code inspection
+- **2 payment ops scenarios added (R48-R49)**: R48 unit-tested, R49 unit-tested + code inspection
+- **2 bulk actions scenarios added (R50-R51)**: R50 audit-log verification, R51 batch limit enforcement
+- **2 strategic reports scenarios added (R52-R53)**: R52 cohort retention, R53 Bloom's distribution
+- **1 control room refactor scenario added (R54)**: R54 verifies all sections render after widget extraction
+- **Gap**: No integration tests verify core invariants against real database/services
+- **Gap**: No E2E tests verify core invariants in a running application (observability E2E added but auth-gated)
 - **Gap**: Score consistency across client + server + RPC (P1 #4) is only tested client-side
 
 ## Testing Gaps and Priorities

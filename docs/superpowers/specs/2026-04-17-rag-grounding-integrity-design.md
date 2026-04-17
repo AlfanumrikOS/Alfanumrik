@@ -978,8 +978,9 @@ Target ≥90% branch coverage. Key tests:
 ## 14. Follow-ups (explicit TODOs)
 
 - **TODO-1** — delete `subjects`/`chapters` tables and `GRADE_SUBJECTS` constant after `cbse_syllabus` is proven (≥30 days stable). Requires audit of all references (analytics, enrollment, reports).
-- **TODO-2** — investigate `concept-engine` and confirm NCERT-solver refactor shape during spec validation; update this spec if either has AI-answering paths not covered.
+- **TODO-2** — investigate `concept-engine` and confirm NCERT-solver refactor shape during spec validation; update this spec if either has AI-answering paths not covered. **Resolved 2026-04-17**: concept-engine uses direct Voyage + `match_rag_chunks` RPC for retrieval only (no Claude). Refactor plan: add `retrieve_only: true` mode to service in Phase 2 Task 2.11; concept-engine calls it in Phase 3 Task 3.4.
 - **TODO-3** — add streaming response support to the service. Requires reworking trace-log timing (trace written post-completion vs per-chunk) and client handling. Priority: only if P95 latency becomes a UX problem post-rollout.
+- **TODO-4** — introduce finer-grained admin roles (`content_admin`, `ops_admin`, `support_admin`) in a follow-up migration. All RLS policies in this project's migrations use the established `admin_users` pattern (active admin gets all rights) because the finer-grained roles don't exist in the `roles` seed today. If ops wants sub-role restrictions later, add the roles + update the four affected policies (`cbse_syllabus_write_admin`, `grounded_traces_read_admin`, `ai_issue_reports_update_admin`, `ff_pairs_write_admin`, etc.). Service-role bypass for Edge Function writes is preserved regardless.
 
 ## 15. Invariant impact
 

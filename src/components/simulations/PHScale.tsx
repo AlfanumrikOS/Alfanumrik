@@ -94,11 +94,11 @@ export default function PHScale() {
 
   return (
     <div style={{
-      minHeight: '100vh',
       background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
       padding: '20px',
       fontFamily: "'Segoe UI', system-ui, -apple-system, sans-serif",
       color: '#f1f5f9',
+      borderRadius: '16px',
     }}>
       <style>{`
         @keyframes bubbleRise {

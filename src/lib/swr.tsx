@@ -37,8 +37,14 @@ const DEFAULT_CONFIG: SWRConfiguration = {
   revalidateOnFocus: false,         // Disabled by default; enabled per-hook where needed
   revalidateOnReconnect: true,      // Refresh when phone gets signal back
   dedupingInterval: 10000,          // 10s dedup to prevent request storms at scale
-  errorRetryCount: 3,               // Retry failed requests 3 times
-  errorRetryInterval: 2000,         // 2s between retries
+  errorRetryCount: 2,               // Max 2 retries (down from 3) to reduce thundering herd
+  onErrorRetry: (error, _key, _config, revalidate, { retryCount }) => {
+    // Don't retry on 4xx errors (client errors, auth failures)
+    if (error?.status >= 400 && error?.status < 500) return;
+    // Exponential backoff: 2s, 4s (max 2 retries, capped at 8s)
+    const delay = Math.min(2000 * Math.pow(2, retryCount), 8000);
+    setTimeout(() => revalidate({ retryCount }), delay);
+  },
   keepPreviousData: true,           // Show stale data while loading new
 };
 
@@ -103,7 +109,11 @@ export function useLeaderboard(period = 'weekly', limit = 50) {
       // Use server API route with CDN caching (s-maxage=60) instead of direct
       // Supabase query. At 50K users this reduces DB load from 10K req/min to 1/min.
       const res = await fetch(`/api/v1/leaderboard?period=${period}&limit=${limit}`);
-      if (!res.ok) throw new Error('Leaderboard fetch failed');
+      if (!res.ok) {
+        const error = new Error('Leaderboard fetch failed') as Error & { status: number };
+        error.status = res.status;
+        throw error;
+      }
       const json = await res.json();
       return json.data ?? [];
     },

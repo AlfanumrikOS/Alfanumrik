@@ -13,6 +13,9 @@ module.exports = {
           purple: '#7C3AED',
           cream: '#FBF8F4',
           warm: '#FEF3E2',
+          // Dynamic school branding — overridden by SchoolThemeProvider CSS vars
+          primary: 'var(--color-brand-primary, #7C3AED)',
+          secondary: 'var(--color-brand-secondary, #F97316)',
         },
         // New semantic tokens — map to CSS custom properties
         primary: {

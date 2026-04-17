@@ -97,6 +97,37 @@ async function fetchQuestions(body: Record<string, unknown>): Promise<Response> 
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
+  // Fetch previously seen NCERT question IDs for this student (30-day window)
+  const seenIds = new Set<string>()
+  try {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+    const { data: attempts } = await supabase
+      .from('student_ncert_attempts')
+      .select('question_id')
+      .eq('student_id', student_id)
+      .gte('created_at', thirtyDaysAgo)
+      .not('question_id', 'is', null)
+    if (attempts) {
+      for (const row of attempts) {
+        if (row.question_id) seenIds.add(row.question_id)
+      }
+    }
+    // Also check user_question_history for unified tracking
+    const { data: historyRows } = await supabase
+      .from('user_question_history')
+      .select('question_id')
+      .eq('student_id', student_id)
+      .eq('subject', subject)
+      .limit(500)
+    if (historyRows) {
+      for (const row of historyRows) {
+        if (row.question_id) seenIds.add(row.question_id)
+      }
+    }
+  } catch {
+    // Non-fatal: proceed without exclusion
+  }
+
   // Resolve "mixed" into multiple types
   const typeParam = question_type === 'mixed' ? 'all' : question_type
 
@@ -105,7 +136,7 @@ async function fetchQuestions(body: Record<string, unknown>): Promise<Response> 
     p_grade: grade,
     p_chapter: chapter,
     p_question_type: typeParam,
-    p_limit: Math.min(count * 2, 60), // fetch extra for dedup
+    p_limit: Math.min(count * 3, 90), // fetch extra for dedup + seen exclusion
   })
 
   if (error) {
@@ -122,22 +153,38 @@ async function fetchQuestions(body: Record<string, unknown>): Promise<Response> 
     return true
   })
 
+  // Separate into unseen and previously seen questions
+  const unseenQuestions = deduped.filter((q: Record<string, unknown>) => !seenIds.has(String(q.id)))
+  const previouslySeen = deduped.filter((q: Record<string, unknown>) => seenIds.has(String(q.id)))
+
   // For mixed mode, enforce CBSE paper balance: ~40% MCQ, ~30% SA, ~20% MA, ~10% LA
-  let selected = deduped
-  if (question_type === 'mixed') {
-    const mcq = deduped.filter((q: Record<string, unknown>) => q.question_type === 'mcq')
-    const sa  = deduped.filter((q: Record<string, unknown>) => ['short_answer','intext'].includes(String(q.question_type)) && Number(q.marks_possible) <= 2)
-    const ma  = deduped.filter((q: Record<string, unknown>) => Number(q.marks_possible) >= 3 && Number(q.marks_possible) <= 4)
-    const la  = deduped.filter((q: Record<string, unknown>) => Number(q.marks_possible) >= 5 || ['long_answer','hots'].includes(String(q.question_type)))
-    const n   = Math.max(count, 10)
-    selected  = [
+  // Apply balance to unseen first, then backfill from seen if pool exhausted
+  const applyBalance = (pool: Record<string, unknown>[], targetCount: number): Record<string, unknown>[] => {
+    const mcq = pool.filter((q) => q.question_type === 'mcq')
+    const sa  = pool.filter((q) => ['short_answer','intext'].includes(String(q.question_type)) && Number(q.marks_possible) <= 2)
+    const ma  = pool.filter((q) => Number(q.marks_possible) >= 3 && Number(q.marks_possible) <= 4)
+    const la  = pool.filter((q) => Number(q.marks_possible) >= 5 || ['long_answer','hots'].includes(String(q.question_type)))
+    const n   = Math.max(targetCount, 10)
+    return [
       ...mcq.slice(0, Math.ceil(n * 0.4)),
       ...sa.slice(0,  Math.ceil(n * 0.3)),
       ...ma.slice(0,  Math.ceil(n * 0.2)),
       ...la.slice(0,  Math.ceil(n * 0.1)),
-    ].slice(0, count)
+    ].slice(0, targetCount)
+  }
+
+  let selected: Record<string, unknown>[]
+  if (question_type === 'mixed') {
+    // Try unseen first, backfill with seen if needed
+    selected = applyBalance(unseenQuestions, count)
+    if (selected.length < count) {
+      const remaining = count - selected.length
+      const backfill = applyBalance(previouslySeen, remaining)
+      selected = [...selected, ...backfill]
+    }
   } else {
-    selected = deduped.slice(0, count)
+    // Prioritize unseen, then backfill with seen
+    selected = [...unseenQuestions, ...previouslySeen].slice(0, count)
   }
 
   // Enrich with CBSE metadata

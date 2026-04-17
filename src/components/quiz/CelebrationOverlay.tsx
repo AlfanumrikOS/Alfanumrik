@@ -166,7 +166,9 @@ export default function CelebrationOverlay({
       setPhase('visible');
       fireConfetti();
       // Play XP sound
-      import('@/lib/sounds').then(({ playSound }) => playSound('xp')).catch(() => {});
+      import('@/lib/sounds').then(({ playSound }) => playSound('xp')).catch((err: unknown) => {
+        console.warn('[celebration] sound playback failed:', err instanceof Error ? err.message : String(err));
+      });
     }, 100);
 
     // Auto-dismiss after 3s

@@ -1,5 +1,6 @@
 'use client';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { useResponsiveCanvas } from '@/hooks/useResponsiveCanvas';
 
 type Tab = 'lever' | 'pulley' | 'incline';
 
@@ -10,15 +11,16 @@ export default function SimpleMachines() {
   const [load, setLoad] = useState(60);
   const [angle, setAngle] = useState(30);
   const [pulleyType, setPulleyType] = useState<'fixed' | 'movable'>('fixed');
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { canvasRef, containerRef, size } = useResponsiveCanvas(560 / 220);
   const LOAD_ARM = 5;
   const W = 80;
 
   useEffect(() => {
     const canvas = canvasRef.current; if (!canvas) return;
     const ctx = canvas.getContext('2d')!;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const w = canvas.width, h = canvas.height;
+    const w = size.width;
+    const h = size.height;
+    ctx.clearRect(0, 0, w, h);
 
     if (tab === 'lever') {
       const loadForce = (effort * effortArm) / LOAD_ARM;
@@ -28,7 +30,7 @@ export default function SimpleMachines() {
       ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx - 20, cy + 40); ctx.lineTo(cx + 20, cy + 40); ctx.closePath();
       ctx.fillStyle = '#888'; ctx.fill();
       // beam
-      const bLen = 220;
+      const bLen = Math.min(220, w * 0.4);
       ctx.save(); ctx.translate(cx, cy); ctx.rotate(tilt);
       ctx.fillStyle = '#a0522d'; ctx.fillRect(-bLen, -8, bLen * 2, 16);
       // effort side
@@ -85,7 +87,7 @@ export default function SimpleMachines() {
       ctx.fillStyle = 'var(--text-2)'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
       ctx.fillText(`Effort=${effortI}N  Normal=${normal}N`, w / 2, h - 10);
     }
-  }, [tab, effort, effortArm, load, angle, pulleyType]);
+  }, [tab, effort, effortArm, load, angle, pulleyType, size, canvasRef]);
 
   const MA = tab === 'lever' ? ((effort * effortArm) / LOAD_ARM / effort).toFixed(2)
     : tab === 'pulley' ? (pulleyType === 'fixed' ? '1.00' : '2.00')
@@ -99,12 +101,14 @@ export default function SimpleMachines() {
   return (
     <div style={{ background: 'var(--surface-1)', borderRadius: 12, padding: 16, maxWidth: 600, margin: '0 auto', fontFamily: 'inherit' }}>
       <h3 style={{ color: 'var(--text-1)', fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Simple Machines</h3>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
         <button style={btnStyle('lever')} onClick={() => setTab('lever')}>Lever</button>
         <button style={btnStyle('pulley')} onClick={() => setTab('pulley')}>Pulley</button>
         <button style={btnStyle('incline')} onClick={() => setTab('incline')}>Inclined Plane</button>
       </div>
-      <canvas ref={canvasRef} width={560} height={220} style={{ width: '100%', borderRadius: 8, background: 'var(--surface-2)', display: 'block' }} />
+      <div ref={containerRef} style={{ width: '100%', aspectRatio: '560/220' }}>
+        <canvas ref={canvasRef} style={{ borderRadius: 8, background: 'var(--surface-2)', display: 'block' }} />
+      </div>
       <div style={{ marginTop: 10 }}>
         {tab === 'lever' && (<>
           <label style={{ color: 'var(--text-2)', fontSize: 13 }}>Effort: {effort} N</label>
@@ -122,7 +126,7 @@ export default function SimpleMachines() {
           </div>
         </>)}
         {tab === 'incline' && (<>
-          <label style={{ color: 'var(--text-2)', fontSize: 13 }}>Angle: {angle}°</label>
+          <label style={{ color: 'var(--text-2)', fontSize: 13 }}>Angle: {angle}deg</label>
           <input type="range" min={10} max={60} value={angle} onChange={e => setAngle(+e.target.value)} style={{ width: '100%' }} />
         </>)}
       </div>

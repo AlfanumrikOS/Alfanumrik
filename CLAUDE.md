@@ -51,7 +51,7 @@ supabase migration new <name>                            # Create new migration
 | Database | Supabase PostgreSQL with RLS, RBAC (6 roles, 71 permissions), pgvector for RAG |
 | Auth | Supabase Auth (email/PKCE), JWT auto-refresh via middleware |
 | Payments | Razorpay (INR subscriptions) |
-| AI | Claude Haiku via Edge Functions (foxy-tutor, ncert-solver, quiz-generator, cme-engine) |
+| AI | Claude Haiku via 29 Edge Functions (foxy-tutor, ncert-solver, quiz-generator, quiz-generator-v2, cme-engine + 24 non-AI functions) |
 | Mobile | Flutter 3.16+ / Dart 3.2+, Riverpod, GoRouter — in `/mobile` (shared API contract) |
 | Monitoring | Sentry (client/server/edge), Vercel Analytics |
 | Deployment | Vercel (bom1/Mumbai region), GitHub Actions CI/CD |
@@ -163,8 +163,8 @@ See `.claude/CLAUDE.md` for the full product constitution:
 | Supabase clients | `src/lib/supabase.ts`, `supabase-server.ts`, `supabase-admin.ts` |
 | Middleware | `src/middleware.ts` |
 | Payments | `src/lib/razorpay.ts`, `src/app/api/payments/` |
-| AI Edge Functions | `supabase/functions/foxy-tutor/`, `ncert-solver/`, `quiz-generator/`, `cme-engine/` |
-| Ops Edge Functions | `supabase/functions/daily-cron/`, `queue-consumer/`, `send-auth-email/`, `session-guard/` |
+| AI Edge Functions | `supabase/functions/foxy-tutor/`, `ncert-solver/`, `quiz-generator/`, `quiz-generator-v2/`, `cme-engine/` |
+| Non-AI Edge Functions | `supabase/functions/daily-cron/`, `queue-consumer/`, `send-auth-email/`, `send-welcome-email/`, `session-guard/`, `scan-ocr/`, `export-report/`, `identity/`, `bulk-question-gen/`, `embed-diagrams/`, `embed-ncert-qa/`, `embed-questions/`, `extract-diagrams/`, `extract-ncert-questions/`, `generate-answers/`, `generate-concepts/`, `generate-embeddings/`, `nep-compliance/`, `parent-portal/`, `parent-report-generator/`, `teacher-dashboard/`, `whatsapp-notify/`, `alert-deliverer/` |
 | Feature flags | `src/lib/feature-flags.ts` |
 | Structured logger | `src/lib/logger.ts` |
 | Migrations | `supabase/migrations/` |

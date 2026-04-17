@@ -43,6 +43,51 @@ const DAILY_QUOTA: Record<string, number> = {
 };
 const DEFAULT_QUOTA = 10;
 
+// API timeout per plan (milliseconds) — paying students get more patience
+// Free: 8s (budget), Starter: 15s (good), Pro: 25s (premium), Unlimited: 30s (max)
+const VOYAGE_TIMEOUT: Record<string, number> = {
+  free: 8000,
+  starter: 15000,
+  pro: 25000,
+  unlimited: 30000,
+};
+const CLAUDE_TIMEOUT: Record<string, number> = {
+  free: 15000,
+  starter: 30000,
+  pro: 45000,
+  unlimited: 60000,
+};
+const DEFAULT_VOYAGE_TIMEOUT = 8000;
+const DEFAULT_CLAUDE_TIMEOUT = 15000;
+
+// Soft upgrade prompts — shown ONLY when quota is near exhaustion (not on errors)
+const UPGRADE_PROMPTS: Record<string, { threshold: number; message: string; messageHi: string; nextPlan: string }> = {
+  free: {
+    threshold: 8, // show when 8/10 used (2 remaining)
+    message: 'You have {remaining} messages left today. Upgrade to Starter for 30 daily messages!',
+    messageHi: 'आज {remaining} मैसेज बाकी हैं। Starter प्लान लो और 30 रोज़ पाओ!',
+    nextPlan: 'starter',
+  },
+  starter: {
+    threshold: 25, // show when 25/30 used (5 remaining)
+    message: 'You have {remaining} messages left today. Upgrade to Pro for 100 daily messages!',
+    messageHi: 'आज {remaining} मैसेज बाकी हैं। Pro प्लान लो और 100 रोज़ पाओ!',
+    nextPlan: 'pro',
+  },
+  pro: {
+    threshold: 90, // show when 90/100 used (10 remaining)
+    message: 'You have {remaining} messages left today. Upgrade to Unlimited for unlimited messages!',
+    messageHi: 'आज {remaining} मैसेज बाकी हैं। Unlimited प्लान लो!',
+    nextPlan: 'unlimited',
+  },
+  unlimited: {
+    threshold: 999999, // never show
+    message: '',
+    messageHi: '',
+    nextPlan: '',
+  },
+};
+
 // Normalize raw plan codes from the DB to canonical keys.
 // Handles legacy aliases (basic→starter, premium→pro, ultimate→unlimited)
 // and strips monthly/yearly billing-cycle suffixes.
@@ -63,6 +108,14 @@ interface RagSource {
   page_number?: number;
   similarity: number;
   content_preview: string;
+  media_url?: string | null;
+}
+
+interface DiagramRef {
+  url: string;
+  title: string;
+  pageNumber?: number;
+  description: string;
 }
 
 interface ChatMessage {
@@ -451,9 +504,12 @@ async function checkAndIncrementQuota(
 
 // ─── Helper: generate Voyage embedding ───────────────────────────────────────
 
-async function generateEmbedding(text: string): Promise<number[] | null> {
+async function generateEmbedding(text: string, timeoutMs: number = 15000): Promise<number[] | null> {
   if (!process.env.VOYAGE_API_KEY) return null;
   try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
     const res = await fetch('https://api.voyageai.com/v1/embeddings', {
       method: 'POST',
       headers: {
@@ -465,17 +521,47 @@ async function generateEmbedding(text: string): Promise<number[] | null> {
         input: [text],
         output_dimension: 1024,
       }),
+      signal: controller.signal,
     });
+    clearTimeout(timer);
+
     if (!res.ok) {
-      logger.warn('foxy_voyage_http_error', { status: res.status });
+      logger.warn('foxy_voyage_http_error', { status: res.status, timeoutMs });
       return null;
     }
     const body = await res.json();
     return body?.data?.[0]?.embedding ?? null;
   } catch (err) {
+    const isTimeout = err instanceof Error && err.name === 'AbortError';
     logger.warn('foxy_voyage_embedding_failed', {
       error: err instanceof Error ? err.message : String(err),
+      isTimeout,
+      timeoutMs,
     });
+    if (isTimeout) {
+      // Timeout is NOT acceptable for paying users — retry once with extended timeout
+      try {
+        const retryRes = await fetch('https://api.voyageai.com/v1/embeddings', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${process.env.VOYAGE_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'voyage-3',
+            input: [text],
+            output_dimension: 1024,
+          }),
+          signal: AbortSignal.timeout(timeoutMs * 2), // double the timeout for retry
+        });
+        if (retryRes.ok) {
+          const retryBody = await retryRes.json();
+          return retryBody?.data?.[0]?.embedding ?? null;
+        }
+      } catch {
+        // Second attempt also failed — fall through to null
+      }
+    }
     return null;
   }
 }
@@ -493,14 +579,38 @@ async function callClaude(
   systemPrompt: string,
   history: ChatMessage[],
   userMessage: string,
+  imageData?: { base64: string; mediaType: string } | null,
 ): Promise<{ content: string; tokensUsed: number; model: string }> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY not configured');
 
   const keyPrefix = apiKey.slice(0, 12);
+
+  // Build the user message content — with optional image for Claude Vision
+  let userContent: any;
+  if (imageData?.base64) {
+    // Claude Vision: multi-modal message with image + text
+    userContent = [
+      {
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: imageData.mediaType || 'image/jpeg',
+          data: imageData.base64,
+        },
+      },
+      {
+        type: 'text',
+        text: userMessage,
+      },
+    ];
+  } else {
+    userContent = userMessage;
+  }
+
   const messages = [
     ...history,
-    { role: 'user' as const, content: userMessage },
+    { role: 'user' as const, content: userContent },
   ];
 
   let lastError = 'Claude API unavailable';
@@ -606,14 +716,21 @@ function buildSystemPrompt(
   board: string,
   chapter: string | null,
   mode: string,
-  ragChunks: Array<{ content: string; chapter?: string; page_number?: number }>,
+  ragChunks: Array<{ content: string; chapter?: string; page_number?: number; media_url?: string | null; media_description?: string | null }>,
   academicGoal?: string | null,
   cognitiveCtx?: CognitiveContext | null,
 ): string {
   const contextSection =
     ragChunks.length > 0
       ? `\n\n## NCERT Reference Material\n${ragChunks
-          .map((c, i) => `[${i + 1}] ${c.chapter ? `Chapter: ${c.chapter}` : ''}${c.page_number ? ` (p.${c.page_number})` : ''}\n${c.content}`)
+          .map((c, i) => {
+            let entry = `[${i + 1}] ${c.chapter ? `Chapter: ${c.chapter}` : ''}${c.page_number ? ` (p.${c.page_number})` : ''}\n${c.content}`;
+            if (c.media_url) {
+              const desc = c.media_description || `NCERT ${c.chapter || subject}`;
+              entry += `\n[Diagram available: ${desc}${c.page_number ? ` - see attached figure from NCERT page ${c.page_number}` : ''}]`;
+            }
+            return entry;
+          })
           .join('\n\n')}`
       : '';
 
@@ -663,6 +780,36 @@ ${academicGoal ? `\n## Student's Academic Goal: ${GOAL_PROMPT_MAP[academicGoal] 
 // ─── POST handler ─────────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest): Promise<Response> {
+  // TOP-LEVEL SAFETY NET — no unhandled exception can crash Foxy.
+  // Individual sections have their own try-catches, but gaps between them
+  // previously caused invisible 500 errors ("Something went wrong").
+  // This catch-all ensures: (1) error is LOGGED, (2) student gets 503 not 500.
+  try {
+  return await handleFoxyPost(request);
+  } catch (topLevelErr) {
+    const diagMsg = topLevelErr instanceof Error ? topLevelErr.message : String(topLevelErr);
+    console.error('[FOXY CRITICAL] Unhandled exception in POST handler:', diagMsg);
+    // Log to ops_events so it's visible in the Observability Console
+    try {
+      const { logOpsEvent } = await import('@/lib/ops-events');
+      await logOpsEvent({
+        category: 'ai',
+        source: 'foxy-route',
+        severity: 'critical',
+        message: `Foxy unhandled crash: ${diagMsg.slice(0, 200)}`,
+        context: { stack: topLevelErr instanceof Error ? topLevelErr.stack?.slice(0, 500) : undefined },
+      });
+    } catch { /* even ops logging failed — nothing more we can do */ }
+    return errorJson(
+      'Foxy encountered an error. Please try again.',
+      'Foxy mein error aaya. Dobara try karein.',
+      503,
+      { _diag: diagMsg.slice(0, 300) },
+    );
+  }
+}
+
+async function handleFoxyPost(request: NextRequest): Promise<Response> {
   // 0. Config validation — fail fast with clear diagnostic
   if (!process.env.ANTHROPIC_API_KEY) {
     logger.error('foxy_config_missing', { variable: 'ANTHROPIC_API_KEY' });
@@ -696,6 +843,11 @@ export async function POST(request: NextRequest): Promise<Response> {
   const sessionId = typeof body.sessionId === 'string' ? body.sessionId.trim() || null : null;
   const mode = typeof body.mode === 'string' && VALID_MODES.includes(body.mode) ? body.mode : 'learn';
 
+  // Claude Vision: optional image for handwriting recognition
+  const imageBase64 = typeof body.image_base64 === 'string' ? body.image_base64 : null;
+  const imageMediaType = typeof body.image_media_type === 'string' ? body.image_media_type : 'image/jpeg';
+  const imageData = imageBase64 ? { base64: imageBase64, mediaType: imageMediaType } : null;
+
   // 3. Validate inputs
   if (!message) {
     return errorJson('Message is required.', 'Message likhna zaroori hai.', 400);
@@ -718,7 +870,9 @@ export async function POST(request: NextRequest): Promise<Response> {
   const studentId = auth.studentId!;
 
   // Subject governance: reject before any subject-keyed retrieval / context load.
-  {
+  // Soft-fail: if governance RPCs are unavailable (migrations not applied), proceed
+  // without gating. Governance rejections ({ ok: false }) still block correctly.
+  try {
     const subjectValidation = await validateSubjectWrite(studentId, subject, {
       supabase: supabaseAdmin,
     });
@@ -733,6 +887,13 @@ export async function POST(request: NextRequest): Promise<Response> {
         { status: 422 },
       );
     }
+  } catch (govErr) {
+    logger.warn('foxy_subject_governance_unavailable', {
+      error: govErr instanceof Error ? govErr.message : String(govErr),
+      subject,
+      studentId,
+      note: 'Proceeding without subject governance — migrations may not be applied',
+    });
   }
 
   let plan = 'free';
@@ -818,7 +979,17 @@ export async function POST(request: NextRequest): Promise<Response> {
         page_number: c.pageNumber,
         similarity: c.similarity,
         content_preview: c.content.slice(0, 150),
+        media_url: c.mediaUrl || null,
       }));
+
+      const routerDiagrams: DiagramRef[] = result.sources
+        .filter((c) => c.mediaUrl)
+        .map((c) => ({
+          url: c.mediaUrl!,
+          title: c.chapter || subject,
+          pageNumber: c.pageNumber,
+          description: c.mediaDescription || `NCERT ${subject} ${c.chapter || ''}`.trim(),
+        }));
 
       await supabaseAdmin.from('foxy_chat_messages').insert([
         {
@@ -861,6 +1032,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         success: true,
         response: result.response,
         sources: sources,
+        diagrams: routerDiagrams,
         sessionId: resolvedSessionId,
         quotaRemaining: remaining,
         tokensUsed: result.tokensUsed,
@@ -877,12 +1049,26 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   // ─── Existing inline flow (default, or fallback from intent router) ────────
 
-  // 7. Load cognitive context + generate embedding in parallel (latency < 100ms)
+  // 7. Load cognitive context + generate embedding in parallel
+  // Timeouts are plan-aware: paying students get longer timeouts + automatic retry
+  const voyageTimeout = VOYAGE_TIMEOUT[plan] ?? DEFAULT_VOYAGE_TIMEOUT;
   const embeddingQuery = `${subject} grade ${grade}${chapter ? ` chapter ${chapter}` : ''}: ${message}`;
-  const [embedding, cognitiveCtx] = await Promise.all([
-    generateEmbedding(embeddingQuery),
-    loadCognitiveContext(studentId, subject, grade),
-  ]);
+  let embedding: number[] | null = null;
+  let cognitiveCtx: CognitiveContext = EMPTY_COGNITIVE_CONTEXT;
+  try {
+    const [emb, ctx] = await Promise.all([
+      generateEmbedding(embeddingQuery, voyageTimeout),
+      loadCognitiveContext(studentId, subject, grade),
+    ]);
+    embedding = emb;
+    cognitiveCtx = ctx;
+  } catch (embErr) {
+    logger.warn('foxy_embedding_or_cognitive_failed', {
+      error: embErr instanceof Error ? embErr.message : String(embErr),
+      studentId, subject, grade, plan, voyageTimeout,
+    });
+    // Non-fatal: RAG falls back to text search, cognitive context empty
+  }
 
   // 8. RAG retrieval via match_rag_chunks RPC
   let ragChunks: Array<{
@@ -892,6 +1078,8 @@ export async function POST(request: NextRequest): Promise<Response> {
     chapter?: string;
     page_number?: number;
     similarity: number;
+    media_url?: string | null;
+    media_description?: string | null;
   }> = [];
 
   try {
@@ -948,8 +1136,13 @@ export async function POST(request: NextRequest): Promise<Response> {
     // Non-fatal: proceed with no context
   }
 
-  // 9. Load conversation history for multi-turn context
-  const history = await loadHistory(resolvedSessionId);
+  // 9. Load conversation history for multi-turn context (non-fatal)
+  let history: ChatMessage[] = [];
+  try {
+    history = await loadHistory(resolvedSessionId);
+  } catch (histErr) {
+    console.warn('[foxy] history load failed:', histErr instanceof Error ? histErr.message : String(histErr));
+  }
 
   // 10. Build system prompt with RAG context + cognitive context
   const systemPrompt = buildSystemPrompt(
@@ -960,7 +1153,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   let assistantResponse: string;
   let tokensUsed = 0;
   try {
-    const result = await callClaude(systemPrompt, history, message);
+    const result = await callClaude(systemPrompt, history, message, imageData);
     assistantResponse = result.content;
     tokensUsed = result.tokensUsed;
     logger.info('foxy_claude_ok', {
@@ -1005,7 +1198,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     );
   }
 
-  // 12. Persist both turns to foxy_chat_messages
+  // 12. Build sources and diagrams arrays
   const now = new Date().toISOString();
   const sources: RagSource[] = ragChunks.map((c) => ({
     chunk_id: c.id,
@@ -1014,28 +1207,44 @@ export async function POST(request: NextRequest): Promise<Response> {
     page_number: c.page_number,
     similarity: c.similarity,
     content_preview: c.content.slice(0, 150),
+    media_url: c.media_url || null,
   }));
 
-  await supabaseAdmin.from('foxy_chat_messages').insert([
-    {
-      session_id: resolvedSessionId,
-      student_id: studentId,
-      role: 'user',
-      content: message,
-      sources: null,
-      tokens_used: null,
-      created_at: now,
-    },
-    {
-      session_id: resolvedSessionId,
-      student_id: studentId,
-      role: 'assistant',
-      content: assistantResponse,
-      sources: sources.length > 0 ? sources : null,
-      tokens_used: tokensUsed,
-      created_at: new Date(Date.now() + 1).toISOString(), // ensure ordering
-    },
-  ]);
+  const diagrams: DiagramRef[] = ragChunks
+    .filter((c) => c.media_url)
+    .map((c) => ({
+      url: c.media_url!,
+      title: c.chapter || subject,
+      pageNumber: c.page_number,
+      description: c.media_description || `NCERT ${subject} ${c.chapter || ''}`.trim(),
+    }));
+
+  // 12b. Persist both turns to foxy_chat_messages (non-fatal — response already generated)
+  try {
+    await supabaseAdmin.from('foxy_chat_messages').insert([
+      {
+        session_id: resolvedSessionId,
+        student_id: studentId,
+        role: 'user',
+        content: message,
+        sources: null,
+        tokens_used: null,
+        created_at: now,
+      },
+      {
+        session_id: resolvedSessionId,
+        student_id: studentId,
+        role: 'assistant',
+        content: assistantResponse,
+        sources: sources.length > 0 ? sources : null,
+        tokens_used: tokensUsed,
+        created_at: new Date(Date.now() + 1).toISOString(), // ensure ordering
+      },
+    ]);
+  } catch (saveErr) {
+    // Message save failure must NOT crash the route — the response is already ready
+    console.warn('[foxy] message save failed:', saveErr instanceof Error ? saveErr.message : String(saveErr));
+  }
 
   // 13. Post-response cognitive logging (fire-and-forget — non-blocking)
   if (cognitiveCtx.nextAction) {
@@ -1050,7 +1259,9 @@ export async function POST(request: NextRequest): Promise<Response> {
           was_followed: true,
           outcome: 'foxy_responded',
         }),
-    ).catch(() => {}); // fire-and-forget
+    ).catch((err: unknown) => {
+      console.warn('[foxy] cognitive action log failed:', err instanceof Error ? err.message : String(err));
+    }); // fire-and-forget
   }
 
   // Update foxy_sessions with cognitive tracking metadata
@@ -1062,7 +1273,9 @@ export async function POST(request: NextRequest): Promise<Response> {
         last_cme_action: cognitiveCtx.nextAction?.actionType ?? null,
       })
       .eq('id', resolvedSessionId),
-  ).catch(() => {}); // fire-and-forget
+  ).catch((err: unknown) => {
+    console.warn('[foxy] session cognitive update failed:', err instanceof Error ? err.message : String(err));
+  }); // fire-and-forget
 
   // 14. Audit log
   logAudit(auth.userId!, {
@@ -1081,14 +1294,29 @@ export async function POST(request: NextRequest): Promise<Response> {
     },
   });
 
-  // 15. Return response
+  // 15. Build soft upgrade prompt if quota near exhaustion
+  const limit = DAILY_QUOTA[plan] ?? DEFAULT_QUOTA;
+  const upgradeConfig = UPGRADE_PROMPTS[plan];
+  let upgradePrompt: { message: string; messageHi: string; nextPlan: string; remaining: number } | null = null;
+  if (upgradeConfig && typeof remaining === 'number' && remaining <= (limit - upgradeConfig.threshold)) {
+    upgradePrompt = {
+      message: upgradeConfig.message.replace('{remaining}', String(remaining)),
+      messageHi: upgradeConfig.messageHi.replace('{remaining}', String(remaining)),
+      nextPlan: upgradeConfig.nextPlan,
+      remaining,
+    };
+  }
+
+  // 16. Return response
   return NextResponse.json({
     success: true,
     response: assistantResponse,
     sources,
+    diagrams,
     sessionId: resolvedSessionId,
     quotaRemaining: remaining,
     tokensUsed,
+    ...(upgradePrompt ? { upgradePrompt } : {}),
   });
 }
 

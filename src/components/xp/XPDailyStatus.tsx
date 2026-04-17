@@ -127,7 +127,7 @@ export default function XPDailyStatus({ studentId, streak, isHi }: XPDailyStatus
   if (error) {
     return (
       <Card>
-        <p className="text-sm text-center py-4" style={{ color: '#DC2626' }}>{error}</p>
+        <p className="text-sm text-center py-4 text-red-600">{error}</p>
       </Card>
     );
   }

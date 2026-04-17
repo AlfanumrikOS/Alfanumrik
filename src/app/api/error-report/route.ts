@@ -117,7 +117,9 @@ export async function POST(request: NextRequest) {
             user_agent: request.headers.get('user-agent')?.slice(0, 500),
             status: 'failure',
           })
-      ).catch(() => {}); // never fail the response due to logging
+      ).catch((err: unknown) => {
+        console.warn('[error-report] audit log write failed:', err instanceof Error ? err.message : String(err));
+      }); // never fail the response due to logging
     } catch {
       // Admin client not configured — skip persistence
     }

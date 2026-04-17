@@ -1,12 +1,24 @@
 // src/lib/useAllowedSubjects.ts
 'use client';
 import useSWR from 'swr';
+import { supabase } from './supabase-client';
 import type { Subject } from './subjects.types';
 
-const fetcher = (url: string) => fetch(url).then((r) => {
+const fetcher = async (url: string) => {
+  // Auth tokens live in localStorage (no middleware to sync to cookies).
+  // Send the access token as Bearer header so server routes can authenticate.
+  const headers: Record<string, string> = {};
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      headers['Authorization'] = `Bearer ${session.access_token}`;
+    }
+  } catch { /* proceed without — server will return 401 */ }
+
+  const r = await fetch(url, { headers });
   if (!r.ok) throw new Error('subjects.fetch_failed');
   return r.json() as Promise<{ subjects: Subject[] }>;
-});
+};
 
 export function useAllowedSubjects() {
   const { data, error, isLoading, mutate } = useSWR('/api/student/subjects', fetcher, {

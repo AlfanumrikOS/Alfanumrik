@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useEffect, useState, useCallback } from 'react';
+import { useResponsiveCanvas } from '@/hooks/useResponsiveCanvas';
 
 /* ═══════════════════════════════════════════════════════════════
    PENDULUM LAB — Interactive Simple Pendulum Simulation
@@ -22,15 +23,13 @@ interface GhostPosition {
   opacity: number;
 }
 
-const CANVAS_HEIGHT = 450;
 const PIVOT_Y = 60;
 const BOB_RADIUS = 18;
 const MAX_TRAIL = 40;
 const DEG = Math.PI / 180;
 
 export default function PendulumLab() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const { canvasRef, containerRef, size } = useResponsiveCanvas(16 / 10);
   const animRef = useRef<number>(0);
   const stateRef = useRef<PendulumState>({
     angle: 30 * DEG,
@@ -53,7 +52,6 @@ export default function PendulumLab() {
   const [displayTime, setDisplayTime] = useState(0);
   const [displayPeriodCount, setDisplayPeriodCount] = useState(0);
   const [displayMeasuredPeriod, setDisplayMeasuredPeriod] = useState(0);
-  const [canvasWidth, setCanvasWidth] = useState(600);
 
   const theoreticalPeriod = 2 * Math.PI * Math.sqrt(length / gravity);
 
@@ -333,8 +331,9 @@ export default function PendulumLab() {
 
       // Update trail
       const s = stateRef.current;
-      const w = canvas.width;
-      const scale = Math.min(w, CANVAS_HEIGHT) * 0.22;
+      const w = size.width;
+      const h = size.height;
+      const scale = Math.min(w, h) * 0.22;
       const pivotX = w / 2;
       const stringLen = length * scale;
       const bobX = pivotX + Math.sin(s.angle) * stringLen;
@@ -352,7 +351,7 @@ export default function PendulumLab() {
         trail[i].opacity = (i + 1) / trail.length;
       }
 
-      draw(ctx, w, CANVAS_HEIGHT);
+      draw(ctx, w, h);
 
       // Update React state every ~6 frames for display
       frameCount++;
@@ -374,24 +373,7 @@ export default function PendulumLab() {
     return () => {
       cancelAnimationFrame(animRef.current);
     };
-  }, [step, draw, length]);
-
-  /* ─── Resize handler ─────────────────────────────────────── */
-  useEffect(() => {
-    const handleResize = () => {
-      const container = containerRef.current;
-      const canvas = canvasRef.current;
-      if (!container || !canvas) return;
-      const w = container.clientWidth;
-      setCanvasWidth(w);
-      canvas.width = w;
-      canvas.height = CANVAS_HEIGHT;
-    };
-
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  }, [step, draw, length, size, canvasRef]);
 
   /* ─── Slider component ──────────────────────────────────── */
   const Slider = ({
@@ -462,7 +444,6 @@ export default function PendulumLab() {
 
   return (
     <div
-      ref={containerRef}
       style={{
         width: '100%',
         maxWidth: 800,
@@ -473,7 +454,10 @@ export default function PendulumLab() {
     >
       {/* Canvas */}
       <div
+        ref={containerRef}
+        className="w-full"
         style={{
+          aspectRatio: '16/10',
           borderRadius: '16px 16px 0 0',
           overflow: 'hidden',
           position: 'relative',
@@ -485,11 +469,8 @@ export default function PendulumLab() {
           ref={canvasRef}
           role="img"
           aria-label="Simple pendulum simulation showing oscillation with adjustable length, gravity, and angle"
-          width={canvasWidth}
-          height={CANVAS_HEIGHT}
+          className="rounded-t-2xl"
           style={{
-            width: '100%',
-            height: CANVAS_HEIGHT,
             display: 'block',
           }}
         />
@@ -606,7 +587,7 @@ export default function PendulumLab() {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: canvasWidth > 500 ? '1fr 1fr' : '1fr',
+            gridTemplateColumns: size.width > 500 ? '1fr 1fr' : '1fr',
             gap: '4px 20px',
           }}
         >

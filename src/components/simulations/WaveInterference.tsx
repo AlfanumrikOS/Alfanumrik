@@ -1,5 +1,6 @@
 'use client';
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useResponsiveCanvas } from '@/hooks/useResponsiveCanvas';
 
 export const metadata = {
   id: 'wave-interference',
@@ -10,7 +11,7 @@ export const metadata = {
 };
 
 export default function WaveInterference() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { canvasRef, containerRef, size } = useResponsiveCanvas(2);
   const animFrameRef = useRef<number>(0);
   const phaseRef = useRef<number>(0);
 
@@ -40,8 +41,8 @@ export default function WaveInterference() {
     if (!ctx) return;
     const { amp1: a1, freq1: f1, amp2: a2, freq2: f2, phase2: p2, isAnimating: anim } = stateRef.current;
 
-    const W = canvas.width;
-    const H = canvas.height;
+    const W = size.width;
+    const H = size.height;
     ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = '#0f0f23';
     ctx.fillRect(0, 0, W, H);
@@ -101,7 +102,7 @@ export default function WaveInterference() {
     ctx.font = 'bold 12px sans-serif';
     ctx.textAlign = 'right';
     ctx.fillText(itype, W - 8, H - 8);
-  }, [getInterferenceType]);
+  }, [getInterferenceType, size, canvasRef]);
 
   useEffect(() => {
     let raf: number;
@@ -124,8 +125,10 @@ export default function WaveInterference() {
   return (
     <div style={{ background: '#1a1a2e', borderRadius: 12, padding: 16, maxWidth: '100%', fontFamily: 'sans-serif' }}>
       <h2 style={{ color: '#F97316', margin: '0 0 12px', fontSize: 18, fontWeight: 700 }}>Wave Interference</h2>
-      <canvas ref={canvasRef} width={400} height={200} style={{ width: '100%', borderRadius: 8, display: 'block' }} />
-      <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div ref={containerRef} className="w-full" style={{ aspectRatio: '2/1' }}>
+        <canvas ref={canvasRef} className="rounded-lg" style={{ display: 'block' }} />
+      </div>
+      <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
         <div>
           <div style={{ color: 'rgba(96,165,250,0.9)', fontWeight: 700, fontSize: 12, marginBottom: 4 }}>Wave 1 (Blue)</div>
           <div>

@@ -1,16 +1,17 @@
 'use client';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { useResponsiveCanvas } from '@/hooks/useResponsiveCanvas';
 
 export default function ConvexLens() {
   const [focal, setFocal] = useState(8);
   const [objDist, setObjDist] = useState(18);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { canvasRef, containerRef, size } = useResponsiveCanvas(2);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d')!;
-    const W = canvas.width, H = canvas.height;
+    const W = size.width, H = size.height;
     ctx.clearRect(0, 0, W, H);
 
     ctx.fillStyle = '#111827';
@@ -132,7 +133,7 @@ export default function ConvexLens() {
     ctx.textAlign = 'left';
     ctx.fillStyle = '#9ca3af';
     ctx.fillText(`u = -${objDist} cm  |  v = ${v.toFixed(1)} cm  |  m = ${m.toFixed(2)}`, 10, H - 10);
-  }, [focal, objDist]);
+  }, [focal, objDist, size, canvasRef]);
 
   const u = -objDist;
   const v = +((u * focal) / (u + focal)).toFixed(2);
@@ -141,13 +142,15 @@ export default function ConvexLens() {
   return (
     <div style={{ background: 'var(--surface-1)', borderRadius: 12, padding: 16, maxWidth: 600, margin: '0 auto', fontFamily: 'inherit' }}>
       <h3 style={{ color: 'var(--text-1)', fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Convex Lens Ray Diagram</h3>
-      <canvas ref={canvasRef} width={560} height={280} style={{ width: '100%', borderRadius: 8, display: 'block' }} />
+      <div ref={containerRef} className="w-full" style={{ aspectRatio: '2/1' }}>
+        <canvas ref={canvasRef} className="rounded-lg" style={{ display: 'block' }} />
+      </div>
       <div style={{ marginTop: 10, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, minWidth: 140 }}>
           <label style={{ color: 'var(--text-2)', fontSize: 13 }}>Focal length f: {focal} cm</label>
           <input type="range" min={3} max={15} value={focal} onChange={e => setFocal(+e.target.value)} style={{ width: '100%' }} />
         </div>
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, minWidth: 140 }}>
           <label style={{ color: 'var(--text-2)', fontSize: 13 }}>Object distance: {objDist} cm</label>
           <input type="range" min={Math.ceil(focal * 1.5)} max={focal * 5} value={objDist} onChange={e => setObjDist(+e.target.value)} style={{ width: '100%' }} />
         </div>

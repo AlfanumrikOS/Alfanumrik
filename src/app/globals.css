@@ -9,11 +9,14 @@
 
   /* Brand */
   --orange: #E8581C;
+  --orange-rgb: 232, 88, 28;        /* use as rgb(var(--orange-rgb) / <alpha>) for opacity stacks */
   --orange-light: #FF7A3D;
   --gold: #F5A623;
   --teal: #0891B2;
   --green: #16A34A;
   --purple: #7C3AED;
+  --purple-rgb: 124, 58, 237;       /* for rgb(var(--purple-rgb) / <alpha>) */
+  --purple-light: #9333EA;
   --pink: #DB2777;
   --red: #DC2626;
 
@@ -367,6 +370,7 @@ input[type="range"][style*="accentColor"]::-webkit-slider-thumb {
 @keyframes shake { 0%, to { transform: translateX(0); } 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
 @keyframes xpRise { 0% { transform: translateY(0); opacity: 1; } to { transform: translateY(-40px); opacity: 0; } }
 @keyframes spin-slow { 0% { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes pulse-glow { 0%, 100% { box-shadow: 0 0 0 0 rgba(232, 88, 28, 0.3); } 50% { box-shadow: 0 0 0 12px rgba(232, 88, 28, 0); } }
 
 @keyframes bounceOnce { 0% { transform: scale(1); } 40% { transform: scale(1.15); } 70% { transform: scale(0.95); } 100% { transform: scale(1); } }
 

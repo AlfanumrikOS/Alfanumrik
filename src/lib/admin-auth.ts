@@ -134,8 +134,11 @@ export async function authorizeAdmin(request: NextRequest): Promise<AdminAuthRes
 
     let admins = await adminRes.json();
 
-    // Fallback: retry with user's own token if service role returned empty
+    // Fallback: retry with user's own token if service role returned empty.
+    // This handles edge cases where RLS policies on admin_users might block the
+    // service role query (e.g., misconfigured policies after a migration).
     if (Array.isArray(admins) && admins.length === 0) {
+      console.warn('[admin-auth] Service role query returned no admin, falling back to user token', { userId });
       const retryRes = await fetch(adminQuery, {
         headers: { 'apikey': key, 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
       });
@@ -143,6 +146,7 @@ export async function authorizeAdmin(request: NextRequest): Promise<AdminAuthRes
         const retryData = await retryRes.json();
         if (Array.isArray(retryData) && retryData.length > 0) {
           admins = retryData;
+          console.warn('[admin-auth] Fallback succeeded — investigate why service role query failed', { userId });
         }
       }
     }

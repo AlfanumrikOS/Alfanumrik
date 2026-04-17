@@ -3,6 +3,7 @@ import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
 import { logger } from '@/lib/logger';
+import { logOpsEvent } from '@/lib/ops-events';
 import { paymentVerifySchema, validateBody } from '@/lib/validation';
 
 /**
@@ -146,15 +147,22 @@ export async function POST(request: NextRequest) {
     }
 
     // Get amount from subscription_plans (source of truth)
-    const { data: planRow } = await admin
+    const { data: planRow, error: planError } = await admin
       .from('subscription_plans')
       .select('price_monthly, price_yearly')
       .eq('plan_code', plan_code)
-      .single();
+      .maybeSingle();
 
-    const priceRupees = planRow
-      ? (billing_cycle === 'yearly' ? planRow.price_yearly : planRow.price_monthly)
-      : 0;
+    if (planError) {
+      logger.error('verify: subscription_plans lookup failed', { error: planError.message, plan_code });
+      return NextResponse.json({ error: 'Plan lookup failed' }, { status: 500 });
+    }
+    if (!planRow) {
+      logger.error('verify: unknown plan_code', { plan_code });
+      return NextResponse.json({ error: `Unknown plan: ${plan_code}` }, { status: 400 });
+    }
+
+    const priceRupees = billing_cycle === 'yearly' ? planRow.price_yearly : planRow.price_monthly;
 
     // Record payment — ignore duplicate constraint (webhook may have already inserted)
     const { error: insertErr } = await admin.from('payment_history').insert({
@@ -190,6 +198,16 @@ export async function POST(request: NextRequest) {
       // Instead, rely on the webhook for activation and tell the user to wait.
       logger.error('verify: RECONCILIATION REQUIRED', { paymentId: razorpay_payment_id, authUserId: user.id, planCode: plan_code });
 
+      logOpsEvent({
+        category: 'payment',
+        source: 'verify/route.ts',
+        severity: 'warning',
+        message: 'Payment verify returned 503 — RPC failed, reconciliation required',
+        subjectType: 'student',
+        subjectId: studentId,
+        context: { payment_id: razorpay_payment_id, plan_code, rpc_error: rpcError.message },
+      });
+
       return NextResponse.json({
         success: false,
         error: 'Payment received but access update is in progress. Your payment is safe — your plan will activate shortly.',
@@ -203,7 +221,7 @@ export async function POST(request: NextRequest) {
       .from('students')
       .select('subscription_plan')
       .eq('auth_user_id', user.id)
-      .single();
+      .maybeSingle();
 
     if (verify?.subscription_plan !== plan_code) {
       logger.error('verify: post-update check failed', { expected: plan_code, got: verify?.subscription_plan });

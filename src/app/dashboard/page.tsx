@@ -42,8 +42,8 @@ const BLOOM_LABELS: Record<string, { icon: string; label: string; labelHi: strin
 export default function Dashboard() {
   const { student, snapshot, isLoggedIn, isLoading, isHi, language, setLanguage, refreshSnapshot, activeRole } = useAuth();
   const router = useRouter();
-  const [profiles, setProfiles] = useState<StudentLearningProfile[]>([]);
   const { unlocked: allowedSubjects } = useAllowedSubjects();
+  const [profiles, setProfiles] = useState<StudentLearningProfile[]>([]);
   const [nextTopics, setNextTopics] = useState<CurriculumTopic[]>([]);
   const [dueCount, setDueCount] = useState(0);
   const [flags, setFlags] = useState<Record<string, boolean>>({});
@@ -178,7 +178,9 @@ export default function Dashboard() {
 
     const rawSelected = (student.selected_subjects || [student.preferred_subject].filter(Boolean)) as string[];
     setSelectedSubjects(rawSelected);
-    generateNotifications(student.id).catch(() => {});
+    generateNotifications(student.id).catch((err: unknown) => {
+      console.warn('[dashboard] notification generation failed:', err instanceof Error ? err.message : String(err));
+    });
   }, [student]);
 
   // Narrow selectedSubjects to only those the student is allowed — drops legacy
@@ -690,6 +692,80 @@ export default function Dashboard() {
             >
               🦊 {isHi ? 'या Foxy से कोई डाउट पूछो' : 'Or ask Foxy a question'}
             </button>
+          </div>
+        )}
+
+        {/* ═══ GETTING STARTED CHECKLIST — < 5 quizzes taken ═══ */}
+        {(snapshot?.quizzes_taken ?? 0) < 5 && (snapshot?.quizzes_taken ?? 0) > 0 && (
+          <div className="rounded-2xl p-4" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-lg">🚀</span>
+              <h3 className="text-sm font-bold" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}>
+                {isHi ? 'शुरुआत करो' : 'Getting Started'}
+              </h3>
+              <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'var(--orange)', color: '#fff' }}>
+                {[
+                  (snapshot?.quizzes_taken ?? 0) >= 1,
+                  totalXp > 0 && profiles.length > 0,
+                  (snapshot?.quizzes_taken ?? 0) >= 3,
+                  (snapshot?.topics_mastered ?? 0) > 0 || (snapshot?.topics_in_progress ?? 0) > 0,
+                ].filter(Boolean).length}/4
+              </span>
+            </div>
+            <div className="space-y-2">
+              {[
+                {
+                  done: (snapshot?.quizzes_taken ?? 0) >= 1,
+                  icon: '✏️',
+                  label: isHi ? 'पहला क्विज़ दो' : 'Take your first quiz',
+                  action: () => router.push('/quiz'),
+                },
+                {
+                  done: totalXp > 0 && profiles.length > 0,
+                  icon: '🦊',
+                  label: isHi ? 'Foxy से कोई सवाल पूछो' : 'Ask Foxy a question',
+                  action: () => router.push('/foxy'),
+                },
+                {
+                  done: (snapshot?.quizzes_taken ?? 0) >= 3,
+                  icon: '📚',
+                  label: isHi ? 'कम से कम 3 क्विज़ पूरा करो' : 'Complete at least 3 quizzes',
+                  action: () => router.push('/quiz'),
+                },
+                {
+                  done: (snapshot?.topics_mastered ?? 0) > 0 || (snapshot?.topics_in_progress ?? 0) > 0,
+                  icon: '📈',
+                  label: isHi ? 'अपनी प्रगति देखो' : 'Check your progress',
+                  action: () => router.push('/progress'),
+                },
+              ].map((step, i) => (
+                <button
+                  key={i}
+                  onClick={step.action}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all active:scale-[0.98]"
+                  style={{
+                    background: step.done ? 'rgba(22,163,74,0.06)' : 'rgba(232,88,28,0.04)',
+                    border: `1px solid ${step.done ? 'rgba(22,163,74,0.15)' : 'var(--border)'}`,
+                  }}
+                >
+                  <span className="text-base flex-shrink-0">{step.done ? '✅' : step.icon}</span>
+                  <span
+                    className="text-xs font-medium flex-1"
+                    style={{
+                      color: step.done ? '#16A34A' : 'var(--text-2)',
+                      textDecoration: step.done ? 'line-through' : 'none',
+                    }}
+                  >
+                    {step.label}
+                  </span>
+                  {!step.done && (
+                    <span className="text-[10px] font-bold" style={{ color: 'var(--orange)' }}>
+                      {isHi ? 'करो →' : 'Go →'}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 

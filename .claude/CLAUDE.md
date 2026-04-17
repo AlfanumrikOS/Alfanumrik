@@ -1,19 +1,19 @@
 # Alfanumrik Learning OS — Non-Negotiable Product Rules
 
 ## What This Is
-Indian K-12 EdTech platform (CBSE grades 6-12). Next.js 16 + Supabase + Razorpay. 219 source files, 227+ SQL migrations, 24 Supabase Edge Functions, Flutter mobile app. Serves students, parents, teachers, and administrators.
+Indian K-12 EdTech platform (CBSE grades 6-12). Next.js 16 + Supabase + Razorpay. 753 source files, 265 SQL migrations, 29 Supabase Edge Functions, Flutter mobile app. Serves students, parents, teachers, and administrators.
 
 ## Architecture Quick Reference
 | Layer | Technology |
 |---|---|
 | Frontend | Next.js 16.2 App Router, React 18, Tailwind 3.4, SWR |
-| Backend | Next.js API routes (32+ routes) + Supabase Edge Functions (24 functions) |
+| Backend | Next.js API routes (151 routes) + Supabase Edge Functions (29 functions) |
 | Auth | Supabase Auth (email/PKCE), session cookies via middleware |
-| Database | Supabase Postgres, RLS (148+ policies), RBAC (6 roles, 71 permissions) |
-| AI | Claude API (Haiku) via Edge Functions: foxy-tutor, ncert-solver, quiz-generator, cme-engine |
+| Database | Supabase Postgres, RLS (440+ policies), RBAC (6 roles, 71 permissions) |
+| AI | Claude API (Haiku) via Edge Functions: foxy-tutor, ncert-solver, quiz-generator, quiz-generator-v2, cme-engine |
 | Payments | Razorpay (INR, monthly recurring + yearly one-time) |
 | Deployment | Vercel (bom1/Mumbai), GitHub Actions CI/CD (3 workflows) |
-| Testing | Vitest (633+ tests, 49+ files), Playwright E2E (4 specs). **Regression catalog: 35/35 (100%).** |
+| Testing | Vitest (2,511 tests, 84 files), Playwright E2E (16 specs). **Regression catalog: 35/35 (100%).** |
 | Monitoring | Sentry (client/server/edge), Vercel Analytics, structured logging |
 | Mobile | Flutter + Riverpod (/mobile) |
 | Offline | Service worker, localStorage cache, background sync |
@@ -37,11 +37,11 @@ Indian K-12 EdTech platform (CBSE grades 6-12). Next.js 16 + Supabase + Razorpay
 | AI Edge Functions | `supabase/functions/foxy-tutor/` (active prod), `ncert-solver/`, `quiz-generator/`, `cme-engine/` |
 | Foxy Next.js Route | `src/app/api/foxy/route.ts` (new RAG+sonnet route — not yet wired to UI; will replace foxy-tutor Edge Function) |
 | Non-AI Edge Functions | `supabase/functions/daily-cron/`, `queue-consumer/`, `send-*-email/`, `session-guard/`, `scan-ocr/`, `export-report/` |
-| Super admin panel | `src/app/super-admin/` (17 pages), `src/app/api/super-admin/` (24 routes) |
-| Parent portal | `src/app/parent/` (5 pages) |
-| Teacher portal | `src/app/teacher/` (6 pages) |
+| Super admin panel | `src/app/super-admin/` (24 pages), `src/app/api/super-admin/` (61 routes) |
+| Parent portal | `src/app/parent/` (6 pages) |
+| Teacher portal | `src/app/teacher/` (8 pages) |
 | Notifications | `src/app/notifications/page.tsx`, daily-cron Edge Function |
-| Migrations | `supabase/migrations/` (160+ files) |
+| Migrations | `supabase/migrations/` (265 files) |
 | CI/CD | `.github/workflows/ci.yml`, `deploy-production.yml`, `deploy-staging.yml` |
 | Mobile | `mobile/` (Flutter app) |
 | SEO/PWA | `src/app/sitemap.ts`, `public/manifest.json`, `public/sw.js`, `src/components/JsonLd.tsx` |
@@ -328,7 +328,7 @@ Commit: [hash] on [branch] | ready to merge: YES/NO
 npm run dev          # Local dev server
 npm run build        # Production build
 npm run type-check   # TypeScript validation
-npm test             # Vitest (633+ tests, 38+ files)
+npm test             # Vitest (2,511 tests, 84 files)
 npm run test:e2e     # Playwright E2E
 npm run lint         # ESLint
 npm run analyze      # Bundle analysis

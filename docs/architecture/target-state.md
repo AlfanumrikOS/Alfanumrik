@@ -24,7 +24,7 @@
 
 ### 3. Security
 - [IMPLEMENTED] HSTS with preload, CSP, X-Frame-Options DENY, X-Content-Type-Options
-- [IMPLEMENTED] RLS on all tables (148+ policies)
+- [IMPLEMENTED] RLS on all tables (440+ policies)
 - [IMPLEMENTED] RBAC with 6 roles, 71 permissions
 - [IMPLEMENTED] Rate limiting (Upstash Redis distributed + in-memory fallback)
 - [IMPLEMENTED] Bot/scanner path blocking in middleware
@@ -107,7 +107,7 @@ See `docs/security/current-risks.md` for detailed assessment.
 |---|---|---|
 | Headers | HSTS, CSP, X-Frame, X-Content-Type, XSS, Referrer, Permissions | Same (sufficient) |
 | Auth | Supabase PKCE, middleware session refresh | Add MFA for admin users |
-| RLS | 148+ policies on all tables | Automated RLS audit in CI |
+| RLS | 440+ policies on all tables | Automated RLS audit in CI |
 | Rate Limiting | Upstash Redis (200/min general, 20/min parent, 60/min admin) | Per-user rate limits for AI endpoints |
 | Secrets | Server-only env vars, PII redaction in logs | Secret rotation automation |
 | Dependencies | npm audit (continue-on-error in CI) | npm audit enforced (no high/critical) |

@@ -274,7 +274,7 @@ export async function canAccessStudent(authUserId: string, studentId: string): P
     .select('id')
     .eq('auth_user_id', authUserId)
     .eq('id', studentId)
-    .single();
+    .maybeSingle();
   if (ownStudent) return true;
 
   // Parent: can access linked children
@@ -314,7 +314,7 @@ export async function canAccessStudent(authUserId: string, studentId: string): P
  */
 export async function canAccessImage(authUserId: string, imageId: string): Promise<boolean> {
   const supabase = getServiceClient();
-  const { data: image } = await supabase.from('image_uploads').select('student_id').eq('id', imageId).single();
+  const { data: image } = await supabase.from('image_uploads').select('student_id').eq('id', imageId).maybeSingle();
   if (!image) return false;
   return canAccessStudent(authUserId, image.student_id);
 }
@@ -513,7 +513,7 @@ export async function authorizeRequest(
       .from('students')
       .select('id')
       .eq('auth_user_id', authUserId)
-      .single();
+      .maybeSingle();
     studentId = student?.id || null;
   }
 

@@ -312,66 +312,229 @@ function validateQuestions(questions: QuestionRecord[]): QuestionRecord[] {
   });
 }
 
+/**
+ * ARCHITECTURAL CONTRACT -- DO NOT MODIFY WITHOUT REVIEW
+ *
+ * Quiz submission MUST update adaptive learning state. This happens in TWO layers:
+ *
+ * Layer 1 (SERVER-SIDE, in RPC):
+ *   submit_quiz_results RPC -> update_learner_state_post_quiz()
+ *   Updates: concept_mastery (BKT), bloom_progression, spaced_repetition,
+ *            error classification, retention half-life, streak, CME action
+ *   Requires: question_bank.topic_id IS NOT NULL (currently 99.9% populated)
+ *   Guarded by: IF v_q_topic_id IS NOT NULL THEN ... END IF
+ *
+ * Layer 2 (CLIENT-SIDE, belt-and-braces backup):
+ *   processAdaptiveLearning() -> CME Edge Function record_response
+ *   Updates: cme_concept_state (IRT mastery), error classification
+ *   Fires after Layer 1 succeeds, fire-and-forget
+ *   NOTE: This is redundant with Layer 1 since migration 20260405000001
+ *   unified concept_mastery and cme_concept_state. Kept as safety net
+ *   in case Layer 1's topic_id lookup returns NULL for edge-case questions.
+ *
+ * FALLBACK PATH WARNING:
+ *   If submit_quiz_results RPC fails, the fallback uses atomic_quiz_profile_update
+ *   which does NOT call update_learner_state_post_quiz. In that case, Layer 2
+ *   (processAdaptiveLearning) is the ONLY mastery update path. This is acceptable
+ *   because the RPC failure is already logged, and Layer 2 is always called from
+ *   the quiz page regardless of which submission path succeeded.
+ *
+ * INVARIANT: Every quiz submission MUST trigger both layers.
+ * If you add a new quiz page, it MUST call submitQuizResults() + processAdaptiveLearning().
+ * Test: src/__tests__/adaptive-pipeline.test.ts verifies this contract.
+ */
+// Dedup guard: prevents double-click / SWR retry from re-submitting a quiz (5 min window).
+const _quizDedup = new Set<string>();
 export async function submitQuizResults(studentId: string, subject: string, grade: string, topic: string, chapter: number, responses: import('./types').QuizResponse[], time: number) {
-  // Try RPC first
-  try {
-    const { data, error } = await supabase.rpc('submit_quiz_results', {
-      p_student_id: studentId, p_subject: subject, p_grade: grade,
-      p_topic: topic, p_chapter: chapter, p_responses: responses, p_time: time,
-    });
-    if (!error && data) return data;
-    console.warn('submit_quiz_results RPC failed, using fallback:', error?.message);
-  } catch (e) {
-    console.warn('submit_quiz_results RPC error, using fallback:', e);
+  const _k = `${studentId}:${subject}:${topic}:${responses.length}:${time}`;
+  if (_quizDedup.has(_k)) return { duplicate: true };
+  _quizDedup.add(_k); setTimeout(() => _quizDedup.delete(_k), 300_000);
+  try { try { // Layer 1: RPC primary path
+      const { data, error } = await supabase.rpc('submit_quiz_results', {
+        p_student_id: studentId, p_subject: subject, p_grade: grade,
+        p_topic: topic, p_chapter: chapter, p_responses: responses, p_time: time,
+      });
+      if (!error && data) return data;
+      console.warn('submit_quiz_results RPC failed, using fallback:', error?.message);
+    } catch (e) {
+      console.warn('submit_quiz_results RPC error, using fallback:', e);
+    }
+
+    // ── Robust client-side fallback ──
+    // Uses atomic RPC for XP/profile updates to prevent race conditions
+    // when multiple quiz submissions happen concurrently.
+    const total = responses.length;
+    const correct = responses.filter(r => r.is_correct).length;
+    const scorePct = calculateScorePercent(correct, total);
+    const xpEarned = calculateQuizXP(correct, scorePct);
+
+    // 1. Insert quiz session (columns must match DB schema exactly)
+    const { data: session, error: sessErr } = await supabase.from('quiz_sessions').insert({
+      student_id: studentId, subject, grade, total_questions: total,
+      correct_answers: correct, wrong_answers: total - correct,
+      score_percent: scorePct, score: xpEarned,
+      time_taken_seconds: time, total_answered: total,
+      is_completed: true, completed_at: new Date().toISOString(),
+    }).select('id').single();
+    if (sessErr) console.error('Fallback: quiz_sessions insert failed:', sessErr.message);
+
+    // 2. Atomically update learning profile and student XP via RPC
+    // This avoids the read-modify-write race condition where concurrent
+    // quiz submissions could lose XP or corrupt counters.
+    try {
+      await supabase.rpc('atomic_quiz_profile_update', {
+        p_student_id: studentId,
+        p_subject: subject,
+        p_xp: xpEarned,
+        p_total: total,
+        p_correct: correct,
+        p_time_seconds: time,
+      });
+    } catch (atomicErr) {
+      console.warn('atomic_quiz_profile_update failed, using non-atomic fallback:', atomicErr);
+      // Last-resort fallback: upsert with ON CONFLICT if the RPC doesn't exist
+      await supabase.from('student_learning_profiles').upsert({
+        student_id: studentId, subject, xp: xpEarned,
+        total_sessions: 1, total_questions_asked: total,
+        total_questions_answered_correctly: correct,
+        total_time_minutes: Math.max(1, Math.round(time / 60)),
+        last_session_at: new Date().toISOString(),
+        streak_days: 1, level: 1, current_level: 'beginner',
+      }, { onConflict: 'student_id,subject' });
+    }
+
+    return {
+      session_id: session?.id ?? '',
+      total, correct, score_percent: scorePct, xp_earned: xpEarned,
+    };
+  } catch (err) {
+    // Release dedup lock so a genuine retry can proceed
+    _quizDedup.delete(_k);
+    throw err;
+  }
+}
+
+/**
+ * Post-quiz adaptive processing — fire-and-forget, non-blocking.
+ *
+ * Calls the CME Edge Function `record_response` action per question to update
+ * mastery state in `cme_concept_state`. This enables:
+ * - Adaptive difficulty in future quizzes (quiz-generator uses concept_mastery)
+ * - Spaced repetition scheduling (retention half-life tracking)
+ * - Knowledge gap detection (error classification)
+ * - Bloom's progression tracking
+ *
+ * Called from the quiz page AFTER submitQuizResults succeeds. Receives both
+ * the responses and the original questions (needed for chapter_number, difficulty,
+ * bloom_level which are on the question, not the response).
+ *
+ * IMPORTANT: This is a best-effort enhancement. If it fails, the quiz score and
+ * XP are already saved correctly via the atomic RPC (P1/P2/P3/P4 untouched).
+ */
+export async function processAdaptiveLearning(
+  studentId: string,
+  subject: string,
+  grade: string,
+  responses: Array<{ question_id: string; is_correct: boolean; time_spent: number; selected_option: number; error_type?: string }>,
+  questions: Array<{ id: string; chapter_number: number; difficulty: number; bloom_level: string }>,
+  sessionId: string,
+): Promise<void> {
+  // Get the user's access token for CME Edge Function auth
+  const { data: { session: authSession } } = await supabase.auth.getSession();
+  const token = authSession?.access_token;
+  if (!token) return; // Can't call Edge Function without auth
+
+  // Build question lookup by ID
+  const questionMap = new Map(questions.map(q => [q.id, q]));
+
+  // Resolve subject code -> subject UUID for curriculum_topics lookup
+  const { data: subjectRow } = await supabase
+    .from('subjects')
+    .select('id')
+    .eq('code', subject)
+    .maybeSingle();
+  if (!subjectRow) return;
+
+  // Collect unique chapter numbers from questions to resolve topic IDs
+  const chapterNumbers = new Set<number>();
+  for (const q of questions) {
+    if (typeof q.chapter_number === 'number' && q.chapter_number > 0) {
+      chapterNumbers.add(q.chapter_number);
+    }
   }
 
-  // ── Robust client-side fallback ──
-  // Uses atomic RPC for XP/profile updates to prevent race conditions
-  // when multiple quiz submissions happen concurrently.
-  const total = responses.length;
-  const correct = responses.filter(r => r.is_correct).length;
-  const scorePct = calculateScorePercent(correct, total);
-  const xpEarned = calculateQuizXP(correct, scorePct);
-
-  // 1. Insert quiz session (columns must match DB schema exactly)
-  const { data: session, error: sessErr } = await supabase.from('quiz_sessions').insert({
-    student_id: studentId, subject, grade, total_questions: total,
-    correct_answers: correct, wrong_answers: total - correct,
-    score_percent: scorePct, score: xpEarned,
-    time_taken_seconds: time, total_answered: total,
-    is_completed: true, completed_at: new Date().toISOString(),
-  }).select('id').single();
-  if (sessErr) console.error('Fallback: quiz_sessions insert failed:', sessErr.message);
-
-  // 2. Atomically update learning profile and student XP via RPC
-  // This avoids the read-modify-write race condition where concurrent
-  // quiz submissions could lose XP or corrupt counters.
-  try {
-    await supabase.rpc('atomic_quiz_profile_update', {
-      p_student_id: studentId,
-      p_subject: subject,
-      p_xp: xpEarned,
-      p_total: total,
-      p_correct: correct,
-      p_time_seconds: time,
-    });
-  } catch (atomicErr) {
-    console.warn('atomic_quiz_profile_update failed, using non-atomic fallback:', atomicErr);
-    // Last-resort fallback: upsert with ON CONFLICT if the RPC doesn't exist
-    await supabase.from('student_learning_profiles').upsert({
-      student_id: studentId, subject, xp: xpEarned,
-      total_sessions: 1, total_questions_asked: total,
-      total_questions_answered_correctly: correct,
-      total_time_minutes: Math.max(1, Math.round(time / 60)),
-      last_session_at: new Date().toISOString(),
-      streak_days: 1, level: 1, current_level: 'beginner',
-    }, { onConflict: 'student_id,subject' });
+  // Resolve chapter_number -> curriculum_topics.id (UUID) for CME
+  const topicMap = new Map<number, string>(); // chapter_number -> topic UUID
+  if (chapterNumbers.size > 0) {
+    const { data: topics } = await supabase
+      .from('curriculum_topics')
+      .select('id, chapter_number')
+      .eq('subject_id', subjectRow.id)
+      .eq('grade', grade)
+      .in('chapter_number', [...chapterNumbers])
+      .is('parent_topic_id', null) // top-level chapter topics
+      .limit(50);
+    if (topics) {
+      for (const t of topics) {
+        if (t.chapter_number != null && !topicMap.has(t.chapter_number)) {
+          topicMap.set(t.chapter_number, t.id);
+        }
+      }
+    }
   }
 
-  return {
-    session_id: session?.id ?? '',
-    total, correct, score_percent: scorePct, xp_earned: xpEarned,
-  };
+  // Call CME record_response for each question response.
+  // This updates cme_concept_state with BKT mastery, error classification,
+  // retention scheduling per concept.
+  let cmeFailureCount = 0;
+  let cmeSuccessCount = 0;
+  for (const response of responses) {
+    const question = questionMap.get(response.question_id);
+    if (!question) continue;
+
+    const conceptId = topicMap.get(question.chapter_number);
+    if (!conceptId) continue; // No matching curriculum_topic — skip
+
+    try {
+      await fetchWithTimeout(`${supabaseUrl}/functions/v1/cme-engine`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          action: 'record_response',
+          concept_id: conceptId,
+          question_id: response.question_id,
+          correct: response.is_correct,
+          difficulty: question.difficulty ?? 2,
+          response_time_ms: (response.time_spent ?? 10) * 1000,
+        }),
+      }, 5000); // 5s timeout per call — best-effort
+      cmeSuccessCount++;
+    } catch {
+      cmeFailureCount++;
+    }
+  }
+
+  // Report adaptive pipeline failures to ops_events via /api/client-error
+  // so they appear in the Observability Console and alert rules can fire.
+  if (cmeFailureCount > 0) {
+    try {
+      fetch('/api/client-error', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: `[adaptive-pipeline] CME record_response failed for ${cmeFailureCount}/${cmeFailureCount + cmeSuccessCount} questions`,
+          url: '/quiz',
+        }),
+      }).catch((err: unknown) => {
+        console.warn('[adaptive-pipeline] error-report POST failed:', err instanceof Error ? err.message : String(err));
+      }); // fire-and-forget, never block
+    } catch {
+      // Reporting failure is itself non-fatal
+    }
+  }
 }
 
 export async function getLeaderboard(period = 'weekly', limit = 20) {
@@ -475,12 +638,13 @@ export async function getCmeNextAction(
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
+        apikey: supabaseAnonKey, // Required by Supabase Edge Functions for JWT verification
       },
       body: JSON.stringify({
         action: 'get_next_action',
         subject_id: subjectRow.id,
       }),
-    }, 8000); // 8s timeout — best-effort, non-blocking
+    }, 10000);
 
     if (!res.ok) return null;
     const data = await res.json();

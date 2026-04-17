@@ -28,6 +28,7 @@ const NAV_ITEMS: { href: string; label: string; icon: string }[] = [
   { href: '/super-admin/subscriptions', label: 'Subscriptions', icon: '◈' },
   { href: '/super-admin/learning', label: 'Learning Intel', icon: '◉' },
   { href: '/super-admin/diagnostics', label: 'Diagnostics', icon: '⊘' },
+  { href: '/super-admin/observability', label: 'Observability', icon: '◎' },
   { href: '/super-admin/workbench', label: 'Data Workbench', icon: '⊞' },
   { href: '/super-admin/flags', label: 'Feature Flags', icon: '⊡' },
   { href: '/super-admin/institutions', label: 'Institutions', icon: '⊟' },
@@ -39,6 +40,7 @@ const NAV_ITEMS: { href: string; label: string; icon: string }[] = [
   { href: '/super-admin/reports', label: 'Reports', icon: '⊏' },
   { href: '/super-admin/logs', label: 'Audit Logs', icon: '⊙' },
   { href: '/super-admin/support', label: 'Support Center', icon: '⊛' },
+  { href: '/super-admin/bulk-actions', label: 'Bulk Actions', icon: '⊞' },
   { href: '/super-admin/demo', label: 'Demo Accounts', icon: '⊜' },
 ];
 
@@ -92,7 +94,9 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
     if (!accessToken) return;
     fetch('/api/super-admin/roles?action=roles', {
       headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-    }).catch(() => {});
+    }).catch((err: unknown) => {
+      console.warn('[admin-shell] roles prefetch failed:', err instanceof Error ? err.message : String(err));
+    });
     // Try to get name from session user metadata
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user?.user_metadata?.name) setAdminName(user.user_metadata.name);

@@ -1,5 +1,6 @@
 'use client';
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useResponsiveCanvas } from '@/hooks/useResponsiveCanvas';
 
 export const metadata = {
   id: 'sound-waves',
@@ -12,7 +13,7 @@ export const metadata = {
 const SOUND_SPEED = 343; // m/s
 
 export default function SoundWaves() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { canvasRef, containerRef, size } = useResponsiveCanvas(400 / 240);
   const rafRef = useRef<number>(0);
 
   const [frequency, setFrequency] = useState(500);
@@ -31,8 +32,8 @@ export default function SoundWaves() {
     if (!ctx) return;
     const { frequency: freq, amplitude: amp } = stateRef.current;
 
-    const W = canvas.width;
-    const H = canvas.height;
+    const W = size.width;
+    const H = size.height;
     ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = '#0f0f23';
     ctx.fillRect(0, 0, W, H);
@@ -148,7 +149,7 @@ export default function SoundWaves() {
     ctx.font = '10px sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(`\u03bb = ${(wavelength * 100).toFixed(1)} cm`, cycleW / 2, annoY + 12);
-  }, [wavelength]);
+  }, [wavelength, size, canvasRef]);
 
   useEffect(() => {
     const loop = (time: number) => {
@@ -166,7 +167,9 @@ export default function SoundWaves() {
   return (
     <div style={{ background: '#1a1a2e', borderRadius: 12, padding: 16, maxWidth: '100%', fontFamily: 'sans-serif' }}>
       <h2 style={{ color: '#F97316', margin: '0 0 12px', fontSize: 18, fontWeight: 700 }}>Sound Waves</h2>
-      <canvas ref={canvasRef} width={400} height={240} style={{ width: '100%', borderRadius: 8, display: 'block' }} />
+      <div ref={containerRef} className="w-full" style={{ aspectRatio: '400/240' }}>
+        <canvas ref={canvasRef} className="rounded-lg" style={{ display: 'block' }} />
+      </div>
       <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>

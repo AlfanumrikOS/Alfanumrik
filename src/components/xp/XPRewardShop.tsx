@@ -166,8 +166,8 @@ export default function XPRewardShop({ balance, isHi, onRedeem }: XPRewardShopPr
                 {isHi ? '\u0906\u092A\u0915\u093E \u092C\u0948\u0932\u0947\u0902\u0938' : 'Your balance'}
               </span>
               <span
-                className="text-sm font-bold"
-                style={{ color: balance >= selectedReward.cost ? 'var(--green, #22C55E)' : '#DC2626' }}
+                className={`text-sm font-bold ${balance >= selectedReward.cost ? '' : 'text-red-600'}`}
+                style={balance >= selectedReward.cost ? { color: 'var(--green, #22C55E)' } : undefined}
               >
                 {balance.toLocaleString()} XP
               </span>
@@ -180,7 +180,7 @@ export default function XPRewardShop({ balance, isHi, onRedeem }: XPRewardShopPr
               </p>
             )}
             {redeemResult === 'error' && (
-              <p className="text-center text-sm font-bold" style={{ color: '#DC2626' }}>
+              <p className="text-center text-sm font-bold text-red-600">
                 {isHi ? '\u0915\u0941\u091B \u0917\u0932\u0924 \u0939\u0941\u0906\u0964 \u092A\u0941\u0928\u0903 \u092A\u094D\u0930\u092F\u093E\u0938 \u0915\u0930\u0947\u0902\u0964' : 'Something went wrong. Please try again.'}
               </p>
             )}

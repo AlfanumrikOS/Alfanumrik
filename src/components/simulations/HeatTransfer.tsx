@@ -1,5 +1,6 @@
 'use client';
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useResponsiveCanvas } from '@/hooks/useResponsiveCanvas';
 
 type Mode = 'conduction' | 'convection' | 'radiation';
 
@@ -8,14 +9,14 @@ export default function HeatTransfer() {
   const [tempDiff, setTempDiff] = useState(60);
   const [radDist, setRadDist] = useState(150);
   const [step, setStep] = useState(0);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { canvasRef, containerRef, size } = useResponsiveCanvas(560 / 240);
   const rafRef = useRef<number>(0);
   const tRef = useRef(0);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current; if (!canvas) return;
     const ctx = canvas.getContext('2d')!;
-    const w = canvas.width, h = canvas.height;
+    const w = size.width, h = size.height;
     tRef.current += 0.05;
     const t = tRef.current;
     ctx.clearRect(0, 0, w, h);
@@ -98,7 +99,7 @@ export default function HeatTransfer() {
     }
 
     rafRef.current = requestAnimationFrame(draw);
-  }, [mode, tempDiff, radDist]);
+  }, [mode, tempDiff, radDist, size, canvasRef]);
 
   useEffect(() => {
     rafRef.current = requestAnimationFrame(draw);
@@ -119,12 +120,14 @@ export default function HeatTransfer() {
   return (
     <div style={{ background: 'var(--surface-1)', borderRadius: 12, padding: 16, maxWidth: 600, margin: '0 auto', fontFamily: 'inherit' }}>
       <h3 style={{ color: 'var(--text-1)', fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Heat Transfer</h3>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
         <button style={btnStyle('conduction')} onClick={() => setMode('conduction')}>Conduction</button>
         <button style={btnStyle('convection')} onClick={() => setMode('convection')}>Convection</button>
         <button style={btnStyle('radiation')} onClick={() => setMode('radiation')}>Radiation</button>
       </div>
-      <canvas ref={canvasRef} width={560} height={240} style={{ width: '100%', borderRadius: 8, background: 'var(--surface-2)', display: 'block' }} />
+      <div ref={containerRef} className="w-full" style={{ aspectRatio: '560/240' }}>
+        <canvas ref={canvasRef} className="rounded-lg" style={{ background: 'var(--surface-2)', display: 'block' }} />
+      </div>
       <div style={{ marginTop: 10 }}>
         {mode === 'conduction' && (<>
           <label style={{ color: 'var(--text-2)', fontSize: 13 }}>Temperature Difference: {tempDiff}°C</label>

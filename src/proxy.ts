@@ -17,6 +17,12 @@ import { createServerClient } from '@supabase/ssr';
 // to keep them out of the middleware's synchronous startup path (P10 budget).
 import type { Ratelimit as RatelimitType } from '@upstash/ratelimit';
 import type { Redis as RedisType } from '@upstash/redis';
+import {
+  getUserRoleFromCache,
+  findRouteRule,
+  destinationForRole,
+  type MiddlewareRole,
+} from '@/lib/middleware-helpers';
 /* ═══════════════════════════════════════════════════════════════
  * PROXY — Security Hardening + Auth Session Refresh
  * Next.js 16 proxy — exported as both proxy (primary) and middleware (compat alias)
@@ -24,9 +30,15 @@ import type { Redis as RedisType } from '@upstash/redis';
  * Defense in depth. Every layer assumes the layer below might be
  * compromised.
  *
- * Layer 0: Supabase session refresh (keeps auth cookies fresh)
- * Layer 1: Security headers (XSS, clickjacking, MIME sniffing)
- * Layer 2: Bot/scanner blocking
+ * Layer 0: Subdomain → school config resolution (white-label)
+ * Layer 0.5: API Authentication Check
+ * Layer 0.6: Protected page route redirects
+ * Layer 0.7: School admin portal protection
+ * Layer 0.8: Session validation (device limit)
+ * Layer 1: Supabase session refresh (keeps auth cookies fresh)
+ * Layer 2: Security headers (XSS, clickjacking, MIME sniffing)
+ * Layer 2.1: Bot/scanner blocking
+ * Layer 2.5: Super admin protection
  * Layer 3: Distributed rate limiting (Upstash Redis, falls back to in-memory)
  * Layer 4: Request validation
  *
@@ -212,6 +224,141 @@ async function validateSessionCached(sessionId: string): Promise<boolean | null>
   }
 }
 
+// ── Subdomain → School resolution (white-label) ──────────────────────
+// Schools access Alfanumrik via <slug>.alfanumrik.com. This cache avoids
+// a DB query on every request (5-minute TTL, 1-minute negative cache).
+const schoolCache = new Map<string, { data: SchoolConfig | null; expires: number }>();
+
+interface SchoolConfig {
+  id: string;
+  name: string;
+  slug: string;
+  logo_url: string | null;
+  primary_color: string;
+  secondary_color: string;
+  tagline: string | null;
+  settings: Record<string, unknown>;
+}
+
+function extractSubdomain(host: string): string | null {
+  // Strip port (e.g., "dps-noida.localhost:3000" → "dps-noida.localhost")
+  const hostWithoutPort = host.split(':')[0];
+  const parts = hostWithoutPort.split('.');
+
+  // school-slug.alfanumrik.com (3+ parts, not www)
+  if (parts.length >= 3 && parts[0] !== 'www') {
+    return parts[0];
+  }
+
+  // school-slug.localhost (local dev)
+  if (parts.length >= 2 && parts[parts.length - 1] === 'localhost' && parts[0] !== 'localhost') {
+    return parts[0];
+  }
+
+  return null;
+}
+
+async function getSchoolBySlug(
+  slug: string,
+  sbUrl: string,
+  sbKey: string
+): Promise<SchoolConfig | null> {
+  const cached = schoolCache.get(slug);
+  if (cached && cached.expires > Date.now()) return cached.data;
+
+  try {
+    // Direct PostgREST query with anon key — lightweight for edge middleware.
+    // School branding is non-sensitive public info. If no RLS policy allows
+    // anonymous/authenticated SELECT on schools, the query returns empty and
+    // we fall through to default Alfanumrik branding.
+    const url = `${sbUrl}/rest/v1/schools?slug=eq.${encodeURIComponent(slug)}&is_active=eq.true&select=id,name,slug,logo_url,primary_color,secondary_color,tagline,settings&limit=1`;
+    const res = await fetch(url, {
+      headers: {
+        'apikey': sbKey,
+        'Authorization': `Bearer ${sbKey}`,
+      },
+    });
+
+    if (!res.ok) {
+      schoolCache.set(slug, { data: null, expires: Date.now() + 60_000 });
+      return null;
+    }
+
+    const rows = await res.json();
+    const data: SchoolConfig | null = rows?.[0] ?? null;
+
+    const ttl = data ? 5 * 60_000 : 60_000;
+    schoolCache.set(slug, { data, expires: Date.now() + ttl });
+
+    evictStaleSchoolCache();
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve a custom domain (e.g., learn.dps.com) to a school config.
+ * Uses the schools.custom_domain column + domain_verified check.
+ */
+async function getSchoolByCustomDomain(
+  domain: string,
+  sbUrl: string,
+  sbKey: string
+): Promise<SchoolConfig | null> {
+  const cacheKey = `domain:${domain}`;
+  const cached = schoolCache.get(cacheKey);
+  if (cached && cached.expires > Date.now()) return cached.data;
+
+  try {
+    const url = `${sbUrl}/rest/v1/schools?custom_domain=eq.${encodeURIComponent(domain)}&is_active=eq.true&domain_verified=eq.true&select=id,name,slug,logo_url,primary_color,secondary_color,tagline,settings&limit=1`;
+    const res = await fetch(url, {
+      headers: {
+        'apikey': sbKey,
+        'Authorization': `Bearer ${sbKey}`,
+      },
+    });
+
+    if (!res.ok) {
+      schoolCache.set(cacheKey, { data: null, expires: Date.now() + 60_000 });
+      return null;
+    }
+
+    const rows = await res.json();
+    const data: SchoolConfig | null = rows?.[0] ?? null;
+
+    const ttl = data ? 5 * 60_000 : 60_000;
+    schoolCache.set(cacheKey, { data, expires: Date.now() + ttl });
+
+    evictStaleSchoolCache();
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+function evictStaleSchoolCache(): void {
+  if (schoolCache.size > 500) {
+    const now = Date.now();
+    for (const [k, v] of schoolCache.entries()) {
+      if (v.expires < now) schoolCache.delete(k);
+    }
+  }
+}
+
+/** Known B2C hostnames — no tenant resolution needed */
+const B2C_HOSTS = new Set([
+  'alfanumrik.com', 'www.alfanumrik.com', 'app.alfanumrik.com',
+  'alfanumrik.vercel.app', 'alfanumrik-ten.vercel.app',
+]);
+
+function isB2CHost(host: string): boolean {
+  const h = host.split(':')[0].toLowerCase();
+  if (h === 'localhost' || h.startsWith('localhost')) return true;
+  if (h.endsWith('.vercel.app')) return true;
+  return B2C_HOSTS.has(h);
+}
+
 export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const pathname = path; // alias for clarity in API checks
@@ -229,6 +376,54 @@ export async function proxy(request: NextRequest) {
 
   const origin = request.headers.get('origin') || '';
   const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+
+  // ── Layer 0: Subdomain / Custom Domain → School resolution (white-label) ──
+  // Extract subdomain or custom domain early (before auth) so school headers
+  // are available to all downstream layers and client-side SchoolContext.
+  // B2C domains (alfanumrik.com, www, app, localhost, *.vercel.app) skip this entirely.
+  const host = request.headers.get('host') || '';
+  const subdomain = extractSubdomain(host);
+  let schoolConfig: SchoolConfig | null = null;
+  let isExplicitTenantRequest = false; // true when host is a school subdomain or custom domain
+
+  if (!isB2CHost(host)) {
+    const sbUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const sbKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    if (sbUrl && sbKey) {
+      if (subdomain) {
+        // Try slug-based resolution (*.alfanumrik.com)
+        schoolConfig = await getSchoolBySlug(subdomain, sbUrl, sbKey);
+        isExplicitTenantRequest = true;
+      } else {
+        // Try custom domain resolution (learn.dps.com)
+        const normalizedHost = host.split(':')[0].toLowerCase();
+        schoolConfig = await getSchoolByCustomDomain(normalizedHost, sbUrl, sbKey);
+        isExplicitTenantRequest = true;
+      }
+
+      // Add school origin to CORS for this request
+      if (schoolConfig) {
+        if (subdomain) {
+          ALLOWED_ORIGINS.push(`https://${subdomain}.alfanumrik.com`);
+          if (process.env.NODE_ENV !== 'production') {
+            ALLOWED_ORIGINS.push(`http://${subdomain}.localhost:3000`);
+          }
+        }
+        if (origin && !ALLOWED_ORIGINS.includes(origin)) {
+          ALLOWED_ORIGINS.push(origin);
+        }
+      }
+    }
+
+    // If this is an explicit tenant request but no school found → 404
+    if (isExplicitTenantRequest && !schoolConfig) {
+      return new NextResponse(
+        '<html><body style="background:#0f0f0f;color:#e0e0e0;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><div style="font-size:48px;margin-bottom:16px">🏫</div><h1 style="font-size:20px;margin-bottom:8px">School Not Found</h1><p style="color:#888;font-size:14px">This school is not registered on Alfanumrik.</p><a href="https://alfanumrik.com" style="color:#7C3AED;margin-top:16px;display:inline-block">Go to Alfanumrik →</a></div></body></html>',
+        { status: 404, headers: { 'Content-Type': 'text/html' } }
+      );
+    }
+  }
 
   // ── Layer 0.5: API Authentication Check ──
   if (pathname.startsWith('/api/v1/')) {
@@ -294,6 +489,14 @@ export async function proxy(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
+  // Track the authenticated user id (if any) and whether auth is degraded.
+  // authUserId is consumed by Layer 0.65 (role-based route protection).
+  // authDegraded is forwarded as `x-auth-degraded: true` so downstream API
+  // handlers know Supabase was unreachable (they must still run their own
+  // authorizeRequest() check, but can choose to emit a softer error surface).
+  let authUserId: string | null = null;
+  let authDegraded = false;
+
   if (supabaseUrl && supabaseKey) {
     const supabase = createServerClient(supabaseUrl, supabaseKey, {
       cookies: {
@@ -311,8 +514,95 @@ export async function proxy(request: NextRequest) {
         },
       },
     });
-    // Refresh the session — this extends the cookie expiry
-    await supabase.auth.getUser();
+
+    // Refresh the session — this extends the cookie expiry.
+    // DEFENSIVE: a Supabase outage here used to crash the middleware,
+    // taking down EVERY request (including public pages, health checks,
+    // and login). We now swallow errors and continue without a user —
+    // API routes will still enforce auth via authorizeRequest(), and
+    // unauthenticated page requests still hit the downstream cookie checks.
+    try {
+      const { data, error } = await supabase.auth.getUser();
+      if (error) {
+        // getUser() returns an error on invalid/expired JWT, network failure,
+        // or service outage. AuthSessionMissingError is the normal "no session"
+        // case and should NOT be flagged as degraded.
+        const errName = (error as { name?: string } | null)?.name ?? '';
+        const isNoSession = errName === 'AuthSessionMissingError';
+        if (!isNoSession) {
+          authDegraded = true;
+          // Best-effort structured log. We avoid importing @/lib/logger in the
+          // middleware synchronous path (logger pulls in Sentry + redactor =
+          // too heavy for middleware bundle). A plain console.warn in the Edge
+          // runtime is captured by Vercel logs.
+          console.warn(JSON.stringify({
+            level: 'warn',
+            message: 'middleware_auth_degraded',
+            route: path,
+            errorName: errName || 'unknown',
+            errorMessage: (error as { message?: string } | null)?.message ?? 'unknown',
+          }));
+        }
+      } else {
+        authUserId = data?.user?.id ?? null;
+      }
+    } catch (err) {
+      // Network error, Supabase outage, or any other unexpected throw.
+      // Fail-open: continue without a user. Downstream auth checks still run.
+      authDegraded = true;
+      console.warn(JSON.stringify({
+        level: 'warn',
+        message: 'middleware_auth_crash',
+        route: path,
+        error: err instanceof Error ? err.message : String(err),
+      }));
+    }
+  }
+
+  // Forward degraded-auth signal to downstream handlers (API routes, server
+  // components). They can read this from request.headers.get('x-auth-degraded').
+  if (authDegraded) {
+    response.headers.set('x-auth-degraded', 'true');
+  }
+
+  // ── Layer 0.65: Role-based route protection (DISABLED) ──
+  //
+  // TEMPORARILY DISABLED due to a production auth cookie propagation bug.
+  //
+  // Root cause: when this layer called `NextResponse.redirect(...)` for a
+  // role mismatch, the new response did NOT carry forward the Supabase
+  // session cookies set earlier by `supabase.auth.getUser()` during session
+  // refresh. Downstream the user's session appeared missing, causing
+  // "AuthSessionMissingError" for teacher/parent/admin logins (students
+  // routed to /dashboard which has no rule, so they were unaffected).
+  //
+  // Safe to disable because:
+  //   - RLS policies in PostgreSQL remain the true auth boundary
+  //   - API routes enforce via authorizeRequest()
+  //   - Client-side AuthContext + per-page redirects handle role routing
+  //
+  // TODO(reintroduce): When re-enabling, clone cookies from the current
+  // `response` onto the redirect response before returning. Reference
+  // pattern: `const redirect = NextResponse.redirect(...); response.cookies
+  // .getAll().forEach(c => redirect.cookies.set(c.name, c.value, c));
+  // return redirect;`
+  //
+  // Keep the helper imports so the follow-up fix is a one-liner.
+  void findRouteRule;
+  void getUserRoleFromCache;
+  void destinationForRole;
+
+  // ── Inject school config headers (after response is created) ──
+  // These headers are read by /api/school-config and forwarded to SchoolContext.
+  // Also injected into request headers for API routes to consume via tenantFromHeaders().
+  if (schoolConfig) {
+    response.headers.set('x-school-id', schoolConfig.id);
+    response.headers.set('x-school-name', encodeURIComponent(schoolConfig.name));
+    response.headers.set('x-school-slug', schoolConfig.slug);
+    response.headers.set('x-school-logo', schoolConfig.logo_url || '');
+    response.headers.set('x-school-primary-color', schoolConfig.primary_color || '#7C3AED');
+    response.headers.set('x-school-secondary-color', schoolConfig.secondary_color || '#F97316');
+    response.headers.set('x-school-tagline', encodeURIComponent(schoolConfig.tagline || ''));
   }
 
   // ── Layer 0.8: Session Validation (device limit enforcement) ──

@@ -15,6 +15,7 @@
  */
 
 import * as Sentry from '@sentry/nextjs';
+import { redactPII } from '@/lib/ops-events-redactor';
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
@@ -26,28 +27,6 @@ interface LogEntry {
   version: string;
   requestId?: string;
   [key: string]: unknown;
-}
-
-// PII fields to redact in logs
-const PII_FIELDS = new Set([
-  'password', 'token', 'secret', 'authorization', 'cookie',
-  'email', 'phone', 'api_key', 'apikey', 'access_token',
-  'refresh_token', 'service_role_key',
-]);
-
-function redactPII(obj: Record<string, unknown>): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(obj)) {
-    const lowerKey = key.toLowerCase();
-    if (PII_FIELDS.has(lowerKey) || PII_FIELDS.has(lowerKey.replace(/_/g, ''))) {
-      result[key] = '[REDACTED]';
-    } else if (value && typeof value === 'object' && !Array.isArray(value)) {
-      result[key] = redactPII(value as Record<string, unknown>);
-    } else {
-      result[key] = value;
-    }
-  }
-  return result;
 }
 
 function safeStringify(obj: unknown): string {
@@ -85,7 +64,7 @@ function createEntry(
   };
 
   if (meta) {
-    const safe = redactPII(meta);
+    const safe = redactPII(meta) as Record<string, unknown>;
     Object.assign(entry, safe);
   }
 

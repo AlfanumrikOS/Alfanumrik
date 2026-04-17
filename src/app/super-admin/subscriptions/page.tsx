@@ -7,6 +7,7 @@ import StatusBadge from '../_components/StatusBadge';
 import DetailDrawer from '../_components/DetailDrawer';
 import { colors, S } from '../_components/admin-styles';
 import { PRICING, yearlyPerMonth } from '@/lib/plans';
+import PaymentOpsTab from './_components/PaymentOpsTab';
 
 interface UserRecord {
   id: string; auth_user_id: string; name: string; email: string; role: string;
@@ -21,6 +22,7 @@ interface AnalyticsData {
 
 function SubscriptionsContent() {
   const { apiFetch } = useAdmin();
+  const [activeTab, setActiveTab] = useState<'revenue' | 'ops'>('revenue');
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [userTotal, setUserTotal] = useState(0);
@@ -94,13 +96,46 @@ function SubscriptionsContent() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div>
           <h1 style={S.h1}>Subscriptions & Billing</h1>
           <p style={{ fontSize: 13, color: colors.text3, margin: 0 }}>Plan distribution, entitlement inspection, and manual overrides</p>
         </div>
       </div>
 
+      {/* Tab Switcher */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: `1px solid ${colors.border}`, paddingBottom: 0 }}>
+        <button
+          onClick={() => setActiveTab('revenue')}
+          style={{
+            ...S.filterBtn,
+            borderRadius: '6px 6px 0 0',
+            borderBottom: activeTab === 'revenue' ? `2px solid ${colors.text1}` : '2px solid transparent',
+            fontWeight: activeTab === 'revenue' ? 700 : 500,
+            color: activeTab === 'revenue' ? colors.text1 : colors.text2,
+            background: activeTab === 'revenue' ? colors.surface : 'transparent',
+          }}
+        >
+          Revenue & Entitlements
+        </button>
+        <button
+          onClick={() => setActiveTab('ops')}
+          style={{
+            ...S.filterBtn,
+            borderRadius: '6px 6px 0 0',
+            borderBottom: activeTab === 'ops' ? `2px solid ${colors.text1}` : '2px solid transparent',
+            fontWeight: activeTab === 'ops' ? 700 : 500,
+            color: activeTab === 'ops' ? colors.text1 : colors.text2,
+            background: activeTab === 'ops' ? colors.surface : 'transparent',
+          }}
+        >
+          Payment Ops
+        </button>
+      </div>
+
+      {activeTab === 'ops' && <PaymentOpsTab />}
+
+      {activeTab === 'revenue' && <>
       {/* KPI Cards */}
       {analytics && (() => {
         // Monthly revenue estimation using centralized PRICING from @/lib/plans
@@ -302,6 +337,7 @@ function SubscriptionsContent() {
           </div>
         )}
       </DetailDrawer>
+      </>}
     </div>
   );
 }

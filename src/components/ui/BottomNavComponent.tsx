@@ -13,6 +13,24 @@ import { useDashboardData } from '@/lib/swr';
  * - Every page reachable in ≤ 2 taps
  */
 
+/** Pure helper: determine whether a nav item is grade-locked for a student.
+ *  Exported for unit testing the grade-gating policy without rendering the
+ *  full nav shell. */
+export interface NavGradeGatedItem {
+  gradeMin?: number;
+  [key: string]: unknown;
+}
+export function getItemLockForGrade(
+  item: NavGradeGatedItem | null | undefined,
+  studentGrade: number,
+): { locked: boolean; gradeMin?: number } {
+  const gMin = item?.gradeMin;
+  if (typeof gMin === 'number' && studentGrade < gMin) {
+    return { locked: true, gradeMin: gMin };
+  }
+  return { locked: false };
+}
+
 const CORE_TABS = [
   { href: '/dashboard', icon: '🏠', activeIcon: '🏠', label: 'Home', labelHi: 'होम' },
   { href: '/quiz', icon: '✏️', activeIcon: '✏️', label: 'Practice', labelHi: 'अभ्यास' },
@@ -163,23 +181,34 @@ export default function BottomNavComponent() {
 
   const tabs = getCoreTabs(activeRole);
   const allSidebarSections = getSidebarSections(activeRole);
-  // Filter by grade for grade-gated sections and items (PYQ, Mock Exam: grade 9+)
+  // Grade-gated items (PYQ, Mock Exam: grade 9+) are now SHOWN as visibly locked
+  // instead of silently hidden — surfaces future value for younger students. See
+  // Phase 5B UX mission: "locked state > missing state".
   const studentGrade = parseInt((auth as any)?.student?.grade ?? '6', 10);
+  const getItemLock = (item: any) => getItemLockForGrade(item, studentGrade);
+  // Phase 5B Surface 3 — show a proactive Upgrade pill in the More sheet
+  // for free-plan students. Pro/starter/unlimited never see it.
+  const subscriptionPlan = ((auth as any)?.student?.subscription_plan as string | null | undefined) ?? null;
+  const showUpgradePill = activeRole === 'student' && (subscriptionPlan === null || subscriptionPlan === 'free');
+  // Sidebar SECTION-level gating (rare) still filters the section entirely —
+  // a whole-section lockout is too heavy to render as locked items.
   const sidebarSections = allSidebarSections.filter(s => {
     const gMin = (s as any).gradeMin;
     return gMin == null || studentGrade >= gMin;
   });
-  const moreItems = getMoreItems(activeRole).filter(item => {
-    const gMin = (item as any).gradeMin;
-    return gMin == null || studentGrade >= gMin;
-  });
+  // Items are never filtered here; locked state is applied at render time.
+  const moreItems = getMoreItems(activeRole);
 
   // Due-review count for the Review tab badge (SWR-cached — no extra request if dashboard already loaded)
   const { data: dashData } = useDashboardData((auth as any)?.student?.id);
   const dueCount: number = (dashData as any)?.due_count ?? 0;
 
+  // Streak count from snapshot (already loaded in AuthContext — no extra request)
+  const streakCount: number = (auth as any)?.snapshot?.current_streak ?? 0;
+
   const isActive = (href: string) => pathname === href || (href !== '/' && pathname.startsWith(href));
-  const isMoreActive = moreItems.some(m => isActive(m.href));
+  // isMoreActive should only consider items the user can actually reach.
+  const isMoreActive = moreItems.some(m => !getItemLock(m).locked && isActive(m.href));
   const hasMultipleRoles = roles.length > 1;
 
   const handleRoleSwitch = (role: UserRole) => {
@@ -219,20 +248,45 @@ export default function BottomNavComponent() {
             </div>
             <div className="px-5 pb-4 space-y-1">
               {moreItems.map(item => {
-                const active = isActive(item.href);
+                const lock = getItemLock(item);
+                const active = !lock.locked && isActive(item.href);
+                const gradeChipLabel = lock.locked
+                  ? (isHi ? `कक्षा ${lock.gradeMin}+` : `Grade ${lock.gradeMin}+`)
+                  : null;
                 return (
                   <button
                     key={item.href}
-                    onClick={() => { setShowMore(false); router.push(item.href); }}
+                    type="button"
+                    onClick={lock.locked
+                      ? undefined
+                      : () => { setShowMore(false); router.push(item.href); }}
+                    aria-disabled={lock.locked || undefined}
+                    aria-label={lock.locked
+                      ? `${isHi ? item.labelHi : item.label} — ${isHi ? 'अभी उपलब्ध नहीं' : 'locked'} · ${gradeChipLabel}`
+                      : undefined}
                     className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl text-left transition-all active:scale-[0.98]"
                     style={{
-                      background: active ? 'rgba(232,88,28,0.08)' : 'transparent',
-                      color: active ? 'var(--orange)' : 'var(--text-2)',
+                      background: active ? 'rgb(var(--orange-rgb) / 0.08)' : 'transparent',
+                      color: lock.locked ? 'var(--text-3)' : (active ? 'var(--orange)' : 'var(--text-2)'),
+                      opacity: lock.locked ? 0.75 : 1,
+                      cursor: lock.locked ? 'not-allowed' : 'pointer',
                     }}
                   >
-                    <span className="text-xl w-7 text-center">{item.icon}</span>
+                    <span className="text-xl w-7 text-center" aria-hidden="true">{item.icon}</span>
                     <span className="text-sm font-semibold">{isHi ? item.labelHi : item.label}</span>
-                    {item.href === '/review' && dueCount > 0 && activeRole === 'student' ? (
+                    {lock.locked ? (
+                      <span
+                        className="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold"
+                        style={{
+                          background: 'var(--surface-3)',
+                          color: 'var(--text-3)',
+                          border: '1px solid var(--border)',
+                        }}
+                      >
+                        <span aria-hidden="true">🔒</span>
+                        {gradeChipLabel}
+                      </span>
+                    ) : item.href === '/review' && dueCount > 0 && activeRole === 'student' ? (
                       <span className="ml-auto min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[9px] font-bold text-white px-1"
                         style={{ background: '#DC2626' }}>
                         {dueCount > 9 ? '9+' : dueCount}
@@ -243,6 +297,50 @@ export default function BottomNavComponent() {
                   </button>
                 );
               })}
+              {/* Phase 5B Surface 3 — Upgrade pill (free-plan students only) */}
+              {showUpgradePill && (
+                <div className="pt-3 mt-2" style={{ borderTop: '1px solid var(--border)' }}>
+                  <a
+                    href="/pricing"
+                    onClick={() => {
+                      setShowMore(false);
+                      if (typeof window !== 'undefined') {
+                        try {
+                          window.dispatchEvent(new CustomEvent('alfanumrik:upgrade-cta-click', {
+                            detail: { source: 'nav_more_sheet', variant: 'pill', timestamp: Date.now() },
+                          }));
+                        } catch { /* non-blocking */ }
+                      }
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--purple)] focus-visible:ring-offset-2"
+                    style={{
+                      background: 'linear-gradient(135deg, rgb(var(--purple-rgb) / 0.10), rgb(var(--orange-rgb) / 0.08))',
+                      border: '1px solid rgb(var(--purple-rgb) / 0.25)',
+                    }}
+                    data-testid="nav-upgrade-pill"
+                  >
+                    <span
+                      className="inline-flex items-center justify-center w-8 h-8 rounded-xl shrink-0"
+                      style={{
+                        background: 'linear-gradient(135deg, var(--purple), var(--purple-light))',
+                        color: 'white',
+                      }}
+                      aria-hidden="true"
+                    >
+                      ✨
+                    </span>
+                    <span className="flex flex-col flex-1 min-w-0">
+                      <span className="text-sm font-bold" style={{ color: 'var(--text-1)' }}>
+                        {isHi ? 'प्रीमियम पर अपग्रेड करें' : 'Upgrade to Premium'}
+                      </span>
+                      <span className="text-[11px]" style={{ color: 'var(--text-3)' }}>
+                        {isHi ? 'और चैट, अनलिमिटेड क्विज़' : 'More chats, unlimited quizzes'}
+                      </span>
+                    </span>
+                    <span className="text-xs font-bold" style={{ color: 'var(--purple)' }} aria-hidden="true">→</span>
+                  </a>
+                </div>
+              )}
               {/* Role Switcher for multi-role users */}
               {hasMultipleRoles && (
                 <div className="pt-2 mt-2" style={{ borderTop: '1px solid var(--border)' }}>
@@ -309,9 +407,9 @@ export default function BottomNavComponent() {
                     className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl shadow-lg"
                     style={{
                       background: active
-                        ? 'linear-gradient(135deg, #E8581C, #F5A623)'
-                        : 'linear-gradient(135deg, #E8581C, #D84315)',
-                      boxShadow: '0 4px 16px rgba(232,88,28,0.35)',
+                        ? 'linear-gradient(135deg, var(--orange), var(--gold))'
+                        : 'linear-gradient(135deg, var(--orange), #D84315)',
+                      boxShadow: '0 4px 16px rgb(var(--orange-rgb) / 0.35)',
                     }}
                   >
                     {item.icon}
@@ -342,11 +440,21 @@ export default function BottomNavComponent() {
                     aria-hidden="true"
                     style={{
                       transform: active ? 'scale(1.15)' : 'scale(1)',
-                      filter: active ? 'drop-shadow(0 0 6px rgba(232, 88, 28, 0.35))' : 'none',
+                      filter: active ? 'drop-shadow(0 0 6px rgb(var(--orange-rgb) / 0.35))' : 'none',
                     }}
                   >
                     {active ? item.activeIcon : item.icon}
                   </span>
+                  {/* Streak badge on Home tab */}
+                  {item.href === '/dashboard' && streakCount > 0 && activeRole === 'student' && (
+                    <span
+                      className="absolute -top-1.5 -right-2.5 min-w-[20px] h-[16px] rounded-full flex items-center justify-center text-[9px] font-bold px-0.5"
+                      style={{ background: '#F59E0B', color: '#fff' }}
+                      aria-label={`${streakCount} day streak`}
+                    >
+                      {streakCount}
+                    </span>
+                  )}
                 </span>
                 <span className="text-[11px] font-semibold tracking-wide">
                   {isHi ? item.labelHi : item.label}
@@ -422,7 +530,7 @@ export default function BottomNavComponent() {
           <div className="space-y-5">
             {sidebarSections.map(section => {
               const isSectionCollapsed = !collapsed && collapsedSections[section.title];
-              const hasActiveItem = section.items.some(item => isActive(item.href));
+              const hasActiveItem = section.items.some(item => !getItemLock(item).locked && isActive(item.href));
               return (
               <div key={section.title}>
                 {!collapsed && <button
@@ -436,31 +544,54 @@ export default function BottomNavComponent() {
                   </span>
                 </button>}
                 {!isSectionCollapsed && <div className="space-y-0.5">
-                  {section.items.filter(item => {
-                    const gMin = (item as any).gradeMin;
-                    return gMin == null || studentGrade >= gMin;
-                  }).map(item => {
-                    const active = isActive(item.href);
+                  {section.items.map(item => {
+                    const lock = getItemLock(item);
+                    const active = !lock.locked && isActive(item.href);
                     const isFoxy = item.href === '/foxy';
                     const isReview = item.href === '/review';
-                    const showReviewBadge = isReview && dueCount > 0 && activeRole === 'student';
+                    const showReviewBadge = !lock.locked && isReview && dueCount > 0 && activeRole === 'student';
+                    const gradeChipLabel = lock.locked
+                      ? (isHi ? `कक्षा ${lock.gradeMin}+` : `Grade ${lock.gradeMin}+`)
+                      : null;
                     return (
                       <button
                         key={item.href}
-                        onClick={() => router.push(item.href)}
+                        type="button"
+                        onClick={lock.locked ? undefined : () => router.push(item.href)}
+                        aria-disabled={lock.locked || undefined}
+                        aria-label={lock.locked
+                          ? `${isHi ? item.labelHi : item.label} — ${isHi ? 'अभी उपलब्ध नहीं' : 'locked'} · ${gradeChipLabel}`
+                          : undefined}
+                        title={lock.locked && !collapsed
+                          ? (isHi ? `कक्षा ${lock.gradeMin} में अनलॉक होगा` : `Unlocks in grade ${lock.gradeMin}`)
+                          : undefined}
                         className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-all"
                         style={{
                           background: active
-                            ? isFoxy ? 'rgba(232,88,28,0.12)' : 'rgba(232,88,28,0.06)'
+                            ? isFoxy ? 'rgb(var(--orange-rgb) / 0.12)' : 'rgb(var(--orange-rgb) / 0.06)'
                             : 'transparent',
-                          color: active ? 'var(--orange)' : 'var(--text-2)',
+                          color: lock.locked ? 'var(--text-3)' : (active ? 'var(--orange)' : 'var(--text-2)'),
                           fontWeight: active ? 600 : 500,
                           fontSize: '14px',
+                          opacity: lock.locked ? 0.7 : 1,
+                          cursor: lock.locked ? 'not-allowed' : 'pointer',
                         }}
                       >
-                        <span className="text-lg w-6 text-center">{item.icon}</span>
+                        <span className="text-lg w-6 text-center" aria-hidden="true">{item.icon}</span>
                         {!collapsed && <span>{isHi ? item.labelHi : item.label}</span>}
-                        {showReviewBadge && !collapsed ? (
+                        {lock.locked && !collapsed ? (
+                          <span
+                            className="ml-auto inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-bold"
+                            style={{
+                              background: 'var(--surface-3)',
+                              color: 'var(--text-3)',
+                              border: '1px solid var(--border)',
+                            }}
+                          >
+                            <span aria-hidden="true">🔒</span>
+                            {gradeChipLabel}
+                          </span>
+                        ) : showReviewBadge && !collapsed ? (
                           <span className="ml-auto min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[9px] font-bold text-white px-1"
                             style={{ background: '#DC2626' }}>
                             {dueCount > 9 ? '9+' : dueCount}

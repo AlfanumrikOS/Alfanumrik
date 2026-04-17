@@ -66,8 +66,8 @@
               |                     |                     |
     +-------------------+ +-------------------+ +-------------------+
     |  Supabase Postgres | | Supabase Auth    | |  Supabase Storage  |
-    |  RLS (148+ policies)| | Email/PKCE      | |  Textbook content  |
-    |  190 migrations    | | 6 roles          | |                    |
+    |  RLS (440+ policies)| | Email/PKCE      | |  Textbook content  |
+    |  265 migrations    | | 6 roles          | |                    |
     +-------------------+ +-------------------+ +-------------------+
               |
     +-------------------+
@@ -410,7 +410,7 @@ Migrations span from 2026-03-07 to 2026-04-01. Key table groups identified from 
 | `cognitive-engine.test.ts` | 70 | Cognitive engine (deep) |
 
 ### E2E Tests (Playwright)
-- **4 spec files**: `smoke.spec.ts`, `navigation.spec.ts`, `accessibility.spec.ts`, `landing-seo.spec.ts`
+- **16 spec files** covering smoke tests, navigation, accessibility, SEO, auth flows, API health, payment ops, school admin, observability, and more
 - Timeout: 30s with 1 retry
 - Targets `http://localhost:3000` (dev server auto-started outside CI)
 
