@@ -1,6 +1,26 @@
 /**
  * ALFANUMRIK — XP Economy Rules
  *
+ * @deprecated This file is deprecated in favor of:
+ *   - `score-config.ts` — Performance Score (bounded 0-100 per subject, replaces unbounded XP levels)
+ *   - `coin-rules.ts`   — Foxy Coins (spendable engagement currency, replaces XP redemption)
+ *
+ * This file remains for backward compatibility during migration. Existing code that
+ * imports from `xp-rules.ts` will continue to work. However, **new code should import
+ * from the new files instead**:
+ *
+ *   import { getLevelFromScore, LEVEL_THRESHOLDS } from '@/lib/score-config';
+ *   import { COIN_REWARDS, COIN_SHOP } from '@/lib/coin-rules';
+ *
+ * Migration status:
+ *   - `submitQuizResults()` still references XP_RULES for quiz scoring (P2 invariant)
+ *   - `atomic_quiz_profile_update()` RPC still uses XP constants
+ *   - Dashboard/progress components still read `students.xp_total`
+ *   - These will be migrated to Performance Score + Foxy Coins in a future phase
+ *
+ * DO NOT remove any exports from this file until all callers have been migrated.
+ *
+ * Original description:
  * Centralized XP earning values, caps, and redemption thresholds.
  * All XP awards must reference these constants.
  *
@@ -25,6 +45,7 @@
 // UPGRADE RULE: Increase values only. Never reduce existing earned XP.
 // All caps prevent daily grind abuse while keeping meaningful earning potential.
 
+/** @deprecated Use `COIN_REWARDS` from `@/lib/coin-rules` for engagement rewards, and `score-config.ts` for mastery scoring. */
 export const XP_RULES = {
   // Foxy AI Tutor — XP awarded by server only for concept clarification events
   // (Not per message click — that was removed. Server awards on mastery signals.)
@@ -59,12 +80,15 @@ export const XP_RULES = {
 
 // ─── Level Calculation ────────────────────────────────────
 
+/** @deprecated Use `LEVEL_THRESHOLDS` from `@/lib/score-config` — Performance Score uses bounded 0-100 thresholds instead of unbounded XP. */
 export const XP_PER_LEVEL = 500;
 
+/** @deprecated Use `getLevelFromScore()` from `@/lib/score-config` — Performance Score uses bounded 0-100 thresholds instead of XP / 500. */
 export function calculateLevel(totalXp: number): number {
   return Math.floor(totalXp / XP_PER_LEVEL) + 1;
 }
 
+/** @deprecated Use Performance Score (0-100) from `@/lib/score-config` — progress is inherent in the bounded score, no "next level" calculation needed. */
 export function xpToNextLevel(totalXp: number): { current: number; needed: number; progress: number } {
   const currentLevelXp = totalXp % XP_PER_LEVEL;
   return {
@@ -76,6 +100,7 @@ export function xpToNextLevel(totalXp: number): { current: number; needed: numbe
 
 // ─── Level Names ──────────────────────────────────────────
 
+/** @deprecated Use `LEVEL_THRESHOLDS` and `getLevelFromScore()` from `@/lib/score-config` — level names are now driven by Performance Score ranges, not XP-based level numbers. */
 export const LEVEL_NAMES: Record<number, string> = {
   1: 'Curious Cub',
   2: 'Quick Learner',
@@ -89,6 +114,7 @@ export const LEVEL_NAMES: Record<number, string> = {
   10: 'Grand Master',
 };
 
+/** @deprecated Use `getLevelFromScore()` from `@/lib/score-config` — accepts a 0-100 score directly instead of an XP-derived level number. */
 export function getLevelName(level: number): string {
   if (level >= 10) return LEVEL_NAMES[10];
   return LEVEL_NAMES[level] || `Level ${level}`;
@@ -98,6 +124,7 @@ export function getLevelName(level: number): string {
 // Business model: XP unlocks temporary premium perks, NOT permanent plan changes.
 // This drives engagement + creates upgrade desire without destroying revenue.
 
+/** @deprecated Use `COIN_SHOP` from `@/lib/coin-rules` — the reward shop now uses Foxy Coins instead of XP. */
 export const XP_REWARDS = [
   {
     id: 'streak_freeze',
@@ -151,4 +178,16 @@ export const XP_REWARDS = [
   },
 ] as const;
 
+/** @deprecated Use `CoinShopItemId` from `@/lib/coin-rules`. */
 export type XPRewardId = typeof XP_REWARDS[number]['id'];
+
+// ─── Re-exports from new files ───────────────────────────
+// These re-exports allow callers to migrate gradually.
+// Import directly from the new files in new code.
+
+/** @see {@link import('@/lib/score-config').getLevelFromScore} */
+export { getLevelFromScore } from './score-config';
+
+/** @see {@link import('@/lib/coin-rules').COIN_REWARDS} */
+/** @see {@link import('@/lib/coin-rules').COIN_SHOP} */
+export { COIN_REWARDS, COIN_SHOP } from './coin-rules';

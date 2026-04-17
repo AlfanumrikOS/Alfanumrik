@@ -1,4 +1,5 @@
-// daily-cron v26 — leaderboard gate >=50->>=2 students; all P5 steps: streaks, leaderboard, parent digest,
+// daily-cron v27 — adds nightly Performance Score recalculation.
+// Previous: leaderboard gate >=50->>=2 students; all P5 steps: streaks, leaderboard, parent digest,
 // task cleanup, platform health snapshot, ml retrain trigger.
 // Secret: CRON_SECRET env var OR get_cron_secret() DB RPC fallback.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -78,6 +79,361 @@ async function triggerModelRetrainIfNeeded(supabase: ReturnType<typeof createCli
   return n??0
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// Performance Score nightly recalculation
+// Computes 0-100 per student×subject from concept_mastery + behavior signals,
+// upserts into performance_scores, snapshots into score_history, and creates
+// notifications when scores cross significant thresholds.
+// Idempotent: safe to run multiple times per day (upserts use ON CONFLICT).
+// ──────────────────────────────────────────────────────────────────────────
+
+// Grade floor: minimum retention value by grade (younger students retain more with support)
+const GRADE_FLOOR: Record<string, number> = {
+  '6': 0.30, '7': 0.30, '8': 0.20, '9': 0.20, '10': 0.15, '11': 0.10, '12': 0.10,
+}
+
+// Bloom ceiling: max contribution by bloom level (higher-order = higher ceiling)
+const BLOOM_CEILING: Record<string, number> = {
+  remember: 0.45, understand: 0.60, apply: 0.75,
+  analyze: 0.85, evaluate: 0.95, create: 1.00,
+}
+
+// Score level names by range
+function levelName(score: number): string {
+  if (score >= 90) return 'Star Explorer'
+  if (score >= 75) return 'Rising Champion'
+  if (score >= 60) return 'Steady Learner'
+  if (score >= 40) return 'Brave Beginner'
+  return 'Curious Cub'
+}
+
+// Derive the highest bloom level achieved from the bloom_mastery JSONB
+// bloom_mastery: {"remember":0.8,"understand":0.5,"apply":0.1,...}
+function highestBloomLevel(bloomMastery: Record<string, number> | null): string {
+  if (!bloomMastery) return 'remember'
+  const order = ['create', 'evaluate', 'analyze', 'apply', 'understand', 'remember']
+  for (const level of order) {
+    if ((bloomMastery[level] ?? 0) > 0.3) return level
+  }
+  return 'remember'
+}
+
+interface ConceptRow {
+  student_id: string
+  topic_id: string
+  p_know: number
+  mastery_probability: number
+  last_attempted_at: string | null
+  retention_half_life: number
+  current_retention: number
+  bloom_mastery: Record<string, number> | null
+}
+
+async function recalculatePerformanceScores(supabase: ReturnType<typeof createClient>): Promise<number> {
+  const now = Date.now()
+
+  // 1. Fetch all concept_mastery rows (bulk — efficient for early-stage and scales to 10K)
+  const { data: conceptRows, error: cmErr } = await supabase
+    .from('concept_mastery')
+    .select('student_id,topic_id,p_know,mastery_probability,last_attempted_at,retention_half_life,current_retention,bloom_mastery')
+  if (cmErr) throw new Error(`recalcPerformanceScores concept_mastery: ${cmErr.message}`)
+  if (!conceptRows?.length) { console.log('daily-cron: performance_scores — 0 concept rows, skipping'); return 0 }
+
+  // 2. Collect unique topic_ids and fetch their subject/grade mapping
+  const topicIds = [...new Set((conceptRows as ConceptRow[]).map(r => r.topic_id).filter(Boolean))]
+  if (!topicIds.length) { console.log('daily-cron: performance_scores — no topic_ids, skipping'); return 0 }
+
+  // Fetch chapter_topics -> chapters -> subjects mapping in batches (Supabase .in() limit ~300)
+  const topicMap = new Map<string, { subject_code: string; grade: string }>()
+  const BATCH = 200
+  for (let i = 0; i < topicIds.length; i += BATCH) {
+    const batch = topicIds.slice(i, i + BATCH)
+    const { data: topicData, error: tErr } = await supabase
+      .from('chapter_topics')
+      .select('id, chapter:chapters!inner(grade, subject:subjects!inner(code))')
+      .in('id', batch)
+    if (tErr) throw new Error(`recalcPerformanceScores topic lookup: ${tErr.message}`)
+    if (topicData) {
+      for (const t of topicData as any[]) {
+        const ch = t.chapter
+        if (ch?.subject?.code && ch.grade) {
+          topicMap.set(t.id, { subject_code: ch.subject.code, grade: ch.grade })
+        }
+      }
+    }
+  }
+
+  // 3. Fetch student grades for grade-floor calculation
+  const studentIds = [...new Set((conceptRows as ConceptRow[]).map(r => r.student_id))]
+  const studentGrades = new Map<string, string>()
+  for (let i = 0; i < studentIds.length; i += BATCH) {
+    const batch = studentIds.slice(i, i + BATCH)
+    const { data: sData, error: sErr } = await supabase
+      .from('students')
+      .select('id,grade')
+      .in('id', batch)
+    if (sErr) throw new Error(`recalcPerformanceScores students: ${sErr.message}`)
+    if (sData) for (const s of sData as { id: string; grade: string }[]) studentGrades.set(s.id, s.grade)
+  }
+
+  // 4. Compute performance component per student×subject
+  // Key: `${student_id}::${subject_code}`
+  type Accumulator = { total: number; count: number; grade: string }
+  const perfMap = new Map<string, Accumulator>()
+
+  for (const row of conceptRows as ConceptRow[]) {
+    const mapping = topicMap.get(row.topic_id)
+    if (!mapping) continue // topic not found in catalog, skip
+    const grade = studentGrades.get(row.student_id) ?? mapping.grade
+    const key = `${row.student_id}::${mapping.subject_code}`
+
+    // Calculate retention decay: exp(-days_since / half_life_in_days)
+    let retention = row.current_retention ?? 0
+    if (row.last_attempted_at) {
+      const daysSince = (now - new Date(row.last_attempted_at).getTime()) / 86400000
+      const halfLife = Math.max(row.retention_half_life ?? 48, 0.5)
+      // Exponential decay with half-life model: retention = exp(-ln(2) * days / halfLife)
+      const decayedRetention = Math.exp(-0.693 * daysSince / halfLife)
+      const floor = GRADE_FLOOR[grade] ?? 0.10
+      retention = Math.max(decayedRetention, floor)
+    }
+
+    // Bloom ceiling from the topic's highest mastered bloom level
+    const bloom = highestBloomLevel(row.bloom_mastery)
+    const ceiling = BLOOM_CEILING[bloom] ?? 0.45
+
+    // Effective mastery for this concept
+    const pKnow = row.p_know ?? row.mastery_probability ?? 0
+    const effective = pKnow * retention * ceiling
+
+    const acc = perfMap.get(key) ?? { total: 0, count: 0, grade }
+    acc.total += effective
+    acc.count += 1
+    perfMap.set(key, acc)
+  }
+
+  // 5. Compute behavior signals per student×subject
+  // Consistency: distinct activity days in last 14 days / 14
+  const fourteenDaysAgo = new Date(now - 14 * 86400000).toISOString().slice(0, 10)
+  const { data: activityData, error: aErr } = await supabase
+    .from('daily_activity')
+    .select('student_id,subject,activity_date')
+    .gte('activity_date', fourteenDaysAgo)
+  if (aErr) console.warn(`daily-cron: performance_scores activity fetch warning: ${aErr.message}`)
+
+  const consistencyMap = new Map<string, number>() // key -> distinct days count
+  if (activityData) {
+    const daySet = new Map<string, Set<string>>()
+    for (const a of activityData as { student_id: string; subject: string; activity_date: string }[]) {
+      const key = `${a.student_id}::${a.subject}`
+      const s = daySet.get(key) ?? new Set()
+      s.add(a.activity_date)
+      daySet.set(key, s)
+    }
+    for (const [key, days] of daySet) consistencyMap.set(key, days.size)
+  }
+
+  // Persistence: completed quizzes / started quizzes in last 30 days
+  const thirtyDaysAgo = new Date(now - 30 * 86400000).toISOString()
+  const { data: quizData, error: qErr } = await supabase
+    .from('quiz_sessions')
+    .select('student_id,subject,is_completed')
+    .gte('created_at', thirtyDaysAgo)
+  if (qErr) console.warn(`daily-cron: performance_scores quiz fetch warning: ${qErr.message}`)
+
+  const persistenceMap = new Map<string, { started: number; completed: number }>()
+  if (quizData) {
+    for (const q of quizData as { student_id: string; subject: string; is_completed: boolean }[]) {
+      const key = `${q.student_id}::${q.subject}`
+      const p = persistenceMap.get(key) ?? { started: 0, completed: 0 }
+      p.started += 1
+      if (q.is_completed) p.completed += 1
+      persistenceMap.set(key, p)
+    }
+  }
+
+  // Velocity: compare this week's mastery average vs last week's
+  // Use topic_mastery for weekly comparison (simpler than concept_mastery aggregation)
+  const { data: recentMastery, error: rmErr } = await supabase
+    .from('topic_mastery')
+    .select('student_id,subject,mastery_level,updated_at')
+  if (rmErr) console.warn(`daily-cron: performance_scores topic_mastery warning: ${rmErr.message}`)
+
+  const velocityMap = new Map<string, number>()
+  if (recentMastery) {
+    // Group by key, separate into this-week vs last-week by updated_at
+    const weekBuckets = new Map<string, { thisWeek: number[]; lastWeek: number[] }>()
+    const sevenDaysMs = 7 * 86400000
+    for (const tm of recentMastery as { student_id: string; subject: string; mastery_level: number; updated_at: string }[]) {
+      const key = `${tm.student_id}::${tm.subject}`
+      const bucket = weekBuckets.get(key) ?? { thisWeek: [], lastWeek: [] }
+      const age = now - new Date(tm.updated_at).getTime()
+      if (age <= sevenDaysMs) bucket.thisWeek.push(tm.mastery_level ?? 0)
+      else if (age <= 2 * sevenDaysMs) bucket.lastWeek.push(tm.mastery_level ?? 0)
+      weekBuckets.set(key, bucket)
+    }
+    for (const [key, b] of weekBuckets) {
+      const avgThis = b.thisWeek.length ? b.thisWeek.reduce((s, v) => s + v, 0) / b.thisWeek.length : 0
+      const avgLast = b.lastWeek.length ? b.lastWeek.reduce((s, v) => s + v, 0) / b.lastWeek.length : 0
+      // Velocity as a 0-100 score: 50 = no change, >50 = improving, <50 = declining
+      // Clamp between 0-100
+      const delta = avgThis - avgLast // range roughly -1 to +1
+      velocityMap.set(key, Math.max(0, Math.min(100, 50 + delta * 50)))
+    }
+  }
+
+  // 6. Build upsert rows for performance_scores and score_history
+  const perfRows: Record<string, unknown>[] = []
+  const historyRows: Record<string, unknown>[] = []
+  const today = new Date().toISOString().slice(0, 10)
+
+  // Fetch previous scores for threshold notifications
+  const prevScoresMap = new Map<string, number>()
+  const { data: prevScores } = await supabase
+    .from('performance_scores')
+    .select('student_id,subject,overall_score')
+  if (prevScores) {
+    for (const ps of prevScores as { student_id: string; subject: string; overall_score: number }[]) {
+      prevScoresMap.set(`${ps.student_id}::${ps.subject}`, ps.overall_score)
+    }
+  }
+
+  const notifications: Record<string, unknown>[] = []
+
+  for (const [key, acc] of perfMap) {
+    const [studentId, subject] = key.split('::')
+    const perfScore = acc.count > 0 ? (acc.total / acc.count) * 100 : 0
+
+    // Behavior sub-scores
+    const consistencyDays = consistencyMap.get(key) ?? 0
+    const consistencyScore = Math.min(100, (consistencyDays / 14) * 100)
+
+    const pers = persistenceMap.get(key)
+    const persistenceScore = pers && pers.started > 0 ? Math.min(100, (pers.completed / pers.started) * 100) : 50
+
+    const velocityScore = velocityMap.get(key) ?? 50
+
+    // Neutral defaults for signals not yet tracked
+    const challengeScore = 50
+    const revisionScore = 50
+    const breadthScore = 50
+
+    // Behavior component: weighted average of sub-scores
+    // Weights from BEHAVIOR_WEIGHTS in score-config.ts: consistency=4, challenge=3, revision=4, persistence=3, breadth=3, velocity=3 (sum=20)
+    const behaviorScore =
+      consistencyScore * (4 / 20) +
+      challengeScore * (3 / 20) +
+      revisionScore * (4 / 20) +
+      persistenceScore * (3 / 20) +
+      breadthScore * (3 / 20) +
+      velocityScore * (3 / 20)
+
+    // Overall: 80% performance + 20% behavior
+    const overallScore = Math.max(0, Math.min(100, perfScore * 0.80 + behaviorScore * 0.20))
+
+    perfRows.push({
+      student_id: studentId,
+      subject,
+      overall_score: Math.round(overallScore * 100) / 100,
+      performance_component: Math.round(perfScore * 100) / 100,
+      behavior_component: Math.round(behaviorScore * 100) / 100,
+      consistency_score: Math.round(consistencyScore * 100) / 100,
+      challenge_score: challengeScore,
+      revision_score: revisionScore,
+      persistence_score: Math.round(persistenceScore * 100) / 100,
+      breadth_score: breadthScore,
+      velocity_score: Math.round(velocityScore * 100) / 100,
+      level_name: levelName(overallScore),
+      updated_at: new Date().toISOString(),
+    })
+
+    historyRows.push({
+      student_id: studentId,
+      subject,
+      score: Math.round(overallScore * 100) / 100,
+      performance_component: Math.round(perfScore * 100) / 100,
+      behavior_component: Math.round(behaviorScore * 100) / 100,
+      recorded_at: today,
+    })
+
+    // Check notification thresholds
+    const prevScore = prevScoresMap.get(key) ?? null
+    if (prevScore !== null) {
+      const rounded = Math.round(overallScore * 100) / 100
+      const drop = prevScore - rounded
+      // Notify on 5+ point drop
+      if (drop >= 5) {
+        notifications.push({
+          recipient_type: 'student',
+          recipient_id: studentId,
+          type: 'score_milestone',
+          title: `Your ${subject} score dropped by ${Math.round(drop)} points`,
+          body: `Your Performance Score went from ${Math.round(prevScore)} to ${Math.round(rounded)}. Review some topics to bring it back up!`,
+          data: { subject, previous: prevScore, current: rounded, change: -drop },
+          is_read: false,
+          created_at: new Date().toISOString(),
+        })
+      }
+      // Crossed above 80 (achievement)
+      if (prevScore < 80 && rounded >= 80) {
+        notifications.push({
+          recipient_type: 'student',
+          recipient_id: studentId,
+          type: 'score_milestone',
+          title: `Great job! ${subject} score reached ${Math.round(rounded)}`,
+          body: `You've crossed 80 in ${subject}. Keep up the excellent work!`,
+          data: { subject, previous: prevScore, current: rounded, milestone: 80 },
+          is_read: false,
+          created_at: new Date().toISOString(),
+        })
+      }
+      // Dropped below 50 (warning)
+      if (prevScore >= 50 && rounded < 50) {
+        notifications.push({
+          recipient_type: 'student',
+          recipient_id: studentId,
+          type: 'score_milestone',
+          title: `${subject} score needs attention`,
+          body: `Your score dropped below 50. A quick revision session can help bring it back up!`,
+          data: { subject, previous: prevScore, current: rounded, milestone: 50 },
+          is_read: false,
+          created_at: new Date().toISOString(),
+        })
+      }
+    }
+  }
+
+  // 7. Upsert performance_scores in batches
+  let upserted = 0
+  for (let i = 0; i < perfRows.length; i += BATCH) {
+    const batch = perfRows.slice(i, i + BATCH)
+    const { error: uErr } = await supabase
+      .from('performance_scores')
+      .upsert(batch, { onConflict: 'student_id,subject' })
+    if (uErr) throw new Error(`recalcPerformanceScores upsert perf: ${uErr.message}`)
+    upserted += batch.length
+  }
+
+  // 8. Upsert score_history in batches
+  for (let i = 0; i < historyRows.length; i += BATCH) {
+    const batch = historyRows.slice(i, i + BATCH)
+    const { error: hErr } = await supabase
+      .from('score_history')
+      .upsert(batch, { onConflict: 'student_id,subject,recorded_at' })
+    if (hErr) throw new Error(`recalcPerformanceScores upsert history: ${hErr.message}`)
+  }
+
+  // 9. Insert notifications
+  if (notifications.length) {
+    const { error: nErr } = await supabase.from('notifications').insert(notifications)
+    if (nErr) console.warn(`daily-cron: performance score notifications warning: ${nErr.message}`)
+    else console.log(`daily-cron: performance_scores — ${notifications.length} notifications sent`)
+  }
+
+  console.log(`daily-cron: performance_scores — ${upserted} student×subject scores recalculated in ${Date.now() - now}ms`)
+  return upserted
+}
+
 Deno.serve(async (req) => {
   if (req.method==='OPTIONS') return new Response('ok',{headers:corsHeaders})
   const t0=Date.now()
@@ -93,6 +449,7 @@ Deno.serve(async (req) => {
       ['task_queue_rows_deleted',()=>cleanupTaskQueue(sb)],
       ['health_snapshot',()=>recordHealthSnapshot(sb)],
       ['ml_retrain_new_responses',()=>triggerModelRetrainIfNeeded(sb)],
+      ['performance_scores_recalculated',()=>recalculatePerformanceScores(sb)],
     ]
     const settled=await Promise.allSettled(steps.map(([,fn])=>fn()))
     const results:Record<string,number>={};const errors:Record<string,string>={}
