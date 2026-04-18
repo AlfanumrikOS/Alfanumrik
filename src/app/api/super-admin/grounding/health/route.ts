@@ -161,6 +161,38 @@ export async function GET(request: NextRequest) {
     const voyageErrorRate = safeRatio(voyageErrRes.count, voyageTotalRes.count);
     const claudeErrorRate = safeRatio(claudeErrRes.count, claudeTotalRes.count);
 
+    // ── Last-hour: study-path fallback activity (ddc41f8 hotfix telemetry) ──
+    // When cbse_syllabus is empty or has no 'ready' chapters, the subjects
+    // and chapters routes fall back to GRADE_SUBJECTS / chapters-catalog and
+    // log an ops_events row. During drain this count is expected to be high;
+    // post-pilot it should trend toward zero. Stable non-zero = ingestion
+    // problem. Surfaced here so ops can spot drift at a glance.
+    const [studyPathFallbackRes, studyPathSubjectsRes, studyPathChaptersRes] = await Promise.all([
+      supabaseAdmin
+        .from('ops_events')
+        .select('id', { count: 'exact', head: true })
+        .eq('category', 'grounding.study_path')
+        .gte('occurred_at', oneHourAgo),
+      supabaseAdmin
+        .from('ops_events')
+        .select('id', { count: 'exact', head: true })
+        .eq('category', 'grounding.study_path')
+        .eq('source', 'api.student.subjects')
+        .gte('occurred_at', oneHourAgo),
+      supabaseAdmin
+        .from('ops_events')
+        .select('id', { count: 'exact', head: true })
+        .eq('category', 'grounding.study_path')
+        .eq('source', 'api.student.chapters')
+        .gte('occurred_at', oneHourAgo),
+    ]);
+
+    const studyPathFallback = {
+      totalLastHour: studyPathFallbackRes.count ?? 0,
+      subjectsLastHour: studyPathSubjectsRes.count ?? 0,
+      chaptersLastHour: studyPathChaptersRes.count ?? 0,
+    };
+
     return NextResponse.json({
       success: true,
       data: {
@@ -174,6 +206,7 @@ export async function GET(request: NextRequest) {
         circuitStates: {},
         voyageErrorRate,
         claudeErrorRate,
+        studyPathFallback,
         generated_at: new Date().toISOString(),
       },
     });

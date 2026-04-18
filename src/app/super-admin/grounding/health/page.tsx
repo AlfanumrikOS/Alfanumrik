@@ -48,6 +48,17 @@ interface HealthData {
   circuitStates: Record<string, 'closed' | 'degraded' | 'open'>;
   voyageErrorRate: number;
   claudeErrorRate: number;
+  /**
+   * Study-path fallback activity in the last hour.
+   * High volume during drain days 1-2 is expected; post-pilot should trend
+   * to zero. Stable non-zero = ingestion problem (see scoring-integrity-epoch
+   * runbook + ddc41f8 commit message).
+   */
+  studyPathFallback?: {
+    totalLastHour: number;
+    subjectsLastHour: number;
+    chaptersLastHour: number;
+  };
   generated_at: string;
 }
 
@@ -312,6 +323,45 @@ function GroundingHealthContent() {
               label="Claude error rate"
               value={pct(data.claudeErrorRate)}
               accentColor={gaugeColor(data.claudeErrorRate)}
+            />
+          </div>
+
+          {/* Study-path fallback telemetry (ddc41f8 hotfix) */}
+          <h2 style={S.h2}>
+            Study-path fallback (last hour)
+          </h2>
+          <p style={{ ...S.small, marginBottom: 12 }}>
+            Number of times <code>/api/student/subjects</code> or{' '}
+            <code>/api/student/chapters</code> fell back to GRADE_SUBJECTS /
+            chapters-catalog because the v2 RPC returned empty or errored.
+            High during drain days 1-2 is expected; post-pilot should trend to
+            zero. Stable non-zero indicates an ingestion problem — see{' '}
+            <code>docs/runbooks/grounding/scoring-integrity-epoch.md</code>.
+          </p>
+          <div
+            data-testid="study-path-fallback-section"
+            style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 24 }}
+          >
+            <StatCard
+              label="Total fallback events"
+              value={String(data.studyPathFallback?.totalLastHour ?? 0)}
+              accentColor={
+                (data.studyPathFallback?.totalLastHour ?? 0) === 0
+                  ? colors.success
+                  : (data.studyPathFallback?.totalLastHour ?? 0) > 100
+                    ? colors.danger
+                    : colors.warning
+              }
+            />
+            <StatCard
+              label="Subjects route"
+              value={String(data.studyPathFallback?.subjectsLastHour ?? 0)}
+              accentColor={colors.text3}
+            />
+            <StatCard
+              label="Chapters route"
+              value={String(data.studyPathFallback?.chaptersLastHour ?? 0)}
+              accentColor={colors.text3}
             />
           </div>
         </>
