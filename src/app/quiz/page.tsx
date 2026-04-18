@@ -68,6 +68,15 @@ interface Response {
   marks_awarded?: number;
   marks_possible?: number;
   rubric_feedback?: string;
+  /**
+   * P1 shuffle/index mismatch fix (migration 20260418110000).
+   * The 4-integer permutation used to render this question's MCQ options,
+   * or `null` for non-shuffled / non-MCQ rows. Sent verbatim to the
+   * `submit_quiz_results` RPC so the server can translate the shuffled
+   * `selected_option` back to the original space before comparing with
+   * `question_bank.correct_answer_index`.
+   */
+  shuffle_map?: number[] | null;
 }
 
 // ─── Written answer helpers ──────────────────────────────────────────────────
@@ -483,6 +492,10 @@ export default function QuizPage() {
       is_correct: isCorrect,
       time_spent: questionTimer,
       error_type: errorType,
+      // P1 server-side shuffle fix (migration 20260418110000): ship the map
+      // alongside the shuffled selected_option so submit_quiz_results can
+      // recompute is_correct in original-index space.
+      shuffle_map: shuffleMaps[currentIdx] ?? null,
     }]);
 
     // In exam mode, skip explanation — go straight to next question
@@ -583,6 +596,9 @@ export default function QuizPage() {
       marks_awarded: marksAwarded,
       marks_possible: marksPossible,
       rubric_feedback: evalResult?.feedback ?? undefined,
+      // P1 server-side shuffle fix: written answers are not shuffled,
+      // selected_option (-1) is already in original space.
+      shuffle_map: null,
     }]);
 
     // Store full evaluation result for rich feedback display
@@ -617,6 +633,8 @@ export default function QuizPage() {
       marks_awarded: 0,
       marks_possible: q.marks_possible ?? 2,
       rubric_feedback: 'Skipped',
+      // P1 server-side shuffle fix: skipped written answers carry no shuffle.
+      shuffle_map: null,
     }]);
     // Move to next question
     if (currentIdx < questions.length - 1) {
@@ -661,6 +679,10 @@ export default function QuizPage() {
               selected_option: selectedOption!,
               is_correct: lastOriginalPicked === q.correct_answer_index,
               time_spent: questionTimer,
+              // P1 server-side shuffle fix (migration 20260418110000): the
+              // server re-derives is_correct; it needs the same shuffle map
+              // used to render the question to the student.
+              shuffle_map: shuffleMaps[currentIdx] ?? null,
             });
           }
         }
@@ -813,6 +835,10 @@ export default function QuizPage() {
               selected_option: selectedOption,
               is_correct: retryOriginalPicked === q.correct_answer_index,
               time_spent: questionTimer,
+              // P1 server-side shuffle fix: retry payload must also carry the
+              // map — if the RPC only sees this push, it still needs to
+              // recompute is_correct in original-index space.
+              shuffle_map: shuffleMaps[currentIdx] ?? null,
             });
           }
         }

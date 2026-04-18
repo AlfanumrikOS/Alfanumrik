@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { logOpsEvent } from '@/lib/ops-events';
 
 /**
  * GET /api/super-admin/grounding/verification-queue
@@ -17,10 +18,32 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
  *     throughputLast24h: { verified_per_hour, failed_per_hour }
  *   }
  *
+ * POST /api/super-admin/grounding/verification-queue
+ *
+ * Admin actions against the verification queue.
+ * Body: { action: 're-verify' | 'soft-delete' | 'enable-enforcement', payload: {...} }
+ *
+ * Actions:
+ *   - re-verify          payload: { id }
+ *                        Reset verification_state to 'legacy_unverified' so the
+ *                        retroactive verifier picks it up on next run.
+ *   - soft-delete        payload: { id, reason? }
+ *                        Set deleted_at=now() on the question_bank row.
+ *   - enable-enforcement payload: { grade, subject_code }
+ *                        UPSERT into ff_grounded_ai_enforced_pairs with
+ *                        enabled=true. Server-side precondition: the pair's
+ *                        verified_ratio MUST be >= 0.9 (matches spec §11
+ *                        precondition for pilot rollout).
+ *
+ * All actions log an ops_events row (category='grounding.admin_action',
+ * source='super-admin.verification-queue').
+ *
  * Auth: super_admin.access permission.
  */
 
 export const runtime = 'nodejs';
+
+const ENFORCEMENT_MIN_VERIFIED_RATIO = 0.9;
 
 type VerificationState = 'legacy_unverified' | 'pending' | 'verified' | 'failed';
 
@@ -137,6 +160,239 @@ export async function GET(request: NextRequest) {
         generated_at: new Date().toISOString(),
       },
     });
+  } catch (err) {
+    return NextResponse.json(
+      { success: false, error: err instanceof Error ? err.message : 'Internal error' },
+      { status: 500 },
+    );
+  }
+}
+
+// ─── POST handler ────────────────────────────────────────────────────────────
+
+type PostAction = 're-verify' | 'soft-delete' | 'enable-enforcement';
+const VALID_ACTIONS: readonly PostAction[] = ['re-verify', 'soft-delete', 'enable-enforcement'];
+
+function isUuid(v: unknown): v is string {
+  return typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+}
+
+function isGrade(v: unknown): v is string {
+  // CBSE grades 6-12 (P5: always string)
+  return typeof v === 'string' && /^(6|7|8|9|10|11|12)$/.test(v);
+}
+
+function isSubjectCode(v: unknown): v is string {
+  return typeof v === 'string' && v.length > 0 && v.length < 64 && /^[a-z0-9_-]+$/.test(v);
+}
+
+export async function POST(request: NextRequest) {
+  const auth = await authorizeRequest(request, 'super_admin.access');
+  if (!auth.authorized) return auth.errorResponse!;
+
+  let body: { action?: unknown; payload?: unknown };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      { success: false, error: 'Invalid JSON body' },
+      { status: 400 },
+    );
+  }
+
+  const action = body.action;
+  if (typeof action !== 'string' || !VALID_ACTIONS.includes(action as PostAction)) {
+    return NextResponse.json(
+      { success: false, error: `Invalid action. Expected one of: ${VALID_ACTIONS.join(', ')}` },
+      { status: 400 },
+    );
+  }
+
+  const payload = (body.payload && typeof body.payload === 'object') ? body.payload as Record<string, unknown> : {};
+
+  try {
+    // ── re-verify ───────────────────────────────────────────────────────────
+    if (action === 're-verify') {
+      const id = payload.id;
+      if (!isUuid(id)) {
+        return NextResponse.json(
+          { success: false, error: 're-verify requires payload.id (uuid)' },
+          { status: 400 },
+        );
+      }
+
+      const { error } = await supabaseAdmin
+        .from('question_bank')
+        .update({
+          verification_state: 'legacy_unverified',
+          verification_claimed_by: null,
+          verification_claim_expires_at: null,
+          verifier_failure_reason: null,
+        })
+        .eq('id', id);
+
+      if (error) {
+        return NextResponse.json(
+          { success: false, error: `re-verify failed: ${error.message}` },
+          { status: 500 },
+        );
+      }
+
+      await logOpsEvent({
+        category: 'grounding.admin_action',
+        source: 'super-admin.verification-queue',
+        severity: 'info',
+        message: `re-verify requested for question_bank row ${id}`,
+        subjectType: 'question_bank',
+        subjectId: id,
+        context: { action, admin_user_id: auth.userId },
+      });
+
+      return NextResponse.json({ success: true, data: { action, id } });
+    }
+
+    // ── soft-delete ─────────────────────────────────────────────────────────
+    if (action === 'soft-delete') {
+      const id = payload.id;
+      const reason = typeof payload.reason === 'string' ? payload.reason : null;
+      if (!isUuid(id)) {
+        return NextResponse.json(
+          { success: false, error: 'soft-delete requires payload.id (uuid)' },
+          { status: 400 },
+        );
+      }
+
+      const { error } = await supabaseAdmin
+        .from('question_bank')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', id)
+        .is('deleted_at', null);
+
+      if (error) {
+        return NextResponse.json(
+          { success: false, error: `soft-delete failed: ${error.message}` },
+          { status: 500 },
+        );
+      }
+
+      await logOpsEvent({
+        category: 'grounding.admin_action',
+        source: 'super-admin.verification-queue',
+        severity: 'warning',
+        message: `soft-delete applied to question_bank row ${id}`,
+        subjectType: 'question_bank',
+        subjectId: id,
+        context: { action, reason, admin_user_id: auth.userId },
+      });
+
+      return NextResponse.json({ success: true, data: { action, id } });
+    }
+
+    // ── enable-enforcement ──────────────────────────────────────────────────
+    if (action === 'enable-enforcement') {
+      const grade = payload.grade;
+      const subject_code = payload.subject_code;
+      if (!isGrade(grade)) {
+        return NextResponse.json(
+          { success: false, error: 'enable-enforcement requires payload.grade (string "6"–"12")' },
+          { status: 400 },
+        );
+      }
+      if (!isSubjectCode(subject_code)) {
+        return NextResponse.json(
+          { success: false, error: 'enable-enforcement requires payload.subject_code' },
+          { status: 400 },
+        );
+      }
+
+      // Precondition: verified_ratio >= 0.9. Recompute server-side so the
+      // client cannot bypass by passing a stale number.
+      const { data: pairRows, error: pairErr } = await supabaseAdmin
+        .from('question_bank')
+        .select('verification_state')
+        .eq('grade', grade)
+        .eq('subject', subject_code)
+        .is('deleted_at', null)
+        .limit(50000);
+
+      if (pairErr) {
+        return NextResponse.json(
+          { success: false, error: `verified_ratio lookup failed: ${pairErr.message}` },
+          { status: 500 },
+        );
+      }
+
+      const rows = (pairRows ?? []) as Array<{ verification_state: VerificationState }>;
+      const total = rows.length;
+      const verified = rows.filter((r) => r.verification_state === 'verified').length;
+      const verified_ratio = total === 0 ? 0 : verified / total;
+
+      if (verified_ratio < ENFORCEMENT_MIN_VERIFIED_RATIO) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              `enable-enforcement denied: verified_ratio ${verified_ratio.toFixed(4)} ` +
+              `< required ${ENFORCEMENT_MIN_VERIFIED_RATIO} for (grade=${grade}, subject=${subject_code}). ` +
+              `Wait for the retroactive verifier to drain the queue for this pair.`,
+            context: { verified, total, verified_ratio },
+          },
+          { status: 400 },
+        );
+      }
+
+      // UPSERT into enforced_pairs (composite PK: grade, subject_code)
+      const { error: upsertErr } = await supabaseAdmin
+        .from('ff_grounded_ai_enforced_pairs')
+        .upsert(
+          {
+            grade,
+            subject_code,
+            enabled: true,
+            enabled_at: new Date().toISOString(),
+            enabled_by: auth.userId,
+            auto_disabled_at: null,
+            auto_disabled_reason: null,
+          },
+          { onConflict: 'grade,subject_code' },
+        );
+
+      if (upsertErr) {
+        return NextResponse.json(
+          { success: false, error: `enforcement upsert failed: ${upsertErr.message}` },
+          { status: 500 },
+        );
+      }
+
+      await logOpsEvent({
+        category: 'grounding.admin_action',
+        source: 'super-admin.verification-queue',
+        severity: 'warning',
+        message: `grounding enforcement enabled for (grade=${grade}, subject=${subject_code})`,
+        subjectType: 'enforcement_pair',
+        subjectId: `${grade}::${subject_code}`,
+        context: {
+          action,
+          grade,
+          subject_code,
+          verified_ratio,
+          verified,
+          total,
+          admin_user_id: auth.userId,
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        data: { action, grade, subject_code, verified_ratio, enabled_at: new Date().toISOString() },
+      });
+    }
+
+    // Unreachable — action is validated above.
+    return NextResponse.json(
+      { success: false, error: 'Invalid action' },
+      { status: 400 },
+    );
   } catch (err) {
     return NextResponse.json(
       { success: false, error: err instanceof Error ? err.message : 'Internal error' },
