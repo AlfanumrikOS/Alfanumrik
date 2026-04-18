@@ -6,9 +6,13 @@
 // sourced from cbse_syllabus via available_chapters_for_student_subject_v2().
 //
 // Phase 3 change (spec §5.1, §7):
-//   Removed the soft-fail fallback to the direct chapters table read. An RPC
-//   failure NOW returns 500 { error: 'service_unavailable' } instead of
-//   silently returning a (possibly inaccurate) chapters-table-derived list.
+//   Removed the soft-fail fallback. An RPC failure returned 500.
+//
+// Phase 4 hotfix (2026-04-18, study-path breakage post-deploy):
+//   v2 RPC widened to rag_status IN ('partial', 'ready'). When cbse_syllabus
+//   returns zero chapters for the (grade, subject) pair, fall back to the
+//   `chapters` catalog table for that subject so the picker stays functional
+//   during drain. Fallback logged to ops_events.
 
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
@@ -22,6 +26,65 @@ interface ChapterV2Row {
   chapter_title: string;
   chapter_title_hi: string | null;
   verified_question_count: number;
+}
+
+interface ChapterResponse {
+  chapter_number: number;
+  chapter_title: string;
+  chapter_title_hi: string | null;
+  verified_question_count: number;
+}
+
+async function logFallback(
+  studentId: string,
+  subject: string,
+  reason: string,
+  chapterCount: number,
+) {
+  try {
+    const admin = getSupabaseAdmin();
+    await admin.from('ops_events').insert({
+      category: 'grounding.study_path',
+      source: 'api.student.chapters',
+      severity: 'warning',
+      message: `chapters fallback engaged: ${reason}`,
+      subject_type: 'student',
+      subject_id: studentId,
+      context: { reason, subject, fallback_chapter_count: chapterCount },
+    });
+  } catch {
+    // Non-blocking.
+  }
+}
+
+/**
+ * Fallback: read chapters from the legacy `chapters` catalog table for the
+ * student's grade + subject. Returns `verified_question_count: 0` to signal
+ * "unverified coverage" — AI surfaces below enforce their own stricter gates.
+ */
+async function fallbackChaptersFromCatalog(
+  grade: string,
+  subjectCode: string,
+): Promise<ChapterResponse[]> {
+  try {
+    const admin = getSupabaseAdmin();
+    const { data, error } = await admin
+      .from('chapters')
+      .select('chapter_number, chapter_title, chapter_title_hi')
+      .eq('grade', grade)
+      .eq('subject_code', subjectCode)
+      .order('chapter_number', { ascending: true });
+
+    if (error || !data) return [];
+    return data.map((c) => ({
+      chapter_number: Number(c.chapter_number),
+      chapter_title: String(c.chapter_title ?? ''),
+      chapter_title_hi: c.chapter_title_hi ? String(c.chapter_title_hi) : null,
+      verified_question_count: 0,
+    }));
+  } catch {
+    return [];
+  }
 }
 
 export async function GET(request: Request) {
@@ -71,16 +134,55 @@ export async function GET(request: Request) {
         subject,
         rpcError: error.message,
       });
+      // RPC failure: try the legacy chapters catalog fallback before 500.
+      const { data: student } = await supabase
+        .from('students')
+        .select('grade')
+        .or(`id.eq.${userId},auth_user_id.eq.${userId}`)
+        .limit(1)
+        .maybeSingle();
+      if (student?.grade) {
+        const chapters = await fallbackChaptersFromCatalog(
+          String(student.grade),
+          subject,
+        );
+        if (chapters.length > 0) {
+          await logFallback(userId, subject, 'v2_rpc_error', chapters.length);
+          return NextResponse.json({ chapters });
+        }
+      }
       return NextResponse.json(
         { error: 'service_unavailable' },
         { status: 500 },
       );
     }
 
-    // Empty result is legitimate (subject has no ready chapters for this
-    // grade yet). Return 200 with an empty list; client shows an empty-state
-    // card.
-    const chapters = ((data ?? []) as ChapterV2Row[]).map((r) => ({
+    const rows = (data ?? []) as ChapterV2Row[];
+
+    // Drain window or unpopulated cbse_syllabus: fall back to `chapters`
+    // catalog for this (grade, subject). Still returns empty if the catalog
+    // itself is empty — client renders an empty-state card.
+    if (rows.length === 0) {
+      const { data: student } = await supabase
+        .from('students')
+        .select('grade')
+        .or(`id.eq.${userId},auth_user_id.eq.${userId}`)
+        .limit(1)
+        .maybeSingle();
+      if (student?.grade) {
+        const chapters = await fallbackChaptersFromCatalog(
+          String(student.grade),
+          subject,
+        );
+        if (chapters.length > 0) {
+          await logFallback(userId, subject, 'v2_empty_rows', chapters.length);
+          return NextResponse.json({ chapters });
+        }
+      }
+      return NextResponse.json({ chapters: [] });
+    }
+
+    const chapters: ChapterResponse[] = rows.map((r) => ({
       chapter_number: r.chapter_number,
       chapter_title: r.chapter_title,
       chapter_title_hi: r.chapter_title_hi,
