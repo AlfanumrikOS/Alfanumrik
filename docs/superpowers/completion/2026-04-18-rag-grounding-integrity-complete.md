@@ -196,3 +196,40 @@ This project was scoped at 4 weeks and 49 tasks; it compressed into a single lon
 The specific bug from the original report screenshot (green ✓ on the answer paired with an "Incorrect" banner) is now impossible — server + client use the same coordinate system, 384 shuffle permutations are regression-tested, and a canary fires immediately if they ever disagree again. The broader hallucinated-answer class is gated at four architectural layers and observable at three dashboards.
 
 Ops owns the rest.
+
+---
+
+## Addendum 2026-04-18 evening — post-deploy hotfixes
+
+After the main deploy, two visible regressions surfaced in the quiz picker:
+
+1. **Lowercase subject names.** The quiz setup page showed "math", "english", "hindi" instead of "Mathematics", "English", "Hindi". Root cause: `cbse_syllabus.subject_display` was backfilled with `subject_code` (lowercase), and the new v2 RPC reads from there. **Fix:** one-shot `UPDATE cbse_syllabus SET subject_display = subjects.name, subject_display_hi = subjects.name_hi FROM subjects WHERE subject_code = code;` applied via Supabase MCP.
+2. **"No chapters available for this subject yet"** on every subject. Two stacked client-side bugs: `getChaptersForSubject()` was not sending the Bearer access token (route returned 401 → helper returned `[]`), and the response field was `chapter_title` on the v2 API but the caller expected `title`. **Fix:** commit `0df27e1` on main — inject Bearer header + normalize `chapter_title → title` at the helper boundary in both `src/lib/supabase.ts::getChaptersForSubject()` and `src/lib/useAllowedChapters.ts::fetcher()`. Also backfilled `cbse_syllabus.chapter_title` from the `chapters` catalog so the populated list renders real NCERT titles ("Number Systems", "Polynomials", …) instead of generic "Chapter N".
+
+### Scheduled crons
+
+- `grounded-coverage-audit` — `30 21 * * *` (03:00 IST). **Active.** Smoke-tested post-deploy; `daily_audit_complete` in 23s, recomputed 761 rows, 0 regressions, today's snapshot persisted to `coverage_audit_snapshots`.
+- `grounded-verify-question-bank` — `*/30 * * * *`. **Unscheduled.** This function calls `grounded-answer` internally; since that Edge Function is still deferred, every run would fail with `upstream_error` × 4 retries × 1000 rows per tick. Re-schedule with `SELECT cron.schedule('grounded-verify-question-bank', '*/30 * * * *', $$…$$);` once `grounded-answer` ships.
+
+### Edge Function v2 bugfix
+
+`coverage-audit` v1 aborted just before completion with `supabase.rpc(...).catch is not a function` — `rpc()` returns a `PostgrestFilterBuilder` which is thenable but not a `Promise`, so `.catch` is undefined. The main recompute step still ran (761 rows were correctly updated) but the run was flagged as `audit_run_failed`. **v2 fix:** wrap the `await supabase.rpc('purge_old_grounded_traces')` in a `try/catch` block. Deployed and verified (`daily_audit_complete`, severity `info`).
+
+### Final live state (post-hotfix)
+
+| Check | Value |
+|---|---|
+| `subject_display` rows still lowercase | 0 |
+| `chapter_title` rows with real NCERT names | 542 |
+| `chapter_title` rows still generic ("Chapter N") | 219 (chapters not in legacy catalog — no better data available; acceptable) |
+| `grounded-coverage-audit` cron active | yes |
+| `grounded-verify-question-bank` cron scheduled | no (paused until `grounded-answer` deploys) |
+| Today's `coverage_audit_snapshots` row | yes |
+| Feature flags (`ff_grounded_ai_*`) enabled | 0 (all OFF, safe) |
+| `super_admin.access` permission seeded | yes |
+| `submit_quiz_results` RPC (P1 server-side fix) live | yes |
+| Hotfix commit on `origin/main` | `0df27e1` + merge `e3be621` |
+
+### Remaining deferred work
+
+- **`grounded-answer` Edge Function** — 18-file bundle; all `ff_grounded_ai_*` flags are OFF so no user-facing path is blocked. Required before: (a) re-scheduling `grounded-verify-question-bank`, (b) Phase 4 Grade 10 Science pilot flip. Follow `docs/runbooks/grounding/rollout-sequence.md` and the pre-rollout checklist (`scripts/pre-rollout-checklist.ts`) before the flip.
