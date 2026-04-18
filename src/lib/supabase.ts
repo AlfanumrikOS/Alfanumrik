@@ -1020,14 +1020,46 @@ export async function getChapterQuestions(subject: string, grade: string, chapte
 export async function getChaptersForSubject(subject: string, _grade: string) {
   void _grade;
   try {
-    const r = await fetch(`/api/student/chapters?subject=${encodeURIComponent(subject)}`);
+    // Auth tokens live in localStorage (no middleware to sync to cookies).
+    // Send the access token as Bearer header so /api/student/chapters can
+    // authenticate the request. Without this, the route returns 401 and the
+    // picker shows "No chapters available for this subject yet" even though
+    // cbse_syllabus has data. Matches useAllowedSubjects() behavior.
+    const headers: Record<string, string> = {};
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+      }
+    } catch {
+      // Proceed without — server will return 401 and we fall back to [].
+    }
+
+    const r = await fetch(
+      `/api/student/chapters?subject=${encodeURIComponent(subject)}`,
+      { headers },
+    );
     if (!r.ok) {
       // 422 = subject not allowed for this student; 401 = unauthenticated.
       // Either way the correct UI behavior is "no chapters available".
       return [] as Array<{ chapter_number: number; title: string }>;
     }
-    const body = (await r.json()) as { chapters?: Array<{ chapter_number: number; title: string }> };
-    return body.chapters ?? [];
+    // API v2 returns { chapters: [{ chapter_number, chapter_title, chapter_title_hi, verified_question_count }] }
+    // QuizSetup expects { chapter_number, title } so map server column
+    // `chapter_title` → client field `title`. Prefer Hindi when available.
+    const body = (await r.json()) as {
+      chapters?: Array<{
+        chapter_number: number;
+        chapter_title?: string;
+        chapter_title_hi?: string | null;
+        // Legacy shape kept for back-compat with older server revisions.
+        title?: string;
+      }>;
+    };
+    return (body.chapters ?? []).map((c) => ({
+      chapter_number: c.chapter_number,
+      title: c.chapter_title ?? c.title ?? `Chapter ${c.chapter_number}`,
+    }));
   } catch (e) {
     console.error('getChaptersForSubject(compat):', e instanceof Error ? e.message : String(e));
     return [];
