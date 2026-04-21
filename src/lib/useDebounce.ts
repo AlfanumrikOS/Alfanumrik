@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect } from 'react';
+import { useRef, useCallback, useEffect, useState } from 'react';
 
 /**
  * Returns a debounced version of the callback.
@@ -24,10 +24,8 @@ export function useDebounce<T extends (...args: unknown[]) => unknown>(
 }
 
 /**
- * Debounce a value — returns the value only after it stops changing for `delay` ms.
+ * Debounce a value - returns the value only after it stops changing for `delay` ms.
  */
-import { useState, useEffect } from 'react';
-
 export function useDebouncedValue<T>(value: T, delay: number): T {
   const [debouncedValue, setDebouncedValue] = useState<T>(value);
 
