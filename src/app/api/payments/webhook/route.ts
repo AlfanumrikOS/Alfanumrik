@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
       const planCode = payment.notes?.plan_code;
       const billingCycle = payment.notes?.billing_cycle || 'monthly';
 
-      console.log(`Webhook: payment.captured ${paymentId}, order: ${orderId}, plan: ${planCode}`);
+      console.info(`Webhook: payment.captured ${paymentId}, order: ${orderId}, plan: ${planCode}`);
 
       if (userId && planCode) {
         // Check if already processed (idempotency)
@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
 
         if (existing && existing.length > 0 && existing[0].status === 'captured') {
           // Already processed by verify route — skip
-          console.log(`Webhook: payment ${paymentId} already processed, skipping`);
+          console.info(`Webhook: payment ${paymentId} already processed, skipping`);
           return NextResponse.json({ received: true, note: 'already_processed' });
         }
 
@@ -119,7 +119,7 @@ export async function POST(request: NextRequest) {
             .update({ subscription_plan: planCode })
             .eq('auth_user_id', userId);
         } else {
-          console.log(`Webhook: subscription activated for ${userId} → ${planCode}`);
+          console.info(`Webhook: subscription activated for ${userId} → ${planCode}`);
         }
       }
     }
@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
     // ── payment.failed: record failure ──
     if (eventType === 'payment.failed') {
       const payment = event.payload.payment.entity;
-      console.log(`Webhook: payment.failed ${payment.id}, reason: ${payment.error_description}`);
+      console.info(`Webhook: payment.failed ${payment.id}, reason: ${payment.error_description}`);
 
       const userId = payment.notes?.user_id;
       if (userId) {
@@ -164,7 +164,7 @@ export async function POST(request: NextRequest) {
       const userId = subscription?.notes?.user_id;
 
       if (userId) {
-        console.log(`Webhook: ${eventType} for user ${userId}`);
+        console.info(`Webhook: ${eventType} for user ${userId}`);
 
         await admin
           .from('students')

@@ -184,25 +184,26 @@ export default function ProgressPage() {
   }, [isLoading, isLoggedIn, router]);
 
   useEffect(() => {
-    if (!student) return;
+    const studentId = student?.id;
+    if (!studentId) return;
     refreshSnapshot();
 
     // Core data
-    Promise.all([getStudentProfiles(student.id), getSubjects()]).then(([p, s]) => {
+    Promise.all([getStudentProfiles(studentId), getSubjects()]).then(([p, s]) => {
       setProfiles(p);
       setSubjects(s);
     });
 
     // Cognitive 2.0 data
-    getBloomProgression(student.id).then(setBloomData).catch(() => {});
-    getLearningVelocity(student.id).then(setVelocityData).catch(() => {});
-    getKnowledgeGaps(student.id, undefined, 20).then(setKnowledgeGaps).catch(() => {});
+    getBloomProgression(studentId).then(setBloomData).catch(() => {});
+    getLearningVelocity(studentId).then(setVelocityData).catch(() => {});
+    getKnowledgeGaps(studentId, undefined, 20).then(setKnowledgeGaps).catch(() => {});
 
     // Cognitive session metrics
     supabase
       .from('cognitive_session_metrics')
       .select('*')
-      .eq('student_id', student.id)
+      .eq('student_id', studentId)
       .order('created_at', { ascending: false })
       .limit(10)
       .then(({ data }) => setSessionMetrics((data as CognitiveSessionMetrics[]) ?? []));

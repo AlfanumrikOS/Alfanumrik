@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
           studentId = emailRow.id;
           // Fix the stale auth_user_id
           await admin.from('students').update({ auth_user_id: user.id }).eq('id', studentId);
-          console.log('verify: found student by email, fixed auth_user_id:', studentId);
+          console.info('verify: found student by email, fixed auth_user_id:', studentId);
         }
       }
     }

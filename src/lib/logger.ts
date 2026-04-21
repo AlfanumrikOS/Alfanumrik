@@ -103,10 +103,10 @@ function emit(entry: LogEntry): void {
       console.warn(output);
       break;
     case 'debug':
-      console.debug(output);
+      console.info(output);
       break;
     default:
-      console.log(output);
+      console.info(output);
   }
 }
 

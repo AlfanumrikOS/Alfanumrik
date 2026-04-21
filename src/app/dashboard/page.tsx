@@ -120,7 +120,11 @@ export default function Dashboard() {
   }, [dashData]);
 
   useEffect(() => {
-    if (student) { loadStaticData(); refreshSnapshot(); }
+    const studentId = student?.id;
+    if (studentId) {
+      loadStaticData();
+      refreshSnapshot();
+    }
   }, [student?.id, loadStaticData, refreshSnapshot]);
 
   // Show skeleton while loading, but don't block non-student roles — they'll be redirected

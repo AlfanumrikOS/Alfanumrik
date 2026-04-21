@@ -108,7 +108,10 @@ export default function LeaderboardPage() {
     else if (tab === 'titles') loadTitles();
   }, [tab, student, loadRanks, loadCompetitions, loadFame, loadTitles]);
 
-  useEffect(() => { if (student && tab === 'ranks') loadRanks(); }, [period]);
+  useEffect(() => {
+    const studentId = student?.id;
+    if (studentId && tab === 'ranks') loadRanks();
+  }, [period, student?.id, tab, loadRanks]);
 
   const handleJoin = async (compId: string) => {
     if (!student) return;

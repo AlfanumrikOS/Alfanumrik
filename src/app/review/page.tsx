@@ -81,7 +81,7 @@ export default function ReviewPage() {
   }, [student]);
 
   useEffect(() => {
-    if (student) load();
+    if (student?.id) load();
   }, [student?.id, load]);
 
   // Track which cards have been reviewed in this session to prevent double-rating

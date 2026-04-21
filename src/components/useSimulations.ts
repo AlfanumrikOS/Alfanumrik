@@ -1,5 +1,5 @@
 'use client';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { supabaseUrl as SUPABASE_URL, supabaseAnonKey as SUPABASE_ANON_KEY } from '@/lib/supabase';
 
 export interface SimulationMeta {
@@ -27,11 +27,11 @@ export interface FullSimulation extends SimulationMeta {
 export function useSimulations() {
   const [loading, setLoading] = useState(false);
 
-  const headers: Record<string, string> = {
+  const headers: Record<string, string> = useMemo(() => ({
     'apikey': SUPABASE_ANON_KEY,
     'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
     'Content-Type': 'application/json'
-  };
+  }), []);
 
   const findSimulations = useCallback(async (
     subject: string,
@@ -57,7 +57,7 @@ export function useSimulations() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [headers]);
 
   const getSimulation = useCallback(async (
     simId: string,
@@ -85,7 +85,7 @@ export function useSimulations() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [headers]);
 
   const getChapterSimulations = useCallback(async (
     subject: string,
@@ -108,7 +108,7 @@ export function useSimulations() {
     } catch {
       return [];
     }
-  }, []);
+  }, [headers]);
 
   const trackInteraction = useCallback(async (
     studentId: string,
@@ -129,7 +129,7 @@ export function useSimulations() {
         })
       });
     } catch { /* silent */ }
-  }, []);
+  }, [headers]);
 
   return { findSimulations, getSimulation, getChapterSimulations, trackInteraction, loading };
 }

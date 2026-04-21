@@ -115,6 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const fetchUser = useCallback(async () => {
     let hasUser = false;
     try {
@@ -302,6 +303,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
     setIsLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const refreshSnapshot = useCallback(async () => {

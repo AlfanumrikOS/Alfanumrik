@@ -729,7 +729,7 @@ export default function CmsPage() {
             )}
 
             {assets.length === 0 ? (
-              <div style={{ fontSize: 12, color: '#555' }}>No assets attached. Click "+ Attach Asset" to add one.</div>
+              <div style={{ fontSize: 12, color: '#555' }}>No assets attached. Click &quot;+ Attach Asset&quot; to add one.</div>
             ) : (
               <table style={S.table}>
                 <thead>
