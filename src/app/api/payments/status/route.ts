@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
-import { createClient } from '@supabase/supabase-js';
 import { logger } from '@/lib/logger';
+import {
+  createBillingAdminClient,
+  getAuthedUserFromRequest,
+  getBillingEnv,
+  resolveStudentIdForUser,
+} from '@/lib/domains/billing';
 
 /**
  * Subscription Status Endpoint
@@ -11,46 +15,19 @@ import { logger } from '@/lib/logger';
  */
 export async function GET(request: NextRequest) {
   try {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!supabaseUrl || !supabaseKey || !serviceKey) {
+    const envRes = getBillingEnv();
+    if (!envRes.ok) {
       return NextResponse.json({ error: 'Not configured' }, { status: 503 });
     }
 
-    const supabase = createServerClient(supabaseUrl, supabaseKey, {
-      cookies: {
-        getAll() { return request.cookies.getAll().map(c => ({ name: c.name, value: c.value })); },
-        setAll() {},
-      },
-    });
-
-    let user = (await supabase.auth.getUser()).data.user;
-    if (!user) {
-      const authHeader = request.headers.get('Authorization');
-      if (authHeader?.startsWith('Bearer ')) {
-        const directClient = createClient(supabaseUrl, supabaseKey, {
-          global: { headers: { Authorization: authHeader } },
-        });
-        user = (await directClient.auth.getUser()).data.user;
-      }
-    }
-    if (!user) {
+    const userRes = await getAuthedUserFromRequest(request, envRes.data);
+    if (!userRes.ok) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const admin = createClient(supabaseUrl, serviceKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-
-    const { data: studentRow } = await admin
-      .from('students')
-      .select('id, subscription_plan')
-      .eq('auth_user_id', user.id)
-      .single();
-
-    if (!studentRow) {
+    const admin = createBillingAdminClient(envRes.data);
+    const studentIdRes = await resolveStudentIdForUser(admin, userRes.data);
+    if (!studentIdRes.ok) {
       return NextResponse.json({
         plan_code: 'free',
         plan_name: 'Explorer',
@@ -64,6 +41,8 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    const studentId = studentIdRes.data;
+
     const { data: sub } = await admin
       .from('student_subscriptions')
       .select(`
@@ -72,7 +51,7 @@ export async function GET(request: NextRequest) {
         grace_period_end, cancelled_at, cancel_reason,
         renewal_attempts, amount_paid, razorpay_subscription_id
       `)
-      .eq('student_id', studentRow.id)
+      .eq('student_id', studentId)
       .single();
 
     if (!sub || sub.plan_code === 'free') {

@@ -72,7 +72,7 @@ export async function GET(request: NextRequest) {
 
     // Query students scoped to the API key's school_id
     let query = supabase
-      .from('students')
+      .from('identity.students')
       .select('id, name, grade, is_active, xp_total, last_active', { count: 'exact' })
       .eq('school_id', auth.schoolId)
       .order('name', { ascending: true })

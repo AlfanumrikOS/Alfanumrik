@@ -33,7 +33,7 @@ export async function POST(request: Request) {
 
     // ── Resolve parent (guardian) ID from auth user ──
     const { data: guardian } = await supabaseAdmin
-      .from('guardians')
+      .from('identity.guardians')
       .select('id')
       .eq('auth_user_id', auth.userId)
       .limit(1)

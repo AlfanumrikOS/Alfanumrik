@@ -19,7 +19,7 @@ const PHONE_RE = /^[+]?\d{7,15}$/;
 
 async function resolveGuardianId(authUserId: string): Promise<string | null> {
   const { data } = await supabaseAdmin
-    .from('guardians')
+    .from('identity.guardians')
     .select('id')
     .eq('auth_user_id', authUserId)
     .single();
@@ -68,7 +68,7 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ success: true, message: 'No changes' });
   }
 
-  const { error } = await supabaseAdmin.from('guardians').update(updatePayload).eq('id', guardianId);
+  const { error } = await supabaseAdmin.from('identity.guardians').update(updatePayload).eq('id', guardianId);
   if (error) {
     logger.error('guardian_profile_update_failed', { error: new Error(error.message), guardianId });
     return err('Failed to update profile', 500);

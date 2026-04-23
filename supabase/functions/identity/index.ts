@@ -1,111 +1,428 @@
 /**
- * identity – Alfanumrik Edge Function (Microservice #1)
+ * Identity Service – Alfanumrik Edge Function
  *
- * Resolves a Supabase JWT → authenticated student identity + feature flags.
- * All other Edge Functions should call this instead of doing their own
- * auth.getUser() + student lookup, preventing N copies of the same auth logic.
+ * Comprehensive identity management microservice providing:
+ * - JWT → identity resolution (legacy endpoint)
+ * - Profile retrieval by user ID
+ * - Session management (2-device limit enforcement)
+ * - Role and permission validation
+ * - Onboarding status checks
  *
- * POST body:
- * (none — reads Authorization header only)
- *
- * Response (200):
- * {
- *   student_id:  string
- *   role:        'student' | 'teacher' | 'parent' | 'admin'
- *   grade:       string
- *   plan:        'free' | 'lite' | 'pro' | 'premium' | 'school'
- *   school_id:   string | null
- *   features:    Record<string, boolean>   // feature flags targeting this student
- * }
- *
- * Errors:
- *   401 — missing or invalid JWT
- *   403 — student account suspended
- *   404 — student record not found
- *
- * WHY as a microservice:
- *   - Removes N copies of auth resolution scattered across 26 edge functions
- *   - Single source of truth for feature flag evaluation
- *   - Cacheable at CDN edge: same token = same identity for TTL=30s
- *   - Can add rate-limit tokens, device fingerprinting here without touching other services
+ * Endpoints:
+ * - POST /resolve - Resolve JWT to identity (legacy)
+ * - GET /profile/:userId - Get user profile
+ * - GET /sessions - Get active sessions for authenticated user
+ * - POST /sessions/validate - Validate session token
+ * - GET /permissions - Get user permissions and roles
+ * - GET /onboarding-status - Check onboarding completion
  */
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts';
-
-const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
-const SUPABASE_SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-const SUPABASE_ANON = Deno.env.get('SUPABASE_ANON_KEY')!;
+import {
+  extractJWT,
+  validateJWT,
+  checkOperationRateLimit,
+  getUserProfile,
+  getActiveSessions,
+  validateSession,
+  getUserPermissions,
+  getOnboardingStatus,
+  createResponse,
+  logIdentityEvent,
+  generateRequestId,
+  createAdminClient,
+} from './utils.ts';
+import type { IdentityRequest, IdentityResponse } from './types.ts';
 
 Deno.serve(async (req: Request) => {
+  const requestId = generateRequestId();
   const origin = req.headers.get('origin');
   const corsHeaders = getCorsHeaders(origin);
+  const url = new URL(req.url);
+  const path = url.pathname.replace('/identity', ''); // Remove base path
 
+  // CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { status: 200, headers: corsHeaders });
   }
 
-  if (req.method !== 'POST' && req.method !== 'GET') {
-    return errorResponse('Method not allowed', 405, origin);
+  try {
+    // Route handling
+    switch (`${req.method} ${path}`) {
+      case 'POST /resolve':
+        return await handleResolveIdentity(req, requestId, origin);
+
+      case 'GET /profile/:userId':
+        return await handleGetProfile(req, requestId, origin, path);
+
+      case 'GET /sessions':
+        return await handleGetSessions(req, requestId, origin);
+
+      case 'POST /sessions/validate':
+        return await handleValidateSession(req, requestId, origin);
+
+      case 'GET /permissions':
+        return await handleGetPermissions(req, requestId, origin);
+
+      case 'GET /onboarding-status':
+        return await handleGetOnboardingStatus(req, requestId, origin);
+
+      default:
+        return errorResponse('Endpoint not found', 404, origin);
+    }
+  } catch (err) {
+    await logIdentityEvent(
+      'identity',
+      'identity-service',
+      'error',
+      `Unhandled error in ${req.method} ${path}`,
+      { error: err.message, stack: err.stack },
+      requestId
+    );
+    return errorResponse('Internal server error', 500, origin);
+  }
+});
+
+/**
+ * POST /resolve - Resolve JWT to identity (legacy endpoint)
+ */
+async function handleResolveIdentity(req: Request, requestId: string, origin: string | null): Promise<Response> {
+  // Rate limiting
+  const rateLimit = checkOperationRateLimit('general', req.headers.get('CF-Connecting-IP') || 'unknown');
+  if (!rateLimit.allowed) {
+    return errorResponse(rateLimit.error!, 429, origin);
   }
 
-  // ── 1. Resolve JWT ────────────────────────────────────────────────────────
-  const authHeader = req.headers.get('Authorization');
-  if (!authHeader?.startsWith('Bearer ')) {
-    return errorResponse('Missing Authorization header', 401, origin);
-  }
-  const jwt = authHeader.slice(7);
-
-  // Use anon client with the user's JWT — auth.getUser() validates the token
-  const userClient = createClient(SUPABASE_URL, SUPABASE_ANON, {
-    global: { headers: { Authorization: authHeader } },
-    auth: { persistSession: false },
-  });
-
-  const { data: { user }, error: userError } = await userClient.auth.getUser();
-  if (userError || !user) {
-    return errorResponse('Invalid or expired token', 401, origin);
+  // Extract and validate JWT
+  const { jwt, error: jwtError } = extractJWT({ method: req.method, url: new URL(req.url), headers: req.headers });
+  if (jwtError) {
+    return errorResponse(jwtError, 401, origin);
   }
 
-  // ── 2. Fetch student record (service role — fast, no RLS overhead) ────────
-  const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, {
-    auth: { persistSession: false },
-  });
+  const { user, error: validationError } = await validateJWT(jwt!);
+  if (validationError) {
+    return errorResponse(validationError, 401, origin);
+  }
 
-  const { data: student, error: studentError } = await admin
-    .from('students')
-    .select('id, grade, subscription_plan, school_id, account_status, institution_id')
-    .eq('auth_user_id', user.id)
-    .single();
+  // Get identity resolution (legacy logic)
+  const identity = await resolveIdentity(user!.id);
 
-  if (studentError || !student) {
-    // May be a teacher or parent — check those tables
-    const { data: teacher } = await admin
-      .from('teachers')
-      .select('id, school_id')
-      .eq('auth_user_id', user.id)
+  await logIdentityEvent(
+    'identity',
+    'resolve',
+    'info',
+    'Identity resolved',
+    { user_id: user!.id, role: identity.role },
+    requestId
+  );
+
+  return jsonResponse(identity, 200, {
+    'Cache-Control': 'private, max-age=30',
+  }, origin);
+}
+
+/**
+ * GET /profile/:userId - Get user profile
+ */
+async function handleGetProfile(req: Request, requestId: string, origin: string | null, path: string): Promise<Response> {
+  // Extract userId from path
+  const userIdMatch = path.match(/^\/profile\/([^\/]+)$/);
+  if (!userIdMatch) {
+    return errorResponse('Invalid user ID', 400, origin);
+  }
+  const targetUserId = userIdMatch[1];
+
+  // Authenticate requesting user
+  const { jwt, error: jwtError } = extractJWT({ method: req.method, url: new URL(req.url), headers: req.headers });
+  if (jwtError) {
+    return errorResponse(jwtError, 401, origin);
+  }
+
+  const { user, error: validationError } = await validateJWT(jwt!);
+  if (validationError) {
+    return errorResponse(validationError, 401, origin);
+  }
+
+  // Rate limiting
+  const rateLimit = checkOperationRateLimit('general', user!.id);
+  if (!rateLimit.allowed) {
+    return errorResponse(rateLimit.error!, 429, origin);
+  }
+
+  // Check if user can access this profile (own profile or admin)
+  if (user!.id !== targetUserId) {
+    const admin = createAdminClient();
+    const { data: isAdmin } = await admin
+      .from('admin_users')
+      .select('id')
+      .eq('auth_user_id', user!.id)
       .single();
 
-    if (teacher) {
-      return jsonResponse({
-        student_id: null,
-        role: 'teacher',
-        grade: null,
-        plan: null,
-        school_id: teacher.school_id,
-        features: {},
-      }, 200, {}, origin);
+    if (!isAdmin) {
+      return errorResponse('Access denied', 403, origin);
+    }
+  }
+
+  // Get profile
+  const { profile, error } = await getUserProfile(targetUserId);
+  if (error) {
+    return errorResponse(error, 404, origin);
+  }
+
+  await logIdentityEvent(
+    'identity',
+    'get_profile',
+    'info',
+    'Profile retrieved',
+    { target_user_id: targetUserId, requester_id: user!.id },
+    requestId
+  );
+
+  return jsonResponse(createResponse(true, profile, undefined, requestId), 200, {}, origin);
+}
+
+/**
+ * GET /sessions - Get active sessions for authenticated user
+ */
+async function handleGetSessions(req: Request, requestId: string, origin: string | null): Promise<Response> {
+  // Authenticate user
+  const { jwt, error: jwtError } = extractJWT({ method: req.method, url: new URL(req.url), headers: req.headers });
+  if (jwtError) {
+    return errorResponse(jwtError, 401, origin);
+  }
+
+  const { user, error: validationError } = await validateJWT(jwt!);
+  if (validationError) {
+    return errorResponse(validationError, 401, origin);
+  }
+
+  // Rate limiting
+  const rateLimit = checkOperationRateLimit('general', user!.id);
+  if (!rateLimit.allowed) {
+    return errorResponse(rateLimit.error!, 429, origin);
+  }
+
+  // Get sessions
+  const { sessions, error } = await getActiveSessions(user!.id);
+  if (error) {
+    return errorResponse(error, 500, origin);
+  }
+
+  await logIdentityEvent(
+    'identity',
+    'get_sessions',
+    'info',
+    'Sessions retrieved',
+    { user_id: user!.id, session_count: sessions.length },
+    requestId
+  );
+
+  return jsonResponse(createResponse(true, sessions, undefined, requestId), 200, {}, origin);
+}
+
+/**
+ * POST /sessions/validate - Validate session token
+ */
+async function handleValidateSession(req: Request, requestId: string, origin: string | null): Promise<Response> {
+  // Authenticate user
+  const { jwt, error: jwtError } = extractJWT({ method: req.method, url: new URL(req.url), headers: req.headers });
+  if (jwtError) {
+    return errorResponse(jwtError, 401, origin);
+  }
+
+  const { user, error: validationError } = await validateJWT(jwt!);
+  if (validationError) {
+    return errorResponse(validationError, 401, origin);
+  }
+
+  // Parse request body
+  let body: { session_token_hash?: string };
+  try {
+    body = await req.json();
+  } catch {
+    return errorResponse('Invalid JSON body', 400, origin);
+  }
+
+  if (!body.session_token_hash) {
+    return errorResponse('Missing session_token_hash', 400, origin);
+  }
+
+  // Rate limiting
+  const rateLimit = checkOperationRateLimit('general', user!.id);
+  if (!rateLimit.allowed) {
+    return errorResponse(rateLimit.error!, 429, origin);
+  }
+
+  // Validate session
+  const { valid, error } = await validateSession(user!.id, body.session_token_hash);
+  if (error) {
+    return errorResponse(error, 400, origin);
+  }
+
+  await logIdentityEvent(
+    'identity',
+    'validate_session',
+    'info',
+    'Session validated',
+    { user_id: user!.id, valid },
+    requestId
+  );
+
+  return jsonResponse(createResponse(true, { valid }, undefined, requestId), 200, {}, origin);
+}
+
+/**
+ * GET /permissions - Get user permissions and roles
+ */
+async function handleGetPermissions(req: Request, requestId: string, origin: string | null): Promise<Response> {
+  // Authenticate user
+  const { jwt, error: jwtError } = extractJWT({ method: req.method, url: new URL(req.url), headers: req.headers });
+  if (jwtError) {
+    return errorResponse(jwtError, 401, origin);
+  }
+
+  const { user, error: validationError } = await validateJWT(jwt!);
+  if (validationError) {
+    return errorResponse(validationError, 401, origin);
+  }
+
+  // Rate limiting
+  const rateLimit = checkOperationRateLimit('general', user!.id);
+  if (!rateLimit.allowed) {
+    return errorResponse(rateLimit.error!, 429, origin);
+  }
+
+  // Get permissions
+  const { permissions, error } = await getUserPermissions(user!.id);
+  if (error) {
+    return errorResponse(error, 500, origin);
+  }
+
+  await logIdentityEvent(
+    'identity',
+    'get_permissions',
+    'info',
+    'Permissions retrieved',
+    { user_id: user!.id, permission_count: permissions?.permissions.length || 0 },
+    requestId
+  );
+
+  return jsonResponse(createResponse(true, permissions, undefined, requestId), 200, {}, origin);
+}
+
+/**
+ * GET /onboarding-status - Check onboarding completion
+ */
+async function handleGetOnboardingStatus(req: Request, requestId: string, origin: string | null): Promise<Response> {
+  // Authenticate user
+  const { jwt, error: jwtError } = extractJWT({ method: req.method, url: new URL(req.url), headers: req.headers });
+  if (jwtError) {
+    return errorResponse(jwtError, 401, origin);
+  }
+
+  const { user, error: validationError } = await validateJWT(jwt!);
+  if (validationError) {
+    return errorResponse(validationError, 401, origin);
+  }
+
+  // Rate limiting
+  const rateLimit = checkOperationRateLimit('general', user!.id);
+  if (!rateLimit.allowed) {
+    return errorResponse(rateLimit.error!, 429, origin);
+  }
+
+  // Get onboarding status
+  const { status, error } = await getOnboardingStatus(user!.id);
+  if (error) {
+    return errorResponse(error, 500, origin);
+  }
+
+  await logIdentityEvent(
+    'identity',
+    'get_onboarding_status',
+    'info',
+    'Onboarding status retrieved',
+    { user_id: user!.id, step: status?.step },
+    requestId
+  );
+
+  return jsonResponse(createResponse(true, status, undefined, requestId), 200, {}, origin);
+}
+
+/**
+ * Legacy identity resolution logic (extracted from original function)
+ */
+async function resolveIdentity(authUserId: string): Promise<any> {
+  const admin = createAdminClient();
+
+  // Try student first
+  const { data: student } = await admin
+    .from('identity.students')
+    .select('id, grade, subscription_plan, school_id, account_status, institution_id')
+    .eq('auth_user_id', authUserId)
+    .single();
+
+  if (student) {
+    if (student.account_status === 'suspended') {
+      throw new Error('Account suspended');
     }
 
-    return errorResponse('Student record not found', 404, origin);
+    const features = await evaluateFeatureFlags(student);
+    return {
+      student_id: student.id,
+      role: 'student',
+      grade: student.grade,
+      plan: student.subscription_plan ?? 'free',
+      school_id: student.school_id ?? null,
+      features,
+    };
   }
 
-  // ── 3. Guard suspended accounts ──────────────────────────────────────────
-  if (student.account_status === 'suspended') {
-    return errorResponse('Account suspended', 403, origin);
+  // Try teacher
+  const { data: teacher } = await admin
+    .from('identity.teachers')
+    .select('id, school_id')
+    .eq('auth_user_id', authUserId)
+    .single();
+
+  if (teacher) {
+    return {
+      student_id: null,
+      role: 'teacher',
+      grade: null,
+      plan: null,
+      school_id: teacher.school_id,
+      features: {},
+    };
   }
 
-  // ── 4. Evaluate feature flags ─────────────────────────────────────────────
+  // Try admin
+  const { data: adminUser } = await admin
+    .from('admin_users')
+    .select('id, admin_level')
+    .eq('auth_user_id', authUserId)
+    .single();
+
+  if (adminUser) {
+    return {
+      student_id: null,
+      role: adminUser.admin_level === 'super_admin' ? 'super_admin' : 'admin',
+      grade: null,
+      plan: null,
+      school_id: null,
+      features: {},
+    };
+  }
+
+  throw new Error('User record not found');
+}
+
+/**
+ * Evaluate feature flags for a student
+ */
+async function evaluateFeatureFlags(student: any): Promise<Record<string, boolean>> {
+  const admin = createAdminClient();
+
   const { data: flags } = await admin
     .from('feature_flags')
     .select('flag_name, is_enabled, target_grades, target_plans, rollout_percentage, target_institutions')
@@ -132,7 +449,7 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Rollout percentage (deterministic hash — same student always gets same result)
+    // Rollout percentage
     if (enabled && flag.rollout_percentage != null && flag.rollout_percentage < 100) {
       const hash = (flag.flag_name + student.id).split('').reduce(
         (acc: number, c: string) => acc + c.charCodeAt(0),
@@ -144,17 +461,5 @@ Deno.serve(async (req: Request) => {
     features[flag.flag_name] = enabled;
   }
 
-  // ── 5. Return resolved identity ───────────────────────────────────────────
-  return jsonResponse({
-    student_id: student.id,
-    role: 'student',
-    grade: student.grade,
-    plan: student.subscription_plan ?? 'free',
-    school_id: student.school_id ?? null,
-    features,
-  }, 200, {
-    // Short-lived cache: same JWT = same identity for 30s
-    // Vary on Authorization so different tokens don't share cache
-    'Cache-Control': 'private, max-age=30',
-  }, origin);
-});
+  return features;
+}

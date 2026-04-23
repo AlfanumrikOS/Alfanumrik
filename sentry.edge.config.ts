@@ -3,6 +3,23 @@ import * as Sentry from '@sentry/nextjs';
 Sentry.init({
   dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
   enabled: !!process.env.NEXT_PUBLIC_SENTRY_DSN,
-  tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
+
+  // Performance monitoring — sample all transactions for microservices foundation
+  tracesSampleRate: 1.0, // Increased from 0.1 for better tracing during migration
+
   environment: process.env.NODE_ENV || 'development',
+
+  // Filter noisy errors
+  ignoreErrors: [
+    'ResizeObserver loop',
+    'Network request failed',
+    'Load failed',
+    'ChunkLoadError',
+    /^AbortError/,
+  ],
+
+  beforeSend(event) {
+    if (process.env.NODE_ENV !== 'production') return null;
+    return event;
+  },
 });

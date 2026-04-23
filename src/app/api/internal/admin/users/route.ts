@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
   const offset = (page - 1) * limit;
 
   try {
-    const table = role === 'teacher' ? 'teachers' : role === 'guardian' || role === 'parent' ? 'guardians' : 'students';
+    const table = role === 'teacher' ? 'identity.teachers' : role === 'guardian' || role === 'parent' ? 'identity.guardians' : 'identity.students';
 
     let q = supabase
       .from(table)
@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
       .range(offset, offset + limit - 1);
 
     if (search) q = q.ilike('name', `%${search}%`);
-    if (table === 'students') {
+    if (table === 'identity.students') {
       if (grade) q = q.eq('grade', grade);
       if (plan) q = q.eq('subscription_plan', plan);
       if (status === 'active') q = q.eq('is_active', true);
@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
     if (error) throw error;
 
     return NextResponse.json({
-      data: (data || []).map((r: Record<string, unknown>) => ({ ...r, role: table === 'guardians' ? 'parent' : role })),
+      data: (data || []).map((r: Record<string, unknown>) => ({ ...r, role: table === 'identity.guardians' ? 'parent' : role })),
       total: count ?? 0,
       page,
       limit,
@@ -64,9 +64,9 @@ export async function PATCH(request: NextRequest) {
     }
 
     const ALLOWED: Record<string, string[]> = {
-      students: ['is_active', 'account_status', 'subscription_plan', 'grade', 'board'],
-      teachers: ['is_active'],
-      guardians: ['is_active'],
+      'identity.students': ['is_active', 'account_status', 'subscription_plan', 'grade', 'board'],
+      'identity.teachers': ['is_active'],
+      'identity.guardians': ['is_active'],
     };
 
     if (!ALLOWED[table]) return NextResponse.json({ error: 'Invalid table' }, { status: 400 });

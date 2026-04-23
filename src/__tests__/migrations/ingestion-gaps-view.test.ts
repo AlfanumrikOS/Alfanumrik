@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { hasSupabaseIntegrationEnv } from '../helpers/integration';
 
-describe('ingestion_gaps view', () => {
+const describeIntegration = hasSupabaseIntegrationEnv() ? describe : describe.skip;
+
+describeIntegration('ingestion_gaps view', () => {
   it('returns rows for non-ready in-scope chapters', async () => {
     await supabaseAdmin.from('cbse_syllabus').insert({
       grade: '10', subject_code: 'gaps_test', subject_display: 'Gaps',

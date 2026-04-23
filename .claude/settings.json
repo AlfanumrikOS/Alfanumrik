@@ -1,5 +1,38 @@
 {
-  "agent": "orchestrator",
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(npx vitest *)",
+      "mcp__claude_ai_Supabase__execute_sql",
+      "mcp__claude_ai_Supabase__apply_migration",
+      "mcp__claude_ai_Supabase__list_tables",
+      "Read(//c/Users/Bharangpur Primary/Alfanumrik-repo/**)",
+      "Bash(ls .eslintrc* eslint.config*)",
+      "mcp__claude_ai_Vercel__list_deployments",
+      "Bash(ls supabase/functions/embed-* supabase/functions/generate-embeddings supabase/functions/extract-*)",
+      "Bash(echo \"EXIT=$?\")",
+      "mcp__claude_ai_Supabase__list_edge_functions",
+      "mcp__claude_ai_Supabase__deploy_edge_function",
+      "mcp__claude_ai_Supabase__get_project_url",
+      "Bash(node -e ' *)",
+      "mcp__claude_ai_Supabase__list_projects",
+      "mcp__claude_ai_Supabase__list_migrations",
+      "Bash(ls src/__tests__/scripts)",
+      "Bash(ls src/__tests__/grounding)",
+      "Bash(npx eslint *)",
+      "Bash(node -e \"const {RuleTester} = require\\('eslint'\\); console.log\\('rule tester:', typeof RuleTester\\);\")"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\Bharangpur Primary\\Alfanumrik-repo\\src\\components\\ui",
+      "c:\\Users\\Bharangpur Primary\\Alfanumrik-repo\\src\\app\\simulations",
+      "c:\\Users\\Bharangpur Primary\\Alfanumrik-repo\\src\\app\\auth\\reset",
+      "c:\\Users\\Bharangpur Primary\\Alfanumrik-repo\\src\\app",
+      "c:\\Users\\Bharangpur Primary\\Alfanumrik-repo\\src\\lib",
+      "c:\\Users\\Bharangpur Primary\\Alfanumrik-repo\\supabase\\functions\\ncert-question-engine",
+      "c:\\Users\\Bharangpur Primary\\Alfanumrik-repo\\supabase\\migrations",
+      "c:\\Users\\Bharangpur Primary\\Alfanumrik-repo\\.claude\\worktrees\\grounded-rag"
+    ]
+  },
   "hooks": {
     "PreToolUse": [
       {
@@ -44,5 +77,6 @@
         ]
       }
     ]
-  }
+  },
+  "agent": "orchestrator"
 }

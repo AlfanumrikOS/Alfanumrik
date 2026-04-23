@@ -90,10 +90,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       const { guardian_email } = updates;
       if (!guardian_email) return NextResponse.json({ error: 'guardian_email required' }, { status: 400 });
 
-      const { data: guardian } = await supabase.from('guardians').select('id').eq('email', guardian_email).single();
+      const { data: guardian } = await supabase.from('identity.guardians').select('id').eq('email', guardian_email).single();
       if (!guardian) return NextResponse.json({ error: 'Guardian not found' }, { status: 404 });
 
-      await supabase.from('guardian_student_links').upsert({
+      await supabase.from('identity.guardian_student_links').upsert({
         guardian_id: guardian.id,
         student_id: id,
         status: 'approved',

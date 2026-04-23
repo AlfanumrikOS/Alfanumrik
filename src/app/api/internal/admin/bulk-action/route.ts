@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     switch (action) {
       case 'suspend': {
         const { error } = await supabase
-          .from('students')
+          .from('identity.students')
           .update({ is_active: false, account_status: 'suspended' })
           .in('id', ids);
         if (error) throw error;
@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
       }
       case 'restore': {
         const { error } = await supabase
-          .from('students')
+          .from('identity.students')
           .update({ is_active: true, account_status: 'active' })
           .in('id', ids);
         if (error) throw error;
@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
       }
       case 'downgrade_plan': {
         const { error } = await supabase
-          .from('students')
+          .from('identity.students')
           .update({ subscription_plan: 'free' })
           .in('id', ids);
         if (error) throw error;
@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
 
     await logAdminAction({
       action: `bulk_${action}`,
-      entity_type: 'students',
+      entity_type: 'identity.students',
       details: { ids_count: ids.length, ...extras },
       ip,
     });

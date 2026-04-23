@@ -88,8 +88,47 @@ const UPGRADE_PROMPTS: Record<string, { threshold: number; message: string; mess
   },
 };
 
+// ─── Circuit Breaker for Claude API ────────────────────────────────────────
+
+// Circuit breaker for Claude API
+let circuitBreakerState: 'closed' | 'open' | 'half-open' = 'closed';
+let failureCount = 0;
+let lastFailureTime = 0;
+const FAILURE_THRESHOLD = 5; // Open circuit after 5 failures
+const TIMEOUT_MS = 30000; // 30s timeout
+const RESET_TIMEOUT_MS = 60000; // Reset after 1 minute
+
+function recordApiFailure() {
+  failureCount++;
+  lastFailureTime = Date.now();
+  if (failureCount >= FAILURE_THRESHOLD) {
+    circuitBreakerState = 'open';
+    logger.warn('AI circuit breaker opened', { failureCount });
+  }
+}
+
+function recordApiSuccess() {
+  if (circuitBreakerState === 'half-open') {
+    circuitBreakerState = 'closed';
+    failureCount = 0;
+    logger.info('AI circuit breaker closed');
+  }
+}
+
+function shouldAttemptApiCall(): boolean {
+  if (circuitBreakerState === 'closed') return true;
+  if (circuitBreakerState === 'open') {
+    if (Date.now() - lastFailureTime > RESET_TIMEOUT_MS) {
+      circuitBreakerState = 'half-open';
+      return true;
+    }
+    return false;
+  }
+  return true; // half-open
+}
+
 // Normalize raw plan codes from the DB to canonical keys.
-// Handles legacy aliases (basic→starter, premium→pro, ultimate→unlimited)
+// Handles legacy aliases (basic→starter, premium→pro, ultimate→unlimited)     
 // and strips monthly/yearly billing-cycle suffixes.
 function normalizePlan(raw: string): string {
   return (raw || 'free')
@@ -1149,13 +1188,22 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     subject, grade, board, chapter, mode, ragChunks, academicGoal, cognitiveCtx,
   );
 
-  // 11. Call Claude
+  // 11. Call Claude (with circuit breaker)
   let assistantResponse: string;
   let tokensUsed = 0;
   try {
+    if (!shouldAttemptApiCall()) {
+      return errorJson(
+        'AI service temporarily unavailable. Please try again in a few minutes.',
+        'AI service abhi available nahi hai. Kuch minute baad try karein.',
+        503
+      );
+    }
+
     const result = await callClaude(systemPrompt, history, message, imageData);
     assistantResponse = result.content;
     tokensUsed = result.tokensUsed;
+    recordApiSuccess(); // Record success for circuit breaker
     logger.info('foxy_claude_ok', {
       model: result.model,
       tokensUsed,
@@ -1163,6 +1211,7 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
       masteryLevel: cognitiveCtx.masteryLevel,
     });
   } catch (claudeErr) {
+    recordApiFailure(); // Record failure for circuit breaker
     logger.error('foxy_claude_api_failed', {
       error: claudeErr instanceof Error ? claudeErr : new Error(String(claudeErr)),
       studentId,

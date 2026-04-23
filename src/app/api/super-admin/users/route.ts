@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     }
     const offset = (page - 1) * limit;
 
-    const table = role === 'teacher' ? 'teachers' : role === 'guardian' || role === 'parent' ? 'guardians' : 'students';
+    const table = role === 'teacher' ? 'identity.teachers' : role === 'guardian' || role === 'parent' ? 'identity.guardians' : 'identity.students';
     let query = `select=*&order=created_at.desc&offset=${offset}&limit=${limit}`;
     if (search) query += `&name=ilike.*${encodeURIComponent(search)}*`;
 
@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
     const total = range ? parseInt(range.split('/')[1]) || 0 : Array.isArray(data) ? data.length : 0;
 
     return NextResponse.json({
-      data: (data || []).map((r: Record<string, unknown>) => ({ ...r, role: table === 'guardians' ? 'parent' : role })),
+      data: (data || []).map((r: Record<string, unknown>) => ({ ...r, role: table === 'identity.guardians' ? 'parent' : role })),
       total, page, limit,
     });
   } catch (err) {
@@ -50,7 +50,7 @@ export async function PATCH(request: NextRequest) {
     // Validate patch payload with Zod
     const userPatchSchema = z.object({
       user_id: zUuid,
-      table: z.enum(['students', 'teachers', 'guardians']),
+      table: z.enum(['identity.students', 'identity.teachers', 'identity.guardians']),
       updates: z.object({
         is_active: z.boolean().optional(),
         account_status: z.enum(['active', 'demo', 'suspended', 'inactive']).optional(),
@@ -73,9 +73,9 @@ export async function PATCH(request: NextRequest) {
     const { user_id, table, updates } = validation.data;
 
     const allowedFields: Record<string, string[]> = {
-      students: ['is_active', 'account_status', 'subscription_plan', 'grade', 'board'],
-      teachers: ['is_active'],
-      guardians: ['is_active'],
+      'identity.students': ['is_active', 'account_status', 'subscription_plan', 'grade', 'board'],
+      'identity.teachers': ['is_active'],
+      'identity.guardians': ['is_active'],
     };
 
     const safe: Record<string, unknown> = {};
@@ -91,7 +91,7 @@ export async function PATCH(request: NextRequest) {
     if (!res.ok) return NextResponse.json({ error: 'Update failed' }, { status: 500 });
 
     // If subscription_plan was overridden on students, sync student_subscriptions.plan_code
-    if (table === 'students' && typeof safe.subscription_plan === 'string') {
+    if (table === 'identity.students' && typeof safe.subscription_plan === 'string') {
       const rawPlan = safe.subscription_plan as string;
       const canonicalPlan = rawPlan.replace(/_(monthly|yearly)$/, '').replace(/^ultimate$/, 'unlimited').replace(/^basic$/, 'starter').replace(/^premium$/, 'pro');
       await fetch(supabaseAdminUrl('student_subscriptions', `student_id=eq.${user_id}`), {

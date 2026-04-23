@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
-import { createClient } from '@supabase/supabase-js';
 import { createRazorpaySubscription, createRazorpayOrder } from '@/lib/razorpay';
 import { logger } from '@/lib/logger';
 import { paymentSubscribeSchema, validateBody } from '@/lib/validation';
 import { logOpsEvent } from '@/lib/ops-events';
+import {
+  canonicalizePlanCode,
+  createBillingAdminClient,
+  getAuthedUserFromRequest,
+  getBillingEnv,
+  getActivePlan,
+  resolveStudentIdForUser,
+} from '@/lib/domains/billing';
 
 /**
  * Subscribe Endpoint
@@ -24,45 +30,15 @@ import { logOpsEvent } from '@/lib/ops-events';
  * Client NEVER sends amount.
  */
 
-/** Strip billing-cycle suffix and map legacy aliases to canonical plan code.
- *  Keep in sync with the same helper in the webhook route. */
-function canonicalizePlan(raw: string): string {
-  return raw
-    .replace(/_(monthly|yearly)$/, '')
-    .replace(/^ultimate$/, 'unlimited')
-    .replace(/^basic$/, 'starter')
-    .replace(/^premium$/, 'pro');
-}
-
 export async function POST(request: NextRequest) {
   try {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!supabaseUrl || !supabaseKey || !serviceKey) {
+    const envRes = getBillingEnv();
+    if (!envRes.ok) {
       return NextResponse.json({ error: 'Payment system not configured' }, { status: 503 });
     }
 
-    // Auth
-    const supabase = createServerClient(supabaseUrl, supabaseKey, {
-      cookies: {
-        getAll() { return request.cookies.getAll().map(c => ({ name: c.name, value: c.value })); },
-        setAll() {},
-      },
-    });
-
-    let user = (await supabase.auth.getUser()).data.user;
-    if (!user) {
-      const authHeader = request.headers.get('Authorization');
-      if (authHeader?.startsWith('Bearer ')) {
-        const directClient = createClient(supabaseUrl, supabaseKey, {
-          global: { headers: { Authorization: authHeader } },
-        });
-        user = (await directClient.auth.getUser()).data.user;
-      }
-    }
-    if (!user) {
+    const userRes = await getAuthedUserFromRequest(request, envRes.data);
+    if (!userRes.ok) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -77,36 +53,25 @@ export async function POST(request: NextRequest) {
     }
 
     // Canonicalize plan_code BEFORE any DB write so pending & active rows match.
-    const plan_code = canonicalizePlan(rawPlan);
+    const plan_code = canonicalizePlanCode(rawPlan);
 
-    const admin = createClient(supabaseUrl, serviceKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
+    const admin = createBillingAdminClient(envRes.data);
 
-    // Look up plan from DB
-    const { data: plan, error: planErr } = await admin
-      .from('subscription_plans')
-      .select('id, plan_code, name, price_monthly, price_yearly, razorpay_plan_id_monthly, is_active')
-      .eq('plan_code', plan_code)
-      .eq('is_active', true)
-      .single();
-
-    if (planErr || !plan) {
+    const planRes = await getActivePlan(admin, plan_code);
+    if (!planRes.ok) {
       return NextResponse.json({ error: 'Plan not available' }, { status: 400 });
     }
+    const plan = planRes.data;
 
     // Check for existing active subscription to prevent duplicates
-    const { data: studentRow } = await admin
-      .from('students')
-      .select('id')
-      .eq('auth_user_id', user.id)
-      .single();
+    const studentIdRes = await resolveStudentIdForUser(admin, userRes.data);
+    const studentId = studentIdRes.ok ? studentIdRes.data : null;
 
-    if (studentRow) {
+    if (studentId) {
       const { data: existingSub } = await admin
         .from('student_subscriptions')
         .select('id, status, razorpay_subscription_id, plan_code, billing_cycle')
-        .eq('student_id', studentRow.id)
+        .eq('student_id', studentId)
         .single();
 
       // If already on same plan+cycle with active recurring, return early
@@ -137,17 +102,7 @@ export async function POST(request: NextRequest) {
       //
       //    We need the student_id BEFORE calling Razorpay so we can put it in
       //    notes. Resolve it here (mirrors verify route: auth_user_id → email fallback).
-      let resolvedStudentId: string | undefined = studentRow?.id;
-      if (!resolvedStudentId && user.email) {
-        const { data: byEmail } = await admin
-          .from('students')
-          .select('id')
-          .eq('email', user.email)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        resolvedStudentId = byEmail?.id;
-      }
+      const resolvedStudentId = studentId ?? '';
 
       const subscription = await createRazorpaySubscription({
         razorpayPlanId: plan.razorpay_plan_id_monthly,
@@ -155,9 +110,9 @@ export async function POST(request: NextRequest) {
         customerNotify: false,
         notes: {
           // Canonical resolution key — read by webhook first.
-          student_id: resolvedStudentId ?? '',
+          student_id: resolvedStudentId,
           // Legacy keys (still read as fallbacks).
-          user_id: user.id,
+          user_id: userRes.data.id,
           plan_code,
           billing_cycle: 'monthly',
         },
@@ -168,8 +123,8 @@ export async function POST(request: NextRequest) {
       //    200 — client will retry and we'll create a fresh Razorpay sub + row.
       //    The orphan Razorpay sub will be cleaned up by reconcile_stuck_subscriptions.
       const { error: rpcErr } = await admin.rpc('create_pending_subscription', {
-        p_auth_user_id: user.id,
-        p_email: user.email ?? '',
+        p_auth_user_id: userRes.data.id,
+        p_email: userRes.data.email ?? '',
         p_plan_code: plan_code,
         p_billing_cycle: 'monthly',
         p_razorpay_subscription_id: subscription.id,
@@ -217,10 +172,10 @@ export async function POST(request: NextRequest) {
     // after Razorpay signature verification succeeds.
     const order = await createRazorpayOrder({
       amountInr: plan.price_yearly,
-      receipt: `${user.id.substring(0, 8)}_${plan_code}_${Date.now().toString(36)}`,
+      receipt: `${userRes.data.id.substring(0, 8)}_${plan_code}_${Date.now().toString(36)}`,
       notes: {
-        student_id: studentRow?.id ?? '',
-        user_id: user.id,
+        student_id: studentId ?? '',
+        user_id: userRes.data.id,
         plan_code,
         billing_cycle: 'yearly',
       },

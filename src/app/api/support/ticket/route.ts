@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
     const { data: { user } } = await supabaseAdmin.auth.getUser(token);
     if (user) {
       const { data: student } = await supabaseAdmin
-        .from('students')
+        .from('identity.students')
         .select('id, name, email')
         .eq('auth_user_id', user.id)
         .single();

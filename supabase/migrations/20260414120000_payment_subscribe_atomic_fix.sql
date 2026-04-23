@@ -28,6 +28,87 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_student_subs_rz_sub_id
   WHERE razorpay_subscription_id IS NOT NULL;
 
 -- ────────────────────────────────────────────────────────────
+-- C2: Atomic subscription activation fallback RPC
+-- ────────────────────────────────────────────────────────────
+-- Called from webhook when activate_subscription RPC fails.
+-- Atomically updates both students and student_subscriptions tables
+-- to prevent split-brain state. This is the robust fallback for P11.
+CREATE OR REPLACE FUNCTION public.atomic_subscription_activation(
+  p_student_id uuid,
+  p_plan_code text,
+  p_billing_cycle text DEFAULT 'monthly',
+  p_razorpay_payment_id text DEFAULT NULL,
+  p_razorpay_subscription_id text DEFAULT NULL
+) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public
+AS $function$
+DECLARE
+  v_plan_id uuid;
+  v_period_end timestamptz;
+  v_next_billing timestamptz;
+BEGIN
+  -- Get plan ID
+  SELECT id INTO v_plan_id FROM subscription_plans WHERE plan_code = p_plan_code LIMIT 1;
+  IF v_plan_id IS NULL THEN
+    RAISE EXCEPTION 'Plan not found: %', p_plan_code;
+  END IF;
+
+  -- Calculate period end and next billing
+  v_period_end := CASE
+    WHEN p_billing_cycle = 'yearly' THEN NOW() + INTERVAL '1 year'
+    ELSE NOW() + INTERVAL '1 month'
+  END;
+
+  v_next_billing := CASE
+    WHEN p_billing_cycle = 'yearly' THEN NOW() + INTERVAL '1 year'
+    WHEN p_billing_cycle = 'monthly' AND p_razorpay_subscription_id IS NOT NULL THEN NOW() + INTERVAL '1 month'
+    ELSE NULL -- one-time yearly has no next billing
+  END;
+
+  -- Atomically update both tables in a single transaction
+  -- First update student_subscriptions
+  INSERT INTO student_subscriptions (
+    student_id, plan_id, plan_code, status, billing_cycle,
+    current_period_start, current_period_end, next_billing_at,
+    razorpay_payment_id, razorpay_subscription_id,
+    auto_renew, renewal_attempts, grace_period_end, ended_at,
+    updated_at
+  ) VALUES (
+    p_student_id, v_plan_id, p_plan_code, 'active', p_billing_cycle,
+    NOW(), v_period_end, v_next_billing,
+    p_razorpay_payment_id, p_razorpay_subscription_id,
+    CASE WHEN p_razorpay_subscription_id IS NOT NULL THEN true ELSE false END,
+    0, NULL, NULL, NOW()
+  )
+  ON CONFLICT (student_id) DO UPDATE SET
+    plan_id = v_plan_id,
+    plan_code = p_plan_code,
+    status = 'active',
+    billing_cycle = p_billing_cycle,
+    current_period_start = NOW(),
+    current_period_end = v_period_end,
+    next_billing_at = v_next_billing,
+    razorpay_payment_id = COALESCE(p_razorpay_payment_id, student_subscriptions.razorpay_payment_id),
+    razorpay_subscription_id = COALESCE(p_razorpay_subscription_id, student_subscriptions.razorpay_subscription_id),
+    auto_renew = CASE WHEN p_razorpay_subscription_id IS NOT NULL THEN true ELSE false END,
+    renewal_attempts = 0,
+    grace_period_end = NULL,
+    ended_at = NULL,
+    cancelled_at = NULL,
+    cancel_reason = NULL,
+    updated_at = NOW();
+
+  -- Then update students table
+  UPDATE students SET
+    subscription_plan = p_plan_code,
+    updated_at = NOW()
+  WHERE id = p_student_id;
+
+END;
+$function$;
+
+-- ────────────────────────────────────────────────────────────
 -- C4: create_pending_subscription RPC (atomic pending-row write)
 -- ────────────────────────────────────────────────────────────
 -- Called from /api/payments/subscribe AFTER Razorpay subscription is created.

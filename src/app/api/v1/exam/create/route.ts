@@ -60,7 +60,7 @@ export async function POST(request: Request) {
 
     // Resolve teacher_id from the authenticated user
     const { data: teacher } = await supabaseAdmin
-      .from('teachers')
+      .from('identity.teachers')
       .select('id, subjects_taught')
       .eq('user_id', auth.userId)
       .single();
@@ -119,7 +119,7 @@ export async function POST(request: Request) {
 
     // Verify teacher is assigned to this class
     const { data: classTeacher } = await supabaseAdmin
-      .from('class_teachers')
+      .from('identity.class_teachers')
       .select('id')
       .eq('class_id', body.class_id)
       .eq('teacher_id', teacher.id)

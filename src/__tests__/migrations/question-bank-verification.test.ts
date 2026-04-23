@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { hasSupabaseIntegrationEnv } from '../helpers/integration';
 
-describe('question_bank verification columns', () => {
+const describeIntegration = hasSupabaseIntegrationEnv() ? describe : describe.skip;
+
+describeIntegration('question_bank verification columns', () => {
   it('new rows default to legacy_unverified', async () => {
     const { data, error } = await supabaseAdmin.from('question_bank').insert({
       question_text: 'Test question with sufficient length here.',

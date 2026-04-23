@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir \"src\\\\lib\" /b)",
+      "Bash(node -e ':*)",
+      "Bash(npx tsc:*)",
+      "Bash(wc -l src/lib/ai/workflows/*.ts)",
+      "Bash(wc -l src/lib/ai/**/*.ts src/lib/ai/*.ts)"
+    ]
+  }
+}

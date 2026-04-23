@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { hasSupabaseIntegrationEnv } from '../helpers/integration';
 
-describe('feedback and failure tables', () => {
+const describeIntegration = hasSupabaseIntegrationEnv() ? describe : describe.skip;
+
+describeIntegration('feedback and failure tables', () => {
   it('content_requests: rate-limit one per (student, chapter, day)', async () => {
     // requires a test student row to exist — skip if not available
     const { data: student } = await supabaseAdmin.from('students').select('id').limit(1).single();

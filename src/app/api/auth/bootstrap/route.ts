@@ -36,6 +36,7 @@ import {
   type ValidRole,
 } from '@/lib/identity';
 import { acquireIdempotencyLock, releaseIdempotencyLock } from '@/lib/redis';
+import { isFeatureEnabled, IDENTITY_MIGRATION_FLAGS } from '@/lib/feature-flags';
 
 // Dedup guard: prevent concurrent bootstrap calls for the same user.
 // The bootstrap_user_profile RPC is idempotent (ON CONFLICT), but concurrent
@@ -281,61 +282,104 @@ async function handleBootstrap(
       }
     }
 
-    // 3. Call the bootstrap RPC via admin client (bypasses RLS for profile creation reliability)
-    const admin = getSupabaseAdmin();
-
-    const { data: result, error: rpcError } = await admin.rpc(
-      'bootstrap_user_profile',
-      {
-        p_auth_user_id: user.id,
-        p_role: role,
-        p_name: name,
-        p_email: user.email || '',
-        p_grade: role === 'student' ? normalizeGrade(body.grade) : null,
-        p_board: role === 'student' ? String(body.board || 'CBSE') : null,
-        p_school_name:
-          role === 'teacher' ? ((body.school_name as string) || '') : null,
-        p_subjects_taught:
-          role === 'teacher'
-            ? ((body.subjects_taught as string[]) || [])
-            : null,
-        p_grades_taught:
-          role === 'teacher'
-            ? ((body.grades_taught as string[]) || [])
-            : null,
-        p_phone: role === 'parent' ? ((body.phone as string) || null) : null,
-        p_link_code:
-          role === 'parent' ? ((body.link_code as string) || null) : null,
-      }
+    // 3. Check if dual-write is enabled
+    const dualWriteEnabled = await isFeatureEnabled(
+      IDENTITY_MIGRATION_FLAGS.IDENTITY_DUAL_WRITE_ENABLED,
+      { userId: user.id }
     );
 
-    if (rpcError) {
-      // Log the failure (best-effort)
-      const auditCtx = extractAuditContext(request, admin, user.id);
-      await logIdentityEvent(auditCtx, 'bootstrap_failure', { error: rpcError.message, role, name });
+    let result: any;
+    let dualWriteResult: any = null;
 
-      console.error('[Bootstrap] RPC failed:', rpcError.message, {
-        userId: user.id,
+    if (dualWriteEnabled) {
+      // Use dual-write implementation
+      const { dualWriteUserProfile } = await import('@/lib/identity/dual-write');
+      dualWriteResult = await dualWriteUserProfile('create', {
+        auth_user_id: user.id,
         role,
+        name,
+        email: user.email || '',
+        grade: role === 'student' ? normalizeGrade(body.grade) : undefined,
+        board: role === 'student' ? String(body.board || 'CBSE') : undefined,
+        school_name: role === 'teacher' ? ((body.school_name as string) || '') : undefined,
+        subjects_taught: role === 'teacher' ? ((body.subjects_taught as string[]) || []) : undefined,
+        grades_taught: role === 'teacher' ? ((body.grades_taught as string[]) || []) : undefined,
+        phone: role === 'parent' ? ((body.phone as string) || null) : undefined,
+        link_code: role === 'parent' ? ((body.link_code as string) || null) : undefined,
       });
 
-      return NextResponse.json(
+      if (!dualWriteResult.success) {
+        // Log dual-write failure but continue with monolith result if available
+        console.error('[Bootstrap] Dual-write failed:', dualWriteResult.errors);
+      }
+
+      result = dualWriteResult.monolithResult;
+    } else {
+      // Original monolith-only logic
+      const admin = getSupabaseAdmin();
+
+      const { data: rpcResult, error: rpcError } = await admin.rpc(
+        'bootstrap_user_profile',
         {
-          success: false,
-          error: 'Profile creation failed. Please try again.',
-          code: 'BOOTSTRAP_FAILED',
-          details: rpcError.message,
-        },
-        { status: 500 }
+          p_auth_user_id: user.id,
+          p_role: role,
+          p_name: name,
+          p_email: user.email || '',
+          p_grade: role === 'student' ? normalizeGrade(body.grade) : null,
+          p_board: role === 'student' ? String(body.board || 'CBSE') : null,
+          p_school_name:
+            role === 'teacher' ? ((body.school_name as string) || '') : null,
+          p_subjects_taught:
+            role === 'teacher'
+              ? ((body.subjects_taught as string[]) || [])
+              : null,
+          p_grades_taught:
+            role === 'teacher'
+              ? ((body.grades_taught as string[]) || [])
+              : null,
+          p_phone: role === 'parent' ? ((body.phone as string) || null) : null,
+          p_link_code:
+            role === 'parent' ? ((body.link_code as string) || null) : null,
+        }
       );
+
+      if (rpcError) {
+        // Log the failure (best-effort)
+        const auditCtx = extractAuditContext(request, admin, user.id);
+        await logIdentityEvent(auditCtx, 'bootstrap_failure', { error: rpcError.message, role, name });
+
+        console.error('[Bootstrap] RPC failed:', rpcError.message, {
+          userId: user.id,
+          role,
+        });
+
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Profile creation failed. Please try again.',
+            code: 'BOOTSTRAP_FAILED',
+            details: rpcError.message,
+          },
+          { status: 500 }
+        );
+      }
+
+      result = rpcResult;
     }
 
     // 4. Log success (best-effort)
+    const admin = getSupabaseAdmin();
     const auditCtx = extractAuditContext(request, admin, user.id);
     await logIdentityEvent(
       auditCtx,
       result?.status === 'already_completed' ? 'bootstrap_idempotent' : 'bootstrap_success',
-      { role, profile_id: result?.profile_id }
+      {
+        role,
+        profile_id: result?.profile_id,
+        dual_write: dualWriteEnabled,
+        dual_write_success: dualWriteResult?.success,
+        consistency_check: dualWriteResult?.consistencyCheck?.consistent,
+      }
     );
 
     // 5. Determine redirect destination based on role
@@ -348,6 +392,11 @@ async function handleBootstrap(
         profile_id: result?.profile_id,
         role,
         redirect: destination,
+        dual_write: dualWriteEnabled ? {
+          success: dualWriteResult?.success,
+          consistency_checked: !!dualWriteResult?.consistencyCheck,
+          consistent: dualWriteResult?.consistencyCheck?.consistent,
+        } : null,
       },
     });
   } catch (error) {

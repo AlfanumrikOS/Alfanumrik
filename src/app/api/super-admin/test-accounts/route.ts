@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
     const authUserId = authUser.id;
 
     // Create profile record in the appropriate table
-    const table = role === 'teacher' ? 'teachers' : role === 'parent' ? 'guardians' : 'students';
+    const table = role === 'teacher' ? 'identity.teachers' : role === 'parent' ? 'identity.guardians' : 'identity.students';
     const profileData: Record<string, unknown> = {
       auth_user_id: authUserId,
       name,

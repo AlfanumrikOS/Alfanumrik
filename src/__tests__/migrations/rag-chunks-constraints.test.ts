@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { hasSupabaseIntegrationEnv } from '../helpers/integration';
 
-describe('rag_content_chunks constraints', () => {
+const describeIntegration = hasSupabaseIntegrationEnv() ? describe : describe.skip;
+
+describeIntegration('rag_content_chunks constraints', () => {
   it('rejects source other than ncert_2025', async () => {
     const { error } = await supabaseAdmin.from('rag_content_chunks').insert({
       content: 'test', source: 'wikipedia',

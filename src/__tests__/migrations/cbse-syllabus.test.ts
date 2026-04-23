@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { hasSupabaseIntegrationEnv } from '../helpers/integration';
 
-describe('cbse_syllabus migration', () => {
+const describeIntegration = hasSupabaseIntegrationEnv() ? describe : describe.skip;
+
+describeIntegration('cbse_syllabus migration', () => {
   it('table exists with expected columns and CHECK constraints', async () => {
     const { data: raw } = await supabaseAdmin.from('cbse_syllabus').select('*').limit(0);
     expect(raw).toBeDefined();

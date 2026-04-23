@@ -258,22 +258,35 @@ export async function POST(request: NextRequest) {
         });
         if (rpcError) {
           logger.error('Webhook: activate_subscription RPC failed', { error: rpcError.message, authUserId });
-          // Fallback patches both tables — tracked risk per P11.
-          await admin
-            .from('students')
-            .update({ subscription_plan: planCode })
-            .eq('id', resolved.student_id);
-          await admin
-            .from('student_subscriptions')
-            .upsert(
-              {
-                student_id: resolved.student_id,
-                plan_code: planCode,
-                status: 'active',
-                updated_at: new Date().toISOString(),
-              },
-              { onConflict: 'student_id' },
-            );
+          // Fallback: use atomic RPC to prevent split-brain state (P11 fix)
+          const { error: atomicError } = await admin.rpc('atomic_subscription_activation', {
+            p_student_id: resolved.student_id,
+            p_plan_code: planCode,
+            p_billing_cycle: billingCycle,
+            p_razorpay_payment_id: paymentId,
+            p_razorpay_subscription_id: null,
+          });
+          if (atomicError) {
+            logger.error('Webhook: atomic_subscription_activation fallback also failed', {
+              error: atomicError.message, studentId: resolved.student_id,
+            });
+            // Last resort: separate updates (tracked risk P11)
+            await admin
+              .from('students')
+              .update({ subscription_plan: planCode })
+              .eq('id', resolved.student_id);
+            await admin
+              .from('student_subscriptions')
+              .upsert(
+                {
+                  student_id: resolved.student_id,
+                  plan_code: planCode,
+                  status: 'active',
+                  updated_at: new Date().toISOString(),
+                },
+                { onConflict: 'student_id' },
+              );
+          }
         }
       }
       return NextResponse.json({ received: true });
@@ -408,7 +421,52 @@ export async function POST(request: NextRequest) {
             logger.error('Webhook: activate_subscription RPC failed', {
               error: rpcError.message, eventType, rzSubId,
             });
-            // Fallback direct writes — tracked risk per P11.
+            // Fallback: use atomic RPC to prevent split-brain state (P11 fix)
+            const { error: atomicError } = await admin.rpc('atomic_subscription_activation', {
+              p_student_id: resolved.student_id,
+              p_plan_code: planCode,
+              p_billing_cycle: 'monthly',
+              p_razorpay_payment_id: paymentEntity?.id ?? null,
+              p_razorpay_subscription_id: rzSubId ?? null,
+            });
+            if (atomicError) {
+              logger.error('Webhook: atomic_subscription_activation fallback also failed', {
+                error: atomicError.message, studentId: resolved.student_id,
+              });
+              // Last resort: separate updates (tracked risk P11)
+              await admin
+                .from('students')
+                .update({ subscription_plan: planCode })
+                .eq('id', resolved.student_id);
+              await admin
+                .from('student_subscriptions')
+                .upsert(
+                  {
+                    student_id: resolved.student_id,
+                    plan_code: planCode,
+                    status: 'active',
+                    billing_cycle: 'monthly',
+                    razorpay_subscription_id: rzSubId,
+                    updated_at: new Date().toISOString(),
+                  },
+                  { onConflict: 'student_id' },
+                );
+            }
+          }
+        } else {
+          // No auth_user_id in notes — direct atomic activation
+          const { error: atomicError } = await admin.rpc('atomic_subscription_activation', {
+            p_student_id: resolved.student_id,
+            p_plan_code: planCode,
+            p_billing_cycle: 'monthly',
+            p_razorpay_payment_id: paymentEntity?.id ?? null,
+            p_razorpay_subscription_id: rzSubId ?? null,
+          });
+          if (atomicError) {
+            logger.error('Webhook: atomic_subscription_activation failed (no auth_user_id)', {
+              error: atomicError.message, studentId: resolved.student_id,
+            });
+            // Fallback: separate updates (tracked risk P11)
             await admin
               .from('students')
               .update({ subscription_plan: planCode })
@@ -427,21 +485,6 @@ export async function POST(request: NextRequest) {
                 { onConflict: 'student_id' },
               );
           }
-        } else {
-          // No auth_user_id in notes — direct upsert against resolved student.
-          await admin
-            .from('student_subscriptions')
-            .upsert(
-              {
-                student_id: resolved.student_id,
-                plan_code: planCode,
-                status: 'active',
-                billing_cycle: 'monthly',
-                razorpay_subscription_id: rzSubId,
-                updated_at: new Date().toISOString(),
-              },
-              { onConflict: 'student_id' },
-            );
         }
         return NextResponse.json({ received: true });
       }

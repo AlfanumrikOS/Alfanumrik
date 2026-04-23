@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { hasSupabaseIntegrationEnv } from '../helpers/integration';
 
-describe('grounded_ai_traces', () => {
+const describeIntegration = hasSupabaseIntegrationEnv() ? describe : describe.skip;
+
+describeIntegration('grounded_ai_traces', () => {
   it('accepts a grounded=true trace', async () => {
     const { data, error } = await supabaseAdmin.from('grounded_ai_traces').insert({
       caller: 'foxy',

@@ -399,7 +399,7 @@ async function computeSchoolMetrics(
 
     // First, get student IDs for this batch of schools
     const { data: studentRows, error: studErr } = await admin
-      .from('students')
+      .from('identity.students')
       .select('id, school_id')
       .in('school_id', batchIds)
       .eq('is_active', true)

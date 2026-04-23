@@ -4,16 +4,16 @@ Sentry.init({
   dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
   enabled: !!process.env.NEXT_PUBLIC_SENTRY_DSN,
 
-  // Performance monitoring — sample 10% of transactions in production
-  tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
+  // Performance monitoring — sample all transactions for microservices foundation
+  tracesSampleRate: 1.0, // Increased from 0.1 for better tracing during migration
 
-  // Session replay for debugging — 1% of sessions, 100% of errored sessions
-  replaysSessionSampleRate: 0.01,
+  // Session replay is configured via Sentry Next.js defaults.
+  replaysSessionSampleRate: 0.1,
   replaysOnErrorSampleRate: 1.0,
 
   environment: process.env.NODE_ENV || 'development',
 
-  // Filter noisy errors that aren't actionable
+  // Filter noisy errors
   ignoreErrors: [
     'ResizeObserver loop',
     'Network request failed',
@@ -23,7 +23,6 @@ Sentry.init({
   ],
 
   beforeSend(event) {
-    // Don't send events in development
     if (process.env.NODE_ENV !== 'production') return null;
     return event;
   },

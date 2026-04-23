@@ -183,3 +183,25 @@ export async function getFeatureFlagsSimple(): Promise<Record<string, boolean>> 
 export const MAINTENANCE_FLAGS = {
   MAINTENANCE_BANNER: 'maintenance_banner',
 } as const;
+
+/**
+ * Identity service migration flags.
+ * Controls the gradual rollout of identity service extraction.
+ */
+export const IDENTITY_MIGRATION_FLAGS = {
+  /** Enables routing auth calls to identity service instead of direct DB access.
+   *  Default: false (use monolith). Rollout: percentage-based by user ID.
+   *  When enabled, AuthContext will call identity service endpoints.
+   *  Safety: circuit breaker automatically falls back to monolith on failures. */
+  IDENTITY_SERVICE_ENABLED: 'identity_service_enabled',
+
+  /** Enables dual-write mode where both monolith and service are updated.
+   *  Default: false. Only enable after identity service is stable.
+   *  Used during migration to ensure data consistency between systems. */
+  IDENTITY_DUAL_WRITE_ENABLED: 'identity_dual_write_enabled',
+
+  /** Enables data drift detection and alerting.
+   *  Default: false. Enable after dual-write is stable.
+   *  Monitors consistency between monolith and service data. */
+  IDENTITY_DRIFT_DETECTION_ENABLED: 'identity_drift_detection_enabled',
+} as const;
