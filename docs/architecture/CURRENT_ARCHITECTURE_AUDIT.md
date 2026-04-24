@@ -19,7 +19,7 @@ for the forward plan.
 | API | Next.js API routes (`src/app/api/`) | **169** `route.ts` files as of 2026-04-24 (find count) |
 | Auth | Supabase Auth (email / PKCE), JWT auto-refresh, device session tracking | [`src/middleware.ts`](../../src/middleware.ts), [`src/lib/AuthContext.tsx`](../../src/lib/AuthContext.tsx) |
 | Database | Supabase PostgreSQL + RLS + RBAC + pgvector | **309** migration files in [`supabase/migrations/`](../../supabase/migrations/) |
-| Edge Functions | Supabase Edge Functions (Deno runtime) | **32** function directories in [`supabase/functions/`](../../supabase/functions/) |
+| Edge Functions | Supabase Edge Functions (Deno runtime) | **33** directories in [`supabase/functions/`](../../supabase/functions/) (32 functions + `_shared` utils module) |
 | Payments | Razorpay (INR, monthly recurring + yearly one-time) | [`src/app/api/payments/`](../../src/app/api/payments/), [`src/lib/razorpay.ts`](../../src/lib/razorpay.ts) |
 | AI | Claude Haiku (primary) + Sonnet fallback via Edge Functions or `/api/foxy` Next route | `supabase/functions/{foxy-tutor, ncert-solver, quiz-generator, quiz-generator-v2, cme-engine, grounded-answer}/`, [`src/app/api/foxy/route.ts`](../../src/app/api/foxy/route.ts) |
 | Mobile | Flutter + Riverpod + GoRouter | [`mobile/`](../../mobile/) |
@@ -28,7 +28,8 @@ for the forward plan.
 
 **Uncertainty:** the numbers 151 / 29 / 265 in
 [`.claude/CLAUDE.md`](../../.claude/CLAUDE.md) are outdated. Re-verified
-on 2026-04-24: 169 routes, 32 Edge Functions, 309 migrations.
+on 2026-04-24: 169 routes, 32 Edge Functions (+1 `_shared` module),
+309 migrations.
 
 ## 2. Routing tree
 
@@ -139,19 +140,31 @@ P8 and is flagged by [`guard.sh`](../../.claude/hooks/guard.sh).
 ### 3.4 Known schema quirks
 
 - **Heavy `SET search_path = public` on SECURITY DEFINER functions.**
-  `supabase/migrations/20260408000009_fix_search_path_on_secdef_functions.sql`
-  bulk-pins ~332 `SECURITY DEFINER` functions across ~92 migration
-  files. Any future schema move that changes where
-  `students`/`teachers`/`guardians` live must rewrite these at the
-  same time, not with a follow-up hotfix. The abandoned identity
-  extraction tried the hotfix approach and broke on exactly this —
-  see the damage audit.
-- **17+ migrations hard-reference `FROM public.students` in RLS
-  policy predicates** (e.g.
-  [`supabase/migrations/20260417700000_fix_student_id_rls_policies.sql`](../../supabase/migrations/20260417700000_fix_student_id_rls_policies.sql)).
-  A schema rename invalidates these.
+  [`supabase/migrations/20260408000009_fix_search_path_on_secdef_functions.sql`](../../supabase/migrations/20260408000009_fix_search_path_on_secdef_functions.sql)
+  is a 40-line DO-loop that pins `search_path = public` on **every
+  postgres-owned SECDEF function in the `public` schema, discovered
+  at runtime** (no hard-coded function list). Any schema move that
+  relocates `students` / `teachers` / `guardians` must re-run an
+  equivalent loop post-move, or every SECDEF function that touches
+  those tables silently fails. The abandoned identity extraction
+  attempted a 4-function hotfix and broke on exactly this — see the
+  damage audit.
+- **Blast-radius of a hypothetical rename of `students` / `teachers`
+  / `guardians`:** RLS policy predicates + policy `USING` / `WITH
+  CHECK` bodies across migrations:
+  - **5 files** fully-qualify `FROM public.students` (e.g.
+    [`supabase/migrations/20260417700000_fix_student_id_rls_policies.sql`](../../supabase/migrations/20260417700000_fix_student_id_rls_policies.sql),
+    [`supabase/migrations/20260408000002_foxy_sessions_and_messages.sql`](../../supabase/migrations/20260408000002_foxy_sessions_and_messages.sql))
+    and must be explicitly rewritten.
+  - **48 additional files** reference unqualified `FROM students` in
+    policy bodies or functions — these resolve via the session-role
+    `search_path`, which in turn depends on the role-level override
+    set by the rename migration itself. Fragile.
+  - Total: ~53 files would need coordinated patching for a rename.
 - **Role-level `search_path` overrides do not apply to SECURITY
-  DEFINER functions.** A common mistake; see the same audit.
+  DEFINER functions.** `ALTER ROLE ... SET search_path` only affects
+  regular (invoker) queries. SECDEF functions use their own
+  `proconfig` pin. A common mistake.
 
 ## 4. Auth and onboarding flow
 

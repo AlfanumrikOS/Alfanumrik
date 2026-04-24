@@ -25,14 +25,14 @@ detail is not duplicated here — see the authoritative migrations in
 | Table | Write owner | Readers | Source migration |
 |---|---|---|---|
 | `auth.users` | Supabase (managed) | B1, B2, B12 | n/a |
-| `students` | **B1** | B1, B2, B3, B4, B5, B7, B8, B9, B10, B12 | `20260322200645_initial_schema.sql` + many updates |
-| `teachers` | **B1** | B1, B2, B4, B12 | `20260322200645_initial_schema.sql` |
-| `guardians` | **B1** | B1, B3, B12 | `20260322200645_initial_schema.sql` |
+| `students` | **B1** | B1, B2, B3, B4, B5, B7, B8, B9, B10, B12 | `supabase/migrations/_legacy/000_core_schema.sql` + many updates |
+| `teachers` | **B1** | B1, B2, B4, B12 | `supabase/migrations/_legacy/000_core_schema.sql` |
+| `guardians` | **B1** | B1, B3, B12 | `supabase/migrations/_legacy/000_core_schema.sql` |
 | `user_roles` | **B1** | every server route via `authorizeRequest()` | `supabase/migrations/20260417200000_rbac_phase2a_tenant_scoped_schema.sql` |
 | `onboarding_state` | **B1** | B1, B2 | `supabase/migrations/20260402100000_robust_auth_onboarding_system.sql` |
 | `user_active_sessions` | **B1** | B1, B13 | `supabase/migrations/20260328120000_identity_integrity.sql` |
 | `identity_events` | **B1** (audit append-only) | B12, B13 | same |
-| `guardian_student_links` | **B3** | B1, B3, B12 | `20260322200645_initial_schema.sql` |
+| `guardian_student_links` | **B3** | B1, B3, B12 | `supabase/migrations/_legacy/000_core_schema.sql` |
 | `school_memberships` | **B2** | B1, B2, B12 | `supabase/migrations/20260412150000_white_label_schools.sql` |
 
 **Writers outside this list:** Supabase Auth writes `auth.users`
@@ -67,7 +67,7 @@ Covered above (`guardian_student_links`, `class_students`,
 | Table | Write owner | Readers | Source migration |
 |---|---|---|---|
 | `question_bank` | **B6** (content) | B5, B7, B9, B13 | `supabase/migrations/20260322200645_initial_schema.sql` + verification-state additions at `supabase/migrations/20260418101100_claim_verification_batch_rpc.sql` |
-| `quiz_sessions` | **B5** | B5, B9, B12 | `20260322200645_initial_schema.sql` |
+| `quiz_sessions` | **B5** | B5, B9, B12 | `supabase/migrations/_legacy/000_core_schema.sql` |
 | `quiz_responses` | **B5** | B5, B9, B12 | same |
 | `user_question_history` | **B5** | B5, B9 | `supabase/migrations/20260325*_*` series |
 | `student_learning_profiles` | **B5** (via `atomic_quiz_profile_update`) | B5, B9, B12 | `supabase/migrations/20260325160000_atomic_quiz_profile_update.sql` |
@@ -98,7 +98,7 @@ any code other than this RPC is a P2 violation.
 |---|---|---|---|
 | `foxy_sessions` | **B7** | B7, B9, B12 | `supabase/migrations/20260408000002_foxy_sessions_and_messages.sql` |
 | `foxy_chat_messages` | **B7** | B7, B12 | same |
-| `ai_tutor_logs` | **B7** | B12, B13 | earlier |
+| `ai_tutor_logs` | **B7** | B12, B13 | `supabase/migrations/_legacy/009_ai_tutor_logs.sql` (or nearest AI-log migration; exact filename may vary) |
 | `student_daily_usage` | **B7** | B7, B10, B12 | same |
 
 ## Assessment (B9)
@@ -131,7 +131,7 @@ signature verification.
 
 | Table | Write owner | Readers | Source migration |
 |---|---|---|---|
-| `notifications` | any server context via B11 dispatcher | user via `/notifications` page | `20260322200645_initial_schema.sql` |
+| `notifications` | any server context via B11 dispatcher | user via `/notifications` page | `supabase/migrations/_legacy/000_core_schema.sql` |
 | `notification_preferences` | **B11** (user-initiated) | B11 | same |
 | `whatsapp_messages` | **B11** | B11, B13 | `whatsapp-notify` Edge Function |
 | `email_logs` | **B11** | B13 | `send-*-email` Edge Functions |

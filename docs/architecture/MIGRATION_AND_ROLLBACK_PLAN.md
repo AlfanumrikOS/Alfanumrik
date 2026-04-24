@@ -100,6 +100,11 @@ lands:
 | `ALTER TYPE` that narrows a value set | Data incompatibility |
 | Changing primary key, unique constraint | Integrity change |
 | Removing FK | Referential integrity change |
+| `ALTER TABLE ... ALTER COLUMN ... TYPE` that changes storage width or collation | Silent full-table rewrite on large tables; long lock |
+| `ALTER TABLE ... ALTER COLUMN ... DROP DEFAULT` when existing code still writes | Breaks inserts mid-deploy |
+| `REVOKE` on `public` schema grants used by `anon` or `authenticated` | Role-level auth break |
+| `ALTER TABLE ... DISABLE TRIGGER` | Silent behaviour change (not DDL in feel, but is) |
+| `DROP EXTENSION` (esp. `pgvector`, `pg_cron`, `pg_stat_statements`) | Cascading loss of RAG, schedules, observability |
 
 A migration that includes any of the above must link to the user
 approval message in its preamble comment and have a matching
@@ -116,10 +121,19 @@ just writing a follow-up (e.g. schema move), ship a rollback
 migration in the same PR. Name convention:
 `YYYYMMDDHHMMSS_rollback_<original_description>.sql`.
 
-The abandoned branch did this correctly for the identity extraction
-even though the extraction itself was not safe — see
-[`supabase/migrations/20260423151532_rollback_identity_service_extraction.sql`](../../supabase/migrations/).
-The pattern is right; we keep it as a template.
+The abandoned branch had a correctly-structured rollback migration
+for its identity extraction, even though the extraction itself was
+unsafe. That rollback file (`20260423151532_rollback_identity_service_extraction.sql`)
+does NOT exist on this branch — it was dropped along with the
+forward extraction in Option C — but it is preserved at git tag
+`quarantine/feat-performance-score-system-pre-option-c-20260424`
+and can be recovered with:
+```
+git show quarantine/feat-performance-score-system-pre-option-c-20260424:supabase/migrations/20260423151532_rollback_identity_service_extraction.sql
+```
+The pattern it exemplified — reverse-dependency-order `SET SCHEMA`,
+explicit FK re-create, policy re-create — is the template for any
+future schema-move rollback.
 
 The rollback migration is NOT applied automatically. It sits ready.
 When a rollback is needed, an operator applies it via Supabase

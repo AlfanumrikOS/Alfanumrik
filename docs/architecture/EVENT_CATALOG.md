@@ -55,10 +55,51 @@ CREATE TABLE public.domain_events (
   error_message  TEXT,
   attempts       INTEGER NOT NULL DEFAULT 0
 );
+-- Secondary sort by event_id breaks ties when two txns share a clock tick.
 CREATE INDEX idx_domain_events_unprocessed
-  ON public.domain_events (occurred_at)
+  ON public.domain_events (occurred_at, event_id)
   WHERE processed_at IS NULL;
+-- Consumers must dedupe by event_id (PRIMARY KEY above) to get
+-- effectively-once semantics on top of at-least-once delivery.
 ```
+
+### Outbox design gotchas (architect-flagged)
+
+- **Ordering.** Per-`aggregate_id` order is preserved by sorting on
+  `(occurred_at, event_id)`. Across aggregates, no order is
+  guaranteed — `now()` in separate transactions can collide on the
+  same clock tick. Consumers that care about cross-stream order must
+  reconstruct it, or the producer must serialize writes to a
+  causality log.
+- **Exactly-once = idempotent consumers + at-least-once delivery.**
+  There is no free exactly-once. Every consumer must use
+  `event_id` as a dedup key (persist last-processed event_id per
+  consumer in a companion table, or use `ON CONFLICT (event_id)
+  DO NOTHING` when writing projections).
+- **Worker concurrency.** If we ever run two `queue-consumer`
+  instances, the polling query MUST use `SELECT ... FOR UPDATE SKIP
+  LOCKED` to avoid double-processing. Single-instance is fine today
+  (Supabase Edge Functions don't support sticky singletons
+  natively — track as a risk when we scale beyond one poller).
+- **Consumer death = silent backlog.** If `queue-consumer` errors and
+  restarts loop-style, events pile up silently. Add an outbox-lag
+  metric (`max(NOW() - occurred_at) WHERE processed_at IS NULL`)
+  to the super-admin observability dashboard when E1 ships, and alert
+  when lag exceeds 60 s.
+- **Growth.** `quiz.completed` alone could be millions of rows per
+  year. Plan for either monthly partitioning of
+  `public.domain_events` (PostgreSQL native partitions by
+  `occurred_at`) OR a scheduled archive job that moves
+  `processed_at IS NOT NULL AND processed_at < NOW() - INTERVAL '30
+  days'` rows into `public.domain_events_archive`. Decide before
+  the first high-volume producer goes live.
+- **DLQ.** Events that exceed `attempts` (proposed cap 5) stay in
+  the same table with `failed_at` set and `processed_at` NULL. A
+  separate `public.domain_events_dlq` partition or VIEW surfaces
+  them for manual replay. Do not silently drop.
+- **Backpressure.** If consumers fall behind and the outbox grows
+  unbounded, pause producers (feature flag off) rather than try
+  to impose RLS throttling — latter is hard to reason about.
 
 ## Catalog
 

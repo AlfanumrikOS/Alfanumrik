@@ -93,25 +93,28 @@ pinned to concrete artefacts, it is not in this register.
 - **Mitigation status:** none
 - **Next action:** one-time audit → catalog triggers in [`DATA_OWNERSHIP_MATRIX.md`](./DATA_OWNERSHIP_MATRIX.md) as "implicit writers". Over time, replace triggers with explicit RPC calls or outbox events (E5).
 
-### R9. 332 SECURITY DEFINER functions bulk-pinned to `SET search_path = public`
+### R9. Dynamic `SET search_path = public` on every postgres-owned SECDEF function
 
 - **Probability:** N/A until a schema move is attempted
-- **Impact:** Critical — any future move of `public.students/teachers/guardians/schools` breaks every SECDEF function unless they are coordinated in the same migration
-- **Evidence:** [`supabase/migrations/20260408000009_fix_search_path_on_secdef_functions.sql`](../../supabase/migrations/20260408000009_fix_search_path_on_secdef_functions.sql) lines 28-31 bulk-set `search_path = public` on all postgres-owned SECDEF functions. This is what broke the abandoned identity extraction (only 4 of ~332 functions were patched in the hotfix)
+- **Impact:** Critical — any future move of `public.students/teachers/guardians/schools` breaks every SECURITY DEFINER function that touches them, silently
+- **Evidence:** [`supabase/migrations/20260408000009_fix_search_path_on_secdef_functions.sql`](../../supabase/migrations/20260408000009_fix_search_path_on_secdef_functions.sql) is a 40-line `DO $$ ... LOOP ... ALTER FUNCTION ... END LOOP` that iterates over `pg_proc WHERE prosecdef = true AND pronamespace = 'public'::regnamespace AND proowner = 'postgres'::regrole`. There is no hard-coded function list — the set is discovered at runtime. Every postgres-owned SECDEF function in `public` is pinned to `search_path = public`. The exact count at migration time was not recorded; the live count grows as new SECDEF functions are added. The abandoned identity extraction attempted a 4-function hotfix and missed the rest.
 - **Owner:** architect
-- **Mitigation status:** Phase 1 damage audit captured the issue; no code fix applied. This is a **preventive constraint** — anyone proposing a schema rename must produce a complete SECDEF migration alongside it, or the proposal is rejected.
-- **Next action:** no action unless a schema move is proposed. If one is proposed (it should not be — see [`MICROSERVICES_EXTRACTION_PLAN.md`](./MICROSERVICES_EXTRACTION_PLAN.md)), the proposal must enumerate every affected SECDEF function and patch it in the same migration.
+- **Mitigation status:** preventive constraint — no active fix. Any proposal to rename or move `students` / `teachers` / `guardians` / `schools` must include a companion migration that either (a) re-runs the same DO-loop post-move, or (b) enumerates every affected function and sets a new `search_path` that includes the new schema.
+- **Next action:** no action unless a schema move is proposed. See [`MICROSERVICES_EXTRACTION_PLAN.md`](./MICROSERVICES_EXTRACTION_PLAN.md) — Phase 0 does not propose any such move.
 
-### R10. 17+ migrations have RLS predicates referencing `FROM public.students`
+### R10. RLS policies + SQL bodies reference `students` in ~53 migration files
 
 - **Probability:** N/A until a schema move is attempted
-- **Impact:** Critical — same class as R9; blast radius of a rename includes most role/access policies
-- **Evidence:** grep-confirmed in the Phase 1 audit. Representative samples:
-  - [`supabase/migrations/20260408000002_foxy_sessions_and_messages.sql`](../../supabase/migrations/20260408000002_foxy_sessions_and_messages.sql) (lines 35, 44, 56, 73, 126, 138, 155)
-  - [`supabase/migrations/20260417700000_fix_student_id_rls_policies.sql`](../../supabase/migrations/20260417700000_fix_student_id_rls_policies.sql) (lines 65, 78, 84, 121, 142, 155, 161, 181)
+- **Impact:** Critical — same class as R9; blast radius of a rename includes most role/access policies and cross-domain views
+- **Evidence:** grep-confirmed as of 2026-04-24:
+  - **5 migration files** fully-qualify `FROM public.students` in RLS policy predicates or view definitions. Examples:
+    - [`supabase/migrations/20260408000002_foxy_sessions_and_messages.sql`](../../supabase/migrations/20260408000002_foxy_sessions_and_messages.sql) (lines 35, 44, 56, 73, 126, 138, 155)
+    - [`supabase/migrations/20260417700000_fix_student_id_rls_policies.sql`](../../supabase/migrations/20260417700000_fix_student_id_rls_policies.sql) (lines 65, 78, 84, 121, 142, 155, 161, 181)
+  - **48 additional migration files** reference unqualified `FROM students` that resolves via session-role `search_path`. Fragile — `ALTER ROLE ... SET search_path` does not propagate into SECDEF function bodies (see R9), so the same text means different things in different execution contexts.
+  - Similar blast radius exists for `teachers`, `guardians`, and `schools` (not re-grepped per table — assumed comparable).
 - **Owner:** architect
 - **Mitigation status:** preventive constraint (see R9)
-- **Next action:** none unless schema move is proposed.
+- **Next action:** none unless schema move is proposed. If one is, it must produce a companion migration that rewrites all ~53 files' references in a single transaction.
 
 ### R11. Two untracked SQL files physically preserved outside git
 
