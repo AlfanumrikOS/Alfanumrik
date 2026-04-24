@@ -307,7 +307,15 @@ describe('GET /api/student/chapters (v2)', () => {
     expect(body.chapters).toEqual([]);
   });
 
-  it('FALLBACK: 200 with chapters-catalog list when RPC empty AND student has grade', async () => {
+  it('PHASE-3-RESTORED: 200 empty when RPC empty AND student has grade (no legacy-chapters fallback)', async () => {
+    // The Phase-4 chapters-catalog fallback was reverted on 2026-04-24 (R2
+    // stabilization, regression #4 in regression-academic-chain.test.ts)
+    // because it produced cross-grade leakage and unverified-count ambiguity
+    // that downstream AI surfaces couldn't distinguish from ground truth.
+    // The chapters route now returns an empty list on empty RPC rows
+    // regardless of whether a student record exists; the client renders an
+    // empty-state card. Fallback continues to exist for /api/student/subjects
+    // (see tests above) because the subject-level leakage risk is lower.
     authOk();
     _rpcImpl = async () => ({ data: [], error: null });
     _studentLookup = { data: { grade: '10' }, error: null };
@@ -326,14 +334,9 @@ describe('GET /api/student/chapters (v2)', () => {
     );
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.chapters).toHaveLength(2);
-    for (const c of body.chapters) {
-      expect(c.verified_question_count).toBe(0);  // fallback signals unverified
-    }
-    expect(_opsEventsInserts[0]).toMatchObject({
-      source: 'api.student.chapters',
-      severity: 'warning',
-    });
+    expect(body.chapters).toEqual([]);
+    // No ops_events fallback log — there is no fallback anymore.
+    expect(_opsEventsInserts.length).toBe(0);
   });
 
   it('maps RPC rows to {chapter_number, chapter_title, chapter_title_hi, verified_question_count}', async () => {
@@ -365,7 +368,11 @@ describe('GET /api/student/chapters (v2)', () => {
     });
   });
 
-  it('500 service_unavailable on RPC error AND no student record AND no catalog', async () => {
+  it('503 service_unavailable on RPC error (no soft-fall to legacy chapters)', async () => {
+    // Phase-3 contract restored 2026-04-24. RPC failure now returns
+    // 503 service_unavailable regardless of student record or catalog
+    // state; the client retries. See regression #4 in
+    // regression-academic-chain.test.ts.
     authOk();
     _rpcImpl = async () => ({
       data: null,
@@ -379,13 +386,16 @@ describe('GET /api/student/chapters (v2)', () => {
         headers: { Authorization: 'Bearer t' },
       }),
     );
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(503);
     const body = await res.json();
     expect(body.error).toBe('service_unavailable');
     expect(body.chapters).toBeUndefined();
   });
 
-  it('FALLBACK: 200 with chapters-catalog on RPC error if student has grade AND catalog has rows', async () => {
+  it('PHASE-3-RESTORED: 503 on RPC error even if student has grade AND catalog has rows', async () => {
+    // The Phase-4 soft-fall fallback was removed: a populated student record
+    // and populated catalog no longer turn an RPC failure into a 200 with
+    // legacy-catalog chapters. The contract is now: RPC failure → 503.
     authOk();
     _rpcImpl = async () => ({
       data: null,
@@ -402,9 +412,9 @@ describe('GET /api/student/chapters (v2)', () => {
         headers: { Authorization: 'Bearer t' },
       }),
     );
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(503);
     const body = await res.json();
-    expect(body.chapters).toHaveLength(1);
-    expect(String(_opsEventsInserts[0].message)).toContain('v2_rpc_error');
+    expect(body.error).toBe('service_unavailable');
+    expect(_opsEventsInserts.length).toBe(0);
   });
 });
