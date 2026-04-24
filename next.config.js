@@ -38,6 +38,7 @@ const nextConfig = {
     remotePatterns: [
       { protocol: 'https', hostname: 'lh3.googleusercontent.com' },
       { protocol: 'https', hostname: '*.supabase.co' },
+      { protocol: 'https', hostname: '*.alfanumrik.com' }, // school logos on tenant subdomains
     ],
   },
   async redirects() {
