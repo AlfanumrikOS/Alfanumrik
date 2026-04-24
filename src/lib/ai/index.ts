@@ -27,6 +27,8 @@ export { buildFoxySystemPrompt } from './prompts/foxy-system';
 export { buildNcertSolverPrompt } from './prompts/ncert-solver';
 export { buildQuizGenPrompt } from './prompts/quiz-gen';
 export { buildParentReportPrompt } from './prompts/parent-report';
+export { buildSchoolContextPrompt, fetchSchoolContext } from './prompts/school-context';
+export type { SchoolContext } from './prompts/school-context';
 
 // ─── Retrieval ──────────────────────────────────────────────────────────────
 export { retrieveNcertChunks, generateEmbedding } from './retrieval/ncert-retriever';
