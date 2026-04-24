@@ -9,19 +9,11 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { getTeacherByAuthUserId } from '@/lib/domains/identity';
 import { logger } from '@/lib/logger';
 
 function err(message: string, status: number) {
   return NextResponse.json({ success: false, error: message }, { status });
-}
-
-async function resolveTeacherId(authUserId: string): Promise<string | null> {
-  const { data } = await supabaseAdmin
-    .from('teachers')
-    .select('id')
-    .eq('auth_user_id', authUserId)
-    .single();
-  return data?.id ?? null;
 }
 
 export async function PATCH(request: NextRequest) {
@@ -33,8 +25,11 @@ export async function PATCH(request: NextRequest) {
   const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
   if (authError || !user) return err('Invalid or expired token', 401);
 
-  const teacherId = await resolveTeacherId(user.id);
-  if (!teacherId) return err('Teacher account not found', 404);
+  const teacherResult = await getTeacherByAuthUserId(user.id);
+  if (!teacherResult.ok || !teacherResult.data) {
+    return err('Teacher account not found', 404);
+  }
+  const teacherId = teacherResult.data.id;
 
   let body: Record<string, unknown>;
   try { body = await request.json(); } catch { return err('Invalid request body', 400); }
