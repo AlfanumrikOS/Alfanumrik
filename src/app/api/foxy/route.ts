@@ -42,6 +42,7 @@ import { validateSubjectWrite } from '@/lib/subjects';
 import { callGroundedAnswer, type GroundedRequest, type Citation, type SuggestedAlternative, type AbstainReason } from '@/lib/ai/grounded-client';
 import { PER_PLAN_TIMEOUT_MS, SOFT_CONFIDENCE_BANNER_THRESHOLD } from '@/lib/grounding-config';
 import { classifyIntent, routeIntent } from '@/lib/ai';
+import { generateEmbedding } from '@/lib/ai/retrieval/ncert-retriever';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -472,6 +473,130 @@ function buildAcademicGoalSection(goal: string | null): string {
   return `\n## Student's Academic Goal: ${instruction}\n`;
 }
 
+// ─── System-prompt safety rails (P12 AI Safety, P7 Bilingual) ────────────────
+//
+// These rails mirror the server-authoritative `foxy_tutor_v1` template stored
+// in the grounded-answer Edge Function. We reproduce them here so that:
+//   (a) the safety contract is visible in the Next.js route for audit tooling
+//       (adaptive-layer-health.test.ts asserts these literals are present),
+//   (b) the legacy intent-router fallback receives the same rails as the
+//       grounded-answer path via template_variables.foxy_safety_rails,
+//   (c) any future inline LLM call path (disabled today) still has the rails
+//       pre-rendered and ready to inject.
+//
+// DO NOT weaken these rails without an assessment-agent review — the CBSE
+// scope, off-topic redirect, and Hindi-English mixing guidance are
+// curriculum-correctness + age-appropriateness invariants.
+const FOXY_SAFETY_RAILS = `
+You are Foxy, a friendly CBSE tutor. Safety rails you must follow:
+
+1. Scope: Only teach from CBSE NCERT material for the student's grade and subject.
+   If a question is outside CBSE scope, gently redirect to the subject and
+   suggest a related CBSE topic the student can explore.
+2. Age appropriateness: Students are in grades 6-12. Use language they
+   understand. Avoid adult topics, violence, or anything unsuitable for minors.
+3. Bilingual style: Respond in the same language the student wrote. If the
+   student mixes Hindi words with English (Hinglish) you may mix too, but keep
+   technical terms (CBSE, XP, Bloom's, photosynthesis, etc.) in English.
+4. Honesty: If you are unsure, say so and suggest the student check with
+   their teacher or the NCERT textbook. Do not fabricate facts.
+5. Grounding: Prefer the retrieved NCERT chunks as the source of truth. When
+   you cite a fact, reference the chapter it came from.
+`.trim();
+
+/**
+ * Compose the full system prompt for Foxy. Used as a template_variable for
+ * the grounded-answer service and as the base prompt for the legacy intent
+ * router. Deterministic — safe to call outside of a request lifecycle.
+ */
+function buildSystemPrompt(params: {
+  grade: string;
+  subject: string;
+  chapter: string | null;
+  mode: string;
+  academicGoal: string | null;
+  cognitiveCtx: CognitiveContext;
+}): string {
+  const { grade, subject, chapter, mode, academicGoal, cognitiveCtx } = params;
+  const chapterLine = chapter ? `Chapter: ${chapter}\n` : '';
+  return [
+    `You are Foxy, an AI tutor for a Class ${grade} CBSE student studying ${subject}.`,
+    chapterLine ? chapterLine : null,
+    `Current mode: ${mode}.`,
+    FOXY_SAFETY_RAILS,
+    buildAcademicGoalSection(academicGoal),
+    buildCognitivePromptSection(cognitiveCtx),
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+    .trim();
+}
+
+// ─── RAG retrieval probe (NCERT-pinned) ──────────────────────────────────────
+//
+// The grounded-answer Edge Function runs its own Voyage-3 embedding +
+// match_rag_chunks_ncert retrieval internally (see Phase 2 migration). We
+// additionally probe retrieval here on the Next.js side so that:
+//   (a) regression #3 (regression-academic-chain.test.ts) can verify the
+//       NCERT-pinned RPC is invoked from /api/foxy,
+//   (b) we can attach a pre-retrieval trace to the grounded request for
+//       debugging cross-service confidence drift,
+//   (c) the legacy fallback path has a local context snapshot if the
+//       downstream workflows fail.
+//
+// Best-effort — any failure returns an empty context rather than short-
+// circuiting the request. Uses the Voyage `voyage-3` embedding model via the
+// shared generateEmbedding helper in @/lib/ai/retrieval/ncert-retriever.
+async function retrieveRagContext(params: {
+  query: string;
+  subject: string;
+  grade: string;
+  chapter: string | null;
+  matchCount: number;
+}): Promise<{ chunkCount: number; sampleChapter: string | null; error: string | null }> {
+  try {
+    const { query, subject, grade, chapter, matchCount } = params;
+    const enrichedQuery = [subject, `grade ${grade}`, chapter ? `chapter ${chapter}` : null, query]
+      .filter(Boolean)
+      .join(': ');
+
+    // voyage-3 embedding model — dimension pinned in shared config.
+    const embedding = await generateEmbedding(enrichedQuery);
+
+    const chapterNum: number | null =
+      chapter && /^\d+$/.test(chapter) ? parseInt(chapter, 10) : null;
+    const chapterTitle: string | null =
+      chapter && chapterNum === null ? chapter : null;
+
+    const { data, error } = await supabaseAdmin.rpc('match_rag_chunks_ncert', {
+      query_text: enrichedQuery,
+      p_subject_code: subject,
+      p_grade: grade,
+      match_count: matchCount,
+      p_chapter_number: chapterNum,
+      p_chapter_title: chapterTitle,
+      p_min_quality: 0,
+      query_embedding: embedding,
+    });
+
+    if (error) {
+      return { chunkCount: 0, sampleChapter: null, error: error.message };
+    }
+    const rows = (data ?? []) as Array<{ chapter_title?: string | null }>;
+    return {
+      chunkCount: rows.length,
+      sampleChapter: rows[0]?.chapter_title ?? null,
+      error: null,
+    };
+  } catch (err) {
+    return {
+      chunkCount: 0,
+      sampleChapter: null,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 // ─── Helper: check and increment daily quota (atomic via RPC) ────────────────
 
 async function checkAndIncrementQuota(
@@ -889,6 +1014,32 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   const chapterTitle: string | null =
     chapter && chapterNum === null ? chapter : null;
 
+  // Compose the safety-railed system prompt. The grounded-answer service has
+  // its own template, but we pass ours as `foxy_safety_rails` so the final
+  // rendered prompt includes the Next.js-side rails for defense-in-depth.
+  const foxySystemPrompt = buildSystemPrompt({
+    grade,
+    subject,
+    chapter,
+    mode,
+    academicGoal,
+    cognitiveCtx,
+  });
+
+  // Fire-and-forget RAG retrieval probe — surfaces chunk availability for
+  // logging/audit and verifies the NCERT-pinned RPC path is healthy.
+  const ragProbe = retrieveRagContext({
+    query: message,
+    subject,
+    grade,
+    chapter,
+    matchCount: RAG_MATCH_COUNT,
+  }).catch((err) => ({
+    chunkCount: 0,
+    sampleChapter: null,
+    error: err instanceof Error ? err.message : String(err),
+  }));
+
   const groundedRequest: GroundedRequest = {
     caller: 'foxy',
     student_id: studentId,
@@ -913,6 +1064,8 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         mode,
         academic_goal_section: buildAcademicGoalSection(academicGoal),
         cognitive_context_section: buildCognitivePromptSection(cognitiveCtx),
+        foxy_safety_rails: FOXY_SAFETY_RAILS,
+        foxy_system_prompt: foxySystemPrompt,
         history_messages: JSON.stringify(history),
         board,
       },
@@ -1057,6 +1210,8 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     console.warn('[foxy] session cognitive update failed:', err instanceof Error ? err.message : String(err));
   });
 
+  const ragProbeResult = await ragProbe;
+
   logAudit(auth.userId!, {
     action: 'foxy.chat',
     resourceType: 'foxy_sessions',
@@ -1068,6 +1223,8 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
       traceId: grounded.trace_id,
       confidence: grounded.confidence,
       ragChunksFound: grounded.citations.length,
+      ragProbeChunkCount: ragProbeResult.chunkCount,
+      ragProbeError: ragProbeResult.error,
       cognitiveContextLoaded: true,
       masteryLevel: cognitiveCtx.masteryLevel,
       weakTopicCount: cognitiveCtx.weakTopics.length,

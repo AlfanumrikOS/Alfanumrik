@@ -8,6 +8,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { getStudentByAuthUserId } from '@/lib/domains/identity';
 import { logger } from '@/lib/logger';
 
 const ALLOWED_CATEGORIES = ['bug', 'content', 'payment', 'account', 'feature', 'other'];
@@ -42,15 +43,11 @@ export async function POST(request: NextRequest) {
     const token = authHeader.slice(7);
     const { data: { user } } = await supabaseAdmin.auth.getUser(token);
     if (user) {
-      const { data: student } = await supabaseAdmin
-        .from('students')
-        .select('id, name, email')
-        .eq('auth_user_id', user.id)
-        .single();
-      if (student) {
-        studentId = student.id;
-        studentName = student.name;
-        studentEmail = student.email;
+      const result = await getStudentByAuthUserId(user.id);
+      if (result.ok && result.data) {
+        studentId = result.data.id;
+        studentName = result.data.name;
+        studentEmail = result.data.email;
       }
     }
   }

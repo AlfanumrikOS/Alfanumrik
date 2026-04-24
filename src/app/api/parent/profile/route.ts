@@ -9,6 +9,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { getGuardianByAuthUserId } from '@/lib/domains/identity';
 import { logger } from '@/lib/logger';
 
 function err(message: string, status: number) {
@@ -16,15 +17,6 @@ function err(message: string, status: number) {
 }
 
 const PHONE_RE = /^[+]?\d{7,15}$/;
-
-async function resolveGuardianId(authUserId: string): Promise<string | null> {
-  const { data } = await supabaseAdmin
-    .from('guardians')
-    .select('id')
-    .eq('auth_user_id', authUserId)
-    .single();
-  return data?.id ?? null;
-}
 
 export async function PATCH(request: NextRequest) {
   const authHeader = request.headers.get('Authorization');
@@ -34,8 +26,11 @@ export async function PATCH(request: NextRequest) {
   const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
   if (authError || !user) return err('Invalid or expired token', 401);
 
-  const guardianId = await resolveGuardianId(user.id);
-  if (!guardianId) return err('Guardian account not found', 404);
+  const guardianResult = await getGuardianByAuthUserId(user.id);
+  if (!guardianResult.ok || !guardianResult.data) {
+    return err('Guardian account not found', 404);
+  }
+  const guardianId = guardianResult.data.id;
 
   let body: Record<string, unknown>;
   try { body = await request.json(); } catch { return err('Invalid request body', 400); }
