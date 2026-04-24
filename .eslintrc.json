@@ -35,6 +35,35 @@
           }
         ]
       }
+    },
+    {
+      "files": [
+        "src/components/**/*.{ts,tsx}",
+        "src/app/**/page.{ts,tsx}",
+        "src/app/**/layout.{ts,tsx}",
+        "src/app/**/template.{ts,tsx}",
+        "src/app/**/loading.{ts,tsx}",
+        "src/app/**/error.{ts,tsx}",
+        "src/app/**/not-found.{ts,tsx}"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/lib/supabase-admin",
+                  "**/lib/supabase-admin",
+                  "../**/supabase-admin",
+                  "../../**/supabase-admin"
+                ],
+                "message": "supabase-admin uses the service-role key and bypasses RLS. It MUST NOT be imported from client components, pages, layouts, or other client-executed files. Use a server API route (src/app/api/**) or a domain module (src/lib/domains/**) instead. See docs/architecture/DOMAIN_BOUNDARIES.md."
+              }
+            ]
+          }
+        ]
+      }
     }
   ]
 }

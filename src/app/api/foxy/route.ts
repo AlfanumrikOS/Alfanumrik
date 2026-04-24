@@ -639,23 +639,6 @@ export async function POST(request: NextRequest): Promise<Response> {
 }
 
 async function handleFoxyPost(request: NextRequest): Promise<Response> {
-  // 0. Config validation — fail fast with clear diagnostic
-  // ANTHROPIC_API_KEY lives on the Edge Function side now, but the service-role
-  // key MUST be set for callGroundedAnswer() to auth against the Edge Function.
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.NEXT_PUBLIC_SUPABASE_URL) {
-    logger.error('foxy_config_missing', {
-      variable: !process.env.SUPABASE_SERVICE_ROLE_KEY
-        ? 'SUPABASE_SERVICE_ROLE_KEY'
-        : 'NEXT_PUBLIC_SUPABASE_URL',
-    });
-    return errorJson(
-      'Foxy is not configured. Please contact support.',
-      'Foxy configure nahi hai. Support se sampark karein.',
-      503,
-      { _diag: 'Supabase env vars not set' },
-    );
-  }
-
   // 1. Auth
   const auth = await authorizeRequest(request, 'foxy.chat', {
     requireStudentId: true,
@@ -696,7 +679,13 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     return errorJson('Valid grade (6–12) is required.', 'Grade 6 se 12 ke beech hona chahiye.', 400);
   }
 
-  // 4. Resolve student ID and plan
+  // 4. Resolve student ID and validate subject governance
+  //
+  // Subject governance (422) MUST run before the config/env validation (503)
+  // below: a denied subject is a product-contract denial that is true
+  // regardless of whether our backend is fully wired, and surfacing 503
+  // instead of 422 would leak infra state to the client and flip the
+  // C4/C5 governance regression catalog entries.
   const studentId = auth.studentId!;
 
   try {
@@ -721,6 +710,24 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
       studentId,
       note: 'Proceeding without subject governance — migrations may not be applied',
     });
+  }
+
+  // 4a. Config validation — fail fast with clear diagnostic.
+  // ANTHROPIC_API_KEY lives on the Edge Function side now, but the service-role
+  // key MUST be set for callGroundedAnswer() to auth against the Edge Function.
+  // Runs AFTER subject governance (see note above).
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.NEXT_PUBLIC_SUPABASE_URL) {
+    logger.error('foxy_config_missing', {
+      variable: !process.env.SUPABASE_SERVICE_ROLE_KEY
+        ? 'SUPABASE_SERVICE_ROLE_KEY'
+        : 'NEXT_PUBLIC_SUPABASE_URL',
+    });
+    return errorJson(
+      'Foxy is not configured. Please contact support.',
+      'Foxy configure nahi hai. Support se sampark karein.',
+      503,
+      { _diag: 'Supabase env vars not set' },
+    );
   }
 
   let plan = 'free';

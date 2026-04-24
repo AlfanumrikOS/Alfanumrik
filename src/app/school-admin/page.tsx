@@ -449,6 +449,24 @@ export default function SchoolAdminPage() {
               color="#F5A623"
               onClick={() => navTo('/school-admin/invite-codes')}
             />
+            <ActionTile
+              icon="@"
+              label={t(isHi, 'API Keys', 'API कुंजियाँ')}
+              color="#6366F1"
+              onClick={() => navTo('/school-admin/api-keys')}
+            />
+            <ActionTile
+              icon="*"
+              label={t(isHi, 'Audit Log', 'ऑडिट लॉग')}
+              color="#6D28D9"
+              onClick={() => navTo('/school-admin/audit-log')}
+            />
+            <ActionTile
+              icon="$"
+              label={t(isHi, 'Billing', 'बिलिंग')}
+              color="#16A34A"
+              onClick={() => navTo('/school-admin/billing')}
+            />
           </div>
         </section>
 

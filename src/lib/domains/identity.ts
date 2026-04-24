@@ -15,8 +15,17 @@
  */
 
 import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
-import { ok, fail, type ServiceResult, type StudentIdentity } from './types';
+import {
+  ok,
+  fail,
+  type ServiceResult,
+  type StudentIdentity,
+  type Student,
+  type Teacher,
+  type Guardian,
+} from './types';
 
 // ── Student resolution ────────────────────────────────────────────────────────
 
@@ -192,4 +201,235 @@ export async function getFeatureFlags(
   }
 
   return ok(flags);
+}
+
+// ── Server-only typed read APIs ───────────────────────────────────────────────
+//
+// These wrap the most common `.from('students' | 'teachers' | 'guardians')`
+// read patterns used across API routes. They are server-only because they
+// use `supabaseAdmin` (service-role). The ESLint `no-restricted-imports`
+// rule on `@/lib/supabase-admin` keeps these from being called from client
+// components; `src/lib/domains/**` is in the allow-list.
+//
+// Contract rules:
+//   - Return ServiceResult<T | null> for single-row lookups (null = not found,
+//     not an error). Reserve `NOT_FOUND` for routes that want to treat
+//     missing as an error.
+//   - Return ServiceResult<T[]> for list endpoints; an empty array is ok.
+//   - Never `select('*')`. Select exactly the columns mapped onto the
+//     returned typed shape.
+//   - Map raw snake_case rows to the camelCase domain type once, here, so
+//     callers don't depend on database column names.
+
+type StudentRow = {
+  id: string;
+  auth_user_id: string | null;
+  name: string | null;
+  email: string | null;
+  grade: string | number | null;
+  school_id: string | null;
+  is_active: boolean | null;
+};
+
+function mapStudent(row: StudentRow): Student {
+  return {
+    id: row.id,
+    authUserId: row.auth_user_id,
+    name: row.name,
+    email: row.email,
+    // Invariant P5: grades are strings everywhere. Coerce defensively.
+    grade: row.grade == null ? null : String(row.grade),
+    schoolId: row.school_id,
+    isActive: row.is_active,
+  };
+}
+
+const STUDENT_COLUMNS =
+  'id, auth_user_id, name, email, grade, school_id, is_active';
+
+/**
+ * Look up a student by auth_user_id. Returns null (not an error) when no
+ * student profile exists for the account — e.g. users who signed up as
+ * teacher/parent, or users mid-onboarding.
+ */
+export async function getStudentByAuthUserId(
+  authUserId: string
+): Promise<ServiceResult<Student | null>> {
+  if (!authUserId) return fail('authUserId is required', 'INVALID_INPUT');
+
+  const { data, error } = await supabaseAdmin
+    .from('students')
+    .select(STUDENT_COLUMNS)
+    .eq('auth_user_id', authUserId)
+    .maybeSingle();
+
+  if (error) {
+    logger.error('identity_get_student_by_auth_user_failed', {
+      error: new Error(error.message),
+      authUserId,
+    });
+    return fail(`Student lookup failed: ${error.message}`, 'DB_ERROR');
+  }
+
+  return ok(data ? mapStudent(data as StudentRow) : null);
+}
+
+/**
+ * Look up a student by primary key. Returns null (not an error) when the
+ * id does not resolve — callers that need 404 semantics should check for
+ * `data === null` explicitly.
+ *
+ * This does NOT enforce ownership. Routes that accept a user-supplied
+ * studentId MUST either be super-admin-gated or use
+ * `resolveStudentById` (client) which performs the ownership check.
+ */
+export async function getStudentById(
+  studentId: string
+): Promise<ServiceResult<Student | null>> {
+  if (!studentId) return fail('studentId is required', 'INVALID_INPUT');
+
+  const { data, error } = await supabaseAdmin
+    .from('students')
+    .select(STUDENT_COLUMNS)
+    .eq('id', studentId)
+    .maybeSingle();
+
+  if (error) {
+    logger.error('identity_get_student_by_id_failed', {
+      error: new Error(error.message),
+      studentId,
+    });
+    return fail(`Student lookup failed: ${error.message}`, 'DB_ERROR');
+  }
+
+  return ok(data ? mapStudent(data as StudentRow) : null);
+}
+
+type TeacherRow = {
+  id: string;
+  auth_user_id: string | null;
+  name: string | null;
+  email: string | null;
+  school_id: string | null;
+  school_name: string | null;
+};
+
+const TEACHER_COLUMNS =
+  'id, auth_user_id, name, email, school_id, school_name';
+
+function mapTeacher(row: TeacherRow): Teacher {
+  return {
+    id: row.id,
+    authUserId: row.auth_user_id,
+    name: row.name,
+    email: row.email,
+    schoolId: row.school_id,
+    schoolName: row.school_name,
+  };
+}
+
+/**
+ * Look up a teacher by auth_user_id. Returns null (not an error) when no
+ * teacher profile exists for the account.
+ */
+export async function getTeacherByAuthUserId(
+  authUserId: string
+): Promise<ServiceResult<Teacher | null>> {
+  if (!authUserId) return fail('authUserId is required', 'INVALID_INPUT');
+
+  const { data, error } = await supabaseAdmin
+    .from('teachers')
+    .select(TEACHER_COLUMNS)
+    .eq('auth_user_id', authUserId)
+    .maybeSingle();
+
+  if (error) {
+    logger.error('identity_get_teacher_by_auth_user_failed', {
+      error: new Error(error.message),
+      authUserId,
+    });
+    return fail(`Teacher lookup failed: ${error.message}`, 'DB_ERROR');
+  }
+
+  return ok(data ? mapTeacher(data as TeacherRow) : null);
+}
+
+type GuardianRow = {
+  id: string;
+  auth_user_id: string | null;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+};
+
+const GUARDIAN_COLUMNS = 'id, auth_user_id, name, email, phone';
+
+function mapGuardian(row: GuardianRow): Guardian {
+  return {
+    id: row.id,
+    authUserId: row.auth_user_id,
+    name: row.name,
+    email: row.email,
+    phone: row.phone,
+  };
+}
+
+/**
+ * Look up a guardian by auth_user_id. Returns null (not an error) when no
+ * guardian profile exists for the account.
+ */
+export async function getGuardianByAuthUserId(
+  authUserId: string
+): Promise<ServiceResult<Guardian | null>> {
+  if (!authUserId) return fail('authUserId is required', 'INVALID_INPUT');
+
+  const { data, error } = await supabaseAdmin
+    .from('guardians')
+    .select(GUARDIAN_COLUMNS)
+    .eq('auth_user_id', authUserId)
+    .maybeSingle();
+
+  if (error) {
+    logger.error('identity_get_guardian_by_auth_user_failed', {
+      error: new Error(error.message),
+      authUserId,
+    });
+    return fail(`Guardian lookup failed: ${error.message}`, 'DB_ERROR');
+  }
+
+  return ok(data ? mapGuardian(data as GuardianRow) : null);
+}
+
+/**
+ * List students belonging to a school. Used by school-admin and school-
+ * reporting APIs. `activeOnly` defaults to false — pass true to match the
+ * `is_active = true` filter used by evaluate-alerts and school dashboards.
+ */
+export async function listStudentsBySchool(
+  schoolId: string,
+  opts: { activeOnly?: boolean } = {}
+): Promise<ServiceResult<Student[]>> {
+  if (!schoolId) return fail('schoolId is required', 'INVALID_INPUT');
+
+  let query = supabaseAdmin
+    .from('students')
+    .select(STUDENT_COLUMNS)
+    .eq('school_id', schoolId);
+
+  if (opts.activeOnly) {
+    query = query.eq('is_active', true);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    logger.error('identity_list_students_by_school_failed', {
+      error: new Error(error.message),
+      schoolId,
+      activeOnly: opts.activeOnly ?? false,
+    });
+    return fail(`School students lookup failed: ${error.message}`, 'DB_ERROR');
+  }
+
+  return ok((data ?? []).map((r) => mapStudent(r as StudentRow)));
 }

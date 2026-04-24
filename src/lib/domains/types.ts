@@ -134,3 +134,37 @@ export interface StudentIdentity {
   grade: string;
   name: string;
 }
+
+/**
+ * Student profile exposed by the identity domain. Intentionally a narrow
+ * projection — callers that need more columns should add them explicitly
+ * to avoid select('*') and over-fetching.
+ *
+ * Grade is always a string (product invariant P5).
+ */
+export interface Student {
+  id: string;
+  authUserId: string | null;
+  name: string | null;
+  email: string | null;
+  grade: string | null;
+  schoolId: string | null;
+  isActive: boolean | null;
+}
+
+export interface Teacher {
+  id: string;
+  authUserId: string | null;
+  name: string | null;
+  email: string | null;
+  schoolId: string | null;
+  schoolName: string | null;
+}
+
+export interface Guardian {
+  id: string;
+  authUserId: string | null;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+}
