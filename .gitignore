@@ -11,3 +11,17 @@ next-env.d.ts
 
 # NCERT books staging (large PDFs, not for git)
 data/ncert-books/
+
+# Playwright / Vitest run artefacts (trace.zip, error-context.md,
+# screenshots). The abandoned feat/performance-score-system branch
+# committed 38 MB of these under test-results/ because this entry
+# was missing. Keep it here so that never happens again.
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+# Orchestrator quarantine area — files preserved from abandoned
+# branches during Option C-style cleanups. Physical preservation
+# outside git history; do not track.
+.claude/quarantine/
