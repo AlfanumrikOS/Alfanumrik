@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
       .from('students')
       .select('id, subscription_plan')
       .eq('auth_user_id', user.id)
-      .single();
+      .maybeSingle();
 
     if (!studentRow) {
       return NextResponse.json({
@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
         renewal_attempts, amount_paid, razorpay_subscription_id
       `)
       .eq('student_id', studentRow.id)
-      .single();
+      .maybeSingle();
 
     if (!sub || sub.plan_code === 'free') {
       return NextResponse.json({
@@ -94,7 +94,7 @@ export async function GET(request: NextRequest) {
       .from('subscription_plans')
       .select('name, price_monthly, price_yearly')
       .eq('plan_code', sub.plan_code)
-      .single();
+      .maybeSingle();
 
     const isInGrace = sub.status === 'past_due' &&
       sub.grace_period_end != null &&
