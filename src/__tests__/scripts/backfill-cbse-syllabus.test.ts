@@ -1,8 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { backfillCbseSyllabus } from '../../../scripts/backfill-cbse-syllabus';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { hasSupabaseIntegrationEnv } from '../helpers/integration';
 
-describe('backfill-cbse-syllabus', () => {
+const describeIntegration = hasSupabaseIntegrationEnv() ? describe : describe.skip;
+
+describeIntegration('backfill-cbse-syllabus', () => {
   it('returns a summary with inserted/skipped counts', async () => {
     const result = await backfillCbseSyllabus({ dryRun: true });
     expect(result).toMatchObject({

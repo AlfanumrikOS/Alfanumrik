@@ -1,7 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { hasSupabaseIntegrationEnv } from '../helpers/integration';
 
-describe('syllabus status triggers', () => {
+const describeIntegration = hasSupabaseIntegrationEnv() ? describe : describe.skip;
+
+describeIntegration('syllabus status triggers', () => {
   const testRow = {
     board: 'CBSE', grade: '10', subject_code: 'science_trigger_test',
     subject_display: 'Science', chapter_number: 777, chapter_title: 'Trigger Test',
