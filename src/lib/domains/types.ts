@@ -168,3 +168,76 @@ export interface Guardian {
   email: string | null;
   phone: string | null;
 }
+
+// ── Relationship domain (Phase 0c) ────────────────────────────────────────────
+//
+// Owns guardian_student_links. Types added below in a separate block to
+// minimise merge friction with concurrent Phase 0b (tenant) extraction.
+// Do not reorder these keys without updating relationship.ts mappers.
+
+/**
+ * Status values used by guardian_student_links.status.
+ *
+ * Multiple values mean "the link is live": legacy demo-account flows insert
+ * with status='active', the human approval flow uses 'approved'. Callers
+ * that need to enforce "linked right now" should accept both.
+ */
+export type GuardianLinkStatus =
+  | 'pending'
+  | 'approved'
+  | 'active'
+  | 'rejected'
+  | 'revoked';
+
+/** Subset of statuses that mean the link is currently active. */
+export const ACTIVE_GUARDIAN_LINK_STATUSES: ReadonlyArray<GuardianLinkStatus> = [
+  'approved',
+  'active',
+];
+
+/**
+ * Raw guardian_student_links row, projected to camelCase. Selected columns
+ * only — we deliberately omit revoked_by / rejected_reason etc. until a
+ * caller needs them, to keep the contract narrow.
+ */
+export interface GuardianStudentLink {
+  id: string;
+  guardianId: string;
+  studentId: string;
+  status: GuardianLinkStatus;
+  permissionLevel: string | null;
+  isVerified: boolean | null;
+  linkedAt: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+/**
+ * Projection used by parent dashboards: each row carries enough about the
+ * child to render a card (name, grade) plus the link metadata, so the
+ * caller doesn't have to do an N+1 lookup back to `students`.
+ */
+export interface ChildSummary {
+  studentId: string;
+  name: string | null;
+  // Invariant P5: grade is always a string.
+  grade: string | null;
+  schoolId: string | null;
+  linkId: string;
+  linkStatus: GuardianLinkStatus;
+  linkedAt: string | null;
+}
+
+/**
+ * Inverse projection: who are the guardians for a given student?
+ * Used by support / admin tooling that starts from the student.
+ */
+export interface GuardianSummary {
+  guardianId: string;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  linkId: string;
+  linkStatus: GuardianLinkStatus;
+  linkedAt: string | null;
+}
