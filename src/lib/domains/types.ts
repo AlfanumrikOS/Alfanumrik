@@ -168,3 +168,63 @@ export interface Guardian {
   email: string | null;
   phone: string | null;
 }
+
+// ── Ops domain (B13) — Phase 0j ───────────────────────────────────────────────
+
+/**
+ * Maintenance banner shown across all portals (student/parent/teacher/admin).
+ *
+ * Backed by a row in the `feature_flags` table with flag_name='maintenance_banner'.
+ * `messageEn` and `messageHi` come from the row's `metadata` JSONB. When no
+ * banner row exists (or it is disabled), `getMaintenanceBanner` returns
+ * `ok(null)`.
+ *
+ * Rendering today is owned by `src/components/MaintenanceBanner.tsx`, which
+ * polls the table client-side. The domain helper exists so server routes
+ * (e.g. middleware, super-admin status APIs) can read the same source of
+ * truth without duplicating the column projection.
+ */
+export interface MaintenanceBanner {
+  isEnabled: boolean;
+  messageEn: string | null;
+  messageHi: string | null;
+  metadata: Record<string, unknown> | null;
+}
+
+/**
+ * Support ticket row exposed by the ops domain. Mirrors the columns
+ * written by `/api/support/ticket` (POST) and updated by
+ * `/api/internal/admin/support` (PATCH).
+ */
+export interface SupportTicket {
+  id: string;
+  studentId: string | null;
+  email: string | null;
+  category: string;
+  subject: string | null;
+  message: string;
+  status: string;
+  userRole: string | null;
+  userName: string | null;
+  deviceInfo: string | null;
+  adminNotes: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
+/**
+ * Admin user record from the `admin_users` table. The table is the source
+ * of truth for super-admin / admin / moderator listings; `user_roles` holds
+ * the granular RBAC role assignment, but `admin_users` is what is read by
+ * RLS policies (see `20260418100800_feature_flags.sql`).
+ */
+export interface AdminUser {
+  id: string;
+  authUserId: string;
+  name: string;
+  email: string | null;
+  adminLevel: string;
+  isActive: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
