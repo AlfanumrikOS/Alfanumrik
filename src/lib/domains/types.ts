@@ -533,6 +533,91 @@ export interface RazorpayWebhook {
   processedAt: string | null;
 }
 
+// ── Ops domain (Phase 0j, B13) ────────────────────────────────────────────────
+
+export interface MaintenanceBanner {
+  isEnabled: boolean;
+  messageEn: string | null;
+  messageHi: string | null;
+  metadata: Record<string, unknown> | null;
+}
+
+export interface SupportTicket {
+  id: string;
+  studentId: string | null;
+  email: string | null;
+  category: string;
+  subject: string | null;
+  message: string;
+  status: string;
+  userRole: string | null;
+  userName: string | null;
+  deviceInfo: string | null;
+  adminNotes: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
+export interface AdminUser {
+  id: string;
+  authUserId: string;
+  name: string;
+  email: string | null;
+  adminLevel: string;
+  isActive: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+// ── Analytics domain (Phase 0i, B12) ──────────────────────────────────────────
+
+export interface DailyActivity {
+  id: string;
+  studentId: string;
+  activityDate: string;
+  subject: string | null;
+  questionsAsked: number;
+  questionsCorrect: number;
+  xpEarned: number;
+  timeMinutes: number;
+  sessions: number;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface StudentAnalytics {
+  studentId: string;
+  totalQuestionsAttempted: number | null;
+  totalQuestionsCorrect: number | null;
+  averageScorePercent: number | null;
+  totalXp: number | null;
+  totalSessions: number | null;
+  totalStudyMinutes: number | null;
+  lastActivityAt: string | null;
+  computedAt: string | null;
+}
+
+export interface UsageMetric {
+  id: string;
+  studentId: string | null;
+  schoolId: string | null;
+  metric: string;
+  value: number;
+  recordedAt: string;
+  metadata: Record<string, unknown> | null;
+}
+
+export interface PerformanceReport {
+  id: string;
+  studentId: string | null;
+  schoolId: string | null;
+  reportType: string;
+  periodStart: string | null;
+  periodEnd: string | null;
+  payload: Record<string, unknown>;
+  generatedAt: string;
+}
+
 // ── Relationship domain (Phase 0c, B3) ────────────────────────────────────────
 
 export type GuardianLinkStatus =
