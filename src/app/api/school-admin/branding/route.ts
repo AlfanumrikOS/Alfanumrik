@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeSchoolAdmin } from '@/lib/school-admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
+import { getSchoolById } from '@/lib/domains/tenant';
 import { logger } from '@/lib/logger';
 
 /**
@@ -15,17 +16,12 @@ export async function GET(request: NextRequest) {
     if (!auth.authorized) return auth.errorResponse!;
 
     const schoolId = auth.schoolId!;
-    const supabase = getSupabaseAdmin();
 
-    const { data, error } = await supabase
-      .from('schools')
-      .select('id, slug, logo_url, primary_color, secondary_color, tagline, custom_domain, domain_verified, billing_email, settings')
-      .eq('id', schoolId)
-      .single();
+    const result = await getSchoolById(schoolId);
 
-    if (error) {
+    if (!result.ok) {
       logger.error('school_admin_branding_get_failed', {
-        error: new Error(error.message),
+        error: new Error(result.error),
         route: '/api/school-admin/branding',
       });
       return NextResponse.json(
@@ -34,12 +30,29 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (!data) {
+    if (!result.data) {
       return NextResponse.json(
         { success: false, error: 'School not found' },
         { status: 404 }
       );
     }
+
+    // Preserve the existing response shape (snake_case) for clients. The
+    // tenant domain returns camelCase projections; map back here so this is
+    // a refactor, not a breaking change.
+    const s = result.data;
+    const data = {
+      id: s.id,
+      slug: s.slug,
+      logo_url: s.logoUrl,
+      primary_color: s.primaryColor,
+      secondary_color: s.secondaryColor,
+      tagline: s.tagline,
+      custom_domain: s.customDomain,
+      domain_verified: s.domainVerified,
+      billing_email: s.billingEmail,
+      settings: s.settings,
+    };
 
     return NextResponse.json({ success: true, data });
   } catch (err) {
