@@ -139,7 +139,22 @@ async function resolveStudent(
   return null;
 }
 
-/** Downgrade helper with plan-downgrade-race guard (architect risk #1). */
+/**
+ * Downgrade helper with plan-downgrade-race guard (architect risk #1).
+ *
+ * Task 5b — payment-webhook-hardening: this delegates to the
+ * `atomic_downgrade_subscription` RPC (migration
+ * 20260425150000_atomic_downgrade_subscription_rpc.sql) which takes a
+ * row-level lock on student_subscriptions, validates the stale-cancel
+ * guard, and runs both downgrade UPDATEs in a single transaction. This
+ * eliminates the SELECT-then-UPDATE race the previous JS implementation
+ * exposed (a charge could land between the read and the write).
+ *
+ * RPC contract: returns a single-row TABLE(outcome text) where outcome is
+ * either 'downgraded' or 'stale_cancel_ignored'. On RPC error we re-throw
+ * so the outer POST try/catch returns 500 and Razorpay retries — silently
+ * swallowing the error would re-create the split-brain risk.
+ */
 async function downgradeIfMatchingSub(
   admin: SupabaseClient,
   studentId: string,
@@ -147,44 +162,42 @@ async function downgradeIfMatchingSub(
   newStatus: 'cancelled' | 'expired' | 'halted' | 'completed',
   eventType: string,
 ): Promise<'downgraded' | 'stale_cancel_ignored'> {
-  const { data: current } = await admin
-    .from('student_subscriptions')
-    .select('razorpay_subscription_id')
-    .eq('student_id', studentId)
-    .maybeSingle();
+  const { data, error } = await admin.rpc('atomic_downgrade_subscription', {
+    p_student_id: studentId,
+    p_cancelled_sub_id: cancelledSubId,
+    p_new_status: newStatus,
+  });
 
-  // If current row references a DIFFERENT sub_id, this cancel is stale.
-  if (current?.razorpay_subscription_id && current.razorpay_subscription_id !== cancelledSubId) {
+  if (error) {
+    await logOpsEvent({
+      category: 'payment',
+      severity: 'critical',
+      source: 'webhook/route.ts',
+      message: 'atomic_downgrade_subscription RPC failed',
+      context: {
+        event_type: eventType,
+        student_id: studentId,
+        cancelled_sub_id: cancelledSubId,
+        error: error.message,
+      },
+    });
+    // Re-throw so the outer try/catch returns 500 → Razorpay retries.
+    throw new Error(`atomic_downgrade_subscription failed: ${error.message}`);
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+  const outcome = row?.outcome as 'downgraded' | 'stale_cancel_ignored' | undefined;
+
+  if (outcome === 'stale_cancel_ignored') {
     await logOpsEvent({
       category: 'payment',
       severity: 'warning',
       source: 'webhook/route.ts',
       message: 'stale_cancel_ignored',
-      context: {
-        event_type: eventType,
-        student_id: studentId,
-        cancelled_sub_id: cancelledSubId,
-        current_sub_id: current.razorpay_subscription_id,
-      },
+      context: { event_type: eventType, student_id: studentId, cancelled_sub_id: cancelledSubId },
     });
     return 'stale_cancel_ignored';
   }
-
-  await admin
-    .from('students')
-    .update({ subscription_plan: 'free' })
-    .eq('id', studentId);
-
-  await admin
-    .from('student_subscriptions')
-    .update({
-      plan_code: 'free',
-      status: newStatus,
-      cancelled_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq('student_id', studentId);
-
   return 'downgraded';
 }
 

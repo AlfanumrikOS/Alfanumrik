@@ -81,3 +81,47 @@ describe('webhook route — event-level dedupe', () => {
     expect(callNames).not.toContain('atomic_subscription_activation');
   });
 });
+
+describe('webhook route — atomic downgrade', () => {
+  let mockAdmin: { rpc: ReturnType<typeof vi.fn>; from: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    process.env.RAZORPAY_WEBHOOK_SECRET = WEBHOOK_SECRET;
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://localhost';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'service_key';
+    mockAdmin = { rpc: vi.fn(), from: vi.fn() };
+    (createClient as ReturnType<typeof vi.fn>).mockReturnValue(mockAdmin);
+  });
+
+  it('subscription.cancelled calls atomic_downgrade_subscription RPC, not raw UPDATEs', async () => {
+    mockAdmin.rpc.mockImplementation(async (name: string) => {
+      if (name === 'record_webhook_event') return { data: [{ is_new: true, id: 'wh-2' }], error: null };
+      if (name === 'mark_webhook_event_processed') return { data: null, error: null };
+      if (name === 'atomic_downgrade_subscription') return { data: [{ outcome: 'downgraded' }], error: null };
+      throw new Error(`unexpected RPC ${name}`);
+    });
+    // Student resolution path: notes_student_id branch hits students table.
+    mockAdmin.from.mockImplementation((table: string) => {
+      if (table === 'students') {
+        return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: 's1' }, error: null }) }) }) };
+      }
+      throw new Error(`unexpected from(${table})`);
+    });
+
+    const evt = buildEvent({
+      event: 'subscription.cancelled',
+      sub_id: 'sub_xyz',
+      notes: { student_id: 's1', plan_code: 'pro', user_id: 'u1' },
+    });
+
+    const req = makeRequest(evt);
+    const res = await POST(req as unknown as import('next/server').NextRequest);
+    expect(res.status).toBe(200);
+
+    const callNames = mockAdmin.rpc.mock.calls.map((c: unknown[]) => c[0]);
+    expect(callNames).toContain('atomic_downgrade_subscription');
+    // Critical: route MUST NOT call admin.from('student_subscriptions').update — that's the old path.
+    const fromCalls = mockAdmin.from.mock.calls.map((c: unknown[]) => c[0]);
+    expect(fromCalls).not.toContain('student_subscriptions');
+  });
+});
