@@ -287,8 +287,12 @@ describe('Webhook Atomic Fallback Kill Switch (ff_atomic_subscription_activation
    *   2. On primary failure, atomic RPC is NOT called.
    *   3. The simulated route returns a 503-equivalent state.
    */
+  type RpcMock = ReturnType<typeof vi.fn> & {
+    (rpcName: string, params: Record<string, unknown>): Promise<{ error: { message: string } | null }>;
+  };
+
   async function activateWithKillSwitch(
-    rpcMock: ReturnType<typeof vi.fn>,
+    rpcMock: RpcMock,
     killSwitchOn: boolean,
   ): Promise<{ method: 'rpc' | 'atomic_fallback' | 'kill_switch_503'; calls: number }> {
     const { error: rpcErr } = await rpcMock('activate_subscription', {});
@@ -303,7 +307,7 @@ describe('Webhook Atomic Fallback Kill Switch (ff_atomic_subscription_activation
   }
 
   it('with kill switch ON, primary failure → 503 without calling atomic RPC', async () => {
-    const rpc = vi.fn().mockResolvedValueOnce({ error: { message: 'primary failure' } });
+    const rpc = vi.fn().mockResolvedValueOnce({ error: { message: 'primary failure' } }) as unknown as RpcMock;
     const result = await activateWithKillSwitch(rpc, false);
     expect(result.method).toBe('kill_switch_503');
     expect(result.calls).toBe(1); // only primary called, atomic skipped
@@ -312,15 +316,15 @@ describe('Webhook Atomic Fallback Kill Switch (ff_atomic_subscription_activation
   it('with kill switch OFF (default), primary failure → atomic fallback runs', async () => {
     const rpc = vi.fn()
       .mockResolvedValueOnce({ error: { message: 'primary failure' } })
-      .mockResolvedValueOnce({ error: null });
+      .mockResolvedValueOnce({ error: null }) as unknown as RpcMock;
     const result = await activateWithKillSwitch(rpc, true);
     expect(result.method).toBe('atomic_fallback');
     expect(result.calls).toBe(2);
   });
 
   it('primary success path is unchanged regardless of kill switch state', async () => {
-    const rpc1 = vi.fn().mockResolvedValueOnce({ error: null });
-    const rpc2 = vi.fn().mockResolvedValueOnce({ error: null });
+    const rpc1 = vi.fn().mockResolvedValueOnce({ error: null }) as unknown as RpcMock;
+    const rpc2 = vi.fn().mockResolvedValueOnce({ error: null }) as unknown as RpcMock;
     const r1 = await activateWithKillSwitch(rpc1, true);
     const r2 = await activateWithKillSwitch(rpc2, false);
     expect(r1.method).toBe('rpc');
