@@ -257,23 +257,48 @@ export async function POST(request: NextRequest) {
           p_razorpay_order_id: orderId,
         });
         if (rpcError) {
-          logger.error('Webhook: activate_subscription RPC failed', { error: rpcError.message, authUserId });
-          // Fallback patches both tables — tracked risk per P11.
-          await admin
-            .from('students')
-            .update({ subscription_plan: planCode })
-            .eq('id', resolved.student_id);
-          await admin
-            .from('student_subscriptions')
-            .upsert(
-              {
+          logger.error('Webhook: activate_subscription RPC failed; falling back to atomic_subscription_activation', {
+            error: rpcError.message,
+            authUserId,
+            studentId: resolved.student_id,
+          });
+          // P11: atomic_subscription_activation upserts BOTH tables in a
+          // single transaction (CREATE FUNCTION at supabase/migrations/
+          // 20260424120000_atomic_subscription_activation_rpc.sql). This
+          // closes the split-brain risk that the previous two-statement
+          // fallback exposed.
+          const { error: atomicErr } = await admin.rpc('atomic_subscription_activation', {
+            p_student_id: resolved.student_id,
+            p_plan_code: planCode,
+            p_billing_cycle: billingCycle,
+            p_razorpay_payment_id: paymentId,
+            p_razorpay_subscription_id: null,
+          });
+          if (atomicErr) {
+            // Both RPCs failed — return 503 so Razorpay retries the webhook.
+            // We do NOT do per-table writes from here: that re-introduces the
+            // exact split-brain risk this RPC was added to eliminate.
+            logger.error('Webhook: atomic_subscription_activation also failed', {
+              error: atomicErr.message,
+              studentId: resolved.student_id,
+            });
+            await logOpsEvent({
+              category: 'payment',
+              severity: 'critical',
+              source: 'webhook/route.ts',
+              message: 'subscription_activation_both_rpcs_failed',
+              context: {
+                event_type: eventType,
                 student_id: resolved.student_id,
-                plan_code: planCode,
-                status: 'active',
-                updated_at: new Date().toISOString(),
+                primary_error: rpcError.message,
+                fallback_error: atomicErr.message,
               },
-              { onConflict: 'student_id' },
+            });
+            return NextResponse.json(
+              { error: 'subscription_activation_failed' },
+              { status: 503 },
             );
+          }
         }
       }
       return NextResponse.json({ received: true });
@@ -405,43 +430,82 @@ export async function POST(request: NextRequest) {
             p_razorpay_subscription_id: rzSubId ?? null,
           });
           if (rpcError) {
-            logger.error('Webhook: activate_subscription RPC failed', {
-              error: rpcError.message, eventType, rzSubId,
+            logger.error('Webhook: activate_subscription RPC failed; falling back to atomic_subscription_activation', {
+              error: rpcError.message,
+              eventType,
+              rzSubId,
+              studentId: resolved.student_id,
             });
-            // Fallback direct writes — tracked risk per P11.
-            await admin
-              .from('students')
-              .update({ subscription_plan: planCode })
-              .eq('id', resolved.student_id);
-            await admin
-              .from('student_subscriptions')
-              .upsert(
-                {
+            // P11: atomic fallback (see payment.captured branch comment).
+            const { error: atomicErr } = await admin.rpc('atomic_subscription_activation', {
+              p_student_id: resolved.student_id,
+              p_plan_code: planCode,
+              p_billing_cycle: 'monthly',
+              p_razorpay_payment_id: paymentEntity?.id ?? null,
+              p_razorpay_subscription_id: rzSubId ?? null,
+            });
+            if (atomicErr) {
+              logger.error('Webhook: atomic_subscription_activation also failed', {
+                error: atomicErr.message,
+                eventType,
+                rzSubId,
+                studentId: resolved.student_id,
+              });
+              await logOpsEvent({
+                category: 'payment',
+                severity: 'critical',
+                source: 'webhook/route.ts',
+                message: 'subscription_activation_both_rpcs_failed',
+                context: {
+                  event_type: eventType,
                   student_id: resolved.student_id,
-                  plan_code: planCode,
-                  status: 'active',
-                  billing_cycle: 'monthly',
-                  razorpay_subscription_id: rzSubId,
-                  updated_at: new Date().toISOString(),
+                  rz_sub_id: rzSubId ?? null,
+                  primary_error: rpcError.message,
+                  fallback_error: atomicErr.message,
                 },
-                { onConflict: 'student_id' },
+              });
+              return NextResponse.json(
+                { error: 'subscription_activation_failed' },
+                { status: 503 },
               );
+            }
           }
         } else {
-          // No auth_user_id in notes — direct upsert against resolved student.
-          await admin
-            .from('student_subscriptions')
-            .upsert(
-              {
+          // No auth_user_id in notes — call atomic RPC directly with the
+          // resolved student_id. This previously did a single-table upsert
+          // that would have left students.subscription_plan stale; the RPC
+          // fixes that by writing both tables atomically.
+          const { error: atomicErr } = await admin.rpc('atomic_subscription_activation', {
+            p_student_id: resolved.student_id,
+            p_plan_code: planCode,
+            p_billing_cycle: 'monthly',
+            p_razorpay_payment_id: paymentEntity?.id ?? null,
+            p_razorpay_subscription_id: rzSubId ?? null,
+          });
+          if (atomicErr) {
+            logger.error('Webhook: atomic_subscription_activation failed (no authUserId path)', {
+              error: atomicErr.message,
+              eventType,
+              rzSubId,
+              studentId: resolved.student_id,
+            });
+            await logOpsEvent({
+              category: 'payment',
+              severity: 'critical',
+              source: 'webhook/route.ts',
+              message: 'subscription_activation_no_auth_user_id_failed',
+              context: {
+                event_type: eventType,
                 student_id: resolved.student_id,
-                plan_code: planCode,
-                status: 'active',
-                billing_cycle: 'monthly',
-                razorpay_subscription_id: rzSubId,
-                updated_at: new Date().toISOString(),
+                rz_sub_id: rzSubId ?? null,
+                error: atomicErr.message,
               },
-              { onConflict: 'student_id' },
+            });
+            return NextResponse.json(
+              { error: 'subscription_activation_failed' },
+              { status: 503 },
             );
+          }
         }
         return NextResponse.json({ received: true });
       }

@@ -94,9 +94,9 @@ describe('Webhook Signature Verification (P11)', () => {
   });
 });
 
-// ── RPC Fallback ─────────────────────────────────────────
+// ── RPC Fallback (Phase 0g.2: atomic_subscription_activation) ───────────
 
-describe('Webhook RPC Fallback Pattern', () => {
+describe('Webhook RPC Fallback Pattern (P11 atomic)', () => {
   // eslint-disable-next-line -- mock admin client with chainable methods for testing
   let mockAdmin: { rpc: any; from: any };
 
@@ -108,14 +108,21 @@ describe('Webhook RPC Fallback Pattern', () => {
   });
 
   /**
-   * Simulates the fallback pattern from the webhook route:
+   * Simulates the post-Phase-0g.2 fallback pattern from the webhook route:
    * 1. Try RPC activate_subscription
-   * 2. If RPC fails, fall back to direct updates
+   * 2. If that fails, call atomic_subscription_activation (single
+   *    transaction across students + student_subscriptions — closes the
+   *    P11 split-brain risk that the previous two-statement fallback had).
+   * 3. If BOTH RPCs fail, return 'failed' so the caller can 5xx and
+   *    Razorpay retries.
+   *
+   * Mirrors src/app/api/payments/webhook/route.ts (subscription.activated /
+   * subscription.charged branches).
    */
   async function activateWithFallback(
     admin: typeof mockAdmin,
     params: { userId: string; planCode: string; studentId: string; rzpSubId: string },
-  ): Promise<{ method: 'rpc' | 'fallback'; error?: string }> {
+  ): Promise<{ method: 'rpc' | 'atomic_fallback' | 'failed'; error?: string; secondError?: string }> {
     const { error: rpcErr } = await admin.rpc('activate_subscription', {
       p_auth_user_id: params.userId,
       p_plan_code: params.planCode,
@@ -123,27 +130,27 @@ describe('Webhook RPC Fallback Pattern', () => {
       p_razorpay_subscription_id: params.rzpSubId,
     });
 
-    if (rpcErr) {
-      // Fallback: direct updates (mirrors webhook route lines 129-143)
-      const updateChain = admin.from('students');
-      await updateChain.update({ subscription_plan: params.planCode });
-
-      const upsertChain = admin.from('student_subscriptions');
-      await upsertChain.upsert({
-        student_id: params.studentId,
-        plan_code: params.planCode,
-        status: 'active',
-        billing_cycle: 'monthly',
-        razorpay_subscription_id: params.rzpSubId,
-      });
-
-      return { method: 'fallback', error: rpcErr.message };
+    if (!rpcErr) {
+      return { method: 'rpc' };
     }
 
-    return { method: 'rpc' };
+    // Fallback: atomic_subscription_activation (single-transaction RPC).
+    const { error: atomicErr } = await admin.rpc('atomic_subscription_activation', {
+      p_student_id: params.studentId,
+      p_plan_code: params.planCode,
+      p_billing_cycle: 'monthly',
+      p_razorpay_payment_id: null,
+      p_razorpay_subscription_id: params.rzpSubId,
+    });
+
+    if (atomicErr) {
+      return { method: 'failed', error: rpcErr.message, secondError: atomicErr.message };
+    }
+
+    return { method: 'atomic_fallback', error: rpcErr.message };
   }
 
-  it('uses RPC when it succeeds', async () => {
+  it('uses primary RPC when it succeeds', async () => {
     mockAdmin.rpc.mockResolvedValue({ error: null });
 
     const result = await activateWithFallback(mockAdmin, {
@@ -154,26 +161,22 @@ describe('Webhook RPC Fallback Pattern', () => {
     });
 
     expect(result.method).toBe('rpc');
+    expect(mockAdmin.rpc).toHaveBeenCalledTimes(1);
     expect(mockAdmin.rpc).toHaveBeenCalledWith('activate_subscription', {
       p_auth_user_id: 'u1',
       p_plan_code: 'pro',
       p_billing_cycle: 'monthly',
       p_razorpay_subscription_id: 'sub_123',
     });
+    // Direct table writes MUST NOT happen (P11 split-brain prevention).
     expect(mockAdmin.from).not.toHaveBeenCalled();
   });
 
-  it('falls back to direct updates when RPC fails', async () => {
-    mockAdmin.rpc.mockResolvedValue({ error: { message: 'RPC timeout' } });
-
-    // Mock the chained calls
-    const mockUpdate = vi.fn().mockResolvedValue({ error: null });
-    const mockUpsert = vi.fn().mockResolvedValue({ error: null });
-    mockAdmin.from.mockImplementation((table: string) => {
-      if (table === 'students') return { update: mockUpdate };
-      if (table === 'student_subscriptions') return { upsert: mockUpsert };
-      return {};
-    });
+  it('falls back to atomic_subscription_activation when primary RPC fails', async () => {
+    // First call (activate_subscription) fails, second (atomic) succeeds.
+    mockAdmin.rpc
+      .mockResolvedValueOnce({ error: { message: 'RPC timeout' } })
+      .mockResolvedValueOnce({ error: null });
 
     const result = await activateWithFallback(mockAdmin, {
       userId: 'u1',
@@ -182,31 +185,28 @@ describe('Webhook RPC Fallback Pattern', () => {
       rzpSubId: 'sub_456',
     });
 
-    expect(result.method).toBe('fallback');
+    expect(result.method).toBe('atomic_fallback');
     expect(result.error).toBe('RPC timeout');
-    expect(mockAdmin.from).toHaveBeenCalledWith('students');
-    expect(mockAdmin.from).toHaveBeenCalledWith('student_subscriptions');
-    expect(mockUpdate).toHaveBeenCalledWith({ subscription_plan: 'starter' });
-    expect(mockUpsert).toHaveBeenCalledWith(
+    expect(mockAdmin.rpc).toHaveBeenCalledTimes(2);
+    // Second call MUST be the atomic RPC, not direct table writes.
+    expect(mockAdmin.rpc).toHaveBeenLastCalledWith(
+      'atomic_subscription_activation',
       expect.objectContaining({
-        student_id: 's1',
-        plan_code: 'starter',
-        status: 'active',
+        p_student_id: 's1',
+        p_plan_code: 'starter',
+        p_billing_cycle: 'monthly',
+        p_razorpay_subscription_id: 'sub_456',
       }),
     );
+    // Direct table writes MUST NOT happen — they would re-introduce the
+    // split-brain risk this RPC was added to eliminate.
+    expect(mockAdmin.from).not.toHaveBeenCalled();
   });
 
-  it('fallback ensures student always gets entitlement (P11)', async () => {
-    // Even when RPC fails, the student must not be left without access
-    mockAdmin.rpc.mockResolvedValue({ error: { message: 'function not found' } });
-
-    const updateCalled = vi.fn().mockResolvedValue({ error: null });
-    const upsertCalled = vi.fn().mockResolvedValue({ error: null });
-    mockAdmin.from.mockImplementation((table: string) => {
-      if (table === 'students') return { update: updateCalled };
-      if (table === 'student_subscriptions') return { upsert: upsertCalled };
-      return {};
-    });
+  it('atomic fallback grants entitlement via single transaction (P11)', async () => {
+    mockAdmin.rpc
+      .mockResolvedValueOnce({ error: { message: 'function not found' } })
+      .mockResolvedValueOnce({ error: null });
 
     const result = await activateWithFallback(mockAdmin, {
       userId: 'u1',
@@ -215,12 +215,38 @@ describe('Webhook RPC Fallback Pattern', () => {
       rzpSubId: 'sub_789',
     });
 
-    // Entitlement MUST be granted via fallback
-    expect(result.method).toBe('fallback');
-    expect(updateCalled).toHaveBeenCalledWith({ subscription_plan: 'pro' });
-    expect(upsertCalled).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'active', plan_code: 'pro' }),
+    expect(result.method).toBe('atomic_fallback');
+    // The atomic RPC writes BOTH tables in a single transaction. The
+    // contract is that we hit it exactly once with the expected args and
+    // no direct table writes leak through.
+    const atomicCall = mockAdmin.rpc.mock.calls.find(
+      (c: unknown[]) => c[0] === 'atomic_subscription_activation',
     );
+    expect(atomicCall).toBeDefined();
+    expect(atomicCall[1]).toEqual(
+      expect.objectContaining({ p_plan_code: 'pro', p_student_id: 's1' }),
+    );
+    expect(mockAdmin.from).not.toHaveBeenCalled();
+  });
+
+  it('returns failed (5xx-equivalent) when BOTH RPCs fail', async () => {
+    mockAdmin.rpc
+      .mockResolvedValueOnce({ error: { message: 'primary timeout' } })
+      .mockResolvedValueOnce({ error: { message: 'fallback rpc not deployed' } });
+
+    const result = await activateWithFallback(mockAdmin, {
+      userId: 'u1',
+      planCode: 'pro',
+      studentId: 's1',
+      rzpSubId: 'sub_999',
+    });
+
+    expect(result.method).toBe('failed');
+    expect(result.error).toBe('primary timeout');
+    expect(result.secondError).toBe('fallback rpc not deployed');
+    // No direct table writes even on double-failure — caller 5xxs and
+    // Razorpay retries the webhook.
+    expect(mockAdmin.from).not.toHaveBeenCalled();
   });
 });
 
