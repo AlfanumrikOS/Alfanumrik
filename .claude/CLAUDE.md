@@ -90,7 +90,7 @@ Shared JS < 160 kB. Pages < 260 kB. Middleware < 120 kB. Target: Indian 4G (2-5 
 
 ### P11: Payment Integrity
 Razorpay webhook signature MUST be verified before processing any payment event. Subscription status changes MUST be written atomically with the payment record. Never grant plan access without verified payment.
-Known tracked risk: webhook handler has a fallback path that updates `students` and `student_subscriptions` as two separate statements if `activate_subscription` RPC fails. If the second statement fails, a temporary split-brain state can occur. Mitigated by: idempotency checks, duplicate payment guards, `reconcile_stuck_payments.sql` runbook, and `verify` route returning 503 (not 200) on RPC failure so clients retry.
+Implementation status: split-brain risk is closed. The webhook (`src/app/api/payments/webhook/route.ts`) calls only RPCs — never two separate UPDATE statements. Primary path is `activate_subscription`; on failure it falls back to `atomic_subscription_activation` (single transaction across `students` + `student_subscriptions`, migration `20260424120000`). Both RPCs failing returns HTTP 503 so Razorpay retries. The `ff_atomic_subscription_activation` feature flag (migration `20260425140500`) gates the atomic fallback off if needed (then 503 immediately). Event-level idempotency lives in `payment_webhook_events` (unique on razorpay_event_id). Verify-route + webhook contention is serialized via `pg_advisory_xact_lock` keyed by student_id.
 
 ### P12: AI Safety
 AI responses (foxy-tutor, ncert-solver) MUST be age-appropriate for grades 6-12. No unfiltered LLM output to students. Responses must stay within CBSE curriculum scope. Daily usage limits enforced per plan.
