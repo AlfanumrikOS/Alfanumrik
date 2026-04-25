@@ -91,8 +91,20 @@ vi.mock('@/lib/logger', () => ({
   logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 
+// Kill-switch flags (seeded with default true) must resolve to true so
+// governance routes don't 503 before reaching the subject check. All other
+// flags continue to default to false (the previous behaviour for grounded
+// rollout flags this suite already relied on).
+const KILL_SWITCH_FLAGS = new Set([
+  'ai_usage_global',
+  'razorpay_payments',
+  'ff_atomic_subscription_activation',
+]);
+
 vi.mock('@/lib/feature-flags', () => ({
-  isFeatureEnabled: vi.fn(() => Promise.resolve(false)),
+  isFeatureEnabled: vi.fn((name: string) =>
+    Promise.resolve(KILL_SWITCH_FLAGS.has(name)),
+  ),
 }));
 
 // ── Test helpers ──────────────────────────────────────────────────────────────

@@ -770,6 +770,23 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   });
   if (!auth.authorized) return auth.errorResponse!;
 
+  // 1b. Global AI kill switch (ai_usage_global)
+  // Seeded by 20260425160000_p0_launch_kill_switches_and_expiry_rpc.sql with
+  // default true. Flip OFF in the super-admin console to halt ALL Claude
+  // calls (foxy/ncert-solver/quiz-gen/scan-solve) without redeploying.
+  // 503 + Retry-After=60 lets the client retry once the switch flips back on.
+  if (!(await isFeatureEnabled('ai_usage_global'))) {
+    logger.warn('foxy: ai_usage_global kill switch active');
+    return new NextResponse(
+      JSON.stringify({
+        success: false,
+        error: 'Foxy is temporarily unavailable. Please try again in a minute.',
+        error_hi: 'Foxy abhi available nahi hai. Kripya thodi der baad try karein.',
+      }),
+      { status: 503, headers: { 'Content-Type': 'application/json', 'Retry-After': '60' } },
+    );
+  }
+
   // 2. Parse body
   let body: Record<string, unknown>;
   try {

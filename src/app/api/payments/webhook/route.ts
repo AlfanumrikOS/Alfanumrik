@@ -130,6 +130,36 @@ async function isAtomicFallbackEnabled(admin: SupabaseClient): Promise<boolean> 
   }
 }
 
+/**
+ * Global Razorpay payment-processing kill switch.
+ *
+ * Seeded by 20260425160000_p0_launch_kill_switches_and_expiry_rpc.sql with
+ * default `is_enabled = true`. Flip OFF in the super-admin console during
+ * a payment incident — the webhook will return HTTP 503 with Retry-After=60
+ * BEFORE doing any DB work. Razorpay retries 5xx with backoff so events
+ * are not lost.
+ *
+ * Read via the anon-keyless `feature_flags` REST query is intentional: we
+ * already have an admin client in scope and want zero-coupling to
+ * src/lib/feature-flags.ts (which adds caching + scoping we don't need
+ * for an emergency switch).
+ *
+ * On read error we fail OPEN (treat as enabled) — failing closed would
+ * convert a Supabase blip into a payment outage.
+ */
+async function isRazorpayPaymentsEnabled(admin: SupabaseClient): Promise<boolean> {
+  try {
+    const { data } = await admin
+      .from('feature_flags')
+      .select('is_enabled')
+      .eq('flag_name', 'razorpay_payments')
+      .maybeSingle();
+    return data?.is_enabled ?? true;
+  } catch {
+    return true;
+  }
+}
+
 type ResolvedStudent = {
   student_id: string;
   /** Which branch succeeded — useful for ops metrics. */
@@ -317,6 +347,28 @@ export async function POST(request: NextRequest) {
     const admin = createClient(supabaseUrl, serviceKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
+
+    // ── Global kill switch (razorpay_payments) ──
+    // Seeded by 20260425160000_p0_launch_kill_switches_and_expiry_rpc.sql
+    // with default true. Flip OFF during a payment incident — we 503 here
+    // BEFORE any DB work so Razorpay retries with backoff (no events lost).
+    // Reads run AFTER signature verification so an attacker cannot probe
+    // flag state without a valid HMAC.
+    if (!(await isRazorpayPaymentsEnabled(admin))) {
+      logger.warn('webhook: razorpay_payments kill-switch active — returning 503', { eventType });
+      await logOpsEvent({
+        category: 'payment',
+        severity: 'critical',
+        source: 'webhook/route.ts',
+        message: 'razorpay_payments_kill_switch_active',
+        context: { event_type: eventType, razorpay_event_id: event.id ?? null },
+      });
+      await emitWebhookTiming({ eventType, outcome: 'failed', latencyMs: Date.now() - startedAt });
+      return new NextResponse(
+        JSON.stringify({ error: 'razorpay_payments_disabled' }),
+        { status: 503, headers: { 'Content-Type': 'application/json', 'Retry-After': '60' } },
+      );
+    }
 
     // ── Event-level dedupe (Task 3 of payment-webhook-hardening plan) ──
     // Razorpay can re-fire any event. We record (account_id, event_id) in
