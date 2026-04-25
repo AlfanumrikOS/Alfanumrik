@@ -168,3 +168,76 @@ export interface Guardian {
   email: string | null;
   phone: string | null;
 }
+
+// ── Tenant domain ──────────────────────────────────────────────────────────────
+//
+// Phase 0b: school / class context. Reads only — writes still live in their
+// owning route (school-admin, internal admin) until the next phase.
+//
+// Field naming follows the rest of the domains module: snake_case DB columns
+// are mapped to camelCase here so callers do not depend on table shape.
+
+/**
+ * School projection for tenant reads. Includes the white-label / branding
+ * columns added in `20260412150000_white_label_schools.sql` because a
+ * single GET often needs both basic identity (id/name/code) and branding.
+ *
+ * Callers that need additional columns should add them explicitly here and
+ * to the SQL select list — never `select('*')`.
+ */
+export interface School {
+  id: string;
+  name: string | null;
+  code: string | null;
+  slug: string | null;
+  logoUrl: string | null;
+  primaryColor: string | null;
+  secondaryColor: string | null;
+  tagline: string | null;
+  customDomain: string | null;
+  domainVerified: boolean | null;
+  billingEmail: string | null;
+  isActive: boolean | null;
+  // White-label settings JSON; opaque to the domain — typed as unknown to
+  // force callers to validate before using.
+  settings: unknown;
+}
+
+/**
+ * Class projection for tenant reads. Mirrors the columns selected by the
+ * school-admin classes list endpoint. P5: `grade` is always a string.
+ */
+export interface Class {
+  id: string;
+  schoolId: string | null;
+  name: string | null;
+  grade: string | null;
+  section: string | null;
+  academicYear: string | null;
+  subject: string | null;
+  classCode: string | null;
+  isActive: boolean | null;
+  maxStudents: number | null;
+  createdAt: string | null;
+}
+
+/**
+ * Membership projections. The legacy `class_students` and the canonical
+ * `class_enrollments` tables share these fields, so the type is reused.
+ */
+export interface ClassStudent {
+  id: string;
+  classId: string;
+  studentId: string;
+  isActive: boolean | null;
+  enrolledAt: string | null;
+}
+
+export interface ClassTeacher {
+  id: string;
+  classId: string;
+  teacherId: string;
+  role: string | null;
+  isActive: boolean | null;
+  joinedAt: string | null;
+}
