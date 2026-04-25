@@ -182,7 +182,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Activate subscription via RPC — this is the critical step
-    const { error: rpcError } = await admin.rpc('activate_subscription', {
+    const { error: rpcError } = await admin.rpc('activate_subscription_locked', {
       p_auth_user_id: user.id,
       p_plan_code: plan_code,
       p_billing_cycle: billing_cycle,

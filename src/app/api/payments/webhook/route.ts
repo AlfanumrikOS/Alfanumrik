@@ -360,7 +360,7 @@ export async function POST(request: NextRequest) {
       // Activate subscription (idempotent — upserts both tables atomically via RPC).
       const authUserId = notes.user_id;
       if (authUserId) {
-        const { error: rpcError } = await admin.rpc('activate_subscription', {
+        const { error: rpcError } = await admin.rpc('activate_subscription_locked', {
           p_auth_user_id: authUserId,
           p_plan_code: planCode,
           p_billing_cycle: billingCycle,
@@ -402,7 +402,7 @@ export async function POST(request: NextRequest) {
           // 20260424120000_atomic_subscription_activation_rpc.sql). This
           // closes the split-brain risk that the previous two-statement
           // fallback exposed.
-          const { error: atomicErr } = await admin.rpc('atomic_subscription_activation', {
+          const { error: atomicErr } = await admin.rpc('atomic_subscription_activation_locked', {
             p_student_id: resolved.student_id,
             p_plan_code: planCode,
             p_billing_cycle: billingCycle,
@@ -564,7 +564,7 @@ export async function POST(request: NextRequest) {
         // Activate via RPC. We require authUserId here — if absent, do a direct
         // upsert to ensure entitlement is still granted.
         if (authUserId) {
-          const { error: rpcError } = await admin.rpc('activate_subscription', {
+          const { error: rpcError } = await admin.rpc('activate_subscription_locked', {
             p_auth_user_id: authUserId,
             p_plan_code: planCode,
             p_billing_cycle: 'monthly',
@@ -604,7 +604,7 @@ export async function POST(request: NextRequest) {
               );
             }
             // P11: atomic fallback (see payment.captured branch comment).
-            const { error: atomicErr } = await admin.rpc('atomic_subscription_activation', {
+            const { error: atomicErr } = await admin.rpc('atomic_subscription_activation_locked', {
               p_student_id: resolved.student_id,
               p_plan_code: planCode,
               p_billing_cycle: 'monthly',
@@ -643,7 +643,7 @@ export async function POST(request: NextRequest) {
           // resolved student_id. This previously did a single-table upsert
           // that would have left students.subscription_plan stale; the RPC
           // fixes that by writing both tables atomically.
-          const { error: atomicErr } = await admin.rpc('atomic_subscription_activation', {
+          const { error: atomicErr } = await admin.rpc('atomic_subscription_activation_locked', {
             p_student_id: resolved.student_id,
             p_plan_code: planCode,
             p_billing_cycle: 'monthly',
