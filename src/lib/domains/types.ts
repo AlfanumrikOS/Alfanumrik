@@ -168,3 +168,89 @@ export interface Guardian {
   email: string | null;
   phone: string | null;
 }
+
+// ── Analytics domain (Phase 0i) ────────────────────────────────────────────────
+//
+// B12 Analytics is a read-only context: it does not own any write paths into
+// the other domains. The four read tables it exposes are dual-written by
+// daily-cron (server) and the quiz RPC (B5). The analytics module only reads
+// them and projects camelCase shapes for the super-admin / school-admin
+// surfaces.
+//
+// Three of the four reference tables in DATA_OWNERSHIP_MATRIX.md
+// (`student_analytics`, `usage_metrics`, `performance_reports`) do not yet
+// exist as physical tables — they are part of the planned analytics schema.
+// The helpers in `domains/analytics.ts` are still defined now to lock the
+// service contract; if the underlying table is missing at query time, the
+// call returns a `DB_ERROR` ServiceResult and a one-line warn is logged so
+// callers can degrade gracefully without crashing.
+
+/**
+ * One row from `daily_activity`, projected to camelCase. The legacy
+ * core_schema shape is the source of truth: per (student_id, date, subject),
+ * counts of questions/correct/sessions and minutes spent.
+ *
+ * `subject` is nullable in the underlying table — represents an aggregate
+ * across all subjects on that day.
+ */
+export interface DailyActivity {
+  id: string;
+  studentId: string;
+  activityDate: string; // YYYY-MM-DD
+  subject: string | null;
+  questionsAsked: number;
+  questionsCorrect: number;
+  xpEarned: number;
+  timeMinutes: number;
+  sessions: number;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+/**
+ * Latest snapshot row from `student_analytics`. Shape is intentionally
+ * narrow and stable — when the physical table lands, additional aggregates
+ * should be added here, not selected via `.select('*')`.
+ */
+export interface StudentAnalytics {
+  studentId: string;
+  totalQuestionsAttempted: number | null;
+  totalQuestionsCorrect: number | null;
+  averageScorePercent: number | null;
+  totalXp: number | null;
+  totalSessions: number | null;
+  totalStudyMinutes: number | null;
+  lastActivityAt: string | null;
+  computedAt: string | null;
+}
+
+/**
+ * Bounded slice of `usage_metrics`. Used by super-admin dashboards and
+ * school-level reporting. The metric is a free-form key (e.g.
+ * `chats.daily.count`, `quizzes.daily.completed`).
+ */
+export interface UsageMetric {
+  id: string;
+  studentId: string | null;
+  schoolId: string | null;
+  metric: string;
+  value: number;
+  recordedAt: string;
+  metadata: Record<string, unknown> | null;
+}
+
+/**
+ * A pre-computed report row out of `performance_reports`. The actual
+ * payload (charts, breakdowns) lives in `payload` JSONB so this type does
+ * not need to evolve when new report kinds are added.
+ */
+export interface PerformanceReport {
+  id: string;
+  studentId: string | null;
+  schoolId: string | null;
+  reportType: string;
+  periodStart: string | null;
+  periodEnd: string | null;
+  payload: Record<string, unknown>;
+  generatedAt: string;
+}
