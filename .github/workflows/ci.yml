@@ -430,9 +430,12 @@ jobs:
 
       - name: Health check
         run: |
+          # Production is served from the canonical alfanumrik.com domain.
+          # The .vercel.app subdomain is not aliased to this project and
+          # 404s — was the source of false health-check failures in CI.
           for i in 1 2 3; do
             RESPONSE=$(curl -s -w "\n%{http_code}" \
-              https://alfanumrik.vercel.app/api/v1/health 2>/dev/null)
+              https://alfanumrik.com/api/v1/health 2>/dev/null)
             STATUS=$(echo "$RESPONSE" | tail -1)
             BODY=$(echo "$RESPONSE" | head -1)
             if [ "$STATUS" = "200" ]; then
