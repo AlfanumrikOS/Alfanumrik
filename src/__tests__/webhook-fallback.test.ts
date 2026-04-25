@@ -250,6 +250,86 @@ describe('Webhook RPC Fallback Pattern (P11 atomic)', () => {
   });
 });
 
+// ── Kill switch (ff_atomic_subscription_activation) ──────────────────────
+//
+// Phase 0g.2 added a kill switch that disables the atomic fallback. When
+// the flag is OFF, the webhook returns 503 immediately on primary RPC
+// failure (forcing Razorpay retries) instead of attempting the atomic RPC.
+//
+// Default behaviour: flag missing → treated as enabled (true) so missing-
+// migration scenarios are safe.
+
+describe('Webhook Atomic Fallback Kill Switch (ff_atomic_subscription_activation)', () => {
+  /**
+   * Mirrors the helper added inline in the webhook route. The flag check
+   * defaults to TRUE when the row is missing so deploying the route
+   * before the migration applies is safe.
+   */
+  function isAtomicFallbackEnabled(flagRow: { is_enabled?: boolean } | null): boolean {
+    return flagRow?.is_enabled ?? true;
+  }
+
+  it('returns true when flag row is missing (safe default)', () => {
+    expect(isAtomicFallbackEnabled(null)).toBe(true);
+  });
+
+  it('returns true when flag is explicitly enabled', () => {
+    expect(isAtomicFallbackEnabled({ is_enabled: true })).toBe(true);
+  });
+
+  it('returns false when flag is explicitly disabled', () => {
+    expect(isAtomicFallbackEnabled({ is_enabled: false })).toBe(false);
+  });
+
+  /**
+   * Simulates the route flow under kill-switch-disabled state. Asserts:
+   *   1. Primary activate_subscription is attempted as normal.
+   *   2. On primary failure, atomic RPC is NOT called.
+   *   3. The simulated route returns a 503-equivalent state.
+   */
+  async function activateWithKillSwitch(
+    rpcMock: ReturnType<typeof vi.fn>,
+    killSwitchOn: boolean,
+  ): Promise<{ method: 'rpc' | 'atomic_fallback' | 'kill_switch_503'; calls: number }> {
+    const { error: rpcErr } = await rpcMock('activate_subscription', {});
+    if (!rpcErr) return { method: 'rpc', calls: rpcMock.mock.calls.length };
+
+    if (!killSwitchOn) {
+      return { method: 'kill_switch_503', calls: rpcMock.mock.calls.length };
+    }
+
+    await rpcMock('atomic_subscription_activation', {});
+    return { method: 'atomic_fallback', calls: rpcMock.mock.calls.length };
+  }
+
+  it('with kill switch ON, primary failure → 503 without calling atomic RPC', async () => {
+    const rpc = vi.fn().mockResolvedValueOnce({ error: { message: 'primary failure' } });
+    const result = await activateWithKillSwitch(rpc, false);
+    expect(result.method).toBe('kill_switch_503');
+    expect(result.calls).toBe(1); // only primary called, atomic skipped
+  });
+
+  it('with kill switch OFF (default), primary failure → atomic fallback runs', async () => {
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ error: { message: 'primary failure' } })
+      .mockResolvedValueOnce({ error: null });
+    const result = await activateWithKillSwitch(rpc, true);
+    expect(result.method).toBe('atomic_fallback');
+    expect(result.calls).toBe(2);
+  });
+
+  it('primary success path is unchanged regardless of kill switch state', async () => {
+    const rpc1 = vi.fn().mockResolvedValueOnce({ error: null });
+    const rpc2 = vi.fn().mockResolvedValueOnce({ error: null });
+    const r1 = await activateWithKillSwitch(rpc1, true);
+    const r2 = await activateWithKillSwitch(rpc2, false);
+    expect(r1.method).toBe('rpc');
+    expect(r2.method).toBe('rpc');
+    expect(r1.calls).toBe(1);
+    expect(r2.calls).toBe(1);
+  });
+});
+
 // ── Idempotency ──────────────────────────────────────────
 
 describe('Webhook Idempotency', () => {

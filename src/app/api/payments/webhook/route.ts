@@ -40,6 +40,32 @@ function canonicalizePlan(raw: string): string {
     .replace(/^premium$/, 'pro');
 }
 
+/**
+ * Phase 0g.2 kill-switch read.
+ *
+ * Returns whether the atomic_subscription_activation fallback should run
+ * when activate_subscription RPC fails. Default: true (atomic enabled) —
+ * missing flag row is treated as enabled so behavior is safe before the
+ * `20260425140500_ff_atomic_subscription_activation` migration applies.
+ *
+ * Set the flag to is_enabled=false ONLY if atomic_subscription_activation
+ * itself is misbehaving and we want webhooks to 503 immediately so
+ * Razorpay retries (instead of writing the wrong thing).
+ */
+async function isAtomicFallbackEnabled(admin: SupabaseClient): Promise<boolean> {
+  try {
+    const { data } = await admin
+      .from('feature_flags')
+      .select('is_enabled')
+      .eq('flag_name', 'ff_atomic_subscription_activation')
+      .maybeSingle();
+    return data?.is_enabled ?? true;
+  } catch {
+    // Any error reading the flag → assume safe behavior (atomic enabled).
+    return true;
+  }
+}
+
 type ResolvedStudent = {
   student_id: string;
   /** Which branch succeeded — useful for ops metrics. */
@@ -262,6 +288,29 @@ export async function POST(request: NextRequest) {
             authUserId,
             studentId: resolved.student_id,
           });
+          // Kill switch (ff_atomic_subscription_activation): if disabled,
+          // skip the atomic fallback and 503 so Razorpay retries.
+          if (!(await isAtomicFallbackEnabled(admin))) {
+            logger.warn('Webhook: ff_atomic_subscription_activation disabled — skipping atomic fallback, returning 503', {
+              eventType,
+              studentId: resolved.student_id,
+            });
+            await logOpsEvent({
+              category: 'payment',
+              severity: 'critical',
+              source: 'webhook/route.ts',
+              message: 'atomic_fallback_kill_switch_active',
+              context: {
+                event_type: eventType,
+                student_id: resolved.student_id,
+                primary_error: rpcError.message,
+              },
+            });
+            return NextResponse.json(
+              { error: 'subscription_activation_failed' },
+              { status: 503 },
+            );
+          }
           // P11: atomic_subscription_activation upserts BOTH tables in a
           // single transaction (CREATE FUNCTION at supabase/migrations/
           // 20260424120000_atomic_subscription_activation_rpc.sql). This
@@ -436,6 +485,30 @@ export async function POST(request: NextRequest) {
               rzSubId,
               studentId: resolved.student_id,
             });
+            // Kill switch — see payment.captured branch.
+            if (!(await isAtomicFallbackEnabled(admin))) {
+              logger.warn('Webhook: ff_atomic_subscription_activation disabled — skipping atomic fallback, returning 503', {
+                eventType,
+                rzSubId,
+                studentId: resolved.student_id,
+              });
+              await logOpsEvent({
+                category: 'payment',
+                severity: 'critical',
+                source: 'webhook/route.ts',
+                message: 'atomic_fallback_kill_switch_active',
+                context: {
+                  event_type: eventType,
+                  student_id: resolved.student_id,
+                  rz_sub_id: rzSubId ?? null,
+                  primary_error: rpcError.message,
+                },
+              });
+              return NextResponse.json(
+                { error: 'subscription_activation_failed' },
+                { status: 503 },
+              );
+            }
             // P11: atomic fallback (see payment.captured branch comment).
             const { error: atomicErr } = await admin.rpc('atomic_subscription_activation', {
               p_student_id: resolved.student_id,
