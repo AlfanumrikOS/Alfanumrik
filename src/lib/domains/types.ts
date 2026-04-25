@@ -169,19 +169,216 @@ export interface Guardian {
   phone: string | null;
 }
 
-// ── Relationship domain (Phase 0c) ────────────────────────────────────────────
+// ── Assessment domain (Phase 0f, B9) ──────────────────────────────────────────
 //
-// Owns guardian_student_links. Types added below in a separate block to
-// minimise merge friction with concurrent Phase 0b (tenant) extraction.
-// Do not reorder these keys without updating relationship.ts mappers.
+// Read-only projections over concept_mastery, topic_mastery, knowledge_gaps,
+// diagnostic_sessions, learning_graph_nodes, cme_error_log. Writes stay in
+// cme-engine and atomic_quiz_profile_update — those are P1/P4 sacred.
 
-/**
- * Status values used by guardian_student_links.status.
- *
- * Multiple values mean "the link is live": legacy demo-account flows insert
- * with status='active', the human approval flow uses 'approved'. Callers
- * that need to enforce "linked right now" should accept both.
- */
+export interface ConceptMastery {
+  id: string;
+  studentId: string;
+  topicId: string;
+  masteryProbability: number;
+  masteryLevel: string | null;
+  attempts: number;
+  correctAttempts: number;
+  hintsUsed: number;
+  firstAttemptedAt: string | null;
+  lastAttemptedAt: string | null;
+  masteredAt: string | null;
+  nextReviewAt: string | null;
+  reviewIntervalDays: number | null;
+  easeFactor: number;
+  consecutiveCorrect: number;
+  pKnow: number | null;
+  pLearn: number | null;
+  pGuess: number | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface TopicMastery {
+  id: string;
+  studentId: string;
+  subject: string;
+  topic: string;
+  masteryLevel: number;
+  totalAttempts: number;
+  correctAttempts: number;
+  lastAttempted: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface KnowledgeGap {
+  id: string;
+  studentId: string;
+  topicId: string;
+  prerequisiteTopicId: string | null;
+  gapType: string | null;
+  severity: string | null;
+  description: string | null;
+  descriptionHi: string | null;
+  recommendedAction: string | null;
+  recommendedActionHi: string | null;
+  isResolved: boolean;
+  detectedAt: string | null;
+  resolvedAt: string | null;
+}
+
+export interface DiagnosticSession {
+  id: string;
+  studentId: string;
+  /** P5: grade is always a string, never an integer. */
+  grade: string | null;
+  subject: string | null;
+  status: string | null;
+  totalQuestions: number;
+  correctAnswers: number;
+  estimatedTheta: number | null;
+  topicsAssessed: unknown[];
+  weakTopics: unknown[];
+  strongTopics: unknown[];
+  recommendedDifficulty: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface LearningGraphNode {
+  id: string;
+  subject: string | null;
+  /** P5: grade is always a string. */
+  grade: string | null;
+  topic: string | null;
+  prerequisites: unknown[];
+  metadata: unknown;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface CmeError {
+  id: string;
+  studentId: string;
+  conceptId: string;
+  questionId: string | null;
+  errorType: string | null;
+  studentAnswer: string | null;
+  correctAnswer: string | null;
+  responseTimeMs: number | null;
+  createdAt: string | null;
+}
+
+// ── Content domain (Phase 0d, B6) ─────────────────────────────────────────────
+//
+// Read-only projections of question_bank, cbse_syllabus, ncert_content
+// (planned), and chapter_concepts. Grade is always a string (P5).
+// Question rows include all fields needed for P6 validation by callers.
+
+export interface Question {
+  id: string;
+  subject: string | null;
+  grade: string | null;
+  chapterId: string | null;
+  chapterNumber: number | null;
+  chapterTitle: string | null;
+  topic: string | null;
+  questionText: string;
+  questionHi: string | null;
+  questionType: string | null;
+  options: string[];
+  correctAnswerIndex: number;
+  explanation: string | null;
+  explanationHi: string | null;
+  hint: string | null;
+  hintHi: string | null;
+  difficulty: number;
+  bloomLevel: string | null;
+  isActive: boolean | null;
+  source: string | null;
+  isNcert: boolean | null;
+  verifiedAgainstNcert: boolean | null;
+  verificationState: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface Chapter {
+  id: string;
+  board: string | null;
+  grade: string | null;
+  subjectCode: string | null;
+  subjectDisplay: string | null;
+  subjectDisplayHi: string | null;
+  chapterNumber: number | null;
+  chapterTitle: string | null;
+  chapterTitleHi: string | null;
+  chunkCount: number;
+  verifiedQuestionCount: number;
+  ragStatus: string | null;
+  lastVerifiedAt: string | null;
+  isInScope: boolean | null;
+  notes: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface NcertContent {
+  id: string;
+  grade: string | null;
+  subject: string | null;
+  chapter: string | null;
+  chapterNumber: number | null;
+  section: string | null;
+  contentType: string | null;
+  contentText: string | null;
+  contentHi: string | null;
+  pageNumber: number | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface ChapterConcept {
+  id: string;
+  chapterId: string | null;
+  grade: string | null;
+  subject: string | null;
+  chapterNumber: number | null;
+  chapterTitle: string | null;
+  conceptNumber: number;
+  title: string | null;
+  titleHi: string | null;
+  slug: string | null;
+  learningObjective: string | null;
+  learningObjectiveHi: string | null;
+  explanation: string | null;
+  explanationHi: string | null;
+  keyFormula: string | null;
+  exampleTitle: string | null;
+  exampleContent: string | null;
+  exampleContentHi: string | null;
+  commonMistakes: string[];
+  examTips: string[];
+  diagramRefs: string[];
+  diagramDescription: string | null;
+  practiceQuestion: string | null;
+  practiceOptions: string[];
+  practiceCorrectIndex: number | null;
+  practiceExplanation: string | null;
+  difficulty: number;
+  bloomLevel: string | null;
+  estimatedMinutes: number;
+  isActive: boolean | null;
+  source: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+// ── Relationship domain (Phase 0c, B3) ────────────────────────────────────────
+
 export type GuardianLinkStatus =
   | 'pending'
   | 'approved'
@@ -189,17 +386,11 @@ export type GuardianLinkStatus =
   | 'rejected'
   | 'revoked';
 
-/** Subset of statuses that mean the link is currently active. */
 export const ACTIVE_GUARDIAN_LINK_STATUSES: ReadonlyArray<GuardianLinkStatus> = [
   'approved',
   'active',
 ];
 
-/**
- * Raw guardian_student_links row, projected to camelCase. Selected columns
- * only — we deliberately omit revoked_by / rejected_reason etc. until a
- * caller needs them, to keep the contract narrow.
- */
 export interface GuardianStudentLink {
   id: string;
   guardianId: string;
@@ -212,15 +403,10 @@ export interface GuardianStudentLink {
   updatedAt: string | null;
 }
 
-/**
- * Projection used by parent dashboards: each row carries enough about the
- * child to render a card (name, grade) plus the link metadata, so the
- * caller doesn't have to do an N+1 lookup back to `students`.
- */
 export interface ChildSummary {
   studentId: string;
   name: string | null;
-  // Invariant P5: grade is always a string.
+  /** P5: grade is always a string. */
   grade: string | null;
   schoolId: string | null;
   linkId: string;
@@ -228,10 +414,6 @@ export interface ChildSummary {
   linkedAt: string | null;
 }
 
-/**
- * Inverse projection: who are the guardians for a given student?
- * Used by support / admin tooling that starts from the student.
- */
 export interface GuardianSummary {
   guardianId: string;
   name: string | null;
