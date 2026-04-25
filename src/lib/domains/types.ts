@@ -456,6 +456,83 @@ export interface NotificationPreferences {
   preferredLanguage?: string | null;
 }
 
+// ── Billing domain (Phase 0g.1, B10) ──────────────────────────────────────────
+
+export interface SubscriptionPlan {
+  id: string;
+  planCode: string;
+  name: string | null;
+  priceMonthly: number | null;
+  priceYearly: number | null;
+  razorpayPlanIdMonthly: string | null;
+  isActive: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface StudentSubscription {
+  id: string;
+  studentId: string;
+  planId: string | null;
+  planCode: string | null;
+  status: string | null;
+  billingCycle: string | null;
+  currentPeriodStart: string | null;
+  currentPeriodEnd: string | null;
+  nextBillingAt: string | null;
+  gracePeriodEnd: string | null;
+  cancelledAt: string | null;
+  cancelReason: string | null;
+  renewalAttempts: number;
+  autoRenew: boolean;
+  amountPaid: number | null;
+  razorpaySubscriptionId: string | null;
+  razorpayPaymentId: string | null;
+  endedAt: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface Payment {
+  id: string;
+  studentId: string | null;
+  razorpayPaymentId: string | null;
+  razorpayOrderId: string | null;
+  amount: number | null;
+  currency: string | null;
+  status: string | null;
+  planCode: string | null;
+  billingCycle: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface RazorpayOrder {
+  id: string;
+  razorpayOrderId: string;
+  studentId: string | null;
+  planCode: string | null;
+  amount: number | null;
+  currency: string | null;
+  status: string | null;
+  receipt: string | null;
+  notes: unknown;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface RazorpayWebhook {
+  id: string;
+  eventId: string | null;
+  eventType: string | null;
+  payload: unknown;
+  signatureVerified: boolean;
+  processed: boolean;
+  processingError: string | null;
+  createdAt: string | null;
+  processedAt: string | null;
+}
+
 // ── Analytics domain (Phase 0i, B12) ──────────────────────────────────────────
 
 export interface DailyActivity {
