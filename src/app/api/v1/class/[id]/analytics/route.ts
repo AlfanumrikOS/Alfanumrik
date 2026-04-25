@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { authorizeRequest, logAudit } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { isTeacherAssignedToClass } from '@/lib/domains/tenant';
 import { logger } from '@/lib/logger';
 import { isValidUUID } from '@/lib/sanitize';
 
@@ -46,15 +47,12 @@ export async function GET(
         );
       }
 
-      // Verify teacher is assigned to this class
-      const { data: classTeacher } = await supabaseAdmin
-        .from('class_teachers')
-        .select('id')
-        .eq('class_id', classId)
-        .eq('teacher_id', teacher.id)
-        .single();
-
-      if (!classTeacher) {
+      // Verify teacher is assigned to this class via the tenant domain.
+      // isTeacherAssignedToClass returns ok(false) when no active row
+      // matches; the original code used .single() and treated null as
+      // "not assigned", so behavior is preserved.
+      const assigned = await isTeacherAssignedToClass(classId, teacher.id);
+      if (!assigned.ok || !assigned.data) {
         return NextResponse.json(
           { error: 'Not assigned to this class' },
           { status: 403 }
