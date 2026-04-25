@@ -46,3 +46,15 @@
 - [ ] Vercel: Deployments → Previous → Promote
 - [ ] Supabase: SQL migrations are additive (no destructive changes)
 - [ ] Edge functions: redeploy previous version
+
+### Payment Webhook Health (post-hardening)
+- [ ] `payment_webhook_events` table exists; unique constraint on `(razorpay_account_id, razorpay_event_id)` is in place (migration `20260425150000`)
+- [ ] `activate_subscription_locked` and `atomic_subscription_activation_locked` RPCs deployed (migration `20260425150300`)
+- [ ] `atomic_downgrade_subscription` RPC deployed (migration `20260425150200`)
+- [ ] `activate_subscription` RPC has `SET search_path = public` (migration `20260425150100`)
+- [ ] `ff_atomic_subscription_activation` feature flag exists with `is_enabled = true`
+- [ ] Sentry alert configured: `payment.webhook_processed` outcome=`failed` rate >5% over 15 minutes → P1 page
+- [ ] Sentry alert configured: webhook p99 latency from `payment.webhook_processed.context.latency_ms` > 5s over 15 minutes → P1 page
+- [ ] Runbook `docs/runbooks/payment-webhook-recovery.md` linked from on-call wiki
+- [ ] At least one synthetic webhook fire executed in staging within 24h before each prod deploy
+- [ ] No `payment_webhook_events` rows with `processed_at IS NULL` older than 5 minutes (sanity sweep on dashboard)
