@@ -664,3 +664,54 @@ export interface GuardianSummary {
   linkStatus: GuardianLinkStatus;
   linkedAt: string | null;
 }
+
+// ── Tenant domain (Phase 0b, B2) ──────────────────────────────────────────────
+
+export interface School {
+  id: string;
+  name: string | null;
+  code: string | null;
+  slug: string | null;
+  logoUrl: string | null;
+  primaryColor: string | null;
+  secondaryColor: string | null;
+  tagline: string | null;
+  customDomain: string | null;
+  domainVerified: boolean | null;
+  billingEmail: string | null;
+  isActive: boolean | null;
+  /** White-label settings JSON; opaque to the domain — typed as unknown to force callers to validate. */
+  settings: unknown;
+}
+
+export interface Class {
+  id: string;
+  schoolId: string | null;
+  name: string | null;
+  /** P5: always string. */
+  grade: string | null;
+  section: string | null;
+  academicYear: string | null;
+  subject: string | null;
+  classCode: string | null;
+  isActive: boolean | null;
+  maxStudents: number | null;
+  createdAt: string | null;
+}
+
+export interface ClassStudent {
+  id: string;
+  classId: string;
+  studentId: string;
+  isActive: boolean | null;
+  enrolledAt: string | null;
+}
+
+export interface ClassTeacher {
+  id: string;
+  classId: string;
+  teacherId: string;
+  role: string | null;
+  isActive: boolean | null;
+  joinedAt: string | null;
+}

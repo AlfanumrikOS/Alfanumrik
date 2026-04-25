@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeSchoolAdmin } from '@/lib/school-admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
+import { getClassById } from '@/lib/domains/tenant';
 
 // GET — list students enrolled in a class
 export async function GET(request: NextRequest) {
@@ -11,18 +12,22 @@ export async function GET(request: NextRequest) {
   const classId = params.get('class_id');
   if (!classId) return NextResponse.json({ error: 'class_id required' }, { status: 400 });
 
+  // Verify class belongs to this school via the tenant domain. Passing
+  // schoolId scopes the lookup so a school admin cannot probe another
+  // tenant's classes.
+  const cls = await getClassById(classId, { schoolId: auth.schoolId! });
+  if (!cls.ok) {
+    return NextResponse.json({ error: cls.error }, { status: 500 });
+  }
+  if (!cls.data) {
+    return NextResponse.json({ error: 'Class not found in your school' }, { status: 404 });
+  }
+
+  // Enrollment list is left on the raw client because it joins the
+  // `students` relation with extra fields (xp_total, last_active) that the
+  // tenant module does not project. Migrating that join is out of scope
+  // for Phase 0b.
   const supabase = getSupabaseAdmin();
-
-  // Verify class belongs to this school
-  const { data: cls } = await supabase
-    .from('classes')
-    .select('id')
-    .eq('id', classId)
-    .eq('school_id', auth.schoolId)
-    .single();
-
-  if (!cls) return NextResponse.json({ error: 'Class not found in your school' }, { status: 404 });
-
   const { data, error } = await supabase
     .from('class_enrollments')
     .select('id, student_id, enrolled_at, is_active, students(id, name, grade, xp_total, last_active)')
