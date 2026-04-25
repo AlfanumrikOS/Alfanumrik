@@ -568,3 +568,52 @@ export interface AdminUser {
   createdAt: string | null;
   updatedAt: string | null;
 }
+
+// ── Analytics domain (Phase 0i, B12) ──────────────────────────────────────────
+
+export interface DailyActivity {
+  id: string;
+  studentId: string;
+  activityDate: string;
+  subject: string | null;
+  questionsAsked: number;
+  questionsCorrect: number;
+  xpEarned: number;
+  timeMinutes: number;
+  sessions: number;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface StudentAnalytics {
+  studentId: string;
+  totalQuestionsAttempted: number | null;
+  totalQuestionsCorrect: number | null;
+  averageScorePercent: number | null;
+  totalXp: number | null;
+  totalSessions: number | null;
+  totalStudyMinutes: number | null;
+  lastActivityAt: string | null;
+  computedAt: string | null;
+}
+
+export interface UsageMetric {
+  id: string;
+  studentId: string | null;
+  schoolId: string | null;
+  metric: string;
+  value: number;
+  recordedAt: string;
+  metadata: Record<string, unknown> | null;
+}
+
+export interface PerformanceReport {
+  id: string;
+  studentId: string | null;
+  schoolId: string | null;
+  reportType: string;
+  periodStart: string | null;
+  periodEnd: string | null;
+  payload: Record<string, unknown>;
+  generatedAt: string;
+}
