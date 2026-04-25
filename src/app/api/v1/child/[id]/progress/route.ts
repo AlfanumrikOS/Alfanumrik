@@ -3,6 +3,7 @@ import { authorizeRequest, logAudit } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import { isValidUUID } from '@/lib/sanitize';
+import { listConceptMasteryByStudent } from '@/lib/domains/practice';
 
 /**
  * GET /api/v1/child/:id/progress — View child's learning progress
@@ -30,8 +31,11 @@ export async function GET(
     });
     if (!auth.authorized) return auth.errorResponse!;
 
-    // Fetch progress data in parallel
-    const [quizzes, mastery, velocity, studyPlan] = await Promise.all([
+    // Fetch progress data in parallel.
+    // concept_mastery slice goes through the practice domain (Phase 0e);
+    // mapped back to snake_case so the wire format stays identical to the
+    // parent-portal client.
+    const [quizzes, masteryResult, velocity, studyPlan] = await Promise.all([
       supabaseAdmin
         .from('quiz_sessions')
         .select(
@@ -40,14 +44,7 @@ export async function GET(
         .eq('student_id', childId)
         .order('completed_at', { ascending: false })
         .limit(20),
-      supabaseAdmin
-        .from('concept_mastery')
-        .select(
-          'topic_id, mastery_probability, consecutive_correct, updated_at'
-        )
-        .eq('student_id', childId)
-        .order('updated_at', { ascending: false })
-        .limit(200),
+      listConceptMasteryByStudent(childId, { limit: 200 }),
       supabaseAdmin
         .from('learning_velocity')
         .select(
@@ -64,6 +61,15 @@ export async function GET(
         .single(),
     ]);
 
+    const masteryRows = masteryResult.ok
+      ? masteryResult.data.map((m) => ({
+          topic_id: m.topicId,
+          mastery_probability: m.masteryProbability,
+          consecutive_correct: m.consecutiveCorrect,
+          updated_at: m.updatedAt,
+        }))
+      : [];
+
     logAudit(auth.userId, {
       action: 'view',
       resourceType: 'child_progress',
@@ -73,7 +79,7 @@ export async function GET(
     return NextResponse.json({
       student_id: childId,
       quizzes: quizzes.data || [],
-      mastery: mastery.data || [],
+      mastery: masteryRows,
       velocity: velocity.data || [],
       active_study_plan: studyPlan.data || null,
     }, {
