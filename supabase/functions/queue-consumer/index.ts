@@ -387,6 +387,166 @@ async function dispatchTask(
   }
 }
 
+// ─── Domain events outbox drain (Phase 0 Wave 3) ──────────────────────────
+//
+// Drains public.domain_events alongside the legacy task_queue. The outbox
+// is the canonical async boundary for cross-context events (E1 quiz.completed,
+// E2/E3 payment, E4 subscription.cancelled, E5/E6 notification, E8 practice).
+//
+// Contract:
+//   - Claim oldest pending events, mark processing.
+//   - Dispatch by event_type to a registered handler; missing handlers are
+//     ack'd as processed (we don't retain unrecognised events forever).
+//   - On dispatch error, increment retry_count and re-pend (up to 3
+//     attempts; then dead_letter).
+//   - processed_at is set on terminal status (processed / dead_letter).
+
+interface DomainEventRow {
+  id: string
+  event_type: string
+  aggregate_type: string
+  aggregate_id: string | null
+  payload: Record<string, unknown>
+  status: string
+  retry_count: number
+  created_at: string
+}
+
+type EventHandler = (
+  supabase: SupabaseClient,
+  event: DomainEventRow,
+) => Promise<void>
+
+/**
+ * Registry of event_type → handler. Add new handlers as Phase 0 consumers
+ * come online. Today every event is a no-op ack — we record that the event
+ * was observed and mark it processed. Real consumers (analytics aggregator
+ * for E1/E8, notification dispatcher for E2/E5/E6) will register real
+ * handlers in subsequent PRs.
+ */
+const eventHandlers: Record<string, EventHandler> = {
+  // E1 — quiz.completed: future analytics aggregation will live here.
+  'quiz.completed': async (_supabase, event) => {
+    console.log(`[outbox] ack quiz.completed for session ${event.aggregate_id}`)
+  },
+  // E2/E3 — payment events: future notification dispatch.
+  'payment.completed': async (_supabase, event) => {
+    console.log(`[outbox] ack payment.completed for ${event.aggregate_id}`)
+  },
+  'payment.failed': async (_supabase, event) => {
+    console.log(`[outbox] ack payment.failed for ${event.aggregate_id}`)
+  },
+  // E4 — subscription terminal state.
+  'subscription.cancelled': async (_supabase, event) => {
+    console.log(`[outbox] ack subscription.cancelled for ${event.aggregate_id}`)
+  },
+  // E5/E6 — notification dispatched.
+  'notification.dispatched.email': async (_supabase, event) => {
+    console.log(`[outbox] ack notification.dispatched.email for ${event.aggregate_id}`)
+  },
+  'notification.dispatched.in_app': async (_supabase, event) => {
+    console.log(`[outbox] ack notification.dispatched.in_app for ${event.aggregate_id}`)
+  },
+  // E8 — practice.completed.
+  'practice.completed': async (_supabase, event) => {
+    console.log(`[outbox] ack practice.completed for ${event.aggregate_id}`)
+  },
+  // Phase 0d test event.
+  'content.request_submitted': async (_supabase, event) => {
+    console.log(`[outbox] ack content.request_submitted for ${event.aggregate_id}`)
+  },
+}
+
+async function dispatchDomainEvent(
+  supabase: SupabaseClient,
+  event: DomainEventRow,
+): Promise<void> {
+  const handler = eventHandlers[event.event_type]
+  if (!handler) {
+    // No registered handler — ack and continue. We don't fail unrecognised
+    // events; this lets new event types be deployed before consumers ship.
+    console.warn(`[outbox] no handler registered for event_type=${event.event_type}; ack'ing`)
+    return
+  }
+  await handler(supabase, event)
+}
+
+interface OutboxDrainResult {
+  processed: number
+  failed: number
+  dead_lettered: number
+  errors: string[]
+}
+
+async function drainDomainEvents(
+  supabase: SupabaseClient,
+  batchSize: number,
+): Promise<OutboxDrainResult> {
+  const result: OutboxDrainResult = {
+    processed: 0,
+    failed: 0,
+    dead_lettered: 0,
+    errors: [],
+  }
+
+  // Claim batch of pending events.
+  const { data: events, error: fetchErr } = await supabase
+    .from('domain_events')
+    .select('id, event_type, aggregate_type, aggregate_id, payload, status, retry_count, created_at')
+    .eq('status', 'pending')
+    .order('created_at', { ascending: true })
+    .limit(batchSize)
+
+  if (fetchErr) {
+    result.errors.push(`outbox fetch failed: ${fetchErr.message}`)
+    return result
+  }
+  if (!events || events.length === 0) {
+    return result
+  }
+
+  const eventIds = events.map((e: DomainEventRow) => e.id)
+
+  // Atomically mark as processing.
+  await supabase
+    .from('domain_events')
+    .update({ status: 'processing' })
+    .in('id', eventIds)
+    .eq('status', 'pending')
+
+  for (const event of events as DomainEventRow[]) {
+    try {
+      await dispatchDomainEvent(supabase, event)
+      await supabase
+        .from('domain_events')
+        .update({ status: 'processed', processed_at: new Date().toISOString() })
+        .eq('id', event.id)
+      result.processed++
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      result.errors.push(`[${event.id}/${event.event_type}] ${message}`)
+      const nextRetry = event.retry_count + 1
+      const terminal = nextRetry >= 3
+      await supabase
+        .from('domain_events')
+        .update({
+          status: terminal ? 'dead_letter' : 'pending',
+          retry_count: nextRetry,
+          last_error: message,
+          processed_at: terminal ? new Date().toISOString() : null,
+        })
+        .eq('id', event.id)
+      if (terminal) {
+        result.dead_lettered++
+      } else {
+        result.failed++
+      }
+    }
+  }
+
+  return result
+}
+
 // ─── Main handler ─────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -487,9 +647,23 @@ Deno.serve(async (req) => {
       }
     }
 
-    return new Response(JSON.stringify(results), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    // Drain the domain_events outbox alongside the legacy task_queue.
+    // Failure here is logged but does NOT fail the overall request — the
+    // task_queue results above are already useful, and a transient outbox
+    // error should not poison the ops cron.
+    let outboxResult: OutboxDrainResult | { error: string }
+    try {
+      outboxResult = await drainDomainEvents(supabaseClient, batchSize)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error('queue-consumer outbox drain error:', message)
+      outboxResult = { error: message }
+    }
+
+    return new Response(
+      JSON.stringify({ ...results, outbox: outboxResult }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    )
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error('queue-consumer fatal error:', message)
