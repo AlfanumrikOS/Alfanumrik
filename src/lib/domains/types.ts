@@ -168,3 +168,56 @@ export interface Guardian {
   email: string | null;
   phone: string | null;
 }
+
+// ── Notifications domain (Phase 0h — B11) ─────────────────────────────────────
+//
+// The `notifications` table is recipient-keyed (recipient_type + recipient_id)
+// and shared across student / guardian / teacher / school recipients. Edge
+// Functions (send-auth-email, send-welcome-email, whatsapp-notify,
+// alert-deliverer) own the dispatch path; this domain owns the *read* and
+// *status-only writes* (markAsRead) layer.
+//
+// `notification_preferences` is currently a JSONB column on `guardians`
+// (and adjacent guardian-level toggles like daily_report_enabled). The shape
+// returned here is intentionally narrow — callers should not store free-form
+// keys in it; new preferences should be added to this contract first.
+
+export type NotificationRecipientType =
+  | 'student'
+  | 'guardian'
+  | 'teacher'
+  | 'school'
+  | 'super_admin';
+
+export interface Notification {
+  id: string;
+  recipientType: NotificationRecipientType;
+  recipientId: string;
+  // Some migration variants name this column `type`, others `notification_type`.
+  // The domain normalises to a single field — callers see one shape.
+  notificationType: string | null;
+  title: string;
+  body: string | null;
+  bodyHi: string | null;
+  icon: string | null;
+  data: Record<string, unknown> | null;
+  isRead: boolean;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export interface NotificationPreferences {
+  // Mirrors the `guardians.notification_preferences` JSONB shape used by
+  // notification-triggers.ts. All fields optional — a missing key means
+  // "use default = true".
+  email?: boolean;
+  whatsapp?: boolean;
+  push?: boolean;
+  daily_report?: boolean;
+  weekly_report?: boolean;
+  // Adjacent guardian-level toggles surfaced here for a single read site.
+  dailyReportEnabled?: boolean;
+  weeklyReportEnabled?: boolean;
+  alertScoreThreshold?: number | null;
+  preferredLanguage?: string | null;
+}
