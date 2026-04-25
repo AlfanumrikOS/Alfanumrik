@@ -168,3 +168,87 @@ export interface Guardian {
   email: string | null;
   phone: string | null;
 }
+
+// ── Billing domain (Phase 0g.1, B10) ──────────────────────────────────────────
+//
+// Read-only projections over subscription_plans, student_subscriptions,
+// payments, razorpay_orders, razorpay_webhooks. Writes stay in the webhook
+// route + activate_subscription / atomic_subscription_activation RPCs (P11).
+
+export interface SubscriptionPlan {
+  id: string;
+  planCode: string;
+  name: string | null;
+  /** INR price for monthly billing cycle. */
+  priceMonthly: number | null;
+  /** INR price for yearly one-time billing cycle. */
+  priceYearly: number | null;
+  /** Razorpay plan id used for monthly recurring auto-charge. */
+  razorpayPlanIdMonthly: string | null;
+  isActive: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface StudentSubscription {
+  id: string;
+  studentId: string;
+  planId: string | null;
+  planCode: string | null;
+  status: string | null;
+  billingCycle: string | null;
+  currentPeriodStart: string | null;
+  currentPeriodEnd: string | null;
+  nextBillingAt: string | null;
+  gracePeriodEnd: string | null;
+  cancelledAt: string | null;
+  cancelReason: string | null;
+  renewalAttempts: number;
+  autoRenew: boolean;
+  amountPaid: number | null;
+  razorpaySubscriptionId: string | null;
+  razorpayPaymentId: string | null;
+  endedAt: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface Payment {
+  id: string;
+  studentId: string | null;
+  razorpayPaymentId: string | null;
+  razorpayOrderId: string | null;
+  amount: number | null;
+  currency: string | null;
+  status: string | null;
+  planCode: string | null;
+  billingCycle: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface RazorpayOrder {
+  id: string;
+  razorpayOrderId: string;
+  studentId: string | null;
+  planCode: string | null;
+  amount: number | null;
+  currency: string | null;
+  status: string | null;
+  receipt: string | null;
+  notes: unknown;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface RazorpayWebhook {
+  id: string;
+  eventId: string | null;
+  eventType: string | null;
+  payload: unknown;
+  signatureVerified: boolean;
+  processed: boolean;
+  processingError: string | null;
+  createdAt: string | null;
+  processedAt: string | null;
+}
