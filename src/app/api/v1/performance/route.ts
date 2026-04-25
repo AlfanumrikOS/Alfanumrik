@@ -3,6 +3,7 @@ import { authorizeRequest, logAudit, canAccessStudent } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import { isValidUUID } from '@/lib/sanitize';
+import { listConceptMasteryByStudent } from '@/lib/domains/practice';
 
 /**
  * GET /api/v1/performance — View performance data
@@ -51,8 +52,10 @@ export async function GET(request: Request) {
       );
     }
 
-    // Fetch performance data in parallel
-    const [quizzes, mastery, velocity] = await Promise.all([
+    // Fetch performance data in parallel.
+    // concept_mastery slice goes through the practice domain (Phase 0e);
+    // mapped back to snake_case so the wire format stays identical to clients.
+    const [quizzes, masteryResult, velocity] = await Promise.all([
       supabaseAdmin
         .from('quiz_sessions')
         .select(
@@ -61,14 +64,7 @@ export async function GET(request: Request) {
         .eq('student_id', targetStudentId)
         .order('completed_at', { ascending: false })
         .limit(20),
-      supabaseAdmin
-        .from('concept_mastery')
-        .select(
-          'topic_id, mastery_probability, consecutive_correct, updated_at'
-        )
-        .eq('student_id', targetStudentId)
-        .order('updated_at', { ascending: false })
-        .limit(200),
+      listConceptMasteryByStudent(targetStudentId, { limit: 200 }),
       supabaseAdmin
         .from('learning_velocity')
         .select(
@@ -77,6 +73,15 @@ export async function GET(request: Request) {
         .eq('student_id', targetStudentId)
         .limit(50),
     ]);
+
+    const masteryRows = masteryResult.ok
+      ? masteryResult.data.map((m) => ({
+          topic_id: m.topicId,
+          mastery_probability: m.masteryProbability,
+          consecutive_correct: m.consecutiveCorrect,
+          updated_at: m.updatedAt,
+        }))
+      : [];
 
     logAudit(auth.userId, {
       action: 'view',
@@ -87,7 +92,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       student_id: targetStudentId,
       quizzes: quizzes.data || [],
-      mastery: mastery.data || [],
+      mastery: masteryRows,
       velocity: velocity.data || [],
     }, {
       headers: {
