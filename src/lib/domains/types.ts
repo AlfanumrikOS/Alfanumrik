@@ -617,3 +617,50 @@ export interface PerformanceReport {
   payload: Record<string, unknown>;
   generatedAt: string;
 }
+
+// ── Relationship domain (Phase 0c, B3) ────────────────────────────────────────
+
+export type GuardianLinkStatus =
+  | 'pending'
+  | 'approved'
+  | 'active'
+  | 'rejected'
+  | 'revoked';
+
+export const ACTIVE_GUARDIAN_LINK_STATUSES: ReadonlyArray<GuardianLinkStatus> = [
+  'approved',
+  'active',
+];
+
+export interface GuardianStudentLink {
+  id: string;
+  guardianId: string;
+  studentId: string;
+  status: GuardianLinkStatus;
+  permissionLevel: string | null;
+  isVerified: boolean | null;
+  linkedAt: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface ChildSummary {
+  studentId: string;
+  name: string | null;
+  /** P5: grade is always a string. */
+  grade: string | null;
+  schoolId: string | null;
+  linkId: string;
+  linkStatus: GuardianLinkStatus;
+  linkedAt: string | null;
+}
+
+export interface GuardianSummary {
+  guardianId: string;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  linkId: string;
+  linkStatus: GuardianLinkStatus;
+  linkedAt: string | null;
+}

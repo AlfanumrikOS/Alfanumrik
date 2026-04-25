@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { authorizeRequest, logAudit } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { getGuardianByAuthUserId } from '@/lib/domains/identity';
+import { isGuardianLinkedToStudent } from '@/lib/domains/relationship';
 import { logger } from '@/lib/logger';
 import { isValidUUID } from '@/lib/sanitize';
 
@@ -32,31 +34,18 @@ export async function POST(request: Request) {
     const safeLanguage = ['en', 'hi'].includes(language) ? language : 'en';
 
     // ── Resolve parent (guardian) ID from auth user ──
-    const { data: guardian } = await supabaseAdmin
-      .from('guardians')
-      .select('id')
-      .eq('auth_user_id', auth.userId)
-      .limit(1)
-      .maybeSingle();
-
-    if (!guardian) {
+    const guardianResult = await getGuardianByAuthUserId(auth.userId!);
+    if (!guardianResult.ok || !guardianResult.data) {
       return NextResponse.json(
         { success: false, error: 'No parent profile found' },
         { status: 403 }
       );
     }
+    const guardian = guardianResult.data;
 
     // ── Verify parent-student link ──
-    const { data: link } = await supabaseAdmin
-      .from('guardian_student_links')
-      .select('id')
-      .eq('guardian_id', guardian.id)
-      .eq('student_id', student_id)
-      .in('status', ['active', 'approved'])
-      .limit(1)
-      .maybeSingle();
-
-    if (!link) {
+    const linkCheck = await isGuardianLinkedToStudent(guardian.id, student_id);
+    if (!linkCheck.ok || !linkCheck.data) {
       return NextResponse.json(
         { success: false, error: 'You are not linked to this student' },
         { status: 403 }
