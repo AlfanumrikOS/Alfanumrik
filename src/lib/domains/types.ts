@@ -168,3 +168,74 @@ export interface Guardian {
   email: string | null;
   phone: string | null;
 }
+
+// ── Phase 0e: Practice / Review / Spaced-Repetition domain ─────────────────────
+//
+// Types live in this clearly-marked block to avoid merge collisions with the
+// sibling 0b/0c branches that also extend this file. Keep additions to this
+// section only — do not interleave with earlier domain types.
+//
+// B8 (practice) owns spaced_repetition_cards and has read-access to
+// concept_mastery / topic_mastery. SM-2 algorithm logic stays in
+// cognitive-engine.ts / feedback-engine.ts (Phase 0f territory).
+
+/**
+ * A spaced-repetition card. Mirrors the spaced_repetition_cards table shape
+ * but in camelCase. Grade is always a string (product invariant P5).
+ *
+ * The algorithm fields (easeFactor, intervalDays, streak, repetitionCount,
+ * nextReviewDate) are read-only from this domain's perspective — SM-2 update
+ * logic is owned by the cognitive engine (Phase 0f).
+ */
+export interface ReviewCard {
+  id: string;
+  studentId: string;
+  cardType: string | null;
+  subject: string | null;
+  grade: string | null;
+  chapterNumber: number | null;
+  chapterTitle: string | null;
+  topic: string | null;
+  frontText: string;
+  backText: string;
+  hint: string | null;
+  source: string | null;
+  sourceId: string | null;
+  easeFactor: number;
+  intervalDays: number;
+  repetitionCount: number;
+  nextReviewDate: string | null;
+  lastReviewDate: string | null;
+  lastQuality: number | null;
+  totalReviews: number;
+  correctReviews: number;
+  streak: number;
+  isActive: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+/**
+ * Aggregate of cards due for a student.
+ * `bySubject` keys are subject codes ("math", "science", etc — see CBSE rules).
+ */
+export interface ReviewDue {
+  total: number;
+  bySubject: Record<string, number>;
+}
+
+/**
+ * Concept-mastery slice exposed to the practice domain — read-only.
+ *
+ * This is intentionally a NARROW projection of the concept_mastery table.
+ * The full BKT/IRT algorithm fields (p_know, p_learn, p_guess, etc) stay
+ * inside the cognitive engine; this domain exposes only what review/practice
+ * UIs need: which topic, how mastered, when next review.
+ */
+export interface ConceptMasterySlice {
+  topicId: string;
+  masteryProbability: number | null;
+  consecutiveCorrect: number | null;
+  nextReviewAt: string | null;
+  updatedAt: string | null;
+}
