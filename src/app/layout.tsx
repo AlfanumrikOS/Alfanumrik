@@ -4,10 +4,8 @@ import { AuthProvider } from '@/lib/AuthContext';
 import { SchoolProvider } from '@/lib/SchoolContext';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import RegisterSW from '@/lib/RegisterSW';
-import CookieConsent from '@/components/CookieConsent';
 import JsonLd from '@/components/JsonLd';
-import NetworkStatus from '@/components/NetworkStatus';
-import MaintenanceBanner from '@/components/MaintenanceBanner';
+import LayoutDeferredChrome from '@/components/LayoutDeferredChrome';
 import DemoModeWrapper from '@/components/DemoModeWrapper';
 
 export const metadata: Metadata = {
@@ -84,14 +82,15 @@ export default function RootLayout({
         <a href="#main-content" className="skip-nav">Skip to content</a>
         <SchoolProvider>
           <AuthProvider>
-            <NetworkStatus />
-            <MaintenanceBanner />
             <ErrorBoundary>
               <div id="main-content" className="app-shell">{children}</div>
             </ErrorBoundary>
             <DemoModeWrapper />
             <RegisterSW />
-            <CookieConsent />
+            {/* Non-critical client-only chrome (consent banner, maintenance
+                banner, offline indicator). Lazy-loaded to keep shared JS
+                under the P10 budget. */}
+            <LayoutDeferredChrome />
           </AuthProvider>
         </SchoolProvider>
       </body>

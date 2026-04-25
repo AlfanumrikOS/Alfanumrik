@@ -1283,19 +1283,52 @@ Deno.serve(async (req) => {
     // review indicators (e.g. "Revision question") without changing QuestionRow shape
     const reviewQuestionIds = [...reviewIds]
 
+    // ── P6 runtime validator (defense-in-depth) ────────────────────────
+    // Strip any question that fails the P6 contract:
+    //   - non-empty question_text without `{{` or `[BLANK]` placeholders
+    //   - exactly 4 distinct, non-empty options
+    //   - correct_answer_index integer in 0..3
+    //   - non-empty explanation
+    // The DB CHECK constraints already enforce this on inserts, but
+    // RAG-derived rows or partial-update edge cases could still slip a
+    // bad shape through; this is the last line of defense before the
+    // wire so students never see a malformed question.
+    const TEMPLATE_RE = /\{\{|\[BLANK\]/i;
+    const validated = interleaved.filter((q) => {
+      const text = typeof q?.question_text === 'string' ? q.question_text.trim() : '';
+      if (!text || TEMPLATE_RE.test(text)) return false;
+      const opts: unknown[] = Array.isArray(q?.options) ? q.options : [];
+      if (opts.length !== 4) return false;
+      const cleaned = opts.map((o) => (typeof o === 'string' ? o.trim() : ''));
+      if (cleaned.some((o) => !o)) return false;
+      if (new Set(cleaned).size !== 4) return false;
+      const idx = q?.correct_answer_index;
+      if (typeof idx !== 'number' || !Number.isInteger(idx) || idx < 0 || idx > 3) return false;
+      const exp = typeof q?.explanation === 'string' ? q.explanation.trim() : '';
+      if (!exp) return false;
+      return true;
+    });
+    const droppedByValidator = interleaved.length - validated.length;
+    if (droppedByValidator > 0) {
+      console.warn(
+        `[quiz-generator] P6 validator dropped ${droppedByValidator} malformed question(s) before send`,
+      );
+    }
+
     return new Response(
       JSON.stringify({
-        questions: interleaved,
+        questions: validated,
         meta: {
           strategy,
           weak_topics_targeted: weakTopicsTargeted,
-          total_returned: interleaved.length,
+          total_returned: validated.length,
           bloom_distribution: bloomDistribution,
           review_count: reviewCount,
           adaptive_count: adaptiveCount,
           random_count: randomCount,
           review_topic_count: reviewTopicCount,
           review_question_ids: reviewQuestionIds,
+          dropped_by_p6_validator: droppedByValidator,
         },
       }),
       {
