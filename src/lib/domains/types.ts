@@ -169,21 +169,216 @@ export interface Guardian {
   phone: string | null;
 }
 
-// ── Ops domain (B13) — Phase 0j ───────────────────────────────────────────────
+// ── Assessment domain (Phase 0f, B9) ──────────────────────────────────────────
+//
+// Read-only projections over concept_mastery, topic_mastery, knowledge_gaps,
+// diagnostic_sessions, learning_graph_nodes, cme_error_log. Writes stay in
+// cme-engine and atomic_quiz_profile_update — those are P1/P4 sacred.
 
-/**
- * Maintenance banner shown across all portals (student/parent/teacher/admin).
- *
- * Backed by a row in the `feature_flags` table with flag_name='maintenance_banner'.
- * `messageEn` and `messageHi` come from the row's `metadata` JSONB. When no
- * banner row exists (or it is disabled), `getMaintenanceBanner` returns
- * `ok(null)`.
- *
- * Rendering today is owned by `src/components/MaintenanceBanner.tsx`, which
- * polls the table client-side. The domain helper exists so server routes
- * (e.g. middleware, super-admin status APIs) can read the same source of
- * truth without duplicating the column projection.
- */
+export interface ConceptMastery {
+  id: string;
+  studentId: string;
+  topicId: string;
+  masteryProbability: number;
+  masteryLevel: string | null;
+  attempts: number;
+  correctAttempts: number;
+  hintsUsed: number;
+  firstAttemptedAt: string | null;
+  lastAttemptedAt: string | null;
+  masteredAt: string | null;
+  nextReviewAt: string | null;
+  reviewIntervalDays: number | null;
+  easeFactor: number;
+  consecutiveCorrect: number;
+  pKnow: number | null;
+  pLearn: number | null;
+  pGuess: number | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface TopicMastery {
+  id: string;
+  studentId: string;
+  subject: string;
+  topic: string;
+  masteryLevel: number;
+  totalAttempts: number;
+  correctAttempts: number;
+  lastAttempted: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface KnowledgeGap {
+  id: string;
+  studentId: string;
+  topicId: string;
+  prerequisiteTopicId: string | null;
+  gapType: string | null;
+  severity: string | null;
+  description: string | null;
+  descriptionHi: string | null;
+  recommendedAction: string | null;
+  recommendedActionHi: string | null;
+  isResolved: boolean;
+  detectedAt: string | null;
+  resolvedAt: string | null;
+}
+
+export interface DiagnosticSession {
+  id: string;
+  studentId: string;
+  /** P5: grade is always a string, never an integer. */
+  grade: string | null;
+  subject: string | null;
+  status: string | null;
+  totalQuestions: number;
+  correctAnswers: number;
+  estimatedTheta: number | null;
+  topicsAssessed: unknown[];
+  weakTopics: unknown[];
+  strongTopics: unknown[];
+  recommendedDifficulty: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface LearningGraphNode {
+  id: string;
+  subject: string | null;
+  /** P5: grade is always a string. */
+  grade: string | null;
+  topic: string | null;
+  prerequisites: unknown[];
+  metadata: unknown;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface CmeError {
+  id: string;
+  studentId: string;
+  conceptId: string;
+  questionId: string | null;
+  errorType: string | null;
+  studentAnswer: string | null;
+  correctAnswer: string | null;
+  responseTimeMs: number | null;
+  createdAt: string | null;
+}
+
+// ── Content domain (Phase 0d, B6) ─────────────────────────────────────────────
+//
+// Read-only projections of question_bank, cbse_syllabus, ncert_content
+// (planned), and chapter_concepts. Grade is always a string (P5).
+// Question rows include all fields needed for P6 validation by callers.
+
+export interface Question {
+  id: string;
+  subject: string | null;
+  grade: string | null;
+  chapterId: string | null;
+  chapterNumber: number | null;
+  chapterTitle: string | null;
+  topic: string | null;
+  questionText: string;
+  questionHi: string | null;
+  questionType: string | null;
+  options: string[];
+  correctAnswerIndex: number;
+  explanation: string | null;
+  explanationHi: string | null;
+  hint: string | null;
+  hintHi: string | null;
+  difficulty: number;
+  bloomLevel: string | null;
+  isActive: boolean | null;
+  source: string | null;
+  isNcert: boolean | null;
+  verifiedAgainstNcert: boolean | null;
+  verificationState: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface Chapter {
+  id: string;
+  board: string | null;
+  grade: string | null;
+  subjectCode: string | null;
+  subjectDisplay: string | null;
+  subjectDisplayHi: string | null;
+  chapterNumber: number | null;
+  chapterTitle: string | null;
+  chapterTitleHi: string | null;
+  chunkCount: number;
+  verifiedQuestionCount: number;
+  ragStatus: string | null;
+  lastVerifiedAt: string | null;
+  isInScope: boolean | null;
+  notes: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface NcertContent {
+  id: string;
+  grade: string | null;
+  subject: string | null;
+  chapter: string | null;
+  chapterNumber: number | null;
+  section: string | null;
+  contentType: string | null;
+  contentText: string | null;
+  contentHi: string | null;
+  pageNumber: number | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface ChapterConcept {
+  id: string;
+  chapterId: string | null;
+  grade: string | null;
+  subject: string | null;
+  chapterNumber: number | null;
+  chapterTitle: string | null;
+  conceptNumber: number;
+  title: string | null;
+  titleHi: string | null;
+  slug: string | null;
+  learningObjective: string | null;
+  learningObjectiveHi: string | null;
+  explanation: string | null;
+  explanationHi: string | null;
+  keyFormula: string | null;
+  exampleTitle: string | null;
+  exampleContent: string | null;
+  exampleContentHi: string | null;
+  commonMistakes: string[];
+  examTips: string[];
+  diagramRefs: string[];
+  diagramDescription: string | null;
+  practiceQuestion: string | null;
+  practiceOptions: string[];
+  practiceCorrectIndex: number | null;
+  practiceExplanation: string | null;
+  difficulty: number;
+  bloomLevel: string | null;
+  estimatedMinutes: number;
+  isActive: boolean | null;
+  source: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+// ── Ops domain (Phase 0j, B13) ────────────────────────────────────────────────
+
 export interface MaintenanceBanner {
   isEnabled: boolean;
   messageEn: string | null;
@@ -191,11 +386,6 @@ export interface MaintenanceBanner {
   metadata: Record<string, unknown> | null;
 }
 
-/**
- * Support ticket row exposed by the ops domain. Mirrors the columns
- * written by `/api/support/ticket` (POST) and updated by
- * `/api/internal/admin/support` (PATCH).
- */
 export interface SupportTicket {
   id: string;
   studentId: string | null;
@@ -212,12 +402,6 @@ export interface SupportTicket {
   resolvedAt: string | null;
 }
 
-/**
- * Admin user record from the `admin_users` table. The table is the source
- * of truth for super-admin / admin / moderator listings; `user_roles` holds
- * the granular RBAC role assignment, but `admin_users` is what is read by
- * RLS policies (see `20260418100800_feature_flags.sql`).
- */
 export interface AdminUser {
   id: string;
   authUserId: string;
