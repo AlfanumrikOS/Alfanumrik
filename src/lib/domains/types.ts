@@ -169,22 +169,216 @@ export interface Guardian {
   phone: string | null;
 }
 
-// ── Tenant domain ──────────────────────────────────────────────────────────────
+// ── Assessment domain (Phase 0f, B9) ──────────────────────────────────────────
 //
-// Phase 0b: school / class context. Reads only — writes still live in their
-// owning route (school-admin, internal admin) until the next phase.
-//
-// Field naming follows the rest of the domains module: snake_case DB columns
-// are mapped to camelCase here so callers do not depend on table shape.
+// Read-only projections over concept_mastery, topic_mastery, knowledge_gaps,
+// diagnostic_sessions, learning_graph_nodes, cme_error_log. Writes stay in
+// cme-engine and atomic_quiz_profile_update — those are P1/P4 sacred.
 
-/**
- * School projection for tenant reads. Includes the white-label / branding
- * columns added in `20260412150000_white_label_schools.sql` because a
- * single GET often needs both basic identity (id/name/code) and branding.
- *
- * Callers that need additional columns should add them explicitly here and
- * to the SQL select list — never `select('*')`.
- */
+export interface ConceptMastery {
+  id: string;
+  studentId: string;
+  topicId: string;
+  masteryProbability: number;
+  masteryLevel: string | null;
+  attempts: number;
+  correctAttempts: number;
+  hintsUsed: number;
+  firstAttemptedAt: string | null;
+  lastAttemptedAt: string | null;
+  masteredAt: string | null;
+  nextReviewAt: string | null;
+  reviewIntervalDays: number | null;
+  easeFactor: number;
+  consecutiveCorrect: number;
+  pKnow: number | null;
+  pLearn: number | null;
+  pGuess: number | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface TopicMastery {
+  id: string;
+  studentId: string;
+  subject: string;
+  topic: string;
+  masteryLevel: number;
+  totalAttempts: number;
+  correctAttempts: number;
+  lastAttempted: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface KnowledgeGap {
+  id: string;
+  studentId: string;
+  topicId: string;
+  prerequisiteTopicId: string | null;
+  gapType: string | null;
+  severity: string | null;
+  description: string | null;
+  descriptionHi: string | null;
+  recommendedAction: string | null;
+  recommendedActionHi: string | null;
+  isResolved: boolean;
+  detectedAt: string | null;
+  resolvedAt: string | null;
+}
+
+export interface DiagnosticSession {
+  id: string;
+  studentId: string;
+  /** P5: grade is always a string, never an integer. */
+  grade: string | null;
+  subject: string | null;
+  status: string | null;
+  totalQuestions: number;
+  correctAnswers: number;
+  estimatedTheta: number | null;
+  topicsAssessed: unknown[];
+  weakTopics: unknown[];
+  strongTopics: unknown[];
+  recommendedDifficulty: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface LearningGraphNode {
+  id: string;
+  subject: string | null;
+  /** P5: grade is always a string. */
+  grade: string | null;
+  topic: string | null;
+  prerequisites: unknown[];
+  metadata: unknown;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface CmeError {
+  id: string;
+  studentId: string;
+  conceptId: string;
+  questionId: string | null;
+  errorType: string | null;
+  studentAnswer: string | null;
+  correctAnswer: string | null;
+  responseTimeMs: number | null;
+  createdAt: string | null;
+}
+
+// ── Content domain (Phase 0d, B6) ─────────────────────────────────────────────
+//
+// Read-only projections of question_bank, cbse_syllabus, ncert_content
+// (planned), and chapter_concepts. Grade is always a string (P5).
+// Question rows include all fields needed for P6 validation by callers.
+
+export interface Question {
+  id: string;
+  subject: string | null;
+  grade: string | null;
+  chapterId: string | null;
+  chapterNumber: number | null;
+  chapterTitle: string | null;
+  topic: string | null;
+  questionText: string;
+  questionHi: string | null;
+  questionType: string | null;
+  options: string[];
+  correctAnswerIndex: number;
+  explanation: string | null;
+  explanationHi: string | null;
+  hint: string | null;
+  hintHi: string | null;
+  difficulty: number;
+  bloomLevel: string | null;
+  isActive: boolean | null;
+  source: string | null;
+  isNcert: boolean | null;
+  verifiedAgainstNcert: boolean | null;
+  verificationState: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface Chapter {
+  id: string;
+  board: string | null;
+  grade: string | null;
+  subjectCode: string | null;
+  subjectDisplay: string | null;
+  subjectDisplayHi: string | null;
+  chapterNumber: number | null;
+  chapterTitle: string | null;
+  chapterTitleHi: string | null;
+  chunkCount: number;
+  verifiedQuestionCount: number;
+  ragStatus: string | null;
+  lastVerifiedAt: string | null;
+  isInScope: boolean | null;
+  notes: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface NcertContent {
+  id: string;
+  grade: string | null;
+  subject: string | null;
+  chapter: string | null;
+  chapterNumber: number | null;
+  section: string | null;
+  contentType: string | null;
+  contentText: string | null;
+  contentHi: string | null;
+  pageNumber: number | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface ChapterConcept {
+  id: string;
+  chapterId: string | null;
+  grade: string | null;
+  subject: string | null;
+  chapterNumber: number | null;
+  chapterTitle: string | null;
+  conceptNumber: number;
+  title: string | null;
+  titleHi: string | null;
+  slug: string | null;
+  learningObjective: string | null;
+  learningObjectiveHi: string | null;
+  explanation: string | null;
+  explanationHi: string | null;
+  keyFormula: string | null;
+  exampleTitle: string | null;
+  exampleContent: string | null;
+  exampleContentHi: string | null;
+  commonMistakes: string[];
+  examTips: string[];
+  diagramRefs: string[];
+  diagramDescription: string | null;
+  practiceQuestion: string | null;
+  practiceOptions: string[];
+  practiceCorrectIndex: number | null;
+  practiceExplanation: string | null;
+  difficulty: number;
+  bloomLevel: string | null;
+  estimatedMinutes: number;
+  isActive: boolean | null;
+  source: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+// ── Tenant domain (Phase 0b, B2) ──────────────────────────────────────────────
+
 export interface School {
   id: string;
   name: string | null;
@@ -198,19 +392,15 @@ export interface School {
   domainVerified: boolean | null;
   billingEmail: string | null;
   isActive: boolean | null;
-  // White-label settings JSON; opaque to the domain — typed as unknown to
-  // force callers to validate before using.
+  /** White-label settings JSON; opaque to the domain — typed as unknown to force callers to validate. */
   settings: unknown;
 }
 
-/**
- * Class projection for tenant reads. Mirrors the columns selected by the
- * school-admin classes list endpoint. P5: `grade` is always a string.
- */
 export interface Class {
   id: string;
   schoolId: string | null;
   name: string | null;
+  /** P5: always string. */
   grade: string | null;
   section: string | null;
   academicYear: string | null;
@@ -221,10 +411,6 @@ export interface Class {
   createdAt: string | null;
 }
 
-/**
- * Membership projections. The legacy `class_students` and the canonical
- * `class_enrollments` tables share these fields, so the type is reused.
- */
 export interface ClassStudent {
   id: string;
   classId: string;
