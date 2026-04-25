@@ -58,9 +58,7 @@ type SchoolRow = {
   settings: unknown;
 };
 
-const SCHOOL_COLUMNS =
-  'id, name, code, slug, logo_url, primary_color, secondary_color, ' +
-  'tagline, custom_domain, domain_verified, billing_email, is_active, settings';
+const SCHOOL_COLUMNS = 'id, name, code, slug, logo_url, primary_color, secondary_color, tagline, custom_domain, domain_verified, billing_email, is_active, settings';
 
 function mapSchool(row: SchoolRow): School {
   return {
@@ -155,9 +153,7 @@ type ClassRow = {
   created_at: string | null;
 };
 
-const CLASS_COLUMNS =
-  'id, school_id, name, grade, section, academic_year, subject, ' +
-  'class_code, is_active, max_students, created_at';
+const CLASS_COLUMNS = 'id, school_id, name, grade, section, academic_year, subject, class_code, is_active, max_students, created_at';
 
 function mapClass(row: ClassRow): Class {
   return {
