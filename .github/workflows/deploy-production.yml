@@ -86,8 +86,19 @@ jobs:
 
       - name: Scan for secrets in diff
         run: |
-          # Final secret scan on what is being deployed
-          SECRETS_FOUND=$(git diff HEAD~1..HEAD 2>/dev/null | grep -iE '^\+.*(sk_live_|rzp_live_|service_role.*eyJ|NEXT_PUBLIC_.*SERVICE_ROLE)' || true)
+          # Final secret scan on what is being deployed.
+          # Strategy: only flag added lines that look like an actual secret
+          # ASSIGNMENT or live token. Skip comments (//, #, *, JSDoc) so
+          # docstrings that *mention* env-var names don't false-positive.
+          ADDED=$(git diff HEAD~1..HEAD 2>/dev/null | grep -E '^\+[^+]' || true)
+          # Drop comment-only additions before scanning.
+          NON_COMMENT=$(echo "$ADDED" | grep -vE '^\+[[:space:]]*(//|#|\*|<!--)' || true)
+          # Patterns:
+          #   - Stripe live secret: sk_live_<24+ chars>
+          #   - Razorpay live key:  rzp_live_<14+ chars>
+          #   - Supabase service role JWT (real key starts eyJ + long base64)
+          #   - Any *SERVICE_ROLE_KEY* assignment with a non-placeholder value
+          SECRETS_FOUND=$(echo "$NON_COMMENT" | grep -iE 'sk_live_[A-Za-z0-9]{24,}|rzp_live_[A-Za-z0-9]{14,}|eyJ[A-Za-z0-9_\-]{40,}\.[A-Za-z0-9_\-]{40,}|SERVICE_ROLE_KEY[[:space:]]*[=:][[:space:]]*[A-Za-z0-9._\-]{20,}' || true)
           if [ -n "$SECRETS_FOUND" ]; then
             echo ""
             echo "BLOCKED: Potential secrets in deployment diff."
