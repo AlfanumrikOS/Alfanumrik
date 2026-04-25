@@ -19,6 +19,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { findLinkById } from '@/lib/domains/relationship';
 import { logger } from '@/lib/logger';
 import { isValidUUID } from '@/lib/sanitize';
 
@@ -87,27 +88,24 @@ export async function POST(request: NextRequest) {
     }
 
     // ── 4. Fetch the pending link and verify the student owns it ──────────
-    const { data: link, error: linkError } = await supabaseAdmin
-      .from('guardian_student_links')
-      .select('id, student_id, guardian_id, status')
-      .eq('id', linkId)
-      .eq('status', 'pending')
-      .maybeSingle();
+    const linkResult = await findLinkById(linkId, 'pending');
 
-    if (linkError) {
+    if (!linkResult.ok) {
       logger.error('approve_link: link fetch failed', {
-        error: new Error(linkError.message),
+        error: new Error(linkResult.error),
         linkId,
       });
       return err('Internal server error', 500);
     }
+
+    const link = linkResult.data;
 
     if (!link) {
       // Either the link does not exist or it is not in 'pending' state
       return err('Link request not found or already processed', 404);
     }
 
-    if (link.student_id !== student.id) {
+    if (link.studentId !== student.id) {
       // The authenticated student does not own this link — reject silently as 404
       // to avoid leaking information about other students' links
       return err('Link request not found or already processed', 404);
