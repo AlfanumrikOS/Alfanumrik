@@ -26,8 +26,13 @@
  * POST /api/foxy
  * Body: { message, subject, grade, chapter?, board?, sessionId?, mode? }
  * Response (success):
- *   { success, response, sources, diagrams?, sessionId, quotaRemaining,
- *     tokensUsed, confidence?, groundingStatus, traceId, upgradePrompt? }
+ *   { success, response, sessionId, quotaRemaining, tokensUsed,
+ *     confidence?, groundingStatus, traceId, upgradePrompt? }
+ *   NOTE (Phase 0): NCERT `sources` and `diagrams` are intentionally NOT
+ *   exposed on the wire. Retrieval still happens server-side, citations
+ *   are injected into the system prompt, and `sources` is still persisted
+ *   to foxy_chat_messages.sources for analytics/debug — but never echoed
+ *   to the client.
  * Response (abstain / hard-abstain):
  *   { success: true, response: '', groundingStatus: 'hard-abstain',
  *     abstainReason, suggestedAlternatives, traceId }
@@ -48,8 +53,17 @@ import { generateEmbedding } from '@/lib/ai/retrieval/ncert-retriever';
 
 const VALID_GRADES = ['6', '7', '8', '9', '10', '11', '12'];
 const VALID_MODES = ['learn', 'explain', 'practice', 'revise'];
+// Phase 2.2: coaching modes — distinct from the UI session mode above.
+// 'answer'   → student wants the answer (used when mastery is high).
+// 'socratic' → guide via questions (default for mid-mastery, the moat).
+// 'review'   → quick recall mode for revision/spaced-repetition entries.
+const VALID_COACH_MODES = ['answer', 'socratic', 'review'] as const;
+type CoachMode = typeof VALID_COACH_MODES[number];
 const MAX_MESSAGE_LENGTH = 1000;
-const MAX_HISTORY_TURNS = 6;       // last 6 turns = 12 messages for context
+// Phase 2.4: bumped from 6 → 20 turns. Anthropic prompt caching
+// (cache_control: ephemeral) is applied to the system prompt + first ~10
+// turns so input cost stays roughly flat despite the longer history.
+const MAX_HISTORY_TURNS = 20;
 const RAG_MATCH_COUNT = 5;
 const SESSION_IDLE_MINUTES = 30;
 
@@ -473,6 +487,32 @@ function buildAcademicGoalSection(goal: string | null): string {
   return `\n## Student's Academic Goal: ${instruction}\n`;
 }
 
+// ─── Coaching-mode resolver (Phase 2.2) ──────────────────────────────────────
+//
+// Decides the per-turn coaching shape from the explicit request param (if any)
+// + the student's current mastery level. Default policy:
+//   mastery 'low'    → 'socratic'  (scaffold prerequisites)
+//   mastery 'medium' → 'socratic'  (the moat — ask, don't tell)
+//   mastery 'high'   → 'answer'    (concise answer + stretch question)
+// 'review' must be requested explicitly (used by spaced-repetition surface).
+function resolveCoachMode(
+  requested: CoachMode | null,
+  masteryLevel: CognitiveContext['masteryLevel'],
+): CoachMode {
+  if (requested) return requested;
+  if (masteryLevel === 'high') return 'answer';
+  return 'socratic';
+}
+
+const COACH_MODE_INSTRUCTIONS: Record<CoachMode, string> = {
+  answer:
+    "Student appears confident. Answer the question concisely (3-5 sentences max) and end with ONE stretch question that is one Bloom's level higher than the original.",
+  socratic:
+    "Use Socratic scaffolding. Break the answer into 2-3 guided sub-questions, ask the student to attempt each, and only give the full explanation if they remain stuck after two scaffolds.",
+  review:
+    "Treat this as a quick recall check. Ask the student to state the key idea in their own words first; only confirm or correct after they answer.",
+};
+
 // ─── System-prompt safety rails (P12 AI Safety, P7 Bilingual) ────────────────
 //
 // These rails mirror the server-authoritative `foxy_tutor_v1` template stored
@@ -802,6 +842,13 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   const board = typeof body.board === 'string' ? body.board.trim() || 'CBSE' : 'CBSE';
   const sessionId = typeof body.sessionId === 'string' ? body.sessionId.trim() || null : null;
   const mode = typeof body.mode === 'string' && VALID_MODES.includes(body.mode) ? body.mode : 'learn';
+  // Phase 2.2: optional coaching mode. If the client passes one, we honor
+  // it. Otherwise we pick a default later, after mastery is known
+  // (mastery < 0.6 → 'socratic', else → 'answer').
+  const requestedCoachMode: CoachMode | null =
+    typeof body.coachMode === 'string' && (VALID_COACH_MODES as readonly string[]).includes(body.coachMode)
+      ? (body.coachMode as CoachMode)
+      : null;
 
   // 3. Validate inputs
   if (!message) {
@@ -999,11 +1046,15 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         },
       });
 
+      // Phase 0: NCERT surfaces (sources, diagrams) are intentionally NOT
+      // returned to the client. Retrieval still happens server-side and
+      // citations are still injected into the system prompt for grounding,
+      // but the student-facing wire shape no longer exposes the raw chunks.
+      // Server-side persistence to foxy_chat_messages.sources is preserved
+      // above for analytics and debug.
       return NextResponse.json({
         success: true,
         response: legacy.response,
-        sources: legacy.sources,
-        diagrams: legacy.diagrams,
         sessionId: resolvedSessionId,
         quotaRemaining: remaining,
         tokensUsed: legacy.tokensUsed,
@@ -1057,6 +1108,9 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     error: err instanceof Error ? err.message : String(err),
   }));
 
+  // Phase 2.2: resolve the coaching mode from explicit request + mastery.
+  const coachMode = resolveCoachMode(requestedCoachMode, cognitiveCtx.masteryLevel);
+
   const groundedRequest: GroundedRequest = {
     caller: 'foxy',
     student_id: studentId,
@@ -1079,6 +1133,10 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         subject,
         chapter: chapter ?? '',
         mode,
+        // Phase 2.2: coaching mode and its instruction line, consumed by
+        // the rewritten foxy_tutor_v1 template.
+        coach_mode: coachMode.toUpperCase(),
+        coach_mode_instruction: COACH_MODE_INSTRUCTIONS[coachMode],
         academic_goal_section: buildAcademicGoalSection(academicGoal),
         cognitive_context_section: buildCognitivePromptSection(cognitiveCtx),
         foxy_safety_rails: FOXY_SAFETY_RAILS,
@@ -1132,11 +1190,10 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
       ? remaining + 1
       : remaining;
 
+    // Phase 0: do NOT echo sources/diagrams to the client.
     return NextResponse.json({
       success: true,
       response: '',
-      sources: [] as RagSource[],
-      diagrams: [] as DiagramRef[],
       sessionId: resolvedSessionId,
       quotaRemaining: effectiveRemaining,
       tokensUsed: 0,
@@ -1265,11 +1322,15 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     };
   }
 
+  // Phase 0: NCERT surfaces (sources, diagrams) are NOT echoed to the client.
+  // Server-side persistence and grounding still use them; this strip only
+  // affects the wire shape so the student UI never displays raw NCERT
+  // citations. `sources` is still computed above and saved to
+  // foxy_chat_messages.sources for analytics/debug.
+  void diagrams;
   return NextResponse.json({
     success: true,
     response: grounded.answer,
-    sources,
-    diagrams,
     sessionId: resolvedSessionId,
     quotaRemaining: remaining,
     tokensUsed: grounded.meta.tokens_used,
@@ -1308,9 +1369,12 @@ export async function GET(request: NextRequest): Promise<Response> {
     return errorJson('Session not found.', 'Session nahi mila.', 404);
   }
 
+  // Phase 0: do NOT return persisted `sources` to the client. The column
+  // remains populated server-side for analytics/debug, but the GET handler
+  // intentionally excludes it from the SELECT so it cannot leak.
   const { data: messages } = await supabaseAdmin
     .from('foxy_chat_messages')
-    .select('id, role, content, sources, tokens_used, created_at')
+    .select('id, role, content, tokens_used, created_at')
     .eq('session_id', sessionId)
     .order('created_at', { ascending: true });
 

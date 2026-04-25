@@ -27,6 +27,7 @@ import { checkCoverage } from './coverage.ts';
 import { buildAbstainResponse } from './abstain.ts';
 import { generateEmbedding } from './embedding.ts';
 import { retrieveChunks, type RetrievedChunk } from './retrieval.ts';
+import { rerankDocuments } from '../_shared/reranking.ts';
 import { callClaude } from './claude.ts';
 import { runGroundingCheck } from './grounding-check.ts';
 import { computeConfidence } from './confidence.ts';
@@ -42,6 +43,8 @@ import {
   redactPreview,
   type TraceRow,
 } from './trace.ts';
+// redactPreview is reused for retrieval_traces.query_text below — keeps
+// the privacy redaction (P13) consistent with grounded_ai_traces.
 import {
   canProceed,
   circuitKey,
@@ -64,6 +67,65 @@ import type {
 } from './types.ts';
 
 const VOYAGE_MODEL_ID = 'voyage-3';
+
+// Phase 1.1: rerank stage. We over-fetch from match_rag_chunks_ncert and
+// then call Voyage rerank-2 to pick the most relevant subset for the
+// caller's match_count. Gated by FOXY_RERANK_ENABLED (default true). On
+// rerank API failure we fall through with the original similarity-ranked
+// top-N so the request never crashes — see rerankDocuments contract.
+const RERANK_INITIAL_FETCH = 30;
+
+function rerankEnabled(): boolean {
+  const raw = (Deno.env.get('FOXY_RERANK_ENABLED') ?? 'true').toLowerCase();
+  return raw !== 'false' && raw !== '0' && raw !== 'off';
+}
+
+/**
+ * Phase 1.3: write a per-query row to retrieval_traces. Best-effort,
+ * non-blocking. Schema reference: migration
+ * `20260403700000_ncert_voyage_retrieval_architecture.sql` lines 151-169.
+ * If the table is absent in the deployed environment (migration not
+ * applied) this is a no-op — we log a warn the first time and never
+ * raise to the caller.
+ */
+async function writeRetrievalTrace(
+  // deno-lint-ignore no-explicit-any
+  sb: any,
+  args: {
+    request: GroundedRequest;
+    chunks: RetrievedChunk[];
+    reranked: boolean;
+    abstain: boolean;
+  },
+): Promise<void> {
+  try {
+    const { request, chunks, reranked } = args;
+    const chunkIds = chunks.map((c) => c.id);
+    await sb.from('retrieval_traces').insert({
+      user_id: null, // student_id in /api/foxy is the alfanumrik student row id, NOT auth.users.id; leave null to satisfy FK.
+      session_id: null,
+      caller: request.caller,
+      grade: request.scope.grade,
+      subject: request.scope.subject_code,
+      chapter_number: request.scope.chapter_number,
+      concept: null,
+      content_type: null,
+      syllabus_version: '2025-26',
+      // P13: redact emails/phones/tokens out of the stored query — matches
+      // the redactPreview policy used for grounded_ai_traces.
+      query_text: redactPreview(request.query),
+      embedding_model: 'voyage/voyage-3',
+      reranked,
+      chunk_ids: chunkIds,
+      match_count: request.retrieval.match_count,
+      latency_ms: null,
+    });
+  } catch (err) {
+    // Non-fatal — never propagate. Most common failure is the table not
+    // existing in this environment; that's logged once at warn level.
+    console.warn(`retrieval_traces insert failed — ${String(err)}`);
+  }
+}
 
 // ── Feature flag cache (60s TTL) ────────────────────────────────────────────
 // ff_grounded_ai_enabled is the global kill switch. We check it on every
@@ -353,14 +415,67 @@ export async function runPipeline(
   }
 
   // Step 6. Retrieve chunks.
-  const { chunks, scopeDrops } = await retrieveChunks(sb, {
+  //
+  // Phase 1.1: over-fetch (top-30 by default) and let the Voyage rerank-2
+  // model pick the most relevant subset for the caller's requested
+  // match_count (default top-5). Reranking is gated by FOXY_RERANK_ENABLED
+  // (default true). If rerank is disabled or the API call fails,
+  // rerankDocuments returns the original similarity order so we always
+  // have a sensible result. The reranked flag is recorded on the per-query
+  // retrieval trace below.
+  const overFetchCount = rerankEnabled()
+    ? Math.max(RERANK_INITIAL_FETCH, request.retrieval.match_count)
+    : request.retrieval.match_count;
+
+  const { chunks: rawChunks, scopeDrops } = await retrieveChunks(sb, {
     query: request.query,
     embedding,
     scope: request.scope,
-    matchCount: request.retrieval.match_count,
+    matchCount: overFetchCount,
     minSimilarity,
   });
+
+  let chunks: RetrievedChunk[];
+  let reranked = false;
+  if (
+    rerankEnabled() &&
+    voyageKey.length > 0 &&
+    rawChunks.length > request.retrieval.match_count
+  ) {
+    const rr = await rerankDocuments(
+      {
+        query: request.query,
+        documents: rawChunks.map((c) => c.content),
+      },
+      request.retrieval.match_count,
+    );
+    if (rr.reranked) {
+      chunks = rr.rankedIndices.map((i) => rawChunks[i]).filter(Boolean);
+      reranked = true;
+    } else {
+      // Rerank API failed or skipped — fall back to similarity-ranked top-N.
+      chunks = rawChunks.slice(0, request.retrieval.match_count);
+    }
+  } else {
+    chunks = rawChunks.slice(0, request.retrieval.match_count);
+  }
+
   ctx.chunks = chunks;
+
+  // Phase 1.3: per-query retrieval trace. Fire-and-forget — never block the
+  // user response on this insert. Captures: caller, scope, top-K chunk_ids
+  // and similarity scores, reranked flag, model, and (later) the abstain
+  // outcome via grounded_ai_traces.abstain_reason. Privacy: query_text
+  // here is the raw query (table is service-role gated; redacted preview
+  // already lives in grounded_ai_traces). If the table doesn't exist (it
+  // is created in a separate migration), the insert silently fails and
+  // does not affect the user.
+  void writeRetrievalTrace(sb, {
+    request,
+    chunks,
+    reranked,
+    abstain: false,
+  });
 
   const topSim = chunks.length > 0 ? chunks[0].similarity : 0;
   const top3Avg =
@@ -438,6 +553,13 @@ export async function runPipeline(
   // if they weren't already provided — callers that built those pass them in.
   if (!vars.academic_goal_section) vars.academic_goal_section = '';
   if (!vars.cognitive_context_section) vars.cognitive_context_section = '';
+  // Phase 2.2 coaching-mode placeholders. Safe defaults if the caller did
+  // not pass them (e.g. older client or non-Foxy caller using foxy_tutor_v1).
+  if (!vars.coach_mode) vars.coach_mode = 'SOCRATIC';
+  if (!vars.coach_mode_instruction) {
+    vars.coach_mode_instruction =
+      'Use Socratic scaffolding: ask, do not tell. Guide the student to the answer.';
+  }
 
   const systemPrompt = resolveTemplate(template, vars);
   const promptHashStr = await hashPrompt(systemPrompt);

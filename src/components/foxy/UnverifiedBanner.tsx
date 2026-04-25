@@ -23,12 +23,12 @@ export function UnverifiedBanner({ traceId, onShowChapters }: UnverifiedBannerPr
   const { isHi } = useAuth();
 
   const message = isHi
-    ? '⚠ Yeh jawab aapki NCERT kitaab se nahi hai — apni kitaab se check karein, ya NCERT se koi specific sawaal poochein.'
-    : '⚠ This answer isn\u2019t from your NCERT textbook — please verify with your book, or ask a specific NCERT question for a grounded answer.';
+    ? '⚠ यह उत्तर आपके सत्यापित पाठ्यक्रम से नहीं है — अपनी किताब से जाँच करें, या किसी विशिष्ट विषय पर प्रश्न पूछें।'
+    : '⚠ This answer isn\u2019t from your verified curriculum — please verify with your book, or ask a specific question for a grounded answer.';
 
   const actionLabel = isHi
-    ? 'Mujhe dikhaiye kaun se NCERT chapters available hain'
-    : 'Show me NCERT chapters I can ask about';
+    ? 'मुझे दिखाइए कौन से सत्यापित पाठ्यक्रम विषय उपलब्ध हैं'
+    : 'Show me verified curriculum topics I can ask about';
 
   return (
     <div

@@ -267,8 +267,6 @@ async function callFoxyTutor(params: Record<string, any>) {
       reply:      data.response || 'Let me think about that...',
       xp_earned:  0, // new route does not award per-message XP (XP via quiz/study plan)
       session_id: data.sessionId || null,
-      sources:    data.sources   || [],
-      diagrams:   data.diagrams  || [],
       quota:      data.quotaRemaining,
       upgradePrompt: data.upgradePrompt || null,
       // Phase 3: grounded-answer response metadata. Undefined when the server
@@ -289,7 +287,6 @@ async function callFoxyTutor(params: Record<string, any>) {
    MAIN FOXY PAGE
    ══════════════════════════════════════════════════════════════ */
 
-interface DiagramRef { url: string; title: string; pageNumber?: number; description: string; }
 interface ChatMessage {
   id: number;
   role: 'student' | 'tutor';
@@ -298,7 +295,6 @@ interface ChatMessage {
   xp?: number;
   feedback?: 'up' | 'down' | null;
   reported?: boolean;
-  diagrams?: DiagramRef[];
   imageUrl?: string;
   /** Grounding verdict — set only on tutor messages served from the grounded-answer service. */
   groundingStatus?: GroundingStatus;
@@ -716,7 +712,6 @@ export default function FoxyPage() {
         content: resp.reply,
         timestamp: new Date().toISOString(),
         xp: resp.xp_earned,
-        diagrams: resp.diagrams?.length > 0 ? resp.diagrams : undefined,
         groundingStatus: resp.groundingStatus,
         traceId: resp.traceId,
         abstainReason: resp.abstainReason,
@@ -1386,53 +1381,6 @@ export default function FoxyPage() {
                     abstainReason={msg.abstainReason}
                     suggestedAlternatives={msg.suggestedAlternatives}
                   />
-                  {msg.role === 'tutor' && msg.diagrams && msg.diagrams.length > 0 && (
-                    <div className="pl-11 -mt-1 mb-2 space-y-2">
-                      <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>
-                        {language === 'hi' ? 'NCERT चित्र:' : 'NCERT Diagrams:'}
-                      </p>
-                      {msg.diagrams.map((d: DiagramRef, i: number) => (
-                        <a
-                          key={i}
-                          href={d.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-3 px-4 py-3 rounded-2xl text-left transition-all hover:brightness-95 active:scale-[0.98]"
-                          style={{
-                            background: `linear-gradient(135deg, ${cfg.color}08, ${cfg.color}04)`,
-                            border: `1.5px solid ${cfg.color}25`,
-                            boxShadow: `0 2px 8px ${cfg.color}08`,
-                          }}
-                        >
-                          <div
-                            className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                            style={{ background: `${cfg.color}12` }}
-                          >
-                            <span className="text-lg" style={{ color: cfg.color }}>📊</span>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-bold truncate" style={{ color: 'var(--text-1)' }}>
-                              {d.title}
-                            </p>
-                            {d.description && (
-                              <p className="text-[10px] mt-0.5 truncate" style={{ color: 'var(--text-3)' }}>
-                                {d.description}
-                              </p>
-                            )}
-                          </div>
-                          {d.pageNumber && (
-                            <span
-                              className="flex-shrink-0 text-[9px] font-bold px-2 py-1 rounded-lg"
-                              style={{ background: `${cfg.color}15`, color: cfg.color }}
-                            >
-                              p. {d.pageNumber}
-                            </span>
-                          )}
-                          <span className="flex-shrink-0 text-sm" style={{ color: cfg.color }}>↗</span>
-                        </a>
-                      ))}
-                    </div>
-                  )}
                   {msg.role === 'tutor' && !msg.reported && (
                     <div className="flex justify-start pl-11 -mt-2 mb-3">
                       <button
