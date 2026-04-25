@@ -31,6 +31,28 @@ import { logger } from '@/lib/logger';
  * All writes are idempotent.
  */
 
+/**
+ * Task 3 — payment-webhook-hardening: outcome marker for payment_webhook_events.
+ *
+ * Records the terminal outcome on the row inserted by `record_webhook_event`
+ * via `mark_webhook_event_processed`. Failure is non-blocking: we never want
+ * to fail a webhook because we couldn't update telemetry.
+ */
+async function markEvent(
+  admin: SupabaseClient,
+  rowId: string | null,
+  outcome: 'ack' | 'dedupe' | 'activated' | 'downgraded' | 'failed' | 'unresolved',
+): Promise<void> {
+  if (!rowId) return;
+  try {
+    await admin.rpc('mark_webhook_event_processed', { p_id: rowId, p_outcome: outcome });
+  } catch (err) {
+    logger.warn('webhook: mark_webhook_event_processed failed (non-blocking)', {
+      error: err instanceof Error ? err.message : String(err), rowId, outcome,
+    });
+  }
+}
+
 /** Strip billing-cycle suffix and map legacy aliases to canonical plan code. */
 function canonicalizePlan(raw: string): string {
   return raw
@@ -166,12 +188,19 @@ async function downgradeIfMatchingSub(
   return 'downgraded';
 }
 
-/** Central handler for unresolved-student webhook events. */
+/**
+ * Central handler for unresolved-student webhook events.
+ *
+ * Task 3 — accepts optional admin + webhookEventRowId so we can stamp
+ * `outcome=unresolved` on the payment_webhook_events row before returning.
+ */
 async function handleUnresolved(
   eventType: string,
   rzSubId: string | undefined,
   rzPaymentId: string | undefined,
   notes: Record<string, unknown>,
+  admin?: SupabaseClient,
+  webhookEventRowId?: string | null,
 ): Promise<NextResponse> {
   await logOpsEvent({
     category: 'payment',
@@ -185,6 +214,9 @@ async function handleUnresolved(
       notes_keys: Object.keys(notes ?? {}),
     },
   });
+  if (admin && webhookEventRowId) {
+    await markEvent(admin, webhookEventRowId, 'unresolved');
+  }
   // Return 500 so Razorpay retries (5xx = retry, 4xx = no retry).
   return NextResponse.json({ error: 'student_unresolved' }, { status: 500 });
 }
@@ -221,6 +253,41 @@ export async function POST(request: NextRequest) {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
+    // ── Event-level dedupe (Task 3 of payment-webhook-hardening plan) ──
+    // Razorpay can re-fire any event. We record (account_id, event_id) in
+    // payment_webhook_events with a unique constraint. ON CONFLICT means
+    // duplicate delivery → ACK and skip. This dedupes events that have no
+    // payment entity (e.g. re-fired subscription.cancelled).
+    const accountId: string | undefined = event.account_id;
+    const razorpayEventId: string | undefined = event.id;
+    let webhookEventRowId: string | null = null;
+
+    if (accountId && razorpayEventId) {
+      const { data: dedupeRows, error: dedupeErr } = await admin.rpc('record_webhook_event', {
+        p_account_id: accountId,
+        p_event_id: razorpayEventId,
+        p_event_type: eventType,
+        p_raw_payload: event,
+      });
+      if (dedupeErr) {
+        // RPC missing or DB error — log and proceed without dedupe so we
+        // don't lose a real event. payment_history-level dedupe still applies.
+        logger.warn('webhook: record_webhook_event RPC failed; proceeding without event-level dedupe', {
+          error: dedupeErr.message, eventType, razorpayEventId,
+        });
+      } else {
+        const row = Array.isArray(dedupeRows) ? dedupeRows[0] : dedupeRows;
+        if (row && row.is_new === false) {
+          return NextResponse.json({ received: true, note: 'dedupe' });
+        }
+        webhookEventRowId = row?.id ?? null;
+      }
+    } else {
+      logger.warn('webhook: missing account_id or event.id; skipping event-level dedupe', {
+        hasAccountId: !!accountId, hasEventId: !!razorpayEventId, eventType,
+      });
+    }
+
     // ══════════════════════════════════════════════════════════
     // PAYMENT EVENTS
     // ══════════════════════════════════════════════════════════
@@ -236,7 +303,10 @@ export async function POST(request: NextRequest) {
 
       logger.info('Webhook: payment.captured', { paymentId, orderId, planCode });
 
-      if (!planCode) return NextResponse.json({ received: true, note: 'no_plan' });
+      if (!planCode) {
+        await markEvent(admin, webhookEventRowId, 'ack');
+        return NextResponse.json({ received: true, note: 'no_plan' });
+      }
 
       // Idempotency: skip if already captured.
       const { data: existing } = await admin
@@ -245,6 +315,7 @@ export async function POST(request: NextRequest) {
         .eq('razorpay_payment_id', paymentId)
         .limit(1);
       if (existing && existing.length > 0 && existing[0].status === 'captured') {
+        await markEvent(admin, webhookEventRowId, 'ack');
         return NextResponse.json({ received: true, note: 'already_processed' });
       }
 
@@ -253,7 +324,8 @@ export async function POST(request: NextRequest) {
         notesUserId: notes.user_id,
       });
       if (!resolved) {
-        return handleUnresolved(eventType, undefined, paymentId, notes);
+        // markEvent('unresolved') is called inside handleUnresolved.
+        return handleUnresolved(eventType, undefined, paymentId, notes, admin, webhookEventRowId);
       }
 
       // Record payment (idempotent via payment_id).
@@ -306,6 +378,7 @@ export async function POST(request: NextRequest) {
                 primary_error: rpcError.message,
               },
             });
+            await markEvent(admin, webhookEventRowId, 'failed');
             return NextResponse.json(
               { error: 'subscription_activation_failed' },
               { status: 503 },
@@ -343,6 +416,7 @@ export async function POST(request: NextRequest) {
                 fallback_error: atomicErr.message,
               },
             });
+            await markEvent(admin, webhookEventRowId, 'failed');
             return NextResponse.json(
               { error: 'subscription_activation_failed' },
               { status: 503 },
@@ -350,6 +424,7 @@ export async function POST(request: NextRequest) {
           }
         }
       }
+      await markEvent(admin, webhookEventRowId, 'activated');
       return NextResponse.json({ received: true });
     }
 
@@ -371,6 +446,7 @@ export async function POST(request: NextRequest) {
           message: 'payment.failed student_unresolved',
           context: { razorpay_payment_id: payment.id, notes_keys: Object.keys(notes) },
         });
+        await markEvent(admin, webhookEventRowId, 'ack');
         return NextResponse.json({ received: true, note: 'student_unresolved' });
       }
 
@@ -394,6 +470,7 @@ export async function POST(request: NextRequest) {
       if (failInsertErr && !failInsertErr.message.includes('duplicate')) {
         logger.error('Webhook: failed payment insert error', { error: failInsertErr.message });
       }
+      await markEvent(admin, webhookEventRowId, 'ack');
       return NextResponse.json({ received: true });
     }
 
@@ -422,7 +499,8 @@ export async function POST(request: NextRequest) {
         notesUserId: notes.user_id,
       });
       if (!resolved) {
-        return handleUnresolved(eventType, rzSubId, paymentEntity?.id, notes);
+        // markEvent('unresolved') is called inside handleUnresolved.
+        return handleUnresolved(eventType, rzSubId, paymentEntity?.id, notes, admin, webhookEventRowId);
       }
 
       const rawPlan = notes.plan_code;
@@ -436,12 +514,14 @@ export async function POST(request: NextRequest) {
       // ── subscription.authenticated: payment method approved, awaiting first charge.
       if (eventType === 'subscription.authenticated') {
         // Pending row already exists from subscribe-route. Nothing to do — just ACK.
+        await markEvent(admin, webhookEventRowId, 'ack');
         return NextResponse.json({ received: true });
       }
 
       // ── subscription.activated / subscription.charged: activate or renew.
       if (eventType === 'subscription.activated' || eventType === 'subscription.charged') {
         if (!planCode) {
+          await markEvent(admin, webhookEventRowId, 'ack');
           return NextResponse.json({ received: true, note: 'no_plan_in_notes' });
         }
 
@@ -504,6 +584,7 @@ export async function POST(request: NextRequest) {
                   primary_error: rpcError.message,
                 },
               });
+              await markEvent(admin, webhookEventRowId, 'failed');
               return NextResponse.json(
                 { error: 'subscription_activation_failed' },
                 { status: 503 },
@@ -537,6 +618,7 @@ export async function POST(request: NextRequest) {
                   fallback_error: atomicErr.message,
                 },
               });
+              await markEvent(admin, webhookEventRowId, 'failed');
               return NextResponse.json(
                 { error: 'subscription_activation_failed' },
                 { status: 503 },
@@ -574,12 +656,14 @@ export async function POST(request: NextRequest) {
                 error: atomicErr.message,
               },
             });
+            await markEvent(admin, webhookEventRowId, 'failed');
             return NextResponse.json(
               { error: 'subscription_activation_failed' },
               { status: 503 },
             );
           }
         }
+        await markEvent(admin, webhookEventRowId, 'activated');
         return NextResponse.json({ received: true });
       }
 
@@ -587,6 +671,7 @@ export async function POST(request: NextRequest) {
       if (eventType === 'subscription.halted') {
         if (rzSubId) {
           const result = await downgradeIfMatchingSub(admin, resolved.student_id, rzSubId, 'halted', eventType);
+          await markEvent(admin, webhookEventRowId, result === 'stale_cancel_ignored' ? 'ack' : 'downgraded');
           return NextResponse.json({ received: true, note: result });
         }
       }
@@ -601,14 +686,18 @@ export async function POST(request: NextRequest) {
             : eventType === 'subscription.expired'  ? 'expired'
             : 'completed';
           const result = await downgradeIfMatchingSub(admin, resolved.student_id, rzSubId, newStatus, eventType);
+          await markEvent(admin, webhookEventRowId, result === 'stale_cancel_ignored' ? 'ack' : 'downgraded');
           return NextResponse.json({ received: true, note: result });
         }
       }
 
+      // Fallthrough subscription event with no rzSubId — just ACK.
+      await markEvent(admin, webhookEventRowId, 'ack');
       return NextResponse.json({ received: true });
     }
 
     // Unknown event type — ACK and ignore.
+    await markEvent(admin, webhookEventRowId, 'ack');
     return NextResponse.json({ received: true, note: 'unhandled_event_type', event_type: eventType });
   } catch (err) {
     logger.error('Webhook error', { error: err instanceof Error ? err : new Error(String(err)) });
