@@ -376,3 +376,46 @@ export interface ChapterConcept {
   createdAt: string | null;
   updatedAt: string | null;
 }
+
+// ── Practice domain (Phase 0e, B8) ────────────────────────────────────────────
+
+export interface ReviewCard {
+  id: string;
+  studentId: string;
+  cardType: string | null;
+  subject: string | null;
+  grade: string | null;
+  chapterNumber: number | null;
+  chapterTitle: string | null;
+  topic: string | null;
+  frontText: string;
+  backText: string;
+  hint: string | null;
+  source: string | null;
+  sourceId: string | null;
+  easeFactor: number;
+  intervalDays: number;
+  repetitionCount: number;
+  nextReviewDate: string | null;
+  lastReviewDate: string | null;
+  lastQuality: number | null;
+  totalReviews: number;
+  correctReviews: number;
+  streak: number;
+  isActive: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface ReviewDue {
+  total: number;
+  bySubject: Record<string, number>;
+}
+
+export interface ConceptMasterySlice {
+  topicId: string;
+  masteryProbability: number | null;
+  consecutiveCorrect: number | null;
+  nextReviewAt: string | null;
+  updatedAt: string | null;
+}
