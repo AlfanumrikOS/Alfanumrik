@@ -169,34 +169,220 @@ export interface Guardian {
   phone: string | null;
 }
 
-// ── Analytics domain (Phase 0i) ────────────────────────────────────────────────
+// ── Assessment domain (Phase 0f, B9) ──────────────────────────────────────────
 //
-// B12 Analytics is a read-only context: it does not own any write paths into
-// the other domains. The four read tables it exposes are dual-written by
-// daily-cron (server) and the quiz RPC (B5). The analytics module only reads
-// them and projects camelCase shapes for the super-admin / school-admin
-// surfaces.
-//
-// Three of the four reference tables in DATA_OWNERSHIP_MATRIX.md
-// (`student_analytics`, `usage_metrics`, `performance_reports`) do not yet
-// exist as physical tables — they are part of the planned analytics schema.
-// The helpers in `domains/analytics.ts` are still defined now to lock the
-// service contract; if the underlying table is missing at query time, the
-// call returns a `DB_ERROR` ServiceResult and a one-line warn is logged so
-// callers can degrade gracefully without crashing.
+// Read-only projections over concept_mastery, topic_mastery, knowledge_gaps,
+// diagnostic_sessions, learning_graph_nodes, cme_error_log. Writes stay in
+// cme-engine and atomic_quiz_profile_update — those are P1/P4 sacred.
 
-/**
- * One row from `daily_activity`, projected to camelCase. The legacy
- * core_schema shape is the source of truth: per (student_id, date, subject),
- * counts of questions/correct/sessions and minutes spent.
- *
- * `subject` is nullable in the underlying table — represents an aggregate
- * across all subjects on that day.
- */
+export interface ConceptMastery {
+  id: string;
+  studentId: string;
+  topicId: string;
+  masteryProbability: number;
+  masteryLevel: string | null;
+  attempts: number;
+  correctAttempts: number;
+  hintsUsed: number;
+  firstAttemptedAt: string | null;
+  lastAttemptedAt: string | null;
+  masteredAt: string | null;
+  nextReviewAt: string | null;
+  reviewIntervalDays: number | null;
+  easeFactor: number;
+  consecutiveCorrect: number;
+  pKnow: number | null;
+  pLearn: number | null;
+  pGuess: number | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface TopicMastery {
+  id: string;
+  studentId: string;
+  subject: string;
+  topic: string;
+  masteryLevel: number;
+  totalAttempts: number;
+  correctAttempts: number;
+  lastAttempted: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface KnowledgeGap {
+  id: string;
+  studentId: string;
+  topicId: string;
+  prerequisiteTopicId: string | null;
+  gapType: string | null;
+  severity: string | null;
+  description: string | null;
+  descriptionHi: string | null;
+  recommendedAction: string | null;
+  recommendedActionHi: string | null;
+  isResolved: boolean;
+  detectedAt: string | null;
+  resolvedAt: string | null;
+}
+
+export interface DiagnosticSession {
+  id: string;
+  studentId: string;
+  /** P5: grade is always a string, never an integer. */
+  grade: string | null;
+  subject: string | null;
+  status: string | null;
+  totalQuestions: number;
+  correctAnswers: number;
+  estimatedTheta: number | null;
+  topicsAssessed: unknown[];
+  weakTopics: unknown[];
+  strongTopics: unknown[];
+  recommendedDifficulty: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface LearningGraphNode {
+  id: string;
+  subject: string | null;
+  /** P5: grade is always a string. */
+  grade: string | null;
+  topic: string | null;
+  prerequisites: unknown[];
+  metadata: unknown;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface CmeError {
+  id: string;
+  studentId: string;
+  conceptId: string;
+  questionId: string | null;
+  errorType: string | null;
+  studentAnswer: string | null;
+  correctAnswer: string | null;
+  responseTimeMs: number | null;
+  createdAt: string | null;
+}
+
+// ── Content domain (Phase 0d, B6) ─────────────────────────────────────────────
+//
+// Read-only projections of question_bank, cbse_syllabus, ncert_content
+// (planned), and chapter_concepts. Grade is always a string (P5).
+// Question rows include all fields needed for P6 validation by callers.
+
+export interface Question {
+  id: string;
+  subject: string | null;
+  grade: string | null;
+  chapterId: string | null;
+  chapterNumber: number | null;
+  chapterTitle: string | null;
+  topic: string | null;
+  questionText: string;
+  questionHi: string | null;
+  questionType: string | null;
+  options: string[];
+  correctAnswerIndex: number;
+  explanation: string | null;
+  explanationHi: string | null;
+  hint: string | null;
+  hintHi: string | null;
+  difficulty: number;
+  bloomLevel: string | null;
+  isActive: boolean | null;
+  source: string | null;
+  isNcert: boolean | null;
+  verifiedAgainstNcert: boolean | null;
+  verificationState: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface Chapter {
+  id: string;
+  board: string | null;
+  grade: string | null;
+  subjectCode: string | null;
+  subjectDisplay: string | null;
+  subjectDisplayHi: string | null;
+  chapterNumber: number | null;
+  chapterTitle: string | null;
+  chapterTitleHi: string | null;
+  chunkCount: number;
+  verifiedQuestionCount: number;
+  ragStatus: string | null;
+  lastVerifiedAt: string | null;
+  isInScope: boolean | null;
+  notes: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface NcertContent {
+  id: string;
+  grade: string | null;
+  subject: string | null;
+  chapter: string | null;
+  chapterNumber: number | null;
+  section: string | null;
+  contentType: string | null;
+  contentText: string | null;
+  contentHi: string | null;
+  pageNumber: number | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface ChapterConcept {
+  id: string;
+  chapterId: string | null;
+  grade: string | null;
+  subject: string | null;
+  chapterNumber: number | null;
+  chapterTitle: string | null;
+  conceptNumber: number;
+  title: string | null;
+  titleHi: string | null;
+  slug: string | null;
+  learningObjective: string | null;
+  learningObjectiveHi: string | null;
+  explanation: string | null;
+  explanationHi: string | null;
+  keyFormula: string | null;
+  exampleTitle: string | null;
+  exampleContent: string | null;
+  exampleContentHi: string | null;
+  commonMistakes: string[];
+  examTips: string[];
+  diagramRefs: string[];
+  diagramDescription: string | null;
+  practiceQuestion: string | null;
+  practiceOptions: string[];
+  practiceCorrectIndex: number | null;
+  practiceExplanation: string | null;
+  difficulty: number;
+  bloomLevel: string | null;
+  estimatedMinutes: number;
+  isActive: boolean | null;
+  source: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+// ── Analytics domain (Phase 0i, B12) ──────────────────────────────────────────
+
 export interface DailyActivity {
   id: string;
   studentId: string;
-  activityDate: string; // YYYY-MM-DD
+  activityDate: string;
   subject: string | null;
   questionsAsked: number;
   questionsCorrect: number;
@@ -207,11 +393,6 @@ export interface DailyActivity {
   updatedAt: string | null;
 }
 
-/**
- * Latest snapshot row from `student_analytics`. Shape is intentionally
- * narrow and stable — when the physical table lands, additional aggregates
- * should be added here, not selected via `.select('*')`.
- */
 export interface StudentAnalytics {
   studentId: string;
   totalQuestionsAttempted: number | null;
@@ -224,11 +405,6 @@ export interface StudentAnalytics {
   computedAt: string | null;
 }
 
-/**
- * Bounded slice of `usage_metrics`. Used by super-admin dashboards and
- * school-level reporting. The metric is a free-form key (e.g.
- * `chats.daily.count`, `quizzes.daily.completed`).
- */
 export interface UsageMetric {
   id: string;
   studentId: string | null;
@@ -239,11 +415,6 @@ export interface UsageMetric {
   metadata: Record<string, unknown> | null;
 }
 
-/**
- * A pre-computed report row out of `performance_reports`. The actual
- * payload (charts, breakdowns) lives in `payload` JSONB so this type does
- * not need to evolve when new report kinds are added.
- */
 export interface PerformanceReport {
   id: string;
   studentId: string | null;
