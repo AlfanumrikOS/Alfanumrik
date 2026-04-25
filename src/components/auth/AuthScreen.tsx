@@ -104,6 +104,18 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
     e.preventDefault();
     setError(''); setLoading(true);
     try {
+      // Defensive: clear any stale local session before a fresh signin.
+      // The Supabase SDK persists tokens to localStorage; if a previous
+      // project state, key rotation, or partial deploy left invalid tokens
+      // behind, signInWithPassword can short-circuit on the stale state and
+      // surface "AuthSessionMissingError" instead of completing. signOut
+      // with scope='local' purges the local store WITHOUT a network round
+      // trip, so it's safe even if Supabase Auth is degraded. See P15
+      // (.claude/CLAUDE.md) — login must work for ALL users every time.
+      try {
+        await supabase.auth.signOut({ scope: 'local' });
+      } catch { /* ignore — local-only signOut should never throw, but be defensive */ }
+
       const { error: authError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
       if (authError) { setError(authError.message); setLoading(false); return; }
       onSuccess();
