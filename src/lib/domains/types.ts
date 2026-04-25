@@ -420,6 +420,42 @@ export interface ConceptMasterySlice {
   updatedAt: string | null;
 }
 
+// ── Notifications domain (Phase 0h, B11) ──────────────────────────────────────
+
+export type NotificationRecipientType =
+  | 'student'
+  | 'guardian'
+  | 'teacher'
+  | 'school'
+  | 'super_admin';
+
+export interface Notification {
+  id: string;
+  recipientType: NotificationRecipientType;
+  recipientId: string;
+  notificationType: string | null;
+  title: string;
+  body: string | null;
+  bodyHi: string | null;
+  icon: string | null;
+  data: Record<string, unknown> | null;
+  isRead: boolean;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export interface NotificationPreferences {
+  email?: boolean;
+  whatsapp?: boolean;
+  push?: boolean;
+  daily_report?: boolean;
+  weekly_report?: boolean;
+  dailyReportEnabled?: boolean;
+  weeklyReportEnabled?: boolean;
+  alertScoreThreshold?: number | null;
+  preferredLanguage?: string | null;
+}
+
 // ── Analytics domain (Phase 0i, B12) ──────────────────────────────────────────
 
 export interface DailyActivity {
