@@ -494,6 +494,7 @@ export async function POST(request: NextRequest) {
       'subscription.authenticated',
       'subscription.activated',
       'subscription.charged',
+      'subscription.pending',
       'subscription.halted',
       'subscription.cancelled',
       'subscription.expired',
@@ -678,6 +679,23 @@ export async function POST(request: NextRequest) {
         }
         await markEvent(admin, webhookEventRowId, 'activated');
         return NextResponse.json({ received: true });
+      }
+
+      // ── subscription.pending: payment retry in progress; mark past_due with grace.
+      if (eventType === 'subscription.pending') {
+        const { error: pdErr } = await admin.rpc('mark_subscription_past_due', {
+          p_student_id: resolved.student_id,
+          p_grace_days: 3,
+        });
+        if (pdErr) {
+          logger.error('Webhook: mark_subscription_past_due failed', {
+            error: pdErr.message, rzSubId, studentId: resolved.student_id,
+          });
+          await markEvent(admin, webhookEventRowId, 'failed');
+          return NextResponse.json({ error: 'past_due_mark_failed' }, { status: 503 });
+        }
+        await markEvent(admin, webhookEventRowId, 'downgraded');
+        return NextResponse.json({ received: true, note: 'marked_past_due' });
       }
 
       // ── subscription.halted: payment retries exhausted.

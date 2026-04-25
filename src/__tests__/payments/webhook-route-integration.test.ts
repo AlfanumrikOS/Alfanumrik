@@ -125,3 +125,43 @@ describe('webhook route — atomic downgrade', () => {
     expect(fromCalls).not.toContain('student_subscriptions');
   });
 });
+
+describe('webhook route — subscription.pending', () => {
+  let mockAdmin: { rpc: ReturnType<typeof vi.fn>; from: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    process.env.RAZORPAY_WEBHOOK_SECRET = WEBHOOK_SECRET;
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://localhost';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'service_key';
+    mockAdmin = { rpc: vi.fn(), from: vi.fn() };
+    (createClient as ReturnType<typeof vi.fn>).mockReturnValue(mockAdmin);
+  });
+
+  it('subscription.pending calls mark_subscription_past_due RPC', async () => {
+    mockAdmin.rpc.mockImplementation(async (name: string) => {
+      if (name === 'record_webhook_event') return { data: [{ is_new: true, id: 'wh-3' }], error: null };
+      if (name === 'mark_subscription_past_due') return { data: null, error: null };
+      if (name === 'mark_webhook_event_processed') return { data: null, error: null };
+      throw new Error(`unexpected RPC ${name}`);
+    });
+    mockAdmin.from.mockImplementation((table: string) => {
+      if (table === 'students') {
+        return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: 's1' }, error: null }) }) }) };
+      }
+      throw new Error(`unexpected from(${table})`);
+    });
+
+    const event = {
+      account_id: 'acc_1',
+      id: 'evt_pending',
+      event: 'subscription.pending',
+      payload: { subscription: { entity: { id: 'sub_xyz', notes: { student_id: 's1', plan_code: 'pro', user_id: 'u1' } } } },
+    };
+
+    const req = makeRequest(event);
+    const res = await POST(req as unknown as import('next/server').NextRequest);
+    expect(res.status).toBe(200);
+    const calls = mockAdmin.rpc.mock.calls.map((c: unknown[]) => c[0]);
+    expect(calls).toContain('mark_subscription_past_due');
+  });
+});
