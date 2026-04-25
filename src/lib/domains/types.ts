@@ -168,3 +168,135 @@ export interface Guardian {
   email: string | null;
   phone: string | null;
 }
+
+// ── Content domain (B6) — Phase 0d ───────────────────────────────────────────
+//
+// Read-only projections of question_bank, cbse_syllabus, ncert_content
+// (planned), and chapter_concepts. Grade is always a string (P5).
+// Question rows include all fields needed for P6 validation by callers.
+
+/**
+ * Question row projected from `question_bank`. The shape is intentionally
+ * stable across the verification lifecycle — verification metadata is
+ * surfaced separately so callers can decide whether to enforce
+ * `verifiedAgainstNcert === true` at serve time.
+ *
+ * Options are normalised to a string[]. Callers must enforce P6 (exactly
+ * 4 distinct non-empty options, correctAnswerIndex in [0,3], non-empty
+ * text/explanation, valid difficulty + bloom_level) at serve time — this
+ * type does not guarantee P6 by itself.
+ */
+export interface Question {
+  id: string;
+  subject: string | null;
+  grade: string | null;          // P5: always string
+  chapterId: string | null;       // FK to chapters(id), may be null on legacy rows
+  chapterNumber: number | null;
+  chapterTitle: string | null;
+  topic: string | null;
+  questionText: string;
+  questionHi: string | null;
+  questionType: string | null;
+  options: string[];              // normalised from JSONB
+  correctAnswerIndex: number;
+  explanation: string | null;
+  explanationHi: string | null;
+  hint: string | null;
+  hintHi: string | null;
+  difficulty: number;
+  bloomLevel: string | null;
+  isActive: boolean | null;
+  source: string | null;
+  isNcert: boolean | null;
+  verifiedAgainstNcert: boolean | null;
+  verificationState: string | null;  // legacy_unverified | pending | verified | failed
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+/**
+ * Chapter row projected from `cbse_syllabus`. One row per
+ * (board, grade, subject_code, chapter_number). The `ragStatus` field
+ * indicates whether retrieval-grounded answers can be served for this
+ * chapter (`ready`) or not (`missing` | `partial`).
+ */
+export interface Chapter {
+  id: string;
+  board: string | null;
+  grade: string | null;            // P5: always string
+  subjectCode: string | null;
+  subjectDisplay: string | null;
+  subjectDisplayHi: string | null;
+  chapterNumber: number | null;
+  chapterTitle: string | null;
+  chapterTitleHi: string | null;
+  chunkCount: number;
+  verifiedQuestionCount: number;
+  ragStatus: string | null;        // missing | partial | ready
+  lastVerifiedAt: string | null;
+  isInScope: boolean | null;
+  notes: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+/**
+ * NCERT content row. Backed by the planned `ncert_content` table (see
+ * DATA_OWNERSHIP_MATRIX.md). Until the migration lands, helpers return
+ * a soft-failure DB_ERROR when the table is missing.
+ */
+export interface NcertContent {
+  id: string;
+  grade: string | null;            // P5: always string
+  subject: string | null;
+  chapter: string | null;
+  chapterNumber: number | null;
+  section: string | null;
+  contentType: string | null;
+  contentText: string | null;
+  contentHi: string | null;
+  pageNumber: number | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+/**
+ * Chapter concept row — the structured "explainer" units per chapter.
+ * Drives Foxy's concept-walkthrough UI and CME-engine concept selection.
+ */
+export interface ChapterConcept {
+  id: string;
+  chapterId: string | null;
+  grade: string | null;            // P5: always string
+  subject: string | null;
+  chapterNumber: number | null;
+  chapterTitle: string | null;
+  conceptNumber: number;
+  title: string | null;
+  titleHi: string | null;
+  slug: string | null;
+  learningObjective: string | null;
+  learningObjectiveHi: string | null;
+  explanation: string | null;
+  explanationHi: string | null;
+  keyFormula: string | null;
+  exampleTitle: string | null;
+  exampleContent: string | null;
+  exampleContentHi: string | null;
+  commonMistakes: string[];
+  examTips: string[];
+  diagramRefs: string[];
+  diagramDescription: string | null;
+  practiceQuestion: string | null;
+  practiceOptions: string[];
+  practiceCorrectIndex: number | null;
+  practiceExplanation: string | null;
+  difficulty: number;
+  bloomLevel: string | null;
+  estimatedMinutes: number;
+  isActive: boolean | null;
+  source: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
