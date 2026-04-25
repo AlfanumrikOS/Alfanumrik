@@ -53,6 +53,48 @@ async function markEvent(
   }
 }
 
+/**
+ * Task 9 — payment-webhook-hardening: timing emit for super-admin dashboards.
+ *
+ * Fires a `payment.webhook_processed` ops event with latency_ms, outcome, and
+ * event_type per terminal POST path. Parallel to markEvent (which writes to
+ * payment_webhook_events for outcome tracking) — this writes to ops_events so
+ * super-admin can compute p50/p95/p99 latency per event_type × outcome.
+ *
+ * Severity is 'error' for failed/unresolved outcomes, 'info' otherwise.
+ * Failures of the emit itself are caught and logged at warn so they never
+ * block the webhook response.
+ */
+type WebhookOutcome = 'ack' | 'dedupe' | 'activated' | 'downgraded' | 'failed' | 'unresolved';
+
+async function emitWebhookTiming(args: {
+  eventType: string;
+  outcome: WebhookOutcome;
+  latencyMs: number;
+  resolvedVia?: string;
+  studentId?: string;
+  rzSubId?: string;
+}): Promise<void> {
+  try {
+    await logOpsEvent({
+      category: 'payment',
+      severity: args.outcome === 'failed' || args.outcome === 'unresolved' ? 'error' : 'info',
+      source: 'webhook/route.ts',
+      message: 'payment.webhook_processed',
+      context: {
+        event_type: args.eventType,
+        outcome: args.outcome,
+        latency_ms: args.latencyMs,
+        resolved_via: args.resolvedVia ?? null,
+        student_id: args.studentId ?? null,
+        rz_sub_id: args.rzSubId ?? null,
+      },
+    });
+  } catch (err) {
+    logger.warn('emitWebhookTiming failed (non-blocking)', { error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
 /** Strip billing-cycle suffix and map legacy aliases to canonical plan code. */
 function canonicalizePlan(raw: string): string {
   return raw
@@ -214,6 +256,7 @@ async function handleUnresolved(
   notes: Record<string, unknown>,
   admin?: SupabaseClient,
   webhookEventRowId?: string | null,
+  startedAt?: number,
 ): Promise<NextResponse> {
   await logOpsEvent({
     category: 'payment',
@@ -230,11 +273,20 @@ async function handleUnresolved(
   if (admin && webhookEventRowId) {
     await markEvent(admin, webhookEventRowId, 'unresolved');
   }
+  if (typeof startedAt === 'number') {
+    await emitWebhookTiming({
+      eventType,
+      outcome: 'unresolved',
+      latencyMs: Date.now() - startedAt,
+      rzSubId,
+    });
+  }
   // Return 500 so Razorpay retries (5xx = retry, 4xx = no retry).
   return NextResponse.json({ error: 'student_unresolved' }, { status: 500 });
 }
 
 export async function POST(request: NextRequest) {
+  const startedAt = Date.now();
   try {
     const body = await request.text();
     const signature = request.headers.get('x-razorpay-signature');
@@ -291,6 +343,7 @@ export async function POST(request: NextRequest) {
       } else {
         const row = Array.isArray(dedupeRows) ? dedupeRows[0] : dedupeRows;
         if (row && row.is_new === false) {
+          await emitWebhookTiming({ eventType, outcome: 'dedupe', latencyMs: Date.now() - startedAt });
           return NextResponse.json({ received: true, note: 'dedupe' });
         }
         webhookEventRowId = row?.id ?? null;
@@ -318,6 +371,7 @@ export async function POST(request: NextRequest) {
 
       if (!planCode) {
         await markEvent(admin, webhookEventRowId, 'ack');
+        await emitWebhookTiming({ eventType, outcome: 'ack', latencyMs: Date.now() - startedAt });
         return NextResponse.json({ received: true, note: 'no_plan' });
       }
 
@@ -329,6 +383,7 @@ export async function POST(request: NextRequest) {
         .limit(1);
       if (existing && existing.length > 0 && existing[0].status === 'captured') {
         await markEvent(admin, webhookEventRowId, 'ack');
+        await emitWebhookTiming({ eventType, outcome: 'ack', latencyMs: Date.now() - startedAt });
         return NextResponse.json({ received: true, note: 'already_processed' });
       }
 
@@ -337,8 +392,8 @@ export async function POST(request: NextRequest) {
         notesUserId: notes.user_id,
       });
       if (!resolved) {
-        // markEvent('unresolved') is called inside handleUnresolved.
-        return handleUnresolved(eventType, undefined, paymentId, notes, admin, webhookEventRowId);
+        // markEvent('unresolved') and emitWebhookTiming are called inside handleUnresolved.
+        return handleUnresolved(eventType, undefined, paymentId, notes, admin, webhookEventRowId, startedAt);
       }
 
       // Record payment (idempotent via payment_id).
@@ -392,6 +447,13 @@ export async function POST(request: NextRequest) {
               },
             });
             await markEvent(admin, webhookEventRowId, 'failed');
+            await emitWebhookTiming({
+              eventType,
+              outcome: 'failed',
+              latencyMs: Date.now() - startedAt,
+              resolvedVia: resolved.via,
+              studentId: resolved.student_id,
+            });
             return NextResponse.json(
               { error: 'subscription_activation_failed' },
               { status: 503 },
@@ -430,6 +492,13 @@ export async function POST(request: NextRequest) {
               },
             });
             await markEvent(admin, webhookEventRowId, 'failed');
+            await emitWebhookTiming({
+              eventType,
+              outcome: 'failed',
+              latencyMs: Date.now() - startedAt,
+              resolvedVia: resolved.via,
+              studentId: resolved.student_id,
+            });
             return NextResponse.json(
               { error: 'subscription_activation_failed' },
               { status: 503 },
@@ -438,6 +507,13 @@ export async function POST(request: NextRequest) {
         }
       }
       await markEvent(admin, webhookEventRowId, 'activated');
+      await emitWebhookTiming({
+        eventType,
+        outcome: 'activated',
+        latencyMs: Date.now() - startedAt,
+        resolvedVia: resolved.via,
+        studentId: resolved.student_id,
+      });
       return NextResponse.json({ received: true });
     }
 
@@ -460,6 +536,7 @@ export async function POST(request: NextRequest) {
           context: { razorpay_payment_id: payment.id, notes_keys: Object.keys(notes) },
         });
         await markEvent(admin, webhookEventRowId, 'ack');
+        await emitWebhookTiming({ eventType, outcome: 'ack', latencyMs: Date.now() - startedAt });
         return NextResponse.json({ received: true, note: 'student_unresolved' });
       }
 
@@ -484,6 +561,13 @@ export async function POST(request: NextRequest) {
         logger.error('Webhook: failed payment insert error', { error: failInsertErr.message });
       }
       await markEvent(admin, webhookEventRowId, 'ack');
+      await emitWebhookTiming({
+        eventType,
+        outcome: 'ack',
+        latencyMs: Date.now() - startedAt,
+        resolvedVia: resolved.via,
+        studentId: resolved.student_id,
+      });
       return NextResponse.json({ received: true });
     }
 
@@ -513,8 +597,8 @@ export async function POST(request: NextRequest) {
         notesUserId: notes.user_id,
       });
       if (!resolved) {
-        // markEvent('unresolved') is called inside handleUnresolved.
-        return handleUnresolved(eventType, rzSubId, paymentEntity?.id, notes, admin, webhookEventRowId);
+        // markEvent('unresolved') and emitWebhookTiming are called inside handleUnresolved.
+        return handleUnresolved(eventType, rzSubId, paymentEntity?.id, notes, admin, webhookEventRowId, startedAt);
       }
 
       const rawPlan = notes.plan_code;
@@ -529,6 +613,14 @@ export async function POST(request: NextRequest) {
       if (eventType === 'subscription.authenticated') {
         // Pending row already exists from subscribe-route. Nothing to do — just ACK.
         await markEvent(admin, webhookEventRowId, 'ack');
+        await emitWebhookTiming({
+          eventType,
+          outcome: 'ack',
+          latencyMs: Date.now() - startedAt,
+          resolvedVia: resolved.via,
+          studentId: resolved.student_id,
+          rzSubId,
+        });
         return NextResponse.json({ received: true });
       }
 
@@ -536,6 +628,14 @@ export async function POST(request: NextRequest) {
       if (eventType === 'subscription.activated' || eventType === 'subscription.charged') {
         if (!planCode) {
           await markEvent(admin, webhookEventRowId, 'ack');
+          await emitWebhookTiming({
+            eventType,
+            outcome: 'ack',
+            latencyMs: Date.now() - startedAt,
+            resolvedVia: resolved.via,
+            studentId: resolved.student_id,
+            rzSubId,
+          });
           return NextResponse.json({ received: true, note: 'no_plan_in_notes' });
         }
 
@@ -599,6 +699,14 @@ export async function POST(request: NextRequest) {
                 },
               });
               await markEvent(admin, webhookEventRowId, 'failed');
+              await emitWebhookTiming({
+                eventType,
+                outcome: 'failed',
+                latencyMs: Date.now() - startedAt,
+                resolvedVia: resolved.via,
+                studentId: resolved.student_id,
+                rzSubId,
+              });
               return NextResponse.json(
                 { error: 'subscription_activation_failed' },
                 { status: 503 },
@@ -633,6 +741,14 @@ export async function POST(request: NextRequest) {
                 },
               });
               await markEvent(admin, webhookEventRowId, 'failed');
+              await emitWebhookTiming({
+                eventType,
+                outcome: 'failed',
+                latencyMs: Date.now() - startedAt,
+                resolvedVia: resolved.via,
+                studentId: resolved.student_id,
+                rzSubId,
+              });
               return NextResponse.json(
                 { error: 'subscription_activation_failed' },
                 { status: 503 },
@@ -671,6 +787,14 @@ export async function POST(request: NextRequest) {
               },
             });
             await markEvent(admin, webhookEventRowId, 'failed');
+            await emitWebhookTiming({
+              eventType,
+              outcome: 'failed',
+              latencyMs: Date.now() - startedAt,
+              resolvedVia: resolved.via,
+              studentId: resolved.student_id,
+              rzSubId,
+            });
             return NextResponse.json(
               { error: 'subscription_activation_failed' },
               { status: 503 },
@@ -678,6 +802,14 @@ export async function POST(request: NextRequest) {
           }
         }
         await markEvent(admin, webhookEventRowId, 'activated');
+        await emitWebhookTiming({
+          eventType,
+          outcome: 'activated',
+          latencyMs: Date.now() - startedAt,
+          resolvedVia: resolved.via,
+          studentId: resolved.student_id,
+          rzSubId,
+        });
         return NextResponse.json({ received: true });
       }
 
@@ -692,9 +824,25 @@ export async function POST(request: NextRequest) {
             error: pdErr.message, rzSubId, studentId: resolved.student_id,
           });
           await markEvent(admin, webhookEventRowId, 'failed');
+          await emitWebhookTiming({
+            eventType,
+            outcome: 'failed',
+            latencyMs: Date.now() - startedAt,
+            resolvedVia: resolved.via,
+            studentId: resolved.student_id,
+            rzSubId,
+          });
           return NextResponse.json({ error: 'past_due_mark_failed' }, { status: 503 });
         }
         await markEvent(admin, webhookEventRowId, 'downgraded');
+        await emitWebhookTiming({
+          eventType,
+          outcome: 'downgraded',
+          latencyMs: Date.now() - startedAt,
+          resolvedVia: resolved.via,
+          studentId: resolved.student_id,
+          rzSubId,
+        });
         return NextResponse.json({ received: true, note: 'marked_past_due' });
       }
 
@@ -702,7 +850,16 @@ export async function POST(request: NextRequest) {
       if (eventType === 'subscription.halted') {
         if (rzSubId) {
           const result = await downgradeIfMatchingSub(admin, resolved.student_id, rzSubId, 'halted', eventType);
-          await markEvent(admin, webhookEventRowId, result === 'stale_cancel_ignored' ? 'ack' : 'downgraded');
+          const outcome: WebhookOutcome = result === 'stale_cancel_ignored' ? 'ack' : 'downgraded';
+          await markEvent(admin, webhookEventRowId, outcome);
+          await emitWebhookTiming({
+            eventType,
+            outcome,
+            latencyMs: Date.now() - startedAt,
+            resolvedVia: resolved.via,
+            studentId: resolved.student_id,
+            rzSubId,
+          });
           return NextResponse.json({ received: true, note: result });
         }
       }
@@ -717,21 +874,40 @@ export async function POST(request: NextRequest) {
             : eventType === 'subscription.expired'  ? 'expired'
             : 'completed';
           const result = await downgradeIfMatchingSub(admin, resolved.student_id, rzSubId, newStatus, eventType);
-          await markEvent(admin, webhookEventRowId, result === 'stale_cancel_ignored' ? 'ack' : 'downgraded');
+          const outcome: WebhookOutcome = result === 'stale_cancel_ignored' ? 'ack' : 'downgraded';
+          await markEvent(admin, webhookEventRowId, outcome);
+          await emitWebhookTiming({
+            eventType,
+            outcome,
+            latencyMs: Date.now() - startedAt,
+            resolvedVia: resolved.via,
+            studentId: resolved.student_id,
+            rzSubId,
+          });
           return NextResponse.json({ received: true, note: result });
         }
       }
 
       // Fallthrough subscription event with no rzSubId — just ACK.
       await markEvent(admin, webhookEventRowId, 'ack');
+      await emitWebhookTiming({
+        eventType,
+        outcome: 'ack',
+        latencyMs: Date.now() - startedAt,
+        resolvedVia: resolved.via,
+        studentId: resolved.student_id,
+        rzSubId,
+      });
       return NextResponse.json({ received: true });
     }
 
     // Unknown event type — ACK and ignore.
     await markEvent(admin, webhookEventRowId, 'ack');
+    await emitWebhookTiming({ eventType, outcome: 'ack', latencyMs: Date.now() - startedAt });
     return NextResponse.json({ received: true, note: 'unhandled_event_type', event_type: eventType });
   } catch (err) {
     logger.error('Webhook error', { error: err instanceof Error ? err : new Error(String(err)) });
+    await emitWebhookTiming({ eventType: 'unknown', outcome: 'failed', latencyMs: Date.now() - startedAt });
     // 500 so Razorpay retries.
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }

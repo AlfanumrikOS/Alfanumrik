@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // We import the route under test. Vitest module-mock the supabase client
 // at the boundary so we can assert RPC call sequences.
@@ -12,6 +12,7 @@ vi.mock('@supabase/supabase-js', async () => {
 
 import { createClient } from '@supabase/supabase-js';
 import { POST } from '@/app/api/payments/webhook/route';
+import * as opsEvents from '@/lib/ops-events';
 import crypto from 'crypto';
 
 const WEBHOOK_SECRET = 'test_webhook_secret';
@@ -292,5 +293,52 @@ describe('webhook route — RPC fallback ladder', () => {
     expect(res.status).toBe(503);
     const calls = mockAdmin.rpc.mock.calls.map((c: unknown[]) => c[0]);
     expect(calls).not.toContain('atomic_subscription_activation_locked');
+  });
+});
+
+describe('webhook route — observability', () => {
+  let mockAdmin: { rpc: ReturnType<typeof vi.fn>; from: ReturnType<typeof vi.fn> };
+  let opsEventSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    process.env.RAZORPAY_WEBHOOK_SECRET = WEBHOOK_SECRET;
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://localhost';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'service_key';
+    mockAdmin = { rpc: vi.fn(), from: vi.fn() };
+    (createClient as ReturnType<typeof vi.fn>).mockReturnValue(mockAdmin);
+    opsEventSpy = vi.spyOn(opsEvents, 'logOpsEvent').mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    opsEventSpy.mockRestore();
+  });
+
+  it('emits payment.webhook_processed with latency_ms on activated terminal path', async () => {
+    mockAdmin.rpc.mockImplementation(async (name: string) => {
+      if (name === 'record_webhook_event') return { data: [{ is_new: true, id: 'wh-x' }], error: null };
+      if (name === 'activate_subscription_locked') return { data: null, error: null };
+      if (name === 'mark_webhook_event_processed') return { data: null, error: null };
+      return { data: null, error: null };
+    });
+    mockAdmin.from.mockImplementation((table: string) => {
+      if (table === 'students') return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: 's1' }, error: null }) }) }) };
+      if (table === 'payment_history') return {
+        select: () => ({ eq: () => ({ limit: async () => ({ data: [], error: null }) }) }),
+        insert: async () => ({ error: null }),
+      };
+      return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) };
+    });
+
+    await POST(makeRequest(buildEvent()) as unknown as import('next/server').NextRequest);
+
+    const processedCall = opsEventSpy.mock.calls.find((args: unknown[]) =>
+      (args[0] as { message?: string }).message === 'payment.webhook_processed',
+    );
+    expect(processedCall).toBeDefined();
+    const ctx = (processedCall![0] as { context: { latency_ms: number; outcome: string; event_type: string } }).context;
+    expect(typeof ctx.latency_ms).toBe('number');
+    expect(ctx.latency_ms).toBeGreaterThanOrEqual(0);
+    expect(ctx.outcome).toBe('activated');
+    expect(ctx.event_type).toBe('payment.captured');
   });
 });
