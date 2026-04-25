@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@/lib/constants';
@@ -15,12 +16,23 @@ import { findSimulation, InlineSimulation } from '@/components/InlineSimulation'
 import { ChatBubble, type GroundingStatus, type AbstainReason, type SuggestedAlternative } from '@/components/foxy/ChatBubble';
 import { LoadingState } from '@/components/foxy/LoadingState';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
-import { RichContent } from '@/components/foxy/RichContent';
 import { ChatInput } from '@/components/foxy/ChatInput';
-import { UpgradeModal } from '@/components/UpgradeModal';
 import { ConversationManager, generateTitle, SIMPLIFIED_MODES, MODE_MAP, type ConversationSummary } from '@/components/foxy/ConversationManager';
 import { ConversationHeader } from '@/components/foxy/ConversationHeader';
-import SELCheckIn, { useSELCheckIn, type MoodState } from '@/components/SELCheckIn';
+import { useSELCheckIn, type MoodState } from '@/components/SELCheckIn';
+
+// P10 bundle hardening: lazy-load components rendered behind a flag/modal/conditional.
+// Cuts /foxy First Load JS by ~70 kB on cold paint. Type/hook imports remain static
+// (Next/dynamic only defers the runtime component, not type erasure).
+const RichContent = dynamic(
+  () => import('@/components/foxy/RichContent').then((m) => ({ default: m.RichContent })),
+  { ssr: false, loading: () => null },
+);
+const UpgradeModal = dynamic(
+  () => import('@/components/UpgradeModal').then((m) => ({ default: m.UpgradeModal })),
+  { ssr: false },
+);
+const SELCheckIn = dynamic(() => import('@/components/SELCheckIn'), { ssr: false });
 
 /* ══════════════════════════════════════════════════════════════
    SUBJECT CONFIGURATION

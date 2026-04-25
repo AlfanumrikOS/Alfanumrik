@@ -90,6 +90,46 @@ export async function POST(request: NextRequest) {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
+    // ── Global kill switch (razorpay_payments) ──
+    // Seeded by 20260425160000_p0_launch_kill_switches_and_expiry_rpc.sql
+    // with default true. Flip OFF during a payment incident — we 503 here
+    // BEFORE any DB write so the client retries (the verify route is called
+    // by checkout.js after Razorpay redirects back). The student keeps
+    // their captured payment; the webhook will reconcile when the switch
+    // is flipped back on, OR the /api/cron/reconcile-payments cron picks it
+    // up within 30 minutes.
+    //
+    // Read fails OPEN (treated as enabled) — a Supabase blip should never
+    // become a payment-verify outage.
+    let killSwitchEnabled = true;
+    try {
+      const { data: flag } = await admin
+        .from('feature_flags')
+        .select('is_enabled')
+        .eq('flag_name', 'razorpay_payments')
+        .maybeSingle();
+      killSwitchEnabled = flag?.is_enabled ?? true;
+    } catch { /* fail open */ }
+
+    if (!killSwitchEnabled) {
+      logger.warn('verify: razorpay_payments kill-switch active — returning 503');
+      logOpsEvent({
+        category: 'payment',
+        source: 'verify/route.ts',
+        severity: 'critical',
+        message: 'razorpay_payments_kill_switch_active',
+        context: { user_id: user.id, plan_code },
+      });
+      return new NextResponse(
+        JSON.stringify({
+          success: false,
+          error: 'Payment processing is temporarily paused. Your payment is safe — please retry shortly.',
+          status: 'kill_switch_active',
+        }),
+        { status: 503, headers: { 'Content-Type': 'application/json', 'Retry-After': '60' } },
+      );
+    }
+
     // Duplicate protection — if already processed, return success
     const { data: existing } = await admin
       .from('payment_history')

@@ -18,6 +18,7 @@
 import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
+import { hasSupabaseIntegrationEnv } from './helpers/integration';
 
 describe('Adaptive Pipeline Integrity', () => {
   // ---------------------------------------------------------------
@@ -155,15 +156,17 @@ describe('Adaptive Pipeline Integrity', () => {
   });
 
   // ---------------------------------------------------------------
-  // 8. Database: topic_id coverage (skip if no Supabase connection)
+  // 8. Database: topic_id coverage (skip if no real Supabase connection)
   // ---------------------------------------------------------------
-  it('question_bank topic_id coverage must be >= 95% (requires Supabase)', async () => {
-    const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
-      // Skip in CI/local without Supabase -- the intent is documented
-      return;
-    }
+  // Use the same placeholder-aware integration helper that the migration
+  // suite uses (see helpers/integration.ts). CI sets placeholder env vars
+  // to satisfy validateServerEnv at boot, which would previously cause this
+  // test to attempt a network call to placeholder.supabase.co and time out.
+  // P0-D launch fix: hard-skip when env is placeholders.
+  const itIfIntegration = hasSupabaseIntegrationEnv() ? it : it.skip;
+  itIfIntegration('question_bank topic_id coverage must be >= 95% (requires Supabase)', async () => {
+    const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
     const { createClient } = await import('@supabase/supabase-js');
     const sb = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);

@@ -16,6 +16,7 @@ import { authorizeRequest } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import { validateSubjectWrite } from '@/lib/subjects';
+import { isFeatureEnabled } from '@/lib/feature-flags';
 
 // ─── Rate Limits by Plan ───────────────────────────────────────
 const SCAN_LIMITS: Record<string, number> = {
@@ -64,6 +65,24 @@ export async function POST(request: NextRequest) {
     // ── Auth ──
     const auth = await authorizeRequest(request, 'quiz.attempt');
     if (!auth.authorized) return auth.errorResponse!;
+
+    // ── Global AI kill switch (ai_usage_global) ──
+    // Seeded by 20260425160000_p0_launch_kill_switches_and_expiry_rpc.sql.
+    // Default true. Flip OFF to halt ALL AI/LLM calls (scan-solve invokes
+    // the ncert-solver Edge Function, which spends Claude tokens).
+    if (!(await isFeatureEnabled('ai_usage_global'))) {
+      logger.warn('scan-solve: ai_usage_global kill switch active');
+      return new NextResponse(
+        JSON.stringify({
+          error: bilingualError(
+            'Scan-to-solve is temporarily unavailable. Please try again in a minute.',
+            'Scan-to-solve abhi available nahi hai. Kripya thodi der baad try karein.',
+            isHi,
+          ),
+        }),
+        { status: 503, headers: { 'Content-Type': 'application/json', 'Retry-After': '60' } },
+      );
+    }
 
     const userId = auth.userId!;
     const studentId = auth.studentId;
