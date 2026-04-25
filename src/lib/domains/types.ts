@@ -168,3 +168,105 @@ export interface Guardian {
   email: string | null;
   phone: string | null;
 }
+
+// ── Assessment domain (Phase 0f, B9) ──────────────────────────────────────────
+//
+// Read-only projections over concept_mastery, topic_mastery, knowledge_gaps,
+// diagnostic_sessions, learning_graph_nodes, cme_error_log. Writes stay in
+// cme-engine and atomic_quiz_profile_update — those are P1/P4 sacred.
+
+export interface ConceptMastery {
+  id: string;
+  studentId: string;
+  topicId: string;
+  masteryProbability: number;
+  masteryLevel: string | null;
+  attempts: number;
+  correctAttempts: number;
+  hintsUsed: number;
+  firstAttemptedAt: string | null;
+  lastAttemptedAt: string | null;
+  masteredAt: string | null;
+  nextReviewAt: string | null;
+  reviewIntervalDays: number | null;
+  easeFactor: number;
+  consecutiveCorrect: number;
+  pKnow: number | null;
+  pLearn: number | null;
+  pGuess: number | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface TopicMastery {
+  id: string;
+  studentId: string;
+  subject: string;
+  topic: string;
+  masteryLevel: number;
+  totalAttempts: number;
+  correctAttempts: number;
+  lastAttempted: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface KnowledgeGap {
+  id: string;
+  studentId: string;
+  topicId: string;
+  prerequisiteTopicId: string | null;
+  gapType: string | null;
+  severity: string | null;
+  description: string | null;
+  descriptionHi: string | null;
+  recommendedAction: string | null;
+  recommendedActionHi: string | null;
+  isResolved: boolean;
+  detectedAt: string | null;
+  resolvedAt: string | null;
+}
+
+export interface DiagnosticSession {
+  id: string;
+  studentId: string;
+  /** P5: grade is always a string, never an integer. */
+  grade: string | null;
+  subject: string | null;
+  status: string | null;
+  totalQuestions: number;
+  correctAnswers: number;
+  estimatedTheta: number | null;
+  topicsAssessed: unknown[];
+  weakTopics: unknown[];
+  strongTopics: unknown[];
+  recommendedDifficulty: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface LearningGraphNode {
+  id: string;
+  subject: string | null;
+  /** P5: grade is always a string. */
+  grade: string | null;
+  topic: string | null;
+  prerequisites: unknown[];
+  metadata: unknown;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface CmeError {
+  id: string;
+  studentId: string;
+  conceptId: string;
+  questionId: string | null;
+  errorType: string | null;
+  studentAnswer: string | null;
+  correctAnswer: string | null;
+  responseTimeMs: number | null;
+  createdAt: string | null;
+}
