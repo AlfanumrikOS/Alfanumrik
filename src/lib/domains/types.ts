@@ -169,35 +169,126 @@ export interface Guardian {
   phone: string | null;
 }
 
-// ── Content domain (B6) — Phase 0d ───────────────────────────────────────────
+// ── Assessment domain (Phase 0f, B9) ──────────────────────────────────────────
+//
+// Read-only projections over concept_mastery, topic_mastery, knowledge_gaps,
+// diagnostic_sessions, learning_graph_nodes, cme_error_log. Writes stay in
+// cme-engine and atomic_quiz_profile_update — those are P1/P4 sacred.
+
+export interface ConceptMastery {
+  id: string;
+  studentId: string;
+  topicId: string;
+  masteryProbability: number;
+  masteryLevel: string | null;
+  attempts: number;
+  correctAttempts: number;
+  hintsUsed: number;
+  firstAttemptedAt: string | null;
+  lastAttemptedAt: string | null;
+  masteredAt: string | null;
+  nextReviewAt: string | null;
+  reviewIntervalDays: number | null;
+  easeFactor: number;
+  consecutiveCorrect: number;
+  pKnow: number | null;
+  pLearn: number | null;
+  pGuess: number | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface TopicMastery {
+  id: string;
+  studentId: string;
+  subject: string;
+  topic: string;
+  masteryLevel: number;
+  totalAttempts: number;
+  correctAttempts: number;
+  lastAttempted: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface KnowledgeGap {
+  id: string;
+  studentId: string;
+  topicId: string;
+  prerequisiteTopicId: string | null;
+  gapType: string | null;
+  severity: string | null;
+  description: string | null;
+  descriptionHi: string | null;
+  recommendedAction: string | null;
+  recommendedActionHi: string | null;
+  isResolved: boolean;
+  detectedAt: string | null;
+  resolvedAt: string | null;
+}
+
+export interface DiagnosticSession {
+  id: string;
+  studentId: string;
+  /** P5: grade is always a string, never an integer. */
+  grade: string | null;
+  subject: string | null;
+  status: string | null;
+  totalQuestions: number;
+  correctAnswers: number;
+  estimatedTheta: number | null;
+  topicsAssessed: unknown[];
+  weakTopics: unknown[];
+  strongTopics: unknown[];
+  recommendedDifficulty: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface LearningGraphNode {
+  id: string;
+  subject: string | null;
+  /** P5: grade is always a string. */
+  grade: string | null;
+  topic: string | null;
+  prerequisites: unknown[];
+  metadata: unknown;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface CmeError {
+  id: string;
+  studentId: string;
+  conceptId: string;
+  questionId: string | null;
+  errorType: string | null;
+  studentAnswer: string | null;
+  correctAnswer: string | null;
+  responseTimeMs: number | null;
+  createdAt: string | null;
+}
+
+// ── Content domain (Phase 0d, B6) ─────────────────────────────────────────────
 //
 // Read-only projections of question_bank, cbse_syllabus, ncert_content
 // (planned), and chapter_concepts. Grade is always a string (P5).
 // Question rows include all fields needed for P6 validation by callers.
 
-/**
- * Question row projected from `question_bank`. The shape is intentionally
- * stable across the verification lifecycle — verification metadata is
- * surfaced separately so callers can decide whether to enforce
- * `verifiedAgainstNcert === true` at serve time.
- *
- * Options are normalised to a string[]. Callers must enforce P6 (exactly
- * 4 distinct non-empty options, correctAnswerIndex in [0,3], non-empty
- * text/explanation, valid difficulty + bloom_level) at serve time — this
- * type does not guarantee P6 by itself.
- */
 export interface Question {
   id: string;
   subject: string | null;
-  grade: string | null;          // P5: always string
-  chapterId: string | null;       // FK to chapters(id), may be null on legacy rows
+  grade: string | null;
+  chapterId: string | null;
   chapterNumber: number | null;
   chapterTitle: string | null;
   topic: string | null;
   questionText: string;
   questionHi: string | null;
   questionType: string | null;
-  options: string[];              // normalised from JSONB
+  options: string[];
   correctAnswerIndex: number;
   explanation: string | null;
   explanationHi: string | null;
@@ -209,21 +300,15 @@ export interface Question {
   source: string | null;
   isNcert: boolean | null;
   verifiedAgainstNcert: boolean | null;
-  verificationState: string | null;  // legacy_unverified | pending | verified | failed
+  verificationState: string | null;
   createdAt: string | null;
   updatedAt: string | null;
 }
 
-/**
- * Chapter row projected from `cbse_syllabus`. One row per
- * (board, grade, subject_code, chapter_number). The `ragStatus` field
- * indicates whether retrieval-grounded answers can be served for this
- * chapter (`ready`) or not (`missing` | `partial`).
- */
 export interface Chapter {
   id: string;
   board: string | null;
-  grade: string | null;            // P5: always string
+  grade: string | null;
   subjectCode: string | null;
   subjectDisplay: string | null;
   subjectDisplayHi: string | null;
@@ -232,7 +317,7 @@ export interface Chapter {
   chapterTitleHi: string | null;
   chunkCount: number;
   verifiedQuestionCount: number;
-  ragStatus: string | null;        // missing | partial | ready
+  ragStatus: string | null;
   lastVerifiedAt: string | null;
   isInScope: boolean | null;
   notes: string | null;
@@ -240,14 +325,9 @@ export interface Chapter {
   updatedAt: string | null;
 }
 
-/**
- * NCERT content row. Backed by the planned `ncert_content` table (see
- * DATA_OWNERSHIP_MATRIX.md). Until the migration lands, helpers return
- * a soft-failure DB_ERROR when the table is missing.
- */
 export interface NcertContent {
   id: string;
-  grade: string | null;            // P5: always string
+  grade: string | null;
   subject: string | null;
   chapter: string | null;
   chapterNumber: number | null;
@@ -261,14 +341,10 @@ export interface NcertContent {
   updatedAt: string | null;
 }
 
-/**
- * Chapter concept row — the structured "explainer" units per chapter.
- * Drives Foxy's concept-walkthrough UI and CME-engine concept selection.
- */
 export interface ChapterConcept {
   id: string;
   chapterId: string | null;
-  grade: string | null;            // P5: always string
+  grade: string | null;
   subject: string | null;
   chapterNumber: number | null;
   chapterTitle: string | null;
