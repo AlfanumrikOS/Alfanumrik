@@ -532,3 +532,39 @@ export interface RazorpayWebhook {
   createdAt: string | null;
   processedAt: string | null;
 }
+
+// ── Ops domain (Phase 0j, B13) ────────────────────────────────────────────────
+
+export interface MaintenanceBanner {
+  isEnabled: boolean;
+  messageEn: string | null;
+  messageHi: string | null;
+  metadata: Record<string, unknown> | null;
+}
+
+export interface SupportTicket {
+  id: string;
+  studentId: string | null;
+  email: string | null;
+  category: string;
+  subject: string | null;
+  message: string;
+  status: string;
+  userRole: string | null;
+  userName: string | null;
+  deviceInfo: string | null;
+  adminNotes: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
+export interface AdminUser {
+  id: string;
+  authUserId: string;
+  name: string;
+  email: string | null;
+  adminLevel: string;
+  isActive: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
