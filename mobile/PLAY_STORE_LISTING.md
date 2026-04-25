@@ -25,25 +25,27 @@ Alfanumrik is an AI-powered learning app built for Indian CBSE students from Cla
 • Subject-wise MCQ quizzes with 10 questions each
 • Timed quiz sessions with progress tracking
 • Instant results with score breakdown
-• Earn XP for every correct answer
+• Anti-cheat checks keep scores honest
 
-⭐ XP & REWARDS
-• Earn XP by reading concepts, completing quizzes, and chatting with Foxy
-• Level up from Beginner to Grandmaster
+📈 PERFORMANCE SCORE & FOXY COINS
+• Your Performance Score reflects accuracy across recent quizzes
+• Earn Foxy Coins for every correct answer, perfect quiz, and daily streak
+• Spend coins on hint unlocks, theme packs, and Foxy avatar items
 • Daily streak tracking to build study habits
-• See your progress on the dashboard
 
 📊 SMART DASHBOARD
 • Daily usage overview — chats used, quizzes taken
-• XP progress bar with level tracking
+• Performance Score trend + Foxy Coin balance at a glance
+• Bloom's-level mastery breakdown per subject
 • Quick access to all subjects
 • Plan status and upgrade options
 
 💎 FLEXIBLE PLANS
 • Free plan: 5 Foxy chats + 5 quizzes per day
-• Starter (₹299/mo): 30 chats + 20 quizzes
-• Pro (₹699/mo): 100 chats + unlimited quizzes
-• Unlimited (₹1,499/mo): Unlimited everything
+• Starter: 30 chats + 20 quizzes per day (monthly or yearly)
+• Pro: 100 chats + unlimited quizzes per day (monthly or yearly)
+• Unlimited: Unlimited everything (monthly or yearly)
+• See in-app for current INR pricing — discounts available on yearly plans
 
 🔒 SAFE & LIGHTWEIGHT
 • No ads, no distractions
