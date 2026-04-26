@@ -36,6 +36,8 @@ Indian K-12 EdTech platform (CBSE grades 6-12). Next.js 16 + Supabase + Razorpay
 | Payments | `src/lib/razorpay.ts`, `src/app/api/payments/` |
 | AI Edge Functions | `supabase/functions/foxy-tutor/` (active prod), `ncert-solver/`, `quiz-generator/`, `cme-engine/` |
 | Foxy Next.js Route | `src/app/api/foxy/route.ts` (new RAG+sonnet route — not yet wired to UI; will replace foxy-tutor Edge Function) |
+| Foxy moat plan | Phases 0-5 shipped via PRs #399, #401-#405. Active: NCERT-grounded RAG (Voyage rerank-2 + RRF k=60), Foxy pedagogy decision tree, IRT 2PL nightly cron at 02:50 UTC, misconception curator at `/super-admin/misconceptions`. Dormant flags: `ff_irt_question_selection` (off until calibration accumulates). |
+| IRT primitives | `src/lib/irt/fisher-info.ts` — TS twin of `select_questions_by_irt_info` SQL RPC. Tested in `src/__tests__/lib/irt/fisher-info.test.ts`. |
 | Non-AI Edge Functions | `supabase/functions/daily-cron/`, `queue-consumer/`, `send-*-email/`, `session-guard/`, `scan-ocr/`, `export-report/` |
 | Super admin panel | `src/app/super-admin/` (24 pages), `src/app/api/super-admin/` (61 routes) |
 | Parent portal | `src/app/parent/` (6 pages) |
