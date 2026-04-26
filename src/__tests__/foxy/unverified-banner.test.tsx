@@ -6,6 +6,11 @@
  *  - Action button invokes onShowChapters
  *  - traceId appears in the title attribute for support/debug
  *  - data-testid preserved for Batch 3A compatibility
+ *
+ * Phase 0 frontend update (2026-04-26): the banner copy was rewritten away
+ * from NCERT-branded wording to the bilingual "verified curriculum /
+ * सत्यापित पाठ्यक्रम" framing in src/components/foxy/UnverifiedBanner.tsx.
+ * Assertions below match the live strings exactly.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -27,16 +32,19 @@ describe('UnverifiedBanner', () => {
     render(<UnverifiedBanner />);
     const banner = screen.getByTestId('unverified-banner');
     expect(banner).toBeInTheDocument();
-    expect(banner.textContent?.toLowerCase()).toMatch(/ncert textbook/);
-    expect(banner.textContent?.toLowerCase()).toMatch(/verify with your book/);
+    // Live EN copy: "...your verified curriculum... ask a specific question..."
+    expect(banner.textContent).toMatch(/verified curriculum/);
+    expect(banner.textContent).toMatch(/verify with your book/);
+    expect(banner.textContent).toMatch(/ask a specific question/);
   });
 
-  it('renders Hindi (romanized) copy when isHi = true', () => {
+  it('renders Hindi (Devanagari) copy when isHi = true', () => {
     mockIsHi.value = true;
     render(<UnverifiedBanner />);
     const banner = screen.getByTestId('unverified-banner');
-    expect(banner.textContent).toMatch(/NCERT kitaab/);
-    expect(banner.textContent).toMatch(/apni kitaab se check karein/);
+    // Live HI copy: "⚠ यह उत्तर आपके सत्यापित पाठ्यक्रम से नहीं है ..."
+    expect(banner.textContent).toMatch(/सत्यापित पाठ्यक्रम/);
+    expect(banner.textContent).toMatch(/अपनी किताब से जाँच करें/);
   });
 
   it('sets role="status" for accessibility', () => {
@@ -57,7 +65,8 @@ describe('UnverifiedBanner', () => {
   it('calls onShowChapters when the action button is clicked (EN)', () => {
     const onShow = vi.fn();
     render(<UnverifiedBanner onShowChapters={onShow} />);
-    const btn = screen.getByRole('button', { name: /show me ncert chapters/i });
+    // Live EN action label: "Show me verified curriculum topics I can ask about"
+    const btn = screen.getByRole('button', { name: /show me verified curriculum topics/i });
     fireEvent.click(btn);
     expect(onShow).toHaveBeenCalledTimes(1);
   });
@@ -66,7 +75,8 @@ describe('UnverifiedBanner', () => {
     mockIsHi.value = true;
     const onShow = vi.fn();
     render(<UnverifiedBanner onShowChapters={onShow} />);
-    const btn = screen.getByRole('button', { name: /NCERT chapters available/i });
+    // Live HI action label: "मुझे दिखाइए कौन से सत्यापित पाठ्यक्रम विषय उपलब्ध हैं"
+    const btn = screen.getByRole('button', { name: /सत्यापित पाठ्यक्रम विषय/ });
     fireEvent.click(btn);
     expect(onShow).toHaveBeenCalledTimes(1);
   });

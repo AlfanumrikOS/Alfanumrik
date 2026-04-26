@@ -120,6 +120,31 @@ async function callOnce(params: {
   const timeoutId = setTimeout(() => controller.abort(), params.timeoutMs);
 
   try {
+    // Phase 2.4: Anthropic prompt caching.
+    //
+    // The system prompt for Foxy/grounded-answer is large (safety rails +
+    // cognitive context + reference material can run 3-6k tokens) and
+    // changes only when the chunks/cognitive snapshot shift. We wrap the
+    // system prompt as a single content block with cache_control so
+    // Anthropic caches the prefix for ~5 minutes. Subsequent turns in the
+    // same conversation reuse the cache and only pay for the user message
+    // delta. Caching is a no-op (just a structural change) when the
+    // backend doesn't honor the header — hence safe across model
+    // generations. See https://docs.anthropic.com/claude/docs/prompt-caching
+    //
+    // History injection still flows via the system prompt string for now
+    // (callers JSON-stringify history_messages). When we move to native
+    // multi-turn message arrays, the same cache_control wrapping should
+    // be applied to the first ~10 turn pairs as well — see route.ts
+    // MAX_HISTORY_TURNS comment.
+    const systemBlocks = [
+      {
+        type: 'text',
+        text: params.systemPrompt,
+        cache_control: { type: 'ephemeral' },
+      },
+    ];
+
     const response = await fetch(ANTHROPIC_ENDPOINT, {
       method: 'POST',
       headers: {
@@ -131,7 +156,7 @@ async function callOnce(params: {
         model: params.model,
         max_tokens: params.maxTokens,
         temperature: params.temperature,
-        system: params.systemPrompt,
+        system: systemBlocks,
         messages: [{ role: 'user', content: params.userMessage }],
       }),
       signal: controller.signal,
