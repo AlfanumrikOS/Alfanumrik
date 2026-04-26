@@ -296,7 +296,7 @@ async function generateWithHaiku(prompt: string): Promise<{ english: string; hin
       return null;
     }
     const body = await response.json().catch(() => null);
-    // deno-lint-ignore no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const blocks: any[] = Array.isArray(body?.content) ? body.content : [];
     const text = blocks
       .filter((b) => b?.type === 'text' && typeof b.text === 'string')

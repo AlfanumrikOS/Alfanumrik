@@ -5,6 +5,9 @@
     "src/app/api/cron/daily-cron/route.ts": {
       "maxDuration": 300
     },
+    "src/app/api/cron/irt-calibrate/route.ts": {
+      "maxDuration": 300
+    },
     "src/app/api/cron/**/*.ts": {
       "maxDuration": 60
     },
@@ -26,6 +29,10 @@
     {
       "path": "/api/cron/daily-cron",
       "schedule": "30 2 * * *"
+    },
+    {
+      "path": "/api/cron/irt-calibrate",
+      "schedule": "50 2 * * *"
     },
     {
       "path": "/api/cron/reconcile-payments",
