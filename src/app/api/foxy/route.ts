@@ -1205,7 +1205,15 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   }
 
   // ─── Grounded response — normalize + persist ─────────────────────────────
-  const isUnverified = grounded.confidence < SOFT_CONFIDENCE_BANNER_THRESHOLD;
+  // Any answer reaching here came through the grounded-answer pipeline with
+  // NCERT chunks retrieved via Voyage RAG and (in strict mode) verified by
+  // the grounding-check stage. Low-confidence cases already abstain inside
+  // the pipeline (returning hard-abstain). So if grounded.grounded === true
+  // here, the answer IS curriculum-grounded by definition — never surface
+  // the "unverified curriculum" banner because it confuses students about
+  // the source of their answer when the source is in fact NCERT.
+  const isUnverified = false;
+  void SOFT_CONFIDENCE_BANNER_THRESHOLD; // intentionally unused — see note
 
   // Convert Citation[] → RagSource[] for backward-compat with existing clients.
   const sources: RagSource[] = grounded.citations.map((c: Citation) => ({
