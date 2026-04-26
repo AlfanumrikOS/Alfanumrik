@@ -28,13 +28,13 @@ CREATE OR REPLACE VIEW misconception_candidates AS
 WITH per_qd AS (
   SELECT
     qr.question_id,
-    qr.selected_option              AS distractor_index,
+    qr.student_answer_index              AS distractor_index,
     COUNT(*)                        AS times_picked,
     COUNT(*) FILTER (WHERE qr.is_correct = false) AS times_wrong
   FROM quiz_responses qr
-  WHERE qr.selected_option IS NOT NULL
-    AND qr.selected_option BETWEEN 0 AND 3
-  GROUP BY qr.question_id, qr.selected_option
+  WHERE qr.student_answer_index IS NOT NULL
+    AND qr.student_answer_index BETWEEN 0 AND 3
+  GROUP BY qr.question_id, qr.student_answer_index
 ),
 totals AS (
   SELECT question_id, SUM(times_picked) AS total_responses
