@@ -14,6 +14,10 @@ env:
   NEXT_PUBLIC_SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder'
   VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
   VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+  # The staging health check uses the Vercel preview URL (no public staging
+  # domain alias is configured today). If/when a `staging.alfanumrik.com`
+  # alias is added, switch the health-check probes to it for the same
+  # auth-wall reasons documented in deploy-production.yml.
 
 jobs:
   # ── Step 1: Quality Checks ──
@@ -44,11 +48,36 @@ jobs:
       - name: Build
         run: npm run build
 
+  # ── Step 1b: Apply Database Migrations to Staging ──
+  # Pushes any pending SQL migrations to the staging Supabase project before
+  # the preview deploy goes live, so the preview build never hits a DB
+  # without the schema/seed it expects. Migrations are idempotent
+  # (per CLAUDE.md), so re-running is safe.
+  migrations:
+    name: Apply Database Migrations (Staging)
+    runs-on: ubuntu-latest
+    needs: quality
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Push migrations to staging
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_STAGING_DB_PASSWORD }}
+        run: |
+          supabase link --project-ref ${{ secrets.SUPABASE_STAGING_PROJECT_REF }} --password "$SUPABASE_DB_PASSWORD"
+          supabase db push --linked --include-all
+
   # ── Step 2: Deploy to Vercel Preview ──
   deploy:
     name: Deploy to Vercel Preview
     runs-on: ubuntu-latest
-    needs: quality
+    needs: [quality, migrations]
     environment: staging
     outputs:
       preview-url: ${{ steps.deploy.outputs.preview_url }}
@@ -137,11 +166,60 @@ jobs:
               console.log(`Commented on PR #${pr.number}`);
             }
 
+  # ── Step 2b: Deploy Changed Edge Functions to Staging ──
+  # Detects which Supabase Edge Functions changed in the merged commit and
+  # redeploys only those (or all active functions if `_shared/` changed).
+  # `--no-verify-jwt` is passed because most Alfanumrik functions perform
+  # their own auth — match deploy-production.yml behavior. See that file
+  # for the full rationale.
+  deploy-functions:
+    name: Deploy Changed Edge Functions (Staging)
+    runs-on: ubuntu-latest
+    needs: [deploy, migrations]
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Detect changed Edge Functions
+        id: changed
+        run: |
+          CHANGED=$(git diff --name-only HEAD~1 HEAD -- 'supabase/functions/' \
+            | grep -vE '(_archive|_shared|__tests__)' \
+            | awk -F/ 'NF>=3 {print $3}' | sort -u | grep -v '^$' || true)
+          if git diff --name-only HEAD~1 HEAD -- 'supabase/functions/_shared/' | grep -q .; then
+            CHANGED=$(ls -d supabase/functions/*/ | grep -vE '(_archive|_shared)' | xargs -n1 basename | sort -u)
+            echo "_shared changed → deploying ALL active functions"
+          fi
+          echo "Changed functions:"
+          echo "$CHANGED"
+          {
+            echo 'functions<<EOF'
+            echo "$CHANGED"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Deploy each changed function
+        if: steps.changed.outputs.functions != ''
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          while IFS= read -r fn; do
+            [ -z "$fn" ] && continue
+            echo "Deploying $fn"
+            supabase functions deploy "$fn" --project-ref ${{ secrets.SUPABASE_STAGING_PROJECT_REF }} --no-verify-jwt
+          done <<< "${{ steps.changed.outputs.functions }}"
+
   # ── Step 3: Health Check ──
   health-check:
     name: Post-Deploy Health Check
     runs-on: ubuntu-latest
-    needs: deploy
+    needs: [deploy, deploy-functions]
     steps:
       - name: Wait for deployment to stabilize
         run: sleep 30
