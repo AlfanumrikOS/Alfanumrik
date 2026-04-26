@@ -120,13 +120,49 @@ async function fetchQuestion(questionId: string): Promise<{
  * `remediation_unavailable` shape regardless of which branch failed. Do
  * NOT add new error reasons here.
  */
+/**
+ * Phase 3 moat plan: curated misconception lookup.
+ *
+ * If the editorial team has annotated this (question_id, distractor_index),
+ * return the canonical misconception_label (and Hindi if present) so we can
+ * anchor the Haiku prompt on it. When no curation exists, returns null and
+ * the prompt falls back to the question + correct-option only.
+ */
+interface CuratedMisconception {
+  code: string;
+  label: string;
+  label_hi: string | null;
+}
+
+async function fetchCuratedMisconception(
+  questionId: string,
+  distractorIndex: number,
+): Promise<CuratedMisconception | null> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("question_misconceptions")
+      .select("misconception_code, misconception_label, misconception_label_hi")
+      .eq("question_id", questionId)
+      .eq("distractor_index", distractorIndex)
+      .maybeSingle();
+    if (error || !data) return null;
+    return {
+      code: data.misconception_code,
+      label: data.misconception_label,
+      label_hi: data.misconception_label_hi ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function studentHasSubmittedDistractor(
   studentId: string,
   questionId: string,
   distractorIndex: number,
 ): Promise<boolean> {
   try {
-    // quiz_responses.selected_option holds the 0..3 index (not _index suffix);
+    // quiz_responses.student_answer_index holds the 0..3 index (not _index suffix);
     // join via quiz_session_id to confirm ownership. We require is_correct=false
     // so submitting the correct answer never unlocks remediation.
     const { data, error } = await supabaseAdmin
@@ -134,7 +170,7 @@ async function studentHasSubmittedDistractor(
       .select('id, quiz_sessions!inner(student_id)')
       .eq('quiz_sessions.student_id', studentId)
       .eq('question_id', questionId)
-      .eq('selected_option', distractorIndex)
+      .eq("student_answer_index", distractorIndex)
       .eq('is_correct', false)
       .limit(1);
     if (error) return false;
@@ -208,6 +244,7 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   // 2. Cache miss — fetch question and generate.
   const question = await fetchQuestion(questionId);
+  const curated = await fetchCuratedMisconception(questionId, distractorIndex);
   if (!question) return errorJson('Question not found.', 404);
 
   const distractor = question.options?.[distractorIndex];
@@ -228,6 +265,12 @@ export async function POST(request: NextRequest): Promise<Response> {
   }
 
   const prompt =
+    (curated
+      ? `Editor-curated misconception for this distractor: ${curated.label}
+` +
+        (curated.label_hi ? `Hindi label: ${curated.label_hi}
+` : "")
+      : "") +
     `Question (${question.subject ?? 'subject'}, Grade ${question.grade ?? '?'}): ${question.question_text}\n` +
     `Wrong answer chosen: ${distractor}\n` +
     `Correct answer: ${correct}\n` +
