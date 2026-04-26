@@ -401,6 +401,58 @@ async function fetchDueReviewQuestions(
  * Select questions using the student's concept_mastery data.
  * Weak topics (mastery < 0.65 or past due for review) get priority.
  * Targets an appropriate difficulty for each weak concept.
+
+// ─── Phase 4 IRT-info selection (gated by ff_irt_question_selection) ────
+
+let _irtFlagCache: { value: boolean; expiresAt: number } | null = null
+const _IRT_FLAG_TTL_MS = 60_000  // 60 sec — same TTL as other Edge fn flag caches
+
+async function isIRTSelectionEnabled(supabase: SupabaseClient): Promise<boolean> {
+  const now = Date.now()
+  if (_irtFlagCache && now < _irtFlagCache.expiresAt) return _irtFlagCache.value
+  try {
+    const { data } = await supabase
+      .from("feature_flags")
+      .select("is_enabled, rollout_percentage")
+      .eq("flag_name", "ff_irt_question_selection")
+      .maybeSingle()
+    const enabled = Boolean(data && data.is_enabled === true && (data.rollout_percentage ?? 0) >= 100)
+    _irtFlagCache = { value: enabled, expiresAt: now + _IRT_FLAG_TTL_MS }
+    return enabled
+  } catch {
+    _irtFlagCache = { value: false, expiresAt: now + _IRT_FLAG_TTL_MS }
+    return false
+  }
+}
+
+async function selectQuestionsByIRT(
+  supabase: SupabaseClient,
+  studentId: string,
+  subject: string,
+  grade: string,
+  chapterNumber: number | null,
+  count: number,
+  excludeIds: Set<string>,
+): Promise<QuestionRow[]> {
+  const exclude = Array.from(excludeIds)
+  const { data, error } = await supabase.rpc("select_questions_by_irt_info", {
+    p_student_id: studentId,
+    p_subject: subject,
+    p_grade: grade,
+    p_chapter_number: chapterNumber,
+    p_match_count: count,
+    p_exclude_ids: exclude.length > 0 ? exclude : [],
+  })
+  if (error) {
+    console.warn(`selectQuestionsByIRT: rpc error - ${error.message}`)
+    return []
+  }
+  // The RPC returns a row shape compatible with QuestionRow at the columns
+  // the quiz-generator caller actually reads. Cast through unknown to keep
+  // strict TS happy without re-defining the RPC row type here.
+  return (data ?? []) as unknown as QuestionRow[]
+}
+
  */
 async function selectAdaptiveQuestions(
   supabase: SupabaseClient,
@@ -1203,6 +1255,28 @@ Deno.serve(async (req) => {
     const adaptiveSlots = count - reviewQuestions.length
 
     if (difficulty == null && adaptiveSlots > 0) {
+      // Phase 4: when ff_irt_question_selection is on, use Fisher-info
+      // ranking via select_questions_by_irt_info RPC. Falls back to the
+      // legacy mastery-driven flow when the flag is off (default) or when
+      // the RPC returns fewer rows than requested.
+      const useIRT = await isIRTSelectionEnabled(supabase)
+      if (useIRT) {
+        const irtQuestions = await selectQuestionsByIRT(
+          supabase,
+          student_id,
+          subject,
+          grade,
+          chapterNumber,
+          adaptiveSlots,
+          usedAfterReview,
+        )
+        if (irtQuestions.length >= adaptiveSlots) {
+          adaptiveQuestions = irtQuestions
+          weakTopicsTargeted = 0  // IRT path does not target weak topics directly
+          // strategy stays 'adaptive' — IRT is just a different ranking inside it
+        }
+      }
+      if (adaptiveQuestions.length === 0) {
       const adaptive = await selectAdaptiveQuestions(
         supabase,
         student_id,
@@ -1214,6 +1288,7 @@ Deno.serve(async (req) => {
       )
       adaptiveQuestions = adaptive.questions
       weakTopicsTargeted = adaptive.weakTopicsTargeted
+      }
     }
 
     // Merge review + adaptive
