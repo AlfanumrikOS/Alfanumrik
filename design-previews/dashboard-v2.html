@@ -1,0 +1,1774 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Alfanumrik — Student Dashboard (v2 preview)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,400;1,6..72,500;1,6..72,600;1,6..72,700&family=Mukta+Vaani:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  /* ---------- DESIGN TOKENS (inherited from welcome-v2.html) ---------- */
+  :root {
+    --cream: #F4ECDB;
+    --cream-deep: #EADFC6;
+    --ink: #0E0B07;
+    --ink-soft: #2A241B;
+    --ink-mute: #5B5141;
+    --saffron: #E8581C;
+    --saffron-deep: #C84411;
+    --peacock: #0F5C5F;
+    --marigold: #F5A623;
+    --leaf: #2F8B3A;
+    --vermilion: #C84411;
+    --rule: rgba(14, 11, 7, 0.12);
+    --rule-strong: rgba(14, 11, 7, 0.4);
+    --paper: var(--cream);
+    --on-paper: var(--ink);
+    --invert-bg: var(--ink);
+    --invert-fg: var(--cream);
+    --display: 'Newsreader', 'Times New Roman', serif;
+    --display-hi: 'Mukta Vaani', 'Newsreader', serif;
+    --body: 'Inter', system-ui, sans-serif;
+    --mono: 'JetBrains Mono', monospace;
+  }
+  body[data-theme="dark"] {
+    --paper: var(--ink);
+    --on-paper: var(--cream);
+    --invert-bg: var(--cream);
+    --invert-fg: var(--ink);
+    --rule: rgba(244, 236, 219, 0.18);
+    --rule-strong: rgba(244, 236, 219, 0.4);
+    --ink-mute: #B7AC95;
+    --ink-soft: #D9CFB7;
+  }
+
+  /* ---------- BASE ---------- */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--paper);
+    color: var(--on-paper);
+    font-family: var(--body);
+    font-size: 17px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow-x: hidden;
+    transition: background-color .35s ease, color .35s ease;
+  }
+  body::before {
+    content: "";
+    position: fixed; inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background-image:
+      radial-gradient(rgba(14,11,7,0.04) 1px, transparent 1px),
+      radial-gradient(rgba(14,11,7,0.03) 1px, transparent 1px);
+    background-size: 3px 3px, 7px 7px;
+    background-position: 0 0, 1.5px 1.5px;
+    mix-blend-mode: multiply;
+    opacity: .55;
+  }
+  body[data-theme="dark"]::before { mix-blend-mode: screen; opacity: .15; }
+
+  ::selection { background: var(--saffron); color: var(--cream); }
+
+  .wrap {
+    width: 100%;
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 0 56px;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* ---------- TYPOGRAPHY HELPERS ---------- */
+  .serif { font-family: var(--display); font-weight: 500; }
+  .display { font-family: var(--display); font-weight: 600; line-height: 0.96; letter-spacing: -0.025em; }
+  .deva { font-family: var(--display-hi); }
+  .mono { font-family: var(--mono); font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; font-size: 11.5px; }
+  .label { font-family: var(--mono); font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; font-size: 10.5px; color: var(--ink-mute); }
+  .tabular { font-variant-numeric: tabular-nums; }
+  em, .italic { font-style: italic; }
+  .saffron { color: var(--saffron); }
+  .peacock { color: var(--peacock); }
+  .marigold { color: var(--marigold); }
+  .leaf { color: var(--leaf); }
+
+  /* ---------- HAIRLINES ---------- */
+  .hairline { height: 1px; background: var(--rule); }
+  .rule-thick { height: 4px; background: var(--ink); }
+
+  /* ---------- NAV ---------- */
+  nav.top {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: var(--paper);
+    border-bottom: 1px solid var(--rule);
+    backdrop-filter: blur(2px);
+  }
+  .nav-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 78px;
+    gap: 32px;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .brand .mark {
+    width: 38px; height: 38px;
+    background: var(--ink);
+    color: var(--cream);
+    display: grid; place-items: center;
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 22px;
+    font-style: italic;
+    border-radius: 2px;
+  }
+  body[data-theme="dark"] .brand .mark { background: var(--cream); color: var(--ink); }
+  .brand .name {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 22px;
+    letter-spacing: -0.01em;
+  }
+  .brand .name sup { font-size: 9px; font-family: var(--mono); font-weight: 400; vertical-align: super; opacity: .55; margin-left: 2px; }
+
+  .nav-tabs {
+    display: flex;
+    border: 1px solid var(--ink);
+    border-radius: 999px;
+    padding: 3px;
+    background: transparent;
+  }
+  body[data-theme="dark"] .nav-tabs { border-color: var(--cream); }
+  .nav-tabs a {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 9px 16px;
+    border-radius: 999px;
+    color: var(--ink);
+    text-decoration: none;
+    transition: background .2s, color .2s;
+  }
+  body[data-theme="dark"] .nav-tabs a { color: var(--cream); }
+  .nav-tabs a.active { background: var(--ink); color: var(--cream); }
+  body[data-theme="dark"] .nav-tabs a.active { background: var(--cream); color: var(--ink); }
+
+  .nav-right { display: flex; align-items: center; gap: 18px; }
+  .lang-toggle {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    background: none; border: none;
+    cursor: pointer;
+    color: var(--on-paper);
+    padding: 6px 4px;
+    position: relative;
+  }
+  .lang-toggle::after {
+    content: ""; position: absolute; left: 4px; right: 4px; bottom: 0; height: 1px;
+    background: var(--ink-mute);
+  }
+  .streak-pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--saffron);
+    padding: 6px 10px;
+    border: 1px solid var(--saffron);
+    border-radius: 2px;
+  }
+  .streak-pill .flame {
+    font-family: var(--display);
+    font-style: normal;
+    font-size: 13px;
+  }
+  .avatar-circle {
+    width: 38px; height: 38px;
+    border-radius: 50%;
+    background: var(--peacock);
+    color: var(--cream);
+    display: grid; place-items: center;
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 17px;
+    cursor: pointer;
+    user-select: none;
+    border: 1px solid var(--ink);
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 22px;
+    font-family: var(--body);
+    font-size: 14.5px;
+    font-weight: 600;
+    text-decoration: none;
+    border-radius: 2px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: transform .15s, background .2s, color .2s;
+  }
+  .btn:hover { transform: translateY(-1px); }
+  .btn-primary { background: var(--saffron); color: #fff; }
+  .btn-primary:hover { background: var(--saffron-deep); }
+  .btn-ink { background: var(--ink); color: var(--cream); }
+  body[data-theme="dark"] .btn-ink { background: var(--cream); color: var(--ink); }
+  .btn-ghost { background: transparent; color: var(--on-paper); border: 1px solid var(--ink); }
+  body[data-theme="dark"] .btn-ghost { border-color: var(--cream); }
+  .btn-cream { background: var(--cream); color: var(--ink); }
+  .btn-arrow::after { content: "→"; font-family: var(--display); font-weight: 500; }
+  .btn-sm { padding: 9px 14px; font-size: 12.5px; }
+
+  /* ---------- ISSUE BAR ---------- */
+  .issue-bar {
+    border-bottom: 1px solid var(--rule);
+    padding: 10px 0;
+    color: var(--ink-mute);
+  }
+  .issue-bar-inner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 24px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .issue-bar-inner .left,
+  .issue-bar-inner .right { display: flex; gap: 22px; flex-wrap: wrap; }
+
+  /* ---------- MASTHEAD ---------- */
+  .masthead {
+    position: relative;
+    padding: 70px 0 64px;
+    border-bottom: 4px solid var(--ink);
+    overflow: hidden;
+  }
+  .masthead-numeral {
+    position: absolute;
+    right: -120px;
+    top: -60px;
+    font-family: var(--display-hi);
+    font-weight: 800;
+    font-size: 560px;
+    line-height: 0.85;
+    color: var(--saffron);
+    opacity: 0.08;
+    pointer-events: none;
+    user-select: none;
+    z-index: 0;
+  }
+  body[data-theme="dark"] .masthead-numeral { opacity: 0.13; }
+  .masthead-inner { position: relative; z-index: 1; }
+  .masthead-eye {
+    display: inline-flex; align-items: center; gap: 12px;
+    margin-bottom: 28px;
+  }
+  .masthead-eye .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--saffron); }
+  .masthead-eye span { font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink); }
+
+  h1.masthead-h {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: clamp(54px, 8.5vw, 124px);
+    line-height: 0.94;
+    letter-spacing: -0.035em;
+    margin-bottom: 12px;
+  }
+  h1.masthead-h em { color: var(--saffron); font-weight: 600; }
+  h1.masthead-h .deva-line {
+    display: block;
+    font-family: var(--display-hi);
+    font-weight: 600;
+    font-size: 0.42em;
+    color: var(--ink-soft);
+    line-height: 1;
+    letter-spacing: -0.01em;
+    margin-top: 18px;
+  }
+  body[data-theme="dark"] h1.masthead-h .deva-line { color: var(--cream); opacity: .82; }
+  h1.masthead-h .deva-line em { color: var(--saffron); font-style: italic; }
+
+  .masthead-intent {
+    margin-top: 36px;
+    max-width: 760px;
+    font-family: var(--display);
+    font-size: 22px;
+    line-height: 1.5;
+    color: var(--ink-soft);
+  }
+  body[data-theme="dark"] .masthead-intent { color: var(--cream); opacity: .9; }
+  .masthead-intent em { color: var(--saffron); }
+
+  .masthead-meta {
+    margin-top: 28px;
+    display: flex; flex-wrap: wrap; gap: 0;
+    border-top: 1px solid var(--rule);
+    padding-top: 18px;
+  }
+  .masthead-meta span {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    padding: 0 18px;
+    border-right: 1px solid var(--rule);
+  }
+  .masthead-meta span:first-child { padding-left: 0; }
+  .masthead-meta span:last-child { border-right: none; }
+  .masthead-meta b { color: var(--saffron); font-weight: 600; }
+
+  /* ---------- TODAY'S PLAN ---------- */
+  .today {
+    padding: 80px 0 90px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .today-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 48px; gap: 32px;
+  }
+  .today-head .h {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: clamp(38px, 5vw, 68px);
+    letter-spacing: -0.025em;
+    line-height: 1;
+  }
+  .today-head .h em { color: var(--saffron); }
+  .today-head .meta { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-mute); }
+
+  .plan-strip {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    border: 1px solid var(--ink);
+    background: var(--paper);
+  }
+  .plan-step {
+    padding: 32px 28px 28px;
+    border-right: 1px solid var(--rule);
+    cursor: pointer;
+    position: relative;
+    transition: background .2s;
+  }
+  .plan-step:last-child { border-right: none; }
+  .plan-step:hover { background: var(--cream-deep); }
+  body[data-theme="dark"] .plan-step:hover { background: rgba(244,236,219,.05); }
+  .plan-step.active { background: var(--cream-deep); }
+  body[data-theme="dark"] .plan-step.active { background: rgba(244,236,219,.05); }
+  .plan-step .roman {
+    font-family: var(--display);
+    font-style: italic;
+    font-weight: 600;
+    font-size: 44px;
+    color: var(--saffron);
+    line-height: 1;
+    margin-bottom: 14px;
+  }
+  .plan-step .lbl {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-bottom: 10px;
+  }
+  .plan-step h3 {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 26px;
+    letter-spacing: -0.015em;
+    line-height: 1.15;
+    margin-bottom: 10px;
+  }
+  .plan-step h3 em { color: var(--saffron); }
+  .plan-step p {
+    font-size: 14.5px;
+    color: var(--ink-soft);
+    line-height: 1.5;
+    margin-bottom: 18px;
+  }
+  body[data-theme="dark"] .plan-step p { color: var(--cream); opacity: .82; }
+  .plan-step .status {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: var(--mono);
+    font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+    padding: 5px 10px;
+    border: 1px dashed var(--ink-mute);
+    color: var(--ink-mute);
+  }
+  .plan-step .status.done { border-style: solid; border-color: var(--leaf); color: var(--leaf); }
+  .plan-step .status.in-progress { border-style: solid; border-color: var(--saffron); color: var(--saffron); }
+  .plan-step .status.queued { border-style: dashed; }
+  .plan-step .expansion {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height .35s ease;
+  }
+  .plan-step.expanded .expansion { max-height: 220px; }
+  .plan-step .expansion-body {
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px solid var(--rule);
+    font-family: var(--display);
+    font-style: italic;
+    font-size: 14.5px;
+    line-height: 1.5;
+    color: var(--ink-mute);
+  }
+  .plan-step .expansion-body ul { list-style: none; margin-top: 8px; }
+  .plan-step .expansion-body li { padding: 4px 0 4px 18px; position: relative; font-style: normal; font-family: var(--body); font-size: 13.5px; color: var(--ink-soft); }
+  .plan-step .expansion-body li::before { content: "→"; position: absolute; left: 0; color: var(--saffron); font-family: var(--display); }
+
+  .plan-cta-row {
+    margin-top: 28px;
+    display: flex; flex-wrap: wrap; gap: 14px; align-items: center;
+  }
+  .plan-cta-row .pencil {
+    font-family: var(--display);
+    font-style: italic;
+    font-size: 14px;
+    color: var(--saffron);
+  }
+
+  /* ---------- MASTERY X-RAY ---------- */
+  .xray {
+    padding: 90px 0 100px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .xray-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 36px; gap: 32px;
+  }
+  .xray-head .h {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: clamp(38px, 5vw, 68px);
+    letter-spacing: -0.025em;
+    line-height: 1;
+  }
+  .xray-head .h em { color: var(--saffron); }
+  .xray-head .meta { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-mute); max-width: 360px; text-align: right; }
+
+  .xray-table {
+    border-top: 4px solid var(--ink);
+    border-bottom: 1px solid var(--ink);
+  }
+  .xray-row {
+    display: grid;
+    grid-template-columns: 130px 1.6fr 1.4fr 180px 110px;
+    align-items: center;
+    padding: 0 8px;
+    border-bottom: 1px solid var(--rule);
+    transition: background .15s;
+  }
+  .xray-row:last-child { border-bottom: none; }
+  .xray-row:not(.head):hover { background: var(--cream-deep); }
+  body[data-theme="dark"] .xray-row:not(.head):hover { background: rgba(244,236,219,.04); }
+  .xray-row.head {
+    background: transparent;
+    cursor: default;
+  }
+  .xray-row .col {
+    padding: 18px 12px;
+  }
+  .xray-row.head .col {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    cursor: pointer;
+    user-select: none;
+    padding: 16px 12px;
+  }
+  .xray-row.head .col:hover { color: var(--saffron); }
+  .xray-row.head .col.sorted::after { content: " ↓"; color: var(--saffron); font-family: var(--display); }
+  .xray-row .subj {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+  .xray-row .topic {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 19px;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    line-height: 1.25;
+  }
+  body[data-theme="dark"] .xray-row .topic { color: var(--cream); }
+  .xray-row .topic small {
+    display: block;
+    font-family: var(--display);
+    font-style: italic;
+    font-weight: 500;
+    font-size: 13px;
+    color: var(--ink-mute);
+    margin-top: 2px;
+  }
+  .xray-bar {
+    display: flex; align-items: center; gap: 12px;
+  }
+  .xray-bar .meter {
+    flex: 1;
+    height: 6px;
+    background: rgba(0,0,0,.08);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  body[data-theme="dark"] .xray-bar .meter { background: rgba(255,255,255,.08); }
+  .xray-bar .meter span { display: block; height: 100%; }
+  .xray-bar .pct {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 18px;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+    min-width: 42px;
+    text-align: right;
+  }
+  body[data-theme="dark"] .xray-bar .pct { color: var(--cream); }
+  .xray-row .last {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+  .xray-row .last em { font-family: var(--display); font-style: italic; font-size: 13px; color: var(--ink-soft); text-transform: none; letter-spacing: 0; display: block; margin-top: 2px; }
+  body[data-theme="dark"] .xray-row .last em { color: var(--cream); opacity: .8; }
+  .xray-row .status-pill {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 2px;
+    text-align: center;
+    display: inline-block;
+  }
+  .status-pill.strong { background: rgba(47, 139, 58, .12); color: var(--leaf); border: 1px solid var(--leaf); }
+  .status-pill.mid { background: rgba(245, 166, 35, .12); color: var(--marigold); border: 1px solid var(--marigold); }
+  .status-pill.weak { background: rgba(200, 68, 17, .12); color: var(--vermilion); border: 1px solid var(--vermilion); }
+
+  .xray-foot {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-top: 22px; gap: 18px;
+  }
+  .xray-foot .note {
+    font-family: var(--display);
+    font-style: italic;
+    font-size: 14.5px;
+    color: var(--ink-mute);
+  }
+
+  /* ---------- TWO COLUMN SPLIT ---------- */
+  .split {
+    padding: 90px 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .split-grid {
+    display: grid;
+    grid-template-columns: 1fr 1px 1fr;
+    gap: 56px;
+  }
+  .split-grid .divider { background: var(--ink); width: 1px; }
+  .split-col h3 {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-bottom: 14px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .split-col h3::before {
+    content: ""; width: 22px; height: 1px; background: var(--saffron);
+  }
+  .split-col .h2-display {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: clamp(34px, 4vw, 56px);
+    letter-spacing: -0.025em;
+    line-height: 1;
+    margin-bottom: 28px;
+  }
+  .split-col .h2-display em { color: var(--saffron); font-style: italic; }
+
+  /* XP block */
+  .xp-stat {
+    display: flex; align-items: baseline; gap: 18px;
+    margin-bottom: 18px;
+  }
+  .xp-stat .num {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 78px;
+    line-height: .95;
+    letter-spacing: -0.025em;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+  }
+  body[data-theme="dark"] .xp-stat .num { color: var(--cream); }
+  .xp-stat .num em { color: var(--saffron); font-style: italic; }
+  .xp-stat .meta {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    line-height: 1.4;
+  }
+
+  .xp-bar {
+    display: flex;
+    gap: 3px;
+    margin: 28px 0 14px;
+  }
+  .xp-bar .seg {
+    flex: 1;
+    height: 22px;
+    border: 1px solid var(--ink);
+    background: transparent;
+  }
+  body[data-theme="dark"] .xp-bar .seg { border-color: var(--cream); }
+  .xp-bar .seg.filled { background: var(--saffron); border-color: var(--saffron); }
+  .xp-bar .seg.partial { background: linear-gradient(to right, var(--saffron) 60%, transparent 60%); border-color: var(--saffron); }
+  .xp-bar-meta {
+    display: flex; justify-content: space-between;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-bottom: 28px;
+  }
+
+  .streak-cal {
+    display: flex; align-items: center; gap: 10px;
+    margin-top: 8px;
+  }
+  .streak-cal .day {
+    width: 36px; height: 36px;
+    border: 1px solid var(--ink);
+    display: grid; place-items: center;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    position: relative;
+  }
+  body[data-theme="dark"] .streak-cal .day { border-color: var(--cream); }
+  .streak-cal .day.done { background: var(--saffron); color: #fff; border-color: var(--saffron); }
+  .streak-cal .day.today { background: var(--ink); color: var(--cream); border-color: var(--ink); }
+  body[data-theme="dark"] .streak-cal .day.today { background: var(--cream); color: var(--ink); border-color: var(--cream); }
+  .streak-cal .day.future { opacity: .4; }
+  .streak-note {
+    margin-top: 18px;
+    font-family: var(--display);
+    font-style: italic;
+    font-size: 14.5px;
+    color: var(--ink-soft);
+  }
+  body[data-theme="dark"] .streak-note { color: var(--cream); opacity: .8; }
+  .streak-note em { color: var(--saffron); }
+
+  /* Concept Chain block */
+  .chain-q {
+    background: var(--cream-deep);
+    border: 1px solid var(--ink);
+    padding: 28px;
+    margin-bottom: 18px;
+  }
+  body[data-theme="dark"] .chain-q { background: rgba(244,236,219,.05); }
+  .chain-q .lbl {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-bottom: 12px;
+  }
+  .chain-q .q-text {
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 22px;
+    line-height: 1.35;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    margin-bottom: 18px;
+  }
+  body[data-theme="dark"] .chain-q .q-text { color: var(--cream); }
+  .chain-q .q-text em { color: var(--saffron); font-style: italic; }
+  .chain-q .deva-q {
+    font-family: var(--display-hi);
+    font-size: 15px;
+    color: var(--ink-mute);
+    line-height: 1.4;
+  }
+  .chain-meta {
+    display: flex; justify-content: space-between; align-items: center;
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-mute);
+    margin-bottom: 22px;
+  }
+  .chain-meta .right { color: var(--saffron); }
+  .chain-rank {
+    margin-top: 22px;
+    padding: 14px 18px;
+    border: 1px dashed var(--ink-mute);
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 12px;
+  }
+  .chain-rank .who {
+    font-family: var(--display);
+    font-size: 16px;
+    line-height: 1.3;
+  }
+  .chain-rank .who em { color: var(--saffron); font-style: italic; }
+  .chain-rank .pos {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 32px;
+    line-height: 1;
+    color: var(--saffron);
+    font-variant-numeric: tabular-nums;
+  }
+  .chain-rank .pos small {
+    font-family: var(--mono);
+    font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink-mute);
+    display: block;
+    margin-top: 4px;
+  }
+
+  /* ---------- SUBJECTS STRIP ---------- */
+  .subjects {
+    padding: 90px 0 60px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .subjects-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 36px; gap: 32px;
+  }
+  .subjects-head .h {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: clamp(38px, 5vw, 64px);
+    letter-spacing: -0.025em;
+    line-height: 1;
+  }
+  .subjects-head .h em { color: var(--saffron); }
+  .subjects-head .meta { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-mute); }
+
+  .subjects-scroll {
+    display: flex;
+    gap: 18px;
+    overflow-x: auto;
+    padding-bottom: 22px;
+    scrollbar-width: thin;
+  }
+  .subjects-scroll::-webkit-scrollbar { height: 6px; }
+  .subjects-scroll::-webkit-scrollbar-thumb { background: var(--ink-mute); border-radius: 3px; }
+  .subj-chip {
+    flex: 0 0 220px;
+    border: 1px solid var(--ink);
+    padding: 22px 22px 18px;
+    background: var(--paper);
+    cursor: pointer;
+    transition: background .2s;
+  }
+  body[data-theme="dark"] .subj-chip { border-color: var(--cream); }
+  .subj-chip:hover {
+    background: var(--ink);
+    color: var(--cream);
+  }
+  body[data-theme="dark"] .subj-chip:hover { background: var(--cream); color: var(--ink); }
+  .subj-chip:hover .subj-name,
+  .subj-chip:hover .subj-pct { color: inherit; }
+  .subj-chip:hover .subj-lbl,
+  .subj-chip:hover .subj-meta { color: inherit; opacity: .7; }
+  .subj-chip:hover .spark { transform: scale(1.06); }
+  .subj-chip:hover .spark polyline { stroke: var(--saffron); }
+  .subj-chip .subj-lbl {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-bottom: 10px;
+  }
+  .subj-chip .subj-name {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 26px;
+    letter-spacing: -0.015em;
+    line-height: 1.1;
+    color: var(--ink);
+    margin-bottom: 16px;
+  }
+  body[data-theme="dark"] .subj-chip .subj-name { color: var(--cream); }
+  .subj-chip .subj-name .deva {
+    display: block;
+    font-family: var(--display-hi);
+    font-size: 15px;
+    color: var(--ink-mute);
+    margin-top: 4px;
+  }
+  .subj-chip .subj-pct {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 36px;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+  }
+  body[data-theme="dark"] .subj-chip .subj-pct { color: var(--cream); }
+  .subj-chip .subj-pct small {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-left: 4px;
+  }
+  .subj-chip .spark {
+    margin-top: 14px;
+    width: 100%;
+    height: 36px;
+    transition: transform .25s ease;
+  }
+  .subj-chip .spark polyline {
+    fill: none;
+    stroke: var(--ink);
+    stroke-width: 1.4;
+    transition: stroke .25s ease;
+  }
+  body[data-theme="dark"] .subj-chip .spark polyline { stroke: var(--cream); }
+  .subj-chip .subj-meta {
+    margin-top: 8px;
+    font-family: var(--mono);
+    font-size: 9.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+
+  /* ---------- FOXY BANNER ---------- */
+  .foxy-band {
+    background: var(--ink);
+    color: var(--cream);
+    padding: 70px 0;
+    position: relative;
+    overflow: hidden;
+  }
+  body[data-theme="dark"] .foxy-band { background: var(--cream); color: var(--ink); }
+  .foxy-band .ornament {
+    position: absolute;
+    right: -60px; bottom: -100px;
+    font-family: var(--display-hi);
+    font-weight: 800;
+    font-size: 380px;
+    line-height: .85;
+    opacity: 0.07;
+    color: var(--cream);
+    pointer-events: none;
+    user-select: none;
+  }
+  body[data-theme="dark"] .foxy-band .ornament { color: var(--ink); }
+  .foxy-grid {
+    display: grid;
+    grid-template-columns: 140px 1fr auto;
+    gap: 40px;
+    align-items: center;
+    position: relative;
+    z-index: 1;
+  }
+  .foxy-svg svg { width: 100%; height: auto; }
+  .foxy-band h3 {
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: clamp(32px, 4.4vw, 54px);
+    letter-spacing: -0.025em;
+    line-height: 1.05;
+  }
+  .foxy-band h3 em { color: var(--saffron); font-style: italic; font-weight: 600; }
+  .foxy-band .sub {
+    margin-top: 14px;
+    font-family: var(--display);
+    font-style: italic;
+    font-size: 17px;
+    color: rgba(244, 236, 219, 0.78);
+  }
+  body[data-theme="dark"] .foxy-band .sub { color: rgba(14,11,7,0.7); }
+  .foxy-band .deva-sub {
+    margin-top: 6px;
+    font-family: var(--display-hi);
+    font-size: 14px;
+    color: rgba(244, 236, 219, 0.6);
+  }
+  body[data-theme="dark"] .foxy-band .deva-sub { color: rgba(14,11,7,0.55); }
+
+  /* ---------- TIMELINE ---------- */
+  .timeline {
+    padding: 90px 0 100px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .timeline-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 48px; gap: 32px;
+  }
+  .timeline-head .h {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: clamp(38px, 5vw, 64px);
+    letter-spacing: -0.025em;
+    line-height: 1;
+  }
+  .timeline-head .h em { color: var(--saffron); }
+  .timeline-head .meta { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-mute); }
+
+  .timeline-list {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    column-gap: 36px;
+    border-top: 1px solid var(--rule);
+  }
+  .tl-time {
+    grid-column: 1;
+    padding: 22px 0;
+    border-right: 1px solid var(--rule);
+    text-align: right;
+    padding-right: 24px;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+  .tl-time strong {
+    display: block;
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 16px;
+    color: var(--ink);
+    text-transform: none;
+    letter-spacing: 0;
+    margin-bottom: 2px;
+    font-variant-numeric: tabular-nums;
+  }
+  body[data-theme="dark"] .tl-time strong { color: var(--cream); }
+  .tl-entry {
+    grid-column: 2;
+    padding: 22px 0;
+    border-bottom: 1px solid var(--rule);
+    position: relative;
+  }
+  .tl-entry::before {
+    content: "";
+    position: absolute;
+    left: -29px; top: 32px;
+    width: 9px; height: 9px;
+    background: var(--saffron);
+    border-radius: 50%;
+  }
+  .tl-time + .tl-entry { border-top: 1px solid var(--rule); margin-top: -1px; }
+  .timeline-list .tl-time:last-of-type,
+  .timeline-list .tl-entry:last-of-type { border-bottom: none; }
+  .tl-cat {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-bottom: 6px;
+  }
+  .tl-cat.cat-quiz { color: var(--saffron); }
+  .tl-cat.cat-mastery { color: var(--leaf); }
+  .tl-cat.cat-streak { color: var(--marigold); }
+  .tl-cat.cat-parent { color: var(--peacock); }
+  .tl-title {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 21px;
+    letter-spacing: -0.01em;
+    line-height: 1.3;
+    color: var(--ink);
+  }
+  body[data-theme="dark"] .tl-title { color: var(--cream); }
+  .tl-title em { color: var(--saffron); font-style: italic; }
+  .tl-detail {
+    margin-top: 6px;
+    font-size: 14.5px;
+    color: var(--ink-soft);
+    font-family: var(--display);
+    font-style: italic;
+  }
+  body[data-theme="dark"] .tl-detail { color: var(--cream); opacity: .8; }
+
+  /* ---------- PARENT VISIBILITY FOOTER ---------- */
+  .parent-vis {
+    padding: 56px 0 36px;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+  }
+  .parent-vis-inner {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 28px;
+    align-items: center;
+  }
+  .parent-vis-lbl {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    border-right: 1px solid var(--rule);
+    padding-right: 28px;
+  }
+  .parent-vis-text {
+    font-family: var(--display);
+    font-style: italic;
+    font-size: 17px;
+    line-height: 1.5;
+    color: var(--ink-soft);
+  }
+  body[data-theme="dark"] .parent-vis-text { color: var(--cream); opacity: .85; }
+  .parent-vis-text b {
+    font-style: normal;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--saffron);
+    padding: 0 4px;
+  }
+
+  /* ---------- COMPRESSED FOOTER ---------- */
+  footer.tight {
+    padding: 36px 0;
+    background: var(--cream);
+    color: var(--ink);
+  }
+  body[data-theme="dark"] footer.tight { background: #14110b; color: var(--cream); }
+  .footer-row {
+    display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 18px;
+    font-family: var(--mono);
+    font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+  .footer-row .brand-mini {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 16px;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    text-transform: none;
+    letter-spacing: -0.01em;
+  }
+  body[data-theme="dark"] .footer-row .brand-mini { color: var(--cream); }
+  .footer-row a {
+    color: var(--ink-mute);
+    text-decoration: none;
+    margin: 0 10px;
+    border-bottom: 1px solid transparent;
+  }
+  body[data-theme="dark"] .footer-row a { color: var(--ink-mute); }
+  .footer-row a:hover { border-bottom-color: var(--saffron); color: var(--saffron); }
+
+  /* ---------- RESPONSIVE ---------- */
+  @media (max-width: 960px) {
+    .wrap { padding: 0 24px; }
+    .nav-tabs { display: none; }
+    .nav-inner { height: 64px; }
+    .streak-pill { display: none; }
+    .issue-bar-inner { font-size: 9.5px; gap: 14px; }
+    .issue-bar-inner .right span:nth-child(n+3) { display: none; }
+    .masthead { padding: 50px 0 48px; }
+    .masthead-numeral { font-size: 320px; right: -90px; top: -20px; }
+    h1.masthead-h { font-size: clamp(40px, 11vw, 64px); }
+    h1.masthead-h .deva-line { font-size: 0.5em; }
+    .masthead-meta { padding-top: 14px; }
+    .masthead-meta span { padding: 6px 12px; border-right: none; border-bottom: 1px solid var(--rule); display: block; flex: 1 1 100%; }
+
+    .today, .xray, .split, .subjects, .timeline { padding: 60px 0; }
+
+    .today-head, .xray-head, .subjects-head, .timeline-head {
+      flex-direction: column; align-items: flex-start; gap: 12px;
+    }
+    .xray-head .meta { text-align: left; }
+
+    .plan-strip { grid-template-columns: 1fr; }
+    .plan-step { border-right: none; border-bottom: 1px solid var(--rule); }
+    .plan-step:last-child { border-bottom: none; }
+
+    .xray-row {
+      grid-template-columns: 1fr;
+      padding: 18px 4px;
+      gap: 6px;
+    }
+    .xray-row .col { padding: 4px 0; }
+    .xray-row.head { display: none; }
+    .xray-row .subj { font-size: 10px; }
+    .xray-row .topic { font-size: 17px; }
+    .xray-bar .pct { font-size: 16px; }
+
+    .split-grid { grid-template-columns: 1fr; gap: 56px; }
+    .split-grid .divider { display: none; }
+    .xp-stat .num { font-size: 56px; }
+    .streak-cal { flex-wrap: wrap; }
+
+    .foxy-grid { grid-template-columns: 1fr; gap: 24px; text-align: center; }
+    .foxy-svg { max-width: 100px; margin: 0 auto; }
+
+    .timeline-list {
+      grid-template-columns: 1fr;
+      column-gap: 0;
+    }
+    .tl-time {
+      border-right: none;
+      text-align: left;
+      padding: 16px 0 6px;
+      border-bottom: none;
+    }
+    .tl-entry {
+      padding: 0 0 18px 0;
+      border-bottom: 1px solid var(--rule);
+    }
+    .tl-entry::before { display: none; }
+
+    .parent-vis-inner { grid-template-columns: 1fr; gap: 14px; }
+    .parent-vis-lbl { border-right: none; padding-right: 0; padding-bottom: 12px; border-bottom: 1px solid var(--rule); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- ============================================== -->
+<!-- NAV                                            -->
+<!-- ============================================== -->
+<nav class="top">
+  <div class="wrap nav-inner">
+    <div class="brand" id="brandToggle" title="Double-click to flip theme">
+      <div class="mark">A</div>
+      <div class="name">Alfanumrik<sup>TM</sup></div>
+    </div>
+    <div class="nav-tabs">
+      <a href="#" class="active">Dashboard</a>
+      <a href="#">Foxy</a>
+      <a href="#">Quiz</a>
+      <a href="#">Progress</a>
+      <a href="#">Exams</a>
+    </div>
+    <div class="nav-right">
+      <button class="lang-toggle" id="langToggle">EN · हिं</button>
+      <span class="streak-pill"><span class="flame">▲</span>7-day streak</span>
+      <div class="avatar-circle" title="Aarav Sharma">A</div>
+    </div>
+  </div>
+</nav>
+
+<!-- Issue bar -->
+<div class="issue-bar">
+  <div class="wrap issue-bar-inner">
+    <div class="left">
+      <span>Vol. 1 · Issue 28</span>
+      <span>Aarav Sharma · Class 8</span>
+      <span>Bengaluru</span>
+    </div>
+    <div class="right">
+      <span>CBSE</span>
+      <span>हिन्दी + English</span>
+      <span>BKT v3.4</span>
+      <span>session 287</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================== -->
+<!-- MASTHEAD                                       -->
+<!-- ============================================== -->
+<section class="masthead">
+  <div class="masthead-numeral deva" aria-hidden="true">८</div>
+  <div class="wrap">
+    <div class="masthead-inner">
+      <div class="masthead-eye">
+        <span class="dot"></span>
+        <span>Monday · 28 Apr · Class 8 · CBSE</span>
+      </div>
+
+      <h1 class="masthead-h">
+        Good morning,<br />
+        <em>Aarav.</em>
+        <span class="deva-line">सुप्रभात, <em>आरव।</em> आज दस मिनट?</span>
+      </h1>
+
+      <p class="masthead-intent">
+        Today: <em>two weak topics</em> in Science to clean up, one quiz due before tomorrow's class, and a Newton's-laws simulation has just unlocked for you.
+      </p>
+
+      <div class="masthead-meta">
+        <span>Streak <b>· 7 days</b></span>
+        <span>XP today <b>· 0 / 200</b></span>
+        <span>Mastery <b>· 64%</b></span>
+        <span>Next level <b>· 253 XP</b></span>
+        <span>Bloom's focus <b>· Apply</b></span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================== -->
+<!-- TODAY'S PLAN                                   -->
+<!-- ============================================== -->
+<section class="today">
+  <div class="wrap">
+    <div class="today-head">
+      <div class="h">Today's <em>plan</em>.</div>
+      <div class="meta">Section i · what to do now · curated by CME</div>
+    </div>
+
+    <div class="plan-strip" id="planStrip">
+      <div class="plan-step active" data-step="1">
+        <div class="roman">i.</div>
+        <div class="lbl">step 01 · 12 min · revision</div>
+        <h3>Refresh — <em>Photosynthesis</em>.</h3>
+        <p>You scored 6 / 10 last time — let's fix the four you missed before today's class.</p>
+        <span class="status in-progress">in progress · 4 min in</span>
+        <div class="expansion">
+          <div class="expansion-body">
+            <em>Why this first?</em> Your BKT mastery for the light reaction dropped to 42% on Friday — Foxy says revisit the chloroplast diagram before anything else.
+            <ul>
+              <li>Re-watch · 90 second concept clip</li>
+              <li>Re-attempt · the four wrong items, slowed down</li>
+              <li>Spaced check · 3 days from now</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="plan-step" data-step="2">
+        <div class="roman">ii.</div>
+        <div class="lbl">step 02 · 8 min · quiz due</div>
+        <h3>Quiz — <em>Linear Equations</em>.</h3>
+        <p>Class quiz due before tomorrow 8:00. Ten questions, mostly Apply-level Bloom's.</p>
+        <span class="status queued">queued</span>
+        <div class="expansion">
+          <div class="expansion-body">
+            Set by Mrs. Iyer for Section A. Your last linear-equations score was 80% — you're already strong, this should be quick.
+            <ul>
+              <li>10 questions · Apply / Analyse mix</li>
+              <li>No timer · cognitive mode</li>
+              <li>Worth · 50 XP if you finish today</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="plan-step" data-step="3">
+        <div class="roman">iii.</div>
+        <div class="lbl">step 03 · 6 min · explore</div>
+        <h3>Try — <em>Newton's laws</em> sim.</h3>
+        <p>A new simulation just unlocked. Drag a box, watch friction. No score, no pressure.</p>
+        <span class="status queued">unlocked today</span>
+        <div class="expansion">
+          <div class="expansion-body">
+            This is a free-play module — Foxy will only ask one reflection question at the end.
+            <ul>
+              <li>No XP · this is for curiosity</li>
+              <li>Pairs with · Friday's force chapter</li>
+              <li>Skip if tired · we'll resurface it</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="plan-cta-row">
+      <a href="#" class="btn btn-primary btn-arrow">Start step 01</a>
+      <a href="#" class="btn btn-ghost">See full week</a>
+      <span class="pencil">— total today: ~26 minutes. you can stop after step 01 and still keep your streak.</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================== -->
+<!-- MASTERY X-RAY                                  -->
+<!-- ============================================== -->
+<section class="xray">
+  <div class="wrap">
+    <div class="xray-head">
+      <div class="h">The mastery <em>x-ray</em>.</div>
+      <div class="meta">Section ii · across six topics<br/>updated after every session · BKT model</div>
+    </div>
+
+    <div class="xray-table" id="xrayTable">
+      <div class="xray-row head">
+        <div class="col" data-sort="subject">Subject</div>
+        <div class="col" data-sort="topic">Topic</div>
+        <div class="col sorted" data-sort="mastery">Mastery</div>
+        <div class="col" data-sort="last">Last practised</div>
+        <div class="col" data-sort="status">Status</div>
+      </div>
+
+      <div class="xray-row" data-mastery="22" data-last="14" data-status="weak" data-subject="Science" data-topic="Photosynthesis">
+        <div class="col"><span class="subj">Science</span></div>
+        <div class="col"><span class="topic">Photosynthesis<small>light reaction · Bloom's: Apply</small></span></div>
+        <div class="col"><div class="xray-bar"><div class="meter"><span style="width:22%;background:var(--vermilion);"></span></div><span class="pct tabular">22</span></div></div>
+        <div class="col"><span class="last">3 days ago<em>Fri · 25 Apr</em></span></div>
+        <div class="col"><span class="status-pill weak">weak</span></div>
+      </div>
+
+      <div class="xray-row" data-mastery="38" data-last="2" data-status="weak" data-subject="Science" data-topic="Force & Motion">
+        <div class="col"><span class="subj">Science</span></div>
+        <div class="col"><span class="topic">Force & motion<small>frictional force · Bloom's: Understand</small></span></div>
+        <div class="col"><div class="xray-bar"><div class="meter"><span style="width:38%;background:var(--vermilion);"></span></div><span class="pct tabular">38</span></div></div>
+        <div class="col"><span class="last">yesterday<em>Sun · 27 Apr</em></span></div>
+        <div class="col"><span class="status-pill weak">weak</span></div>
+      </div>
+
+      <div class="xray-row" data-mastery="54" data-last="4" data-status="mid" data-subject="English" data-topic="Tenses">
+        <div class="col"><span class="subj">English</span></div>
+        <div class="col"><span class="topic">Tenses<small>past perfect · Bloom's: Analyse</small></span></div>
+        <div class="col"><div class="xray-bar"><div class="meter"><span style="width:54%;background:var(--marigold);"></span></div><span class="pct tabular">54</span></div></div>
+        <div class="col"><span class="last">4 days ago<em>Thu · 24 Apr</em></span></div>
+        <div class="col"><span class="status-pill mid">mid</span></div>
+      </div>
+
+      <div class="xray-row" data-mastery="67" data-last="1" data-status="mid" data-subject="Maths" data-topic="Linear Equations">
+        <div class="col"><span class="subj">Maths</span></div>
+        <div class="col"><span class="topic">Linear equations<small>two variables · Bloom's: Apply</small></span></div>
+        <div class="col"><div class="xray-bar"><div class="meter"><span style="width:67%;background:var(--marigold);"></span></div><span class="pct tabular">67</span></div></div>
+        <div class="col"><span class="last">today<em>Mon · 28 Apr</em></span></div>
+        <div class="col"><span class="status-pill mid">mid</span></div>
+      </div>
+
+      <div class="xray-row" data-mastery="81" data-last="2" data-status="strong" data-subject="Maths" data-topic="Mensuration">
+        <div class="col"><span class="subj">Maths</span></div>
+        <div class="col"><span class="topic">Mensuration<small>cylinder volume · Bloom's: Apply</small></span></div>
+        <div class="col"><div class="xray-bar"><div class="meter"><span style="width:81%;background:var(--peacock);"></span></div><span class="pct tabular">81</span></div></div>
+        <div class="col"><span class="last">2 days ago<em>Sat · 26 Apr</em></span></div>
+        <div class="col"><span class="status-pill strong">strong</span></div>
+      </div>
+
+      <div class="xray-row" data-mastery="92" data-last="6" data-status="strong" data-subject="Science" data-topic="Chemical Reactions">
+        <div class="col"><span class="subj">Science</span></div>
+        <div class="col"><span class="topic">Chemical reactions<small>balancing equations · Bloom's: Analyse</small></span></div>
+        <div class="col"><div class="xray-bar"><div class="meter"><span style="width:92%;background:var(--peacock);"></span></div><span class="pct tabular">92</span></div></div>
+        <div class="col"><span class="last">6 days ago<em>Tue · 22 Apr</em></span></div>
+        <div class="col"><span class="status-pill strong">strong</span></div>
+      </div>
+    </div>
+
+    <div class="xray-foot">
+      <div class="note">↳ click any column header to sort. weak topics float to the top by default — that is where Foxy is taking you.</div>
+      <a href="#" class="btn btn-ghost btn-sm">See all 47 topics</a>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================== -->
+<!-- SPLIT — XP & CONCEPT CHAIN                     -->
+<!-- ============================================== -->
+<section class="split">
+  <div class="wrap">
+    <div class="split-grid">
+      <!-- Left: XP & Streak -->
+      <div class="split-col">
+        <h3>Streak & XP</h3>
+        <div class="h2-display">You are <em>level seven</em>.</div>
+
+        <div class="xp-stat">
+          <div class="num tabular">1,247<span style="font-size:.45em; color: var(--ink-mute); font-weight: 500;"> XP</span></div>
+          <div class="meta">Level 7<br/>“Weekend Scholar”</div>
+        </div>
+
+        <div class="xp-bar" aria-label="XP progress, 247 of 500 to next level">
+          <!-- 20 segments, ~13 filled (1247 XP within current level: 247/500 = ~49%) -->
+          <div class="seg filled"></div>
+          <div class="seg filled"></div>
+          <div class="seg filled"></div>
+          <div class="seg filled"></div>
+          <div class="seg filled"></div>
+          <div class="seg filled"></div>
+          <div class="seg filled"></div>
+          <div class="seg filled"></div>
+          <div class="seg filled"></div>
+          <div class="seg partial"></div>
+          <div class="seg"></div>
+          <div class="seg"></div>
+          <div class="seg"></div>
+          <div class="seg"></div>
+          <div class="seg"></div>
+          <div class="seg"></div>
+          <div class="seg"></div>
+          <div class="seg"></div>
+          <div class="seg"></div>
+          <div class="seg"></div>
+        </div>
+        <div class="xp-bar-meta">
+          <span>247 / 500 to level 8</span>
+          <span>“Bench Builder”</span>
+        </div>
+
+        <h3>7-day streak</h3>
+        <div class="streak-cal">
+          <div class="day done">T</div>
+          <div class="day done">W</div>
+          <div class="day done">T</div>
+          <div class="day done">F</div>
+          <div class="day done">S</div>
+          <div class="day done">S</div>
+          <div class="day today">M</div>
+          <div class="day future">T</div>
+          <div class="day future">W</div>
+        </div>
+        <div class="streak-note">↳ <em>do step 01 today</em> and you reach 8. miss it and the calendar quietly forgives you tomorrow.</div>
+      </div>
+
+      <div class="divider" aria-hidden="true"></div>
+
+      <!-- Right: Concept Chain -->
+      <div class="split-col">
+        <h3>Daily challenge — Concept Chain</h3>
+        <div class="h2-display">One question, <em>now</em>.</div>
+
+        <div class="chain-q">
+          <div class="lbl">today's chain · class 8 · physics</div>
+          <div class="q-text">If a body is moving at <em>constant velocity</em>, the net force on it is —</div>
+          <div class="deva-q">यदि कोई वस्तु एक समान वेग से चल रही है, तो उस पर लगने वाला कुल बल कितना होगा?</div>
+        </div>
+
+        <div class="chain-meta">
+          <span>4 options · 30 seconds · 25 XP</span>
+          <span class="right">312 students attempted today</span>
+        </div>
+
+        <a href="#" class="btn btn-primary btn-arrow">Take the chain</a>
+
+        <div class="chain-rank">
+          <div class="who">You · <em>#14 of 312</em><br/><small style="font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-mute);display:block;margin-top:4px;">in your school this week</small></div>
+          <div class="pos">14<small>this week</small></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================== -->
+<!-- SUBJECTS STRIP                                 -->
+<!-- ============================================== -->
+<section class="subjects">
+  <div class="wrap">
+    <div class="subjects-head">
+      <div class="h">Your <em>subjects</em>.</div>
+      <div class="meta">Section iv · class 8 cbse · scroll →</div>
+    </div>
+
+    <div class="subjects-scroll">
+      <div class="subj-chip">
+        <div class="subj-lbl">Tool i</div>
+        <div class="subj-name">Mathematics</div>
+        <div class="subj-pct tabular">74<small>%</small></div>
+        <svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none"><polyline points="0,22 17,18 33,20 50,12 67,14 83,8 100,10" /></svg>
+        <div class="subj-meta">last 6 quizzes · trending up</div>
+      </div>
+
+      <div class="subj-chip">
+        <div class="subj-lbl">Tool ii</div>
+        <div class="subj-name">Science</div>
+        <div class="subj-pct tabular">58<small>%</small></div>
+        <svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none"><polyline points="0,12 17,15 33,10 50,18 67,16 83,22 100,20" /></svg>
+        <div class="subj-meta">last 6 quizzes · trending down</div>
+      </div>
+
+      <div class="subj-chip">
+        <div class="subj-lbl">Tool iii</div>
+        <div class="subj-name">English</div>
+        <div class="subj-pct tabular">66<small>%</small></div>
+        <svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none"><polyline points="0,18 17,16 33,16 50,14 67,15 83,12 100,10" /></svg>
+        <div class="subj-meta">last 6 quizzes · steady</div>
+      </div>
+
+      <div class="subj-chip">
+        <div class="subj-lbl">Tool iv</div>
+        <div class="subj-name">Hindi<span class="deva">हिन्दी</span></div>
+        <div class="subj-pct tabular">81<small>%</small></div>
+        <svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none"><polyline points="0,16 17,12 33,10 50,12 67,8 83,6 100,5" /></svg>
+        <div class="subj-meta">last 6 quizzes · trending up</div>
+      </div>
+
+      <div class="subj-chip">
+        <div class="subj-lbl">Tool v</div>
+        <div class="subj-name">Social Studies</div>
+        <div class="subj-pct tabular">62<small>%</small></div>
+        <svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none"><polyline points="0,14 17,16 33,14 50,15 67,13 83,16 100,14" /></svg>
+        <div class="subj-meta">last 6 quizzes · steady</div>
+      </div>
+
+      <div class="subj-chip">
+        <div class="subj-lbl">Tool vi</div>
+        <div class="subj-name">Sanskrit<span class="deva">संस्कृतम्</span></div>
+        <div class="subj-pct tabular">49<small>%</small></div>
+        <svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none"><polyline points="0,20 17,18 33,22 50,16 67,18 83,14 100,12" /></svg>
+        <div class="subj-meta">last 6 quizzes · trending up</div>
+      </div>
+
+      <div class="subj-chip">
+        <div class="subj-lbl">Tool vii</div>
+        <div class="subj-name">Computer</div>
+        <div class="subj-pct tabular">88<small>%</small></div>
+        <svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none"><polyline points="0,12 17,8 33,9 50,5 67,6 83,4 100,3" /></svg>
+        <div class="subj-meta">last 6 quizzes · trending up</div>
+      </div>
+
+      <div class="subj-chip">
+        <div class="subj-lbl">Tool viii</div>
+        <div class="subj-name">Practice<small style="display:block;font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-mute);font-weight:500;margin-top:6px;">cross-subject</small></div>
+        <div class="subj-pct tabular">71<small>%</small></div>
+        <svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none"><polyline points="0,14 17,12 33,15 50,11 67,13 83,9 100,11" /></svg>
+        <div class="subj-meta">mixed sets · last 6 attempts</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================== -->
+<!-- FOXY BANNER                                    -->
+<!-- ============================================== -->
+<section class="foxy-band">
+  <div class="ornament deva" aria-hidden="true">९</div>
+  <div class="wrap">
+    <div class="foxy-grid">
+      <div class="foxy-svg" aria-hidden="true">
+        <svg viewBox="0 0 140 140" width="140" height="140">
+          <!-- Foxy head -->
+          <path d="M30 38 L48 18 L56 50 Z" fill="#E8581C"/>
+          <path d="M110 38 L92 18 L84 50 Z" fill="#E8581C"/>
+          <path d="M38 32 L52 22 L52 42 Z" fill="#0E0B07"/>
+          <path d="M102 32 L88 22 L88 42 Z" fill="#0E0B07"/>
+          <ellipse cx="70" cy="80" rx="48" ry="40" fill="#E8581C"/>
+          <ellipse cx="70" cy="92" rx="28" ry="22" fill="#F4ECDB"/>
+          <circle cx="52" cy="74" r="6" fill="#0E0B07"/>
+          <circle cx="88" cy="74" r="6" fill="#0E0B07"/>
+          <circle cx="50" cy="72" r="2" fill="#fff"/>
+          <circle cx="86" cy="72" r="2" fill="#fff"/>
+          <ellipse cx="70" cy="88" rx="5" ry="3.5" fill="#0E0B07"/>
+          <path d="M70 92 Q 60 100 56 96" stroke="#0E0B07" stroke-width="2" fill="none" stroke-linecap="round"/>
+          <path d="M70 92 Q 80 100 84 96" stroke="#0E0B07" stroke-width="2" fill="none" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div>
+        <h3>Stuck on something? <em>Ask Foxy.</em></h3>
+        <div class="sub">She's read every NCERT chapter for Class 8 — and she'll never sigh, never mock, never go off-syllabus.</div>
+        <div class="deva-sub">कुछ अटक गया? फॉक्सी से पूछिए — वह सुनेगी, धीरे-धीरे समझाएगी।</div>
+      </div>
+      <div>
+        <a href="#" class="btn btn-primary btn-arrow">Open Foxy</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================== -->
+<!-- TIMELINE                                       -->
+<!-- ============================================== -->
+<section class="timeline">
+  <div class="wrap">
+    <div class="timeline-head">
+      <div class="h">Recent <em>activity</em>.</div>
+      <div class="meta">Section vi · last 48 hours · auto-archived</div>
+    </div>
+
+    <div class="timeline-list">
+      <div class="tl-time"><strong>10:14</strong>MON · 28 APR</div>
+      <div class="tl-entry">
+        <div class="tl-cat cat-mastery">Mastery moved</div>
+        <div class="tl-title">Linear equations climbed to <em>67%</em>.</div>
+        <div class="tl-detail">↳ +9 points after this morning's practice set. Bloom's level: Apply, holding steady.</div>
+      </div>
+
+      <div class="tl-time"><strong>09:48</strong>MON · 28 APR</div>
+      <div class="tl-entry">
+        <div class="tl-cat cat-quiz">Quiz submitted</div>
+        <div class="tl-title">Maths · Linear equations · <em>8 / 10</em>.</div>
+        <div class="tl-detail">↳ Q4 and Q9 wrong (substitution method). Foxy queued a re-ask for Wednesday.</div>
+      </div>
+
+      <div class="tl-time"><strong>08:12</strong>MON · 28 APR</div>
+      <div class="tl-entry">
+        <div class="tl-cat cat-streak">Streak extended</div>
+        <div class="tl-title">Day <em>seven</em> — your longest yet.</div>
+        <div class="tl-detail">↳ +20 XP bonus. Calendar shifts forward at midnight; one missed day is forgiven each week.</div>
+      </div>
+
+      <div class="tl-time"><strong>20:34</strong>SUN · 27 APR</div>
+      <div class="tl-entry">
+        <div class="tl-cat cat-parent">Parent viewed</div>
+        <div class="tl-title">Your father opened your weekly report.</div>
+        <div class="tl-detail">↳ He saw: this week's mastery trend, time studied, quiz completion. He cannot see your chats with Foxy.</div>
+      </div>
+
+      <div class="tl-time"><strong>19:02</strong>SUN · 27 APR</div>
+      <div class="tl-entry">
+        <div class="tl-cat cat-mastery">Concept mastered</div>
+        <div class="tl-title">Cylinder volume formula — <em>locked in</em>.</div>
+        <div class="tl-detail">↳ Reached 81% mastery after three correct attempts in a row. Spaced revision next: in 7 days.</div>
+      </div>
+
+      <div class="tl-time"><strong>17:25</strong>SUN · 27 APR</div>
+      <div class="tl-entry">
+        <div class="tl-cat cat-quiz">Foxy session</div>
+        <div class="tl-title">You asked about <em>chloroplasts</em> — twice.</div>
+        <div class="tl-detail">↳ 11-minute conversation. Foxy noted you confused the stroma with the thylakoid; today's step 01 is built around that.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================== -->
+<!-- PARENT VISIBILITY                              -->
+<!-- ============================================== -->
+<section class="parent-vis">
+  <div class="wrap">
+    <div class="parent-vis-inner">
+      <div class="parent-vis-lbl">Privacy<br/>note</div>
+      <div class="parent-vis-text">
+        Your parent can see <b>today's quiz scores</b>, your <b>mastery trend</b>, and <b>time studied</b>.
+        They cannot see <b>chat content with Foxy</b>, your wrong answers in detail, or your concept-chain rank.
+        — <em>this is yours to share, not ours.</em>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================== -->
+<!-- COMPRESSED FOOTER                              -->
+<!-- ============================================== -->
+<footer class="tight">
+  <div class="wrap">
+    <div class="footer-row">
+      <div>
+        <span class="brand-mini">Alfanumrik<sup style="font-family:var(--mono);font-size:8px;font-weight:400;vertical-align:super;opacity:.55;margin-left:2px;">TM</sup></span>
+      </div>
+      <div>
+        <a href="#">Help</a>·<a href="#">Privacy</a>·<a href="#">DPDPA</a>·<a href="#">Logout</a>
+      </div>
+      <div>© 2026 Cusiosense Learning India · Bengaluru</div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  // Brand double-click → flip theme (same as welcome-v2)
+  var brand = document.getElementById('brandToggle');
+  if (brand) {
+    brand.addEventListener('dblclick', function(){
+      var cur = document.body.getAttribute('data-theme');
+      if (cur === 'dark') document.body.removeAttribute('data-theme');
+      else document.body.setAttribute('data-theme', 'dark');
+    });
+  }
+
+  // Language toggle (visual nudge for Hindi spans)
+  var lang = document.getElementById('langToggle');
+  var hiOn = false;
+  if (lang) {
+    lang.addEventListener('click', function(){
+      hiOn = !hiOn;
+      document.querySelectorAll('.deva, .deva-line, .deva-sub, .deva-q').forEach(function(el){
+        el.style.opacity = hiOn ? '1' : '';
+        el.style.fontWeight = hiOn ? '700' : '';
+      });
+      lang.textContent = hiOn ? 'हिं · EN' : 'EN · हिं';
+    });
+  }
+
+  // Today's plan: click step → expand it
+  document.querySelectorAll('#planStrip .plan-step').forEach(function(step){
+    step.addEventListener('click', function(){
+      var wasExpanded = step.classList.contains('expanded');
+      document.querySelectorAll('#planStrip .plan-step').forEach(function(s){ s.classList.remove('expanded'); });
+      if (!wasExpanded) step.classList.add('expanded');
+    });
+  });
+
+  // Mastery x-ray: click column header → sort
+  var table = document.getElementById('xrayTable');
+  if (!table) return;
+  var headerCols = table.querySelectorAll('.xray-row.head .col');
+  var sortState = { key: 'mastery', dir: 'asc' }; // weak first by default
+
+  function sortRows(key){
+    var dir = (sortState.key === key && sortState.dir === 'asc') ? 'desc' : 'asc';
+    sortState = { key: key, dir: dir };
+
+    headerCols.forEach(function(c){ c.classList.remove('sorted'); });
+    var activeHead = table.querySelector('.xray-row.head .col[data-sort="' + key + '"]');
+    if (activeHead) activeHead.classList.add('sorted');
+
+    var rows = Array.prototype.slice.call(table.querySelectorAll('.xray-row:not(.head)'));
+    rows.sort(function(a, b){
+      var av, bv;
+      if (key === 'mastery') { av = +a.dataset.mastery; bv = +b.dataset.mastery; }
+      else if (key === 'last') { av = +a.dataset.last; bv = +b.dataset.last; }
+      else if (key === 'status') {
+        var order = { weak: 0, mid: 1, strong: 2 };
+        av = order[a.dataset.status]; bv = order[b.dataset.status];
+      } else if (key === 'subject') { av = a.dataset.subject; bv = b.dataset.subject; }
+      else if (key === 'topic') { av = a.dataset.topic; bv = b.dataset.topic; }
+      if (av < bv) return dir === 'asc' ? -1 : 1;
+      if (av > bv) return dir === 'asc' ? 1 : -1;
+      return 0;
+    });
+    rows.forEach(function(r){ table.appendChild(r); });
+  }
+
+  headerCols.forEach(function(col){
+    col.addEventListener('click', function(){
+      var key = col.getAttribute('data-sort');
+      if (key) sortRows(key);
+    });
+  });
+
+  // Initial sort: weak first (mastery ascending)
+  sortRows('mastery');
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,1319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#F4ECDB" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#0E0B07" media="(prefers-color-scheme: dark)" />
+<meta name="description" content="Alfanumrik — a CBSE-aligned learning OS for grades 6 to 12. Foxy, your patient bilingual tutor." />
+<title>Alfanumrik — built for your phone, your network, your child</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,500;0,600;1,500&family=Mukta+Vaani:wght@500;700&family=Inter:wght@400;600&family=JetBrains+Mono:wght@500&display=swap" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,500;0,600;1,500&family=Mukta+Vaani:wght@500;700&family=Inter:wght@400;600&family=JetBrains+Mono:wght@500&display=swap" media="print" onload="this.media='all'" />
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,500;0,600;1,500&family=Mukta+Vaani:wght@500;700&family=Inter:wght@400;600&family=JetBrains+Mono:wght@500&display=swap" /></noscript>
+<style>
+/* ---------- TOKENS (raw hex; opacity via CSS opacity prop) ---------- */
+:root{
+  --cream:#F4ECDB;
+  --cream-deep:#EADFC6;
+  --ink:#0E0B07;
+  --ink-soft:#2A241B;
+  --ink-mute:#5B5141;
+  --saffron:#E8581C;
+  --saffron-deep:#C84411;
+  --peacock:#0F5C5F;
+  --marigold:#F5A623;
+  --rule:rgba(14,11,7,.14);
+  --rule-strong:rgba(14,11,7,.42);
+  --paper:var(--cream);
+  --on-paper:var(--ink);
+  --invert-bg:var(--ink);
+  --invert-fg:var(--cream);
+  --pad:16px;
+  --pad-lg:20px;
+  --tap:48px;
+}
+body[data-theme="dark"]{
+  --paper:var(--ink);
+  --on-paper:var(--cream);
+  --invert-bg:var(--cream);
+  --invert-fg:var(--ink);
+  --rule:rgba(244,236,219,.18);
+  --rule-strong:rgba(244,236,219,.42);
+  --ink-mute:#B7AC95;
+  --ink-soft:#D9CFB7;
+}
+@media (prefers-color-scheme: dark){
+  body:not([data-theme="light"]){
+    --paper:var(--ink);
+    --on-paper:var(--cream);
+    --invert-bg:var(--cream);
+    --invert-fg:var(--ink);
+    --rule:rgba(244,236,219,.18);
+    --rule-strong:rgba(244,236,219,.42);
+    --ink-mute:#B7AC95;
+    --ink-soft:#D9CFB7;
+  }
+}
+
+/* ---------- BASE ---------- */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{
+  background:var(--paper);
+  color:var(--on-paper);
+  font-family:'Inter',system-ui,-apple-system,Roboto,sans-serif;
+  font-size:16px;
+  line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeSpeed;
+  overflow-x:hidden;
+  min-height:100dvh;
+}
+::selection{background:var(--saffron);color:var(--cream)}
+
+/* ---------- TYPOGRAPHY ---------- */
+.serif{font-family:'Newsreader','Times New Roman',serif;font-weight:500}
+.display{font-family:'Newsreader',serif;font-weight:600;line-height:.98;letter-spacing:-.022em}
+.deva{font-family:'Mukta Vaani','Newsreader',serif}
+.mono{font-family:'JetBrains Mono',ui-monospace,monospace;font-weight:500;letter-spacing:.08em;text-transform:uppercase;font-size:11px}
+.label{font-family:'JetBrains Mono',ui-monospace,monospace;font-weight:500;letter-spacing:.14em;text-transform:uppercase;font-size:10.5px;color:var(--ink-mute)}
+.tabular{font-variant-numeric:tabular-nums}
+em,.italic{font-style:italic}
+.saffron{color:var(--saffron)}
+.peacock{color:var(--peacock)}
+.marigold{color:var(--marigold)}
+
+/* ---------- HAIRLINES (1px, do not scale) ---------- */
+.hairline{height:1px;background:var(--rule)}
+.hairline-strong{height:1px;background:var(--rule-strong)}
+
+/* ---------- LAYOUT ---------- */
+.wrap{
+  width:100%;
+  max-width:1240px;
+  margin:0 auto;
+  padding:0 var(--pad);
+  position:relative;
+}
+section{position:relative}
+
+/* ---------- FOCUS ---------- */
+:focus-visible{outline:2px solid var(--saffron);outline-offset:3px;border-radius:2px}
+
+/* ---------- NAV (sticky, 56px) ---------- */
+nav.top{
+  position:sticky;
+  top:0;
+  z-index:50;
+  background:var(--paper);
+  border-bottom:1px solid var(--rule);
+  height:56px;
+}
+.nav-inner{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  height:56px;
+  padding:0 var(--pad);
+  max-width:1240px;
+  margin:0 auto;
+}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;min-height:var(--tap)}
+.brand .mark{
+  width:32px;height:32px;
+  background:var(--ink);color:var(--cream);
+  display:grid;place-items:center;
+  font-family:'Newsreader',serif;font-weight:700;font-size:18px;font-style:italic;
+  border-radius:2px;flex-shrink:0;
+}
+body[data-theme="dark"] .brand .mark{background:var(--cream);color:var(--ink)}
+@media (prefers-color-scheme: dark){body:not([data-theme="light"]) .brand .mark{background:var(--cream);color:var(--ink)}}
+.brand .name{font-family:'Newsreader',serif;font-weight:600;font-size:19px;letter-spacing:-.01em}
+.brand .name sup{font-size:9px;font-family:'JetBrains Mono',monospace;font-weight:400;vertical-align:super;opacity:.5;margin-left:2px}
+
+.menu-btn{
+  width:var(--tap);height:var(--tap);
+  background:transparent;border:none;cursor:pointer;
+  display:grid;place-items:center;
+  color:var(--on-paper);
+  margin-right:-12px;
+}
+.menu-btn svg{width:22px;height:22px}
+
+/* ---------- FULL-SCREEN MENU ---------- */
+.menu{
+  position:fixed;inset:0;
+  height:100lvh;
+  background:var(--paper);
+  z-index:100;
+  transform:translateY(-100%);
+  transition:transform .32s cubic-bezier(.7,0,.3,1);
+  display:flex;flex-direction:column;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+}
+.menu[aria-hidden="false"]{transform:translateY(0)}
+.menu-head{
+  display:flex;align-items:center;justify-content:space-between;
+  height:56px;padding:0 var(--pad);
+  border-bottom:1px solid var(--rule);
+  flex-shrink:0;
+}
+.menu-body{padding:24px var(--pad) 40px;display:flex;flex-direction:column;gap:28px}
+.menu-section .label{margin-bottom:12px;display:block}
+.menu-roles{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.menu-roles button{
+  min-height:var(--tap);
+  background:transparent;
+  border:1px solid var(--ink);
+  border-radius:2px;
+  font-family:'JetBrains Mono',monospace;
+  font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--on-paper);cursor:pointer;
+  padding:0 12px;
+}
+body[data-theme="dark"] .menu-roles button{border-color:var(--cream)}
+@media (prefers-color-scheme: dark){body:not([data-theme="light"]) .menu-roles button{border-color:var(--cream)}}
+.menu-roles button.active{background:var(--ink);color:var(--cream)}
+body[data-theme="dark"] .menu-roles button.active{background:var(--cream);color:var(--ink)}
+@media (prefers-color-scheme: dark){body:not([data-theme="light"]) .menu-roles button.active{background:var(--cream);color:var(--ink)}}
+.menu-toggles{display:flex;gap:8px;flex-wrap:wrap}
+.menu-toggles button{
+  min-height:var(--tap);flex:1;min-width:120px;
+  background:transparent;border:1px solid var(--rule-strong);
+  font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--on-paper);cursor:pointer;padding:0 14px;border-radius:2px;
+}
+.menu-nav{display:flex;flex-direction:column}
+.menu-nav a{
+  min-height:var(--tap);display:flex;align-items:center;
+  font-family:'Newsreader',serif;font-size:22px;font-weight:500;
+  color:var(--on-paper);text-decoration:none;
+  border-bottom:1px solid var(--rule);
+  padding:8px 0;
+}
+.menu-nav a .num{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--ink-mute);margin-right:14px;letter-spacing:.1em}
+.menu-foot{margin-top:auto;padding:24px var(--pad);border-top:1px solid var(--rule)}
+.menu-foot .deva{font-family:'Mukta Vaani',serif;font-size:13px;color:var(--ink-mute)}
+
+/* ---------- BUTTONS ---------- */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:10px;
+  min-height:var(--tap);width:100%;
+  padding:0 22px;
+  font-family:'Inter',sans-serif;font-size:15px;font-weight:600;
+  text-decoration:none;border-radius:2px;
+  border:1px solid transparent;cursor:pointer;
+  text-align:center;
+}
+.btn-primary{background:var(--saffron);color:var(--cream);border-color:var(--saffron)}
+.btn-primary:active{background:var(--saffron-deep);border-color:var(--saffron-deep)}
+.btn-ghost{background:transparent;color:var(--on-paper);border-color:var(--ink)}
+body[data-theme="dark"] .btn-ghost{border-color:var(--cream)}
+@media (prefers-color-scheme: dark){body:not([data-theme="light"]) .btn-ghost{border-color:var(--cream)}}
+.btn-on-ink{background:var(--cream);color:var(--ink);border-color:var(--cream)}
+.btn-ghost-on-ink{background:transparent;color:var(--cream);border-color:var(--cream)}
+
+.btn .arrow{transition:transform .2s}
+.btn:active .arrow{transform:translateX(3px)}
+
+/* ---------- HERO ---------- */
+.hero{
+  min-height:90dvh;
+  padding:32px 0 40px;
+  display:flex;flex-direction:column;justify-content:center;
+  position:relative;overflow:hidden;
+}
+.hero .deco-numeral{
+  position:absolute;
+  right:-10vw;top:8%;
+  font-family:'Mukta Vaani',serif;
+  font-size:clamp(280px,80vw,480px);
+  line-height:.85;
+  color:var(--saffron);
+  opacity:.08;
+  pointer-events:none;
+  user-select:none;
+  font-weight:700;
+  z-index:0;
+}
+.hero-eyebrow{margin-bottom:20px;display:flex;align-items:center;gap:8px;color:var(--ink-mute)}
+.hero-eyebrow .dot{width:6px;height:6px;background:var(--saffron);border-radius:50%;display:inline-block;flex-shrink:0}
+.hero h1{
+  font-family:'Newsreader',serif;font-weight:600;
+  font-size:clamp(36px,9vw,56px);
+  line-height:1;letter-spacing:-.025em;
+  margin-bottom:22px;
+  position:relative;z-index:1;
+}
+.hero h1 .deva-line{
+  display:block;
+  font-family:'Mukta Vaani',serif;font-weight:500;
+  font-size:.62em;line-height:1.05;
+  color:var(--ink-soft);
+  margin-top:10px;
+  letter-spacing:-.01em;
+}
+.hero h1 em{color:var(--saffron);font-weight:500}
+.hero .lede{
+  font-size:16px;line-height:1.6;
+  color:var(--ink-soft);
+  max-width:46ch;
+  margin-bottom:28px;
+  position:relative;z-index:1;
+}
+.hero .ctas{
+  display:flex;flex-direction:column;gap:10px;
+  position:relative;z-index:1;
+  margin-bottom:24px;
+}
+.hero .micro{
+  font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-mute);
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  position:relative;z-index:1;
+}
+.hero .micro .sep{opacity:.4}
+
+/* ---------- CTA pulse (motion-safe only) ---------- */
+@media (prefers-reduced-motion: no-preference){
+  .btn-primary{animation:cta-pulse 2.4s ease-in-out 1.2s 2}
+  @keyframes cta-pulse{
+    0%,100%{box-shadow:0 0 0 0 rgba(232,88,28,0)}
+    50%{box-shadow:0 0 0 8px rgba(232,88,28,.16)}
+  }
+}
+
+/* ---------- LIVE STATUS STRIP ---------- */
+.live-strip{
+  height:48px;
+  border-top:1px solid var(--rule);
+  border-bottom:1px solid var(--rule);
+  display:flex;align-items:center;
+  overflow:hidden;
+}
+.live-strip-inner{
+  width:100%;padding:0 var(--pad);
+  display:flex;align-items:center;gap:14px;
+  font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-mute);
+  white-space:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;
+}
+.live-strip-inner::-webkit-scrollbar{display:none}
+.live-pulse{
+  width:8px;height:8px;border-radius:50%;background:#1d8a4f;flex-shrink:0;
+  position:relative;
+}
+@media (prefers-reduced-motion: no-preference){
+  .live-pulse::after{
+    content:"";position:absolute;inset:-4px;border-radius:50%;
+    border:1px solid #1d8a4f;
+    animation:pulse-ring 2.2s ease-out infinite;
+  }
+  @keyframes pulse-ring{
+    0%{transform:scale(.6);opacity:.9}
+    100%{transform:scale(2.2);opacity:0}
+  }
+}
+
+/* ---------- STATS ACCORDION ---------- */
+.stats{padding:32px 0}
+.stats-head{margin-bottom:8px}
+.stats-head .label{display:block;margin-bottom:8px}
+.stats-head h2{font-family:'Newsreader',serif;font-weight:600;font-size:clamp(24px,6vw,32px);line-height:1.1;letter-spacing:-.018em;margin-bottom:16px}
+.stats-head h2 em{color:var(--saffron)}
+.stat-row{
+  border-top:1px solid var(--rule);
+  padding:18px 0;
+  display:block;width:100%;text-align:left;
+  background:transparent;border-left:0;border-right:0;border-bottom:0;
+  cursor:pointer;color:var(--on-paper);
+  min-height:var(--tap);
+}
+.stat-row:last-of-type{border-bottom:1px solid var(--rule)}
+.stat-row-top{display:flex;align-items:baseline;justify-content:space-between;gap:14px}
+.stat-num{
+  font-family:'Newsreader',serif;font-weight:600;
+  font-size:clamp(40px,11vw,60px);line-height:.95;letter-spacing:-.025em;
+  font-variant-numeric:tabular-nums;
+}
+.stat-num small{font-size:.4em;font-weight:500;margin-left:2px;color:var(--ink-mute)}
+.stat-lbl{font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-mute);text-align:right;flex-shrink:0;max-width:50%}
+.stat-ctx{
+  font-family:'Newsreader',serif;font-style:italic;font-weight:500;
+  font-size:15px;line-height:1.4;color:var(--ink-soft);
+  margin-top:0;max-height:0;overflow:hidden;
+  transition:max-height .3s ease, margin-top .3s ease;
+}
+.stat-row[aria-expanded="true"] .stat-ctx{max-height:120px;margin-top:10px}
+.stat-row .chev{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--ink-mute);margin-left:8px;transition:transform .25s}
+.stat-row[aria-expanded="true"] .chev{transform:rotate(90deg)}
+
+/* ---------- WORKBOOK (problem→solution) ---------- */
+.workbook{padding:48px 0 40px;position:relative}
+.workbook-head{margin-bottom:24px}
+.workbook-head .label{display:block;margin-bottom:8px}
+.workbook-head h2{font-family:'Newsreader',serif;font-weight:600;font-size:clamp(28px,7.5vw,40px);line-height:1.05;letter-spacing:-.022em}
+.workbook-head h2 em{color:var(--saffron)}
+.entry{padding:24px 0;border-top:1px solid var(--rule)}
+.entry:last-of-type{border-bottom:1px solid var(--rule)}
+.entry .roman{font-family:'Newsreader',serif;font-style:italic;font-size:28px;color:var(--ink-mute);font-weight:500;margin-bottom:6px;display:block}
+.entry h3{font-family:'Newsreader',serif;font-weight:600;font-size:22px;line-height:1.15;letter-spacing:-.012em;margin-bottom:8px}
+.entry p{font-size:15px;line-height:1.55;color:var(--ink-soft);margin-bottom:10px}
+.entry .annot{
+  display:inline-block;
+  font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-mute);
+  padding:5px 10px;border:1px dashed var(--rule-strong);border-radius:2px;
+}
+.workbook-divider{
+  text-align:center;padding:32px 0;
+  border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);
+  margin:8px 0;
+}
+.workbook-divider .em{
+  font-family:'Newsreader',serif;font-style:italic;font-weight:500;
+  font-size:22px;color:var(--saffron);line-height:1.1;
+}
+.workbook-divider .arrow-down{display:block;margin-top:4px;font-size:18px;color:var(--saffron)}
+
+/* ---------- SHOWCASE CARDS ---------- */
+.showcase{padding:48px 0;background:var(--cream-deep)}
+body[data-theme="dark"] .showcase{background:#181208}
+@media (prefers-color-scheme: dark){body:not([data-theme="light"]) .showcase{background:#181208}}
+.showcase-head{margin-bottom:24px}
+.showcase-head .label{display:block;margin-bottom:8px}
+.showcase-head h2{font-family:'Newsreader',serif;font-weight:600;font-size:clamp(28px,7.5vw,40px);line-height:1.05;letter-spacing:-.022em}
+.showcase-head h2 em{color:var(--saffron)}
+.showcase-grid{
+  display:flex;flex-direction:column;gap:24px;
+  container-type:inline-size;
+}
+.scard{
+  background:var(--paper);
+  border:1px solid var(--rule);
+  border-left:3px solid var(--saffron);
+  padding:22px 18px;border-radius:2px;
+  position:relative;
+}
+.scard .stop{font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--saffron);margin-bottom:8px;display:block}
+.scard h3{font-family:'Newsreader',serif;font-weight:600;font-size:24px;line-height:1.1;letter-spacing:-.014em;margin-bottom:12px}
+.scard h3 em{color:var(--saffron)}
+.scard p{font-size:14.5px;line-height:1.5;color:var(--ink-soft);margin-bottom:18px}
+
+/* mini chat preview */
+.mini-chat{background:var(--cream);border:1px solid var(--rule);border-radius:2px;padding:14px;font-family:'Inter';font-size:13px;display:flex;flex-direction:column;gap:8px}
+body[data-theme="dark"] .mini-chat{background:#1f180c}
+@media (prefers-color-scheme: dark){body:not([data-theme="light"]) .mini-chat{background:#1f180c}}
+.mc-row{display:flex;gap:8px;align-items:flex-start}
+.mc-av{width:24px;height:24px;border-radius:50%;background:var(--ink);color:var(--cream);display:grid;place-items:center;font-family:'Newsreader',serif;font-style:italic;font-weight:600;font-size:12px;flex-shrink:0}
+.mc-av.you{background:var(--peacock)}
+.mc-bub{flex:1;line-height:1.4}
+.mc-bub em{font-style:italic;color:var(--saffron)}
+
+/* mini mastery */
+.mini-mastery{display:flex;flex-direction:column;gap:10px}
+.mm-row{display:flex;align-items:center;gap:10px;font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-mute)}
+.mm-bar{flex:1;height:6px;background:var(--rule);border-radius:1px;position:relative;overflow:hidden}
+.mm-fill{position:absolute;inset:0;background:var(--saffron);transform-origin:left;border-radius:1px}
+.mm-pct{font-variant-numeric:tabular-nums;color:var(--on-paper);min-width:36px;text-align:right}
+
+/* mini quiz card */
+.mini-quiz{background:var(--cream);border:1px solid var(--rule);border-radius:2px;padding:14px}
+body[data-theme="dark"] .mini-quiz{background:#1f180c}
+@media (prefers-color-scheme: dark){body:not([data-theme="light"]) .mini-quiz{background:#1f180c}}
+.mq-q{font-family:'Newsreader',serif;font-size:15px;font-weight:500;line-height:1.3;margin-bottom:10px}
+.mq-opts{display:flex;flex-direction:column;gap:6px}
+.mq-opt{font-family:'Inter',sans-serif;font-size:13px;padding:9px 10px;border:1px solid var(--rule);border-radius:2px;display:flex;align-items:center;gap:8px}
+.mq-opt .key{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--ink-mute);width:14px}
+.mq-opt.right{border-color:var(--peacock);background:rgba(15,92,95,.08)}
+.mq-opt.wrong{opacity:.55;text-decoration:line-through}
+
+/* ---------- TRUST ---------- */
+.trust{padding:48px 0}
+.trust-block{padding:28px 0;border-top:1px solid var(--rule)}
+.trust-block:first-of-type{border-top:0;padding-top:0}
+.trust-block .label{display:block;margin-bottom:14px}
+.trust-block blockquote{
+  font-family:'Newsreader',serif;font-style:italic;font-weight:500;
+  font-size:clamp(22px,5.4vw,28px);line-height:1.18;letter-spacing:-.01em;
+  margin-bottom:16px;color:var(--on-paper);
+}
+.trust-block blockquote::before{content:"\201C";color:var(--saffron);font-size:1em;line-height:0;margin-right:2px}
+.trust-block .attr{display:flex;align-items:center;gap:12px}
+.trust-block .av{
+  width:40px;height:40px;border-radius:50%;
+  background:var(--ink);color:var(--cream);
+  display:grid;place-items:center;
+  font-family:'Newsreader',serif;font-weight:600;font-size:15px;
+  flex-shrink:0;
+}
+body[data-theme="dark"] .trust-block .av{background:var(--cream);color:var(--ink)}
+@media (prefers-color-scheme: dark){body:not([data-theme="light"]) .trust-block .av{background:var(--cream);color:var(--ink)}}
+.trust-block .av.peacock{background:var(--peacock);color:var(--cream)}
+.trust-block .av.saffron{background:var(--saffron);color:var(--cream)}
+.trust-block .meta{display:flex;flex-direction:column;gap:2px;font-size:13px}
+.trust-block .meta .name{font-weight:600}
+.trust-block .meta .role{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-mute)}
+
+.live-counter{
+  margin-top:32px;padding:18px var(--pad);
+  background:var(--paper);
+  border:1px solid var(--rule);border-radius:2px;
+  display:flex;align-items:center;justify-content:space-between;gap:14px;
+  flex-wrap:wrap;
+}
+.live-counter-num{
+  font-family:'Newsreader',serif;font-weight:600;
+  font-size:clamp(28px,8vw,38px);line-height:1;
+  font-variant-numeric:tabular-nums;
+  color:var(--saffron);
+}
+.live-counter-lbl{font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-mute);text-align:right;max-width:60%}
+
+.compliance{
+  margin-top:24px;padding-top:20px;border-top:1px solid var(--rule);
+  display:flex;flex-wrap:wrap;gap:8px;
+}
+.compliance span{
+  font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-mute);
+  padding:6px 10px;border:1px solid var(--rule-strong);border-radius:999px;
+}
+
+/* ---------- PRICING CAROUSEL ---------- */
+.pricing{padding:48px 0;background:var(--cream-deep)}
+body[data-theme="dark"] .pricing{background:#181208}
+@media (prefers-color-scheme: dark){body:not([data-theme="light"]) .pricing{background:#181208}}
+.pricing-head{margin-bottom:20px;padding:0 var(--pad)}
+.pricing-head .label{display:block;margin-bottom:8px}
+.pricing-head h2{font-family:'Newsreader',serif;font-weight:600;font-size:clamp(28px,7.5vw,40px);line-height:1.05;letter-spacing:-.022em}
+.pricing-head h2 em{color:var(--saffron)}
+.pricing-track{
+  display:flex;gap:14px;
+  overflow-x:auto;
+  scroll-snap-type:x mandatory;
+  -webkit-overflow-scrolling:touch;
+  padding:8px var(--pad) 12px;
+  scrollbar-width:none;
+  container-type:inline-size;
+}
+.pricing-track::-webkit-scrollbar{display:none}
+.plan{
+  flex:0 0 90%;
+  min-width:0;
+  scroll-snap-align:center;
+  background:var(--paper);
+  border:1px solid var(--rule);
+  border-radius:2px;
+  padding:24px 20px;
+  display:flex;flex-direction:column;
+}
+.plan.featured{border-color:var(--saffron);border-width:1px;border-left-width:3px}
+.plan-lbl{font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-mute);margin-bottom:14px}
+.plan.featured .plan-lbl{color:var(--saffron)}
+.plan h3{font-family:'Newsreader',serif;font-weight:600;font-size:26px;line-height:1.05;margin-bottom:6px;letter-spacing:-.012em}
+.plan h3 em{color:var(--saffron)}
+.plan .desc{font-size:13.5px;color:var(--ink-soft);margin-bottom:18px;line-height:1.45}
+.plan .price{
+  font-family:'Newsreader',serif;font-weight:600;
+  font-size:44px;line-height:1;letter-spacing:-.022em;
+  font-variant-numeric:tabular-nums;
+  margin-bottom:18px;
+}
+.plan .price small{font-size:14px;font-weight:500;color:var(--ink-mute);margin-left:4px}
+.plan ul{list-style:none;display:flex;flex-direction:column;gap:9px;margin-bottom:20px;flex:1}
+.plan li{font-size:13.5px;line-height:1.4;display:flex;gap:8px;color:var(--ink-soft)}
+.plan li::before{content:"·";color:var(--saffron);font-weight:700;flex-shrink:0}
+.plan .btn{margin-top:auto}
+
+.pricing-dots{
+  display:flex;justify-content:center;gap:8px;
+  padding:8px var(--pad) 0;
+}
+.pricing-dots button{
+  width:var(--tap);height:24px;
+  background:transparent;border:none;cursor:pointer;
+  display:grid;place-items:center;
+  padding:0;
+}
+.pricing-dots button .dot{
+  width:8px;height:8px;border-radius:50%;
+  background:var(--rule-strong);
+  transition:background .2s,transform .2s;
+}
+.pricing-dots button.active .dot{background:var(--saffron);transform:scale(1.3)}
+
+/* ---------- FINAL CTA ---------- */
+.final{
+  background:var(--ink);color:var(--cream);
+  min-height:60svh;
+  padding:64px 0 56px;
+  position:relative;overflow:hidden;
+  display:flex;flex-direction:column;justify-content:center;
+}
+.final .deco{
+  position:absolute;
+  font-family:'Mukta Vaani',serif;font-weight:700;
+  font-size:clamp(280px,90vw,540px);
+  line-height:.85;
+  color:var(--saffron);
+  opacity:.06;
+  right:-15vw;top:5%;
+  pointer-events:none;user-select:none;
+  z-index:0;
+}
+.final .label{color:#B7AC95;display:block;margin-bottom:16px;position:relative;z-index:1}
+.final h2{
+  font-family:'Newsreader',serif;font-weight:600;
+  font-size:clamp(40px,10vw,72px);line-height:1;letter-spacing:-.025em;
+  margin-bottom:20px;position:relative;z-index:1;
+}
+.final h2 em{color:var(--saffron)}
+.final h2 .deva{display:block;font-size:.55em;line-height:1.05;font-family:'Mukta Vaani',serif;font-weight:500;color:#D9CFB7;margin-top:10px}
+.final p{font-size:16px;line-height:1.55;color:#D9CFB7;max-width:46ch;margin-bottom:28px;position:relative;z-index:1}
+.final .ctas{display:flex;flex-direction:column;gap:10px;position:relative;z-index:1;margin-bottom:28px}
+.final .micro{font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#B7AC95;position:relative;z-index:1}
+
+/* ---------- FOOTER ---------- */
+footer{background:var(--paper);padding:40px 0 24px;border-top:1px solid var(--rule)}
+.foot-brand{margin-bottom:28px}
+.foot-brand .name{font-family:'Newsreader',serif;font-weight:600;font-size:22px;letter-spacing:-.01em}
+.foot-brand p{font-size:13.5px;color:var(--ink-mute);margin-top:8px;line-height:1.5;max-width:42ch}
+.foot-brand .deva{font-family:'Mukta Vaani',serif;font-style:italic;color:var(--ink-soft);font-size:13px;margin-top:10px;display:block}
+
+.foot-acc{border-top:1px solid var(--rule)}
+.foot-acc summary{
+  list-style:none;cursor:pointer;
+  min-height:var(--tap);display:flex;align-items:center;justify-content:space-between;
+  font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--on-paper);
+  padding:8px 0;
+  border-bottom:1px solid var(--rule);
+}
+.foot-acc summary::-webkit-details-marker{display:none}
+.foot-acc summary::after{content:"+";font-family:'JetBrains Mono',monospace;font-size:18px;color:var(--ink-mute);transition:transform .2s}
+.foot-acc[open] summary::after{transform:rotate(45deg)}
+.foot-acc ul{list-style:none;padding:14px 0;display:flex;flex-direction:column;gap:4px;border-bottom:1px solid var(--rule)}
+.foot-acc li a{
+  min-height:var(--tap);display:flex;align-items:center;
+  font-family:'Inter',sans-serif;font-size:14.5px;color:var(--ink-soft);text-decoration:none;
+}
+.foot-foot{
+  padding-top:20px;
+  display:flex;flex-direction:column;gap:6px;
+  font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-mute);
+}
+
+/* ---------- REVEAL (gentle, only ONE moment) ---------- */
+.reveal{opacity:0;transform:translateY(12px);transition:opacity .6s ease, transform .6s ease}
+.reveal.in{opacity:1;transform:translateY(0)}
+@media (prefers-reduced-motion: reduce){
+  .reveal{opacity:1;transform:none;transition:none}
+}
+
+/* ---------- REDUCED MOTION (kill ALL animation) ---------- */
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+  html{scroll-behavior:auto}
+}
+
+/* ---------- 480px+ (larger phone) ---------- */
+@media (min-width:480px){
+  :root{--pad:24px}
+  .hero{padding:48px 0 56px}
+  .hero h1{font-size:clamp(44px,10vw,64px)}
+  .hero .deco-numeral{font-size:clamp(360px,75vw,560px);right:-12vw}
+  .stats-head h2,.workbook-head h2,.showcase-head h2,.pricing-head h2{font-size:clamp(32px,7vw,44px)}
+}
+
+/* ---------- 768px+ (tablet, hero becomes split) ---------- */
+@media (min-width:768px){
+  :root{--pad:40px}
+  nav.top, .nav-inner{height:64px}
+
+  .hero{
+    min-height:84dvh;
+    padding:64px 0 72px;
+    display:grid;
+    grid-template-columns:1.05fr .95fr;
+    align-items:center;gap:32px;
+  }
+  .hero-text{position:relative;z-index:1}
+  .hero h1{font-size:clamp(56px,8.5vw,84px)}
+  .hero .deco-numeral{
+    position:relative;right:auto;top:auto;
+    font-size:clamp(360px,52vw,540px);
+    text-align:right;display:block;
+    opacity:.18;
+    color:var(--saffron);
+  }
+  .hero-decowrap{position:relative;height:100%;display:flex;align-items:center;justify-content:flex-end;overflow:hidden}
+  .hero .ctas{flex-direction:row;max-width:540px}
+  .hero .ctas .btn{width:auto;flex:1}
+
+  .stats{padding:64px 0}
+  .stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+  .stats .stat-row{border-top:0;border-bottom:0;border-right:1px solid var(--rule);padding:24px 20px}
+  .stats .stat-row:nth-child(2n){border-right:0}
+  .stats .stat-row:nth-child(n+3){border-top:1px solid var(--rule)}
+  .stats .stat-row:last-of-type{border-bottom:0}
+
+  .workbook{padding:80px 0}
+  .workbook-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 32px}
+  .workbook-divider{grid-column:1/-1}
+
+  .showcase{padding:80px 0}
+  .showcase-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  .showcase-grid .scard:first-child{grid-column:1/-1}
+
+  .trust{padding:80px 0}
+  .trust-grid{display:grid;grid-template-columns:1fr 1fr;gap:32px}
+  .trust-grid .trust-block{border-top:0;padding:0}
+
+  .pricing{padding:80px 0}
+  .pricing-track{
+    display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px;
+    overflow:visible;padding:0 var(--pad);
+  }
+  .plan{flex:none}
+  .pricing-dots{display:none}
+
+  .final{padding:96px 0;min-height:auto}
+  .final .ctas{flex-direction:row;max-width:560px}
+  .final .ctas .btn{width:auto;flex:1}
+
+  footer{padding:64px 0 32px}
+  .foot-grid{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:32px}
+  .foot-acc{border:0}
+  .foot-acc summary{cursor:default;pointer-events:none;padding:0 0 16px;border:0}
+  .foot-acc summary::after{display:none}
+  .foot-acc[open] summary::after{display:none}
+  .foot-acc ul{padding:0;border:0}
+  .foot-acc{display:block!important}
+  .foot-acc[open]>ul,.foot-acc>ul{display:flex!important}
+}
+
+/* ---------- 1024px+ (small desktop) ---------- */
+@media (min-width:1024px){
+  :root{--pad:56px}
+  .hero{padding:96px 0 104px;grid-template-columns:1.15fr .85fr;gap:48px}
+  .hero h1{font-size:clamp(72px,7vw,104px)}
+  .hero .deco-numeral{font-size:clamp(440px,46vw,620px);opacity:.22}
+  .stats-grid{grid-template-columns:repeat(4,1fr)}
+  .stats .stat-row{border-right:1px solid var(--rule)}
+  .stats .stat-row:nth-child(2n){border-right:1px solid var(--rule)}
+  .stats .stat-row:nth-child(4){border-right:0}
+  .stats .stat-row:nth-child(n+3){border-top:0}
+  .showcase-grid{grid-template-columns:1fr 1fr 1fr}
+  .showcase-grid .scard:first-child{grid-column:auto}
+  .trust-grid{grid-template-columns:1fr 1fr 1fr}
+}
+
+/* ---------- 1440px+ ---------- */
+@media (min-width:1440px){
+  .hero h1{font-size:clamp(88px,6.5vw,128px);letter-spacing:-.03em}
+  .hero .lede{font-size:18px;max-width:48ch}
+  .stats-head h2,.workbook-head h2,.showcase-head h2,.pricing-head h2{font-size:clamp(40px,5vw,56px)}
+  .final h2{font-size:clamp(72px,7vw,112px)}
+}
+
+/* ---------- 1920px+ (true desktop reading rhythm) ---------- */
+@media (min-width:1920px){
+  .wrap{max-width:1320px;padding:0 80px}
+  .nav-inner{max-width:1320px;padding:0 80px}
+}
+
+/* ---------- 2560px+ (4K-ready) ---------- */
+@media (min-width:2560px){
+  .wrap,.nav-inner{max-width:1640px;padding:0 96px}
+  body{font-size:18px}
+  .hero h1{font-size:clamp(120px,6vw,180px)}
+  .stats-head h2,.workbook-head h2,.showcase-head h2,.pricing-head h2{font-size:clamp(56px,4.5vw,88px)}
+  .final h2{font-size:clamp(120px,6vw,200px)}
+  .hero .deco-numeral{font-size:clamp(640px,42vw,920px)}
+}
+</style>
+</head>
+<body>
+
+<!-- ====================== NAV ====================== -->
+<nav class="top" role="navigation" aria-label="Primary">
+  <div class="nav-inner">
+    <a class="brand" href="#" aria-label="Alfanumrik home">
+      <span class="mark" aria-hidden="true">A</span>
+      <span class="name">Alfanumrik<sup>v2</sup></span>
+    </a>
+    <button class="menu-btn" id="menuOpen" aria-label="Open menu" aria-expanded="false" aria-controls="menu">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square">
+        <line x1="3" y1="7" x2="21" y2="7"/>
+        <line x1="3" y1="13" x2="21" y2="13"/>
+        <line x1="3" y1="19" x2="21" y2="19"/>
+      </svg>
+    </button>
+  </div>
+</nav>
+
+<!-- ====================== FULL-SCREEN MENU ====================== -->
+<div class="menu" id="menu" role="dialog" aria-modal="true" aria-hidden="true" aria-label="Site menu">
+  <div class="menu-head">
+    <a class="brand" href="#" aria-label="Alfanumrik home">
+      <span class="mark" aria-hidden="true">A</span>
+      <span class="name">Alfanumrik</span>
+    </a>
+    <button class="menu-btn" id="menuClose" aria-label="Close menu">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square">
+        <line x1="5" y1="5" x2="19" y2="19"/>
+        <line x1="19" y1="5" x2="5" y2="19"/>
+      </svg>
+    </button>
+  </div>
+  <div class="menu-body">
+    <div class="menu-section">
+      <span class="label">I am a</span>
+      <div class="menu-roles" id="roleSwitcher" role="tablist">
+        <button data-role="parent" role="tab" aria-selected="false">Parent</button>
+        <button data-role="student" class="active" role="tab" aria-selected="true">Student</button>
+        <button data-role="teacher" role="tab" aria-selected="false">Teacher</button>
+        <button data-role="school" role="tab" aria-selected="false">School</button>
+      </div>
+    </div>
+
+    <div class="menu-section">
+      <span class="label">Read in</span>
+      <div class="menu-toggles">
+        <button id="langToggle" aria-label="Toggle language">EN · हि</button>
+        <button id="themeToggle" aria-label="Toggle theme">Light · Dark</button>
+      </div>
+    </div>
+
+    <nav class="menu-nav" aria-label="Sections">
+      <a href="#stats"><span class="num">01</span>By the numbers</a>
+      <a href="#workbook"><span class="num">02</span>What changes</a>
+      <a href="#showcase"><span class="num">03</span>Inside the product</a>
+      <a href="#trust"><span class="num">04</span>What teachers say</a>
+      <a href="#pricing"><span class="num">05</span>Plans &amp; pricing</a>
+      <a href="#final"><span class="num">06</span>Begin a session</a>
+    </nav>
+  </div>
+  <div class="menu-foot">
+    <span class="deva" lang="hi">सीखना — एक बैठक में, एक हाथ में।</span>
+  </div>
+</div>
+
+<!-- ====================== HERO ====================== -->
+<section class="hero">
+  <div class="wrap hero-text">
+    <span class="deco-numeral deva" lang="hi" aria-hidden="true">९</span>
+    <div class="hero-eyebrow mono"><span class="dot" aria-hidden="true"></span><span>CBSE 6—12 · हिन्दी &amp; English</span></div>
+    <h1 id="heroH1">
+      A patient tutor<br/>that <em>listens</em> first,<br/>then teaches.
+      <span class="deva-line" lang="hi">एक धैर्यवान शिक्षक — जो पहले सुनता है, फिर समझाता है।</span>
+    </h1>
+    <p class="lede">Alfanumrik is a CBSE-aligned learning OS for grades six through twelve. Foxy, our tutor, walks beside your child through photosynthesis, quadratics and the Mughal succession — at the pace they can hold.</p>
+    <div class="ctas">
+      <a class="btn btn-primary" href="#final" aria-label="Start a free Foxy session">
+        See your child's first session free
+        <span class="arrow" aria-hidden="true">→</span>
+      </a>
+      <a class="btn btn-ghost" href="#showcase" aria-label="See how it works">How it works</a>
+    </div>
+    <div class="micro">
+      <span>No card needed</span><span class="sep">·</span><span>3 sessions free</span><span class="sep">·</span><span>Hindi + English</span>
+    </div>
+  </div>
+  <div class="hero-decowrap" aria-hidden="true"></div>
+</section>
+
+<!-- ====================== LIVE STRIP ====================== -->
+<div class="live-strip" role="status" aria-label="Live activity">
+  <div class="live-strip-inner">
+    <span class="live-pulse" aria-hidden="true"></span>
+    <span aria-live="polite"><span id="liveCount">142</span> students learning now</span>
+    <span style="opacity:.4">·</span>
+    <span>last quiz 14s ago</span>
+    <span style="opacity:.4">·</span>
+    <span>Bengaluru → Patna → Kanpur</span>
+  </div>
+</div>
+
+<!-- ====================== STATS ACCORDION ====================== -->
+<section class="stats" id="stats">
+  <div class="wrap">
+    <div class="stats-head reveal">
+      <span class="label">By the numbers · April 2026</span>
+      <h2>Built quietly, used <em>seriously</em>.</h2>
+    </div>
+    <div class="stats-grid">
+      <button class="stat-row" aria-expanded="false" type="button">
+        <div class="stat-row-top">
+          <span class="stat-num tabular">12,400<small>+</small></span>
+          <span class="stat-lbl">Students<br/>active monthly</span>
+        </div>
+        <div class="stat-ctx">Across 614 PIN codes from Tier-2 to Tier-4 cities. <span class="chev">→</span></div>
+      </button>
+      <button class="stat-row" aria-expanded="false" type="button">
+        <div class="stat-row-top">
+          <span class="stat-num tabular">87<small>%</small></span>
+          <span class="stat-lbl">Quiz completion<br/>(industry avg 41%)</span>
+        </div>
+        <div class="stat-ctx">When the tutor explains <em>why</em>, children stay. <span class="chev">→</span></div>
+      </button>
+      <button class="stat-row" aria-expanded="false" type="button">
+        <div class="stat-row-top">
+          <span class="stat-num tabular">3.2<small>×</small></span>
+          <span class="stat-lbl">Concept retention<br/>after 14 days</span>
+        </div>
+        <div class="stat-ctx">Spaced re-asking, not flashcards. Things actually stick. <span class="chev">→</span></div>
+      </button>
+      <button class="stat-row" aria-expanded="false" type="button">
+        <div class="stat-row-top">
+          <span class="stat-num tabular">₹0</span>
+          <span class="stat-lbl">First three<br/>Foxy sessions</span>
+        </div>
+        <div class="stat-ctx">No card. No trial countdown. We earn the next session. <span class="chev">→</span></div>
+      </button>
+    </div>
+  </div>
+</section>
+
+<!-- ====================== WORKBOOK ====================== -->
+<section class="workbook" id="workbook">
+  <div class="wrap">
+    <div class="workbook-head reveal">
+      <span class="label">A Workbook · Problems &amp; Solutions</span>
+      <h2>Coaching is broken. <em>Quietly.</em></h2>
+    </div>
+
+    <div class="workbook-grid">
+      <article class="entry">
+        <span class="roman">i.</span>
+        <h3>Tuition costs ₹14,000 a month</h3>
+        <p>And by month three, the child stops attending. Parents pay anyway, embarrassed to say.</p>
+        <span class="annot">National average · urban tier-2</span>
+      </article>
+      <article class="entry">
+        <span class="roman">ii.</span>
+        <h3>Apps that gamify the wrong thing</h3>
+        <p>Streaks, gems, leaderboards. Children chase points and learn nothing. The dopamine fades.</p>
+        <span class="annot">Common pattern · 2019—2024</span>
+      </article>
+      <article class="entry">
+        <span class="roman">iii.</span>
+        <h3>One teacher, sixty students</h3>
+        <p>Even the best teacher cannot watch sixty children think. The quiet ones drift to the back row.</p>
+        <span class="annot">Class size · CBSE govt schools</span>
+      </article>
+      <article class="entry">
+        <span class="roman">iv.</span>
+        <h3>Hindi content treated as second-class</h3>
+        <p>English-first apps with translated buttons. Real bilingual pedagogy is rare.</p>
+        <span class="annot">Surveyed · 38 EdTech apps</span>
+      </article>
+    </div>
+
+    <div class="workbook-divider reveal">
+      <div class="em">here is what changes</div>
+      <span class="arrow-down" aria-hidden="true">↓</span>
+    </div>
+
+    <div class="workbook-grid">
+      <article class="entry">
+        <span class="roman">i.</span>
+        <h3>One tutor. Always patient.</h3>
+        <p>Foxy doesn't sigh, doesn't compare, doesn't get tired at 9 pm. It teaches the same lesson three different ways if needed.</p>
+        <span class="annot">Foxy · always-on</span>
+      </article>
+      <article class="entry">
+        <span class="roman">ii.</span>
+        <h3>Mastery, not points.</h3>
+        <p>Every question is tagged <em>Remember → Understand → Apply → Analyse</em>. We don't say "level up." We say "she can now apply photosynthesis."</p>
+        <span class="annot">Bloom's-tagged · CBSE 6—12</span>
+      </article>
+      <article class="entry">
+        <span class="roman">iii.</span>
+        <h3>The teacher gets X-ray vision.</h3>
+        <p>Class dashboards show who is stuck on what — by topic, by Bloom level, by week. The quiet child stops being invisible.</p>
+        <span class="annot">Teacher portal · live</span>
+      </article>
+      <article class="entry">
+        <span class="roman">iv.</span>
+        <h3>Hindi as a first language.</h3>
+        <p>Every concept, every question, every Foxy explanation — natively in हिन्दी. Tap once to switch. Code-switch mid-sentence if you want.</p>
+        <span class="annot">Bilingual by design</span>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ====================== SHOWCASE ====================== -->
+<section class="showcase" id="showcase">
+  <div class="wrap">
+    <div class="showcase-head reveal">
+      <span class="label">Inside the product · Three moments</span>
+      <h2>Not a chatbot. A <em>tutor</em>.</h2>
+    </div>
+
+    <div class="showcase-grid">
+
+      <!-- card 1 -->
+      <article class="scard">
+        <span class="stop">Stop 01 · Foxy session</span>
+        <h3>Foxy, who never <em>sighs</em>.</h3>
+        <p>She asks back. She draws diagrams. She says "shall we try a smaller example?" instead of "wrong, try again."</p>
+        <div class="mini-chat" aria-label="Sample Foxy chat">
+          <div class="mc-row">
+            <div class="mc-av you" aria-hidden="true">A</div>
+            <div class="mc-bub">Foxy, why does my plant need light?</div>
+          </div>
+          <div class="mc-row">
+            <div class="mc-av" aria-hidden="true">F</div>
+            <div class="mc-bub">Good question, Aarav. <em>shall we draw it together?</em> Light is the energy that lets the plant build sugar from CO₂ and water…</div>
+          </div>
+          <div class="mc-row">
+            <div class="mc-av you" aria-hidden="true">A</div>
+            <div class="mc-bub">So leaves are the kitchen?</div>
+          </div>
+          <div class="mc-row">
+            <div class="mc-av" aria-hidden="true">F</div>
+            <div class="mc-bub"><em>exactly</em> — and chlorophyll is the cook.</div>
+          </div>
+        </div>
+      </article>
+
+      <!-- card 2 -->
+      <article class="scard">
+        <span class="stop">Stop 02 · Mastery x-ray</span>
+        <h3>Bloom's, made <em>visible</em>.</h3>
+        <p>Per-topic mastery across the four cognitive levels. Parents see exactly where the child is, not a vague "85%."</p>
+        <div class="mini-mastery" aria-label="Mastery progress for Photosynthesis">
+          <div class="mm-row"><span style="width:90px">Remember</span><span class="mm-bar"><span class="mm-fill" style="width:96%"></span></span><span class="mm-pct">96%</span></div>
+          <div class="mm-row"><span style="width:90px">Understand</span><span class="mm-bar"><span class="mm-fill" style="width:78%"></span></span><span class="mm-pct">78%</span></div>
+          <div class="mm-row"><span style="width:90px">Apply</span><span class="mm-bar"><span class="mm-fill" style="width:54%"></span></span><span class="mm-pct">54%</span></div>
+          <div class="mm-row"><span style="width:90px">Analyse</span><span class="mm-bar"><span class="mm-fill" style="width:22%"></span></span><span class="mm-pct">22%</span></div>
+        </div>
+      </article>
+
+      <!-- card 3 -->
+      <article class="scard">
+        <span class="stop">Stop 03 · Quiz that re-asks</span>
+        <h3>Wrong? Foxy <em>re-asks</em>.</h3>
+        <p>Get a question wrong, and the misconception is logged. Three days later, the same idea comes back — phrased differently. That's how things stick.</p>
+        <div class="mini-quiz" aria-label="Sample quiz card">
+          <div class="mq-q">Q3 · The site of the light reaction in photosynthesis is —</div>
+          <div class="mq-opts">
+            <div class="mq-opt wrong"><span class="key">A</span>Stroma</div>
+            <div class="mq-opt right"><span class="key">B</span>Thylakoid membrane ✓</div>
+            <div class="mq-opt"><span class="key">C</span>Cytoplasm</div>
+            <div class="mq-opt"><span class="key">D</span>Mitochondria</div>
+          </div>
+        </div>
+      </article>
+
+    </div>
+  </div>
+</section>
+
+<!-- ====================== TRUST ====================== -->
+<section class="trust" id="trust">
+  <div class="wrap">
+    <div class="trust-grid">
+
+      <div class="trust-block">
+        <span class="label">A note from the founder</span>
+        <blockquote>I built Alfanumrik because my niece, in class eight, was being told she was <em>"not a science person."</em> She is. We just hadn't found the patience to explain it her way.</blockquote>
+        <div class="attr">
+          <div class="av" aria-hidden="true">P</div>
+          <div class="meta">
+            <span class="name">Pradeep Sharma</span>
+            <span class="role">Founder · Alfanumrik</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="trust-block">
+        <span class="label">From the teachers' room</span>
+        <blockquote>For the first time I can tell <em>which</em> child is stuck on <em>which</em> step of quadratics. I used to know it for ten students. Now I know it for sixty.</blockquote>
+        <div class="attr">
+          <div class="av peacock" aria-hidden="true">M</div>
+          <div class="meta">
+            <span class="name">Meera Iyer</span>
+            <span class="role">Maths · Class 9 · Pune</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="trust-block">
+        <span class="label">From a parent</span>
+        <blockquote>My son closed his coaching app after a month. Foxy, he opens every evening — without me asking. That alone is the <em>price</em>.</blockquote>
+        <div class="attr">
+          <div class="av saffron" aria-hidden="true">R</div>
+          <div class="meta">
+            <span class="name">Rohini Verma</span>
+            <span class="role">Parent · Class 7 · Kanpur</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="live-counter" role="status" aria-live="polite">
+      <span class="live-counter-num tabular" id="liveStudents">12,447</span>
+      <span class="live-counter-lbl">children learning with Foxy<br/>this <em style="font-style:italic;color:var(--saffron)">very moment</em></span>
+    </div>
+
+    <div class="compliance">
+      <span>DPIIT Recognised</span>
+      <span>DPDPA Aligned</span>
+      <span>NEP 2020</span>
+      <span>CBSE Curriculum</span>
+      <span>Made in Bengaluru</span>
+      <span>Hosted in Mumbai</span>
+    </div>
+  </div>
+</section>
+
+<!-- ====================== PRICING ====================== -->
+<section class="pricing" id="pricing">
+  <div class="pricing-head reveal">
+    <span class="label">Plans · Honest pricing</span>
+    <h2>Three plans. <em>One promise.</em></h2>
+  </div>
+
+  <div class="pricing-track" id="pricingTrack" role="list">
+    <article class="plan" role="listitem">
+      <div class="plan-lbl">Plan i · Explorer</div>
+      <h3>Try, then <em>decide</em>.</h3>
+      <p class="desc">For families just meeting Foxy. No card, no countdown.</p>
+      <div class="price tabular">₹0<small>/forever</small></div>
+      <ul>
+        <li>3 Foxy sessions a day</li>
+        <li>NCERT solver, view-only</li>
+        <li>Weekly progress digest</li>
+        <li>Hindi &amp; English</li>
+      </ul>
+      <a class="btn btn-ghost" href="#final">Begin for free</a>
+    </article>
+
+    <article class="plan featured" role="listitem">
+      <div class="plan-lbl">Plan ii · Pro · Most chosen</div>
+      <h3>The <em>full</em> tutor.</h3>
+      <p class="desc">Unlimited Foxy. Mastery x-ray. Spaced re-asking. The whole product.</p>
+      <div class="price tabular">₹699<small>/mo</small></div>
+      <ul>
+        <li>Unlimited Foxy + NCERT solver</li>
+        <li>Bloom's mastery dashboard</li>
+        <li>Daily spaced re-asks</li>
+        <li>Parent weekly report (PDF)</li>
+        <li>Priority support · 24h</li>
+      </ul>
+      <a class="btn btn-primary" href="#final">Start Pro <span class="arrow" aria-hidden="true">→</span></a>
+    </article>
+
+    <article class="plan" role="listitem">
+      <div class="plan-lbl">Plan iii · Family</div>
+      <h3>Two children, <em>one bill</em>.</h3>
+      <p class="desc">Up to two siblings on one plan. Separate progress, shared price.</p>
+      <div class="price tabular">₹999<small>/mo</small></div>
+      <ul>
+        <li>Everything in Pro · ×2</li>
+        <li>Joint parent dashboard</li>
+        <li>Sibling-aware spacing</li>
+        <li>Annual save · ₹2,000</li>
+      </ul>
+      <a class="btn btn-ghost" href="#final">Choose Family</a>
+    </article>
+  </div>
+
+  <div class="pricing-dots" id="pricingDots" role="tablist" aria-label="Choose plan">
+    <button data-i="0" aria-label="Show Explorer plan"><span class="dot" aria-hidden="true"></span></button>
+    <button data-i="1" class="active" aria-label="Show Pro plan"><span class="dot" aria-hidden="true"></span></button>
+    <button data-i="2" aria-label="Show Family plan"><span class="dot" aria-hidden="true"></span></button>
+  </div>
+</section>
+
+<!-- ====================== FINAL CTA ====================== -->
+<section class="final" id="final">
+  <span class="deco deva" lang="hi" aria-hidden="true">९</span>
+  <div class="wrap">
+    <span class="label">Begin a session</span>
+    <h2>
+      Tonight, after dinner —<br/>let her <em>try one</em>.
+      <span class="deva" lang="hi">आज रात — एक सवाल। बस एक।</span>
+    </h2>
+    <p>Three free Foxy sessions. No card. No countdown. If she comes back tomorrow on her own, you have your answer.</p>
+    <div class="ctas">
+      <a class="btn btn-on-ink" href="#" aria-label="Start free">
+        Start free · 3 sessions
+        <span class="arrow" aria-hidden="true">→</span>
+      </a>
+      <a class="btn btn-ghost-on-ink" href="#" aria-label="Talk to a teacher">Talk to a teacher first</a>
+    </div>
+    <div class="micro">No card · हिन्दी &amp; English · Works on 2G</div>
+  </div>
+</section>
+
+<!-- ====================== FOOTER ====================== -->
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div class="foot-brand">
+        <div class="brand" style="margin-bottom:14px">
+          <span class="mark" aria-hidden="true">A</span>
+          <span class="name">Alfanumrik</span>
+        </div>
+        <p>A patient, bilingual learning OS for CBSE grades 6—12. Built in Bengaluru, hosted in Mumbai.</p>
+        <span class="deva" lang="hi">सीखना — एक बैठक में, एक हाथ में।</span>
+      </div>
+
+      <details class="foot-acc" id="footProduct">
+        <summary>Product</summary>
+        <ul>
+          <li><a href="#">Foxy tutor</a></li>
+          <li><a href="#">NCERT solver</a></li>
+          <li><a href="#">Mastery dashboard</a></li>
+          <li><a href="#">Teacher portal</a></li>
+          <li><a href="#">Parent reports</a></li>
+        </ul>
+      </details>
+
+      <details class="foot-acc" id="footCompany">
+        <summary>Company</summary>
+        <ul>
+          <li><a href="#">About</a></li>
+          <li><a href="#">Founder note</a></li>
+          <li><a href="#">Careers</a></li>
+          <li><a href="#">Press</a></li>
+          <li><a href="#">Contact</a></li>
+        </ul>
+      </details>
+
+      <details class="foot-acc" id="footLegal">
+        <summary>Legal</summary>
+        <ul>
+          <li><a href="#">Privacy</a></li>
+          <li><a href="#">Terms</a></li>
+          <li><a href="#">DPDPA</a></li>
+          <li><a href="#">Refunds</a></li>
+          <li><a href="#">Security</a></li>
+        </ul>
+      </details>
+    </div>
+
+    <div class="hairline" style="margin:32px 0 20px"></div>
+
+    <div class="foot-foot">
+      <span>© 2026 Cusiosense Learning India Private Limited</span>
+      <span>CIN U72900KA2024PTC000000 · Bengaluru, Karnataka</span>
+      <span>v2 · Mobile · Built for budget Android</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  // Menu open/close
+  var menu=document.getElementById('menu'),
+      open=document.getElementById('menuOpen'),
+      close=document.getElementById('menuClose');
+  function setMenu(o){
+    menu.setAttribute('aria-hidden',o?'false':'true');
+    open.setAttribute('aria-expanded',o?'true':'false');
+    document.body.style.overflow=o?'hidden':'';
+  }
+  open.addEventListener('click',function(){setMenu(true)});
+  close.addEventListener('click',function(){setMenu(false)});
+  menu.querySelectorAll('a').forEach(function(a){a.addEventListener('click',function(){setMenu(false)})});
+
+  // Role switcher (swap hero headline)
+  var headlines={
+    parent:{en:'A tutor your child <em>opens</em> — without you asking.',hi:'एक शिक्षक — जिसे आपका बच्चा खुद खोले।'},
+    student:{en:'A patient tutor that <em>listens</em> first, then teaches.',hi:'एक धैर्यवान शिक्षक — जो पहले सुनता है, फिर समझाता है।'},
+    teacher:{en:'X-ray vision for the quiet kid in <em>row five</em>.',hi:'पीछे बैठे चुप बच्चे को भी देखने वाली नज़र।'},
+    school:{en:'Bilingual, mastery-first OS for the <em>whole school</em>.',hi:'पूरी पाठशाला के लिए — हिन्दी-अंग्रेज़ी, माहिर-केंद्रित।'}
+  };
+  var roleSw=document.getElementById('roleSwitcher');
+  roleSw.addEventListener('click',function(e){
+    var b=e.target.closest('button[data-role]'); if(!b) return;
+    roleSw.querySelectorAll('button').forEach(function(x){x.classList.remove('active');x.setAttribute('aria-selected','false')});
+    b.classList.add('active');b.setAttribute('aria-selected','true');
+    var r=b.getAttribute('data-role'),h=headlines[r];
+    document.getElementById('heroH1').innerHTML=h.en+'<span class="deva-line" lang="hi">'+h.hi+'</span>';
+  });
+
+  // Stats accordion
+  document.querySelectorAll('.stat-row').forEach(function(row){
+    row.addEventListener('click',function(){
+      var on=row.getAttribute('aria-expanded')==='true';
+      row.setAttribute('aria-expanded',on?'false':'true');
+    });
+  });
+
+  // Pricing carousel + dots
+  var track=document.getElementById('pricingTrack'),
+      dots=document.getElementById('pricingDots');
+  if(track && dots){
+    dots.addEventListener('click',function(e){
+      var b=e.target.closest('button[data-i]'); if(!b) return;
+      var i=parseInt(b.getAttribute('data-i'),10),
+          card=track.children[i];
+      if(card) card.scrollIntoView({behavior:'smooth',inline:'center',block:'nearest'});
+    });
+    var ticking=false;
+    track.addEventListener('scroll',function(){
+      if(ticking) return; ticking=true;
+      requestAnimationFrame(function(){
+        var rect=track.getBoundingClientRect(),mid=rect.left+rect.width/2,best=0,dmin=1e9;
+        for(var i=0;i<track.children.length;i++){
+          var r=track.children[i].getBoundingClientRect(),
+              d=Math.abs((r.left+r.width/2)-mid);
+          if(d<dmin){dmin=d;best=i}
+        }
+        dots.querySelectorAll('button').forEach(function(b,j){b.classList.toggle('active',j===best)});
+        ticking=false;
+      });
+    },{passive:true});
+  }
+
+  // Theme toggle (persists; respects prefers-color-scheme on first load)
+  var theme=document.getElementById('themeToggle');
+  function applyTheme(t){if(t)document.body.setAttribute('data-theme',t);else document.body.removeAttribute('data-theme')}
+  var stored=null;try{stored=localStorage.getItem('alf-theme')}catch(e){}
+  if(stored) applyTheme(stored);
+  theme.addEventListener('click',function(){
+    var cur=document.body.getAttribute('data-theme'),
+        sysDark=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches,
+        next= cur==='dark' ? 'light' : (cur==='light' ? 'dark' : (sysDark?'light':'dark'));
+    applyTheme(next);
+    try{localStorage.setItem('alf-theme',next)}catch(e){}
+  });
+
+  // Lang toggle (visual swap of html lang attribute on hero deva line; demo only)
+  var lang=document.getElementById('langToggle'),isHi=false;
+  lang.addEventListener('click',function(){
+    isHi=!isHi;
+    document.documentElement.setAttribute('lang',isHi?'hi':'en');
+    lang.textContent=isHi?'हि · EN':'EN · हि';
+  });
+
+  // Reveal on scroll (single deliberate moment)
+  if('IntersectionObserver' in window){
+    var io=new IntersectionObserver(function(es){
+      es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}});
+    },{rootMargin:'0px 0px -10% 0px',threshold:.05});
+    document.querySelectorAll('.reveal').forEach(function(el){io.observe(el)});
+  }else{
+    document.querySelectorAll('.reveal').forEach(function(el){el.classList.add('in')});
+  }
+
+  // Mobile-only footer accordions; tablet+ leaves them open
+  if(window.matchMedia('(min-width:768px)').matches){
+    document.querySelectorAll('.foot-acc').forEach(function(d){d.open=true});
+  }
+})();
+</script>
+</body>
+</html>

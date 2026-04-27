@@ -1,0 +1,1950 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Alfanumrik — Indian Editorial Tutor (v2 preview)</title>
+
+<!-- SEO + social meta -->
+<meta name="description" content="Alfanumrik — structured CBSE learning for grades 6-12. Bilingual AI tutor, mastery x-ray, parent-visible progress. Built in India.">
+<meta name="theme-color" content="#0E0B07">
+<meta property="og:title" content="Alfanumrik — Every exam, prepared.">
+<meta property="og:description" content="The structured tutor that adapts to what your child actually knows. Bilingual. Curriculum-true. Parent-visible.">
+<meta property="og:image" content="/og-image.png">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="canonical" href="https://alfanumrik.com/welcome">
+
+<!-- Trimmed font payload: 2 weights/family, only used axes -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<!-- Preload the heaviest hero glyph (Devanagari numerals) so LCP isn't blocked -->
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Mukta+Vaani:wght@500;700&display=swap&text=%E0%A5%A6%E0%A5%A7%E0%A5%A8%E0%A5%A9%E0%A5%AA%E0%A5%AB%E0%A5%AC%E0%A5%AD%E0%A5%AE%E0%A5%AF" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Mukta+Vaani:wght@500;700&display=swap&text=%E0%A5%A6%E0%A5%A7%E0%A5%A8%E0%A5%A9%E0%A5%AA%E0%A5%AB%E0%A5%AC%E0%A5%AD%E0%A5%AE%E0%A5%AF" />
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:wght@400;600&family=Mukta+Vaani:wght@500;700&family=Inter:wght@400;600&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet" />
+
+<style>
+  /* ---------- DESIGN TOKENS ---------- */
+  :root {
+    --cream: #F4ECDB;
+    --cream-deep: #EADFC6;
+    --ink: #0E0B07;
+    --ink-soft: #2A241B;
+    --ink-mute: #5B5141;
+    --saffron: #E8581C;
+    --saffron-deep: #C84411;
+    --peacock: #0F5C5F;
+    --marigold: #F5A623;
+    --rule: rgba(14, 11, 7, 0.12);
+    --rule-strong: rgba(14, 11, 7, 0.4);
+    --paper: var(--cream);
+    --on-paper: var(--ink);
+    --invert-bg: var(--ink);
+    --invert-fg: var(--cream);
+  }
+  body[data-theme="dark"] {
+    --paper: var(--ink);
+    --on-paper: var(--cream);
+    --invert-bg: var(--cream);
+    --invert-fg: var(--ink);
+    --rule: rgba(244, 236, 219, 0.18);
+    --rule-strong: rgba(244, 236, 219, 0.4);
+    --ink-mute: #B7AC95;
+    --ink-soft: #D9CFB7;
+  }
+
+  /* ---------- BASE ---------- */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--paper);
+    color: var(--on-paper);
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: clamp(15px, 0.4vw + 14px, 17px);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow-x: hidden;
+    transition: background-color .35s ease, color .35s ease;
+  }
+  body::before {
+    /* Subtle paper grain */
+    content: "";
+    position: fixed; inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background-image:
+      radial-gradient(rgba(14,11,7,0.04) 1px, transparent 1px),
+      radial-gradient(rgba(14,11,7,0.03) 1px, transparent 1px);
+    background-size: 3px 3px, 7px 7px;
+    background-position: 0 0, 1.5px 1.5px;
+    mix-blend-mode: multiply;
+    opacity: .55;
+  }
+  body[data-theme="dark"]::before { mix-blend-mode: screen; opacity: .15; }
+
+  ::selection { background: var(--saffron); color: var(--cream); }
+
+  /* Universal focus-visible ring */
+  a:focus-visible, button:focus-visible, [role="tab"]:focus-visible, [tabindex]:focus-visible {
+    outline: 2px solid var(--saffron);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+
+  /* Devanagari support: explicit font + breathing room for top matras */
+  [lang="hi"], .deva, .deva-line, .deva-sub, .deva-num {
+    font-family: 'Mukta Vaani', 'Noto Sans Devanagari', sans-serif;
+    line-height: 1.1;
+  }
+
+  /* Mobile-first wrap */
+  .wrap {
+    width: 100%;
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 0 20px;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* ---------- TYPOGRAPHY ---------- */
+  .serif { font-family: 'Newsreader', 'Times New Roman', serif; font-weight: 400; }
+  .display { font-family: 'Newsreader', serif; font-weight: 600; line-height: 0.96; letter-spacing: -0.025em; }
+  .deva { font-family: 'Mukta Vaani', 'Noto Sans Devanagari', sans-serif; }
+  .mono { font-family: 'JetBrains Mono', monospace; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; font-size: 11.5px; }
+  .label { font-family: 'JetBrains Mono', monospace; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; font-size: 10.5px; color: var(--ink-mute); }
+  .tabular { font-variant-numeric: tabular-nums; }
+  em, .italic { font-style: italic; }
+  .saffron { color: var(--saffron); }
+  .peacock { color: var(--peacock); }
+  .marigold { color: var(--marigold); }
+
+  /* Saffron emphasis: when text could fall below contrast minimum, use underline accent.
+     Apply .saffron-emph instead of bare color on body-sized italics. */
+  .saffron-emph {
+    color: var(--ink);
+    border-bottom: 2px solid var(--saffron);
+    padding-bottom: 1px;
+  }
+  body[data-theme="dark"] .saffron-emph { color: var(--cream); }
+
+  /* ---------- HAIRLINES ---------- */
+  .hairline { height: 1px; background: var(--rule); }
+  .hairline-strong { height: 1px; background: var(--rule-strong); }
+  .rule-thick { height: 4px; background: var(--ink); }
+
+  /* ---------- NAV ---------- */
+  nav.top {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: var(--paper);
+    border-bottom: 1px solid var(--rule);
+    box-shadow: 0 1px 0 var(--rule);
+  }
+  .nav-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 64px;
+    gap: 16px;
+  }
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    text-decoration: none;
+    color: inherit;
+    user-select: none;
+    min-height: 44px;
+  }
+  .brand .mark {
+    width: 36px; height: 36px;
+    background: var(--ink);
+    color: var(--cream);
+    display: grid; place-items: center;
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-size: 20px;
+    font-style: italic;
+    border-radius: 2px;
+  }
+  body[data-theme="dark"] .brand .mark { background: var(--cream); color: var(--ink); }
+  .brand .name {
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-size: clamp(18px, 1vw + 14px, 22px);
+    letter-spacing: -0.01em;
+  }
+  .brand .name sup { font-size: 9px; font-family: 'JetBrains Mono', monospace; font-weight: 400; vertical-align: super; opacity: .55; margin-left: 2px; }
+
+  .role-switcher {
+    display: none; /* mobile-first: hidden, shown at md+ */
+    border: 1px solid var(--ink);
+    border-radius: 999px;
+    padding: 3px;
+    background: transparent;
+  }
+  .role-switcher [role="tab"] {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 9px 16px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    color: var(--ink);
+    transition: background .2s, color .2s;
+  }
+  body[data-theme="dark"] .role-switcher [role="tab"] { color: var(--cream); }
+  body[data-theme="dark"] .role-switcher { border-color: var(--cream); }
+  .role-switcher [role="tab"][aria-selected="true"] {
+    background: var(--ink);
+    color: var(--cream);
+  }
+  body[data-theme="dark"] .role-switcher [role="tab"][aria-selected="true"] { background: var(--cream); color: var(--ink); }
+
+  .nav-right {
+    display: flex; align-items: center; gap: 10px;
+  }
+  .lang-toggle, .theme-toggle {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    background: none; border: none;
+    cursor: pointer;
+    color: var(--on-paper);
+    padding: 6px 10px;
+    min-height: 44px;
+    min-width: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+  .lang-toggle::after {
+    content: ""; position: absolute; left: 10px; right: 10px; bottom: 6px; height: 1px;
+    background: var(--ink-mute);
+  }
+  .theme-toggle { font-size: 16px; }
+  .theme-toggle[aria-pressed="true"] { color: var(--saffron); }
+
+  /* CTA in nav: hide label on small screens, keep arrow only */
+  .nav-cta-label { display: none; }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 14px 22px;
+    min-height: 44px;
+    font-family: 'Inter', sans-serif;
+    font-size: 14.5px;
+    font-weight: 600;
+    text-decoration: none;
+    border-radius: 2px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: transform .15s, background .2s, color .2s;
+  }
+  .btn:hover { transform: translateY(-1px); }
+  .btn-primary { background: var(--saffron); color: #fff; }
+  .btn-primary:hover { background: var(--saffron-deep); }
+  .btn-ink { background: var(--ink); color: var(--cream); }
+  body[data-theme="dark"] .btn-ink { background: var(--cream); color: var(--ink); }
+  .btn-ghost { background: transparent; color: var(--on-paper); border: 1px solid var(--ink); }
+  body[data-theme="dark"] .btn-ghost { border-color: var(--cream); }
+  .btn-cream { background: var(--cream); color: var(--ink); }
+  .btn-arrow::after { content: "→"; font-family: 'Newsreader', serif; font-weight: 500; }
+
+  /* ---------- ISSUE BAR ---------- */
+  .issue-bar {
+    border-bottom: 1px solid var(--rule);
+    padding: 10px 0;
+    color: var(--ink-mute);
+  }
+  .issue-bar-inner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    flex-wrap: wrap;
+  }
+  .issue-bar-inner .left,
+  .issue-bar-inner .right {
+    display: flex; gap: 14px; flex-wrap: wrap;
+  }
+  /* mobile: trim noisy bits */
+  .issue-bar-inner .right span:nth-child(n+3) { display: none; }
+  .issue-bar-inner .left span:nth-child(2) { display: none; }
+
+  /* ---------- HERO ---------- */
+  .hero {
+    position: relative;
+    padding: 56px 0 64px;
+    border-bottom: 4px solid var(--ink);
+    overflow: hidden;
+    min-height: 80svh;
+  }
+  .hero-numeral {
+    position: absolute;
+    left: -100px;
+    top: 0;
+    font-family: 'Mukta Vaani', sans-serif;
+    font-weight: 700;
+    font-size: clamp(280px, 56vw, 720px);
+    line-height: 0.85;
+    color: var(--saffron);
+    opacity: 0.10;
+    pointer-events: none;
+    user-select: none;
+    z-index: 0;
+  }
+  body[data-theme="dark"] .hero-numeral { opacity: 0.13; }
+  .hero-grid {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 48px;
+    align-items: end;
+  }
+  .hero-eyebrow {
+    display: inline-flex; align-items: center; gap: 12px;
+    margin-bottom: 20px;
+  }
+  .hero-eyebrow .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--saffron); }
+  .hero-eyebrow span { font-family: 'JetBrains Mono', monospace; font-size: clamp(10px, 0.4vw + 9px, 11.5px); letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink); }
+
+  h1.hero-h {
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-size: clamp(40px, 6vw + 16px, 132px);
+    line-height: 0.96;
+    letter-spacing: -0.035em;
+    margin-bottom: 12px;
+  }
+  h1.hero-h em { color: var(--saffron); font-weight: 600; }
+  h1.hero-h .deva-line {
+    display: block;
+    font-family: 'Mukta Vaani', sans-serif;
+    font-weight: 500;
+    font-size: 0.72em;
+    color: var(--ink-soft);
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+    margin-top: 14px;
+  }
+  body[data-theme="dark"] h1.hero-h .deva-line { color: var(--cream); opacity: .82; }
+  h1.hero-h .deva-line em { color: var(--saffron); font-style: italic; font-weight: 700; }
+
+  .hero-lede {
+    margin-top: 30px;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 18px;
+    max-width: 720px;
+  }
+  .hero-lede p {
+    font-family: 'Newsreader', serif;
+    font-size: clamp(16px, 0.5vw + 15px, 19.5px);
+    line-height: 1.55;
+    color: var(--ink-soft);
+  }
+  body[data-theme="dark"] .hero-lede p { color: var(--cream); opacity: .9; }
+  .hero-lede p:first-child::first-letter {
+    font-family: 'Newsreader', serif;
+    font-weight: 700;
+    font-style: italic;
+    font-size: 4.2em;
+    line-height: .85;
+    float: left;
+    padding: 6px 10px 0 0;
+    color: var(--saffron);
+  }
+
+  .hero-cta-row {
+    margin-top: 36px;
+    display: flex; flex-wrap: wrap; gap: 14px; align-items: center;
+  }
+  .hero-fineprint {
+    margin-top: 18px;
+    color: var(--ink-mute);
+    font-size: 13px;
+  }
+  .hero-fineprint .pencil {
+    font-style: italic;
+    color: var(--ink);
+    border-bottom: 2px solid var(--saffron);
+    padding-bottom: 1px;
+    font-family: 'Newsreader', serif;
+    font-size: 14px;
+  }
+  body[data-theme="dark"] .hero-fineprint .pencil { color: var(--cream); }
+
+  /* Phone mockup */
+  .phone-figure-wrap { position: relative; }
+  .phone-figure {
+    position: relative;
+    transform: rotate(-1deg);
+    background: var(--cream-deep);
+    padding: 20px;
+    border: 1px solid var(--rule);
+    max-width: 320px;
+    margin: 0 auto;
+  }
+  body[data-theme="dark"] .phone-figure { background: #1a160f; }
+  .phone-figure::before,
+  .phone-figure::after {
+    content: ""; position: absolute;
+    width: 9px; height: 9px;
+    background: var(--saffron);
+    border-radius: 50%;
+  }
+  .phone-figure::before { top: -4px; left: -4px; }
+  .phone-figure::after { bottom: -4px; right: -4px; }
+  .phone-figure .caption-pill {
+    position: absolute;
+    top: 14px;
+    right: -18px;
+    background: var(--saffron);
+    color: #fff;
+    padding: 7px 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    transform: rotate(4deg);
+    z-index: 3;
+    box-shadow: 0 4px 0 var(--ink);
+  }
+  .phone {
+    width: 100%;
+    max-width: 320px;
+    aspect-ratio: 9 / 18.6;
+    margin: 0 auto;
+    background: var(--ink);
+    border-radius: 30px;
+    padding: 14px;
+    position: relative;
+  }
+  .phone-screen {
+    width: 100%; height: 100%;
+    background: var(--cream);
+    border-radius: 18px;
+    padding: 18px;
+    overflow: hidden;
+    color: var(--ink);
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .phone-screen .ps-top {
+    display: flex; justify-content: space-between; align-items: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+  .phone-screen .ps-greet {
+    font-family: 'Newsreader', serif;
+    font-size: 18px;
+    line-height: 1.2;
+    margin-top: 4px;
+  }
+  .phone-screen .ps-greet em { color: var(--saffron); }
+  .phone-screen .ps-card {
+    background: #fff;
+    border: 1px solid rgba(0,0,0,.08);
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 11.5px;
+  }
+  .phone-screen .ps-card .ps-mono { font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); margin-bottom: 4px; }
+  .phone-screen .ps-card strong { display: block; font-family: 'Newsreader', serif; font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+  .phone-screen .ps-card .ps-strong-lg { font-size: 18px; }
+  .phone-screen .ps-card .ps-meta-line { font-size: 11px; color: #5B5141; }
+  .phone-screen .ps-card .bar { height: 6px; background: #efe6d2; border-radius: 4px; overflow: hidden; margin-top: 8px; }
+  .phone-screen .ps-card .bar-fill { height: 100%; width: 72%; background: var(--saffron); }
+  .phone-screen .ps-foxy {
+    margin-top: auto;
+    background: var(--ink);
+    color: var(--cream);
+    border-radius: 12px;
+    padding: 10px 12px;
+    font-size: 11px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .phone-screen .ps-foxy svg { flex-shrink: 0; }
+
+  .pencil-note {
+    position: static;
+    margin-top: 28px;
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+    font-size: 14px;
+    color: var(--ink);
+    border-left: 2px solid var(--saffron);
+    padding-left: 12px;
+    max-width: 360px;
+    line-height: 1.45;
+  }
+  body[data-theme="dark"] .pencil-note { color: var(--cream); }
+  .pencil-note::before {
+    content: "↳ ";
+    font-style: normal;
+    color: var(--saffron);
+  }
+
+  /* ---------- STATS STRIP ---------- */
+  .stats {
+    padding: 48px 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px 0;
+  }
+  .stat {
+    padding: 18px;
+    border-right: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+  }
+  .stat:nth-child(2n) { border-right: none; }
+  .stat:nth-child(n+3) { border-bottom: none; }
+  .stat .num {
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-size: clamp(40px, 4vw + 18px, 64px);
+    line-height: 1;
+    letter-spacing: -0.025em;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+  }
+  body[data-theme="dark"] .stat .num { color: var(--cream); }
+  .stat .num em { color: var(--saffron); font-style: italic; }
+  .stat .num small.pct { font-size: .5em; color: var(--ink-mute); }
+  .stat .lbl {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-top: 14px;
+  }
+  .stat .desc {
+    font-family: 'Newsreader', serif;
+    font-size: 14.5px;
+    color: var(--ink-soft);
+    margin-top: 8px;
+    font-style: italic;
+  }
+  body[data-theme="dark"] .stat .desc { color: var(--cream); opacity: .75; }
+
+  /* ---------- PROBLEM / SOLUTION SPREAD ---------- */
+  .spread {
+    padding: 64px 0 72px;
+    border-bottom: 1px solid var(--rule);
+    position: relative;
+  }
+  .spread-head {
+    display: flex; flex-direction: column; align-items: flex-start; justify-content: space-between;
+    margin-bottom: 40px;
+    gap: 16px;
+  }
+  .spread-head h2 {
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-size: clamp(32px, 4vw + 14px, 76px);
+    letter-spacing: -0.025em;
+    line-height: 1;
+  }
+  .spread-head h2 em { color: var(--saffron); }
+  .spread-head .meta { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-mute); flex-shrink: 0; }
+
+  .spread-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 40px;
+  }
+  .spread-grid .divider { display: none; background: var(--ink); width: 1px; }
+  .spread-col h3 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-bottom: 28px;
+  }
+  .spread-col h3 strong { color: var(--saffron); font-weight: 500; }
+  .spread-item {
+    display: grid;
+    grid-template-columns: 36px 1fr;
+    gap: 18px;
+    margin-bottom: 30px;
+  }
+  .spread-item .roman {
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+    font-size: 22px;
+    color: var(--saffron);
+    text-align: right;
+    padding-top: 4px;
+  }
+  .spread-item h4 {
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-size: clamp(18px, 0.5vw + 16px, 22px);
+    letter-spacing: -0.01em;
+    margin-bottom: 8px;
+    line-height: 1.2;
+  }
+  .spread-item p {
+    font-size: clamp(14px, 0.3vw + 13px, 15.5px);
+    color: var(--ink-soft);
+    line-height: 1.55;
+  }
+  body[data-theme="dark"] .spread-item p { color: var(--cream); opacity: .82; }
+  .spread-item .tag {
+    margin-top: 12px;
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border: 1px dashed var(--ink-mute);
+    color: var(--ink-mute);
+  }
+
+  /* ---------- SHOWCASE ---------- */
+  .showcase {
+    padding: 64px 0 72px;
+    border-bottom: 1px solid var(--rule);
+    position: relative;
+    container-type: inline-size;
+  }
+  .showcase-head {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 28px;
+    margin-bottom: 48px;
+    align-items: end;
+  }
+  .showcase-head .left .label { margin-bottom: 14px; }
+  .showcase-head .left h2 {
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-size: clamp(32px, 4vw + 12px, 72px);
+    letter-spacing: -0.025em;
+    line-height: 1;
+  }
+  .showcase-head .left h2 em { color: var(--saffron); }
+  .showcase-head .right p {
+    font-family: 'Newsreader', serif;
+    font-size: clamp(15px, 0.4vw + 14px, 19px);
+    line-height: 1.55;
+    color: var(--ink-soft);
+  }
+  body[data-theme="dark"] .showcase-head .right p { color: var(--cream); opacity: .85; }
+
+  .show-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+  .show-card {
+    background: var(--paper);
+    border: 1px solid var(--ink);
+    padding: 24px;
+    display: flex; flex-direction: column;
+    position: relative;
+    container-type: inline-size;
+  }
+  .show-card .step {
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+    font-weight: 600;
+    font-size: 26px;
+    color: var(--saffron);
+  }
+  .show-card .lbl {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-bottom: 6px;
+  }
+  .show-card h3 {
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-size: clamp(22px, 0.6vw + 20px, 28px);
+    letter-spacing: -0.015em;
+    line-height: 1.1;
+    margin: 14px 0 12px;
+  }
+  .show-card p {
+    font-size: 14.5px;
+    color: var(--ink-soft);
+    line-height: 1.55;
+    margin-bottom: 22px;
+  }
+  body[data-theme="dark"] .show-card p { color: var(--cream); opacity: .82; }
+
+  /* mini visualizations */
+  .viz {
+    margin-top: auto;
+    padding: 16px;
+    background: var(--cream-deep);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+  }
+  body[data-theme="dark"] .viz { background: #1a160f; }
+  .viz .row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 12.5px; }
+  .viz .row:last-child { margin-bottom: 0; }
+  .viz .row .meter {
+    flex: 1; height: 5px; background: rgba(0,0,0,.08); border-radius: 3px; overflow: hidden;
+  }
+  body[data-theme="dark"] .viz .row .meter { background: rgba(255,255,255,.08); }
+  .viz .row .meter span { display: block; height: 100%; }
+  /* Mastery meter color + width modifiers (extracted from inline style) */
+  .meter-fill { display: block; height: 100%; }
+  .meter-strong { background: #0F5C5F; }
+  .meter-mid    { background: #F5A623; }
+  .meter-weak   { background: #E8581C; }
+  .meter-w-88 { width: 88%; }
+  .meter-w-81 { width: 81%; }
+  .meter-w-54 { width: 54%; }
+  .meter-w-47 { width: 47%; }
+  .meter-w-22 { width: 22%; }
+
+  .viz .row .pill {
+    font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-mute);
+    width: 60px; text-align: right;
+  }
+
+  /* chat viz */
+  .viz-chat .bubble {
+    padding: 8px 12px; border-radius: 8px; font-size: 12.5px; margin-bottom: 8px; max-width: 85%;
+    line-height: 1.4;
+  }
+  .viz-chat .bubble.you { background: var(--ink); color: var(--cream); margin-left: auto; border-bottom-right-radius: 2px; }
+  .viz-chat .bubble.foxy { background: #fff; border: 1px solid rgba(0,0,0,.08); border-bottom-left-radius: 2px; color: var(--ink); }
+  body[data-theme="dark"] .viz-chat .bubble.foxy { background: #2a241b; color: var(--cream); border-color: rgba(255,255,255,.1); }
+  .viz-chat .bubble.foxy em { color: var(--saffron); font-style: italic; }
+
+  /* quiz viz */
+  .viz-quiz .q { font-family: 'Newsreader', serif; font-size: 13.5px; margin-bottom: 10px; line-height: 1.3; color: var(--ink); }
+  body[data-theme="dark"] .viz-quiz .q { color: var(--cream); }
+  .viz-quiz .opt {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px; border: 1px solid rgba(0,0,0,.1); border-radius: 4px;
+    font-size: 12px; margin-bottom: 6px; color: var(--ink);
+  }
+  body[data-theme="dark"] .viz-quiz .opt { border-color: rgba(255,255,255,.12); color: var(--cream); }
+  .viz-quiz .opt.correct { background: #dff3df; border-color: #2f8b3a; color: #1a5a22; }
+  .viz-quiz .opt .key { font-family: 'JetBrains Mono', monospace; font-size: 10px; opacity: .6; }
+  .viz-quiz .progress {
+    height: 4px; background: rgba(0,0,0,.08); border-radius: 2px; margin-top: 12px; overflow: hidden;
+  }
+  body[data-theme="dark"] .viz-quiz .progress { background: rgba(255,255,255,.08); }
+  .viz-quiz .progress span { display: block; height: 100%; width: 60%; background: var(--saffron); }
+
+  /* ---------- TRUST ---------- */
+  .trust {
+    padding: 64px 0 56px;
+    border-top: 4px solid var(--ink);
+    border-bottom: 4px solid var(--ink);
+    position: relative;
+  }
+  .trust-head {
+    display: flex; flex-direction: column; align-items: flex-start; justify-content: space-between;
+    margin-bottom: 40px; gap: 16px;
+  }
+  .trust-head h2 {
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-size: clamp(30px, 3.5vw + 14px, 68px);
+    letter-spacing: -0.025em;
+    line-height: 1;
+  }
+  .trust-head h2 em { color: var(--saffron); }
+  .trust-head .meta { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-mute); }
+
+  .trust-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 40px;
+    padding-bottom: 48px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .trust-col {
+    border-right: none;
+    border-bottom: 1px solid var(--rule);
+    padding-right: 0;
+    padding-bottom: 32px;
+  }
+  .trust-col:last-child { border-bottom: none; padding-bottom: 0; }
+  .trust-col h3.head {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-bottom: 22px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .trust-col h3.head::before {
+    content: ""; width: 22px; height: 1px; background: var(--saffron);
+  }
+  .trust-quote {
+    font-family: 'Newsreader', serif;
+    font-size: clamp(18px, 0.5vw + 17px, 22px);
+    line-height: 1.4;
+    letter-spacing: -0.005em;
+    color: var(--ink);
+    position: relative;
+    padding-left: 36px;
+  }
+  body[data-theme="dark"] .trust-quote { color: var(--cream); }
+  .trust-quote::before {
+    content: "\201C";
+    position: absolute;
+    left: -4px; top: -28px;
+    font-family: 'Newsreader', serif;
+    font-size: 90px;
+    line-height: 1;
+    color: var(--saffron);
+  }
+  .trust-quote em { color: var(--ink); border-bottom: 2px solid var(--saffron); padding-bottom: 1px; font-style: italic; }
+  body[data-theme="dark"] .trust-quote em { color: var(--cream); }
+  .trust-attrib {
+    margin-top: 28px;
+    display: flex; align-items: center; gap: 14px;
+  }
+  .trust-attrib .avatar {
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    background: var(--peacock);
+    color: var(--cream);
+    display: grid; place-items: center;
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-size: 18px;
+  }
+  .trust-attrib.va2 .avatar { background: var(--saffron); }
+  .trust-attrib.va3 .avatar { background: var(--ink); }
+  body[data-theme="dark"] .trust-attrib.va3 .avatar { background: var(--cream); color: var(--ink); }
+  .trust-attrib .who {
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-size: 15px;
+  }
+  .trust-attrib .role {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-top: 2px;
+  }
+
+  .live-counter {
+    margin-top: 40px;
+    display: flex; align-items: center; gap: 14px;
+    padding: 18px 22px;
+    border: 1px solid var(--ink);
+    background: transparent;
+    flex-wrap: wrap;
+    position: relative;
+  }
+  .live-counter .pulse {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #21a838;
+    box-shadow: 0 0 0 0 rgba(33, 168, 56, 0.6);
+    animation: pulse 1.8s infinite;
+    flex-shrink: 0;
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(33, 168, 56, 0.55); }
+    70% { box-shadow: 0 0 0 14px rgba(33, 168, 56, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(33, 168, 56, 0); }
+  }
+  .live-counter .live-text {
+    font-family: 'Newsreader', serif;
+    font-size: clamp(15px, 0.3vw + 14px, 17px);
+    color: var(--ink);
+  }
+  body[data-theme="dark"] .live-counter .live-text { color: var(--cream); }
+  .live-counter .live-text .num { font-weight: 700; color: var(--saffron); font-variant-numeric: tabular-nums; }
+  .live-counter .live-text .deva-num { font-family: 'Mukta Vaani', sans-serif; font-weight: 700; color: var(--saffron); margin-left: 6px; opacity: .7; }
+  .live-counter .live-meta { margin-left: auto; font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-mute); cursor: help; border-bottom: 1px dotted var(--ink-mute); }
+
+  .compliance {
+    margin-top: 28px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 0;
+    border-top: 1px solid var(--rule);
+    padding-top: 22px;
+  }
+  .compliance span {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    padding: 8px 14px;
+    border-right: 1px solid var(--rule);
+  }
+  .compliance span:first-child { padding-left: 0; }
+  .compliance span:last-child { border-right: none; }
+
+  /* ---------- PRICING TEASER ---------- */
+  .pricing {
+    padding: 64px 0 72px;
+    border-bottom: 1px solid var(--rule);
+    container-type: inline-size;
+  }
+  .pricing-head {
+    display: flex; flex-direction: column; align-items: flex-start; justify-content: space-between;
+    gap: 16px; margin-bottom: 40px;
+  }
+  .pricing-head h2 {
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-size: clamp(30px, 3.5vw + 14px, 68px);
+    letter-spacing: -0.025em;
+    line-height: 1;
+  }
+  .pricing-head h2 em { color: var(--saffron); }
+  .pricing-head .meta {
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-mute);
+    max-width: 320px;
+  }
+
+  .pricing-group {
+    border: 1px solid var(--ink);
+    display: grid;
+    grid-template-columns: 1fr;
+    position: relative;
+  }
+  .plan {
+    padding: 32px 24px;
+    border-right: none;
+    border-bottom: 1px solid var(--rule);
+    position: relative;
+    display: flex; flex-direction: column;
+    background: var(--paper);
+  }
+  .plan:last-child { border-bottom: none; }
+  .plan.featured {
+    background: var(--ink);
+    color: var(--cream);
+  }
+  body[data-theme="dark"] .plan.featured {
+    background: var(--cream);
+    color: var(--ink);
+  }
+  .plan .tag {
+    position: absolute; top: -14px; left: 24px; transform: none;
+    background: var(--saffron); color: #fff;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase;
+    padding: 7px 16px;
+    box-shadow: 0 4px 0 var(--ink);
+  }
+  .plan .plan-lbl {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-bottom: 14px;
+  }
+  .plan.featured .plan-lbl { color: rgba(244, 236, 219, 0.6); }
+  body[data-theme="dark"] .plan.featured .plan-lbl { color: rgba(14,11,7,0.6); }
+  .plan h3 {
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-size: clamp(26px, 0.6vw + 24px, 32px);
+    letter-spacing: -0.015em;
+    margin-bottom: 6px;
+  }
+  .plan .sub {
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+    font-size: 15px;
+    color: var(--ink-mute);
+    margin-bottom: 28px;
+  }
+  .plan.featured .sub { color: rgba(244, 236, 219, 0.7); }
+  body[data-theme="dark"] .plan.featured .sub { color: rgba(14,11,7,0.7); }
+  .plan .price {
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-size: clamp(48px, 1.5vw + 40px, 60px);
+    line-height: 1;
+    letter-spacing: -0.025em;
+    font-variant-numeric: tabular-nums;
+  }
+  .plan .price small { font-size: 16px; font-weight: 500; color: var(--ink-mute); margin-left: 4px; }
+  .plan.featured .price small { color: rgba(244, 236, 219, 0.6); }
+  body[data-theme="dark"] .plan.featured .price small { color: rgba(14,11,7,0.6); }
+  .plan .features {
+    list-style: none;
+    margin-top: 28px;
+    padding: 22px 0 0;
+    border-top: 1px solid var(--rule);
+    flex: 1;
+  }
+  .plan.featured .features { border-top-color: rgba(244, 236, 219, 0.18); }
+  body[data-theme="dark"] .plan.featured .features { border-top-color: rgba(14,11,7,0.18); }
+  .plan .features li {
+    font-size: 14.5px;
+    line-height: 1.5;
+    padding: 9px 0 9px 22px;
+    position: relative;
+  }
+  .plan .features li::before {
+    content: "→";
+    position: absolute; left: 0; top: 9px;
+    font-family: 'Newsreader', serif;
+    color: var(--saffron);
+    font-weight: 600;
+  }
+  .plan .cta { margin-top: 28px; }
+  .plan .cta .btn { width: 100%; justify-content: center; }
+
+  /* ---------- FINAL CTA ---------- */
+  .final-cta {
+    background: var(--ink);
+    color: var(--cream);
+    position: relative;
+    overflow: hidden;
+    padding: 80px 0 80px;
+  }
+  body[data-theme="dark"] .final-cta {
+    background: var(--cream);
+    color: var(--ink);
+  }
+  .final-cta .ornament {
+    position: absolute;
+    right: -80px;
+    bottom: -80px;
+    font-family: 'Mukta Vaani', sans-serif;
+    font-weight: 700;
+    font-size: clamp(280px, 60vw, 700px);
+    line-height: 0.85;
+    opacity: 0.06;
+    color: var(--cream);
+    pointer-events: none;
+    user-select: none;
+  }
+  body[data-theme="dark"] .final-cta .ornament { color: var(--ink); opacity: 0.07; }
+  .final-cta .eye {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(244, 236, 219, 0.65);
+    margin-bottom: 28px;
+    display: inline-flex; align-items: center; gap: 12px;
+  }
+  body[data-theme="dark"] .final-cta .eye { color: rgba(14,11,7,0.6); }
+  .final-cta .eye::before { content: ""; width: 22px; height: 1px; background: var(--saffron); }
+  .final-cta h2 {
+    font-family: 'Newsreader', serif;
+    font-weight: 500;
+    font-size: clamp(36px, 5vw + 18px, 124px);
+    letter-spacing: -0.035em;
+    line-height: 0.96;
+    max-width: 1100px;
+  }
+  .final-cta h2 em { color: var(--saffron); font-style: italic; font-weight: 600; }
+  .final-cta .sub {
+    margin-top: 28px;
+    max-width: 720px;
+    font-family: 'Newsreader', serif;
+    font-size: clamp(17px, 0.4vw + 16px, 22px);
+    line-height: 1.5;
+    color: rgba(244, 236, 219, 0.85);
+  }
+  body[data-theme="dark"] .final-cta .sub { color: rgba(14,11,7,0.78); }
+  .final-cta .deva-sub {
+    margin-top: 12px;
+    font-family: 'Mukta Vaani', sans-serif;
+    font-size: clamp(16px, 0.3vw + 15px, 18px);
+    color: rgba(244, 236, 219, 0.7);
+  }
+  body[data-theme="dark"] .final-cta .deva-sub { color: rgba(14,11,7,0.65); }
+  .final-cta .cta-row {
+    margin-top: 44px;
+    display: flex; flex-wrap: wrap; gap: 14px; align-items: center;
+  }
+  .final-cta .fineprint {
+    margin-top: 26px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: rgba(244, 236, 219, 0.5);
+  }
+  body[data-theme="dark"] .final-cta .fineprint { color: rgba(14,11,7,0.5); }
+
+  /* ---------- FOOTER ---------- */
+  footer {
+    background: var(--cream);
+    color: var(--ink);
+    padding: 56px 0 28px;
+  }
+  body[data-theme="dark"] footer { background: #14110b; color: var(--cream); }
+  .footer-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 32px;
+    padding-bottom: 40px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .footer-brand .name {
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-size: 26px;
+    letter-spacing: -0.01em;
+    margin-bottom: 14px;
+  }
+  .footer-brand .name sup {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    font-weight: 400;
+    vertical-align: super;
+    opacity: .55;
+    margin-left: 2px;
+  }
+  .footer-brand .tag {
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+    font-size: 17px;
+    color: var(--ink-soft);
+    line-height: 1.5;
+    max-width: 320px;
+    margin-bottom: 22px;
+  }
+  body[data-theme="dark"] .footer-brand .tag { color: var(--cream); opacity: .8; }
+  .footer-brand .deva {
+    font-family: 'Mukta Vaani', sans-serif;
+    font-size: 14.5px;
+    color: var(--ink-mute);
+    line-height: 1.45;
+  }
+  .footer-col h4 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-bottom: 18px;
+  }
+  .footer-col ul { list-style: none; }
+  .footer-col li {
+    font-size: 14.5px;
+    margin-bottom: 10px;
+  }
+  .footer-col a {
+    color: var(--ink);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: border-color .2s;
+    display: inline-block;
+    padding: 4px 0;
+    min-height: 32px;
+  }
+  body[data-theme="dark"] .footer-col a { color: var(--cream); }
+  .footer-col a:hover { border-bottom-color: var(--saffron); }
+
+  .footer-foot {
+    margin-top: 28px;
+    display: flex; flex-direction: column; gap: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+
+  /* ---------- RESPONSIVE: progressive enhancement ---------- */
+
+  /* >= 480px: small phone landscape, larger phones */
+  @media (min-width: 480px) {
+    .wrap { padding: 0 28px; }
+    .stats-grid { gap: 0; }
+    .footer-foot { flex-direction: row; justify-content: space-between; flex-wrap: wrap; }
+    .nav-cta-label { display: inline; }
+  }
+
+  /* >= 768px: tablet portrait */
+  @media (min-width: 768px) {
+    .wrap { padding: 0 36px; }
+    .nav-inner { height: 72px; }
+    .role-switcher { display: flex; }
+    .issue-bar-inner .right span:nth-child(n+3),
+    .issue-bar-inner .left span:nth-child(2) { display: inline; }
+    .hero { padding: 80px 0 90px; }
+    .hero-grid { grid-template-columns: 1.35fr 1fr; gap: 48px; }
+    .hero-lede { grid-template-columns: 1fr 1fr; gap: 28px; max-width: 720px; }
+    .pencil-note {
+      position: absolute;
+      bottom: -56px;
+      left: 0;
+      max-width: 280px;
+      margin-top: 0;
+      border-left: none;
+      padding-left: 0;
+      color: var(--saffron);
+    }
+    .stats { padding: 60px 0; }
+    .stats-grid { grid-template-columns: repeat(4, 1fr); }
+    .stat { padding: 0 32px; border-bottom: none; }
+    .stat:first-child { padding-left: 0; }
+    .stat:last-child { border-right: none; padding-right: 0; }
+    .stat:nth-child(2n) { border-right: 1px solid var(--rule); }
+    .spread { padding: 88px 0 96px; }
+    .spread-head { flex-direction: row; align-items: baseline; margin-bottom: 56px; gap: 32px; }
+    .spread-grid { grid-template-columns: 1fr 1px 1fr; gap: 56px; }
+    .spread-grid .divider { display: block; }
+    .showcase { padding: 96px 0 110px; }
+    .showcase-head { grid-template-columns: 1fr 1fr; gap: 48px; align-items: end; margin-bottom: 64px; }
+    .show-grid { grid-template-columns: repeat(12, 1fr); gap: 24px; }
+    .show-card-1 { grid-column: 1 / span 6; }
+    .show-card-2 { grid-column: 7 / span 6; transform: translateY(40px); }
+    .show-card-3 { grid-column: 4 / span 6; transform: translateY(40px); }
+    .trust { padding: 96px 0 80px; }
+    .trust-head { flex-direction: row; align-items: baseline; margin-bottom: 64px; }
+    .trust-grid { grid-template-columns: repeat(3, 1fr); gap: 48px; padding-bottom: 64px; }
+    .trust-col { border-right: 1px solid var(--rule); border-bottom: none; padding-right: 32px; padding-bottom: 0; }
+    .trust-col:last-child { border-right: none; padding-right: 0; }
+    .pricing { padding: 96px 0 96px; }
+    .pricing-head { flex-direction: row; align-items: baseline; gap: 32px; margin-bottom: 56px; }
+    .pricing-head .meta { text-align: right; }
+    .pricing-group { grid-template-columns: 1fr 1.1fr 1fr; }
+    .plan { padding: 40px 28px; border-right: 1px solid var(--rule); border-bottom: none; }
+    .plan:last-child { border-right: none; }
+    .plan .tag { left: 50%; transform: translateX(-50%); }
+    .final-cta { padding: 110px 0 120px; }
+    .final-cta .ornament { right: -120px; bottom: -180px; }
+    .footer-grid { grid-template-columns: 2fr 1fr 1fr 1fr; gap: 36px; padding-bottom: 48px; }
+  }
+
+  /* >= 1024px: small laptop */
+  @media (min-width: 1024px) {
+    .wrap { padding: 0 48px; }
+    .nav-inner { height: 78px; }
+    .hero { padding: 90px 0 110px; }
+    .hero-grid { gap: 64px; }
+    .hero-lede { gap: 36px; }
+    .show-card-1 { grid-column: 1 / span 5; transform: translateY(0); }
+    .show-card-2 { grid-column: 5 / span 5; transform: translateY(40px); }
+    .show-card-3 { grid-column: 8 / span 4; transform: translateY(86px); } /* fixed: was span 5 (overflow) */
+    .pricing-head .meta { max-width: 320px; }
+    .footer-grid { grid-template-columns: 1.4fr 1fr 1fr 1fr; gap: 48px; padding-bottom: 56px; }
+  }
+
+  /* >= 1440px: laptop / small desktop */
+  @media (min-width: 1440px) {
+    .wrap { padding: 0 56px; }
+    .spread { padding: 100px 0 110px; }
+    .spread-grid { gap: 64px; }
+    .showcase { padding: 110px 0 130px; }
+    .showcase-head { margin-bottom: 80px; }
+    .trust { padding: 110px 0 90px; }
+    .trust-head { margin-bottom: 70px; }
+    .trust-grid { gap: 56px; padding-bottom: 70px; }
+    .pricing { padding: 110px 0 110px; }
+    .final-cta { padding: 140px 0 150px; }
+  }
+
+  /* >= 1920px: full HD desktop */
+  @media (min-width: 1920px) {
+    .wrap { max-width: 1480px; padding: 0 72px; }
+  }
+
+  /* >= 2560px: 1440p / mid 4K-ish */
+  @media (min-width: 2560px) {
+    .wrap { max-width: 1760px; padding: 0 96px; }
+  }
+
+  /* @container queries — show cards adapt to their own width, not viewport */
+  @container (min-width: 360px) {
+    .show-card { padding: 28px 28px 32px; }
+  }
+  @container (min-width: 520px) {
+    .show-card h3 { font-size: 28px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+    .live-counter .pulse { animation: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ============================================== -->
+<!-- NAV                                            -->
+<!-- ============================================== -->
+<nav class="top">
+  <div class="wrap nav-inner">
+    <a class="brand" href="/" aria-label="Alfanumrik home">
+      <span class="mark" aria-hidden="true">A</span>
+      <span class="name">Alfanumrik<sup>TM</sup></span>
+    </a>
+
+    <div class="role-switcher" id="roleSwitch" role="tablist" aria-label="Choose your view">
+      <button role="tab" aria-selected="true" data-role="parent" id="role-parent" tabindex="0">Parent</button>
+      <button role="tab" aria-selected="false" data-role="student" id="role-student" tabindex="-1">Student</button>
+      <button role="tab" aria-selected="false" data-role="teacher" id="role-teacher" tabindex="-1">Teacher</button>
+      <button role="tab" aria-selected="false" data-role="school" id="role-school" tabindex="-1">School</button>
+    </div>
+
+    <div class="nav-right">
+      <button class="lang-toggle" id="langToggle" aria-label="Toggle language between English and Hindi" aria-pressed="false">EN · <span lang="hi">हिं</span></button>
+      <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode" aria-pressed="false" title="Toggle dark mode">◐</button>
+      <a href="/login" class="btn btn-ink btn-arrow"><span class="nav-cta-label">Start free</span></a>
+    </div>
+  </div>
+</nav>
+
+<!-- Issue bar -->
+<div class="issue-bar">
+  <div class="wrap issue-bar-inner">
+    <div class="left">
+      <span>Vol. 1 · Issue 04</span>
+      <span>Bengaluru · Mumbai · Delhi</span>
+      <span>26 Apr 2026</span>
+    </div>
+    <div class="right">
+      <span>CBSE 6 — 12</span>
+      <span><span lang="hi">हिन्दी</span> + English</span>
+      <span>Built in India</span>
+      <span>DPDPA-aligned</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================== -->
+<!-- HERO                                           -->
+<!-- ============================================== -->
+<section class="hero" aria-labelledby="hero-title">
+  <div class="hero-numeral deva" lang="hi" aria-hidden="true">६</div>
+  <div class="wrap">
+    <div class="hero-grid">
+      <div>
+        <div class="hero-eyebrow">
+          <span class="dot" aria-hidden="true"></span>
+          <span data-role-eyebrow>The learning workbook · for the home, the class, the phone</span>
+        </div>
+
+        <h1 id="hero-title" class="hero-h">
+          <span data-role-headline>Every exam,<br /><em>prepared.</em></span>
+          <span class="deva-line" lang="hi" data-role-deva>हर परीक्षा, <em>तैयारी से।</em></span>
+        </h1>
+
+        <div class="hero-lede">
+          <p data-role-lede1>Alfanumrik is a CBSE-aligned learning OS for grades six through twelve. Foxy, our patient little tutor, walks beside your child through photosynthesis, quadratics and the Mughal succession — at the pace they can actually hold.</p>
+          <p data-role-lede2>No infinite scrolls. No leaderboards screaming. Just a clean workbook, a kind voice in <span class="deva" lang="hi">हिन्दी</span> or English, and a parent dashboard that finally tells you the truth — what they know, where they slipped, what to do tonight.</p>
+        </div>
+
+        <div class="hero-cta-row">
+          <a href="/login" class="btn btn-primary btn-arrow" data-role-cta>See your child's first session free</a>
+          <a href="#how" class="btn btn-ghost">How it works</a>
+        </div>
+        <div class="hero-fineprint">
+          No card. No spam. Cancel anytime. <span class="pencil">— a real fox, not a chatbot pretending to be friendly.</span>
+        </div>
+      </div>
+
+      <div class="phone-figure-wrap">
+        <figure class="phone-figure">
+          <span class="caption-pill">Live · Class 8 · Biology</span>
+          <div class="phone">
+            <div class="phone-screen">
+              <div class="ps-top">
+                <span>9:41</span>
+                <span>Mon · CBSE 8</span>
+              </div>
+              <div class="ps-greet">Good evening, <em>Ananya</em>.<br/>Ready for ten minutes?</div>
+              <div class="ps-card">
+                <div class="ps-mono">Tonight's plan · Biology</div>
+                <strong>Photosynthesis — light reaction</strong>
+                <div>You stalled here yesterday. Let's revisit the chloroplast diagram first.</div>
+                <div class="bar"><div class="bar-fill"></div></div>
+              </div>
+              <div class="ps-card">
+                <div class="ps-mono">Mastery · last 7 days</div>
+                <strong class="ps-strong-lg">72%</strong>
+                <div class="ps-meta-line">+8 from last week · Bloom's: Apply</div>
+              </div>
+              <div class="ps-foxy">
+                <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true">
+                  <path d="M6 8 L10 4 L12 10 Z" fill="#E8581C"/>
+                  <path d="M26 8 L22 4 L20 10 Z" fill="#E8581C"/>
+                  <path d="M8 6 L11 4.5 L11.5 7.5 Z" fill="#0E0B07"/>
+                  <path d="M24 6 L21 4.5 L20.5 7.5 Z" fill="#0E0B07"/>
+                  <ellipse cx="16" cy="18" rx="11" ry="9" fill="#E8581C"/>
+                  <ellipse cx="16" cy="22" rx="6" ry="5" fill="#F4ECDB"/>
+                  <circle cx="12" cy="17" r="1.6" fill="#0E0B07"/>
+                  <circle cx="20" cy="17" r="1.6" fill="#0E0B07"/>
+                  <circle cx="11.5" cy="16.5" r=".5" fill="#fff"/>
+                  <circle cx="19.5" cy="16.5" r=".5" fill="#fff"/>
+                  <ellipse cx="16" cy="20.5" rx="1.2" ry=".8" fill="#0E0B07"/>
+                </svg>
+                <span>Foxy: <em>"shall we draw it together?"</em></span>
+              </div>
+            </div>
+          </div>
+        </figure>
+        <p class="pencil-note">a parent told us last week: "she now opens this before TikTok." we are still recovering.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================== -->
+<!-- STATS                                          -->
+<!-- ============================================== -->
+<section class="stats" aria-label="Key numbers">
+  <div class="wrap">
+    <div class="stats-grid">
+      <div class="stat">
+        <div class="num tabular">12<em>k</em></div>
+        <div class="lbl">students learning</div>
+        <div class="desc">across 247 cities, mostly tier-2 and tier-3</div>
+      </div>
+      <div class="stat">
+        <div class="num tabular">94<small class="pct">%</small></div>
+        <div class="lbl">say it feels easier</div>
+        <div class="desc">on the standard 21-day usage survey</div>
+      </div>
+      <div class="stat">
+        <div class="num tabular">07</div>
+        <div class="lbl">subjects · grades 6—12</div>
+        <div class="desc">English, Hindi, Maths, Science, Social, Sanskrit, Computer</div>
+      </div>
+      <div class="stat">
+        <div class="num tabular">₹<em>699</em></div>
+        <div class="lbl">a month, all-in</div>
+        <div class="desc">no upsells, no franchise fees, no coaching auntie</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================== -->
+<!-- PROBLEM / SOLUTION SPREAD                      -->
+<!-- ============================================== -->
+<section class="spread" id="how" aria-labelledby="spread-title">
+  <div class="wrap">
+    <div class="spread-head">
+      <h2 id="spread-title">The honest <em>diagnosis</em>.</h2>
+      <div class="meta">A workbook spread · sec. ii</div>
+    </div>
+
+    <div class="spread-grid">
+      <div class="spread-col">
+        <h3>What is <strong>actually happening</strong> in Indian homes</h3>
+
+        <div class="spread-item">
+          <div class="roman">i.</div>
+          <div>
+            <h4>Tuition has eaten the evening.</h4>
+            <p>Three classes, two coaching tabs, one parent waiting in a Maruti at 8:40 pm. The child has not actually understood the chapter — they have been re-told it.</p>
+            <span class="tag">Observation, Lucknow · Mar 2026</span>
+          </div>
+        </div>
+
+        <div class="spread-item">
+          <div class="roman">ii.</div>
+          <div>
+            <h4>Apps reward attendance, not learning.</h4>
+            <p>Streaks, gems, Lottie confetti. Your child has a 47-day streak and still cannot identify a transitive verb. The metrics are decorative.</p>
+            <span class="tag">Issue · gamification debt</span>
+          </div>
+        </div>
+
+        <div class="spread-item">
+          <div class="roman">iii.</div>
+          <div>
+            <h4>Parents are flying blind.</h4>
+            <p>The PTM is twice a year. The report card is one row of percentages. There is no honest weekly answer to the question every parent quietly asks: <em>are they alright?</em></p>
+            <span class="tag">Survey · n = 1,840 parents</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="divider" aria-hidden="true"></div>
+
+      <div class="spread-col">
+        <h3>What Alfanumrik <strong>does instead</strong></h3>
+
+        <div class="spread-item">
+          <div class="roman">i.</div>
+          <div>
+            <h4>Ten minutes, then we stop.</h4>
+            <p>Sessions are short by design. Our cognitive engine watches latency and accuracy and ends the session before fatigue sets in. The child leaves wanting more — that is the point.</p>
+            <span class="tag">CME · cognitive moderation</span>
+          </div>
+        </div>
+
+        <div class="spread-item">
+          <div class="roman">ii.</div>
+          <div>
+            <h4>Mastery, measured by Bloom's.</h4>
+            <p>Every question is tagged Remember → Understand → Apply → Analyse. We do not say "level up" — we say "she can now <em>apply</em> the photosynthesis equation; she still cannot <em>analyse</em> the Calvin cycle." Specific. Useful.</p>
+            <span class="tag">Bayesian Knowledge Tracing</span>
+          </div>
+        </div>
+
+        <div class="spread-item">
+          <div class="roman">iii.</div>
+          <div>
+            <h4>One honest weekly note for the parent.</h4>
+            <p>Every Sunday morning, in <span class="deva" lang="hi">हिन्दी</span> or English, you receive a short letter — what was learnt, what slipped, what to talk about at dinner. Written by the engine; reviewed by a human; never algorithmic gibberish.</p>
+            <span class="tag">Parent letter · weekly</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================== -->
+<!-- SHOWCASE — asymmetric cascade                  -->
+<!-- ============================================== -->
+<section class="showcase" aria-labelledby="showcase-title">
+  <div class="wrap">
+    <div class="showcase-head">
+      <div class="left">
+        <div class="label">Section iii · the workbench</div>
+        <h2 id="showcase-title">Three tools, <em>one workbook</em>.</h2>
+      </div>
+      <div class="right">
+        <p>The product is small on purpose. A tutor to talk to, a map to know yourself by, and a quiz that actually teaches you something when you are wrong.</p>
+      </div>
+    </div>
+
+    <div class="show-grid">
+      <article class="show-card show-card-1" aria-labelledby="card-1-title">
+        <div class="lbl">Tool i · the tutor</div>
+        <div class="step" aria-hidden="true">i.</div>
+        <h3 id="card-1-title">Foxy, who never <em>sighs</em>.</h3>
+        <p>An AI tutor trained on the NCERT textbook for your grade. Answers in your language, never goes off-syllabus, never invents a fact. Asks better questions than it answers.</p>
+        <div class="viz viz-chat" aria-hidden="true">
+          <div class="bubble you">why does a leaf look green?</div>
+          <div class="bubble foxy">good question — what part of the leaf do you think is doing the work? <em>(let's start there)</em></div>
+          <div class="bubble you">chlorophyll?</div>
+          <div class="bubble foxy">yes. and chlorophyll absorbs red and blue light, but reflects green. so what colour reaches your eye?</div>
+        </div>
+      </article>
+
+      <article class="show-card show-card-2" aria-labelledby="card-2-title">
+        <div class="lbl">Tool ii · the map</div>
+        <div class="step" aria-hidden="true">ii.</div>
+        <h3 id="card-2-title">The mastery <em>x-ray</em>.</h3>
+        <p>Every topic in your syllabus, scored honestly. Strong, mid, weak — no false confidence. Updated after every session by a Bayesian model that forgets nothing and forgives everything.</p>
+        <div class="viz" aria-hidden="true">
+          <div class="row">
+            <span class="pill">Strong</span>
+            <div class="meter"><span class="meter-fill meter-strong meter-w-88"></span></div>
+            <span class="mono tabular">88</span>
+          </div>
+          <div class="row">
+            <span class="pill">Strong</span>
+            <div class="meter"><span class="meter-fill meter-strong meter-w-81"></span></div>
+            <span class="mono tabular">81</span>
+          </div>
+          <div class="row">
+            <span class="pill">Mid</span>
+            <div class="meter"><span class="meter-fill meter-mid meter-w-54"></span></div>
+            <span class="mono tabular">54</span>
+          </div>
+          <div class="row">
+            <span class="pill">Mid</span>
+            <div class="meter"><span class="meter-fill meter-mid meter-w-47"></span></div>
+            <span class="mono tabular">47</span>
+          </div>
+          <div class="row">
+            <span class="pill">Weak</span>
+            <div class="meter"><span class="meter-fill meter-weak meter-w-22"></span></div>
+            <span class="mono tabular">22</span>
+          </div>
+        </div>
+      </article>
+
+      <article class="show-card show-card-3" aria-labelledby="card-3-title">
+        <div class="lbl">Tool iii · the workbook</div>
+        <div class="step" aria-hidden="true">iii.</div>
+        <h3 id="card-3-title">Quiz that <em>teaches back</em>.</h3>
+        <p>Get it wrong and Foxy doesn't just mark it red — it walks you through the misconception, then re-asks in a different way three days later. That is how things actually stick.</p>
+        <div class="viz viz-quiz" aria-hidden="true">
+          <div class="q">Q3 · In photosynthesis, the primary site of the light reaction is —</div>
+          <div class="opt"><span class="key">A</span>Cytoplasm</div>
+          <div class="opt correct"><span class="key">B</span>Thylakoid membrane ✓</div>
+          <div class="opt"><span class="key">C</span>Mitochondria</div>
+          <div class="opt"><span class="key">D</span>Cell wall</div>
+          <div class="progress"><span></span></div>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================== -->
+<!-- TRUST                                          -->
+<!-- ============================================== -->
+<section class="trust" aria-labelledby="trust-title">
+  <div class="wrap">
+    <div class="trust-head">
+      <h2 id="trust-title">Voices from the <em>desk</em>.</h2>
+      <div class="meta">Sec. iv · letters received</div>
+    </div>
+
+    <div class="trust-grid">
+      <div class="trust-col">
+        <h3 class="head">A note from the founder</h3>
+        <div class="trust-quote">
+          We built Alfanumrik because our own daughter's report card kept saying <em>"average"</em> — a word that hides everything and explains nothing. We wanted to know exactly what she knew and exactly what she did not. Now she does too.
+        </div>
+        <div class="trust-attrib">
+          <div class="avatar" aria-hidden="true">PS</div>
+          <div>
+            <div class="who">Pradeep Sharma</div>
+            <div class="role">Founder · Alfanumrik · Bengaluru</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="trust-col">
+        <h3 class="head">From a teacher</h3>
+        <div class="trust-quote va2-q">
+          For the first time my Class 9 children walk into the lesson having <em>actually</em> read the previous chapter. The Bloom's-level dashboard tells me who needs me on Monday morning — I do not waste a single minute.
+        </div>
+        <div class="trust-attrib va2">
+          <div class="avatar" aria-hidden="true">RM</div>
+          <div>
+            <div class="who">Rashmi Menon</div>
+            <div class="role">Maths · D.A.V. Pune · 12 yrs</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="trust-col">
+        <h3 class="head">From a parent</h3>
+        <div class="trust-quote">
+          The Sunday letter does what fifteen tuition WhatsApp groups never did — <em>it tells me the truth, kindly.</em> I now know my son struggles with motion graphs and is excellent at chemical equations. I can actually help him.
+        </div>
+        <div class="trust-attrib va3">
+          <div class="avatar" aria-hidden="true">AK</div>
+          <div>
+            <div class="who">Anita Kulkarni</div>
+            <div class="role">Mother · Class 10 · Indore</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="live-counter" aria-live="polite" aria-label="Currently active learners">
+      <span class="pulse" aria-hidden="true"></span>
+      <div class="live-text"><span class="num tabular" id="liveNum">142</span> students learning right now <span class="deva-num" lang="hi" id="liveDeva">१४२</span></div>
+      <div class="live-meta" title="Updated every 5 minutes from active sessions. The static preview shows the most recent value." aria-label="Updated every 5 minutes from active sessions">Refreshed every 5 min</div>
+    </div>
+
+    <div class="compliance">
+      <span>DPIIT Recognised</span>
+      <span>DPDPA Aligned</span>
+      <span>NCERT Mapped</span>
+      <span>End-to-End Encrypted</span>
+      <span>No Ads · Ever</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================== -->
+<!-- PRICING TEASER                                 -->
+<!-- ============================================== -->
+<section class="pricing" aria-labelledby="pricing-title">
+  <div class="wrap">
+    <div class="pricing-head">
+      <h2 id="pricing-title">Three <em>plans</em>, no asterisks.</h2>
+      <div class="meta">Section v · pricing<br/>billed monthly · INR · cancel anytime</div>
+    </div>
+
+    <div class="pricing-group">
+      <article class="plan" aria-labelledby="plan-1-title">
+        <div class="plan-lbl">Plan i · Explorer</div>
+        <h3 id="plan-1-title">Free, forever.</h3>
+        <div class="sub">For first families dipping a toe in.</div>
+        <div class="price">₹0<small>/mo</small></div>
+        <ul class="features">
+          <li>3 Foxy sessions a day</li>
+          <li>One subject of your choice</li>
+          <li>Weekly parent letter</li>
+          <li>Mastery x-ray (read-only)</li>
+        </ul>
+        <div class="cta"><a href="/login" class="btn btn-ghost">Start free</a></div>
+      </article>
+
+      <article class="plan featured" aria-labelledby="plan-2-title">
+        <span class="tag">Most chosen</span>
+        <div class="plan-lbl">Plan ii · Pro</div>
+        <h3 id="plan-2-title">The full workbook.</h3>
+        <div class="sub">For the family that means it.</div>
+        <div class="price">₹699<small>/mo</small></div>
+        <ul class="features">
+          <li>Unlimited Foxy + NCERT solver</li>
+          <li>All seven subjects, grades 6—12</li>
+          <li>Daily plan + spaced revision</li>
+          <li>Parent + teacher dashboard</li>
+          <li>Offline mode for the metro ride</li>
+        </ul>
+        <div class="cta"><a href="/login" class="btn btn-primary btn-arrow">Begin</a></div>
+      </article>
+
+      <article class="plan" aria-labelledby="plan-3-title">
+        <div class="plan-lbl">Plan iii · Schools</div>
+        <h3 id="plan-3-title">Per classroom.</h3>
+        <div class="sub">For principals tired of decks.</div>
+        <div class="price">Talk<small> · custom</small></div>
+        <ul class="features">
+          <li>Bulk seats · 30 to 3,000</li>
+          <li>Teacher dashboards by section</li>
+          <li>NEP-aligned reporting</li>
+          <li>Onboarding + training included</li>
+        </ul>
+        <div class="cta"><a href="/for-schools" class="btn btn-ghost">Book a call</a></div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================== -->
+<!-- FINAL CTA                                      -->
+<!-- ============================================== -->
+<section class="final-cta" id="cta" aria-labelledby="final-cta-title">
+  <div class="ornament deva" lang="hi" aria-hidden="true">९</div>
+  <div class="wrap">
+    <div class="eye">Section vi · the invitation</div>
+    <h2 id="final-cta-title">
+      Tonight's homework can be <em>different</em>.<br/>
+      Start in the next ten minutes.
+    </h2>
+    <p class="sub">Sign up takes ninety seconds. Pick your child's grade and one subject they are quietly afraid of. We will show you, this week, what they actually know — and one small thing you can do about it.</p>
+    <p class="deva-sub" lang="hi">आज की पढ़ाई थोड़ी बेहतर हो सकती है। अभी शुरू कीजिये।</p>
+    <div class="cta-row">
+      <a href="/login" class="btn btn-primary btn-arrow">Start a free session</a>
+      <a href="/contact" class="btn btn-cream">Talk to the founder</a>
+    </div>
+    <div class="fineprint">No credit card · Cancel any moment · Made in Bengaluru, India</div>
+  </div>
+</section>
+
+<!-- ============================================== -->
+<!-- FOOTER                                         -->
+<!-- ============================================== -->
+<footer aria-labelledby="footer-title">
+  <h2 id="footer-title" class="visually-hidden" style="position:absolute;left:-9999px;">Site footer</h2>
+  <div class="wrap">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <div class="name">Alfanumrik<sup>TM</sup></div>
+        <div class="tag">A learning workbook for the Indian home — bilingual, honest, and small enough to fit in ten minutes.</div>
+        <div class="deva" lang="hi">अल्फ़ान्यूमरिक · भारत में, भारत के लिए, बच्चों के साथ बनाया गया।</div>
+      </div>
+      <nav class="footer-col" aria-label="Product">
+        <h4>Product</h4>
+        <ul>
+          <li><a href="/foxy">Foxy tutor</a></li>
+          <li><a href="/progress">Mastery x-ray</a></li>
+          <li><a href="/parent">Parent dashboard</a></li>
+          <li><a href="/teacher">Teacher portal</a></li>
+          <li><a href="/for-schools">For schools</a></li>
+          <li><a href="/pricing">Pricing</a></li>
+        </ul>
+      </nav>
+      <nav class="footer-col" aria-label="Company">
+        <h4>Company</h4>
+        <ul>
+          <li><a href="/about">About</a></li>
+          <li><a href="/about#founder">Founder note</a></li>
+          <li><a href="/changelog">Changelog</a></li>
+          <li><a href="/about#press">Press</a></li>
+          <li><a href="/contact">Contact</a></li>
+        </ul>
+      </nav>
+      <nav class="footer-col" aria-label="Legal">
+        <h4>Legal</h4>
+        <ul>
+          <li><a href="/privacy">Privacy</a></li>
+          <li><a href="/terms">Terms</a></li>
+          <li><a href="/dpdpa">DPDPA</a></li>
+          <li><a href="/refund">Refunds</a></li>
+          <li><a href="/security">Security</a></li>
+        </ul>
+      </nav>
+    </div>
+    <div class="footer-foot">
+      <div>© 2026 Cusiosense Learning India Pvt. Ltd.</div>
+      <div>CIN U85499KA2024PTC182441 · GSTIN 29AAJCC4851N1ZD</div>
+      <div>Bengaluru · 560034</div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  // ===== prefers-color-scheme + persisted theme (must run before any UI work) =====
+  var STORAGE_KEY = 'alfanumrik-theme';
+  var stored = null;
+  try { stored = localStorage.getItem(STORAGE_KEY); } catch(e) {}
+  var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var initialTheme = stored || (prefersDark ? 'dark' : 'light');
+  if (initialTheme === 'dark') document.body.dataset.theme = 'dark';
+
+  // ===== Theme toggle (visible button) =====
+  var themeBtn = document.getElementById('themeToggle');
+  function syncThemeBtn(){
+    var isDark = document.body.dataset.theme === 'dark';
+    if (themeBtn) themeBtn.setAttribute('aria-pressed', isDark ? 'true' : 'false');
+  }
+  syncThemeBtn();
+  if (themeBtn) {
+    themeBtn.addEventListener('click', function(){
+      var isDark = document.body.dataset.theme === 'dark';
+      if (isDark) {
+        delete document.body.dataset.theme;
+        try { localStorage.setItem(STORAGE_KEY, 'light'); } catch(e) {}
+      } else {
+        document.body.dataset.theme = 'dark';
+        try { localStorage.setItem(STORAGE_KEY, 'dark'); } catch(e) {}
+      }
+      syncThemeBtn();
+    });
+  }
+
+  // ===== Role switcher: tablist with content swap =====
+  var roleContent = {
+    parent: {
+      eyebrow: 'The learning workbook · for the home, the class, the phone',
+      headline: 'Every exam,<br /><em>prepared.</em>',
+      deva: 'हर परीक्षा, <em>तैयारी से।</em>',
+      lede1: 'Alfanumrik is a CBSE-aligned learning OS for grades six through twelve. Foxy, our patient little tutor, walks beside your child through photosynthesis, quadratics and the Mughal succession — at the pace they can actually hold.',
+      lede2: 'No infinite scrolls. No leaderboards screaming. Just a clean workbook, a kind voice in <span class="deva" lang="hi">हिन्दी</span> or English, and a parent dashboard that finally tells you the truth — what they know, where they slipped, what to do tonight.',
+      cta: "See your child's first session free"
+    },
+    student: {
+      eyebrow: 'A patient tutor · in your pocket · in your language',
+      headline: 'The chapter,<br /><em>finally clear.</em>',
+      deva: 'अब समझ में, <em>आ गया।</em>',
+      lede1: 'Foxy answers in Hindi or English, never sighs, never makes you feel small. Ask anything from your NCERT — photosynthesis to quadratics — and get back a question that helps you find the answer yourself.',
+      lede2: 'Ten-minute sessions, a streak that actually means learning, and a mastery map that shows you exactly which topic to revise tonight. No leaderboards. No noise. Just you and the book.',
+      cta: 'Try a free Foxy session'
+    },
+    teacher: {
+      eyebrow: 'For the teacher who wants Monday to mean something',
+      headline: 'Walk in,<br /><em>already prepared.</em>',
+      deva: 'सोमवार को, <em>तैयार।</em>',
+      lede1: 'See, before the bell, which child read the chapter and which child only opened it. Bloom\'s-level dashboards by section. The whole class, mapped to the syllabus, refreshed every Sunday night.',
+      lede2: 'Set worksheets in 90 seconds, share via WhatsApp, get back per-question diagnostics. NEP-aligned reporting your principal will actually read.',
+      cta: 'See the teacher portal'
+    },
+    school: {
+      eyebrow: 'For principals tired of decks and demos',
+      headline: 'Every section,<br /><em>visible.</em>',
+      deva: 'हर अनुभाग, <em>स्पष्ट।</em>',
+      lede1: 'Bulk seats from 30 to 3,000. Teacher dashboards by section, principal view across the school, NEP-aligned reporting that maps to the board\'s rubric.',
+      lede2: 'Onboarding and training included. Bilingual support. India-hosted data, DPDPA-compliant, with a real human at the other end of the WhatsApp.',
+      cta: 'Book a school demo'
+    }
+  };
+
+  var ctaLink = document.querySelector('[data-role-cta]');
+  var ctaHrefByRole = {
+    parent: '/login',
+    student: '/login',
+    teacher: '/login?role=teacher',
+    school: '/for-schools'
+  };
+
+  var roles = document.querySelectorAll('#roleSwitch [role="tab"]');
+  function activateRole(role){
+    var content = roleContent[role];
+    if (!content) return;
+    roles.forEach(function(b){
+      var sel = b.getAttribute('data-role') === role;
+      b.setAttribute('aria-selected', sel ? 'true' : 'false');
+      b.setAttribute('tabindex', sel ? '0' : '-1');
+    });
+    var elEye = document.querySelector('[data-role-eyebrow]');
+    var elHead = document.querySelector('[data-role-headline]');
+    var elDeva = document.querySelector('[data-role-deva]');
+    var elL1 = document.querySelector('[data-role-lede1]');
+    var elL2 = document.querySelector('[data-role-lede2]');
+    if (elEye) elEye.textContent = content.eyebrow;
+    if (elHead) elHead.innerHTML = content.headline;
+    if (elDeva) elDeva.innerHTML = content.deva;
+    if (elL1) elL1.innerHTML = content.lede1;
+    if (elL2) elL2.innerHTML = content.lede2;
+    if (ctaLink) {
+      ctaLink.textContent = content.cta;
+      ctaLink.setAttribute('href', ctaHrefByRole[role] || '/login');
+    }
+  }
+  roles.forEach(function(btn){
+    btn.addEventListener('click', function(){
+      activateRole(btn.getAttribute('data-role'));
+    });
+    btn.addEventListener('keydown', function(e){
+      // Arrow-key navigation per WAI tablist pattern
+      var idx = Array.prototype.indexOf.call(roles, btn);
+      if (e.key === 'ArrowRight') { e.preventDefault(); var next = roles[(idx + 1) % roles.length]; next.focus(); next.click(); }
+      if (e.key === 'ArrowLeft')  { e.preventDefault(); var prev = roles[(idx - 1 + roles.length) % roles.length]; prev.focus(); prev.click(); }
+    });
+  });
+
+  // ===== Live counter — STATIC honest number, no jitter =====
+  // The static preview shows a single honest figure. In production, this will be
+  // hydrated from an API endpoint that aggregates active sessions every 5 minutes.
+  // No Math.random(), no fake heartbeat — the pulse animation alone signals "live".
+  // (See data-attr below if you want to swap the number at build time.)
+
+  // ===== Language toggle (visual nudge for Devanagari spans) =====
+  var lang = document.getElementById('langToggle');
+  var hiOn = false;
+  if (lang) {
+    lang.addEventListener('click', function(){
+      hiOn = !hiOn;
+      lang.setAttribute('aria-pressed', hiOn ? 'true' : 'false');
+      document.querySelectorAll('.deva, .deva-line, .deva-sub, .deva-num, [lang="hi"]').forEach(function(el){
+        el.style.opacity = hiOn ? '1' : '';
+        el.style.fontWeight = hiOn ? '700' : '';
+      });
+      lang.innerHTML = hiOn ? '<span lang="hi">हिं</span> · EN' : 'EN · <span lang="hi">हिं</span>';
+    });
+  }
+})();
+</script>
+
+</body>
+</html>
