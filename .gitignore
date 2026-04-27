@@ -25,3 +25,7 @@ playwright/.cache/
 # branches during Option C-style cleanups. Physical preservation
 # outside git history; do not track.
 .claude/quarantine/
+
+# RAG eval run artefacts — per-run JSON reports written by
+# scripts/rag-eval.mjs. Uploaded as CI artifacts; do not track in git.
+eval/rag/reports/

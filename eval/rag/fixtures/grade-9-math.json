@@ -1,0 +1,107 @@
+{
+  "_meta": {
+    "grade": "9",
+    "subject": "math",
+    "description": "8 gold queries for CBSE Class 9 Mathematics. Chapter numbers per NCERT 2024 edition: 1 Number Systems, 2 Polynomials, 3 Coordinate Geometry, 4 Linear Equations in Two Variables, 5 Introduction to Euclid's Geometry, 6 Lines and Angles, 7 Triangles, 8 Quadrilaterals, 9 Circles, 10 Heron's Formula, 11 Surface Areas and Volumes, 12 Statistics.",
+    "chapter_verification": "Chapter numbers verified against publicly available CBSE Class 9 NCERT 2024 edition. must_cite_chapter_numbers asserted where the query maps cleanly to a single chapter."
+  },
+  "queries": [
+    {
+      "id": "g9-math-recall-001",
+      "query": "What is the formula for the area of a triangle using Heron's formula?",
+      "grade": "9",
+      "subject": "math",
+      "expected": {
+        "is_in_scope": true,
+        "expected_chapter": "Heron's Formula",
+        "must_cite_chapter_numbers": [10],
+        "forbidden_phrases": ["I don't know"]
+      }
+    },
+    {
+      "id": "g9-math-conceptual-001",
+      "query": "Why is every rational number also a real number?",
+      "grade": "9",
+      "subject": "math",
+      "expected": {
+        "is_in_scope": true,
+        "expected_chapter": "Number Systems",
+        "must_cite_chapter_numbers": [1],
+        "forbidden_phrases": ["I don't know"]
+      }
+    },
+    {
+      "id": "g9-math-application-001",
+      "query": "If a train travels 240 km in 3 hours, write a linear equation in two variables x (time) and y (distance) representing its motion.",
+      "grade": "9",
+      "subject": "math",
+      "expected": {
+        "is_in_scope": true,
+        "expected_chapter": "Linear Equations in Two Variables",
+        "must_cite_chapter_numbers": [4],
+        "forbidden_phrases": ["I don't know"]
+      }
+    },
+    {
+      "id": "g9-math-compare-001",
+      "query": "What is the difference between a parallelogram and a trapezium?",
+      "grade": "9",
+      "subject": "math",
+      "expected": {
+        "is_in_scope": true,
+        "expected_chapter": "Quadrilaterals",
+        "must_cite_chapter_numbers": [8],
+        "forbidden_phrases": ["I don't know"]
+      }
+    },
+    {
+      "id": "g9-math-chapter-001",
+      "query": "State Euclid's first postulate.",
+      "grade": "9",
+      "subject": "math",
+      "expected": {
+        "is_in_scope": true,
+        "expected_chapter": "Introduction to Euclid's Geometry",
+        "must_cite_chapter_numbers": [5],
+        "forbidden_phrases": ["I don't know"]
+      }
+    },
+    {
+      "id": "g9-math-multistep-001",
+      "query": "Describe the steps to factorize the polynomial x^2 + 5x + 6.",
+      "grade": "9",
+      "subject": "math",
+      "expected": {
+        "is_in_scope": true,
+        "expected_chapter": "Polynomials",
+        "must_cite_chapter_numbers": [2],
+        "forbidden_phrases": ["I don't know"]
+      }
+    },
+    {
+      "id": "g9-math-ambiguous-001",
+      "query": "Tell me about circles.",
+      "grade": "9",
+      "subject": "math",
+      "expected": {
+        "is_in_scope": true,
+        "expected_chapter": "Circles",
+        "must_cite_chapter_numbers": [9],
+        "forbidden_phrases": ["I don't know", "ambiguous"]
+      }
+    },
+    {
+      "id": "g9-math-boundary-001",
+      "query": "How do you find the median of grouped data?",
+      "grade": "9",
+      "subject": "math",
+      "expected": {
+        "is_in_scope": true,
+        "expected_chapter": "Statistics",
+        "must_cite_chapter_numbers": [12],
+        "forbidden_phrases": ["I don't know"]
+      },
+      "notes": "Boundary: 'median of grouped data' is a Class 10 topic in some editions; Class 9 covers ungrouped median. Service may correctly redirect — either an answer about ungrouped median (citing ch 12) or an abstain pointing to Class 10 is acceptable. We score as in-scope; if the service consistently abstains here we should reclassify."
+    }
+  ]
+}

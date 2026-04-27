@@ -1,0 +1,105 @@
+{
+  "_meta": {
+    "grade": "10",
+    "subject": "science",
+    "description": "8 gold queries for CBSE Class 10 Science. Chapter numbers per NCERT 2024 edition: 1 Chemical Reactions and Equations, 2 Acids Bases and Salts, 3 Metals and Non-metals, 4 Carbon and its Compounds, 5 Life Processes, 6 Control and Coordination, 7 How do Organisms Reproduce, 8 Heredity and Evolution, 9 Light - Reflection and Refraction, 10 The Human Eye and the Colourful World, 11 Electricity, 12 Magnetic Effects of Electric Current, 13 Our Environment.",
+    "chapter_verification": "Chapter numbers verified against the CBSE Class 10 NCERT 2024 edition. The 2024 syllabus rationalised some chapters; verify must_cite_chapter_numbers against the deployed chapters table before promoting any failures from advisory to blocking."
+  },
+  "queries": [
+    {
+      "id": "g10-sci-recall-001",
+      "query": "State Newton's third law of motion.",
+      "grade": "10",
+      "subject": "science",
+      "expected": {
+        "is_in_scope": false,
+        "abstain_phrases": ["scope", "syllabus", "class 9", "class 11", "physics"]
+      },
+      "notes": "Newton's laws are Class 9 physics in CBSE — moved here as a deliberate out-of-scope test for grade 10 science. Service should abstain (scope_mismatch) or redirect."
+    },
+    {
+      "id": "g10-sci-conceptual-001",
+      "query": "Why does a leaf appear green to our eyes?",
+      "grade": "10",
+      "subject": "science",
+      "expected": {
+        "is_in_scope": true,
+        "expected_chapter": "Life Processes",
+        "must_cite_chapter_numbers": [5, 9],
+        "forbidden_phrases": ["I don't know"]
+      },
+      "notes": "Class 10 covers photosynthesis (ch 5) and reflection of specific wavelengths (ch 9). Either chapter is acceptable."
+    },
+    {
+      "id": "g10-sci-application-001",
+      "query": "A circuit has a 12V battery and a 4 ohm resistor. What current flows through it?",
+      "grade": "10",
+      "subject": "science",
+      "expected": {
+        "is_in_scope": true,
+        "expected_chapter": "Electricity",
+        "must_cite_chapter_numbers": [11],
+        "forbidden_phrases": ["I don't know"]
+      }
+    },
+    {
+      "id": "g10-sci-compare-001",
+      "query": "What is the difference between mitosis and meiosis?",
+      "grade": "10",
+      "subject": "science",
+      "expected": {
+        "is_in_scope": true,
+        "expected_chapter": "How do Organisms Reproduce",
+        "must_cite_chapter_numbers": [7, 8],
+        "forbidden_phrases": ["I don't know"]
+      }
+    },
+    {
+      "id": "g10-sci-chapter-001",
+      "query": "What is the law of conservation of mass in a chemical reaction?",
+      "grade": "10",
+      "subject": "science",
+      "expected": {
+        "is_in_scope": true,
+        "expected_chapter": "Chemical Reactions and Equations",
+        "must_cite_chapter_numbers": [1],
+        "forbidden_phrases": ["I don't know"]
+      }
+    },
+    {
+      "id": "g10-sci-multistep-001",
+      "query": "Describe the steps to balance the chemical equation: H2 + O2 -> H2O.",
+      "grade": "10",
+      "subject": "science",
+      "expected": {
+        "is_in_scope": true,
+        "expected_chapter": "Chemical Reactions and Equations",
+        "must_cite_chapter_numbers": [1],
+        "forbidden_phrases": ["I don't know"]
+      }
+    },
+    {
+      "id": "g10-sci-ambiguous-001",
+      "query": "Tell me about light.",
+      "grade": "10",
+      "subject": "science",
+      "expected": {
+        "is_in_scope": true,
+        "expected_chapter": "Light - Reflection and Refraction",
+        "must_cite_chapter_numbers": [9, 10],
+        "forbidden_phrases": ["I don't know", "ambiguous"]
+      }
+    },
+    {
+      "id": "g10-sci-boundary-001",
+      "query": "How does a refrigerator use the refrigeration cycle?",
+      "grade": "10",
+      "subject": "science",
+      "expected": {
+        "is_in_scope": false,
+        "abstain_phrases": ["scope", "syllabus", "outside"]
+      },
+      "notes": "Refrigeration cycle (Carnot/vapour-compression) is beyond Class 10 CBSE Science scope. Service should abstain. If it grounds in 'Heat' or any chapter, that's a scope leak."
+    }
+  ]
+}

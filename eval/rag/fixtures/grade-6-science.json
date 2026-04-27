@@ -1,0 +1,106 @@
+{
+  "_meta": {
+    "grade": "6",
+    "subject": "science",
+    "description": "8 gold queries spanning recall, conceptual, application, compare-contrast, chapter-specific, multi-step, ambiguous-but-in-scope, and boundary cases. NCERT chapter names follow CBSE Class 6 Science syllabus.",
+    "chapter_verification": "Chapter numbers reference CBSE Class 6 NCERT 'Curiosity' (2024 edition) syllabus. Names verified against publicly available NCERT chapter index. Treat as best-effort — author should re-verify chapter_number against the deployed chapters table before relying on must_cite assertions for blocking gates."
+  },
+  "queries": [
+    {
+      "id": "g6-sci-recall-001",
+      "query": "What are the components of food?",
+      "grade": "6",
+      "subject": "science",
+      "expected": {
+        "is_in_scope": true,
+        "expected_chapter": "Diversity in the Living World / Food and Nutrition",
+        "forbidden_phrases": ["I don't know", "I cannot answer"]
+      },
+      "notes": "Class 6 NCERT 'Curiosity' covers food components (carbohydrates, proteins, fats, vitamins, minerals, water, roughage). Chapter number not asserted to keep this query robust to syllabus reshuffles."
+    },
+    {
+      "id": "g6-sci-conceptual-001",
+      "query": "Why do leaves of plants appear green?",
+      "grade": "6",
+      "subject": "science",
+      "expected": {
+        "is_in_scope": true,
+        "expected_chapter": "Plant Life / The Living World of Plants",
+        "forbidden_phrases": ["I don't know"]
+      },
+      "notes": "Chlorophyll-based explanation. chapter name unverified — varies between 'Curiosity' (new) and pre-2024 NCERT."
+    },
+    {
+      "id": "g6-sci-application-001",
+      "query": "If you put a wet cloth in sunlight, why does it dry faster than in the shade?",
+      "grade": "6",
+      "subject": "science",
+      "expected": {
+        "is_in_scope": true,
+        "expected_chapter": "Materials Around Us / Changes Around Us",
+        "forbidden_phrases": ["I don't know"]
+      },
+      "notes": "Evaporation concept; tests application reasoning."
+    },
+    {
+      "id": "g6-sci-compare-001",
+      "query": "What is the difference between a herbivore and a carnivore?",
+      "grade": "6",
+      "subject": "science",
+      "expected": {
+        "is_in_scope": true,
+        "expected_chapter": "The Living World / Living Creatures",
+        "forbidden_phrases": ["I don't know"]
+      },
+      "notes": "Compare-contrast on dietary classification."
+    },
+    {
+      "id": "g6-sci-chapter-001",
+      "query": "Name the parts of a flower and their functions.",
+      "grade": "6",
+      "subject": "science",
+      "expected": {
+        "is_in_scope": true,
+        "expected_chapter": "Plant Life / Flowers",
+        "forbidden_phrases": ["I don't know"]
+      },
+      "notes": "Chapter-specific factual recall."
+    },
+    {
+      "id": "g6-sci-multistep-001",
+      "query": "Describe the steps of how water moves through the water cycle.",
+      "grade": "6",
+      "subject": "science",
+      "expected": {
+        "is_in_scope": true,
+        "expected_chapter": "Water / The Wonderful World of Water",
+        "forbidden_phrases": ["I don't know"]
+      },
+      "notes": "Multi-step process: evaporation → condensation → precipitation → collection."
+    },
+    {
+      "id": "g6-sci-ambiguous-001",
+      "query": "Tell me about magnets.",
+      "grade": "6",
+      "subject": "science",
+      "expected": {
+        "is_in_scope": true,
+        "expected_chapter": "Fun with Magnets",
+        "forbidden_phrases": ["I don't know", "ambiguous"]
+      },
+      "notes": "Ambiguous-but-in-scope; service should pick the magnets chapter. CBSE Class 6 'Fun with Magnets' is a well-known chapter title across editions."
+    },
+    {
+      "id": "g6-sci-boundary-001",
+      "query": "How does a refrigerator keep food cold?",
+      "grade": "6",
+      "subject": "science",
+      "expected": {
+        "is_in_scope": true,
+        "expected_chapter": "Hot and Cold / Heat",
+        "forbidden_phrases": ["I don't know"]
+      },
+      "notes": "Boundary case: heat transfer is in scope at Class 6, but the refrigerator itself may go beyond curriculum. Either grounded answer (heat-transfer angle) or graceful abstain is acceptable on close reading; we score it as in-scope and trust the service to ground in the heat chapter."
+    }
+  ]
+}

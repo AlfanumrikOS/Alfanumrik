@@ -19,7 +19,9 @@
     "test:coverage": "vitest run --coverage",
     "type-check": "tsc --noEmit",
     "supabase:gen-types": "node scripts/gen-supabase-types.mjs",
-    "supabase:check-types": "node scripts/gen-supabase-types.mjs --check"
+    "supabase:check-types": "node scripts/gen-supabase-types.mjs --check",
+    "eval:rag": "npx tsx scripts/rag-eval.mjs",
+    "eval:rag:check": "RAG_EVAL_THRESHOLD=0.80 npx tsx scripts/rag-eval.mjs"
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.1",
