@@ -13,7 +13,16 @@ type AnalyticsEvent = {
   quiz_completed: { subject: string; score: number; questions: number; grade: string; time_seconds: number };
   quiz_started: { subject: string; grade: string };
   foxy_message_sent: { subject: string; mode: string; language: string };
-  foxy_session_started: { subject: string; mode: string };
+  // F16: extended to carry grade alongside the subject/mode pair already collected.
+  foxy_session_started: { subject: string; grade?: string; mode?: string };
+  // F16: per-turn completion telemetry — feeds RAG/grounding success funnels.
+  foxy_turn_completed: {
+    subject: string;
+    grade?: string;
+    was_grounded: boolean;
+    citations_count: number;
+    latency_ms: number;
+  };
   review_card_rated: { quality: number; topic: string };
   study_plan_generated: { subject?: string; daily_minutes: number };
   simulation_opened: { simulation_id: string; title: string };
@@ -26,8 +35,13 @@ type AnalyticsEvent = {
   leaderboard_viewed: { period: string };
   competition_joined: { competition_id: string };
 
+  // Funnel events (F16 — top-of-funnel acquisition + activation)
+  signup_complete: { role: 'student' | 'teacher' | 'parent' | 'guardian'; method: 'email' };
+  onboarding_complete: { role: 'student' | 'teacher' | 'parent' | 'guardian'; grade?: string; board?: string; subjects?: string[] };
+  payment_success: { plan: string; amount_inr?: number; currency: 'INR'; order_id?: string; subscription_id?: string; billing_cycle: 'monthly' | 'yearly' };
+
   // Parent/Teacher events
-  parent_linked: { method: string };
+  parent_linked: { method?: string; student_id_hash?: string; link_method?: 'code' | 'phone' };
   teacher_class_created: { grade: string };
   hpc_viewed: Record<string, never>;
 

@@ -47,7 +47,6 @@ import { validateSubjectWrite } from '@/lib/subjects';
 import { callGroundedAnswer, type GroundedRequest, type Citation, type SuggestedAlternative, type AbstainReason } from '@/lib/ai/grounded-client';
 import { PER_PLAN_TIMEOUT_MS, SOFT_CONFIDENCE_BANNER_THRESHOLD } from '@/lib/grounding-config';
 import { classifyIntent, routeIntent } from '@/lib/ai';
-import { generateEmbedding } from '@/lib/ai/retrieval/ncert-retriever';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -572,71 +571,6 @@ function buildSystemPrompt(params: {
     .trim();
 }
 
-// ─── RAG retrieval probe (NCERT-pinned) ──────────────────────────────────────
-//
-// The grounded-answer Edge Function runs its own Voyage-3 embedding +
-// match_rag_chunks_ncert retrieval internally (see Phase 2 migration). We
-// additionally probe retrieval here on the Next.js side so that:
-//   (a) regression #3 (regression-academic-chain.test.ts) can verify the
-//       NCERT-pinned RPC is invoked from /api/foxy,
-//   (b) we can attach a pre-retrieval trace to the grounded request for
-//       debugging cross-service confidence drift,
-//   (c) the legacy fallback path has a local context snapshot if the
-//       downstream workflows fail.
-//
-// Best-effort — any failure returns an empty context rather than short-
-// circuiting the request. Uses the Voyage `voyage-3` embedding model via the
-// shared generateEmbedding helper in @/lib/ai/retrieval/ncert-retriever.
-async function retrieveRagContext(params: {
-  query: string;
-  subject: string;
-  grade: string;
-  chapter: string | null;
-  matchCount: number;
-}): Promise<{ chunkCount: number; sampleChapter: string | null; error: string | null }> {
-  try {
-    const { query, subject, grade, chapter, matchCount } = params;
-    const enrichedQuery = [subject, `grade ${grade}`, chapter ? `chapter ${chapter}` : null, query]
-      .filter(Boolean)
-      .join(': ');
-
-    // voyage-3 embedding model — dimension pinned in shared config.
-    const embedding = await generateEmbedding(enrichedQuery);
-
-    const chapterNum: number | null =
-      chapter && /^\d+$/.test(chapter) ? parseInt(chapter, 10) : null;
-    const chapterTitle: string | null =
-      chapter && chapterNum === null ? chapter : null;
-
-    const { data, error } = await supabaseAdmin.rpc('match_rag_chunks_ncert', {
-      query_text: enrichedQuery,
-      p_subject_code: subject,
-      p_grade: grade,
-      match_count: matchCount,
-      p_chapter_number: chapterNum,
-      p_chapter_title: chapterTitle,
-      p_min_quality: 0,
-      query_embedding: embedding,
-    });
-
-    if (error) {
-      return { chunkCount: 0, sampleChapter: null, error: error.message };
-    }
-    const rows = (data ?? []) as Array<{ chapter_title?: string | null }>;
-    return {
-      chunkCount: rows.length,
-      sampleChapter: rows[0]?.chapter_title ?? null,
-      error: null,
-    };
-  } catch (err) {
-    return {
-      chunkCount: 0,
-      sampleChapter: null,
-      error: err instanceof Error ? err.message : String(err),
-    };
-  }
-}
-
 // ─── Helper: check and increment daily quota (atomic via RPC) ────────────────
 
 async function checkAndIncrementQuota(
@@ -1094,20 +1028,6 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     cognitiveCtx,
   });
 
-  // Fire-and-forget RAG retrieval probe — surfaces chunk availability for
-  // logging/audit and verifies the NCERT-pinned RPC path is healthy.
-  const ragProbe = retrieveRagContext({
-    query: message,
-    subject,
-    grade,
-    chapter,
-    matchCount: RAG_MATCH_COUNT,
-  }).catch((err) => ({
-    chunkCount: 0,
-    sampleChapter: null,
-    error: err instanceof Error ? err.message : String(err),
-  }));
-
   // Phase 2.2: resolve the coaching mode from explicit request + mastery.
   const coachMode = resolveCoachMode(requestedCoachMode, cognitiveCtx.masteryLevel);
 
@@ -1152,6 +1072,7 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   // Hop timeout = service timeout + 2s buffer so we let the service return its
   // own abstain payload rather than giving up at the transport layer.
   const hopTimeoutMs = (PER_PLAN_TIMEOUT_MS[plan] ?? 20000) + 2000;
+  // Single retrieval: grounded-answer service handles embed+RRF+rerank. Audit 2026-04-27 F11.
   const grounded = await callGroundedAnswer(groundedRequest, { hopTimeoutMs });
 
   // ─── Handle abstain ──────────────────────────────────────────────────────
@@ -1292,8 +1213,6 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     console.warn('[foxy] session cognitive update failed:', err instanceof Error ? err.message : String(err));
   });
 
-  const ragProbeResult = await ragProbe;
-
   logAudit(auth.userId!, {
     action: 'foxy.chat',
     resourceType: 'foxy_sessions',
@@ -1305,8 +1224,6 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
       traceId: grounded.trace_id,
       confidence: grounded.confidence,
       ragChunksFound: grounded.citations.length,
-      ragProbeChunkCount: ragProbeResult.chunkCount,
-      ragProbeError: ragProbeResult.error,
       cognitiveContextLoaded: true,
       masteryLevel: cognitiveCtx.masteryLevel,
       weakTopicCount: cognitiveCtx.weakTopics.length,

@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/nextjs';
+import { redactSentryEvent } from './src/lib/sentry-client-redact';
 
 Sentry.init({
   dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
@@ -23,8 +24,11 @@ Sentry.init({
   ],
 
   beforeSend(event) {
-    // Don't send events in development
+    // P13 enforcement — see audit 2026-04-27 finding F1.
+    // Redaction is implemented in src/lib/sentry-client-redact.ts so it
+    // can be unit-tested without triggering Sentry SDK side effects.
+    // Don't send events in development.
     if (process.env.NODE_ENV !== 'production') return null;
-    return event;
+    return redactSentryEvent(event);
   },
 });

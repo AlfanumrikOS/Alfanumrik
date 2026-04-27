@@ -19,6 +19,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { GRADES, BOARDS } from '@/lib/constants';
 import { LoadingFoxy } from '@/components/ui';
+import { track } from '@/lib/analytics';
 
 export default function OnboardingPage() {
   const { student, isLoggedIn, isLoading, refreshStudent, activeRole, isHi } = useAuth();
@@ -120,6 +121,17 @@ export default function OnboardingPage() {
         setSaving(false);
         return;
       }
+
+      // Analytics: F16 — see audit 2026-04-27.
+      // Fires once per student when they complete grade/board setup. Non-student
+      // roles short-circuit to their own portals before reaching this submit.
+      try {
+        track('onboarding_complete', {
+          role: 'student',
+          grade,
+          board,
+        });
+      } catch { /* analytics is non-critical */ }
 
       // Refresh auth context so dashboard sees updated grade/board
       await refreshStudent();

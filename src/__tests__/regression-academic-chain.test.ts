@@ -96,8 +96,16 @@ describe('Regression #3: Next.js RAG callers are pinned to NCERT', () => {
     expect(src).toMatch(/p_subject_code/);
   });
 
-  it('/api/foxy calls match_rag_chunks_ncert (not V1)', () => {
-    const src = read('src/app/api/foxy/route.ts');
+  it('grounded-answer service is the sole production caller of match_rag_chunks_ncert', () => {
+    // Post-Phase-2 (PR #399+) the RAG retrieval moved out of the Next.js
+    // /api/foxy route and into the grounded-answer Edge Function. The
+    // moat-leak / structural enforcement now lives in
+    // src/__tests__/eslint-rules/no-direct-rag-rpc.test.ts (no direct
+    // RAG RPC calls outside _shared/). This regression entry pins the
+    // remaining product contract: at least one production caller of
+    // match_rag_chunks_ncert exists for NCERT-pinned grounding, and it
+    // is the grounded-answer retrieval module.
+    const src = read('supabase/functions/grounded-answer/retrieval.ts');
     expect(src).toMatch(/rpc\(\s*['"]match_rag_chunks_ncert['"]/);
     expect(src).not.toMatch(/rpc\(\s*['"]match_rag_chunks['"]\s*,/);
     expect(src).toMatch(/p_subject_code/);

@@ -17,7 +17,9 @@
     "check:config-parity": "bash scripts/check-config-parity.sh",
     "lint:ai-boundary": "bash scripts/check-config-parity.sh && eslint --config .eslintrc.ai-boundary.json --ext .ts,.tsx src supabase/functions",
     "test:coverage": "vitest run --coverage",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "supabase:gen-types": "node scripts/gen-supabase-types.mjs",
+    "supabase:check-types": "node scripts/gen-supabase-types.mjs --check"
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.1",

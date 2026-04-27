@@ -120,7 +120,12 @@ These are commonly violated and cause bugs:
 ## Testing
 
 - **Unit tests**: Vitest with JSDOM. Tests in `src/__tests__/`. Setup file: `src/__tests__/setup.ts`.
-- **Coverage thresholds**: 60% global; `xp-rules.ts` requires 90%; `cognitive-engine.ts` and `exam-engine.ts` require 80%.
+- **Coverage thresholds (current → aspirational target, reconciled 2026-04-27):**
+  - Global: 35% statements / 30% branches / 35% functions / 35% lines → 60% (TODO(testing): real coverage is ~37%; ratchet upward by adding hook + util + server-helper tests — see `vitest.config.ts` lines 60-68)
+  - `src/lib/xp-rules.ts`: 90% statements / 75% branches / 90% functions / 90% lines → 90%/90%/90%/90% (TODO(assessment): branches relaxed; need daily-cap clamp, perfect-score combo, streak-bonus edge cases — see `vitest.config.ts` lines 73-82)
+  - `src/lib/cognitive-engine.ts`: 65% all metrics → 80% all metrics (TODO(assessment): need IRT 3PL Newton-Raphson convergence path, SM-2 schedule decay, error-classification branches — file is 1412 LOC, see `vitest.config.ts` lines 83-92)
+  - `src/lib/exam-engine.ts`: 80% all metrics → 80% all metrics (at target)
+  - Authoritative source: `vitest.config.ts`. If the table above disagrees with the config, the config wins and this doc is stale.
 - **E2E tests**: Playwright, specs in `e2e/`. 30s timeout, 1 retry, trace on first retry.
 - **CI pipeline** (`.github/workflows/ci.yml`): secret scan → type-check → lint → test → auth gate → build → bundle size check → E2E (PRs) → post-deploy health check (main).
 

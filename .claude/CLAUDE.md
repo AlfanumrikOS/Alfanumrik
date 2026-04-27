@@ -4,6 +4,9 @@
 Indian K-12 EdTech platform (CBSE grades 6-12). Next.js 16 + Supabase + Razorpay. 753 source files, 265 SQL migrations, 29 Supabase Edge Functions, Flutter mobile app. Serves students, parents, teachers, and administrators.
 
 ## Architecture Quick Reference
+
+> **Constitution last reconciled: 2026-04-27.** Numbers in this file are point-in-time. To re-reconcile, run the production-readiness audit (see `docs/runbooks/audit-production-readiness.md`) or invoke the orchestrator with "audit production readiness".
+
 | Layer | Technology |
 |---|---|
 | Frontend | Next.js 16.2 App Router, React 18, Tailwind 3.4, SWR |
@@ -13,10 +16,34 @@ Indian K-12 EdTech platform (CBSE grades 6-12). Next.js 16 + Supabase + Razorpay
 | AI | Claude API (Haiku) via Edge Functions: foxy-tutor, ncert-solver, quiz-generator, quiz-generator-v2, cme-engine |
 | Payments | Razorpay (INR, monthly recurring + yearly one-time) |
 | Deployment | Vercel (bom1/Mumbai), GitHub Actions CI/CD (3 workflows) |
-| Testing | Vitest (2,511 tests, 84 files), Playwright E2E (16 specs). **Regression catalog: 35/35 (100%).** |
+| Testing | Vitest (2,511 tests, 84 files), Playwright E2E (16 specs). **Regression catalog: 11 entries catalogued. Aspirational target: 35. Last reconciled: 2026-04-27.** Many P-invariants have direct unit/E2E tests that aren't yet promoted into the catalog — see "Regression catalog status by invariant" below. |
 | Monitoring | Sentry (client/server/edge), Vercel Analytics, structured logging |
 | Mobile | Flutter + Riverpod (/mobile) |
 | Offline | Service worker, localStorage cache, background sync |
+
+### Regression catalog status by P-invariant (reconciled 2026-04-27)
+
+Status key: **catalogued** = explicit entry in `.claude/regression-catalog.md`; **tested-only** = unit/integration/E2E tests exist but no catalog entry; **no-coverage** = no enforcing test.
+
+| Invariant | Status | Notes |
+|---|---|---|
+| P1 Score accuracy | tested-only | `src/__tests__/regression-academic-chain.test.ts`, `xp-ledger-parity.test.ts` cover the formula; not catalogued |
+| P2 XP economy | tested-only | xp-rules unit tests + ledger parity test exist; daily-cap clamp + perfect-score branches are gaps (see vitest TODO at xp-rules branches=75) |
+| P3 Anti-cheat | partial | REG-40 catalogues remediation oracle-shape (defense-in-depth); core 3-rule client+server checks tested but not catalogued |
+| P4 Atomic quiz submission | tested-only | RPC parity test exists; not catalogued |
+| P5 Grade format | catalogued | SG-1..SG-6 cover grade-string contract end-to-end |
+| P6 Question quality | catalogued | REG-39 (distractor index 0..3) explicit; broader 4-option/explanation checks tested-only |
+| P7 Bilingual UI | no-coverage | No regression test enforces Hi/En parity on critical surfaces |
+| P8 RLS boundary | catalogued (partial) | SG covers governance service; broader RLS policy coverage is tested-only via `rls-student-id-policies.test.ts` |
+| P9 RBAC enforcement | catalogued (partial) | SG-3..SG-5 cover plan/stream gating; full 71-permission matrix is tested-only |
+| P10 Bundle budget | tested-only | CI bundle-size check enforces; no catalog entry |
+| P11 Payment integrity | tested-only | `webhook-fallback.test.ts`, `payment-ops-api.test.ts`; atomic activation + advisory-lock branches uncatalogued |
+| P12 AI safety | catalogued | REG-37 (Voyage fallback), REG-39 (kill switch + cache) |
+| P13 Data privacy | no-coverage | Logger redaction has unit tests but no regression entry; Sentry client PII path uncovered (audit Round 2 to add) |
+| P14 Review chain completeness | n/a (process invariant) | Enforced by `review-chain.sh` hook + orchestrator Gate 5 |
+| P15 Onboarding integrity | tested-only | `auth-callback-role-redirect.test.ts` and identity tests; 3-role E2E gap |
+
+Round 2 audit identified 4 new catalog entries to promote: atomic_plan_change atomicity, daily XP cap, Sentry client PII redaction, single-retrieval contract for Foxy. Testing agent owns adding these to `.claude/regression-catalog.md`.
 
 ## Critical File Map
 | Area | Files |
@@ -39,7 +66,7 @@ Indian K-12 EdTech platform (CBSE grades 6-12). Next.js 16 + Supabase + Razorpay
 | Foxy moat plan | Phases 0-5 shipped via PRs #399, #401-#405. Active: NCERT-grounded RAG (Voyage rerank-2 + RRF k=60), Foxy pedagogy decision tree, IRT 2PL nightly cron at 02:50 UTC, misconception curator at `/super-admin/misconceptions`. Dormant flags: `ff_irt_question_selection` (off until calibration accumulates). |
 | IRT primitives | `src/lib/irt/fisher-info.ts` — TS twin of `select_questions_by_irt_info` SQL RPC. Tested in `src/__tests__/lib/irt/fisher-info.test.ts`. |
 | Non-AI Edge Functions | `supabase/functions/daily-cron/`, `queue-consumer/`, `send-*-email/`, `session-guard/`, `scan-ocr/`, `export-report/` |
-| Super admin panel | `src/app/super-admin/` (24 pages), `src/app/api/super-admin/` (61 routes) |
+| Super admin panel | `src/app/super-admin/` (43 pages), `src/app/api/super-admin/` (75 routes). Last reconciled: 2026-04-27 — admin surface grew ~80% in pages, ~23% in routes since the prior count of 24/61. |
 | Parent portal | `src/app/parent/` (6 pages) |
 | Teacher portal | `src/app/teacher/` (8 pages) |
 | Notifications | `src/app/notifications/page.tsx`, daily-cron Edge Function |

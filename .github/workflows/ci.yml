@@ -135,6 +135,35 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # Verify Supabase TypeScript types match the live schema.
+      # Skips on PRs from forks (no secrets available there).
+      # Currently advisory (continue-on-error: true) — flip to blocking after the
+      # team has run a clean `npm run supabase:gen-types` locally and committed.
+      # TODO: Remove `continue-on-error` once verified stable in CI.
+      - name: Verify Supabase types are up to date
+        if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'
+        continue-on-error: true
+        env:
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          if [ -z "$SUPABASE_PROJECT_ID" ] || [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "::warning::SUPABASE_PROJECT_ID or SUPABASE_ACCESS_TOKEN not set. Skipping type sync check."
+            echo "Add these repo secrets to enable schema-drift detection on PRs."
+            exit 0
+          fi
+          # Install Supabase CLI if not already on the runner.
+          if ! command -v supabase >/dev/null 2>&1; then
+            curl -sL https://github.com/supabase/cli/releases/latest/download/supabase_linux_amd64.tar.gz \
+              | tar -xz -C /tmp \
+              && sudo mv /tmp/supabase /usr/local/bin/supabase
+          fi
+          npm run supabase:check-types || {
+            echo "::error::Supabase types are out of sync with migrations."
+            echo "Run \`npm run supabase:gen-types\` locally and commit the result."
+            exit 1
+          }
+
       - name: Type check
         run: npm run type-check
 

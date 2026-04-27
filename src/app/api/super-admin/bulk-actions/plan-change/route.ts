@@ -62,48 +62,41 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ── Execute bulk update ──────────────────────────────────────
-    const errors: string[] = [];
+    // ── Execute bulk update via atomic RPC (P11 split-brain safety) ──
+    // Each student is processed via `atomic_plan_change(p_student_id, p_new_plan, p_reason)`
+    // which holds a pg_advisory_xact_lock and updates students + student_subscriptions
+    // in a single transaction with a domain_events audit row.
+    // We loop per student so a single failure does not poison the entire batch.
+    const failures: Array<{ student_id: string; error: string }> = [];
     let succeeded = 0;
 
-    const { data, error } = await supabaseAdmin
-      .from('students')
-      .update({ subscription_plan: targetPlan })
-      .in('id', studentIds)
-      .select('id');
+    const reason = `bulk.${action}: ${targetPlan} via super-admin`;
 
-    if (error) {
-      errors.push(error.message);
-    } else {
-      succeeded = data?.length ?? 0;
-      if (succeeded < studentIds.length) {
-        errors.push(`${studentIds.length - succeeded} student(s) not found or unchanged`);
+    for (const studentId of studentIds as string[]) {
+      const { error: rpcError } = await supabaseAdmin.rpc('atomic_plan_change', {
+        p_student_id: studentId,
+        p_new_plan: targetPlan,
+        p_reason: reason,
+      });
+
+      if (rpcError) {
+        failures.push({ student_id: studentId, error: rpcError.message });
+      } else {
+        succeeded += 1;
       }
     }
 
-    // Also sync student_subscriptions.plan_code for affected students
-    const canonicalPlan = targetPlan
-      .replace(/_(monthly|yearly)$/, '')
-      .replace(/^ultimate$/, 'unlimited')
-      .replace(/^basic$/, 'starter')
-      .replace(/^premium$/, 'pro');
-
-    const { error: subSyncError } = await supabaseAdmin
-      .from('student_subscriptions')
-      .update({ plan_code: canonicalPlan })
-      .in('student_id', studentIds);
-
-    if (subSyncError) {
-      errors.push(`subscription sync: ${subSyncError.message}`);
-    }
+    const failed = failures.length;
+    // Surface a flat error list for backwards-compatible UI consumers.
+    const errors: string[] = failures.map((f) => `${f.student_id}: ${f.error}`);
 
     // ── Log events ───────────────────────────────────────────────
     await logOpsEvent({
       category: 'admin',
       source: 'bulk-actions/plan-change',
-      severity: 'info',
-      message: `bulk plan change: ${action} to ${targetPlan} for ${studentIds.length} students`,
-      context: { action, targetPlan, requested: studentIds.length, succeeded, failed: studentIds.length - succeeded },
+      severity: failed > 0 ? 'warning' : 'info',
+      message: `bulk plan change: ${action} to ${targetPlan} for ${studentIds.length} students (${succeeded} ok, ${failed} failed)`,
+      context: { action, targetPlan, requested: studentIds.length, succeeded, failed },
     });
 
     await logAdminAudit(
@@ -111,7 +104,7 @@ export async function POST(request: NextRequest) {
       `bulk.${action}`,
       'students',
       `batch_${studentIds.length}`,
-      { targetPlan, requested: studentIds.length, succeeded, errors },
+      { targetPlan, requested: studentIds.length, succeeded, failed, failures: failures.slice(0, 50) },
     );
 
     return NextResponse.json({
@@ -119,8 +112,9 @@ export async function POST(request: NextRequest) {
       data: {
         processed: studentIds.length,
         succeeded,
-        failed: studentIds.length - succeeded,
+        failed,
         errors,
+        failures,
       },
     });
   } catch (err) {

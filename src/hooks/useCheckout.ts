@@ -3,6 +3,7 @@
 import { useState, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { track } from '@/lib/analytics';
 
 /**
  * Razorpay Checkout Hook — unified for recurring + one-time flows.
@@ -180,11 +181,29 @@ export function useCheckout() {
             setStatus('activating');
             await refreshStudent();
             setStatus('success');
+            // Analytics: F16 — see audit 2026-04-27.
+            try {
+              track('payment_success', {
+                plan: params.planCode,
+                currency: 'INR',
+                billing_cycle: 'monthly',
+                subscription_id: params.subscriptionId,
+              });
+            } catch { /* analytics is non-critical */ }
             params.onSuccess?.(params.planCode);
           } else if (verifyRes.status === 202 || data.status === 'activation_pending' || data.status === 'pending_confirmation') {
             // Payment captured, activation in progress via webhook
             await refreshStudent();
             setStatus('success');
+            // Analytics: F16 — see audit 2026-04-27.
+            try {
+              track('payment_success', {
+                plan: params.planCode,
+                currency: 'INR',
+                billing_cycle: 'monthly',
+                subscription_id: params.subscriptionId,
+              });
+            } catch { /* analytics is non-critical */ }
             params.onSuccess?.(params.planCode);
           } else {
             setError(data.error || 'Verification failed. Your payment is safe — plan will activate shortly.');
@@ -263,10 +282,30 @@ export function useCheckout() {
             setStatus('activating');
             await refreshStudent();
             setStatus('success');
+            // Analytics: F16 — see audit 2026-04-27.
+            try {
+              track('payment_success', {
+                plan: params.planCode,
+                amount_inr: params.amount / 100, // Razorpay amounts are in paise
+                currency: 'INR',
+                billing_cycle: 'yearly',
+                order_id: params.orderId,
+              });
+            } catch { /* analytics is non-critical */ }
             params.onSuccess?.(params.planCode);
           } else if (verifyRes.status === 202 || data.status === 'pending_confirmation' || data.status === 'activation_pending') {
             await refreshStudent();
             setStatus('success');
+            // Analytics: F16 — see audit 2026-04-27.
+            try {
+              track('payment_success', {
+                plan: params.planCode,
+                amount_inr: params.amount / 100,
+                currency: 'INR',
+                billing_cycle: 'yearly',
+                order_id: params.orderId,
+              });
+            } catch { /* analytics is non-critical */ }
             params.onSuccess?.(params.planCode);
           } else {
             setError(data.error || 'Payment verification failed. Please contact support.');
