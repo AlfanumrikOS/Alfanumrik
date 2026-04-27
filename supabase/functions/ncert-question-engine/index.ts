@@ -207,7 +207,7 @@ async function fetchQuestions(body: Record<string, unknown>): Promise<Response> 
 // a simple counter row in student_ncert_attempts aggregation.
 // Uses a lightweight in-memory store keyed by student_id for the current
 // Edge Function instance. At scale, use Upstash Redis or Supabase realtime.
-import { createRateLimiter } from '../../src/lib/rate-limiter.ts'
+import { createRateLimiter } from '../_shared/rate-limiter.ts'
 
 const EVAL_LIMIT = 30
 const EVAL_WINDOW_MS = 10 * 60 * 1000 // 10 minutes
