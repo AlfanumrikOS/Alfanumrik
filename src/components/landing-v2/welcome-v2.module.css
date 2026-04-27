@@ -92,6 +92,55 @@
     --success-fg: #b9efc1;
     --cream-deeper: var(--ink-deep);
   }
+
+  /* ──────────────────────────────────────────────────────────────────
+     DEFENSE-IN-DEPTH: critical per-component dark overrides mirrored
+     into the @media block so the page stays readable even if the
+     bootstrap script + matchMedia useEffect both fail (JS disabled,
+     content blocker, edge case). The 11 selectors below are the
+     production-visible ones flagged in the quality audit.
+     The other ~30 dark overrides remain only under
+     `.root[data-theme='dark']` and will activate when the JS layer
+     promotes them — this is acceptable for less-critical surfaces.
+     ──────────────────────────────────────────────────────────────── */
+  .root:not([data-theme='light']) .trustQuote {
+    color: var(--cream);
+  }
+  .root:not([data-theme='light']) .trustQuote :global(em) {
+    color: var(--cream);
+  }
+  .root:not([data-theme='light']) .trustAttrib:global(.va3) :global(.avatar) {
+    background: var(--cream);
+    color: var(--ink);
+  }
+  .root:not([data-theme='light']) .footer {
+    background: #14110b;
+    color: var(--cream);
+  }
+  .root:not([data-theme='light']) .footerBrand :global(.tag) {
+    color: var(--cream);
+    opacity: 0.8;
+  }
+  .root:not([data-theme='light']) .footAcc :global(li a) {
+    color: var(--cream);
+    opacity: 0.85;
+  }
+  .root:not([data-theme='light']) .plan {
+    border-color: var(--cream);
+  }
+  .root:not([data-theme='light']) .planFeatured {
+    background: var(--cream);
+    color: var(--ink);
+  }
+  .root:not([data-theme='light']) .planFeatured :global(*) {
+    color: var(--ink);
+  }
+  .root:not([data-theme='light']) .liveCounter {
+    border-color: var(--cream);
+  }
+  .root:not([data-theme='light']) .liveCounter :global(.liveText) {
+    color: var(--cream);
+  }
 }
 
 .root :global(::selection) {
@@ -181,6 +230,11 @@
   max-width: 1320px;
   margin: 0 auto;
   padding: 0 var(--pad);
+  /* Prevent the role switcher from forcing a wrap onto two lines at the
+     1024–1280px squeeze zone; min-width:0 lets flex children shrink rather
+     than blow out the container. */
+  flex-wrap: nowrap;
+  min-width: 0;
 }
 .brand {
   display: inline-flex;
@@ -252,6 +306,9 @@
   border-radius: 999px;
   padding: 3px;
   background: transparent;
+  /* Don't let the brand or navRight shrink the role pills; we shrink padding
+     instead in the squeeze-zone media query below. */
+  flex-shrink: 0;
 }
 .roleSwitcher :global(button) {
   background: transparent;
@@ -282,6 +339,17 @@
 .root[data-theme='dark'] .roleSwitcher :global(button[aria-selected='true']) {
   background: var(--cream);
   color: var(--ink);
+}
+
+/* Squeeze-zone (1024–1279): the role switcher first appears at 768
+   (rule below) but at >=1024 the lang/theme/CTA cluster on the right grows.
+   Shrink the role pills slightly so all 4 fit comfortably without wrapping
+   onto a second line. At >=1280 we restore the original padding. */
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .roleSwitcher :global(button) {
+    padding: 7px 12px;
+    font-size: 10px;
+  }
 }
 
 .navRight {
@@ -1443,7 +1511,7 @@
 }
 .plan :global(.tag) {
   position: absolute;
-  top: -14px;
+  top: -18px;
   left: 24px;
   background: var(--saffron);
   color: #fff;
@@ -1452,7 +1520,23 @@
   letter-spacing: 0.16em;
   text-transform: uppercase;
   padding: 7px 16px;
+  /* Defined edge regardless of background — fixes light-theme cream-on-cream
+     clip and dark-theme black-on-black invisibility. */
+  border: 1px solid var(--ink);
+  border-radius: 4px;
   box-shadow: 0 4px 0 var(--ink);
+}
+/* In dark theme `--ink` IS the page background, so a black border + black
+   shadow disappear. Flip both to cream for visible separation. */
+.root[data-theme='dark'] .plan :global(.tag) {
+  border-color: var(--cream);
+  box-shadow: 0 4px 0 var(--cream);
+}
+@media (prefers-color-scheme: dark) {
+  .root:not([data-theme='light']) .plan :global(.tag) {
+    border-color: var(--cream);
+    box-shadow: 0 4px 0 var(--cream);
+  }
 }
 .plan :global(.planLbl) {
   font-family: var(--mono);
@@ -1983,7 +2067,17 @@
     margin-top: 0;
     border-left: none;
     padding-left: 0;
-    color: var(--saffron);
+    /* WCAG AA fix: --saffron (#E8581C) on --paper cream is ~3.8:1 — fails AA
+       at body sizes (14px italic). Keep ink as the readable colour and use
+       saffron as a 2px underline accent instead. The arrow before pseudo
+       still uses saffron for visual continuity with the design. */
+    color: var(--ink);
+    border-bottom: 2px solid var(--saffron);
+    display: inline-block;
+    padding-bottom: 2px;
+  }
+  .root[data-theme='dark'] .pencilNote {
+    color: var(--cream);
   }
 
   .stats { padding: 60px 0; }
