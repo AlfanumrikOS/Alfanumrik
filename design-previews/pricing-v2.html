@@ -1,0 +1,1872 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Alfanumrik — Pricing (v2 preview)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,400;1,6..72,500;1,6..72,600;1,6..72,700&family=Mukta+Vaani:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  /* ---------- DESIGN TOKENS (inherited from welcome-v2) ---------- */
+  :root {
+    --cream: #F4ECDB;
+    --cream-deep: #EADFC6;
+    --ink: #0E0B07;
+    --ink-soft: #2A241B;
+    --ink-mute: #5B5141;
+    --saffron: #E8581C;
+    --saffron-deep: #C84411;
+    --peacock: #0F5C5F;
+    --marigold: #F5A623;
+    --rule: rgba(14, 11, 7, 0.12);
+    --rule-strong: rgba(14, 11, 7, 0.4);
+    --paper: var(--cream);
+    --on-paper: var(--ink);
+    --invert-bg: var(--ink);
+    --invert-fg: var(--cream);
+  }
+  body[data-theme="dark"] {
+    --paper: var(--ink);
+    --on-paper: var(--cream);
+    --invert-bg: var(--cream);
+    --invert-fg: var(--ink);
+    --rule: rgba(244, 236, 219, 0.18);
+    --rule-strong: rgba(244, 236, 219, 0.4);
+    --ink-mute: #B7AC95;
+    --ink-soft: #D9CFB7;
+  }
+
+  /* ---------- BASE ---------- */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--paper);
+    color: var(--on-paper);
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 17px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow-x: hidden;
+    transition: background-color .35s ease, color .35s ease;
+  }
+  body::before {
+    content: "";
+    position: fixed; inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background-image:
+      radial-gradient(rgba(14,11,7,0.04) 1px, transparent 1px),
+      radial-gradient(rgba(14,11,7,0.03) 1px, transparent 1px);
+    background-size: 3px 3px, 7px 7px;
+    background-position: 0 0, 1.5px 1.5px;
+    mix-blend-mode: multiply;
+    opacity: .55;
+  }
+  body[data-theme="dark"]::before { mix-blend-mode: screen; opacity: .15; }
+
+  ::selection { background: var(--saffron); color: var(--cream); }
+
+  .wrap {
+    width: 100%;
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 0 56px;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* ---------- TYPOGRAPHY ---------- */
+  .serif { font-family: 'Newsreader', 'Times New Roman', serif; font-weight: 500; }
+  .display { font-family: 'Newsreader', serif; font-weight: 600; line-height: 0.96; letter-spacing: -0.025em; }
+  .deva { font-family: 'Mukta Vaani', 'Newsreader', serif; }
+  .mono { font-family: 'JetBrains Mono', monospace; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; font-size: 11.5px; }
+  .label { font-family: 'JetBrains Mono', monospace; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; font-size: 10.5px; color: var(--ink-mute); }
+  .tabular { font-variant-numeric: tabular-nums; }
+  em, .italic { font-style: italic; }
+  .saffron { color: var(--saffron); }
+  .peacock { color: var(--peacock); }
+  .marigold { color: var(--marigold); }
+
+  /* ---------- HAIRLINES ---------- */
+  .hairline { height: 1px; background: var(--rule); }
+  .hairline-strong { height: 1px; background: var(--rule-strong); }
+  .rule-thick { height: 4px; background: var(--ink); }
+
+  /* ---------- NAV ---------- */
+  nav.top {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: var(--paper);
+    border-bottom: 1px solid var(--rule);
+    backdrop-filter: blur(2px);
+  }
+  .nav-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 78px;
+    gap: 32px;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .brand .mark {
+    width: 38px; height: 38px;
+    background: var(--ink);
+    color: var(--cream);
+    display: grid; place-items: center;
+    font-family: 'Newsreader', serif;
+    font-weight: 700;
+    font-size: 22px;
+    font-style: italic;
+    border-radius: 2px;
+  }
+  body[data-theme="dark"] .brand .mark { background: var(--cream); color: var(--ink); }
+  .brand .name {
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-size: 22px;
+    letter-spacing: -0.01em;
+  }
+  .brand .name sup { font-size: 9px; font-family: 'JetBrains Mono', monospace; font-weight: 400; vertical-align: super; opacity: .55; margin-left: 2px; }
+
+  .role-switcher {
+    display: flex;
+    border: 1px solid var(--ink);
+    border-radius: 999px;
+    padding: 3px;
+    background: transparent;
+  }
+  .role-switcher button {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 9px 16px;
+    border-radius: 999px;
+    color: var(--ink);
+    transition: background .2s, color .2s;
+  }
+  body[data-theme="dark"] .role-switcher button { color: var(--cream); }
+  body[data-theme="dark"] .role-switcher { border-color: var(--cream); }
+  .role-switcher button.active {
+    background: var(--ink);
+    color: var(--cream);
+  }
+  body[data-theme="dark"] .role-switcher button.active { background: var(--cream); color: var(--ink); }
+
+  .nav-right {
+    display: flex; align-items: center; gap: 18px;
+  }
+  .lang-toggle {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    background: none; border: none;
+    cursor: pointer;
+    color: var(--on-paper);
+    padding: 6px 4px;
+    position: relative;
+  }
+  .lang-toggle::after {
+    content: ""; position: absolute; left: 4px; right: 4px; bottom: 0; height: 1px;
+    background: var(--ink-mute);
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 22px;
+    font-family: 'Inter', sans-serif;
+    font-size: 14.5px;
+    font-weight: 600;
+    text-decoration: none;
+    border-radius: 2px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: transform .15s, background .2s, color .2s;
+  }
+  .btn:hover { transform: translateY(-1px); }
+  .btn-primary { background: var(--saffron); color: #fff; }
+  .btn-primary:hover { background: var(--saffron-deep); }
+  .btn-ink { background: var(--ink); color: var(--cream); }
+  body[data-theme="dark"] .btn-ink { background: var(--cream); color: var(--ink); }
+  .btn-ghost { background: transparent; color: var(--on-paper); border: 1px solid var(--ink); }
+  body[data-theme="dark"] .btn-ghost { border-color: var(--cream); }
+  .btn-cream { background: var(--cream); color: var(--ink); }
+  .btn-peacock { background: var(--peacock); color: var(--cream); }
+  .btn-peacock:hover { background: #0a4446; }
+  .btn-arrow::after { content: "→"; font-family: 'Newsreader', serif; font-weight: 500; }
+  .btn-sm { padding: 10px 16px; font-size: 13px; }
+
+  /* ---------- ISSUE BAR ---------- */
+  .issue-bar {
+    border-bottom: 1px solid var(--rule);
+    padding: 10px 0;
+    color: var(--ink-mute);
+  }
+  .issue-bar-inner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 24px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .issue-bar-inner .left,
+  .issue-bar-inner .right {
+    display: flex; gap: 22px; flex-wrap: wrap;
+  }
+
+  /* ---------- MASTHEAD ---------- */
+  .masthead {
+    padding: 90px 0 80px;
+    border-bottom: 4px solid var(--ink);
+    position: relative;
+    overflow: hidden;
+  }
+  .masthead-numeral {
+    position: absolute;
+    right: -100px;
+    top: -60px;
+    font-family: 'Mukta Vaani', serif;
+    font-weight: 800;
+    font-size: 580px;
+    line-height: 0.85;
+    color: var(--saffron);
+    opacity: 0.08;
+    pointer-events: none;
+    user-select: none;
+    z-index: 0;
+  }
+  body[data-theme="dark"] .masthead-numeral { opacity: 0.13; }
+  .masthead-inner { position: relative; z-index: 1; }
+  .mast-eyebrow {
+    display: inline-flex; align-items: center; gap: 12px;
+    margin-bottom: 28px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink);
+  }
+  .mast-eyebrow .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--saffron); }
+
+  h1.mast-h {
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-size: clamp(56px, 9vw, 132px);
+    line-height: 0.94;
+    letter-spacing: -0.035em;
+    margin-bottom: 32px;
+    max-width: 1100px;
+  }
+  h1.mast-h em { color: var(--saffron); font-weight: 600; font-style: italic; }
+
+  .mast-sub {
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+    font-size: clamp(20px, 2.2vw, 26px);
+    line-height: 1.5;
+    color: var(--ink-soft);
+    max-width: 760px;
+  }
+  body[data-theme="dark"] .mast-sub { color: var(--cream); opacity: .85; }
+
+  /* ---------- BILLING TOGGLE ---------- */
+  .billing-band {
+    padding: 56px 0 32px;
+    border-bottom: 1px solid var(--rule);
+    text-align: center;
+  }
+  .billing-toggle {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 28px;
+    font-family: 'Newsreader', serif;
+    font-size: 26px;
+    line-height: 1;
+  }
+  .billing-toggle button {
+    background: none; border: none;
+    font-family: inherit;
+    font-size: inherit;
+    color: var(--ink-mute);
+    cursor: pointer;
+    padding: 4px 2px;
+    position: relative;
+    transition: color .2s;
+    font-weight: 500;
+  }
+  .billing-toggle button:hover { color: var(--ink); }
+  body[data-theme="dark"] .billing-toggle button:hover { color: var(--cream); }
+  .billing-toggle button.active {
+    color: var(--ink);
+    font-style: italic;
+    font-weight: 600;
+  }
+  body[data-theme="dark"] .billing-toggle button.active { color: var(--cream); }
+  .billing-toggle button.active::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; bottom: -6px;
+    height: 3px;
+    background: var(--saffron);
+  }
+  .billing-toggle .sep {
+    color: var(--ink-mute);
+    font-style: normal;
+    font-weight: 400;
+  }
+  .billing-fineprint {
+    margin-top: 22px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+
+  /* ---------- COMPARISON TABLE ---------- */
+  .compare {
+    padding: 56px 0 110px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .compare-table {
+    width: 100%;
+    border: 1px solid var(--ink);
+    border-collapse: collapse;
+    table-layout: fixed;
+    background: var(--paper);
+  }
+  .compare-table th,
+  .compare-table td {
+    padding: 22px 24px;
+    vertical-align: top;
+    text-align: left;
+    border-right: 1px solid var(--rule);
+    transition: background-color .15s ease;
+  }
+  .compare-table th:last-child,
+  .compare-table td:last-child { border-right: none; }
+  .compare-table tbody tr:hover td:not(.col-pro),
+  .compare-table tbody tr:hover th:not(.col-pro) {
+    background: rgba(232, 88, 28, 0.04);
+  }
+  .compare-table tbody tr:hover td.col-pro {
+    background: #1a160f;
+  }
+
+  /* Plan header row */
+  thead.plan-headers th {
+    background: var(--paper);
+    padding: 36px 24px 28px;
+    border-bottom: 1px solid var(--ink);
+    position: sticky; top: 78px; z-index: 10;
+  }
+  thead.plan-headers th.col-pro {
+    background: var(--ink);
+    color: var(--cream);
+    position: relative;
+  }
+  body[data-theme="dark"] thead.plan-headers th.col-pro {
+    background: var(--cream); color: var(--ink);
+  }
+  thead.plan-headers th.col-feature {
+    background: transparent;
+  }
+  .col-feature { width: 22%; }
+  .col-explorer, .col-starter, .col-pro, .col-family { width: 19.5%; }
+
+  .ph-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-bottom: 10px;
+    font-weight: 500;
+  }
+  .col-pro .ph-label { color: rgba(244, 236, 219, 0.6); }
+  body[data-theme="dark"] .col-pro .ph-label { color: rgba(14,11,7,0.6); }
+
+  .ph-tag {
+    display: inline-block;
+    background: var(--saffron);
+    color: #fff;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    padding: 4px 9px;
+    margin-bottom: 12px;
+    box-shadow: 0 3px 0 var(--ink);
+  }
+
+  .ph-tagline {
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+    font-size: 16px;
+    color: var(--ink-mute);
+    margin-bottom: 20px;
+    line-height: 1.35;
+    min-height: 44px;
+  }
+  .col-pro .ph-tagline { color: rgba(244, 236, 219, 0.75); }
+  body[data-theme="dark"] .col-pro .ph-tagline { color: rgba(14,11,7,0.75); }
+
+  .ph-price {
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-size: 52px;
+    line-height: 1;
+    letter-spacing: -0.025em;
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 4px;
+  }
+  .ph-price small {
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--ink-mute);
+    margin-left: 2px;
+    letter-spacing: 0;
+  }
+  .col-pro .ph-price small { color: rgba(244, 236, 219, 0.6); }
+  body[data-theme="dark"] .col-pro .ph-price small { color: rgba(14,11,7,0.6); }
+  .ph-price .strike {
+    font-size: 22px;
+    text-decoration: line-through;
+    color: var(--ink-mute);
+    margin-right: 8px;
+    font-weight: 500;
+  }
+
+  .ph-sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-bottom: 22px;
+    min-height: 32px;
+  }
+  .col-pro .ph-sub { color: rgba(244, 236, 219, 0.55); }
+  body[data-theme="dark"] .col-pro .ph-sub { color: rgba(14,11,7,0.55); }
+
+  .ph-cta .btn { width: 100%; justify-content: center; padding: 12px 16px; font-size: 13.5px; }
+
+  /* Group sub-header rows */
+  tr.group-row td {
+    background: var(--cream-deep);
+    padding: 14px 24px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    border-top: 1px solid var(--ink);
+    border-bottom: 1px solid var(--rule);
+    border-right: none;
+  }
+  body[data-theme="dark"] tr.group-row td { background: #1a160f; color: var(--cream); opacity: .9; }
+  tr.group-row td::before {
+    content: "§ ";
+    color: var(--saffron);
+    font-weight: 600;
+  }
+
+  /* Feature rows */
+  tr.feat-row td,
+  tr.feat-row th {
+    border-bottom: 1px solid var(--rule);
+    padding: 16px 24px;
+    font-size: 14.5px;
+    line-height: 1.4;
+  }
+  tr.feat-row th {
+    font-weight: 500;
+    font-family: 'Newsreader', serif;
+    font-size: 16px;
+    color: var(--ink);
+  }
+  body[data-theme="dark"] tr.feat-row th { color: var(--cream); }
+  tr.feat-row th .feat-note {
+    display: block;
+    font-family: 'Inter', sans-serif;
+    font-size: 12.5px;
+    color: var(--ink-mute);
+    font-weight: 400;
+    margin-top: 2px;
+    line-height: 1.4;
+  }
+  tr.feat-row td {
+    color: var(--ink-soft);
+    font-family: 'Inter', sans-serif;
+  }
+  body[data-theme="dark"] tr.feat-row td { color: var(--cream); opacity: .85; }
+  tr.feat-row td.col-pro {
+    background: var(--ink);
+    color: var(--cream);
+  }
+  body[data-theme="dark"] tr.feat-row td.col-pro {
+    background: var(--cream); color: var(--ink);
+  }
+  tr.feat-row td .check {
+    color: var(--saffron);
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-size: 18px;
+    margin-right: 6px;
+  }
+  tr.feat-row td .num-mono {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    color: var(--ink);
+  }
+  body[data-theme="dark"] tr.feat-row td .num-mono { color: var(--cream); }
+  tr.feat-row td.col-pro .num-mono { color: var(--cream); }
+  body[data-theme="dark"] tr.feat-row td.col-pro .num-mono { color: var(--ink); }
+  tr.feat-row td .dash {
+    color: var(--ink-mute);
+    font-family: 'Newsreader', serif;
+    font-size: 18px;
+  }
+  tr.feat-row td.col-pro .dash { color: rgba(244, 236, 219, 0.4); }
+  body[data-theme="dark"] tr.feat-row td.col-pro .dash { color: rgba(14,11,7,0.4); }
+
+  /* Final CTA row at bottom of table */
+  tr.cta-row td {
+    padding: 28px 24px;
+    border-top: 2px solid var(--ink);
+    border-right: 1px solid var(--rule);
+    border-bottom: none;
+  }
+  tr.cta-row td.col-pro {
+    background: var(--ink);
+  }
+  body[data-theme="dark"] tr.cta-row td.col-pro { background: var(--cream); }
+  tr.cta-row td .btn { width: 100%; justify-content: center; padding: 12px 14px; font-size: 13.5px; }
+
+  /* Mobile cards (hidden by default, shown <960px) */
+  .compare-cards { display: none; }
+
+  /* ---------- DECISION VIGNETTES ---------- */
+  .vignettes {
+    padding: 110px 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .vignettes-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 32px; margin-bottom: 64px;
+  }
+  .vignettes-head h2 {
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-size: clamp(38px, 5vw, 68px);
+    letter-spacing: -0.025em;
+    line-height: 1;
+  }
+  .vignettes-head h2 em { color: var(--saffron); font-style: italic; }
+  .vignettes-head .meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+
+  .vig-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0;
+  }
+  .vignette {
+    padding: 0 36px;
+    border-right: 1px solid var(--rule);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .vignette:first-child { padding-left: 0; }
+  .vignette:last-child { border-right: none; padding-right: 0; }
+
+  .vig-foxy {
+    margin-bottom: 28px;
+  }
+  .vig-foxy svg { width: 64px; height: 64px; }
+
+  .vig-roman {
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+    font-size: 22px;
+    color: var(--saffron);
+    margin-bottom: 14px;
+  }
+
+  .vig-headline {
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+    font-size: 26px;
+    line-height: 1.3;
+    letter-spacing: -0.01em;
+    margin-bottom: 22px;
+    color: var(--ink);
+  }
+  body[data-theme="dark"] .vig-headline { color: var(--cream); }
+  .vig-headline::before {
+    content: "\201C";
+    color: var(--saffron);
+    font-family: 'Newsreader', serif;
+    font-size: 1em;
+    margin-right: 2px;
+  }
+  .vig-headline::after {
+    content: "\201D";
+    color: var(--saffron);
+    font-family: 'Newsreader', serif;
+    font-size: 1em;
+  }
+
+  .vig-recommend {
+    margin-top: auto;
+    padding-top: 22px;
+    border-top: 1px solid var(--rule);
+    width: 100%;
+  }
+  .vig-recommend .lbl {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-bottom: 6px;
+  }
+  .vig-recommend .plan-name {
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-size: 24px;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+  }
+  body[data-theme="dark"] .vig-recommend .plan-name { color: var(--cream); }
+  .vig-recommend .plan-name em { color: var(--saffron); font-style: italic; }
+  .vig-recommend .plan-price {
+    font-family: 'Newsreader', serif;
+    font-size: 15px;
+    color: var(--ink-mute);
+    margin-top: 4px;
+  }
+
+  /* ---------- B2B BAND ---------- */
+  .b2b {
+    background: var(--cream-deep);
+    padding: 110px 0;
+    border-bottom: 4px solid var(--ink);
+    position: relative;
+    overflow: hidden;
+  }
+  body[data-theme="dark"] .b2b { background: #1a160f; }
+
+  .b2b-inner { position: relative; z-index: 1; }
+  .b2b-eye {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-bottom: 28px;
+    display: inline-flex; align-items: center; gap: 12px;
+  }
+  .b2b-eye::before { content: ""; width: 22px; height: 1px; background: var(--saffron); }
+
+  .b2b h2 {
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-size: clamp(40px, 5.5vw, 76px);
+    letter-spacing: -0.025em;
+    line-height: 1;
+    margin-bottom: 24px;
+    max-width: 800px;
+  }
+  .b2b h2 em { color: var(--saffron); font-style: italic; }
+
+  .b2b-sub {
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+    font-size: 21px;
+    color: var(--ink-soft);
+    line-height: 1.5;
+    max-width: 680px;
+    margin-bottom: 56px;
+  }
+  body[data-theme="dark"] .b2b-sub { color: var(--cream); opacity: .85; }
+
+  .b2b-features {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0;
+    margin-bottom: 56px;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+  }
+  .b2b-feat {
+    padding: 32px 36px 32px 0;
+    border-right: 1px solid var(--rule);
+  }
+  .b2b-feat:last-child { border-right: none; padding-right: 0; }
+  .b2b-feat:not(:first-child) { padding-left: 36px; }
+  .b2b-feat .roman {
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+    font-size: 20px;
+    color: var(--saffron);
+    margin-bottom: 10px;
+  }
+  .b2b-feat h4 {
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-size: 22px;
+    letter-spacing: -0.01em;
+    margin-bottom: 10px;
+    line-height: 1.2;
+  }
+  .b2b-feat p {
+    font-size: 14.5px;
+    color: var(--ink-soft);
+    line-height: 1.5;
+  }
+  body[data-theme="dark"] .b2b-feat p { color: var(--cream); opacity: .82; }
+
+  .b2b-cta-row {
+    display: flex; flex-wrap: wrap; gap: 14px; align-items: center;
+  }
+  .b2b-fineprint {
+    margin-top: 18px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+
+  /* ---------- TRUST / COMPLIANCE STRIP ---------- */
+  .trust-strip {
+    padding: 56px 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .compliance-row {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 0;
+    justify-content: center;
+  }
+  .compliance-row span {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    padding: 0 28px;
+    border-right: 1px solid var(--rule);
+  }
+  .compliance-row span:last-child { border-right: none; }
+  .compliance-row span strong { color: var(--saffron); font-weight: 500; margin-right: 6px; }
+
+  /* ---------- FAQ ---------- */
+  .faq-section {
+    padding: 110px 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .faq-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 32px; margin-bottom: 56px;
+  }
+  .faq-head h2 {
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-size: clamp(38px, 5vw, 68px);
+    letter-spacing: -0.025em;
+    line-height: 1;
+  }
+  .faq-head h2 em { color: var(--saffron); font-style: italic; }
+  .faq-head .meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+
+  .faq-list {
+    border-top: 1px solid var(--ink);
+  }
+  .faq-item {
+    border-bottom: 1px solid var(--rule);
+    display: grid;
+    grid-template-columns: 64px 1fr 32px;
+    gap: 24px;
+    padding: 32px 4px;
+    cursor: pointer;
+    align-items: start;
+    transition: background-color .2s;
+  }
+  .faq-item:hover { background: rgba(232, 88, 28, 0.03); }
+  .faq-item .roman {
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+    font-size: 24px;
+    color: var(--saffron);
+    text-align: right;
+    padding-top: 4px;
+  }
+  .faq-q {
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+    font-weight: 500;
+    font-size: 24px;
+    line-height: 1.3;
+    color: var(--saffron);
+    letter-spacing: -0.01em;
+  }
+  .faq-toggle {
+    font-family: 'Newsreader', serif;
+    font-size: 28px;
+    line-height: 1;
+    color: var(--ink-mute);
+    text-align: right;
+    transition: transform .25s;
+    user-select: none;
+  }
+  .faq-item.open .faq-toggle { transform: rotate(45deg); color: var(--saffron); }
+  .faq-a {
+    grid-column: 2 / 3;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height .35s ease, margin-top .25s ease;
+    font-family: 'Inter', sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    color: var(--ink-soft);
+    padding: 0;
+  }
+  body[data-theme="dark"] .faq-a { color: var(--cream); opacity: .85; }
+  .faq-item.open .faq-a {
+    max-height: 320px;
+    margin-top: 18px;
+  }
+  .faq-a strong { color: var(--ink); font-weight: 600; }
+  body[data-theme="dark"] .faq-a strong { color: var(--cream); }
+  .faq-a em { color: var(--saffron); font-style: italic; }
+
+  /* ---------- PULL QUOTE ---------- */
+  .pull-quote {
+    padding: 140px 0;
+    text-align: center;
+    border-bottom: 4px solid var(--ink);
+    background: var(--paper);
+    position: relative;
+  }
+  .pull-quote-text {
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+    font-weight: 500;
+    font-size: clamp(40px, 6vw, 84px);
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    color: var(--saffron);
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  .pull-quote-text::before,
+  .pull-quote-text::after {
+    color: var(--saffron);
+    font-style: normal;
+    opacity: .6;
+  }
+  .pull-quote-text::before { content: "\201C"; }
+  .pull-quote-text::after { content: "\201D"; }
+  .pull-quote-attrib {
+    margin-top: 36px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+
+  /* ---------- FOOTER ---------- */
+  footer {
+    background: var(--cream);
+    color: var(--ink);
+    padding: 80px 0 36px;
+  }
+  body[data-theme="dark"] footer { background: #14110b; color: var(--cream); }
+  .footer-grid {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr 1fr 1fr;
+    gap: 48px;
+    padding-bottom: 56px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .footer-brand .name {
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-size: 28px;
+    letter-spacing: -0.01em;
+    margin-bottom: 14px;
+  }
+  .footer-brand .tag {
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+    font-size: 17px;
+    color: var(--ink-soft);
+    line-height: 1.5;
+    max-width: 320px;
+    margin-bottom: 22px;
+  }
+  body[data-theme="dark"] .footer-brand .tag { color: var(--cream); opacity: .8; }
+  .footer-brand .deva {
+    font-family: 'Mukta Vaani', serif;
+    font-size: 14.5px;
+    color: var(--ink-mute);
+    line-height: 1.45;
+  }
+  .footer-col h4 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-bottom: 18px;
+  }
+  .footer-col ul { list-style: none; }
+  .footer-col li {
+    font-size: 14.5px;
+    margin-bottom: 10px;
+  }
+  .footer-col a {
+    color: var(--ink);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: border-color .2s;
+  }
+  body[data-theme="dark"] .footer-col a { color: var(--cream); }
+  .footer-col a:hover { border-bottom-color: var(--saffron); }
+
+  .footer-foot {
+    margin-top: 28px;
+    display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+
+  /* ---------- RESPONSIVE ---------- */
+  @media (max-width: 960px) {
+    .wrap { padding: 0 24px; }
+    .role-switcher { display: none; }
+    .nav-inner { height: 64px; }
+    .issue-bar-inner { font-size: 9.5px; gap: 14px; }
+    .issue-bar-inner .right span:nth-child(n+3) { display: none; }
+
+    .masthead { padding: 56px 0 50px; }
+    .masthead-numeral { font-size: 360px; right: -80px; top: 0; opacity: .07; }
+    h1.mast-h { font-size: clamp(40px, 11vw, 68px); }
+
+    .billing-band { padding: 40px 0 28px; }
+    .billing-toggle { font-size: 20px; gap: 16px; flex-wrap: wrap; justify-content: center; }
+
+    /* Hide table, show stacked cards */
+    .compare { padding: 32px 0 80px; }
+    .compare-table { display: none; }
+    .compare-cards { display: block; }
+    .compare-card {
+      border: 1px solid var(--ink);
+      margin-bottom: 24px;
+      background: var(--paper);
+    }
+    .compare-card.featured { background: var(--ink); color: var(--cream); }
+    body[data-theme="dark"] .compare-card.featured { background: var(--cream); color: var(--ink); }
+    .cc-head {
+      padding: 32px 24px 24px;
+      border-bottom: 1px solid var(--rule);
+      position: relative;
+    }
+    .compare-card.featured .cc-head { border-bottom-color: rgba(244, 236, 219, 0.18); }
+    body[data-theme="dark"] .compare-card.featured .cc-head { border-bottom-color: rgba(14,11,7,0.18); }
+    .cc-head .ph-tag {
+      position: absolute; top: -14px; left: 24px;
+    }
+    .cc-features { padding: 0 24px 24px; }
+    .cc-group {
+      padding: 14px 0 10px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10.5px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--ink-mute);
+      border-bottom: 1px solid var(--rule);
+      margin-top: 10px;
+    }
+    .compare-card.featured .cc-group { color: rgba(244, 236, 219, 0.6); border-bottom-color: rgba(244, 236, 219, 0.18); }
+    body[data-theme="dark"] .compare-card.featured .cc-group { color: rgba(14,11,7,0.6); border-bottom-color: rgba(14,11,7,0.18); }
+    .cc-group::before { content: "§ "; color: var(--saffron); }
+    .cc-feat {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 16px;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--rule);
+      font-size: 14px;
+      align-items: center;
+    }
+    .compare-card.featured .cc-feat { border-bottom-color: rgba(244, 236, 219, 0.12); }
+    body[data-theme="dark"] .compare-card.featured .cc-feat { border-bottom-color: rgba(14,11,7,0.12); }
+    .cc-feat .label-text {
+      font-family: 'Newsreader', serif;
+      font-size: 15px;
+      line-height: 1.3;
+    }
+    .cc-feat .val { text-align: right; min-width: 70px; }
+    .cc-cta { padding: 0 24px 28px; }
+    .cc-cta .btn { width: 100%; justify-content: center; }
+
+    /* Vignettes stack */
+    .vignettes { padding: 64px 0; }
+    .vignettes-head { flex-direction: column; align-items: flex-start; gap: 18px; }
+    .vig-grid { grid-template-columns: 1fr; gap: 48px; }
+    .vignette { padding: 0 0 48px; border-right: none; border-bottom: 1px solid var(--rule); align-items: flex-start; }
+    .vignette:last-child { border-bottom: none; padding-bottom: 0; }
+    .vig-recommend { margin-top: 24px; }
+
+    /* B2B */
+    .b2b { padding: 64px 0; }
+    .b2b-features { grid-template-columns: 1fr; }
+    .b2b-feat { padding: 28px 0; border-right: none; border-bottom: 1px solid var(--rule); }
+    .b2b-feat:last-child { border-bottom: none; }
+    .b2b-feat:not(:first-child) { padding-left: 0; }
+
+    /* Trust */
+    .compliance-row { flex-direction: column; gap: 18px; }
+    .compliance-row span { border-right: none; padding: 0; }
+
+    /* FAQ */
+    .faq-section { padding: 64px 0; }
+    .faq-head { flex-direction: column; align-items: flex-start; gap: 18px; }
+    .faq-item { grid-template-columns: 36px 1fr 24px; gap: 16px; padding: 24px 0; }
+    .faq-q { font-size: 19px; }
+    .faq-item .roman { font-size: 18px; }
+    .faq-toggle { font-size: 22px; }
+    .faq-a { font-size: 14.5px; }
+
+    /* Pull quote */
+    .pull-quote { padding: 80px 0; }
+
+    /* Footer */
+    .footer-grid { grid-template-columns: 1fr 1fr; gap: 36px; }
+    .footer-brand { grid-column: 1 / -1; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- ============================================== -->
+<!-- NAV                                            -->
+<!-- ============================================== -->
+<nav class="top">
+  <div class="wrap nav-inner">
+    <div class="brand" id="brandToggle" title="Double-click to flip theme">
+      <div class="mark">A</div>
+      <div class="name">Alfanumrik<sup>TM</sup></div>
+    </div>
+    <div class="role-switcher" id="roleSwitch">
+      <button data-role="parent">Parent</button>
+      <button data-role="student">Student</button>
+      <button data-role="teacher">Teacher</button>
+      <button data-role="school">School</button>
+    </div>
+    <div class="nav-right">
+      <button class="lang-toggle" id="langToggle">EN · हिं</button>
+      <a href="#cta" class="btn btn-ink btn-arrow">Start free</a>
+    </div>
+  </div>
+</nav>
+
+<!-- Issue bar -->
+<div class="issue-bar">
+  <div class="wrap issue-bar-inner">
+    <div class="left">
+      <span>Vol. 1 · Issue 04</span>
+      <span>Bengaluru · Mumbai · Delhi</span>
+      <span>26 Apr 2026</span>
+    </div>
+    <div class="right">
+      <span>CBSE 6 — 12</span>
+      <span>हिन्दी + English</span>
+      <span>Built in India</span>
+      <span>DPDPA-aligned</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================== -->
+<!-- MASTHEAD                                       -->
+<!-- ============================================== -->
+<section class="masthead">
+  <div class="masthead-numeral deva" aria-hidden="true">₹</div>
+  <div class="wrap masthead-inner">
+    <div class="mast-eyebrow">
+      <span class="dot"></span>
+      <span>Pricing · April 2026 · INR · GST inclusive</span>
+    </div>
+    <h1 class="mast-h">Pay only when <em>you need more.</em></h1>
+    <p class="mast-sub">Start on Explorer (free, forever). Upgrade when your child is ready. Cancel anytime, 7-day refund on every paid plan.</p>
+  </div>
+</section>
+
+<!-- ============================================== -->
+<!-- BILLING TOGGLE                                 -->
+<!-- ============================================== -->
+<section class="billing-band">
+  <div class="wrap">
+    <div class="billing-toggle" id="billingToggle" role="tablist" aria-label="Billing cycle">
+      <button class="active" data-cycle="monthly" role="tab" aria-selected="true">Monthly</button>
+      <span class="sep">·</span>
+      <button data-cycle="yearly" role="tab" aria-selected="false">Yearly · save 33%</button>
+    </div>
+    <div class="billing-fineprint" id="billingNote">
+      Yearly billing is one upfront payment per year — most parents prefer this.
+    </div>
+  </div>
+</section>
+
+<!-- ============================================== -->
+<!-- COMPARISON TABLE                               -->
+<!-- ============================================== -->
+<section class="compare">
+  <div class="wrap">
+
+    <!-- Desktop / wide table -->
+    <table class="compare-table">
+      <colgroup>
+        <col class="col-feature" />
+        <col class="col-explorer" />
+        <col class="col-starter" />
+        <col class="col-pro" />
+        <col class="col-family" />
+      </colgroup>
+
+      <thead class="plan-headers">
+        <tr>
+          <th class="col-feature">
+            <div class="ph-label">Compare · 4 plans</div>
+            <div class="ph-tagline">Choose what fits today. Switch any month.</div>
+          </th>
+
+          <th class="col-explorer">
+            <div class="ph-label">Plan i · Explorer</div>
+            <div class="ph-tagline">A free taste of the product.</div>
+            <div class="ph-price tabular" data-base="0" data-yearly="0">₹0<small>/month</small></div>
+            <div class="ph-sub" data-base-sub="Free, forever" data-yearly-sub="₹0/mo · always free">Free, forever</div>
+            <div class="ph-cta"><a href="#cta" class="btn btn-ghost">Start free</a></div>
+          </th>
+
+          <th class="col-starter">
+            <div class="ph-label">Plan ii · Starter</div>
+            <div class="ph-tagline">One child. Four subjects. Daily limits.</div>
+            <div class="ph-price tabular" data-base="399" data-yearly="266">₹399<small>/month</small></div>
+            <div class="ph-sub" data-base-sub="₹3,199/yr if billed yearly · save 33%" data-yearly-sub="₹3,199/yr billed once · save 33%">₹3,199/yr if billed yearly · save 33%</div>
+            <div class="ph-cta"><a href="#cta" class="btn btn-ghost">Choose Starter</a></div>
+          </th>
+
+          <th class="col-pro">
+            <span class="ph-tag">Most chosen</span>
+            <div class="ph-label">Plan iii · Pro</div>
+            <div class="ph-tagline">Unlimited Foxy, all subjects, one child.</div>
+            <div class="ph-price tabular" data-base="699" data-yearly="466">₹699<small>/month</small></div>
+            <div class="ph-sub" data-base-sub="₹5,599/yr if billed yearly · save 33%" data-yearly-sub="₹5,599/yr billed once · save 33%">₹5,599/yr if billed yearly · save 33%</div>
+            <div class="ph-cta"><a href="#cta" class="btn btn-primary btn-arrow">Begin Pro</a></div>
+          </th>
+
+          <th class="col-family">
+            <div class="ph-label">Plan iv · Family</div>
+            <div class="ph-tagline">Pro features for up to three children.</div>
+            <div class="ph-price tabular" data-base="999" data-yearly="666">₹999<small>/month</small></div>
+            <div class="ph-sub" data-base-sub="₹7,999/yr if billed yearly · save 33%" data-yearly-sub="₹7,999/yr billed once · save 33%">₹7,999/yr if billed yearly · save 33%</div>
+            <div class="ph-cta"><a href="#cta" class="btn btn-ghost">Choose Family</a></div>
+          </th>
+        </tr>
+      </thead>
+
+      <tbody>
+        <!-- TUTOR -->
+        <tr class="group-row"><td colspan="5">Tutor</td></tr>
+        <tr class="feat-row">
+          <th>Foxy chat sessions<span class="feat-note">Bilingual NCERT-aligned tutor</span></th>
+          <td><span class="num-mono">5/day</span></td>
+          <td><span class="num-mono">25/day</span></td>
+          <td class="col-pro"><span class="check">✓</span><span class="num-mono">Unlimited</span></td>
+          <td><span class="check">✓</span><span class="num-mono">Unlimited</span></td>
+        </tr>
+        <tr class="feat-row">
+          <th>NCERT solver<span class="feat-note">Step-by-step textbook answers</span></th>
+          <td><span class="dash">—</span></td>
+          <td><span class="num-mono">10/day</span></td>
+          <td class="col-pro"><span class="check">✓</span><span class="num-mono">Unlimited</span></td>
+          <td><span class="check">✓</span><span class="num-mono">Unlimited</span></td>
+        </tr>
+        <tr class="feat-row">
+          <th>Scan a question<span class="feat-note">Photograph any sum, get help</span></th>
+          <td><span class="dash">—</span></td>
+          <td><span class="num-mono">5/day</span></td>
+          <td class="col-pro"><span class="check">✓</span><span class="num-mono">Unlimited</span></td>
+          <td><span class="check">✓</span><span class="num-mono">Unlimited</span></td>
+        </tr>
+
+        <!-- QUIZZES -->
+        <tr class="group-row"><td colspan="5">Quizzes</td></tr>
+        <tr class="feat-row">
+          <th>Daily quizzes<span class="feat-note">CBSE-aligned, Bloom's-tagged</span></th>
+          <td><span class="num-mono">5/day</span></td>
+          <td><span class="num-mono">20/day</span></td>
+          <td class="col-pro"><span class="check">✓</span><span class="num-mono">Unlimited</span></td>
+          <td><span class="check">✓</span><span class="num-mono">Unlimited</span></td>
+        </tr>
+        <tr class="feat-row">
+          <th>Subjects covered<span class="feat-note">English, Hindi, Maths, Science, Social, Sanskrit, Computer</span></th>
+          <td><span class="num-mono">1 subject</span></td>
+          <td><span class="num-mono">4 subjects</span></td>
+          <td class="col-pro"><span class="check">✓</span><span class="num-mono">All 7</span></td>
+          <td><span class="check">✓</span><span class="num-mono">All 7</span></td>
+        </tr>
+        <tr class="feat-row">
+          <th>Mock board exams<span class="feat-note">Class 10 & 12, full-length, timed</span></th>
+          <td><span class="dash">—</span></td>
+          <td><span class="dash">—</span></td>
+          <td class="col-pro"><span class="check">✓</span></td>
+          <td><span class="check">✓</span></td>
+        </tr>
+
+        <!-- MASTERY -->
+        <tr class="group-row"><td colspan="5">Mastery</td></tr>
+        <tr class="feat-row">
+          <th>Mastery x-ray<span class="feat-note">Topic-by-topic strength map</span></th>
+          <td><span class="num-mono">Read-only</span></td>
+          <td><span class="check">✓</span></td>
+          <td class="col-pro"><span class="check">✓</span></td>
+          <td><span class="check">✓</span></td>
+        </tr>
+        <tr class="feat-row">
+          <th>Spaced revision<span class="feat-note">Forget-curve aware re-asks</span></th>
+          <td><span class="dash">—</span></td>
+          <td><span class="check">✓</span></td>
+          <td class="col-pro"><span class="check">✓</span></td>
+          <td><span class="check">✓</span></td>
+        </tr>
+        <tr class="feat-row">
+          <th>Daily plan<span class="feat-note">10-min sessions, set by the engine</span></th>
+          <td><span class="dash">—</span></td>
+          <td><span class="dash">—</span></td>
+          <td class="col-pro"><span class="check">✓</span></td>
+          <td><span class="check">✓</span></td>
+        </tr>
+
+        <!-- PARENT VISIBILITY -->
+        <tr class="group-row"><td colspan="5">Parent visibility</td></tr>
+        <tr class="feat-row">
+          <th>Weekly parent letter<span class="feat-note">Honest summary in हिंदी or English</span></th>
+          <td><span class="check">✓</span></td>
+          <td><span class="check">✓</span></td>
+          <td class="col-pro"><span class="check">✓</span></td>
+          <td><span class="check">✓</span></td>
+        </tr>
+        <tr class="feat-row">
+          <th>Live parent dashboard<span class="feat-note">Real-time mastery + activity</span></th>
+          <td><span class="dash">—</span></td>
+          <td><span class="check">✓</span></td>
+          <td class="col-pro"><span class="check">✓</span></td>
+          <td><span class="check">✓</span></td>
+        </tr>
+        <tr class="feat-row">
+          <th>Children covered<span class="feat-note">One account, multiple kids</span></th>
+          <td><span class="num-mono">1 child</span></td>
+          <td><span class="num-mono">1 child</span></td>
+          <td class="col-pro"><span class="num-mono">1 child</span></td>
+          <td><span class="check">✓</span><span class="num-mono">Up to 3</span></td>
+        </tr>
+
+        <!-- SCHOOL FEATURES -->
+        <tr class="group-row"><td colspan="5">School features</td></tr>
+        <tr class="feat-row">
+          <th>Teacher class link-up<span class="feat-note">Join a class with a code</span></th>
+          <td><span class="check">✓</span></td>
+          <td><span class="check">✓</span></td>
+          <td class="col-pro"><span class="check">✓</span></td>
+          <td><span class="check">✓</span></td>
+        </tr>
+        <tr class="feat-row">
+          <th>Worksheet exports<span class="feat-note">PDF homework + answer keys</span></th>
+          <td><span class="dash">—</span></td>
+          <td><span class="dash">—</span></td>
+          <td class="col-pro"><span class="check">✓</span></td>
+          <td><span class="check">✓</span></td>
+        </tr>
+
+        <!-- SUPPORT -->
+        <tr class="group-row"><td colspan="5">Support</td></tr>
+        <tr class="feat-row">
+          <th>Email support<span class="feat-note">Mon — Sat, 9 am to 7 pm IST</span></th>
+          <td><span class="num-mono">72hr reply</span></td>
+          <td><span class="num-mono">24hr reply</span></td>
+          <td class="col-pro"><span class="check">✓</span><span class="num-mono">Same-day</span></td>
+          <td><span class="check">✓</span><span class="num-mono">Priority</span></td>
+        </tr>
+        <tr class="feat-row">
+          <th>WhatsApp support line<span class="feat-note">Direct line to a real human</span></th>
+          <td><span class="dash">—</span></td>
+          <td><span class="dash">—</span></td>
+          <td class="col-pro"><span class="check">✓</span></td>
+          <td><span class="check">✓</span></td>
+        </tr>
+        <tr class="feat-row">
+          <th>7-day refund<span class="feat-note">Full money back, no questions</span></th>
+          <td><span class="dash">—</span></td>
+          <td><span class="check">✓</span></td>
+          <td class="col-pro"><span class="check">✓</span></td>
+          <td><span class="check">✓</span></td>
+        </tr>
+
+        <!-- bottom CTA row -->
+        <tr class="cta-row">
+          <td></td>
+          <td><a href="#cta" class="btn btn-ghost">Start free</a></td>
+          <td><a href="#cta" class="btn btn-ghost">Choose Starter</a></td>
+          <td class="col-pro"><a href="#cta" class="btn btn-primary btn-arrow">Begin Pro</a></td>
+          <td><a href="#cta" class="btn btn-ghost">Choose Family</a></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Mobile stacked cards (replaces table at <960px) -->
+    <div class="compare-cards">
+
+      <!-- Explorer -->
+      <article class="compare-card">
+        <div class="cc-head">
+          <div class="ph-label">Plan i · Explorer</div>
+          <div class="ph-tagline">A free taste of the product.</div>
+          <div class="ph-price tabular" data-base="0" data-yearly="0">₹0<small>/month</small></div>
+          <div class="ph-sub">Free, forever</div>
+        </div>
+        <div class="cc-features">
+          <div class="cc-group">Tutor</div>
+          <div class="cc-feat"><span class="label-text">Foxy chat sessions</span><span class="val"><span class="num-mono">5/day</span></span></div>
+          <div class="cc-feat"><span class="label-text">NCERT solver</span><span class="val"><span class="dash">—</span></span></div>
+          <div class="cc-feat"><span class="label-text">Scan a question</span><span class="val"><span class="dash">—</span></span></div>
+          <div class="cc-group">Quizzes</div>
+          <div class="cc-feat"><span class="label-text">Daily quizzes</span><span class="val"><span class="num-mono">5/day</span></span></div>
+          <div class="cc-feat"><span class="label-text">Subjects covered</span><span class="val"><span class="num-mono">1 subject</span></span></div>
+          <div class="cc-feat"><span class="label-text">Mock board exams</span><span class="val"><span class="dash">—</span></span></div>
+          <div class="cc-group">Mastery</div>
+          <div class="cc-feat"><span class="label-text">Mastery x-ray</span><span class="val"><span class="num-mono">Read-only</span></span></div>
+          <div class="cc-feat"><span class="label-text">Spaced revision</span><span class="val"><span class="dash">—</span></span></div>
+          <div class="cc-feat"><span class="label-text">Daily plan</span><span class="val"><span class="dash">—</span></span></div>
+          <div class="cc-group">Parent visibility</div>
+          <div class="cc-feat"><span class="label-text">Weekly parent letter</span><span class="val"><span class="check">✓</span></span></div>
+          <div class="cc-feat"><span class="label-text">Live dashboard</span><span class="val"><span class="dash">—</span></span></div>
+          <div class="cc-feat"><span class="label-text">Children covered</span><span class="val"><span class="num-mono">1</span></span></div>
+          <div class="cc-group">Support</div>
+          <div class="cc-feat"><span class="label-text">Email support</span><span class="val"><span class="num-mono">72hr</span></span></div>
+          <div class="cc-feat"><span class="label-text">7-day refund</span><span class="val"><span class="dash">—</span></span></div>
+        </div>
+        <div class="cc-cta"><a href="#cta" class="btn btn-ghost">Start free</a></div>
+      </article>
+
+      <!-- Starter -->
+      <article class="compare-card">
+        <div class="cc-head">
+          <div class="ph-label">Plan ii · Starter</div>
+          <div class="ph-tagline">One child. Four subjects. Daily limits.</div>
+          <div class="ph-price tabular" data-base="399" data-yearly="266">₹399<small>/month</small></div>
+          <div class="ph-sub" data-base-sub="₹3,199/yr if billed yearly · save 33%" data-yearly-sub="₹3,199/yr billed once · save 33%">₹3,199/yr if billed yearly · save 33%</div>
+        </div>
+        <div class="cc-features">
+          <div class="cc-group">Tutor</div>
+          <div class="cc-feat"><span class="label-text">Foxy chat sessions</span><span class="val"><span class="num-mono">25/day</span></span></div>
+          <div class="cc-feat"><span class="label-text">NCERT solver</span><span class="val"><span class="num-mono">10/day</span></span></div>
+          <div class="cc-feat"><span class="label-text">Scan a question</span><span class="val"><span class="num-mono">5/day</span></span></div>
+          <div class="cc-group">Quizzes</div>
+          <div class="cc-feat"><span class="label-text">Daily quizzes</span><span class="val"><span class="num-mono">20/day</span></span></div>
+          <div class="cc-feat"><span class="label-text">Subjects covered</span><span class="val"><span class="num-mono">4 subjects</span></span></div>
+          <div class="cc-feat"><span class="label-text">Mock board exams</span><span class="val"><span class="dash">—</span></span></div>
+          <div class="cc-group">Mastery</div>
+          <div class="cc-feat"><span class="label-text">Mastery x-ray</span><span class="val"><span class="check">✓</span></span></div>
+          <div class="cc-feat"><span class="label-text">Spaced revision</span><span class="val"><span class="check">✓</span></span></div>
+          <div class="cc-feat"><span class="label-text">Daily plan</span><span class="val"><span class="dash">—</span></span></div>
+          <div class="cc-group">Parent visibility</div>
+          <div class="cc-feat"><span class="label-text">Weekly parent letter</span><span class="val"><span class="check">✓</span></span></div>
+          <div class="cc-feat"><span class="label-text">Live dashboard</span><span class="val"><span class="check">✓</span></span></div>
+          <div class="cc-feat"><span class="label-text">Children covered</span><span class="val"><span class="num-mono">1</span></span></div>
+          <div class="cc-group">Support</div>
+          <div class="cc-feat"><span class="label-text">Email support</span><span class="val"><span class="num-mono">24hr</span></span></div>
+          <div class="cc-feat"><span class="label-text">7-day refund</span><span class="val"><span class="check">✓</span></span></div>
+        </div>
+        <div class="cc-cta"><a href="#cta" class="btn btn-ghost">Choose Starter</a></div>
+      </article>
+
+      <!-- Pro (featured) -->
+      <article class="compare-card featured">
+        <div class="cc-head">
+          <span class="ph-tag">Most chosen</span>
+          <div class="ph-label">Plan iii · Pro</div>
+          <div class="ph-tagline">Unlimited Foxy, all subjects, one child.</div>
+          <div class="ph-price tabular" data-base="699" data-yearly="466">₹699<small>/month</small></div>
+          <div class="ph-sub" data-base-sub="₹5,599/yr if billed yearly · save 33%" data-yearly-sub="₹5,599/yr billed once · save 33%">₹5,599/yr if billed yearly · save 33%</div>
+        </div>
+        <div class="cc-features">
+          <div class="cc-group">Tutor</div>
+          <div class="cc-feat"><span class="label-text">Foxy chat sessions</span><span class="val"><span class="num-mono">Unlimited</span></span></div>
+          <div class="cc-feat"><span class="label-text">NCERT solver</span><span class="val"><span class="num-mono">Unlimited</span></span></div>
+          <div class="cc-feat"><span class="label-text">Scan a question</span><span class="val"><span class="num-mono">Unlimited</span></span></div>
+          <div class="cc-group">Quizzes</div>
+          <div class="cc-feat"><span class="label-text">Daily quizzes</span><span class="val"><span class="num-mono">Unlimited</span></span></div>
+          <div class="cc-feat"><span class="label-text">Subjects covered</span><span class="val"><span class="num-mono">All 7</span></span></div>
+          <div class="cc-feat"><span class="label-text">Mock board exams</span><span class="val"><span class="check">✓</span></span></div>
+          <div class="cc-group">Mastery</div>
+          <div class="cc-feat"><span class="label-text">Mastery x-ray</span><span class="val"><span class="check">✓</span></span></div>
+          <div class="cc-feat"><span class="label-text">Spaced revision</span><span class="val"><span class="check">✓</span></span></div>
+          <div class="cc-feat"><span class="label-text">Daily plan</span><span class="val"><span class="check">✓</span></span></div>
+          <div class="cc-group">Parent visibility</div>
+          <div class="cc-feat"><span class="label-text">Weekly parent letter</span><span class="val"><span class="check">✓</span></span></div>
+          <div class="cc-feat"><span class="label-text">Live dashboard</span><span class="val"><span class="check">✓</span></span></div>
+          <div class="cc-feat"><span class="label-text">Children covered</span><span class="val"><span class="num-mono">1</span></span></div>
+          <div class="cc-group">Support</div>
+          <div class="cc-feat"><span class="label-text">Email support</span><span class="val"><span class="num-mono">Same-day</span></span></div>
+          <div class="cc-feat"><span class="label-text">WhatsApp line</span><span class="val"><span class="check">✓</span></span></div>
+          <div class="cc-feat"><span class="label-text">7-day refund</span><span class="val"><span class="check">✓</span></span></div>
+        </div>
+        <div class="cc-cta"><a href="#cta" class="btn btn-primary btn-arrow">Begin Pro</a></div>
+      </article>
+
+      <!-- Family -->
+      <article class="compare-card">
+        <div class="cc-head">
+          <div class="ph-label">Plan iv · Family</div>
+          <div class="ph-tagline">Pro features for up to three children.</div>
+          <div class="ph-price tabular" data-base="999" data-yearly="666">₹999<small>/month</small></div>
+          <div class="ph-sub" data-base-sub="₹7,999/yr if billed yearly · save 33%" data-yearly-sub="₹7,999/yr billed once · save 33%">₹7,999/yr if billed yearly · save 33%</div>
+        </div>
+        <div class="cc-features">
+          <div class="cc-group">Tutor</div>
+          <div class="cc-feat"><span class="label-text">Foxy chat sessions</span><span class="val"><span class="num-mono">Unlimited</span></span></div>
+          <div class="cc-feat"><span class="label-text">NCERT solver</span><span class="val"><span class="num-mono">Unlimited</span></span></div>
+          <div class="cc-feat"><span class="label-text">Scan a question</span><span class="val"><span class="num-mono">Unlimited</span></span></div>
+          <div class="cc-group">Quizzes</div>
+          <div class="cc-feat"><span class="label-text">Daily quizzes</span><span class="val"><span class="num-mono">Unlimited</span></span></div>
+          <div class="cc-feat"><span class="label-text">Subjects covered</span><span class="val"><span class="num-mono">All 7</span></span></div>
+          <div class="cc-feat"><span class="label-text">Mock board exams</span><span class="val"><span class="check">✓</span></span></div>
+          <div class="cc-group">Mastery</div>
+          <div class="cc-feat"><span class="label-text">Mastery x-ray</span><span class="val"><span class="check">✓</span></span></div>
+          <div class="cc-feat"><span class="label-text">Spaced revision</span><span class="val"><span class="check">✓</span></span></div>
+          <div class="cc-feat"><span class="label-text">Daily plan</span><span class="val"><span class="check">✓</span></span></div>
+          <div class="cc-group">Parent visibility</div>
+          <div class="cc-feat"><span class="label-text">Weekly parent letter</span><span class="val"><span class="check">✓</span></span></div>
+          <div class="cc-feat"><span class="label-text">Live dashboard</span><span class="val"><span class="check">✓</span></span></div>
+          <div class="cc-feat"><span class="label-text">Children covered</span><span class="val"><span class="num-mono">Up to 3</span></span></div>
+          <div class="cc-group">Support</div>
+          <div class="cc-feat"><span class="label-text">Email support</span><span class="val"><span class="num-mono">Priority</span></span></div>
+          <div class="cc-feat"><span class="label-text">WhatsApp line</span><span class="val"><span class="check">✓</span></span></div>
+          <div class="cc-feat"><span class="label-text">7-day refund</span><span class="val"><span class="check">✓</span></span></div>
+        </div>
+        <div class="cc-cta"><a href="#cta" class="btn btn-ghost">Choose Family</a></div>
+      </article>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============================================== -->
+<!-- DECISION VIGNETTES                             -->
+<!-- ============================================== -->
+<section class="vignettes">
+  <div class="wrap">
+    <div class="vignettes-head">
+      <h2>Which plan is for <em>you</em>?</h2>
+      <div class="meta">Section ii · the human voice</div>
+    </div>
+
+    <div class="vig-grid">
+
+      <!-- Vignette i: Explorer -->
+      <div class="vignette">
+        <div class="vig-foxy">
+          <svg viewBox="0 0 32 32" aria-hidden="true">
+            <path d="M6 8 L10 4 L12 10 Z" fill="#E8581C"/>
+            <path d="M26 8 L22 4 L20 10 Z" fill="#E8581C"/>
+            <path d="M8 6 L11 4.5 L11.5 7.5 Z" fill="#0E0B07"/>
+            <path d="M24 6 L21 4.5 L20.5 7.5 Z" fill="#0E0B07"/>
+            <ellipse cx="16" cy="18" rx="11" ry="9" fill="#E8581C"/>
+            <ellipse cx="16" cy="22" rx="6" ry="5" fill="#F4ECDB"/>
+            <circle cx="12" cy="17" r="1.6" fill="#0E0B07"/>
+            <circle cx="20" cy="17" r="1.6" fill="#0E0B07"/>
+            <circle cx="11.5" cy="16.5" r=".5" fill="#fff"/>
+            <circle cx="19.5" cy="16.5" r=".5" fill="#fff"/>
+            <ellipse cx="16" cy="20.5" rx="1.2" ry=".8" fill="#0E0B07"/>
+          </svg>
+        </div>
+        <div class="vig-roman">i.</div>
+        <div class="vig-headline">Just trying it out — let me see if she likes it before I pay.</div>
+        <div class="vig-recommend">
+          <div class="lbl">We suggest</div>
+          <div class="plan-name">Plan i · <em>Explorer</em></div>
+          <div class="plan-price">₹0/month · free, forever</div>
+        </div>
+      </div>
+
+      <!-- Vignette ii: Pro -->
+      <div class="vignette">
+        <div class="vig-foxy">
+          <svg viewBox="0 0 32 32" aria-hidden="true">
+            <path d="M6 8 L10 4 L12 10 Z" fill="#E8581C"/>
+            <path d="M26 8 L22 4 L20 10 Z" fill="#E8581C"/>
+            <path d="M8 6 L11 4.5 L11.5 7.5 Z" fill="#0E0B07"/>
+            <path d="M24 6 L21 4.5 L20.5 7.5 Z" fill="#0E0B07"/>
+            <ellipse cx="16" cy="18" rx="11" ry="9" fill="#E8581C"/>
+            <ellipse cx="16" cy="22" rx="6" ry="5" fill="#F4ECDB"/>
+            <circle cx="12" cy="17" r="1.6" fill="#0F5C5F"/>
+            <circle cx="20" cy="17" r="1.6" fill="#0F5C5F"/>
+            <circle cx="11.5" cy="16.5" r=".5" fill="#fff"/>
+            <circle cx="19.5" cy="16.5" r=".5" fill="#fff"/>
+            <ellipse cx="16" cy="20.5" rx="1.2" ry=".8" fill="#0E0B07"/>
+          </svg>
+        </div>
+        <div class="vig-roman">ii.</div>
+        <div class="vig-headline">One child, serious about boards — I want unlimited everything.</div>
+        <div class="vig-recommend">
+          <div class="lbl">We suggest</div>
+          <div class="plan-name">Plan iii · <em>Pro</em></div>
+          <div class="plan-price">₹699/month · ₹5,599/yr</div>
+        </div>
+      </div>
+
+      <!-- Vignette iii: Family -->
+      <div class="vignette">
+        <div class="vig-foxy">
+          <svg viewBox="0 0 32 32" aria-hidden="true">
+            <path d="M6 8 L10 4 L12 10 Z" fill="#E8581C"/>
+            <path d="M26 8 L22 4 L20 10 Z" fill="#E8581C"/>
+            <path d="M8 6 L11 4.5 L11.5 7.5 Z" fill="#0E0B07"/>
+            <path d="M24 6 L21 4.5 L20.5 7.5 Z" fill="#0E0B07"/>
+            <ellipse cx="16" cy="18" rx="11" ry="9" fill="#E8581C"/>
+            <ellipse cx="16" cy="22" rx="6" ry="5" fill="#F4ECDB"/>
+            <circle cx="12" cy="17" r="1.6" fill="#F5A623"/>
+            <circle cx="20" cy="17" r="1.6" fill="#F5A623"/>
+            <circle cx="11.5" cy="16.5" r=".5" fill="#fff"/>
+            <circle cx="19.5" cy="16.5" r=".5" fill="#fff"/>
+            <ellipse cx="16" cy="20.5" rx="1.2" ry=".8" fill="#0E0B07"/>
+          </svg>
+        </div>
+        <div class="vig-roman">iii.</div>
+        <div class="vig-headline">Multiple kids in CBSE — one bill, three children, no quarrels.</div>
+        <div class="vig-recommend">
+          <div class="lbl">We suggest</div>
+          <div class="plan-name">Plan iv · <em>Family</em></div>
+          <div class="plan-price">₹999/month · ₹7,999/yr · up to 3</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============================================== -->
+<!-- B2B BAND                                       -->
+<!-- ============================================== -->
+<section class="b2b">
+  <div class="wrap b2b-inner">
+    <div class="b2b-eye">B2B · whole-school deployment</div>
+    <h2>Bring Alfanumrik to your <em>school</em>.</h2>
+    <p class="b2b-sub">For principals tired of decks. We deploy across your sections, train your staff, and report back to your trustees in NEP-aligned terms — not buzzwords.</p>
+
+    <div class="b2b-features">
+      <div class="b2b-feat">
+        <div class="roman">i.</div>
+        <h4>Admin dashboard</h4>
+        <p>One screen across grades and sections. Mastery heatmaps, attendance overlays, and export to Excel for your board meetings.</p>
+      </div>
+      <div class="b2b-feat">
+        <div class="roman">ii.</div>
+        <h4>Teacher tools</h4>
+        <p>Worksheet generator, Bloom's-tagged question bank, and a Monday-morning view of who needs help with what — by your own syllabus calendar.</p>
+      </div>
+      <div class="b2b-feat">
+        <div class="roman">iii.</div>
+        <h4>Parent portal</h4>
+        <p>Every parent in your school gets the weekly letter, in their language, with your school's branding on top. PTM days finally have data.</p>
+      </div>
+    </div>
+
+    <div class="b2b-cta-row">
+      <a href="#" class="btn btn-peacock btn-arrow">Book a 30-min demo</a>
+      <a href="#" class="btn btn-ghost">Download the deck</a>
+    </div>
+    <div class="b2b-fineprint">Pricing starts ₹40,000 per year · 30-seat minimum · invoice + GST · onboarding included</div>
+  </div>
+</section>
+
+<!-- ============================================== -->
+<!-- TRUST STRIP                                    -->
+<!-- ============================================== -->
+<section class="trust-strip">
+  <div class="wrap">
+    <div class="compliance-row">
+      <span><strong>·</strong>DPIIT Recognised</span>
+      <span><strong>·</strong>DPDPA Aligned</span>
+      <span><strong>·</strong>7-Day Refund</span>
+      <span><strong>·</strong>No Ads · Ever</span>
+      <span><strong>·</strong>Razorpay Secure</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================== -->
+<!-- FAQ                                            -->
+<!-- ============================================== -->
+<section class="faq-section">
+  <div class="wrap">
+    <div class="faq-head">
+      <h2>Questions, <em>answered</em>.</h2>
+      <div class="meta">Section iv · the small print, in plain words</div>
+    </div>
+
+    <div class="faq-list" id="faqList">
+
+      <div class="faq-item">
+        <div class="roman">i.</div>
+        <div>
+          <div class="faq-q">What if my child doesn't take to it — can I get a refund?</div>
+          <div class="faq-a">Yes. Every paid plan comes with a <strong>7-day full refund</strong>, no questions asked. Email <em>support@alfanumrik.com</em> within seven days of payment and we will reverse the charge to your original payment method within 5—7 working days. No screenshots, no exit interviews.</div>
+        </div>
+        <div class="faq-toggle">+</div>
+      </div>
+
+      <div class="faq-item">
+        <div class="roman">ii.</div>
+        <div>
+          <div class="faq-q">How does the billing cycle work — and when am I charged?</div>
+          <div class="faq-a"><strong>Monthly plans</strong> are billed via Razorpay every 30 days from your signup date — recurring auto-debit on UPI, cards, or netbanking. <strong>Yearly plans</strong> are a single upfront charge for 365 days; we email you a reminder 14 days before renewal. Cancel anytime from your dashboard, and you keep access until the period you have already paid for ends.</div>
+        </div>
+        <div class="faq-toggle">+</div>
+      </div>
+
+      <div class="faq-item">
+        <div class="roman">iii.</div>
+        <div>
+          <div class="faq-q">Can I switch between plans — say, Starter to Pro mid-month?</div>
+          <div class="faq-a">Yes, switch up or down anytime from your account page. <strong>Upgrades</strong> take effect immediately and we pro-rate the price for the days remaining in your cycle. <strong>Downgrades</strong> take effect at the next billing date — you keep the higher plan's features until then. There is no fee for switching.</div>
+        </div>
+        <div class="faq-toggle">+</div>
+      </div>
+
+      <div class="faq-item">
+        <div class="roman">iv.</div>
+        <div>
+          <div class="faq-q">Is GST included in these prices, or extra?</div>
+          <div class="faq-a"><strong>All prices shown are inclusive of 18% GST.</strong> The price you see is the price you pay. Your invoice (downloadable from your account) will show the base amount and GST broken out separately for your records — useful if you need it for school reimbursement or your own books.</div>
+        </div>
+        <div class="faq-toggle">+</div>
+      </div>
+
+      <div class="faq-item">
+        <div class="roman">v.</div>
+        <div>
+          <div class="faq-q">Which payment methods do you accept?</div>
+          <div class="faq-a">Everything Razorpay supports for Indian customers — <strong>UPI</strong> (Google Pay, PhonePe, Paytm, BHIM), <strong>credit and debit cards</strong> (Visa, Mastercard, RuPay, Amex), <strong>netbanking</strong> from 50+ banks, and <strong>wallets</strong>. UPI auto-pay works on monthly subscriptions. We do not store your card details — Razorpay tokenises everything to RBI standards.</div>
+        </div>
+        <div class="faq-toggle">+</div>
+      </div>
+
+      <div class="faq-item">
+        <div class="roman">vi.</div>
+        <div>
+          <div class="faq-q">I have three children — is Family really cheaper than three Pro plans?</div>
+          <div class="faq-a">Yes, considerably. Three Pro plans would cost ₹2,097/month or ₹16,797/year. <strong>Family is ₹999/month or ₹7,999/year</strong> for the same unlimited features across all three children. You save roughly <em>₹1,100 every month</em> — about ₹13,000 a year — and you get one bill, one dashboard, one PTM-ready summary across all three.</div>
+        </div>
+        <div class="faq-toggle">+</div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============================================== -->
+<!-- PULL QUOTE                                     -->
+<!-- ============================================== -->
+<section class="pull-quote" id="cta">
+  <div class="wrap">
+    <p class="pull-quote-text">The best plan is the one your child actually uses.</p>
+    <div class="pull-quote-attrib">— from a letter to a parent · March 2026</div>
+  </div>
+</section>
+
+<!-- ============================================== -->
+<!-- FOOTER                                         -->
+<!-- ============================================== -->
+<footer>
+  <div class="wrap">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <div class="name">Alfanumrik<sup style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:400;vertical-align:super;opacity:.55;margin-left:2px;">TM</sup></div>
+        <div class="tag">A learning workbook for the Indian home — bilingual, honest, and small enough to fit in ten minutes.</div>
+        <div class="deva">अल्फ़ान्यूमरिक · भारत में, भारत के लिए, बच्चों के साथ बनाया गया।</div>
+      </div>
+      <div class="footer-col">
+        <h4>Product</h4>
+        <ul>
+          <li><a href="#">Foxy tutor</a></li>
+          <li><a href="#">Mastery x-ray</a></li>
+          <li><a href="#">Parent dashboard</a></li>
+          <li><a href="#">Teacher portal</a></li>
+          <li><a href="#">Pricing</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Company</h4>
+        <ul>
+          <li><a href="#">About</a></li>
+          <li><a href="#">Founder note</a></li>
+          <li><a href="#">Careers · 4 open</a></li>
+          <li><a href="#">Press</a></li>
+          <li><a href="#">Contact</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Legal</h4>
+        <ul>
+          <li><a href="#">Privacy</a></li>
+          <li><a href="#">Terms</a></li>
+          <li><a href="#">DPDPA</a></li>
+          <li><a href="#">Refunds</a></li>
+          <li><a href="#">Security</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-foot">
+      <div>© 2026 Cusiosense Learning India Pvt. Ltd.</div>
+      <div>CIN U85499KA2024PTC182441 · GSTIN 29AAJCC4851N1ZD</div>
+      <div>Bengaluru · 560034</div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  // ---- Role switcher (visual only) ----
+  var roles = document.querySelectorAll('#roleSwitch button');
+  roles.forEach(function(btn){
+    btn.addEventListener('click', function(){
+      roles.forEach(function(b){ b.classList.remove('active'); });
+      btn.classList.add('active');
+    });
+  });
+
+  // ---- Language toggle ----
+  var lang = document.getElementById('langToggle');
+  var hiOn = false;
+  if (lang) {
+    lang.addEventListener('click', function(){
+      hiOn = !hiOn;
+      document.querySelectorAll('.deva, .deva-line, .deva-sub, .deva-num').forEach(function(el){
+        el.style.opacity = hiOn ? '1' : '';
+        el.style.fontWeight = hiOn ? '700' : '';
+      });
+      lang.textContent = hiOn ? 'हिं · EN' : 'EN · हिं';
+    });
+  }
+
+  // ---- Brand double-click → flip theme ----
+  var brand = document.getElementById('brandToggle');
+  if (brand) {
+    brand.addEventListener('dblclick', function(){
+      var cur = document.body.getAttribute('data-theme');
+      if (cur === 'dark') document.body.removeAttribute('data-theme');
+      else document.body.setAttribute('data-theme', 'dark');
+    });
+  }
+
+  // ---- Billing toggle ----
+  var billingBtns = document.querySelectorAll('#billingToggle button');
+  var billingNote = document.getElementById('billingNote');
+  function fmtINR(n){
+    // Indian comma formatting (e.g. 5,599)
+    var s = String(n);
+    if (n < 1000) return s;
+    var lastThree = s.slice(-3);
+    var rest = s.slice(0, -3);
+    rest = rest.replace(/\B(?=(\d{2})+(?!\d))/g, ',');
+    return rest + ',' + lastThree;
+  }
+  function setCycle(cycle){
+    billingBtns.forEach(function(b){
+      var active = b.dataset.cycle === cycle;
+      b.classList.toggle('active', active);
+      b.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    document.querySelectorAll('.ph-price').forEach(function(el){
+      var base = parseInt(el.dataset.base, 10);
+      var yearly = parseInt(el.dataset.yearly, 10);
+      if (cycle === 'yearly' && base > 0) {
+        el.innerHTML = '<span class="strike">₹' + fmtINR(base) + '</span>₹' + fmtINR(yearly) + '<small>/month</small>';
+      } else {
+        var n = base;
+        el.innerHTML = '₹' + fmtINR(n) + '<small>/month</small>';
+      }
+    });
+    document.querySelectorAll('.ph-sub').forEach(function(el){
+      var base = el.dataset.baseSub;
+      var year = el.dataset.yearlySub;
+      if (!base && !year) return;
+      el.textContent = cycle === 'yearly' ? (year || base) : (base || year);
+    });
+    if (billingNote) {
+      billingNote.textContent = cycle === 'yearly'
+        ? 'One upfront payment for 365 days · cancel before renewal · 7-day refund applies.'
+        : 'Yearly billing is one upfront payment per year — most parents prefer this.';
+    }
+  }
+  billingBtns.forEach(function(b){
+    b.addEventListener('click', function(){ setCycle(b.dataset.cycle); });
+  });
+
+  // ---- FAQ accordion ----
+  var faqItems = document.querySelectorAll('.faq-item');
+  faqItems.forEach(function(item){
+    item.addEventListener('click', function(){
+      var wasOpen = item.classList.contains('open');
+      faqItems.forEach(function(i){ i.classList.remove('open'); });
+      if (!wasOpen) item.classList.add('open');
+    });
+  });
+
+})();
+</script>
+
+</body>
+</html>

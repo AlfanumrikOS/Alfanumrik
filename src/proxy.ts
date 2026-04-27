@@ -23,6 +23,11 @@ import {
   destinationForRole,
   type MiddlewareRole,
 } from '@/lib/middleware-helpers';
+import {
+  ANON_ID_COOKIE,
+  ANON_ID_MAX_AGE_SECONDS,
+  generateAnonId,
+} from '@/lib/anon-id';
 /* ═══════════════════════════════════════════════════════════════
  * PROXY — Security Hardening + Auth Session Refresh
  * Next.js 16 proxy — exported as both proxy (primary) and middleware (compat alias)
@@ -346,6 +351,43 @@ function evictStaleSchoolCache(): void {
   }
 }
 
+/**
+ * Ensure the anonymous-visitor identity cookie (`alf_anon_id`) is present.
+ *
+ * Reason: src/lib/feature-flags.ts → hashForRollout() needs a stable per-visitor
+ * key so that rollout_percentage > 0 deterministically samples anonymous traffic
+ * (otherwise the existing fallback treats any rollout > 0 as 100% on for anon
+ * visitors, breaking the canary). The cookie cannot be reliably set from a
+ * Server Component in Next 16 — only middleware, route handlers, and server
+ * actions can mutate cookies on the response. Setting it here in middleware
+ * means the FIRST request from a new visitor lands a Set-Cookie header on the
+ * response, and every subsequent request carries the same id.
+ *
+ * Properties (mirrors src/lib/anon-id.ts buildAnonIdCookieAttributes()):
+ *   - 365-day Max-Age
+ *   - Path=/
+ *   - SameSite=Lax (CSRF-safe, allows cross-origin GET navigation)
+ *   - Secure in production (HTTPS only)
+ *   - httpOnly: false — analytics/clients may read it for downstream attribution.
+ *     This is NOT a security identifier; do not use it for auth, RBAC, or PII.
+ *
+ * Idempotent: if the cookie already exists on the request, no Set-Cookie is
+ * emitted.
+ */
+export function ensureAnonIdCookie(request: NextRequest, response: NextResponse): void {
+  const existing = request.cookies.get(ANON_ID_COOKIE)?.value;
+  if (existing) return;
+  response.cookies.set({
+    name: ANON_ID_COOKIE,
+    value: generateAnonId(),
+    maxAge: ANON_ID_MAX_AGE_SECONDS,
+    sameSite: 'lax',
+    path: '/',
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: false,
+  });
+}
+
 /** Known B2C hostnames — no tenant resolution needed */
 const B2C_HOSTS = new Set([
   'alfanumrik.com', 'www.alfanumrik.com', 'app.alfanumrik.com',
@@ -565,6 +607,14 @@ export async function proxy(request: NextRequest) {
     response.headers.set('x-auth-degraded', 'true');
   }
 
+  // ── Layer 0.7: Anonymous-visitor identity (alf_anon_id) ──
+  // Mint the anon-id cookie on first visit so feature-flag rollout sampling is
+  // deterministic for logged-out traffic. Must run AFTER the Supabase block
+  // (which can recreate `response` inside setAll) and BEFORE any early-return
+  // redirects below so the cookie persists through the first hop.
+  // See ensureAnonIdCookie() above for cookie attributes.
+  ensureAnonIdCookie(request, response);
+
   // ── Layer 0.65: Role-based route protection (DISABLED) ──
   //
   // TEMPORARILY DISABLED due to a production auth cookie propagation bug.
@@ -745,7 +795,12 @@ export async function proxy(request: NextRequest) {
   if (path === '/') {
     const hasSession = request.cookies.getAll().some(c => /^sb-.+-auth-token/.test(c.name));
     if (!hasSession) {
-      return NextResponse.redirect(new URL('/welcome', request.url));
+      const welcomeRedirect = NextResponse.redirect(new URL('/welcome', request.url));
+      // Carry the alf_anon_id cookie forward onto the redirect response so the
+      // first-time anon visitor's id lands before the welcome page renders
+      // (otherwise the Set-Cookie on `response` is discarded by this early return).
+      ensureAnonIdCookie(request, welcomeRedirect);
+      return welcomeRedirect;
     }
   }
 

@@ -1,0 +1,1656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Foxy — your tutor, sitting next to you (v2 preview)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,400;1,6..72,500;1,6..72,600;1,6..72,700&family=Mukta+Vaani:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  /* ---------- DESIGN TOKENS (inherited from welcome-v2) ---------- */
+  :root {
+    --cream: #F4ECDB;
+    --cream-deep: #EADFC6;
+    --ink: #0E0B07;
+    --ink-soft: #2A241B;
+    --ink-mute: #5B5141;
+    --saffron: #E8581C;
+    --saffron-deep: #C84411;
+    --peacock: #0F5C5F;
+    --marigold: #F5A623;
+    --rule: rgba(14, 11, 7, 0.12);
+    --rule-strong: rgba(14, 11, 7, 0.4);
+    --paper: var(--cream);
+    --on-paper: var(--ink);
+    --invert-bg: var(--ink);
+    --invert-fg: var(--cream);
+    --panel: #FBF6E9;
+  }
+  body[data-theme="dark"] {
+    --paper: #14110B;
+    --on-paper: var(--cream);
+    --invert-bg: var(--cream);
+    --invert-fg: var(--ink);
+    --rule: rgba(244, 236, 219, 0.18);
+    --rule-strong: rgba(244, 236, 219, 0.4);
+    --ink-mute: #B7AC95;
+    --ink-soft: #D9CFB7;
+    --panel: #1A160F;
+  }
+
+  /* ---------- BASE ---------- */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--paper);
+    color: var(--on-paper);
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow: hidden; /* full-screen experience */
+    transition: background-color .35s ease, color .35s ease;
+  }
+  body::before {
+    /* Subtle paper grain — same as welcome-v2 */
+    content: "";
+    position: fixed; inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background-image:
+      radial-gradient(rgba(14,11,7,0.04) 1px, transparent 1px),
+      radial-gradient(rgba(14,11,7,0.03) 1px, transparent 1px);
+    background-size: 3px 3px, 7px 7px;
+    background-position: 0 0, 1.5px 1.5px;
+    mix-blend-mode: multiply;
+    opacity: .55;
+  }
+  body[data-theme="dark"]::before { mix-blend-mode: screen; opacity: .12; }
+
+  ::selection { background: var(--saffron); color: var(--cream); }
+
+  /* ---------- TYPOGRAPHY HELPERS ---------- */
+  .serif { font-family: 'Newsreader', 'Times New Roman', serif; font-weight: 500; }
+  .display { font-family: 'Newsreader', serif; font-weight: 600; line-height: 0.96; letter-spacing: -0.025em; }
+  .deva { font-family: 'Mukta Vaani', 'Newsreader', serif; }
+  .mono { font-family: 'JetBrains Mono', monospace; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; font-size: 11.5px; }
+  .label { font-family: 'JetBrains Mono', monospace; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; font-size: 10.5px; color: var(--ink-mute); }
+  .tabular { font-variant-numeric: tabular-nums; }
+  em, .italic { font-style: italic; }
+  .saffron { color: var(--saffron); }
+  .peacock { color: var(--peacock); }
+  .marigold { color: var(--marigold); }
+
+  /* ---------- LAYOUT (shell) ---------- */
+  .shell {
+    position: relative;
+    z-index: 1;
+    height: 100vh;
+    display: grid;
+    grid-template-rows: 64px 1fr 88px;
+  }
+
+  /* ---------- TOP BAR ---------- */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 28px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--paper);
+    gap: 24px;
+  }
+  .topbar-left {
+    display: flex; align-items: center; gap: 14px;
+    min-width: 0;
+  }
+  .foxy-mark {
+    width: 36px; height: 36px;
+    border: 1px solid var(--ink);
+    background: var(--paper);
+    display: grid; place-items: center;
+    border-radius: 4px;
+    flex-shrink: 0;
+    cursor: pointer;
+    user-select: none;
+  }
+  body[data-theme="dark"] .foxy-mark { border-color: var(--cream); }
+  .foxy-mark svg { display: block; }
+
+  .brand-name {
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-size: 22px;
+    letter-spacing: -0.01em;
+    line-height: 1;
+  }
+  .brand-name em { color: var(--saffron); font-style: italic; }
+  .brand-sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-top: 2px;
+  }
+
+  .breadcrumb {
+    display: flex; align-items: center; gap: 10px;
+    margin-left: 22px;
+    padding-left: 22px;
+    border-left: 1px solid var(--rule);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .breadcrumb .crumb-sep { opacity: .45; }
+  .breadcrumb .crumb-active { color: var(--saffron); }
+
+  .topbar-right {
+    display: flex; align-items: center; gap: 14px;
+    flex-shrink: 0;
+  }
+  .lang-toggle {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    background: none; border: none;
+    cursor: pointer;
+    color: var(--on-paper);
+    padding: 6px 4px;
+    position: relative;
+  }
+  .lang-toggle::after {
+    content: ""; position: absolute; left: 4px; right: 4px; bottom: 0; height: 1px;
+    background: var(--ink-mute);
+  }
+  .end-btn {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    background: transparent;
+    color: var(--on-paper);
+    border: 1px solid var(--rule-strong);
+    padding: 8px 14px;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: background .2s, color .2s;
+  }
+  .end-btn:hover { background: var(--ink); color: var(--cream); }
+  body[data-theme="dark"] .end-btn:hover { background: var(--cream); color: var(--ink); }
+  .avatar {
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    background: var(--peacock);
+    color: #fff;
+    display: grid; place-items: center;
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-style: italic;
+    font-size: 14px;
+    cursor: pointer;
+  }
+
+  /* ---------- BODY GRID (rail | conversation | marginalia) ---------- */
+  .body-grid {
+    display: grid;
+    grid-template-columns: 60px 1fr 280px;
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  /* ---------- MODE RAIL ---------- */
+  .rail {
+    border-right: 1px solid var(--rule);
+    background: var(--paper);
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    padding: 18px 0;
+    position: relative;
+  }
+  .rail-modes {
+    display: flex; flex-direction: column;
+    gap: 4px;
+    flex: 1;
+  }
+  .rail-mode {
+    position: relative;
+    height: 110px;
+    width: 100%;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--ink-mute);
+    transition: color .2s;
+  }
+  .rail-mode:hover { color: var(--on-paper); }
+  .rail-mode .lbl {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+  }
+  .rail-mode.active { color: var(--on-paper); }
+  .rail-mode.active::after {
+    content: "";
+    position: absolute;
+    right: 0; top: 14px; bottom: 14px;
+    width: 2px;
+    background: var(--saffron);
+  }
+  .rail-mode .num {
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+    font-size: 13px;
+    color: var(--ink-mute);
+    opacity: .7;
+  }
+
+  .rail-foot {
+    border-top: 1px solid var(--rule);
+    padding: 14px 0;
+    display: flex; flex-direction: column;
+    align-items: center;
+    gap: 14px;
+  }
+  .rail-foot .timer {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    color: var(--on-paper);
+    letter-spacing: 0.05em;
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+  }
+  .rail-foot .timer-lbl {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+  }
+  .rail-foot .xp-chip {
+    background: var(--saffron);
+    color: #fff;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.1em;
+    padding: 5px 0;
+    width: 38px;
+    text-align: center;
+    border-radius: 2px;
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    font-weight: 600;
+  }
+
+  /* ---------- CONVERSATION COLUMN ---------- */
+  .conv {
+    overflow-y: auto;
+    padding: 36px 64px 60px;
+    scroll-behavior: smooth;
+    position: relative;
+  }
+  .conv::-webkit-scrollbar { width: 6px; }
+  .conv::-webkit-scrollbar-track { background: transparent; }
+  .conv::-webkit-scrollbar-thumb { background: var(--rule-strong); border-radius: 3px; }
+
+  .conv-inner {
+    max-width: 760px;
+    margin: 0 auto;
+  }
+
+  /* Session header (in-page) */
+  .conv-header {
+    margin-bottom: 38px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .conv-header .eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-bottom: 10px;
+    display: flex;
+    gap: 14px;
+    align-items: center;
+  }
+  .conv-header .eyebrow .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--saffron);
+    animation: pulse 2.4s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .55; transform: scale(.85); } }
+  .conv-header h1 {
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-size: 40px;
+    letter-spacing: -0.025em;
+    line-height: 1.05;
+  }
+  .conv-header h1 em { color: var(--saffron); }
+  .conv-header h1 .deva-line {
+    display: block;
+    font-family: 'Mukta Vaani', serif;
+    font-size: 0.55em;
+    color: var(--ink-soft);
+    margin-top: 8px;
+    font-weight: 500;
+  }
+  body[data-theme="dark"] .conv-header h1 .deva-line { color: var(--cream); opacity: .85; }
+
+  /* Turn — generic */
+  .turn {
+    margin-bottom: 32px;
+    position: relative;
+  }
+  .turn-meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-bottom: 8px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+
+  /* Student turn */
+  .turn-you {
+    text-align: right;
+    padding-bottom: 22px;
+    border-bottom: 1px dashed var(--rule);
+  }
+  .turn-you .turn-meta { justify-content: flex-end; }
+  .turn-you .body {
+    font-family: 'Inter', sans-serif;
+    font-size: 16.5px;
+    line-height: 1.55;
+    color: var(--on-paper);
+    max-width: 560px;
+    margin-left: auto;
+  }
+  .turn-you .body::before {
+    content: "you · ";
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+    font-weight: 500;
+    color: var(--saffron);
+  }
+
+  /* Foxy turn */
+  .turn-foxy {
+    padding-left: 36px;
+    position: relative;
+  }
+  .turn-foxy .foxy-icon {
+    position: absolute;
+    left: 0;
+    top: 24px;
+    width: 26px; height: 26px;
+    border: 1px solid var(--ink);
+    background: var(--paper);
+    border-radius: 50%;
+    display: grid; place-items: center;
+  }
+  body[data-theme="dark"] .turn-foxy .foxy-icon { border-color: var(--cream); }
+  .turn-foxy .turn-meta {
+    margin-left: 0;
+  }
+  .turn-foxy .body {
+    font-family: 'Inter', sans-serif;
+    font-size: 16px;
+    line-height: 1.65;
+    color: var(--on-paper);
+  }
+  .turn-foxy .body p { margin-bottom: 12px; }
+  .turn-foxy .body p:last-child { margin-bottom: 0; }
+  .turn-foxy .body .term {
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+    font-weight: 600;
+    color: var(--saffron);
+  }
+  .turn-foxy .body .deva-inline {
+    font-family: 'Mukta Vaani', serif;
+    font-weight: 500;
+  }
+  .turn-foxy .body .ask {
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+    font-size: 18px;
+    color: var(--peacock);
+    border-left: 2px solid var(--peacock);
+    padding-left: 14px;
+    margin: 14px 0;
+    line-height: 1.45;
+  }
+  body[data-theme="dark"] .turn-foxy .body .ask { color: var(--marigold); border-left-color: var(--marigold); }
+
+  /* Step list (mono numerals) */
+  .step-list {
+    display: flex; flex-direction: column;
+    gap: 14px;
+    margin: 14px 0;
+  }
+  .step-list .step {
+    display: grid;
+    grid-template-columns: 64px 1fr;
+    gap: 14px;
+    align-items: baseline;
+  }
+  .step-list .step .stepnum {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--saffron);
+    text-align: right;
+    border-right: 1px solid var(--rule);
+    padding-right: 12px;
+    line-height: 1.2;
+  }
+  .step-list .step .steptxt {
+    font-size: 15.5px;
+    line-height: 1.55;
+  }
+
+  /* Mono code/equation box */
+  .eq-box {
+    border: 1px solid var(--peacock);
+    background: var(--panel);
+    padding: 18px 20px;
+    margin: 18px 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--on-paper);
+    border-radius: 2px;
+    position: relative;
+    overflow-x: auto;
+  }
+  .eq-box .eq-tag {
+    position: absolute;
+    top: -10px;
+    left: 14px;
+    background: var(--paper);
+    padding: 0 8px;
+    font-size: 9.5px;
+    letter-spacing: 0.18em;
+    color: var(--peacock);
+    text-transform: uppercase;
+  }
+  .eq-box pre { white-space: pre; font-family: inherit; color: inherit; }
+  .eq-box .arrow { color: var(--saffron); font-weight: 600; }
+  .eq-box .caption {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--rule);
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+    font-size: 13px;
+    color: var(--ink-mute);
+    text-transform: none;
+    letter-spacing: 0;
+  }
+
+  /* Inline option chips (mid-conversation interactive) */
+  .opts-block {
+    margin: 18px 0 4px;
+  }
+  .opts-block .ask-line {
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+    font-size: 16.5px;
+    color: var(--on-paper);
+    margin-bottom: 12px;
+  }
+  .opts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .opt {
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 10px 16px;
+    border: 1px solid var(--rule-strong);
+    background: var(--paper);
+    border-radius: 2px;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    color: var(--on-paper);
+    transition: all .18s ease;
+  }
+  .opt:hover { border-color: var(--ink); }
+  body[data-theme="dark"] .opt:hover { border-color: var(--cream); }
+  .opt .opt-key {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    color: var(--ink-mute);
+    border-right: 1px solid var(--rule);
+    padding-right: 10px;
+  }
+  .opt.selected {
+    border-color: var(--saffron);
+    border-width: 2px;
+    background: rgba(232, 88, 28, 0.08);
+    padding: 9px 15px;
+  }
+  .opt.selected .opt-key { color: var(--saffron); }
+  .opt.selected::after {
+    content: "✓";
+    color: var(--saffron);
+    font-weight: 700;
+    margin-left: 4px;
+  }
+  .opt.disabled { pointer-events: none; opacity: .55; }
+
+  .feedback {
+    margin-top: 14px;
+    padding: 12px 16px;
+    border-left: 3px solid var(--saffron);
+    background: rgba(232, 88, 28, 0.06);
+    font-size: 14.5px;
+    line-height: 1.55;
+    display: none;
+  }
+  .feedback.shown { display: block; animation: slideIn .3s ease; }
+  @keyframes slideIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+  .feedback strong {
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+    color: var(--saffron);
+    font-weight: 600;
+  }
+  .xp-ribbon {
+    display: inline-flex; align-items: center; gap: 6px;
+    margin-top: 10px;
+    background: var(--saffron);
+    color: #fff;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    padding: 5px 10px;
+    border-radius: 2px;
+    font-weight: 600;
+    animation: ribbonPop .45s cubic-bezier(.2,.7,.3,1.4);
+  }
+  @keyframes ribbonPop { 0% { transform: scale(.6); opacity: 0; } 60% { transform: scale(1.06); opacity: 1; } 100% { transform: scale(1); } }
+
+  /* Typing placeholder */
+  .typing {
+    display: inline-flex; gap: 4px; align-items: center;
+    color: var(--ink-mute);
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+    font-size: 15px;
+  }
+  .typing .dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--ink-mute);
+    animation: bounce 1.2s infinite;
+  }
+  .typing .dot:nth-child(2) { animation-delay: .15s; }
+  .typing .dot:nth-child(3) { animation-delay: .3s; }
+  @keyframes bounce { 0%,80%,100% { transform: translateY(0); opacity: .35; } 40% { transform: translateY(-4px); opacity: 1; } }
+
+  /* End-of-session preview (faded) */
+  .end-preview {
+    margin-top: 60px;
+    padding: 24px 28px;
+    border: 1px dashed var(--rule-strong);
+    border-radius: 2px;
+    opacity: .55;
+    background: var(--panel);
+    transition: opacity .25s;
+  }
+  .end-preview:hover { opacity: 1; }
+  .end-preview .lbl {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-bottom: 8px;
+  }
+  .end-preview h3 {
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-size: 22px;
+    letter-spacing: -0.015em;
+    margin-bottom: 14px;
+  }
+  .end-preview h3 em { color: var(--saffron); }
+  .end-preview .summary-row {
+    display: flex; flex-wrap: wrap; gap: 28px;
+    margin-bottom: 18px;
+  }
+  .end-preview .summary-row .item {
+    display: flex; flex-direction: column;
+  }
+  .end-preview .summary-row .item .num {
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-size: 28px;
+    line-height: 1;
+    color: var(--saffron);
+    font-variant-numeric: tabular-nums;
+  }
+  .end-preview .summary-row .item .lbl2 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-top: 6px;
+  }
+  .end-preview .share-row {
+    display: flex; align-items: center; gap: 14px;
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+    font-size: 15px;
+    color: var(--ink-soft);
+  }
+  body[data-theme="dark"] .end-preview .share-row { color: var(--cream); opacity: .8; }
+  .end-preview .share-row .yes {
+    background: var(--saffron); color: #fff;
+    padding: 6px 14px; border-radius: 2px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    text-decoration: none;
+    font-style: normal;
+    font-weight: 600;
+  }
+  .end-preview .share-row .no {
+    border: 1px solid var(--rule-strong);
+    padding: 6px 14px; border-radius: 2px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    font-style: normal;
+  }
+
+  /* ---------- MARGINALIA ---------- */
+  .marg {
+    border-left: 1px solid var(--rule);
+    background: var(--panel);
+    overflow-y: auto;
+    padding: 28px 24px 40px;
+  }
+  .marg::-webkit-scrollbar { width: 4px; }
+  .marg::-webkit-scrollbar-track { background: transparent; }
+  .marg::-webkit-scrollbar-thumb { background: var(--rule-strong); border-radius: 2px; }
+
+  .marg-section {
+    margin-bottom: 36px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .marg-section:last-child { border-bottom: none; margin-bottom: 0; }
+  .marg-section h4 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-bottom: 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .marg-section h4 .pulse-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--saffron);
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+
+  /* Concept map (CSS only) */
+  .concept-map {
+    position: relative;
+    padding: 8px 4px 16px;
+  }
+  .concept-map .root {
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-style: italic;
+    font-size: 16px;
+    color: var(--on-paper);
+    text-align: center;
+    padding: 8px 12px;
+    border: 1px solid var(--ink);
+    background: var(--paper);
+    border-radius: 2px;
+    margin-bottom: 22px;
+    position: relative;
+  }
+  body[data-theme="dark"] .concept-map .root { border-color: var(--cream); }
+  .concept-map .root::after {
+    content: "";
+    position: absolute;
+    bottom: -22px;
+    left: 50%;
+    width: 1px;
+    height: 22px;
+    background: var(--rule-strong);
+  }
+  .concept-map .branches {
+    display: flex; flex-direction: column;
+    gap: 8px;
+    position: relative;
+    padding-left: 14px;
+  }
+  .concept-map .branches::before {
+    content: "";
+    position: absolute;
+    left: 14px;
+    top: -2px;
+    bottom: 14px;
+    width: 1px;
+    background: var(--rule-strong);
+  }
+  .concept-map .leaf {
+    position: relative;
+    padding: 6px 10px 6px 18px;
+    font-family: 'Inter', sans-serif;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    border: 1px solid transparent;
+    border-radius: 2px;
+    transition: all .2s;
+  }
+  body[data-theme="dark"] .concept-map .leaf { color: var(--cream); opacity: .82; }
+  .concept-map .leaf::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 50%;
+    width: 14px; height: 1px;
+    background: var(--rule-strong);
+  }
+  .concept-map .leaf.active {
+    border-color: var(--saffron);
+    background: rgba(232, 88, 28, 0.08);
+    color: var(--on-paper);
+    opacity: 1;
+    font-weight: 500;
+  }
+  .concept-map .leaf.active::after {
+    content: "";
+    position: absolute;
+    right: 8px; top: 50%;
+    transform: translateY(-50%);
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--saffron);
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+
+  /* Mastery bars */
+  .mastery {
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .mastery .row {
+    display: grid;
+    grid-template-columns: 80px 1fr 36px;
+    gap: 10px;
+    align-items: center;
+    font-size: 12.5px;
+  }
+  .mastery .row .name {
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+    color: var(--on-paper);
+  }
+  .mastery .row .meter {
+    height: 4px;
+    background: rgba(0,0,0,.08);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  body[data-theme="dark"] .mastery .row .meter { background: rgba(255,255,255,.1); }
+  .mastery .row .meter span {
+    display: block;
+    height: 100%;
+    background: var(--saffron);
+  }
+  .mastery .row .pct {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    color: var(--ink-mute);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Next up preview */
+  .next-up {
+    border-left: 2px solid var(--marigold);
+    padding: 6px 0 6px 12px;
+  }
+  .next-up .nu-lbl {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--marigold);
+    margin-bottom: 6px;
+  }
+  .next-up .nu-q {
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+    font-size: 14px;
+    line-height: 1.4;
+    color: var(--on-paper);
+  }
+
+  /* References */
+  .refs {
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .refs a {
+    text-decoration: none;
+    color: var(--on-paper);
+    display: flex; justify-content: space-between; gap: 10px;
+    font-size: 13px;
+    border-bottom: 1px dashed var(--rule);
+    padding-bottom: 8px;
+    transition: color .2s;
+  }
+  .refs a:hover { color: var(--saffron); }
+  .refs a .name {
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+  }
+  .refs a .pg {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-mute);
+    flex-shrink: 0;
+  }
+
+  /* ---------- COMPOSER (bottom) ---------- */
+  .composer {
+    border-top: 1px solid var(--rule);
+    background: var(--paper);
+    padding: 14px 28px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .composer-row {
+    display: flex; align-items: center;
+    gap: 12px;
+    border: 1px solid var(--rule-strong);
+    background: var(--paper);
+    padding: 8px 8px 8px 18px;
+    border-radius: 2px;
+    transition: border-color .2s;
+  }
+  .composer-row:focus-within { border-color: var(--ink); }
+  body[data-theme="dark"] .composer-row:focus-within { border-color: var(--cream); }
+  .composer-row.shake { animation: shake .4s; }
+  @keyframes shake {
+    0%,100% { transform: translateX(0); }
+    25% { transform: translateX(-6px); border-color: var(--saffron); }
+    75% { transform: translateX(6px); border-color: var(--saffron); }
+  }
+  .composer input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    outline: none;
+    font-family: 'Newsreader', serif;
+    font-size: 17px;
+    color: var(--on-paper);
+    padding: 8px 0;
+  }
+  .composer input::placeholder {
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+    color: var(--ink-mute);
+    opacity: .85;
+  }
+  .composer .mic {
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: var(--peacock);
+    width: 36px; height: 36px;
+    display: grid; place-items: center;
+    border-radius: 50%;
+    transition: background .2s;
+  }
+  .composer .mic:hover { background: rgba(15, 92, 95, 0.12); }
+  body[data-theme="dark"] .composer .mic { color: var(--marigold); }
+  .composer .lang-inline {
+    border: 1px solid var(--rule-strong);
+    background: transparent;
+    cursor: pointer;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    color: var(--on-paper);
+    padding: 7px 10px;
+    border-radius: 2px;
+    text-transform: uppercase;
+  }
+  .composer .send {
+    background: var(--saffron);
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    font-size: 14px;
+    padding: 10px 20px;
+    border-radius: 2px;
+    transition: background .2s, transform .15s;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .composer .send:hover { background: var(--saffron-deep); transform: translateY(-1px); }
+  .composer .send::after { content: "→"; font-family: 'Newsreader', serif; font-weight: 500; font-size: 18px; }
+
+  .composer-foot {
+    display: flex; justify-content: space-between; align-items: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    padding: 0 4px;
+  }
+  .composer-foot .right { color: var(--saffron); }
+
+  /* Quiz mode placeholder (shown when Quiz mode active) */
+  .quiz-card {
+    display: none;
+    max-width: 760px;
+    margin: 0 auto;
+    border: 1px solid var(--ink);
+    background: var(--panel);
+    padding: 36px 40px;
+    border-radius: 2px;
+  }
+  body[data-theme="dark"] .quiz-card { border-color: var(--cream); }
+  .quiz-card .qc-lbl {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-bottom: 14px;
+    display: flex; justify-content: space-between;
+  }
+  .quiz-card .qc-lbl .q-num em { color: var(--saffron); font-style: italic; }
+  .quiz-card .qc-q {
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-size: 26px;
+    line-height: 1.2;
+    margin-bottom: 28px;
+    letter-spacing: -0.015em;
+  }
+  .quiz-card .qc-opts { display: flex; flex-direction: column; gap: 10px; }
+  .quiz-card .qc-opts .opt {
+    padding: 14px 18px;
+    width: 100%;
+  }
+  .quiz-card .qc-foot {
+    margin-top: 28px;
+    display: flex; justify-content: space-between; align-items: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+  .quiz-card .qc-foot .timer-q {
+    color: var(--saffron); font-weight: 600;
+  }
+
+  /* ---------- RESPONSIVE: <960px ---------- */
+  .marg-toggle {
+    display: none;
+    position: fixed;
+    bottom: 110px;
+    right: 16px;
+    z-index: 60;
+    background: var(--ink);
+    color: var(--cream);
+    border: none;
+    cursor: pointer;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    padding: 10px 14px;
+    border-radius: 999px;
+    box-shadow: 0 4px 16px rgba(0,0,0,.2);
+  }
+  body[data-theme="dark"] .marg-toggle { background: var(--cream); color: var(--ink); }
+
+  @media (max-width: 960px) {
+    body { overflow-y: auto; overflow-x: hidden; }
+    .shell { height: auto; min-height: 100vh; grid-template-rows: auto auto 1fr auto; }
+
+    /* mode rail goes horizontal across the top */
+    .body-grid {
+      display: flex;
+      flex-direction: column;
+    }
+    .rail {
+      flex-direction: row;
+      width: 100%;
+      border-right: none;
+      border-bottom: 1px solid var(--rule);
+      padding: 0;
+      align-items: center;
+      overflow-x: auto;
+    }
+    .rail-modes {
+      flex-direction: row;
+      flex: 1;
+      gap: 0;
+    }
+    .rail-mode {
+      height: 56px;
+      padding: 0 18px;
+      flex: 1;
+      min-width: 90px;
+    }
+    .rail-mode .lbl {
+      writing-mode: horizontal-tb;
+      transform: none;
+    }
+    .rail-mode .num { display: none; }
+    .rail-mode.active::after {
+      right: 0; left: 0; top: auto; bottom: 0;
+      width: auto; height: 2px;
+    }
+    .rail-foot {
+      flex-direction: row;
+      border-top: none;
+      border-left: 1px solid var(--rule);
+      padding: 0 14px;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    .rail-foot .timer, .rail-foot .timer-lbl, .rail-foot .xp-chip {
+      writing-mode: horizontal-tb;
+      transform: none;
+    }
+    .rail-foot .xp-chip { width: auto; padding: 5px 10px; }
+
+    .conv {
+      padding: 24px 20px 40px;
+    }
+    .conv-header h1 { font-size: 30px; }
+
+    /* marginalia drawer */
+    .marg {
+      position: fixed;
+      top: 0; right: 0;
+      width: min(360px, 88vw);
+      height: 100vh;
+      z-index: 70;
+      transform: translateX(100%);
+      transition: transform .3s ease;
+      box-shadow: -8px 0 30px rgba(0,0,0,.18);
+      border-left: 1px solid var(--rule-strong);
+    }
+    .marg.open { transform: translateX(0); }
+    .marg-toggle { display: inline-flex; align-items: center; gap: 6px; }
+
+    .composer { padding: 12px 16px 14px; }
+    .composer input { font-size: 15.5px; }
+    .composer .lang-inline { display: none; }
+
+    .breadcrumb {
+      font-size: 9.5px;
+      margin-left: 12px;
+      padding-left: 12px;
+    }
+    .topbar { padding: 0 14px; }
+    .end-btn { display: none; }
+    .turn-foxy { padding-left: 30px; }
+    .turn-foxy .foxy-icon { width: 22px; height: 22px; top: 22px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+    }
+    .conv { scroll-behavior: auto; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Tiny Foxy SVG (reused) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="foxy" viewBox="0 0 32 32">
+      <!-- stylized fox head -->
+      <path d="M6 8 L10 14 L4 18 Z" fill="#E8581C"/>
+      <path d="M26 8 L22 14 L28 18 Z" fill="#E8581C"/>
+      <path d="M16 6 C9 6 5 12 5 18 C5 24 10 28 16 28 C22 28 27 24 27 18 C27 12 23 6 16 6 Z" fill="#E8581C"/>
+      <path d="M16 14 C12 14 10 16 10 19 C10 22 12 25 16 25 C20 25 22 22 22 19 C22 16 20 14 16 14 Z" fill="#F4ECDB"/>
+      <circle cx="13" cy="17" r="1.4" fill="#0E0B07"/>
+      <circle cx="19" cy="17" r="1.4" fill="#0E0B07"/>
+      <path d="M16 21 L14.5 22.5 L17.5 22.5 Z" fill="#0E0B07"/>
+    </symbol>
+    <symbol id="foxy-mini" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="10" fill="#E8581C"/>
+      <path d="M12 9 C9 9 8 11 8 13 C8 15 10 17 12 17 C14 17 16 15 16 13 C16 11 15 9 12 9 Z" fill="#F4ECDB"/>
+      <circle cx="10" cy="12" r="0.9" fill="#0E0B07"/>
+      <circle cx="14" cy="12" r="0.9" fill="#0E0B07"/>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="shell">
+
+  <!-- ============================================== -->
+  <!-- TOP BAR                                        -->
+  <!-- ============================================== -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="foxy-mark" id="brandToggle" title="Double-click for night mode">
+        <svg width="26" height="26"><use href="#foxy"/></svg>
+      </div>
+      <div>
+        <div class="brand-name"><em>Foxy</em></div>
+        <div class="brand-sub">tutor · live</div>
+      </div>
+      <div class="breadcrumb" aria-label="Session breadcrumb">
+        <span>Class 8</span>
+        <span class="crumb-sep">/</span>
+        <span>Science</span>
+        <span class="crumb-sep">/</span>
+        <span class="crumb-active">Photosynthesis</span>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <button class="lang-toggle" id="langToggle">EN · हिं</button>
+      <button class="end-btn" type="button">End session</button>
+      <div class="avatar" title="Aarav Sharma">A</div>
+    </div>
+  </header>
+
+  <!-- ============================================== -->
+  <!-- BODY GRID                                      -->
+  <!-- ============================================== -->
+  <main class="body-grid">
+
+    <!-- Mode rail -->
+    <aside class="rail" aria-label="Session modes">
+      <div class="rail-modes">
+        <button class="rail-mode active" data-mode="learn">
+          <span class="num">i</span>
+          <span class="lbl">Learn</span>
+        </button>
+        <button class="rail-mode" data-mode="practice">
+          <span class="num">ii</span>
+          <span class="lbl">Practice</span>
+        </button>
+        <button class="rail-mode" data-mode="quiz">
+          <span class="num">iii</span>
+          <span class="lbl">Quiz</span>
+        </button>
+        <button class="rail-mode" data-mode="simulate">
+          <span class="num">iv</span>
+          <span class="lbl">Simulate</span>
+        </button>
+      </div>
+      <div class="rail-foot">
+        <span class="timer-lbl">session</span>
+        <span class="timer tabular" id="sessionTimer">00:14:32</span>
+        <span class="xp-chip">+24 XP</span>
+      </div>
+    </aside>
+
+    <!-- Conversation column -->
+    <section class="conv" id="convScroll">
+      <div class="conv-inner" id="convInner">
+
+        <div class="conv-header">
+          <div class="eyebrow">
+            <span class="dot"></span>
+            <span>Section i · today's lesson</span>
+            <span style="opacity:.55">·</span>
+            <span>Tuesday · 7:42 pm</span>
+          </div>
+          <h1>
+            How plants <em>eat sunlight</em>.
+            <span class="deva-line">पौधे धूप को कैसे खाते हैं — आज समझते हैं।</span>
+          </h1>
+        </div>
+
+        <!-- Turn 1 — student opens -->
+        <div class="turn turn-you">
+          <div class="turn-meta"><span>7:42 pm</span></div>
+          <div class="body">Foxy bhaiya, photosynthesis kal test mein aayega. Mujhe samajh hi nahi aaya light reaction aur dark reaction mein farak kya hai. Ek baar simply samjha do?</div>
+        </div>
+
+        <!-- Turn 2 — Foxy responds with Socratic opener -->
+        <div class="turn turn-foxy">
+          <div class="foxy-icon"><svg width="18" height="18"><use href="#foxy-mini"/></svg></div>
+          <div class="turn-meta"><span>Foxy</span><span>·</span><span>7:42 pm</span></div>
+          <div class="body">
+            <p>Tension mat lo Aarav — agar formula yaad karne se confusion ho raha hai, toh hum thoda ulta start karte hain. Pehle ek choti baat batao —</p>
+            <p class="ask">Agar main tumse kahoon ki "ek pattha ek chhota factory hai" — toh us factory ko chalane ke liye <em>kya kya cheez</em> chahiye hogi?</p>
+            <p>Soch ke jawab do, exam-jaisa nahi — apne dimaag se.</p>
+          </div>
+        </div>
+
+        <!-- Turn 3 — student guesses -->
+        <div class="turn turn-you">
+          <div class="turn-meta"><span>7:43 pm</span></div>
+          <div class="body">Hmm... sunlight, paani, aur shaayad CO₂? Aur leaves ke andar kuch green cheez hoti hai na — chlorophyll?</div>
+        </div>
+
+        <!-- Turn 4 — Foxy validates + builds with diagram -->
+        <div class="turn turn-foxy">
+          <div class="foxy-icon"><svg width="18" height="18"><use href="#foxy-mini"/></svg></div>
+          <div class="turn-meta"><span>Foxy</span><span>·</span><span>7:43 pm</span></div>
+          <div class="body">
+            <p>Bilkul sahi pakda. Tumne factory ke <span class="term">raw materials</span> bata diye. Ab dekho — yeh raha woh poori equation jo NCERT chapter 1 mein likhi hai:</p>
+
+            <div class="eq-box" role="figure" aria-label="Photosynthesis equation">
+              <span class="eq-tag">Equation · NCERT Cl 8 · Ch 1</span>
+<pre>      sunlight
+        ↓
+6 CO₂  +  6 H₂O  <span class="arrow">────────►</span>  C₆H₁₂O₆  +  6 O₂
+   │        │      chlorophyll        │         │
+   │        │                         │         │
+ carbon   water                    glucose    oxygen
+ dioxide                          (food!)   (we breathe)</pre>
+              <div class="caption">Plant ke leaves "carbon + water + light" ko "sugar + oxygen" mein convert karte hain — yeh sirf 1 cycle hai, but inside ye 2 stages mein hota hai.</div>
+            </div>
+
+            <p>Ab tumhare original sawaal pe — <span class="term">light reaction</span> aur <span class="term">dark reaction</span> waali confusion. Naam dhokha de raha hai. Yeh dono actually 2 alag-alag <em>steps</em> hain ek hi factory ke andar:</p>
+
+            <div class="step-list">
+              <div class="step">
+                <div class="stepnum">step 01<br/><span style="color:var(--ink-mute);font-size:9px">light</span></div>
+                <div class="steptxt">Sunlight chlorophyll ko hit karta hai. Pani (H₂O) tootta hai — yahaan se <span class="term">oxygen</span> nikalta hai (jo hum saans lete hain). Ye step <em>sirf din mein</em> hota hai — kyunki sunlight chahiye.</div>
+              </div>
+              <div class="step">
+                <div class="stepnum">step 02<br/><span style="color:var(--ink-mute);font-size:9px">dark</span></div>
+                <div class="steptxt">Step 1 mein bani energy ka use karke, CO₂ ko <span class="term">glucose</span> mein convert kiya jaata hai. "Dark" naam isliye padaa kyunki <em>direct sunlight ki zaroorat nahi</em> — but ye din mein bhi ho sakta hai.</div>
+              </div>
+            </div>
+
+            <p>Ek line mein — light reaction <em>ingredients tod-ti hai</em>, dark reaction <em>khaana banaati hai</em>. Samjha?</p>
+          </div>
+        </div>
+
+        <!-- Turn 5 — student insight -->
+        <div class="turn turn-you">
+          <div class="turn-meta"><span>7:46 pm</span></div>
+          <div class="body">Achha toh "dark" ka matlab raat nahi, balki "without light needed" hai? Itne saalon se main galat samajh raha tha lol.</div>
+        </div>
+
+        <!-- Turn 6 — Foxy mid-conversation interactive (option chips) -->
+        <div class="turn turn-foxy">
+          <div class="foxy-icon"><svg width="18" height="18"><use href="#foxy-mini"/></svg></div>
+          <div class="turn-meta"><span>Foxy</span><span>·</span><span>7:47 pm</span><span style="color:var(--saffron)">· quick check</span></div>
+          <div class="body">
+            <p>Haan exactly — naam thoda misleading hai, isliye new books mein "Calvin cycle" likhte hain. Ek choti check karta hoon —</p>
+
+            <div class="opts-block">
+              <div class="ask-line">Sahi answer choose karo: <em>Photolysis kis step mein hota hai?</em></div>
+              <div class="opts" id="optGroup" role="radiogroup" aria-label="Photolysis quick check">
+                <button class="opt" data-opt="a"><span class="opt-key">A</span> Light reaction</button>
+                <button class="opt" data-opt="b"><span class="opt-key">B</span> Dark reaction</button>
+                <button class="opt" data-opt="c"><span class="opt-key">C</span> Dono mein</button>
+                <button class="opt" data-opt="d"><span class="opt-key">D</span> Kisi mein nahi</button>
+              </div>
+              <div class="feedback" id="optFeedback">
+                <strong>Sahi!</strong> Photolysis = "photo" (light) + "lysis" (breaking). Yeh light reaction mein hi hota hai, kyunki sunlight ki zaroorat hoti hai paani todne ke liye. Yahin se O₂ release hota hai jo plant baahar chhodta hai.
+                <div><span class="xp-ribbon">+10 XP earned</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Turn 7 — Foxy summary + next -->
+        <div class="turn turn-foxy">
+          <div class="foxy-icon"><svg width="18" height="18"><use href="#foxy-mini"/></svg></div>
+          <div class="turn-meta"><span>Foxy</span><span>·</span><span>7:48 pm</span></div>
+          <div class="body">
+            <p>Ek baar quickly recap karte hain jo abhi seekha:</p>
+            <div class="step-list">
+              <div class="step">
+                <div class="stepnum">recap 01</div>
+                <div class="steptxt">Photosynthesis = leaf factory mein <span class="term">CO₂ + H₂O</span> se <span class="term">glucose + O₂</span> banana.</div>
+              </div>
+              <div class="step">
+                <div class="stepnum">recap 02</div>
+                <div class="steptxt">Light reaction → photolysis → O₂ release.</div>
+              </div>
+              <div class="step">
+                <div class="stepnum">recap 03</div>
+                <div class="steptxt">Dark / Calvin cycle → CO₂ + energy → glucose. "Dark" = light optional.</div>
+              </div>
+            </div>
+            <p class="ask">Ek aakhri sawaal — agar plant ke leaf ko 48 ghante andhere mein rakh diya jaaye, toh photosynthesis ka kaunsa step ruk jaayega aur kaunsa shayad chal sakta hai? Soch ke batao.</p>
+          </div>
+        </div>
+
+        <!-- End-of-session preview (faded) -->
+        <div class="end-preview" aria-label="Session summary preview">
+          <div class="lbl">Session ends in 5 min · preview</div>
+          <h3>Aaj ka kaam · <em>1 concept</em> reinforced</h3>
+          <div class="summary-row">
+            <div class="item">
+              <div class="num tabular">1</div>
+              <div class="lbl2">concept reinforced</div>
+            </div>
+            <div class="item">
+              <div class="num tabular">4</div>
+              <div class="lbl2">quiz Qs answered</div>
+            </div>
+            <div class="item">
+              <div class="num tabular">+24</div>
+              <div class="lbl2">XP earned today</div>
+            </div>
+            <div class="item">
+              <div class="num tabular">14:32</div>
+              <div class="lbl2">minutes focused</div>
+            </div>
+          </div>
+          <div class="share-row">
+            <span>Share with parent?</span>
+            <a href="#" class="yes">Yes, send</a>
+            <a href="#" class="no">Not now</a>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Quiz mode placeholder card (hidden until Quiz selected) -->
+      <div class="quiz-card" id="quizCard">
+        <div class="qc-lbl">
+          <span>Section iii · adaptive quiz</span>
+          <span class="q-num">Question <em>3</em> of 5</span>
+        </div>
+        <div class="qc-q">In photosynthesis, which gas is released as a by-product?</div>
+        <div class="qc-opts">
+          <button class="opt"><span class="opt-key">A</span> Carbon dioxide</button>
+          <button class="opt"><span class="opt-key">B</span> Nitrogen</button>
+          <button class="opt"><span class="opt-key">C</span> Oxygen</button>
+          <button class="opt"><span class="opt-key">D</span> Hydrogen</button>
+        </div>
+        <div class="qc-foot">
+          <span>Bloom · Understand · diff 0.4</span>
+          <span class="timer-q tabular">00:38</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Marginalia (right sidebar) -->
+    <aside class="marg" id="marg" aria-label="What Foxy is thinking">
+
+      <div class="marg-section">
+        <h4>Concept Map <span class="pulse-dot" aria-hidden="true"></span></h4>
+        <div class="concept-map">
+          <div class="root">Photosynthesis</div>
+          <div class="branches">
+            <div class="leaf active">Light reaction</div>
+            <div class="leaf">Dark reaction <span style="font-size:10px;opacity:.6">(Calvin)</span></div>
+            <div class="leaf">Chlorophyll &amp; chloroplasts</div>
+            <div class="leaf">Photolysis</div>
+            <div class="leaf">Glucose &amp; respiration link</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="marg-section">
+        <h4>Mastery · This Topic</h4>
+        <div class="mastery">
+          <div class="row">
+            <span class="name">Remember</span>
+            <span class="meter"><span style="width:92%"></span></span>
+            <span class="pct">92%</span>
+          </div>
+          <div class="row">
+            <span class="name">Understand</span>
+            <span class="meter"><span style="width:78%"></span></span>
+            <span class="pct">78%</span>
+          </div>
+          <div class="row">
+            <span class="name">Apply</span>
+            <span class="meter"><span style="width:41%; background:var(--marigold)"></span></span>
+            <span class="pct">41%</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="marg-section">
+        <h4>Next Up</h4>
+        <div class="next-up">
+          <div class="nu-lbl">Foxy is preparing →</div>
+          <div class="nu-q">"If you cover one leaf with foil for 24 hours, will starch form? Why?"</div>
+        </div>
+      </div>
+
+      <div class="marg-section">
+        <h4>References</h4>
+        <div class="refs">
+          <a href="#"><span class="name">NCERT Cl 8 · Ch 1</span><span class="pg">pg 03–07</span></a>
+          <a href="#"><span class="name">Lakhmir Singh · Bio</span><span class="pg">pg 11</span></a>
+          <a href="#"><span class="name">Diagram · chloroplast</span><span class="pg">fig 1.4</span></a>
+          <a href="#"><span class="name">CBSE prev. yr · 2024</span><span class="pg">Q 12</span></a>
+        </div>
+      </div>
+
+      <div class="marg-section" style="opacity:.7">
+        <h4>Safety</h4>
+        <div style="font-family:'Newsreader',serif;font-style:italic;font-size:13.5px;line-height:1.5;color:var(--ink-mute)">
+          Foxy stays inside CBSE Class 8 Science scope. All responses pass age-appropriate filters and are logged for parent review.
+        </div>
+      </div>
+
+    </aside>
+
+  </main>
+
+  <!-- ============================================== -->
+  <!-- COMPOSER                                       -->
+  <!-- ============================================== -->
+  <footer class="composer">
+    <div class="composer-row" id="composerRow">
+      <button class="mic" type="button" aria-label="Voice input" title="Speak in Hindi or English">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+          <rect x="9" y="3" width="6" height="12" rx="3"/>
+          <path d="M5 11a7 7 0 0 0 14 0"/>
+          <path d="M12 18v3"/>
+        </svg>
+      </button>
+      <input id="composerInput" type="text" placeholder="ask Foxy anything from your textbook…" autocomplete="off" />
+      <button class="lang-inline" type="button" id="langInline">हि / En</button>
+      <button class="send" type="button" id="sendBtn">Send</button>
+    </div>
+    <div class="composer-foot">
+      <span class="left">Foxy stays inside CBSE Class 8 Science · responses are reviewed for safety</span>
+      <span class="right">2 of 5 free chats today</span>
+    </div>
+  </footer>
+
+</div>
+
+<!-- mobile drawer toggle -->
+<button class="marg-toggle" id="margToggle" type="button">Show details</button>
+
+<script>
+(function(){
+  // ---------- Mode rail switching ----------
+  var modes = document.querySelectorAll('.rail-mode');
+  var convInner = document.getElementById('convInner');
+  var quizCard = document.getElementById('quizCard');
+  var composer = document.querySelector('.composer');
+
+  modes.forEach(function(m){
+    m.addEventListener('click', function(){
+      modes.forEach(function(x){ x.classList.remove('active'); });
+      m.classList.add('active');
+      var mode = m.getAttribute('data-mode');
+      if (mode === 'quiz') {
+        convInner.style.display = 'none';
+        quizCard.style.display = 'block';
+        composer.style.display = 'none';
+      } else {
+        convInner.style.display = '';
+        quizCard.style.display = 'none';
+        composer.style.display = 'flex';
+      }
+    });
+  });
+
+  // ---------- Mid-conversation option chips ----------
+  var optGroup = document.getElementById('optGroup');
+  var optFb = document.getElementById('optFeedback');
+  if (optGroup) {
+    var opts = optGroup.querySelectorAll('.opt');
+    opts.forEach(function(o){
+      o.addEventListener('click', function(){
+        opts.forEach(function(x){ x.classList.remove('selected'); x.classList.add('disabled'); });
+        o.classList.add('selected');
+        o.classList.remove('disabled');
+        if (optFb) optFb.classList.add('shown');
+      });
+    });
+  }
+
+  // ---------- Composer (send) ----------
+  var sendBtn = document.getElementById('sendBtn');
+  var input = document.getElementById('composerInput');
+  var row = document.getElementById('composerRow');
+  var convScroll = document.getElementById('convScroll');
+
+  function appendStudentTurn(text){
+    var t = document.createElement('div');
+    t.className = 'turn turn-you';
+    t.innerHTML = '<div class="turn-meta"><span>just now</span></div><div class="body">'+ text.replace(/</g,'&lt;') +'</div>';
+    convInner.appendChild(t);
+
+    var ft = document.createElement('div');
+    ft.className = 'turn turn-foxy';
+    ft.innerHTML = '<div class="foxy-icon"><svg width="18" height="18"><use href="#foxy-mini"/></svg></div>'
+      + '<div class="turn-meta"><span>Foxy</span><span>·</span><span>typing</span></div>'
+      + '<div class="body"><span class="typing"><span class="dot"></span><span class="dot"></span><span class="dot"></span> Foxy soch raha hai…</span></div>';
+    convInner.appendChild(ft);
+
+    setTimeout(function(){
+      convScroll.scrollTop = convScroll.scrollHeight;
+    }, 50);
+  }
+
+  function send(){
+    var v = input.value.trim();
+    if (!v) {
+      row.classList.add('shake');
+      setTimeout(function(){ row.classList.remove('shake'); }, 420);
+      return;
+    }
+    appendStudentTurn(v);
+    input.value = '';
+  }
+  if (sendBtn) sendBtn.addEventListener('click', send);
+  if (input) input.addEventListener('keydown', function(e){
+    if (e.key === 'Enter') { e.preventDefault(); send(); }
+  });
+
+  // ---------- Inline language toggle ----------
+  var langInline = document.getElementById('langInline');
+  var langTop = document.getElementById('langToggle');
+  var hi = false;
+  function flip(){
+    hi = !hi;
+    if (langInline) langInline.textContent = hi ? 'En / हि' : 'हि / En';
+    if (langTop) langTop.textContent = hi ? 'हिं · EN' : 'EN · हिं';
+    document.querySelectorAll('.deva, .deva-line, .deva-inline').forEach(function(el){
+      el.style.fontWeight = hi ? '700' : '';
+      el.style.opacity = hi ? '1' : '';
+    });
+    if (input) {
+      input.placeholder = hi ? 'फ़ॉक्सी से कुछ भी पूछो…' : 'ask Foxy anything from your textbook…';
+    }
+  }
+  if (langInline) langInline.addEventListener('click', flip);
+  if (langTop) langTop.addEventListener('click', flip);
+
+  // ---------- Brand double-click → dark theme ----------
+  var brand = document.getElementById('brandToggle');
+  if (brand) {
+    brand.addEventListener('dblclick', function(){
+      var cur = document.body.getAttribute('data-theme');
+      if (cur === 'dark') document.body.removeAttribute('data-theme');
+      else document.body.setAttribute('data-theme', 'dark');
+    });
+  }
+
+  // ---------- Live session timer ----------
+  var timerEl = document.getElementById('sessionTimer');
+  if (timerEl) {
+    var parts = timerEl.textContent.split(':').map(function(n){ return parseInt(n,10); });
+    var totalSec = parts[0]*3600 + parts[1]*60 + parts[2];
+    setInterval(function(){
+      totalSec += 1;
+      var h = Math.floor(totalSec/3600);
+      var m = Math.floor((totalSec%3600)/60);
+      var s = totalSec%60;
+      timerEl.textContent =
+        String(h).padStart(2,'0') + ':' +
+        String(m).padStart(2,'0') + ':' +
+        String(s).padStart(2,'0');
+    }, 1000);
+  }
+
+  // ---------- Marginalia drawer (mobile) ----------
+  var margBtn = document.getElementById('margToggle');
+  var marg = document.getElementById('marg');
+  if (margBtn && marg) {
+    margBtn.addEventListener('click', function(){
+      marg.classList.toggle('open');
+      margBtn.textContent = marg.classList.contains('open') ? 'Hide details' : 'Show details';
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

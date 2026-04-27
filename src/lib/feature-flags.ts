@@ -183,3 +183,42 @@ export async function getFeatureFlagsSimple(): Promise<Record<string, boolean>> 
 export const MAINTENANCE_FLAGS = {
   MAINTENANCE_BANNER: 'maintenance_banner',
 } as const;
+
+/**
+ * Marketing/landing-page flags.
+ *
+ * `ff_welcome_v2` gates the mobile-first editorial redesign of the `/welcome`
+ * landing page (Indian Editorial Tutor aesthetic). Default OFF.
+ *
+ * Routing approach (recommended for the upcoming frontend port):
+ *   The `/welcome` server component reads this flag and renders either
+ *   <WelcomeV1 /> or <WelcomeV2 />. The URL stays `/welcome` — no SEO split,
+ *   no link breakage, no marketing redirect. The `?v=2` query-string param
+ *   should force v2 even when the flag is off (QA preview escape hatch);
+ *   `?v=1` should force v1 when the flag is on (rollback escape hatch).
+ *
+ *   Pseudocode for src/app/welcome/page.tsx:
+ *     const force = searchParams.v;
+ *     const flagOn = await isFeatureEnabled('ff_welcome_v2', { userId, environment });
+ *     const showV2 = force === '2' || (flagOn && force !== '1');
+ *     return showV2 ? <WelcomeV2 /> : <WelcomeV1 />;
+ *
+ * Seeded by migration 20260426150000_add_ff_welcome_v2.sql.
+ * Operator runbook for staged rollout / rollback lives in that migration's header.
+ */
+export const WELCOME_FLAGS = {
+  /** Mobile-first editorial redesign of /welcome. Default: false (off).
+   *  When true, /welcome renders WelcomeV2 instead of WelcomeV1. */
+  WELCOME_V2: 'ff_welcome_v2',
+} as const;
+
+/**
+ * Default values for known flags. `isFeatureEnabled()` already returns false
+ * for any flag not present in the DB, but this map is the documented source
+ * of truth for SSR behavior before the first DB hit completes.
+ *
+ * Keep in sync with the migration that seeds each flag.
+ */
+export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
+  [WELCOME_FLAGS.WELCOME_V2]: false,
+} as const;
