@@ -1,14 +1,19 @@
 // supabase/functions/grounded-answer/retrieval.ts
-// Retrieval + scope verification layer.
+// Retrieval + scope verification adapter.
 //
-// Single responsibility: call match_rag_chunks_ncert and independently
-// verify that every returned chunk belongs to the requested scope.
-// Defense-in-depth for spec §6.4 step 4 — if a future RPC refactor
-// silently broadens the result (returns wrong-grade or wrong-subject
-// chunks), the scopeDrops counter will surface it in the trace instead
-// of leaking into student answers.
+// As of audit F10 (2026-04-27 production-readiness), the canonical RPC
+// retrieval contract lives in `../_shared/rag/retrieve.ts`. This file is now
+// a thin adapter that:
+//   1. Delegates the RPC call to the unified `retrieve()` module (Phase 1
+//      consolidation — keeps every caller on a single source of truth for
+//      `match_rag_chunks_ncert` parameter shape).
+//   2. Maps the unified RetrievalChunk shape to grounded-answer's local
+//      `RetrievedChunk` shape (keeps pipeline.ts unchanged).
+//   3. Preserves the existing TS-side similarity-floor filter (callers like
+//      pipeline.ts rely on the floor being applied here, not just RPC-side,
+//      because stubs in tests bypass the RPC's quality filter).
 //
-// Contract:
+// Contract (UNCHANGED from pre-F10 implementation):
 //   - Never throws. RPC errors return empty chunks + 0 drops.
 //   - chapter_number is passed as INTEGER to the RPC (never stringified) —
 //     the RPC signature is `p_chapter_number INTEGER DEFAULT NULL` and
@@ -16,6 +21,9 @@
 //   - When scope.chapter_number is null we ran subject-wide retrieval;
 //     we MUST NOT drop rows on chapter mismatch because the caller
 //     explicitly asked for any chapter in the subject.
+//   - Similarity floor filtering happens here, NOT counted as scope drops.
+
+import { retrieve, type RetrievalChunk as UnifiedChunk } from '../_shared/rag/retrieve.ts';
 
 export interface RetrievedChunk {
   id: string;
@@ -51,103 +59,71 @@ export interface RetrievalResult {
 // deno-lint-ignore no-explicit-any
 type SupabaseLike = any;
 
-// Row shape we ask the RPC for. grade_short / subject_code are not
-// returned by match_rag_chunks_ncert today, but we still read them if
-// present so a future RPC extension lights up the scope check
-// automatically.
-interface RpcRow {
-  id: string;
-  content: string | null;
-  chapter_number: number | null;
-  chapter_title: string | null;
-  page_number: number | null;
-  similarity: number | null;
-  media_url: string | null;
-  media_description: string | null;
-  grade_short?: string | null;
-  subject_code?: string | null;
-}
-
 export async function retrieveChunks(
   sb: SupabaseLike,
   params: RetrievalParams,
 ): Promise<RetrievalResult> {
   const { query, embedding, scope, matchCount, minSimilarity } = params;
 
-  // deno-lint-ignore no-explicit-any
-  let result: { data: any; error: any };
+  // Validate grade as a P5 string at the boundary. The unified retrieve()
+  // throws RetrievalError on validation failure — that's a programming bug,
+  // not a runtime degrade, but pipeline.ts depends on this layer being
+  // best-effort. Catch and degrade to empty.
+  let unified;
   try {
-    // Forward minSimilarity as the RPC's p_min_quality floor so the DB-side
-    // filter runs at the correct threshold per spec §6.4 step 3 (strict=0.75,
-    // soft=0.55). The post-retrieval scope-verification below is defense in
-    // depth on top of this. Callers that don't want DB-side filtering can
-    // pass minSimilarity=0.
-    result = await sb.rpc('match_rag_chunks_ncert', {
-      query_text: query,
-      p_subject_code: scope.subject_code,
-      p_grade: scope.grade,
-      match_count: matchCount,
-      p_chapter_number: scope.chapter_number, // int | null — pass through as-is
-      p_chapter_title: scope.chapter_title,   // string | null
-      p_min_quality: minSimilarity,
-      query_embedding: embedding,
+    unified = await retrieve({
+      query,
+      grade: scope.grade as '6' | '7' | '8' | '9' | '10' | '11' | '12',
+      subject: scope.subject_code,
+      chapterNumber: scope.chapter_number,
+      chapterTitle: scope.chapter_title,
+      limit: matchCount,
+      minSimilarity,
+      // Defer reranking to the pipeline (it manages over-fetch + Voyage call).
+      rerank: false,
+      caller: 'grounded-answer',
+      embedding,
+      supabase: sb,
     });
   } catch (err) {
-    console.warn(`retrieval: rpc threw — ${String(err)}`);
+    console.warn(`retrieval: unified retrieve threw — ${String(err)}`);
     return { chunks: [], scopeDrops: 0 };
   }
 
-  if (result.error) {
-    console.warn(`retrieval: rpc error — ${result.error.message ?? 'unknown'}`);
-    return { chunks: [], scopeDrops: 0 };
+  if (unified.error) {
+    // Embedding-only errors with non-empty chunks are soft; retrieval errors
+    // surface as empty results. The unified module sets error on either case
+    // when chunks is empty, which matches the legacy contract.
+    if (unified.chunks.length === 0) {
+      console.warn(
+        `retrieval: ${unified.error.phase} — ${unified.error.message}`,
+      );
+      return { chunks: [], scopeDrops: 0 };
+    }
   }
 
-  const rows: RpcRow[] = Array.isArray(result.data) ? result.data : [];
-
-  let scopeDrops = 0;
+  // TS-side similarity floor — preserved from the legacy implementation
+  // because tests stub the RPC and bypass the DB-side `p_min_quality`
+  // filter. Floor failures are NOT scope drops (they're an expected filter,
+  // per the original retrieval.test.ts contract).
   const chunks: RetrievedChunk[] = [];
-
-  for (const row of rows) {
-    // Scope verification. Only enforce fields we received — if the RPC
-    // doesn't return grade_short/subject_code, we rely on its internal
-    // filter (which DOES enforce them). Chapter enforcement is conditional
-    // on the caller having specified a chapter.
-    if (row.grade_short !== undefined && row.grade_short !== null && row.grade_short !== scope.grade) {
-      scopeDrops++;
-      continue;
-    }
-    if (row.subject_code !== undefined && row.subject_code !== null && row.subject_code !== scope.subject_code) {
-      scopeDrops++;
-      continue;
-    }
-    if (scope.chapter_number != null && row.chapter_number !== scope.chapter_number) {
-      scopeDrops++;
-      continue;
-    }
-
-    // Similarity floor — defensive even though the RPC already ranks.
-    // When embedding path is taken, similarity = 1 - cosine_distance.
-    // When FTS path is taken, similarity = ts_rank (small positive floats).
-    // When LIKE fallback is taken, similarity is hardcoded to 0.3.
-    // The caller passes the appropriate floor for the current mode.
-    const sim = typeof row.similarity === 'number' ? row.similarity : 0;
-    if (sim < minSimilarity) {
-      // Not a scope drop — this is an expected filter, not a defense-in-depth
-      // catch. Don't inflate the scopeDrops counter with it.
-      continue;
-    }
-
-    chunks.push({
-      id: row.id,
-      content: row.content ?? '',
-      chapter_number: row.chapter_number ?? 0,
-      chapter_title: row.chapter_title ?? '',
-      page_number: row.page_number ?? null,
-      similarity: sim,
-      media_url: row.media_url ?? null,
-      media_description: row.media_description ?? null,
-    });
+  for (const c of unified.chunks) {
+    if (c.similarity < minSimilarity) continue;
+    chunks.push(adaptChunk(c));
   }
 
-  return { chunks, scopeDrops };
+  return { chunks, scopeDrops: unified.scope_drops };
+}
+
+function adaptChunk(c: UnifiedChunk): RetrievedChunk {
+  return {
+    id: c.chunk_id,
+    content: c.content ?? '',
+    chapter_number: c.chapter_number ?? 0,
+    chapter_title: c.chapter_title ?? '',
+    page_number: c.page_number ?? null,
+    similarity: c.similarity,
+    media_url: c.media_url ?? null,
+    media_description: c.media_description ?? null,
+  };
 }

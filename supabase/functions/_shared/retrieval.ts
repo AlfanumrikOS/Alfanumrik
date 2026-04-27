@@ -1,4 +1,15 @@
 /**
+ * @deprecated Use `_shared/rag/retrieve.ts` instead. This module exists only
+ * for backward compatibility with quiz-generator, ncert-solver, and
+ * generate-answers (Phase 1 deferred them to keep the change surface small —
+ * see audit 2026-04-27 finding F10).
+ *
+ * New callers MUST use the unified `retrieve()` interface from
+ * `_shared/rag/retrieve.ts`. Phase 2 (SQL-layer consolidation — drop
+ * match_rag_chunks_v2 and match_rag_chunks) is a separate session.
+ *
+ * Original docstring follows.
+ *
  * Unified NCERT Retrieval Module
  *
  * Architecture:
