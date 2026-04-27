@@ -14,7 +14,7 @@
  *   logger.error('AI response failed', { error, studentId });
  */
 
-import * as Sentry from '@sentry/nextjs';
+import { captureException, captureMessage } from '@sentry/nextjs';
 import { redactPII } from '@/lib/ops-events-redactor';
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
@@ -113,11 +113,11 @@ export const logger = {
     try {
       const originalError = meta?.error instanceof Error ? meta.error : undefined;
       if (originalError) {
-        Sentry.captureException(originalError, {
+        captureException(originalError, {
           extra: { ...meta, logMessage: message },
         });
       } else {
-        Sentry.captureMessage(message, {
+        captureMessage(message, {
           level: 'error',
           extra: meta,
         });

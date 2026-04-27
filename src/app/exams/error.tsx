@@ -1,11 +1,11 @@
 'use client';
 
 import { useEffect } from 'react';
-import * as Sentry from '@sentry/nextjs';
+import { captureException } from '@sentry/nextjs';
 
 export default function ExamsError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
-    Sentry.captureException(error, { tags: { boundary: 'exams-error', digest: error.digest } });
+    captureException(error, { tags: { boundary: 'exams-error', digest: error.digest } });
   }, [error]);
 
   const isHi = typeof window !== 'undefined' && (

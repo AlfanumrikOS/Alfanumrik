@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import * as Sentry from '@sentry/nextjs';
+import { captureException } from '@sentry/nextjs';
 
 /**
  * Root route error boundary — catches errors in any page (not root layout).
@@ -16,7 +16,7 @@ export default function Error({
 }) {
   useEffect(() => {
     // Report to Sentry with context
-    Sentry.captureException(error, {
+    captureException(error, {
       tags: {
         boundary: 'route-error',
         digest: error.digest,

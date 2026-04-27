@@ -33,6 +33,26 @@ const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   compress: true,
+  // Tree-shake named imports from heavy libraries. Each entry gets transformed
+  // from `import { x, y } from 'pkg'` into per-symbol imports so unused symbols
+  // are dropped from the client bundle. P10 budget enforcement.
+  experimental: {
+    optimizePackageImports: [
+      '@sentry/nextjs',
+      '@supabase/supabase-js',
+      '@supabase/ssr',
+      '@upstash/ratelimit',
+      '@upstash/redis',
+      'react-markdown',
+      'remark-gfm',
+      'remark-math',
+      'rehype-katex',
+      'swr',
+      'zod',
+      'clsx',
+      'tailwind-merge',
+    ],
+  },
   images: {
     formats: ['image/avif', 'image/webp'],
     remotePatterns: [

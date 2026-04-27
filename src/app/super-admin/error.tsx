@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import * as Sentry from '@sentry/nextjs';
+import { captureException } from '@sentry/nextjs';
 
 /**
  * /super-admin error boundary — English-only per ops decision.
@@ -9,7 +9,7 @@ import * as Sentry from '@sentry/nextjs';
  */
 export default function SuperAdminError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
-    Sentry.captureException(error, { tags: { boundary: 'super-admin-error', digest: error.digest } });
+    captureException(error, { tags: { boundary: 'super-admin-error', digest: error.digest } });
   }, [error]);
 
   const isDev = process.env.NODE_ENV === 'development';
