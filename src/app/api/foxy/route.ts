@@ -986,6 +986,11 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
       // but the student-facing wire shape no longer exposes the raw chunks.
       // Server-side persistence to foxy_chat_messages.sources is preserved
       // above for analytics and debug.
+      //
+      // Phase 0 Fix 0.5: legacy intent-router path. groundedFromChunks is
+      // approximated as `sources.length > 0` — the legacy path doesn't run
+      // the soft-mode escape detection, so this is a conservative proxy
+      // ("we retrieved chunks AND the LLM produced a response").
       return NextResponse.json({
         success: true,
         response: legacy.response,
@@ -993,6 +998,8 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         quotaRemaining: remaining,
         tokensUsed: legacy.tokensUsed,
         groundingStatus: 'grounded' as const,
+        groundedFromChunks: legacy.sources.length > 0,
+        citationsCount: legacy.sources.length,
         traceId: legacy.traceId,
       });
     } catch (legacyErr) {
@@ -1253,6 +1260,16 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   // citations. `sources` is still computed above and saved to
   // foxy_chat_messages.sources for analytics/debug.
   void diagrams;
+
+  // Phase 0 Fix 0.5: surface groundedFromChunks + citationsCount so the
+  // client analytics layer can emit honest `was_grounded` telemetry.
+  // Default to `false` if the service didn't include the field (e.g. an old
+  // cached response from before Fix 0.5 shipped) — conservative: don't claim
+  // grounding we can't prove.
+  const groundedFromChunks =
+    grounded.groundedFromChunks === true ? true : false;
+  const citationsCount = grounded.citations.length;
+
   return NextResponse.json({
     success: true,
     response: grounded.answer,
@@ -1261,6 +1278,8 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     tokensUsed: grounded.meta.tokens_used,
     confidence: grounded.confidence,
     groundingStatus: isUnverified ? ('unverified' as const) : ('grounded' as const),
+    groundedFromChunks,
+    citationsCount,
     traceId: grounded.trace_id,
     ...(upgradePrompt ? { upgradePrompt } : {}),
   });

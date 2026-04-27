@@ -103,13 +103,31 @@ export default function ExamsPage() {
     const loadChapters = async () => {
       setLoadingChapters(true);
       try {
-        const { data, error } = await supabase
+        // Resolve subject code → subject_id (every other surface joins via id).
+        // Reference: src/app/foxy/page.tsx:78-81 and src/app/api/foxy/route.ts.
+        const { data: subjectRow } = await supabase
+          .from('subjects')
+          .select('id')
+          .eq('code', selectedSubject)
+          .eq('is_active', true)
+          .single();
+
+        if (!subjectRow?.id) {
+          setAvailableChapters([]);
+          setLoadingChapters(false);
+          return;
+        }
+
+        // Curriculum_topics may store grade as either "9" or "Grade 9" — match both.
+        let query = supabase
           .from('curriculum_topics')
           .select('chapter_number, title')
-          .eq('grade', student.grade)
-          .eq('subject', selectedSubject)
+          .eq('subject_id', subjectRow.id)
           .eq('is_active', true)
           .order('chapter_number');
+        query = query.or(`grade.eq.Grade ${student.grade},grade.eq.${student.grade}`);
+        const { data, error } = await query;
+
         if (!error && data) {
           // Deduplicate by chapter_number
           const seen = new Set<number>();
@@ -522,7 +540,7 @@ export default function ExamsPage() {
 
                   {/* Stats row */}
                   <div className="flex items-center gap-4 mt-3 text-xs text-[var(--text-3)] flex-wrap">
-                    <span>📅 {new Date(exam.exam_date).toLocaleDateString()}</span>
+                    <span>📅 {new Date(exam.exam_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
                     <span>📊 {isHi ? 'अनुमानित' : 'Predicted'}: {predicted}/{exam.total_marks}</span>
                     <span>⏱ {exam.duration_minutes} {isHi ? 'मिनट' : 'min'}</span>
                   </div>

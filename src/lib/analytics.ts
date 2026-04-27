@@ -32,6 +32,16 @@ type AnalyticsEvent = {
   // F16: extended to carry grade alongside the subject/mode pair already collected.
   foxy_session_started: { subject: string; grade?: string; mode?: string };
   // F16: per-turn completion telemetry — feeds RAG/grounding success funnels.
+  // Phase 0 Fix 0.5 (2026-04-27): semantics tightened.
+  //   was_grounded   — true ONLY when the answer was produced from the
+  //                    retrieved NCERT chunks. Soft-mode "From general CBSE
+  //                    knowledge:" fallback answers report false here even
+  //                    though the API-shape branch was grounded:true.
+  //                    Use this for the citation-backed answer rate metric.
+  //   citations_count — actual NCERT citation count from the grounded-answer
+  //                    service response (0 on abstain or legacy paths
+  //                    without chunks). NOT suggestedAlternatives.length
+  //                    (which was the previous, incorrect signal).
   foxy_turn_completed: {
     subject: string;
     grade?: string;
