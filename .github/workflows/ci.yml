@@ -447,6 +447,61 @@ jobs:
           path: playwright-report/
           retention-days: 7
 
+  # ── Step 2c: Critical-path E2E (BLOCKING) ──
+  # Audit finding F9: the legacy `e2e` job above is `continue-on-error: true`
+  # because it has known flakes; cleanup is a separate session. This new job
+  # runs ONLY the two highest-blast-radius specs (quiz happy path, payment
+  # checkout) and IS BLOCKING. A scoring or Razorpay regression must not ship
+  # through CI green.
+  #
+  # Catalog entries: REG-45 (quiz), REG-46 (payment) — see
+  # `.claude/regression-catalog.md`.
+  e2e-critical-paths:
+    name: E2E Critical Paths (blocking)
+    runs-on: ubuntu-latest
+    needs: build
+    # Only run on PRs targeting main/staging branches. Don't slow down feature
+    # branches that haven't proposed a merge yet. Skip on forked PRs (no
+    # secrets) — when staging fixtures are wired in, this `if` should also
+    # require the same-repo guard used by the integration-tests job.
+    if: |
+      github.event_name == 'pull_request' &&
+      (github.base_ref == 'main' || github.base_ref == 'master' || github.base_ref == 'staging') &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+
+      - name: Run critical-path E2E specs
+        # BLOCKING — no continue-on-error. Tests that need a live test-user
+        # fixture are registered with `test.fixme()` so they don't fail the
+        # suite while the fixture is being wired (audit F9 follow-up). The
+        # spec FILES must parse and any non-fixme tests must pass.
+        run: npx playwright test --project=chromium e2e/quiz-happy-path.spec.ts e2e/payment-checkout.spec.ts
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ env.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ env.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          # Real-auth path: when these secrets are present, the `test.fixme`
+          # guards in the specs flip off and the tests drive a live student
+          # session. Until then, the specs run their mocked-only assertions
+          # and skip the real-auth branches via fixme.
+          TEST_STUDENT_EMAIL: ${{ secrets.TEST_STUDENT_EMAIL }}
+          TEST_STUDENT_PASSWORD: ${{ secrets.TEST_STUDENT_PASSWORD }}
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-critical-paths-traces
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 14
+
   # ── Step 3: Post-deploy health check (main branch only) ──
   health-check:
     name: Post-Deploy Health Check

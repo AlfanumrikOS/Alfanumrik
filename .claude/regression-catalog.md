@@ -70,3 +70,41 @@ implementation in `src/app/api/foxy/route.ts`,
 `supabase/functions/grounded-answer/` diverges from the parity copy
 in these tests, quality review must reject and the parity copy must be
 re-synced.
+
+## Critical-Path E2E (Audit F9 — 2026-04-27)
+
+Source: production-readiness audit finding F9 — the highest-blast-radius
+user flows (quiz happy path, payment funnel) had ZERO Playwright coverage
+and the existing `e2e` CI job is `continue-on-error: true`, so even the
+specs that did exist couldn't block PRs. The new `e2e-critical-paths` job
+runs ONLY these two specs and IS BLOCKING.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-45 | `quiz_happy_path_p1_p2_p3` | Browser-level enforcement of P1 (score = round((correct/total)*100), surfaced from server response, never recomputed in QuizResults), P2 (XP from server response; daily-cap clamp surfaces bilingual "cap reached" copy when `xp_capped: true`), and P3 (all-same-answer flag, speed-hack flag, response-count mismatch — server zeroes XP / rejects). | `e2e/quiz-happy-path.spec.ts` | P (5 tests; 5 fixme until test-user fixture wired in CI — see TODO at bottom of spec) |
+| REG-46 | `payment_checkout_p11` | Browser-level enforcement of P11 — happy path (Razorpay → /api/payments/verify → subscription active), signature mismatch returns 400 with no subscription change, atomic-activation kill switch returns 503 with retry copy (no false success), `payment_success` analytics event fires with `amount_inr`/`currency` and NO raw email/phone (P13). Idempotency for duplicate webhook events is unit-only (server-side) and is registered as fixme in the spec to keep the catalog visible at the E2E layer. | `e2e/payment-checkout.spec.ts` | P (5 tests; 4 fixme until test-user fixture wired, 1 fixme by design — webhook idempotency is server-only) |
+
+### Invariants covered by this section
+
+- P1 (score accuracy) — REG-45
+- P2 (XP economy + daily cap) — REG-45
+- P3 (anti-cheat 3 rules) — REG-45
+- P11 (payment integrity — signature, atomicity, no plan access without
+  verified payment) — REG-46
+- P13 (data privacy — analytics payload contains no raw PII) — REG-46
+
+### Notes on test strategy
+
+Both specs use `test.fixme(true, '<reason>')` for branches that require a
+real authenticated student session (the staging Supabase project does not
+yet seed `TEST_STUDENT_EMAIL` / `TEST_STUDENT_PASSWORD` for CI). The spec
+FILES still parse and the catalog entries are visible — when the fixture
+is wired in CI, the fixmes flip off and the suite runs end-to-end. Until
+then, the unit-level coverage referenced in each fixme reason is the
+authoritative defense for that branch. See `e2e/helpers/auth.ts` for the
+mocked-session and real-login helpers, and the TODO blocks at the bottom
+of each spec for fixture wiring requirements.
+
+CI job: `e2e-critical-paths` in `.github/workflows/ci.yml` — BLOCKING
+(no `continue-on-error`), runs only on PRs targeting main/master/staging
+from the same repo. The legacy `e2e` job remains advisory.
