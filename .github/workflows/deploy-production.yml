@@ -344,9 +344,9 @@ jobs:
             FAIL=1
           fi
 
-          # Homepage loads
+          # Homepage loads — 307/308 are expected (redirects to /welcome marketing route)
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${TARGET_URL}/" 2>/dev/null)
-          if [ "$STATUS" = "200" ]; then
+          if [ "$STATUS" = "200" ] || [ "$STATUS" = "307" ] || [ "$STATUS" = "308" ]; then
             echo "| / (homepage) | $STATUS |" >> $GITHUB_STEP_SUMMARY
           else
             echo "| / (homepage) | FAIL ($STATUS) |" >> $GITHUB_STEP_SUMMARY
