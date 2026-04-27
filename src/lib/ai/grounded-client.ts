@@ -89,6 +89,20 @@ export type GroundedResponse =
       answer: string;
       citations: Citation[];
       confidence: number;
+      /**
+       * True when the answer was actually produced from the retrieved NCERT
+       * chunks. False when soft-mode fell back to general CBSE knowledge or
+       * the retrieve_only branch returned without an answer.
+       *
+       * Optional on the wire because cached responses written before this
+       * field shipped (and any future legacy paths) may not include it. UI
+       * code that needs a strict signal should treat `undefined` as the
+       * conservative `false` (don't claim grounding we can't prove).
+       *
+       * Audit Phase 0 Fix 0.5 — this is what `was_grounded` should be
+       * derived from in PostHog, not the abstain-status check.
+       */
+      groundedFromChunks?: boolean;
       trace_id: string;
       meta: { claude_model: string; tokens_used: number; latency_ms: number };
     }

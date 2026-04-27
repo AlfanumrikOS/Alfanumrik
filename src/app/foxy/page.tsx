@@ -192,7 +192,9 @@ async function fetchConversationById(sessionId: string) {
 // Calls the NEW Next.js API route (src/app/api/foxy/route.ts), which uses
 // the src/lib/ai/ orchestration layer. The legacy foxy-tutor Edge Function
 // (supabase/functions/foxy-tutor/) is deprecated — do not revert to it.
-async function callFoxyTutor(params: Record<string, any>) {
+async function callFoxyTutor(params: Record<string, any> & { language?: string }) {
+  // P7: Hindi-medium students must see Hindi error/paywall copy on critical surfaces.
+  const isHi = params.language === 'hi';
   try {
     // Get the current access token — this is the primary auth mechanism.
     // cookies() alone can fail for chunked Supabase JWTs; the Bearer token
@@ -240,32 +242,64 @@ async function callFoxyTutor(params: Record<string, any>) {
       }
 
       if (res.status === 401) {
-        return { reply: 'Session expired. Please sign in again.', xp_earned: 0, session_id: null };
+        return {
+          reply: isHi
+            ? 'सेशन समाप्त हो गया। कृपया फिर से साइन इन करें।'
+            : 'Session expired. Please sign in again.',
+          xp_earned: 0,
+          session_id: null,
+        };
       }
       if (res.status === 403) {
         const errCode = (errBody?.code as string) ?? '';
         if (errCode === 'PERMISSION_DENIED' || errCode === 'NO_ROLES') {
-          return { reply: 'Foxy is available on paid plans. Upgrade to chat with your AI tutor!', xp_earned: 0, session_id: null };
+          return {
+            reply: isHi
+              ? 'फॉक्सी पेड प्लान पर उपलब्ध है। अपग्रेड करें और AI ट्यूटर से चैट करें!'
+              : 'Foxy is available on paid plans. Upgrade to chat with your AI tutor!',
+            xp_earned: 0,
+            session_id: null,
+          };
         }
-        return { reply: 'Access denied. Please contact support.', xp_earned: 0, session_id: null };
+        return {
+          reply: isHi
+            ? 'पहुँच अस्वीकृत। कृपया सहायता से संपर्क करें।'
+            : 'Access denied. Please contact support.',
+          xp_earned: 0,
+          session_id: null,
+        };
       }
       if (res.status === 429) {
         return {
-          reply: (errBody?.error as string) || "You've used all your messages for today. Upgrade to continue!",
+          reply: (errBody?.error as string) || (isHi
+            ? 'आज के सारे संदेश इस्तेमाल हो गए। जारी रखने के लिए अपग्रेड करें!'
+            : "You've used all your messages for today. Upgrade to continue!"),
           xp_earned: 0,
           session_id: null,
           limitReached: true,
         };
       }
       if (res.status === 503) {
-        return { reply: 'Foxy is temporarily unavailable. Please try again in a minute.', xp_earned: 0, session_id: null };
+        return {
+          reply: isHi
+            ? 'फॉक्सी अभी अस्थायी रूप से उपलब्ध नहीं है। एक मिनट बाद कोशिश करें।'
+            : 'Foxy is temporarily unavailable. Please try again in a minute.',
+          xp_earned: 0,
+          session_id: null,
+        };
       }
-      return { reply: 'Something went wrong. Please try again.', xp_earned: 0, session_id: null };
+      return {
+        reply: isHi
+          ? 'कुछ गड़बड़ हो गई। कृपया फिर कोशिश करें।'
+          : 'Something went wrong. Please try again.',
+        xp_earned: 0,
+        session_id: null,
+      };
     }
 
     const data = await res.json();
     return {
-      reply:      data.response || 'Let me think about that...',
+      reply:      data.response || (isHi ? 'मुझे इसके बारे में सोचने दो...' : 'Let me think about that...'),
       xp_earned:  0, // new route does not award per-message XP (XP via quiz/study plan)
       session_id: data.sessionId || null,
       quota:      data.quotaRemaining,
@@ -277,10 +311,24 @@ async function callFoxyTutor(params: Record<string, any>) {
       traceId:                data.traceId as string | undefined,
       abstainReason:          data.abstainReason as AbstainReason | undefined,
       suggestedAlternatives:  data.suggestedAlternatives as SuggestedAlternative[] | undefined,
+      // Phase 0 Fix 0.5: analytics-only signals. Distinct from groundingStatus,
+      // which is the API-shape branch discriminator. groundedFromChunks is
+      // the honest "did the answer actually use the retrieved NCERT chunks"
+      // signal; citationsCount is the count of NCERT citations on the
+      // grounded-answer service response (0 on abstain or legacy w/out chunks).
+      // Default to safe values when the server didn't emit them.
+      groundedFromChunks:     typeof data.groundedFromChunks === 'boolean' ? data.groundedFromChunks : false,
+      citationsCount:         typeof data.citationsCount === 'number' ? data.citationsCount : 0,
     };
   } catch (err) {
     console.error('[Foxy] Network error:', err);
-    return { reply: 'Connection issue. Check your network and try again!', xp_earned: 0, session_id: null };
+    return {
+      reply: isHi
+        ? 'कनेक्शन की समस्या। अपना नेटवर्क जाँचें और फिर कोशिश करें!'
+        : 'Connection issue. Check your network and try again!',
+      xp_earned: 0,
+      session_id: null,
+    };
   }
 }
 
@@ -620,7 +668,14 @@ export default function FoxyPage() {
     if (!text.trim() && !image) return;
     // Client-side length limit matching server-side MAX_MESSAGE_LENGTH
     if (text.length > 5000) {
-      setMessages((p: ChatMessage[]) => [...p, { id: Date.now(), role: 'tutor', content: 'Message too long! Please keep it under 5000 characters.', timestamp: new Date().toISOString() }]);
+      setMessages((p: ChatMessage[]) => [...p, {
+        id: Date.now(),
+        role: 'tutor',
+        content: language === 'hi'
+          ? 'संदेश बहुत लंबा है! कृपया 5000 अक्षरों से कम रखें।'
+          : 'Message too long! Please keep it under 5000 characters.',
+        timestamp: new Date().toISOString(),
+      }]);
       return;
     }
 
@@ -746,16 +801,22 @@ export default function FoxyPage() {
       if (resp.xp_earned > 0) setXpGained((p: number) => p + resp.xp_earned);
       if (resp.session_id) setChatSessionId(resp.session_id);
       // Analytics: F16 — see audit 2026-04-27.
-      // groundingStatus values: 'grounded' | 'unverified' | 'hard-abstain' (undefined on legacy responses).
-      // Only 'grounded' counts as a true citation-backed answer.
+      // Phase 0 Fix 0.5: was_grounded is derived from resp.groundedFromChunks
+      // (the server's honest "answer was actually produced from retrieved
+      // NCERT chunks" signal), NOT from the groundingStatus discriminator.
+      // Soft-mode answers that fell back to "general CBSE knowledge" return
+      // groundingStatus='grounded' but groundedFromChunks=false — previously
+      // these inflated the was_grounded metric to ~100% even when Foxy was
+      // answering from general knowledge. citations_count uses the actual
+      // NCERT citation count from the grounded-answer service (not
+      // suggestedAlternatives, which is the abstain-branch redirect list
+      // and is always 0 on grounded responses).
       try {
-        const grounded = resp.groundingStatus === 'grounded';
-        const citationsCount = Array.isArray(resp.suggestedAlternatives) ? resp.suggestedAlternatives.length : 0;
         track('foxy_turn_completed', {
           subject: activeSubject,
           grade: studentGrade,
-          was_grounded: grounded,
-          citations_count: citationsCount,
+          was_grounded: resp.groundedFromChunks === true,
+          citations_count: typeof resp.citationsCount === 'number' ? resp.citationsCount : 0,
           latency_ms: Date.now() - turnStartedAt,
         });
       } catch { /* analytics is non-critical */ }
@@ -773,7 +834,12 @@ export default function FoxyPage() {
       // Refresh conversation list so new/updated sessions appear
       setTimeout(refreshConversations, 1000);
     } catch {
-      setMessages((p: ChatMessage[]) => [...p, { id: Date.now() + 1, role: 'tutor', content: 'Oops! Please try again.', timestamp: new Date().toISOString() }]);
+      setMessages((p: ChatMessage[]) => [...p, {
+        id: Date.now() + 1,
+        role: 'tutor',
+        content: language === 'hi' ? 'ओह! कृपया फिर कोशिश करें।' : 'Oops! Please try again.',
+        timestamp: new Date().toISOString(),
+      }]);
       setFoxyState('idle');
     }
     setLoading(false);
@@ -926,7 +992,7 @@ export default function FoxyPage() {
 
   if (authLoading || !student) return (
     <div className="mesh-bg min-h-dvh flex items-center justify-center">
-      <div className="text-center"><div className="text-5xl animate-float mb-3">{FOXY_FACES.idle}</div><p className="text-sm text-[var(--text-3)]">Loading Foxy...</p></div>
+      <div className="text-center"><div className="text-5xl animate-float mb-3">{FOXY_FACES.idle}</div><p className="text-sm text-[var(--text-3)]">{language === 'hi' ? 'फॉक्सी लोड हो रहा है...' : 'Loading Foxy...'}</p></div>
     </div>
   );
 
@@ -951,19 +1017,23 @@ export default function FoxyPage() {
           {FOXY_FACES[foxyState]}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-bold truncate">Foxy <span className="text-[10px] font-semibold opacity-60">AI Tutor</span></div>
+          <div className="text-sm font-bold truncate">Foxy <span className="text-[10px] font-semibold opacity-60">{language === 'hi' ? 'AI ट्यूटर' : 'AI Tutor'}</span></div>
           <div className="text-[10px] opacity-50 flex gap-2"><span className="hidden sm:inline">{totalXP + xpGained} XP</span><span className="hidden sm:inline">{streakDays}d streak</span><span>Gr {studentGrade}</span></div>
         </div>
         <div className="flex items-center gap-1.5">
           {LANGS.map(l => <button key={l.code} onClick={() => { if (!isLangLocked) setLanguage(l.code); }} className={`text-[10px] font-bold px-2 py-1 rounded-lg transition-all ${language !== l.code ? 'hidden sm:inline-block' : ''}`} style={{ background: language === l.code ? 'rgba(255,255,255,0.2)' : 'transparent', color: language === l.code ? '#fff' : 'rgba(255,255,255,0.4)', opacity: isLangLocked && language !== l.code ? 0.2 : 1, cursor: isLangLocked ? 'default' : 'pointer' }}>{l.label}</button>)}
           {isLangLocked && <span className="text-[8px] text-white/30">🔒</span>}
-          {chatUsage && <span className="hidden sm:inline text-[8px] opacity-40 ml-1" title="Chat messages remaining">💬{chatUsage.remaining}/{chatUsage.limit}</span>}
+          {chatUsage && <span className="hidden sm:inline text-[8px] opacity-40 ml-1" title={language === 'hi' ? 'बचे हुए संदेश' : 'Chat messages remaining'}>💬{chatUsage.remaining}/{chatUsage.limit}</span>}
           {/* Voice mode toggle — hidden on browsers without TTS */}
           {ttsSupported && (
             <button
               onClick={toggleVoiceMode}
-              title={voiceMode ? 'Voice mode ON — click to mute' : 'Voice mode OFF — click to enable auto-speak'}
-              aria-label={voiceMode ? 'Disable voice mode' : 'Enable voice mode'}
+              title={language === 'hi'
+                ? (voiceMode ? 'वॉइस मोड चालू — म्यूट करने के लिए क्लिक करें' : 'वॉइस मोड बंद — ऑटो-स्पीक चालू करने के लिए क्लिक करें')
+                : (voiceMode ? 'Voice mode ON — click to mute' : 'Voice mode OFF — click to enable auto-speak')}
+              aria-label={language === 'hi'
+                ? (voiceMode ? 'वॉइस मोड बंद करें' : 'वॉइस मोड चालू करें')
+                : (voiceMode ? 'Disable voice mode' : 'Enable voice mode')}
               className="w-7 h-7 rounded-lg flex items-center justify-center text-sm transition-all active:scale-90"
               style={{
                 background: voiceMode ? 'rgba(232,88,28,0.25)' : 'rgba(255,255,255,0.08)',
@@ -1462,7 +1532,7 @@ export default function FoxyPage() {
 
                     {/* Student's correction */}
                     <div className="mb-4">
-                      <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--text-3)' }}>What should the correct answer be? (optional)</label>
+                      <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--text-3)' }}>{language === 'hi' ? 'सही उत्तर क्या होना चाहिए? (वैकल्पिक)' : 'What should the correct answer be? (optional)'}</label>
                       <textarea
                         value={reportCorrection}
                         onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setReportCorrection(e.target.value)}
@@ -1475,15 +1545,17 @@ export default function FoxyPage() {
 
                     {/* Submit */}
                     <div className="flex gap-2">
-                      <button onClick={() => setReportModal(null)} className="flex-1 py-2.5 rounded-xl text-xs font-bold" style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }}>Cancel</button>
+                      <button onClick={() => setReportModal(null)} className="flex-1 py-2.5 rounded-xl text-xs font-bold" style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }}>{language === 'hi' ? 'रद्द करें' : 'Cancel'}</button>
                       <button onClick={submitReport} disabled={reportSubmitting} className="flex-1 py-2.5 rounded-xl text-xs font-bold text-white transition-all active:scale-95 disabled:opacity-50" style={{ background: '#EF4444' }}>
-                        {reportSubmitting ? 'Submitting...' : '⚠️ Submit Report'}
+                        {reportSubmitting
+                          ? (language === 'hi' ? 'भेजा जा रहा है...' : 'Submitting...')
+                          : (language === 'hi' ? '⚠️ रिपोर्ट भेजें' : '⚠️ Submit Report')}
                       </button>
                     </div>
                   </>) : (
                     <div className="text-center py-6">
                       <div className="text-4xl mb-3">✅</div>
-                      <h3 className="text-base font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>Thank you!</h3>
+                      <h3 className="text-base font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>{language === 'hi' ? 'धन्यवाद!' : 'Thank you!'}</h3>
                       <p className="text-xs mb-4" style={{ color: 'var(--text-3)' }}>
                         {language === 'hi' ? 'आपकी रिपोर्ट दर्ज हो गई है। हम इसकी जाँच करेंगे और सुधार करेंगे।' : 'Your report has been recorded. Our team will review and fix this.'}
                       </p>

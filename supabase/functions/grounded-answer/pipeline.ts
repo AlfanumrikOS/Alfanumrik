@@ -276,6 +276,69 @@ async function finalizeAbstain(
 }
 
 /**
+ * Soft-mode "general knowledge" escape detection. The foxy_tutor_v1 prompt
+ * (and the legacy modeInstructionFor 'soft' branch) both instruct Claude to
+ * prefix any non-NCERT-grounded segment with one of these sentinel phrases:
+ *
+ *   - "From general CBSE knowledge:"   (foxy_tutor_v1 inline.ts L71)
+ *   - "General knowledge (not from NCERT):"  (modeInstructionFor 'soft')
+ *
+ * If the FINAL answer starts with either prefix (case-insensitive, ignoring
+ * leading whitespace and a small set of markdown emphasis chars), the answer
+ * is NOT grounded in the retrieved chunks even though the pipeline returned
+ * grounded:true at the API-shape level. Used by `groundedFromChunks` to give
+ * analytics an honest signal about citation-backed vs. fallback answers.
+ *
+ * Conservative: matches only at the START of the answer. Mid-answer fallback
+ * sentences (rare but possible) currently still register as grounded — Phase
+ * 2.5 will tighten this when we add full grounding-check coverage to soft mode.
+ */
+function answerStartsWithGeneralKnowledgeEscape(answer: string): boolean {
+  if (!answer) return false;
+  // Strip leading whitespace and a small set of markdown emphasis chars
+  // ("*", "_", ">", "-") so e.g. "**From general CBSE knowledge:** ..." or
+  // "> General knowledge (not from NCERT): ..." still matches.
+  const stripped = answer.replace(/^[\s*_>\-]+/, '').toLowerCase();
+  return (
+    stripped.startsWith('from general cbse knowledge:') ||
+    stripped.startsWith('general knowledge (not from ncert):')
+  );
+}
+
+/**
+ * Compute whether the grounded:true response was actually produced from the
+ * retrieved chunks. See the GroundedResponse.groundedFromChunks field doc
+ * in types.ts for the exact contract.
+ */
+function computeGroundedFromChunks(args: {
+  mode: 'strict' | 'soft';
+  answer: string;
+  chunkCount: number;
+  retrieveOnly: boolean;
+}): boolean {
+  if (args.retrieveOnly) {
+    // retrieve_only has no answer text — there is no claim to ground. We
+    // mark this false so analytics doesn't double-count concept-engine
+    // retrieval pings as student-facing grounded answers.
+    return false;
+  }
+  if (args.chunkCount === 0) {
+    // No chunks retrieved. Soft mode may still answer (from general CBSE
+    // knowledge). Strict mode would have abstained earlier so this branch
+    // is effectively soft-only — and is by definition NOT grounded in chunks.
+    return false;
+  }
+  if (args.mode === 'strict') {
+    // Strict mode reaches finalizeGrounded only after passing the grounding
+    // check (see Step 12 in runPipeline). By construction, grounded in chunks.
+    return true;
+  }
+  // Soft mode with chunks present: grounded UNLESS the answer opens with a
+  // "general knowledge" escape prefix (Claude's signal that it fell back).
+  return !answerStartsWithGeneralKnowledgeEscape(args.answer);
+}
+
+/**
  * Write the success trace row and return the grounded response. Only the
  * 2 success paths (retrieve_only with chunks, full grounded answer) call
  * this helper.
@@ -295,11 +358,18 @@ async function finalizeGrounded(
   traceRow.confidence = confidence;
   traceRow.answer_length = answer.length;
   const traceId = await writeTrace(sb, traceRow);
+  const groundedFromChunks = computeGroundedFromChunks({
+    mode: ctx.request.mode,
+    answer,
+    chunkCount: ctx.chunks ? ctx.chunks.length : 0,
+    retrieveOnly: ctx.request.retrieve_only === true,
+  });
   return {
     grounded: true,
     answer,
     citations,
     confidence,
+    groundedFromChunks,
     trace_id: traceId,
     meta: {
       claude_model: claudeModelLabel,

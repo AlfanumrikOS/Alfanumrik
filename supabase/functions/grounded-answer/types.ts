@@ -70,6 +70,19 @@ export type GroundedResponse =
       answer: string;
       citations: Citation[];
       confidence: number;
+      /**
+       * True when the answer was actually produced from the retrieved NCERT
+       * chunks (strict-mode passed grounding-check OR soft-mode answered with
+       * chunks present and no "general knowledge" escape prefix).
+       * False when soft-mode fell back to general CBSE knowledge OR when no
+       * chunks were retrieved but soft-mode answered anyway OR for the
+       * retrieve_only branch where there is no answer text.
+       *
+       * Distinct from `grounded: true` (the API-shape branch discriminator).
+       * Analytics callers should prefer this field over `grounded` when
+       * measuring true citation-backed answer rate. Audit Phase 0 Fix 0.5.
+       */
+      groundedFromChunks: boolean;
       trace_id: string;
       meta: { claude_model: string; tokens_used: number; latency_ms: number };
     }

@@ -63,17 +63,21 @@ export default function LearnPage() {
       .finally(() => setChaptersLoading(false));
   }, [selectedSubject, student?.grade]);
 
+  // Guard: if selected subject is locked (plan downgrade, grade change, etc.),
+  // reset selection. Calling setSelectedSubject() during render is a React
+  // anti-pattern — it must run from an effect.
+  useEffect(() => {
+    if (selectedSubject && lockedSubjects.find(s => s.code === selectedSubject)) {
+      setSelectedSubject(null);
+    }
+  }, [selectedSubject, lockedSubjects]);
+
   if (isLoading || !student) return <LoadingFoxy />;
 
   // allSubjects / allowedSubjects / lockedSubjects now come from the subjects
   // service hook above — plan + grade + stream gating lives on the server.
   const plan = getPlanConfig(student.subscription_plan);
   const selectedMeta = allSubjects.find(s => s.code === selectedSubject);
-
-  // Guard: if selected subject is locked, reset selection
-  if (selectedSubject && lockedSubjects.find(s => s.code === selectedSubject)) {
-    setSelectedSubject(null);
-  }
 
   return (
     <div className="mesh-bg min-h-dvh pb-nav">

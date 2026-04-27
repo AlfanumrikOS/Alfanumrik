@@ -97,6 +97,13 @@ export default function Dashboard() {
     if (!isLoading && isLoggedIn && activeRole === 'student' && student && !student.onboarding_completed) {
       router.replace('/onboarding');
     }
+    // Edge case: logged in, but student profile is missing AND no other role assigned.
+    // The render-time fallback at the bottom can't call router.replace() during render
+    // (React anti-pattern: setState/router during render triggers strict-mode warnings),
+    // so we kick the redirect from here.
+    if (!isLoading && isLoggedIn && !student && activeRole !== 'teacher' && activeRole !== 'guardian') {
+      router.replace('/login');
+    }
   }, [isLoading, isLoggedIn, activeRole, student, router]);
 
   useEffect(() => {
@@ -380,11 +387,10 @@ export default function Dashboard() {
   // Show skeleton while loading, but don't block non-student roles — they'll be redirected
   if (isLoading) return <DashboardSkeleton />;
   if (!student) {
-    // Non-student role (teacher/guardian) — redirect is already in flight from useEffect
-    // Show skeleton briefly while redirect completes
-    if (activeRole === 'teacher' || activeRole === 'guardian') return <DashboardSkeleton />;
-    // No student profile and no other role — something's wrong, redirect to login
-    router.replace('/login');
+    // Non-student role (teacher/guardian) — redirect is already in flight from useEffect.
+    // No student profile + no other role: redirect-to-login is dispatched from the
+    // useEffect at the top of this component (NOT from here — calling router.replace()
+    // during render is a React anti-pattern that breaks strict-mode).
     return <DashboardSkeleton />;
   }
 
