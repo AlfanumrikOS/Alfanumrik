@@ -494,7 +494,7 @@ jobs:
         # fixture are registered with `test.fixme()` so they don't fail the
         # suite while the fixture is being wired (audit F9 follow-up). The
         # spec FILES must parse and any non-fixme tests must pass.
-        run: npx playwright test --project=chromium e2e/quiz-happy-path.spec.ts e2e/payment-checkout.spec.ts
+        run: npx playwright test e2e/quiz-happy-path.spec.ts e2e/payment-checkout.spec.ts
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ env.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ env.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
