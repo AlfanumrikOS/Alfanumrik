@@ -114,6 +114,69 @@ export const RATE_LIMITS = {
   general: { maxRequests: 60, windowMs: 60_000, prefix: 'general' } satisfies RateLimitConfig,
 } as const;
 
+// ─── Sliding-window factory (port of src/lib/rate-limiter.ts) ───────────────
+// Provided so Edge Functions can use the same call shape as the Next.js side
+// without importing across the supabase/ ↔ src/ tree boundary (which fails
+// at deploy time — only supabase/functions/** is shipped to the Edge runtime).
+
+export interface SlidingWindowEntry {
+  count: number;
+  windowStart: number;
+}
+
+export interface SlidingWindowResult {
+  allowed: boolean;
+  retryAfterMs: number;
+}
+
+export type SlidingWindowStore = Map<string, SlidingWindowEntry>;
+
+/**
+ * Sliding-window rate limit check. Caller owns the store.
+ * Distinct from the token-bucket `checkRateLimit` above — different semantics
+ * and call signature, hence a different name.
+ */
+export function checkSlidingWindow(
+  store: SlidingWindowStore,
+  key: string,
+  limit: number,
+  windowMs: number,
+  nowMs: number = Date.now(),
+): SlidingWindowResult {
+  const entry = store.get(key);
+
+  if (!entry || nowMs - entry.windowStart > windowMs) {
+    store.set(key, { count: 1, windowStart: nowMs });
+    return { allowed: true, retryAfterMs: 0 };
+  }
+
+  if (entry.count >= limit) {
+    const retryAfterMs = windowMs - (nowMs - entry.windowStart);
+    return { allowed: false, retryAfterMs };
+  }
+
+  entry.count++;
+  return { allowed: true, retryAfterMs: 0 };
+}
+
+/**
+ * Factory: returns a rate-limiter function pre-bound to a private store,
+ * limit, and window. Call shape matches `src/lib/rate-limiter.ts` so the
+ * same usage pattern works on both Node (Next.js API routes) and Deno
+ * (Supabase Edge Functions).
+ *
+ * Usage:
+ *   const evalLimiter = createRateLimiter(30, 10 * 60 * 1000);
+ *   const { allowed, retryAfterMs } = evalLimiter(studentId);
+ */
+export function createRateLimiter(limit: number, windowMs: number) {
+  const store: SlidingWindowStore = new Map();
+
+  return function check(key: string, nowMs?: number): SlidingWindowResult {
+    return checkSlidingWindow(store, key, limit, windowMs, nowMs);
+  };
+}
+
 /* ═══════════════════════════════════════════════════════════════
  * UPSTASH REDIS UPGRADE (uncomment when ready for 50K+ students)
  *
