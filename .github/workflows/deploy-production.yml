@@ -10,8 +10,6 @@ concurrency:
 
 env:
   NODE_VERSION: '20'
-  NEXT_PUBLIC_SUPABASE_URL: 'https://placeholder.supabase.co'
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder'
   VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
   VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
   # Canonical production domain — already aliased to the latest deployment after
@@ -188,6 +186,36 @@ jobs:
 
       - name: Pull Vercel environment
         run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Reject placeholder env values from Vercel
+        # Defensive guard added 2026-04-27 after a build shipped with
+        # NEXT_PUBLIC_SUPABASE_URL=https://placeholder.supabase.co baked into
+        # the client bundle, breaking all browser-side Supabase calls.
+        # If Vercel project env is misconfigured, fail the build immediately
+        # rather than silently shipping a broken client to users.
+        run: |
+          if [ -f .vercel/.env.production.local ]; then
+            ENVFILE=.vercel/.env.production.local
+          elif [ -f .vercel/.env.preview.local ]; then
+            ENVFILE=.vercel/.env.preview.local
+          else
+            echo "::error::No Vercel env file found after `vercel pull`"
+            exit 1
+          fi
+          BAD=0
+          if grep -q "placeholder.supabase.co" "$ENVFILE" 2>/dev/null; then
+            echo "::error::Vercel project has placeholder NEXT_PUBLIC_SUPABASE_URL — set the real Supabase project URL in Vercel Dashboard → Settings → Environment Variables → Production"
+            BAD=1
+          fi
+          if grep -q "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder" "$ENVFILE" 2>/dev/null; then
+            echo "::error::Vercel project has placeholder NEXT_PUBLIC_SUPABASE_ANON_KEY — set the real anon JWT in Vercel Dashboard → Settings → Environment Variables → Production"
+            BAD=1
+          fi
+          if [ "$BAD" = "1" ]; then
+            echo "Refusing to build with placeholder Supabase credentials. Fix Vercel env vars and redeploy."
+            exit 1
+          fi
+          echo "Vercel env values look real (no placeholder markers detected)."
 
       - name: Build with Vercel
         run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
