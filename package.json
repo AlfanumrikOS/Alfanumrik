@@ -39,7 +39,6 @@
     "@vercel/speed-insights": "^2.0.0",
     "canvas-confetti": "^1.9.4",
     "clsx": "^2.1.1",
-    "framer-motion": "^11.3.19",
     "katex": "^0.16.45",
     "next": "^16.2.1",
     "pdf-parse": "^2.4.5",
@@ -54,6 +53,17 @@
     "tailwind-merge": "^2.5.2",
     "zod": "^4.3.6"
   },
+  "browserslist": [
+    "Chrome >= 90",
+    "Firefox >= 90",
+    "Safari >= 14",
+    "Edge >= 90",
+    "iOS >= 14",
+    "ChromeAndroid >= 90",
+    "not dead",
+    "not IE 11",
+    "not op_mini all"
+  ],
   "devDependencies": {
     "@next/bundle-analyzer": "^16.2.1",
     "@playwright/test": "^1.58.2",

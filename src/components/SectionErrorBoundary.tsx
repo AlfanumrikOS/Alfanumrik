@@ -1,7 +1,7 @@
 'use client';
 
 import { Component, type ReactNode } from 'react';
-import * as Sentry from '@sentry/nextjs';
+import { captureException } from '@sentry/nextjs';
 
 interface Props {
   children: ReactNode;
@@ -28,7 +28,7 @@ export class SectionErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    Sentry.captureException(error, {
+    captureException(error, {
       tags: { boundary: 'section-error', section: this.props.section || 'unknown' },
       contexts: {
         react: { componentStack: info.componentStack?.slice(0, 300) },

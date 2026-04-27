@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import * as Sentry from '@sentry/nextjs';
+import { captureException } from '@sentry/nextjs';
 
 /**
  * Global error boundary — catches errors in the root layout itself.
@@ -17,7 +17,7 @@ export default function GlobalError({
 }) {
   useEffect(() => {
     // Report to Sentry with digest for server-side correlation
-    Sentry.captureException(error, {
+    captureException(error, {
       tags: { boundary: 'global-error', digest: error.digest },
     });
   }, [error]);
