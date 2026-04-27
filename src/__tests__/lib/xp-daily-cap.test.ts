@@ -172,3 +172,61 @@ describe('clampXp: parity port of the SQL daily-cap clamp', () => {
     expect(clampXp(0, -50, cap)).toBe(0);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────
+// 4. XP bonus parity: SQL submit_quiz_results literals === XP_RULES (F20)
+// ─────────────────────────────────────────────────────────────────────
+//
+// Audit finding F20: submit_quiz_results RPC at
+// supabase/migrations/20260418110000_fix_quiz_shuffle_scoring.sql:236-238
+// hardcodes literals  v_xp := v_correct * 10  /  v_xp + 20  /  v_xp + 50.
+// They MUST match XP_RULES.quiz_per_correct, .quiz_high_score_bonus,
+// .quiz_perfect_bonus. If anyone bumps a TS constant without updating
+// the SQL — or vice versa — students see scores that don't match the
+// XP that lands in students.xp_total. P2 invariant breach.
+
+describe('xp bonuses: SQL submit_quiz_results literals match XP_RULES', () => {
+  // If a future migration replaces this RPC, update the path AND keep
+  // the parity assertions intact.
+  const migrationPath = resolve(
+    process.cwd(),
+    'supabase/migrations/20260418110000_fix_quiz_shuffle_scoring.sql',
+  );
+  const sql = readFileSync(migrationPath, 'utf8');
+
+  it('XP_RULES base values are the published P2 constants', () => {
+    expect(XP_RULES.quiz_per_correct).toBe(10);
+    expect(XP_RULES.quiz_high_score_bonus).toBe(20);
+    expect(XP_RULES.quiz_perfect_bonus).toBe(50);
+  });
+
+  it('SQL: per-correct literal matches XP_RULES.quiz_per_correct (10)', () => {
+    const re = new RegExp(`v_xp\\s*:=\\s*v_correct\\s*\\*\\s*${XP_RULES.quiz_per_correct}\\b`);
+    expect(sql).toMatch(re);
+  });
+
+  it('SQL: high-score bonus literal matches XP_RULES.quiz_high_score_bonus (20)', () => {
+    // Match `>= 80 ... v_xp := v_xp + 20`
+    const re = new RegExp(`>=\\s*80[\\s\\S]*?v_xp\\s*:=\\s*v_xp\\s*\\+\\s*${XP_RULES.quiz_high_score_bonus}\\b`);
+    expect(sql).toMatch(re);
+  });
+
+  it('SQL: perfect-score bonus literal matches XP_RULES.quiz_perfect_bonus (50)', () => {
+    // Match `= 100 ... v_xp := v_xp + 50`
+    const re = new RegExp(`=\\s*100[\\s\\S]*?v_xp\\s*:=\\s*v_xp\\s*\\+\\s*${XP_RULES.quiz_perfect_bonus}\\b`);
+    expect(sql).toMatch(re);
+  });
+
+  it('SQL: high-score threshold is 80 and perfect-score threshold is 100', () => {
+    // Pin thresholds — they live in the score formula, not in XP_RULES,
+    // but a future edit could silently change "who gets the bonus".
+    expect(sql).toMatch(/v_score_percent\s*>=\s*80/);
+    expect(sql).toMatch(/v_score_percent\s*=\s*100/);
+  });
+
+  it('SQL: anti-cheat zeroes XP — flagged path forces v_xp := 0', () => {
+    // Pin so the parity check above cannot be bypassed by removing the
+    // anti-cheat zero (which would let a flagged session still earn XP).
+    expect(sql).toMatch(/v_flagged[\s\S]{0,200}?v_xp\s*:=\s*0/);
+  });
+});
