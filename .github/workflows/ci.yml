@@ -371,13 +371,18 @@ jobs:
           FAIL=0
           WARN=0
 
-          # Largest single shared chunk (worst-case first-load weight)
-          LARGEST_CHUNK_BYTES=$(find .next/static/chunks -maxdepth 1 -name '*.js' -type f -printf '%s\n' 2>/dev/null | sort -nr | head -1)
-          LARGEST_CHUNK_KB=$((${LARGEST_CHUNK_BYTES:-0} / 1024))
-          echo "Largest shared chunk: ${LARGEST_CHUNK_KB} kB (limit: ${SHARED_JS_LIMIT_KB} kB)"
-          if [ "$LARGEST_CHUNK_KB" -gt "$SHARED_JS_LIMIT_KB" ]; then
-            echo "::warning::Largest shared chunk is ${LARGEST_CHUNK_KB} kB (> ${SHARED_JS_LIMIT_KB} kB). Investigate with 'npm run analyze'."
-            WARN=1
+          # Largest single shared chunk. P10 budget is gzipped — must compare
+          # gzipped against gzipped. Previous version compared raw bytes vs the
+          # gzipped budget and emitted false-positive 400+ kB warnings.
+          LARGEST_CHUNK_FILE=$(find .next/static/chunks -maxdepth 1 -name '*.js' -type f 2>/dev/null | xargs -I {} sh -c 'echo "$(wc -c < "{}") {}"' | sort -nr | head -1 | awk '{print $2}')
+          if [ -n "$LARGEST_CHUNK_FILE" ]; then
+            LARGEST_RAW_KB=$(($(wc -c < "$LARGEST_CHUNK_FILE") / 1024))
+            LARGEST_GZ_KB=$(($(gzip -c "$LARGEST_CHUNK_FILE" | wc -c) / 1024))
+            echo "Largest shared chunk: ${LARGEST_GZ_KB} kB gzipped (${LARGEST_RAW_KB} kB raw) — limit: ${SHARED_JS_LIMIT_KB} kB gzipped"
+            if [ "$LARGEST_GZ_KB" -gt "$SHARED_JS_LIMIT_KB" ]; then
+              echo "::warning::Largest shared chunk is ${LARGEST_GZ_KB} kB gzipped (> ${SHARED_JS_LIMIT_KB} kB). Investigate with 'npm run analyze'."
+              WARN=1
+            fi
           fi
 
           # Middleware size (P10: < 120 kB). Some setups emit a shim file; skip if < 1 kB.
