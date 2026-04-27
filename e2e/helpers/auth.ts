@@ -102,9 +102,13 @@ export async function loginViaUI(page: Page): Promise<boolean> {
   if (!email || !password) return false;
 
   await page.goto('/login');
-  await page.getByLabel(/email/i).fill(email);
-  await page.getByLabel(/password/i).fill(password);
-  await page.getByRole('button', { name: /log in|sign in/i }).click();
+  // The login form has 3 elements matching /password/i (the input itself
+  // plus "Show password" toggle + "Forgot password?" link). Use exact label
+  // match to disambiguate to the actual input. AuthScreen.tsx:387 sets
+  // aria-label="Password" on the input.
+  await page.getByLabel(/^email/i).fill(email);
+  await page.getByLabel('Password', { exact: true }).fill(password);
+  await page.getByRole('button', { name: /^log in$|^sign in$/i }).click();
   await page.waitForURL(/dashboard|foxy|learn|quiz|onboarding/, { timeout: 15_000 });
   return true;
 }
