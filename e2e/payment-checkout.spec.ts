@@ -144,7 +144,7 @@ test.describe('REG-46 Payment Checkout', () => {
     }
 
     await page.goto('/pricing');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Click annual toggle so the Pro plan triggers the yearly order path.
     await page.getByRole('button', { name: /switch to annual/i }).click();
@@ -207,7 +207,7 @@ test.describe('REG-46 Payment Checkout', () => {
     }
 
     await page.goto('/pricing');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await page.getByRole('button', { name: /switch to annual/i }).click();
     await page.getByRole('button', { name: /get started|शुरू करें/i }).first().click();
 
@@ -261,7 +261,7 @@ test.describe('REG-46 Payment Checkout', () => {
     }
 
     await page.goto('/pricing');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await page.getByRole('button', { name: /switch to annual/i }).click();
     await page.getByRole('button', { name: /get started|शुरू करें/i }).first().click();
 
@@ -317,7 +317,7 @@ test.describe('REG-46 Payment Checkout', () => {
     }
 
     await page.goto('/pricing');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await page.getByRole('button', { name: /switch to annual/i }).click();
     await page.getByRole('button', { name: /get started|शुरू करें/i }).first().click();
 

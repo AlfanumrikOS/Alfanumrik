@@ -90,7 +90,7 @@ test.describe('REG-45 Quiz Happy Path', () => {
     }
 
     await page.goto('/quiz');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Assertion: results screen displays the server-returned 70% (P1) and 70
     // XP (P2: 7 correct * 10, no bonus since < 80%).
@@ -138,7 +138,7 @@ test.describe('REG-45 Quiz Happy Path', () => {
     }
 
     await page.goto('/quiz');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // The XP card should show +0 and the score should still display.
     await expect(page.getByText(/\+0/)).toBeVisible({ timeout: 30_000 });
@@ -177,7 +177,7 @@ test.describe('REG-45 Quiz Happy Path', () => {
     }
 
     await page.goto('/quiz');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     await expect(page.getByText(/\+0/)).toBeVisible({ timeout: 30_000 });
   });
@@ -219,7 +219,7 @@ test.describe('REG-45 Quiz Happy Path', () => {
     }
 
     await page.goto('/quiz');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // The UI should surface the clamped value, not the raw 50.
     await expect(page.getByText(/\+20/)).toBeVisible({ timeout: 30_000 });
@@ -261,7 +261,7 @@ test.describe('REG-45 Quiz Happy Path', () => {
     }
 
     await page.goto('/quiz');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // UI should show an error state, not a results screen with fabricated XP.
     const errorCopy = page.getByText(/error|something went wrong|try again|कुछ गलत|फिर से/i);
