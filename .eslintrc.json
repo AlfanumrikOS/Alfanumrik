@@ -1,12 +1,23 @@
 {
   "root": true,
   "extends": "next/core-web-vitals",
-  "plugins": ["@typescript-eslint", "alfanumrik"],
+  "plugins": [
+    "@typescript-eslint",
+    "alfanumrik"
+  ],
   "rules": {
     "@typescript-eslint/no-explicit-any": "off",
     "@next/next/no-img-element": "warn",
     "react/no-unescaped-entities": "warn",
-    "no-console": ["warn", { "allow": ["warn", "error"] }],
+    "no-console": [
+      "warn",
+      {
+        "allow": [
+          "warn",
+          "error"
+        ]
+      }
+    ],
     "alfanumrik/no-raw-subject-imports": "error",
     "alfanumrik/no-direct-ai-calls": "off",
     "alfanumrik/no-direct-rag-rpc": "off"
@@ -59,6 +70,37 @@
                   "../../**/supabase-admin"
                 ],
                 "message": "supabase-admin uses the service-role key and bypasses RLS. It MUST NOT be imported from client components, pages, layouts, or other client-executed files. Use a server API route (src/app/api/**) or a domain module (src/lib/domains/**) instead. See docs/architecture/DOMAIN_BOUNDARIES.md."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/app/**/*.{ts,tsx}",
+        "src/components/**/*.{ts,tsx}",
+        "src/lib/**/*.{ts,tsx}"
+      ],
+      "excludedFiles": [
+        "src/lib/xp-rules.ts",
+        "src/__tests__/**",
+        "src/**/*.test.{ts,tsx}",
+        "src/**/*.spec.{ts,tsx}"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "warn",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/lib/xp-rules",
+                  "**/lib/xp-rules",
+                  "../**/xp-rules",
+                  "../../**/xp-rules"
+                ],
+                "message": "@/lib/xp-rules is @deprecated. New code MUST import from @/lib/score-config (Performance Score) or @/lib/coin-rules (Foxy Coins) instead. Existing 17 imports remain for backward compat — see audit F19. Migration roadmap: docs/architecture/xp-deprecation.md (TBD)."
               }
             ]
           }
