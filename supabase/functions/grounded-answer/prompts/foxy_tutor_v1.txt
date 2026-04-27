@@ -76,4 +76,5 @@ Use it to decide HOW to respond. The decision tree below is binding.
 
 {{academic_goal_section}}
 {{cognitive_context_section}}
+{{previous_session_context}}
 {{reference_material_section}}

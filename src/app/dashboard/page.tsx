@@ -409,6 +409,27 @@ export default function Dashboard() {
     : 0;
   const overallPerfLevel = getLevelFromScore(overallPerfScore);
 
+  // Phase 1.2: build the Foxy entry URL with subject + grade pre-filled so a
+  // student doesn't have to pick a subject before sending their first message.
+  // Subject choice priority: preferred_subject (validated against allowedSubjects)
+  // → first allowed subject → no subject param (falls back to legacy /foxy).
+  // The Foxy page itself re-validates subject against allowedSubjects (it has
+  // the authoritative list once loaded), so this is a best-effort hint.
+  const buildFoxyHref = (): string => {
+    const allowedCodes = new Set(allowedSubjects.map((s) => s.code));
+    let subject: string | undefined;
+    if (student.preferred_subject && allowedCodes.has(student.preferred_subject)) {
+      subject = student.preferred_subject;
+    } else if (allowedSubjects.length > 0) {
+      subject = allowedSubjects[0].code;
+    }
+    if (!subject) return '/foxy';
+    const params = new URLSearchParams({ subject, source: 'dashboard' });
+    if (student.grade) params.set('grade', String(student.grade).replace('Grade ', '').trim());
+    return `/foxy?${params.toString()}`;
+  };
+  const foxyHref = buildFoxyHref();
+
   // Filter subjects by stream for grades 11-12
   const streamFilteredSubjects = (() => {
     const g = student?.grade ?? '9';
@@ -692,7 +713,7 @@ export default function Dashboard() {
               📚 {isHi ? 'पढ़ना शुरू करो →' : 'Start Learning →'}
             </button>
             <button
-              onClick={() => router.push('/foxy')}
+              onClick={() => router.push(foxyHref)}
               className="w-full mt-2 py-2.5 rounded-xl text-xs font-semibold transition-all active:scale-[0.98]"
               style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}
             >
@@ -730,7 +751,7 @@ export default function Dashboard() {
                   done: totalXp > 0 && profiles.length > 0,
                   icon: '🦊',
                   label: isHi ? 'Foxy से कोई सवाल पूछो' : 'Ask Foxy a question',
-                  action: () => router.push('/foxy'),
+                  action: () => router.push(foxyHref),
                 },
                 {
                   done: (snapshot?.quizzes_taken ?? 0) >= 3,
@@ -803,7 +824,7 @@ export default function Dashboard() {
                 onClick={() =>
                   topic.chapter_number
                     ? router.push(`/learn/${student.preferred_subject}/${topic.chapter_number}`)
-                    : router.push('/foxy')
+                    : router.push(foxyHref)
                 }
                 className="flex items-center gap-4 !p-4"
               >
@@ -1043,7 +1064,7 @@ export default function Dashboard() {
                   ))}
                 </div>
                 <button
-                  onClick={() => router.push('/foxy')}
+                  onClick={() => router.push(foxyHref)}
                   className="mt-2 text-xs font-bold px-3 py-1.5 rounded-lg"
                   style={{ background: 'rgba(232,88,28,0.1)', color: 'var(--orange)' }}
                 >
@@ -1057,6 +1078,7 @@ export default function Dashboard() {
         {/* Smart "What to do now?" CTA — context-driven, single recommendation */}
         <QuickActions
           isHi={isHi}
+          foxyHref={foxyHref}
         />
 
         {/* Mini Leaderboard — competitive motivation, prominent for CBSE students */}

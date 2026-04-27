@@ -48,6 +48,10 @@ type AnalyticsEvent = {
     was_grounded: boolean;
     citations_count: number;
     latency_ms: number;
+    // Phase 1.1: true when the response was served via SSE streaming. Used to
+    // separate streaming-vs-blocking latency distributions in PostHog. Optional
+    // for backward compat — older clients on the blocking path omit it.
+    streamed?: boolean;
   };
   review_card_rated: { quality: number; topic: string };
   study_plan_generated: { subject?: string; daily_minutes: number };

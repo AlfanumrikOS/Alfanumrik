@@ -49,6 +49,36 @@ export type ClaudeResponse =
       reason: 'timeout' | 'auth_error' | 'server_error' | 'unknown';
     };
 
+/**
+ * Streaming variant of ClaudeResponse — yields chunks of decoded text and a
+ * final aggregated payload. Used by callClaudeStream() for the Phase 1.1
+ * streaming pipeline. Caller iterates the AsyncIterable and accumulates the
+ * full text; the closing `final` event includes token usage + model.
+ *
+ * Errors are surfaced as a `final` event with ok:false (NEVER thrown). This
+ * matches callClaude()'s never-throws contract so callers can use one error
+ * handler.
+ */
+export type ClaudeStreamEvent =
+  | { type: 'text_delta'; delta: string }
+  | {
+      type: 'final';
+      ok: true;
+      fullText: string;
+      model: string;
+      inputTokens: number;
+      outputTokens: number;
+      insufficientContext: boolean;
+    }
+  | {
+      type: 'final';
+      ok: false;
+      reason: 'timeout' | 'auth_error' | 'server_error' | 'unknown';
+      // partial text accumulated up to the failure point — may be empty
+      partialText: string;
+      model: string | null;
+    };
+
 export async function callClaude(req: ClaudeRequest): Promise<ClaudeResponse> {
   if (!req.apiKey) {
     return { ok: false, reason: 'auth_error' };
@@ -203,6 +233,233 @@ async function callOnce(params: {
     }
     console.warn(`claude: network error on ${params.model} — ${String(err)}`);
     return { kind: 'unknown' };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+// ─── Streaming variant ───────────────────────────────────────────────────────
+//
+// callClaudeStream(): yields ClaudeStreamEvent values. Mirrors callClaude's
+// model-fallback + auth-error fast-fail policy, but only the FIRST model in
+// the order is used for the stream (we cannot retry mid-stream once tokens
+// have shipped to the browser). If the chosen model fails BEFORE any tokens
+// arrive, we transparently retry with the next model in the order.
+//
+// Why not full fallback once tokens flow: re-trying a different model
+// after partial text would force the browser to either splice two responses
+// (confusing) or discard work (wasteful). The first-token wait is short
+// (~300-700ms with Haiku); any later failure is surfaced as a final
+// `ok:false` event so the caller can show an error toast.
+
+export async function* callClaudeStream(
+  req: ClaudeRequest,
+): AsyncGenerator<ClaudeStreamEvent, void, unknown> {
+  if (!req.apiKey) {
+    yield { type: 'final', ok: false, reason: 'auth_error', partialText: '', model: null };
+    return;
+  }
+
+  const modelOrder = resolveModelOrder(req.modelPreference);
+  const perCallTimeout = Math.min(req.timeoutMs * PER_CALL_TIMEOUT_FRAC, PER_CALL_TIMEOUT_CAP_MS);
+
+  let lastReason: 'timeout' | 'server_error' | 'unknown' = 'unknown';
+
+  for (let i = 0; i < modelOrder.length; i++) {
+    const model = modelOrder[i];
+    const isLastModel = i === modelOrder.length - 1;
+    const result = yield* streamOnce({
+      model,
+      systemPrompt: req.systemPrompt,
+      userMessage: req.userMessage,
+      maxTokens: req.maxTokens,
+      temperature: req.temperature,
+      timeoutMs: perCallTimeout,
+      apiKey: req.apiKey,
+      // If we've already started streaming text (any text_delta yielded) we
+      // can't retry — we must commit to this model's outcome. streamOnce
+      // tracks `firstTokenSent` to enforce this contract.
+      allowFallback: !isLastModel,
+    });
+
+    if (result.ok) {
+      yield {
+        type: 'final',
+        ok: true,
+        fullText: result.fullText,
+        model,
+        inputTokens: result.inputTokens,
+        outputTokens: result.outputTokens,
+        insufficientContext: result.fullText.trim() === INSUFFICIENT_CONTEXT_SENTINEL,
+      };
+      return;
+    }
+
+    if (result.reason === 'auth_error') {
+      yield { type: 'final', ok: false, reason: 'auth_error', partialText: '', model };
+      return;
+    }
+
+    if (result.firstTokenSent) {
+      // Tokens already streamed — cannot fallback. Surface the failure with
+      // whatever partial text the client already has.
+      yield {
+        type: 'final',
+        ok: false,
+        reason: result.reason,
+        partialText: result.fullText,
+        model,
+      };
+      return;
+    }
+
+    lastReason = result.reason as 'timeout' | 'server_error' | 'unknown';
+    // Try next model in the order.
+  }
+
+  yield { type: 'final', ok: false, reason: lastReason, partialText: '', model: null };
+}
+
+interface StreamOnceResult {
+  ok: boolean;
+  reason?: 'timeout' | 'auth_error' | 'server_error' | 'unknown';
+  fullText: string;
+  inputTokens: number;
+  outputTokens: number;
+  firstTokenSent: boolean;
+}
+
+/**
+ * Stream a single Claude call. Yields text_delta events as they arrive and
+ * returns a StreamOnceResult describing the outcome. The caller (above) decides
+ * whether to retry or surface the final event based on `firstTokenSent`.
+ */
+async function* streamOnce(params: {
+  model: string;
+  systemPrompt: string;
+  userMessage: string;
+  maxTokens: number;
+  temperature: number;
+  timeoutMs: number;
+  apiKey: string;
+  allowFallback: boolean;
+}): AsyncGenerator<ClaudeStreamEvent, StreamOnceResult, unknown> {
+  void params.allowFallback; // reserved for future telemetry; behavior driven by caller's loop
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), params.timeoutMs);
+
+  let fullText = '';
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let firstTokenSent = false;
+
+  try {
+    const systemBlocks = [
+      {
+        type: 'text',
+        text: params.systemPrompt,
+        cache_control: { type: 'ephemeral' },
+      },
+    ];
+
+    const response = await fetch(ANTHROPIC_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': params.apiKey,
+        'anthropic-version': ANTHROPIC_VERSION,
+      },
+      body: JSON.stringify({
+        model: params.model,
+        max_tokens: params.maxTokens,
+        temperature: params.temperature,
+        system: systemBlocks,
+        messages: [{ role: 'user', content: params.userMessage }],
+        stream: true,
+      }),
+      signal: controller.signal,
+    });
+
+    if (response.status === 401 || response.status === 403) {
+      await response.body?.cancel().catch(() => {});
+      return { ok: false, reason: 'auth_error', fullText, inputTokens, outputTokens, firstTokenSent };
+    }
+    if (response.status === 404 || response.status === 529) {
+      await response.body?.cancel().catch(() => {});
+      return { ok: false, reason: 'server_error', fullText, inputTokens, outputTokens, firstTokenSent };
+    }
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => {});
+      console.warn(`claude(stream): unexpected HTTP ${response.status} for ${params.model}`);
+      return { ok: false, reason: 'unknown', fullText, inputTokens, outputTokens, firstTokenSent };
+    }
+
+    if (!response.body) {
+      return { ok: false, reason: 'unknown', fullText, inputTokens, outputTokens, firstTokenSent };
+    }
+
+    // Parse Anthropic SSE stream. Each event is `event: <name>\ndata: <json>\n\n`.
+    // We only act on `content_block_delta` (text deltas) and `message_delta`
+    // / `message_stop` (final usage). Other event types (ping, content_block_start,
+    // message_start) are ignored.
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      // SSE events are separated by blank lines (\n\n). Process each complete
+      // event in the buffer and keep the trailing partial chunk for next read.
+      let sepIdx: number;
+      while ((sepIdx = buffer.indexOf('\n\n')) !== -1) {
+        const rawEvent = buffer.slice(0, sepIdx);
+        buffer = buffer.slice(sepIdx + 2);
+        const dataLines = rawEvent
+          .split('\n')
+          .filter((line) => line.startsWith('data: '))
+          .map((line) => line.slice(6));
+        if (dataLines.length === 0) continue;
+        const dataPayload = dataLines.join('\n');
+        if (dataPayload === '[DONE]') continue;
+        let parsed: any = null;
+        try {
+          parsed = JSON.parse(dataPayload);
+        } catch {
+          continue;
+        }
+        if (!parsed || typeof parsed !== 'object') continue;
+
+        if (parsed.type === 'content_block_delta') {
+          const delta = parsed.delta;
+          if (delta && delta.type === 'text_delta' && typeof delta.text === 'string') {
+            fullText += delta.text;
+            firstTokenSent = true;
+            yield { type: 'text_delta', delta: delta.text };
+          }
+        } else if (parsed.type === 'message_start') {
+          if (parsed.message?.usage?.input_tokens) {
+            inputTokens = parsed.message.usage.input_tokens;
+          }
+        } else if (parsed.type === 'message_delta') {
+          if (parsed.usage?.output_tokens) {
+            outputTokens = parsed.usage.output_tokens;
+          }
+        }
+        // Ignore: ping, content_block_start, content_block_stop, message_stop
+      }
+    }
+
+    return { ok: true, fullText, inputTokens, outputTokens, firstTokenSent };
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      return { ok: false, reason: 'timeout', fullText, inputTokens, outputTokens, firstTokenSent };
+    }
+    console.warn(`claude(stream): network error on ${params.model} — ${String(err)}`);
+    return { ok: false, reason: 'unknown', fullText, inputTokens, outputTokens, firstTokenSent };
   } finally {
     clearTimeout(timeoutId);
   }

@@ -623,6 +623,8 @@ export async function runPipeline(
   // if they weren't already provided — callers that built those pass them in.
   if (!vars.academic_goal_section) vars.academic_goal_section = '';
   if (!vars.cognitive_context_section) vars.cognitive_context_section = '';
+  // Task 1.3 cross-session memory: empty string when caller didn't pass it.
+  if (!vars.previous_session_context) vars.previous_session_context = '';
   // Phase 2.2 coaching-mode placeholders. Safe defaults if the caller did
   // not pass them (e.g. older client or non-Foxy caller using foxy_tutor_v1).
   if (!vars.coach_mode) vars.coach_mode = 'SOCRATIC';
