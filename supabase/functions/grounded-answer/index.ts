@@ -14,6 +14,7 @@
 
 import { validateRequest } from './validators.ts';
 import { runPipeline, writeUpstreamErrorTrace } from './pipeline.ts';
+import { runStreamingPipeline } from './pipeline-stream.ts';
 import { ensureSb, getSb, setSbForTests } from './_sb.ts';
 import type { GroundedRequest, GroundedResponse } from './types.ts';
 
@@ -129,6 +130,13 @@ export async function handleRequest(req: Request): Promise<Response> {
     return new Response('Method not allowed', { status: 405 });
   }
 
+  // Streaming branch: opt-in via `?stream=1` query param. The body shape is
+  // identical to the blocking POST. We use a query param (not a request body
+  // field) so an HTTP middleware that doesn't parse JSON can still route on
+  // streaming-vs-not. Phase 1.1 — soft-mode only (foxy-tutor).
+  const url = new URL(req.url);
+  const wantsStream = url.searchParams.get('stream') === '1';
+
   let body: unknown;
   try {
     body = await req.json();
@@ -143,6 +151,27 @@ export async function handleRequest(req: Request): Promise<Response> {
 
   const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY') ?? '';
   const voyageKey = Deno.env.get('VOYAGE_API_KEY') ?? '';
+
+  if (wantsStream) {
+    // Streaming guards: only soft-mode + retrieve_only=false are supported.
+    // Strict-mode requires post-hoc grounding-check on the full answer (would
+    // defeat streaming). retrieve_only has no answer text. Both fall through
+    // to the blocking path silently for compatibility.
+    const r = request as GroundedRequest;
+    if (r.mode === 'soft' && r.retrieve_only !== true) {
+      try {
+        ensureSb();
+        return buildStreamingResponse(r, started, anthropicKey, voyageKey);
+      } catch (err) {
+        console.error(
+          `grounded-answer: streaming setup threw — ${String(err instanceof Error ? err.stack ?? err.message : err)}`,
+        );
+        const traceId = await writeUpstreamErrorTrace(r, started);
+        return jsonResponse(500, buildPanicResponse(traceId, Date.now() - started));
+      }
+    }
+    // Else: silently fall through to the blocking path below.
+  }
 
   try {
     ensureSb();
@@ -192,6 +221,93 @@ export async function handleRequest(req: Request): Promise<Response> {
       buildPanicResponse(traceId, Date.now() - started),
     );
   }
+}
+
+/**
+ * Build an SSE Response that streams pipeline events to the client.
+ * Each PipelineStreamEvent is serialized as one SSE frame with a named event
+ * type so consumers can attach typed listeners. The cap-truncation logic from
+ * applyFoxyWordCap CANNOT be applied mid-stream (we'd have to buffer the whole
+ * answer); instead we rely on Claude's max_tokens setting + the prompt's
+ * 150-word soft cap to keep responses bounded.
+ */
+function buildStreamingResponse(
+  request: GroundedRequest,
+  startedAt: number,
+  anthropicKey: string,
+  voyageKey: string,
+): Response {
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const encoder = new TextEncoder();
+      const send = (eventName: string, payload: unknown) => {
+        const frame = `event: ${eventName}\ndata: ${JSON.stringify(payload)}\n\n`;
+        controller.enqueue(encoder.encode(frame));
+      };
+      try {
+        for await (const evt of runStreamingPipeline(
+          request,
+          startedAt,
+          anthropicKey,
+          voyageKey,
+        )) {
+          if (evt.kind === 'metadata') {
+            send('metadata', {
+              groundingStatus: evt.groundingStatus,
+              citations: evt.citations,
+              traceId: evt.traceId,
+              confidence: evt.confidence,
+            });
+          } else if (evt.kind === 'text') {
+            send('text', { delta: evt.delta });
+          } else if (evt.kind === 'done') {
+            send('done', {
+              tokensUsed: evt.tokensUsed,
+              latencyMs: evt.latencyMs,
+              groundedFromChunks: evt.groundedFromChunks,
+              claudeModel: evt.claudeModel,
+              answerLength: evt.answerLength,
+            });
+          } else if (evt.kind === 'abstain') {
+            send('abstain', {
+              abstainReason: evt.abstainReason,
+              suggestedAlternatives: evt.suggestedAlternatives,
+              traceId: evt.traceId,
+              latencyMs: evt.latencyMs,
+            });
+          } else if (evt.kind === 'error') {
+            send('error', {
+              reason: evt.reason,
+              traceId: evt.traceId,
+              latencyMs: evt.latencyMs,
+            });
+          }
+        }
+      } catch (err) {
+        console.error(
+          `grounded-answer(stream): generator threw — ${String(err instanceof Error ? err.stack ?? err.message : err)}`,
+        );
+        send('error', {
+          reason: 'pipeline_threw',
+          traceId: 'pending',
+          latencyMs: Date.now() - startedAt,
+        });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      'Connection': 'keep-alive',
+      // Disable nginx/CDN buffering so SSE frames arrive immediately.
+      'X-Accel-Buffering': 'no',
+    },
+  });
 }
 
 Deno.serve(handleRequest);

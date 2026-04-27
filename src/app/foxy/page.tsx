@@ -333,6 +333,156 @@ async function callFoxyTutor(params: Record<string, any> & { language?: string }
 }
 
 /* ══════════════════════════════════════════════════════════════
+   STREAMING — Phase 1.1
+   ══════════════════════════════════════════════════════════════ */
+
+// Per-user opt-out: localStorage.alfanumrik_foxy_stream = '0'.
+// Default: streaming on (when ff_foxy_streaming is also enabled server-side).
+function shouldUseStreaming(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const v = window.localStorage.getItem('alfanumrik_foxy_stream');
+    return v !== '0';
+  } catch {
+    return true;
+  }
+}
+
+interface StreamingCallbacks {
+  onSession?: (sessionId: string) => void;
+  onMetadata?: (meta: { groundingStatus: GroundingStatus; traceId?: string; confidence?: number; citationsCount?: number }) => void;
+  onText: (delta: string) => void;
+  onDone: (info: { tokensUsed: number; latencyMs: number; groundedFromChunks: boolean; citationsCount: number; claudeModel: string }) => void;
+  onAbstain?: (info: { abstainReason: AbstainReason; suggestedAlternatives: SuggestedAlternative[]; traceId?: string }) => void;
+  onError?: (info: { reason: string; traceId?: string }) => void;
+}
+
+/**
+ * Stream a Foxy response. POSTs to /api/foxy with stream:true and consumes
+ * the SSE response body. Invokes callbacks as events arrive. Returns a
+ * promise that resolves when the stream closes (cleanly OR with error).
+ *
+ * Compatibility:
+ *   - If the server doesn't honor `stream:true` (flag off, or service not
+ *     deployed yet), the response will be JSON. In that case we fall back to
+ *     the non-streaming path internally — caller's onDone is still invoked
+ *     once with the full response.
+ */
+async function callFoxyTutorStream(
+  payload: Record<string, any>,
+  callbacks: StreamingCallbacks,
+): Promise<void> {
+  let accessToken: string | null = null;
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    accessToken = session?.access_token ?? null;
+  } catch { /* fall back to cookie */ }
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Accept': 'text/event-stream',
+  };
+  if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+
+  const res = await fetch('/api/foxy', {
+    method: 'POST',
+    headers,
+    credentials: 'include',
+    body: JSON.stringify({ ...payload, stream: true }),
+  });
+
+  if (!res.ok) {
+    callbacks.onError?.({ reason: `http-${res.status}` });
+    return;
+  }
+
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('text/event-stream')) {
+    // Server didn't honor streaming — parse as regular JSON and fire onDone once.
+    try {
+      const data = await res.json();
+      if (data?.sessionId) callbacks.onSession?.(data.sessionId);
+      if (typeof data?.response === 'string' && data.response.length > 0) {
+        callbacks.onText(data.response);
+      }
+      callbacks.onDone({
+        tokensUsed: data?.tokensUsed ?? 0,
+        latencyMs: 0,
+        groundedFromChunks: data?.groundedFromChunks === true,
+        citationsCount: typeof data?.citationsCount === 'number' ? data.citationsCount : 0,
+        claudeModel: data?.meta?.claude_model || data?.claudeModel || '',
+      });
+    } catch {
+      callbacks.onError?.({ reason: 'non-stream-parse-failed' });
+    }
+    return;
+  }
+
+  if (!res.body) {
+    callbacks.onError?.({ reason: 'empty-body' });
+    return;
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let citationsCount = 0;
+  let metadataTraceId: string | undefined;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let sepIdx: number;
+    while ((sepIdx = buffer.indexOf('\n\n')) !== -1) {
+      const rawEvent = buffer.slice(0, sepIdx);
+      buffer = buffer.slice(sepIdx + 2);
+      const eventLine = rawEvent.split('\n').find((l) => l.startsWith('event: '));
+      const dataLine = rawEvent.split('\n').find((l) => l.startsWith('data: '));
+      if (!eventLine || !dataLine) continue;
+      const eventName = eventLine.slice(7).trim();
+      let parsed: any = null;
+      try { parsed = JSON.parse(dataLine.slice(6)); } catch { continue; }
+
+      if (eventName === 'session') {
+        if (parsed?.sessionId) callbacks.onSession?.(parsed.sessionId);
+      } else if (eventName === 'metadata') {
+        metadataTraceId = parsed?.traceId;
+        if (Array.isArray(parsed?.citations)) citationsCount = parsed.citations.length;
+        callbacks.onMetadata?.({
+          groundingStatus: (parsed?.groundingStatus || 'grounded') as GroundingStatus,
+          traceId: parsed?.traceId,
+          confidence: parsed?.confidence,
+          citationsCount,
+        });
+      } else if (eventName === 'text') {
+        if (typeof parsed?.delta === 'string') callbacks.onText(parsed.delta);
+      } else if (eventName === 'done') {
+        callbacks.onDone({
+          tokensUsed: typeof parsed?.tokensUsed === 'number' ? parsed.tokensUsed : 0,
+          latencyMs: typeof parsed?.latencyMs === 'number' ? parsed.latencyMs : 0,
+          groundedFromChunks: parsed?.groundedFromChunks === true,
+          citationsCount,
+          claudeModel: typeof parsed?.claudeModel === 'string' ? parsed.claudeModel : '',
+        });
+      } else if (eventName === 'abstain') {
+        callbacks.onAbstain?.({
+          abstainReason: (parsed?.abstainReason || 'upstream_error') as AbstainReason,
+          suggestedAlternatives: Array.isArray(parsed?.suggestedAlternatives) ? parsed.suggestedAlternatives : [],
+          traceId: parsed?.traceId || metadataTraceId,
+        });
+      } else if (eventName === 'error') {
+        callbacks.onError?.({
+          reason: typeof parsed?.reason === 'string' ? parsed.reason : 'unknown',
+          traceId: parsed?.traceId || metadataTraceId,
+        });
+      }
+    }
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
    MAIN FOXY PAGE
    ══════════════════════════════════════════════════════════════ */
 
@@ -421,8 +571,14 @@ export default function FoxyPage() {
   const [chatUsage, setChatUsage] = useState<UsageResult | null>(null);
   const [showLimitModal, setShowLimitModal] = useState(false);
 
-  // Context-aware entry — URL params from /learn, /quiz results, knowledge gap links
-  const [urlContext, setUrlContext] = useState<{ subject?: string; topic?: string; mode?: string; source?: string } | null>(null);
+  // Context-aware entry — URL params from /learn, /quiz results, knowledge gap links,
+  // /dashboard CTAs (Phase 1.2 auto-fill: subject + grade + source=dashboard).
+  const [urlContext, setUrlContext] = useState<{ subject?: string; grade?: string; topic?: string; mode?: string; source?: string } | null>(null);
+  // Tracks whether the URL-context auto-fill has been applied. The effect must
+  // wait for allowedSubjects to load before validating the subject param, but
+  // it must only apply once per page load (otherwise switching subjects later
+  // re-triggers and clobbers the user's manual choice).
+  const urlContextAppliedRef = useRef(false);
 
   // Save-to-flashcard — tracks which message IDs have been saved
   const [savedMessageIds, setSavedMessageIds] = useState<Set<number>>(new Set());
@@ -625,27 +781,54 @@ export default function FoxyPage() {
     });
   }, [student?.id, chatSessionId]);
 
-  // Apply URL context (subject, chapter, mode) — runs once after student loads
+  // Apply URL context (subject, chapter, mode, grade, source) — runs after student
+  // loads AND allowedSubjects resolves, so subject validation can use the real
+  // entitlement set (grade + plan + stream). Applies at most once per page load.
   useEffect(() => {
     if (!student) return;
     if (typeof window === 'undefined') return;
+    if (urlContextAppliedRef.current) return;
+    // Wait for allowedSubjects to populate so subject validation is honest.
+    // If the student happens to have zero allowed subjects (rare edge case —
+    // legacy/drift), proceed anyway after a tick so we don't deadlock.
+    if (allowedSubjects.length === 0) return;
+
     const params = new URLSearchParams(window.location.search);
     const subjectParam = params.get('subject');
     const chapterParam = params.get('chapter');
     const modeParam = params.get('mode');
     const topicParam = params.get('topic');
+    const gradeParam = params.get('grade');
     const sourceParam = params.get('source');
-    if (!subjectParam && !modeParam && !topicParam && !chapterParam) return;
-    const ctx: { subject?: string; topic?: string; mode?: string; source?: string } = {};
-    if (subjectParam) ctx.subject = subjectParam;
+    if (!subjectParam && !modeParam && !topicParam && !chapterParam && !gradeParam) {
+      urlContextAppliedRef.current = true;
+      return;
+    }
+
+    // Validate subject param against the student's actual allowed-subjects set.
+    // If the student isn't entitled to the requested subject (e.g. commerce
+    // stream getting `?subject=science`), fall back to the first allowed one —
+    // never silently land on a subject the dropdown can't show.
+    const allowedCodes = new Set(allowedSubjects.map((s) => s.code));
+    let validatedSubject: string | undefined;
+    if (subjectParam && allowedCodes.has(subjectParam)) {
+      validatedSubject = subjectParam;
+    } else if (subjectParam && allowedSubjects.length > 0) {
+      validatedSubject = allowedSubjects[0].code;
+    }
+
+    const ctx: { subject?: string; grade?: string; topic?: string; mode?: string; source?: string } = {};
+    if (validatedSubject) ctx.subject = validatedSubject;
+    if (gradeParam) ctx.grade = gradeParam;
     if (topicParam) ctx.topic = topicParam;
     if (chapterParam) ctx.topic = chapterParam;
     if (modeParam) ctx.mode = modeParam;
     if (sourceParam) ctx.source = sourceParam;
     setUrlContext(ctx);
-    if (subjectParam && SUBJECTS[subjectParam]) switchSubject(subjectParam);
+    if (validatedSubject) switchSubject(validatedSubject);
     if (modeParam) setSessionMode(modeParam);
-  }, [student]); // eslint-disable-line react-hooks/exhaustive-deps
+    urlContextAppliedRef.current = true;
+  }, [student, allowedSubjects]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load topics on subject/grade change
   useEffect(() => {
@@ -767,6 +950,137 @@ export default function FoxyPage() {
         } catch { /* analytics is non-critical */ }
       }
       const turnStartedAt = Date.now();
+
+      // ── Phase 1.1: streaming branch ─────────────────────────────────────
+      // Streaming is gated by:
+      //   (1) shouldUseStreaming() — per-user opt-out via localStorage
+      //   (2) ff_foxy_streaming server-side flag (checked in /api/foxy)
+      // If either is off, the request still goes through /api/foxy and the
+      // route falls back to JSON. callFoxyTutorStream auto-detects content-type
+      // and adapts — so the client code below works for both paths.
+      if (shouldUseStreaming() && !imageBase64) {
+        const tutorBubbleId = Date.now() + 1;
+        // Optimistically add an empty tutor bubble that we'll fill in.
+        setMessages((p: ChatMessage[]) => [...p, {
+          id: tutorBubbleId,
+          role: 'tutor',
+          content: '',
+          timestamp: new Date().toISOString(),
+        }]);
+
+        // Throttle React state updates: collect deltas and flush every ~50ms
+        // so we don't trigger 60+ re-renders/sec on a fast token stream.
+        let pendingDelta = '';
+        let flushScheduled = false;
+        const flushDelta = () => {
+          if (!pendingDelta) { flushScheduled = false; return; }
+          const toAppend = pendingDelta;
+          pendingDelta = '';
+          flushScheduled = false;
+          setMessages((p: ChatMessage[]) => p.map((m) =>
+            m.id === tutorBubbleId ? { ...m, content: m.content + toAppend } : m,
+          ));
+        };
+        const scheduleFlush = () => {
+          if (flushScheduled) return;
+          flushScheduled = true;
+          setTimeout(flushDelta, 50);
+        };
+
+        let streamGroundingStatus: GroundingStatus | undefined;
+        let streamTraceId: string | undefined;
+        let streamGotDone = false;
+
+        try {
+          await callFoxyTutorStream(foxyParams, {
+            onSession: (sid) => {
+              if (sid) setChatSessionId(sid);
+            },
+            onMetadata: (meta) => {
+              streamGroundingStatus = meta.groundingStatus;
+              streamTraceId = meta.traceId;
+              setMessages((p: ChatMessage[]) => p.map((m) =>
+                m.id === tutorBubbleId
+                  ? { ...m, groundingStatus: meta.groundingStatus, traceId: meta.traceId }
+                  : m,
+              ));
+            },
+            onText: (delta) => {
+              pendingDelta += delta;
+              scheduleFlush();
+            },
+            onDone: (info) => {
+              streamGotDone = true;
+              flushDelta(); // ensure last batch is rendered
+              try {
+                track('foxy_turn_completed', {
+                  subject: activeSubject,
+                  grade: studentGrade,
+                  was_grounded: info.groundedFromChunks === true,
+                  citations_count: info.citationsCount,
+                  latency_ms: Date.now() - turnStartedAt,
+                  streamed: true,
+                });
+              } catch { /* analytics non-critical */ }
+              setFoxyState('happy'); setTimeout(() => setFoxyState('idle'), 2000);
+            },
+            onAbstain: (info) => {
+              flushDelta();
+              setMessages((p: ChatMessage[]) => p.map((m) =>
+                m.id === tutorBubbleId
+                  ? {
+                      ...m,
+                      content: '',
+                      groundingStatus: 'hard-abstain' as GroundingStatus,
+                      abstainReason: info.abstainReason,
+                      suggestedAlternatives: info.suggestedAlternatives,
+                      traceId: info.traceId,
+                    }
+                  : m,
+              ));
+              setFoxyState('idle');
+            },
+            onError: (info) => {
+              void info;
+              flushDelta();
+              setMessages((p: ChatMessage[]) => p.map((m) =>
+                m.id === tutorBubbleId
+                  ? {
+                      ...m,
+                      content: m.content || (language === 'hi'
+                        ? 'ओह! कृपया फिर कोशिश करें।'
+                        : 'Oops! Please try again.'),
+                    }
+                  : m,
+              ));
+              setFoxyState('idle');
+            },
+          });
+        } catch (streamErr) {
+          flushDelta();
+          console.warn('[foxy] stream error:', streamErr);
+          setMessages((p: ChatMessage[]) => p.map((m) =>
+            m.id === tutorBubbleId && !m.content
+              ? {
+                  ...m,
+                  content: language === 'hi'
+                    ? 'ओह! कृपया फिर कोशिश करें।'
+                    : 'Oops! Please try again.',
+                }
+              : m,
+          ));
+          setFoxyState('idle');
+        }
+
+        void streamGroundingStatus; void streamTraceId; void streamGotDone;
+
+        // Refresh conversation list so new/updated sessions appear
+        setTimeout(refreshConversations, 1000);
+        setLoading(false);
+        return;
+      }
+      // ── End streaming branch ────────────────────────────────────────────
+
       const resp = await callFoxyTutor(foxyParams);
       // Server confirmed daily limit reached — show UpgradeModal
       if (resp.limitReached) {
@@ -989,6 +1303,37 @@ export default function FoxyPage() {
   }, [lessonStep, lessonStepsCompleted, activeTopic, language, sendMessage]);
 
   const cfg = SUBJECTS[activeSubject] || SUBJECTS.science || FALLBACK_SCIENCE;
+
+  // Phase 1.2: when entering Foxy from /dashboard with subject+grade pre-filled,
+  // show a friendlier "Hi! Ready to study Class X Y?" greeting instead of the
+  // generic "Hi! I am Foxy" + chapter nudge. This removes friction for first-time
+  // students who can't yet make domain decisions like "which chapter".
+  const isDashboardEntry =
+    urlContext?.source === 'dashboard' && !!urlContext?.subject && !activeTopic;
+  const dashboardEntryGrade = urlContext?.grade || studentGrade;
+
+  const getEmptyStateHeading = (): string => {
+    if (isDashboardEntry) {
+      return language === 'hi'
+        ? `नमस्ते! कक्षा ${dashboardEntryGrade} ${cfg.name} पढ़ने के लिए तैयार?`
+        : `Hi! Ready to study Class ${dashboardEntryGrade} ${cfg.name}?`;
+    }
+    return 'Hi! I am Foxy';
+  };
+
+  const getEmptyStateSubtitle = (): string => {
+    if (isDashboardEntry) {
+      return language === 'hi'
+        ? 'कुछ भी पूछो — सवाल, डाउट, या कोई कॉन्सेप्ट समझाने के लिए कहो। \u{1F98A}'
+        : 'Ask me anything — a question, a doubt, or just type a topic to learn. \u{1F98A}';
+    }
+    if (!activeTopic) {
+      return language === 'hi'
+        ? 'नीचे से अध्याय चुनो या सीधे टाइप करो!'
+        : 'Select a chapter below or just start typing!';
+    }
+    return `${cfg.name} — Ch ${activeTopic.chapter_number}: ${activeTopic.title}`;
+  };
 
   if (authLoading || !student) return (
     <div className="mesh-bg min-h-dvh flex items-center justify-center">
@@ -1330,16 +1675,9 @@ export default function FoxyPage() {
             {messages.length === 0 && (
               <div className="text-center py-12 md:py-20 animate-slide-up">
                 <div className="text-6xl md:text-7xl mb-4 animate-float">{FOXY_FACES.idle}</div>
-                <h2 className="text-xl md:text-2xl font-extrabold mb-2" style={{ fontFamily: 'var(--font-display)', background: `linear-gradient(135deg, #E8590C, ${cfg.color})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Hi! I am Foxy</h2>
+                <h2 className="text-xl md:text-2xl font-extrabold mb-2" style={{ fontFamily: 'var(--font-display)', background: `linear-gradient(135deg, #E8590C, ${cfg.color})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>{getEmptyStateHeading()}</h2>
                 <p className="text-sm text-[var(--text-3)] max-w-sm mx-auto mb-4 leading-relaxed">
-                  {!activeTopic
-                    ? (language === 'hi'
-                        ? '\u0928\u0940\u091A\u0947 \u0938\u0947 \u0905\u0927\u094D\u092F\u093E\u092F \u091A\u0941\u0928\u094B \u092F\u093E \u0938\u0940\u0927\u0947 \u091F\u093E\u0907\u092A \u0915\u0930\u094B!'
-                        : 'Select a chapter below or just start typing!')
-                    : (language === 'hi'
-                        ? `${cfg.name} \u2014 Ch ${activeTopic.chapter_number}: ${activeTopic.title}`
-                        : `${cfg.name} \u2014 Ch ${activeTopic.chapter_number}: ${activeTopic.title}`)
-                  }
+                  {getEmptyStateSubtitle()}
                 </p>
 
                 {/* Chapter selection nudge when no topic selected */}
@@ -1357,8 +1695,10 @@ export default function FoxyPage() {
                   </button>
                 )}
 
-                {/* Context banner — shown when arriving from /learn, /quiz, or knowledge gap */}
-                {urlContext && (
+                {/* Context banner — shown when arriving from /learn, /quiz, or
+                    knowledge gap (NOT dashboard — dashboard entry uses the
+                    Phase 1.2 friendly greeting above, no Start-button banner). */}
+                {urlContext && !isDashboardEntry && (
                   <div className="mx-auto max-w-sm mb-6 p-4 rounded-2xl text-left" style={{ background: `${cfg.color}10`, border: `1.5px solid ${cfg.color}30` }}>
                     <div className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: cfg.color }}>
                       {language === 'hi' ? '📍 इस विषय से शुरू करो' : '📍 Continuing from'}

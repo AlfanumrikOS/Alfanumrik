@@ -44,7 +44,7 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import { isFeatureEnabled } from '@/lib/feature-flags';
 import { validateSubjectWrite } from '@/lib/subjects';
-import { callGroundedAnswer, type GroundedRequest, type Citation, type SuggestedAlternative, type AbstainReason } from '@/lib/ai/grounded-client';
+import { callGroundedAnswer, callGroundedAnswerStream, type GroundedRequest, type Citation, type SuggestedAlternative, type AbstainReason } from '@/lib/ai/grounded-client';
 import { PER_PLAN_TIMEOUT_MS, SOFT_CONFIDENCE_BANNER_THRESHOLD } from '@/lib/grounding-config';
 import { classifyIntent, routeIntent } from '@/lib/ai';
 
@@ -241,6 +241,95 @@ async function loadHistory(sessionId: string): Promise<ChatMessage[]> {
 
   if (!messages || messages.length === 0) return [];
   return (messages as ChatMessage[]).reverse();
+}
+
+// ─── Helper: load prior-session context (Task 1.3) ───────────────────────────
+// Last 6-10 messages from PRIOR sessions on the same (student, subject,
+// chapter) tuple. We exclude the current session so we don't double-count
+// turns the student is actively in. Returns at most PRIOR_SESSION_MSG_LIMIT
+// turn snippets (a snippet is a [user → assistant] pair compressed to
+// content previews, 200 chars each).
+//
+// Phase 1.3 cheap-path: no Haiku summarization. We inject the raw last few
+// turns as `[previous: …]` snippets in the prompt template. If this proves
+// too noisy, Phase 2 can add a Haiku summary step here.
+const PRIOR_SESSION_MSG_LIMIT = 10;
+const PRIOR_SESSION_LOOKBACK_DAYS = 30;
+
+interface PriorSessionTurn {
+  role: 'user' | 'assistant';
+  content: string;
+  created_at: string;
+}
+
+async function loadPriorSessionContext(
+  studentId: string,
+  subject: string,
+  grade: string,
+  currentSessionId: string,
+  chapter: string | null,
+): Promise<PriorSessionTurn[]> {
+  void grade; // session-row scoping (subject + chapter) is sufficient for now
+  try {
+    // Find prior session ids for this student / subject / chapter (if known).
+    // We look back 30 days so we don't drag in stale sessions from months ago.
+    const lookbackIso = new Date(
+      Date.now() - PRIOR_SESSION_LOOKBACK_DAYS * 24 * 60 * 60 * 1000,
+    ).toISOString();
+
+    let sessionsQuery = supabaseAdmin
+      .from('foxy_sessions')
+      .select('id')
+      .eq('student_id', studentId)
+      .eq('subject', subject)
+      .gte('last_active_at', lookbackIso)
+      .neq('id', currentSessionId)
+      .order('last_active_at', { ascending: false })
+      .limit(3);
+    if (chapter) sessionsQuery = sessionsQuery.eq('chapter', chapter);
+
+    const { data: priorSessions } = await sessionsQuery;
+    if (!priorSessions || priorSessions.length === 0) return [];
+
+    const priorSessionIds = priorSessions.map((s: any) => s.id);
+
+    const { data: priorMessages } = await supabaseAdmin
+      .from('foxy_chat_messages')
+      .select('role, content, created_at')
+      .in('session_id', priorSessionIds)
+      .order('created_at', { ascending: false })
+      .limit(PRIOR_SESSION_MSG_LIMIT);
+
+    if (!priorMessages || priorMessages.length === 0) return [];
+    // Reverse to chronological order so the prompt reads forward in time.
+    return (priorMessages as PriorSessionTurn[]).reverse();
+  } catch (err) {
+    logger.warn('foxy_prior_session_context_failed', {
+      error: err instanceof Error ? err.message : String(err),
+      studentId,
+      subject,
+    });
+    return [];
+  }
+}
+
+/**
+ * Format prior-session turns into a prompt section. Each turn is truncated to
+ * 200 chars to keep the prompt bounded. Empty array → empty string (template
+ * handles missing cleanly).
+ */
+function buildPriorSessionPromptSection(turns: PriorSessionTurn[]): string {
+  if (turns.length === 0) return '';
+  const lines = turns.map((t) => {
+    const speaker = t.role === 'user' ? 'Student' : 'Foxy';
+    const content = (t.content ?? '').slice(0, 200).replace(/\s+/g, ' ').trim();
+    return `[previous · ${speaker}] ${content}`;
+  });
+  return [
+    '## PREVIOUS CONVERSATION (recent prior sessions on this subject/chapter)',
+    'Use this only as context — do not address the previous turns directly. The student\'s current question is in the user message.',
+    ...lines,
+  ].join('\n');
 }
 
 // ─── Helper: load cognitive context from CME tables ─────────────────────────
@@ -783,6 +872,10 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     typeof body.coachMode === 'string' && (VALID_COACH_MODES as readonly string[]).includes(body.coachMode)
       ? (body.coachMode as CoachMode)
       : null;
+  // Phase 1.1: optional `stream:true` body param. Default false to preserve
+  // backward compatibility with mobile, ncert-solver, and any non-Foxy callers.
+  // The streaming path is gated by `ff_foxy_streaming` (DB feature flag).
+  const wantsStream = body.stream === true;
 
   // 3. Validate inputs
   if (!message) {
@@ -895,16 +988,19 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     );
   }
 
-  // 7. Load cognitive context + history (parallel, non-fatal on failure)
+  // 7. Load cognitive context + history + prior-session context (parallel, non-fatal on failure)
   let cognitiveCtx: CognitiveContext = EMPTY_COGNITIVE_CONTEXT;
   let history: ChatMessage[] = [];
+  let priorSessionTurns: PriorSessionTurn[] = [];
   try {
-    const [ctx, hist] = await Promise.all([
+    const [ctx, hist, prior] = await Promise.all([
       loadCognitiveContext(studentId, subject, grade),
       loadHistory(resolvedSessionId),
+      loadPriorSessionContext(studentId, subject, grade, resolvedSessionId, chapter),
     ]);
     cognitiveCtx = ctx;
     history = hist;
+    priorSessionTurns = prior;
   } catch (ctxErr) {
     logger.warn('foxy_context_load_failed', {
       error: ctxErr instanceof Error ? ctxErr.message : String(ctxErr),
@@ -1066,6 +1162,9 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         coach_mode_instruction: COACH_MODE_INSTRUCTIONS[coachMode],
         academic_goal_section: buildAcademicGoalSection(academicGoal),
         cognitive_context_section: buildCognitivePromptSection(cognitiveCtx),
+        // Task 1.3: cross-session memory. Empty string when no prior sessions
+        // (template handles missing variables as empty by design).
+        previous_session_context: buildPriorSessionPromptSection(priorSessionTurns),
         foxy_safety_rails: FOXY_SAFETY_RAILS,
         foxy_system_prompt: foxySystemPrompt,
         history_messages: JSON.stringify(history),
@@ -1079,6 +1178,35 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   // Hop timeout = service timeout + 2s buffer so we let the service return its
   // own abstain payload rather than giving up at the transport layer.
   const hopTimeoutMs = (PER_PLAN_TIMEOUT_MS[plan] ?? 20000) + 2000;
+
+  // ─── Phase 1.1: streaming branch (opt-in via body.stream + ff_foxy_streaming) ──
+  if (wantsStream) {
+    const streamingEnabled = await isFeatureEnabled('ff_foxy_streaming', {
+      role: 'student',
+      userId: auth.userId!,
+    });
+    if (streamingEnabled) {
+      // The streaming pipeline writes to foxy_chat_messages once the stream
+      // completes (server side, after capturing full text). Quota was already
+      // incremented in step 5 above; if the stream fails BEFORE done arrives
+      // we refund it. If the stream succeeds we keep the deduction.
+      return await handleStreamingFoxyTurn({
+        groundedRequest,
+        hopTimeoutMs,
+        studentId,
+        userId: auth.userId!,
+        resolvedSessionId,
+        message,
+        subject,
+        grade,
+        chapter,
+        mode,
+        cognitiveCtx,
+      });
+    }
+    // Streaming requested but flag off → silently fall through to blocking.
+  }
+
   // Single retrieval: grounded-answer service handles embed+RRF+rerank. Audit 2026-04-27 F11.
   const grounded = await callGroundedAnswer(groundedRequest, { hopTimeoutMs });
 
@@ -1283,6 +1411,238 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     traceId: grounded.trace_id,
     ...(upgradePrompt ? { upgradePrompt } : {}),
   });
+}
+
+// ─── Streaming turn handler (Phase 1.1) ─────────────────────────────────────
+//
+// Pipes the upstream SSE stream from the grounded-answer Edge Function to the
+// browser, while taking a side-channel tap so we can:
+//   1. Persist the full assistant turn to foxy_chat_messages on `done`
+//   2. Refund quota on `error` or premature stream end
+//   3. Emit logAudit + analytics on completion
+//
+// Wire shape — each SSE event has a named `event:` and a JSON payload:
+//   metadata → {groundingStatus, citations, traceId, confidence}  (once)
+//   text     → {delta}                                             (N times)
+//   done     → {tokensUsed, latencyMs, groundedFromChunks, claudeModel, answerLength}
+//   abstain  → {abstainReason, suggestedAlternatives, traceId, latencyMs}
+//   error    → {reason, traceId, latencyMs}
+//
+// We add ONE additional event we synthesize in this layer (so the browser
+// has everything it needs without a follow-up REST call):
+//   session  → {sessionId}                                         (first frame)
+async function handleStreamingFoxyTurn(params: {
+  groundedRequest: GroundedRequest;
+  hopTimeoutMs: number;
+  studentId: string;
+  userId: string;
+  resolvedSessionId: string;
+  message: string;
+  subject: string;
+  grade: string;
+  chapter: string | null;
+  mode: string;
+  cognitiveCtx: CognitiveContext;
+}): Promise<Response> {
+  const upstream = await callGroundedAnswerStream(params.groundedRequest, {
+    hopTimeoutMs: params.hopTimeoutMs,
+  });
+
+  if (!upstream.ok) {
+    // Hop failed (service down, network error, config). Refund quota and
+    // surface a synthetic error event so the client can render the same
+    // UI as a streamed error.
+    await refundQuota(params.studentId, 'foxy_chat');
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const encoder = new TextEncoder();
+        const send = (eventName: string, payload: unknown) => {
+          controller.enqueue(
+            encoder.encode(`event: ${eventName}\ndata: ${JSON.stringify(payload)}\n\n`),
+          );
+        };
+        send('session', { sessionId: params.resolvedSessionId });
+        send('error', {
+          reason: upstream.reason,
+          traceId: 'pending',
+          latencyMs: 0,
+        });
+        controller.close();
+      },
+    });
+    return new Response(stream, {
+      status: 200,
+      headers: streamingHeaders(),
+    });
+  }
+
+  if (!upstream.response.body) {
+    await refundQuota(params.studentId, 'foxy_chat');
+    return new Response('upstream returned no body', { status: 502 });
+  }
+
+  // Transform stream that:
+  //  (a) re-emits each frame to the client byte-for-byte (low-latency)
+  //  (b) parses each frame so we can capture full text + done payload
+  let accumulatedText = '';
+  let parseBuffer = '';
+  let doneSeen = false;
+  let errorSeen = false;
+  let lastTraceId = 'pending';
+  let lastTokensUsed = 0;
+  let lastClaudeModel = '';
+  let lastGroundedFromChunks = false;
+  let lastCitations: Citation[] = [];
+  // Synthesize a leading `session` event so the client knows the sessionId
+  // up front (Edge Function doesn't know it).
+  const encoder = new TextEncoder();
+  const sessionFrame = encoder.encode(
+    `event: session\ndata: ${JSON.stringify({ sessionId: params.resolvedSessionId })}\n\n`,
+  );
+
+  const finalizeOnError = async () => {
+    if (errorSeen || doneSeen) return; // already handled
+    await refundQuota(params.studentId, 'foxy_chat');
+  };
+
+  const persistOnDone = async () => {
+    try {
+      const now = new Date().toISOString();
+      await supabaseAdmin.from('foxy_chat_messages').insert([
+        {
+          session_id: params.resolvedSessionId,
+          student_id: params.studentId,
+          role: 'user',
+          content: params.message,
+          sources: null,
+          tokens_used: null,
+          created_at: now,
+        },
+        {
+          session_id: params.resolvedSessionId,
+          student_id: params.studentId,
+          role: 'assistant',
+          content: accumulatedText,
+          sources: lastCitations.length > 0
+            ? lastCitations.map((c) => ({
+                chunk_id: c.chunk_id,
+                subject: params.subject,
+                chapter: c.chapter_title || (c.chapter_number ? `Chapter ${c.chapter_number}` : undefined),
+                page_number: c.page_number ?? undefined,
+                similarity: c.similarity,
+                content_preview: c.excerpt.slice(0, 150),
+                media_url: c.media_url,
+              }))
+            : null,
+          tokens_used: lastTokensUsed,
+          created_at: new Date(Date.now() + 1).toISOString(),
+        },
+      ]);
+    } catch (err) {
+      console.warn('[foxy] streaming message save failed:', err instanceof Error ? err.message : String(err));
+    }
+
+    try {
+      logAudit(params.userId, {
+        action: 'foxy.chat',
+        resourceType: 'foxy_sessions',
+        resourceId: params.resolvedSessionId,
+        details: {
+          subject: params.subject,
+          grade: params.grade,
+          chapter: params.chapter,
+          mode: params.mode,
+          tokensUsed: lastTokensUsed,
+          model: lastClaudeModel,
+          traceId: lastTraceId,
+          ragChunksFound: lastCitations.length,
+          masteryLevel: params.cognitiveCtx.masteryLevel,
+          flow: 'grounded-answer-stream',
+          groundedFromChunks: lastGroundedFromChunks,
+        },
+      });
+    } catch { /* audit log is non-critical */ }
+  };
+
+  const transform = new TransformStream<Uint8Array, Uint8Array>({
+    start(controller) {
+      controller.enqueue(sessionFrame);
+    },
+    transform(chunk, controller) {
+      // Re-emit verbatim to client (preserves exact SSE formatting).
+      controller.enqueue(chunk);
+      // Parse for our side-channel tracking.
+      parseBuffer += new TextDecoder().decode(chunk);
+      let sepIdx: number;
+      while ((sepIdx = parseBuffer.indexOf('\n\n')) !== -1) {
+        const rawEvent = parseBuffer.slice(0, sepIdx);
+        parseBuffer = parseBuffer.slice(sepIdx + 2);
+        const eventLine = rawEvent.split('\n').find((l) => l.startsWith('event: '));
+        const dataLine = rawEvent.split('\n').find((l) => l.startsWith('data: '));
+        if (!eventLine || !dataLine) continue;
+        const eventName = eventLine.slice(7).trim();
+        let payload: any = null;
+        try {
+          payload = JSON.parse(dataLine.slice(6));
+        } catch {
+          continue;
+        }
+        if (eventName === 'metadata') {
+          if (payload?.traceId) lastTraceId = payload.traceId;
+          if (Array.isArray(payload?.citations)) lastCitations = payload.citations;
+        } else if (eventName === 'text') {
+          if (typeof payload?.delta === 'string') accumulatedText += payload.delta;
+        } else if (eventName === 'done') {
+          doneSeen = true;
+          if (typeof payload?.tokensUsed === 'number') lastTokensUsed = payload.tokensUsed;
+          if (typeof payload?.claudeModel === 'string') lastClaudeModel = payload.claudeModel;
+          if (typeof payload?.groundedFromChunks === 'boolean') {
+            lastGroundedFromChunks = payload.groundedFromChunks;
+          }
+        } else if (eventName === 'abstain') {
+          // Abstain → refund based on the same policy as the blocking path
+          if (
+            payload?.abstainReason &&
+            REFUND_ABSTAIN_REASONS.includes(payload.abstainReason as AbstainReason)
+          ) {
+            // Fire-and-forget — we're inside transform(), can't await
+            void refundQuota(params.studentId, 'foxy_chat');
+          }
+          errorSeen = true; // treat as terminal (not a `done`)
+          if (payload?.traceId) lastTraceId = payload.traceId;
+        } else if (eventName === 'error') {
+          errorSeen = true;
+          if (payload?.traceId) lastTraceId = payload.traceId;
+        }
+      }
+    },
+    async flush() {
+      if (doneSeen) {
+        // Persist on completion (fire-and-forget — stream already closed for client).
+        void persistOnDone();
+      } else {
+        // Stream closed without a `done` event → refund (defensive).
+        await finalizeOnError();
+      }
+    },
+  });
+
+  // Pipe upstream → transform → response
+  const responseStream = upstream.response.body.pipeThrough(transform);
+
+  return new Response(responseStream, {
+    status: 200,
+    headers: streamingHeaders(),
+  });
+}
+
+function streamingHeaders(): HeadersInit {
+  return {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  };
 }
 
 // ─── GET: fetch chat history for a session ────────────────────────────────────

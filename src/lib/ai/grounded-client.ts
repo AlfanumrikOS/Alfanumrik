@@ -209,3 +209,79 @@ export async function callGroundedAnswer(
     return buildHopError('network-error', Date.now() - startedAt);
   }
 }
+
+// ─── Streaming variant (Phase 1.1) ───────────────────────────────────────────
+//
+// The streaming variant returns a fetch Response whose body is the raw SSE
+// stream from the Edge Function. Callers (currently only /api/foxy) pipe the
+// body through to the browser AND tap a parser to track stream completion
+// (so they can deduct quota on `done` and refund on `error`).
+//
+// We expose the raw Response (rather than parsing here) because Next.js Edge
+// runtime's preferred pattern is to TransformStream the body to the client
+// without buffering. The route layer attaches a TransformStream that
+// double-pipes to:
+//   (a) the client (verbatim re-emit, low-latency)
+//   (b) a parser closure (to learn when `done`/`error` fires)
+
+export interface StreamingCallOptions extends CallOptions { /* same */ }
+
+/**
+ * POST a streaming grounded-answer request and return the raw SSE Response.
+ * Caller is responsible for piping the body to the browser and parsing the
+ * stream for completion. Returns null on hop failure (caller should fall
+ * back to non-streaming or surface an error).
+ */
+export async function callGroundedAnswerStream(
+  request: GroundedRequest,
+  options: StreamingCallOptions = {},
+): Promise<{ ok: true; response: Response } | { ok: false; reason: string }> {
+  // The hop timeout for streaming is intentionally LOOSE — Claude streams may
+  // legitimately run for 30-60s. We rely on the Edge Function's per-call
+  // timeout (request.timeout_ms) to bound the upstream call. This timeout is
+  // only for the initial connection / first byte.
+  const hopTimeoutMs = options.hopTimeoutMs ?? 5000;
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceKey) {
+    return { ok: false, reason: 'config-missing' };
+  }
+
+  const url = `${supabaseUrl}/functions/v1/grounded-answer?stream=1`;
+
+  // We do NOT abort the fetch on hopTimeoutMs — for streams the connection
+  // legitimately stays open for the full duration. Instead, use a separate
+  // AbortController bound only to the body-read phase if needed (caller
+  // can cancel via response.body?.cancel()).
+  const controller = new AbortController();
+  const firstByteTimer = setTimeout(() => controller.abort(), hopTimeoutMs);
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${serviceKey}`,
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream',
+      },
+      body: JSON.stringify(request),
+    });
+    clearTimeout(firstByteTimer);
+
+    if (!res.ok) {
+      // Edge function rejected the streaming request before opening the body.
+      // Drain any error body and return.
+      try { await res.text(); } catch { /* ignore */ }
+      return { ok: false, reason: `service-${res.status}` };
+    }
+
+    return { ok: true, response: res };
+  } catch (err) {
+    clearTimeout(firstByteTimer);
+    const isAbort = err instanceof Error && err.name === 'AbortError';
+    return { ok: false, reason: isAbort ? 'hop-timeout' : 'network-error' };
+  }
+}
