@@ -224,8 +224,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 64px;
-  gap: 16px;
+  height: 56px;
+  gap: 12px;
   width: 100%;
   max-width: 1320px;
   margin: 0 auto;
@@ -236,6 +236,16 @@
   flex-wrap: nowrap;
   min-width: 0;
 }
+/* At ≥480px restore the original 64px nav row height + 16px gap. Below
+   that we keep 56px (touch-target compliant: the menu/lang/theme/CTA all
+   carry their own min-height: var(--tap) = 48px, so the row visually
+   matches the tap targets). */
+@media (min-width: 480px) {
+  .navInner {
+    height: 64px;
+    gap: 16px;
+  }
+}
 .brand {
   display: inline-flex;
   align-items: center;
@@ -244,6 +254,22 @@
   color: inherit;
   user-select: none;
   min-height: var(--tap);
+  /* Never let the brand wordmark be squeezed by neighbouring nav items —
+     when navInner runs out of horizontal space at 320–414px, the inline
+     <sup>TM</sup> would otherwise paint across the right-hand cluster.
+     At ≥768px the role switcher returns and we let brand shrink again so
+     the role pills + right cluster can fit on one line. */
+  flex-shrink: 0;
+  /* Keep the brand text + sup on a single line; the sup is inline-flow so
+     it must not wrap onto a second baseline at narrow widths. */
+  white-space: nowrap;
+}
+@media (min-width: 768px) {
+  /* Restore original tablet/desktop behaviour where flex distributes
+     negative space across all navInner children if the row gets tight
+     (e.g. 1024–1279 squeeze zone). The TM-overlap bug only occurs on
+     narrow phones where there's no role switcher to compete for space. */
+  .brand { flex-shrink: 1; }
 }
 .brandMark {
   width: 36px;
@@ -274,6 +300,10 @@
   font-weight: 600;
   font-size: clamp(18px, 1vw + 14px, 22px);
   letter-spacing: -0.01em;
+  /* Reserve a sliver of inline space at the right edge so the inline
+     <sup>TM</sup> always paints inside the brand container's bounding box,
+     never crossing into the .navRight cluster on narrow viewports. */
+  padding-right: 4px;
 }
 .brandName :global(sup) {
   font-size: 9px;
@@ -282,6 +312,14 @@
   vertical-align: super;
   opacity: 0.55;
   margin-left: 2px;
+}
+/* Hide the legal mark on the smallest Android phones (<375px = Redmi 9A,
+   Nokia C-series, etc.). At ≥375px the mark returns. This is permitted
+   per brand guidelines — the wordmark itself stays visible. */
+@media (max-width: 374px) {
+  .brandName :global(sup) {
+    display: none;
+  }
 }
 
 .menuBtn {
@@ -294,6 +332,7 @@
   place-items: center;
   color: var(--on-paper);
   margin-right: -12px;
+  flex-shrink: 0;
 }
 .menuBtn :global(svg) {
   width: 22px;
@@ -355,7 +394,43 @@
 .navRight {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 4px;
+  /* The right cluster (lang, theme, CTA, hamburger) must keep its full
+     intrinsic width — without this, flex distributes negative space to
+     navRight first and the brand's inline sup overlaps the lang toggle. */
+  flex-shrink: 0;
+}
+/* At <768px (every phone + small tablet) the top nav shows ONLY the brand
+   wordmark and the hamburger. The lang toggle, theme toggle, and Start-
+   free CTA all remain accessible inside the slide-in menu (.menu /
+   .menuBody), which is opened by the hamburger and exposes every control
+   at touch size. This is the only way to guarantee the brand <sup>TM</sup>
+   cannot overlap any nav sibling at 320–414px (Redmi 9A → iPhone 11 Pro
+   Max) on a 36px-mark + display-serif wordmark. At ≥768px the hamburger
+   itself is hidden and the inline lang/theme/CTA cluster returns. */
+.navRight .langToggle,
+.navRight .themeToggle,
+.navRight .btn {
+  display: none;
+}
+@media (min-width: 768px) {
+  .navRight { gap: 10px; }
+  .navRight .langToggle,
+  .navRight .themeToggle {
+    display: inline-flex;
+  }
+  .navRight .btn {
+    display: inline-flex;
+  }
+  /* Let the right cluster shrink at ≥768 so the role switcher (which only
+     appears at this breakpoint) has room without overflowing. The mobile
+     bug is already mitigated above by hiding lang/theme/CTA at <768. */
+  .navRight,
+  .navRight .langToggle,
+  .navRight .themeToggle,
+  .navRight .btn {
+    flex-shrink: 1;
+  }
 }
 .langToggle,
 .themeToggle {
@@ -367,13 +442,21 @@
   border: none;
   cursor: pointer;
   color: var(--on-paper);
-  padding: 6px 10px;
+  padding: 6px 6px;
   min-height: var(--tap);
   min-width: var(--tap);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   position: relative;
+  /* Each touch target keeps its 48×48 footprint — no shrinking. */
+  flex-shrink: 0;
+}
+@media (min-width: 480px) {
+  .langToggle,
+  .themeToggle {
+    padding: 6px 10px;
+  }
 }
 .themeToggle {
   font-size: 16px;
@@ -384,6 +467,24 @@
 
 .navCtaLabel {
   display: none;
+}
+
+/* The nav CTA on mobile is icon-only ("→") until 480px. Trim its padding
+   so the right-hand cluster (lang + theme + CTA + hamburger) fits cleanly
+   alongside the brand wordmark at 320–414px without crowding the TM mark.
+   Also lock flex-shrink so the CTA keeps its tap target. */
+.navRight .btn {
+  flex-shrink: 0;
+  padding: 0 10px;
+  min-width: var(--tap);
+  gap: 0;
+}
+@media (min-width: 480px) {
+  .navRight .btn {
+    padding: 14px 22px;
+    min-width: 0;
+    gap: 10px;
+  }
 }
 
 /* ---------- BUTTONS ---------- */
