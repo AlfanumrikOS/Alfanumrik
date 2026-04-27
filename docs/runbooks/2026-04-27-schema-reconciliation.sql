@@ -1,9 +1,12 @@
--- PRODUCTION SCHEMA RECONCILIATION - 2026-04-27 (rev 2)
+-- PRODUCTION SCHEMA RECONCILIATION - 2026-04-27 (rev 3)
 -- Project: shktyoxqhundlvkiwguu
--- Patches: teacher_id->class_teachers junction, defensive EXCEPTION handlers
+-- Patches: teacher_id->class_teachers junction (rev2)
+--          add_xp recreation skipped (rev3, preserves foxy-tutor caller)
+--          DROP-before-CREATE for select_questions_by_irt_info (rev3)
+--          defensive EXCEPTION handlers on bare DO blocks (rev2)
 -- Backup: 2026-04-27T02:23:40Z physical snapshot
 
-SELECT (SELECT to_regclass('public.xp_transactions') IS NOT NULL) AS pre_xp_tx, (SELECT to_regclass('public.misconceptions') IS NOT NULL) AS pre_misc, (SELECT to_regclass('public.student_skill_state') IS NOT NULL) AS pre_skill_state, (SELECT to_regprocedure('public.atomic_quiz_profile_update(uuid,text,int,int,int,int,uuid)')::text) AS pre_7arg;
+SELECT (SELECT to_regclass('public.xp_transactions') IS NOT NULL) AS pre_xp_tx, (SELECT to_regclass('public.misconceptions') IS NOT NULL) AS pre_misc, (SELECT to_regclass('public.student_skill_state') IS NOT NULL) AS pre_skill_state, (SELECT to_regclass('public.payment_webhook_events') IS NOT NULL) AS pre_webhook_evt, (SELECT to_regclass('public.domain_events') IS NOT NULL) AS pre_dom_evt, (SELECT to_regprocedure('public.atomic_quiz_profile_update(uuid,text,int,int,int,int,uuid)')::text) AS pre_7arg;
 
 
 -- =====================================================
@@ -281,40 +284,12 @@ $$;
 
 -- The existing add_xp(UUID, INT, TEXT) is called by the mobile app.
 -- Replace it to route through the ledger while keeping the same signature.
-CREATE OR REPLACE FUNCTION add_xp(
-  p_student_id UUID,
-  p_amount     INT,
-  p_source     TEXT DEFAULT 'unknown'
-)
-RETURNS VOID AS $$
-DECLARE
-  _awarded  INTEGER;
-  _total    INTEGER;
-  _capped   BOOLEAN;
-BEGIN
-  -- Route through award_xp to record in ledger
-  SELECT a.awarded, a.new_total, a.capped
-  INTO _awarded, _total, _capped
-  FROM award_xp(
-    p_student_id  := p_student_id,
-    p_amount      := p_amount,
-    p_source      := CASE
-                       WHEN p_source = 'unknown' THEN 'admin_adjustment'
-                       WHEN p_source IN (
-                         'quiz_correct', 'quiz_high_score', 'quiz_perfect',
-                         'foxy_chat', 'foxy_lesson_complete',
-                         'streak_daily', 'streak_milestone',
-                         'topic_mastered', 'chapter_complete',
-                         'study_task', 'study_week',
-                         'challenge_win', 'competition_prize',
-                         'first_quiz_of_day', 'redemption', 'admin_adjustment'
-                       ) THEN p_source
-                       ELSE 'admin_adjustment'  -- fallback for unrecognized sources
-                     END,
-    p_metadata    := jsonb_build_object('legacy_source', p_source)
-  ) a;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+-- RECONCILIATION PATCH 2026-04-27: add_xp recreation SKIPPED.
+-- Production already has add_xp(uuid, integer, text) with live caller foxy-tutor
+-- using parameter name p_xp. Migration wanted to rename to p_amount which would
+-- break the caller. Existing add_xp kept; new award_xp from this migration is
+-- the canonical XP-writing path going forward.
+SELECT 'add_xp recreation skipped per reconciliation patch' AS reconciliation_note;
 -- SECURITY DEFINER: delegates to award_xp which needs cross-table writes;
 -- maintains backward compatibility with existing mobile app calls.
 
@@ -1920,6 +1895,7 @@ GRANT SELECT ON misconception_candidates TO service_role;
 -- comparable numeric scores, the calibrated path wins ties — but a much
 -- better proxy match still beats a marginal calibrated fit.
 
+DROP FUNCTION IF EXISTS public.select_questions_by_irt_info(UUID, TEXT, TEXT, INT, INT, UUID[]);
 CREATE OR REPLACE FUNCTION select_questions_by_irt_info(
   p_student_id      UUID,
   p_subject         TEXT,
@@ -2097,6 +2073,7 @@ END $$;
 -- declaration as NUMERIC means callers (TypeScript types) see a stable
 -- numeric type; the cast is a no-op for the values we actually store.
 
+DROP FUNCTION IF EXISTS public.select_questions_by_irt_info(UUID, TEXT, TEXT, INT, INT, UUID[]);
 CREATE OR REPLACE FUNCTION select_questions_by_irt_info(
   p_student_id      UUID,
   p_subject         TEXT,
@@ -2552,4 +2529,4 @@ INSERT INTO supabase_migrations.schema_migrations (version, name) VALUES
 ON CONFLICT (version) DO NOTHING;
 COMMIT;
 
-SELECT (SELECT to_regclass('public.xp_transactions') IS NOT NULL) AS post_xp_tx, (SELECT to_regclass('public.misconceptions') IS NOT NULL) AS post_misc, (SELECT to_regclass('public.student_skill_state') IS NOT NULL) AS post_skill_state, (SELECT to_regprocedure('public.atomic_quiz_profile_update(uuid,text,int,int,int,int,uuid)')::text) AS post_7arg, (SELECT COUNT(*) FROM supabase_migrations.schema_migrations) AS sm_final_count;
+SELECT (SELECT to_regclass('public.xp_transactions') IS NOT NULL) AS post_xp_tx, (SELECT to_regclass('public.misconceptions') IS NOT NULL) AS post_misc, (SELECT to_regclass('public.student_skill_state') IS NOT NULL) AS post_skill_state, (SELECT to_regclass('public.payment_webhook_events') IS NOT NULL) AS post_webhook_evt, (SELECT to_regclass('public.domain_events') IS NOT NULL) AS post_dom_evt, (SELECT to_regprocedure('public.atomic_quiz_profile_update(uuid,text,int,int,int,int,uuid)')::text) AS post_7arg, (SELECT COUNT(*) FROM supabase_migrations.schema_migrations) AS sm_final_count;
