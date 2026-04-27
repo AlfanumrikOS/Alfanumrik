@@ -60,11 +60,18 @@ fi
 
 echo ""
 echo "🚀 Building release APKs (split by ABI)..."
+# FOXY_ENDPOINT controls which Foxy backend the mobile app calls:
+#   'edge' (default) → legacy supabase/functions/v1/foxy-tutor (DEPRECATED, FTS-only)
+#   'api'            → new Next.js /api/foxy (RAG + Sonnet + P12-grade safety rails)
+# Default stays 'edge' so existing user builds remain unchanged. Ops will flip
+# this to 'api' in a future release after staging validates the new path.
+# See mobile/docs/foxy-migration.md.
 flutter build apk --release --split-per-abi \
     --dart-define=SUPABASE_URL="${SUPABASE_URL}" \
     --dart-define=SUPABASE_ANON_KEY="${SUPABASE_ANON_KEY}" \
     --dart-define=RAZORPAY_KEY_ID="${RAZORPAY_KEY_ID:-}" \
-    --dart-define=API_BASE_URL="${API_BASE_URL:-https://alfanumrik.com/api}"
+    --dart-define=API_BASE_URL="${API_BASE_URL:-https://alfanumrik.com/api}" \
+    --dart-define=FOXY_ENDPOINT="${FOXY_ENDPOINT:-edge}"
 
 echo ""
 echo "================================"
