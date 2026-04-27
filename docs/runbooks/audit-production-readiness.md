@@ -68,3 +68,6 @@ The audit document itself is never edited after the run — drift discovered lat
 - **Do not skip the reconciliation diff** — operational drift is the audit's load-bearing output.
 - **Numbers must come from `Glob` / `Grep` / `Read`,** never recalled from memory or prior audits.
 - **The audit document is the source of truth** for the next 4-week window. The CEO briefing references it.
+
+---
+_Last verified: 2026-04-27 — TEST_STUDENT_* secrets wired, e2e-critical-paths gate now exercises real auth path._

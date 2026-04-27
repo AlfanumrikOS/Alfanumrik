@@ -494,10 +494,15 @@ jobs:
         # fixture are registered with `test.fixme()` so they don't fail the
         # suite while the fixture is being wired (audit F9 follow-up). The
         # spec FILES must parse and any non-fixme tests must pass.
+        #
+        # BASE_URL points at the deployed production domain so we don't need
+        # to run a dev server in CI. Login goes through real Supabase Auth
+        # (validates the auth flow); RPC calls are intercepted by page.route()
+        # in the spec, so quiz/payment business logic is asserted against
+        # deterministic mocked responses (P1/P2/P3 invariant pinning).
         run: npx playwright test e2e/quiz-happy-path.spec.ts e2e/payment-checkout.spec.ts
         env:
-          NEXT_PUBLIC_SUPABASE_URL: ${{ env.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ env.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          BASE_URL: 'https://alfanumrik.com'
           # Real-auth path: when these secrets are present, the `test.fixme`
           # guards in the specs flip off and the tests drive a live student
           # session. Until then, the specs run their mocked-only assertions
