@@ -16,6 +16,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { supabase, getStudentSnapshot } from './supabase';
 import { clearAllCache } from './swr';
+import { track } from './analytics';
 import type { Student, StudentSnapshot } from './types';
 
 /* ─── Role Types ─── */
@@ -341,6 +342,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             });
             if (res.ok) {
               bootstrapSucceeded = true;
+              // Analytics: F16 — see audit 2026-04-27.
+              // Bootstrap is the first successful server-side write of a profile,
+              // gated by Redis idempotency lock — fires exactly once per new user.
+              try {
+                const role: 'student' | 'teacher' | 'parent' | 'guardian' =
+                  metaRole === 'teacher' ? 'teacher'
+                    : metaRole === 'parent' || metaRole === 'guardian' ? 'guardian'
+                    : 'student';
+                track('signup_complete', { role, method: 'email' });
+              } catch { /* analytics is non-critical */ }
               // Re-run fetchUser ONE MORE TIME to pick up newly created profile.
               // bootstrapAttemptedRef.current is already true, so the recursive call
               // will skip this bootstrap block — preventing infinite recursion.

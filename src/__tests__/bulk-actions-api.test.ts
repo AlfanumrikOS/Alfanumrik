@@ -65,6 +65,9 @@ vi.mock('@/lib/supabase-admin', () => ({
       insert: () => ({ select: () => Promise.resolve({ data: [], error: null }) }),
       select: () => ({ in: () => Promise.resolve({ data: [], error: null }) }),
     }),
+    // plan-change route now calls atomic_plan_change RPC per student.
+    // Default to success; specific tests can override.
+    rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
     auth: { admin: { generateLink: vi.fn().mockResolvedValue({ data: {}, error: null }) } },
   },
 }));

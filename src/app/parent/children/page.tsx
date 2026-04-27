@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { BottomNav } from '@/components/ui';
+import { track } from '@/lib/analytics';
 
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -403,6 +404,27 @@ function LinkChildSection({
         setMessage({ type: 'error', text: (data as { error: string }).error });
       } else {
         setMessage({ type: 'success', text: t(isHi, 'Child linked successfully!', 'बच्चा सफलतापूर्वक जुड़ गया!') });
+        // Analytics: F16 — see audit 2026-04-27.
+        // Fires once per successful link redemption. Never log raw student_id —
+        // hash to first 8 bytes (16 hex chars) for cohort analysis without PII.
+        try {
+          const studentId = data && typeof data === 'object' && 'student_id' in data
+            ? (data as { student_id: string }).student_id
+            : null;
+          let studentIdHash: string | undefined;
+          if (studentId && typeof crypto !== 'undefined' && crypto.subtle) {
+            const buf = new TextEncoder().encode(studentId);
+            const digest = await crypto.subtle.digest('SHA-256', buf);
+            studentIdHash = Array.from(new Uint8Array(digest).slice(0, 8))
+              .map((b) => b.toString(16).padStart(2, '0'))
+              .join('');
+          }
+          track('parent_linked', {
+            method: 'code',
+            link_method: 'code',
+            ...(studentIdHash ? { student_id_hash: studentIdHash } : {}),
+          });
+        } catch { /* analytics is non-critical */ }
         setCode('');
         setTimeout(() => {
           setMessage(null);

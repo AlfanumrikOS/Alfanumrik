@@ -698,10 +698,24 @@ describe('Section 3: Adaptive Pipeline Integration', () => {
       expect(foxySource).toContain('loadCognitiveContext');
     });
 
-    it('calls Voyage embeddings for RAG', () => {
-      // The route generates Voyage embeddings for semantic search
-      expect(foxySource).toContain('generateEmbedding');
-      expect(foxySource).toContain('voyage-3');
+    it('grounded-answer service uses Voyage embeddings for RAG', () => {
+      // Post-Phase-2 (audit 2026-04-27 F11): Foxy route delegates retrieval
+      // to the grounded-answer Edge Function. The Voyage embedding call now
+      // lives in the grounded-answer service (pipeline.ts + embedding.ts).
+      // Foxy itself no longer contains generateEmbedding/voyage-3 literals.
+      const groundedPipelineSource = readSource(
+        'supabase/functions/grounded-answer/pipeline.ts'
+      );
+      const groundedEmbeddingSource = readSource(
+        'supabase/functions/grounded-answer/embedding.ts'
+      );
+      const groundedRetrievalSource = readSource(
+        'supabase/functions/grounded-answer/retrieval.ts'
+      );
+      const combinedSource =
+        groundedPipelineSource + groundedEmbeddingSource + groundedRetrievalSource;
+      expect(combinedSource).toContain('generateEmbedding');
+      expect(combinedSource).toContain('voyage-3');
     });
 
     it('includes input safety checks via grade validation', () => {

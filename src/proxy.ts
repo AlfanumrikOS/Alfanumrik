@@ -615,32 +615,127 @@ export async function proxy(request: NextRequest) {
   // See ensureAnonIdCookie() above for cookie attributes.
   ensureAnonIdCookie(request, response);
 
-  // ── Layer 0.65: Role-based route protection (DISABLED) ──
+  // ── Layer 0.65: Role-based route protection ──
   //
-  // TEMPORARILY DISABLED due to a production auth cookie propagation bug.
+  // Prevents URL-level cross-portal navigation: a student who clicks/types
+  // /teacher/* must not land on a teacher-only page even if the data is
+  // RLS-protected (the broken UI is a poor UX). RLS at the DB layer remains
+  // the true authorization boundary; this layer is defense-in-depth and a UX
+  // affordance, not a security primitive.
   //
-  // Root cause: when this layer called `NextResponse.redirect(...)` for a
-  // role mismatch, the new response did NOT carry forward the Supabase
-  // session cookies set earlier by `supabase.auth.getUser()` during session
-  // refresh. Downstream the user's session appeared missing, causing
-  // "AuthSessionMissingError" for teacher/parent/admin logins (students
-  // routed to /dashboard which has no rule, so they were unaffected).
+  // History (audit F26): this layer was previously disabled due to a cookie
+  // propagation bug — when `NextResponse.redirect(...)` was returned, the
+  // Supabase session cookies set earlier by `supabase.auth.getUser()` during
+  // session refresh were NOT carried forward, causing "AuthSessionMissingError"
+  // for teacher/parent/admin logins on the next request. Fix: clone cookies
+  // from the current `response` onto the redirect response before returning.
   //
-  // Safe to disable because:
-  //   - RLS policies in PostgreSQL remain the true auth boundary
-  //   - API routes enforce via authorizeRequest()
-  //   - Client-side AuthContext + per-page redirects handle role routing
+  // Safety properties:
+  //   - Reads role via `getUserRoleFromCache` — Redis + in-memory cache, no
+  //     DB roundtrip on the hot path (60s TTL with write-through).
+  //   - FAIL-OPEN: any failure (cache miss returns null, auth degraded,
+  //     Supabase down) → allow the request through. Downstream RLS, API
+  //     `authorizeRequest()`, and client-side redirects still enforce.
+  //   - Skipped entirely when `ENABLE_LAYER_065` is not "true". Defaults
+  //     to disabled outside production so tests/local dev are unaffected.
+  //   - Logs a structured breadcrumb on every blocked navigation (visible
+  //     in Vercel logs / Sentry log integrations) so we can observe whether
+  //     this layer ever fires unexpectedly in prod.
   //
-  // TODO(reintroduce): When re-enabling, clone cookies from the current
-  // `response` onto the redirect response before returning. Reference
-  // pattern: `const redirect = NextResponse.redirect(...); response.cookies
-  // .getAll().forEach(c => redirect.cookies.set(c.name, c.value, c));
-  // return redirect;`
-  //
-  // Keep the helper imports so the follow-up fix is a one-liner.
-  void findRouteRule;
-  void getUserRoleFromCache;
-  void destinationForRole;
+  // The structured logger is intentionally NOT imported here (logger pulls
+  // in Sentry + redactor; too heavy for the middleware bundle per P10).
+  // We use `console.warn(JSON.stringify(...))` which is the same pattern
+  // used by the auth-degraded log a few lines above.
+  const layer065Enabled = (() => {
+    const flag = process.env.ENABLE_LAYER_065;
+    if (typeof flag === 'string' && flag.length > 0) {
+      return flag === 'true' || flag === '1';
+    }
+    // Default: ON in production, OFF in dev/test/preview to avoid affecting
+    // local Playwright runs and unit tests that don't seed roles.
+    return process.env.NODE_ENV === 'production';
+  })();
+
+  if (layer065Enabled && authUserId && !authDegraded) {
+    const rule = findRouteRule(path);
+    if (rule) {
+      const role: MiddlewareRole | null = await getUserRoleFromCache(authUserId);
+      // role === null → cache + lookup both failed → fail open.
+      // role === 'none' → authenticated but not yet onboarded → /onboarding.
+      // role in rule.allowed → allow.
+      // role NOT in rule.allowed → redirect to that role's home portal.
+      if (role !== null) {
+        let redirectTo: string | null = null;
+        if (role === 'none') {
+          redirectTo = '/onboarding';
+        } else if (!rule.allowed.includes(role)) {
+          const dest = destinationForRole(role);
+          // Loop safety: if destinationForRole returns a path inside this
+          // very rule (would re-trigger the same redirect), fall back to
+          // /dashboard which has no rule.
+          redirectTo = (path === dest || path.startsWith(dest + '/'))
+            ? '/dashboard'
+            : dest;
+        }
+
+        if (redirectTo) {
+          const url = new URL(redirectTo, request.url);
+          const redirect = NextResponse.redirect(url);
+
+          // CRITICAL — preserve cookies set earlier by supabase.auth.getUser()
+          // during session refresh. Without this, the new response loses the
+          // Supabase session cookies and the user appears logged out on the
+          // next request. This is the bug F26 was tracking.
+          response.cookies.getAll().forEach((c) => {
+            redirect.cookies.set({
+              name: c.name,
+              value: c.value,
+              path: c.path,
+              domain: c.domain,
+              maxAge: c.maxAge,
+              expires: c.expires,
+              httpOnly: c.httpOnly,
+              secure: c.secure,
+              sameSite: c.sameSite,
+            });
+          });
+
+          // Forward degraded-auth signal too (it was already 'false' here, but
+          // be defensive in case another layer added the header).
+          const degradedHeader = response.headers.get('x-auth-degraded');
+          if (degradedHeader) {
+            redirect.headers.set('x-auth-degraded', degradedHeader);
+          }
+
+          // Observability: structured log (one line per block). Useful both
+          // for spotting misconfigured rules and for confirming the layer is
+          // actually active in production. PII-free — only role + path.
+          console.warn(JSON.stringify({
+            level: 'warn',
+            message: 'layer_0_65_role_block',
+            from: path,
+            to: redirectTo,
+            role,
+            rulePrefix: rule.prefix,
+          }));
+
+          return redirect;
+        }
+      }
+    }
+  } else if (!layer065Enabled) {
+    // Detect when the layer is disabled in production — this should be
+    // surfaced by observability so we can confirm the rollout flag is set.
+    // Sampled (1% of requests) to avoid log spam.
+    if (process.env.NODE_ENV === 'production' && Math.random() < 0.01) {
+      console.warn(JSON.stringify({
+        level: 'warn',
+        message: 'layer_0_65_disabled',
+        reason: 'ENABLE_LAYER_065 not set to true in production',
+        route: path,
+      }));
+    }
+  }
 
   // ── Inject school config headers (after response is created) ──
   // These headers are read by /api/school-config and forwarded to SchoolContext.

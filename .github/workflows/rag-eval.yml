@@ -1,0 +1,64 @@
+name: RAG eval — grounded-answer regression detector
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 22:00 UTC = 03:30 IST nightly
+    - cron: '0 22 * * *'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'supabase/functions/grounded-answer/**'
+      - 'supabase/functions/_shared/retrieval.ts'
+      - 'supabase/functions/_shared/reranking.ts'
+      - 'supabase/functions/_shared/rag-retrieval.ts'
+      - 'eval/rag/**'
+      - 'scripts/rag-eval.mjs'
+      - '.github/workflows/rag-eval.yml'
+
+# Single run at a time per branch to avoid hammering the live service.
+concurrency:
+  group: rag-eval-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  eval:
+    name: Run RAG gold-set eval
+    runs-on: ubuntu-latest
+    # Forks have no service-role secret. Skip rather than fail.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # Advisory until 5 consecutive runs at >=95% pass rate. Then flip to false.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # tsx lets Node 20 execute the .ts files in eval/rag/ without a separate
+      # build step. Pinned to a stable line.
+      - name: Install tsx (transient)
+        run: npm install --no-save tsx@4.19.0
+
+      - name: Run RAG eval
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # Default to advisory threshold (0.80) to avoid false alarms while
+          # the gold set stabilises. Tighten via repo variable RAG_EVAL_THRESHOLD.
+          RAG_EVAL_THRESHOLD: ${{ vars.RAG_EVAL_THRESHOLD || '0.80' }}
+        run: npx tsx scripts/rag-eval.mjs
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rag-eval-report-${{ github.run_id }}
+          path: eval/rag/reports/*.json
+          if-no-files-found: warn
+          retention-days: 30

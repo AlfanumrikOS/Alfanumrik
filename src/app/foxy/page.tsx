@@ -20,6 +20,7 @@ import { ChatInput } from '@/components/foxy/ChatInput';
 import { ConversationManager, generateTitle, SIMPLIFIED_MODES, MODE_MAP, type ConversationSummary } from '@/components/foxy/ConversationManager';
 import { ConversationHeader } from '@/components/foxy/ConversationHeader';
 import { useSELCheckIn, type MoodState } from '@/components/SELCheckIn';
+import { track } from '@/lib/analytics';
 
 // P10 bundle hardening: lazy-load components rendered behind a flag/modal/conditional.
 // Cuts /foxy First Load JS by ~70 kB on cold paint. Type/hook imports remain static
@@ -697,6 +698,20 @@ export default function FoxyPage() {
         foxyParams.image_base64 = imageBase64;
         foxyParams.image_media_type = image?.type || 'image/jpeg';
       }
+      // Analytics: F16 — see audit 2026-04-27.
+      // Fires once per fresh thread (when no chatSessionId exists yet at send time).
+      // Subsequent turns reuse the existing session, so this won't double-fire.
+      const isFreshSession = !chatSessionId;
+      if (isFreshSession) {
+        try {
+          track('foxy_session_started', {
+            subject: activeSubject,
+            grade: studentGrade,
+            mode: sessionMode,
+          });
+        } catch { /* analytics is non-critical */ }
+      }
+      const turnStartedAt = Date.now();
       const resp = await callFoxyTutor(foxyParams);
       // Server confirmed daily limit reached — show UpgradeModal
       if (resp.limitReached) {
@@ -730,6 +745,20 @@ export default function FoxyPage() {
       }
       if (resp.xp_earned > 0) setXpGained((p: number) => p + resp.xp_earned);
       if (resp.session_id) setChatSessionId(resp.session_id);
+      // Analytics: F16 — see audit 2026-04-27.
+      // groundingStatus values: 'grounded' | 'unverified' | 'hard-abstain' (undefined on legacy responses).
+      // Only 'grounded' counts as a true citation-backed answer.
+      try {
+        const grounded = resp.groundingStatus === 'grounded';
+        const citationsCount = Array.isArray(resp.suggestedAlternatives) ? resp.suggestedAlternatives.length : 0;
+        track('foxy_turn_completed', {
+          subject: activeSubject,
+          grade: studentGrade,
+          was_grounded: grounded,
+          citations_count: citationsCount,
+          latency_ms: Date.now() - turnStartedAt,
+        });
+      } catch { /* analytics is non-critical */ }
       setFoxyState('happy'); setTimeout(() => setFoxyState('idle'), 2000);
       // Auto-speak when voice mode is ON
       if (voiceModeRef.current) {

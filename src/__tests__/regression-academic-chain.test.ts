@@ -96,11 +96,31 @@ describe('Regression #3: Next.js RAG callers are pinned to NCERT', () => {
     expect(src).toMatch(/p_subject_code/);
   });
 
-  it('/api/foxy calls match_rag_chunks_ncert (not V1)', () => {
-    const src = read('src/app/api/foxy/route.ts');
-    expect(src).toMatch(/rpc\(\s*['"]match_rag_chunks_ncert['"]/);
-    expect(src).not.toMatch(/rpc\(\s*['"]match_rag_chunks['"]\s*,/);
-    expect(src).toMatch(/p_subject_code/);
+  it('grounded-answer service is the sole production caller of match_rag_chunks_ncert', () => {
+    // Post-Phase-2 (PR #399+) the RAG retrieval moved out of the Next.js
+    // /api/foxy route and into the grounded-answer Edge Function. The
+    // moat-leak / structural enforcement now lives in
+    // src/__tests__/eslint-rules/no-direct-rag-rpc.test.ts (no direct
+    // RAG RPC calls outside _shared/). This regression entry pins the
+    // remaining product contract: at least one production caller of
+    // match_rag_chunks_ncert exists for NCERT-pinned grounding.
+    //
+    // Audit F10 (2026-04-27) consolidated the RPC call into
+    // `_shared/rag/retrieve.ts`. grounded-answer/retrieval.ts is now a
+    // thin adapter that delegates to it. The structural invariant we
+    // care about is preserved: a single canonical caller of the NCERT
+    // RPC, with snake_case `p_subject_code` params.
+    const unified = read('supabase/functions/_shared/rag/retrieve.ts');
+    expect(unified).toMatch(/rpc\(\s*['"]match_rag_chunks_ncert['"]/);
+    expect(unified).not.toMatch(/rpc\(\s*['"]match_rag_chunks['"]\s*,/);
+    expect(unified).toMatch(/p_subject_code/);
+
+    // grounded-answer/retrieval.ts must continue to import from the
+    // unified module (and nothing else) so the migration cannot silently
+    // regress to a direct RPC call.
+    const adapter = read('supabase/functions/grounded-answer/retrieval.ts');
+    expect(adapter).toMatch(/from\s+['"]\.\.\/_shared\/rag\/retrieve\.ts['"]/);
+    expect(adapter).not.toMatch(/rpc\(\s*['"]match_rag_chunks['"]\s*,/);
   });
 });
 

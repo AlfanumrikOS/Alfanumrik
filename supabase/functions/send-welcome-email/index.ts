@@ -49,7 +49,8 @@ const MAILGUN_API_KEY = Deno.env.get('MAILGUN_API_KEY') ?? ''
 const MAILGUN_DOMAIN = Deno.env.get('MAILGUN_DOMAIN') ?? ''
 const FROM_EMAIL = 'Alfanumrik <welcome@alfanumrik.com>'
 const REPLY_TO = 'support@alfanumrik.com'
-const SITE_URL = 'https://alfanumrik.com'
+// SITE_URL must come from env per P15 #6. See audit 2026-04-27 F4.
+const SITE_URL = Deno.env.get('SITE_URL') || 'https://alfanumrik.com'
 
 async function sendMailgunEmail(params: {
   to: string; subject: string; html: string; text: string;

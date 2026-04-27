@@ -17,7 +17,11 @@
     "check:config-parity": "bash scripts/check-config-parity.sh",
     "lint:ai-boundary": "bash scripts/check-config-parity.sh && eslint --config .eslintrc.ai-boundary.json --ext .ts,.tsx src supabase/functions",
     "test:coverage": "vitest run --coverage",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "supabase:gen-types": "node scripts/gen-supabase-types.mjs",
+    "supabase:check-types": "node scripts/gen-supabase-types.mjs --check",
+    "eval:rag": "npx tsx scripts/rag-eval.mjs",
+    "eval:rag:check": "RAG_EVAL_THRESHOLD=0.80 npx tsx scripts/rag-eval.mjs"
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.1",
@@ -39,6 +43,7 @@
     "katex": "^0.16.45",
     "next": "^16.2.1",
     "pdf-parse": "^2.4.5",
+    "posthog-js": "^1.372.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^10.1.0",

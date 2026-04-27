@@ -323,10 +323,13 @@ Deno.serve(async (req: Request) => {
         ],
       })
 
+      // P13: user.email is PII; log a truncated form only. Audit 2026-04-27 F5.
+      const redactedEmail = user.email.slice(0, 3) + '***@' + (user.email.split('@')[1] ?? 'unknown')
+
       if (result.error) {
         console.error('[Auth Email] Mailgun error:', result.error)
       } else {
-        console.log(`[Auth Email] Sent ${email_action_type} email to ${user.email}, id: ${result.id}`)
+        console.log(`[Auth Email] Sent ${email_action_type} email to ${redactedEmail}, id: ${result.id}`)
         sent = true
       }
     } catch (sendErr) {
@@ -334,7 +337,9 @@ Deno.serve(async (req: Request) => {
     }
 
     if (!sent) {
-      console.error('[Auth Email] Send failed for', user.email, '- check domain verification in Mailgun dashboard')
+      // P13: user.email is PII; log a truncated form only. Audit 2026-04-27 F5.
+      const redactedEmailFail = user.email.slice(0, 3) + '***@' + (user.email.split('@')[1] ?? 'unknown')
+      console.error('[Auth Email] Send failed for', redactedEmailFail, '- check domain verification in Mailgun dashboard')
     }
 
     // ALWAYS return 200 — never block the auth flow
