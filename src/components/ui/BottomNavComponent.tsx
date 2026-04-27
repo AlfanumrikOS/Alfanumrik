@@ -49,6 +49,7 @@ const MORE_ITEMS = [
   { href: '/profile', icon: '👤', label: 'Profile', labelHi: 'प्रोफ़ाइल' },
   { href: '/notifications', icon: '🔔', label: 'Settings & Notifications', labelHi: 'सेटिंग्स और सूचनाएँ' },
   { href: '/help', icon: '❓', label: 'Help & Support', labelHi: 'सहायता और सपोर्ट' },
+  { href: '/support', icon: '📨', label: 'My Tickets', labelHi: 'मेरे टिकट' },
 ];
 
 const SIDEBAR_SECTIONS = [
@@ -82,6 +83,7 @@ const SIDEBAR_SECTIONS = [
     items: [
       { href: '/profile', icon: '👤', label: 'Profile', labelHi: 'प्रोफ़ाइल' },
       { href: '/help', icon: '❓', label: 'Help & Support', labelHi: 'सहायता और सपोर्ट' },
+      { href: '/support', icon: '📨', label: 'My Tickets', labelHi: 'मेरे टिकट' },
     ],
   },
 ];

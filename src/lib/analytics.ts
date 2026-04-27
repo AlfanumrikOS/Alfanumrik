@@ -4,9 +4,25 @@
  * Dario's principle: Measure what matters for the mission, not vanity metrics.
  * For EdTech, that means: learning velocity, retention, and mastery progression.
  *
- * These events feed into Vercel Analytics. In production, extend to
- * PostHog/Mixpanel for cohort analysis and learning funnel optimization.
+ * Dual-dispatch:
+ *  - Vercel Analytics — page-level events + simple custom events. Always on
+ *    in production (via @vercel/analytics injection).
+ *  - PostHog — cohort/funnel/retention analysis. Opt-in via
+ *    NEXT_PUBLIC_POSTHOG_ENABLED=true + NEXT_PUBLIC_POSTHOG_KEY. See
+ *    `src/lib/posthog-client.ts` for init details and privacy posture.
+ *
+ * Every `track()` call fires to BOTH backends if both are configured.
+ * Callers don't need to know which backends are active; they just call
+ * `track('quiz_completed', { ... })` and the dispatcher does the right thing.
+ *
+ * Privacy (P13):
+ *  - Never pass raw user IDs in event properties — use `hashUserIdForAnalytics()`
+ *    or the existing `student_id_hash` convention.
+ *  - PostHog `identify()` always uses a hashed ID, never the raw Supabase UUID.
+ *  - Both dispatch paths swallow errors: analytics never breaks the app.
  */
+
+import { posthogCapture, posthogIdentify, posthogReset, hashUserIdForAnalytics, isPosthogEnabled } from './posthog-client';
 
 type AnalyticsEvent = {
   // Learning events
@@ -57,8 +73,11 @@ type AnalyticsEvent = {
 };
 
 /**
- * Track a learning event. In production, this sends to Vercel Analytics
- * and can be extended to any analytics provider.
+ * Track a learning event. Fans out to all configured analytics backends:
+ *  - Vercel Analytics (always on in production)
+ *  - PostHog (when `NEXT_PUBLIC_POSTHOG_ENABLED === 'true'`)
+ *
+ * Callers don't need to know which backends are active.
  */
 export function track<K extends keyof AnalyticsEvent>(
   event: K,
@@ -69,7 +88,7 @@ export function track<K extends keyof AnalyticsEvent>(
     console.info(`[Analytics] ${event}`, properties);
   }
 
-  // Vercel Analytics custom events
+  // ── Vercel Analytics (custom events) ──
   if (typeof window !== 'undefined' && 'va' in window) {
     try {
       // Vercel Analytics track function
@@ -79,6 +98,10 @@ export function track<K extends keyof AnalyticsEvent>(
       });
     } catch { /* analytics should never break the app */ }
   }
+
+  // ── PostHog (cohort/funnel/retention) ──
+  // No-op when the runtime flag is off or the key is missing — see posthog-client.ts.
+  posthogCapture(event, properties as Record<string, unknown>);
 }
 
 /**
@@ -94,4 +117,36 @@ export function setLearningContext(context: {
   if (typeof window !== 'undefined') {
     (window as Window & { __alfCtx?: typeof context }).__alfCtx = context;
   }
+}
+
+/**
+ * Identify the current user to analytics backends.
+ *
+ * P13: We hash the auth UUID before sending to PostHog. The 16-hex-char
+ * (8-byte) prefix gives ~10^19 distinct cohorts — enough to keep users
+ * distinct, while preventing recovery of the original UUID.
+ *
+ * Call this from AuthContext after `supabase.auth.getUser()` resolves.
+ * Safe to call on every auth state change — `posthogIdentify()` is idempotent.
+ *
+ * @param authUserId Raw Supabase auth UUID. Hashed before any external call.
+ * @param traits Optional trait map (role, grade, plan tier). DO NOT pass PII.
+ */
+export async function identifyUser(
+  authUserId: string,
+  traits?: { role?: 'student' | 'teacher' | 'parent' | 'guardian'; grade?: string; plan?: string }
+): Promise<void> {
+  if (!authUserId) return;
+  if (!isPosthogEnabled()) return;
+  const hash = await hashUserIdForAnalytics(authUserId);
+  if (!hash) return;
+  posthogIdentify(hash, traits as Record<string, unknown> | undefined);
+}
+
+/**
+ * Reset analytics identity (call on logout). Prevents cross-user attribution
+ * when a different user signs in on the same browser.
+ */
+export function resetAnalyticsIdentity(): void {
+  posthogReset();
 }

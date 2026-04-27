@@ -38,9 +38,11 @@ jobs:
 
       # Real secret scanner (low false-positive rate, industry standard).
       # Pinned major to v2 for stability; config in .gitleaks.toml if/when added.
+      # Audit 2026-04-27 F23: flipped from advisory → BLOCKING. Secret leaks
+      # must fail CI. If a finding is a known false positive, allowlist it via
+      # .gitleaks.toml (preferred) rather than re-disabling this gate.
       - name: Gitleaks scan
         uses: gitleaks/gitleaks-action@v2
-        continue-on-error: true   # Advisory for now; will be enforced once baseline is clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -257,6 +259,11 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+        # ADVISORY UNTIL 2026-04-27. Audit 2026-04-27 F23.
+        # TODO: flip to blocking after staging Supabase reachability from
+        # GH-hosted runners is stable for 2 consecutive weeks (track flake
+        # rate via the workflow run history). Live-DB tests are sensitive
+        # to staging maintenance windows and runner egress IP changes.
         continue-on-error: true
 
   # ── Step 2: Production Build + Bundle Analysis ──
@@ -439,6 +446,11 @@ jobs:
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ env.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ env.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+        # ADVISORY UNTIL 2026-04-27. Audit 2026-04-27 F23 / F9.
+        # TODO: flip to blocking after legacy E2E flake cleanup. The new
+        # `e2e-critical-paths` job below IS BLOCKING and covers the
+        # must-not-break paths (quiz happy path REG-45, payment checkout
+        # REG-46), so this advisory does not weaken release safety.
         continue-on-error: true
       - uses: actions/upload-artifact@v4
         if: always()
