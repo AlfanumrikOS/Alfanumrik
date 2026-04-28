@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { track } from '@/lib/analytics';
-import { submitQuizResults, saveCognitiveMetrics, saveQuestionResponses, supabase, updateChapterProgress } from '@/lib/supabase';
+import { submitQuizResults, saveCognitiveMetrics, saveQuestionResponses, supabase, updateChapterProgress, startQuizSession } from '@/lib/supabase';
 import { assembleQuiz } from '@/lib/quiz-assembler';
 import { XP_RULES } from '@/lib/xp-rules';
 import { Card, Button, ProgressBar, LoadingFoxy } from '@/components/ui';
@@ -134,48 +134,43 @@ function parseOptions(opts: string|string[]) {
   try { return JSON.parse(opts); } catch { return []; }
 }
 
-/* ═══ OPTION SHUFFLE — Anti-pattern exploitation (P3/P6) ═══
- * 57.5% of questions had correct_answer_index=1. Students picked B and scored 57%.
- * Fix: deterministic shuffle at serve time using question ID as seed.
+/* ═══ OPTION SHUFFLE — server-owned (migration 20260428160000) ═══
+ *
+ * P0 fix: shuffle authority moved from client to server. The legacy
+ * client-side seededShuffle was stable across sessions; when
+ * question_bank.options got edited, the cached shuffle map drifted from
+ * the new correct_answer_index and students saw "wrong" feedback on the
+ * SAME option whose explanation said it was correct.
+ *
+ * New flow:
+ *   1. startQuizSession() → server generates per-question shuffle, snapshots
+ *      options + correct_answer_index, returns shuffled options to client
+ *      WITHOUT correct_answer_index.
+ *   2. Client renders options as-given (already in display order).
+ *   3. On submit, client sends only { question_id, selected_displayed_index };
+ *      server re-derives is_correct from the snapshot.
+ *
+ * Per-question feedback during the quiz (live isCorrect check) is
+ * unavailable in Phase A — the FeedbackOverlay shows "Submitted —
+ * check results at end". Phase B may add a per-answer server roundtrip.
+ *
+ * The legacy fallback path (when server session is null — e.g. RPC failure)
+ * keeps the questions in original order and submits with selected_option as
+ * the original index. Without a shuffle the visual-correct equality holds.
  */
-function seededShuffle(arr: string[], seed: string) {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) {
-    hash = ((hash << 5) - hash + seed.charCodeAt(i)) | 0;
-  }
-  const indices = arr.map((_, i) => i);
-  for (let i = indices.length - 1; i > 0; i--) {
-    hash = ((hash * 1103515245 + 12345) & 0x7fffffff);
-    const j = hash % (i + 1);
-    [indices[i], indices[j]] = [indices[j], indices[i]];
-  }
-  return { shuffled: indices.map(i => arr[i]), indexMap: indices };
+// Identity helpers for the legacy fallback path. With server-owned shuffle,
+// shuffleMaps[i] is always null; client renders options in the order the
+// server returned them, and `selected_option` IS the displayed index.
+function getShuffledOptions(q: {options:string|string[]}, _shuffleMap: number[]|null) {
+  return parseOptions(q.options);
 }
 
-function buildShuffleMaps(questions: Array<{id:string;question_text:string;options:string|string[];correct_answer_index:number}>) {
-  return questions.map(q => {
-    const opts = parseOptions(q.options);
-    if (opts.length !== 4 || typeof q.correct_answer_index !== 'number') return null;
-    const seed = q.id + (q.question_text || '').slice(0, 20);
-    const { indexMap } = seededShuffle(opts, seed);
-    return indexMap;
-  });
+function shuffledToOriginal(displayIdx: number, _shuffleMap: number[]|null) {
+  return displayIdx;
 }
 
-function getShuffledOptions(q: {options:string|string[]}, shuffleMap: number[]|null) {
-  const opts = parseOptions(q.options);
-  if (!shuffleMap || opts.length !== 4) return opts;
-  return shuffleMap.map(origIdx => opts[origIdx]);
-}
-
-function shuffledToOriginal(displayIdx: number, shuffleMap: number[]|null) {
-  if (!shuffleMap) return displayIdx;
-  return shuffleMap[displayIdx];
-}
-
-function originalToShuffled(origIdx: number, shuffleMap: number[]|null) {
-  if (!shuffleMap) return origIdx;
-  return shuffleMap.indexOf(origIdx);
+function originalToShuffled(origIdx: number, _shuffleMap: number[]|null) {
+  return origIdx;
 }
 
 const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
@@ -222,7 +217,15 @@ export default function QuizPage() {
 
   // Quiz state
   const [questions, setQuestions] = useState<Question[]>([]);
+  // shuffleMaps is retained as a state slot for the legacy fallback path —
+  // when startQuizSession() returns null and we serve original-order
+  // questions, the maps are all-null. The server-shuffle path (Phase A)
+  // also stores all-null because the server delivered options pre-shuffled
+  // and selected_displayed_index is just the index the user clicked.
   const [shuffleMaps, setShuffleMaps] = useState<Array<number[] | null>>([]);
+  // P0 fix: server-owned quiz session ID. When non-null, submitQuizResults
+  // routes through submit_quiz_results_v2 (snapshot-backed scoring).
+  const [serverSessionId, setServerSessionId] = useState<string | null>(null);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [responses, setResponses] = useState<Response[]>([]);
@@ -428,8 +431,53 @@ export default function QuizPage() {
       }
 
       const qs = result.questions;
-      setQuestions(qs);
-      setShuffleMaps(buildShuffleMaps(qs));
+
+      // P0 fix (migration 20260428160000): move shuffle authority to server.
+      // For MCQ questions, ask the server to generate the shuffle and snapshot
+      // options + correct_answer_index. The server returns options already in
+      // display order; selected_option is just the displayed index.
+      const mcqIds = qs
+        .filter((q: Question) => isQuestionMCQ(q) && typeof q.id === 'string')
+        .map((q: Question) => q.id);
+      let session: Awaited<ReturnType<typeof startQuizSession>> = null;
+      if (mcqIds.length > 0 && student) {
+        session = await startQuizSession(student.id, mcqIds);
+      }
+
+      let displayQuestions = qs;
+      if (session && session.session_id && Array.isArray(session.questions)) {
+        // Merge server-shuffled options into the original question objects so
+        // downstream UI (Bloom, hints, explanations, written-answer fields)
+        // keeps working untouched. The server returns options in shuffled
+        // order; we replace `options` so getShuffledOptions() (now an
+        // identity helper) renders them as-is.
+        const byId = new Map(session.questions.map(s => [s.question_id, s]));
+        displayQuestions = qs.map((q: Question) => {
+          const s = byId.get(q.id);
+          if (!s) return q;
+          return {
+            ...q,
+            options: s.options_displayed,
+            // The server intentionally does NOT return correct_answer_index.
+            // Set it to -1 client-side to make any accidental client-side
+            // comparison fail loudly instead of silently scoring wrong.
+            // (The review screen reads correct_option_text from the v2 RPC
+            // response, not from this field.)
+            correct_answer_index: -1,
+          };
+        });
+        setServerSessionId(session.session_id);
+      } else {
+        // Server session unavailable — fall back to original-order render.
+        // Without a shuffle, selected_option IS the original index, so
+        // legacy v1 scoring still works correctly.
+        setServerSessionId(null);
+      }
+
+      setQuestions(displayQuestions);
+      // shuffleMaps stays all-null in both Phase A paths; see comment at
+      // state declaration.
+      setShuffleMaps(displayQuestions.map(() => null));
       setCurrentIdx(0);
       setResponses([]);
       setSelectedOption(null);
@@ -459,28 +507,51 @@ export default function QuizPage() {
   const confirmAnswer = () => {
     if (selectedOption === null) return;
     const q = questions[currentIdx];
-    // P1 score-accuracy fix: selectedOption is the SHUFFLED display index the
-    // student clicked; q.correct_answer_index is the ORIGINAL index before
-    // shuffle. Must map through the active shuffle before comparing, otherwise
-    // scoring disagrees with the green-check rendering (see line ~1059 which
-    // correctly applies originalToShuffled). Bug surfaced 2026-04-18:
-    // student picks the visually-correct option and sees "Incorrect".
+
+    // P0 fix (migration 20260428160000): when serverSessionId is set, the
+    // client does NOT know correct_answer_index — the server snapshot is the
+    // single source of truth. We mark is_correct as `false` provisionally
+    // (won't be sent to v2 RPC; it's just used for client-side UI like
+    // anti-cheat patterns). The authoritative is_correct comes back in the
+    // submit response. This eliminates the bug class where client and server
+    // disagreed on coordinate spaces.
+    //
+    // Legacy fallback path (serverSessionId === null): no shuffle was
+    // applied, so selectedOption is already the original index and we can
+    // compare directly to correct_answer_index for live feedback.
+    const isV2 = serverSessionId !== null;
     const originalPicked = shuffledToOriginal(selectedOption, shuffleMaps[currentIdx] ?? null);
-    const isCorrect = originalPicked === q.correct_answer_index;
+    const isCorrect = isV2
+      ? false  // unknown until server response — see comment above
+      : (originalPicked === q.correct_answer_index);
 
-    // Emotional feedback — sound + Foxy reaction
-    const fb = isCorrect ? onCorrectAnswer(feedbackState) : onWrongAnswer(feedbackState);
+    // Emotional feedback. In v2 mode we show a neutral "Submitted" reaction
+    // instead of correct/wrong, since the answer isn't known yet.
+    const fb = isV2
+      ? onCorrectAnswer(feedbackState)  // reuse the gentle "submitted" sound
+      : (isCorrect ? onCorrectAnswer(feedbackState) : onWrongAnswer(feedbackState));
     playFeedbackSound(fb);
-    setActiveFeedback({ ...fb }); // spread to trigger re-render
+    setActiveFeedback({
+      ...fb,
+      foxyLine: isV2
+        ? {
+            en: 'Submitted — check results at end',
+            hi: 'जवाब जमा हो गया — नतीजे अंत में देखो',
+          }
+        : fb.foxyLine,
+    });
 
-    // Near-completion nudge
-    const nudge = getNearCompletionNudge(currentIdx, questions.length);
-    if (nudge && !isCorrect) {
-      // Show nudge as feedback instead if near end and wrong
-      setActiveFeedback({ ...fb, foxyLine: nudge });
+    // Near-completion nudge (only meaningful in legacy path where we know correctness)
+    if (!isV2) {
+      const nudge = getNearCompletionNudge(currentIdx, questions.length);
+      if (nudge && !isCorrect) {
+        setActiveFeedback({ ...fb, foxyLine: nudge });
+      }
     }
 
-    // Classify error type for cognitive analysis
+    // Classify error type for cognitive analysis. In v2 mode this is a
+    // best-effort label since isCorrect isn't yet known; the server will
+    // re-classify based on its own is_correct.
     const avgTime = responses.length > 0
       ? responses.reduce((a, r) => a + r.time_spent, 0) / responses.length
       : questionTimer;
@@ -492,10 +563,10 @@ export default function QuizPage() {
       is_correct: isCorrect,
       time_spent: questionTimer,
       error_type: errorType,
-      // P1 server-side shuffle fix (migration 20260418110000): ship the map
-      // alongside the shuffled selected_option so submit_quiz_results can
-      // recompute is_correct in original-index space.
-      shuffle_map: shuffleMaps[currentIdx] ?? null,
+      // Legacy shuffle_map field — null in both Phase A paths. v2 RPC ignores
+      // this field; v1 RPC accepts null and treats selected_option as
+      // already-original (correct fallback semantics).
+      shuffle_map: null,
     }]);
 
     // In exam mode, skip explanation — go straight to next question
@@ -667,22 +738,19 @@ export default function QuizPage() {
         if (allResponses.length < questions.length) {
           const q = questions[currentIdx];
           if (isQuestionMCQ(q)) {
-            // P1 score-accuracy fix: selectedOption is the SHUFFLED display index;
-            // q.correct_answer_index is the ORIGINAL pre-shuffle index. Map through
-            // the active shuffle before comparing, otherwise is_correct silently
-            // corrupts scoring/XP/mastery (same bug class as commit aa4ed51).
-            const lastOriginalPicked = selectedOption !== null
-              ? shuffledToOriginal(selectedOption, shuffleMaps[currentIdx] ?? null)
-              : null;
+            // P0 fix (migration 20260428160000): in v2 mode, server re-derives
+            // is_correct from the snapshot. In legacy mode, no shuffle is
+            // applied so selected_option IS the original index.
+            const isV2 = serverSessionId !== null;
+            const lastIsCorrect = isV2
+              ? false
+              : (selectedOption === q.correct_answer_index);
             allResponses.push({
               question_id: q.id,
               selected_option: selectedOption!,
-              is_correct: lastOriginalPicked === q.correct_answer_index,
+              is_correct: lastIsCorrect,
               time_spent: questionTimer,
-              // P1 server-side shuffle fix (migration 20260418110000): the
-              // server re-derives is_correct; it needs the same shuffle map
-              // used to render the question to the student.
-              shuffle_map: shuffleMaps[currentIdx] ?? null,
+              shuffle_map: null,
             });
           }
         }
@@ -739,9 +807,23 @@ export default function QuizPage() {
           subMeta?.name || selectedSubject!,
           questions[0]?.chapter_number || 1,
           allResponses,
-          timer
+          timer,
+          serverSessionId,  // P0 fix: route to v2 RPC when present
         );
         setResults(res);
+        // P0 fix: if v2 returned per-question review data, sync the
+        // authoritative is_correct back into local responses so QuizResults
+        // shows the correct/wrong banner derived from server truth.
+        if (res && Array.isArray((res as { questions?: unknown }).questions)) {
+          const reviewByQid = new Map(
+            ((res as { questions: Array<{ question_id: string; is_correct: boolean }> }).questions)
+              .map(rq => [rq.question_id, rq])
+          );
+          setResponses(prev => prev.map(r => {
+            const review = reviewByQid.get(r.question_id);
+            return review ? { ...r, is_correct: review.is_correct } : r;
+          }));
+        }
         refreshSnapshot();
 
         // Update chapter progress after quiz
@@ -827,18 +909,17 @@ export default function QuizPage() {
         if (pendingSubmissionRef.current.length < questions.length) {
           const q = questions[currentIdx];
           if (isQuestionMCQ(q) && selectedOption !== null) {
-            // P1 score-accuracy fix: map shuffled-display index back to original
-            // before comparing to q.correct_answer_index (see aa4ed51 context).
-            const retryOriginalPicked = shuffledToOriginal(selectedOption, shuffleMaps[currentIdx] ?? null);
+            // P0 fix: same v2/v1 dispatch as the happy path.
+            const isV2 = serverSessionId !== null;
+            const lastIsCorrect = isV2
+              ? false
+              : (selectedOption === q.correct_answer_index);
             pendingSubmissionRef.current.push({
               question_id: q.id,
               selected_option: selectedOption,
-              is_correct: retryOriginalPicked === q.correct_answer_index,
+              is_correct: lastIsCorrect,
               time_spent: questionTimer,
-              // P1 server-side shuffle fix: retry payload must also carry the
-              // map — if the RPC only sees this push, it still needs to
-              // recompute is_correct in original-index space.
-              shuffle_map: shuffleMaps[currentIdx] ?? null,
+              shuffle_map: null,
             });
           }
         }
@@ -882,9 +963,20 @@ export default function QuizPage() {
         subMeta?.name || selectedSubject,
         questions[0]?.chapter_number || 1,
         allResponses,
-        timer
+        timer,
+        serverSessionId,  // P0 fix: v2 path on retry too
       );
       setResults(res);
+      if (res && Array.isArray((res as { questions?: unknown }).questions)) {
+        const reviewByQid = new Map(
+          ((res as { questions: Array<{ question_id: string; is_correct: boolean }> }).questions)
+            .map(rq => [rq.question_id, rq])
+        );
+        setResponses(prev => prev.map(r => {
+          const review = reviewByQid.get(r.question_id);
+          return review ? { ...r, is_correct: review.is_correct } : r;
+        }));
+      }
       refreshSnapshot();
       pendingSubmissionRef.current = null;
 
@@ -909,7 +1001,7 @@ export default function QuizPage() {
         : 'Connection lost — your answers are saved. Please retry.');
     }
     setLoading(false);
-  }, [student, selectedSubject, questions, timer, selectedChapter, isHi, refreshSnapshot]);
+  }, [student, selectedSubject, questions, timer, selectedChapter, isHi, refreshSnapshot, serverSessionId, allowedSubjects]);
 
   const formatTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
 
@@ -990,14 +1082,17 @@ export default function QuizPage() {
   if (screen === 'quiz' && q) {
     const isAnswered = showExplanation;
     const currentShuffleMap = shuffleMaps[currentIdx] ?? null;
-    // P1 score-accuracy fix: map shuffled-index (selectedOption) through the
-    // shuffle to compare with q.correct_answer_index (original index).
-    // Line 1059's isCorrectOpt uses originalToShuffled correctly; this mirror
-    // must use shuffledToOriginal so the banner matches the highlight.
+    // P0 fix (migration 20260428160000): in v2 mode, the client does not
+    // know correct_answer_index — q.correct_answer_index has been set to -1
+    // explicitly to make any accidental comparison fail loudly. The live
+    // banner shows "Submitted — check results at end" rather than
+    // correct/wrong. In legacy mode (no server session), comparison still
+    // works because no shuffle is applied (selected_option IS original).
+    const isV2Question = serverSessionId !== null;
     const originalPicked = selectedOption !== null
       ? shuffledToOriginal(selectedOption, currentShuffleMap)
       : null;
-    const isCorrect = originalPicked === q.correct_answer_index;
+    const isCorrect = !isV2Question && (originalPicked === q.correct_answer_index);
 
     return (
       <div className="mesh-bg min-h-dvh flex flex-col focus-screen">
@@ -1106,7 +1201,13 @@ export default function QuizPage() {
               const letter = OPTION_LETTERS[idx] || String(idx + 1);
               const optText = opt.replace(/^[A-D][\.\)]\s*/, '');
               const isSelected = selectedOption === idx;
-              const isCorrectOpt = idx === originalToShuffled(q.correct_answer_index, shuffleMaps[currentIdx] ?? null);
+              // P0 fix: in v2 mode the client doesn't know the correct
+              // option, so isCorrectOpt is always false (no green check
+              // appears mid-quiz). Final review screen highlights the
+              // correct option using the server's correct_option_text from
+              // the v2 RPC response.
+              const isCorrectOpt = !isV2Question
+                && (idx === originalToShuffled(q.correct_answer_index, shuffleMaps[currentIdx] ?? null));
 
                   let bg = 'var(--surface-1)';
                   let border = 'var(--border)';
@@ -1115,7 +1216,14 @@ export default function QuizPage() {
                   let letterColor = 'var(--text-2)';
 
                   if (isAnswered) {
-                    if (isCorrectOpt) {
+                    if (isV2Question && isSelected) {
+                      // v2 mode: just show the student's pick highlighted
+                      // in neutral color since correctness is unknown.
+                      bg = `${subMeta?.color || 'var(--orange)'}10`;
+                      border = subMeta?.color || 'var(--orange)';
+                      letterBg = subMeta?.color || 'var(--orange)';
+                      letterColor = '#fff';
+                    } else if (isCorrectOpt) {
                       bg = 'rgba(22,163,74,0.08)';
                       border = 'rgba(22,163,74,0.4)';
                       textColor = '#16A34A';
@@ -1170,21 +1278,34 @@ export default function QuizPage() {
                 <div
                   className="rounded-2xl p-4 border"
                   style={{
-                    background: isCorrect ? 'rgba(22,163,74,0.05)' : 'rgba(220,38,38,0.04)',
-                    borderColor: isCorrect ? 'rgba(22,163,74,0.15)' : 'rgba(220,38,38,0.12)',
+                    background: isV2Question
+                      ? 'rgba(124,58,237,0.05)'
+                      : (isCorrect ? 'rgba(22,163,74,0.05)' : 'rgba(220,38,38,0.04)'),
+                    borderColor: isV2Question
+                      ? 'rgba(124,58,237,0.15)'
+                      : (isCorrect ? 'rgba(22,163,74,0.15)' : 'rgba(220,38,38,0.12)'),
                   }}
                 >
                   <div className="flex items-center gap-2 mb-2">
-                    <span className="text-lg">{isCorrect ? '🎉' : '💡'}</span>
-                    <span className="text-sm font-bold" style={{ color: isCorrect ? '#16A34A' : '#DC2626' }}>
-                      {isCorrect
-                        ? (isHi ? 'शाबाश! सही जवाब!' : 'Correct! Well done!')
-                        : (isHi ? 'गलत जवाब' : 'Incorrect')}
+                    <span className="text-lg">
+                      {isV2Question ? '✓' : (isCorrect ? '🎉' : '💡')}
                     </span>
-                    {isCorrect && <span className="ml-auto text-xs font-bold" style={{ color: 'var(--orange)' }}>+{XP_RULES.quiz_per_correct} XP</span>}
+                    <span className="text-sm font-bold"
+                      style={{ color: isV2Question ? '#7C3AED' : (isCorrect ? '#16A34A' : '#DC2626') }}>
+                      {isV2Question
+                        ? (isHi ? 'जवाब जमा हो गया' : 'Answer submitted')
+                        : isCorrect
+                          ? (isHi ? 'शाबाश! सही जवाब!' : 'Correct! Well done!')
+                          : (isHi ? 'गलत जवाब' : 'Incorrect')}
+                    </span>
+                    {!isV2Question && isCorrect && <span className="ml-auto text-xs font-bold" style={{ color: 'var(--orange)' }}>+{XP_RULES.quiz_per_correct} XP</span>}
                   </div>
                   <p className="text-sm leading-relaxed text-[var(--text-2)]">
-                    {isHi && q.explanation_hi ? q.explanation_hi : q.explanation || (isHi ? 'कोई व्याख्या उपलब्ध नहीं' : 'No explanation available')}
+                    {isV2Question
+                      ? (isHi
+                          ? 'क्विज़ ख़त्म होने पर सही जवाब और व्याख्या देखोगे।'
+                          : "You'll see the correct answer and explanation at the end of the quiz.")
+                      : (isHi && q.explanation_hi ? q.explanation_hi : q.explanation || (isHi ? 'कोई व्याख्या उपलब्ध नहीं' : 'No explanation available'))}
                   </p>
                 </div>
               )}
@@ -1461,6 +1582,20 @@ export default function QuizPage() {
           questions={questions}
           responses={responses}
           shuffleMaps={shuffleMaps}
+          // P0 fix: server review payload from submit_quiz_results_v2.
+          // QuizResults.tsx renders correct_option_text from this map
+          // instead of deriving from local options[correct_answer_index]
+          // (which was never trustworthy after content edits).
+          serverReview={
+            (results as { questions?: Array<{
+              question_id: string;
+              is_correct: boolean;
+              correct_option_text: string | null;
+              correct_original_index: number;
+              selected_displayed_index: number;
+              selected_original_index: number;
+            }> }).questions ?? null
+          }
           isHi={isHi}
           quizMode={quizMode}
           cogLoad={cogLoad}

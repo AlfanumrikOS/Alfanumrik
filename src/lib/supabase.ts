@@ -343,13 +343,131 @@ function validateQuestions(questions: QuestionRecord[]): QuestionRecord[] {
  * If you add a new quiz page, it MUST call submitQuizResults() + processAdaptiveLearning().
  * Test: src/__tests__/adaptive-pipeline.test.ts verifies this contract.
  */
+/**
+ * P0 fix (migration 20260428160000): server-owned shuffle authority.
+ *
+ * Calls the start_quiz_session RPC, which generates a server-side shuffle per
+ * question, snapshots options + correct_answer_index into
+ * quiz_session_shuffles, and returns the SHUFFLED options to the client
+ * WITHOUT correct_answer_index. The session_id MUST be passed back to
+ * submitQuizResults for v2 scoring.
+ *
+ * Returns a discriminated result. On RPC failure, returns `{ session_id: null,
+ * questions: <raw> }` so the caller can fall back to the legacy path
+ * (client-side shuffle + v1 submit). The web client should treat a null
+ * session_id as a soft failure and surface a retry-friendly error to the user.
+ */
+export interface ServerShuffledQuestion {
+  question_id: string;
+  question_text: string;
+  question_hi: string | null;
+  question_type: string;
+  options_displayed: string[];
+  explanation: string | null;
+  explanation_hi: string | null;
+  hint: string | null;
+  difficulty: number;
+  bloom_level: string;
+  chapter_number: number;
+}
+export interface ServerQuizSession {
+  session_id: string;
+  questions: ServerShuffledQuestion[];
+}
+export async function startQuizSession(
+  studentId: string,
+  questionIds: string[],
+): Promise<ServerQuizSession | null> {
+  try {
+    const { data, error } = await supabase.rpc('start_quiz_session', {
+      p_student_id: studentId,
+      p_question_ids: questionIds,
+    });
+    if (error) {
+      console.warn('start_quiz_session RPC failed:', error.message);
+      return null;
+    }
+    if (!data || typeof data !== 'object') return null;
+    const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+    if (!parsed?.session_id || !Array.isArray(parsed?.questions)) return null;
+    return parsed as ServerQuizSession;
+  } catch (e) {
+    console.warn('start_quiz_session error:', e);
+    return null;
+  }
+}
+
+/**
+ * v2 response payload — client sends ONLY the displayed index it clicked.
+ * No more is_correct, no more shuffle_map. Server is the single source of truth.
+ */
+export interface QuizResponseV2 {
+  question_id: string;
+  selected_displayed_index: number;
+  time_spent: number;
+  error_type?: string;
+  // Written-answer companion fields (still needed for SA/MA/LA flow, but
+  // server scores those separately via ncert-question-engine).
+  student_answer_text?: string;
+  marks_awarded?: number;
+  marks_possible?: number;
+  rubric_feedback?: string;
+}
+
 // Dedup guard: prevents double-click / SWR retry from re-submitting a quiz (5 min window).
 const _quizDedup = new Set<string>();
-export async function submitQuizResults(studentId: string, subject: string, grade: string, topic: string, chapter: number, responses: import('./types').QuizResponse[], time: number) {
+export async function submitQuizResults(studentId: string, subject: string, grade: string, topic: string, chapter: number, responses: import('./types').QuizResponse[], time: number, sessionId?: string | null) {
   const _k = `${studentId}:${subject}:${topic}:${responses.length}:${time}`;
   if (_quizDedup.has(_k)) return { duplicate: true };
   _quizDedup.add(_k); setTimeout(() => _quizDedup.delete(_k), 300_000);
-  try { try { // Layer 1: RPC primary path
+  try {
+    // ── v2 path: when start_quiz_session was called and returned a session_id,
+    //    the server already owns the shuffle. Strip is_correct + shuffle_map
+    //    from the payload — server re-derives both from the snapshot.
+    if (sessionId) {
+      try {
+        const v2Responses = responses.map(r => {
+          // Optional fields not pinned in the public QuizResponse shape but
+          // present on the in-memory client objects.
+          const rx = r as typeof r & {
+            error_type?: string;
+            student_answer_text?: string;
+            marks_awarded?: number;
+            marks_possible?: number;
+            rubric_feedback?: string;
+          };
+          return {
+            question_id: r.question_id,
+            selected_displayed_index:
+              typeof r.selected_option === 'number' ? r.selected_option : Number(r.selected_option),
+            time_spent: r.time_spent,
+            error_type: rx.error_type,
+            // Written answers carry their own shape; preserve so the RPC can
+            // pass through to legacy fields if any caller needs them.
+            student_answer_text: rx.student_answer_text,
+            marks_awarded: rx.marks_awarded,
+            marks_possible: rx.marks_possible,
+            rubric_feedback: rx.rubric_feedback,
+          };
+        });
+        const { data, error } = await supabase.rpc('submit_quiz_results_v2', {
+          p_session_id: sessionId,
+          p_student_id: studentId,
+          p_subject: subject,
+          p_grade: grade,
+          p_topic: topic,
+          p_chapter: chapter,
+          p_responses: v2Responses,
+          p_time: time,
+        });
+        if (!error && data) return data;
+        console.warn('submit_quiz_results_v2 RPC failed, using v1 fallback:', error?.message);
+      } catch (e) {
+        console.warn('submit_quiz_results_v2 RPC error, using v1 fallback:', e);
+      }
+    }
+
+    try { // Layer 1: v1 RPC primary path (legacy clients + fallback)
       const { data, error } = await supabase.rpc('submit_quiz_results', {
         p_student_id: studentId, p_subject: subject, p_grade: grade,
         p_topic: topic, p_chapter: chapter, p_responses: responses, p_time: time,
