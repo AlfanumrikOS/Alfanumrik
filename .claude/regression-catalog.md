@@ -232,3 +232,43 @@ inspection parity test on the canonical Edge Function source
 `supabase/functions/grounded-answer/__tests__/pipeline.test.ts`
 exercises the runtime path; REG-50 pins the structural contract under
 `npm test`).
+
+## Quiz Server-Shuffle Authority (P0 fix — 2026-04-28)
+
+Source: production P0 — students saw the green check on a SELECTED option
+while the explanation said the SAME option IS correct. Forensic analysis
+traced the bug to `seededShuffle(opts, q.id + question_text.slice(0,20))`
+in `src/app/quiz/page.tsx`: the seed was STABLE across sessions, so when
+`question_bank.options` got edited (e.g. content fix), the cached shuffle
+map drifted from the new `correct_answer_index`. The
+`grounding.scoring` canary in migration 20260418110000 was already
+recording every disagreement in production. Phase A fix: move shuffle
+authority from client to server.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-51 | `quiz_server_shuffle_authority_round_trip` | (1) `startQuizSession()` calls the `start_quiz_session` RPC and the response NEVER contains `correct_answer_index` for active questions (server keeps the index in `quiz_session_shuffles` only). Returns null on RPC error / malformed response so callers can fall back to legacy v1. (2) `submitQuizResults` with a non-null `sessionId` routes to `submit_quiz_results_v2`; payload contains ONLY `selected_displayed_index` per response — NO `is_correct`, NO `shuffle_map`, NO `selected_option`. Falls back to v1 when `sessionId` is null OR when v2 RPC returns an error. (3) Pure-TS port of v2 PL/pgSQL inner-loop reproduces snapshot-backed scoring: picking the visually-correct option scores correct on every shuffle permutation; mid-session mutation of `question_bank.options` does NOT affect scoring (snapshot wins); out-of-range / missing snapshot rows return `is_correct=false` defensively without throwing. `correct_option_text` always comes from `options_snapshot[correct_answer_index_snapshot]`, NEVER from live `question_bank.options[correct_answer_index]`. | `src/__tests__/api/quiz-server-shuffle-authority.test.ts` | E |
+
+### Invariants covered by this section
+
+- P1 (score accuracy — server is the only authority that compares
+  `selected_original_index` to `correct_answer_index_snapshot`; client
+  cannot disagree because it never sees the index)
+- P6 (question quality — snapshot at session start isolates in-flight
+  scoring from mid-session content edits to `question_bank.options` /
+  `question_bank.correct_answer_index`)
+
+### Notes on test strategy
+
+REG-51 is a contract / parity test following the pattern of REG-37, REG-42,
+REG-43, REG-50: the client-side dispatch contract is exercised via mocked
+`supabase.rpc`, and the server-side scoring is reproduced as a pure-TS
+port of the PL/pgSQL inner loop in migration 20260428160000. There is no
+in-process Postgres in unit tests, so the migration's `submit_quiz_results_v2`
+function is parity-asserted by the TS port; if the SQL diverges, this test
+must be re-synced and quality must reject. Phase B (out of scope here)
+will add SQL-level CHECK constraints on `shuffle_map` and an
+`options_version` column for stricter snapshot pinning. Mobile is also
+out of scope for Phase A — the legacy `submit_quiz_results` (v1) is
+preserved untouched so mobile clients keep working until they adopt the
+new RPCs separately.

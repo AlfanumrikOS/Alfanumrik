@@ -72,16 +72,29 @@ interface QuizResultsProps {
   /**
    * Optional per-question shuffle maps aligned to `questions`.
    *   shuffleMaps[i][displayIdx] === originalIdx
-   * When provided, the review screen renders options in the same shuffled
-   * order the student saw during the quiz, and highlights both the correct
-   * answer and the student's actual pick correctly. `response.selected_option`
-   * is interpreted as the SHUFFLED display index (the index the student
-   * clicked); `question.correct_answer_index` is the ORIGINAL pre-shuffle
-   * index. Without this prop, options render in original order and
-   * `selected_option` is interpreted directly as the original index — which
-   * is correct for surfaces that do not shuffle (diagnostic, pyq, mock-exam).
+   * Legacy support — only populated for surfaces that still use the
+   * deprecated client-side seededShuffle. P0 fix (migration 20260428160000)
+   * moved shuffle authority to the server, so this is `null` per question
+   * in the new path; correctness highlighting comes from `serverReview`.
    */
   shuffleMaps?: Array<number[] | null>;
+  /**
+   * P0 fix (migration 20260428160000): per-question review data from the
+   * server's submit_quiz_results_v2 RPC. When present, this is the
+   * authoritative source of `correct_option_text` and `is_correct`.
+   * The legacy code path that derived correct answer text from
+   * `options[correct_answer_index]` was never trustworthy after content
+   * edits — it caused the "selected option marked wrong while explanation
+   * says it's correct" production bug.
+   */
+  serverReview?: Array<{
+    question_id: string;
+    is_correct: boolean;
+    correct_option_text: string | null;
+    correct_original_index: number;
+    selected_displayed_index: number;
+    selected_original_index: number;
+  }> | null;
 }
 
 export default function QuizResults({
@@ -98,7 +111,15 @@ export default function QuizResults({
   onRetry,
   onGoHome,
   shuffleMaps,
+  serverReview,
 }: QuizResultsProps) {
+  // P0 fix: build a question_id -> server review row map for O(1) lookup
+  // during render. When `serverReview` is null we fall back to the legacy
+  // local-derivation path (correct for non-shuffled surfaces and for
+  // pre-v2 clients still in flight).
+  const reviewByQid = new Map(
+    (serverReview ?? []).map(r => [r.question_id, r])
+  );
   const router = useRouter();
   const { student } = useAuth();
   const [expandedCorrect, setExpandedCorrect] = useState<Set<number>>(new Set());
@@ -173,7 +194,12 @@ export default function QuizResults({
             const q = questions[i];
             const r = responses[i];
             const opts = parseOptions(q.options);
-            const correctAnswer = opts[q.correct_answer_index] || '';
+            // P0 fix: server is the single source of truth for correct
+            // answer text. Fall back to local derivation only when the
+            // server review payload is unavailable (legacy / v1 path).
+            const sRow = reviewByQid.get(q.id);
+            const correctAnswer = sRow?.correct_option_text
+              ?? (q.correct_answer_index >= 0 ? (opts[q.correct_answer_index] || '') : '');
             const explanation = isHi && q.explanation_hi ? q.explanation_hi : (q.explanation || '');
             return {
               student_id: student.id,
@@ -663,19 +689,25 @@ export default function QuizResults({
               const resp = responses[idx];
               const correct = resp?.is_correct;
               const isExpanded = !correct || expandedCorrect.has(idx);
+              // P0 fix: prefer server review data when present.
+              const serverRow = reviewByQid.get(question.id) ?? null;
               const origOpts = parseOptions(question.options);
-              // P1 score-accuracy fix: if a shuffle map was provided, render
-              // options in the SAME order the student saw them during the
-              // quiz. `response.selected_option` is a shuffled display index
-              // in that case, so we must compare indices in the same space
-              // to highlight the student's actual pick correctly. Without a
-              // shuffle map we fall through to original-order rendering,
-              // which is the correct behavior for surfaces that don't shuffle.
+              // Legacy shuffle support — only meaningful when serverReview is
+              // null (pre-v2 clients).
               const shuffleMap = shuffleMaps?.[idx] ?? null;
               const opts = shuffleMap && origOpts.length === 4
                 ? shuffleMap.map(origIdx => origOpts[origIdx])
                 : origOpts;
-              const correctAnswerText = origOpts[question.correct_answer_index] || '';
+              // P0 fix: server is the single source of truth for the correct
+              // answer text. The legacy `origOpts[correct_answer_index]`
+              // path was never trustworthy after content edits — that's the
+              // bug class this PR closes. In v2 mode, the question's
+              // correct_answer_index is set to -1 client-side, so we MUST
+              // pull from serverRow.
+              const correctAnswerText = serverRow?.correct_option_text
+                ?? (question.correct_answer_index >= 0
+                  ? (origOpts[question.correct_answer_index] || '')
+                  : '');
               const questionText = isHi && question.question_hi ? question.question_hi : question.question_text;
               const explanation = isHi && question.explanation_hi ? question.explanation_hi : question.explanation;
               return (
@@ -788,15 +820,26 @@ export default function QuizResults({
                           {opts.length > 0 && (
                             <div className="space-y-1">
                               {opts.map((opt, oi) => {
-                                // When a shuffle map is present, `oi` is a shuffled
-                                // display index. Map correct_answer_index (original)
-                                // onto the display axis so the ✓ lands on the right
-                                // option. response.selected_option is already in the
-                                // shuffled space (that's what the student clicked),
-                                // so compare display-to-display directly.
-                                const correctDisplayIdx = shuffleMap && origOpts.length === 4
-                                  ? shuffleMap.indexOf(question.correct_answer_index)
-                                  : question.correct_answer_index;
+                                // P0 fix: when serverRow is present, options
+                                // are in the order the student saw them
+                                // (server-shuffled). selected_displayed_index
+                                // and correct_original_index come from the
+                                // server snapshot. We need correct_displayed_index
+                                // to highlight the correct option — derive it
+                                // by matching option text (the canonical
+                                // correct_option_text) since the client has
+                                // no shuffle_map in v2 mode.
+                                let correctDisplayIdx: number;
+                                if (serverRow && serverRow.correct_option_text != null) {
+                                  // Match by exact text (the snapshot's
+                                  // canonical correct_option_text).
+                                  correctDisplayIdx = opts.findIndex(o => o === serverRow.correct_option_text);
+                                  if (correctDisplayIdx < 0) correctDisplayIdx = -1;
+                                } else if (shuffleMap && origOpts.length === 4) {
+                                  correctDisplayIdx = shuffleMap.indexOf(question.correct_answer_index);
+                                } else {
+                                  correctDisplayIdx = question.correct_answer_index;
+                                }
                                 const isCorrectOpt = oi === correctDisplayIdx;
                                 const isSelected = oi === resp?.selected_option;
                                 let bg = 'var(--surface-2)';
