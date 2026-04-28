@@ -73,16 +73,23 @@ export default defineConfig({
         // (mocked logger), posthog-client.ts, feedback-engine.ts (mocked
         // sounds), and the entire quiz-engine.ts pure-fn library. Measured
         // run 49.97 / 45.40 / 53.70 / 51.06 → floors set ~1 point below.
-        // TODO(testing): installment 3 should target the next layer of
-        // pure-fn helpers — admin-auth.ts (still 14%), middleware-helpers.ts
-        // (18%), rbac.ts pure parts (25%), usage.ts (12%, needs Supabase
-        // mocks), oauth-manager.ts edge cases — aiming +5 points to clear
-        // the 55%-statements milestone and put the 60% aspirational target
-        // within one more installment.
-        statements: 48,
-        branches: 44,
-        functions: 52,
-        lines: 50,
+        // Installment 3 (2026-04-28, PR test/global-coverage-installment-3):
+        // added 4 test files for the auth/RBAC/usage helpers — admin-auth.ts
+        // (14% → 86%), middleware-helpers.ts (18% → 88%), rbac.ts pure parts
+        // (25% → 74%), usage.ts (12% → 98%). 107 new tests. Measured run
+        // 55.66 / 50.73 / 59.31 / 56.68 → floors set ~1 point below to
+        // leave safety margin for refactors. We are now within striking
+        // distance of the 60% aspirational target.
+        // TODO(testing): installment 4 should target the next layer —
+        // oauth-manager.ts (71% → push to 90%), feature-flags.ts (85% →
+        // close gaps at lines 86/119/160-165), plan-gate.ts (81% → cover
+        // lines 89/230/291-296), and start chipping at supabase.ts (10%)
+        // by extracting pure helpers and testing them with mocked client.
+        // After installment 4 the 60% milestone should clear.
+        statements: 54,
+        branches: 49,
+        functions: 58,
+        lines: 55,
         // Per-file thresholds for critical business logic.
         // P14 review chains (assessment + testing) own restoring xp-rules
         // branches → 90% and cognitive-engine all-metrics → 80%; thresholds
