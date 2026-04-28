@@ -376,8 +376,8 @@ jobs:
             LARGEST_GZ_KB=$(($(gzip -c "$LARGEST_CHUNK_FILE" | wc -c) / 1024))
             echo "Largest shared chunk: ${LARGEST_GZ_KB} kB gzipped (${LARGEST_RAW_KB} kB raw) — limit: ${SHARED_JS_LIMIT_KB} kB gzipped"
             if [ "$LARGEST_GZ_KB" -gt "$SHARED_JS_LIMIT_KB" ]; then
-              echo "::warning::Largest shared chunk is ${LARGEST_GZ_KB} kB gzipped (> ${SHARED_JS_LIMIT_KB} kB). Investigate with 'npm run analyze'."
-              WARN=1
+              echo "::error::Largest shared chunk is ${LARGEST_GZ_KB} kB gzipped (> ${SHARED_JS_LIMIT_KB} kB). P10 invariant breach. Investigate with 'npm run analyze'."
+              FAIL=1
             fi
           fi
 
@@ -400,8 +400,8 @@ jobs:
                 DIR_SIZE_KB=$((DIR_SIZE_BYTES / 1024))
                 DIR_NAME=$(echo "$dir" | sed "s|.next/static/chunks/app/||")
                 if [ "$DIR_SIZE_KB" -gt "${PAGE_JS_LIMIT_KB}" ]; then
-                  echo "::warning::Page /$DIR_NAME is ${DIR_SIZE_KB} kB (limit: ${PAGE_JS_LIMIT_KB} kB)"
-                  WARN=1
+                  echo "::error::Page /$DIR_NAME is ${DIR_SIZE_KB} kB (limit: ${PAGE_JS_LIMIT_KB} kB). P10 invariant breach."
+                  FAIL=1
                 fi
               fi
             done < <(find .next/static/chunks/app -mindepth 1 -maxdepth 2 -type d 2>/dev/null)
@@ -416,7 +416,7 @@ jobs:
 
           if [ "$WARN" = "1" ]; then
             echo ""
-            echo "::notice::Bundle size warnings emitted (non-blocking for P10 tuning phase)."
+            echo "::notice::Bundle size warnings emitted (advisory only — all P10 budget breaches now block via FAIL=1)."
           else
             echo "All bundle sizes within budget."
           fi
