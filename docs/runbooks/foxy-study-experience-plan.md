@@ -47,3 +47,15 @@ This document. Updated as each phase ships. Each phase merges its own PR; this d
 ## Update log
 
 - 2026-04-27 13:00 IST — plan authored, Phase 0 starting
+- 2026-04-28 — IP filing documentation authored (see "IP Filing Documentation" below).
+
+## IP Filing Documentation
+
+The CEO is preparing IP registration covering the Foxy pedagogy method, the RAG retrieval pipeline, and the cognitive-model assessment engine. Three architecture documents under `docs/architecture/` are the source-of-truth for the IP filing. They are written for an IP examiner, not for engineers — every concrete claim is annotated with `path:line` so the implementation can be inspected verbatim.
+
+| Document | Scope | Path |
+|----------|-------|------|
+| Foxy pedagogy method | Method-of-instruction patent claim — 5-mode decision tree, 7-dim cognitive context, closing-question taxonomy, bilingual code-switching, distractor pedagogy, cross-session episodic memory, novelty comparison vs. ChatGPT/flash-card SaaS/BYJU'S/Vedantu/Unacademy | `docs/architecture/foxy-pedagogy-method.md` |
+| RAG retrieval pipeline | Retrieval system claim — 9-stage pipeline (coverage, cache, kill switch, embedding, RRF retrieval, scope verify, rerank, MMR, grounding check + abstain), defense layers (P12), observability (P13), grade-string invariant (P5), novelty comparison vs. LangChain/plain vector/standard RRF | `docs/architecture/rag-pipeline.md` |
+| Cognitive model | Assessment engine claim — three-tier cognitive state (concept_mastery / student_skill_state / student_learning_profiles), BKT model + calibration, IRT 2PL model + IRLS calibration, adaptive selection by Fisher information, SM-2 spaced repetition, misconception ontology, XP economy (P2), score formula (P1), anti-cheat (P3) | `docs/architecture/cognitive-model.md` |
+
