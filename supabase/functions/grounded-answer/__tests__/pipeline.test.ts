@@ -709,3 +709,173 @@ Deno.test('Win 2: MMR-enabled pipeline returns grounded:true with diversified ci
     restoreFetch();
   }
 });
+
+// ── P0 fix: soft-mode bypasses coverage precheck ────────────────────────────
+// User-reported issue (2026-04-28): student asked Foxy "Teach me: Arithmetic
+// Expressions" on a Class 7 Math chapter where rag_status != 'ready' (NCERT
+// chunks not fully ingested). The pre-fix coverage gate refused ALL turns
+// regardless of mode. After the fix, soft mode skips the precheck and the
+// Phase 2.C Edit 2 prompt handles empty reference material gracefully via
+// the "general CBSE knowledge" fallback. Strict mode still blocks — those
+// callers (ncert-solver, quiz-generator-v2) require cited chunks.
+
+Deno.test('soft mode + chapter_not_ready coverage → pipeline proceeds (no abstain at coverage)', async () => {
+  // Coverage is NOT ready, but mode is soft — pipeline must continue past
+  // coverage and reach Claude. We provide chunks so retrieval succeeds and
+  // Claude is invoked exactly once (no grounding-check on soft mode).
+  __setSupabaseClientForTests(
+    buildSbStub({
+      chapter_ready: false, // <— coverage gate would normally fire here
+      flag_enabled: true,
+      chunks: fiveChunks(),
+      trace_insert_id: 'trace-soft-bypass',
+    }),
+  );
+  __resetFeatureFlagCacheForTests();
+  __clearCacheForTests();
+  __resetCircuitsForTests();
+  installFetchStub({
+    voyage: voyageOk,
+    claude: [
+      () => claudeOk('Arithmetic expressions combine numbers using operators [1].'),
+      // No second Claude call — soft mode skips grounding-check.
+    ],
+  });
+
+  try {
+    const resp = await runPipeline(
+      makeRequest({ mode: 'soft' }),
+      Date.now(),
+      'anthropic-key',
+      'voyage-key',
+    );
+    // Critical: NOT a chapter_not_ready abstain — pipeline reached Claude.
+    assertEquals(resp.grounded, true);
+    if (resp.grounded) {
+      assert(resp.answer.includes('Arithmetic'));
+      assertEquals(resp.trace_id, 'trace-soft-bypass');
+    }
+  } finally {
+    restoreFetch();
+  }
+});
+
+Deno.test('soft mode + zero retrieved chunks + chapter_not_ready → Claude is still called (general-knowledge fallback)', async () => {
+  // The user's exact failure mode: chapter unloaded AND retrieval returns 0
+  // chunks. Pre-fix: abstained at coverage step. Post-fix: pipeline must
+  // reach Claude with an empty reference_material_section so the prompt's
+  // "From general CBSE knowledge:" fallback can engage.
+  __setSupabaseClientForTests(
+    buildSbStub({
+      chapter_ready: false,
+      flag_enabled: true,
+      chunks: [], // zero chunks — empty reference material
+      trace_insert_id: 'trace-soft-empty',
+    }),
+  );
+  __resetFeatureFlagCacheForTests();
+  __clearCacheForTests();
+  __resetCircuitsForTests();
+
+  let claudeWasCalled = false;
+  let capturedSystemPrompt = '';
+  const originalFetchLocal = globalThis.fetch;
+  globalThis.fetch = ((url: string | URL, init?: RequestInit) => {
+    const u = String(url);
+    if (u.includes('voyageai.com')) return Promise.resolve(voyageOk());
+    if (u.includes('anthropic.com')) {
+      claudeWasCalled = true;
+      try {
+        const body = JSON.parse(String(init?.body ?? '{}'));
+        if (typeof body.system === 'string') capturedSystemPrompt = body.system;
+      } catch { /* ignore */ }
+      return Promise.resolve(
+        claudeOk('From general CBSE knowledge: arithmetic expressions are...'),
+      );
+    }
+    throw new Error(`unexpected fetch to ${u}`);
+  }) as typeof fetch;
+
+  try {
+    const resp = await runPipeline(
+      makeRequest({ mode: 'soft' }),
+      Date.now(),
+      'anthropic-key',
+      'voyage-key',
+    );
+    assert(claudeWasCalled, 'Claude must be called even with zero chunks in soft mode');
+    assertEquals(resp.grounded, true);
+    if (resp.grounded) {
+      // Empty reference_material_section is the soft-mode contract when no
+      // chunks come back — the prompt template handles the fallback.
+      assert(
+        !capturedSystemPrompt.includes('## NCERT Reference Material'),
+        'reference_material_section should be empty when chunks=[]',
+      );
+    }
+  } finally {
+    globalThis.fetch = originalFetchLocal;
+  }
+});
+
+Deno.test('strict mode + chapter_not_ready coverage → still abstains at coverage stage (regression check)', async () => {
+  // The strict-mode behavior MUST NOT change. ncert-solver and
+  // quiz-generator-v2 depend on this gate.
+  __setSupabaseClientForTests(
+    buildSbStub({
+      chapter_ready: false,
+      flag_enabled: true,
+      chunks: fiveChunks(), // even with chunks available, strict abstains
+      trace_insert_id: 'trace-strict-coverage',
+    }),
+  );
+  __resetFeatureFlagCacheForTests();
+  __clearCacheForTests();
+  __resetCircuitsForTests();
+
+  // No fetch stub — Claude must NOT be called in strict mode when coverage
+  // is not ready. If anything tries to fetch, the original fetch will error.
+  const resp = await runPipeline(
+    makeRequest({ mode: 'strict' }),
+    Date.now(),
+    'anthropic-key',
+    '', // empty voyage key — pipeline shouldn't get past coverage anyway
+  );
+  assertEquals(resp.grounded, false);
+});
+
+Deno.test('strict mode + chapter_not_ready coverage → abstain reason is chapter_not_ready (regression check)', async () => {
+  __setSupabaseClientForTests(
+    buildSbStub({
+      chapter_ready: false,
+      flag_enabled: true,
+      alternatives: [
+        {
+          grade: '7',
+          subject_code: 'math',
+          chapter_number: 1,
+          chapter_title: 'Integers',
+        },
+      ],
+      trace_insert_id: 'trace-strict-not-ready',
+    }),
+  );
+  __resetFeatureFlagCacheForTests();
+  __clearCacheForTests();
+  __resetCircuitsForTests();
+
+  const resp = await runPipeline(
+    makeRequest({ mode: 'strict' }),
+    Date.now(),
+    'anthropic-key',
+    '',
+  );
+  assertEquals(resp.grounded, false);
+  if (!resp.grounded) {
+    assertEquals(resp.abstain_reason, 'chapter_not_ready');
+    // Alternatives are propagated unchanged for strict mode.
+    assertEquals(resp.suggested_alternatives.length, 1);
+    assertEquals(resp.suggested_alternatives[0].chapter_number, 1);
+    assertEquals(resp.trace_id, 'trace-strict-not-ready');
+  }
+});

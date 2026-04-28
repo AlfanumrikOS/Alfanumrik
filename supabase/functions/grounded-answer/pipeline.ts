@@ -438,13 +438,24 @@ export async function runPipeline(
   const ctx: PipelineCtx = { request, startedAt, queryHash };
 
   // Step 1. Coverage precheck (chapter_not_ready short-circuit).
-  const coverage = await checkCoverage(sb, {
-    grade: request.scope.grade,
-    subject_code: request.scope.subject_code,
-    chapter_number: request.scope.chapter_number,
-  });
-  if (!coverage.ready) {
-    return finalizeAbstain(sb, ctx, 'chapter_not_ready', coverage.alternatives);
+  //
+  // Soft mode (Foxy chat) skips the precheck and falls through to retrieval.
+  // If no chunks come back, the Phase 2.C Edit 2 prompt handles the
+  // "general CBSE knowledge" fallback gracefully — soft-mode users still
+  // get a useful answer even when NCERT ingestion is incomplete for the
+  // chapter (rag_status != 'ready').
+  //
+  // Strict mode (ncert-solver, quiz-generator-v2) keeps the precheck —
+  // those callers MUST cite chunks and cannot answer without ready content.
+  if (request.mode === 'strict') {
+    const coverage = await checkCoverage(sb, {
+      grade: request.scope.grade,
+      subject_code: request.scope.subject_code,
+      chapter_number: request.scope.chapter_number,
+    });
+    if (!coverage.ready) {
+      return finalizeAbstain(sb, ctx, 'chapter_not_ready', coverage.alternatives);
+    }
   }
 
   // Step 2. Cache lookup (spec §6.9). Only grounded:true responses live
