@@ -1597,11 +1597,14 @@ GRANT EXECUTE ON FUNCTION public.send_welcome_email_on_insert() TO supabase_auth
 GRANT SELECT ON public.app_config TO supabase_auth_admin;
 
 -- ============================================================
--- > Forward declarations: tables referenced by _legacy/ but not
--- > created in any _legacy file (originally created via Supabase
--- > dashboard before migration tracking existed). Idempotent.
+-- > Forward declarations: schema items referenced by _legacy/
+-- > but not created in any _legacy file (originally added via
+-- > Supabase dashboard before migration tracking existed).
+-- > All statements are idempotent and a no-op on production.
 -- ============================================================
 
+-- 1. curriculum_topics (referenced in _legacy/006 FKs and
+--    _legacy/007_dashboard_rpcs.sql RPC bodies).
 CREATE TABLE IF NOT EXISTS curriculum_topics (
   id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   subject_id           UUID REFERENCES subjects(id),
@@ -1627,6 +1630,46 @@ CREATE POLICY "curriculum_topics_public_read" ON curriculum_topics
 DROP POLICY IF EXISTS "curriculum_topics_service_all" ON curriculum_topics;
 CREATE POLICY "curriculum_topics_service_all" ON curriculum_topics
   FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+
+-- 2. question_bank.subject_id (referenced in _legacy/006
+--    get_board_exam_questions: "JOIN subjects s ON s.id = qb.subject_id").
+ALTER TABLE question_bank ADD COLUMN IF NOT EXISTS subject_id UUID REFERENCES subjects(id);
+
+-- 3. concept_mastery.topic_tag, .chapter_title, .front_text, .back_text,
+--    .hint, .interval_days, .streak (referenced in _legacy/007_*.sql RPCs
+--    that read mastery cards). On prod these were added via dashboard.
+ALTER TABLE concept_mastery ADD COLUMN IF NOT EXISTS topic_tag TEXT;
+ALTER TABLE concept_mastery ADD COLUMN IF NOT EXISTS chapter_title TEXT;
+ALTER TABLE concept_mastery ADD COLUMN IF NOT EXISTS chapter_number INTEGER;
+ALTER TABLE concept_mastery ADD COLUMN IF NOT EXISTS subject TEXT;
+ALTER TABLE concept_mastery ADD COLUMN IF NOT EXISTS front_text TEXT;
+ALTER TABLE concept_mastery ADD COLUMN IF NOT EXISTS back_text TEXT;
+ALTER TABLE concept_mastery ADD COLUMN IF NOT EXISTS hint TEXT;
+ALTER TABLE concept_mastery ADD COLUMN IF NOT EXISTS interval_days INTEGER DEFAULT 1;
+ALTER TABLE concept_mastery ADD COLUMN IF NOT EXISTS streak INTEGER DEFAULT 0;
+ALTER TABLE concept_mastery ADD COLUMN IF NOT EXISTS total_reviews INTEGER DEFAULT 0;
+ALTER TABLE concept_mastery ADD COLUMN IF NOT EXISTS correct_reviews INTEGER DEFAULT 0;
+ALTER TABLE concept_mastery ADD COLUMN IF NOT EXISTS repetition_count INTEGER DEFAULT 0;
+
+-- 4. quiz_sessions.xp_earned, .topic_id, .grade, .time_seconds (referenced
+--    in _legacy/007_core_rpcs.sql submit_quiz_results INSERT).
+ALTER TABLE quiz_sessions ADD COLUMN IF NOT EXISTS xp_earned INTEGER DEFAULT 0;
+ALTER TABLE quiz_sessions ADD COLUMN IF NOT EXISTS topic_id UUID;
+ALTER TABLE quiz_sessions ADD COLUMN IF NOT EXISTS time_seconds INTEGER;
+
+-- 5. question_bank legacy columns referenced by _legacy/007_dashboard_rpcs
+--    (question_text_hi, correct_option). These overlap with existing
+--    columns in _legacy/000 (question_hi, correct_answer_index) but the
+--    older RPC bodies expected the legacy names.
+ALTER TABLE question_bank ADD COLUMN IF NOT EXISTS question_text_hi TEXT;
+ALTER TABLE question_bank ADD COLUMN IF NOT EXISTS correct_option INTEGER;
+
+-- 6. student_learning_profiles helpers referenced by _legacy/007_*.sql
+--    leaderboard subqueries.
+ALTER TABLE student_learning_profiles ADD COLUMN IF NOT EXISTS total_xp INTEGER;
+ALTER TABLE student_learning_profiles ADD COLUMN IF NOT EXISTS max_streak INTEGER;
+ALTER TABLE student_learning_profiles ADD COLUMN IF NOT EXISTS total_correct INTEGER;
+ALTER TABLE student_learning_profiles ADD COLUMN IF NOT EXISTS total_asked INTEGER;
 
 
 -- ============================================================
