@@ -73,10 +73,10 @@ export default defineConfig({
         // drift while the gap is closed.
         // TODO(assessment): restore xp-rules.ts branches threshold to 90 by
         // adding tests for the daily-cap clamp, perfect-score combo, and
-        // streak-bonus edge cases. Currently 75% (gap = ~3 branches).
+        // streak-bonus edge cases.
         'src/lib/xp-rules.ts': {
           statements: 90,
-          branches: 75,
+          branches: 90,
           functions: 90,
           lines: 90,
         },
