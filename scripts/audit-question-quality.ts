@@ -23,15 +23,18 @@ import { createClient } from '@supabase/supabase-js';
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
-if (!SUPABASE_URL || !SERVICE_KEY) {
-  console.error('ERROR: Missing required env vars.');
-  console.error('  NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set.');
-  process.exit(1);
+// Env validation lives inside main() so importing this module from tests
+// (which uses VITEST=1 and supabase placeholder credentials) does not exit.
+function getSupabaseClient() {
+  if (!SUPABASE_URL || !SERVICE_KEY) {
+    console.error('ERROR: Missing required env vars.');
+    console.error('  NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set.');
+    process.exit(1);
+  }
+  return createClient(SUPABASE_URL, SERVICE_KEY, {
+    auth: { persistSession: false },
+  });
 }
-
-const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
-  auth: { persistSession: false },
-});
 
 // ─── CLI args ───────────────────────────────────────────────
 
@@ -41,6 +44,7 @@ const gradeFilter = args.includes('--grade')
   : null;
 const jsonOutput = args.includes('--json');
 const fixReport = args.includes('--fix-report');
+const dryRun = args.includes('--dry-run');
 
 // ─── Constants ──────────────────────────────────────────────
 
@@ -62,7 +66,16 @@ const PAGE_SIZE = 1000;
 
 // ─── Types ──────────────────────────────────────────────────
 
-interface QuestionRow {
+/** Query shape contract — exposed for tests so the field selection in
+ *  fetchAllQuestions() can be asserted without hitting the network. */
+export const QUERY_SHAPES = {
+  question_bank: {
+    table: 'question_bank',
+    select: 'id, subject, grade, chapter_number, chapter_title, topic, question_text, question_hi, question_type, options, correct_answer_index, explanation, explanation_hi, hint, difficulty, bloom_level, is_active, source, board_year, topic_id, content_status',
+  },
+} as const;
+
+export interface QuestionRow {
   id: string;
   subject: string;
   grade: string;
@@ -120,13 +133,14 @@ interface FailedQuestion {
 
 async function fetchAllQuestions(): Promise<QuestionRow[]> {
   const all: QuestionRow[] = [];
+  const supabase = getSupabaseClient();
   let from = 0;
   let hasMore = true;
 
   while (hasMore) {
     let query = supabase
-      .from('question_bank')
-      .select('id, subject, grade, chapter_number, chapter_title, topic, question_text, question_hi, question_type, options, correct_answer_index, explanation, explanation_hi, hint, difficulty, bloom_level, is_active, source, board_year, topic_id, content_status')
+      .from(QUERY_SHAPES.question_bank.table)
+      .select(QUERY_SHAPES.question_bank.select)
       .range(from, from + PAGE_SIZE - 1);
 
     if (gradeFilter) {
@@ -228,7 +242,7 @@ function isTooGeneric(text: string): boolean {
   return GENERIC_PATTERNS.some(p => p.test(trimmed));
 }
 
-function auditQuestion(q: QuestionRow): FailReason[] {
+export function auditQuestion(q: QuestionRow): FailReason[] {
   const reasons: FailReason[] = [];
 
   // --- Mirrors validateQuestions() from src/lib/supabase.ts ---
@@ -381,7 +395,7 @@ function auditQuestion(q: QuestionRow): FailReason[] {
 
 // ─── Duplicate detection ────────────────────────────────────
 
-function findDuplicates(questions: QuestionRow[]): Map<string, string[]> {
+export function findDuplicates(questions: QuestionRow[]): Map<string, string[]> {
   const textToIds = new Map<string, string[]>();
   for (const q of questions) {
     if (!q.question_text) continue;
@@ -427,7 +441,7 @@ interface AuditReport {
   failedQuestions: FailedQuestion[];
 }
 
-function generateReport(questions: QuestionRow[]): AuditReport {
+export function generateReport(questions: QuestionRow[]): AuditReport {
   const failures: FailedQuestion[] = [];
   const failureBreakdown: Record<string, number> = {};
   const coverageByGrade: Record<string, { total: number; valid: number; subjects: Set<string>; chapters: Set<string> }> = {};
@@ -805,6 +819,18 @@ function printJsonReport(report: AuditReport): void {
 // ─── Main ───────────────────────────────────────────────────
 
 async function main() {
+  if (dryRun) {
+    // Validate query shape + audit logic without hitting the network.
+    const sample = generateReport([]);
+    if (jsonOutput) {
+      console.log(JSON.stringify({ dryRun: true, queryShapes: QUERY_SHAPES, sampleReport: sample }, null, 2));
+    } else {
+      console.log('audit-question-quality: --dry-run OK');
+      console.log('Query shapes:', JSON.stringify(QUERY_SHAPES, null, 2));
+    }
+    process.exit(0);
+  }
+
   if (!jsonOutput) {
     console.log('Fetching questions from question_bank...');
   }
@@ -834,7 +860,16 @@ async function main() {
   }
 }
 
-main().catch(err => {
-  console.error('Fatal error:', err);
-  process.exit(1);
-});
+// Detect if this file is the entry-point. When imported by tests we do NOT
+// auto-run main(). Vitest sets process.env.VITEST so we guard on that.
+const isCli =
+  !process.env.VITEST &&
+  typeof process.argv[1] === 'string' &&
+  process.argv[1].includes('audit-question-quality');
+
+if (isCli) {
+  main().catch((err) => {
+    console.error('Fatal error:', err);
+    process.exit(1);
+  });
+}

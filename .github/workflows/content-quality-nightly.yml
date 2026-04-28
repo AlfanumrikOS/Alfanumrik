@@ -1,0 +1,138 @@
+name: Content Quality — Nightly
+
+# Phase 3.3: Truthful content-readiness measurement.
+# Runs the two ops scripts (check-content-gaps + audit-question-quality)
+# against the live database every night and uploads the results as build
+# artifacts. Slack/email wiring lands in Phase 5; for now ops reads the
+# artifact from the run page.
+#
+# Failure semantics:
+#   * exit 1 from check-content-gaps  = catastrophic gap (chapter has 0
+#     chunks AND 0 questions). Fails the workflow (red gate).
+#   * exit 2 from check-content-gaps  = below P3 floor (warn, advisory
+#     `continue-on-error: true`).
+#   * audit-question-quality is advisory (non-blocking) — quality is
+#     monitored but not gated until pass rate is stable.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 04:00 UTC = 09:30 IST nightly (right after the pg_cron 03:30 UTC
+    # readiness recompute, so the script reads fresh values).
+    - cron: '0 4 * * *'
+
+concurrency:
+  group: content-quality-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  content-quality:
+    name: Content quality scan
+    runs-on: ubuntu-latest
+    # Forks have no service-role secret. Skip rather than fail.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install tsx (transient)
+        run: npm install --no-save tsx@4.19.0
+
+      - name: Prepare report directory
+        run: mkdir -p reports/content-quality
+
+      # ── Gap check (BLOCKING on catastrophic gap, exit 1) ──
+      - name: Check content gaps
+        id: gaps
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set +e
+          npx tsx scripts/check-content-gaps.ts --json > reports/content-quality/gaps.json
+          EXIT=$?
+          echo "gaps_exit_code=$EXIT" >> $GITHUB_OUTPUT
+          # Render a markdown summary from the JSON.
+          node -e "
+            const r = require('./reports/content-quality/gaps.json');
+            const lines = [];
+            lines.push('# Content gap nightly report');
+            lines.push('');
+            lines.push('Generated: ' + new Date().toISOString());
+            lines.push('');
+            lines.push('| Metric | Value |');
+            lines.push('|---|---|');
+            lines.push('| Total RAG chunks | ' + r.totalRagChunks + ' |');
+            lines.push('| Total questions | ' + r.totalQuestions + ' |');
+            lines.push('| Pairs below P3 floor | ' + r.totalGaps + ' / ' + r.rows.length + ' |');
+            lines.push('| **Catastrophic gaps** (0 chunks AND 0 questions) | **' + r.catastrophicGaps + '** |');
+            lines.push('');
+            if (r.catastrophicGaps > 0) {
+              lines.push('## Catastrophic pairs');
+              lines.push('');
+              lines.push('| Subject | Grade | Chunks | Questions |');
+              lines.push('|---|---|---|---|');
+              for (const row of r.rows.filter(x => x.catastrophic)) {
+                lines.push(['', row.subject, row.grade, row.ragCount, row.questionCount, ''].join('|'));
+              }
+              lines.push('');
+            }
+            require('fs').writeFileSync('reports/content-quality/gaps.md', lines.join('\n'));
+            require('fs').appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n') + '\n');
+          "
+          # Pass exit 1 (catastrophic) up. Exit 2 (P3 floor breach) becomes
+          # exit 0 here so the workflow does not fail on advisory issues.
+          if [ "$EXIT" = "1" ]; then exit 1; fi
+          exit 0
+
+      # ── Question-bank quality audit (advisory) ──
+      - name: Audit question quality
+        if: always()
+        continue-on-error: true
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          npx tsx scripts/audit-question-quality.ts --json > reports/content-quality/quality.json || true
+          # Render a one-page summary.
+          node -e "
+            const r = require('./reports/content-quality/quality.json');
+            const lines = [];
+            lines.push('# Question-bank quality nightly report');
+            lines.push('');
+            lines.push('Generated: ' + new Date().toISOString());
+            lines.push('');
+            lines.push('| Metric | Value |');
+            lines.push('|---|---|');
+            lines.push('| Total questions | ' + r.summary.total + ' |');
+            lines.push('| Pass all checks | ' + r.summary.passAll + ' (' + r.summary.passRate + '%) |');
+            lines.push('| Critical defects | ' + r.summary.criticalDefects + ' |');
+            lines.push('| Duplicate texts | ' + r.duplicateTexts + ' (~' + r.duplicateQuestions + ' extras) |');
+            lines.push('');
+            lines.push('## Top failure reasons');
+            lines.push('');
+            lines.push('| Reason | Count |');
+            lines.push('|---|---|');
+            const top = Object.entries(r.failureBreakdown).sort((a,b) => b[1]-a[1]).slice(0, 10);
+            for (const [k, v] of top) {
+              lines.push(['', k, v, ''].join('|'));
+            }
+            require('fs').writeFileSync('reports/content-quality/quality.md', lines.join('\n'));
+            require('fs').appendFileSync(process.env.GITHUB_STEP_SUMMARY, '\n\n' + lines.join('\n') + '\n');
+          " || echo "Quality summary rendering failed — see reports/content-quality/quality.json"
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: content-quality-${{ github.run_id }}
+          path: reports/content-quality/
+          if-no-files-found: warn
+          retention-days: 30

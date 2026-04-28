@@ -157,3 +157,78 @@ or swaps the MMR greedy loop for a probabilistic tie-breaker), these
 specs MUST fail and quality MUST reject — the contract here is the
 moat-protection guarantee that competitor scrapes and prompt-injection
 attempts cannot leak Foxy's behaviour.
+
+## Phase 3.1 — IRT Cron Schedule Parity (2026-04-28)
+
+Source: production-readiness audit follow-up. Multiple sources cite the
+IRT 2PL recalibration cron at "02:50 UTC nightly" (constitution
+`.claude/CLAUDE.md`, IP-filing doc `docs/architecture/cognitive-model.md`,
+route header `src/app/api/cron/irt-calibrate/route.ts`). The schedule is
+configured in `vercel.json` (Vercel cron, NOT pg_cron). The unrelated
+pg_cron job in `supabase/migrations/20260404000002_pg_cron_daily.sql`
+handles the `daily-cron` Edge Function (streaks, leaderboards, parent
+digests) at 18:30 UTC and has nothing to do with IRT. Confusion between
+the two has caused at least one rumored doc-vs-prod drift report; this
+catalog entry pins both schedules in code so future drift fails the
+build.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-44 | `irt_calibration_cron_schedule_parity` | `vercel.json` registers exactly one `/api/cron/irt-calibrate` entry with schedule `50 2 * * *` (02:50 UTC daily). The schedule is a 5-field cron. The IRT cron runs 20 minutes after `/api/cron/daily-cron` (`30 2 * * *`) so quiz_responses are settled before recalibration reads them. The route source `src/app/api/cron/irt-calibrate/route.ts` documents the 02:50 UTC schedule in its header. The unrelated pg_cron migration `20260404000002_pg_cron_daily.sql` is pinned at `30 18 * * *` (18:30 UTC) AND must not mention IRT — anti-confusion guard against anyone "aligning" the two. | `src/__tests__/irt/cron-schedule-parity.test.ts` | E |
+
+### Invariants covered by this section
+
+- Documentation/production parity (process invariant) — docs cannot drift
+  from `vercel.json` without breaking this test.
+- Operational correctness — the 20-minute gap after `daily-cron` is part
+  of the IRT calibration's correctness contract (quiz_responses must be
+  committed before the recalibration RPC reads them).
+
+## Round 2 Audit Promotions (2026-04-28)
+
+Source: `.claude/CLAUDE.md` "Round 2 audit identified 4 new catalog
+entries to promote: atomic_plan_change atomicity, daily XP cap, Sentry
+client PII redaction, single-retrieval contract for Foxy. Testing agent
+owns adding these to .claude/regression-catalog.md." These tests
+already existed in the codebase (REG-47, REG-48, REG-49) or were added
+as part of this promotion (REG-50) but were not visible in the catalog.
+Promoting them makes them block-on-removal under orchestrator Gate 5 +
+quality veto and surfaces them in the per-invariant status table at the
+top of `.claude/CLAUDE.md`.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-47 | `atomic_plan_change_atomicity_p11` | Bulk plan-change route NEVER updates `students` or `student_subscriptions` directly — every plan transition flows through the `atomic_plan_change(p_student_id, p_new_plan, p_reason)` RPC (migration `20260427000002`) which holds `pg_advisory_xact_lock` and writes both rows + a `domain_events` audit row in a single transaction. Per-student isolation: a single RPC failure does not poison the batch (route reports `failures: [{ student_id, error }]` and bumps ops-event severity to `warning`). Auth gate (`authorizeAdmin`) runs BEFORE any RPC call (401 short-circuit). Static contract canary on the route source asserts no direct `.from('students').update(...)` or `.from('student_subscriptions').update(...)` for plan changes — closes the P11 split-brain vector on bulk plan changes (status=active but plan_id=free). | `src/__tests__/api/super-admin/plan-change-atomicity.test.ts` | E |
+| REG-48 | `xp_daily_cap_clamp_p2` | `XP_RULES.quiz_daily_cap` (200) is the published P2 cap and SQL migration `20260427000003_enforce_daily_xp_cap.sql` contains the same literal `v_daily_cap INT := 200` (drift detection: bumping the TS constant without the SQL — or vice-versa — fails this test). Pure-TS clamp parity port (`clampXp(today_earned, requested, cap)`) reproduces the SQL semantics line-for-line: already_at_cap → 0; room_for_full_amount → returns full requested; partial_room (199 + quiz worth 50 → 1, NOT 0 and NOT 50); boundary at-cap → next request awards 0; zero/negative requested → 0; runtime cap arg respected. `atomic_quiz_profile_update` return-shape pinned as TS type alias (`success`, `requested_xp`, `effective_xp`, `xp_capped`, `xp_cap_excess`, `today_earned`, `daily_cap`, `remaining_today`, `profile_xp`) — every key documented in `jsonb_build_object` in the migration. SQL `submit_quiz_results` literals match `XP_RULES.quiz_per_correct` (10) / `quiz_high_score_bonus` (20) / `quiz_perfect_bonus` (50) (audit F20 parity). Anti-cheat zeroes XP path pinned (`v_flagged ... v_xp := 0`). | `src/__tests__/lib/xp-daily-cap.test.ts` | E |
+| REG-49 | `sentry_client_pii_redaction_p13` | `redactSentryEvent(event)` (called from `sentry.client.config.ts` `beforeSend`) redacts on every code path before the event leaves the browser. User identity → only opaque `id` survives (email/ip_address/username dropped). request.headers → Authorization/Cookie/Set-Cookie/x-api-key stripped. request.url → sensitive query params (`SENSITIVE_QUERY_KEYS = ['email','phone','token','password','key']`) replaced with `[REDACTED]`. request.data (body) and request.cookies → dropped wholesale. request.query_string (object form) → redactPII applied. extra/contexts → keys matching `SENSITIVE_CONTEXT_KEY_REGEX = /email\|phone\|token\|password\|secret\|key\|cookie\|auth/i` dropped; remaining values → redactPII. breadcrumbs → data redacted, url/to/from sanitised, message URLs sanitised. tags → redactPII applied. Composite end-to-end serialization assertion guarantees no PII string survives in the JSON shipped to Sentry. P13 enforcement — closes the audit Round 2 "no-coverage" gap. | `src/__tests__/sentry/client-redact.test.ts` | E |
+| REG-50 | `foxy_single_retrieval_contract_p12` | A single Foxy turn calls `retrieveChunks` (which dispatches the `match_rag_chunks_ncert` RPC via the unified `_shared/rag/retrieve.ts` module) AT MOST ONCE. Static-inspects `supabase/functions/grounded-answer/pipeline.ts`: import is unique; call site is unique; grounding-check step consumes `ctx.chunks` (the single retrieval's output) and never re-invokes `retrieveChunks`; no direct `.rpc('match_rag_chunks_ncert', …)` invocation sneaks in alongside the unified module; cache-hit branch short-circuits BEFORE retrieval (zero RPC on cache hit — source-position pin: `getFromCache(...)` precedes `await retrieveChunks(sb, ...)` and the cache branch contains a `return hit` early exit); no `Promise.all([retrieveChunks, ...])` fan-out. Closes the IP-filing requirement that the pipeline is single-retrieval-then-grounding-check, never context-fan-out + separate grounding fetch. | `src/__tests__/foxy-single-retrieval-contract.test.ts` | N |
+
+### Invariants covered by this section
+
+- P11 (payment integrity — atomic plan transition; no split-brain state
+  where status changes without plan_id, or vice versa) — REG-47
+- P2 (XP economy — daily-cap clamp; SQL/TS literal parity drift
+  detection; `atomic_quiz_profile_update` return shape) — REG-48
+- P13 (data privacy — Sentry client `beforeSend` redactor; no PII
+  leaves the browser even on error events) — REG-49
+- P12 (AI safety — single-retrieval contract bounds RPC load,
+  embedding cost, and citation/answer race conditions; cache-hit
+  short-circuit pins the cost ceiling) — REG-50
+
+### Notes on test strategy
+
+REG-47 is a route-mock + source-canary test — it exercises the
+bulk-actions plan-change route with a mocked `supabaseAdmin.rpc`, then
+static-reads the route source to assert no direct table updates.
+REG-48 is a SQL-migration parity + pure-TS clamp port — there is no
+in-process Postgres in unit tests, so the migration literal is grep'd
+and the clamp is re-implemented line-for-line. REG-49 exercises
+`redactSentryEvent` directly against synthetic Sentry event shapes —
+the redactor was extracted from `sentry.client.config.ts` precisely so
+it could be tested without booting the SDK. REG-50 is a static-
+inspection parity test on the canonical Edge Function source
+(`pipeline.ts`) following the same pattern as REG-37 / REG-42 / REG-43
+(the Deno integration test in
+`supabase/functions/grounded-answer/__tests__/pipeline.test.ts`
+exercises the runtime path; REG-50 pins the structural contract under
+`npm test`).
