@@ -232,21 +232,30 @@ export async function* runStreamingPipeline(
   const ctx: StreamCtx = { request, startedAt, queryHash };
 
   // Step 1. Coverage precheck.
-  const coverage = await checkCoverage(sb, {
-    grade: request.scope.grade,
-    subject_code: request.scope.subject_code,
-    chapter_number: request.scope.chapter_number,
-  });
-  if (!coverage.ready) {
-    const traceId = await writeAbstainTrace(sb, ctx, 'chapter_not_ready');
-    yield {
-      kind: 'abstain',
-      abstainReason: 'chapter_not_ready',
-      suggestedAlternatives: coverage.alternatives,
-      traceId,
-      latencyMs: Date.now() - startedAt,
-    };
-    return;
+  //
+  // Soft mode (Foxy chat) skips the precheck and falls through to retrieval —
+  // mirrors pipeline.ts. The Phase 2.C Edit 2 prompt handles empty reference
+  // material gracefully via the "general CBSE knowledge" fallback. Strict
+  // mode (not used by streaming today, but kept symmetric) still gates on
+  // coverage so the contract matches pipeline.ts exactly. Keep both
+  // pipelines in sync.
+  if (request.mode === 'strict') {
+    const coverage = await checkCoverage(sb, {
+      grade: request.scope.grade,
+      subject_code: request.scope.subject_code,
+      chapter_number: request.scope.chapter_number,
+    });
+    if (!coverage.ready) {
+      const traceId = await writeAbstainTrace(sb, ctx, 'chapter_not_ready');
+      yield {
+        kind: 'abstain',
+        abstainReason: 'chapter_not_ready',
+        suggestedAlternatives: coverage.alternatives,
+        traceId,
+        latencyMs: Date.now() - startedAt,
+      };
+      return;
+    }
   }
 
   // Step 4. Effective threshold (soft mode only — mirror pipeline.ts).
