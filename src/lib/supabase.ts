@@ -416,58 +416,38 @@ export interface QuizResponseV2 {
 
 // Dedup guard: prevents double-click / SWR retry from re-submitting a quiz (5 min window).
 const _quizDedup = new Set<string>();
+
+// v2 response mapper -- strips is_correct + shuffle_map; server re-derives both from snapshot.
+type _RX = import('./types').QuizResponse & { error_type?: string; student_answer_text?: string; marks_awarded?: number; marks_possible?: number; rubric_feedback?: string };
+function _mapV2(responses: import('./types').QuizResponse[]) {
+  return responses.map(r => { const rx = r as _RX; return { question_id: r.question_id, selected_displayed_index: typeof r.selected_option === 'number' ? r.selected_option : Number(r.selected_option), time_spent: r.time_spent, error_type: rx.error_type, student_answer_text: rx.student_answer_text, marks_awarded: rx.marks_awarded, marks_possible: rx.marks_possible, rubric_feedback: rx.rubric_feedback }; });
+}
+
+/**
+ * ARCHITECTURAL CONTRACT (post-PR #447) -- DO NOT MODIFY WITHOUT REVIEW
+ *
+ * submitQuizResults dispatches across two layers:
+ *   Layer 1: v2 RPC submit_quiz_results_v2 when sessionId is provided
+ *            (server-shuffle authority via start_quiz_session snapshot).
+ *   Layer 2: v1 RPC submit_quiz_results as fallback / legacy path
+ *            (no sessionId -- mobile + in-flight web clients).
+ *   Fallback: atomic_quiz_profile_update if both RPCs fail.
+ *
+ * The v1 RPC `submit_quiz_results` MUST remain callable until mobile cuts
+ * over to v2. adaptive-pipeline.test.ts enforces this canary.
+ */
 export async function submitQuizResults(studentId: string, subject: string, grade: string, topic: string, chapter: number, responses: import('./types').QuizResponse[], time: number, sessionId?: string | null) {
   const _k = `${studentId}:${subject}:${topic}:${responses.length}:${time}`;
   if (_quizDedup.has(_k)) return { duplicate: true };
   _quizDedup.add(_k); setTimeout(() => _quizDedup.delete(_k), 300_000);
   try {
-    // ── v2 path: when start_quiz_session was called and returned a session_id,
-    //    the server already owns the shuffle. Strip is_correct + shuffle_map
-    //    from the payload — server re-derives both from the snapshot.
-    if (sessionId) {
+    if (sessionId) { // L1: v2 (server-shuffle)
       try {
-        const v2Responses = responses.map(r => {
-          // Optional fields not pinned in the public QuizResponse shape but
-          // present on the in-memory client objects.
-          const rx = r as typeof r & {
-            error_type?: string;
-            student_answer_text?: string;
-            marks_awarded?: number;
-            marks_possible?: number;
-            rubric_feedback?: string;
-          };
-          return {
-            question_id: r.question_id,
-            selected_displayed_index:
-              typeof r.selected_option === 'number' ? r.selected_option : Number(r.selected_option),
-            time_spent: r.time_spent,
-            error_type: rx.error_type,
-            // Written answers carry their own shape; preserve so the RPC can
-            // pass through to legacy fields if any caller needs them.
-            student_answer_text: rx.student_answer_text,
-            marks_awarded: rx.marks_awarded,
-            marks_possible: rx.marks_possible,
-            rubric_feedback: rx.rubric_feedback,
-          };
-        });
-        const { data, error } = await supabase.rpc('submit_quiz_results_v2', {
-          p_session_id: sessionId,
-          p_student_id: studentId,
-          p_subject: subject,
-          p_grade: grade,
-          p_topic: topic,
-          p_chapter: chapter,
-          p_responses: v2Responses,
-          p_time: time,
-        });
-        if (!error && data) return data;
-        console.warn('submit_quiz_results_v2 RPC failed, using v1 fallback:', error?.message);
-      } catch (e) {
-        console.warn('submit_quiz_results_v2 RPC error, using v1 fallback:', e);
-      }
+        const v2 = await supabase.rpc('submit_quiz_results_v2', { p_session_id: sessionId, p_student_id: studentId, p_subject: subject, p_grade: grade, p_topic: topic, p_chapter: chapter, p_responses: _mapV2(responses), p_time: time });
+        if (!v2.error && v2.data) return v2.data;
+      } catch { /* fall through */ }
     }
-
-    try { // Layer 1: v1 RPC primary path (legacy clients + fallback)
+    try { // L2: v1 RPC (legacy)
       const { data, error } = await supabase.rpc('submit_quiz_results', {
         p_student_id: studentId, p_subject: subject, p_grade: grade,
         p_topic: topic, p_chapter: chapter, p_responses: responses, p_time: time,
