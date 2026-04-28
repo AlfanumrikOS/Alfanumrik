@@ -66,15 +66,23 @@ export default defineConfig({
         // share.ts, sanitize.ts, useDebounce.ts, utils.ts. Measured run
         // 44.20 / 39.78 / 46.86 / 45.47 → floors set 1 point below to leave
         // safety margin.
-        // TODO(testing): installment 2 should target hook utilities
-        // (useAllowedSubjects, useTeacherAllowedSubjects, useSubjectLookup,
-        // useRequireAuth, useAllowedChapters), then server-helper modules
-        // that mock Supabase (cache.ts, plans.ts, slo.ts, plan-gate.ts
-        // remaining branches), targeting +5 points each installment until 60%.
-        statements: 43,
-        branches: 38,
-        functions: 45,
-        lines: 44,
+        // Installment 2 (2026-04-28, PR test/global-coverage-installment-2):
+        // added 10 test files for pure-fn server helpers + Foxy/quiz pure
+        // libs: scoring.ts, anon-id.ts, score-config.ts, slo.ts, plans.ts,
+        // cache.ts (mocked redis), sentry-client-redact.ts, request-timing.ts
+        // (mocked logger), posthog-client.ts, feedback-engine.ts (mocked
+        // sounds), and the entire quiz-engine.ts pure-fn library. Measured
+        // run 49.97 / 45.40 / 53.70 / 51.06 → floors set ~1 point below.
+        // TODO(testing): installment 3 should target the next layer of
+        // pure-fn helpers — admin-auth.ts (still 14%), middleware-helpers.ts
+        // (18%), rbac.ts pure parts (25%), usage.ts (12%, needs Supabase
+        // mocks), oauth-manager.ts edge cases — aiming +5 points to clear
+        // the 55%-statements milestone and put the 60% aspirational target
+        // within one more installment.
+        statements: 48,
+        branches: 44,
+        functions: 52,
+        lines: 50,
         // Per-file thresholds for critical business logic.
         // P14 review chains (assessment + testing) own restoring xp-rules
         // branches → 90% and cognitive-engine all-metrics → 80%; thresholds
