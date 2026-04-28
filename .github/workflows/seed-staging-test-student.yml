@@ -1,0 +1,100 @@
+name: Seed staging test student (one-off)
+
+# Idempotent seed for the E2E test student in the STAGING Supabase project.
+# Trigger via: gh workflow run seed-staging-test-student.yml
+#
+# Creates the student matching TEST_STUDENT_EMAIL / TEST_STUDENT_PASSWORD
+# repo secrets so REG-45 (quiz happy path) and REG-46 (payment checkout)
+# can authenticate against staging in CI.
+#
+# Safety:
+#   - Uses STAGING_SUPABASE_SERVICE_ROLE_KEY only — never prod secrets
+#   - Runs only on workflow_dispatch (no schedule, no auto-trigger)
+#   - User creation is idempotent: if user exists, just upsert profile fields
+#   - Hard-coded grade='10', board='CBSE', plan=free for predictable test state
+
+on:
+  workflow_dispatch:
+
+jobs:
+  seed:
+    name: Create / refresh staging test student
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install supabase-js
+        run: npm install --no-save @supabase/supabase-js@2
+
+      - name: Seed test student
+        env:
+          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+          TEST_STUDENT_EMAIL: ${{ secrets.TEST_STUDENT_EMAIL }}
+          TEST_STUDENT_PASSWORD: ${{ secrets.TEST_STUDENT_PASSWORD }}
+        run: |
+          node -e "
+          const { createClient } = require('@supabase/supabase-js');
+          const url = process.env.STAGING_SUPABASE_URL;
+          const key = process.env.STAGING_SUPABASE_SERVICE_ROLE_KEY;
+          const email = process.env.TEST_STUDENT_EMAIL;
+          const password = process.env.TEST_STUDENT_PASSWORD;
+          if (!url || !key || !email || !password) {
+            console.error('Missing required env vars');
+            process.exit(1);
+          }
+          (async () => {
+            const sb = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+            // 1. Find or create user
+            console.log('Looking up user', email, '...');
+            let userId;
+            const { data: list, error: listErr } = await sb.auth.admin.listUsers({ page: 1, perPage: 200 });
+            if (listErr) { console.error('listUsers failed:', listErr.message); process.exit(1); }
+            const existing = (list?.users || []).find(u => u.email === email);
+            if (existing) {
+              console.log('User exists, id =', existing.id);
+              userId = existing.id;
+              // Refresh password (idempotency)
+              const { error: updErr } = await sb.auth.admin.updateUserById(existing.id, { password, email_confirm: true });
+              if (updErr) console.error('updateUserById warn:', updErr.message);
+              else console.log('Password refreshed + email_confirm=true');
+            } else {
+              console.log('User missing, creating...');
+              const { data: created, error: createErr } = await sb.auth.admin.createUser({
+                email, password, email_confirm: true,
+                user_metadata: { role: 'student', name: 'E2E Test Student' }
+              });
+              if (createErr) { console.error('createUser failed:', createErr.message); process.exit(1); }
+              userId = created.user.id;
+              console.log('User created, id =', userId);
+            }
+            // 2. Bootstrap profile (idempotent ON CONFLICT per migration 20260402100000)
+            console.log('Bootstrapping student profile...');
+            const { data: bootstrapData, error: bootstrapErr } = await sb.rpc('bootstrap_user_profile', {
+              p_auth_user_id: userId,
+              p_role: 'student',
+              p_name: 'E2E Test Student',
+              p_email: email,
+              p_grade: '10',
+              p_board: 'CBSE',
+            });
+            if (bootstrapErr) { console.error('bootstrap_user_profile failed:', bootstrapErr.message); process.exit(1); }
+            console.log('Bootstrap result:', JSON.stringify(bootstrapData));
+            // 3. Mark onboarding_completed=true on students row
+            console.log('Marking onboarding_completed=true...');
+            const { data: updateData, error: updateErr } = await sb
+              .from('students')
+              .update({ onboarding_completed: true, grade: '10', board: 'CBSE' })
+              .eq('auth_user_id', userId)
+              .select('id, name, grade, board, onboarding_completed');
+            if (updateErr) { console.error('students update failed:', updateErr.message); process.exit(1); }
+            console.log('Student row:', JSON.stringify(updateData?.[0]));
+            console.log('Seed complete. user_id =', userId);
+          })().catch(e => { console.error('Seed crashed:', e?.message || e); process.exit(1); });
+          "
