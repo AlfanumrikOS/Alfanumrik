@@ -113,6 +113,17 @@ export async function loginViaUI(page: Page): Promise<boolean> {
   return true;
 }
 
+/**
+ * True when both test-student creds AND a non-placeholder Supabase URL are
+ * configured. The CI env block defaults NEXT_PUBLIC_SUPABASE_URL to
+ * https://placeholder.supabase.co — real auth against that URL hangs and
+ * times out after 30s. Tests guarded by this check skip cleanly when the
+ * dev server is bound to placeholder Supabase, regardless of whether the
+ * test-student secrets exist.
+ */
 export function hasRealStudentCreds(): boolean {
-  return Boolean(process.env.TEST_STUDENT_EMAIL && process.env.TEST_STUDENT_PASSWORD);
+  const hasCreds = Boolean(process.env.TEST_STUDENT_EMAIL && process.env.TEST_STUDENT_PASSWORD);
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+  const isPlaceholder = supabaseUrl.includes("placeholder.supabase.co") || supabaseUrl === "";
+  return hasCreds && !isPlaceholder;
 }
