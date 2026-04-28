@@ -108,3 +108,18 @@ of each spec for fixture wiring requirements.
 CI job: `e2e-critical-paths` in `.github/workflows/ci.yml` — BLOCKING
 (no `continue-on-error`), runs only on PRs targeting main/master/staging
 from the same repo. The legacy `e2e` job remains advisory.
+
+## Foxy Phase 2 — Skill State + Misconception Context Wiring (2026-04-28)
+
+Source: Foxy moat plan Phase 2 — wires per-LO BKT mastery (`student_skill_state` join `learning_objectives`) and curated misconception ontology (`quiz_responses` join `question_misconceptions`) into the Foxy pedagogy decision tree. Pre-Phase 2 the MISCONCEPTION_REPAIR pedagogy branch had no real signal because `cme_error_log` only stored generic `error_type` strings.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-41 | `foxy_skill_state_and_misconception_context_wired` | `loadCognitiveContext()` populates `loSkills` from `student_skill_state` join `learning_objectives` (top-10 weakest by `p_know` ASC) and `recentMisconceptions` from `quiz_responses` join `question_misconceptions` (top-3 by count, distractor_index match, 30-day window); `buildLoSkillsSubsection` and `buildMisconceptionPromptSection` emit empty string on no-data and template substitutes cleanly into `{{misconception_section}}`. P12 dosage caps: LO subsection caps at 10 lines, misconception subsection caps at 3 entries, remediation text truncates to ≤ 400 chars. P13: formatter signature contains no PII identifiers (studentId/email/phone). | `src/__tests__/foxy-skill-state-misconception-context.test.ts` | E |
+
+### Invariants covered by this section
+
+- P12 (AI safety — dosage caps prevent prompt-injection / token-spend
+  blowup; LO and misconception sections bounded; remediation truncated)
+- P13 (data privacy — formatter signature pinned to misconception data
+  only; no studentId / email / phone reach the prompt or logs)
