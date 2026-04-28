@@ -545,6 +545,20 @@ export default function FoxyPage() {
   const [topics, setTopics] = useState<any[]>([]);
   const [masteryData, setMasteryData] = useState<any[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // Monotonic message-id counter. Used in place of `Date.now()` for setMessages
+  // pushes so two sequential pushes (e.g. user message + optimistic empty tutor
+  // bubble) can never share an id even if the JS clock returns the same ms.
+  // P0 (2026-04-28): ID collisions caused setMessages updates targeting the
+  // tutor bubble to also flow into the user message, producing the
+  // "duplicate render with raw markdown above the Foxy header" symptom.
+  const messageIdCounterRef = useRef(0);
+  const nextMessageId = useCallback(() => {
+    messageIdCounterRef.current += 1;
+    // Tag the counter into the lower bits and Date.now() into the upper bits,
+    // so ids are still roughly chronological but guaranteed unique within a
+    // single page session.
+    return Date.now() * 1000 + messageIdCounterRef.current;
+  }, []);
   const [collapsedAbove, setCollapsedAbove] = useState<number | null>(null); // index above which messages are collapsed
   const [loading, setLoading] = useState(false);
   const [sessionMode, setSessionMode] = useState('learn');
@@ -864,7 +878,7 @@ export default function FoxyPage() {
     // Client-side length limit matching server-side MAX_MESSAGE_LENGTH
     if (text.length > 5000) {
       setMessages((p: ChatMessage[]) => [...p, {
-        id: Date.now(),
+        id: nextMessageId(),
         role: 'tutor',
         content: language === 'hi'
           ? 'संदेश बहुत लंबा है! कृपया 5000 अक्षरों से कम रखें।'
@@ -903,7 +917,7 @@ export default function FoxyPage() {
 
       // Show the student message immediately with the image
       setMessages((p: ChatMessage[]) => [...p, {
-        id: Date.now(),
+        id: nextMessageId(),
         role: 'student',
         content: text || (language === 'hi' ? 'फ़ोटो अपलोड की' : 'Uploaded photo'),
         timestamp: new Date().toISOString(),
@@ -934,7 +948,7 @@ export default function FoxyPage() {
       }
     } else {
       // Text-only message — show immediately
-      setMessages((p: ChatMessage[]) => [...p, { id: Date.now(), role: 'student', content: text, timestamp: new Date().toISOString() }]);
+      setMessages((p: ChatMessage[]) => [...p, { id: nextMessageId(), role: 'student', content: text, timestamp: new Date().toISOString() }]);
       setLoading(true); setFoxyState('thinking'); setShowTopicSheet(false);
     }
 
@@ -971,7 +985,7 @@ export default function FoxyPage() {
       // route falls back to JSON. callFoxyTutorStream auto-detects content-type
       // and adapts — so the client code below works for both paths.
       if (shouldUseStreaming() && !imageBase64) {
-        const tutorBubbleId = Date.now() + 1;
+        const tutorBubbleId = nextMessageId();
         // Optimistically add an empty tutor bubble that we'll fill in.
         setMessages((p: ChatMessage[]) => [...p, {
           id: tutorBubbleId,
@@ -1112,14 +1126,14 @@ export default function FoxyPage() {
       const resp = await callFoxyTutor(foxyParams);
       // Server confirmed daily limit reached — show UpgradeModal
       if (resp.limitReached) {
-        setMessages((p: ChatMessage[]) => [...p, { id: Date.now() + 1, role: 'tutor', content: resp.reply, timestamp: new Date().toISOString() }]);
+        setMessages((p: ChatMessage[]) => [...p, { id: nextMessageId(), role: 'tutor', content: resp.reply, timestamp: new Date().toISOString() }]);
         setShowLimitModal(true);
         setFoxyState('idle');
         setLoading(false);
         return;
       }
       setMessages((p: ChatMessage[]) => [...p, {
-        id: Date.now() + 1,
+        id: nextMessageId(),
         role: 'tutor',
         content: resp.reply,
         timestamp: new Date().toISOString(),
@@ -1134,7 +1148,7 @@ export default function FoxyPage() {
         const up = resp.upgradePrompt;
         const promptMsg = language === 'hi' ? up.messageHi : up.message;
         setMessages((p: ChatMessage[]) => [...p, {
-          id: Date.now() + 2,
+          id: nextMessageId(),
           role: 'tutor',
           content: `💡 ${promptMsg}`,
           timestamp: new Date().toISOString(),
@@ -1177,7 +1191,7 @@ export default function FoxyPage() {
       setTimeout(refreshConversations, 1000);
     } catch {
       setMessages((p: ChatMessage[]) => [...p, {
-        id: Date.now() + 1,
+        id: nextMessageId(),
         role: 'tutor',
         content: language === 'hi' ? 'ओह! कृपया फिर कोशिश करें।' : 'Oops! Please try again.',
         timestamp: new Date().toISOString(),
@@ -1185,7 +1199,7 @@ export default function FoxyPage() {
       setFoxyState('idle');
     }
     setLoading(false);
-  }, [student, studentGrade, activeSubject, language, sessionMode, activeTopic, chatSessionId, selectedChapters, topics, refreshConversations]);
+  }, [student, studentGrade, activeSubject, language, sessionMode, activeTopic, chatSessionId, selectedChapters, topics, refreshConversations, nextMessageId]);
 
   // Feedback: thumbs up/down
   const handleFeedback = useCallback(async (msgId: number, isUp: boolean) => {
@@ -1813,7 +1827,22 @@ export default function FoxyPage() {
               </button>
             )}
 
-            {messages.map((msg: ChatMessage, idx: number) => {
+            {/* P0 (2026-04-28) defensive dedup: filter out any messages that
+                share an id with an earlier entry. Guards against the
+                duplicate-render symptom where the same ChatMessage somehow
+                appears twice in the array (or where a stale streaming-bubble
+                push lands alongside a fresh one). The structural fix is
+                nextMessageId() above, which makes ids monotonically unique;
+                this keeps that guarantee even if a future regression breaks
+                it. */}
+            {(() => {
+              const seenIds = new Set<number>();
+              return messages.filter((m) => {
+                if (seenIds.has(m.id)) return false;
+                seenIds.add(m.id);
+                return true;
+              });
+            })().map((msg: ChatMessage, idx: number) => {
               // Skip collapsed messages
               if (collapsedAbove !== null && idx < collapsedAbove) return null;
 
