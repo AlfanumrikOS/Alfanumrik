@@ -66,17 +66,53 @@ function buildMisconceptionPromptSection(
 }
 
 // Mirror of the LO-skills sub-section emitted inside buildCognitivePromptSection.
-// We extract it as a standalone helper for unit testing.
+// We extract it as a standalone helper for unit testing. Step-card pedagogy
+// PR rewrote this from raw "P(know)=42%" labels to directive sentences keyed
+// on three pKnow buckets so the model knows HOW to open the explanation.
+function buildLoDirective(lo: {
+  loCode: string;
+  loStatement: string;
+  pKnow: number;
+}): string {
+  const pct = Math.round(lo.pKnow * 100);
+  const label = `[${lo.loCode}] ${lo.loStatement}`;
+  if (lo.pKnow < 0.5) {
+    return `${label} is weak (mastery ${pct}%) — open the explanation with a concrete real-world analogy or worked example BEFORE introducing the formal definition.`;
+  }
+  if (lo.pKnow < 0.75) {
+    return `${label} is partial (mastery ${pct}%) — quick recap (1 sentence), then advance to application.`;
+  }
+  return `${label} is strong (mastery ${pct}%) — skip basics, go straight to challenge or transfer task.`;
+}
+
 function buildLoSkillsSubsection(loSkills: CognitiveContextLO[]): string {
   if (loSkills.length === 0) return '';
   const lines: string[] = [
-    'LEARNING OBJECTIVE MASTERY (per-LO BKT — finer-grained than topic mastery):',
+    'LEARNING OBJECTIVE MASTERY (directive — open the explanation accordingly):',
   ];
   for (const lo of loSkills) {
-    const pKnowPct = Math.round(lo.pKnow * 100);
-    lines.push(`- [${lo.loCode}] ${lo.loStatement} — P(know)=${pKnowPct}%, theta=${lo.theta.toFixed(2)}`);
+    lines.push(`- ${buildLoDirective(lo)}`);
   }
   return lines.join('\n');
+}
+
+// Mirror of composeMisconceptionDirective in src/app/api/foxy/route.ts.
+// Composes generic recentErrors with curated misconception ontology into a
+// single binary signal: fire MISCONCEPTION_REPAIR if a curated label has
+// count ≥ 2; otherwise return empty so the legacy block renders.
+function composeMisconceptionDirective(
+  _recentErrors: Array<{ errorType: string; count: number }>,
+  misconceptions: CognitiveContextMisconception[],
+): string {
+  if (misconceptions.length === 0) return '';
+  const top = misconceptions[0];
+  if (!top || top.count < 2) return '';
+  let fix = '';
+  if (top.remediationText) {
+    const cleaned = top.remediationText.replace(/\s+/g, ' ').trim();
+    fix = ` — ${cleaned.length > 200 ? `${cleaned.slice(0, 199)}…` : cleaned}`;
+  }
+  return `MISCONCEPTION TO TARGET: ${top.label}${fix}`;
 }
 
 // ─── (a) SQL query shape contract ───────────────────────────────────────────
@@ -244,10 +280,15 @@ describe('Misconception injection — happy path', () => {
   });
 });
 
-// ─── (c) LO skills injection happy path ──────────────────────────────────────
+// ─── (c) LO skills injection happy path — DIRECTIVE format ──────────────────
+//
+// Step-card pedagogy PR replaced the flat "P(know)=42%, theta=-0.85" label
+// with directive sentences keyed on three pKnow buckets. The model now
+// receives an actionable instruction (HOW to open the explanation) rather
+// than a raw probability.
 
-describe('LO skills subsection — happy path', () => {
-  it('emits each LO with code, statement, P(know)%, theta', () => {
+describe('LO skills subsection — directive format (pKnow buckets)', () => {
+  it('emits each LO with code, statement, and a directive sentence', () => {
     const out = buildLoSkillsSubsection([
       {
         loCode: 'PHY-7-MOTION-LO-01',
@@ -259,24 +300,57 @@ describe('LO skills subsection — happy path', () => {
     ]);
     expect(out).toContain('[PHY-7-MOTION-LO-01]');
     expect(out).toContain('Distinguish uniform and non-uniform motion');
-    expect(out).toContain('P(know)=23%');
-    expect(out).toContain('theta=-0.85');
+    // Weak bucket → analogy-first directive
+    expect(out).toContain('is weak (mastery 23%)');
+    expect(out).toContain('real-world analogy or worked example BEFORE');
+    // Old percentage-only format must NOT appear
+    expect(out).not.toContain('P(know)=23%');
+    expect(out).not.toContain('theta=');
   });
 
-  it('rounds P(know) to integer percent', () => {
+  it('weak bucket (pKnow < 0.5): emits analogy-first directive', () => {
+    const out = buildLoSkillsSubsection([
+      { loCode: 'L1', loStatement: 'Some weak LO', pKnow: 0.3, pSlip: 0, theta: 0 },
+    ]);
+    expect(out).toContain('is weak (mastery 30%)');
+    expect(out).toContain('open the explanation with a concrete real-world analogy or worked example BEFORE introducing the formal definition');
+  });
+
+  it('partial bucket (0.5 ≤ pKnow < 0.75): emits 1-sentence-recap directive', () => {
+    const out = buildLoSkillsSubsection([
+      { loCode: 'L2', loStatement: 'Some partial LO', pKnow: 0.65, pSlip: 0, theta: 0 },
+    ]);
+    expect(out).toContain('is partial (mastery 65%)');
+    expect(out).toContain('quick recap (1 sentence), then advance to application');
+  });
+
+  it('strong bucket (pKnow ≥ 0.75): emits skip-basics directive', () => {
+    const out = buildLoSkillsSubsection([
+      { loCode: 'L3', loStatement: 'Some strong LO', pKnow: 0.82, pSlip: 0, theta: 0 },
+    ]);
+    expect(out).toContain('is strong (mastery 82%)');
+    expect(out).toContain('skip basics, go straight to challenge or transfer task');
+  });
+
+  it('boundary conditions: 0.5 → partial, 0.75 → strong, 0.49 → weak', () => {
+    const out = buildLoSkillsSubsection([
+      { loCode: 'B1', loStatement: 's1', pKnow: 0.49, pSlip: 0, theta: 0 },
+      { loCode: 'B2', loStatement: 's2', pKnow: 0.5, pSlip: 0, theta: 0 },
+      { loCode: 'B3', loStatement: 's3', pKnow: 0.75, pSlip: 0, theta: 0 },
+    ]);
+    // 0.49 → weak
+    expect(out).toMatch(/\[B1\][^\n]*is weak/);
+    // 0.5 → partial
+    expect(out).toMatch(/\[B2\][^\n]*is partial/);
+    // 0.75 → strong
+    expect(out).toMatch(/\[B3\][^\n]*is strong/);
+  });
+
+  it('rounds mastery percent to integer in the directive', () => {
     const out = buildLoSkillsSubsection([
       { loCode: 'X', loStatement: 'Y', pKnow: 0.4567, pSlip: 0, theta: 0 },
     ]);
-    expect(out).toContain('P(know)=46%');
-  });
-
-  it('formats theta to 2 decimal places (positive and negative)', () => {
-    const out = buildLoSkillsSubsection([
-      { loCode: 'X1', loStatement: 'Y1', pKnow: 0.5, pSlip: 0, theta: 1.234 },
-      { loCode: 'X2', loStatement: 'Y2', pKnow: 0.5, pSlip: 0, theta: -2.5 },
-    ]);
-    expect(out).toContain('theta=1.23');
-    expect(out).toContain('theta=-2.50');
+    expect(out).toContain('mastery 46%');
   });
 
   it('renders the heading once, regardless of LO count', () => {
@@ -288,6 +362,91 @@ describe('LO skills subsection — happy path', () => {
     const heading = 'LEARNING OBJECTIVE MASTERY';
     const headingMatches = out.match(new RegExp(heading, 'g')) || [];
     expect(headingMatches.length).toBe(1);
+  });
+
+  it('heading wording shifted from "per-LO BKT" to "directive"', () => {
+    const out = buildLoSkillsSubsection([
+      { loCode: 'A', loStatement: 'a', pKnow: 0.1, pSlip: 0, theta: 0 },
+    ]);
+    expect(out).toContain('directive — open the explanation accordingly');
+    expect(out).not.toContain('per-LO BKT');
+  });
+});
+
+// ─── (c2) Composed misconception directive (binary signal) ──────────────────
+//
+// Step-card pedagogy PR composes recentErrors + recentMisconceptions into a
+// single MISCONCEPTION TO TARGET directive when curated overlap is real
+// (count ≥ 2). Before this change, the two signals competed inside the prompt.
+
+describe('composeMisconceptionDirective — binary signal for MISCONCEPTION_REPAIR', () => {
+  it('returns empty when no curated misconceptions exist', () => {
+    expect(
+      composeMisconceptionDirective(
+        [{ errorType: 'conceptual', count: 5 }],
+        [],
+      ),
+    ).toBe('');
+  });
+
+  it('returns empty when top misconception count is < 2 (one-off)', () => {
+    expect(
+      composeMisconceptionDirective(
+        [],
+        [{ code: 'mc_oneoff', label: 'Some label', count: 1, remediationText: 'fix' }],
+      ),
+    ).toBe('');
+  });
+
+  it('emits MISCONCEPTION TO TARGET when top count ≥ 2', () => {
+    const out = composeMisconceptionDirective(
+      [{ errorType: 'conceptual', count: 4 }],
+      [
+        {
+          code: 'confuses_mass_with_weight',
+          label: 'Treats mass and weight as the same',
+          count: 4,
+          remediationText: 'Mass is amount of matter (kg). Weight is force (N).',
+        },
+      ],
+    );
+    expect(out).toContain('MISCONCEPTION TO TARGET:');
+    expect(out).toContain('Treats mass and weight as the same');
+    expect(out).toContain('Mass is amount of matter');
+  });
+
+  it('truncates remediation text to 200 chars in the directive', () => {
+    const longText = 'a '.repeat(200); // 400 chars
+    const out = composeMisconceptionDirective(
+      [],
+      [
+        {
+          code: 'mc_long',
+          label: 'Long misconception',
+          count: 3,
+          remediationText: longText,
+        },
+      ],
+    );
+    const dashIdx = out.indexOf(' — ');
+    expect(dashIdx).toBeGreaterThan(0);
+    const fix = out.slice(dashIdx + 3);
+    expect(fix.length).toBeLessThanOrEqual(200);
+  });
+
+  it('omits the fix segment when remediationText is empty', () => {
+    const out = composeMisconceptionDirective(
+      [],
+      [
+        {
+          code: 'mc_no_remediation',
+          label: 'Plain misconception',
+          count: 2,
+          remediationText: '',
+        },
+      ],
+    );
+    expect(out).toBe('MISCONCEPTION TO TARGET: Plain misconception');
   });
 });
 
@@ -509,5 +668,51 @@ describe('REG-41 hardening — P12 dosage caps + P13 formatter signature pin', (
     expect(src).not.toContain('auth_user_id');
     expect(src).not.toContain('email');
     expect(src).not.toContain('phone');
+  });
+});
+
+// ─── (g) Step-card structural contract (prompt template) ────────────────────
+//
+// Locks in the STEP CARDS turn-shape contract added by the step-card pedagogy
+// PR. The runtime loads foxy_tutor_v1 from the inline.ts FOXY_TUTOR_V1
+// constant (Edge Function bundle) AND from foxy_tutor_v1.txt (local test
+// harness + reviewer diff). Both must contain the new structural literals.
+
+describe('Step-card structural contract — foxy_tutor_v1 prompt', () => {
+  // Use the same path the runtime/test harness uses.
+  const fs = require('fs') as typeof import('fs');
+  const path = require('path') as typeof import('path');
+  const ROOT = path.resolve(__dirname, '..', '..');
+  const FOXY_TXT = fs.readFileSync(
+    path.resolve(ROOT, 'supabase/functions/grounded-answer/prompts/foxy_tutor_v1.txt'),
+    'utf8',
+  );
+
+  it('contains the OUTPUT CONTRACT — STEP CARDS heading', () => {
+    expect(FOXY_TXT).toContain('OUTPUT CONTRACT — STEP CARDS');
+  });
+
+  it('contains the literal "STEP CARDS" used by the step-card pedagogy', () => {
+    expect(FOXY_TXT).toContain('STEP CARDS');
+  });
+
+  it('shows the per-step heading template "### Step N:"', () => {
+    expect(FOXY_TXT).toContain('### Step N:');
+  });
+
+  it('mandates the trailing check question prefix arrow', () => {
+    // The last step must end with a question prefixed with `→ `.
+    expect(FOXY_TXT).toMatch(/check question on its own line, prefixed with `→ `/);
+  });
+
+  it('replaces the old 150-word-per-turn cap with the per-step soft cap', () => {
+    // Old cap is gone, new soft cap is in.
+    expect(FOXY_TXT).not.toContain('Maximum 150 words per turn');
+    expect(FOXY_TXT).toMatch(/Soft cap: ≤30 words per step, 2-4 steps max/);
+  });
+
+  it('includes the math-spacing rule (numbers, operators, words)', () => {
+    expect(FOXY_TXT).toMatch(/spaces around math operators/);
+    expect(FOXY_TXT).toMatch(/"5 × 10 = 50" not "5×10=50"/);
   });
 });

@@ -687,6 +687,60 @@ async function loadCognitiveContext(
   }
 }
 
+// ─── Helper: pKnow → directive sentence (per-LO bucket) ─────────────────────
+//
+// Replaces flat percentage labels like "P(know)=42%" with directive sentences
+// keyed on three pKnow buckets. The model received numbers but didn't know
+// what to DO with them; directives say HOW to open the explanation.
+//   pKnow < 0.5         → weak     (analogy/worked example BEFORE definition)
+//   0.5 ≤ pKnow < 0.75  → partial  (1-sentence recap, then advance)
+//   pKnow ≥ 0.75        → strong   (skip basics, go to challenge/transfer)
+function buildLoDirective(lo: {
+  loCode: string;
+  loStatement: string;
+  pKnow: number;
+}): string {
+  const pct = Math.round(lo.pKnow * 100);
+  const label = `[${lo.loCode}] ${lo.loStatement}`;
+  if (lo.pKnow < 0.5) {
+    return `${label} is weak (mastery ${pct}%) — open the explanation with a concrete real-world analogy or worked example BEFORE introducing the formal definition.`;
+  }
+  if (lo.pKnow < 0.75) {
+    return `${label} is partial (mastery ${pct}%) — quick recap (1 sentence), then advance to application.`;
+  }
+  return `${label} is strong (mastery ${pct}%) — skip basics, go straight to challenge or transfer task.`;
+}
+
+// ─── Helper: compose recentErrors + recentMisconceptions ────────────────────
+//
+// Audit finding: RECENT_ERROR_PATTERNS (generic counts) and KNOWN_MISCONCEPTIONS
+// (curated ontology) were two separate signals that didn't compose. The
+// MISCONCEPTION_REPAIR pedagogy rule fires on a 3+ generic-error count, but
+// the curated label/remediation lives in a different section. Compose them:
+// when the top curated misconception has count ≥ 2 (a real overlap, not a
+// one-off), emit a SINGLE binary directive the model can act on directly.
+// Otherwise return empty so the legacy generic-counts block can render.
+function composeMisconceptionDirective(
+  recentErrors: CognitiveContext['recentErrors'],
+  misconceptions: CognitiveContext['recentMisconceptions'],
+): string {
+  if (misconceptions.length === 0) return '';
+  const top = misconceptions[0];
+  if (!top || top.count < 2) return '';
+  // Defense-in-depth: cap remediation snippet (the curated section already
+  // truncates at 400 chars, but the directive line stays terse).
+  let fix = '';
+  if (top.remediationText) {
+    const cleaned = top.remediationText.replace(/\s+/g, ' ').trim();
+    fix = ` — ${cleaned.length > 200 ? `${cleaned.slice(0, 199)}…` : cleaned}`;
+  }
+  // Suppress the generic counts block when we have curated overlap so the
+  // model sees ONE directive instead of two competing signals. Caller decides
+  // to skip the legacy block when this returns non-empty.
+  void recentErrors;
+  return `MISCONCEPTION TO TARGET: ${top.label}${fix}`;
+}
+
 // ─── Helper: build cognitive prompt section from CME data ───────────────────
 
 function buildCognitivePromptSection(ctx: CognitiveContext): string {
@@ -734,7 +788,19 @@ function buildCognitivePromptSection(ctx: CognitiveContext): string {
     }
   }
 
-  if (ctx.recentErrors.length > 0) {
+  // Compose recentErrors + recentMisconceptions into a single binary
+  // directive when curated misconception data overlaps with generic error
+  // counts. This makes the MISCONCEPTION_REPAIR pedagogy rule fire on real
+  // curated signals (label + remediation) rather than generic error_type
+  // strings. Threshold: top curated misconception count >= 2 = fire.
+  const composedMc = composeMisconceptionDirective(
+    ctx.recentErrors,
+    ctx.recentMisconceptions,
+  );
+  if (composedMc) {
+    sections.push(`\n${composedMc}`);
+  } else if (ctx.recentErrors.length > 0) {
+    // Fall back to legacy generic error counts only when no curated overlap.
     sections.push('\nRECENT ERROR PATTERNS (address these misconceptions proactively):');
     for (const e of ctx.recentErrors) {
       sections.push(`- ${e.errorType} errors: ${e.count} times in last 30 days`);
@@ -742,13 +808,13 @@ function buildCognitivePromptSection(ctx: CognitiveContext): string {
   }
 
   // Phase 2: per-LO BKT mastery — finer-grained than topic mastery above.
-  // Use this when scaffolding prerequisite checks or selecting next questions:
-  // it pinpoints the EXACT learning objective the student is weakest on.
+  // Render as DIRECTIVE sentences keyed on pKnow buckets, not raw labels.
+  // The flat percentage label "P(know)=42%" was descriptive but not
+  // actionable. Bucketed directives tell Foxy HOW to open the explanation.
   if (ctx.loSkills.length > 0) {
-    sections.push('\nLEARNING OBJECTIVE MASTERY (per-LO BKT — finer-grained than topic mastery):');
+    sections.push('\nLEARNING OBJECTIVE MASTERY (directive — open the explanation accordingly):');
     for (const lo of ctx.loSkills) {
-      const pKnowPct = Math.round(lo.pKnow * 100);
-      sections.push(`- [${lo.loCode}] ${lo.loStatement} — P(know)=${pKnowPct}%, theta=${lo.theta.toFixed(2)}`);
+      sections.push(`- ${buildLoDirective(lo)}`);
     }
   }
 
