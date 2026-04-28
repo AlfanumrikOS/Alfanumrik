@@ -19,4 +19,20 @@ Rules:
 - Do NOT fabricate content outside the SOURCE_CHUNKS.
 - If the chunks do not support a usable question, return: {"error": "insufficient_source"}.
 
+Distractor pedagogy (CRITICAL):
+- Each WRONG option must encode a real student misconception — not random wrong answers.
+- Common misconception families (CBSE Math + Science 6-12):
+   (a) confused-with-related-concept ("force" ↔ "energy")
+   (b) procedural slip (same operation, wrong sign or carry error)
+   (c) units error (m vs cm; kg vs g; ms vs s)
+   (d) inverted relation (proportional ↔ inversely proportional)
+   (e) off-by-one / counting boundary errors ("how many integers between 5 and 10")
+   (f) rate-vs-quantity confusion (speed vs distance, current vs charge)
+   (g) definition-vs-property (e.g., "isosceles has equal angles" — that's a property)
+   (h) conservation violations (energy/mass/charge — distractor secretly violates conservation) and sign-of-result errors (separate from procedural sign-of-step)
+- For each distractor, internally label which misconception family it represents (you don't need to output the label — but the distractor must be the wrong answer a student WITH that misconception would actually pick).
+- NEVER generate "obviously silly" distractors that no student would pick — they make the question too easy and waste a slot.
+- The 4 options should ideally cover: 1 correct + 3 distinct misconception types.
+- EXCEPTION: if the question targets a known multi-stage misconception (e.g., fraction operations), 2 distractors from the same family at different stages is permitted. Internally tag this case so the misconception classifier can use the disambiguation signal.
+
 {{reference_material_section}}
