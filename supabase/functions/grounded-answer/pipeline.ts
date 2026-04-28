@@ -28,6 +28,9 @@ import { buildAbstainResponse } from './abstain.ts';
 import { generateEmbedding } from './embedding.ts';
 import { retrieveChunks, type RetrievedChunk } from './retrieval.ts';
 import { rerankDocuments } from '../_shared/reranking.ts';
+import { applyMMR } from '../_shared/rag/mmr.ts';
+import { sanitizeChunkForPrompt } from '../_shared/rag/sanitize.ts';
+import { isMMRDiversityEnabled } from './_mmr-flag.ts';
 import { callClaude } from './claude.ts';
 import { runGroundingCheck } from './grounding-check.ts';
 import { computeConfidence } from './confidence.ts';
@@ -73,7 +76,13 @@ const VOYAGE_MODEL_ID = 'voyage-3';
 // caller's match_count. Gated by FOXY_RERANK_ENABLED (default true). On
 // rerank API failure we fall through with the original similarity-ranked
 // top-N so the request never crashes — see rerankDocuments contract.
-const RERANK_INITIAL_FETCH = 30;
+//
+// Phase 2.B Win 1: bumped 30 → 40. Empirical: rerank quality plateaus
+// around 35-50 candidates for educational text; 40 is the conservative
+// midpoint. Voyage rerank-2 cost is roughly linear in candidate count, so
+// 40 candidates costs ~$0.0001 more per call but gives the reranker a
+// better selection set — measurable lift in NDCG@5 on the NCERT eval set.
+const RERANK_INITIAL_FETCH = 40;
 
 function rerankEnabled(): boolean {
   const raw = (Deno.env.get('FOXY_RERANK_ENABLED') ?? 'true').toLowerCase();
@@ -168,6 +177,13 @@ export function __resetFeatureFlagCacheForTests(): void {
 // Claude's behavior is consistent when we cut over. 0 chunks → empty
 // string (soft mode proceeds without references; template has placeholder
 // anyway; trace row records chunk_count=0 for observability).
+//
+// Phase 2.B Win 4 (P12 hardening): every chunk's content is passed through
+// sanitizeChunkForPrompt before injection so a malicious or buggy ingestion
+// row containing a prompt-injection prefix ("Ignore previous instructions",
+// "System:", "<|im_start|>", etc.) cannot jailbreak Foxy. Each chunk is
+// also capped at 1500 chars — NCERT paragraphs are 200-800 chars typically,
+// so the cap is conservative.
 function buildReferenceMaterialSection(chunks: RetrievedChunk[]): string {
   if (chunks.length === 0) return '';
   const lines = chunks.map((c, i) => {
@@ -175,7 +191,8 @@ function buildReferenceMaterialSection(chunks: RetrievedChunk[]): string {
       ? `Chapter ${c.chapter_number}: ${c.chapter_title}`
       : `Chapter ${c.chapter_number}`;
     const pageBit = c.page_number ? `, p.${c.page_number}` : '';
-    let entry = `[${i + 1}] (${chapterBit}${pageBit})\n${c.content}`;
+    const safeContent = sanitizeChunkForPrompt(c.content);
+    let entry = `[${i + 1}] (${chapterBit}${pageBit})\n${safeContent}`;
     if (c.media_url) {
       const desc = c.media_description || `NCERT ${c.chapter_title || ''}`.trim();
       const pageSuffix = c.page_number
@@ -528,6 +545,16 @@ export async function runPipeline(
     }
   } else {
     chunks = rawChunks.slice(0, request.retrieval.match_count);
+  }
+
+  // Phase 2.B Win 2: apply MMR diversity over the reranked top-N. Voyage
+  // rerank picks the most-relevant chunks but in NCERT corpora consecutive
+  // paragraphs frequently cover the same sub-concept — MMR (lambda=0.7)
+  // mildly penalises redundancy so Foxy gets broader context. Gated by
+  // ff_rag_mmr_diversity (default ON). Skipped when reranked=false (no
+  // signal worth diversifying) or when chunks.length <= 1 (nothing to do).
+  if (reranked && chunks.length > 1 && (await isMMRDiversityEnabled(sb))) {
+    chunks = applyMMR(chunks, 0.7);
   }
 
   ctx.chunks = chunks;

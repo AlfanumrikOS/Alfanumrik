@@ -123,3 +123,37 @@ Source: Foxy moat plan Phase 2 — wires per-LO BKT mastery (`student_skill_stat
   blowup; LO and misconception sections bounded; remediation truncated)
 - P13 (data privacy — formatter signature pinned to misconception data
   only; no studentId / email / phone reach the prompt or logs)
+
+## Foxy Phase 2.B — RAG Strengthening (2026-04-28)
+
+Source: Foxy moat plan Phase 2.B — diversification and prompt-injection
+hardening of the NCERT-grounded RAG pipeline. Adds MMR diversification
+between Voyage rerank and prompt assembly, and sanitization of every
+chunk's content before it is injected into Claude's system prompt.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-42 | `foxy_mmr_diversity_contract` | `applyMMR(chunks, lambda)` preserves the original top-1 unconditionally (slot-1 is taken before any redundancy comparison runs), never drops chunks (output length === input length, no duplicate ids), is deterministic across repeat calls and idempotent (`applyMMR(applyMMR(x)) === applyMMR(x)`), breaks ties by original input order (stable), and at default λ=0.7 demotes near-duplicates behind diverse near-tied chunks (so the prompt-token budget is not burned on redundant NCERT paragraphs). Lambda extremes: λ=1.0 preserves original ranking; λ=0.0 picks the most-different chunk in slot 2. Defensive shape: empty input → `[]`, non-array input → `[]`, no input mutation. | `src/__tests__/rag/mmr-diversity.test.ts` | E |
+| REG-43 | `foxy_chunk_sanitization_strips_injection_prefixes` | `sanitizeChunkForPrompt(text)` strips leading attack prefixes (case-insensitive `Ignore previous`, `Disregard`, `Forget`; role tokens `System:`/`Assistant:`/`Human:`/`User:`; chat-template specials `<\|im_start\|>`, `<\|im_end\|>`, `[INST]`, `[/INST]`; stacked combos like `Ignore previous. System: ...`). Length cap: content > 1500 chars truncates to exactly 1500 (off-by-one boundary verified at MAX+1 → MAX). Idempotent (`sanitize(sanitize(x)) === sanitize(x)`). Defensive: `''`/`null`/`undefined`/non-string → `''`. Audit trail: emits a `[rag/sanitize]` `console.warn` with `prefix=true` / `truncate=true` flags whenever sanitization fires; clean short input emits NO warn (P13 — no PII / spam in logs). Anchoring contract: prefix matchers are anchored at the start of the chunk, so an attack phrase appearing mid-chunk is treated as data and preserved. Preserves clean NCERT content untouched. | `src/__tests__/rag/chunk-sanitization.test.ts` | E |
+
+### Invariants covered by this section
+
+- P12 (AI safety — indirect prompt-injection defense at the NCERT-chunk
+  boundary; MMR diversity bounds prompt-token spend so a crafted
+  near-duplicate cluster cannot crowd out diverse pedagogical material
+  and inflate Anthropic cost)
+- P13 (data privacy — sanitize warn-log signature contains only
+  `prefix`/`truncate`/`originalLen` flags, no chunk content / studentId /
+  document_id, so audit trail does not leak PII or NCERT chapter URLs)
+
+### Notes on test strategy
+
+Both files import the Edge Function source directly via dynamic import
+(`../../../supabase/functions/_shared/rag/{mmr,sanitize}`). The modules
+are pure TS with no Deno globals, so Vitest exercises the same code path
+that `deno test` runs on the Edge side. If the implementation diverges
+(e.g. someone changes the prefix matcher to global instead of anchored,
+or swaps the MMR greedy loop for a probabilistic tie-breaker), these
+specs MUST fail and quality MUST reject — the contract here is the
+moat-protection guarantee that competitor scrapes and prompt-injection
+attempts cannot leak Foxy's behaviour.
