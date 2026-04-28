@@ -158,6 +158,12 @@ interface CognitiveContext {
   recentErrors: Array<{ errorType: string; count: number }>;
   nextAction: { actionType: string; conceptName: string; reason: string } | null;
   masteryLevel: 'low' | 'medium' | 'high';
+  // Phase 2: per-LO BKT mastery (finer-grained than topic mastery).
+  // Top 10 weakest LOs (lowest p_know) for the student in this chapter/subject.
+  loSkills: Array<{ loCode: string; loStatement: string; pKnow: number; pSlip: number; theta: number }>;
+  // Phase 2: curated misconceptions observed in this student's recent (30d)
+  // wrong-answer patterns. Top 3 by occurrence count.
+  recentMisconceptions: Array<{ code: string; label: string; count: number; remediationText: string }>;
 }
 
 const EMPTY_COGNITIVE_CONTEXT: CognitiveContext = {
@@ -168,6 +174,8 @@ const EMPTY_COGNITIVE_CONTEXT: CognitiveContext = {
   recentErrors: [],
   nextAction: null,
   masteryLevel: 'medium',
+  loSkills: [],
+  recentMisconceptions: [],
 };
 
 // ─── Helper: error response ───────────────────────────────────────────────────
@@ -338,6 +346,7 @@ async function loadCognitiveContext(
   studentId: string,
   subject: string,
   grade: string,
+  chapter: string | null = null,
 ): Promise<CognitiveContext> {
   void grade; // reserved for future grade-scoped mastery lookups
   try {
@@ -348,7 +357,31 @@ async function loadCognitiveContext(
       .maybeSingle();
     const subjectId = subjectRow?.id ?? null;
 
-    const [masteryRes, gapsRes, revisionRes, errorsRes] = await Promise.all([
+    // Resolve chapter id when caller passed a chapter (number or title) so we
+    // can scope the per-LO skill query down to that chapter; otherwise fall
+    // back to the subject-wide weakest LOs.
+    let chapterId: string | null = null;
+    if (chapter && subjectId) {
+      try {
+        const chapterNum = /^\d+$/.test(chapter) ? parseInt(chapter, 10) : null;
+        let chQuery = supabaseAdmin
+          .from('chapters')
+          .select('id')
+          .eq('subject_id', subjectId)
+          .eq('grade', grade);
+        if (chapterNum !== null) {
+          chQuery = chQuery.eq('chapter_number', chapterNum);
+        } else {
+          chQuery = chQuery.ilike('title', chapter);
+        }
+        const { data: chRow } = await chQuery.limit(1).maybeSingle();
+        chapterId = chRow?.id ?? null;
+      } catch {
+        // Non-fatal — fall back to subject-wide LO scope.
+      }
+    }
+
+    const [masteryRes, gapsRes, revisionRes, errorsRes, loSkillsRes, misconceptionsRes] = await Promise.all([
       supabaseAdmin
         .from('concept_mastery')
         .select('mastery_probability, mastery_level, attempts, topic_id, curriculum_topics(title, subject_id)')
@@ -377,6 +410,38 @@ async function loadCognitiveContext(
         .select('error_type')
         .eq('student_id', studentId)
         .gte('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()),
+
+      // Phase 2: per-LO BKT skill state (top 10 weakest by p_know). Joined to
+      // learning_objectives so we can render the LO statement + chapter scope.
+      // chapter_id filter is applied client-side after the join because the
+      // PostgREST !inner join requires the filter on the joined alias.
+      (() => {
+        let q = supabaseAdmin
+          .from('student_skill_state')
+          .select('p_know, p_slip, theta, learning_objectives!inner(code, statement, chapter_id, chapters!inner(subject_id))')
+          .eq('student_id', studentId)
+          .order('p_know', { ascending: true })
+          .limit(50);
+        if (chapterId) {
+          q = q.eq('learning_objectives.chapter_id', chapterId);
+        } else if (subjectId) {
+          q = q.eq('learning_objectives.chapters.subject_id', subjectId);
+        }
+        return q;
+      })(),
+
+      // Phase 2: recent (30d) wrong-answer misconceptions for this student.
+      // Join quiz_responses → question_misconceptions on
+      // (question_id, distractor_index = selected_option). Filter is_correct=false.
+      // We pull both the misconception code/label and the remediation text
+      // from the wrong_answer_remediations cache (best-effort).
+      supabaseAdmin
+        .from('quiz_responses')
+        .select('question_id, selected_option, is_correct, created_at, question_misconceptions!inner(misconception_code, misconception_label, distractor_index, remediation_chunk_id)')
+        .eq('student_id', studentId)
+        .eq('is_correct', false)
+        .gte('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
+        .limit(200),
     ]);
 
     const subjectMastery = (masteryRes.data ?? []).filter((m: any) => {
@@ -421,6 +486,145 @@ async function loadCognitiveContext(
       .map(([errorType, count]) => ({ errorType, count }))
       .sort((a, b) => b.count - a.count);
 
+    // Phase 2: Process per-LO skill state — keep at most 10 weakest LOs.
+    // The PostgREST !inner join filter on chapters.subject_id may not narrow
+    // perfectly when chapterId is null (PostgREST sometimes ignores nested
+    // filters silently); we double-filter client-side as a defense.
+    // PostgREST returns nested joins as either an object (when the FK is
+    // unique) or an array (when ambiguous). We normalize both shapes.
+    type LoSkillRow = {
+      p_know: number | string | null;
+      p_slip: number | string | null;
+      theta: number | string | null;
+      learning_objectives:
+        | {
+            code: string;
+            statement: string;
+            chapter_id: string;
+            chapters: { subject_id: string } | Array<{ subject_id: string }> | null;
+          }
+        | Array<{
+            code: string;
+            statement: string;
+            chapter_id: string;
+            chapters: { subject_id: string } | Array<{ subject_id: string }> | null;
+          }>
+        | null;
+    };
+    const loSkillsRaw = (loSkillsRes.data ?? []) as unknown as LoSkillRow[];
+    const loSkills = loSkillsRaw
+      .map((row) => {
+        const lo = Array.isArray(row.learning_objectives)
+          ? row.learning_objectives[0]
+          : row.learning_objectives;
+        if (!lo) return null;
+        const chap = Array.isArray(lo.chapters) ? lo.chapters[0] : lo.chapters;
+        return {
+          row,
+          loCode: lo.code,
+          loStatement: lo.statement,
+          chapterIdForRow: lo.chapter_id,
+          subjectIdForRow: chap?.subject_id ?? null,
+        };
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+      .filter((entry) => {
+        if (chapterId) return entry.chapterIdForRow === chapterId;
+        if (subjectId) return entry.subjectIdForRow === subjectId;
+        return true;
+      })
+      .slice(0, 10)
+      .map((entry) => ({
+        loCode: entry.loCode,
+        loStatement: entry.loStatement,
+        pKnow: Number(entry.row.p_know ?? 0),
+        pSlip: Number(entry.row.p_slip ?? 0),
+        theta: Number(entry.row.theta ?? 0),
+      }));
+
+    // Phase 2: Process recent misconceptions — keep ones where the student's
+    // selected_option matches the curated distractor_index, group by code,
+    // count occurrences, take top 3, then enrich with cached remediation text.
+    type MisconceptionJoinRow = {
+      question_id: string;
+      selected_option: number | null;
+      question_misconceptions:
+        | {
+            misconception_code: string;
+            misconception_label: string;
+            distractor_index: number;
+            remediation_chunk_id: string | null;
+          }
+        | Array<{
+            misconception_code: string;
+            misconception_label: string;
+            distractor_index: number;
+            remediation_chunk_id: string | null;
+          }>
+        | null;
+    };
+    const misconceptionRaw = (misconceptionsRes.data ?? []) as unknown as MisconceptionJoinRow[];
+    const misconceptionAgg: Record<string, { code: string; label: string; count: number; questionIds: Set<string> }> = {};
+    for (const row of misconceptionRaw) {
+      const qm = Array.isArray(row.question_misconceptions)
+        ? row.question_misconceptions
+        : (row.question_misconceptions ? [row.question_misconceptions] : []);
+      for (const m of qm) {
+        if (m.distractor_index !== row.selected_option) continue;
+        if (!misconceptionAgg[m.misconception_code]) {
+          misconceptionAgg[m.misconception_code] = {
+            code: m.misconception_code,
+            label: m.misconception_label,
+            count: 0,
+            questionIds: new Set<string>(),
+          };
+        }
+        misconceptionAgg[m.misconception_code].count += 1;
+        misconceptionAgg[m.misconception_code].questionIds.add(row.question_id);
+      }
+    }
+    const topMisconceptions = Object.values(misconceptionAgg)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 3);
+
+    // Enrich with remediation text. Best-effort lookup against the
+    // wrong_answer_remediations cache for the question_ids that produced each
+    // misconception. If no cached remediation exists, leave the field empty
+    // (the prompt template handles empty gracefully).
+    const recentMisconceptions: CognitiveContext['recentMisconceptions'] = [];
+    for (const m of topMisconceptions) {
+      let remediationText = '';
+      try {
+        const qIds = Array.from(m.questionIds);
+        if (qIds.length > 0) {
+          const { data: remRows } = await supabaseAdmin
+            .from('wrong_answer_remediations')
+            .select('remediation_text')
+            .in('question_id', qIds)
+            .limit(1);
+          remediationText = remRows?.[0]?.remediation_text ?? '';
+        }
+      } catch {
+        // non-fatal — empty remediation is acceptable
+      }
+      recentMisconceptions.push({
+        code: m.code,
+        label: m.label,
+        count: m.count,
+        remediationText: remediationText.slice(0, 200),
+      });
+    }
+
+    // P13: do not log misconception code/label paired with student_id. Only
+    // log a redacted preview (counts only, no codes/labels) for ops.
+    if (recentMisconceptions.length > 0) {
+      logger.info('foxy_misconception_context_loaded', {
+        // intentionally NO studentId in this log line
+        misconceptionCount: recentMisconceptions.length,
+        topCount: recentMisconceptions[0]?.count ?? 0,
+      });
+    }
+
     const avgMastery = subjectMastery.length > 0
       ? subjectMastery.reduce((s: number, m: any) => s + (m.mastery_probability ?? 0), 0) / subjectMastery.length
       : 0.5;
@@ -463,7 +667,17 @@ async function loadCognitiveContext(
       }
     }
 
-    return { weakTopics, strongTopics, knowledgeGaps, revisionDue, recentErrors, nextAction, masteryLevel };
+    return {
+      weakTopics,
+      strongTopics,
+      knowledgeGaps,
+      revisionDue,
+      recentErrors,
+      nextAction,
+      masteryLevel,
+      loSkills,
+      recentMisconceptions,
+    };
   } catch (err) {
     logger.warn('foxy_cognitive_context_failed', {
       error: err instanceof Error ? err.message : String(err),
@@ -482,7 +696,8 @@ function buildCognitivePromptSection(ctx: CognitiveContext): string {
     ctx.knowledgeGaps.length === 0 &&
     ctx.revisionDue.length === 0 &&
     ctx.recentErrors.length === 0 &&
-    !ctx.nextAction
+    !ctx.nextAction &&
+    ctx.loSkills.length === 0
   ) {
     return '';
   }
@@ -526,6 +741,17 @@ function buildCognitivePromptSection(ctx: CognitiveContext): string {
     }
   }
 
+  // Phase 2: per-LO BKT mastery — finer-grained than topic mastery above.
+  // Use this when scaffolding prerequisite checks or selecting next questions:
+  // it pinpoints the EXACT learning objective the student is weakest on.
+  if (ctx.loSkills.length > 0) {
+    sections.push('\nLEARNING OBJECTIVE MASTERY (per-LO BKT — finer-grained than topic mastery):');
+    for (const lo of ctx.loSkills) {
+      const pKnowPct = Math.round(lo.pKnow * 100);
+      sections.push(`- [${lo.loCode}] ${lo.loStatement} — P(know)=${pKnowPct}%, theta=${lo.theta.toFixed(2)}`);
+    }
+  }
+
   if (ctx.nextAction) {
     sections.push(`\nRECOMMENDED ACTION: ${ctx.nextAction.actionType.toUpperCase()}`);
     sections.push(`Concept: ${ctx.nextAction.conceptName}`);
@@ -557,6 +783,46 @@ function buildCognitivePromptSection(ctx: CognitiveContext): string {
   }
 
   return sections.join('\n');
+}
+
+// ─── Helper: build curated misconception prompt section ────────────────────
+//
+// Renders the top-3 curated misconceptions observed in this student's recent
+// (30 day) wrong-answer patterns. Used to fire MISCONCEPTION_REPAIR in the
+// Foxy pedagogy decision tree (foxy_tutor_v1) — without this data the branch
+// never triggers because cme_error_log only has generic error_type strings.
+//
+// Empty input → empty string (no heading printed). The template renders the
+// `{{misconception_section}}` placeholder as empty so there's no orphan
+// header. P13: NEVER pair misconception code/label with student_id in logs.
+// P12 prompt-bloat guard: cap rendered remediation text at 400 chars. Curated
+// remediations in `wrong_answer_remediations` are 150-300 chars by policy; 400
+// is a 33% safety margin. Without this cap, a 5000-char curator entry in a
+// 3-misconception section would add ~15k tokens to every Foxy request.
+const REMEDIATION_MAX_CHARS = 400;
+
+function buildMisconceptionPromptSection(
+  misconceptions: CognitiveContext['recentMisconceptions'],
+): string {
+  if (misconceptions.length === 0) return '';
+  const lines: string[] = [
+    "KNOWN MISCONCEPTIONS (curated, observed in this student's recent quizzes):",
+  ];
+  for (const m of misconceptions) {
+    let remediation = '';
+    if (m.remediationText) {
+      const cleaned = m.remediationText.replace(/\s+/g, ' ').trim();
+      const truncated =
+        cleaned.length > REMEDIATION_MAX_CHARS
+          ? `${cleaned.slice(0, REMEDIATION_MAX_CHARS - 1)}…`
+          : cleaned;
+      remediation = ` — fix: ${truncated}`;
+    }
+    lines.push(
+      `- [${m.code}] ${m.label} (seen ${m.count}x in last 30 days)${remediation}`,
+    );
+  }
+  return lines.join('\n');
 }
 
 // ─── Academic goal → prompt instruction mapping ──────────────────────────────
@@ -994,7 +1260,7 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   let priorSessionTurns: PriorSessionTurn[] = [];
   try {
     const [ctx, hist, prior] = await Promise.all([
-      loadCognitiveContext(studentId, subject, grade),
+      loadCognitiveContext(studentId, subject, grade, chapter),
       loadHistory(resolvedSessionId),
       loadPriorSessionContext(studentId, subject, grade, resolvedSessionId, chapter),
     ]);
@@ -1162,6 +1428,10 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         coach_mode_instruction: COACH_MODE_INSTRUCTIONS[coachMode],
         academic_goal_section: buildAcademicGoalSection(academicGoal),
         cognitive_context_section: buildCognitivePromptSection(cognitiveCtx),
+        // Phase 2: curated misconception ontology — fires the
+        // MISCONCEPTION_REPAIR branch in foxy_tutor_v1 with real data.
+        // Empty string when no misconceptions observed (template-safe).
+        misconception_section: buildMisconceptionPromptSection(cognitiveCtx.recentMisconceptions),
         // Task 1.3: cross-session memory. Empty string when no prior sessions
         // (template handles missing variables as empty by design).
         previous_session_context: buildPriorSessionPromptSection(priorSessionTurns),
