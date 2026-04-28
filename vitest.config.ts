@@ -80,15 +80,21 @@ export default defineConfig({
           functions: 90,
           lines: 90,
         },
-        // TODO(assessment): restore cognitive-engine.ts thresholds to 80 by
-        // adding tests for IRT 3PL Newton-Raphson convergence path, SM-2
-        // schedule decay, and error-classification branches. Currently
-        // ~67-68% across all 4 metrics (file is 1412 LOC).
+        // P22 (learning graph) defense floor restored 2026-04-28: coverage
+        // closure tests in src/__tests__/lib/cognitive-engine-coverage.test.ts
+        // hit IRT 3PL Newton-Raphson convergence + clamping, SM-2 schedule
+        // decay + EF floor + quality<3 reset, error-classification (slip/
+        // guess) thresholds, BKT adaptive parameter branches, generateQuiz-
+        // Params switch cases, calculateChapterPriority urgency tiers,
+        // generateExamStudyPlan (last-day / last-week / normal), predict-
+        // ExamScore confidence, classifyImageText heuristics, and compute-
+        // MonthlyReportMetrics. Actual coverage: 100/98.8/100/100. Floor
+        // pinned at 80 to leave 1-2 branches of headroom for refactors.
         'src/lib/cognitive-engine.ts': {
-          statements: 65,
-          branches: 65,
-          functions: 65,
-          lines: 65,
+          statements: 80,
+          branches: 80,
+          functions: 80,
+          lines: 80,
         },
         'src/lib/exam-engine.ts': {
           statements: 80,
