@@ -59,13 +59,22 @@ export default defineConfig({
         // exceeded ~37%. Now that CI is a hard gate (P0-D launch fix), the
         // floor must reflect actual present coverage. Aspirational target
         // remains 60% — ratchet upward via the testing chain (see TODOs).
-        // TODO(testing): ratchet global thresholds back to 60% by adding unit
-        // tests for hooks (use*.ts), utils (voice.ts, whatsapp-templates.ts),
-        // and server-helper modules that don't require a live Supabase.
-        statements: 35,
-        branches: 30,
-        functions: 35,
-        lines: 35,
+        //
+        // Installment 1 (2026-04-28, PR test/global-coverage-installment-1):
+        // raised floors after adding 8 pure-utility test files covering
+        // voice.ts, whatsapp-templates.ts, foxy-lines.ts, email-templates.ts,
+        // share.ts, sanitize.ts, useDebounce.ts, utils.ts. Measured run
+        // 44.20 / 39.78 / 46.86 / 45.47 → floors set 1 point below to leave
+        // safety margin.
+        // TODO(testing): installment 2 should target hook utilities
+        // (useAllowedSubjects, useTeacherAllowedSubjects, useSubjectLookup,
+        // useRequireAuth, useAllowedChapters), then server-helper modules
+        // that mock Supabase (cache.ts, plans.ts, slo.ts, plan-gate.ts
+        // remaining branches), targeting +5 points each installment until 60%.
+        statements: 43,
+        branches: 38,
+        functions: 45,
+        lines: 44,
         // Per-file thresholds for critical business logic.
         // P14 review chains (assessment + testing) own restoring xp-rules
         // branches → 90% and cognitive-engine all-metrics → 80%; thresholds
