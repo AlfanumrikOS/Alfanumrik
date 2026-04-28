@@ -4,6 +4,7 @@ import React, { memo, useState, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
 import rehypeKatex from 'rehype-katex';
 import { useSubjectLookup } from '@/lib/useSubjectLookup';
 
@@ -81,7 +82,7 @@ function RichContentInner({ content, subjectKey, subjectConfig }: RichContentPro
 
 // ─── Custom marker handling ──────────────────────────────────────────────────
 
-interface Segment {
+export interface Segment {
   type: 'markdown' | 'ans' | 'tip' | 'marks';
   content: string;
 }
@@ -89,23 +90,47 @@ interface Segment {
 /**
  * Splits content into segments: regular markdown text and custom markers
  * ([ANS:], [TIP:], [MARKS:]) that need special rendering.
+ *
+ * Whitespace preservation: when a marker is adjacent to non-whitespace text
+ * (e.g. "answer is[ANS: 50]today"), we inject a single space into the
+ * preceding/trailing markdown segment so the rendered DOM has visible
+ * whitespace between the badge and surrounding text. We never add a space
+ * if one already exists, so well-formed input is unchanged.
+ *
+ * Exported for testability.
  */
-function splitCustomMarkers(text: string, _color: string): Segment[] {
+export function splitCustomMarkers(text: string, _color: string): Segment[] {
   const segments: Segment[] = [];
   const re = /\[(ANS|TIP|MARKS):\s*([^\]]+)\]/g;
   let m: RegExpExecArray | null;
   let last = 0;
 
   while ((m = re.exec(text)) !== null) {
+    // Preceding character: if the marker is touching non-whitespace text,
+    // pad a space onto the trailing edge of the markdown segment.
     if (m.index > last) {
-      segments.push({ type: 'markdown', content: text.substring(last, m.index) });
+      let chunk = text.substring(last, m.index);
+      const charBefore = chunk.charAt(chunk.length - 1);
+      if (charBefore && !/\s/.test(charBefore)) {
+        chunk = chunk + ' ';
+      }
+      segments.push({ type: 'markdown', content: chunk });
     }
+
     const tag = m[1].toLowerCase() as 'ans' | 'tip' | 'marks';
     segments.push({ type: tag, content: m[2] });
     last = m.index + m[0].length;
   }
+
   if (last < text.length) {
-    segments.push({ type: 'markdown', content: text.substring(last) });
+    let chunk = text.substring(last);
+    // Trailing chunk: if the marker is touching non-whitespace text after,
+    // pad a space onto the leading edge of the markdown segment.
+    const charAfter = chunk.charAt(0);
+    if (charAfter && !/\s/.test(charAfter)) {
+      chunk = ' ' + chunk;
+    }
+    segments.push({ type: 'markdown', content: chunk });
   }
   return segments;
 }
@@ -157,7 +182,7 @@ function SegmentRenderer({ segment, cfg }: { segment: Segment; cfg: { color: str
 function MarkdownBlock({ content, cfg }: { content: string; cfg: { color: string; icon: string } }) {
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm, remarkMath]}
+      remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
       rehypePlugins={[rehypeKatex]}
       components={{
         // Headings styled with subject color
@@ -298,14 +323,32 @@ function MarkdownBlock({ content, cfg }: { content: string; cfg: { color: string
           </a>
         ),
 
-        // Paragraphs
+        // Paragraphs — wordSpacing is defensive: helps numbers/math feel
+        // legible if upstream emits compressed whitespace runs.
         p: ({ children }) => (
-          <p className="my-1.5 leading-[1.75] text-[var(--text-2)]">{children}</p>
+          <p
+            className="my-1.5 leading-[1.75] text-[var(--text-2)]"
+            style={{ whiteSpace: 'normal', wordSpacing: '0.05em' }}
+          >
+            {children}
+          </p>
         ),
 
-        // Bold — key terms styled with subject color
+        // Bold — key terms styled with subject color. paddingRight prevents
+        // the borderBottom underline from visually fusing with the next
+        // character when bold text is immediately followed by plain text
+        // (e.g. **important**word).
         strong: ({ children }) => (
-          <span className="font-bold" style={{ color: cfg.color, borderBottom: `2px solid ${cfg.color}40`, paddingBottom: 1 }}>
+          <span
+            className="font-bold"
+            style={{
+              color: cfg.color,
+              borderBottom: `2px solid ${cfg.color}40`,
+              paddingBottom: 1,
+              paddingRight: '2px',
+              marginRight: '1px',
+            }}
+          >
             {children}
           </span>
         ),
