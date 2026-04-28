@@ -75,6 +75,14 @@ const HEADER = `-- =============================================================
 --   record of how the schema was bootstrapped. It is no longer required for
 --   fresh-DB bootstrap.
 --
+-- FORWARD DECLARATIONS
+--   _legacy/006_cognitive_engine_tables.sql references curriculum_topics(id)
+--   in foreign keys, but no _legacy file creates that table — it was originally
+--   created via the Supabase dashboard. To make this baseline self-sufficient
+--   on a fresh DB, a minimal CREATE TABLE IF NOT EXISTS curriculum_topics
+--   block is injected immediately before the _legacy/006 section. On production
+--   the table already exists; the IF NOT EXISTS guard makes it a no-op.
+--
 -- TOTAL FILE ORDER (concatenated below)
 --   000_core_schema.sql
 --   001_task_queue_and_helpers.sql
@@ -114,6 +122,60 @@ function applyWraps(filename, body) {
       return body;
   }
 }
+
+/**
+ * Forward-declared tables that `_legacy/006_cognitive_engine_tables.sql` references
+ * via foreign key but are NOT created in any _legacy file (they were originally
+ * created via the Supabase dashboard). Without this, fresh-DB bootstrap fails with:
+ *   ERROR: relation "curriculum_topics" does not exist (SQLSTATE 42P01)
+ *
+ * The minimal schema below contains only columns that are referenced by:
+ *   - FK constraints in _legacy/006 (id)
+ *   - SQL bodies in _legacy/007_dashboard_rpcs.sql RPCs (title, title_hi,
+ *     description, subject_id, grade, is_active, difficulty_level,
+ *     chapter_number, topic_type, learning_objectives, display_order)
+ *
+ * Later migrations (e.g. 20260328010000_cms_foundation_actual.sql) add more
+ * columns idempotently via ALTER TABLE ADD COLUMN IF NOT EXISTS, so they keep
+ * working unchanged.
+ *
+ * On production this is a no-op (table already exists, IF NOT EXISTS skips).
+ * On a fresh DB this allows the FK references in _legacy/006 to resolve.
+ */
+const FORWARD_DECLARATIONS = `
+-- ============================================================
+-- > Forward declarations: tables referenced by _legacy/ but not
+-- > created in any _legacy file (originally created via Supabase
+-- > dashboard before migration tracking existed). Idempotent.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS curriculum_topics (
+  id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  subject_id           UUID REFERENCES subjects(id),
+  grade                TEXT NOT NULL,
+  chapter_number       INTEGER,
+  title                TEXT NOT NULL,
+  title_hi             TEXT,
+  description          TEXT,
+  description_hi       TEXT,
+  topic_type           TEXT DEFAULT 'concept',
+  difficulty_level     INTEGER DEFAULT 2,
+  learning_objectives  JSONB DEFAULT '[]',
+  display_order        INTEGER DEFAULT 0,
+  is_active            BOOLEAN DEFAULT TRUE,
+  created_at           TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE curriculum_topics ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "curriculum_topics_public_read" ON curriculum_topics;
+CREATE POLICY "curriculum_topics_public_read" ON curriculum_topics
+  FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "curriculum_topics_service_all" ON curriculum_topics;
+CREATE POLICY "curriculum_topics_service_all" ON curriculum_topics
+  FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+
+`;
 
 /**
  * `ALTER PUBLICATION supabase_realtime ADD TABLE IF EXISTS xxx;` is idempotent
@@ -181,6 +243,11 @@ let output = HEADER;
 const wrapsApplied = [];
 
 for (const filename of FILES_IN_ORDER) {
+  // Inject forward declarations immediately before _legacy/006 (which is the
+  // first file that references `curriculum_topics`).
+  if (filename === '006_cognitive_engine_tables.sql') {
+    output += FORWARD_DECLARATIONS;
+  }
   const fullPath = path.join(LEGACY_DIR, filename);
   let body = fs.readFileSync(fullPath, 'utf8');
   const before = body;

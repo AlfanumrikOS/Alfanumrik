@@ -44,6 +44,14 @@
 --   record of how the schema was bootstrapped. It is no longer required for
 --   fresh-DB bootstrap.
 --
+-- FORWARD DECLARATIONS
+--   _legacy/006_cognitive_engine_tables.sql references curriculum_topics(id)
+--   in foreign keys, but no _legacy file creates that table — it was originally
+--   created via the Supabase dashboard. To make this baseline self-sufficient
+--   on a fresh DB, a minimal CREATE TABLE IF NOT EXISTS curriculum_topics
+--   block is injected immediately before the _legacy/006 section. On production
+--   the table already exists; the IF NOT EXISTS guard makes it a no-op.
+--
 -- TOTAL FILE ORDER (concatenated below)
 --   000_core_schema.sql
 --   001_task_queue_and_helpers.sql
@@ -1587,6 +1595,39 @@ GRANT EXECUTE ON FUNCTION public.get_app_config(TEXT) TO supabase_auth_admin;
 GRANT EXECUTE ON FUNCTION public.send_welcome_email_on_confirm() TO supabase_auth_admin;
 GRANT EXECUTE ON FUNCTION public.send_welcome_email_on_insert() TO supabase_auth_admin;
 GRANT SELECT ON public.app_config TO supabase_auth_admin;
+
+-- ============================================================
+-- > Forward declarations: tables referenced by _legacy/ but not
+-- > created in any _legacy file (originally created via Supabase
+-- > dashboard before migration tracking existed). Idempotent.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS curriculum_topics (
+  id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  subject_id           UUID REFERENCES subjects(id),
+  grade                TEXT NOT NULL,
+  chapter_number       INTEGER,
+  title                TEXT NOT NULL,
+  title_hi             TEXT,
+  description          TEXT,
+  description_hi       TEXT,
+  topic_type           TEXT DEFAULT 'concept',
+  difficulty_level     INTEGER DEFAULT 2,
+  learning_objectives  JSONB DEFAULT '[]',
+  display_order        INTEGER DEFAULT 0,
+  is_active            BOOLEAN DEFAULT TRUE,
+  created_at           TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE curriculum_topics ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "curriculum_topics_public_read" ON curriculum_topics;
+CREATE POLICY "curriculum_topics_public_read" ON curriculum_topics
+  FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "curriculum_topics_service_all" ON curriculum_topics;
+CREATE POLICY "curriculum_topics_service_all" ON curriculum_topics
+  FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+
 
 -- ============================================================
 -- > Section: 006_cognitive_engine_tables.sql
