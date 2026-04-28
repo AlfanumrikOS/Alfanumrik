@@ -402,6 +402,18 @@ async function callFoxyTutorStream(
     try {
       const data = await res.json();
       if (data?.sessionId) callbacks.onSession?.(data.sessionId);
+      // P0 fix: when the server returns a hard-abstain in the JSON-fallback
+      // path (because ff_foxy_streaming is OFF), we MUST route through
+      // onAbstain — not onDone — otherwise the tutor bubble stays empty
+      // and the HardAbstainCard never renders.
+      if (data?.groundingStatus === 'hard-abstain') {
+        callbacks.onAbstain?.({
+          abstainReason: (data?.abstainReason || 'upstream_error') as AbstainReason,
+          suggestedAlternatives: Array.isArray(data?.suggestedAlternatives) ? data.suggestedAlternatives : [],
+          traceId: data?.traceId,
+        });
+        return;
+      }
       if (typeof data?.response === 'string' && data.response.length > 0) {
         callbacks.onText(data.response);
       }
@@ -1022,6 +1034,22 @@ export default function FoxyPage() {
                   streamed: true,
                 });
               } catch { /* analytics non-critical */ }
+              // P0 defensive guard: if the stream completed with no delta and
+              // the bubble is still empty AND we had no abstain signal AND we
+              // didn't get a groundedFromChunks=true terminal, fill with a
+              // friendly fallback so the user never sees a silent empty bubble.
+              setMessages((p: ChatMessage[]) => p.map((m) => {
+                if (m.id !== tutorBubbleId) return m;
+                if (m.content && m.content.length > 0) return m;
+                if (m.groundingStatus === 'hard-abstain') return m; // abstain UI handles its own display
+                if (info.groundedFromChunks === true) return m;     // server signaled real grounded answer
+                return {
+                  ...m,
+                  content: language === 'hi'
+                    ? 'मैं अभी जवाब नहीं दे सका। फिर से कोशिश करें या दूसरा chapter चुनें।'
+                    : "I couldn't generate a response right now. Try rephrasing or pick a different chapter.",
+                };
+              }));
               setFoxyState('happy'); setTimeout(() => setFoxyState('idle'), 2000);
             },
             onAbstain: (info) => {
