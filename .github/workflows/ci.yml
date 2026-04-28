@@ -259,12 +259,8 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
-        # ADVISORY UNTIL 2026-04-27. Audit 2026-04-27 F23.
-        # TODO: flip to blocking after staging Supabase reachability from
-        # GH-hosted runners is stable for 2 consecutive weeks (track flake
-        # rate via the workflow run history). Live-DB tests are sensitive
-        # to staging maintenance windows and runner egress IP changes.
-        continue-on-error: true
+        # Integration tests are now BLOCKING (per production-readiness audit Gap 5b). P8/P9 (RLS + RBAC) DB enforcement layer.
+        continue-on-error: false
 
   # ── Step 2: Production Build + Bundle Analysis ──
   build:
