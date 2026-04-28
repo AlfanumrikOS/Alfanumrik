@@ -272,3 +272,55 @@ will add SQL-level CHECK constraints on `shuffle_map` and an
 out of scope for Phase A — the legacy `submit_quiz_results` (v1) is
 preserved untouched so mobile clients keep working until they adopt the
 new RPCs separately.
+
+## Quiz Authenticity Canary (Phase B — 2026-04-29)
+
+Source: Phase A (PR #447, prod git_sha=987fe70, migration
+20260428160000_quiz_session_shuffles.sql) moved shuffle authority from
+client to server. Phase B (PR feat/quiz-authenticity-phase-b, migration
+20260429010000_quiz_authenticity_phase_b_constraints.sql) locks the
+contract with DB-level CHECK constraints (4-element options +
+correct_answer_index ∈ [0,3]; selected_option ∈ {NULL, -1..3};
+explanation forbids "Option [A-D]" / "विकल्प [क-घ]" positional letters)
+AND adds a CI canary that promotes the production `grounding.scoring`
+ops_events alarm into a CI hard gate.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-52 | `quiz_authenticity_ops_events_canary_p1_p6` | Queries staging `ops_events` for rows with `category='grounding.scoring' AND severity='warning' AND occurred_at > now() - 24h`. Phase A guarantees the server is the only authority that re-derives `is_correct` (against the per-session snapshot, never the live `question_bank`); any non-zero count in this window is direct evidence of a Phase A regression — the server-side derivation disagreed with what the client-rendered green check showed. The test SKIPS gracefully (logs an info line, returns) when integration env is absent (PR branches without staging creds, local dev without `.env.local`). It runs FOR REAL in the CI integration-tests job that wires staging Supabase credentials. On a hit, the assertion message lists the first 50 affected sessions (id, subject_id, occurred_at, message) so ops can replay the snapshot. Fails on infra error (cannot reach Supabase / service-role key invalid) with a distinct error message — infra failures and contract violations are not conflated. | `src/__tests__/regression-quiz-authenticity-canary.test.ts` | E |
+
+### Invariants covered by this section
+
+- P1 (score accuracy — production canary detects any disagreement
+  between the client-rendered correctness and the server's snapshot-
+  backed re-derivation, and the CI test fails the build on any such
+  disagreement)
+- P6 (question quality — a `grounding.scoring` warning means the
+  per-session snapshot was bypassed; a Phase A invariant violated
+  in production)
+
+### Notes on test strategy
+
+REG-52 is a **runtime canary promoter**, not a static-source test like
+REG-50. The drift bug Phase A closed was a runtime phenomenon (stable
+client seed × mid-session content edit) — no amount of source
+inspection can prove it stays gone in production. The
+`grounding.scoring` ops_events alarm has been recording every
+disagreement in production since migration 20260418110000; REG-52
+promotes "production canary has zero entries in 24h" into a CI hard
+gate. The skip-on-placeholder pattern (via
+`src/__tests__/helpers/integration.ts:hasSupabaseIntegrationEnv()`)
+keeps the suite deterministic on PR branches that don't have staging
+credentials. To run locally against staging:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=... \
+NEXT_PUBLIC_SUPABASE_ANON_KEY=... \
+SUPABASE_SERVICE_ROLE_KEY=... \
+npx vitest run src/__tests__/regression-quiz-authenticity-canary.test.ts
+```
+
+Phase C (out of scope for this PR) will retire the legacy v1
+`submit_quiz_results` once mobile adopts v2, drop the `seededShuffle`
+client helper, and tighten the explanation linter to also flag
+"first option / दूसरा विकल्प" position references.
