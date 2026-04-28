@@ -23,6 +23,7 @@ import ExamReadiness from '@/components/dashboard/ExamReadiness';
 import DailyChallenge from '@/components/dashboard/DailyChallenge';
 import FocusDashboard from '@/components/dashboard/FocusDashboard';
 import PendingLinkApproval, { type PendingLink } from '@/components/dashboard/PendingLinkApproval';
+import ReviewsDueCard from '@/components/dashboard/ReviewsDueCard';
 import ScoreHero from '@/components/score/ScoreHero';
 import ScoreCard from '@/components/score/ScoreCard';
 import CoinBalance from '@/components/coins/CoinBalance';
@@ -643,6 +644,12 @@ export default function Dashboard() {
             </div>
           );
         })()}
+
+        {/* ═══ SPACED-REPETITION CTA (Phase 2.D) ═══
+            High-visibility prompt that pulls the student into /review when
+            concept_mastery.next_review_date is due. Renders nothing when
+            dueCount === 0. Self-fetches via SWR and refreshes every 60s. */}
+        <ReviewsDueCard />
 
         {/* ═══ FOCUS ZONE: 3 cards — "One Thing at a Time" ═══ */}
         <FocusDashboard
