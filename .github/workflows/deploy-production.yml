@@ -3,6 +3,12 @@ name: Deploy Production — Alfanumrik
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      force_deploy_all_functions:
+        description: 'Force-redeploy ALL active Edge Functions regardless of git diff (use when a previous deploy was cancelled and Edge Function code is stale)'
+        type: boolean
+        default: false
 
 concurrency:
   group: deploy-production
@@ -322,6 +328,13 @@ jobs:
           if git diff --name-only HEAD~1 HEAD -- 'supabase/functions/_shared/' | grep -q .; then
             CHANGED=$(ls -d supabase/functions/*/ | grep -vE '(_archive|_shared)' | xargs -n1 basename | sort -u)
             echo "_shared changed → deploying ALL active functions"
+          fi
+          # Manual force-redeploy override (workflow_dispatch input). Use when a
+          # previous deploy was cancelled by a superseding merge and Edge Function
+          # code on `main` is ahead of what's running in production.
+          if [ "${{ inputs.force_deploy_all_functions }}" = "true" ]; then
+            CHANGED=$(ls -d supabase/functions/*/ | grep -vE '(_archive|_shared)' | xargs -n1 basename | sort -u)
+            echo "force_deploy_all_functions=true → deploying ALL active functions"
           fi
           echo "Changed functions:"
           echo "$CHANGED"
