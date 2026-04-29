@@ -204,4 +204,4 @@ Development is governed by product invariants defined in [.claude/CLAUDE.md](./.
 
 ## License
 
-MIT License -- see [LICENSE](./LICENSE) file.
+Proprietary. All rights reserved.
