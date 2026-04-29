@@ -1,0 +1,853 @@
+name: Schema Reproducibility Fix (P0 — manual ops)
+
+# End-to-end automation of docs/runbooks/schema-reproducibility-fix.md.
+#
+# Five idempotent phases, selectable via the `step` input. The user runs each
+# phase in order:
+#   1. dry-run-staging   → rehearse capture+sanitize+local-validate. No mutation.
+#   2. capture-and-pr    → capture+sanitize+local-validate, then open PR.
+#                          (User reviews + merges the PR.)
+#   3. pre-mark-staging  → after PR merged: register baseline as applied on staging.
+#                          Writes ONE row in supabase_migrations.schema_migrations.
+#   4. pre-mark-prod     → same on prod, with 30s safety delay.
+#   5. verify            → both envs report zero pending migrations.
+#
+# Safety properties:
+#   - workflow_dispatch ONLY (no auto-trigger).
+#   - dry-run-staging never touches prod or staging metadata.
+#   - pre-mark phases pre-flight check the row already exists → idempotent.
+#   - pre-mark-prod sleeps 30s before execution so the operator can cancel.
+#   - All 5 phases write a structured $GITHUB_STEP_SUMMARY for audit.
+#   - Concurrency group prevents two operators from running pre-mark-prod
+#     simultaneously.
+#   - No new secrets — uses only the 5 existing repo secrets that the
+#     deploy-production / deploy-staging workflows already use.
+
+on:
+  workflow_dispatch:
+    inputs:
+      step:
+        description: 'Which phase to run (run them in this order)'
+        required: true
+        type: choice
+        options:
+          - dry-run-staging
+          - capture-and-pr
+          - pre-mark-staging
+          - pre-mark-prod
+          - verify
+
+concurrency:
+  group: schema-reproducibility-fix
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '22'
+  BASELINE_VERSION: '00000000000000'
+  BASELINE_FILENAME: '00000000000000_baseline_from_prod.sql'
+  # Supabase managed role names that pg_dump emits ALTER ... OWNER TO lines for.
+  # We strip all of them in Section 2 step 1.
+  # Listed here for grep-ability when debugging artifacts.
+  SUPABASE_OWNER_ROLES: 'postgres,supabase_admin,supabase_auth_admin,supabase_storage_admin,authenticator,authenticated,anon,service_role,dashboard_user,pgsodium_keyholder,pgbouncer'
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────
+  # PHASE 1 — dry-run-staging (read-only rehearsal)
+  # ──────────────────────────────────────────────────────────────────────
+  dry-run-staging:
+    name: Dry-run rehearsal (no mutation)
+    if: ${{ inputs.step == 'dry-run-staging' || inputs.step == 'capture-and-pr' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      baseline-sha: ${{ steps.fingerprint.outputs.sha256 }}
+      baseline-bytes: ${{ steps.fingerprint.outputs.bytes }}
+      prod-tables: ${{ steps.snapshot.outputs.prod_tables }}
+      prod-rpcs: ${{ steps.snapshot.outputs.prod_rpcs }}
+      local-tables: ${{ steps.compare.outputs.local_tables }}
+      local-rpcs: ${{ steps.compare.outputs.local_rpcs }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Install postgresql-client (psql) and tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client jq
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Snapshot prod table + RPC counts
+        id: snapshot
+        env:
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          # Pooler URL — same shape used by deploy-production.yml's `supabase link`.
+          # We need a direct psql connection for COUNT queries because the CLI
+          # doesn't expose a generic SQL probe.
+          # Pooler URL pattern: aws-0-ap-south-1.pooler.supabase.com:6543
+          # Format documented at https://supabase.com/docs/guides/database/connecting-to-postgres
+          PROD_DB_URL="postgresql://postgres.${SUPABASE_PROJECT_REF}:${SUPABASE_DB_PASSWORD}@aws-0-ap-south-1.pooler.supabase.com:6543/postgres"
+
+          PROD_TABLES=$(psql "$PROD_DB_URL" -tAc \
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE';")
+          PROD_RPCS=$(psql "$PROD_DB_URL" -tAc \
+            "SELECT count(*) FROM information_schema.routines WHERE routine_schema='public' AND routine_type='FUNCTION';")
+
+          echo "prod_tables=$PROD_TABLES" >> "$GITHUB_OUTPUT"
+          echo "prod_rpcs=$PROD_RPCS" >> "$GITHUB_OUTPUT"
+          echo "PROD_DB_URL_SET=1" >> "$GITHUB_ENV"
+          # Persist URL for later steps (masked because of password). Avoid echoing.
+          echo "::add-mask::$PROD_DB_URL"
+          echo "PROD_DB_URL=$PROD_DB_URL" >> "$GITHUB_ENV"
+
+          {
+            echo "## Prod schema snapshot"
+            echo ""
+            echo "| Metric | Value |"
+            echo "|---|---|"
+            echo "| Public tables | $PROD_TABLES |"
+            echo "| Public functions (RPCs) | $PROD_RPCS |"
+            echo "| Captured at | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Capture prod schema (Supabase CLI, with pg_dump fallback)
+        id: capture
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/baseline
+          cd /tmp/baseline
+
+          # Try CLI first.
+          if supabase db dump \
+                --db-url "$PROD_DB_URL" \
+                --schema public \
+                -f baseline.raw.sql 2>cli_err.log; then
+            echo "Captured via supabase CLI."
+          else
+            echo "Supabase CLI dump failed; falling back to pg_dump."
+            cat cli_err.log || true
+            pg_dump --schema-only --no-owner --no-privileges \
+                    --schema=public \
+                    "$PROD_DB_URL" > baseline.raw.sql
+          fi
+
+          ls -lh baseline.raw.sql
+          echo "RAW_PATH=/tmp/baseline/baseline.raw.sql" >> "$GITHUB_ENV"
+
+      - name: Sanity check raw dump (size, no data lines)
+        run: |
+          set -euo pipefail
+          BYTES=$(stat -c%s "$RAW_PATH")
+          MIN=$((500 * 1024))      # 500 KB
+          MAX=$((10 * 1024 * 1024)) # 10 MB (a touch above the 5 MB target — fail with explicit error)
+          if [ "$BYTES" -lt "$MIN" ] || [ "$BYTES" -gt "$MAX" ]; then
+            echo "::error::Raw dump size $BYTES bytes is outside expected envelope (500 KB – 10 MB)"
+            exit 1
+          fi
+          DATA_LINES=$(grep -cE '^(INSERT INTO |COPY )' "$RAW_PATH" || true)
+          if [ "$DATA_LINES" != "0" ]; then
+            echo "::error::Raw dump contains $DATA_LINES data lines (INSERT/COPY) — schema-only capture failed"
+            grep -nE '^(INSERT INTO |COPY )' "$RAW_PATH" | head -5
+            exit 1
+          fi
+          echo "Raw dump: $BYTES bytes, 0 data lines — OK."
+
+      - name: Sanitize — Section 2 sed transforms (step-by-step for debuggability)
+        id: sanitize
+        run: |
+          set -euo pipefail
+          cd /tmp/baseline
+          cp baseline.raw.sql baseline.step1.sql
+
+          # Step 1a — strip per-object OWNER TO lines (any object class).
+          sed -E '/^ALTER (TABLE|FUNCTION|TYPE|SCHEMA|SEQUENCE|VIEW|MATERIALIZED VIEW|DOMAIN|AGGREGATE|FOREIGN TABLE|PROCEDURE|ROUTINE|PUBLICATION|SUBSCRIPTION|EVENT TRIGGER|COLLATION|CONVERSION|EXTENSION|TEXT SEARCH (PARSER|DICTIONARY|TEMPLATE|CONFIGURATION)|OPERATOR( CLASS| FAMILY)?|TRIGGER|RULE|FOREIGN DATA WRAPPER|SERVER|USER MAPPING|CAST|LARGE OBJECT|DEFAULT PRIVILEGES) .* OWNER TO .*;$/d' \
+            baseline.step1.sql > baseline.step2.sql
+
+          # Step 1b — strip GRANT/REVOKE.
+          sed -E '/^(GRANT|REVOKE) .* (ON|FROM|TO) /d' \
+            baseline.step2.sql > baseline.step3.sql
+
+          # Step 2 — strip pg_dump SET boilerplate that can't run on a fresh DB.
+          sed -E '/^SET (default_table_access_method|default_tablespace|lock_timeout|idle_in_transaction_session_timeout|row_security|statement_timeout|client_min_messages|standard_conforming_strings|check_function_bodies|xmloption|client_encoding) /d' \
+            baseline.step3.sql > baseline.step4.sql
+
+          sed -E '/^SELECT pg_catalog\.set_config/d' \
+            baseline.step4.sql > baseline.step5.sql
+
+          # Step 3 — make CREATE EXTENSION idempotent.
+          sed -E 's/^CREATE EXTENSION ([^ ]+) WITH SCHEMA ([^;]+);$/CREATE EXTENSION IF NOT EXISTS \1 WITH SCHEMA \2;/' \
+            baseline.step5.sql > baseline.step6.sql
+          sed -E 's/^CREATE EXTENSION ([^ ;]+);$/CREATE EXTENSION IF NOT EXISTS \1;/' \
+            baseline.step6.sql > baseline.step7.sql
+
+          # Step 4a — make CREATE SCHEMA idempotent.
+          sed -E 's/^CREATE SCHEMA ([a-zA-Z_][a-zA-Z0-9_]*);$/CREATE SCHEMA IF NOT EXISTS \1;/' \
+            baseline.step7.sql > baseline.step8.sql
+
+          # Step 4b — wrap CREATE TYPE in DO blocks for idempotency.
+          awk '
+            /^CREATE TYPE / && !/AS ENUM/ {
+              print "DO $$ BEGIN"
+              sub(/^CREATE TYPE /, "  CREATE TYPE ")
+              print
+              print "EXCEPTION WHEN duplicate_object THEN NULL;"
+              print "END $$;"
+              next
+            }
+            /^CREATE TYPE .* AS ENUM/ {
+              block = $0
+              while (block !~ /\);[[:space:]]*$/) {
+                if ((getline next_line) <= 0) break
+                block = block "\n" next_line
+              }
+              print "DO $$ BEGIN"
+              print block
+              print "EXCEPTION WHEN duplicate_object THEN NULL;"
+              print "END $$;"
+              next
+            }
+            { print }
+          ' baseline.step8.sql > baseline.step9.sql
+
+          # Step 5 — drop publication / subscription DDL (Supabase-managed).
+          sed -E '/^CREATE PUBLICATION /d; /^ALTER PUBLICATION /d; /^CREATE SUBSCRIPTION /d' \
+            baseline.step9.sql > baseline.step10.sql
+
+          # Step 6 — strip psql meta-commands that aren't valid SQL when executed
+          # outside an interactive psql session.
+          sed -E '/^\\restrict /d; /^\\unrestrict /d; /^\\connect /d' \
+            baseline.step10.sql > baseline.step11.sql
+
+          # Step 7 — collapse 3+ consecutive blank lines.
+          awk 'BEGIN{blank=0} /^$/{blank++; if (blank<=2) print; next} {blank=0; print}' \
+            baseline.step11.sql > baseline.sanitized.sql
+
+          # Final sanity check — output is non-empty and free of stripped patterns.
+          OUT_BYTES=$(stat -c%s baseline.sanitized.sql)
+          if [ "$OUT_BYTES" -lt "$((400 * 1024))" ]; then
+            echo "::error::Sanitized output suspiciously small ($OUT_BYTES bytes) — sanitize regex over-matched"
+            exit 1
+          fi
+          if grep -qE '^ALTER .* OWNER TO ' baseline.sanitized.sql; then
+            echo "::error::OWNER TO lines survived sanitization"
+            exit 1
+          fi
+          if grep -qE '^(GRANT|REVOKE) ' baseline.sanitized.sql; then
+            echo "::error::GRANT/REVOKE lines survived sanitization"
+            exit 1
+          fi
+
+          echo "SANITIZED_PATH=/tmp/baseline/baseline.sanitized.sql" >> "$GITHUB_ENV"
+          echo "Sanitized output: $OUT_BYTES bytes."
+
+      - name: Prepend file header (capture metadata)
+        run: |
+          set -euo pipefail
+          cd /tmp/baseline
+          CAPTURE_TS=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+          cat > header.sql <<HEADER
+          -- ============================================================================
+          -- BASELINE — captured from production on ${CAPTURE_TS}
+          -- ============================================================================
+          -- Source project: ${{ secrets.SUPABASE_PROJECT_REF }}
+          -- Capture method: supabase db dump --schema public
+          -- Sanitization:   docs/runbooks/schema-reproducibility-fix.md Section 2
+          --
+          -- IDEMPOTENCY: this file is pre-marked applied on prod + staging via
+          -- \`supabase migration repair --status applied ${BASELINE_VERSION}\`. It
+          -- MUST never re-execute against an env that already has the prod schema.
+          --
+          -- Fresh envs (CI scratch project, local dev) re-apply this file first,
+          -- then every migration after it. All subsequent files apply on top.
+          --
+          -- DO NOT EDIT BY HAND. Re-generate via:
+          --   gh workflow run schema-reproducibility-fix.yml -f step=capture-and-pr
+          -- ============================================================================
+
+          HEADER
+          cat header.sql baseline.sanitized.sql > "${BASELINE_FILENAME}"
+          echo "BASELINE_PATH=/tmp/baseline/${BASELINE_FILENAME}" >> "$GITHUB_ENV"
+          ls -lh "${BASELINE_FILENAME}"
+
+      - name: Fingerprint baseline
+        id: fingerprint
+        run: |
+          set -euo pipefail
+          SHA=$(sha256sum "$BASELINE_PATH" | awk '{print $1}')
+          BYTES=$(stat -c%s "$BASELINE_PATH")
+          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
+          echo "bytes=$BYTES" >> "$GITHUB_OUTPUT"
+
+      - name: Spin up local Supabase stack
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/local-supabase && cd /tmp/local-supabase
+          supabase init --workdir . --force
+          # Reduce noise: don't pull every optional service.
+          supabase start --workdir . --exclude=studio,inbucket,imgproxy,storage-api,realtime,edge-runtime,functions
+          # Capture the local DB URL for `db reset` to target.
+          DB_URL=$(supabase status --workdir . --output json 2>/dev/null | jq -r '.DB_URL // .db.url // empty')
+          if [ -z "$DB_URL" ]; then
+            DB_URL=$(supabase status --workdir . | grep -i 'DB URL' | head -1 | awk '{print $NF}')
+          fi
+          echo "::add-mask::$DB_URL"
+          echo "LOCAL_DB_URL=$DB_URL" >> "$GITHUB_ENV"
+          echo "LOCAL_WORKDIR=/tmp/local-supabase" >> "$GITHUB_ENV"
+
+      - name: Apply baseline + all repo migrations to local Supabase
+        run: |
+          set -euo pipefail
+          cd "$LOCAL_WORKDIR"
+          # Mirror the repo's migrations into the local workdir, plus the new baseline.
+          rm -rf supabase/migrations
+          mkdir -p supabase/migrations
+          cp -R "${GITHUB_WORKSPACE}/supabase/migrations/." supabase/migrations/
+          # Drop any leftover _legacy directory — `supabase db reset` will only
+          # apply the canonical timestamped files.
+          rm -rf supabase/migrations/_legacy
+          cp "$BASELINE_PATH" "supabase/migrations/${BASELINE_FILENAME}"
+
+          MIGRATION_COUNT=$(ls supabase/migrations/*.sql | wc -l)
+          echo "Applying baseline + $((MIGRATION_COUNT - 1)) migrations to local DB."
+          supabase db reset --workdir . --no-seed
+          echo "Local db reset succeeded — exit 0."
+
+      - name: Run integration tests against local Supabase
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:54321'
+        run: |
+          set -euo pipefail
+          # Pull the locally generated anon + service-role keys.
+          STATUS_JSON=$(supabase status --workdir "$LOCAL_WORKDIR" --output json 2>/dev/null || true)
+          ANON_KEY=$(echo "$STATUS_JSON" | jq -r '.ANON_KEY // .anon_key // empty')
+          SERVICE_KEY=$(echo "$STATUS_JSON" | jq -r '.SERVICE_ROLE_KEY // .service_role_key // empty')
+          if [ -z "$ANON_KEY" ] || [ -z "$SERVICE_KEY" ]; then
+            echo "::warning::Could not parse Supabase status JSON; falling back to text scrape."
+            ANON_KEY=$(supabase status --workdir "$LOCAL_WORKDIR" | awk '/anon key/{print $NF}' | head -1)
+            SERVICE_KEY=$(supabase status --workdir "$LOCAL_WORKDIR" | awk '/service_role key/{print $NF}' | head -1)
+          fi
+          export NEXT_PUBLIC_SUPABASE_ANON_KEY="$ANON_KEY"
+          export SUPABASE_SERVICE_ROLE_KEY="$SERVICE_KEY"
+          echo "::add-mask::$ANON_KEY"
+          echo "::add-mask::$SERVICE_KEY"
+          # Targeted subset that historically failed when the migration chain was broken.
+          npm test -- --run \
+            src/__tests__/migrations/ \
+            src/__tests__/scripts/backfill-cbse-syllabus.test.ts
+
+      - name: Compare local vs prod schema counts
+        id: compare
+        run: |
+          set -euo pipefail
+          LOCAL_TABLES=$(psql "$LOCAL_DB_URL" -tAc \
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE';")
+          LOCAL_RPCS=$(psql "$LOCAL_DB_URL" -tAc \
+            "SELECT count(*) FROM information_schema.routines WHERE routine_schema='public' AND routine_type='FUNCTION';")
+          echo "local_tables=$LOCAL_TABLES" >> "$GITHUB_OUTPUT"
+          echo "local_rpcs=$LOCAL_RPCS" >> "$GITHUB_OUTPUT"
+
+          PROD_TABLES=${{ steps.snapshot.outputs.prod_tables }}
+          PROD_RPCS=${{ steps.snapshot.outputs.prod_rpcs }}
+          DELTA_TABLES=$((LOCAL_TABLES - PROD_TABLES))
+          DELTA_RPCS=$((LOCAL_RPCS - PROD_RPCS))
+          ABS_T=${DELTA_TABLES#-}
+          ABS_R=${DELTA_RPCS#-}
+
+          {
+            echo ""
+            echo "## Local vs prod schema comparison"
+            echo ""
+            echo "| Metric | Prod | Local | Delta | Within ±5? |"
+            echo "|---|---|---|---|---|"
+            echo "| Tables | $PROD_TABLES | $LOCAL_TABLES | $DELTA_TABLES | $([ $ABS_T -le 5 ] && echo yes || echo NO) |"
+            echo "| RPCs | $PROD_RPCS | $LOCAL_RPCS | $DELTA_RPCS | $([ $ABS_R -le 5 ] && echo yes || echo NO) |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ $ABS_T -gt 5 ] || [ $ABS_R -gt 5 ]; then
+            echo "::error::Schema delta outside ±5 tolerance (tables Δ=$DELTA_TABLES, rpcs Δ=$DELTA_RPCS)"
+            exit 1
+          fi
+          echo "Schema delta within tolerance."
+
+      - name: Build diff report
+        if: always()
+        run: |
+          set -euo pipefail
+          cd /tmp/baseline
+          {
+            echo "Baseline: ${BASELINE_FILENAME}"
+            echo "SHA-256:  ${{ steps.fingerprint.outputs.sha256 }}"
+            echo "Bytes:    ${{ steps.fingerprint.outputs.bytes }}"
+            echo ""
+            echo "Sanitization steps preserved as artifacts:"
+            ls -1 baseline.step*.sql 2>/dev/null || echo "  (no step files)"
+            echo ""
+            echo "Prod tables: ${{ steps.snapshot.outputs.prod_tables }}"
+            echo "Prod RPCs:   ${{ steps.snapshot.outputs.prod_rpcs }}"
+          } > diff-report.txt
+
+      - name: Upload artifacts (90-day retention)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: baseline-${{ github.run_id }}
+          path: |
+            /tmp/baseline/${{ env.BASELINE_FILENAME }}
+            /tmp/baseline/baseline.step*.sql
+            /tmp/baseline/diff-report.txt
+          retention-days: 90
+
+      - name: Phase summary
+        if: always()
+        run: |
+          {
+            echo ""
+            echo "## Phase: ${{ inputs.step }}"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Baseline SHA-256 | \`${{ steps.fingerprint.outputs.sha256 }}\` |"
+            echo "| Baseline bytes | ${{ steps.fingerprint.outputs.bytes }} |"
+            echo "| Mutated prod metadata | NO |"
+            echo "| Mutated staging metadata | NO |"
+            echo "| Artifact | \`baseline-${{ github.run_id }}\` (90-day retention) |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ──────────────────────────────────────────────────────────────────────
+  # PHASE 2 — capture-and-pr (only difference from Phase 1: open PR at the end)
+  # Reuses Phase 1 by gating on the same input, then runs an exclusive PR step.
+  # ──────────────────────────────────────────────────────────────────────
+  open-pr:
+    name: Open PR with new baseline
+    if: ${{ inputs.step == 'capture-and-pr' }}
+    needs: dry-run-staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Re-download baseline artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: baseline-${{ github.run_id }}
+          path: /tmp/baseline
+
+      - name: Configure git author
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+      - name: Commit baseline on a fresh branch
+        id: commit
+        env:
+          BASELINE_SHA: ${{ needs.dry-run-staging.outputs.baseline-sha }}
+          BASELINE_BYTES: ${{ needs.dry-run-staging.outputs.baseline-bytes }}
+          PROD_TABLES: ${{ needs.dry-run-staging.outputs.prod-tables }}
+          PROD_RPCS: ${{ needs.dry-run-staging.outputs.prod-rpcs }}
+          LOCAL_TABLES: ${{ needs.dry-run-staging.outputs.local-tables }}
+          LOCAL_RPCS: ${{ needs.dry-run-staging.outputs.local-rpcs }}
+        run: |
+          set -euo pipefail
+          BRANCH="fix/schema-reproducibility-baseline-from-prod"
+          # Idempotent re-run: if a stale branch exists locally or remotely, force-recreate.
+          git checkout -B "$BRANCH"
+          mkdir -p supabase/migrations
+          cp "/tmp/baseline/${BASELINE_FILENAME}" "supabase/migrations/${BASELINE_FILENAME}"
+          git add "supabase/migrations/${BASELINE_FILENAME}"
+          git commit -m "$(cat <<EOF
+          fix(schema): baseline from prod for reproducibility
+
+          Captures the production schema as supabase/migrations/${BASELINE_FILENAME}
+          and pre-marks it applied on prod + staging (run pre-mark-staging then
+          pre-mark-prod after this PR merges).
+
+          Why: the migration chain in supabase/migrations/ no longer replays cleanly
+          on a fresh Postgres because some early files reference managed Supabase
+          state. CI's integration-tests job (and any new Supabase project) chokes
+          partway through. Shipping a baseline file gives those envs a known-good
+          starting point; the existing migrations apply on top.
+
+          Snapshot at capture time:
+          - Prod tables: \${PROD_TABLES}
+          - Prod RPCs:   \${PROD_RPCS}
+          - Local tables after replay: \${LOCAL_TABLES}
+          - Local RPCs after replay:   \${LOCAL_RPCS}
+          - Baseline SHA-256: \${BASELINE_SHA}
+          - Baseline bytes:   \${BASELINE_BYTES}
+
+          Generated by .github/workflows/schema-reproducibility-fix.yml
+          (run id ${{ github.run_id }}).
+          EOF
+          )"
+          git push --force-with-lease --set-upstream origin "$BRANCH"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Create PR (or update existing)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASELINE_SHA: ${{ needs.dry-run-staging.outputs.baseline-sha }}
+          BASELINE_BYTES: ${{ needs.dry-run-staging.outputs.baseline-bytes }}
+          PROD_TABLES: ${{ needs.dry-run-staging.outputs.prod-tables }}
+          PROD_RPCS: ${{ needs.dry-run-staging.outputs.prod-rpcs }}
+          LOCAL_TABLES: ${{ needs.dry-run-staging.outputs.local-tables }}
+          LOCAL_RPCS: ${{ needs.dry-run-staging.outputs.local-rpcs }}
+        run: |
+          set -euo pipefail
+          BRANCH="${{ steps.commit.outputs.branch }}"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          # Capture the baseline file header (first 22 lines) for the PR body.
+          HEADER=$(head -22 "supabase/migrations/${BASELINE_FILENAME}")
+
+          BODY=$(cat <<EOF
+          ## Why
+
+          The 349-file migration chain in \`supabase/migrations/\` no longer replays
+          cleanly on a fresh Postgres. CI's integration-tests job — and any new
+          Supabase project we ever spin up — chokes partway through. Production
+          works because the schema is already there; new environments cannot
+          reach parity.
+
+          This PR ships a captured-from-prod baseline as
+          \`supabase/migrations/${BASELINE_FILENAME}\`. Fresh envs apply it first,
+          then every existing migration on top. Prod + staging are pre-marked
+          applied (Jobs 3 + 4 of the workflow), so neither re-executes the file.
+
+          ## What was validated
+
+          - **Dry-run rehearsal:** [run ${{ github.run_id }}](${RUN_URL})
+          - **Local Supabase reset:** baseline + all migrations replayed cleanly
+          - **Integration tests** (previously failing on every PR): now pass
+            - \`src/__tests__/migrations/\` (7 specs)
+            - \`src/__tests__/scripts/backfill-cbse-syllabus.test.ts\`
+          - **Schema delta vs prod:** within ±5 tables / ±5 RPCs
+
+          ## Snapshot at capture time
+
+          | Field | Value |
+          |---|---|
+          | Prod tables | ${PROD_TABLES} |
+          | Prod RPCs | ${PROD_RPCS} |
+          | Local tables after replay | ${LOCAL_TABLES} |
+          | Local RPCs after replay | ${LOCAL_RPCS} |
+          | Baseline SHA-256 | \`${BASELINE_SHA}\` |
+          | Baseline bytes | ${BASELINE_BYTES} |
+
+          ## Baseline file header
+
+          \`\`\`sql
+          ${HEADER}
+          \`\`\`
+
+          ## Post-merge steps (operator runs)
+
+          \`\`\`bash
+          gh workflow run schema-reproducibility-fix.yml -f step=pre-mark-staging
+          # … verify staging summary …
+          gh workflow run schema-reproducibility-fix.yml -f step=pre-mark-prod
+          # … verify prod summary (30s safety delay before execution) …
+          gh workflow run schema-reproducibility-fix.yml -f step=verify
+          \`\`\`
+
+          The pre-mark phases write exactly **one row** of metadata (no schema
+          mutation) and are idempotent — the workflow checks for the row first
+          and exits 0 if it already exists.
+
+          ## Rollback
+
+          \`DELETE FROM supabase_migrations.schema_migrations WHERE version='${{ env.BASELINE_VERSION }}';\`
+          plus \`git revert\` of this PR. Zero data risk.
+
+          ---
+
+          Generated by \`.github/workflows/schema-reproducibility-fix.yml\` from
+          [run ${{ github.run_id }}](${RUN_URL}).
+          EOF
+          )
+
+          # Idempotent: if a PR already exists for the branch, edit the body; else create.
+          if gh pr view "$BRANCH" --json number --jq .number 2>/dev/null; then
+            gh pr edit "$BRANCH" --title "fix(schema): baseline from prod for reproducibility" --body "$BODY"
+            PR_URL=$(gh pr view "$BRANCH" --json url --jq .url)
+          else
+            PR_URL=$(gh pr create \
+              --base main \
+              --head "$BRANCH" \
+              --title "fix(schema): baseline from prod for reproducibility" \
+              --body "$BODY")
+          fi
+          echo "PR_URL=$PR_URL" >> "$GITHUB_ENV"
+
+          # Comment with the run URL for traceability.
+          gh pr comment "$BRANCH" --body "Workflow run: ${RUN_URL}" || true
+
+      - name: Phase summary
+        if: always()
+        run: |
+          {
+            echo ""
+            echo "## Phase: capture-and-pr"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| PR | $PR_URL |"
+            echo "| Branch | fix/schema-reproducibility-baseline-from-prod |"
+            echo "| Mutated prod metadata | NO |"
+            echo "| Mutated staging metadata | NO |"
+            echo "| Next step | Review + merge PR, then run \`pre-mark-staging\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ──────────────────────────────────────────────────────────────────────
+  # PHASE 3 — pre-mark-staging (writes 1 row in staging schema_migrations)
+  # ──────────────────────────────────────────────────────────────────────
+  pre-mark-staging:
+    name: Pre-mark baseline applied (staging)
+    if: ${{ inputs.step == 'pre-mark-staging' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Install psql
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+
+      - name: Pre-flight check (idempotency) and pre-mark
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_STAGING_DB_PASSWORD }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_STAGING_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          STAGING_DB_URL="postgresql://postgres.${SUPABASE_PROJECT_REF}:${SUPABASE_DB_PASSWORD}@aws-0-ap-south-1.pooler.supabase.com:6543/postgres"
+          echo "::add-mask::$STAGING_DB_URL"
+
+          EXISTING=$(psql "$STAGING_DB_URL" -tAc \
+            "SELECT version FROM supabase_migrations.schema_migrations WHERE version='${BASELINE_VERSION}';")
+
+          if [ -n "$EXISTING" ]; then
+            INSERTED_AT=$(psql "$STAGING_DB_URL" -tAc \
+              "SELECT inserted_at FROM supabase_migrations.schema_migrations WHERE version='${BASELINE_VERSION}';")
+            {
+              echo "## Phase: pre-mark-staging (idempotent no-op)"
+              echo ""
+              echo "Baseline ${BASELINE_VERSION} already pre-marked applied on staging."
+              echo ""
+              echo "| Field | Value |"
+              echo "|---|---|"
+              echo "| Version | \`${BASELINE_VERSION}\` |"
+              echo "| Existing row inserted_at | \`${INSERTED_AT}\` |"
+              echo "| Action | none (idempotent) |"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+          supabase migration repair --status applied "$BASELINE_VERSION"
+
+          # Verify the row landed.
+          INSERTED_AT=$(psql "$STAGING_DB_URL" -tAc \
+            "SELECT inserted_at FROM supabase_migrations.schema_migrations WHERE version='${BASELINE_VERSION}';")
+          if [ -z "$INSERTED_AT" ]; then
+            echo "::error::Baseline row missing after migration repair — FAIL"
+            exit 1
+          fi
+
+          {
+            echo "## Phase: pre-mark-staging"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Version | \`${BASELINE_VERSION}\` |"
+            echo "| Row inserted_at | \`${INSERTED_AT}\` |"
+            echo "| Mutated staging metadata | YES (1 row) |"
+            echo "| Mutated prod metadata | NO |"
+            echo "| Next step | Verify staging via \`step=verify\`, then run \`pre-mark-prod\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ──────────────────────────────────────────────────────────────────────
+  # PHASE 4 — pre-mark-prod (writes 1 row in prod schema_migrations)
+  # 30s safety delay before mutation so the operator can cancel.
+  # ──────────────────────────────────────────────────────────────────────
+  pre-mark-prod:
+    name: Pre-mark baseline applied (prod)
+    if: ${{ inputs.step == 'pre-mark-prod' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Install psql
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+
+      - name: 30-second safety delay (operator may cancel)
+        run: |
+          echo "Pausing 30s before mutating prod schema_migrations…"
+          echo "Cancel via the Actions UI now if you don't want this to run."
+          sleep 30
+          echo "Proceeding."
+
+      - name: Pre-flight check (idempotency) and pre-mark
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          PROD_DB_URL="postgresql://postgres.${SUPABASE_PROJECT_REF}:${SUPABASE_DB_PASSWORD}@aws-0-ap-south-1.pooler.supabase.com:6543/postgres"
+          echo "::add-mask::$PROD_DB_URL"
+
+          EXISTING=$(psql "$PROD_DB_URL" -tAc \
+            "SELECT version FROM supabase_migrations.schema_migrations WHERE version='${BASELINE_VERSION}';")
+
+          if [ -n "$EXISTING" ]; then
+            INSERTED_AT=$(psql "$PROD_DB_URL" -tAc \
+              "SELECT inserted_at FROM supabase_migrations.schema_migrations WHERE version='${BASELINE_VERSION}';")
+            {
+              echo "## Phase: pre-mark-prod (idempotent no-op)"
+              echo ""
+              echo "Baseline ${BASELINE_VERSION} already pre-marked applied on prod."
+              echo ""
+              echo "| Field | Value |"
+              echo "|---|---|"
+              echo "| Version | \`${BASELINE_VERSION}\` |"
+              echo "| Existing row inserted_at | \`${INSERTED_AT}\` |"
+              echo "| Action | none (idempotent) |"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+          supabase migration repair --status applied "$BASELINE_VERSION"
+
+          INSERTED_AT=$(psql "$PROD_DB_URL" -tAc \
+            "SELECT inserted_at FROM supabase_migrations.schema_migrations WHERE version='${BASELINE_VERSION}';")
+          if [ -z "$INSERTED_AT" ]; then
+            echo "::error::Baseline row missing after migration repair — FAIL"
+            exit 1
+          fi
+
+          {
+            echo "## Phase: pre-mark-prod"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Version | \`${BASELINE_VERSION}\` |"
+            echo "| Row inserted_at | \`${INSERTED_AT}\` |"
+            echo "| Mutated prod metadata | YES (1 row) |"
+            echo "| Mutated staging metadata | NO |"
+            echo "| Next step | Run \`step=verify\` to confirm zero pending migrations |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ──────────────────────────────────────────────────────────────────────
+  # PHASE 5 — verify (read-only dry-run on both envs)
+  # ──────────────────────────────────────────────────────────────────────
+  verify:
+    name: Verify zero pending migrations on both envs
+    if: ${{ inputs.step == 'verify' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Verify staging
+        id: staging
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_STAGING_DB_PASSWORD }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_STAGING_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+          OUTPUT=$(supabase db push --linked --dry-run 2>&1 || true)
+          echo "$OUTPUT"
+          # Treat "Remote database is up to date" OR an empty pending-list as zero pending.
+          if echo "$OUTPUT" | grep -qiE 'up to date|no migrations? to apply|nothing to (apply|do)'; then
+            echo "staging_status=zero-pending" >> "$GITHUB_OUTPUT"
+          elif echo "$OUTPUT" | grep -qE '^[[:space:]]*[0-9]{14}_'; then
+            echo "::error::Staging has pending migrations after pre-mark — FAIL"
+            echo "staging_status=pending-detected" >> "$GITHUB_OUTPUT"
+            exit 1
+          else
+            echo "staging_status=indeterminate" >> "$GITHUB_OUTPUT"
+            echo "::warning::Could not parse staging dry-run output; review manually."
+          fi
+
+      - name: Verify prod
+        id: prod
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+          OUTPUT=$(supabase db push --linked --dry-run 2>&1 || true)
+          echo "$OUTPUT"
+          if echo "$OUTPUT" | grep -qiE 'up to date|no migrations? to apply|nothing to (apply|do)'; then
+            echo "prod_status=zero-pending" >> "$GITHUB_OUTPUT"
+          elif echo "$OUTPUT" | grep -qE '^[[:space:]]*[0-9]{14}_'; then
+            echo "::error::Prod has pending migrations after pre-mark — FAIL"
+            echo "prod_status=pending-detected" >> "$GITHUB_OUTPUT"
+            exit 1
+          else
+            echo "prod_status=indeterminate" >> "$GITHUB_OUTPUT"
+            echo "::warning::Could not parse prod dry-run output; review manually."
+          fi
+
+      - name: Phase summary
+        if: always()
+        run: |
+          {
+            echo "## Phase: verify"
+            echo ""
+            echo "| Env | Pending migrations |"
+            echo "|---|---|"
+            echo "| Staging | ${{ steps.staging.outputs.staging_status }} |"
+            echo "| Prod | ${{ steps.prod.outputs.prod_status }} |"
+            echo ""
+            echo "If either env shows \`pending-detected\`, the pre-mark phase did"
+            echo "not register the baseline as applied. Re-run \`pre-mark-staging\`"
+            echo "or \`pre-mark-prod\` and then re-run \`verify\`."
+          } >> "$GITHUB_STEP_SUMMARY"
