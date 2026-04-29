@@ -252,10 +252,10 @@ jobs:
           IN_LINES=$(wc -l < baseline.step12.sql)
           OUT_LINES=$(wc -l < baseline.step13.sql)
           DELTA=$((OUT_LINES - IN_LINES))
-          # Reorder adds at most 10 marker lines (one per non-empty bucket).
-          # Negative or > 10 → something dropped or duplicated. Fail loudly.
-          if [ "$DELTA" -lt 0 ] || [ "$DELTA" -gt 10 ]; then
-            echo "::error::Reorder line-count delta ($DELTA) outside expected ±10 envelope. in=$IN_LINES out=$OUT_LINES"
+          # Reorder adds at most 20 marker lines (one per non-empty bucket; 13 buckets after PR #466).
+          # Negative or > 20 → something dropped or duplicated. Fail loudly.
+          if [ "$DELTA" -lt 0 ] || [ "$DELTA" -gt 20 ]; then
+            echo "::error::Reorder line-count delta ($DELTA) outside expected ±20 envelope. in=$IN_LINES out=$OUT_LINES"
             diff <(grep -cE '^CREATE TABLE' baseline.step12.sql) <(grep -cE '^CREATE TABLE' baseline.step13.sql) || true
             diff <(grep -cE '^CREATE (OR REPLACE )?FUNCTION' baseline.step12.sql) <(grep -cE '^CREATE (OR REPLACE )?FUNCTION' baseline.step13.sql) || true
             exit 1
