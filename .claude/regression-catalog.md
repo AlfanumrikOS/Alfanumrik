@@ -325,6 +325,85 @@ Phase C (out of scope for this PR) will retire the legacy v1
 client helper, and tighten the explanation linter to also flag
 "first option / दूसरा विकल्प" position references.
 
+## Quiz Authenticity Phase C — Options Versioning + Integrity Hash (2026-04-30)
+
+Source: Phase A (PR #447, migration `20260428160000_quiz_session_shuffles.sql`)
+moved shuffle authority to the server and snapshots options +
+correct_answer_index into `quiz_session_shuffles` at session start.
+Phase B (PR #449, migration `20260429010000_quiz_authenticity_phase_b_constraints.sql`)
+added DB CHECK constraints on `question_bank` and a CI canary on
+`grounding.scoring` ops_events. Phase C (this entry, migration
+`20260430000000_quiz_phase_c_options_versioning.sql`) closes the last
+remaining vector: post-INSERT tampering of `quiz_session_shuffles` rows
+(malicious migration, buggy maintenance script, accidental update).
+Phase A trusted the snapshot row at submit time — Phase C makes that
+trust verifiable.
+
+Three durability layers:
+1. `question_bank.options_version` — auto-incrementing integer that
+   bumps on every UPDATE where `options` or `correct_answer_index`
+   changes (BEFORE UPDATE trigger; idempotent; bumps once per
+   statement, not per-column).
+2. `quiz_session_shuffles.options_version_at_serve` — snapshots the
+   current `question_bank.options_version` at `start_quiz_session()`
+   time. Observability-only cross-check between session start and
+   submit; logs an ops_events warning when versions disagree (does
+   NOT change scoring; that's still snapshot-bound).
+3. `quiz_session_shuffles.integrity_hash` — SHA256 of
+   `options_snapshot::text || correct_answer_index_snapshot::text`
+   computed at `start_quiz_session()` persist time.
+   `submit_quiz_results_v2` recomputes the hash before scoring;
+   mismatch → ZERO XP for that question + `ops_events` row with
+   `category='quiz.integrity_mismatch'`, `severity='warning'`. Other
+   questions in the same session score normally so a single tampered
+   row doesn't void the whole quiz.
+
+Backwards-compatible: ADD COLUMN IF NOT EXISTS, CREATE OR REPLACE
+FUNCTION, NULL `integrity_hash` skips verification (Phase A rows
+written before this migration continue to score per Phase A
+semantics). Mobile out of scope — v1 `submit_quiz_results` is
+untouched.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-53 | `quiz_phase_c_options_versioning_and_integrity_hash` | (1) **Trigger semantics**: pure-TS port of `question_bank_bump_options_version_fn` BEFORE UPDATE trigger — `options_version` bumps on UPDATE when `options` change, when `correct_answer_index` changes, or when both change (single bump per statement, not per-column); does NOT bump when only `question_text` changes; stays monotonic across multiple edits. (2) **start_quiz_session contract**: snapshot row carries `options_version_at_serve` + `integrity_hash`; hash is SHA256 of `options_snapshot::text + correct_answer_index_snapshot::text`, hex-encoded, 64 chars. (3) **submit_quiz_results_v2 hash match**: valid hash → standard Phase A scoring (snapshot-backed `is_correct` derivation), no ops_events warning. (4) **submit_quiz_results_v2 hash mismatch**: tampered `options_snapshot` whose `integrity_hash` no longer matches the recomputed value → `is_correct=false`, `integrity_failed=true`, ops_events row emitted with `category='quiz.integrity_mismatch'`, `severity='warning'`, `question_id` populated; ZERO XP contribution for that question. (5) **Mixed batch isolation**: a single tampered row in a multi-question session does NOT void the others — good rows score normally, bad row contributes zero, ops_events warning is for the bad row only. (6) **Phase A back-compat**: rows with NULL `integrity_hash` and NULL `options_version_at_serve` (pre-Phase-C inserts) skip verification and score per Phase A semantics; no ops_events warning emitted. | `src/__tests__/api/quiz-phase-c-options-versioning.test.ts` | E |
+
+### Invariants covered by this section
+
+- P1 (score accuracy — server is the only authority that re-derives
+  `is_correct`; if the snapshot it reads from has been tampered with
+  after INSERT, the integrity hash recomputation fails and the
+  question is awarded ZERO XP rather than silently scoring against
+  attacker-chosen options)
+- P4 (atomic quiz submission — integrity verification happens inside
+  `submit_quiz_results_v2`, the same transactional RPC that updates
+  `student_learning_profiles` / `students.xp_total`; the integrity
+  failure path is part of the same transaction, so ops_events warning
+  + zero-XP commit happen atomically with the rest of the submit)
+- P6 (question quality — `options_version` provides a monotonic stamp
+  for content edits, enabling cross-session drift detection;
+  `integrity_hash` makes the per-session snapshot self-verifying so
+  the snapshot contract Phase A introduced cannot be broken silently
+  by an out-of-band write to `quiz_session_shuffles`)
+
+### Notes on test strategy
+
+REG-53 is a contract / parity test in the same family as REG-37,
+REG-50, REG-51, and REG-54: there is no in-process Postgres in unit
+tests, so the migration's BEFORE UPDATE trigger and the
+`submit_quiz_results_v2` integrity-verification inner loop are
+re-implemented as pure-TS ports. The SHA256 computation uses Node's
+`crypto.createHash` and matches the SQL `encode(digest(... ::text,
+'sha256'), 'hex')` byte-for-byte for the snapshot shapes the
+migration cares about (array-of-short-strings + integer). If the
+SQL diverges (e.g. someone changes the trigger to bump on
+non-relevant column changes, or changes the hash composition order),
+this test must fail and quality must reject — the parity copy must
+be re-synced. The migration also adds operational observability
+(`ops_events` warning on hash mismatch) that ops can monitor in
+production; a non-zero count of `quiz.integrity_mismatch` events in
+a 24h window is direct evidence of a Phase C contract violation.
+
 ## AI Quiz-Generator Validation Oracle (Phase C+ — 2026-04-29)
 
 Source: Phase C migration header

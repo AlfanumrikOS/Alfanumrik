@@ -16,34 +16,34 @@ Indian K-12 EdTech platform (CBSE grades 6-12). Next.js 16 + Supabase + Razorpay
 | AI | Claude API (Haiku) via Edge Functions: foxy-tutor, ncert-solver, quiz-generator, quiz-generator-v2, cme-engine |
 | Payments | Razorpay (INR, monthly recurring + yearly one-time) |
 | Deployment | Vercel (bom1/Mumbai), GitHub Actions CI/CD (3 workflows) |
-| Testing | Vitest (2,511 tests, 84 files), Playwright E2E (16 specs). **Regression catalog: 11 entries catalogued. Aspirational target: 35. Last reconciled: 2026-04-27.** Many P-invariants have direct unit/E2E tests that aren't yet promoted into the catalog — see "Regression catalog status by invariant" below. |
+| Testing | Vitest (2,511 tests, 84 files), Playwright E2E (16 specs). **Regression catalog: 25 entries catalogued (REG-53 added 2026-04-29 — Phase C options versioning + integrity hash). Aspirational target: 35. Last reconciled: 2026-04-29.** Many P-invariants have direct unit/E2E tests that aren't yet promoted into the catalog — see "Regression catalog status by invariant" below. |
 | Monitoring | Sentry (client/server/edge), Vercel Analytics, structured logging |
 | Mobile | Flutter + Riverpod (/mobile) |
 | Offline | Service worker, localStorage cache, background sync |
 
-### Regression catalog status by P-invariant (reconciled 2026-04-27)
+### Regression catalog status by P-invariant (reconciled 2026-04-29)
 
 Status key: **catalogued** = explicit entry in `.claude/regression-catalog.md`; **tested-only** = unit/integration/E2E tests exist but no catalog entry; **no-coverage** = no enforcing test.
 
 | Invariant | Status | Notes |
 |---|---|---|
-| P1 Score accuracy | tested-only | `src/__tests__/regression-academic-chain.test.ts`, `xp-ledger-parity.test.ts` cover the formula; not catalogued |
-| P2 XP economy | tested-only | xp-rules unit tests + ledger parity test exist; daily-cap clamp + perfect-score branches are gaps (see vitest TODO at xp-rules branches=75) |
-| P3 Anti-cheat | partial | REG-40 catalogues remediation oracle-shape (defense-in-depth); core 3-rule client+server checks tested but not catalogued |
-| P4 Atomic quiz submission | tested-only | RPC parity test exists; not catalogued |
+| P1 Score accuracy | catalogued | REG-45 (E2E happy-path), REG-51 (server-shuffle authority — server is the only re-deriver), REG-52 (production canary on `grounding.scoring`), REG-53 (Phase C integrity hash → tampered snapshot scores zero) |
+| P2 XP economy | catalogued | REG-45 (E2E XP from server response, daily-cap copy), REG-48 (daily-cap clamp + SQL/TS literal parity drift detection + `atomic_quiz_profile_update` return-shape pin) |
+| P3 Anti-cheat | partial | REG-40 catalogues remediation oracle-shape (defense-in-depth); REG-45 enforces 3-rule checks at the E2E layer; core 3-rule unit checks tested but not separately catalogued |
+| P4 Atomic quiz submission | catalogued (partial) | REG-53 covers integrity-failure branch atomic with submit transaction; broader RPC parity test still tested-only |
 | P5 Grade format | catalogued | SG-1..SG-6 cover grade-string contract end-to-end |
-| P6 Question quality | catalogued | REG-39 (distractor index 0..3) explicit; broader 4-option/explanation checks tested-only |
+| P6 Question quality | catalogued | REG-39 (distractor index 0..3), REG-51 (snapshot isolation from mid-session edits), REG-53 (`options_version` monotonic stamp + SHA256 self-verifying snapshot), REG-54 (AI quiz-generator validation oracle — deterministic + LLM-grader gate before `question_bank` insert) |
 | P7 Bilingual UI | no-coverage | No regression test enforces Hi/En parity on critical surfaces |
 | P8 RLS boundary | catalogued (partial) | SG covers governance service; broader RLS policy coverage is tested-only via `rls-student-id-policies.test.ts` |
 | P9 RBAC enforcement | catalogued (partial) | SG-3..SG-5 cover plan/stream gating; full 71-permission matrix is tested-only |
 | P10 Bundle budget | tested-only | CI bundle-size check enforces; no catalog entry |
-| P11 Payment integrity | tested-only | `webhook-fallback.test.ts`, `payment-ops-api.test.ts`; atomic activation + advisory-lock branches uncatalogued |
-| P12 AI safety | catalogued | REG-37 (Voyage fallback), REG-39 (kill switch + cache) |
-| P13 Data privacy | no-coverage | Logger redaction has unit tests but no regression entry; Sentry client PII path uncovered (audit Round 2 to add) |
+| P11 Payment integrity | catalogued | REG-46 (E2E payment funnel), REG-47 (atomic_plan_change atomicity — bulk plan-change route flows through RPC + advisory lock + audit row in single transaction; per-student isolation; static contract canary blocks direct table updates) |
+| P12 AI safety | catalogued | REG-37 (Voyage fallback), REG-39 (kill switch + cache), REG-50 (single-retrieval contract for Foxy — `retrieveChunks` ≤ 1 call/turn, cache short-circuits before retrieval), REG-54 (oracle gates AI hallucinations before `question_bank`) |
+| P13 Data privacy | catalogued | REG-46 (analytics payload redaction at E2E layer), REG-49 (Sentry client `beforeSend` redactor — user identity / headers / URL params / body / cookies / extra / contexts / breadcrumbs / tags all redacted before event leaves browser) |
 | P14 Review chain completeness | n/a (process invariant) | Enforced by `review-chain.sh` hook + orchestrator Gate 5 |
 | P15 Onboarding integrity | tested-only | `auth-callback-role-redirect.test.ts` and identity tests; 3-role E2E gap |
 
-Round 2 audit identified 4 new catalog entries to promote: atomic_plan_change atomicity, daily XP cap, Sentry client PII redaction, single-retrieval contract for Foxy. Testing agent owns adding these to `.claude/regression-catalog.md`.
+Round 2 audit promotions (atomic_plan_change atomicity, daily XP cap, Sentry client PII redaction, single-retrieval contract for Foxy) shipped as REG-47, REG-48, REG-49, REG-50. Phase A/B/C quiz-authenticity work shipped as REG-51, REG-52, REG-53. AI quiz-generator validation oracle shipped as REG-54. Total catalog: 25 entries (target: 35).
 
 ## Critical File Map
 | Area | Files |
