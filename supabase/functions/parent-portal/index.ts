@@ -26,6 +26,34 @@ function getServiceClient() {
   })
 }
 
+// ─── Date helpers — IST bucketing ─────────────────────────────────────────
+//
+// All Indian users live in IST (UTC+5:30). The CBSE academic day is an IST
+// day. Bucketing quiz activity by UTC date causes today's early-morning IST
+// quizzes (anything before 05:30 IST) to be silently dropped from the
+// previous UTC date AND — more visibly — leaves the "today" cell on the
+// "This week" chart empty for hours after the user took quizzes (because
+// the chart loop builds dateStr from `new Date()` in UTC while quiz
+// `created_at` slices are also UTC, so when the IST day rolls over at
+// 18:30 UTC the previous day, the chart's "Wed" UTC slot doesn't match
+// the user's IST "Wed" until 18:30 UTC).
+//
+// `istDateString(d)` returns the IST calendar date (YYYY-MM-DD) for a given
+// instant, regardless of the host's local timezone. Edge Functions run in
+// UTC by default; this is the canonical conversion.
+const IST_OFFSET_MIN = 330 // +5h30m
+const IST_DAY_LABELS_FROM_SUNDAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+function istDateString(d: Date): string {
+  const istMs = d.getTime() + IST_OFFSET_MIN * 60_000
+  return new Date(istMs).toISOString().slice(0, 10)
+}
+
+function istDayOfWeekLabel(d: Date): string {
+  const istMs = d.getTime() + IST_OFFSET_MIN * 60_000
+  return IST_DAY_LABELS_FROM_SUNDAY[new Date(istMs).getUTCDay()]
+}
+
 // ─── Action Handlers ──────────────────────────────────────────────────────
 
 /**
@@ -323,26 +351,38 @@ async function getChildDashboardData(
   )
   const accuracy = totalQuestions > 0 ? Math.round((totalCorrect / totalQuestions) * 100) : 0
 
-  // Daily activity (last 7 days)
-  const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-  const today = new Date()
-  const dailyActivity = []
+  // Daily activity (last 7 IST days).
+  //
+  // Bug fix (2026-04-29): bucket by IST calendar date, not UTC.
+  //   - The chart cell for "today" is the current IST date.
+  //   - A quiz `created_at` (TIMESTAMPTZ, stored as UTC) is matched to its
+  //     IST calendar date via istDateString(). This ensures a quiz taken at
+  //     10:00 IST today (= 04:30 UTC today) lands in today's cell, and a
+  //     quiz at 04:00 IST today (= 22:30 UTC yesterday) also lands in
+  //     today's cell — matching how an Indian user perceives "today".
+  const nowUtc = new Date()
+  const dailyActivity: Array<Record<string, unknown>> = []
   const weekQuizzes: Record<string, unknown>[] = []
 
   for (let i = 6; i >= 0; i--) {
-    const d = new Date(today)
-    d.setDate(d.getDate() - i)
-    const dateStr = d.toISOString().slice(0, 10)
-    const dayQuizzes = allQuizzes.filter(
-      (q: Record<string, unknown>) => String(q.created_at || '').slice(0, 10) === dateStr
-    )
+    // Step back i days in IST. We add the offset once before subtracting
+    // days so the "midnight boundary" is the IST one, not UTC's.
+    const d = new Date(nowUtc.getTime() - i * 24 * 60 * 60 * 1000)
+    const dateStr = istDateString(d)
+    const dayQuizzes = allQuizzes.filter((q: Record<string, unknown>) => {
+      const createdAt = q.created_at
+      if (!createdAt) return false
+      const qDate = new Date(String(createdAt))
+      if (Number.isNaN(qDate.getTime())) return false
+      return istDateString(qDate) === dateStr
+    })
     const quizCount = dayQuizzes.length
     const dayXp = dayQuizzes.reduce(
       (sum: number, q: Record<string, unknown>) => sum + (Number(q.correct_answers) || 0) * 10,
       0
     )
     dailyActivity.push({
-      label: dayLabels[d.getDay()],
+      label: istDayOfWeekLabel(d),
       day: dateStr,
       quizzes: quizCount,
       xp: dayXp,
