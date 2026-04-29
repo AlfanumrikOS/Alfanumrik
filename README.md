@@ -9,7 +9,7 @@ Alfanumrik provides an AI-powered learning experience with adaptive quizzes, an 
 | Layer | Technology |
 |-------|-----------|
 | Frontend | Next.js 16.2 (App Router), React 18, Tailwind CSS 3.4, SWR |
-| Backend | Next.js API routes (151 endpoints) + Supabase Edge Functions (29 functions, Deno) |
+| Backend | Next.js API routes (179 endpoints) + Supabase Edge Functions (29 functions, Deno) |
 | Database | Supabase PostgreSQL with RLS (440+ policies), RBAC (6 roles, 71 permissions), pgvector |
 | Auth | Supabase Auth (email/PKCE), JWT auto-refresh via middleware |
 | Payments | Razorpay (INR subscriptions) |
@@ -75,7 +75,7 @@ The app runs at `http://localhost:3000`.
 ```
 src/
   app/              # Next.js App Router pages and API routes
-    api/            # Backend API routes (151 endpoints)
+    api/            # Backend API routes (179 endpoints)
     dashboard/      # Student dashboard
     foxy/           # AI tutor chat interface
     learn/          # Learning content browser
@@ -83,7 +83,7 @@ src/
     parent/         # Parent portal (6 pages)
     teacher/        # Teacher portal (8 pages)
     school-admin/   # School admin portal (B2B)
-    super-admin/    # Super admin panel (24 pages)
+    super-admin/    # Super admin panel (43 pages)
   components/       # Shared React components
     quiz/           # Quiz engine components
     ui/             # Design system primitives
@@ -91,13 +91,13 @@ src/
   lib/              # Shared utilities, clients, and business logic
 supabase/
   functions/        # Deno Edge Functions (29 functions)
-  migrations/       # PostgreSQL migrations (265 files)
+  migrations/       # PostgreSQL migrations (358 files)
 mobile/             # Flutter mobile app
 docs/               # Operational documentation
-e2e/                # Playwright E2E test specs (16 specs)
+e2e/                # Playwright E2E test specs (26 specs)
 ```
 
-753 TypeScript source files across the codebase.
+1,168 TypeScript source files across the codebase.
 
 ## Multi-Portal Architecture
 
@@ -131,8 +131,8 @@ All AI responses are filtered for age-appropriateness (grades 6-12), scoped to t
 
 | Tool | Scope | Count |
 |------|-------|-------|
-| Vitest | Unit tests | 2,511 tests across 84 files |
-| Playwright | End-to-end tests | 16 specs |
+| Vitest | Unit tests | 4,928 tests across ~230 files |
+| Playwright | End-to-end tests | 26 specs |
 
 Coverage thresholds enforced in CI:
 
@@ -194,6 +194,14 @@ Development is governed by product invariants defined in [.claude/CLAUDE.md](./.
 - **Review chain requirements** -- changes to critical files trigger mandatory downstream reviews (e.g., scoring changes require testing, AI, backend, frontend, and mobile review).
 - **Release gates** -- type-check, lint, tests, build, and domain review must all pass before merge.
 
+## Recent Highlights (April 2026)
+
+- **Phase A/B/C quiz authenticity** -- server-authoritative shuffle, DB CHECK constraints, options-versioning + integrity hash (PRs #447, #449, #452)
+- **AI quiz-generator validation oracle** -- deterministic + LLM-grader gate catching hallucinations before bank insert (PRs #454, #460)
+- **Server-authoritative quiz mobile cutover** -- Flutter app on `submit_quiz_results_v2` + `/api/foxy` SSE route (PR #453)
+- **IRT 2PL nightly calibration + Misconception curator** -- Foxy moat phases 0-5 active in production
+- **Schema-reproducibility fix workflow** -- `gh workflow run schema-reproducibility-fix.yml -f step=...` automation in place; final TOC-driven topo-sort scheduled for next sprint
+
 ## License
 
-Proprietary. All rights reserved.
+MIT License -- see [LICENSE](./LICENSE) file.
