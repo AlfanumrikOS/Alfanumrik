@@ -805,3 +805,87 @@ supabase migration repair --status applied \
 
 # 8. Watch deploy: confirm "Skipping migration ...00000000000000..." on prod
 ```
+
+---
+
+## Section 11: Automated execution via GitHub Actions
+
+> **This section SUPERSEDES the manual Sections 0–10 for normal operations.** The
+> `.github/workflows/schema-reproducibility-fix.yml` workflow automates Sections
+> 1 through 9 end-to-end, so the operator does **not** need to run any local
+> `pg_dump`, `sed`, `perl`, or `supabase` commands. The manual sections above
+> remain the authoritative reference for *what* the workflow does at each phase
+> and are the primary debugging surface when anything fails.
+
+The workflow is `workflow_dispatch` only — there is no auto-trigger. It is
+driven by a single `step` input that selects one of five idempotent phases.
+
+### Invocations
+
+```bash
+# 1. Read-only rehearsal: capture + sanitize + local-validate against a fresh
+#    Supabase local stack. Uploads `baseline.sanitized.sql` as an artifact for
+#    review. Does NOT touch prod or staging metadata.
+gh workflow run schema-reproducibility-fix.yml -f step=dry-run-staging
+
+# 2. Real capture + sanitize + local-validate, then open a PR adding
+#    `supabase/migrations/00000000000000_baseline_from_prod.sql`. Operator
+#    reviews and merges that PR.
+gh workflow run schema-reproducibility-fix.yml -f step=capture-and-pr
+
+# 3. Pre-mark the baseline applied on the staging project (one row inserted
+#    into `supabase_migrations.schema_migrations`; no SQL executed).
+gh workflow run schema-reproducibility-fix.yml -f step=pre-mark-staging
+
+# 4. Same on prod. The job sleeps 30 seconds before execution so the operator
+#    can cancel the run if anything looks wrong.
+gh workflow run schema-reproducibility-fix.yml -f step=pre-mark-prod
+
+# 5. Confirm zero pending migrations on both envs (`db push --dry-run`
+#    against staging and prod).
+gh workflow run schema-reproducibility-fix.yml -f step=verify
+```
+
+### Step → secrets / mutation / success / failure matrix
+
+| Step | Secrets used | Mutates prod? | Success signal | On failure |
+|---|---|---|---|---|
+| `dry-run-staging` | `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`, `SUPABASE_PROJECT_REF` (prod, read-only `pg_dump`) | No | Job green; `baseline.sanitized.sql` artifact uploaded; step summary lists prod-table-count vs local-table-count within ±5 | Re-run after fixing the failing transform; nothing was mutated. Inspect the artifact and the failed step's logs. |
+| `capture-and-pr` | Same as above plus `GITHUB_TOKEN` (to open the PR) | No (the PR opens; merge is gated on operator review) | PR opened with title `fix(schema): baseline from prod for reproducibility`, +1 file, dry-run job referenced in the PR body succeeded | Close the PR if it opened with a bad baseline. Re-run after fixing the regex / transform. The PR branch is throwaway — delete and re-run. |
+| `pre-mark-staging` | `SUPABASE_ACCESS_TOKEN`, `SUPABASE_STAGING_DB_PASSWORD`, `SUPABASE_STAGING_PROJECT_REF` | No (staging only) | Step summary shows the new row in `supabase_migrations.schema_migrations` for version `00000000000000`; idempotent re-run reports "already applied" and exits 0 | Drop into Section 7 of the manual runbook. Inspect the staging `schema_migrations` table directly via `psql`. Most common cause: wrong staging project ref / password — verify against repo secrets. |
+| `pre-mark-prod` | `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`, `SUPABASE_PROJECT_REF` | **Yes** — one metadata row inserted (no schema mutation; the SQL is **not** executed) | Same as staging: row visible in prod `supabase_migrations.schema_migrations`; idempotent re-run is a no-op | Drop into Section 8 of the manual runbook. If the row landed but a later step failed, see Section 9.1 (rollback) and the manual `DELETE FROM supabase_migrations.schema_migrations WHERE version='00000000000000'` recipe. |
+| `verify` | All five Supabase secrets (staging + prod, read-only) | No | Both `db push --dry-run` calls report `Remote database is up to date.` (zero pending migrations) | If prod reports pending migrations, the pre-mark didn't take — re-run `pre-mark-prod` and re-verify. If staging reports pending, same with `pre-mark-staging`. Persistent failure → Section 9 (failure modes). |
+
+### Recommended invocation order
+
+1. `dry-run-staging` → review the uploaded `baseline.sanitized.sql` artifact and the step summary (prod vs local table/RPC counts within ±5).
+2. `capture-and-pr` → review the PR it opens; merge it once the diff and dry-run reference both look good.
+3. `pre-mark-staging` → verify the staging row landed (the workflow's step summary prints the inserted row).
+4. Confirm staging is healthy: `verify` will report zero pending migrations on staging.
+5. `pre-mark-prod` → 30-second safety delay gives a final cancel window before the metadata row is inserted on prod.
+6. Confirm prod is healthy: re-run `verify` (both envs reporting zero pending migrations is the final acceptance).
+
+### When to fall back to the manual runbook
+
+The workflow does not cover:
+- Debugging *why* a `sed` / `perl` transform produced unexpected output (use Section 2 to step through the transforms by hand against the workflow's uploaded artifact).
+- Compensating-migration authoring when a fresh project bootstrap reveals an object missing from the baseline (Section 9.2).
+- Rolling back the pre-mark row outside the workflow (Section 9.1 — the manual `DELETE` against `supabase_migrations.schema_migrations` is the prescribed recovery).
+- Cleaning up `_legacy/` and stub migrations after the baseline has been live for 7 days (Section 10 — explicitly out of scope for the workflow).
+
+For any of those, drop back to the relevant section above. Section 0
+(prerequisites) lists the tools you'll need installed locally.
+
+### Secrets used (no new secrets required)
+
+The workflow uses only the five secrets the existing `deploy-production` and
+`deploy-staging` workflows already use:
+
+- `SUPABASE_ACCESS_TOKEN`
+- `SUPABASE_DB_PASSWORD` (prod)
+- `SUPABASE_PROJECT_REF` (prod)
+- `SUPABASE_STAGING_DB_PASSWORD`
+- `SUPABASE_STAGING_PROJECT_REF`
+
+A concurrency group (`schema-reproducibility-fix`) prevents two operators from
+running `pre-mark-prod` simultaneously.
