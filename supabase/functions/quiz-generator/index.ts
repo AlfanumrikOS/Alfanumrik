@@ -30,6 +30,7 @@ import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-
 import { corsHeaders, getCorsHeaders } from '../_shared/cors.ts'
 import { retrieveChunks } from '../_shared/retrieval.ts'
 import { validateSubjectRpc } from '../_shared/subjects-validate.ts'
+import { runDeterministicChecks, type CandidateQuestion } from '../_shared/quiz-oracle.ts'
 
 // ─── In-memory rate limiter (first line of defence) ─────────────────────────
 // NOTE: This Map is per-isolate and will reset on cold starts. It provides fast
@@ -1358,30 +1359,28 @@ Deno.serve(async (req) => {
     // review indicators (e.g. "Revision question") without changing QuestionRow shape
     const reviewQuestionIds = [...reviewIds]
 
-    // ── P6 runtime validator (defense-in-depth) ────────────────────────
-    // Strip any question that fails the P6 contract:
-    //   - non-empty question_text without `{{` or `[BLANK]` placeholders
-    //   - exactly 4 distinct, non-empty options
-    //   - correct_answer_index integer in 0..3
-    //   - non-empty explanation
-    // The DB CHECK constraints already enforce this on inserts, but
-    // RAG-derived rows or partial-update edge cases could still slip a
-    // bad shape through; this is the last line of defense before the
-    // wire so students never see a malformed question.
-    const TEMPLATE_RE = /\{\{|\[BLANK\]/i;
+    // ── Oracle deterministic gate (REG-54, defense-in-depth) ───────────
+    // The oracle's deterministic checks are a strict superset of the legacy
+    // P6 runtime validator (same P6 rules + option-overlap + numeric
+    // consistency). The LLM-grader pass is intentionally NOT run here —
+    // this is the hot quiz-serving path and questions in question_bank
+    // were already gated by the oracle on insertion via bulk-question-gen
+    // (when ff_quiz_oracle_enabled=ON). Running deterministic-only gives
+    // sub-millisecond per-question overhead and zero Claude calls.
+    //
+    // The DB CHECK constraints already enforce P6 on inserts, but RAG-
+    // derived rows or partial-update edge cases could still slip a bad
+    // shape through; this is the last line of defense before the wire.
     const validated = interleaved.filter((q) => {
-      const text = typeof q?.question_text === 'string' ? q.question_text.trim() : '';
-      if (!text || TEMPLATE_RE.test(text)) return false;
-      const opts: unknown[] = Array.isArray(q?.options) ? q.options : [];
-      if (opts.length !== 4) return false;
-      const cleaned = opts.map((o) => (typeof o === 'string' ? o.trim() : ''));
-      if (cleaned.some((o) => !o)) return false;
-      if (new Set(cleaned).size !== 4) return false;
-      const idx = q?.correct_answer_index;
-      if (typeof idx !== 'number' || !Number.isInteger(idx) || idx < 0 || idx > 3) return false;
-      const exp = typeof q?.explanation === 'string' ? q.explanation.trim() : '';
-      if (!exp) return false;
-      return true;
+      const candidate: CandidateQuestion = {
+        question_text: typeof q?.question_text === 'string' ? q.question_text : '',
+        options: Array.isArray(q?.options) ? (q.options as string[]) : [],
+        correct_answer_index:
+          typeof q?.correct_answer_index === 'number' ? q.correct_answer_index : -1,
+        explanation: typeof q?.explanation === 'string' ? q.explanation : '',
+      };
+      const fail = runDeterministicChecks(candidate);
+      return fail === null;
     });
     const droppedByValidator = interleaved.length - validated.length;
     if (droppedByValidator > 0) {
