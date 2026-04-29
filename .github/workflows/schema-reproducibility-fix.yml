@@ -59,6 +59,7 @@ jobs:
     if: ${{ inputs.step == 'dry-run-staging' || inputs.step == 'capture-and-pr' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    environment: production
     permissions:
       contents: read
     outputs:
@@ -778,12 +779,18 @@ jobs:
 
   # ──────────────────────────────────────────────────────────────────────
   # PHASE 5 — verify (read-only dry-run on both envs)
+  # Split into two sequential jobs so each can declare its own GitHub
+  # Environment (a job may only declare one). verify-staging runs first;
+  # verify-prod runs after and reads its sibling's status for the summary.
   # ──────────────────────────────────────────────────────────────────────
-  verify:
-    name: Verify zero pending migrations on both envs
+  verify-staging:
+    name: Verify zero pending migrations (staging)
     if: ${{ inputs.step == 'verify' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    environment: staging
+    outputs:
+      staging_status: ${{ steps.staging.outputs.staging_status }}
     steps:
       - uses: actions/checkout@v4
 
@@ -813,6 +820,20 @@ jobs:
             echo "staging_status=indeterminate" >> "$GITHUB_OUTPUT"
             echo "::warning::Could not parse staging dry-run output; review manually."
           fi
+
+  verify-prod:
+    name: Verify zero pending migrations (prod)
+    if: ${{ inputs.step == 'verify' }}
+    needs: verify-staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
 
       - name: Verify prod
         id: prod
@@ -844,7 +865,7 @@ jobs:
             echo ""
             echo "| Env | Pending migrations |"
             echo "|---|---|"
-            echo "| Staging | ${{ steps.staging.outputs.staging_status }} |"
+            echo "| Staging | ${{ needs.verify-staging.outputs.staging_status }} |"
             echo "| Prod | ${{ steps.prod.outputs.prod_status }} |"
             echo ""
             echo "If either env shows \`pending-detected\`, the pre-mark phase did"
