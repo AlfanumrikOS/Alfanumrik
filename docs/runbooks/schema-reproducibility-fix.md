@@ -258,7 +258,69 @@ sed -i.bak -E 's/^CREATE FUNCTION /CREATE OR REPLACE FUNCTION /' baseline.sql
 
 **Acceptance**: `grep -c '^CREATE FUNCTION ' baseline.sql` is **0**.
 
-### 2.6 Final sanity sweep
+### 2.6 Reorder so tables come before functions (`%ROWTYPE` compatibility)
+
+`pg_dump --schema-only` emits objects in alphabetical-ish-by-class order
+(roughly: extensions → schemas → types → functions → tables → indexes →
+constraints → triggers → policies). It relies on
+`SET check_function_bodies = false` so that the *body* of a `CREATE FUNCTION`
+is not validated against a missing referenced object on first parse.
+
+**The catch**: `%ROWTYPE` declarations in PL/pgSQL `DECLARE` blocks
+(`v_rec public.adaptive_mastery%ROWTYPE`) are resolved at **PARSE time** of
+the function header / declarations, BEFORE `check_function_bodies` kicks in.
+So a function emitted at line ~1,150 that declares `%ROWTYPE` against a
+table emitted at line ~8,700 fails to apply on a fresh Postgres with
+`ERROR: relation "public.adaptive_mastery" does not exist (SQLSTATE 42P01)`,
+even though `check_function_bodies = false` is set.
+
+This is a known pg_dump idiosyncrasy. The dump is a faithful representation
+of the live schema but is structurally non-replayable.
+
+**The fix**: route every top-level statement into one of 10 ordered buckets
+and concatenate in dependency order:
+
+```
+1. setup     — SET, CREATE EXTENSION, CREATE SCHEMA, COMMENT ON SCHEMA
+2. types     — CREATE TYPE, CREATE DOMAIN (incl. DO $$..$$ idempotency wraps)
+3. sequences — CREATE SEQUENCE, ALTER SEQUENCE
+4. tables    — CREATE TABLE, ALTER TABLE (non-RLS)
+5. indexes   — CREATE INDEX, CREATE UNIQUE INDEX
+6. functions — CREATE [OR REPLACE] FUNCTION, CREATE PROCEDURE
+7. views     — CREATE [OR REPLACE] [MATERIALIZED] VIEW
+8. triggers  — CREATE TRIGGER, CREATE EVENT TRIGGER
+9. policies  — CREATE/DROP POLICY, ALTER TABLE … ENABLE ROW LEVEL SECURITY
+10. other    — anything not classified (kept at the end so we never drop)
+```
+
+The reorder is implemented in `scripts/reorder-baseline.mjs` (Node, no
+deps). Self-tests via `node scripts/reorder-baseline.mjs --self-test`. The
+GitHub Actions workflow runs it automatically as Step 8 of the sanitize
+phase (`baseline.step12.sql` → `baseline.step13.sql`), and includes a
+hard-coded post-reorder check that `public.adaptive_mastery` (table)
+precedes `public.bkt_update` (function) in the output. If this check ever
+fails, the dry-run aborts before touching prod.
+
+To run the reorder by hand against a sanitized baseline:
+
+```bash
+node scripts/reorder-baseline.mjs \
+  --input  /tmp/schema-fix/baseline.sql \
+  --output /tmp/schema-fix/baseline.reordered.sql
+
+# Then continue with Section 2.7 sanity sweep against the reordered file.
+mv /tmp/schema-fix/baseline.reordered.sql /tmp/schema-fix/baseline.sql
+```
+
+**Acceptance**:
+- `node scripts/reorder-baseline.mjs --self-test` reports `12 passed, 0 failed`.
+- `grep -nE 'CREATE TABLE.*"public"."adaptive_mastery"' baseline.sql` line number
+  is **less than** the line number of the first `bkt_update` `CREATE OR REPLACE
+  FUNCTION` match.
+- Total line count delta vs the input: between 0 and +10 (one bucket-marker
+  comment line per non-empty bucket).
+
+### 2.7 Final sanity sweep
 
 ```bash
 # No data
