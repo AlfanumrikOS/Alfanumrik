@@ -221,7 +221,59 @@ jobs:
 
           # Step 7 — collapse 3+ consecutive blank lines.
           awk 'BEGIN{blank=0} /^$/{blank++; if (blank<=2) print; next} {blank=0; print}' \
-            baseline.step11.sql > baseline.sanitized.sql
+            baseline.step11.sql > baseline.step12.sql
+
+          # Step 8 — reorder so tables/sequences/types come BEFORE the
+          # functions/views/triggers/policies that reference them. pg_dump
+          # emits objects in alphabetical-ish-by-class order and relies on
+          # `SET check_function_bodies = false` so function bodies aren't
+          # validated on first parse. But `%ROWTYPE` declarations in DECLARE
+          # blocks are resolved at PARSE time of the function, NOT at
+          # check-function-bodies time. So
+          #     v_rec public.adaptive_mastery%ROWTYPE
+          # in `bkt_update` (emitted at line ~1157) fails when
+          # `public.adaptive_mastery` (emitted at line ~8739) doesn't yet
+          # exist. The reorder script fixes this by routing each top-level
+          # statement into one of 10 buckets and concatenating in
+          # dependency order.
+          #
+          # The script is checked into the repo at scripts/reorder-baseline.mjs
+          # and ships with self-tests (`node scripts/reorder-baseline.mjs --self-test`).
+          # It is idempotent: running it on already-reordered output is a no-op.
+          node "${GITHUB_WORKSPACE}/scripts/reorder-baseline.mjs" \
+            --input baseline.step12.sql \
+            --output baseline.step13.sql
+
+          # Quick post-reorder sanity check: the reorder script must not
+          # silently drop content. Compare statement count (count of `;` at
+          # start of trailing whitespace, approximated as semicolons followed
+          # by newline), allowing only the +N bucket-header lines to differ
+          # in line count.
+          IN_LINES=$(wc -l < baseline.step12.sql)
+          OUT_LINES=$(wc -l < baseline.step13.sql)
+          DELTA=$((OUT_LINES - IN_LINES))
+          # Reorder adds at most 10 marker lines (one per non-empty bucket).
+          # Negative or > 10 → something dropped or duplicated. Fail loudly.
+          if [ "$DELTA" -lt 0 ] || [ "$DELTA" -gt 10 ]; then
+            echo "::error::Reorder line-count delta ($DELTA) outside expected ±10 envelope. in=$IN_LINES out=$OUT_LINES"
+            diff <(grep -cE '^CREATE TABLE' baseline.step12.sql) <(grep -cE '^CREATE TABLE' baseline.step13.sql) || true
+            diff <(grep -cE '^CREATE (OR REPLACE )?FUNCTION' baseline.step12.sql) <(grep -cE '^CREATE (OR REPLACE )?FUNCTION' baseline.step13.sql) || true
+            exit 1
+          fi
+
+          # Verify the reorder actually fixed the %ROWTYPE ordering for the
+          # canonical failure case (bkt_update / adaptive_mastery). If this
+          # ever flips back, the dry-run will fail further down with the same
+          # SQLSTATE 42P01 we shipped this PR to fix.
+          BKT_LINE=$(grep -nE 'CREATE OR REPLACE FUNCTION "public"\."bkt_update"' baseline.step13.sql | head -1 | cut -d: -f1 || true)
+          AM_LINE=$(grep -nE 'CREATE TABLE IF NOT EXISTS "public"\."adaptive_mastery"' baseline.step13.sql | head -1 | cut -d: -f1 || true)
+          if [ -n "$BKT_LINE" ] && [ -n "$AM_LINE" ] && [ "$AM_LINE" -ge "$BKT_LINE" ]; then
+            echo "::error::%ROWTYPE ordering check failed: adaptive_mastery (line $AM_LINE) must precede bkt_update (line $BKT_LINE)"
+            exit 1
+          fi
+
+          # Canonical sanitized output is the reordered file.
+          cp baseline.step13.sql baseline.sanitized.sql
 
           # Final sanity check — output is non-empty and free of stripped patterns.
           OUT_BYTES=$(stat -c%s baseline.sanitized.sql)
@@ -398,6 +450,7 @@ jobs:
           path: |
             /tmp/baseline/${{ env.BASELINE_FILENAME }}
             /tmp/baseline/baseline.step*.sql
+            /tmp/baseline/baseline.sanitized.sql
             /tmp/baseline/diff-report.txt
           retention-days: 90
 
