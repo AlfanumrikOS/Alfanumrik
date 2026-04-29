@@ -139,13 +139,24 @@ describe('GroundingHealthPage', () => {
     apiFetchMock.mockResolvedValue(okResponse(OK_BODY));
 
     render(<GroundingHealthPage />);
-    await waitFor(() => expect(apiFetchMock).toHaveBeenCalledTimes(1));
+    // The page now fetches TWO endpoints per cycle: the grounding-health
+    // route AND the oracle-health route (added with REG-54 telemetry
+    // panel). Both are kicked off on mount and again on every 30s tick.
+    await waitFor(() =>
+      expect(apiFetchMock).toHaveBeenCalledWith('/api/super-admin/grounding/health'),
+    );
+    await waitFor(() =>
+      expect(apiFetchMock).toHaveBeenCalledWith('/api/super-admin/ai/oracle-health'),
+    );
+    const initialCount = apiFetchMock.mock.calls.length;
 
-    // Advance 30s and let React flush — second poll fires
+    // Advance 30s and let React flush — second poll fires (both endpoints).
     await act(async () => {
       vi.advanceTimersByTime(30_001);
     });
-    await waitFor(() => expect(apiFetchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(apiFetchMock.mock.calls.length).toBeGreaterThanOrEqual(initialCount + 2),
+    );
   });
 
   it('shows empty state for abstain bar when no abstains', async () => {

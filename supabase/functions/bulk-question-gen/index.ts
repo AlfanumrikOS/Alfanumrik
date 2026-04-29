@@ -431,7 +431,20 @@ async function callOracleGrader(input: {
 
 /**
  * Validate one candidate question with caching. Returns OracleResult.
- * Logs rejections (NOT acceptances) to ops_events for audit visibility.
+ *
+ * Telemetry contract (Q3 — REG-54 follow-up):
+ *   - rejection → emit `quiz.oracle_rejection` (severity=info)
+ *   - acceptance → emit `quiz.oracle_evaluated` (severity=info, verdict=accepted)
+ * Both events let the super-admin oracle health panel compute a true
+ * rejection rate (`rejected / (rejected + accepted)`) instead of a raw
+ * count. The oracle-health route was previously returning
+ * `notes.acceptedEventMissing=true`; once this lands, that flag flips false.
+ *
+ * Cache contract (Q2 — REG-54 follow-up):
+ *   `llm_grader_unavailable` (network/timeout/parse) is NOT cached. A
+ *   transient network blip would otherwise pin the same candidate to a
+ *   sticky rejection across retries within an isolate. Every other verdict
+ *   is cached.
  */
 async function validateWithCacheAndLogging(
   candidate: CandidateQuestion,
@@ -450,7 +463,13 @@ async function validateWithCacheAndLogging(
     enableLlmGrader: ctx.enableLlmGrader,
     llmGrade: ctx.enableLlmGrader ? callOracleGrader : undefined,
   })
-  setCachedResult(cacheKey, result)
+
+  // Q2: skip cache write when the grader was unreachable. Every other
+  // outcome (deterministic reject, accept, llm_mismatch, llm_ambiguous) is
+  // a stable property of the candidate and is safe to cache.
+  if (result.ok || result.category !== 'llm_grader_unavailable') {
+    setCachedResult(cacheKey, result)
+  }
 
   if (!result.ok) {
     // Log rejection (no PII — generated content is not student data per P13).
@@ -469,6 +488,24 @@ async function validateWithCacheAndLogging(
         llm_calls: result.llm_calls,
         // First 80 chars of question_text for triage (not PII).
         question_preview: candidate.question_text.slice(0, 80),
+      },
+    })
+  } else {
+    // Q3: emit accept-path telemetry so the super-admin oracle health panel
+    // can compute a real rejection rate. No PII (P13) — only volumetric +
+    // routing context (grade/subject/chapter) plus llm_calls for cost
+    // tracking.
+    await logOpsEvent({
+      category: 'quiz.oracle_evaluated',
+      source: 'bulk-question-gen',
+      severity: 'info',
+      message: 'Oracle accepted candidate',
+      context: {
+        verdict: 'accepted',
+        llm_calls: result.llm_calls,
+        grade: ctx.grade,
+        subject: ctx.subject,
+        chapter: ctx.chapter,
       },
     })
   }
@@ -940,8 +977,14 @@ Deno.serve(async (req: Request) => {
                 correct_answer_index: outcome.row.correct_answer_index,
                 explanation: outcome.row.explanation,
                 hint: outcome.row.hint,
-                difficulty: outcome.row.difficulty,
+                // A3: difficulty is now string-only in the candidate.
+                // outcome.row.difficulty is the numeric 1..5 question_bank
+                // shape, already validated upstream by the verifier path,
+                // so we omit it from the oracle candidate (the oracle's
+                // difficulty check is opt-in).
                 bloom_level: outcome.row.bloom_level,
+                grade,
+                subject: safeSubject,
               },
               {
                 grade,
@@ -973,8 +1016,10 @@ Deno.serve(async (req: Request) => {
                     correct_answer_index: retry.row.correct_answer_index,
                     explanation: retry.row.explanation,
                     hint: retry.row.hint,
-                    difficulty: retry.row.difficulty,
+                    // A3: see comment above — difficulty omitted.
                     bloom_level: retry.row.bloom_level,
+                    grade,
+                    subject: safeSubject,
                   },
                   {
                     grade,
@@ -1137,8 +1182,12 @@ Deno.serve(async (req: Request) => {
             correct_answer_index: q.correct_answer_index,
             explanation: q.explanation,
             hint: q.hint,
-            difficulty: q.difficulty,
+            // A3: difficulty is string-only in the oracle candidate; the
+            // legacy single-pass generator emits integer 1..5 (already
+            // validated by isValidQuestion), so we omit it here.
             bloom_level: q.bloom_level,
+            grade,
+            subject: safeSubject,
           },
           {
             grade,

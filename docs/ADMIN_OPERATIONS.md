@@ -96,6 +96,41 @@ No query-param secrets are used. Access requires logging in with a valid admin a
 2. Click CSV or JSON for the desired data type
 3. File downloads automatically with timestamp
 
+### Monitoring Oracle Health (Quiz Generator AI)
+
+The Grounding Health page (`/super-admin/grounding/health`) includes an
+"Oracle health" panel that tracks the AI quiz-generator validation oracle
+(REG-54). The oracle gates every AI-generated MCQ before it lands in
+`question_bank`; rejected candidates are dropped, never shown to students.
+
+The panel reads from `ops_events` rows where
+`category='quiz.oracle_rejection'` and shows, over the last 24 hours:
+total rejections, rejections by reason (P6 violations vs. semantic
+overlap vs. numeric mismatch vs. LLM-grader disagreement), the latest
+10 rejected candidates with question previews, and an hourly time
+series.
+
+**Health rule of thumb (rejection rate):**
+
+| Range | Interpretation |
+|---|---|
+| 0-2% | Oracle is too lax or generator is producing nothing — investigate |
+| 2-5% | Borderline — keep an eye on it |
+| **5-15%** | **Healthy — oracle is catching real issues without being noisy** |
+| 15-25% | Noisy — oracle may be too strict or generator quality is dropping |
+| >25% | Generator is broken or oracle is too strict — page on-call |
+
+**Known telemetry gap (as of PR #454):** the oracle currently emits only
+rejection events. Until a matching `quiz.oracle_accepted` event lands,
+`Total candidates` and `Rejection rate` show "—" instead of a misleading
+denominator. Follow-up on the AI-engineer queue.
+
+**Kill switch:** the `ff_quiz_oracle_enabled` feature flag in the Flags
+tab disables the oracle entirely (generator falls back to legacy
+single-pass behavior). Use only if the oracle's rejection rate is
+clearly broken (e.g. rejecting 100% of candidates) and content
+shipping is blocked.
+
 ## Environment Variables Required
 
 | Variable | Purpose | Where Set |

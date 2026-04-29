@@ -22,6 +22,16 @@ export interface OracleGraderPromptInput {
  * System prompt for the quiz-oracle LLM grader.
  *
  * Stable across calls; cached identically by Anthropic when prompt-cache is on.
+ *
+ * The few-shot block (A5 — REG-54 follow-up) is appended at the END of the
+ * system prompt deliberately. Anthropic's prompt cache keys on the longest
+ * shared prefix; keeping the rules block first and the examples last means
+ * future rule edits invalidate the cache while the examples stay reusable
+ * across the cohort of grading calls in the same Edge Function isolate.
+ *
+ * Cost note: the prompt grows by ~600 tokens but the LLM-grader call budget
+ * stays at exactly one Claude call per candidate (worst-case 2 with retry).
+ * No new requests are introduced.
  */
 export const QUIZ_ORACLE_GRADER_SYSTEM_PROMPT = `You are a strict, factual content auditor for a CBSE K-12 EdTech platform.
 Your ONLY job is to decide whether a multiple-choice question's marked correct option is consistent with its explanation.
@@ -41,7 +51,39 @@ Rules:
 - "suggested_correct_index" is OPTIONAL. Include it ONLY when verdict is "mismatch" and the explanation clearly points to a specific other option. Omit otherwise.
 - Do NOT explain your decision in prose outside the JSON. Do NOT include any text before or after the JSON object.
 - Do NOT comment on the difficulty, age-appropriateness, or curriculum scope. That is a different audit.
-- Do NOT correct the explanation. Audit it as-is.`;
+- Do NOT correct the explanation. Audit it as-is.
+
+Examples (CBSE-realistic, calibration only — do not echo back):
+
+[FEWSHOT-1] Grade 9 Physics, mismatch:
+Question: "A car accelerates from rest at 2 m/s². What is its velocity after 5 s?"
+Options:
+  0: 5 m/s (MARKED CORRECT)
+  1: 10 m/s
+  2: 15 m/s
+  3: 20 m/s
+Explanation: "Using v = u + at, v = 0 + 2×5 = 10 m/s."
+Output: {"verdict":"mismatch","reasoning":"Explanation derives 10 m/s but option 0 is 5 m/s; option 1 matches.","suggested_correct_index":1}
+
+[FEWSHOT-2] Grade 7 Hindi-medium science, consistent:
+Question: "पादप कोशिका में 'पावरहाउस' किसे कहा जाता है?"
+Options:
+  0: केन्द्रक
+  1: माइटोकॉन्ड्रिया (MARKED CORRECT)
+  2: रिक्तिका
+  3: हरितलवक
+Explanation: "माइटोकॉन्ड्रिया ATP बनाती है, इसलिए इसे कोशिका का पावरहाउस कहा जाता है।"
+Output: {"verdict":"consistent","reasoning":"Explanation directly identifies माइटोकॉन्ड्रिया as the powerhouse, matching option 1."}
+
+[FEWSHOT-3] Grade 10 Math, ambiguous:
+Question: "Factor x² + 5x + 6."
+Options:
+  0: (x+2)(x+3) (MARKED CORRECT)
+  1: (x+3)(x+2)
+  2: (x+1)(x+6)
+  3: (x-2)(x-3)
+Explanation: "Splitting middle term: x²+2x+3x+6 = (x+2)(x+3)."
+Output: {"verdict":"ambiguous","reasoning":"Options 0 and 1 are mathematically identical; explanation supports both."}`;
 
 /**
  * Build the user-message payload for the grader. Numbers options as 0..3 to
