@@ -52,9 +52,15 @@
  *   6. constraints      — ALTER TABLE ONLY … ADD CONSTRAINT
  *                         (PRIMARY KEY, UNIQUE, CHECK, FOREIGN KEY).
  *                         FK requires ALL tables to exist first.
- *   7. indexes          — CREATE INDEX, CREATE UNIQUE INDEX
- *   8. functions        — CREATE FUNCTION, CREATE PROCEDURE
- *   9. views            — CREATE VIEW, CREATE MATERIALIZED VIEW
+ *   7. functions        — CREATE FUNCTION, CREATE PROCEDURE.
+ *                         MUST come before indexes because functional indexes
+ *                         (`CREATE INDEX … (some_function(col))`) depend on the
+ *                         function existing. Functions don't structurally depend
+ *                         on indexes, so this is the safe direction.
+ *   8. views            — CREATE VIEW, CREATE MATERIALIZED VIEW
+ *                         (may reference functions → after functions).
+ *   9. indexes          — CREATE INDEX, CREATE UNIQUE INDEX
+ *                         (functional indexes need their function emitted first).
  *  10. triggers         — CREATE TRIGGER, CREATE EVENT TRIGGER (need functions)
  *  11. rls-enable       — ALTER TABLE … ENABLE / FORCE ROW LEVEL SECURITY
  *                         (must run before CREATE POLICY so policies aren't
@@ -235,9 +241,9 @@ const BUCKET_NAMES = [
   'tables',
   'table-attach',
   'constraints',
-  'indexes',
   'functions',
   'views',
+  'indexes',
   'triggers',
   'rls-enable',
   'policies',
@@ -252,9 +258,9 @@ const BUCKET = Object.freeze({
   TABLES: 3,
   TABLE_ATTACH: 4,
   CONSTRAINTS: 5,
-  INDEXES: 6,
-  FUNCTIONS: 7,
-  VIEWS: 8,
+  FUNCTIONS: 6,
+  VIEWS: 7,
+  INDEXES: 8,
   TRIGGERS: 9,
   RLS_ENABLE: 10,
   POLICIES: 11,
