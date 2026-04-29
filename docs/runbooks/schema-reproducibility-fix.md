@@ -258,85 +258,66 @@ sed -i.bak -E 's/^CREATE FUNCTION /CREATE OR REPLACE FUNCTION /' baseline.sql
 
 **Acceptance**: `grep -c '^CREATE FUNCTION ' baseline.sql` is **0**.
 
-### 2.6 Reorder so tables come before functions (`%ROWTYPE` compatibility)
+### 2.6 Rewrite `<table>%ROWTYPE` declarations to `RECORD`
 
-`pg_dump --schema-only` emits objects in alphabetical-ish-by-class order
-(roughly: extensions → schemas → types → functions → tables → indexes →
-constraints → triggers → policies). It relies on
-`SET check_function_bodies = false` so that the *body* of a `CREATE FUNCTION`
-is not validated against a missing referenced object on first parse.
+`pg_dump --schema-only` emits objects in dependency-aware topological order
+(extensions → schemas → types → tables → indexes → functions → views →
+triggers → policies, with within-class ordering computed from the catalog).
+It relies on `SET check_function_bodies = false` so the *body* of a
+`CREATE FUNCTION` is not validated against missing referenced objects on
+first parse. That covers PL/pgSQL function bodies — and pg_dump's natural
+ordering covers everything else.
 
-**The catch**: `%ROWTYPE` declarations in PL/pgSQL `DECLARE` blocks
-(`v_rec public.adaptive_mastery%ROWTYPE`) are resolved at **PARSE time** of
-the function header / declarations, BEFORE `check_function_bodies` kicks in.
-So a function emitted at line ~1,150 that declares `%ROWTYPE` against a
-table emitted at line ~8,700 fails to apply on a fresh Postgres with
-`ERROR: relation "public.adaptive_mastery" does not exist (SQLSTATE 42P01)`,
-even though `check_function_bodies = false` is set.
+**The single documented exception**: `%ROWTYPE` declarations inside PL/pgSQL
+`DECLARE` blocks (`v_rec public.adaptive_mastery%ROWTYPE`) are resolved at
+**PARSE time** of the function declarations, BEFORE `check_function_bodies`
+kicks in. So a function emitted before the table it references fails to
+apply on a fresh Postgres with `ERROR: relation "public.adaptive_mastery"
+does not exist (SQLSTATE 42P01)`, even with `check_function_bodies = false`.
 
-This is a known pg_dump idiosyncrasy. The dump is a faithful representation
-of the live schema but is structurally non-replayable.
+**The fix**: rewrite `<schema>.<table>%ROWTYPE` (and unqualified
+`<table>%ROWTYPE`) to the generic PL/pgSQL `RECORD` type. PostgreSQL
+resolves `RECORD` at runtime via the `SELECT INTO` (or `RETURNING ... INTO`)
+that populates it, so the function body is unchanged in shape and field
+access (`v_rec.column_name`) works identically. The transform is a 1:1
+token swap; line count and pg_dump's natural ordering are preserved
+byte-for-byte outside the rewritten declarations.
 
-**The fix**: route every top-level statement into one of 14 dependency-ordered
-buckets and concatenate in canonical order. The bucket scheme handles five
-distinct table-dependency classes (function `%ROWTYPE`, `ALTER SEQUENCE …
-OWNED BY`, `SET DEFAULT nextval`, FK `ADD CONSTRAINT`, `COMMENT ON …`):
-
-```
- 1. setup            — SET, CREATE EXTENSION, CREATE SCHEMA, COMMENT ON SCHEMA
- 2. types            — CREATE TYPE, CREATE DOMAIN (incl. DO $$..$$ wraps)
- 3. sequences-create — CREATE SEQUENCE (and non-OWNED-BY ALTER SEQUENCE forms)
- 4. tables           — CREATE TABLE, plain ALTER TABLE (ADD COLUMN, etc.)
- 5. table-attach     — ALTER SEQUENCE … OWNED BY,
-                       ALTER TABLE ONLY … ALTER COLUMN … SET DEFAULT nextval(…)
-                       (needs both sequence and table to exist)
- 6. constraints      — ALTER TABLE ONLY … ADD CONSTRAINT
-                       (PK / UNIQUE / CHECK / FK — FK needs ALL tables)
- 7. indexes          — CREATE INDEX, CREATE UNIQUE INDEX
- 8. functions        — CREATE [OR REPLACE] FUNCTION, CREATE PROCEDURE
- 9. views            — CREATE [OR REPLACE] [MATERIALIZED] VIEW
-10. triggers         — CREATE TRIGGER, CREATE EVENT TRIGGER
-11. rls-enable       — ALTER TABLE … ENABLE / FORCE ROW LEVEL SECURITY
-                       (must run before CREATE POLICY)
-12. policies         — CREATE POLICY, DROP POLICY
-13. comments         — COMMENT ON TABLE / COLUMN / FUNCTION / TYPE / …
-14. other            — anything not classified (kept at the end so we never
-                       drop). GRANT / REVOKE land here naturally.
-```
-
-The reorder is implemented in `scripts/reorder-baseline.mjs` (Node, no
+The transform is implemented in `scripts/reorder-baseline.mjs` (Node, no
 deps). Self-tests via `node scripts/reorder-baseline.mjs --self-test`. The
 GitHub Actions workflow runs it automatically as Step 8 of the sanitize
-phase (`baseline.step12.sql` → `baseline.step13.sql`), and includes a
-hard-coded post-reorder check that `public.adaptive_mastery` (table)
-precedes `public.bkt_update` (function) in the output. If this check ever
-fails, the dry-run aborts before touching prod.
+phase (`baseline.step12.sql` → `baseline.step13.sql`), and asserts that
+zero `%ROWTYPE` strings remain in the output. If any survived the regex
+missed a form pg_dump emitted, and the workflow fails with a clearer error
+than the downstream SQLSTATE 42P01 we'd otherwise see during replay.
 
-To run the reorder by hand against a sanitized baseline:
+History: earlier iterations of this script bucket-reordered every top-level
+statement to satisfy table-before-function ordering (PRs #464, #466, #467,
+#469). Each bucket-fix solved one prod-specific dependency class
+(function `%ROWTYPE`, `ALTER SEQUENCE … OWNED BY`, FK `ADD CONSTRAINT`,
+functional indexes, …) but kept breaking pg_dump's careful within-class
+ordering for the next dependency class we tripped on. The current approach
+trusts pg_dump's natural ordering and fixes only the one thing pg_dump's
+output reliably gets wrong.
+
+To run the rewrite by hand against a sanitized baseline:
 
 ```bash
 node scripts/reorder-baseline.mjs \
   --input  /tmp/schema-fix/baseline.sql \
-  --output /tmp/schema-fix/baseline.reordered.sql
+  --output /tmp/schema-fix/baseline.rewritten.sql
 
-# Then continue with Section 2.7 sanity sweep against the reordered file.
-mv /tmp/schema-fix/baseline.reordered.sql /tmp/schema-fix/baseline.sql
+# Then continue with Section 2.7 sanity sweep against the rewritten file.
+mv /tmp/schema-fix/baseline.rewritten.sql /tmp/schema-fix/baseline.sql
 ```
 
 **Acceptance**:
-- `node scripts/reorder-baseline.mjs --self-test` reports `20 passed, 0 failed`.
-- `grep -nE 'CREATE TABLE.*"public"."adaptive_mastery"' baseline.sql` line number
-  is **less than** the line number of the first `bkt_update` `CREATE OR REPLACE
-  FUNCTION` match.
-- `grep -nE 'CREATE TABLE.*"public"."mass_gen_log"' baseline.sql` line number
-  is **less than** the first `ALTER SEQUENCE "public"."mass_gen_log_id_seq"
-  OWNED BY` match (the regression that motivated the comprehensive reorder).
-- Every `FOREIGN KEY` line number is **greater than** every `CREATE TABLE` line
-  number (FK constraints land in bucket 6, after all table CREATEs in bucket 4).
-- Every `ENABLE ROW LEVEL SECURITY` line number is **less than** every
-  `CREATE POLICY` line number (so policies aren't dormant on replay).
-- Total line count delta vs the input: between 0 and +14 (one bucket-marker
-  comment line per non-empty bucket).
+- `node scripts/reorder-baseline.mjs --self-test` reports `15 passed, 0 failed`.
+- `grep -c '%ROWTYPE' baseline.sql` returns **0** (every form has been
+  rewritten to `RECORD`).
+- Total line count vs the input: **identical** (the rewrite is a 1:1 token
+  swap; bucket markers no longer exist).
+- Running the script on its own output is a no-op (idempotency).
 
 ### 2.7 Final sanity sweep
 
