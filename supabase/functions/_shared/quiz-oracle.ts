@@ -28,8 +28,23 @@ export interface CandidateQuestion {
   correct_answer_index: number;
   explanation: string;
   hint?: string;
-  difficulty?: number | string;
+  /**
+   * Difficulty enum (REG-54 follow-up A3): only string `easy|medium|hard` is
+   * accepted. The legacy 1..5 integer path was dropped because callers
+   * (`quiz-generator/index.ts`, `bulk-question-gen/index.ts`) emit integer
+   * difficulty INTO `question_bank`, not into the oracle candidate. Keeping
+   * two valid shapes invited drift; one shape, no surprise.
+   */
+  difficulty?: string;
   bloom_level?: string;
+  /**
+   * Optional grade/subject context. When the generator pins these on input,
+   * passing them through lets the oracle verify the candidate didn't drift.
+   * Both are validated only when present (P5: grade is a string "6".."12";
+   * subject must be a known CBSE subject — see `VALID_CBSE_SUBJECTS`).
+   */
+  grade?: string;
+  subject?: string;
 }
 
 export type OracleVerdict = 'consistent' | 'mismatch' | 'ambiguous';
@@ -55,6 +70,8 @@ export type OracleRejectionCategory =
   | 'p6_explanation_empty'
   | 'p6_invalid_difficulty'
   | 'p6_invalid_bloom'
+  | 'p5_invalid_grade'
+  | 'invalid_subject'
   | 'options_overlap_semantic'
   | 'numeric_inconsistency'
   | 'llm_mismatch'
@@ -87,8 +104,54 @@ const VALID_BLOOM_LEVELS = new Set([
   'create',
 ]);
 
+/**
+ * Canonical CBSE subject allowlist used by the oracle's optional subject
+ * check (A4). Mirrors the `VALID_SUBJECTS_BY_GRADE` map in
+ * `supabase/functions/bulk-question-gen/index.ts` collapsed to a flat set —
+ * grade-by-grade subject filtering is the caller's job; the oracle only
+ * verifies the subject is a known CBSE code at all.
+ */
+const VALID_CBSE_SUBJECTS = new Set([
+  'math',
+  'science',
+  'english',
+  'hindi',
+  'social_studies',
+  'social studies',
+  'physics',
+  'chemistry',
+  'biology',
+  'economics',
+  'accountancy',
+  'business_studies',
+  'business studies',
+  'history',
+  'geography',
+  'political_science',
+  'political science',
+]);
+
+/** P5 grade format: strings "6" through "12". */
+const VALID_GRADE_RE = /^[6-9]$|^1[0-2]$/;
+
 const PLACEHOLDER_RE = /\{\{|\[BLANK\]/i;
+// Numeric token: integer or decimal, with optional sign. Devanagari digits
+// (०१२३४५६७८९) are normalised to ASCII before the regex runs — see
+// `normaliseDigits()` (A2). Without that normalisation, Hindi-medium content
+// like "5x = १५" would silently lose half its numeric tokens.
 const NUMERIC_RE = /-?\d+(?:\.\d+)?/g;
+
+/**
+ * Map Devanagari digits (०..९) to ASCII (0..9). CBSE Hindi-medium content
+ * uses both numeral systems interchangeably; we normalise so numeric
+ * consistency checks (A2) can compare values regardless of script.
+ */
+function normaliseDigits(s: string): string {
+  // U+0966..U+096F maps 1:1 to U+0030..U+0039.
+  return s.replace(/[०-९]/g, (d) =>
+    String.fromCharCode(d.charCodeAt(0) - 0x0966 + 0x30),
+  );
+}
 
 // ─── Deterministic checks ───────────────────────────────────────────────────
 
@@ -143,16 +206,17 @@ export function runDeterministicChecks(
   const exp = typeof q?.explanation === 'string' ? q.explanation.trim() : '';
   if (!exp) return rejectDet('p6_explanation_empty', 'explanation is empty');
 
+  // String-only difficulty enum (A3 — REG-54 follow-up). Integer 1..5 was
+  // the legacy shape but `question_bank` schema and `exam-engine.ts` only
+  // speak in string enums; the integer path was dead in callers.
   if (q.difficulty !== undefined && q.difficulty !== null) {
     const d = q.difficulty;
-    const numeric = typeof d === 'number' ? d : Number(d);
-    const isValidNumeric = Number.isInteger(numeric) && numeric >= 1 && numeric <= 5;
     const isValidString =
       typeof d === 'string' && ['easy', 'medium', 'hard'].includes(d.toLowerCase());
-    if (!isValidNumeric && !isValidString) {
+    if (!isValidString) {
       return rejectDet(
         'p6_invalid_difficulty',
-        `difficulty must be integer 1..5 or one of easy|medium|hard, got ${String(d)}`,
+        `difficulty must be one of easy|medium|hard, got ${String(d)}`,
       );
     }
   }
@@ -165,6 +229,29 @@ export function runDeterministicChecks(
       return rejectDet(
         'p6_invalid_bloom',
         `bloom_level must be one of remember|understand|apply|analyze|evaluate|create, got ${String(q.bloom_level)}`,
+      );
+    }
+  }
+
+  // grade (when provided, A4) — P5: strings "6".."12".
+  if (q.grade !== undefined && q.grade !== null) {
+    if (typeof q.grade !== 'string' || !VALID_GRADE_RE.test(q.grade)) {
+      return rejectDet(
+        'p5_invalid_grade',
+        `grade must be a string "6".."12", got ${String(q.grade)}`,
+      );
+    }
+  }
+
+  // subject (when provided, A4) — CBSE subject allowlist.
+  if (q.subject !== undefined && q.subject !== null) {
+    if (
+      typeof q.subject !== 'string' ||
+      !VALID_CBSE_SUBJECTS.has(q.subject.toLowerCase().trim())
+    ) {
+      return rejectDet(
+        'invalid_subject',
+        `subject must be a known CBSE subject, got ${String(q.subject)}`,
       );
     }
   }
@@ -202,9 +289,14 @@ function rejectDet(
 }
 
 function tokenize(s: string): string[] {
+  // Unicode-aware (A1 — REG-54 follow-up). The previous regex
+  // /[^a-z0-9\s]/g stripped Devanagari and any non-ASCII letter, so Hindi-
+  // medium MCQ options tokenized to empty sets and the empty-set fast path
+  // (`return 1` in jaccardWordOverlap) flagged 100% of Hindi candidates as
+  // overlap-rejected. \p{L}\p{N} keeps letters and numbers in any script.
   return s
     .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .split(/\s+/)
     .filter(Boolean);
 }
@@ -221,8 +313,13 @@ function jaccardWordOverlap(a: string, b: string): number {
 }
 
 function extractNumbers(s: string): number[] {
+  // Normalise Devanagari digits to ASCII first (A2). CBSE Hindi-medium
+  // questions mix "5" and "५" freely; without normalisation the latter
+  // would never match `NUMERIC_RE` and numeric-consistency would silently
+  // pass mismatched values.
+  const normalised = normaliseDigits(s);
   const out: number[] = [];
-  const matches = s.match(NUMERIC_RE);
+  const matches = normalised.match(NUMERIC_RE);
   if (!matches) return out;
   for (const m of matches) {
     const n = Number(m);
@@ -292,6 +389,12 @@ export async function validateCandidate(
       explanation: q.explanation,
     });
   } catch (err) {
+    // The grader threw (network/timeout/parse). Fail CLOSED: reject the
+    // candidate as 'llm_grader_unavailable'. P12 (AI safety) prefers
+    // dropping a question over serving an unaudited one. Caller decides
+    // whether to retry. Setting cache here would make the rejection
+    // sticky across retries within an isolate, so we skip caching for
+    // this category — see Q3 fix.
     return {
       ok: false,
       category: 'llm_grader_unavailable',

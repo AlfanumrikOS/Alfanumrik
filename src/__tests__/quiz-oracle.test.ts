@@ -31,7 +31,8 @@ function validCandidate(overrides: Partial<CandidateQuestion> = {}): CandidateQu
     options: ['H2O', 'CO2', 'NaCl', 'O2'],
     correct_answer_index: 0,
     explanation: 'Water is composed of two hydrogen atoms and one oxygen atom, so its chemical formula is H2O.',
-    difficulty: 1,
+    // After A3, difficulty is string-only.
+    difficulty: 'easy',
     bloom_level: 'remember',
     ...overrides,
   };
@@ -149,14 +150,7 @@ describe('runDeterministicChecks — P6 explanation', () => {
   });
 });
 
-describe('runDeterministicChecks — P6 difficulty', () => {
-  it('accepts numeric 1..5', () => {
-    for (const d of [1, 2, 3, 4, 5]) {
-      const r = runDeterministicChecks(validCandidate({ difficulty: d }));
-      expect(r).toBeNull();
-    }
-  });
-
+describe('runDeterministicChecks — P6 difficulty (string-only after A3)', () => {
   it('accepts string easy|medium|hard', () => {
     for (const d of ['easy', 'medium', 'hard']) {
       const r = runDeterministicChecks(validCandidate({ difficulty: d }));
@@ -164,9 +158,21 @@ describe('runDeterministicChecks — P6 difficulty', () => {
     }
   });
 
-  it('rejects out-of-range numeric', () => {
-    const r = runDeterministicChecks(validCandidate({ difficulty: 6 }));
-    expect(r?.category).toBe('p6_invalid_difficulty');
+  it('accepts case-insensitively', () => {
+    const r = runDeterministicChecks(validCandidate({ difficulty: 'MEDIUM' }));
+    expect(r).toBeNull();
+  });
+
+  it('rejects integer 1..5 (legacy path dropped — A3)', () => {
+    // Pre-A3 the integer 1..5 form was accepted alongside strings. After
+    // A3 the candidate's difficulty MUST be a string enum; integer paths
+    // route through the caller (e.g. question_bank schema column).
+    for (const d of [1, 2, 3, 4, 5]) {
+      const r = runDeterministicChecks(
+        validCandidate({ difficulty: d as unknown as string }),
+      );
+      expect(r?.category).toBe('p6_invalid_difficulty');
+    }
   });
 
   it('rejects unknown string', () => {
@@ -176,6 +182,61 @@ describe('runDeterministicChecks — P6 difficulty', () => {
 
   it('skips check when difficulty is undefined', () => {
     const r = runDeterministicChecks({ ...validCandidate(), difficulty: undefined });
+    expect(r).toBeNull();
+  });
+});
+
+describe('runDeterministicChecks — P5 grade (A4)', () => {
+  it('accepts string grades "6".."12"', () => {
+    for (const g of ['6', '7', '8', '9', '10', '11', '12']) {
+      const r = runDeterministicChecks(validCandidate({ grade: g }));
+      expect(r).toBeNull();
+    }
+  });
+
+  it('rejects integer grade (P5 violation)', () => {
+    const r = runDeterministicChecks(
+      validCandidate({ grade: 9 as unknown as string }),
+    );
+    expect(r?.category).toBe('p5_invalid_grade');
+  });
+
+  it('rejects out-of-range string grade "5"', () => {
+    const r = runDeterministicChecks(validCandidate({ grade: '5' }));
+    expect(r?.category).toBe('p5_invalid_grade');
+  });
+
+  it('rejects out-of-range string grade "13"', () => {
+    const r = runDeterministicChecks(validCandidate({ grade: '13' }));
+    expect(r?.category).toBe('p5_invalid_grade');
+  });
+
+  it('skips when grade is undefined (optional)', () => {
+    const r = runDeterministicChecks({ ...validCandidate(), grade: undefined });
+    expect(r).toBeNull();
+  });
+});
+
+describe('runDeterministicChecks — subject (A4)', () => {
+  it('accepts known CBSE subjects', () => {
+    for (const s of ['math', 'science', 'physics', 'chemistry', 'hindi', 'social_studies']) {
+      const r = runDeterministicChecks(validCandidate({ subject: s }));
+      expect(r).toBeNull();
+    }
+  });
+
+  it('accepts case-insensitively and trims whitespace', () => {
+    const r = runDeterministicChecks(validCandidate({ subject: '  Physics  ' }));
+    expect(r).toBeNull();
+  });
+
+  it('rejects unknown subject', () => {
+    const r = runDeterministicChecks(validCandidate({ subject: 'astrology' }));
+    expect(r?.category).toBe('invalid_subject');
+  });
+
+  it('skips when subject is undefined (optional)', () => {
+    const r = runDeterministicChecks({ ...validCandidate(), subject: undefined });
     expect(r).toBeNull();
   });
 });
@@ -240,6 +301,49 @@ describe('runDeterministicChecks — options_overlap_semantic', () => {
   });
 });
 
+describe('runDeterministicChecks — Hindi MCQ (A1: Unicode tokenizer)', () => {
+  // Pre-A1 the tokenizer regex /[^a-z0-9\s]/g stripped Devanagari, so any
+  // Hindi-medium MCQ tokenized to an empty set, which jaccardWordOverlap
+  // returned 1.0 for, which fired options_overlap_semantic on every pair.
+  // A1 swaps the regex to \p{L}\p{N} (Unicode letter/number classes).
+  it('accepts a Hindi-medium MCQ with distinct Devanagari options', () => {
+    const r = runDeterministicChecks({
+      question_text: 'पादप कोशिका में पावरहाउस किसे कहा जाता है?',
+      options: ['केन्द्रक', 'माइटोकॉन्ड्रिया', 'रिक्तिका', 'हरितलवक'],
+      correct_answer_index: 1,
+      explanation: 'माइटोकॉन्ड्रिया ATP बनाती है, इसलिए इसे पावरहाउस कहा जाता है।',
+    });
+    expect(r).toBeNull();
+  });
+
+  it('still rejects truly-overlapping Hindi options (regression check)', () => {
+    // After A1 we still need overlap detection to work in Hindi. These
+    // four options share most tokens — they should fail.
+    const r = runDeterministicChecks({
+      question_text: 'सही विकल्प चुनें।',
+      options: [
+        'पौधे प्रकाश से ऊर्जा प्राप्त करते हैं',
+        'पौधे प्रकाश से ऊर्जा प्राप्त करते',
+        'दूसरा विकल्प कुछ और है',
+        'चौथा विकल्प भी अलग है',
+      ],
+      correct_answer_index: 0,
+      explanation: 'प्रकाश संश्लेषण की प्रक्रिया।',
+    });
+    expect(r?.category).toBe('options_overlap_semantic');
+  });
+
+  it('accepts mixed English-Hindi (Hinglish) options', () => {
+    const r = runDeterministicChecks({
+      question_text: 'What is the SI unit of force?',
+      options: ['न्यूटन (Newton)', 'जूल (Joule)', 'पास्कल (Pascal)', 'वाट (Watt)'],
+      correct_answer_index: 0,
+      explanation: 'Force is measured in Newton (न्यूटन).',
+    });
+    expect(r).toBeNull();
+  });
+});
+
 // ─── Deterministic: numeric consistency ─────────────────────────────────────
 
 describe('checkNumericConsistency', () => {
@@ -286,6 +390,33 @@ describe('checkNumericConsistency', () => {
       'What is the capital?',
       'Paris',
       'The capital is Paris, founded around the year 250 BC.',
+    );
+    expect(r).toBeNull();
+  });
+
+  // ── A2: Devanagari numerals normalise to ASCII before extraction ────────
+  it('treats ASCII and Devanagari numerals as equivalent', () => {
+    // Option "१२" (Devanagari for 12). Explanation references "12".
+    const r = checkNumericConsistency('Solve.', 'x = १२', 'The answer is 12.');
+    expect(r).toBeNull();
+  });
+
+  it('treats ASCII option vs Devanagari explanation as equivalent', () => {
+    const r = checkNumericConsistency('Solve.', 'x = 12', 'उत्तर है १२।');
+    expect(r).toBeNull();
+  });
+
+  it('still flags genuine mismatch with Devanagari numerals', () => {
+    // Option "१२" but explanation derives "१५"
+    const r = checkNumericConsistency('Solve.', 'x = १२', 'उत्तर है १५।');
+    expect(r).toMatch(/12.*explanation/);
+  });
+
+  it('handles mixed-script Devanagari/ASCII in same string', () => {
+    const r = checkNumericConsistency(
+      'दिया है 5x + 7 = 22, x ज्ञात करें।',
+      '३',
+      'दोनों ओर से ७ घटाने पर 5x = 15, फिर ५ से भाग देने पर x = 3।',
     );
     expect(r).toBeNull();
   });
@@ -517,5 +648,28 @@ describe('QUIZ_ORACLE_GRADER_SYSTEM_PROMPT contract', () => {
 
   it('forbids commenting on difficulty/age/curriculum (out of scope)', () => {
     expect(QUIZ_ORACLE_GRADER_SYSTEM_PROMPT).toMatch(/Do NOT comment on the difficulty/i);
+  });
+
+  // A5: three CBSE-realistic few-shot examples (calibration only).
+  it('contains the three few-shot examples (A5)', () => {
+    expect(QUIZ_ORACLE_GRADER_SYSTEM_PROMPT).toContain('[FEWSHOT-1]');
+    expect(QUIZ_ORACLE_GRADER_SYSTEM_PROMPT).toContain('[FEWSHOT-2]');
+    expect(QUIZ_ORACLE_GRADER_SYSTEM_PROMPT).toContain('[FEWSHOT-3]');
+  });
+
+  it('few-shot 1 demonstrates the mismatch verdict (Grade 9 Physics)', () => {
+    expect(QUIZ_ORACLE_GRADER_SYSTEM_PROMPT).toMatch(/Grade 9 Physics/);
+    expect(QUIZ_ORACLE_GRADER_SYSTEM_PROMPT).toMatch(/v = u \+ at/);
+    expect(QUIZ_ORACLE_GRADER_SYSTEM_PROMPT).toMatch(/"verdict":"mismatch".*"suggested_correct_index":1/);
+  });
+
+  it('few-shot 2 demonstrates the consistent verdict in Hindi-medium', () => {
+    expect(QUIZ_ORACLE_GRADER_SYSTEM_PROMPT).toMatch(/माइटोकॉन्ड्रिया/);
+    expect(QUIZ_ORACLE_GRADER_SYSTEM_PROMPT).toMatch(/"verdict":"consistent"/);
+  });
+
+  it('few-shot 3 demonstrates the ambiguous verdict (Grade 10 Math)', () => {
+    expect(QUIZ_ORACLE_GRADER_SYSTEM_PROMPT).toMatch(/Grade 10 Math/);
+    expect(QUIZ_ORACLE_GRADER_SYSTEM_PROMPT).toMatch(/"verdict":"ambiguous"/);
   });
 });

@@ -7,29 +7,22 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
  *
  * Surface telemetry for the quiz-generator validation oracle (REG-54, PR
  * #454). The oracle gates AI-generated MCQs before they land in
- * `question_bank`. Every rejection writes a row to `ops_events` with
- * `category='quiz.oracle_rejection'`. This route aggregates those rows
- * for the super-admin AI health panel.
+ * `question_bank`. Every evaluation writes a row to `ops_events`:
+ *   - rejection → `category='quiz.oracle_rejection'`
+ *   - acceptance → `category='quiz.oracle_evaluated'` (verdict='accepted')
+ * The accept-path event was added by the REG-54 follow-up PR (Q3).
  *
  * Auth: super_admin.access (existing AI permission — no new RBAC code).
  *
  * Window: rolling last 24h.
  *
- * IMPORTANT — telemetry gap:
- *   The oracle currently emits ONLY rejection events. There is no
- *   matching `quiz.oracle_accepted` (or `quiz.oracle_evaluated`) event
- *   today, so we cannot compute a true rejection rate (rejected/total)
- *   from `ops_events` alone. This route returns:
- *     - `totalRejected` (24h) — from ops_events
- *     - `rejectionsByReason` — from ops_events
- *     - `latestRejections` (10) — from ops_events
- *     - `hourlyRejections` (24 buckets) — from ops_events
- *     - `totalEvaluated` is reported as `null` along with a
- *       `notes.acceptedEventMissing=true` flag so the UI can show "—"
- *       instead of a misleading rate.
- *   Follow-up: ai-engineer to add `category='quiz.oracle_accepted'` (or
- *   bump category to `quiz.oracle_evaluated` with a verdict field) so
- *   `rejectionRate` can be computed properly.
+ * The route now computes `totalEvaluated = totalAccepted + totalRejected`
+ * and `rejectionRate = totalRejected / totalEvaluated`. The
+ * `notes.acceptedEventMissing` flag is now `false` whenever any accept
+ * event has been observed in the window. Older isolates that haven't
+ * emitted accept events yet (cold cache, kill-switch off) will keep
+ * acceptedEventMissing=true so the UI can render "—" instead of a
+ * misleading 100% rate.
  *
  * Response shape (stable contract):
  *   {
@@ -37,8 +30,9 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
  *     data: {
  *       windowHours: 24,
  *       totalRejected: number,
- *       totalEvaluated: number | null,        // null until accepted-event lands
- *       rejectionRate: number | null,         // null until accepted-event lands
+ *       totalAccepted: number,
+ *       totalEvaluated: number | null,
+ *       rejectionRate: number | null,
  *       rejectionsByReason: Record<category, number>,
  *       latestRejections: Array<{
  *         occurred_at: string,
@@ -71,6 +65,8 @@ const ORACLE_REJECTION_CATEGORIES = [
   'p6_explanation_empty',
   'p6_invalid_difficulty',
   'p6_invalid_bloom',
+  'p5_invalid_grade',
+  'invalid_subject',
   'options_overlap_semantic',
   'numeric_inconsistency',
   'llm_mismatch',
@@ -115,6 +111,28 @@ export async function GET(request: NextRequest) {
     }
 
     const rows: RejectionRow[] = (rejectionRows ?? []) as RejectionRow[];
+
+    // Pull the accept-path counterpart (Q3 — REG-54 follow-up). We only
+    // need the count, so a head-count is cheaper than fetching rows. If
+    // this table call fails for any reason we degrade to the previous
+    // "rate unavailable" behaviour rather than 500 the whole panel.
+    let totalAccepted = 0;
+    let acceptedEventMissing = true;
+    try {
+      const { count: acceptedCount, error: acceptedErr } = await supabaseAdmin
+        .from('ops_events')
+        .select('*', { count: 'exact', head: true })
+        .eq('category', 'quiz.oracle_evaluated')
+        .gte('occurred_at', windowStart);
+      if (!acceptedErr && typeof acceptedCount === 'number') {
+        totalAccepted = acceptedCount;
+        // Once we've seen at least one accept event in the window, the
+        // accept-path telemetry is live and the UI can show a real rate.
+        acceptedEventMissing = acceptedCount === 0;
+      }
+    } catch {
+      // Non-fatal — UI falls back to "—" via acceptedEventMissing=true.
+    }
 
     // ── 2. Total + by-reason breakdown ─────────────────────────────────
     const rejectionsByReason: Record<string, number> = {};
@@ -167,13 +185,18 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // ── 5. Total evaluated (currently unavailable) ─────────────────────
-    // No `quiz.oracle_accepted` event exists yet. Returning null + a flag
-    // is more honest than a fake denominator (e.g. count of recent
-    // bulk-question-gen runs, which would not match candidate count
-    // 1:1).
-    const totalEvaluated: number | null = null;
-    const rejectionRate: number | null = null;
+    // ── 5. Rate computation (Q3) ───────────────────────────────────────
+    // totalEvaluated = accepted + rejected. Rate is null until we've seen
+    // at least one event of EITHER kind, so an empty window doesn't show
+    // 0/0=NaN.
+    const totalEvaluated: number | null =
+      acceptedEventMissing && totalRejected === 0
+        ? null
+        : totalAccepted + totalRejected;
+    const rejectionRate: number | null =
+      totalEvaluated === null || totalEvaluated === 0
+        ? null
+        : totalRejected / totalEvaluated;
 
     return NextResponse.json(
       {
@@ -181,13 +204,14 @@ export async function GET(request: NextRequest) {
         data: {
           windowHours: WINDOW_HOURS,
           totalRejected,
+          totalAccepted,
           totalEvaluated,
           rejectionRate,
           rejectionsByReason,
           latestRejections,
           hourlyRejections: hourlyBuckets,
           notes: {
-            acceptedEventMissing: true,
+            acceptedEventMissing,
           },
           generated_at: new Date().toISOString(),
         },

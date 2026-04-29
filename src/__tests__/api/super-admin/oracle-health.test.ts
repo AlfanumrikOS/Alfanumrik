@@ -11,11 +11,13 @@
  *     (we feed pre-sorted rows; the route preserves order via
  *     `.order(..., desc).limit(10)`).
  *   - Hourly bucket count is exactly 24 and oldest → newest.
- *   - When no `quiz.oracle_accepted` data is available,
- *     `totalEvaluated` and `rejectionRate` are null and
- *     `notes.acceptedEventMissing` is true. This is the deliberate
- *     telemetry gap documented in the route header — until the oracle
- *     emits accept events, the rate cannot be computed.
+ *   - When the accept-path telemetry exists (Q3 — REG-54 follow-up):
+ *     `totalEvaluated` and `rejectionRate` are computed; the route now
+ *     issues a head-count query against `quiz.oracle_evaluated` and
+ *     surfaces `notes.acceptedEventMissing=false`.
+ *   - When no accept events exist (cold start, kill-switch off):
+ *     `totalEvaluated`/`rejectionRate` stay null and
+ *     `notes.acceptedEventMissing=true`.
  *
  * Mocking style follows `src/__tests__/super-admin-grounding-apis.test.ts`
  * — chainable supabase boundary mock, swap canned result per test.
@@ -31,24 +33,58 @@ vi.mock('@/lib/rbac', () => ({
   authorizeRequest: mockAuthorizeRequest,
 }));
 
-let supabaseResult: { data: unknown; error: unknown } = {
+// The route fires two queries:
+//   1. rejection rows  — `.eq('category', 'quiz.oracle_rejection')` →
+//      yields rows array via `.then`
+//   2. accepted count  — `.eq('category', 'quiz.oracle_evaluated')` with
+//      `.select('*', { count: 'exact', head: true })` → yields { count }
+//
+// We branch the mock by sniffing the first `.eq` arg. The chainable's
+// `.then` is what awaits the query (PostgREST-style).
+let supabaseRejectionResult: { data: unknown; error: unknown } = {
   data: [],
+  error: null,
+};
+let supabaseAcceptedResult: { count: number | null; error: unknown } = {
+  count: 0,
   error: null,
 };
 
 function setSupabaseResult(r: { data?: unknown; error?: unknown }) {
-  supabaseResult = { data: r.data ?? [], error: r.error ?? null };
+  supabaseRejectionResult = { data: r.data ?? [], error: r.error ?? null };
+}
+
+function setAcceptedCount(c: { count?: number | null; error?: unknown }) {
+  supabaseAcceptedResult = {
+    count: c.count === undefined ? 0 : c.count,
+    error: c.error ?? null,
+  };
 }
 
 function makeChainable() {
+  const state: { category: string | null; isHeadCount: boolean } = {
+    category: null,
+    isHeadCount: false,
+  };
   const chain: Record<string, unknown> = {
-    select: vi.fn(() => chain),
-    eq: vi.fn(() => chain),
+    select: vi.fn((_: unknown, opts?: { head?: boolean }) => {
+      if (opts?.head) state.isHeadCount = true;
+      return chain;
+    }),
+    eq: vi.fn((col: string, val: string) => {
+      if (col === 'category') state.category = val;
+      return chain;
+    }),
     gte: vi.fn(() => chain),
     order: vi.fn(() => chain),
     limit: vi.fn(() => chain),
-    then: (resolve: (r: unknown) => unknown) =>
-      Promise.resolve(supabaseResult).then(resolve),
+    then: (resolve: (r: unknown) => unknown) => {
+      const result =
+        state.isHeadCount || state.category === 'quiz.oracle_evaluated'
+          ? { data: null, error: supabaseAcceptedResult.error, count: supabaseAcceptedResult.count }
+          : { ...supabaseRejectionResult };
+      return Promise.resolve(result).then(resolve);
+    },
   };
   return chain;
 }
@@ -105,6 +141,7 @@ function buildRequest(): Request {
 beforeEach(() => {
   vi.clearAllMocks();
   setSupabaseResult({ data: [], error: null });
+  setAcceptedCount({ count: 0 });
 });
 
 // ─── Auth ─────────────────────────────────────────────────────────────
@@ -147,6 +184,7 @@ describe('GET /api/super-admin/ai/oracle-health: response shape', () => {
   it('200 with the expected top-level shape on empty result', async () => {
     mockAuthorizeRequest.mockResolvedValueOnce(AUTH_OK);
     setSupabaseResult({ data: [], error: null });
+    setAcceptedCount({ count: 0 });
     const { GET } = await import(
       '@/app/api/super-admin/ai/oracle-health/route'
     );
@@ -158,6 +196,7 @@ describe('GET /api/super-admin/ai/oracle-health: response shape', () => {
       expect.objectContaining({
         windowHours: 24,
         totalRejected: 0,
+        totalAccepted: 0,
         totalEvaluated: null,
         rejectionRate: null,
         rejectionsByReason: expect.any(Object),
@@ -168,6 +207,65 @@ describe('GET /api/super-admin/ai/oracle-health: response shape', () => {
       }),
     );
     expect(body.data.hourlyRejections).toHaveLength(24);
+  });
+
+  it('computes rejectionRate when accept events exist (Q3)', async () => {
+    mockAuthorizeRequest.mockResolvedValueOnce(AUTH_OK);
+    // 2 rejections in the window
+    setSupabaseResult({
+      data: [
+        {
+          occurred_at: new Date().toISOString(),
+          context: { category: 'llm_mismatch', reason: 'r1' },
+        },
+        {
+          occurred_at: new Date(Date.now() - 60_000).toISOString(),
+          context: { category: 'p6_options_not_4', reason: 'r2' },
+        },
+      ],
+      error: null,
+    });
+    // 8 accepts → totalEvaluated=10, rate=0.2
+    setAcceptedCount({ count: 8 });
+
+    const { GET } = await import(
+      '@/app/api/super-admin/ai/oracle-health/route'
+    );
+    const res = await GET(buildRequest() as never);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.totalRejected).toBe(2);
+    expect(body.data.totalAccepted).toBe(8);
+    expect(body.data.totalEvaluated).toBe(10);
+    expect(body.data.rejectionRate).toBeCloseTo(0.2, 5);
+    expect(body.data.notes.acceptedEventMissing).toBe(false);
+  });
+
+  it('keeps acceptedEventMissing=true when only rejection rows exist', async () => {
+    mockAuthorizeRequest.mockResolvedValueOnce(AUTH_OK);
+    setSupabaseResult({
+      data: [
+        {
+          occurred_at: new Date().toISOString(),
+          context: { category: 'llm_mismatch', reason: 'r1' },
+        },
+      ],
+      error: null,
+    });
+    setAcceptedCount({ count: 0 });
+
+    const { GET } = await import(
+      '@/app/api/super-admin/ai/oracle-health/route'
+    );
+    const res = await GET(buildRequest() as never);
+    const body = await res.json();
+    expect(body.data.totalRejected).toBe(1);
+    expect(body.data.totalAccepted).toBe(0);
+    // With only rejections (no accepts) totalEvaluated should still be a
+    // number — we know SOME evaluations happened because rejections did.
+    expect(body.data.totalEvaluated).toBe(1);
+    expect(body.data.rejectionRate).toBeCloseTo(1.0, 5);
+    expect(body.data.notes.acceptedEventMissing).toBe(true);
   });
 
   it('hourly bucket is ordered oldest → newest with 24 buckets', async () => {
