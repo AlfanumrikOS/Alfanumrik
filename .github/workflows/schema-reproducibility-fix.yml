@@ -252,56 +252,62 @@ jobs:
           awk 'BEGIN{blank=0} /^$/{blank++; if (blank<=2) print; next} {blank=0; print}' \
             baseline.step11.sql > baseline.step12.sql
 
-          # Step 8 — reorder so tables/sequences/types come BEFORE the
-          # functions/views/triggers/policies that reference them. pg_dump
-          # emits objects in alphabetical-ish-by-class order and relies on
-          # `SET check_function_bodies = false` so function bodies aren't
-          # validated on first parse. But `%ROWTYPE` declarations in DECLARE
-          # blocks are resolved at PARSE time of the function, NOT at
-          # check-function-bodies time. So
-          #     v_rec public.adaptive_mastery%ROWTYPE
-          # in `bkt_update` (emitted at line ~1157) fails when
-          # `public.adaptive_mastery` (emitted at line ~8739) doesn't yet
-          # exist. The reorder script fixes this by routing each top-level
-          # statement into one of 10 buckets and concatenating in
-          # dependency order.
+          # Step 8 — rewrite `<table>%ROWTYPE` declarations to `RECORD`.
+          #
+          # pg_dump emits objects in dependency-aware order and relies on
+          # `SET check_function_bodies = false` so PL/pgSQL function bodies
+          # are not validated against missing referenced objects on first
+          # parse. The single documented exception is `%ROWTYPE` declarations
+          # in `DECLARE` blocks: PARSE-time resolves them BEFORE
+          # `check_function_bodies` kicks in, so a function emitted before
+          # the table it references fails to apply on a fresh replay.
+          #
+          # The transform rewrites every `<schema>.<table>%ROWTYPE` (and
+          # unqualified `<table>%ROWTYPE`) to the generic PL/pgSQL `RECORD`
+          # type. PostgreSQL resolves `RECORD` at runtime via the SELECT INTO
+          # / RETURNING ... INTO that populates it. Field access
+          # `v_rec.column_name` works identically. The function body is
+          # otherwise unchanged.
+          #
+          # This is a 1:1 token swap — line count is unchanged. We do NOT
+          # bucket-reorder; pg_dump's natural --schema-only ordering is
+          # preserved byte-for-byte outside the rewritten declarations.
+          # Earlier iterations of this script bucketed every top-level
+          # statement, which broke pg_dump's careful within-class ordering
+          # (function-to-function calls, view-on-view, functional indexes,
+          # partial-index predicates) and required a new fix every time
+          # we tripped on a new prod-specific dependency class.
           #
           # The script is checked into the repo at scripts/reorder-baseline.mjs
           # and ships with self-tests (`node scripts/reorder-baseline.mjs --self-test`).
-          # It is idempotent: running it on already-reordered output is a no-op.
+          # It is idempotent: running it on its own output is a no-op (no
+          # `%ROWTYPE` strings remain after the first pass).
           node "${GITHUB_WORKSPACE}/scripts/reorder-baseline.mjs" \
             --input baseline.step12.sql \
             --output baseline.step13.sql
 
-          # Quick post-reorder sanity check: the reorder script must not
-          # silently drop content. Compare statement count (count of `;` at
-          # start of trailing whitespace, approximated as semicolons followed
-          # by newline), allowing only the +N bucket-header lines to differ
-          # in line count.
+          # Sanity check: the rewrite is a 1:1 token swap so line count must
+          # be unchanged.
           IN_LINES=$(wc -l < baseline.step12.sql)
           OUT_LINES=$(wc -l < baseline.step13.sql)
           DELTA=$((OUT_LINES - IN_LINES))
-          # Reorder adds at most 20 marker lines (one per non-empty bucket; 13 buckets after PR #466).
-          # Negative or > 20 → something dropped or duplicated. Fail loudly.
-          if [ "$DELTA" -lt 0 ] || [ "$DELTA" -gt 20 ]; then
-            echo "::error::Reorder line-count delta ($DELTA) outside expected ±20 envelope. in=$IN_LINES out=$OUT_LINES"
-            diff <(grep -cE '^CREATE TABLE' baseline.step12.sql) <(grep -cE '^CREATE TABLE' baseline.step13.sql) || true
-            diff <(grep -cE '^CREATE (OR REPLACE )?FUNCTION' baseline.step12.sql) <(grep -cE '^CREATE (OR REPLACE )?FUNCTION' baseline.step13.sql) || true
+          if [ "$DELTA" -ne 0 ]; then
+            echo "::error::Rewrite line-count delta ($DELTA) is non-zero — RECORD rewrite should be 1:1. in=$IN_LINES out=$OUT_LINES"
             exit 1
           fi
 
-          # Verify the reorder actually fixed the %ROWTYPE ordering for the
-          # canonical failure case (bkt_update / adaptive_mastery). If this
-          # ever flips back, the dry-run will fail further down with the same
-          # SQLSTATE 42P01 we shipped this PR to fix.
-          BKT_LINE=$(grep -nE 'CREATE OR REPLACE FUNCTION "public"\."bkt_update"' baseline.step13.sql | head -1 | cut -d: -f1 || true)
-          AM_LINE=$(grep -nE 'CREATE TABLE IF NOT EXISTS "public"\."adaptive_mastery"' baseline.step13.sql | head -1 | cut -d: -f1 || true)
-          if [ -n "$BKT_LINE" ] && [ -n "$AM_LINE" ] && [ "$AM_LINE" -ge "$BKT_LINE" ]; then
-            echo "::error::%ROWTYPE ordering check failed: adaptive_mastery (line $AM_LINE) must precede bkt_update (line $BKT_LINE)"
+          # Hard guard: zero `%ROWTYPE` strings should remain in the output.
+          # If any survived, the regex missed a form pg_dump emitted and the
+          # downstream replay will fail with SQLSTATE 42P01 — fail here
+          # instead with a clearer error.
+          REMAINING_ROWTYPE=$(grep -cE '%ROWTYPE' baseline.step13.sql || true)
+          if [ "$REMAINING_ROWTYPE" != "0" ]; then
+            echo "::error::%ROWTYPE rewrite incomplete — $REMAINING_ROWTYPE occurrences still present in output"
+            grep -nE '%ROWTYPE' baseline.step13.sql | head -10
             exit 1
           fi
 
-          # Canonical sanitized output is the reordered file.
+          # Canonical sanitized output is the rewritten file.
           cp baseline.step13.sql baseline.sanitized.sql
 
           # Final sanity check — output is non-empty and free of stripped patterns.
