@@ -181,6 +181,35 @@ jobs:
           sed -E 's/^CREATE EXTENSION ([^ ;]+);$/CREATE EXTENSION IF NOT EXISTS \1;/' \
             baseline.step6.sql > baseline.step7.sql
 
+          # Step 3b — ensure pgvector lives in public schema. Production has
+          # `vector` installed in `public` (legacy default), so the prod dump
+          # references `public.vector(N)` column types and `public.vector_cosine_ops`
+          # opclasses. But `supabase db dump --schema public` does NOT emit any
+          # `CREATE EXTENSION` lines — extensions live outside the public schema
+          # and are excluded from --schema captures. Local Supabase (and any
+          # fresh project) ships pgvector pre-installed in the `extensions`
+          # schema, NOT `public`, so the first `public.vector` reference fails
+          # with `ERROR: type "public.vector" does not exist (SQLSTATE 42704)`.
+          #
+          # Fix: prepend a `CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;`
+          # so fresh envs install vector in the schema the baseline expects.
+          # The reorder script (step 8) routes CREATE EXTENSION into bucket 1
+          # (setup), so the prepended line lands at the top of the executed SQL,
+          # before any column declaration that depends on it.
+          #
+          # Idempotent: prod is pre-marked applied (the baseline never
+          # re-executes there), and IF NOT EXISTS makes the line safe even if
+          # vector is already present in some other schema (it becomes a no-op
+          # — it does NOT attempt to move the extension).
+          {
+            echo "-- Injected by schema-reproducibility-fix.yml (Step 3b):"
+            echo "-- ensure pgvector lives in public schema for fresh envs."
+            echo "CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;"
+            echo ""
+            cat baseline.step7.sql
+          } > baseline.step7b.sql
+          mv baseline.step7b.sql baseline.step7.sql
+
           # Step 4a — make CREATE SCHEMA idempotent.
           sed -E 's/^CREATE SCHEMA ([a-zA-Z_][a-zA-Z0-9_]*);$/CREATE SCHEMA IF NOT EXISTS \1;/' \
             baseline.step7.sql > baseline.step8.sql
