@@ -40,6 +40,21 @@ import {
   isFeatureFlagEnabled,
   type GroundedRequest,
 } from '../_shared/grounded-client.ts'
+import {
+  validateCandidate,
+  parseLlmGraderResponse,
+  makeCandidateCacheKey,
+  getCachedResult,
+  setCachedResult,
+  type CandidateQuestion,
+  type LlmGradeResult,
+  type OracleResult,
+} from '../_shared/quiz-oracle.ts'
+import {
+  QUIZ_ORACLE_GRADER_SYSTEM_PROMPT,
+  buildQuizOracleGraderUserPrompt,
+} from '../_shared/quiz-oracle-prompts.ts'
+import { logOpsEvent } from '../_shared/ops-events.ts'
 
 // ─── Environment ──────────────────────────────────────────────────────────────
 const ANTHROPIC_API_KEY   = Deno.env.get('ANTHROPIC_API_KEY')   || ''
@@ -338,6 +353,127 @@ function extractJsonArray(text: string): unknown[] | null {
   } catch {
     return null
   }
+}
+
+// ─── Quiz validation oracle (REG-54) ─────────────────────────────────────────
+//
+// Validates each candidate via deterministic P6 checks + an LLM grader
+// (Claude Haiku). Gated by `ff_quiz_oracle_enabled` (default OFF in prod).
+//
+// Worst-case cost per accepted question:
+//   - 1 generator call (status quo)
+//   - 1 oracle LLM-grader call
+//   - 1 retry generator call (when oracle rejects on first try)
+//   - 1 retry oracle LLM-grader call
+//   = 4 Claude calls absolute worst case for an accepted question.
+//   Typical (oracle approves first try): 2 Claude calls.
+//
+// Rejections are logged to ops_events with category='quiz.oracle_rejection'
+// (severity='info' — rejections are expected, that's the oracle working).
+
+const ORACLE_LLM_GRADER_TIMEOUT_MS = 12_000 // single-turn JSON ~ small payload
+
+/**
+ * Call Claude as the oracle's LLM grader. Returns a structured verdict or
+ * throws on hard failure (network, timeout, parse). The oracle module catches
+ * thrown errors and surfaces them as 'llm_grader_unavailable' rejections.
+ */
+async function callOracleGrader(input: {
+  question_text: string
+  options: string[]
+  correct_answer_index: number
+  explanation: string
+}): Promise<LlmGradeResult> {
+  const userPrompt = buildQuizOracleGraderUserPrompt(input)
+
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), ORACLE_LLM_GRADER_TIMEOUT_MS)
+
+  try {
+    // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- TODO(phase-4-cleanup): oracle grader is a back-office content-audit path; route through grounded service when an unscoped LLM-grader API exists.
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 256, // grader returns one-line JSON
+        temperature: 0,  // factual audit — no creativity (P12)
+        system: QUIZ_ORACLE_GRADER_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: userPrompt }],
+      }),
+      signal: controller.signal,
+    })
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      throw new Error(`Oracle grader HTTP ${res.status}: ${body.slice(0, 200)}`)
+    }
+    const data = await res.json()
+    const text: string = data?.content?.[0]?.text || ''
+    const parsed = parseLlmGraderResponse(text)
+    if (!parsed) {
+      // Treat unparseable grader output as ambiguous — caller will reject.
+      return { verdict: 'ambiguous', reasoning: 'grader returned unparseable JSON' }
+    }
+    return parsed
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('Oracle grader timeout (12s)')
+    }
+    throw err
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
+/**
+ * Validate one candidate question with caching. Returns OracleResult.
+ * Logs rejections (NOT acceptances) to ops_events for audit visibility.
+ */
+async function validateWithCacheAndLogging(
+  candidate: CandidateQuestion,
+  ctx: {
+    grade: string
+    subject: string
+    chapter: string
+    enableLlmGrader: boolean
+  },
+): Promise<OracleResult> {
+  const cacheKey = makeCandidateCacheKey(candidate)
+  const cached = getCachedResult(cacheKey)
+  if (cached) return cached
+
+  const result = await validateCandidate(candidate, {
+    enableLlmGrader: ctx.enableLlmGrader,
+    llmGrade: ctx.enableLlmGrader ? callOracleGrader : undefined,
+  })
+  setCachedResult(cacheKey, result)
+
+  if (!result.ok) {
+    // Log rejection (no PII — generated content is not student data per P13).
+    await logOpsEvent({
+      category: 'quiz.oracle_rejection',
+      source: 'bulk-question-gen',
+      severity: 'info',
+      message: `Oracle rejected candidate: ${result.category}`,
+      context: {
+        grade: ctx.grade,
+        subject: ctx.subject,
+        chapter: ctx.chapter,
+        category: result.category,
+        reason: result.reason,
+        suggested_correct_index: result.suggested_correct_index ?? null,
+        llm_calls: result.llm_calls,
+        // First 80 chars of question_text for triage (not PII).
+        question_preview: candidate.question_text.slice(0, 80),
+      },
+    })
+  }
+
+  return result
 }
 
 // ─── Two-pass grounded generation + verification (Phase 3) ───────────────────
@@ -767,13 +903,22 @@ Deno.serve(async (req: Request) => {
     if (useGroundedService) {
       const chapterNumberParsed = /^\d+$/.test(safeChapter) ? parseInt(safeChapter, 10) : null
 
+      // Oracle gate (REG-54) — also active on the grounded path. The two-pass
+      // grounded verifier validates against NCERT chunks; the oracle adds a
+      // separate semantic check that the explanation logically supports the
+      // marked correct option (independent of NCERT alignment). Both can
+      // catch bugs the other misses.
+      const oracleOnGroundedPath = await isFeatureFlagEnabled('ff_quiz_oracle_enabled')
+
       // Serial calls — service runs its own circuit breaker; 50 × 2 passes
       // is ~100 sub-requests so keep strict sequence for clarity and to
       // avoid hitting Claude rate limits.
       const resultRows: GroundedInsertRow[] = []
       const rejectionReasons: string[] = []
+      let oracleRejectedOnGrounded = 0
       for (let i = 0; i < count; i++) {
-        const outcome = await generateAndVerifyOne({
+        // First attempt
+        let outcome = await generateAndVerifyOne({
           grade,
           subject: safeSubject,
           chapter: safeChapter,
@@ -782,9 +927,82 @@ Deno.serve(async (req: Request) => {
           bloomLevel,
           fallbackDifficulty: difficulty,
         })
+
+        let acceptedRow: GroundedInsertRow | null = null
         if (outcome.ok) {
-          resultRows.push(outcome.row)
-        } else {
+          if (!oracleOnGroundedPath) {
+            acceptedRow = outcome.row
+          } else {
+            const oracleResult = await validateWithCacheAndLogging(
+              {
+                question_text: outcome.row.question_text,
+                options: outcome.row.options,
+                correct_answer_index: outcome.row.correct_answer_index,
+                explanation: outcome.row.explanation,
+                hint: outcome.row.hint,
+                difficulty: outcome.row.difficulty,
+                bloom_level: outcome.row.bloom_level,
+              },
+              {
+                grade,
+                subject: safeSubject,
+                chapter: safeChapter,
+                enableLlmGrader: true,
+              },
+            )
+            if (oracleResult.ok) {
+              acceptedRow = outcome.row
+            } else {
+              // Single retry — re-run the grounded generate+verify pipeline
+              // once. Cost ceiling: at most 4 Claude calls for one accepted
+              // question (1 gen + 1 grader + 1 retry-gen + 1 retry-grader).
+              const retry = await generateAndVerifyOne({
+                grade,
+                subject: safeSubject,
+                chapter: safeChapter,
+                chapterNumber: chapterNumberParsed,
+                chapterId: safeChapterId,
+                bloomLevel,
+                fallbackDifficulty: difficulty,
+              })
+              if (retry.ok) {
+                const retryResult = await validateWithCacheAndLogging(
+                  {
+                    question_text: retry.row.question_text,
+                    options: retry.row.options,
+                    correct_answer_index: retry.row.correct_answer_index,
+                    explanation: retry.row.explanation,
+                    hint: retry.row.hint,
+                    difficulty: retry.row.difficulty,
+                    bloom_level: retry.row.bloom_level,
+                  },
+                  {
+                    grade,
+                    subject: safeSubject,
+                    chapter: safeChapter,
+                    enableLlmGrader: true,
+                  },
+                )
+                if (retryResult.ok) {
+                  acceptedRow = retry.row
+                } else {
+                  // Second oracle rejection — drop the slot.
+                  oracleRejectedOnGrounded++
+                  rejectionReasons.push(`oracle_reject_after_retry:${retryResult.category}`)
+                  outcome = retry // for downstream rejection accounting
+                }
+              } else {
+                oracleRejectedOnGrounded++
+                rejectionReasons.push(`oracle_reject_then_generator_fail:${retry.reason}`)
+                outcome = retry
+              }
+            }
+          }
+        }
+
+        if (acceptedRow) {
+          resultRows.push(acceptedRow)
+        } else if (!outcome.ok) {
           rejectionReasons.push(outcome.reason)
         }
       }
@@ -832,6 +1050,8 @@ Deno.serve(async (req: Request) => {
         verified:      verifiedCount,
         failed:        failedCount,
         rejected:      rejectionReasons.length,
+        oracle_enabled: oracleOnGroundedPath,
+        oracle_rejected: oracleRejectedOnGrounded,
         difficulty,
         bloom_level:   bloomLevel,
         ts:            new Date().toISOString(),
@@ -844,6 +1064,8 @@ Deno.serve(async (req: Request) => {
           verified: verifiedCount,
           failed: failedCount,
           rejected: rejectionReasons.length,
+          oracle_enabled: oracleOnGroundedPath,
+          oracle_rejected: oracleRejectedOnGrounded,
           rejection_reasons: rejectionReasons.length > 0 ? rejectionReasons : undefined,
           questions: insertedArr,
           flow: 'grounded-two-pass',
@@ -896,6 +1118,56 @@ Deno.serve(async (req: Request) => {
       console.warn(`bulk-question-gen: ${rejectedCount.value} questions rejected by validator`)
     }
 
+    // ── Oracle gate (REG-54) ───────────────────────────────────────────────
+    // When ff_quiz_oracle_enabled is ON, run each candidate through the
+    // validation oracle. Rejections are logged to ops_events with
+    // category='quiz.oracle_rejection'. No retry on this path — the legacy
+    // single-pass generator returns an entire batch in one Claude call;
+    // selectively re-prompting one question would require a second batch
+    // call and break the cost ceiling. Failed candidates are dropped.
+    const oracleEnabled = await isFeatureFlagEnabled('ff_quiz_oracle_enabled')
+    let oracleRejectedCount = 0
+    const oracleAcceptedQuestions: GeneratedQuestion[] = []
+    if (oracleEnabled) {
+      for (const q of validQuestions) {
+        const result = await validateWithCacheAndLogging(
+          {
+            question_text: q.question_text,
+            options: q.options,
+            correct_answer_index: q.correct_answer_index,
+            explanation: q.explanation,
+            hint: q.hint,
+            difficulty: q.difficulty,
+            bloom_level: q.bloom_level,
+          },
+          {
+            grade,
+            subject: safeSubject,
+            chapter: safeChapter,
+            enableLlmGrader: true,
+          },
+        )
+        if (result.ok) {
+          oracleAcceptedQuestions.push(q)
+        } else {
+          oracleRejectedCount++
+        }
+      }
+    } else {
+      // Flag OFF — pass through every P6-valid question as before.
+      oracleAcceptedQuestions.push(...validQuestions)
+    }
+
+    if (oracleRejectedCount > 0) {
+      console.warn(
+        `bulk-question-gen: ${oracleRejectedCount} questions rejected by oracle (ff_quiz_oracle_enabled=ON)`,
+      )
+    }
+
+    // Replace validQuestions downstream with the oracle-gated list.
+    validQuestions.length = 0
+    validQuestions.push(...oracleAcceptedQuestions)
+
     const generated = rawArray.length
 
     if (validQuestions.length === 0) {
@@ -947,28 +1219,32 @@ Deno.serve(async (req: Request) => {
     // Log to structured console output; ai_generation_logs table does not yet
     // exist in the schema. A future migration can add it and wire this up.
     console.warn(JSON.stringify({
-      event:         'bulk_question_gen',
-      function_name: 'bulk-question-gen',
+      event:           'bulk_question_gen',
+      function_name:   'bulk-question-gen',
       grade,
-      subject:       safeSubject,
-      chapter:       safeChapter,
-      requested:     count,
+      subject:         safeSubject,
+      chapter:         safeChapter,
+      requested:       count,
       generated,
-      inserted:      inserted.length,
-      rejected:      rejectedCount.value,
+      inserted:        inserted.length,
+      rejected:        rejectedCount.value,
+      oracle_enabled:  oracleEnabled,
+      oracle_rejected: oracleRejectedCount,
       difficulty,
-      bloom_level:   bloomLevel,
-      model:         'claude-haiku-4-5-20251001',
-      ts:            new Date().toISOString(),
+      bloom_level:     bloomLevel,
+      model:           'claude-haiku-4-5-20251001',
+      ts:              new Date().toISOString(),
     }))
 
     // ── 8. Return result ────────────────────────────────────────────────────
     return jsonResponse(
       {
         generated,
-        inserted:  inserted.length,
-        rejected:  rejectedCount.value > 0 ? rejectedCount.value : undefined,
-        questions: inserted,
+        inserted:        inserted.length,
+        rejected:        rejectedCount.value > 0 ? rejectedCount.value : undefined,
+        oracle_enabled:  oracleEnabled,
+        oracle_rejected: oracleRejectedCount,
+        questions:       inserted,
       },
       200,
       {},

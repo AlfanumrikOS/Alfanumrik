@@ -324,3 +324,73 @@ Phase C (out of scope for this PR) will retire the legacy v1
 `submit_quiz_results` once mobile adopts v2, drop the `seededShuffle`
 client helper, and tighten the explanation linter to also flag
 "first option / दूसरा विकल्प" position references.
+
+## AI Quiz-Generator Validation Oracle (Phase C+ — 2026-04-29)
+
+Source: Phase C migration header
+(`supabase/migrations/20260430000000_quiz_phase_c_options_versioning.sql:71-74`)
+called for a per-question AI-validation oracle. REG-54 ships that oracle
+as the generator-side gate that catches Claude hallucinations BEFORE the
+candidate row reaches `question_bank`. Existing rows are NOT re-validated;
+this is a forward-only quality gate.
+
+Architecture:
+1. Cheap deterministic checks first (P6 + option-overlap + numeric
+   consistency) — pure functions, no I/O.
+2. Expensive LLM-grader second (Claude Haiku, temperature=0, single-turn
+   strict-JSON output) — only invoked when deterministic checks pass.
+3. One retry with corrective regeneration on first oracle reject; drop
+   the slot if the retry also fails (no silent passthrough).
+4. Cost ceiling per accepted question: worst case 4 Claude calls (1 gen +
+   1 grader + 1 retry-gen + 1 retry-grader); typical case 2.
+5. Gated by `ff_quiz_oracle_enabled` (default OFF in prod for first
+   deploy; ON in dev/staging) so we can roll out gradually and measure
+   the rejection-rate baseline via the super-admin AI health panel.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-54 | `quiz_oracle_validation_contract` | (1) Deterministic checks reject every P6 violation category — empty/placeholder text, options ≠ 4, non-distinct options, correct_answer_index outside 0..3, empty explanation, invalid difficulty, invalid bloom_level. (2) Semantic option-overlap detection rejects high-Jaccard short options (≥0.7 on ≤6 tokens) and very-high-overlap long options (≥0.85). (3) Numeric consistency rejects when the marked correct option contains a number absent from the explanation, EXCLUDING numbers given in the question itself (so re-statement of givens before derivation isn't flagged). (4) LLM-grader contract: verdict='consistent' → accept; verdict='mismatch' → reject with category='llm_mismatch' and surface suggested_correct_index when present; verdict='ambiguous' → reject with category='llm_ambiguous'; grader throws → reject with category='llm_grader_unavailable' and llm_calls=1. (5) Reasoning text truncated to ≤300 chars on rejection (no PII / log bloat). (6) Parser tolerates ```json fences and plain ``` fences; rejects unknown verdicts; drops out-of-range or non-integer suggested_correct_index. (7) Prompt builder is deterministic (cache-safe) and marks the correct option with " (MARKED CORRECT)". (8) System prompt forbids commenting on difficulty/age/curriculum (strict scope); requires strict JSON, no markdown. | `src/__tests__/quiz-oracle.test.ts` | E |
+
+### Invariants covered by this section
+
+- P6 (question quality — every served candidate must have non-empty text
+  without `{{`/`[BLANK]`, exactly 4 distinct non-empty options,
+  `correct_answer_index` in 0..3, non-empty explanation, valid difficulty
+  and bloom_level — all enforced by the deterministic check layer
+  upstream of `question_bank`).
+- P12 (AI safety — oracle output is NEVER shown to students; rejections
+  log to `ops_events` with `category='quiz.oracle_rejection'`,
+  `severity='info'` for queryability without leaking PII; LLM grader
+  receives only candidate content, never student identity / grade / PII;
+  feature-flagged rollout means the gate can be disabled in seconds via
+  `ff_quiz_oracle_enabled` if it false-rejects too aggressively).
+- P13 (data privacy — generated questions are content, not student data,
+  so logging full payloads is permitted; `redactPII` in `_shared/ops-events`
+  still redacts any accidental PII before insert).
+
+### Notes on test strategy
+
+REG-54 follows the contract/parity pattern (see REG-37, REG-50, REG-51):
+the authoritative oracle module lives at
+`src/lib/ai/validation/quiz-oracle.ts` and is unit-testable in vitest;
+the Deno mirror at `supabase/functions/_shared/quiz-oracle.ts` keeps
+the same logic verbatim and is the actual code path used by Edge
+Functions (`bulk-question-gen`, `quiz-generator`). If the two files
+diverge, quality review must reject — the prompts module
+(`quiz-oracle-prompts.ts`) has the same parity contract.
+
+The LLM grader is INJECTED as a function (`llmGrade`) rather than
+imported, so the unit tests can mock the verdict/error path
+without booting fetch / Anthropic SDK / network. The Edge Function
+call site supplies `callOracleGrader` (real Claude Haiku call) at the
+top-level oracle entry point.
+
+Wire-up status:
+- `bulk-question-gen` (legacy single-pass + grounded two-pass): wired
+  with retry-once on grounded path (legacy path drops failures because
+  one Claude call returns the entire batch — re-prompting one question
+  would require a second batch call and break the cost ceiling).
+- `quiz-generator` (hot serving path): runs deterministic-only oracle as
+  defense-in-depth on every question fetched from `question_bank`. No
+  LLM-grader call here — questions were already gated on insert by
+  `bulk-question-gen` when the flag was ON. Sub-millisecond per question.
