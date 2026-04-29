@@ -70,7 +70,7 @@ Round 2 audit identified 4 new catalog entries to promote: atomic_plan_change at
 | Parent portal | `src/app/parent/` (6 pages) |
 | Teacher portal | `src/app/teacher/` (8 pages) |
 | Notifications | `src/app/notifications/page.tsx`, daily-cron Edge Function |
-| Migrations | `supabase/migrations/` (265 files) |
+| Migrations | `supabase/migrations/` (265 files). **Schema reproducibility P0 fix runbook: `docs/runbooks/schema-reproducibility-fix.md`** — replaces the legacy chain with a pg_dump-derived idempotent baseline (`00000000000000_baseline_from_prod.sql`), pre-marked applied on prod and main-staging via `supabase migration repair` so the merge skips execution on those envs and only runs against fresh projects (CI live-DB tests, new staging, DR). |
 | CI/CD | `.github/workflows/ci.yml`, `deploy-production.yml`, `deploy-staging.yml` |
 | Mobile | `mobile/` (Flutter app) |
 | SEO/PWA | `src/app/sitemap.ts`, `public/manifest.json`, `public/sw.js`, `src/components/JsonLd.tsx` |
