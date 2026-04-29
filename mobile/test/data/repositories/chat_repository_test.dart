@@ -12,12 +12,18 @@ import 'package:alfanumrik/data/repositories/chat_repository.dart';
 
 void main() {
   group('ApiConstants.foxyEndpoint', () {
-    test('defaults to "edge" so existing builds preserve current behavior',
-        () {
-      // Sanity-check the compile-time default. If this fails, somebody flipped
-      // the default from edge → api without a coordinated rollout — that
-      // breaks F7's "default-stays-edge" rollout safety guarantee.
-      expect(ApiConstants.foxyEndpoint, 'edge');
+    test('defaults to "api" — mobile uses the Next.js /api/foxy route', () {
+      // Phase 2 cutover (PR feat/mobile-quiz-v2-and-foxy-route): default
+      // flipped from 'edge' → 'api'. Mobile now matches the surface web has
+      // been on (Voyage RAG + Sonnet + full P12 rails). The 'edge' branch
+      // stays compiled-in indefinitely for old builds in the wild and as a
+      // rollback path via --dart-define=FOXY_ENDPOINT=edge.
+      //
+      // If this assertion needs to change, update the docs:
+      //   - mobile/docs/foxy-migration.md (rollout timeline)
+      //   - mobile/lib/core/constants/api_constants.dart (the default itself)
+      //   - mobile/build_apk.sh (the env-var default)
+      expect(ApiConstants.foxyEndpoint, 'api');
     });
   });
 

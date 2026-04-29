@@ -61,17 +61,18 @@ fi
 echo ""
 echo "🚀 Building release APKs (split by ABI)..."
 # FOXY_ENDPOINT controls which Foxy backend the mobile app calls:
-#   'edge' (default) → legacy supabase/functions/v1/foxy-tutor (DEPRECATED, FTS-only)
-#   'api'            → new Next.js /api/foxy (RAG + Sonnet + P12-grade safety rails)
-# Default stays 'edge' so existing user builds remain unchanged. Ops will flip
-# this to 'api' in a future release after staging validates the new path.
-# See mobile/docs/foxy-migration.md.
+#   'api' (default) → new Next.js /api/foxy (RAG + Sonnet + P12-grade safety rails)
+#   'edge'          → legacy supabase/functions/v1/foxy-tutor (DEPRECATED, FTS-only)
+# Default flipped to 'api' in PR (mobile-quiz-v2-and-foxy-route): mobile now
+# matches the surface web has been on. To roll back a build, set
+# FOXY_ENDPOINT=edge before running this script.
+# See mobile/docs/foxy-migration.md for the deprecation timeline.
 flutter build apk --release --split-per-abi \
     --dart-define=SUPABASE_URL="${SUPABASE_URL}" \
     --dart-define=SUPABASE_ANON_KEY="${SUPABASE_ANON_KEY}" \
     --dart-define=RAZORPAY_KEY_ID="${RAZORPAY_KEY_ID:-}" \
     --dart-define=API_BASE_URL="${API_BASE_URL:-https://alfanumrik.com/api}" \
-    --dart-define=FOXY_ENDPOINT="${FOXY_ENDPOINT:-edge}"
+    --dart-define=FOXY_ENDPOINT="${FOXY_ENDPOINT:-api}"
 
 echo ""
 echo "================================"
