@@ -117,7 +117,17 @@ async function handleParentLogin(
     }
   }
 
-  // 2b. Check if there's already a guardian linked to this student
+  // 2b. Check if there's already a guardian linked to this student.
+  // Bug fix (2026-04-29) — privacy hardening (P13):
+  // Previously, when an UNAUTHENTICATED user entered a link code that another
+  // guardian had already claimed, this branch returned that other guardian's
+  // id + name, effectively logging the new caller in as that other parent.
+  // That allowed anyone in possession of a leaked link code (e.g. a tuition
+  // center) to impersonate the real parent and view all of their linked
+  // children. We now require the caller to be authenticated (handled by the
+  // auth_user_id branch above) before reusing an existing guardian; otherwise
+  // we add a NEW guardian + link, scoping the new caller's session to a
+  // distinct guardian row.
   const { data: existingLink } = await supabase
     .from('guardian_student_links')
     .select('guardian_id, guardians(id, name, email)')
@@ -126,12 +136,33 @@ async function handleParentLogin(
     .limit(1)
     .maybeSingle()
 
-  if (existingLink?.guardian_id) {
-    // Use existing guardian
-    guardianId = existingLink.guardian_id
-    const g = existingLink.guardians as unknown as { id: string; name: string } | null
-    guardianName = g?.name || parentName
+  if (existingLink?.guardian_id && authUserId) {
+    // Authenticated caller AND a guardian already exists for this student.
+    // The auth_user_id branch above would have matched the caller's own
+    // guardian if they had one; falling through to here means they don't.
+    // Reuse the existing guardian only when the existing guardian's
+    // auth_user_id matches the caller (prevents hijack). Otherwise, create a
+    // distinct guardian row below.
+    const { data: existingGuardian } = await supabase
+      .from('guardians')
+      .select('id, name, auth_user_id')
+      .eq('id', existingLink.guardian_id)
+      .maybeSingle()
+
+    if (existingGuardian && existingGuardian.auth_user_id === authUserId) {
+      guardianId = existingGuardian.id
+      guardianName = existingGuardian.name || parentName
+    } else {
+      // Fall through to create-new-guardian path
+      guardianId = ''
+      guardianName = ''
+    }
   } else {
+    guardianId = ''
+    guardianName = ''
+  }
+
+  if (!guardianId) {
     // Create new guardian and link — set auth_user_id if the caller is authenticated
     const guardianInsert: Record<string, unknown> = { name: parentName, relationship: 'parent' }
     if (authUserId) {
@@ -346,6 +377,21 @@ async function getChildDashboardData(
     else masteryLevels.attempted++
   }
 
+  // Bug fix (2026-04-29): Compute a true mastery percentage from concept_mastery
+  // rather than aliasing accuracy. Previously stats.mastery was set to accuracy,
+  // so the parent UI showed identical numbers for "Mastery" and "Accuracy" pills,
+  // misleading parents about distinct measures.
+  // mastery_percent = (mastered + 0.66 * proficient + 0.33 * familiar) / total
+  // Same weighting used by the student-facing /progress page.
+  const totalConcepts = allConcepts.length
+  const masteryPercent = totalConcepts > 0
+    ? Math.round(
+        ((masteryLevels.mastered + 0.66 * masteryLevels.proficient + 0.33 * masteryLevels.familiar) /
+          totalConcepts) *
+          100
+      )
+    : 0
+
   // Subject data
   const subjectMap = new Map<string, { quizzes: Record<string, unknown>[] }>()
   for (const q of allQuizzes) {
@@ -432,8 +478,10 @@ async function getChildDashboardData(
       minutes: totalMinutes,
       totalChats: totalChats || 0,
       avgScore,
-      mastery: accuracy,
-      mastery_percent: accuracy,
+      // Bug fix (2026-04-29): mastery is now derived from concept_mastery, not
+      // aliased to accuracy. See computation of masteryPercent above.
+      mastery: masteryPercent,
+      mastery_percent: masteryPercent,
       avg_score: avgScore,
       total_quizzes: totalQuizCount,
       study_minutes: totalMinutes,
