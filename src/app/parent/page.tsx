@@ -488,6 +488,30 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi }: { guardian: 
 
   useEffect(() => { load(); }, [load]);
 
+  // Bug fix (2026-04-29 IST timezone): refetch when the tab regains focus or
+  // becomes visible. Without this, a parent who opens the dashboard once in
+  // the morning and returns hours later sees stale "today" stats — the chart
+  // still shows the previous IST day as the rightmost cell because no
+  // re-fetch was triggered.
+  useEffect(() => {
+    const onFocus = () => { load(); };
+    const onVisibility = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        load();
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', onFocus);
+      document.addEventListener('visibilitychange', onVisibility);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('focus', onFocus);
+        document.removeEventListener('visibilitychange', onVisibility);
+      }
+    };
+  }, [load]);
+
   const logout = () => { clearParentSession(); window.location.reload(); };
 
   if (loading) return (

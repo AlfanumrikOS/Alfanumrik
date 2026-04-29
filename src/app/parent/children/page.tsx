@@ -831,10 +831,18 @@ interface RawChildResponse {
   week_summary?: string;
 }
 
+// IST day computation. Indian users perceive "today" as the IST calendar
+// day, not UTC. Edge Function emits IST-bucketed dates; the client must
+// agree when falling back to a last_active comparison.
+function istDateStringFromInstant(d: Date): string {
+  const istMs = d.getTime() + 330 * 60_000; // +5h30m
+  return new Date(istMs).toISOString().slice(0, 10);
+}
+
 function normalizeChild(raw: RawChildResponse): ChildData {
   const student = raw.student || raw;
   const stats = raw.stats || {};
-  const today = new Date().toISOString().slice(0, 10);
+  const today = istDateStringFromInstant(new Date());
 
   // Determine if active today.
   // Bug fix (2026-04-29): Prefer the server-computed activeToday flag over
@@ -842,6 +850,8 @@ function normalizeChild(raw: RawChildResponse): ChildData {
   // last_active to today, but last_active can be stale (set by login/chat
   // flows but not always after a quiz). This caused the "Active today" dot
   // to be wrong even when today's quiz count was non-zero.
+  // Bug fix (2026-04-29 IST timezone): the fallback comparison now uses an
+  // IST calendar date, matching the Edge Function's istDateString() output.
   const lastActiveRaw = raw.lastActive || raw.last_active || (raw.student ? raw.student.last_active : null) || null;
   const serverActiveToday = typeof raw.activeToday === 'boolean'
     ? raw.activeToday
@@ -853,7 +863,7 @@ function normalizeChild(raw: RawChildResponse): ChildData {
     todayQuizzes > 0
       ? true
       : lastActiveRaw
-        ? new Date(lastActiveRaw).toISOString().slice(0, 10) === today
+        ? istDateStringFromInstant(new Date(lastActiveRaw)) === today
         : false
   );
 

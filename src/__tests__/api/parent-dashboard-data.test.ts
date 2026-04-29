@@ -216,3 +216,127 @@ describe('parent_login — guardian reuse policy (P13 hardening)', () => {
     expect(decideGuardianReuse(null, null)).toBeNull();
   });
 });
+
+// ─── Bug 4: weekly chart must bucket by IST, not UTC ──────────────────────
+//
+// Production bug 2026-04-29: parent dashboard "This week" chart and stats
+// excluded today's quizzes for hours. Root cause: the Edge Function
+// computed `dateStr = d.toISOString().slice(0,10)` (UTC) and matched it
+// against `q.created_at.slice(0,10)` (also UTC), so a quiz taken at
+// 10:00 IST today (= 04:30 UTC today) was correctly bucketed as "today"
+// only after 05:30 IST passed — but the empty rightmost cell observed in
+// the screenshot is caused by the inverse case: at 04:00 IST today
+// (= 22:30 UTC yesterday), the loop's "today" cell pointed at the UTC
+// date which was still yesterday's IST day, leaving today's bucket
+// empty. Either way, IST users see drift.
+//
+// The fix: bucket by Asia/Kolkata calendar date.
+
+const IST_OFFSET_MIN = 330;
+
+function istDateString(d: Date): string {
+  const istMs = d.getTime() + IST_OFFSET_MIN * 60_000;
+  return new Date(istMs).toISOString().slice(0, 10);
+}
+
+interface QuizLike {
+  created_at: string;
+  correct_answers?: number;
+  time_taken_seconds?: number;
+}
+
+interface DailyCell {
+  day: string;
+  quizzes: number;
+  active: boolean;
+}
+
+/**
+ * Pure twin of the parent-portal Edge Function's daily-activity loop, fixed
+ * to bucket by IST. Returns 7 cells, oldest first.
+ */
+function buildIstDailyActivity(now: Date, quizzes: QuizLike[]): DailyCell[] {
+  const cells: DailyCell[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+    const dateStr = istDateString(d);
+    const dayQuizzes = quizzes.filter((q) => {
+      const t = new Date(q.created_at);
+      if (Number.isNaN(t.getTime())) return false;
+      return istDateString(t) === dateStr;
+    });
+    cells.push({
+      day: dateStr,
+      quizzes: dayQuizzes.length,
+      active: dayQuizzes.length > 0,
+    });
+  }
+  return cells;
+}
+
+describe('parent dashboard — weekly chart IST bucketing', () => {
+  it('REGRESSION: a 10:00 IST quiz today lands in today\'s IST cell, not yesterday', () => {
+    // "Now" at 11:00 IST on Wed 2026-04-29 = 05:30 UTC.
+    const now = new Date('2026-04-29T05:30:00.000Z');
+    // Quiz at 10:00 IST today = 04:30 UTC today.
+    const quizzes: QuizLike[] = [
+      { created_at: '2026-04-29T04:30:00.000Z', correct_answers: 5, time_taken_seconds: 300 },
+    ];
+    const cells = buildIstDailyActivity(now, quizzes);
+    // Last cell is today, IST.
+    expect(cells[6].day).toBe('2026-04-29');
+    expect(cells[6].quizzes).toBe(1);
+    expect(cells[6].active).toBe(true);
+  });
+
+  it('REGRESSION: a 04:00 IST quiz today (= 22:30 UTC yesterday) still lands in today\'s IST cell', () => {
+    // This is the precise case the user screenshot showed: early-morning
+    // IST quiz that, under UTC bucketing, falls into the previous UTC date.
+    // "Now" at 05:00 IST on Wed 2026-04-29 = 23:30 UTC Tue 2026-04-28.
+    const now = new Date('2026-04-28T23:30:00.000Z');
+    // Quiz at 04:00 IST Wed = 22:30 UTC Tue.
+    const quizzes: QuizLike[] = [
+      { created_at: '2026-04-28T22:30:00.000Z', correct_answers: 3, time_taken_seconds: 200 },
+    ];
+    const cells = buildIstDailyActivity(now, quizzes);
+    // Today (rightmost cell) IST is 2026-04-29.
+    expect(cells[6].day).toBe('2026-04-29');
+    expect(cells[6].quizzes).toBe(1);
+    expect(cells[6].active).toBe(true);
+    // The previous IST day (Tue 2026-04-28) must NOT have inherited this quiz.
+    const tueCell = cells.find((c) => c.day === '2026-04-28');
+    expect(tueCell?.quizzes ?? 0).toBe(0);
+  });
+
+  it('a 23:30 IST quiz on Tue (= 18:00 UTC Tue) stays bucketed on Tue', () => {
+    // "Now" at 12:00 IST Wed = 06:30 UTC Wed.
+    const now = new Date('2026-04-29T06:30:00.000Z');
+    const quizzes: QuizLike[] = [
+      // 23:30 IST Tue = 18:00 UTC Tue.
+      { created_at: '2026-04-28T18:00:00.000Z', correct_answers: 4, time_taken_seconds: 250 },
+    ];
+    const cells = buildIstDailyActivity(now, quizzes);
+    const wedCell = cells.find((c) => c.day === '2026-04-29');
+    const tueCell = cells.find((c) => c.day === '2026-04-28');
+    expect(wedCell?.quizzes ?? 0).toBe(0);
+    expect(tueCell?.quizzes).toBe(1);
+  });
+
+  it('returns 7 cells, oldest first, and "today" is always the last cell', () => {
+    const now = new Date('2026-04-29T15:00:00.000Z');
+    const cells = buildIstDailyActivity(now, []);
+    expect(cells.length).toBe(7);
+    expect(cells[6].day).toBe(istDateString(now));
+    // Cells are strictly increasing by day.
+    for (let i = 1; i < cells.length; i++) {
+      expect(cells[i].day > cells[i - 1].day).toBe(true);
+    }
+  });
+
+  it('istDateString rolls over at 00:00 IST (= 18:30 UTC previous day)', () => {
+    // 18:29 UTC = 23:59 IST → still previous IST day.
+    expect(istDateString(new Date('2026-04-28T18:29:00.000Z'))).toBe('2026-04-28');
+    // 18:30 UTC = 00:00 IST next day.
+    expect(istDateString(new Date('2026-04-28T18:30:00.000Z'))).toBe('2026-04-29');
+  });
+});
