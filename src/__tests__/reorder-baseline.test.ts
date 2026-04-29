@@ -8,8 +8,12 @@
  *
  * Bucket indices (from BUCKET in the script):
  *   0 setup, 1 types, 2 sequences-create, 3 tables, 4 table-attach,
- *   5 constraints, 6 indexes, 7 functions, 8 views, 9 triggers,
+ *   5 constraints, 6 functions, 7 views, 8 indexes, 9 triggers,
  *   10 rls-enable, 11 policies, 12 comments, 13 other
+ *
+ * Functions are emitted BEFORE indexes because functional indexes
+ * (`CREATE INDEX … (some_function(col))`) require the function to exist.
+ * Functions don't structurally depend on indexes, so this is the safe order.
  *
  * The script is owned by the architect agent (CI/baseline tooling).
  */
@@ -86,13 +90,13 @@ describe('reorder-baseline.mjs — classifyStatement', () => {
     ['CREATE TABLE foo (id int);', 3 /* tables */],
     ['CREATE TABLE IF NOT EXISTS foo (id int);', 3 /* tables */],
     ['ALTER TABLE foo ADD COLUMN x int;', 3 /* tables */],
-    ['CREATE OR REPLACE FUNCTION f() RETURNS void AS $$ BEGIN END; $$;', 7 /* functions */],
-    ['CREATE FUNCTION f() RETURNS void AS $$ BEGIN END; $$;', 7 /* functions */],
-    ['CREATE PROCEDURE p() AS $$ BEGIN END; $$;', 7 /* functions */],
-    ['CREATE INDEX idx_foo ON foo(id);', 6 /* indexes */],
-    ['CREATE UNIQUE INDEX idx_foo ON foo(id);', 6 /* indexes */],
-    ['CREATE OR REPLACE VIEW v AS SELECT 1;', 8 /* views */],
-    ['CREATE MATERIALIZED VIEW mv AS SELECT 1;', 8 /* views */],
+    ['CREATE OR REPLACE FUNCTION f() RETURNS void AS $$ BEGIN END; $$;', 6 /* functions */],
+    ['CREATE FUNCTION f() RETURNS void AS $$ BEGIN END; $$;', 6 /* functions */],
+    ['CREATE PROCEDURE p() AS $$ BEGIN END; $$;', 6 /* functions */],
+    ['CREATE INDEX idx_foo ON foo(id);', 8 /* indexes */],
+    ['CREATE UNIQUE INDEX idx_foo ON foo(id);', 8 /* indexes */],
+    ['CREATE OR REPLACE VIEW v AS SELECT 1;', 7 /* views */],
+    ['CREATE MATERIALIZED VIEW mv AS SELECT 1;', 7 /* views */],
     ['CREATE TRIGGER trg AFTER INSERT ON foo EXECUTE FUNCTION f();', 9 /* triggers */],
     ['CREATE EVENT TRIGGER etrg ON sql_drop EXECUTE FUNCTION f();', 9 /* triggers */],
     ['CREATE POLICY "p1" ON foo FOR SELECT USING (true);', 11 /* policies */],
@@ -252,7 +256,8 @@ describe('reorder-baseline.mjs — reorder()', () => {
     }
     // Canonical dependency order:
     //   setup < type < sequence-create < table < table-attach < constraints
-    //         < index < fn < view < trigger < rls-enable < policy < comment
+    //         < fn < view < index < trigger < rls-enable < policy < comment
+    // Note: functions BEFORE indexes (functional indexes need function to exist).
     expect(positions.set).toBeLessThan(positions.type);
     expect(positions.type).toBeLessThan(positions.sequence);
     expect(positions.sequence).toBeLessThan(positions.table);
@@ -260,13 +265,38 @@ describe('reorder-baseline.mjs — reorder()', () => {
     expect(positions.table).toBeLessThan(positions.ownedBy);
     expect(positions.attach).toBeLessThan(positions.constraint);
     expect(positions.ownedBy).toBeLessThan(positions.constraint);
-    expect(positions.constraint).toBeLessThan(positions.index);
-    expect(positions.index).toBeLessThan(positions.fn);
+    expect(positions.constraint).toBeLessThan(positions.fn);
     expect(positions.fn).toBeLessThan(positions.view);
-    expect(positions.view).toBeLessThan(positions.trigger);
+    expect(positions.view).toBeLessThan(positions.index);
+    expect(positions.index).toBeLessThan(positions.trigger);
     expect(positions.trigger).toBeLessThan(positions.rlsEnable);
     expect(positions.rlsEnable).toBeLessThan(positions.policy);
     expect(positions.policy).toBeLessThan(positions.comment);
+  });
+
+  it('emits CREATE FUNCTION before CREATE INDEX (functional indexes regression)', () => {
+    // Regression test for the functional-index failure observed in CI run
+    // 25098632951: `CREATE UNIQUE INDEX idx_content_requests_one_per_ist_day
+    // ON public.content_requests (public.content_request_ist_day(created_at))`
+    // failed because pg_dump emitted the index before the function. Functions
+    // bucket must precede indexes bucket so functional indexes can resolve
+    // their function reference at index-creation time.
+    const input = [
+      'CREATE UNIQUE INDEX "idx_content_requests_one_per_ist_day" ON "public"."content_requests" ("public"."content_request_ist_day"("created_at"));',
+      'CREATE OR REPLACE FUNCTION "public"."content_request_ist_day"("ts" timestamptz) RETURNS date LANGUAGE sql IMMUTABLE AS $$ SELECT (ts AT TIME ZONE \'Asia/Kolkata\')::date $$;',
+      'CREATE TABLE IF NOT EXISTS "public"."content_requests" (id int, created_at timestamptz);',
+    ].join('\n');
+    const out = reorder(input);
+    const tblIdx = out.indexOf('CREATE TABLE IF NOT EXISTS "public"."content_requests"');
+    const fnIdx = out.indexOf('CREATE OR REPLACE FUNCTION "public"."content_request_ist_day"');
+    const idxIdx = out.indexOf('CREATE UNIQUE INDEX "idx_content_requests_one_per_ist_day"');
+    expect(tblIdx).toBeGreaterThan(-1);
+    expect(fnIdx).toBeGreaterThan(-1);
+    expect(idxIdx).toBeGreaterThan(-1);
+    // Function must be emitted BEFORE the functional index that references it.
+    expect(fnIdx).toBeLessThan(idxIdx);
+    // Table still precedes function (functions may %ROWTYPE-reference tables).
+    expect(tblIdx).toBeLessThan(fnIdx);
   });
 
   it('does not lose content when reordering (statement counts preserved)', () => {
