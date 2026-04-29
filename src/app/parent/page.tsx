@@ -536,8 +536,16 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi }: { guardian: 
         studentList={children}
         selectedIdx={selectedChildIdx}
         onSelect={(idx) => {
-          setSelectedChildIdx(idx);
+          // Bug fix (2026-04-29): switch to loading state immediately so the
+          // "Failed to load dashboard" error UI does not flash between
+          // setDash(null) and the next load() tick. Also clear stale
+          // performance scores so the previously-selected child's subject
+          // cards do not bleed into the new child's view.
+          if (idx === selectedChildIdx) return;
+          setLoading(true);
           setDash(null);
+          setPerfScores([]);
+          setSelectedChildIdx(idx);
         }}
       />
 

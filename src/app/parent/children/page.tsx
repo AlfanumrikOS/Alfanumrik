@@ -814,6 +814,13 @@ interface RawChildResponse {
   stats?: Record<string, number>;
   lastActive?: string;
   last_active?: string;
+  // Server-computed flag: true iff the child took >=1 quiz today (UTC date).
+  // The Edge Function calculates this from quiz_sessions, which is the freshest
+  // source. The students.last_active timestamp is updated by other flows (chat,
+  // login, etc.) and may lag behind quiz activity.
+  activeToday?: boolean;
+  active_today?: boolean;
+  bktMastery?: { levels?: Record<string, number>; total?: number };
   subjects?: string[];
   subjectProgress?: RawSubjectProgress[];
   subject_progress?: RawSubjectProgress[];
@@ -829,11 +836,26 @@ function normalizeChild(raw: RawChildResponse): ChildData {
   const stats = raw.stats || {};
   const today = new Date().toISOString().slice(0, 10);
 
-  // Determine if active today
+  // Determine if active today.
+  // Bug fix (2026-04-29): Prefer the server-computed activeToday flag over
+  // re-deriving from students.last_active. Previously the client compared
+  // last_active to today, but last_active can be stale (set by login/chat
+  // flows but not always after a quiz). This caused the "Active today" dot
+  // to be wrong even when today's quiz count was non-zero.
   const lastActiveRaw = raw.lastActive || raw.last_active || (raw.student ? raw.student.last_active : null) || null;
-  const activeToday = lastActiveRaw
-    ? new Date(lastActiveRaw).toISOString().slice(0, 10) === today
-    : (stats.todayQuizzes || stats.today_quizzes || 0) > 0;
+  const serverActiveToday = typeof raw.activeToday === 'boolean'
+    ? raw.activeToday
+    : typeof raw.active_today === 'boolean'
+      ? raw.active_today
+      : null;
+  const todayQuizzes = stats.todayQuizzes || stats.today_quizzes || 0;
+  const activeToday = serverActiveToday ?? (
+    todayQuizzes > 0
+      ? true
+      : lastActiveRaw
+        ? new Date(lastActiveRaw).toISOString().slice(0, 10) === today
+        : false
+  );
 
   // Extract subjects
   const subjects: string[] = raw.subjects
