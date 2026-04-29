@@ -277,20 +277,31 @@ even though `check_function_bodies = false` is set.
 This is a known pg_dump idiosyncrasy. The dump is a faithful representation
 of the live schema but is structurally non-replayable.
 
-**The fix**: route every top-level statement into one of 10 ordered buckets
-and concatenate in dependency order:
+**The fix**: route every top-level statement into one of 14 dependency-ordered
+buckets and concatenate in canonical order. The bucket scheme handles five
+distinct table-dependency classes (function `%ROWTYPE`, `ALTER SEQUENCE …
+OWNED BY`, `SET DEFAULT nextval`, FK `ADD CONSTRAINT`, `COMMENT ON …`):
 
 ```
-1. setup     — SET, CREATE EXTENSION, CREATE SCHEMA, COMMENT ON SCHEMA
-2. types     — CREATE TYPE, CREATE DOMAIN (incl. DO $$..$$ idempotency wraps)
-3. sequences — CREATE SEQUENCE, ALTER SEQUENCE
-4. tables    — CREATE TABLE, ALTER TABLE (non-RLS)
-5. indexes   — CREATE INDEX, CREATE UNIQUE INDEX
-6. functions — CREATE [OR REPLACE] FUNCTION, CREATE PROCEDURE
-7. views     — CREATE [OR REPLACE] [MATERIALIZED] VIEW
-8. triggers  — CREATE TRIGGER, CREATE EVENT TRIGGER
-9. policies  — CREATE/DROP POLICY, ALTER TABLE … ENABLE ROW LEVEL SECURITY
-10. other    — anything not classified (kept at the end so we never drop)
+ 1. setup            — SET, CREATE EXTENSION, CREATE SCHEMA, COMMENT ON SCHEMA
+ 2. types            — CREATE TYPE, CREATE DOMAIN (incl. DO $$..$$ wraps)
+ 3. sequences-create — CREATE SEQUENCE (and non-OWNED-BY ALTER SEQUENCE forms)
+ 4. tables           — CREATE TABLE, plain ALTER TABLE (ADD COLUMN, etc.)
+ 5. table-attach     — ALTER SEQUENCE … OWNED BY,
+                       ALTER TABLE ONLY … ALTER COLUMN … SET DEFAULT nextval(…)
+                       (needs both sequence and table to exist)
+ 6. constraints      — ALTER TABLE ONLY … ADD CONSTRAINT
+                       (PK / UNIQUE / CHECK / FK — FK needs ALL tables)
+ 7. indexes          — CREATE INDEX, CREATE UNIQUE INDEX
+ 8. functions        — CREATE [OR REPLACE] FUNCTION, CREATE PROCEDURE
+ 9. views            — CREATE [OR REPLACE] [MATERIALIZED] VIEW
+10. triggers         — CREATE TRIGGER, CREATE EVENT TRIGGER
+11. rls-enable       — ALTER TABLE … ENABLE / FORCE ROW LEVEL SECURITY
+                       (must run before CREATE POLICY)
+12. policies         — CREATE POLICY, DROP POLICY
+13. comments         — COMMENT ON TABLE / COLUMN / FUNCTION / TYPE / …
+14. other            — anything not classified (kept at the end so we never
+                       drop). GRANT / REVOKE land here naturally.
 ```
 
 The reorder is implemented in `scripts/reorder-baseline.mjs` (Node, no
@@ -313,11 +324,18 @@ mv /tmp/schema-fix/baseline.reordered.sql /tmp/schema-fix/baseline.sql
 ```
 
 **Acceptance**:
-- `node scripts/reorder-baseline.mjs --self-test` reports `12 passed, 0 failed`.
+- `node scripts/reorder-baseline.mjs --self-test` reports `20 passed, 0 failed`.
 - `grep -nE 'CREATE TABLE.*"public"."adaptive_mastery"' baseline.sql` line number
   is **less than** the line number of the first `bkt_update` `CREATE OR REPLACE
   FUNCTION` match.
-- Total line count delta vs the input: between 0 and +10 (one bucket-marker
+- `grep -nE 'CREATE TABLE.*"public"."mass_gen_log"' baseline.sql` line number
+  is **less than** the first `ALTER SEQUENCE "public"."mass_gen_log_id_seq"
+  OWNED BY` match (the regression that motivated the comprehensive reorder).
+- Every `FOREIGN KEY` line number is **greater than** every `CREATE TABLE` line
+  number (FK constraints land in bucket 6, after all table CREATEs in bucket 4).
+- Every `ENABLE ROW LEVEL SECURITY` line number is **less than** every
+  `CREATE POLICY` line number (so policies aren't dormant on replay).
+- Total line count delta vs the input: between 0 and +14 (one bucket-marker
   comment line per non-empty bucket).
 
 ### 2.7 Final sanity sweep

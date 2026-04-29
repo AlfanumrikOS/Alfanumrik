@@ -2,46 +2,75 @@
 /**
  * reorder-baseline.mjs
  * --------------------
- * Reorder a sanitized pg_dump baseline so that table/sequence/type definitions
- * appear before the function/view/trigger/policy definitions that reference
- * them. Without this reordering, `%ROWTYPE` declarations inside CREATE FUNCTION
- * bodies fail to PARSE on a fresh Postgres because the referenced table type
- * does not yet exist.
+ * Reorder a sanitized pg_dump baseline so that every statement appears in an
+ * order that respects all object dependencies. Without this reordering, fresh
+ * Postgres replays of the dump fail in multiple ways:
+ *
+ *   1. `%ROWTYPE` declarations inside CREATE FUNCTION bodies fail to PARSE
+ *      when the referenced table type does not yet exist (PARSE happens
+ *      BEFORE check_function_bodies kicks in).
+ *      ERROR: relation "public.adaptive_mastery" does not exist
+ *
+ *   2. `ALTER SEQUENCE … OWNED BY public.<table>.<col>` fails when the table
+ *      hasn't been created yet.
+ *      ERROR: relation "public.mass_gen_log" does not exist
+ *
+ *   3. `ALTER TABLE ONLY … ALTER COLUMN … SET DEFAULT nextval('seq')` requires
+ *      both the table and the sequence to exist.
+ *
+ *   4. `ALTER TABLE ONLY … ADD CONSTRAINT … FOREIGN KEY` requires the
+ *      REFERENCED table to exist — i.e. ALL tables must be created first.
+ *
+ *   5. `COMMENT ON TABLE/COLUMN/FUNCTION/…` requires the referenced object to
+ *      exist.
  *
  * pg_dump emits its own internal order (alphabetical-ish by object class), and
  * relies on `SET check_function_bodies = false` so that the *body* of a
- * function isn't validated until after all tables are created. But `%ROWTYPE`
- * resolution happens at PARSE time of the function header / DECLARE block —
- * which is BEFORE check_function_bodies kicks in. Hence the failure mode
- *
- *     ERROR: relation "public.adaptive_mastery" does not exist
- *
- * even though check_function_bodies = false is set.
+ * function isn't validated until after all tables are created. That covers
+ * case (1) for function BODIES but not for headers/DECLAREs and not at all for
+ * (2)-(5).
  *
  * This script splits the input file into top-level SQL statements (handling
  * dollar-quoting, single-quote strings, line/block comments) and routes each
- * statement into one of 10 ordered buckets:
- *
- *   1. setup     — SET, SELECT pg_catalog.set_config, comments-only chunks,
- *                  CREATE EXTENSION, CREATE SCHEMA, COMMENT ON SCHEMA
- *   2. types     — CREATE TYPE / CREATE DOMAIN (including the DO $$..$$
- *                  idempotency wrappers the sanitize step adds)
- *   3. sequences — CREATE SEQUENCE, ALTER SEQUENCE
- *   4. tables    — CREATE TABLE, ALTER TABLE
- *   5. indexes   — CREATE INDEX, CREATE UNIQUE INDEX
- *   6. functions — CREATE FUNCTION, CREATE OR REPLACE FUNCTION, CREATE PROCEDURE
- *   7. views     — CREATE VIEW, CREATE OR REPLACE VIEW, CREATE MATERIALIZED VIEW
- *   8. triggers  — CREATE TRIGGER, CREATE EVENT TRIGGER
- *   9. policies  — CREATE POLICY, DROP POLICY, ALTER TABLE … ENABLE RLS
- *  10. other     — anything that didn't match (kept at the end so we don't
- *                  accidentally drop a statement)
- *
- * Buckets are concatenated in order 1→10. The result is replayable on a fresh
+ * statement into one of the dependency-ordered buckets below. Buckets are then
+ * concatenated in canonical order. The result is replayable on a fresh
  * Postgres where prior versions failed.
+ *
+ * Bucket order (lower number emitted first):
+ *
+ *   1. setup            — SET, SELECT pg_catalog.set_config, CREATE EXTENSION,
+ *                         CREATE SCHEMA, COMMENT ON SCHEMA
+ *   2. types            — CREATE TYPE / CREATE DOMAIN (incl. DO $$..$$
+ *                         idempotency wrappers added by sanitize step)
+ *   3. sequences-create — CREATE SEQUENCE (NOT ALTER SEQUENCE … OWNED BY)
+ *   4. tables           — CREATE TABLE (and bare ALTER TABLE … ADD COLUMN
+ *                         that doesn't reference sequences/constraints)
+ *   5. table-attach     — ALTER SEQUENCE … OWNED BY
+ *                         ALTER TABLE ONLY … ALTER COLUMN … SET DEFAULT
+ *                         nextval(…)
+ *                         (depends on BOTH sequence + table)
+ *   6. constraints      — ALTER TABLE ONLY … ADD CONSTRAINT
+ *                         (PRIMARY KEY, UNIQUE, CHECK, FOREIGN KEY).
+ *                         FK requires ALL tables to exist first.
+ *   7. indexes          — CREATE INDEX, CREATE UNIQUE INDEX
+ *   8. functions        — CREATE FUNCTION, CREATE PROCEDURE
+ *   9. views            — CREATE VIEW, CREATE MATERIALIZED VIEW
+ *  10. triggers         — CREATE TRIGGER, CREATE EVENT TRIGGER (need functions)
+ *  11. rls-enable       — ALTER TABLE … ENABLE / FORCE ROW LEVEL SECURITY
+ *                         (must run before CREATE POLICY so policies aren't
+ *                         dormant after replay; keeps the user-visible
+ *                         CREATE POLICY ordering predictable)
+ *  12. policies         — CREATE POLICY, DROP POLICY
+ *  13. comments         — COMMENT ON TABLE / COLUMN / FUNCTION / TYPE / …
+ *                         (need the referenced object to exist)
+ *  14. other            — anything that didn't match (kept last so we never
+ *                         accidentally drop a statement). GRANT/REVOKE land
+ *                         here naturally and run after everything else.
  *
  * The script is **idempotent**: running it on already-reordered input yields
  * the same output (each bucket is preserved in its existing relative order,
- * and the bucket-emit order is deterministic).
+ * the bucket-emit order is deterministic, and reorder() strips its own marker
+ * lines before reclassifying).
  *
  * Usage:
  *   node scripts/reorder-baseline.mjs < input.sql > output.sql
@@ -202,27 +231,35 @@ export function splitStatements(src) {
 const BUCKET_NAMES = [
   'setup',
   'types',
-  'sequences',
+  'sequences-create',
   'tables',
+  'table-attach',
+  'constraints',
   'indexes',
   'functions',
   'views',
   'triggers',
+  'rls-enable',
   'policies',
+  'comments',
   'other',
 ];
 
 const BUCKET = Object.freeze({
   SETUP: 0,
   TYPES: 1,
-  SEQUENCES: 2,
+  SEQUENCES_CREATE: 2,
   TABLES: 3,
-  INDEXES: 4,
-  FUNCTIONS: 5,
-  VIEWS: 6,
-  TRIGGERS: 7,
-  POLICIES: 8,
-  OTHER: 9,
+  TABLE_ATTACH: 4,
+  CONSTRAINTS: 5,
+  INDEXES: 6,
+  FUNCTIONS: 7,
+  VIEWS: 8,
+  TRIGGERS: 9,
+  RLS_ENABLE: 10,
+  POLICIES: 11,
+  COMMENTS: 12,
+  OTHER: 13,
 });
 
 /** Strip leading whitespace + comment lines and return the first SQL keyword line. */
@@ -236,49 +273,67 @@ function firstSqlLine(stmt) {
   return '';
 }
 
+/** Collapse whitespace in the statement body for multi-line pattern matching. */
+function flatten(stmt) {
+  return stmt.replace(/\s+/g, ' ');
+}
+
 /**
  * Classify a single statement (already split by `splitStatements`) into a
  * bucket index. Order of pattern checks matters for ambiguous statements like
- * `ALTER TABLE … ENABLE ROW LEVEL SECURITY` (policies) vs `ALTER TABLE … ADD
- * COLUMN` (tables).
+ * `ALTER TABLE … ENABLE ROW LEVEL SECURITY` (policies) vs `ALTER TABLE ONLY …
+ * ADD CONSTRAINT …` (constraints) vs `ALTER TABLE ONLY … ALTER COLUMN … SET
+ * DEFAULT nextval(…)` (table-attach).
  */
 export function classifyStatement(stmt) {
   const head = firstSqlLine(stmt);
   if (!head) return BUCKET.SETUP; // pure comment / whitespace block
 
-  // Setup: SET, SELECT pg_catalog.set_config, COMMENT ON SCHEMA, CREATE EXTENSION, CREATE SCHEMA
+  // ── Setup: SET, SELECT pg_catalog.set_config, CREATE EXTENSION, CREATE
+  //    SCHEMA, COMMENT ON SCHEMA. (COMMENT ON SCHEMA stays in setup because
+  //    schemas are created in setup and there are no other dependencies.)
   if (/^SET\s+/i.test(head)) return BUCKET.SETUP;
   if (/^SELECT\s+pg_catalog\.set_config/i.test(head)) return BUCKET.SETUP;
   if (/^CREATE\s+EXTENSION\b/i.test(head)) return BUCKET.SETUP;
   if (/^CREATE\s+SCHEMA\b/i.test(head)) return BUCKET.SETUP;
   if (/^COMMENT\s+ON\s+SCHEMA\b/i.test(head)) return BUCKET.SETUP;
 
-  // RLS-style ALTER TABLE … ENABLE ROW LEVEL SECURITY → policies bucket so it
-  // fires AFTER the table definition and the policy DROP/CREATE pair land
-  // first. Also covers ALTER TABLE … FORCE ROW LEVEL SECURITY.
-  if (/^ALTER\s+TABLE\b.*\bROW\s+LEVEL\s+SECURITY\b/i.test(stmt.replace(/\s+/g, ' '))) {
-    return BUCKET.POLICIES;
+  // ── Comments on any other object class must run AFTER the object exists.
+  //    Routed to the dedicated comments bucket which is emitted near the end.
+  //    (COMMENT ON TABLE / COLUMN / FUNCTION / TYPE / DOMAIN / SEQUENCE / VIEW
+  //    / TRIGGER / INDEX / POLICY / EXTENSION / CONSTRAINT.)
+  if (/^COMMENT\s+ON\b/i.test(head)) return BUCKET.COMMENTS;
+
+  // ── RLS-style ALTER TABLE … ENABLE/FORCE ROW LEVEL SECURITY → dedicated
+  //    rls-enable bucket so it fires AFTER the table definition AND BEFORE
+  //    CREATE POLICY (otherwise policies are dormant on a fresh replay).
+  //    Check the FLATTENED statement because pg_dump may break the keyword
+  //    across lines.
+  const flat = flatten(stmt);
+  if (/^ALTER\s+TABLE\b.*\bROW\s+LEVEL\s+SECURITY\b/i.test(flat)) {
+    return BUCKET.RLS_ENABLE;
   }
 
-  // CREATE/DROP POLICY
+  // ── CREATE/DROP POLICY
   if (/^(CREATE|DROP)\s+POLICY\b/i.test(head)) return BUCKET.POLICIES;
 
-  // Triggers (incl. event triggers). DROP TRIGGER lands here too.
+  // ── Triggers (incl. event triggers). DROP TRIGGER lands here too.
   if (/^(CREATE|DROP)\s+(EVENT\s+)?TRIGGER\b/i.test(head)) return BUCKET.TRIGGERS;
 
-  // Views (regular + materialized)
+  // ── Views (regular + materialized). Views are emitted AFTER tables and
+  //    constraints, so even FK-dependent views resolve.
   if (/^CREATE\s+(OR\s+REPLACE\s+)?(MATERIALIZED\s+)?VIEW\b/i.test(head)) {
     return BUCKET.VIEWS;
   }
 
-  // Functions / procedures
+  // ── Functions / procedures. Bodies aren't checked due to
+  //    `SET check_function_bodies = false`, but %ROWTYPE in DECLARE is
+  //    parsed eagerly — so functions must come AFTER tables.
   if (/^CREATE\s+(OR\s+REPLACE\s+)?(FUNCTION|PROCEDURE)\b/i.test(head)) {
     return BUCKET.FUNCTIONS;
   }
 
-  // Sanitized CREATE TYPE wrapped in DO $$ BEGIN CREATE TYPE … END $$;
-  // The first non-comment line is `DO $$ BEGIN` or similar, but the inner
-  // CREATE TYPE is what we care about. Detect by scanning the statement body.
+  // ── Sanitized CREATE TYPE wrapped in DO $$ BEGIN CREATE TYPE … END $$;
   if (/^\s*DO\s+\$/i.test(head)) {
     if (/CREATE\s+TYPE\b/i.test(stmt) || /CREATE\s+DOMAIN\b/i.test(stmt)) {
       return BUCKET.TYPES;
@@ -288,16 +343,44 @@ export function classifyStatement(stmt) {
   }
   if (/^CREATE\s+(TYPE|DOMAIN)\b/i.test(head)) return BUCKET.TYPES;
 
-  // Sequences
-  if (/^(CREATE|ALTER)\s+SEQUENCE\b/i.test(head)) return BUCKET.SEQUENCES;
+  // ── Sequences: split CREATE SEQUENCE (early, before tables) from
+  //    ALTER SEQUENCE … OWNED BY (late, needs the table that owns it).
+  if (/^CREATE\s+SEQUENCE\b/i.test(head)) return BUCKET.SEQUENCES_CREATE;
+  if (/^ALTER\s+SEQUENCE\b.*\bOWNED\s+BY\b/i.test(flat)) return BUCKET.TABLE_ATTACH;
+  if (/^ALTER\s+SEQUENCE\b/i.test(head)) {
+    // Other ALTER SEQUENCE forms (RESTART, CACHE, MINVALUE, …) don't depend
+    // on table existence — keep with create-sequence so they emit early.
+    return BUCKET.SEQUENCES_CREATE;
+  }
 
-  // Indexes
+  // ── Indexes
   if (/^CREATE\s+(UNIQUE\s+)?INDEX\b/i.test(head)) return BUCKET.INDEXES;
 
-  // Tables (default for any remaining ALTER TABLE / CREATE TABLE — must come
-  // after the policy / RLS-enable check above)
+  // ── Tables and table-related ALTER TABLE statements. Order matters:
+  //    1. CREATE TABLE → tables bucket.
+  //    2. ALTER TABLE ONLY … ALTER COLUMN … SET DEFAULT nextval(…)
+  //         → table-attach (needs sequence too).
+  //    3. ALTER TABLE ONLY … ADD CONSTRAINT … (PK / UNIQUE / CHECK / FK)
+  //         → constraints (FK needs all tables to exist).
+  //    4. Anything else (ALTER TABLE … ADD COLUMN, RENAME, …) → tables.
   if (/^CREATE\s+TABLE\b/i.test(head)) return BUCKET.TABLES;
-  if (/^ALTER\s+TABLE\b/i.test(head)) return BUCKET.TABLES;
+
+  if (/^ALTER\s+TABLE\b/i.test(head)) {
+    // ADD CONSTRAINT can be PRIMARY KEY, UNIQUE, CHECK, FOREIGN KEY, or
+    // EXCLUDE. All need the table to exist; FK needs the referenced table
+    // too. Route them to the constraints bucket which runs after every
+    // CREATE TABLE has emitted.
+    if (/\bADD\s+CONSTRAINT\b/i.test(flat)) return BUCKET.CONSTRAINTS;
+
+    // SET DEFAULT nextval(…) needs the sequence to exist. Route to
+    // table-attach (emitted after both tables AND sequences).
+    if (/\bALTER\s+COLUMN\b.*\bSET\s+DEFAULT\b.*\bnextval\b/i.test(flat)) {
+      return BUCKET.TABLE_ATTACH;
+    }
+
+    // Any other ALTER TABLE (ADD COLUMN, RENAME, etc.) — keep in tables.
+    return BUCKET.TABLES;
+  }
 
   return BUCKET.OTHER;
 }
@@ -310,8 +393,12 @@ export function classifyStatement(stmt) {
  * Marker line written into the output so a second invocation can detect that
  * the file is already reordered and strip the previous markers before
  * re-bucketing. This makes reorder(reorder(x)) === reorder(x).
+ *
+ * Matches both the legacy two-digit format (bucket 10) and the current
+ * one-or-two digit format (bucket 1, 12, …) and any bucket name from the
+ * BUCKET_NAMES list.
  */
-const BUCKET_MARKER_RE = /^-- ── reorder-baseline\.mjs bucket \d+: [a-z]+ ──$/;
+const BUCKET_MARKER_RE = /^-- ── reorder-baseline\.mjs bucket \d+: [a-z-]+ ──$/;
 
 export function reorder(src) {
   // Strip any previous bucket-header marker lines before reclassifying. This
@@ -333,7 +420,12 @@ export function reorder(src) {
   for (let b = 0; b < buckets.length; b += 1) {
     if (buckets[b].length === 0) continue;
     parts.push(`-- ── reorder-baseline.mjs bucket ${b + 1}: ${BUCKET_NAMES[b]} ──\n`);
-    parts.push(buckets[b].join(''));
+    let body = buckets[b].join('');
+    // Guarantee bucket body ends with a newline so the NEXT bucket-marker
+    // line lands on its own line (matters for idempotency: the marker-line
+    // regex requires a full-line match to strip on the second pass).
+    if (body.length > 0 && !body.endsWith('\n')) body += '\n';
+    parts.push(body);
   }
   return parts.join('');
 }
@@ -431,8 +523,7 @@ function selfTest() {
     type5 > -1 && tbl5 > -1 && type5 < tbl5,
     `type=${type5} tbl=${tbl5}`);
 
-  // Test 6: ALTER TABLE … ENABLE ROW LEVEL SECURITY routes to policies bucket
-  // (so it lands AFTER the table is created, not interleaved before it).
+  // Test 6: ALTER TABLE … ENABLE ROW LEVEL SECURITY routes to policies bucket.
   const fixture6 = [
     "ALTER TABLE public.foo ENABLE ROW LEVEL SECURITY;",
     "CREATE TABLE IF NOT EXISTS public.foo (id int);",
@@ -466,6 +557,114 @@ function selfTest() {
   const trg8 = out8.indexOf('CREATE TRIGGER trg');
   expect('order: tables → views → triggers', t8 < v8 && v8 < trg8,
     `t=${t8} v=${v8} trg=${trg8}`);
+
+  // Test 9: ALTER SEQUENCE … OWNED BY lands AFTER the table CREATE.
+  const fixture9 = [
+    'ALTER SEQUENCE "public"."mass_gen_log_id_seq" OWNED BY "public"."mass_gen_log"."id";',
+    'CREATE SEQUENCE "public"."mass_gen_log_id_seq";',
+    'CREATE TABLE IF NOT EXISTS "public"."mass_gen_log" (id int);',
+  ].join('\n');
+  const out9 = reorder(fixture9);
+  const seq9 = out9.indexOf('CREATE SEQUENCE "public"."mass_gen_log_id_seq"');
+  const tbl9 = out9.indexOf('CREATE TABLE IF NOT EXISTS "public"."mass_gen_log"');
+  const own9 = out9.indexOf('ALTER SEQUENCE "public"."mass_gen_log_id_seq" OWNED BY');
+  expect('order: CREATE SEQUENCE → CREATE TABLE → ALTER SEQUENCE OWNED BY',
+    seq9 > -1 && tbl9 > -1 && own9 > -1 && seq9 < tbl9 && tbl9 < own9,
+    `seq=${seq9} tbl=${tbl9} own=${own9}`);
+
+  // Test 10: ALTER TABLE ONLY … ALTER COLUMN … SET DEFAULT nextval(…) lands
+  // AFTER both the table and the sequence.
+  const fixture10 = [
+    'ALTER TABLE ONLY "public"."mass_gen_log" ALTER COLUMN "id" SET DEFAULT nextval(\'"public"."mass_gen_log_id_seq"\'::"regclass");',
+    'CREATE TABLE IF NOT EXISTS "public"."mass_gen_log" (id int);',
+    'CREATE SEQUENCE "public"."mass_gen_log_id_seq";',
+  ].join('\n');
+  const out10 = reorder(fixture10);
+  const seq10 = out10.indexOf('CREATE SEQUENCE "public"."mass_gen_log_id_seq"');
+  const tbl10 = out10.indexOf('CREATE TABLE IF NOT EXISTS "public"."mass_gen_log"');
+  const def10 = out10.indexOf('SET DEFAULT nextval');
+  expect('SET DEFAULT nextval lands after BOTH sequence AND table',
+    seq10 < def10 && tbl10 < def10,
+    `seq=${seq10} tbl=${tbl10} def=${def10}`);
+
+  // Test 11: ALTER TABLE ONLY … ADD CONSTRAINT … FOREIGN KEY lands AFTER
+  // ALL CREATE TABLE statements (FK needs the referenced table too).
+  const fixture11 = [
+    'ALTER TABLE ONLY "public"."child" ADD CONSTRAINT "child_parent_fkey" FOREIGN KEY ("parent_id") REFERENCES "public"."parent"("id");',
+    'CREATE TABLE IF NOT EXISTS "public"."child" (id int, parent_id int);',
+    'CREATE TABLE IF NOT EXISTS "public"."parent" (id int);',
+  ].join('\n');
+  const out11 = reorder(fixture11);
+  const child11 = out11.indexOf('CREATE TABLE IF NOT EXISTS "public"."child"');
+  const parent11 = out11.indexOf('CREATE TABLE IF NOT EXISTS "public"."parent"');
+  const fk11 = out11.indexOf('FOREIGN KEY');
+  expect('FK ADD CONSTRAINT lands after both child AND parent table CREATEs',
+    child11 < fk11 && parent11 < fk11,
+    `child=${child11} parent=${parent11} fk=${fk11}`);
+
+  // Test 12: ALTER TABLE ONLY … ADD CONSTRAINT … PRIMARY KEY (multi-line).
+  const fixture12 = [
+    'ALTER TABLE ONLY "public"."achievements"',
+    '    ADD CONSTRAINT "achievements_pkey" PRIMARY KEY ("id");',
+    'CREATE TABLE IF NOT EXISTS "public"."achievements" (id int);',
+  ].join('\n');
+  const out12 = reorder(fixture12);
+  const tbl12 = out12.indexOf('CREATE TABLE IF NOT EXISTS "public"."achievements"');
+  const pk12 = out12.indexOf('ADD CONSTRAINT "achievements_pkey"');
+  expect('multi-line ADD CONSTRAINT PRIMARY KEY lands after table CREATE',
+    tbl12 > -1 && pk12 > -1 && tbl12 < pk12,
+    `tbl=${tbl12} pk=${pk12}`);
+
+  // Test 13: COMMENT ON TABLE lands AFTER the table CREATE.
+  const fixture13 = [
+    "COMMENT ON TABLE \"public\".\"foo\" IS 'doc';",
+    'CREATE TABLE IF NOT EXISTS "public"."foo" (id int);',
+  ].join('\n');
+  const out13 = reorder(fixture13);
+  const tbl13 = out13.indexOf('CREATE TABLE IF NOT EXISTS "public"."foo"');
+  const cmt13 = out13.indexOf('COMMENT ON TABLE');
+  expect('COMMENT ON TABLE lands after CREATE TABLE',
+    tbl13 > -1 && cmt13 > -1 && tbl13 < cmt13,
+    `tbl=${tbl13} cmt=${cmt13}`);
+
+  // Test 14: COMMENT ON SCHEMA stays in setup (no dependency to defer).
+  const fixture14 = [
+    "COMMENT ON SCHEMA \"public\" IS 'standard';",
+    'CREATE TABLE IF NOT EXISTS "public"."foo" (id int);',
+  ].join('\n');
+  const out14 = reorder(fixture14);
+  const cmt14 = out14.indexOf('COMMENT ON SCHEMA');
+  const tbl14 = out14.indexOf('CREATE TABLE IF NOT EXISTS "public"."foo"');
+  expect('COMMENT ON SCHEMA stays in setup (before tables)',
+    cmt14 > -1 && tbl14 > -1 && cmt14 < tbl14,
+    `cmt=${cmt14} tbl=${tbl14}`);
+
+  // Test 14b: ENABLE ROW LEVEL SECURITY runs BEFORE CREATE POLICY (otherwise
+  // policies are dormant on a fresh replay).
+  const fixture14b = [
+    'CREATE POLICY "p1" ON public.foo FOR SELECT USING (true);',
+    'ALTER TABLE public.foo ENABLE ROW LEVEL SECURITY;',
+    'CREATE TABLE IF NOT EXISTS public.foo (id int);',
+  ].join('\n');
+  const out14b = reorder(fixture14b);
+  const tbl14b = out14b.indexOf('CREATE TABLE IF NOT EXISTS public.foo');
+  const rls14b = out14b.indexOf('ENABLE ROW LEVEL SECURITY');
+  const pol14b = out14b.indexOf('CREATE POLICY "p1"');
+  expect('order: CREATE TABLE → ENABLE RLS → CREATE POLICY',
+    tbl14b > -1 && rls14b > -1 && pol14b > -1 && tbl14b < rls14b && rls14b < pol14b,
+    `tbl=${tbl14b} rls=${rls14b} pol=${pol14b}`);
+
+  // Test 15: COMMENT ON FUNCTION lands AFTER the function CREATE.
+  const fixture15 = [
+    "COMMENT ON FUNCTION \"public\".\"f\"() IS 'doc';",
+    'CREATE OR REPLACE FUNCTION "public"."f"() RETURNS void LANGUAGE plpgsql AS $$ BEGIN RETURN; END; $$;',
+  ].join('\n');
+  const out15 = reorder(fixture15);
+  const fn15 = out15.indexOf('CREATE OR REPLACE FUNCTION "public"."f"');
+  const cmt15 = out15.indexOf('COMMENT ON FUNCTION');
+  expect('COMMENT ON FUNCTION lands after CREATE FUNCTION',
+    fn15 > -1 && cmt15 > -1 && fn15 < cmt15,
+    `fn=${fn15} cmt=${cmt15}`);
 
   process.stdout.write(`\nself-test: ${passed} passed, ${failed} failed\n`);
   return failed === 0 ? 0 : 1;
