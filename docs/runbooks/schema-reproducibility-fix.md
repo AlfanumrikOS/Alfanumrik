@@ -291,14 +291,30 @@ zero `%ROWTYPE` strings remain in the output. If any survived the regex
 missed a form pg_dump emitted, and the workflow fails with a clearer error
 than the downstream SQLSTATE 42P01 we'd otherwise see during replay.
 
+**Second narrow exception (added after Phase 1 dry-run failure, CI run
+25256333169)**: `LANGUAGE sql` function bodies are validated at CREATE time
+*even with* `check_function_bodies = false`. The toggle only defers PL/pgSQL
+bodies. So a `LANGUAGE sql` function calling another function (sql or
+plpgsql) fails to create when pg_dump emits the caller alphabetically
+before the callee — for example `check_foxy_quota` (sql, line 1803) calls
+`check_plan_limits` (plpgsql, line 1820). The same `reorder-baseline.mjs`
+script applies a second pass that moves every `LANGUAGE sql` function block
+to AFTER the last PL/pgSQL function in the file (topologically sorted by
+sql→sql call dependency so callees precede callers). PL/pgSQL functions,
+tables, indexes, policies, and every other line stay byte-for-byte where
+pg_dump put them — only sql function blocks (with their trailing separator
+blanks) move. Total line count is preserved.
+
 History: earlier iterations of this script bucket-reordered every top-level
 statement to satisfy table-before-function ordering (PRs #464, #466, #467,
 #469). Each bucket-fix solved one prod-specific dependency class
 (function `%ROWTYPE`, `ALTER SEQUENCE … OWNED BY`, FK `ADD CONSTRAINT`,
 functional indexes, …) but kept breaking pg_dump's careful within-class
-ordering for the next dependency class we tripped on. The current approach
-trusts pg_dump's natural ordering and fixes only the one thing pg_dump's
-output reliably gets wrong.
+ordering for the next dependency class we tripped on (PR #470 walked them
+all back). The current approach trusts pg_dump's natural ordering and
+applies only two narrow rewrites that pg_dump + `check_function_bodies =
+false` provably fail to handle: `%ROWTYPE` → `RECORD`, and `LANGUAGE sql`
+function reorder.
 
 To run the rewrite by hand against a sanitized baseline:
 
@@ -312,11 +328,15 @@ mv /tmp/schema-fix/baseline.rewritten.sql /tmp/schema-fix/baseline.sql
 ```
 
 **Acceptance**:
-- `node scripts/reorder-baseline.mjs --self-test` reports `15 passed, 0 failed`.
+- `node scripts/reorder-baseline.mjs --self-test` reports all tests passing
+  (`N passed, 0 failed`). Both the `%ROWTYPE` rewrite and the LANGUAGE-sql
+  reorder pass have self-test coverage.
 - `grep -c '%ROWTYPE' baseline.sql` returns **0** (every form has been
   rewritten to `RECORD`).
-- Total line count vs the input: **identical** (the rewrite is a 1:1 token
-  swap; bucket markers no longer exist).
+- Total line count vs the input: **identical**. The `%ROWTYPE` rewrite is a
+  1:1 token swap and the LANGUAGE-sql reorder is a permutation of contiguous
+  function blocks (with their trailing separator blanks); neither pass adds
+  or removes lines.
 - Running the script on its own output is a no-op (idempotency).
 
 ### 2.7 Final sanity sweep
