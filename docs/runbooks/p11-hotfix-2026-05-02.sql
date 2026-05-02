@@ -170,13 +170,25 @@ COMMENT ON FUNCTION public.atomic_downgrade_subscription IS
 -- ────────────────────────────────────────────────────────────
 -- 3. activate_subscription_locked
 -- ────────────────────────────────────────────────────────────
+-- COURSE-CORRECT 2026-05-02: webhook supplies a SUBSET of these args
+-- at two call sites:
+--   - src/app/api/payments/webhook/route.ts:470 (payment.captured)
+--     omits p_razorpay_subscription_id (one-time yearly orders).
+--   - src/app/api/payments/webhook/route.ts:720 (subscription.charged)
+--     omits p_razorpay_order_id (recurring subs have no order_id).
+-- DEFAULT NULL added to the three optional Razorpay identifier params
+-- (and DEFAULT 'monthly' on billing_cycle for symmetry) so PostgREST
+-- resolves both call shapes against this single overload.
+-- Source migration 20260425150300_activate_with_advisory_lock.sql is
+-- left unchanged; it will be reconciled when the schema-reproducibility
+-- baseline regenerates from prod.
 CREATE OR REPLACE FUNCTION public.activate_subscription_locked(
   p_auth_user_id uuid,
   p_plan_code text,
-  p_billing_cycle text,
-  p_razorpay_payment_id text,
-  p_razorpay_order_id text,
-  p_razorpay_subscription_id text
+  p_billing_cycle text DEFAULT 'monthly',
+  p_razorpay_payment_id text DEFAULT NULL,
+  p_razorpay_order_id text DEFAULT NULL,
+  p_razorpay_subscription_id text DEFAULT NULL
 )
 RETURNS void
 LANGUAGE plpgsql
@@ -210,12 +222,18 @@ GRANT EXECUTE ON FUNCTION public.activate_subscription_locked(uuid, text, text, 
 -- ────────────────────────────────────────────────────────────
 -- 4. atomic_subscription_activation_locked
 -- ────────────────────────────────────────────────────────────
+-- COURSE-CORRECT 2026-05-02: webhook call sites at lines 519, 768, 815
+-- of webhook/route.ts pass all 5 keys explicitly (with `null` for the
+-- absent identifier), so PostgREST resolves today. DEFAULT NULL added
+-- to the optional params for defense-in-depth and signature symmetry
+-- with atomic_subscription_activation (which already declares them
+-- defaulted). Source migration unchanged.
 CREATE OR REPLACE FUNCTION public.atomic_subscription_activation_locked(
   p_student_id uuid,
   p_plan_code text,
-  p_billing_cycle text,
-  p_razorpay_payment_id text,
-  p_razorpay_subscription_id text
+  p_billing_cycle text DEFAULT 'monthly',
+  p_razorpay_payment_id text DEFAULT NULL,
+  p_razorpay_subscription_id text DEFAULT NULL
 )
 RETURNS void
 LANGUAGE plpgsql

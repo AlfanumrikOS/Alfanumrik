@@ -192,13 +192,34 @@ COMMENT ON FUNCTION public.atomic_downgrade_subscription IS
 -- Source: 20260425150300_activate_with_advisory_lock.sql
 -- Wraps activate_subscription in a transaction-scoped advisory lock keyed
 -- by student_id, serializing verify-route + webhook activation attempts.
+--
+-- COURSE-CORRECT 2026-05-02 (this hotfix only — source migration
+-- unchanged): the webhook supplies a SUBSET of these args at two call
+-- sites:
+--   - src/app/api/payments/webhook/route.ts:470 (payment.captured branch)
+--     supplies 5 keys: p_auth_user_id, p_plan_code, p_billing_cycle,
+--     p_razorpay_payment_id, p_razorpay_order_id  — MISSING
+--     p_razorpay_subscription_id (one-time yearly orders have no sub_id).
+--   - src/app/api/payments/webhook/route.ts:720 (subscription.charged
+--     branch) supplies 5 keys: p_auth_user_id, p_plan_code,
+--     p_billing_cycle, p_razorpay_payment_id, p_razorpay_subscription_id
+--     — MISSING p_razorpay_order_id (recurring subs have no order_id).
+-- PostgREST resolves RPCs by named-arg signature match; without DEFAULTs
+-- the missing keys make the function appear absent and the webhook 503s.
+-- We add DEFAULT NULL to the three optional Razorpay identifier params
+-- (and to billing_cycle for symmetry with atomic_subscription_activation)
+-- so both call shapes resolve to the same overload.
+--
+-- The source migration in the repo (20260425150300) is left unchanged;
+-- it will be reconciled when the schema-reproducibility baseline is
+-- regenerated from the post-hotfix prod schema.
 CREATE OR REPLACE FUNCTION public.activate_subscription_locked(
   p_auth_user_id uuid,
   p_plan_code text,
-  p_billing_cycle text,
-  p_razorpay_payment_id text,
-  p_razorpay_order_id text,
-  p_razorpay_subscription_id text
+  p_billing_cycle text DEFAULT 'monthly',
+  p_razorpay_payment_id text DEFAULT NULL,
+  p_razorpay_order_id text DEFAULT NULL,
+  p_razorpay_subscription_id text DEFAULT NULL
 )
 RETURNS void
 LANGUAGE plpgsql
@@ -237,12 +258,27 @@ GRANT EXECUTE ON FUNCTION public.activate_subscription_locked(uuid, text, text, 
 -- Source: 20260425150300_activate_with_advisory_lock.sql
 -- Wraps atomic_subscription_activation with the same advisory lock so the
 -- fallback path is also serialized per-student.
+--
+-- COURSE-CORRECT 2026-05-02 (this hotfix only — source migration
+-- unchanged): all three webhook call sites
+--   - src/app/api/payments/webhook/route.ts:519 (payment.captured fallback)
+--   - src/app/api/payments/webhook/route.ts:768 (subscription.charged fallback)
+--   - src/app/api/payments/webhook/route.ts:815 (no-authUserId path)
+-- explicitly pass all 5 keys (with `null` for the absent identifier),
+-- so PostgREST resolution succeeds today. We still add DEFAULT NULL to
+-- the optional params for defense-in-depth and signature symmetry with
+-- atomic_subscription_activation (which already declares them defaulted).
+-- This way any future call site can omit them safely.
+--
+-- The source migration in the repo (20260425150300) is left unchanged;
+-- it will be reconciled when the schema-reproducibility baseline is
+-- regenerated from the post-hotfix prod schema.
 CREATE OR REPLACE FUNCTION public.atomic_subscription_activation_locked(
   p_student_id uuid,
   p_plan_code text,
-  p_billing_cycle text,
-  p_razorpay_payment_id text,
-  p_razorpay_subscription_id text
+  p_billing_cycle text DEFAULT 'monthly',
+  p_razorpay_payment_id text DEFAULT NULL,
+  p_razorpay_subscription_id text DEFAULT NULL
 )
 RETURNS void
 LANGUAGE plpgsql
