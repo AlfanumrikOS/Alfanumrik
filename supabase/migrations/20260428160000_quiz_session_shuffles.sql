@@ -138,13 +138,19 @@ CREATE POLICY "quiz_session_shuffles_parent_select" ON quiz_session_shuffles
   );
 
 -- Teacher reads assigned class (matches four-pattern template).
+-- Canonical join: class_students -> class_teachers -> teachers. The `classes`
+-- table has NO `teacher_id` column; the class<->teacher relationship lives in
+-- the `class_teachers` join table (see _legacy/000_core_schema.sql:213-219 and
+-- 20260408000002_foxy_sessions_and_messages.sql:146-161 for the canonical
+-- pattern used elsewhere in this codebase).
 DROP POLICY IF EXISTS "quiz_session_shuffles_teacher_select" ON quiz_session_shuffles;
 CREATE POLICY "quiz_session_shuffles_teacher_select" ON quiz_session_shuffles
   FOR SELECT USING (
     student_id IN (
-      SELECT student_id FROM class_enrollments
+      SELECT student_id FROM class_students
       WHERE class_id IN (
-        SELECT id FROM classes WHERE teacher_id IN (
+        SELECT class_id FROM class_teachers
+        WHERE teacher_id IN (
           SELECT id FROM teachers WHERE auth_user_id = auth.uid()
         )
       )
