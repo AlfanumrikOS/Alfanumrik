@@ -40,15 +40,6 @@ import {
   resolveTemplate,
   hashPrompt,
 } from './prompts/index.ts';
-import { FOXY_STRUCTURED_OUTPUT_PROMPT } from './structured-prompt.ts';
-import {
-  validateFoxyResponse,
-  validateSubjectRules,
-  wrapAsParagraph,
-  denormalizeFoxyResponse,
-  type FoxyResponse,
-  type FoxySubject,
-} from './structured-schema.ts';
 import {
   writeTrace,
   hashQuery,
@@ -378,7 +369,6 @@ async function finalizeGrounded(
   confidence: number,
   claudeModelLabel: string,
   tokensUsed: number,
-  structured?: FoxyResponse,
 ): Promise<GroundedResponse> {
   const traceRow = baseTraceRowFromCtx(ctx);
   traceRow.grounded = true;
@@ -391,7 +381,7 @@ async function finalizeGrounded(
     chunkCount: ctx.chunks ? ctx.chunks.length : 0,
     retrieveOnly: ctx.request.retrieve_only === true,
   });
-  const response: GroundedResponse = {
+  return {
     grounded: true,
     answer,
     citations,
@@ -404,123 +394,7 @@ async function finalizeGrounded(
       latency_ms: Date.now() - ctx.startedAt,
     },
   };
-  if (structured) {
-    response.structured = structured;
-  }
-  return response;
 }
-
-// ── Foxy structured output parsing ──────────────────────────────────────────
-//
-// For caller='foxy' Claude is instructed to emit a strict JSON object matching
-// the FoxyResponseSchema (src/lib/foxy/schema.ts). We attempt JSON.parse and
-// then run validateFoxyResponse + validateSubjectRules. Any failure path falls
-// back to wrapAsParagraph(rawText) so the response is ALWAYS a usable
-// FoxyResponse. The pipeline never throws on a bad LLM payload -- P12.
-//
-// Performance: JSON.parse + single-pass validator + 1x TextEncoder pass for
-// byte cap. Measured at <2ms for 4 KB payloads on Deno Edge runtime.
-
-/**
- * Strip a single layer of common JSON-formatting chrome the model sometimes
- * adds despite "JSON ONLY" instructions. Matches:
- *   - leading/trailing whitespace
- *   - ```json ... ``` markdown code fences (also bare ```)
- *
- * We do NOT attempt to extract JSON from arbitrary prose -- if the model
- * returned mixed prose+JSON, we let the parse fail and the wrapAsParagraph
- * fallback wins. That's the safer default than risking a partial parse.
- */
-function stripCodeFence(raw: string): string {
-  let s = raw.trim();
-  if (s.startsWith('```')) {
-    // Drop opening fence (with optional language tag) and closing fence.
-    s = s.replace(/^```(?:json|javascript|js)?\s*/i, '');
-    s = s.replace(/```\s*$/i, '');
-    s = s.trim();
-  }
-  return s;
-}
-
-interface ParsedStructured {
-  structured: FoxyResponse;
-  /** True when the model returned a valid structured payload. */
-  ok: boolean;
-  /** Why we fell back, when ok=false. Used for tracing. */
-  reason?: string;
-  /** Hint for analytics: subject rule warnings (when ok=true). */
-  warnings?: string[];
-}
-
-/**
- * Parse + validate Claude's structured output for the Foxy caller. Always
- * returns a usable FoxyResponse: on failure, wraps the raw text as a
- * paragraph-only response. Logs (via console.warn) a redacted reason on
- * failure so misbehaving models surface in trace logs.
- */
-function parseFoxyStructured(args: {
-  rawAnswer: string;
-  subjectHint?: FoxySubject;
-}): ParsedStructured {
-  const { rawAnswer, subjectHint } = args;
-  const stripped = stripCodeFence(rawAnswer);
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(stripped);
-  } catch (err) {
-    const preview = redactPreview(rawAnswer).slice(0, 200);
-    console.warn(
-      `foxy: structured_parse_failed reason=json_parse preview="${preview}" err=${String(err).slice(0, 120)}`,
-    );
-    return {
-      structured: wrapAsParagraph(rawAnswer, { subject: subjectHint }),
-      ok: false,
-      reason: 'json_parse',
-    };
-  }
-
-  const validation = validateFoxyResponse(parsed);
-  if (!validation.ok) {
-    const preview = redactPreview(rawAnswer).slice(0, 200);
-    console.warn(
-      `foxy: structured_parse_failed reason=schema preview="${preview}" detail="${validation.reason}"`,
-    );
-    return {
-      structured: wrapAsParagraph(rawAnswer, { subject: subjectHint }),
-      ok: false,
-      reason: 'schema',
-    };
-  }
-
-  const subjectCheck = validateSubjectRules(validation.value);
-  if (!subjectCheck.ok) {
-    const preview = redactPreview(rawAnswer).slice(0, 200);
-    console.warn(
-      `foxy: structured_parse_failed reason=subject_rules preview="${preview}" detail="${subjectCheck.reason}"`,
-    );
-    return {
-      structured: wrapAsParagraph(rawAnswer, { subject: subjectHint }),
-      ok: false,
-      reason: 'subject_rules',
-    };
-  }
-
-  return {
-    structured: validation.value,
-    ok: true,
-    warnings: subjectCheck.warnings,
-  };
-}
-
-/**
- * For caller='foxy' we boost max_tokens by ~25% to account for the JSON
- * overhead (keys, brackets, escaping). Otherwise the structured response
- * tends to truncate mid-block and fail JSON.parse. The boost is applied at
- * the Claude call site only -- the request contract still carries the
- * caller-supplied max_tokens for telemetry.
- */
-const FOXY_STRUCTURED_TOKEN_MULTIPLIER = 1.25;
 
 /**
  * retrieve_only citations: every chunk becomes a Citation (indexed 1..N)
@@ -801,36 +675,15 @@ export async function runPipeline(
       'Use Socratic scaffolding: ask, do not tell. Guide the student to the answer.';
   }
 
-  let systemPrompt = resolveTemplate(template, vars);
-
-  // Foxy structured-output addendum. ONLY appended for caller='foxy' so
-  // ncert-solver, quiz-generator, concept-engine, and diagnostic keep their
-  // current text-only contract. The addendum mirrors
-  // src/lib/foxy/schema.ts:FOXY_STRUCTURED_OUTPUT_PROMPT (Deno copy in
-  // structured-prompt.ts; parity-tested from the Node side).
-  const isFoxyStructured = request.caller === 'foxy';
-  if (isFoxyStructured) {
-    systemPrompt = `${systemPrompt}\n\n${FOXY_STRUCTURED_OUTPUT_PROMPT}`;
-  }
-
+  const systemPrompt = resolveTemplate(template, vars);
   const promptHashStr = await hashPrompt(systemPrompt);
   ctx.promptHash = promptHashStr;
 
   // Step 10. Call Claude.
-  //
-  // For Foxy we boost max_tokens by ~25% to budget for JSON overhead (keys,
-  // brackets, escaping). Without the boost, structured responses tend to
-  // truncate mid-block and fail JSON.parse, which forces a wrapAsParagraph
-  // fallback even when the model would have produced valid JSON given a few
-  // more tokens. Other callers see no change.
-  const effectiveMaxTokens = isFoxyStructured
-    ? Math.ceil(request.generation.max_tokens * FOXY_STRUCTURED_TOKEN_MULTIPLIER)
-    : request.generation.max_tokens;
-
   const claude = await callClaude({
     systemPrompt,
     userMessage: request.query,
-    maxTokens: effectiveMaxTokens,
+    maxTokens: request.generation.max_tokens,
     temperature: request.generation.temperature,
     timeoutMs: request.timeout_ms,
     apiKey: anthropicKey,
@@ -893,47 +746,18 @@ export async function runPipeline(
     return finalizeAbstain(sb, ctx, 'low_similarity');
   }
 
-  // Step 14. Citations + structured parse + success.
-  //
-  // For Foxy: parse the model's JSON output, validate against the structured
-  // schema, and produce a denormalized text equivalent for legacy storage in
-  // foxy_chat_messages.content. On any parse/validate failure we fall back to
-  // wrapAsParagraph(rawText) so `structured` is ALWAYS defined for Foxy. The
-  // legacy `answer` field carries the denormalized text so non-structured
-  // consumers (e.g. existing markdown renderers, server logs, exports) keep
-  // working unchanged.
-  //
-  // For other callers: behavior is unchanged. `structured` is left undefined
-  // and `answer` contains the raw markdown/text response.
-  let answerForResponse = claude.content;
-  let structuredForResponse: FoxyResponse | undefined;
-
-  if (isFoxyStructured) {
-    const subjectHint = mapSubjectCodeToFoxySubject(request.scope.subject_code);
-    const parsed = parseFoxyStructured({
-      rawAnswer: claude.content,
-      subjectHint,
-    });
-    structuredForResponse = parsed.structured;
-    // Denormalize the structured payload into a single string for legacy
-    // storage. This is what foxy_chat_messages.content (TEXT) keeps. When
-    // parse failed, `parsed.structured` is the wrapAsParagraph fallback so
-    // the denormalized text is still safe to surface.
-    answerForResponse = denormalizeFoxyResponse(parsed.structured);
-  }
-
+  // Step 14. Citations + success.
   const citations = extractCitations(claude.content, chunks);
-  ctx.answerLength = answerForResponse.length;
+  ctx.answerLength = claude.content.length;
 
   const response = await finalizeGrounded(
     sb,
     ctx,
-    answerForResponse,
+    claude.content,
     citations,
     confidence,
     claude.model,
     claude.inputTokens + claude.outputTokens,
-    structuredForResponse,
   );
 
   // Cache the grounded response. retrieve_only responses skip the cache
@@ -944,29 +768,6 @@ export async function runPipeline(
   }
 
   return response;
-}
-
-/**
- * Best-effort mapping from request.scope.subject_code (a free-form CBSE code
- * like "math", "science", "social_studies", "english") to the schema's
- * narrower FoxySubject enum. Used as a hint for wrapAsParagraph fallback so
- * the fallback response has a sensible subject. The model's emitted
- * `subject` field always wins on the happy path; this only matters when we
- * fall back to a paragraph wrap (which always produces subject='general' by
- * default; passing a hint just lets the renderer pick subject-aware styling
- * even on parse failure).
- */
-function mapSubjectCodeToFoxySubject(code: string): FoxySubject | undefined {
-  const normalized = (code ?? '').toLowerCase().trim();
-  if (normalized.includes('math')) return 'math';
-  if (normalized.includes('science') || normalized.includes('physics') || normalized.includes('chemistry') || normalized.includes('biology')) {
-    return 'science';
-  }
-  if (normalized.includes('social') || normalized === 'sst' || normalized.includes('history') || normalized.includes('geography') || normalized.includes('civics') || normalized.includes('economics')) {
-    return 'sst';
-  }
-  if (normalized.includes('english')) return 'english';
-  return undefined;
 }
 
 /**

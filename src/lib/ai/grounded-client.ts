@@ -19,14 +19,6 @@
 
 // ─── Types (mirror supabase/functions/grounded-answer/types.ts) ──────────────
 
-// Re-export FoxyResponse from the canonical schema module so callers don't
-// have a second source of truth. The structured-rendering UI imports this
-// type via `@/lib/ai/grounded-client` for ergonomic colocation with the
-// response shape; the runtime/validation lives in `@/lib/foxy/schema`.
-export type { FoxyResponse } from '@/lib/foxy/schema';
-
-import type { FoxyResponse as FoxyResponseShape } from '@/lib/foxy/schema';
-
 export type Caller =
   | 'foxy'
   | 'ncert-solver'
@@ -111,20 +103,6 @@ export type GroundedResponse =
        * derived from in PostHog, not the abstain-status check.
        */
       groundedFromChunks?: boolean;
-      /**
-       * Foxy structured-response payload. Defined when caller='foxy' and the
-       * Edge Function's parse+validate step succeeded (or fell back to
-       * wrapAsParagraph). Other callers leave this undefined; they consume
-       * the legacy `answer` markdown string instead.
-       *
-       * Optional on the wire because:
-       *   - Non-Foxy callers never get it.
-       *   - Older deployments of the Edge Function (pre-structured-output)
-       *     never populated it; cached responses may still lack it.
-       * UI renderers that understand the structured contract should prefer
-       * this field over `answer` and fall back to `answer` when undefined.
-       */
-      structured?: FoxyResponseShape;
       trace_id: string;
       meta: { claude_model: string; tokens_used: number; latency_ms: number };
     }
