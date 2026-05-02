@@ -38,6 +38,13 @@ import { callClaudeStream } from './claude.ts';
 import { extractCitations } from './citations.ts';
 import { computeConfidence } from './confidence.ts';
 import { loadTemplate, resolveTemplate, hashPrompt } from './prompts/index.ts';
+import { FOXY_STRUCTURED_OUTPUT_PROMPT } from './structured-prompt.ts';
+import {
+  validateFoxyResponse,
+  validateSubjectRules,
+  wrapAsParagraph,
+  type FoxyResponse,
+} from './structured-schema.ts';
 import { writeTrace, hashQuery, redactPreview, type TraceRow } from './trace.ts';
 import {
   canProceed,
@@ -120,6 +127,15 @@ export type PipelineStreamEvent =
       groundedFromChunks: boolean;
       claudeModel: string;
       answerLength: number;
+      /**
+       * Foxy structured-response payload, parsed + validated AFTER the stream
+       * closes. Mid-stream we cannot validate (the JSON is incomplete), so the
+       * UI renders the raw `text` deltas in real time and SWAPS to the
+       * structured renderer on `done`. On parse/validate failure this is the
+       * `wrapAsParagraph(fullText)` fallback -- always defined when the caller
+       * is 'foxy' and the stream completed successfully.
+       */
+      structured?: FoxyResponse;
     }
   | {
       kind: 'abstain';
@@ -375,7 +391,16 @@ export async function* runStreamingPipeline(
       'Use Socratic scaffolding: ask, do not tell. Guide the student to the answer.';
   }
 
-  const systemPrompt = resolveTemplate(template, vars);
+  let systemPrompt = resolveTemplate(template, vars);
+
+  // Foxy structured-output addendum (streaming). Mirrors pipeline.ts logic.
+  // Mid-stream we cannot validate; the parse + validate step runs ONCE at
+  // stream close and emits the result on the `done` event.
+  const isFoxyStructured = request.caller === 'foxy';
+  if (isFoxyStructured) {
+    systemPrompt = `${systemPrompt}\n\n${FOXY_STRUCTURED_OUTPUT_PROMPT}`;
+  }
+
   const promptHashStr = await hashPrompt(systemPrompt);
   ctx.promptHash = promptHashStr;
 
@@ -427,10 +452,19 @@ export async function* runStreamingPipeline(
   };
 
   // Step 10. Stream Claude.
+  //
+  // Boost max_tokens for Foxy structured output by ~25% (mirror pipeline.ts).
+  // Without the boost, structured responses tend to truncate mid-block which
+  // forces the close-event parser to fall back to wrapAsParagraph(fullText).
+  const FOXY_STRUCTURED_TOKEN_MULTIPLIER = 1.25;
+  const effectiveMaxTokens = isFoxyStructured
+    ? Math.ceil(request.generation.max_tokens * FOXY_STRUCTURED_TOKEN_MULTIPLIER)
+    : request.generation.max_tokens;
+
   const claudeStream = callClaudeStream({
     systemPrompt,
     userMessage: request.query,
-    maxTokens: request.generation.max_tokens,
+    maxTokens: effectiveMaxTokens,
     temperature: request.generation.temperature,
     timeoutMs: request.timeout_ms,
     apiKey: anthropicKey,
@@ -498,6 +532,16 @@ export async function* runStreamingPipeline(
 
   ctx.answerLength = accumulated.length;
 
+  // Parse + validate structured Foxy output ONCE at stream close. Mid-stream
+  // we couldn't validate because the JSON was incomplete. On any failure we
+  // emit a wrapAsParagraph(fullText) fallback so the client always receives
+  // a usable FoxyResponse on the `done` event. The UI can choose to swap
+  // from the raw text deltas it streamed to the structured renderer.
+  let structured: FoxyResponse | undefined;
+  if (isFoxyStructured) {
+    structured = parseStreamingFoxy(accumulated);
+  }
+
   yield {
     kind: 'done',
     tokensUsed,
@@ -505,5 +549,49 @@ export async function* runStreamingPipeline(
     groundedFromChunks,
     claudeModel,
     answerLength: accumulated.length,
+    structured,
   };
+}
+
+/**
+ * Streaming-path helper: parse + validate the accumulated text. Mirrors
+ * `parseFoxyStructured` in pipeline.ts but without the subjectHint plumbing
+ * (the streaming entry doesn't carry the same subject-mapping). On any
+ * failure returns a wrapAsParagraph(rawText) fallback. Never throws.
+ */
+function parseStreamingFoxy(rawAnswer: string): FoxyResponse {
+  let stripped = rawAnswer.trim();
+  if (stripped.startsWith('```')) {
+    stripped = stripped.replace(/^```(?:json|javascript|js)?\s*/i, '');
+    stripped = stripped.replace(/```\s*$/i, '');
+    stripped = stripped.trim();
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stripped);
+  } catch (err) {
+    console.warn(
+      `foxy(stream): structured_parse_failed reason=json_parse err=${String(err).slice(0, 120)}`,
+    );
+    return wrapAsParagraph(rawAnswer);
+  }
+
+  const validation = validateFoxyResponse(parsed);
+  if (!validation.ok) {
+    console.warn(
+      `foxy(stream): structured_parse_failed reason=schema detail="${validation.reason}"`,
+    );
+    return wrapAsParagraph(rawAnswer);
+  }
+
+  const subjectCheck = validateSubjectRules(validation.value);
+  if (!subjectCheck.ok) {
+    console.warn(
+      `foxy(stream): structured_parse_failed reason=subject_rules detail="${subjectCheck.reason}"`,
+    );
+    return wrapAsParagraph(rawAnswer);
+  }
+
+  return validation.value;
 }

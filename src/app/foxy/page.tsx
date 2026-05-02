@@ -16,6 +16,7 @@ import { findSimulation, InlineSimulation } from '@/components/InlineSimulation'
 import { ChatBubble, type GroundingStatus, type AbstainReason, type SuggestedAlternative } from '@/components/foxy/ChatBubble';
 import { LoadingState } from '@/components/foxy/LoadingState';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
+import type { FoxyResponse } from '@/lib/foxy/schema';
 import { ChatInput } from '@/components/foxy/ChatInput';
 import { ConversationManager, generateTitle, SIMPLIFIED_MODES, MODE_MAP, type ConversationSummary } from '@/components/foxy/ConversationManager';
 import { ConversationHeader } from '@/components/foxy/ConversationHeader';
@@ -29,6 +30,25 @@ const RichContent = dynamic(
   () => import('@/components/foxy/RichContent').then((m) => ({ default: m.RichContent })),
   { ssr: false, loading: () => null },
 );
+// Phase 2 (structured rendering): the structured renderer pulls in KaTeX +
+// CSS, which is heavy. Keep it dynamic so the synchronous /foxy bundle stays
+// inside the P10 page budget. `loading: () => null` is intentional — until
+// the renderer hydrates we paint nothing for that bubble; React mounts it on
+// the first frame after the chunk arrives. Same pattern as RichContent above.
+//
+// `isFoxyResponse` is imported synchronously from `@/lib/foxy/is-foxy-response`
+// (NOT from FoxyStructuredRenderer) — that helper has zero deps so the
+// discriminator can run on every render without dragging KaTeX into the
+// synchronous bundle.
+import { isFoxyResponse } from '@/lib/foxy/is-foxy-response';
+const FoxyStructuredRenderer = dynamic(
+  () => import('@/components/foxy/FoxyStructuredRenderer').then((m) => ({ default: m.FoxyStructuredRenderer })),
+  { ssr: false, loading: () => null },
+);
+// Synchronous import for the boundary class — it's tiny (no deps) and must
+// be present on every assistant bubble render so it can catch a downstream
+// throw from the lazy structured renderer.
+import { StructuredRenderBoundary } from '@/components/foxy/StructuredRenderBoundary';
 const UpgradeModal = dynamic(
   () => import('@/components/UpgradeModal').then((m) => ({ default: m.UpgradeModal })),
   { ssr: false },
@@ -103,9 +123,14 @@ async function fetchRecentSession(
     .limit(1);
   if (!sessions || sessions.length === 0) return null;
   const sessionId = sessions[0].id;
+  // Phase 2 (structured rendering): pull the `structured` JSONB column so
+  // historical assistant turns can render via FoxyStructuredRenderer when the
+  // row was persisted post-migration. NULL on legacy rows; the bubble falls
+  // back to the markdown renderer in that case (see ChatBubble's renderer
+  // choice).
   const { data: msgs } = await supabase
     .from('foxy_chat_messages')
-    .select('role, content, created_at')
+    .select('role, content, structured, created_at')
     .eq('session_id', sessionId)
     .order('created_at', { ascending: true });
   if (!msgs || msgs.length === 0) return null;
@@ -116,6 +141,7 @@ async function fetchRecentSession(
       role: (m.role === 'assistant' ? 'tutor' : 'student') as 'tutor' | 'student',
       content: m.content,
       timestamp: m.created_at || new Date().toISOString(),
+      structured: (m.structured as FoxyResponse | null | undefined) ?? undefined,
     })),
   };
 }
@@ -172,9 +198,11 @@ async function fetchConversationById(sessionId: string) {
     .eq('id', sessionId)
     .single();
   if (!session) return null;
+  // Phase 2 (structured rendering): include `structured` so resumed sessions
+  // can render historical assistant turns via FoxyStructuredRenderer.
   const { data: messages } = await supabase
     .from('foxy_chat_messages')
-    .select('role, content, created_at')
+    .select('role, content, structured, created_at')
     .eq('session_id', sessionId)
     .order('created_at', { ascending: true });
   return {
@@ -184,6 +212,7 @@ async function fetchConversationById(sessionId: string) {
     messages: (messages ?? []).map((m: any) => ({
       role: m.role,           // 'user' | 'assistant'
       content: m.content,
+      structured: (m.structured as FoxyResponse | null | undefined) ?? undefined,
       ts: m.created_at,
     })),
   };
@@ -319,6 +348,10 @@ async function callFoxyTutor(params: Record<string, any> & { language?: string }
       // Default to safe values when the server didn't emit them.
       groundedFromChunks:     typeof data.groundedFromChunks === 'boolean' ? data.groundedFromChunks : false,
       citationsCount:         typeof data.citationsCount === 'number' ? data.citationsCount : 0,
+      // Phase 2 (structured rendering): the validated FoxyResponse payload, if
+      // upstream produced one. Absent on legacy / abstain / kill-switch paths;
+      // the chat page falls back to RichContent on `data.response` in that case.
+      structured:             (data.structured as FoxyResponse | undefined) ?? undefined,
     };
   } catch (err) {
     console.error('[Foxy] Network error:', err);
@@ -352,7 +385,22 @@ interface StreamingCallbacks {
   onSession?: (sessionId: string) => void;
   onMetadata?: (meta: { groundingStatus: GroundingStatus; traceId?: string; confidence?: number; citationsCount?: number }) => void;
   onText: (delta: string) => void;
-  onDone: (info: { tokensUsed: number; latencyMs: number; groundedFromChunks: boolean; citationsCount: number; claudeModel: string }) => void;
+  onDone: (info: {
+    tokensUsed: number;
+    latencyMs: number;
+    groundedFromChunks: boolean;
+    citationsCount: number;
+    claudeModel: string;
+    /**
+     * Validated structured FoxyResponse — emitted ONCE on the `done` event by
+     * the streaming pipeline (pipeline-stream.ts). Absent when the upstream
+     * could not produce a schema-valid payload (kill-switch, parse failure,
+     * non-Foxy flow). Until `done` arrives the bubble shows partial text deltas
+     * via the markdown renderer; on `done` the bubble swaps to the structured
+     * renderer when this field is present.
+     */
+    structured?: FoxyResponse;
+  }) => void;
   onAbstain?: (info: { abstainReason: AbstainReason; suggestedAlternatives: SuggestedAlternative[]; traceId?: string }) => void;
   onError?: (info: { reason: string; traceId?: string }) => void;
 }
@@ -423,6 +471,9 @@ async function callFoxyTutorStream(
         groundedFromChunks: data?.groundedFromChunks === true,
         citationsCount: typeof data?.citationsCount === 'number' ? data.citationsCount : 0,
         claudeModel: data?.meta?.claude_model || data?.claudeModel || '',
+        // Phase 2: forward the validated structured payload through the
+        // JSON-fallback path so the renderer-swap logic is identical to SSE.
+        structured: (data?.structured as FoxyResponse | undefined) ?? undefined,
       });
     } catch {
       callbacks.onError?.({ reason: 'non-stream-parse-failed' });
@@ -477,6 +528,11 @@ async function callFoxyTutorStream(
           groundedFromChunks: parsed?.groundedFromChunks === true,
           citationsCount,
           claudeModel: typeof parsed?.claudeModel === 'string' ? parsed.claudeModel : '',
+          // Phase 2: pipeline-stream.ts attaches a validated FoxyResponse on
+          // the terminal `done` payload (or omits it when upstream couldn't
+          // produce one). Hand it through unchanged — the renderer applies
+          // `isFoxyResponse` before trusting it.
+          structured: (parsed?.structured as FoxyResponse | undefined) ?? undefined,
         });
       } else if (eventName === 'abstain') {
         callbacks.onAbstain?.({
@@ -515,6 +571,17 @@ interface ChatMessage {
   abstainReason?: AbstainReason;
   /** Suggested alternative chapters (only present when groundingStatus === 'hard-abstain'). */
   suggestedAlternatives?: SuggestedAlternative[];
+  /**
+   * Validated structured-block payload from the Foxy API (post-migration).
+   * - POST /api/foxy returns this on `data.structured` when upstream emitted a
+   *   schema-valid FoxyResponse.
+   * - GET /api/foxy?sessionId=... returns it per persisted assistant row when
+   *   the row was saved after the structured-output migration.
+   * - Streaming: arrives only on the `done` event; until then the bubble shows
+   *   the in-progress `content` via the legacy markdown renderer.
+   * Absent on legacy assistant rows, abstain responses, and user messages.
+   */
+  structured?: FoxyResponse;
 }
 
 const REPORT_REASONS = [
@@ -767,6 +834,7 @@ export default function FoxyPage() {
         content: m.content,
         timestamp: m.ts || m.created_at || new Date().toISOString(),
         xp: m.meta?.xp || 0,
+        structured: (m.structured as FoxyResponse | undefined) ?? undefined,
       }))
     );
     setActiveTopic(null);
@@ -1052,13 +1120,23 @@ export default function FoxyPage() {
               // the bubble is still empty AND we had no abstain signal AND we
               // didn't get a groundedFromChunks=true terminal, fill with a
               // friendly fallback so the user never sees a silent empty bubble.
+              //
+              // Phase 2 (structured rendering): on `done` we also stamp the
+              // validated `structured` payload onto the bubble. Until this
+              // moment the bubble was rendering streamed text deltas via the
+              // markdown renderer; once `structured` lands, ChatBubble swaps
+              // to FoxyStructuredRenderer for the final paint.
               setMessages((p: ChatMessage[]) => p.map((m) => {
                 if (m.id !== tutorBubbleId) return m;
-                if (m.content && m.content.length > 0) return m;
-                if (m.groundingStatus === 'hard-abstain') return m; // abstain UI handles its own display
-                if (info.groundedFromChunks === true) return m;     // server signaled real grounded answer
+                let next: ChatMessage = m;
+                if (info.structured) {
+                  next = { ...next, structured: info.structured };
+                }
+                if (next.content && next.content.length > 0) return next;
+                if (next.groundingStatus === 'hard-abstain') return next; // abstain UI handles its own display
+                if (info.groundedFromChunks === true) return next;        // server signaled real grounded answer
                 return {
-                  ...m,
+                  ...next,
                   content: language === 'hi'
                     ? 'मैं अभी जवाब नहीं दे सका। फिर से कोशिश करें या दूसरा chapter चुनें।'
                     : "I couldn't generate a response right now. Try rephrasing or pick a different chapter.",
@@ -1142,6 +1220,11 @@ export default function FoxyPage() {
         traceId: resp.traceId,
         abstainReason: resp.abstainReason,
         suggestedAlternatives: resp.suggestedAlternatives,
+        // Phase 2 (structured rendering): attach the validated FoxyResponse
+        // when the JSON path produced one. ChatBubble routes structured-bearing
+        // tutor messages to FoxyStructuredRenderer; legacy/abstain messages
+        // continue through RichContent.
+        structured: resp.structured,
       }]);
       // Soft upgrade prompt when quota is near exhaustion (user's choice, not forced)
       if (resp.upgradePrompt) {
@@ -1846,11 +1929,37 @@ export default function FoxyPage() {
               // Skip collapsed messages
               if (collapsedAbove !== null && idx < collapsedAbove) return null;
 
+              // ── Phase 2 renderer choice (structured vs legacy markdown) ──
+              // For tutor messages we prefer FoxyStructuredRenderer when the
+              // server attached a schema-valid `structured` payload AND the
+              // cheap shape discriminator passes. Otherwise we fall back to
+              // the legacy `RichContent` markdown renderer (legacy persisted
+              // rows, abstain bubbles, in-progress streaming text before the
+              // `done` event lands). The structured render is wrapped in a
+              // small error boundary whose fallback is the same legacy
+              // RichContent rendering — so the user always sees the answer
+              // text even if the structured tree blows up at runtime.
+              const useStructured =
+                msg.role === 'tutor' && msg.structured && isFoxyResponse(msg.structured);
+              const legacyTutorContent = (
+                <RichContent content={msg.content} subjectKey={activeSubject} />
+              );
+              const tutorContent = useStructured ? (
+                <StructuredRenderBoundary fallback={legacyTutorContent}>
+                  <FoxyStructuredRenderer
+                    response={msg.structured!}
+                    subjectKey={activeSubject}
+                  />
+                </StructuredRenderBoundary>
+              ) : (
+                legacyTutorContent
+              );
+
               return (
                 <div key={msg.id}>
                   <ChatBubble
                     role={msg.role}
-                    content={msg.role === 'tutor' ? <RichContent content={msg.content} subjectKey={activeSubject} /> : (
+                    content={msg.role === 'tutor' ? tutorContent : (
                       <div>
                         {msg.imageUrl && (
                           <div className="mb-2 rounded-xl overflow-hidden max-w-[220px]">
