@@ -5,9 +5,6 @@
 // Keep them in sync with spec §6.1 and src/lib/ai/grounded-client.ts (when added).
 
 import { VALID_CALLERS } from './config.ts';
-import type { FoxyResponse } from './structured-schema.ts';
-
-export type { FoxyResponse } from './structured-schema.ts';
 
 export type Caller = typeof VALID_CALLERS[number];
 export type Mode = 'strict' | 'soft';
@@ -86,22 +83,6 @@ export type GroundedResponse =
        * measuring true citation-backed answer rate. Audit Phase 0 Fix 0.5.
        */
       groundedFromChunks: boolean;
-      /**
-       * Foxy structured-response payload. Populated ONLY for `caller === 'foxy'`
-       * when Claude's output successfully parses + validates against the
-       * FoxyResponseSchema (see src/lib/foxy/schema.ts; Deno mirror in
-       * structured-schema.ts). On parse/validate failure the pipeline emits a
-       * `wrapAsParagraph(rawText)` fallback so this field is ALWAYS defined for
-       * Foxy responses -- never undefined when caller is 'foxy' and the call
-       * succeeded. Other callers (ncert-solver, quiz-generator, etc) leave it
-       * undefined; they consume the legacy `answer` markdown string instead.
-       *
-       * The legacy `answer` field is also populated for Foxy via
-       * `denormalizeFoxyResponse` so storage in foxy_chat_messages.content
-       * (TEXT, denormalized) keeps working without schema changes. Renderers
-       * that understand the structured contract should prefer `structured`.
-       */
-      structured?: FoxyResponse;
       trace_id: string;
       meta: { claude_model: string; tokens_used: number; latency_ms: number };
     }
