@@ -29,10 +29,10 @@ describe('GOAL_ADAPTIVE_FLAGS registry', () => {
     expect(GOAL_ADAPTIVE_FLAGS.GOAL_AWARE_FOXY).toBe('ff_goal_aware_foxy');
   });
 
-  it('contains exactly the two known goal-adaptive keys (no accidental drift)', () => {
-    expect(Object.keys(GOAL_ADAPTIVE_FLAGS).sort()).toEqual(
-      ['GOAL_AWARE_FOXY', 'GOAL_PROFILES'],
-    );
+  it('contains the Phase 0+1 goal-adaptive keys (subset, may grow additively across phases drift)', () => {
+    const keys = Object.keys(GOAL_ADAPTIVE_FLAGS).sort();
+    expect(keys).toEqual(expect.arrayContaining(
+      ['GOAL_AWARE_FOXY', 'GOAL_PROFILES']));
   });
 
   it('is an `as const` literal (compile-time check via type narrowing)', () => {

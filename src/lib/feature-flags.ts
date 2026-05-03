@@ -230,6 +230,7 @@ export const WELCOME_FLAGS = {
 export const GOAL_ADAPTIVE_FLAGS = {
   GOAL_PROFILES: 'ff_goal_profiles',
   GOAL_AWARE_FOXY: 'ff_goal_aware_foxy',
+  GOAL_DAILY_PLAN: 'ff_goal_daily_plan',  // Phase 3
 } as const;
 
 /**
@@ -243,4 +244,5 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [WELCOME_FLAGS.WELCOME_V2]: false,
   [GOAL_ADAPTIVE_FLAGS.GOAL_PROFILES]: false,
   [GOAL_ADAPTIVE_FLAGS.GOAL_AWARE_FOXY]: false,
+  [GOAL_ADAPTIVE_FLAGS.GOAL_DAILY_PLAN]: false,
 } as const;
