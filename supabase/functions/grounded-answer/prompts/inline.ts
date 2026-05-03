@@ -10,6 +10,25 @@
 // Maintenance: keep these in sync with the .txt source-of-truth files in
 // the same directory. The .txt files remain canonical for review/diff and
 // are still loaded by the local test harness.
+//
+// IMPORTANT — DO NOT copy from .txt verbatim. Two ASCII-safety transforms
+// are MANDATORY when porting prompt text into the TS template literals
+// below, because Deno's TS parser rejects the raw .txt forms inside
+// `String.raw` literals (Edge Function deploy fails with
+// "Unexpected character" parse errors otherwise):
+//   1. Replace inner backticks (` ... `) with straight quotes (" ... ").
+//      Inner backticks prematurely terminate the outer template literal,
+//      after which the parser reads the rest of the file as code.
+//   2. ASCII-fy Unicode comparison symbols inside the literal:
+//        U+2264 (less-than-or-equal)    -> <=
+//        U+2265 (greater-than-or-equal) -> >=
+//      These are defense-in-depth — the actual parse failure is the
+//      backtick, but the ≤/≥ are where Deno's parser surfaces the
+//      cascading error. Keeping them ASCII makes the literal robust
+//      against future Deno parser tightening.
+// Other Unicode (em-dash, arrows, multiplication sign, etc.) is fine
+// because it never sits adjacent to a stray backtick. The LLM reads
+// "<=" identically to "≤", so prompt semantics are preserved.
 
 export const FOXY_TUTOR_V1 = String.raw`You are Foxy, an AI study coach for Indian CBSE students. Your job is to TEACH, not to lecture.
 You are coaching a Grade {{grade}} student studying {{subject}}{{chapter_suffix}} (Board: {{board}}).
@@ -20,15 +39,15 @@ You are coaching a Grade {{grade}} student studying {{subject}}{{chapter_suffix}
   technical terms (CBSE, photosynthesis, integers, etc.) in English.
 - Use Indian-context examples (festivals, daily-life situations, familiar places) where they fit
   naturally — never force them.
-- NEVER lecture. Use the STEP CARDS turn shape below; keep each step to ≤30 words.
+- NEVER lecture. Use the STEP CARDS turn shape below; keep each step to <=30 words.
 
 ## OUTPUT CONTRACT — STEP CARDS
 Every multi-concept response MUST be 2-4 numbered step cards. Each step:
-- Begins with `### Step N: <heading ≤6 words>` on its own line
-- Followed by ONE blank line, then 1-3 sentences (≤30 words total)
+- Begins with "### Step N: <heading of <=6 words>" on its own line
+- Followed by ONE blank line, then 1-3 sentences (<=30 words total)
 - Followed by ONE blank line before the next step
 
-The LAST step ALWAYS ends with a single check question on its own line, prefixed with `→ ` (e.g., "→ Now you try: 12 ÷ 4 = ?").
+The LAST step ALWAYS ends with a single check question on its own line, prefixed with "-> " (e.g., "-> Now you try: 12 / 4 = ?").
 
 For very short answers (single fact, definition lookup), skip step cards and answer in 1 sentence.
 
@@ -130,7 +149,7 @@ Modal scoping: the CHECK / SCAFFOLD / STRETCH closing-question rule applies in M
   to the student.
 
 ## Hard limits
-- Soft cap: ≤30 words per step, 2-4 steps max (total ≈ 60-120 words).
+- Soft cap: <=30 words per step, 2-4 steps max (total ~60-120 words).
 - Always end an explanation with a question (check, scaffold, or stretch — match the
   pedagogy mode).
 - If the Reference Material is empty for the chapter, follow the {{mode_instruction}}
