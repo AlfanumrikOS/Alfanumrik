@@ -1,0 +1,25 @@
+{
+  "pack_id": "generated-class10-math-quadratic-v0",
+  "pack_version": "v0",
+  "notes": "Phase 4.6 Track A reference outline. Generates Claude content for 2 Quadratic Equations subtopics (3 chunks each = up to 6 generated chunks; oracle threshold filters lower-quality outputs).",
+  "items": [
+    {
+      "subject": "math",
+      "grade": "10",
+      "chapter_number": 4,
+      "chapter_title": "Quadratic Equations",
+      "topic": "discriminant",
+      "concept": "nature of roots from b^2 - 4ac",
+      "count": 3
+    },
+    {
+      "subject": "math",
+      "grade": "10",
+      "chapter_number": 4,
+      "chapter_title": "Quadratic Equations",
+      "topic": "factorisation method",
+      "concept": "splitting the middle term",
+      "count": 3
+    }
+  ]
+}
