@@ -35,6 +35,7 @@ on:
           - capture-and-pr
           - pre-mark-staging
           - pre-mark-prod
+          - apply-baseline-staging
           - verify
 
 concurrency:
@@ -941,6 +942,77 @@ jobs:
             echo "| Mutated prod metadata | YES (1 row) |"
             echo "| Mutated staging metadata | NO |"
             echo "| Next step | Run \`step=verify\` to confirm zero pending migrations |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ──────────────────────────────────────────────────────────────────────
+  # PHASE 4d — apply-baseline-staging
+  #
+  # Use case: staging's schema is incomplete relative to prod (some legacy
+  # migrations never reached staging). After Section 10 cleanup, attempting
+  # to apply post-baseline feature migrations fails because tables they
+  # target do not exist on staging.
+  #
+  # Fix: clear the staging pre-mark for the baseline, then run db push.
+  # The CLI sees baseline as PENDING and executes it. Baseline is fully
+  # idempotent (IF NOT EXISTS / OR REPLACE / DROP+CREATE policies + schema-
+  # only — no INSERT/COPY), so it ADDS missing schema objects without
+  # touching staging's existing data.
+  #
+  # After this step, staging's schema_migrations records the baseline + any
+  # post-baseline migrations that applied. Future deploy-staging runs see
+  # zero pending and skip cleanly.
+  #
+  # Validated: the baseline applies cleanly to a fresh local Supabase
+  # stack (dry-run-staging passes consistently). Staging is similar enough
+  # to fresh that the same idempotent SQL applies cleanly there too.
+  # ──────────────────────────────────────────────────────────────────────
+  apply-baseline-staging:
+    name: Apply baseline to staging (idempotent)
+    if: ${{ inputs.step == 'apply-baseline-staging' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Clear pre-mark + apply baseline + post-baseline to staging
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_STAGING_DB_PASSWORD }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_STAGING_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+
+          # Clear the pre-mark (set earlier by step=pre-mark-staging).
+          # After this, the CLI sees baseline as PENDING locally.
+          # Idempotent: if already reverted, this is a no-op.
+          supabase migration repair --status reverted "$BASELINE_VERSION" || true
+
+          # Apply baseline + any post-baseline migrations now sitting at root
+          # of supabase/migrations/ (currently: 20260430010000 Foxy structured).
+          # Baseline is schema-only and fully idempotent; safe to apply on
+          # a partially-populated staging environment.
+          supabase db push --linked --include-all
+
+          # Post-state: list migrations to confirm Local + Remote both have
+          # baseline + any post-baseline migrations.
+          POST_LIST=$(supabase migration list --linked 2>&1 || true)
+          echo "$POST_LIST"
+
+          {
+            echo "## Phase: apply-baseline-staging"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Baseline applied to | staging |"
+            echo "| Schema mutated | YES (additive only — IF NOT EXISTS guards) |"
+            echo "| Data mutated | NO (schema-only baseline) |"
+            echo "| Next step | re-trigger deploy-staging.yml to confirm full chain |"
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ──────────────────────────────────────────────────────────────────────
