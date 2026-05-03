@@ -1,0 +1,11 @@
+{
+  "pack_id": "generated-class11-physics-rotation-v0",
+  "pack_version": "v0",
+  "notes": "System of Particles and Rotational Motion — moment of inertia, torque, angular momentum. Conceptually dense; thin RAG coverage. 4 items, 3 chunks each.",
+  "items": [
+    { "subject": "physics", "grade": "11", "chapter_number": 7, "chapter_title": "System of Particles and Rotational Motion", "topic": "centre of mass", "concept": "definition for discrete and continuous systems", "count": 3 },
+    { "subject": "physics", "grade": "11", "chapter_number": 7, "chapter_title": "System of Particles and Rotational Motion", "topic": "moment of inertia", "concept": "I = sum m_i r_i^2; standard body formulas (rod, ring, disc, sphere)", "count": 3 },
+    { "subject": "physics", "grade": "11", "chapter_number": 7, "chapter_title": "System of Particles and Rotational Motion", "topic": "torque and angular momentum", "concept": "tau = r x F; L = I omega; conservation of angular momentum", "count": 3 },
+    { "subject": "physics", "grade": "11", "chapter_number": 7, "chapter_title": "System of Particles and Rotational Motion", "topic": "rolling motion", "concept": "rolling without slipping condition v = R omega; total KE = translational + rotational", "count": 3 }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "pack_id": "generated-class12-biology-inheritance-v0",
+  "pack_version": "v0",
+  "notes": "Principles of Inheritance and Variation — Mendel, dihybrid, sex-linked. Often thin in NCERT vs NEET coverage. 4 items, 3 chunks each.",
+  "items": [
+    { "subject": "biology", "grade": "12", "chapter_number": 5, "chapter_title": "Principles of Inheritance and Variation", "topic": "Mendel's laws", "concept": "law of dominance, segregation, independent assortment", "count": 3 },
+    { "subject": "biology", "grade": "12", "chapter_number": 5, "chapter_title": "Principles of Inheritance and Variation", "topic": "monohybrid and dihybrid cross", "concept": "Punnett square; 3:1 and 9:3:3:1 ratios", "count": 3 },
+    { "subject": "biology", "grade": "12", "chapter_number": 5, "chapter_title": "Principles of Inheritance and Variation", "topic": "sex-linked inheritance", "concept": "haemophilia, color blindness; X-linked recessive pattern", "count": 3 },
+    { "subject": "biology", "grade": "12", "chapter_number": 5, "chapter_title": "Principles of Inheritance and Variation", "topic": "chromosomal disorders", "concept": "Down, Turner, Klinefelter syndromes; aneuploidy basics", "count": 3 }
+  ]
+}

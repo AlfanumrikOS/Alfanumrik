@@ -1,0 +1,11 @@
+{
+  "pack_id": "generated-class12-physics-emi-v0",
+  "pack_version": "v0",
+  "notes": "Electromagnetic Induction — Faraday, Lenz, motional EMF, self/mutual inductance. Heavily JEE/NEET tested. 4 items, 3 chunks each.",
+  "items": [
+    { "subject": "physics", "grade": "12", "chapter_number": 6, "chapter_title": "Electromagnetic Induction", "topic": "Faraday's law and Lenz's law", "concept": "induced EMF = -dPhi/dt; sign convention from Lenz's law", "count": 3 },
+    { "subject": "physics", "grade": "12", "chapter_number": 6, "chapter_title": "Electromagnetic Induction", "topic": "motional EMF", "concept": "EMF = B L v for a rod moving in a magnetic field", "count": 3 },
+    { "subject": "physics", "grade": "12", "chapter_number": 6, "chapter_title": "Electromagnetic Induction", "topic": "self inductance", "concept": "L of a solenoid; energy stored U = (1/2) L I^2", "count": 3 },
+    { "subject": "physics", "grade": "12", "chapter_number": 6, "chapter_title": "Electromagnetic Induction", "topic": "mutual inductance", "concept": "M between two coupled coils; coupling coefficient", "count": 3 }
+  ]
+}

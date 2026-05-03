@@ -1,0 +1,10 @@
+{
+  "pack_id": "generated-class09-science-sound-v0",
+  "pack_version": "v0",
+  "notes": "Sound — wave concepts, frequency, amplitude, reflection. Wave physics is thin in NCERT compared to test difficulty. 3 items, 3 chunks each.",
+  "items": [
+    { "subject": "science", "grade": "9", "chapter_number": 12, "chapter_title": "Sound", "topic": "longitudinal wave properties", "concept": "compression rarefaction wavelength frequency time period", "count": 3 },
+    { "subject": "science", "grade": "9", "chapter_number": 12, "chapter_title": "Sound", "topic": "speed of sound in different media", "concept": "speed in solids vs liquids vs gases; effect of temperature", "count": 3 },
+    { "subject": "science", "grade": "9", "chapter_number": 12, "chapter_title": "Sound", "topic": "echo and reverberation", "concept": "minimum distance condition for echo at 22 degrees C", "count": 3 }
+  ]
+}

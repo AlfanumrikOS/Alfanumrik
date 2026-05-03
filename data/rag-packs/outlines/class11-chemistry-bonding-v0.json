@@ -1,0 +1,10 @@
+{
+  "pack_id": "generated-class11-chemistry-bonding-v0",
+  "pack_version": "v0",
+  "notes": "Chemical Bonding and Molecular Structure — VSEPR, hybridisation, MOT basics. High board + JEE relevance. 3 items, 4 chunks each.",
+  "items": [
+    { "subject": "chemistry", "grade": "11", "chapter_number": 4, "chapter_title": "Chemical Bonding and Molecular Structure", "topic": "VSEPR theory", "concept": "predicting molecular geometry from electron pair repulsion (linear, trigonal, tetrahedral, etc.)", "count": 4 },
+    { "subject": "chemistry", "grade": "11", "chapter_number": 4, "chapter_title": "Chemical Bonding and Molecular Structure", "topic": "hybridisation", "concept": "sp, sp2, sp3 hybrid orbitals; how to deduce hybridisation from structure", "count": 4 },
+    { "subject": "chemistry", "grade": "11", "chapter_number": 4, "chapter_title": "Chemical Bonding and Molecular Structure", "topic": "Molecular Orbital Theory basics", "concept": "bonding vs antibonding orbitals; bond order calculation; magnetic character", "count": 4 }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "pack_id": "generated-class09-math-surface-volumes-v0",
+  "pack_version": "v0",
+  "notes": "Surface areas and volumes of cuboids, cylinders, cones, spheres, hemispheres. Multi-shape chapter — students mix up formulas. 4 items, 3 chunks each.",
+  "items": [
+    { "subject": "math", "grade": "9", "chapter_number": 13, "chapter_title": "Surface Areas and Volumes", "topic": "cuboid and cube CSA TSA", "concept": "lateral vs total surface formulas", "count": 3 },
+    { "subject": "math", "grade": "9", "chapter_number": 13, "chapter_title": "Surface Areas and Volumes", "topic": "right circular cylinder", "concept": "CSA = 2 pi r h, TSA = 2 pi r (r + h)", "count": 3 },
+    { "subject": "math", "grade": "9", "chapter_number": 13, "chapter_title": "Surface Areas and Volumes", "topic": "right circular cone", "concept": "slant height l = sqrt(r^2 + h^2), CSA = pi r l", "count": 3 },
+    { "subject": "math", "grade": "9", "chapter_number": 13, "chapter_title": "Surface Areas and Volumes", "topic": "sphere and hemisphere", "concept": "4 pi r^2 surface, (4/3) pi r^3 volume", "count": 3 }
+  ]
+}
