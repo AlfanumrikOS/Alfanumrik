@@ -256,28 +256,78 @@ jobs:
         run: sleep 90
 
       - name: Health check
+        id: health
+        # Vercel's Security Checkpoint will JS-challenge anonymous requests
+        # from datacenter IPs (GitHub Actions runners). With a default `curl`
+        # User-Agent we observed three back-to-back HTTP 429s on otherwise
+        # healthy deploys (run 25274559010, 25275123707) — a CI-only false
+        # positive that real browsers do not see.
+        #
+        # Mitigations applied here, in order of precedence:
+        #   1. Send a monitoring-style User-Agent + Accept: application/json
+        #      so the request looks like a known health probe, not a bot
+        #      crawl, and the API route is content-negotiated as JSON.
+        #   2. Increase the retry budget and back off longer between attempts
+        #      so transient checkpoint engagements have time to clear.
+        #   3. Distinguish 429 (checkpoint engaged) from real failures via an
+        #      output, so the auto-rollback step can refuse to rollback a
+        #      deploy whose ONLY failure signal was a CI-side 429.
         run: |
           TARGET_URL="${PRODUCTION_DOMAIN}"
           echo "Checking: $TARGET_URL/api/v1/health"
 
-          for i in 1 2 3; do
+          LAST_STATUS=""
+          ALL_429=1
+          for i in 1 2 3 4 5; do
             RESPONSE=$(curl -s -w "\n%{http_code}" \
+              -A "Alfanumrik-CI-HealthCheck/1.0 (+https://alfanumrik.com; vercel-monitoring)" \
+              -H "Accept: application/json" \
+              -H "x-health-probe: github-actions" \
               "${TARGET_URL}/api/v1/health" 2>/dev/null)
             STATUS=$(echo "$RESPONSE" | tail -1)
             BODY=$(echo "$RESPONSE" | head -1)
+            LAST_STATUS="$STATUS"
             if [ "$STATUS" = "200" ]; then
               echo "Health check passed (attempt $i)"
               echo "$BODY" | head -c 500
+              echo "all_429=false" >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            echo "Attempt $i/3 returned HTTP $STATUS"
-            sleep 15
+            if [ "$STATUS" != "429" ]; then
+              ALL_429=0
+            fi
+            echo "Attempt $i/5 returned HTTP $STATUS"
+            # Longer backoff on 429 so the checkpoint can clear; quick retry otherwise.
+            if [ "$STATUS" = "429" ]; then
+              sleep 30
+            else
+              sleep 15
+            fi
           done
-          echo "Health check failed after 3 attempts"
+
+          if [ "$ALL_429" = "1" ]; then
+            # Every attempt was rate-limited by Vercel's Security Checkpoint.
+            # This is a CI infrastructure signal, NOT a production-down signal —
+            # real browser users automatically pass the JS challenge.
+            # Mark as unhealthy for the job exit code, but emit `all_429=true`
+            # so the auto-rollback step can refuse to roll back a deploy that
+            # is almost certainly fine.
+            echo "::warning::All 5 attempts returned HTTP 429 — Vercel Security Checkpoint engaged for CI runner. Real users are unaffected."
+            echo "all_429=true" >> "$GITHUB_OUTPUT"
+            echo "Health check could not validate (CI-side 429). Skipping rollback."
+            exit 1
+          fi
+
+          echo "all_429=false" >> "$GITHUB_OUTPUT"
+          echo "Health check failed after 5 attempts (last status: $LAST_STATUS)"
           exit 1
 
       - name: Auto-rollback on health check failure
-        if: failure()
+        # Refuse to rollback when the only failure signal was a 429 from
+        # Vercel's Security Checkpoint — that's a CI artifact, not a real
+        # outage. A 5xx, connection error, or non-429 status is still treated
+        # as a real failure and triggers rollback.
+        if: failure() && steps.health.outputs.all_429 != 'true'
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
