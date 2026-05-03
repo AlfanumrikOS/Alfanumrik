@@ -252,26 +252,41 @@ jobs:
           awk 'BEGIN{blank=0} /^$/{blank++; if (blank<=2) print; next} {blank=0; print}' \
             baseline.step11.sql > baseline.step12.sql
 
-          # Step 8 — rewrite `<table>%ROWTYPE` declarations to `RECORD`.
+          # Step 8 — three-pass rewrite to make pg_dump output replayable.
           #
           # pg_dump emits objects in dependency-aware order and relies on
           # `SET check_function_bodies = false` so PL/pgSQL function bodies
           # are not validated against missing referenced objects on first
-          # parse. The single documented exception is `%ROWTYPE` declarations
-          # in `DECLARE` blocks: PARSE-time resolves them BEFORE
-          # `check_function_bodies` kicks in, so a function emitted before
-          # the table it references fails to apply on a fresh replay.
+          # parse. There are two documented exceptions where parse-time
+          # resolution happens BEFORE `check_function_bodies` kicks in:
+          #   (a) `%ROWTYPE` declarations in `DECLARE` blocks
+          #   (b) `LANGUAGE sql` function bodies (always parsed strictly)
+          # Either case fails on a fresh replay if the referenced object has
+          # not yet been emitted.
           #
-          # The transform rewrites every `<schema>.<table>%ROWTYPE` (and
-          # unqualified `<table>%ROWTYPE`) to the generic PL/pgSQL `RECORD`
-          # type. PostgreSQL resolves `RECORD` at runtime via the SELECT INTO
-          # / RETURNING ... INTO that populates it. Field access
-          # `v_rec.column_name` works identically. The function body is
-          # otherwise unchanged.
+          # The script `scripts/reorder-baseline.mjs` runs three passes that
+          # together eliminate both failure modes:
           #
-          # This is a 1:1 token swap — line count is unchanged. We do NOT
-          # bucket-reorder; pg_dump's natural --schema-only ordering is
-          # preserved byte-for-byte outside the rewritten declarations.
+          #   Pass 1 (%ROWTYPE → RECORD): token-swap rewrite of every
+          #     `<schema>.<table>%ROWTYPE` and unqualified `<table>%ROWTYPE`
+          #     to the generic PL/pgSQL `RECORD` type. RECORD is resolved at
+          #     runtime via SELECT INTO / RETURNING INTO. Field access
+          #     `v_rec.column_name` works identically. Line count unchanged.
+          #
+          #   Pass 2 (LANGUAGE sql reorder + COMMENT relocation): topological
+          #     reorder of `LANGUAGE sql` function blocks so each is emitted
+          #     after the functions it calls. Permutes blocks; line count
+          #     preserved.
+          #
+          #   Pass 3 (LANGUAGE sql → LANGUAGE plpgsql): convert remaining
+          #     `LANGUAGE sql` function bodies to `LANGUAGE plpgsql` (wrapped
+          #     in BEGIN/RETURN/END;) so they benefit from the deferred-
+          #     validation contract. Adds ~2-3 lines per converted function.
+          #     Functions whose bodies don't fit the conversion shape are
+          #     left as `LANGUAGE sql` (a small safety net).
+          #
+          # We do NOT bucket-reorder top-level statements; pg_dump's natural
+          # --schema-only ordering is preserved outside the targeted rewrites.
           # Earlier iterations of this script bucketed every top-level
           # statement, which broke pg_dump's careful within-class ordering
           # (function-to-function calls, view-on-view, functional indexes,
@@ -281,20 +296,38 @@ jobs:
           # The script is checked into the repo at scripts/reorder-baseline.mjs
           # and ships with self-tests (`node scripts/reorder-baseline.mjs --self-test`).
           # It is idempotent: running it on its own output is a no-op (no
-          # `%ROWTYPE` strings remain after the first pass).
+          # `%ROWTYPE` strings and no convertible `LANGUAGE sql` blocks
+          # remain after the first run).
           node "${GITHUB_WORKSPACE}/scripts/reorder-baseline.mjs" \
             --input baseline.step12.sql \
             --output baseline.step13.sql
 
-          # Sanity check: the rewrite is a 1:1 token swap so line count must
-          # be unchanged.
+          # Sanity check: the rewrite has bounded line-count growth.
+          #
+          # The script `scripts/reorder-baseline.mjs` runs three passes:
+          #   - Pass 1 (%ROWTYPE → RECORD): 1:1 token swap, no line change.
+          #   - Pass 2 (LANGUAGE sql reorder + COMMENT relocation): permutes
+          #     blocks, line count preserved.
+          #   - Pass 3 (LANGUAGE sql → LANGUAGE plpgsql conversion): wraps
+          #     each converted function body in BEGIN/RETURN/END;, legitimately
+          #     adding ~2-3 lines per converted function. With ~36 converted
+          #     functions in the prod fixture, the observed delta is ~88 lines.
+          #
+          # Earlier this assertion required a strict 1:1 line count (Pass 1
+          # only). That broke after PR #481 added Pass 3. The new bounded
+          # check accepts non-negative growth up to +500 lines (generous
+          # upper bound; real growth tracks the count of LANGUAGE sql
+          # functions in the dump). A negative delta or one above +500
+          # signals the script ate the file or duplicated content — both
+          # cheaper to catch here than to debug via a multi-minute db push.
           IN_LINES=$(wc -l < baseline.step12.sql)
           OUT_LINES=$(wc -l < baseline.step13.sql)
           DELTA=$((OUT_LINES - IN_LINES))
-          if [ "$DELTA" -ne 0 ]; then
-            echo "::error::Rewrite line-count delta ($DELTA) is non-zero — RECORD rewrite should be 1:1. in=$IN_LINES out=$OUT_LINES"
+          if [ "$DELTA" -lt 0 ] || [ "$DELTA" -gt 500 ]; then
+            echo "::error::Rewrite line-count delta ($DELTA) is outside expected range [0, +500]. in=$IN_LINES out=$OUT_LINES"
             exit 1
           fi
+          echo "Rewrite line-count delta ($DELTA) within expected range [0, +500]. in=$IN_LINES out=$OUT_LINES"
 
           # Hard guard: zero `%ROWTYPE` strings should remain in the output.
           # If any survived, the regex missed a form pg_dump emitted and the
