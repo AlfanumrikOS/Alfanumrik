@@ -31,7 +31,7 @@ describe('GOAL_ADAPTIVE_FLAGS registry', () => {
 
   it('contains the Phase 0+1 goal-adaptive keys (no accidental drift on the original two)', () => {
     // Phase 0+1 keys MUST remain present. Newer phases (Phase 2 onward) add
-    // additional keys to this registry — assert the Phase 0+1 contract here
+    // additional keys to this registry. Assert the Phase 0+1 contract here
     // and let the per-phase test files (e.g.
     // feature-flags-phase2-goal-selection-registry.test.ts) pin their own
     // keys. Using a subset assertion keeps this test stable as the registry
