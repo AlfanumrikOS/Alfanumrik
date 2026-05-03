@@ -229,8 +229,10 @@ describe('FoxyStructuredRenderer — bilingual chrome (P7)', () => {
     render(<FoxyStructuredRenderer response={response} />);
 
     // All 5 Hindi chrome labels should be present.
+    // "परीक्षा सुझाव" is the standard NCERT Hindi term for "Exam Tip"; the
+    // prior "परीक्षा टिप" was Hinglish (loaned the English word "टिप").
     expect(screen.getByText('उत्तर')).toBeInTheDocument();
-    expect(screen.getByText('परीक्षा टिप')).toBeInTheDocument();
+    expect(screen.getByText('परीक्षा सुझाव')).toBeInTheDocument();
     expect(screen.getByText('परिभाषा')).toBeInTheDocument();
     expect(screen.getByText('उदाहरण')).toBeInTheDocument();
     expect(screen.getByText('अभ्यास')).toBeInTheDocument();

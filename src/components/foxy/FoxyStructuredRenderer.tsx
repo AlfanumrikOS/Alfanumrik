@@ -76,7 +76,11 @@ const CHROME: { en: Chrome; hi: Chrome } = {
   },
   hi: {
     answer: 'उत्तर',
-    examTip: 'परीक्षा टिप',
+    // "परीक्षा सुझाव" is the standard NCERT Hindi-medium term for "exam tip".
+    // The earlier "परीक्षा टिप" was Hinglish (English loan "टिप") and not
+    // consistent with the rest of the chrome map (उत्तर / परिभाषा / उदाहरण /
+    // अभ्यास / सूत्र में समस्या) which all use standard NCERT terminology.
+    examTip: 'परीक्षा सुझाव',
     definition: 'परिभाषा',
     example: 'उदाहरण',
     practice: 'अभ्यास',
