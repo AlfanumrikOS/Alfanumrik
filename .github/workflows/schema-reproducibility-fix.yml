@@ -466,6 +466,10 @@ jobs:
       - name: Run integration tests against local Supabase
         env:
           NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:54321'
+          # Enable integration-test inclusion in vitest.config.ts (which
+          # gates src/__tests__/migrations/** and src/__tests__/scripts/**
+          # behind this flag — they require a live Supabase backend).
+          RUN_INTEGRATION_TESTS: '1'
         run: |
           set -euo pipefail
           # Pull the locally generated anon + service-role keys.
