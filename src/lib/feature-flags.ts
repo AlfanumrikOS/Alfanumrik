@@ -213,7 +213,7 @@ export const WELCOME_FLAGS = {
 } as const;
 
 /**
- * Goal-Adaptive Learning Layers flags (Phase 0 + Phase 1).
+ * Goal-Adaptive Learning Layers flags (Phase 0 + Phase 1 + Phase 2).
  *
  * `ff_goal_profiles` gates the super-admin Goal Profile Preview page that
  * lets admins inspect each of the 6 goal personas + their config tables.
@@ -222,14 +222,24 @@ export const WELCOME_FLAGS = {
  *   1. Foxy's system prompt swaps the legacy single-line goal sentence for
  *      a multi-paragraph persona tailored to (goal × mode).
  *   2. QuizResults renders a goal-aware scorecard sentence after every quiz.
- * Both behaviors fall back to the legacy default when the flag is off, so
- * disabling at any time is an instant rollback.
  *
- * Seeded by migration 20260503120000_add_ff_goal_adaptive_layers.sql.
+ * `ff_goal_aware_selection` (Phase 2) gates two backend behaviors:
+ *   1. Quiz-generate workflow uses pickQuizParams + the additive
+ *      get_adaptive_questions_v2 RPC instead of legacy constants + v1 RPC.
+ *   2. Mastery display thresholds switch from the global 0.8 default to
+ *      goal-specific thresholds (see src/lib/goals/mastery-display.ts).
+ *
+ * All three flags fall back to the legacy default when off, so disabling at
+ * any time is an instant rollback.
+ *
+ * Seeded by migrations:
+ *   - 20260503120000_add_ff_goal_adaptive_layers.sql       (Phase 0+1)
+ *   - 20260503140000_add_phase2_goal_aware_selection.sql   (Phase 2)
  */
 export const GOAL_ADAPTIVE_FLAGS = {
   GOAL_PROFILES: 'ff_goal_profiles',
   GOAL_AWARE_FOXY: 'ff_goal_aware_foxy',
+  GOAL_AWARE_SELECTION: 'ff_goal_aware_selection',
   GOAL_DAILY_PLAN: 'ff_goal_daily_plan',  // Phase 3
 } as const;
 
@@ -244,5 +254,6 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [WELCOME_FLAGS.WELCOME_V2]: false,
   [GOAL_ADAPTIVE_FLAGS.GOAL_PROFILES]: false,
   [GOAL_ADAPTIVE_FLAGS.GOAL_AWARE_FOXY]: false,
+  [GOAL_ADAPTIVE_FLAGS.GOAL_AWARE_SELECTION]: false,
   [GOAL_ADAPTIVE_FLAGS.GOAL_DAILY_PLAN]: false,
 } as const;

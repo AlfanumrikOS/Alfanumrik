@@ -19,6 +19,12 @@
    - Predict-Before-Reveal (active recall prompts)
    ═══════════════════════════════════════════════════════════════ */
 
+import {
+  classifyMasteryForDisplay,
+  getDisplayMasteryThreshold,
+} from '@/lib/goals/mastery-display';
+import type { GoalCode } from '@/lib/goals/goal-profile';
+
 // ─── Types ───────────────────────────────────────────────────
 
 export type BloomLevel = 'remember' | 'understand' | 'apply' | 'analyze' | 'evaluate' | 'create';
@@ -1408,5 +1414,63 @@ export function computeMonthlyReportMetrics(params: {
     totalQuestionsAttempted: totalQuestions,
     improvementAreas: improvements,
     achievements,
+  };
+}
+
+// ─── Goal-aware Mastery Display Badge (Phase 2 / Layer 4) ────
+//
+// SCOPE: this is the ONLY goal-aware addition to cognitive-engine.ts. It is
+// purely additive — no existing function was modified, no algorithm constant
+// (BKT slip/learn rates 0.7/0.8 used internally) was changed. Default
+// behavior is unchanged: callers that omit `useGoalAwareSelection` (or pass
+// false) get the legacy 0.8 / 0.4 thresholds.
+//
+// Caller wiring (Phase 2): the `ff_goal_aware_selection` feature flag check
+// lives on the call site; this function trusts the flag value passed in via
+// `options.useGoalAwareSelection`. When the flag is OFF (default), this
+// returns byte-identical output to the legacy badge logic — preserving the
+// founder's "do not touch anything existing" constraint.
+
+/**
+ * Render a UI-friendly mastery badge.
+ *
+ * Default (useGoalAwareSelection !== true) — LEGACY behavior preserved:
+ *   - threshold = 0.8 (hardcoded legacy display threshold)
+ *   - state = 'mastered' if mastery >= 0.8, 'developing' if >= 0.4, else 'building'
+ *   - isGoalAware = false
+ *
+ * Goal-aware (useGoalAwareSelection === true) — NEW behavior, flag-gated by caller:
+ *   - threshold = goal.masteryThreshold (or 0.8 if goal is null/unknown)
+ *   - state = classifyMasteryForDisplay(mastery, goal)
+ *   - isGoalAware = true
+ *
+ * @param mastery       Current mastery probability (0-1).
+ * @param goal          Optional GoalCode. Ignored unless useGoalAwareSelection === true.
+ * @param options       Pass `{ useGoalAwareSelection: true }` only when the
+ *                      `ff_goal_aware_selection` flag is on for this caller.
+ */
+export function getMasteryDisplayBadge(
+  mastery: number,
+  goal: GoalCode | null | undefined,
+  options?: { useGoalAwareSelection?: boolean },
+): { state: 'mastered' | 'developing' | 'building'; threshold: number; isGoalAware: boolean } {
+  if (options?.useGoalAwareSelection !== true) {
+    // Legacy display: threshold 0.8, half-threshold 0.4. Keep verbatim — do
+    // not call into mastery-display.ts here, otherwise we couple legacy
+    // output to a future change of the LEGACY_DISPLAY_THRESHOLD constant.
+    let state: 'mastered' | 'developing' | 'building';
+    if (mastery >= 0.8) {
+      state = 'mastered';
+    } else if (mastery >= 0.4) {
+      state = 'developing';
+    } else {
+      state = 'building';
+    }
+    return { state, threshold: 0.8, isGoalAware: false };
+  }
+  return {
+    state: classifyMasteryForDisplay(mastery, goal),
+    threshold: getDisplayMasteryThreshold(goal),
+    isGoalAware: true,
   };
 }

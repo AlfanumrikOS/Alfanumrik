@@ -15,6 +15,10 @@ import { retrieveNcertChunks } from '../retrieval/ncert-retriever';
 import { buildQuizGenPrompt } from '../prompts/quiz-gen';
 import { validateQuizQuestions } from '../validation/quiz-validator';
 import { TraceLogger, logTrace } from '../tracing/trace-logger';
+import { isFeatureEnabled } from '@/lib/feature-flags';
+import { resolveGoalProfile } from '@/lib/goals/goal-profile';
+import { pickQuizParams, type QuizParams } from '@/lib/goals/quiz-params';
+import { logger } from '@/lib/logger';
 
 export interface QuizGenerateWorkflowParams {
   subject: string;
@@ -40,6 +44,35 @@ export async function runQuizGenerateWorkflow(
   const config = getAIConfig();
   const trace = new TraceLogger('quiz-generate', params.studentId, params.sessionId);
 
+  // Goal-aware selection (Phase 2). Behind ff_goal_aware_selection.
+  // When the flag is OFF, the goal is null, or the goal code is unknown,
+  // the resolved QuizParams is null and the original DEFAULT_* constants
+  // are used — preserving byte-identical behavior with prior versions.
+  const useGoalAwareSelection = await isFeatureEnabled('ff_goal_aware_selection', {
+    role: 'student',
+    environment: process.env.VERCEL_ENV || process.env.NODE_ENV || 'production',
+    userId: params.studentId,
+  });
+
+  const goalProfile = useGoalAwareSelection
+    ? resolveGoalProfile(params.academicGoal ?? null)
+    : null;
+  const quizParams: QuizParams | null = goalProfile ? pickQuizParams(goalProfile) : null;
+
+  const effectiveCount = quizParams?.count ?? DEFAULT_QUIZ_COUNT;
+  const effectiveDifficulty = quizParams?.difficulty ?? DEFAULT_DIFFICULTY;
+  const effectiveBloomLevel = quizParams?.bloomLevel ?? DEFAULT_BLOOM_LEVEL;
+
+  logger.info('quiz-generate.params_chosen', {
+    studentId: params.studentId ? 'present' : 'absent',
+    useGoalAwareSelection,
+    goalCode: goalProfile?.code ?? null,
+    count: effectiveCount,
+    difficulty: effectiveDifficulty,
+    bloom: effectiveBloomLevel,
+    rationale: quizParams?.rationale ?? 'legacy_defaults',
+  });
+
   try {
     // 1. Retrieve NCERT chunks for context
     trace.startStep('retrieval');
@@ -60,21 +93,21 @@ export async function runQuizGenerateWorkflow(
       subject: params.subject,
       chapter: params.chapter ?? 'General',
       topic: message,
-      count: DEFAULT_QUIZ_COUNT,
-      difficulty: DEFAULT_DIFFICULTY,
-      bloomLevel: DEFAULT_BLOOM_LEVEL,
+      count: effectiveCount,
+      difficulty: effectiveDifficulty,
+      bloomLevel: effectiveBloomLevel,
     });
 
     // Append RAG context if available
     const fullPrompt = retrieval.contextText
       ? `${systemPrompt}\n\n## Reference Material\n${retrieval.contextText}`
       : systemPrompt;
-    trace.endStep({ count: DEFAULT_QUIZ_COUNT, difficulty: DEFAULT_DIFFICULTY });
+    trace.endStep({ count: effectiveCount, difficulty: effectiveDifficulty });
 
     // 3. Call Claude requesting JSON output
     trace.startStep('llm_call');
     const messages: ChatMessage[] = [
-      { role: 'user', content: `Generate ${DEFAULT_QUIZ_COUNT} quiz questions about: ${message}` },
+      { role: 'user', content: `Generate ${effectiveCount} quiz questions about: ${message}` },
     ];
     const claudeResponse = await callClaude({
       systemPrompt: fullPrompt,
@@ -117,7 +150,7 @@ export async function runQuizGenerateWorkflow(
       validationErrors = validation.errors;
     }
     trace.endStep({
-      questionsRequested: DEFAULT_QUIZ_COUNT,
+      questionsRequested: effectiveCount,
       questionsValid: validQuestions.length,
       validationErrors: validationErrors.length,
     });
@@ -146,8 +179,11 @@ export async function runQuizGenerateWorkflow(
       metadata: {
         questions: validQuestions,
         validationErrors,
-        questionsRequested: DEFAULT_QUIZ_COUNT,
+        questionsRequested: effectiveCount,
         questionsValid: validQuestions.length,
+        useGoalAwareSelection,
+        goalCode: goalProfile?.code ?? null,
+        quizParamsRationale: quizParams?.rationale ?? null,
       },
     };
   } catch (err) {
