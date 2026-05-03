@@ -213,6 +213,26 @@ export const WELCOME_FLAGS = {
 } as const;
 
 /**
+ * Goal-Adaptive Learning Layers flags (Phase 0 + Phase 1).
+ *
+ * `ff_goal_profiles` gates the super-admin Goal Profile Preview page that
+ * lets admins inspect each of the 6 goal personas + their config tables.
+ *
+ * `ff_goal_aware_foxy` gates two user-visible behaviors that ship together:
+ *   1. Foxy's system prompt swaps the legacy single-line goal sentence for
+ *      a multi-paragraph persona tailored to (goal × mode).
+ *   2. QuizResults renders a goal-aware scorecard sentence after every quiz.
+ * Both behaviors fall back to the legacy default when the flag is off, so
+ * disabling at any time is an instant rollback.
+ *
+ * Seeded by migration 20260503120000_add_ff_goal_adaptive_layers.sql.
+ */
+export const GOAL_ADAPTIVE_FLAGS = {
+  GOAL_PROFILES: 'ff_goal_profiles',
+  GOAL_AWARE_FOXY: 'ff_goal_aware_foxy',
+} as const;
+
+/**
  * Default values for known flags. `isFeatureEnabled()` already returns false
  * for any flag not present in the DB, but this map is the documented source
  * of truth for SSR behavior before the first DB hit completes.
@@ -221,4 +241,6 @@ export const WELCOME_FLAGS = {
  */
 export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [WELCOME_FLAGS.WELCOME_V2]: false,
+  [GOAL_ADAPTIVE_FLAGS.GOAL_PROFILES]: false,
+  [GOAL_ADAPTIVE_FLAGS.GOAL_AWARE_FOXY]: false,
 } as const;

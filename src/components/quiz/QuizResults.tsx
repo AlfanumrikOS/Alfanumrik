@@ -15,6 +15,8 @@ import { supabase } from '@/lib/supabase';
 import { getLevelFromScore } from '@/lib/score-config';
 import NextActionCard from '@/components/quiz/NextActionCard';
 import CelebrationOverlay from '@/components/quiz/CelebrationOverlay';
+import GoalScorecardSentence from '@/components/quiz/GoalScorecardSentence';
+import { isKnownGoalCode } from '@/lib/goals/goal-profile';
 import type { ErrorType } from '@/lib/cognitive-engine';
 
 interface Question {
@@ -133,6 +135,33 @@ export default function QuizResults({
     currentScore: number;
     levelName: string;
   } | null>(null);
+
+  // Goal-Adaptive Learning Layers (Phase 1) — additive, flag-gated.
+  // When `ff_goal_aware_foxy` is OFF, this stays false and nothing new
+  // renders. When ON AND the student has a recognized academic_goal, we
+  // render GoalScorecardSentence under the stats grid. The flag is read
+  // client-side via the same pattern as MaintenanceBanner (public-read on
+  // `feature_flags`). Default false on cold start so the existing markup
+  // tree is byte-identical until the flag resolves true.
+  const [goalFlagOn, setGoalFlagOn] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('feature_flags')
+          .select('is_enabled')
+          .eq('flag_name', 'ff_goal_aware_foxy')
+          .maybeSingle();
+        if (active && data?.is_enabled === true) setGoalFlagOn(true);
+      } catch {
+        // Silent — flag-gated UI is non-critical. Default OFF means the
+        // existing scorecard remains unchanged.
+      }
+    })();
+    return () => { active = false; };
+  }, []);
 
   // Fetch the current Performance Score for this subject after quiz submission
   useEffect(() => {
@@ -305,6 +334,23 @@ export default function QuizResults({
           <StatCard icon="✨" value={`+${results.xp_earned}`} label="XP" color="var(--orange)" />
           <StatCard icon="⏱" value={formatTime(timer)} label={isHi ? 'समय' : 'Time'} color="var(--teal)" />
         </div>
+
+        {/* Goal-aware scorecard sentence (Phase 1, flag-gated, additive).
+            Renders nothing when ff_goal_aware_foxy is off OR the student has
+            no recognized academic_goal — keeps existing markup byte-identical
+            in those cases. */}
+        {goalFlagOn && isKnownGoalCode(student?.academic_goal) && (
+          <div data-testid="goal-scorecard-mount">
+            <GoalScorecardSentence
+              goal={student?.academic_goal ?? null}
+              correct={results.correct}
+              total={results.total}
+              scorePercent={results.score_percent}
+              xpEarned={results.xp_earned}
+              isHi={isHi}
+            />
+          </div>
+        )}
 
         {/* Post-quiz nudge -- contextual encouragement based on score */}
         {(() => {

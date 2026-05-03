@@ -68,6 +68,7 @@ import { PER_PLAN_TIMEOUT_MS, SOFT_CONFIDENCE_BANNER_THRESHOLD } from '@/lib/gro
 import { classifyIntent, routeIntent } from '@/lib/ai';
 import { FoxyResponseSchema, type FoxyResponse } from '@/lib/foxy/schema';
 import { denormalizeFoxyResponse } from '@/lib/foxy/denormalize';
+import { buildExpandedGoalSection } from '@/lib/goals/goal-personas';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -973,8 +974,29 @@ const GOAL_PROMPT_MAP: Record<string, string> = {
   improve_basics: 'Improve Basics. Be extra patient, use analogies and visuals, break complex topics into tiny steps, and reinforce fundamentals.',
 };
 
-function buildAcademicGoalSection(goal: string | null): string {
+/**
+ * Phase 1 — Goal-Adaptive Foxy persona (gated by `ff_goal_aware_foxy`).
+ *
+ * Default invocation `buildAcademicGoalSection(goal)` is byte-identical to
+ * the pre-Phase-1 behavior: it falls through to the single-line
+ * `GOAL_PROMPT_MAP` lookup. When the route detects the flag is on it calls
+ * `buildAcademicGoalSection(goal, mode, { useExpandedPersona: true })` to
+ * swap in the multi-paragraph persona block from
+ * `buildExpandedGoalSection(...)`. When that builder cannot resolve the
+ * goal (null/unknown code) it returns "" and we fall back to the legacy
+ * single-line section so the prompt is never silently emptied.
+ */
+function buildAcademicGoalSection(
+  goal: string | null,
+  mode?: string,
+  options?: { useExpandedPersona?: boolean },
+): string {
   if (!goal) return '';
+  if (options?.useExpandedPersona && mode) {
+    const expanded = buildExpandedGoalSection(goal, mode);
+    if (expanded) return expanded;
+    // Fall through to legacy if goal/mode unknown to expanded builder.
+  }
   const instruction = GOAL_PROMPT_MAP[goal] ?? goal;
   return `\n## Student's Academic Goal: ${instruction}\n`;
 }
@@ -1040,6 +1062,12 @@ You are Foxy, a friendly CBSE tutor. Safety rails you must follow:
  * Compose the full system prompt for Foxy. Used as a template_variable for
  * the grounded-answer service and as the base prompt for the legacy intent
  * router. Deterministic — safe to call outside of a request lifecycle.
+ *
+ * `useExpandedPersona` is the Phase 1 Goal-Adaptive switch. When omitted
+ * (the default) the produced prompt is byte-identical to the pre-Phase-1
+ * builder. The route flips it to `true` only after consulting
+ * `ff_goal_aware_foxy`. See `buildAcademicGoalSection` for the gated
+ * substitution rule.
  */
 function buildSystemPrompt(params: {
   grade: string;
@@ -1048,15 +1076,24 @@ function buildSystemPrompt(params: {
   mode: string;
   academicGoal: string | null;
   cognitiveCtx: CognitiveContext;
+  useExpandedPersona?: boolean;
 }): string {
-  const { grade, subject, chapter, mode, academicGoal, cognitiveCtx } = params;
+  const {
+    grade,
+    subject,
+    chapter,
+    mode,
+    academicGoal,
+    cognitiveCtx,
+    useExpandedPersona = false,
+  } = params;
   const chapterLine = chapter ? `Chapter: ${chapter}\n` : '';
   return [
     `You are Foxy, an AI tutor for a Class ${grade} CBSE student studying ${subject}.`,
     chapterLine ? chapterLine : null,
     `Current mode: ${mode}.`,
     FOXY_SAFETY_RAILS,
-    buildAcademicGoalSection(academicGoal),
+    buildAcademicGoalSection(academicGoal, mode, { useExpandedPersona }),
     buildCognitivePromptSection(cognitiveCtx),
   ]
     .filter(Boolean)
@@ -1523,6 +1560,28 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   const chapterTitle: string | null =
     chapter && chapterNum === null ? chapter : null;
 
+  // Phase 1 — Goal-Adaptive Foxy persona gate.
+  //
+  // `ff_goal_aware_foxy` is seeded by the architect (DISABLED by default in
+  // both production and staging). When it's off, every downstream prompt
+  // builder receives `useExpandedPersona: false` and produces output
+  // byte-identical to the pre-Phase-1 path. Per-user deterministic rollout
+  // is keyed off `studentId` so a given student gets a stable experience
+  // through the rollout window.
+  const useExpandedPersona = await isFeatureEnabled('ff_goal_aware_foxy', {
+    role: 'student',
+    environment:
+      process.env.VERCEL_ENV || process.env.NODE_ENV || 'production',
+    userId: studentId,
+  });
+
+  logger.info('foxy.persona_mode', {
+    studentId,
+    useExpandedPersona,
+    hasGoal: !!academicGoal,
+    mode,
+  });
+
   // Compose the safety-railed system prompt. The grounded-answer service has
   // its own template, but we pass ours as `foxy_safety_rails` so the final
   // rendered prompt includes the Next.js-side rails for defense-in-depth.
@@ -1533,6 +1592,7 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     mode,
     academicGoal,
     cognitiveCtx,
+    useExpandedPersona,
   });
 
   // Phase 2.2: resolve the coaching mode from explicit request + mastery.
@@ -1564,7 +1624,12 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         // the rewritten foxy_tutor_v1 template.
         coach_mode: coachMode.toUpperCase(),
         coach_mode_instruction: COACH_MODE_INSTRUCTIONS[coachMode],
-        academic_goal_section: buildAcademicGoalSection(academicGoal),
+        // Phase 1: when `ff_goal_aware_foxy` is on AND the goal resolves,
+        // this swaps the legacy single-line section for the multi-paragraph
+        // expanded persona block. Off → byte-identical legacy output.
+        academic_goal_section: buildAcademicGoalSection(academicGoal, mode, {
+          useExpandedPersona,
+        }),
         cognitive_context_section: buildCognitivePromptSection(cognitiveCtx),
         // Phase 2: curated misconception ontology — fires the
         // MISCONCEPTION_REPAIR branch in foxy_tutor_v1 with real data.
