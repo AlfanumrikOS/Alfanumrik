@@ -20,6 +20,7 @@ test-results/
 playwright-report/
 blob-report/
 playwright/.cache/
+coverage/
 
 # Orchestrator quarantine area — files preserved from abandoned
 # branches during Option C-style cleanups. Physical preservation

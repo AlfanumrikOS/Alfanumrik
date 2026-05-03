@@ -1,7 +1,7 @@
 # RLS Policy Matrix
 
-Last verified: 2026-04-02
-Source: 265 migration files in `supabase/migrations/`, 440+ `CREATE POLICY` statements across 265 files
+Last verified: 2026-04-02 (migration counts updated 2026-05-02 post Section 10 cleanup)
+Source: 1 pg_dump-derived baseline (`00000000000000_baseline_from_prod.sql`) + post-baseline migrations at `supabase/migrations/` root, plus 349 archived legacy migrations under `supabase/migrations/_legacy/timestamped/`. The 440+ `CREATE POLICY` statements are now consolidated into the baseline; new policies arrive via post-baseline migrations.
 
 ## Overview
 
