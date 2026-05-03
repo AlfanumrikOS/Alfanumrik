@@ -29,10 +29,16 @@ describe('GOAL_ADAPTIVE_FLAGS registry', () => {
     expect(GOAL_ADAPTIVE_FLAGS.GOAL_AWARE_FOXY).toBe('ff_goal_aware_foxy');
   });
 
-  it('contains exactly the two known goal-adaptive keys (no accidental drift)', () => {
-    expect(Object.keys(GOAL_ADAPTIVE_FLAGS).sort()).toEqual(
-      ['GOAL_AWARE_FOXY', 'GOAL_PROFILES'],
-    );
+  it('contains the Phase 0+1 goal-adaptive keys (no accidental drift on the original two)', () => {
+    // Phase 0+1 keys MUST remain present. Newer phases (Phase 2 onward) add
+    // additional keys to this registry — assert the Phase 0+1 contract here
+    // and let the per-phase test files (e.g.
+    // feature-flags-phase2-goal-selection-registry.test.ts) pin their own
+    // keys. Using a subset assertion keeps this test stable as the registry
+    // grows additively.
+    const keys = Object.keys(GOAL_ADAPTIVE_FLAGS);
+    expect(keys).toContain('GOAL_PROFILES');
+    expect(keys).toContain('GOAL_AWARE_FOXY');
   });
 
   it('is an `as const` literal (compile-time check via type narrowing)', () => {
