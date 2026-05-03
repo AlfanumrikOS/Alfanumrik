@@ -2,7 +2,7 @@
 /**
  * reorder-baseline.mjs
  * --------------------
- * Two-pass stream transform applied to a sanitized pg_dump baseline:
+ * Three-pass stream transform applied to a sanitized pg_dump baseline:
  *
  *   1. Rewrite PL/pgSQL `<table>%ROWTYPE` declarations to `RECORD`.
  *   2. Move every `LANGUAGE sql` function block to AFTER the last PL/pgSQL
@@ -11,12 +11,21 @@
  *      `COMMENT ON FUNCTION <same-name>(<same-args>) IS '...';` statement
  *      is moved with the function so it lands AFTER its target instead of
  *      orphaned at its original pg_dump emit position.
+ *   3. Convert every remaining `LANGUAGE sql` function to `LANGUAGE plpgsql`
+ *      (PL/pgSQL bodies skip eager validation under
+ *      `check_function_bodies = false`, so sql→table forward references are
+ *      eliminated). Functions whose body shape can't be confidently
+ *      converted (multi-statement scalar return, control flow, etc.) fall
+ *      back to a safety net: kept as `LANGUAGE sql` with a TODO marker
+ *      prepended.
  *
- * Both passes preserve total line count: pass 1 is a 1:1 token swap, and
- * pass 2 is a pure reorder of contiguous function blocks (with their trailing
- * separator blank lines and any attached COMMENT ON FUNCTION lines). All
- * non-function, non-attached-comment lines stay byte-for-byte where pg_dump
- * put them.
+ * Pass 1 is a 1:1 token swap (line count unchanged). Pass 2 is a pure
+ * reorder of contiguous function blocks (line count unchanged). Pass 3
+ * adds ~2-3 lines per converted function (the BEGIN/RETURN/END wrapping),
+ * so the final output is slightly longer than the input — for the prod
+ * baseline this is +88 lines on a 22.5k-line file (36 functions × ~2.4
+ * lines each). All non-function content stays byte-for-byte where pg_dump
+ * put it.
  *
  * Why pass 1 exists (`%ROWTYPE` → `RECORD`)
  * -----------------------------------------
@@ -875,15 +884,546 @@ export function reorderSqlFunctions(src) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Pass 3: convert LANGUAGE sql → LANGUAGE plpgsql
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Why pass 3 exists
+ * -----------------
+ * Pass 2 reorders `LANGUAGE sql` functions to the end of the function section
+ * so sql→sql call dependencies resolve. That fix is sufficient for sql→sql
+ * dependencies but does NOT cover the third dependency class: sql→table.
+ *
+ * Postgres validates `LANGUAGE sql` function bodies at PARSE time regardless
+ * of `check_function_bodies = false`. The toggle only defers PL/pgSQL bodies.
+ * So a `LANGUAGE sql` function whose body references a not-yet-created TABLE
+ * (e.g. `cleanup_old_rate_limits` → `DELETE FROM public.rate_limits`) fails
+ * on a fresh-DB replay. CI run 25260192948 hit this:
+ *
+ *   ERROR: relation "public.rate_limits" does not exist (SQLSTATE 42P01)
+ *   At statement: 320
+ *
+ * pg_dump emits CREATE FUNCTION blocks BEFORE CREATE TABLE in the alphabetical-
+ * within-class section ordering. There is no useful reorder we can do here:
+ * we can't move tables before functions without breaking other dependencies
+ * (e.g. RLS policies that reference functions, indexes that reference table
+ * columns). The only way to defer SQL-language-body validation is to convert
+ * those functions to PL/pgSQL — PL/pgSQL bodies skip eager validation under
+ * `check_function_bodies = false`.
+ *
+ * Pre-mark-prod semantics: the baseline never executes on prod / main-staging
+ * (those envs are already at the post-baseline state, and the baseline is
+ * marked applied via `supabase migration repair`). The conversion only
+ * matters on fresh-DB envs (CI live-DB tests, new staging spin-up, DR).
+ *
+ * Performance trade-off
+ * ---------------------
+ * SQL-language function bodies CAN be inlined by the planner for simple
+ * expressions. PL/pgSQL bodies cannot. For functions called inside RLS
+ * policies (e.g. `get_student_id_for_auth`, `current_school_id`), this means
+ * a slight planning-time cost on fresh-DB envs. This is acceptable because:
+ *   1. Prod retains the original `LANGUAGE sql` definitions (the baseline is
+ *      pre-marked there). The conversion only affects fresh-DB envs.
+ *   2. Future feature migrations that ship NEW sql-language helpers can keep
+ *      `LANGUAGE sql` — the migration chain stacks on the baseline.
+ *   3. If a specific function turns out to be performance-critical on a
+ *      fresh env, write a compensating migration to redefine it as
+ *      `LANGUAGE sql` after the baseline.
+ *
+ * Conversion shapes
+ * -----------------
+ * The conversion preserves every modifier (STABLE, IMMUTABLE, STRICT,
+ * SECURITY DEFINER, SET search_path) and the dollar-quote tag. Only the
+ * language token and the body shell change. Conversion rules per `RETURNS`
+ * clause and body shape:
+ *
+ *   A. RETURNS void, body is one or more DML/SELECT statements:
+ *        AS $$ DELETE FROM x WHERE ...; $$
+ *      becomes:
+ *        AS $$ BEGIN DELETE FROM x WHERE ...; END; $$
+ *      Multiple statements: `BEGIN s1; s2; ...; END;`.
+ *
+ *   B. RETURNS <scalar-type>, body is a single SELECT (or WITH … SELECT):
+ *        AS $$ SELECT id FROM students WHERE auth_user_id = auth.uid(); $$
+ *      becomes:
+ *        AS $$ BEGIN RETURN (SELECT id FROM students WHERE auth_user_id = auth.uid()); END; $$
+ *
+ *   C. RETURNS SETOF X or RETURNS TABLE(...), body is a single SELECT:
+ *        AS $$ SELECT * FROM students $$
+ *      becomes:
+ *        AS $$ BEGIN RETURN QUERY SELECT * FROM students; END; $$
+ *
+ *   D. RETURNS SETOF X with body starting in UPDATE/INSERT/DELETE … RETURNING:
+ *        AS $$ UPDATE x SET ... RETURNING * $$
+ *      becomes:
+ *        AS $$ BEGIN RETURN QUERY WITH _x AS (UPDATE x SET ... RETURNING *) SELECT * FROM _x; END; $$
+ *      (PL/pgSQL `RETURN QUERY` requires SELECT/VALUES at the top; data-
+ *      modifying statements must be wrapped in a CTE.)
+ *
+ * Safety net
+ * ----------
+ * If the parser cannot confidently classify a function body (multi-statement
+ * scalar return, control flow inside the body, or any shape the conversion
+ * rules don't cover), the function is LEFT IN PLACE as `LANGUAGE sql`. A
+ * `-- TODO(baseline): manually convert to plpgsql` comment is inserted right
+ * before the CREATE FUNCTION header for visibility, and a notice is logged.
+ * Pass 2's reorder still applies to those functions so sql→sql dependencies
+ * still resolve.
+ *
+ * Idempotent: running on already-converted output sees zero `LANGUAGE sql`
+ * functions and is a no-op (modulo the log notice line count, which is also
+ * idempotent because the TODO comment is matched and not re-inserted).
+ */
+
+/**
+ * Extract the RETURNS clause kind from a CREATE FUNCTION header.
+ * Returns one of: 'void', 'setof', 'table', 'scalar' (anything else with a
+ * single typename), or null if the RETURNS clause cannot be parsed.
+ *
+ * Examples:
+ *   RETURNS "void"                      → 'void'
+ *   RETURNS void                        → 'void'
+ *   RETURNS SETOF "public"."students"   → 'setof'
+ *   RETURNS SETOF "uuid"                → 'setof'
+ *   RETURNS TABLE("a" "uuid", "b" int)  → 'table'
+ *   RETURNS "uuid"                      → 'scalar'
+ *   RETURNS boolean                     → 'scalar'
+ *   RETURNS "jsonb"                     → 'scalar'
+ *   RETURNS "trigger"                   → 'scalar'
+ */
+function classifyReturnType(headerText) {
+  // Find `RETURNS` keyword. The full RETURNS clause may span the rest of the
+  // header line (and into attribute lines, but pg_dump always keeps RETURNS
+  // on the header line).
+  const m = headerText.match(/\bRETURNS\s+(.+?)(?:\r?\n|$)/i);
+  if (!m) return null;
+  const rest = m[1].trim();
+  if (/^("?void"?)\b/i.test(rest)) return 'void';
+  if (/^SETOF\s+/i.test(rest)) return 'setof';
+  if (/^TABLE\s*\(/i.test(rest)) return 'table';
+  // Anything else with a typename: scalar (uuid, text, boolean, jsonb, …).
+  return 'scalar';
+}
+
+/**
+ * Split a SQL body string into top-level statements at `;` boundaries,
+ * respecting paren depth and string literals (both single-quoted and
+ * dollar-quoted). Empty / whitespace-only statements are dropped.
+ *
+ * Returns an array of { text, leading } objects where `leading` is the
+ * whitespace/comments preceding the statement (preserved for round-trip
+ * fidelity in the BEGIN/END wrap).
+ */
+function splitTopLevelStatements(body) {
+  const stmts = [];
+  let depth = 0;
+  let i = 0;
+  let buf = '';
+  let dollarTag = null; // currently inside a $TAG$ … $TAG$ literal
+  let inSingleQuote = false;
+  while (i < body.length) {
+    const ch = body[i];
+    const rest = body.substring(i);
+    if (dollarTag !== null) {
+      // Look for the closing tag.
+      if (rest.startsWith(dollarTag)) {
+        buf += dollarTag;
+        i += dollarTag.length;
+        dollarTag = null;
+        continue;
+      }
+      buf += ch;
+      i += 1;
+      continue;
+    }
+    if (inSingleQuote) {
+      buf += ch;
+      if (ch === "'" && body[i + 1] === "'") {
+        // escaped quote
+        buf += "'";
+        i += 2;
+        continue;
+      }
+      if (ch === "'") inSingleQuote = false;
+      i += 1;
+      continue;
+    }
+    // Check for entering a dollar-quoted literal.
+    const dq = rest.match(/^\$([A-Za-z0-9_]*)\$/);
+    if (dq) {
+      dollarTag = dq[0];
+      buf += dollarTag;
+      i += dollarTag.length;
+      continue;
+    }
+    if (ch === "'") {
+      inSingleQuote = true;
+      buf += ch;
+      i += 1;
+      continue;
+    }
+    if (ch === '(') depth += 1;
+    else if (ch === ')') depth -= 1;
+    else if (ch === ';' && depth === 0) {
+      const trimmed = buf.trim();
+      if (trimmed.length > 0) stmts.push(trimmed);
+      buf = '';
+      i += 1;
+      continue;
+    }
+    buf += ch;
+    i += 1;
+  }
+  const tail = buf.trim();
+  if (tail.length > 0) stmts.push(tail);
+  return stmts;
+}
+
+/**
+ * Strip line-comments from a SQL string for shape-classification purposes.
+ * Does NOT modify string literals (a `--` inside `'...'` is preserved).
+ * Returns the cleaned string.
+ *
+ * Used only by `classifyBodyShape` to detect the leading keyword of a body.
+ * The actual body is preserved verbatim in the converted output.
+ */
+function stripComments(s) {
+  // Drop line comments outside string literals. Conservative: only strip
+  // `--` to end-of-line when not inside `'…'`.
+  const out = [];
+  let inSQ = false;
+  let i = 0;
+  while (i < s.length) {
+    const ch = s[i];
+    if (inSQ) {
+      out.push(ch);
+      if (ch === "'" && s[i + 1] === "'") { out.push("'"); i += 2; continue; }
+      if (ch === "'") inSQ = false;
+      i += 1;
+      continue;
+    }
+    if (ch === "'") { inSQ = true; out.push(ch); i += 1; continue; }
+    if (ch === '-' && s[i + 1] === '-') {
+      while (i < s.length && s[i] !== '\n') i += 1;
+      continue;
+    }
+    out.push(ch);
+    i += 1;
+  }
+  return out.join('');
+}
+
+/**
+ * Detect the leading keyword of a statement (first non-whitespace,
+ * non-comment token, lowercased). Returns 'select' / 'with' / 'update' /
+ * 'insert' / 'delete' / 'values' / 'table' or null.
+ */
+function leadingKeyword(stmt) {
+  const cleaned = stripComments(stmt).trim();
+  const m = cleaned.match(/^([A-Za-z_]+)/);
+  if (!m) return null;
+  return m[1].toLowerCase();
+}
+
+/**
+ * Locate the body content of a function block. Returns:
+ *   {
+ *     openLineIdx: index of the line containing `AS $TAG$`,
+ *     closeLineIdx: index of the line containing the closing `$TAG$;`,
+ *     openTag:      the dollar-quote tag (e.g. `$$`, `$_$`, `$_pkg_$`),
+ *     bodyText:     the body content as a single string (between the
+ *                   opening tag and the closing tag, exclusive of both),
+ *     openLineHead: text on the openLineIdx line BEFORE the opening tag,
+ *     closeLineTail:text on the closeLineIdx line AFTER the closing `;`,
+ *   }
+ * Returns null if the structure doesn't match.
+ */
+function locateBody(blockLines) {
+  let openLineIdx = -1;
+  let openTag = null;
+  let openLineHead = '';
+  for (let i = 0; i < blockLines.length; i += 1) {
+    const line = blockLines[i];
+    const m = line.match(/AS\s+(\$[A-Za-z0-9_]*\$)/);
+    if (m) {
+      openLineIdx = i;
+      openTag = m[1];
+      openLineHead = line.substring(0, line.indexOf(m[0]) + m[0].length);
+      break;
+    }
+  }
+  if (openTag === null) return null;
+  // Body collection.
+  const closeNeedle = openTag + ';';
+  let closeLineIdx = -1;
+  let closeColIdx = -1;
+  // Single-line body case: opener and closer on the same line.
+  const openLine = blockLines[openLineIdx];
+  const restAfterOpen = openLine.substring(openLineHead.length);
+  if (restAfterOpen.includes(closeNeedle)) {
+    closeLineIdx = openLineIdx;
+    closeColIdx = openLineHead.length + restAfterOpen.indexOf(closeNeedle);
+  } else {
+    for (let j = openLineIdx + 1; j < blockLines.length; j += 1) {
+      const idx = blockLines[j].indexOf(closeNeedle);
+      if (idx !== -1) {
+        closeLineIdx = j;
+        closeColIdx = idx;
+        break;
+      }
+    }
+  }
+  if (closeLineIdx === -1) return null;
+  // Assemble bodyText: from openTag-end on openLine to closeColIdx on
+  // closeLine.
+  let bodyText;
+  if (closeLineIdx === openLineIdx) {
+    bodyText = blockLines[openLineIdx].substring(openLineHead.length, closeColIdx);
+  } else {
+    const parts = [];
+    parts.push(blockLines[openLineIdx].substring(openLineHead.length));
+    for (let j = openLineIdx + 1; j < closeLineIdx; j += 1) {
+      parts.push(blockLines[j]);
+    }
+    parts.push(blockLines[closeLineIdx].substring(0, closeColIdx));
+    bodyText = parts.join('\n');
+  }
+  const closeLineTail = blockLines[closeLineIdx].substring(closeColIdx + closeNeedle.length);
+  return {
+    openLineIdx,
+    closeLineIdx,
+    openTag,
+    bodyText,
+    openLineHead,
+    closeLineTail,
+  };
+}
+
+/**
+ * Try to construct a converted PL/pgSQL body for an sql-language function
+ * block. Returns the new body string (without the dollar-tag wrapping) on
+ * success, or null if the shape can't be confidently converted.
+ *
+ * The returned body is wrapped between `<openTag>` and `<openTag>;` by the
+ * caller — this function only produces the inner BEGIN/END content.
+ *
+ * The body classification rules are documented above (cases A–D).
+ */
+function buildPlpgsqlBody(returnKind, bodyText) {
+  // Trim trailing whitespace; trailing `;` will be preserved by the
+  // statement-splitter. Preserve leading whitespace as-is for readability.
+  const trimmedBody = bodyText.replace(/^\s*\n/, '').replace(/\s+$/, '');
+  if (trimmedBody.length === 0) return null;
+
+  const stmts = splitTopLevelStatements(trimmedBody);
+  if (stmts.length === 0) return null;
+
+  // Case A: RETURNS void
+  if (returnKind === 'void') {
+    // Wrap each statement followed by `;`. PL/pgSQL allows multiple
+    // statements between BEGIN and END.
+    const inner = stmts.map((s) => `${s};`).join('\n  ');
+    return `\nBEGIN\n  ${inner}\nEND;\n`;
+  }
+
+  // For non-void, only single-statement bodies are confidently convertible.
+  // Multi-statement scalar returns (case E in the design doc) require
+  // declaring a temporary variable and assigning via SELECT INTO, which is
+  // ambiguous without catalog knowledge — punt to the safety net.
+  if (stmts.length !== 1) return null;
+  const stmt = stmts[0];
+  const kw = leadingKeyword(stmt);
+  if (kw === null) return null;
+
+  if (returnKind === 'scalar') {
+    // Case B: single SELECT (or WITH ... SELECT) returning a scalar.
+    if (kw === 'select' || kw === 'with' || kw === 'values') {
+      return `\nBEGIN\n  RETURN (${stmt});\nEND;\n`;
+    }
+    return null;
+  }
+
+  if (returnKind === 'setof' || returnKind === 'table') {
+    // Case C: single SELECT/WITH/VALUES → RETURN QUERY directly.
+    if (kw === 'select' || kw === 'with' || kw === 'values') {
+      return `\nBEGIN\n  RETURN QUERY ${stmt};\nEND;\n`;
+    }
+    // Case D: data-modifying statement with RETURNING clause → wrap in CTE
+    // because PL/pgSQL `RETURN QUERY` requires a top-level SELECT/VALUES.
+    if (kw === 'update' || kw === 'insert' || kw === 'delete') {
+      // Sanity check: must contain RETURNING or there's nothing to return.
+      if (!/\bRETURNING\b/i.test(stmt)) return null;
+      return `\nBEGIN\n  RETURN QUERY WITH "_dml" AS (${stmt}) SELECT * FROM "_dml";\nEND;\n`;
+    }
+    return null;
+  }
+
+  return null;
+}
+
+/**
+ * Rewrite a single fn segment from `LANGUAGE sql` to `LANGUAGE plpgsql`.
+ * Mutates the segment in place: replaces `lines`, sets `lang = 'plpgsql'`.
+ * Returns true on success, false if the body could not be confidently
+ * converted (caller adds a TODO marker and leaves the segment as sql).
+ *
+ * Conversion is line-aware: the LANGUAGE attribute line is rewritten in
+ * place, the body span is rebuilt as a multi-line BEGIN/END block, and all
+ * other lines (header, SET search_path, modifier attributes, owner GRANTs,
+ * etc.) pass through unchanged.
+ */
+function convertFunctionSegment(seg) {
+  // Find the RETURNS clause to classify return shape.
+  const headerText = seg.lines.join('\n');
+  const returnKind = classifyReturnType(headerText);
+  if (returnKind === null) return false;
+
+  // Find body span.
+  const body = locateBody(seg.lines);
+  if (body === null) return false;
+
+  // Build the new PL/pgSQL body.
+  const newBody = buildPlpgsqlBody(returnKind, body.bodyText);
+  if (newBody === null) return false;
+
+  // Rewrite the LANGUAGE attribute line. pg_dump emits this on its own line,
+  // optionally with attribute clauses appended (e.g.
+  // `    LANGUAGE "sql" STABLE SECURITY DEFINER`). Replace just the language
+  // token, preserve every other token byte-for-byte.
+  let langRewritten = false;
+  const newLines = seg.lines.map((line) => {
+    if (langRewritten) return line;
+    // Match `LANGUAGE` followed by `sql` in any quoting style: bare,
+    // double-quoted, or single-quoted. The replacement preserves the
+    // surrounding whitespace and any trailing modifier clauses.
+    //
+    // We can't rely on a trailing `\b` after `"sql"` because both `"` and
+    // the following whitespace are non-word characters (no boundary). The
+    // bare-token form needs `\b` to avoid matching `sqlite` or `sqltest`,
+    // so we split into two patterns and try each.
+    const reQuoted = /(\bLANGUAGE\s+)(?:"sql"|'sql')/i;
+    const reBare = /(\bLANGUAGE\s+)sql\b/i;
+    if (reQuoted.test(line)) {
+      langRewritten = true;
+      return line.replace(reQuoted, '$1"plpgsql"');
+    }
+    if (reBare.test(line)) {
+      langRewritten = true;
+      return line.replace(reBare, '$1"plpgsql"');
+    }
+    return line;
+  });
+  if (!langRewritten) return false;
+
+  // Replace the body span (openLineIdx..closeLineIdx) with new lines.
+  // The new body is the openLineHead + newBody + `<openTag>;` + closeLineTail.
+  // Construct as multi-line so we end up with:
+  //     `    AS $$`              (openLineHead)
+  //     `BEGIN`
+  //     `  <stmt>;`
+  //     `END;`
+  //     `$$;`                    (close + closeLineTail)
+  const openTag = body.openTag;
+  const reconstructed = body.openLineHead + newBody + openTag + ';' + body.closeLineTail;
+  const reconstructedLines = reconstructed.split('\n');
+
+  const finalLines = [
+    ...newLines.slice(0, body.openLineIdx),
+    ...reconstructedLines,
+    ...newLines.slice(body.closeLineIdx + 1),
+  ];
+
+  seg.lines = finalLines;
+  seg.lang = 'plpgsql';
+  return true;
+}
+
+/**
+ * Pass 3: convert every `LANGUAGE sql` function segment to `LANGUAGE plpgsql`.
+ *
+ * Runs over the parsed segments (not raw text) so it composes cleanly with
+ * pass 2's reorder. After this pass, `seg.lang === 'plpgsql'` for every
+ * convertible function; functions that fall into the safety net retain
+ * `seg.lang === 'sql'` and get a TODO comment prepended.
+ *
+ * Logging: the count of converted vs skipped functions is written to stderr
+ * as a single summary line (no per-function noise unless something is
+ * skipped — those get a notice).
+ */
+function convertSqlFunctionsToPlpgsqlInSegments(segments) {
+  let converted = 0;
+  let skipped = 0;
+  const skippedNames = [];
+  for (const seg of segments) {
+    if (seg.kind !== 'fn' || seg.lang !== 'sql') continue;
+    const ok = convertFunctionSegment(seg);
+    if (ok) {
+      converted += 1;
+    } else {
+      skipped += 1;
+      skippedNames.push(seg.qualifiedName);
+      // Prepend a TODO marker line so anyone reviewing the output sees the
+      // unconverted function. The marker is idempotent: re-running the pass
+      // checks for an existing `-- TODO(baseline)` line right before the
+      // CREATE FUNCTION header.
+      const firstLine = seg.lines[0] || '';
+      const todoLine = `-- TODO(baseline): manually convert ${seg.qualifiedName} to plpgsql (unhandled body shape)`;
+      const alreadyMarked = seg.lines.length >= 2
+        && seg.lines[0].trim() === todoLine.trim();
+      // Find if previous segment's last line already has the marker (it
+      // could be in a 'lines' segment ahead of us — but we don't mutate
+      // those). Easiest: insert marker as first element of seg.lines if not
+      // already there.
+      if (!alreadyMarked && !firstLine.includes('TODO(baseline)')) {
+        seg.lines = [todoLine, ...seg.lines];
+      }
+    }
+  }
+  if (converted > 0 || skipped > 0) {
+    const msg =
+      `pass 3 (sql→plpgsql): ${converted} converted, ${skipped} skipped` +
+      (skipped > 0 ? ` (${skippedNames.join(', ')})` : '');
+    process.stderr.write(`${msg}\n`);
+  }
+}
+
+/**
+ * Public entry for pass 3 used in tests and the combined pipeline. Parses
+ * source into segments, runs the conversion, and re-serializes.
+ *
+ * Idempotent: running on already-converted output finds zero `LANGUAGE sql`
+ * segments and is a no-op.
+ */
+export function convertSqlFunctionsToPlpgsql(src) {
+  const segments = parseSegments(src);
+  convertSqlFunctionsToPlpgsqlInSegments(segments);
+  return serializeSegments(segments);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Combined pipeline
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Full rewrite: pass 1 (%ROWTYPE → RECORD), then pass 2 (reorder LANGUAGE
- * sql). Idempotent — running it on its own output is a no-op.
+ * Full rewrite pipeline:
+ *   pass 1: %ROWTYPE → RECORD     (PL/pgSQL DECLARE block forward refs)
+ *   pass 2: reorder LANGUAGE sql  (sql→sql call dependencies)
+ *   pass 3: sql → plpgsql         (sql→table forward refs eliminated)
+ *
+ * After pass 3 every convertible function is PL/pgSQL, so pass 2's reorder
+ * is effectively a no-op on the post-pass-3 output (no LANGUAGE sql segments
+ * remain to move). We still run pass 2 first because:
+ *   1. The two passes are orthogonal — running them in either order gives
+ *      the same result, and running pass 2 first means the safety-net
+ *      sql functions (those pass 3 couldn't convert) still benefit from
+ *      pass 2's topological reordering.
+ *   2. Pass 2 has been in production through PR #479 / #480 and is well-
+ *      tested. Keeping its invocation unchanged avoids risk.
+ *
+ * Idempotent: running on its own output is a no-op for all three passes.
  */
 export function rewriteAll(src) {
-  return reorderSqlFunctions(rewriteRowtype(src));
+  return convertSqlFunctionsToPlpgsql(reorderSqlFunctions(rewriteRowtype(src)));
 }
 
 // Kept exported under the old name so any external caller (workflow, runbook
@@ -1198,9 +1738,18 @@ function selfTest() {
     'rewriteAll: %ROWTYPE rewritten in plpgsql AND sql moved after',
     !outAll.includes('%ROWTYPE') && outAll.indexOf('public.s1(') > outAll.indexOf('public.g1('),
   );
+  // After pass 3, the sql fn is converted to plpgsql so line count grows by
+  // the BEGIN/RETURN/END wrapping (~3 lines per converted sql fn). Verify
+  // the converted output contains the expected plpgsql shell and no
+  // remaining `LANGUAGE "sql"` / `LANGUAGE sql` tokens.
   expect(
-    'rewriteAll: line count unchanged',
-    combined.split('\n').length === outAll.split('\n').length,
+    'rewriteAll: sql fn converted to plpgsql (no remaining sql tokens)',
+    !/\bLANGUAGE\s+"?sql"?\b/i.test(outAll),
+    `output retains a LANGUAGE sql token: ${outAll.match(/.*LANGUAGE.*/)?.[0]}`,
+  );
+  expect(
+    'rewriteAll: converted body uses BEGIN ... RETURN (...) ... END',
+    outAll.includes('RETURN (SELECT public.g1(p))'),
   );
 
   // 22. End-to-end idempotency.
@@ -1699,6 +2248,391 @@ function selfTest() {
   expect(
     'real_world_shape: line count preserved',
     fixture37.split('\n').length === out37.split('\n').length,
+  );
+
+  // ── Pass 3: convert LANGUAGE sql → LANGUAGE plpgsql ──────────────────────
+  // Pass 3 eliminates the sql→table forward-reference class by converting
+  // sql-language function bodies to PL/pgSQL, which skips eager validation
+  // under `check_function_bodies = false`. CI run 25260192948 hit this on
+  // `cleanup_old_rate_limits` (DELETE FROM rate_limits before the table
+  // existed). Tests 38-50 pin the conversion shapes.
+  //
+  // Pass 3 self-tests use `convertSqlFunctionsToPlpgsql` directly (skipping
+  // pass 2's reorder) for shape verification, then verify combined behavior
+  // via `rewriteAll`.
+
+  // Capture stderr to silence the "pass 3 (sql→plpgsql): N converted" notice
+  // during self-tests (we don't want it polluting the PASS/FAIL output).
+  const captureStderr = (fn) => {
+    const orig = process.stderr.write.bind(process.stderr);
+    let captured = '';
+    process.stderr.write = (chunk) => { captured += String(chunk); return true; };
+    try { return { result: fn(), stderr: captured }; }
+    finally { process.stderr.write = orig; }
+  };
+
+  // 38. case_a_void_single_dml: `LANGUAGE sql RETURNS void AS $$ DELETE … $$`
+  //     becomes `LANGUAGE plpgsql RETURNS void AS $$ BEGIN DELETE …; END; $$`.
+  //     This is the exact failing function from CI run 25260192948.
+  const fixture38 = [
+    'CREATE OR REPLACE FUNCTION "public"."cleanup_old_rate_limits"() RETURNS "void"',
+    '    LANGUAGE "sql" SECURITY DEFINER',
+    '    SET "search_path" TO \'public\'',
+    '    AS $$',
+    '  DELETE FROM public.rate_limits WHERE window_start < now() - interval \'2 hours\';',
+    '$$;',
+    '',
+  ].join('\n');
+  const { result: out38 } = captureStderr(() => convertSqlFunctionsToPlpgsql(fixture38));
+  expect(
+    'case_a_void_single_dml: LANGUAGE rewritten to plpgsql',
+    /LANGUAGE\s+"plpgsql"\s+SECURITY DEFINER/.test(out38),
+    `output: ${out38.match(/.*LANGUAGE.*/)?.[0]}`,
+  );
+  expect(
+    'case_a_void_single_dml: body wrapped in BEGIN ... END;',
+    out38.includes('BEGIN') && out38.includes('END;') &&
+      out38.includes('DELETE FROM public.rate_limits'),
+  );
+  expect(
+    'case_a_void_single_dml: SET search_path preserved',
+    out38.includes("SET \"search_path\" TO 'public'"),
+  );
+
+  // 39. case_a_void_multi_dml: multiple statements wrap together.
+  const fixture39 = [
+    'CREATE OR REPLACE FUNCTION "public"."purge_old_grounded_traces"() RETURNS "void"',
+    '    LANGUAGE "sql"',
+    '    AS $$',
+    '  DELETE FROM grounded_ai_traces',
+    '    WHERE grounded = true AND created_at < now() - INTERVAL \'90 days\';',
+    '  DELETE FROM grounded_ai_traces',
+    '    WHERE grounded = false AND created_at < now() - INTERVAL \'180 days\';',
+    '$$;',
+    '',
+  ].join('\n');
+  const { result: out39 } = captureStderr(() => convertSqlFunctionsToPlpgsql(fixture39));
+  expect(
+    'case_a_void_multi_dml: both DELETEs preserved',
+    out39.includes("INTERVAL '90 days'") && out39.includes("INTERVAL '180 days'"),
+  );
+  expect(
+    'case_a_void_multi_dml: wrapped in BEGIN ... END',
+    out39.includes('BEGIN') && /END;\s*$/m.test(out39),
+  );
+  expect(
+    'case_a_void_multi_dml: language is plpgsql',
+    /LANGUAGE\s+"plpgsql"/.test(out39),
+  );
+
+  // 40. case_b_scalar_select: `RETURNS uuid LANGUAGE sql AS $$ SELECT id ... $$`.
+  const fixture40 = [
+    'CREATE OR REPLACE FUNCTION "public"."get_my_student_id"() RETURNS "uuid"',
+    '    LANGUAGE "sql" STABLE SECURITY DEFINER',
+    '    SET "search_path" TO \'public\'',
+    '    AS $$',
+    '  SELECT id FROM students WHERE auth_user_id = auth.uid() AND is_active = true LIMIT 1;',
+    '$$;',
+    '',
+  ].join('\n');
+  const { result: out40 } = captureStderr(() => convertSqlFunctionsToPlpgsql(fixture40));
+  expect(
+    'case_b_scalar_select: body becomes BEGIN RETURN (SELECT ...); END;',
+    out40.includes('RETURN (SELECT id FROM students') && out40.includes('END;'),
+  );
+  expect(
+    'case_b_scalar_select: STABLE SECURITY DEFINER preserved',
+    /LANGUAGE\s+"plpgsql"\s+STABLE\s+SECURITY DEFINER/.test(out40),
+  );
+
+  // 41. case_c_setof: `RETURNS SETOF uuid LANGUAGE sql AS $$ SELECT … $$`.
+  const fixture41 = [
+    'CREATE OR REPLACE FUNCTION "public"."get_my_student_ids"() RETURNS SETOF "uuid"',
+    '    LANGUAGE "sql" STABLE SECURITY DEFINER',
+    '    AS $$ SELECT id FROM students WHERE auth_user_id = auth.uid() $$;',
+    '',
+  ].join('\n');
+  const { result: out41 } = captureStderr(() => convertSqlFunctionsToPlpgsql(fixture41));
+  expect(
+    'case_c_setof: body becomes BEGIN RETURN QUERY SELECT ...; END;',
+    out41.includes('RETURN QUERY SELECT id FROM students') && out41.includes('END;'),
+  );
+  expect(
+    'case_c_setof: SETOF type preserved',
+    /RETURNS\s+SETOF\s+"uuid"/.test(out41),
+  );
+
+  // 42. case_c_table_returns: `RETURNS TABLE(...) LANGUAGE sql AS $$ SELECT … $$`.
+  const fixture42 = [
+    'CREATE OR REPLACE FUNCTION "public"."get_chapter_titles"("p_grade" "text") RETURNS TABLE("title" "text", "num" integer)',
+    '    LANGUAGE "sql" STABLE',
+    '    AS $$ SELECT chapter_title, chapter_number FROM rag_content_chunks WHERE grade = p_grade $$;',
+    '',
+  ].join('\n');
+  const { result: out42 } = captureStderr(() => convertSqlFunctionsToPlpgsql(fixture42));
+  expect(
+    'case_c_table_returns: TABLE(...) preserved, body becomes RETURN QUERY',
+    out42.includes('RETURNS TABLE') && out42.includes('RETURN QUERY SELECT chapter_title'),
+  );
+
+  // 43. case_b_boolean_select: `RETURNS boolean LANGUAGE sql AS $$ SELECT EXISTS(...) $$`.
+  const fixture43 = [
+    'CREATE OR REPLACE FUNCTION "public"."is_admin"() RETURNS boolean',
+    '    LANGUAGE "sql" STABLE SECURITY DEFINER',
+    '    AS $$ SELECT EXISTS(SELECT 1 FROM admin_users WHERE auth_user_id = auth.uid()); $$;',
+    '',
+  ].join('\n');
+  const { result: out43 } = captureStderr(() => convertSqlFunctionsToPlpgsql(fixture43));
+  expect(
+    'case_b_boolean_select: returns boolean body wrapped in RETURN (...)',
+    out43.includes('RETURN (SELECT EXISTS(SELECT 1 FROM admin_users'),
+  );
+
+  // 44. case_d_setof_with_returning: UPDATE … RETURNING * → wrapped in CTE.
+  //     This is `claim_verification_batch` from the real fixture.
+  const fixture44 = [
+    'CREATE OR REPLACE FUNCTION "public"."claim_verification_batch"("p_n" integer) RETURNS SETOF "public"."question_bank"',
+    '    LANGUAGE "sql" SECURITY DEFINER',
+    '    AS $$',
+    '  UPDATE question_bank',
+    '  SET verification_state = \'pending\'',
+    '  WHERE id IN (SELECT id FROM question_bank LIMIT p_n)',
+    '  RETURNING *;',
+    '$$;',
+    '',
+  ].join('\n');
+  const { result: out44 } = captureStderr(() => convertSqlFunctionsToPlpgsql(fixture44));
+  expect(
+    'case_d_setof_with_returning: UPDATE wrapped in CTE for RETURN QUERY',
+    out44.includes('RETURN QUERY WITH "_dml" AS (UPDATE question_bank') &&
+      out44.includes('SELECT * FROM "_dml"'),
+  );
+  expect(
+    'case_d_setof_with_returning: language is plpgsql',
+    /LANGUAGE\s+"plpgsql"/.test(out44),
+  );
+
+  // 45. function_with_stable_modifier: STABLE preserved, language flipped.
+  const fixture45 = [
+    'CREATE OR REPLACE FUNCTION "public"."normalize_grade"("p_grade" "text") RETURNS "text"',
+    '    LANGUAGE "sql" IMMUTABLE',
+    '    AS $$ SELECT \'Grade \' || p_grade $$;',
+    '',
+  ].join('\n');
+  const { result: out45 } = captureStderr(() => convertSqlFunctionsToPlpgsql(fixture45));
+  expect(
+    'function_with_stable_modifier: IMMUTABLE preserved on plpgsql conversion',
+    /LANGUAGE\s+"plpgsql"\s+IMMUTABLE/.test(out45),
+  );
+
+  // 46. function_with_security_definer: SECURITY DEFINER preserved.
+  const fixture46 = [
+    'CREATE OR REPLACE FUNCTION "public"."get_cron_secret"() RETURNS "text"',
+    '    LANGUAGE "sql" SECURITY DEFINER',
+    '    SET "search_path" TO \'public\'',
+    '    AS $$ SELECT \'secret\'::text $$;',
+    '',
+  ].join('\n');
+  const { result: out46 } = captureStderr(() => convertSqlFunctionsToPlpgsql(fixture46));
+  expect(
+    'function_with_security_definer: SECURITY DEFINER preserved',
+    /LANGUAGE\s+"plpgsql"\s+SECURITY DEFINER/.test(out46),
+  );
+
+  // 47. function_with_quoted_language: `LANGUAGE "sql"` (quoted) recognized.
+  //     The bare-quote form is what pg_dump emits in real fixtures.
+  const fixture47 = [
+    'CREATE OR REPLACE FUNCTION public.bare_lang() RETURNS int',
+    '    LANGUAGE sql',
+    '    AS $$ SELECT 1 $$;',
+    '',
+    '',
+    'CREATE OR REPLACE FUNCTION public.quoted_lang() RETURNS int',
+    '    LANGUAGE "sql"',
+    '    AS $$ SELECT 1 $$;',
+    '',
+  ].join('\n');
+  const { result: out47 } = captureStderr(() => convertSqlFunctionsToPlpgsql(fixture47));
+  expect(
+    'function_with_quoted_language: both bare and quoted LANGUAGE sql converted',
+    !/\bLANGUAGE\s+"?sql"?\b/i.test(out47),
+    `output retains: ${out47.match(/.*LANGUAGE.*/g)?.join(' | ')}`,
+  );
+
+  // 48. function_with_nested_dollar_tag_body: outer `$_$` with inner `$_$`-distinct
+  //     dollar literals in the body. Conversion must use the outer tag.
+  const fixture48 = [
+    'CREATE OR REPLACE FUNCTION "public"."normalize_grade"("p_grade" "text") RETURNS "text"',
+    '    LANGUAGE "sql" IMMUTABLE',
+    '    AS $_$',
+    '  SELECT regexp_replace(p_grade, \'[^0-9]\', \'\', \'g\');',
+    '$_$;',
+    '',
+  ].join('\n');
+  const { result: out48 } = captureStderr(() => convertSqlFunctionsToPlpgsql(fixture48));
+  expect(
+    'function_with_nested_dollar_tag_body: outer $_$ tag preserved',
+    out48.includes('AS $_$') && out48.includes('$_$;'),
+  );
+  expect(
+    'function_with_nested_dollar_tag_body: body wrapped in RETURN (...)',
+    out48.includes('RETURN (SELECT regexp_replace'),
+  );
+
+  // 49. function_unconvertible_safety_net: multi-statement scalar return
+  //     (case E in the design doc) is the safety-net path. The function is
+  //     left as `LANGUAGE sql` and a TODO comment is prepended.
+  const fixture49 = [
+    'CREATE OR REPLACE FUNCTION "public"."weird_multi_stmt_scalar"("p_id" "uuid") RETURNS "uuid"',
+    '    LANGUAGE "sql"',
+    '    AS $$',
+    '  UPDATE x SET y = 1 WHERE id = p_id;',
+    '  SELECT id FROM x WHERE id = p_id;',
+    '$$;',
+    '',
+  ].join('\n');
+  const { result: out49, stderr: err49 } = captureStderr(
+    () => convertSqlFunctionsToPlpgsql(fixture49),
+  );
+  expect(
+    'function_unconvertible_safety_net: function preserved as LANGUAGE sql',
+    /LANGUAGE\s+"sql"/.test(out49),
+  );
+  expect(
+    'function_unconvertible_safety_net: TODO marker prepended',
+    out49.includes('-- TODO(baseline): manually convert public.weird_multi_stmt_scalar'),
+  );
+  expect(
+    'function_unconvertible_safety_net: stderr summary lists the skipped fn',
+    /skipped \(public\.weird_multi_stmt_scalar\)/.test(err49),
+  );
+
+  // 50. comment_on_function_preserved: a converted function still has its
+  //     COMMENT attached (pass 2's COMMENT-relocation runs before pass 3).
+  const fixture50 = [
+    'CREATE OR REPLACE FUNCTION "public"."anchor_p"() RETURNS "void"',
+    '    LANGUAGE "plpgsql"',
+    '    AS $$ BEGIN RETURN; END; $$;',
+    '',
+    '',
+    'CREATE OR REPLACE FUNCTION "public"."current_school_id"() RETURNS "uuid"',
+    '    LANGUAGE "sql" STABLE SECURITY DEFINER',
+    '    AS $$ SELECT \'00000000-0000-0000-0000-000000000000\'::uuid $$;',
+    '',
+    '',
+    'COMMENT ON FUNCTION "public"."current_school_id"() IS \'doc string\';',
+    '',
+  ].join('\n');
+  const { result: out50 } = captureStderr(() => rewriteAll(fixture50));
+  expect(
+    'comment_on_function_preserved: COMMENT survives the conversion',
+    out50.includes('COMMENT ON FUNCTION "public"."current_school_id"()'),
+  );
+  expect(
+    'comment_on_function_preserved: function converted to plpgsql',
+    /current_school_id"\(\) RETURNS "uuid"\s*\n\s+LANGUAGE\s+"plpgsql"/m.test(out50),
+  );
+  // The COMMENT must come AFTER the (converted) function header.
+  const fnPos50 = out50.indexOf('FUNCTION "public"."current_school_id"()');
+  const cmtPos50 = out50.indexOf('COMMENT ON FUNCTION "public"."current_school_id"()');
+  expect(
+    'comment_on_function_preserved: COMMENT positioned after CREATE',
+    fnPos50 > -1 && cmtPos50 > -1 && cmtPos50 > fnPos50,
+    `fn=${fnPos50} cmt=${cmtPos50}`,
+  );
+
+  // 51. idempotency_after_conversion: running rewriteAll twice on a fixture
+  //     with sql functions yields identical output.
+  const fixture51 = [
+    'CREATE OR REPLACE FUNCTION "public"."anchor_p"() RETURNS "void"',
+    '    LANGUAGE "plpgsql"',
+    '    AS $$ BEGIN RETURN; END; $$;',
+    '',
+    '',
+    'CREATE OR REPLACE FUNCTION "public"."get_admin_school_id"() RETURNS "uuid"',
+    '    LANGUAGE "sql" STABLE',
+    '    SET "search_path" TO \'public\'',
+    '    AS $$ SELECT school_id FROM teachers WHERE auth_user_id = auth.uid() LIMIT 1 $$;',
+    '',
+    '',
+    'CREATE OR REPLACE FUNCTION "public"."is_admin"() RETURNS boolean',
+    '    LANGUAGE "sql" STABLE SECURITY DEFINER',
+    '    AS $$ SELECT EXISTS(SELECT 1 FROM admin_users) $$;',
+    '',
+  ].join('\n');
+  const { result: outOnce51 } = captureStderr(() => rewriteAll(fixture51));
+  const { result: outTwice51 } = captureStderr(() => rewriteAll(outOnce51));
+  expect(
+    'idempotency_after_conversion: rewriteAll(rewriteAll(x)) === rewriteAll(x)',
+    outOnce51 === outTwice51,
+  );
+  expect(
+    'idempotency_after_conversion: zero LANGUAGE sql tokens after first pass',
+    !/\bLANGUAGE\s+"?sql"?\b/i.test(outOnce51),
+  );
+
+  // 52. preserves_pass1_pass2: combined pipeline still rewrites %ROWTYPE
+  //     and orders sql→sql dependencies even after pass 3 conversion.
+  const fixture52 = [
+    'CREATE OR REPLACE FUNCTION "public"."plpgsql_fn"("p" "uuid") RETURNS "uuid"',
+    '    LANGUAGE "plpgsql"',
+    '    AS $$ DECLARE v public.adaptive_mastery%ROWTYPE; BEGIN RETURN p; END; $$;',
+    '',
+    '',
+    'CREATE OR REPLACE FUNCTION "public"."sql_caller"("p" "uuid") RETURNS "uuid"',
+    '    LANGUAGE "sql"',
+    '    AS $$ SELECT public.plpgsql_fn(p) $$;',
+    '',
+  ].join('\n');
+  const { result: out52 } = captureStderr(() => rewriteAll(fixture52));
+  expect(
+    'preserves_pass1_pass2: %ROWTYPE rewritten in plpgsql body',
+    !out52.includes('%ROWTYPE') && out52.includes('v RECORD'),
+  );
+  expect(
+    'preserves_pass1_pass2: sql_caller converted to plpgsql',
+    !/\bLANGUAGE\s+"?sql"?\b/i.test(out52),
+  );
+  expect(
+    'preserves_pass1_pass2: callee plpgsql_fn appears before caller sql_caller',
+    out52.indexOf('plpgsql_fn') < out52.indexOf('sql_caller'),
+  );
+
+  // 53. real_world_fixture_smoke_test: the failing function from CI run
+  //     25260192948 is the cleanup_old_rate_limits one. End-to-end check
+  //     that rewriteAll converts it correctly.
+  const fixture53 = [
+    'CREATE OR REPLACE FUNCTION "public"."anchor_p"() RETURNS "void"',
+    '    LANGUAGE "plpgsql"',
+    '    AS $$ BEGIN RETURN; END; $$;',
+    '',
+    '',
+    'CREATE OR REPLACE FUNCTION "public"."cleanup_old_rate_limits"() RETURNS "void"',
+    '    LANGUAGE "sql" SECURITY DEFINER',
+    '    SET "search_path" TO \'public\'',
+    '    AS $$',
+    '  DELETE FROM public.rate_limits WHERE window_start < now() - interval \'2 hours\';',
+    '$$;',
+    '',
+    '',
+    'CREATE TABLE IF NOT EXISTS "public"."rate_limits" (',
+    '  "id" "uuid" PRIMARY KEY DEFAULT gen_random_uuid(),',
+    '  "window_start" timestamptz NOT NULL DEFAULT now()',
+    ');',
+    '',
+  ].join('\n');
+  const { result: out53 } = captureStderr(() => rewriteAll(fixture53));
+  expect(
+    'real_world_fixture_smoke_test: cleanup function is now plpgsql',
+    /cleanup_old_rate_limits"\(\) RETURNS "void"\s*\n\s+LANGUAGE\s+"plpgsql"/m.test(out53),
+  );
+  expect(
+    'real_world_fixture_smoke_test: DELETE statement preserved',
+    out53.includes('DELETE FROM public.rate_limits WHERE window_start'),
+  );
+  expect(
+    'real_world_fixture_smoke_test: DELETE wrapped in BEGIN ... END;',
+    out53.includes('BEGIN') && /END;/.test(out53),
   );
 
   process.stdout.write(`\nself-test: ${passed} passed, ${failed} failed\n`);
