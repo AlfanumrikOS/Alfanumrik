@@ -63,6 +63,8 @@ export interface RetrievalQuery {
   board?: string;
   matchCount?: number;
   minQuality?: number;
+  /** Goal-Adaptive Phase 4: when ff_goal_aware_rag is on, this triggers a post-RPC rerank. Optional - omit to preserve legacy ordering. */
+  academicGoal?: string | null;
 }
 
 export interface RetrievedChunk {
@@ -75,6 +77,10 @@ export interface RetrievedChunk {
   contentType?: string;
   mediaUrl?: string | null;
   mediaDescription?: string | null;
+  /** Goal-Adaptive Phase 4: source pack of the chunk (e.g. ncert_2025, pyq, jee_archive). Optional. */
+  source?: string | null;
+  /** Goal-Adaptive Phase 4: exam-relevance tags (e.g. CBSE, CBSE_BOARD, JEE, NEET, OLYMPIAD). Optional. */
+  examRelevance?: ReadonlyArray<string> | null;
 }
 
 /** Diagram metadata surfaced alongside tutor responses */

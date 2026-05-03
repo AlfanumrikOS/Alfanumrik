@@ -12,6 +12,9 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import type { RetrievalQuery, RetrievedChunk, RetrievalResult } from '../types';
 import { getAIConfig } from '../config';
+import { isFeatureEnabled } from '@/lib/feature-flags';
+import { applyGoalRerank } from '@/lib/goals/rag-source-weights';
+import { isKnownGoalCode, type GoalCode } from '@/lib/goals/goal-profile';
 
 // ─── Embedding Generation ──────────────────────────────────────────────────
 
@@ -140,12 +143,35 @@ export async function retrieveNcertChunks(query: RetrievalQuery): Promise<Retrie
       contentType: row.content_type != null ? String(row.content_type) : undefined,
       mediaUrl: typeof row.media_url === 'string' ? row.media_url : null,
       mediaDescription: typeof row.media_description === 'string' ? row.media_description : null,
+      source: typeof row.source === 'string' ? row.source : null,
+      examRelevance: Array.isArray(row.exam_relevance) ? row.exam_relevance.filter((t: unknown): t is string => typeof t === 'string') : null,
     }));
 
-    // Format LLM-ready context string
-    const contextText = formatContextText(chunks);
+    // Phase 4 (Goal-Adaptive Layers): when ff_goal_aware_rag is on AND a
+    // known goal is supplied via query.academicGoal, re-rank chunks by
+    // similarity * source-weight (see src/lib/goals/rag-source-weights.ts).
+    // Default OFF preserves byte-identical legacy ordering.
+    let finalChunks = chunks;
+    if (isKnownGoalCode(query.academicGoal)) {
+      const goalRerankOn = await isFeatureEnabled('ff_goal_aware_rag', {
+        role: 'student',
+        environment: process.env.VERCEL_ENV || process.env.NODE_ENV || 'production',
+      });
+      if (goalRerankOn) {
+        finalChunks = applyGoalRerank(chunks, query.academicGoal as GoalCode);
+        logger.info('ncert_retriever_goal_rerank_applied', {
+          goalCode: query.academicGoal,
+          chunkCount: finalChunks.length,
+          subject: query.subject,
+          grade: query.grade,
+        });
+      }
+    }
 
-    return { chunks, contextText, error: null };
+    // Format LLM-ready context string
+    const contextText = formatContextText(finalChunks);
+
+    return { chunks: finalChunks, contextText, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     logger.error('ncert_retriever_unexpected_error', {
