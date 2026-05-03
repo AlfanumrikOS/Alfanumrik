@@ -67,7 +67,12 @@
     +-------------------+ +-------------------+ +-------------------+
     |  Supabase Postgres | | Supabase Auth    | |  Supabase Storage  |
     |  RLS (440+ policies)| | Email/PKCE      | |  Textbook content  |
-    |  265 migrations    | | 6 roles          | |                    |
+    |  1 baseline +      | | 6 roles          | |                    |
+    |  post-baseline at  | |                  | |                    |
+    |  migrations/ root; | |                  | |                    |
+    |  349 archived in   | |                  | |                    |
+    |  _legacy/          | |                  | |                    |
+    |  timestamped/      | |                  | |                    |
     +-------------------+ +-------------------+ +-------------------+
               |
     +-------------------+

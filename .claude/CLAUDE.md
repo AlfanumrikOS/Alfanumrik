@@ -16,7 +16,7 @@ Indian K-12 EdTech platform (CBSE grades 6-12). Next.js 16 + Supabase + Razorpay
 | AI | Claude API (Haiku) via Edge Functions: foxy-tutor, ncert-solver, quiz-generator, quiz-generator-v2, cme-engine |
 | Payments | Razorpay (INR, monthly recurring + yearly one-time) |
 | Deployment | Vercel (bom1/Mumbai), GitHub Actions CI/CD (3 workflows) |
-| Testing | Vitest (2,511 tests, 84 files), Playwright E2E (16 specs). **Regression catalog: 25 entries catalogued (REG-53 added 2026-04-29 — Phase C options versioning + integrity hash). Aspirational target: 35. Last reconciled: 2026-04-29.** Many P-invariants have direct unit/E2E tests that aren't yet promoted into the catalog — see "Regression catalog status by invariant" below. |
+| Testing | Vitest (2,511 tests, 84 files), Playwright E2E (16 specs). **Regression catalog: 26 entries catalogued (REG-55 added 2026-05-02 — Foxy structured rendering envelope). Aspirational target: 35. Last reconciled: 2026-05-02.** Many P-invariants have direct unit/E2E tests that aren't yet promoted into the catalog — see "Regression catalog status by invariant" below. |
 | Monitoring | Sentry (client/server/edge), Vercel Analytics, structured logging |
 | Mobile | Flutter + Riverpod (/mobile) |
 | Offline | Service worker, localStorage cache, background sync |
@@ -43,7 +43,7 @@ Status key: **catalogued** = explicit entry in `.claude/regression-catalog.md`; 
 | P14 Review chain completeness | n/a (process invariant) | Enforced by `review-chain.sh` hook + orchestrator Gate 5 |
 | P15 Onboarding integrity | tested-only | `auth-callback-role-redirect.test.ts` and identity tests; 3-role E2E gap |
 
-Round 2 audit promotions (atomic_plan_change atomicity, daily XP cap, Sentry client PII redaction, single-retrieval contract for Foxy) shipped as REG-47, REG-48, REG-49, REG-50. Phase A/B/C quiz-authenticity work shipped as REG-51, REG-52, REG-53. AI quiz-generator validation oracle shipped as REG-54. Total catalog: 25 entries (target: 35).
+Round 2 audit promotions (atomic_plan_change atomicity, daily XP cap, Sentry client PII redaction, single-retrieval contract for Foxy) shipped as REG-47, REG-48, REG-49, REG-50. Phase A/B/C quiz-authenticity work shipped as REG-51, REG-52, REG-53. AI quiz-generator validation oracle shipped as REG-54. Foxy structured rendering envelope shipped as REG-55 (2026-05-02). Total catalog: 26 entries (target: 35).
 
 ## Critical File Map
 | Area | Files |

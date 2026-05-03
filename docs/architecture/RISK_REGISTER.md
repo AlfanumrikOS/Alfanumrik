@@ -134,23 +134,23 @@ pinned to concrete artefacts, it is not in this register.
 - **Mitigation status:** documented in [`../stabilization-phase-0-memo.md`](../stabilization-phase-0-memo.md)
 - **Next action:** if we push this branch, push the tag alongside with an explanatory commit message OR keep it local-only. 30 days grace; then `git tag -d` if unused.
 
-### R13. Schema migration drift from prod (inferred from CLAUDE.md)
+### R13. Schema migration drift from prod (inferred from CLAUDE.md) — **RESOLVED 2026-05-03**
 
-- **Probability:** Med
-- **Impact:** Low — documentation mismatch with reality
-- **Evidence:** `.claude/CLAUDE.md` claims 151 API routes / 29 Edge Functions / 265 migrations. Real counts as of 2026-04-24 on `origin/main`: **169 / 32 / 309**. Documentation lags reality by weeks-to-months
-- **Owner:** ops (docs), orchestrator (auto-update hooks)
-- **Mitigation status:** surfaced by [`CURRENT_ARCHITECTURE_AUDIT.md`](./CURRENT_ARCHITECTURE_AUDIT.md)
-- **Next action:** update `.claude/CLAUDE.md` to cite current counts (1-line PR); OR make the counts dynamic in a status page
+- **Probability:** N/A — closed
+- **Impact:** N/A — closed
+- **Evidence:** `.claude/CLAUDE.md` previously claimed 265 migrations against a real on-disk count of ~309. The schema-reproducibility workstream (2026-05-02 → 2026-05-03) collapsed the historical chain into a single `00000000000000_baseline_from_prod.sql` derived from `pg_dump`, archived 349 legacy timestamped files under `supabase/migrations/_legacy/timestamped/`, and pre-marked the baseline applied on prod and main-staging via `supabase migration repair`. The constitution's `Database` row in `.claude/CLAUDE.md` and the layer diagram in `docs/architecture/current-state.md` were updated in the same workstream to cite "1 baseline + post-baseline" rather than a stale absolute count. See [`docs/runbooks/2026-05-03-schema-reproducibility-completion.md`](../runbooks/2026-05-03-schema-reproducibility-completion.md) for the completion log and [`docs/runbooks/schema-reproducibility-fix.md`](../runbooks/schema-reproducibility-fix.md) for the operational procedure.
+- **Owner:** ops (docs), architect (migration mechanics)
+- **Mitigation status:** **CLOSED** — baseline landed on `main`, archived chain skipped on every deploy because Supabase CLI's `db push` only walks the immediate `supabase/migrations/` root.
+- **Next action:** none. Future drift between docs and on-disk migration count is structurally prevented because the documented number ("1 baseline + post-baseline") no longer needs reconciliation when new migrations are added.
 
-### R14. Regression-catalog claim "35/35 (100%)" is aspirational
+### R14. Regression-catalog count claim drifts from reality
 
 - **Probability:** N/A — documentation accuracy gap
 - **Impact:** Low — but erodes trust in catalog over time
-- **Evidence:** CLAUDE.md says "Regression catalog: 35/35 (100%)". Tests include 8 failing Foxy regression tests today (see R2). Either the catalog count is wrong or the failing tests are outside the catalog scope; either way not transparent.
+- **Evidence:** Constitution previously claimed "35/35 (100%)". Real catalog count at last reconciliation (2026-05-02) is **26 entries** in `.claude/regression-catalog.md` against an aspirational target of 35. The 35 figure is the *target*, not the current state. The constitution's `Testing` row + per-invariant status table now cite the actual 26-entry count and label 35 as aspirational. Newly added: REG-55 (Foxy structured rendering envelope, 2026-05-02).
 - **Owner:** testing
-- **Mitigation status:** R2 fix reduces delta
-- **Next action:** resolve after R2
+- **Mitigation status:** count claim corrected; aspirational target preserved as a forward-looking goal
+- **Next action:** continue promoting tested-only invariants (P7 bilingual UI, P10 bundle budget, P15 onboarding integrity) into catalogued entries to close the 9-entry gap to the aspirational target.
 
 ### R15. No server-side enforcement of domain module boundaries
 

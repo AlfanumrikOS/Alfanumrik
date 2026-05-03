@@ -473,3 +473,30 @@ Wire-up status:
   defense-in-depth on every question fetched from `question_bank`. No
   LLM-grader call here — questions were already gated on insert by
   `bulk-question-gen` when the flag was ON. Sub-millisecond per question.
+
+## Foxy Structured Rendering Envelope (2026-05-02)
+
+Source: Foxy structured-rendering workstream — `/api/foxy` and the
+`grounded-answer` Edge Function now emit a structured `lines[]` payload
+conforming to `src/lib/foxy/schema.ts`. The Next.js renderer
+(`FoxyStructuredRenderer.tsx`) consumes it; the `is-foxy-response.ts`
+guard ensures the renderer degrades gracefully when an upstream payload
+fails schema validation. The streaming `done` event persists both the
+structured JSONB and the denormalized `content` text atomically, and
+Hindi i18n uses NCERT-standard terms (`परीक्षा सुझाव`, never the
+non-standard `परीक्षा टिप`).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-55 | `foxy_structured_rendering_envelope` | Foxy `/api/foxy` and `grounded-answer` Edge Function streaming responses produce a structured payload (lines[]) conforming to `src/lib/foxy/schema.ts`; renderer (`FoxyStructuredRenderer.tsx`) gracefully degrades on schema-invalid payloads via `is-foxy-response.ts` guard; streaming-done event persists both `structured` JSONB and denormalized `content` text atomically (no orphaned messages with one-but-not-the-other); Hindi i18n uses NCERT-standard terms (परीक्षा सुझाव, not परीक्षा टिप). | `src/__tests__/api/foxy/streaming-structured-persistence.test.ts`, `src/__tests__/api/foxy/structured-abstain-and-history.test.ts`, `src/__tests__/api/foxy/structured-persistence.test.ts`, `src/__tests__/components/FoxyStructuredRenderer.test.tsx` | E |
+
+### Invariants covered by this section
+
+- P7 (bilingual UI — Hindi rendering uses NCERT-standard terminology;
+  no `परीक्षा टिप` fallback)
+- P12 (AI safety — schema-invalid LLM output never reaches students; the
+  guard short-circuits to a safe degraded render)
+- P13 (data privacy — persistence path writes structured JSONB + content
+  in a single atomic transaction so the chat history cannot end up with
+  half-rendered messages that would later be re-fetched and re-shipped
+  to Sentry)
