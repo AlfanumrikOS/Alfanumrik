@@ -1401,14 +1401,108 @@ export function convertSqlFunctionsToPlpgsql(src) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Pass 4: strip `public.` qualifier from operator-class references
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Why pass 4 exists
+ * -----------------
+ * Operator classes (the trailing identifier in `USING <method> (col [opclass])`)
+ * live in the schema where their owning extension was installed. Production
+ * has `pg_trgm` and `pgvector` installed in the `public` schema (legacy
+ * default), so pg_dump emits index DDL like:
+ *
+ *   CREATE INDEX idx_x ON public.t USING gin (lower(col) "public"."gin_trgm_ops");
+ *   CREATE INDEX idx_y ON public.t USING hnsw (embedding "public"."vector_cosine_ops");
+ *
+ * On a fresh Supabase local stack (the env CI's `supabase db reset` uses),
+ * `pg_trgm` is preinstalled in the `extensions` schema, NOT `public`. The
+ * qualified reference `public.gin_trgm_ops` resolves to the `public` schema
+ * and finds nothing — the opclass actually lives at `extensions.gin_trgm_ops`.
+ * `CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public` is a NO-OP when
+ * the extension already exists elsewhere (Postgres won't move it), so the
+ * earlier strategy of injecting CREATE EXTENSION (used for `vector` in step
+ * 3b of the workflow) doesn't help here.
+ *
+ * CI run 25269714566 hit this exact failure:
+ *   ERROR: operator class "public.gin_trgm_ops" does not exist for access method "gin"
+ *   At statement: 1508
+ *   CREATE INDEX "idx_rag_chunks_concept_trgm" ON … "public"."gin_trgm_ops"
+ *
+ * The narrow fix
+ * --------------
+ * Operator classes are looked up via `search_path` when unqualified — same as
+ * functions and types. Stripping the `public.` qualifier from operator-class
+ * references makes the lookup work in any schema (public OR extensions),
+ * because the default Supabase `search_path` is `"$user", public, extensions`.
+ *
+ * Transformation:
+ *   "<col>"  "public"."<opclass>"   →   "<col>"  "<opclass>"
+ *   <col>    public.<opclass>       →   <col>    <opclass>
+ *
+ * The pattern is anchored to opclass-shaped identifiers (`*_ops`) inside a
+ * `USING <method> (...)` index spec, so it cannot match unrelated public-
+ * schema-qualified function calls or column references in other contexts.
+ *
+ * Why this is safe on prod
+ * ------------------------
+ * Prod is pre-marked applied; the baseline never re-executes there. The
+ * stripped names would resolve to `public.gin_trgm_ops` on prod via
+ * search_path anyway (public is the FIRST entry in the default search_path
+ * after `"$user"`), so the rewrite is semantically identical.
+ *
+ * Why this is safe on Supabase local
+ * ----------------------------------
+ * Supabase's default `search_path = "$user", public, extensions` resolves
+ * unqualified `gin_trgm_ops` to `extensions.gin_trgm_ops` (where pg_trgm
+ * actually lives). The HNSW + vector_cosine_ops case is the same pattern,
+ * just for pgvector — defense in depth catches it here too.
+ *
+ * Idempotent: running pass 4 on its own output finds zero qualified-opclass
+ * shapes left and is a no-op.
+ */
+
+/**
+ * Strip `public.` schema qualifier from operator-class references inside
+ * `USING <method> (..., <opclass>)` index specs. Returns the transformed
+ * source.
+ *
+ * Match shapes accepted (pg_dump emission variants):
+ *   "<col>"  "public"."<name>_ops"   ← pg_dump always quotes; the common form
+ *   "<col>"  public."<name>_ops"
+ *   "<col>"  "public".<name>_ops
+ *   <col>    public.<name>_ops       ← unquoted (rare in pg_dump but possible)
+ *
+ * Only the schema qualifier is removed. The opclass name is left intact and
+ * its quoting is preserved (so `"gin_trgm_ops"` stays quoted, `gin_trgm_ops`
+ * stays bare).
+ *
+ * Conservative match: requires the opclass identifier to end in `_ops` (the
+ * canonical Postgres convention for built-in and extension-emitted opclasses
+ * — `gin_trgm_ops`, `vector_cosine_ops`, `vector_l2_ops`, `int4_ops`, etc.).
+ * This avoids false positives on unrelated `public.<thing>` references in
+ * the dump (column types, function calls, table refs).
+ *
+ * Line-count preservation: strict 1:1 token swap, no line additions or
+ * removals.
+ */
+const OPCLASS_QUAL_RE =
+  /(\s)(?:"public"|public)\.("?)([A-Za-z_][A-Za-z0-9_]*_ops)\2/g;
+
+export function stripExtensionSchemaQualifiers(src) {
+  return src.replace(OPCLASS_QUAL_RE, '$1$2$3$2');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Combined pipeline
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Full rewrite pipeline:
- *   pass 1: %ROWTYPE → RECORD     (PL/pgSQL DECLARE block forward refs)
- *   pass 2: reorder LANGUAGE sql  (sql→sql call dependencies)
- *   pass 3: sql → plpgsql         (sql→table forward refs eliminated)
+ *   pass 1: %ROWTYPE → RECORD                (PL/pgSQL DECLARE block forward refs)
+ *   pass 2: reorder LANGUAGE sql             (sql→sql call dependencies)
+ *   pass 3: sql → plpgsql                    (sql→table forward refs eliminated)
+ *   pass 4: strip public. on opclass refs    (Supabase-local pg_trgm in `extensions`)
  *
  * After pass 3 every convertible function is PL/pgSQL, so pass 2's reorder
  * is effectively a no-op on the post-pass-3 output (no LANGUAGE sql segments
@@ -1420,10 +1514,17 @@ export function convertSqlFunctionsToPlpgsql(src) {
  *   2. Pass 2 has been in production through PR #479 / #480 and is well-
  *      tested. Keeping its invocation unchanged avoids risk.
  *
- * Idempotent: running on its own output is a no-op for all three passes.
+ * Pass 4 runs last and is a pure regex token-swap on the post-conversion
+ * source. It composes with everything before it (the rewrite is local to
+ * `USING <method> (...)` index specs, which are top-level SQL outside any
+ * function body, so it doesn't interact with passes 1-3).
+ *
+ * Idempotent: running on its own output is a no-op for all four passes.
  */
 export function rewriteAll(src) {
-  return convertSqlFunctionsToPlpgsql(reorderSqlFunctions(rewriteRowtype(src)));
+  return stripExtensionSchemaQualifiers(
+    convertSqlFunctionsToPlpgsql(reorderSqlFunctions(rewriteRowtype(src))),
+  );
 }
 
 // Kept exported under the old name so any external caller (workflow, runbook
@@ -2633,6 +2734,170 @@ function selfTest() {
   expect(
     'real_world_fixture_smoke_test: DELETE wrapped in BEGIN ... END;',
     out53.includes('BEGIN') && /END;/.test(out53),
+  );
+
+  // ── Pass 4: strip public. on operator-class refs ──────────────────────────
+  // CI run 25269714566 hit `public.gin_trgm_ops` does not exist on a fresh
+  // Supabase local stack because pg_trgm is preinstalled in the `extensions`
+  // schema, NOT `public`. The qualified reference fails; the unqualified
+  // reference resolves via search_path. Tests 54-67 pin the strip behavior.
+
+  // 54. case_a_quoted_qualified_gin_trgm: the exact failing index from CI run
+  //     25269714566 (line 1508 of the sanitized baseline).
+  const fixture54 =
+    'CREATE INDEX "idx_rag_chunks_concept_trgm" ON "public"."rag_content_chunks" USING "gin" ("lower"("concept") "public"."gin_trgm_ops");';
+  const out54 = stripExtensionSchemaQualifiers(fixture54);
+  expect(
+    'case_a_quoted_qualified_gin_trgm: public. qualifier stripped from gin_trgm_ops',
+    out54 === 'CREATE INDEX "idx_rag_chunks_concept_trgm" ON "public"."rag_content_chunks" USING "gin" ("lower"("concept") "gin_trgm_ops");',
+    `out=${out54}`,
+  );
+
+  // 55. case_b_quoted_qualified_vector_cosine: HNSW index for pgvector.
+  const fixture55 =
+    'CREATE INDEX "idx_rag_chunks_embedding_hnsw" ON "public"."rag_content_chunks" USING "hnsw" ("embedding" "public"."vector_cosine_ops") WITH ("m"=\'16\', "ef_construction"=\'64\');';
+  const out55 = stripExtensionSchemaQualifiers(fixture55);
+  expect(
+    'case_b_quoted_qualified_vector_cosine: public. stripped from vector_cosine_ops',
+    out55.includes('"vector_cosine_ops"') && !out55.includes('"public"."vector_cosine_ops"'),
+    `out=${out55}`,
+  );
+
+  // 56. case_c_unquoted_bare_form: pg_dump usually quotes, but be defensive.
+  const fixture56 = 'CREATE INDEX foo ON t USING gin (col public.gin_trgm_ops);';
+  const out56 = stripExtensionSchemaQualifiers(fixture56);
+  expect(
+    'case_c_unquoted_bare_form: bare public.gin_trgm_ops stripped',
+    out56 === 'CREATE INDEX foo ON t USING gin (col gin_trgm_ops);',
+    `out=${out56}`,
+  );
+
+  // 57. case_d_mixed_quoting: schema bare, opclass quoted. pg_dump can emit
+  //     either form depending on how the dump was authored.
+  const fixture57 = 'CREATE INDEX foo ON t USING gin (col public."gin_trgm_ops");';
+  const out57 = stripExtensionSchemaQualifiers(fixture57);
+  expect(
+    'case_d_mixed_quoting: schema bare + opclass quoted → still strips',
+    out57 === 'CREATE INDEX foo ON t USING gin (col "gin_trgm_ops");',
+    `out=${out57}`,
+  );
+
+  // 58. preserves_unrelated_public_refs: column types, function calls, table
+  //     refs that contain `public.` are NOT touched (only `*_ops` opclasses
+  //     match the regex).
+  const fixture58 = [
+    'CREATE TABLE public.foo (id uuid REFERENCES public.bar(id));',
+    'SELECT "public"."my_function"() FROM "public"."t";',
+    'CREATE OR REPLACE FUNCTION public.helper() RETURNS uuid AS $$ SELECT public.other() $$ LANGUAGE sql;',
+    'COMMENT ON FUNCTION public.gen_random_uuid() IS \'wrapper\';',
+  ].join('\n');
+  const out58 = stripExtensionSchemaQualifiers(fixture58);
+  expect(
+    'preserves_unrelated_public_refs: non-opclass `public.*` references untouched',
+    out58 === fixture58,
+    `unexpected diff at: ${[...fixture58].findIndex((c, i) => c !== out58[i])}`,
+  );
+
+  // 59. preserves_other_schemas: only `public.` is stripped — `extensions.foo_ops`
+  //     or `auth.foo_ops` (hypothetical) would NOT match.
+  const fixture59 = 'CREATE INDEX foo ON t USING gin (col extensions.gin_trgm_ops);';
+  const out59 = stripExtensionSchemaQualifiers(fixture59);
+  expect(
+    'preserves_other_schemas: extensions.gin_trgm_ops left intact',
+    out59 === fixture59,
+    `out=${out59}`,
+  );
+
+  // 60. multiple_opclass_refs_same_line: pg_dump occasionally emits multiple
+  //     opclass refs in a single CREATE INDEX (composite indexes).
+  const fixture60 =
+    'CREATE INDEX multi ON t USING gist ("a" "public"."tsvector_ops", "b" "public"."gist_trgm_ops");';
+  const out60 = stripExtensionSchemaQualifiers(fixture60);
+  expect(
+    'multiple_opclass_refs_same_line: both qualifiers stripped',
+    out60 === 'CREATE INDEX multi ON t USING gist ("a" "tsvector_ops", "b" "gist_trgm_ops");',
+    `out=${out60}`,
+  );
+
+  // 61. idempotency: stripping already-stripped output is a no-op.
+  const onceStripped = stripExtensionSchemaQualifiers(fixture54);
+  const twiceStripped = stripExtensionSchemaQualifiers(onceStripped);
+  expect('idempotency: strip(strip(x)) === strip(x)', onceStripped === twiceStripped);
+
+  // 62. line_count_preserved: strict 1:1 token swap, no new lines added.
+  const fixtureMultiline = [
+    'CREATE INDEX a ON t USING gin ("col1" "public"."gin_trgm_ops");',
+    'CREATE INDEX b ON t USING hnsw ("col2" "public"."vector_cosine_ops");',
+    'CREATE INDEX c ON t USING gin ("col3" "public"."gin_trgm_ops") WHERE active;',
+  ].join('\n');
+  const outMultiline = stripExtensionSchemaQualifiers(fixtureMultiline);
+  expect(
+    'line_count_preserved: stripping does not change line count',
+    fixtureMultiline.split('\n').length === outMultiline.split('\n').length,
+  );
+
+  // 63. all_three_stripped: the multiline fixture has 3 stripped opclass refs.
+  expect(
+    'all_three_stripped: zero `public.<X>_ops` patterns remain in multiline output',
+    !/public"?\."?[A-Za-z_][A-Za-z0-9_]*_ops\b/.test(outMultiline),
+    `out=${outMultiline}`,
+  );
+
+  // 64. rewriteAll_chains_pass4: end-to-end pipeline includes the strip.
+  const fixture64 = [
+    'CREATE OR REPLACE FUNCTION "public"."anchor_p"() RETURNS "void"',
+    '    LANGUAGE "plpgsql"',
+    '    AS $$ BEGIN RETURN; END; $$;',
+    '',
+    '',
+    'CREATE TABLE IF NOT EXISTS "public"."t" ("id" "uuid" PRIMARY KEY, "content" "text");',
+    '',
+    '',
+    'CREATE INDEX "t_content_trgm" ON "public"."t" USING "gin" ("content" "public"."gin_trgm_ops");',
+    '',
+  ].join('\n');
+  const { result: out64 } = captureStderr(() => rewriteAll(fixture64));
+  expect(
+    'rewriteAll_chains_pass4: opclass qualifier stripped in combined output',
+    out64.includes('"gin_trgm_ops"') && !out64.includes('"public"."gin_trgm_ops"'),
+    `out=${out64.match(/.*gin_trgm_ops.*/)?.[0]}`,
+  );
+
+  // 65. rewriteAll_idempotent_with_pass4: end-to-end on its own output is a no-op.
+  const { result: out65a } = captureStderr(() => rewriteAll(fixture64));
+  const { result: out65b } = captureStderr(() => rewriteAll(out65a));
+  expect('rewriteAll_idempotent_with_pass4: rewriteAll(rewriteAll(x)) === rewriteAll(x)',
+    out65a === out65b);
+
+  // 66. preserves_function_body_text: opclass references INSIDE function bodies
+  //     are unusual but should also be safely stripped (the regex doesn't
+  //     distinguish; the rewrite is still semantically correct).
+  const fixture66 = [
+    'CREATE OR REPLACE FUNCTION "public"."f"() RETURNS "void" LANGUAGE plpgsql AS $$',
+    'BEGIN',
+    '  -- Comment mentioning "public"."gin_trgm_ops" should also strip — fine.',
+    '  EXECUTE \'CREATE INDEX foo ON t USING gin (col "public"."gin_trgm_ops")\';',
+    'END;',
+    '$$;',
+  ].join('\n');
+  const out66 = stripExtensionSchemaQualifiers(fixture66);
+  expect(
+    'preserves_function_body_text: dynamic SQL inside function bodies also stripped',
+    !out66.includes('"public"."gin_trgm_ops"'),
+    `out has qualified ref: ${out66.includes('"public"."gin_trgm_ops"')}`,
+  );
+
+  // 67. ci_run_25269714566_smoke: the exact failing CREATE INDEX statement from
+  //     the most recent dry-run (line 17692 of the sanitized baseline). After
+  //     pass 4, the qualifier is stripped and the index would create
+  //     successfully on a fresh Supabase local stack.
+  const fixture67 =
+    'CREATE INDEX "idx_rag_chunks_concept_trgm" ON "public"."rag_content_chunks" USING "gin" ("lower"("concept") "public"."gin_trgm_ops");';
+  const { result: out67 } = captureStderr(() => rewriteAll(fixture67));
+  expect(
+    'ci_run_25269714566_smoke: real failing statement is fixed by pass 4',
+    out67.includes('"gin_trgm_ops"') && !out67.includes('"public"."gin_trgm_ops"'),
+    `out=${out67}`,
   );
 
   process.stdout.write(`\nself-test: ${passed} passed, ${failed} failed\n`);
