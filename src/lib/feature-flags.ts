@@ -241,6 +241,7 @@ export const GOAL_ADAPTIVE_FLAGS = {
   GOAL_AWARE_FOXY: 'ff_goal_aware_foxy',
   GOAL_AWARE_SELECTION: 'ff_goal_aware_selection',
   GOAL_DAILY_PLAN: 'ff_goal_daily_plan',  // Phase 3
+  GOAL_AWARE_RAG: 'ff_goal_aware_rag',  // Phase 4
 } as const;
 
 /**
@@ -256,4 +257,5 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [GOAL_ADAPTIVE_FLAGS.GOAL_AWARE_FOXY]: false,
   [GOAL_ADAPTIVE_FLAGS.GOAL_AWARE_SELECTION]: false,
   [GOAL_ADAPTIVE_FLAGS.GOAL_DAILY_PLAN]: false,
+  [GOAL_ADAPTIVE_FLAGS.GOAL_AWARE_RAG]: false,
 } as const;
