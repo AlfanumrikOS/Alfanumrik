@@ -3,6 +3,11 @@ name: Deploy Staging — Alfanumrik
 on:
   push:
     branches: [develop, staging]
+  # Manual trigger so operators can re-run the staging deploy after
+  # infrastructure changes (e.g., schema-reproducibility cleanup, env-var
+  # rotation) without needing a code push to develop/staging. Mirrors the
+  # workflow_dispatch already on deploy-production.yml.
+  workflow_dispatch:
 
 concurrency:
   group: deploy-staging-${{ github.ref }}
