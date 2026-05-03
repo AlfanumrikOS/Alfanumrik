@@ -22,13 +22,19 @@ import * as path from 'path';
  */
 
 const MIGRATION_FILE = 'supabase/migrations/20260417700000_fix_student_id_rls_policies.sql';
+// Section 10 cleanup (2026-05-03): pre-baseline migrations were moved to
+// `supabase/migrations/_legacy/timestamped/`.
+const MIGRATION_FILE_LEGACY =
+  'supabase/migrations/_legacy/timestamped/20260417700000_fix_student_id_rls_policies.sql';
 
 function resolveMigrationPath(): string | null {
   const candidates = [
     path.resolve(process.cwd(), MIGRATION_FILE),
+    path.resolve(process.cwd(), MIGRATION_FILE_LEGACY),
     // Worktree parent resolution: tests may run from a git worktree where the
     // migration was authored but the outer repo has not yet picked it up.
     path.resolve(process.cwd(), '.claude/worktrees/compassionate-curie', MIGRATION_FILE),
+    path.resolve(process.cwd(), '.claude/worktrees/compassionate-curie', MIGRATION_FILE_LEGACY),
   ];
   for (const c of candidates) {
     if (fs.existsSync(c)) return c;

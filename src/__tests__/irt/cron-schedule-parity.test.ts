@@ -29,7 +29,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 // Resolve from the repo root rather than from the test file so this is
@@ -127,15 +127,14 @@ describe('REG-44: IRT calibration cron schedule parity', () => {
     // leaderboards / parent-digests Edge Function — it does NOT calibrate
     // IRT. If someone confuses the two and tries to "align" them, this
     // test fails and forces a re-read of the architecture.
-    const sql = readFileSync(
-      resolve(
-        REPO_ROOT,
-        'supabase',
-        'migrations',
-        '20260404000002_pg_cron_daily.sql',
-      ),
-      'utf8',
-    );
+    // Section 10 cleanup (2026-05-03): pre-baseline migrations were moved to
+    // `supabase/migrations/_legacy/timestamped/`. Search both locations.
+    const candidates = [
+      resolve(REPO_ROOT, 'supabase', 'migrations', '20260404000002_pg_cron_daily.sql'),
+      resolve(REPO_ROOT, 'supabase', 'migrations', '_legacy', 'timestamped', '20260404000002_pg_cron_daily.sql'),
+    ];
+    const migrationPath = candidates.find((p) => existsSync(p)) ?? candidates[0];
+    const sql = readFileSync(migrationPath, 'utf8');
     expect(sql).toMatch(/'30 18 \* \* \*'/);
     expect(sql).not.toMatch(/'50 2 \* \* \*'/);
     // The pg_cron job MUST NOT mention IRT — IRT lives in vercel.json only.

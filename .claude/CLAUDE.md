@@ -1,7 +1,7 @@
 # Alfanumrik Learning OS — Non-Negotiable Product Rules
 
 ## What This Is
-Indian K-12 EdTech platform (CBSE grades 6-12). Next.js 16 + Supabase + Razorpay. 753 source files, 265 SQL migrations, 29 Supabase Edge Functions, Flutter mobile app. Serves students, parents, teachers, and administrators.
+Indian K-12 EdTech platform (CBSE grades 6-12). Next.js 16 + Supabase + Razorpay. 753 source files, 1 baseline migration + 349 archived in `supabase/migrations/_legacy/timestamped/` (post Section 10 cleanup, 2026-05-03), 29 Supabase Edge Functions, Flutter mobile app. Serves students, parents, teachers, and administrators.
 
 ## Architecture Quick Reference
 
@@ -70,7 +70,7 @@ Round 2 audit promotions (atomic_plan_change atomicity, daily XP cap, Sentry cli
 | Parent portal | `src/app/parent/` (6 pages) |
 | Teacher portal | `src/app/teacher/` (8 pages) |
 | Notifications | `src/app/notifications/page.tsx`, daily-cron Edge Function |
-| Migrations | `supabase/migrations/` (265 files). **Schema reproducibility P0 fix runbook: `docs/runbooks/schema-reproducibility-fix.md`** — replaces the legacy chain with a pg_dump-derived idempotent baseline (`00000000000000_baseline_from_prod.sql`), pre-marked applied on prod and main-staging via `supabase migration repair` so the merge skips execution on those envs and only runs against fresh projects (CI live-DB tests, new staging, DR). |
+| Migrations | `supabase/migrations/` (post Section 10 cleanup, 2026-05-03: root contains 0 timestamped migrations until `capture-and-pr` workflow lands the baseline; the 349-file pre-baseline chain plus the original 10 pre-timestamp legacy files are archived under `supabase/migrations/_legacy/` and `_legacy/timestamped/`). **Schema reproducibility P0 fix runbook: `docs/runbooks/schema-reproducibility-fix.md`** — replaces the legacy chain with a pg_dump-derived idempotent baseline (`00000000000000_baseline_from_prod.sql`), pre-marked applied on prod and main-staging via `supabase migration repair` so the merge skips execution on those envs and only runs against fresh projects (CI live-DB tests, new staging, DR). Supabase CLI's `db push` only applies files at the immediate `supabase/migrations/` root, so `_legacy/` is skipped automatically on every deploy. |
 | CI/CD | `.github/workflows/ci.yml`, `deploy-production.yml`, `deploy-staging.yml` |
 | Mobile | `mobile/` (Flutter app) |
 | SEO/PWA | `src/app/sitemap.ts`, `public/manifest.json`, `public/sw.js`, `src/components/JsonLd.tsx` |

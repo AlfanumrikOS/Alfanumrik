@@ -66,10 +66,35 @@ const PHASE_1_4_MIGRATION_TIMESTAMPS = [
   '20260418120000', // super_admin_access_permission_seed
 ];
 
+// Section 10 cleanup (2026-05-03): pre-baseline timestamped migrations were
+// moved from `supabase/migrations/` to `supabase/migrations/_legacy/timestamped/`
+// in chore/migrations-move-legacy-to-subdir. Helper to search both roots so
+// presence checks remain valid before AND after the baseline-from-prod lands.
+function listMigrationFilesAcrossRoots(): { dirs: string[]; files: string[] } {
+  const roots = [
+    join(REPO_ROOT, 'supabase', 'migrations'),
+    join(REPO_ROOT, 'supabase', 'migrations', '_legacy', 'timestamped'),
+  ];
+  const dirs: string[] = [];
+  const files: string[] = [];
+  for (const dir of roots) {
+    if (!existsSync(dir)) continue;
+    dirs.push(dir);
+    for (const f of readdirSync(dir)) {
+      if (f.endsWith('.sql')) files.push(f);
+    }
+  }
+  return { dirs, files };
+}
+
 export function checkPhase14MigrationsPresent(): CheckResult {
-  const dir = join(REPO_ROOT, 'supabase', 'migrations');
-  if (!existsSync(dir)) return fail('phase1-4 migrations', `directory missing: ${dir}`);
-  const files = readdirSync(dir).filter((f) => f.endsWith('.sql'));
+  const { dirs, files } = listMigrationFilesAcrossRoots();
+  if (dirs.length === 0) {
+    return fail(
+      'phase1-4 migrations',
+      `directory missing: ${join(REPO_ROOT, 'supabase', 'migrations')}`,
+    );
+  }
   const missing: string[] = [];
   for (const ts of PHASE_1_4_MIGRATION_TIMESTAMPS) {
     if (!files.some((f) => f.startsWith(ts + '_'))) missing.push(ts);
@@ -202,16 +227,34 @@ export function checkRolloutSequenceRunbook(): CheckResult {
 }
 
 export function checkSuperAdminAccessMigration(): CheckResult {
-  const dir = join(REPO_ROOT, 'supabase', 'migrations');
-  if (!existsSync(dir)) return fail('super_admin.access migration', `directory missing: ${dir}`);
-  const files = readdirSync(dir);
-  const found = files.find((f) => /super_admin_access_permission_seed/i.test(f));
-  if (!found) return fail('super_admin.access migration', 'no migration named *super_admin_access_permission_seed*');
-  const src = readFileSync(join(dir, found), 'utf8');
+  // Searches both `supabase/migrations/` and `supabase/migrations/_legacy/timestamped/`
+  // (post-Section-10-cleanup, 2026-05-03).
+  const roots = [
+    join(REPO_ROOT, 'supabase', 'migrations'),
+    join(REPO_ROOT, 'supabase', 'migrations', '_legacy', 'timestamped'),
+  ];
+  let foundDir: string | null = null;
+  let foundFile: string | null = null;
+  for (const dir of roots) {
+    if (!existsSync(dir)) continue;
+    const f = readdirSync(dir).find((f) => /super_admin_access_permission_seed/i.test(f));
+    if (f) {
+      foundDir = dir;
+      foundFile = f;
+      break;
+    }
+  }
+  if (!foundFile || !foundDir) {
+    return fail(
+      'super_admin.access migration',
+      'no migration named *super_admin_access_permission_seed*',
+    );
+  }
+  const src = readFileSync(join(foundDir, foundFile), 'utf8');
   if (!/'super_admin\.access'/.test(src)) {
     return fail('super_admin.access migration', 'migration found but does not reference permission code');
   }
-  return ok('super_admin.access migration', found);
+  return ok('super_admin.access migration', foundFile);
 }
 
 export function checkPostHandlers(): CheckResult {

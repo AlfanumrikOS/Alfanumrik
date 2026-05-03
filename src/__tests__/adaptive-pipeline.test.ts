@@ -75,22 +75,33 @@ describe('Adaptive Pipeline Integrity', () => {
   // 4. Server-side RPC wiring (submit_quiz_results -> update_learner_state_post_quiz)
   // ---------------------------------------------------------------
   it('submit_quiz_results RPC must call update_learner_state_post_quiz', () => {
-    // Check the latest migration that defines submit_quiz_results
-    const migrationsDir = path.resolve('supabase/migrations');
-    const files = fs.readdirSync(migrationsDir).filter(f => f.endsWith('.sql')).sort();
+    // Section 10 cleanup (2026-05-03): pre-baseline migrations were moved
+    // to `supabase/migrations/_legacy/timestamped/`. Search both roots.
+    const migrationsDirs = [
+      path.resolve('supabase/migrations'),
+      path.resolve('supabase/migrations/_legacy/timestamped'),
+    ].filter((d) => fs.existsSync(d));
 
-    // Find migrations that contain submit_quiz_results
+    // Find latest migration (across both dirs) that contains submit_quiz_results
     let latestMigrationWithSubmitQuiz = '';
-    for (const file of files) {
-      const content = fs.readFileSync(path.join(migrationsDir, file), 'utf-8');
-      if (content.includes('CREATE OR REPLACE FUNCTION submit_quiz_results')) {
-        latestMigrationWithSubmitQuiz = file;
+    let latestMigrationDir = '';
+    for (const migrationsDir of migrationsDirs) {
+      const files = fs.readdirSync(migrationsDir).filter(f => f.endsWith('.sql')).sort();
+      for (const file of files) {
+        const content = fs.readFileSync(path.join(migrationsDir, file), 'utf-8');
+        if (content.includes('CREATE OR REPLACE FUNCTION submit_quiz_results')) {
+          // Track the lexicographically latest file across all dirs.
+          if (file > latestMigrationWithSubmitQuiz) {
+            latestMigrationWithSubmitQuiz = file;
+            latestMigrationDir = migrationsDir;
+          }
+        }
       }
     }
 
     expect(latestMigrationWithSubmitQuiz).not.toBe('');
     const migrationContent = fs.readFileSync(
-      path.join(migrationsDir, latestMigrationWithSubmitQuiz),
+      path.join(latestMigrationDir, latestMigrationWithSubmitQuiz),
       'utf-8'
     );
 
