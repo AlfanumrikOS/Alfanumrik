@@ -12,6 +12,26 @@
  * Review: assessment (curriculum scope, age-appropriateness)
  */
 
+import { buildExpandedPersona, type FoxyMode } from '@/lib/goals/goal-personas';
+import { isKnownGoalCode, type GoalCode } from '@/lib/goals/goal-profile';
+
+// Modes that the expanded persona builder recognizes. Any other mode value
+// (legacy template variations, future additions) falls through to the
+// legacy single-line goal section so we don't accidentally emit an
+// expanded persona keyed off a stale mode string.
+const EXPANDED_PERSONA_MODES = new Set<FoxyMode>([
+  'learn',
+  'explain',
+  'practice',
+  'revise',
+  'doubt',
+  'homework',
+]);
+
+function isExpandedPersonaMode(mode: string): mode is FoxyMode {
+  return EXPANDED_PERSONA_MODES.has(mode as FoxyMode);
+}
+
 // ─── Academic goal mapping ──────────────────────────────────────────────────
 
 const GOAL_PROMPT_MAP: Record<string, string> = {
@@ -56,6 +76,26 @@ export interface FoxySystemPromptParams {
   mode: string;           // learn | explain | practice | revise | doubt | homework
   ragContext: string;     // Pre-formatted RAG context string (or empty)
   academicGoal?: string | null;
+  /**
+   * Phase 1 — Goal-Adaptive Foxy persona.
+   *
+   * When `true` AND `academicGoal` is a known {@link GoalCode}, the legacy
+   * single-line `GOAL_PROMPT_MAP` entry is replaced by the multi-paragraph
+   * persona block from `buildExpandedPersona(academicGoal, mode)`. The
+   * `## Student's Academic Goal` section header is preserved so downstream
+   * template rendering and audit tooling still see the same anchor.
+   *
+   * When `false` (the default) OR when `academicGoal` is null/unknown,
+   * behavior is BYTE-IDENTICAL to the pre-Phase-1 builder. This is the
+   * safety contract that lets us ship the expanded persona behind the
+   * `ff_goal_aware_foxy` feature flag without disturbing the production
+   * code path until rollout.
+   *
+   * Defaults to `false`. The Next.js route at `src/app/api/foxy/route.ts`
+   * is the only caller that flips this to `true`, gated by
+   * `isFeatureEnabled('ff_goal_aware_foxy', ...)`.
+   */
+  useExpandedPersona?: boolean;
 }
 
 // ─── Builder ────────────────────────────────────────────────────────────────
@@ -67,14 +107,52 @@ export interface FoxySystemPromptParams {
  * and age-appropriate language constraints (P12).
  */
 export function buildFoxySystemPrompt(params: FoxySystemPromptParams): string {
-  const { grade, subject, board, chapter, mode, ragContext, academicGoal } =
-    params;
+  const {
+    grade,
+    subject,
+    board,
+    chapter,
+    mode,
+    ragContext,
+    academicGoal,
+    useExpandedPersona = false,
+  } = params;
 
   const chapterLabel = chapter ? `, Chapter: ${chapter}` : '';
   const modeInstruction = MODE_INSTRUCTIONS[mode] ?? MODE_INSTRUCTIONS.learn;
-  const goalSection = academicGoal
-    ? `\n## Student's Academic Goal\n${GOAL_PROMPT_MAP[academicGoal] ?? academicGoal}\nAdjust depth, pacing, and challenge level to match this goal.\n`
-    : '';
+
+  // Goal-section composition (Phase 1, founder-approved).
+  //
+  // Two code paths:
+  //   1. Default (`useExpandedPersona === false`): byte-identical to the
+  //      pre-Phase-1 builder. Renders the legacy single-line section for
+  //      ANY truthy `academicGoal` (with raw goal string as fallback when
+  //      the goal is not in `GOAL_PROMPT_MAP`). The snapshot test in
+  //      `foxy-system-goal-persona.test.ts` pins this exact output.
+  //   2. Expanded (`useExpandedPersona === true`): when the goal is a
+  //      known `GoalCode`, swap in the multi-paragraph persona block from
+  //      `buildExpandedPersona(...)`. Header `## Student's Academic Goal`
+  //      is preserved as the anchor. When the goal is null/unknown, emit
+  //      no goal section at all — we'd rather show no persona than an
+  //      "expanded" persona that fell back to the raw goal string.
+  let goalSection = '';
+  if (useExpandedPersona) {
+    if (
+      academicGoal &&
+      isKnownGoalCode(academicGoal) &&
+      isExpandedPersonaMode(mode)
+    ) {
+      const goalCode: GoalCode = academicGoal;
+      const expanded = buildExpandedPersona(goalCode, mode);
+      goalSection = `\n## Student's Academic Goal\n${expanded}\nAdjust depth, pacing, and challenge level to match this goal.\n`;
+    }
+    // else: null/unknown goal or unknown mode → no header. Conservative
+    // fallback so we never emit a degraded "expanded" persona.
+  } else if (academicGoal) {
+    // Legacy path — DO NOT modify without re-pinning the snapshot test.
+    goalSection = `\n## Student's Academic Goal\n${GOAL_PROMPT_MAP[academicGoal] ?? academicGoal}\nAdjust depth, pacing, and challenge level to match this goal.\n`;
+  }
+
   const ragSection = ragContext
     ? `\n## NCERT Reference Material\n${ragContext}\n`
     : '';
