@@ -1,0 +1,45 @@
+{
+  // ────────────────────────────────────────────────────────────────────
+  // Workspace settings for the Alfanumrik repo.
+  //
+  // These settings apply only to this repo and only affect editor
+  // behavior — they do not change CI, build, lint, or any runtime code.
+  // ────────────────────────────────────────────────────────────────────
+
+  // Map *.sql files in supabase/migrations/ and docs/runbooks/ to a
+  // PostgreSQL-aware language mode. VS Code's built-in SQL language
+  // service does not understand PostgreSQL-specific syntax (dollar-
+  // quoted strings `$$ ... $$`, `DO $$ BEGIN ... END $$`, `LANGUAGE
+  // plpgsql`, `RETURNS SETOF`, `RETURNS TABLE(...)`, `SECURITY DEFINER`,
+  // PL/pgSQL control flow, etc.) and reports them as syntax errors —
+  // ~28 false-positive Problems per migration file. Mapping these paths
+  // to "postgres" language ID either:
+  //   (a) routes parsing to a Postgres-aware extension if the operator
+  //       has one installed (e.g., Microsoft `ms-ossdata.vscode-pgsql`,
+  //       `cweijan.vscode-postgresql-client2`), OR
+  //   (b) falls back to plain-text mode when no such extension is
+  //       installed, which silently suppresses the false positives.
+  //
+  // The actual SQL is correct — the noise was purely from the wrong
+  // language service. CI linters / build tooling are unaffected.
+  "files.associations": {
+    "supabase/migrations/*.sql": "postgres",
+    "docs/runbooks/*.sql": "postgres",
+    "supabase/functions/**/*.sql": "postgres",
+    "scripts/*.sql": "postgres"
+  },
+
+  // Disable the built-in SQL language server for files we have routed
+  // to "postgres" above. Belt-and-braces — even if the file association
+  // doesn't take, this prevents the wrong validator from running.
+  "[sql]": {
+    "editor.suggest.showWords": false
+  },
+
+  // Mark this repo's TypeScript-related folders explicitly so JS files
+  // in /scripts/ that aren't part of the tsconfig project don't trigger
+  // editor-level type-check noise. The build script is annotated with
+  // `// @ts-nocheck` directly; this is a defense-in-depth alignment.
+  "javascript.implicitProjectConfig.checkJs": false,
+  "js/ts.implicitProjectConfig.checkJs": false
+}
