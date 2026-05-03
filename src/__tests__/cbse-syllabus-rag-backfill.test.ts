@@ -14,9 +14,17 @@ import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 
-const MIGRATION_PATH = path.resolve(
-  'supabase/migrations/20260428140000_backfill_cbse_syllabus_rag_status.sql'
-);
+// Section 10 cleanup (2026-05-03): pre-baseline migrations were moved from
+// `supabase/migrations/` to `supabase/migrations/_legacy/timestamped/`. Resolve
+// to whichever path exists so this test stays valid before AND after the
+// baseline-from-prod lands.
+const MIGRATION_PATH = (() => {
+  const candidates = [
+    path.resolve('supabase/migrations/20260428140000_backfill_cbse_syllabus_rag_status.sql'),
+    path.resolve('supabase/migrations/_legacy/timestamped/20260428140000_backfill_cbse_syllabus_rag_status.sql'),
+  ];
+  return candidates.find((p) => fs.existsSync(p)) ?? candidates[0];
+})();
 
 describe('cbse_syllabus rag_status backfill migration', () => {
   it('migration file exists at the expected path', () => {

@@ -25,7 +25,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { resolve } from 'path';
 import { XP_RULES } from '@/lib/xp-rules';
 
@@ -33,11 +33,18 @@ import { XP_RULES } from '@/lib/xp-rules';
 // 1. Parity assertion: XP_RULES.quiz_daily_cap === SQL migration literal
 // ─────────────────────────────────────────────────────────────────────
 
+// Section 10 cleanup (2026-05-03): pre-baseline migrations were moved to
+// `supabase/migrations/_legacy/timestamped/`. Helper to find them.
+function resolveMigration(name: string): string {
+  const candidates = [
+    resolve(process.cwd(), 'supabase/migrations', name),
+    resolve(process.cwd(), 'supabase/migrations/_legacy/timestamped', name),
+  ];
+  return candidates.find((p) => existsSync(p)) ?? candidates[0];
+}
+
 describe('xp daily cap: SQL migration parity with XP_RULES', () => {
-  const migrationPath = resolve(
-    process.cwd(),
-    'supabase/migrations/20260427000003_enforce_daily_xp_cap.sql',
-  );
+  const migrationPath = resolveMigration('20260427000003_enforce_daily_xp_cap.sql');
   const sql = readFileSync(migrationPath, 'utf8');
 
   it('XP_RULES.quiz_daily_cap is 200 (the published P2 cap)', () => {
@@ -97,10 +104,7 @@ describe('atomic_quiz_profile_update return shape (migration 20260427000003)', (
   });
 
   it('migration source declares jsonb_build_object with the documented keys', () => {
-    const migrationPath = resolve(
-      process.cwd(),
-      'supabase/migrations/20260427000003_enforce_daily_xp_cap.sql',
-    );
+    const migrationPath = resolveMigration('20260427000003_enforce_daily_xp_cap.sql');
     const sql = readFileSync(migrationPath, 'utf8');
     for (const key of [
       'success',
@@ -188,10 +192,7 @@ describe('clampXp: parity port of the SQL daily-cap clamp', () => {
 describe('xp bonuses: SQL submit_quiz_results literals match XP_RULES', () => {
   // If a future migration replaces this RPC, update the path AND keep
   // the parity assertions intact.
-  const migrationPath = resolve(
-    process.cwd(),
-    'supabase/migrations/20260418110000_fix_quiz_shuffle_scoring.sql',
-  );
+  const migrationPath = resolveMigration('20260418110000_fix_quiz_shuffle_scoring.sql');
   const sql = readFileSync(migrationPath, 'utf8');
 
   it('XP_RULES base values are the published P2 constants', () => {

@@ -38,10 +38,15 @@ const pipelineStreamPath = resolve(
   process.cwd(),
   'supabase/functions/grounded-answer/pipeline-stream.ts',
 );
-const streamingMigrationPath = resolve(
-  process.cwd(),
-  'supabase/migrations/20260429000000_p1_foxy_streaming_flag.sql',
-);
+// Section 10 cleanup (2026-05-03): pre-baseline migrations were moved to
+// `supabase/migrations/_legacy/timestamped/`. Search both locations.
+const streamingMigrationPath = (() => {
+  const candidates = [
+    resolve(process.cwd(), 'supabase/migrations/20260429000000_p1_foxy_streaming_flag.sql'),
+    resolve(process.cwd(), 'supabase/migrations/_legacy/timestamped/20260429000000_p1_foxy_streaming_flag.sql'),
+  ];
+  return candidates.find((p) => existsSync(p)) ?? candidates[0];
+})();
 
 const pipelineSrc = readFileSync(pipelinePath, 'utf8');
 const pipelineStreamSrc = readFileSync(pipelineStreamPath, 'utf8');
