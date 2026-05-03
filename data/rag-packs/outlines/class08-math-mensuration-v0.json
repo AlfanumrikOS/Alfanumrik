@@ -1,0 +1,10 @@
+{
+  "pack_id": "generated-class08-math-mensuration-v0",
+  "pack_version": "v0",
+  "notes": "Mensuration — perimeter, area, surface area, volume of standard solids. Formula-heavy chapter. 3 items, 3 chunks each.",
+  "items": [
+    { "subject": "math", "grade": "8", "chapter_number": 11, "chapter_title": "Mensuration", "topic": "area of trapezium and general quadrilateral", "concept": "decomposition into triangles", "count": 3 },
+    { "subject": "math", "grade": "8", "chapter_number": 11, "chapter_title": "Mensuration", "topic": "surface area of cuboid cube cylinder", "concept": "lateral vs total surface area", "count": 3 },
+    { "subject": "math", "grade": "8", "chapter_number": 11, "chapter_title": "Mensuration", "topic": "volume of cuboid cube cylinder", "concept": "unit conversions and capacity", "count": 3 }
+  ]
+}

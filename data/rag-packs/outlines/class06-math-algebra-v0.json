@@ -1,0 +1,10 @@
+{
+  "pack_id": "generated-class06-math-algebra-v0",
+  "pack_version": "v0",
+  "notes": "Algebra basics — variables, expressions, simple equations. Common thin area for new learners. 3 items, 3 chunks each.",
+  "items": [
+    { "subject": "math", "grade": "6", "chapter_number": 11, "chapter_title": "Algebra", "topic": "variables and expressions", "concept": "what a variable means and how expressions are built", "count": 3 },
+    { "subject": "math", "grade": "6", "chapter_number": 11, "chapter_title": "Algebra", "topic": "translating word problems into expressions", "concept": "from English to algebraic notation", "count": 3 },
+    { "subject": "math", "grade": "6", "chapter_number": 11, "chapter_title": "Algebra", "topic": "solving simple linear equations", "concept": "balance method for one-step and two-step equations", "count": 3 }
+  ]
+}

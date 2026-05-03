@@ -1,0 +1,10 @@
+{
+  "pack_id": "generated-class10-science-electricity-v0",
+  "pack_version": "v0",
+  "notes": "Electricity — Ohm's law, series and parallel circuits, power. Frequently tested in board exams. 3 items, 4 chunks each.",
+  "items": [
+    { "subject": "science", "grade": "10", "chapter_number": 12, "chapter_title": "Electricity", "topic": "Ohm's law and resistance", "concept": "V = IR; resistance depends on length, area, resistivity", "count": 4 },
+    { "subject": "science", "grade": "10", "chapter_number": 12, "chapter_title": "Electricity", "topic": "resistors in series and parallel", "concept": "R_series sums; 1/R_parallel sums of reciprocals", "count": 4 },
+    { "subject": "science", "grade": "10", "chapter_number": 12, "chapter_title": "Electricity", "topic": "electrical power and heating effect", "concept": "P = VI = I^2 R = V^2/R; H = I^2 R t (Joule's heating)", "count": 4 }
+  ]
+}
