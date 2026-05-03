@@ -27,15 +27,34 @@
  * Body: { message, subject, grade, chapter?, board?, sessionId?, mode? }
  * Response (success):
  *   { success, response, sessionId, quotaRemaining, tokensUsed,
- *     confidence?, groundingStatus, traceId, upgradePrompt? }
+ *     confidence?, groundingStatus, traceId, upgradePrompt?,
+ *     structured? }
  *   NOTE (Phase 0): NCERT `sources` and `diagrams` are intentionally NOT
  *   exposed on the wire. Retrieval still happens server-side, citations
  *   are injected into the system prompt, and `sources` is still persisted
  *   to foxy_chat_messages.sources for analytics/debug — but never echoed
  *   to the client.
+ *
+ *   `structured` (FoxyResponse, see src/lib/foxy/schema.ts) is the new
+ *   block-shape rendering of the answer. Present ONLY when the upstream
+ *   grounded-answer service returned a valid structured payload AND it
+ *   passed defense-in-depth validation at this API boundary. If absent
+ *   (legacy fallback path, kill-switch path, malformed upstream payload,
+ *   or upstream that hasn't shipped structured yet) the client falls
+ *   back to the legacy `response` string. The `response` (denormalized
+ *   text) is ALWAYS populated so old clients keep working.
  * Response (abstain / hard-abstain):
  *   { success: true, response: '', groundingStatus: 'hard-abstain',
  *     abstainReason, suggestedAlternatives, traceId }
+ *
+ * GET /api/foxy?sessionId=<uuid>
+ * Response:
+ *   { success: true, session, messages: Array<{
+ *       id, role, content, structured, tokens_used, created_at }> }
+ *   `structured` (FoxyResponse|null) is the persisted block-shape rendering
+ *   for assistant rows. NULL for user rows (DB CHECK constraint) and for
+ *   legacy assistant rows persisted before the structured-output migration;
+ *   the chat page falls back to `content` in that case.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -47,6 +66,8 @@ import { validateSubjectWrite } from '@/lib/subjects';
 import { callGroundedAnswer, callGroundedAnswerStream, type GroundedRequest, type Citation, type SuggestedAlternative, type AbstainReason } from '@/lib/ai/grounded-client';
 import { PER_PLAN_TIMEOUT_MS, SOFT_CONFIDENCE_BANNER_THRESHOLD } from '@/lib/grounding-config';
 import { classifyIntent, routeIntent } from '@/lib/ai';
+import { FoxyResponseSchema, type FoxyResponse } from '@/lib/foxy/schema';
+import { denormalizeFoxyResponse } from '@/lib/foxy/denormalize';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -177,6 +198,57 @@ const EMPTY_COGNITIVE_CONTEXT: CognitiveContext = {
   loSkills: [],
   recentMisconceptions: [],
 };
+
+// ─── Helper: structured-payload extraction (defense-in-depth) ───────────────
+//
+// The grounded-answer Edge Function may include a `structured` field on
+// successful responses (a `FoxyResponse` per src/lib/foxy/schema.ts). The
+// service-side already validates the payload, but we re-validate at this API
+// boundary because the JSONB column we are about to write is trusted by every
+// downstream reader (renderer, analytics, parent portal). A bug on the Edge
+// Function side must NOT poison the database.
+//
+// Behavior:
+//   - upstream returned no `structured` field          → returns null (legacy path)
+//   - upstream returned a valid FoxyResponse           → returns the parsed value
+//   - upstream returned a malformed `structured` field → returns null AND logs
+//     `foxy.structured.invalid_payload` so ops can detect Edge Function drift.
+//
+// The route never throws on a bad structured payload — the legacy `response`
+// (string) is always populated so the student still sees an answer.
+function extractValidatedStructured(
+  upstream: unknown,
+  ctx: { traceId: string; studentId: string; subject: string; grade: string },
+): FoxyResponse | null {
+  // Read defensively: until grounded-client.ts adds the field to its type,
+  // TypeScript doesn't know about it. The runtime shape is what matters.
+  const candidate = (upstream as { structured?: unknown } | null | undefined)
+    ?.structured;
+  if (candidate === undefined || candidate === null) {
+    return null; // legacy / pre-structured upstream — not an error
+  }
+  const parsed = FoxyResponseSchema.safeParse(candidate);
+  if (!parsed.success) {
+    // P12 defense-in-depth: never write malformed JSON into the JSONB column.
+    // We log the issue but continue — the legacy `response` string still
+    // populates `content`, so the student turn is preserved.
+    logger.error('foxy.structured.invalid_payload', {
+      traceId: ctx.traceId,
+      // Intentionally NOT logging studentId at error-level (P13). Subject +
+      // grade are non-PII context for ops triage.
+      subject: ctx.subject,
+      grade: ctx.grade,
+      // First 3 issues only, to bound log size.
+      issueCount: parsed.error.issues.length,
+      issuePreview: parsed.error.issues.slice(0, 3).map((i) => ({
+        path: i.path.join('.'),
+        message: i.message,
+      })),
+    });
+    return null;
+  }
+  return parsed.data;
+}
 
 // ─── Helper: error response ───────────────────────────────────────────────────
 
@@ -1627,6 +1699,27 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
       description: `NCERT ${subject} ${c.chapter_title || ''}`.trim(),
     }));
 
+  // ─── Extract + validate structured payload (defense-in-depth) ──────────
+  // The grounded-answer service may return a structured FoxyResponse alongside
+  // the plain `answer` string. We validate at the API boundary so the JSONB
+  // column we are about to write cannot be poisoned by an upstream bug. If
+  // validation fails the helper returns null and logs once; the legacy
+  // `answer` string is still persisted in `content` so the turn is preserved.
+  const structured = extractValidatedStructured(grounded, {
+    traceId: grounded.trace_id,
+    studentId,
+    subject,
+    grade,
+  });
+
+  // When `structured` is present, the canonical assistant text is the
+  // denormalized rendering (title + blocks → flat string with `$$ ... $$`
+  // wrappers around math). When absent (legacy/kill-switch/malformed), keep
+  // the existing behavior of storing the raw `answer` string.
+  const assistantContent = structured
+    ? denormalizeFoxyResponse(structured)
+    : grounded.answer;
+
   // Persist both turns (non-fatal — response already generated)
   const now = new Date().toISOString();
   try {
@@ -1644,7 +1737,11 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         session_id: resolvedSessionId,
         student_id: studentId,
         role: 'assistant',
-        content: grounded.answer,
+        content: assistantContent,
+        // CHECK constraint `structured_role_check` permits structured only on
+        // assistant rows; the column is nullable so legacy/fallback writes
+        // explicitly null. Migration: 20260430010000_foxy_chat_messages_add_structured.
+        structured: structured ?? null,
         sources: sources.length > 0 ? sources : null,
         tokens_used: grounded.meta.tokens_used,
         created_at: new Date(Date.now() + 1).toISOString(),
@@ -1702,6 +1799,12 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
       revisionDueCount: cognitiveCtx.revisionDue.length,
       cmeAction: cognitiveCtx.nextAction?.actionType ?? null,
       flow: 'grounded-answer',
+      // Adoption telemetry for the structured-rendering rollout. `true` only
+      // when the upstream returned a structured payload AND it passed the
+      // boundary validation. Helps ops measure (a) Edge Function rollout
+      // progress and (b) malformed-payload rate (gap between
+      // upstream-presence and persisted-presence).
+      structured_present: structured !== null,
     },
   });
 
@@ -1736,6 +1839,10 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
 
   return NextResponse.json({
     success: true,
+    // `response` stays as the legacy plain string for backward compat. New
+    // clients should prefer `structured` when present and fall back to
+    // `response` only when `structured` is absent (legacy/kill-switch/
+    // upstream-without-structured/malformed-payload paths).
     response: grounded.answer,
     sessionId: resolvedSessionId,
     quotaRemaining: remaining,
@@ -1746,6 +1853,10 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     citationsCount,
     traceId: grounded.trace_id,
     ...(upgradePrompt ? { upgradePrompt } : {}),
+    // Only include `structured` when the helper produced a validated payload.
+    // Omitting (vs. including null) keeps the wire shape backward-compatible
+    // with clients that haven't been updated to read this field yet.
+    ...(structured ? { structured } : {}),
   });
 }
 
@@ -2012,9 +2123,16 @@ export async function GET(request: NextRequest): Promise<Response> {
   // Phase 0: do NOT return persisted `sources` to the client. The column
   // remains populated server-side for analytics/debug, but the GET handler
   // intentionally excludes it from the SELECT so it cannot leak.
+  //
+  // Phase 2 (structured rendering): include the `structured` JSONB column so
+  // the chat page can re-render historical assistant turns with the structured
+  // renderer on session resume. NULL for legacy assistant rows persisted
+  // before the structured-output migration; the renderer falls back to
+  // `content` (TEXT) in that case. User rows are NULL by DB CHECK constraint
+  // (`structured_role_check` in migration 20260430010000).
   const { data: messages } = await supabaseAdmin
     .from('foxy_chat_messages')
-    .select('id, role, content, tokens_used, created_at')
+    .select('id, role, content, structured, tokens_used, created_at')
     .eq('session_id', sessionId)
     .order('created_at', { ascending: true });
 
