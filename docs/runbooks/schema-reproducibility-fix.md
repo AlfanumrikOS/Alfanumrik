@@ -828,26 +828,56 @@ migrations stack on top.
 
 ---
 
-## 10. Cleanup (out of scope; future PR)
+## 10. Cleanup (executed 2026-05-03 in `chore/migrations-move-legacy-to-subdir` — pre-merge of baseline)
 
-Not part of this runbook. Track as a separate ticket once the baseline has
-been live for **at least 7 days** with no rollback:
+**Status: COMPLETED pre-merge of `capture-and-pr`.** This section originally
+deferred cleanup until the baseline had been live for 7 days. That plan was
+revised when `dry-run-staging` (CI run 25271011508) revealed the legacy chain
+was already provably broken — replaying it on top of the baseline surfaced
+internal drift (e.g., `20260322200702_add_missing_indexes_and_triggers.sql`
+references `topic_mastery.topic` which doesn't exist at that point in the
+chain). Production deploys had been red for 5+ days (16+ consecutive
+`deploy-production` runs), and Supabase Preview branch migrations were also
+failing. The CEO authorized full Option B closure: move the entire
+pre-baseline chain to `_legacy/timestamped/` immediately.
 
-- Delete `supabase/migrations/_legacy/` directory (the pre-timestamp `000_*`
-  to `008_*` files). They are superseded by the baseline.
-- Delete or empty the 9 timestamp-format stub files (each is just a comment
-  pointing back to legacy). Identify them with:
-  ```bash
-  for f in supabase/migrations/2026*.sql; do
-    if [ "$(grep -cE '^[^-]' "$f")" -lt 5 ]; then echo "$f"; fi
-  done
-  ```
-- Remove any documentation that points at the legacy chain as authoritative.
+What was done in `chore/migrations-move-legacy-to-subdir`:
 
-> **Why deferred**: keeping `_legacy/` and the stubs around for a week gives
-> us a safety net if the baseline turns out to be missing something subtle.
-> Once Integration Tests (live DB) has been green for 7 days against multiple
-> PRs, the legacy chain is provably dead and can be pruned.
+- Created `supabase/migrations/_legacy/timestamped/`.
+- `git mv` of all 349 `supabase/migrations/2026*.sql` files into
+  `_legacy/timestamped/` (preserves history; diff shows pure renames).
+- Pre-existing `supabase/migrations/_legacy/000_*` to `008_*` files
+  (pre-timestamp legacy) left untouched alongside the new
+  `timestamped/` subdirectory.
+- The 9 timestamp-format stub files (each `< 5` non-comment lines) were
+  swept up by the same `git mv` and now live under `_legacy/timestamped/`.
+- Updated `.github/workflows/schema-reproducibility-fix.yml` comment at the
+  `Apply baseline + all repo migrations to local Supabase` step to reflect
+  that fresh-DB bootstrap is now baseline-only.
+- Updated `.claude/CLAUDE.md` migration count claim and key-file map entry.
+
+What `db push` does post-cleanup:
+
+- Supabase CLI's `db push` operates only on `supabase/migrations/*.sql` at the
+  immediate root — subdirectories like `_legacy/` and `_legacy/timestamped/`
+  are skipped automatically. No workflow change was required.
+- Until `capture-and-pr` lands `00000000000000_baseline_from_prod.sql` at
+  root, `db push` reports "no pending migrations" because the root is empty.
+- After the baseline lands and is pre-marked applied on prod and
+  main-staging, `db push` is a no-op on those envs and bootstraps fresh
+  projects (CI live-DB tests, new staging, DR) from the baseline alone.
+
+Rationale for early cleanup (vs. the original 7-day defer):
+
+- The legacy chain was provably broken — `dry-run-staging` failed
+  reproducibly on internal drift, not on baseline errors.
+- Keeping a broken chain at root continued to break Supabase Preview and
+  Integration Tests (live DB) for every PR, slowing down all engineering.
+- Production deploys had been failing for 5+ days. The chain at root was
+  the active blocker; clearing it unblocks `deploy-production` immediately
+  while `capture-and-pr` lands the baseline.
+- Files were moved (not deleted), so the historical reference is preserved
+  in `_legacy/` exactly as the original 7-day-defer plan intended.
 
 ---
 
@@ -952,7 +982,7 @@ The workflow does not cover:
 - Debugging *why* a `sed` / `perl` transform produced unexpected output (use Section 2 to step through the transforms by hand against the workflow's uploaded artifact).
 - Compensating-migration authoring when a fresh project bootstrap reveals an object missing from the baseline (Section 9.2).
 - Rolling back the pre-mark row outside the workflow (Section 9.1 — the manual `DELETE` against `supabase_migrations.schema_migrations` is the prescribed recovery).
-- Cleaning up `_legacy/` and stub migrations after the baseline has been live for 7 days (Section 10 — explicitly out of scope for the workflow).
+- Cleaning up `_legacy/` and stub migrations after the baseline has been live for 7 days (Section 10 — completed pre-merge in `chore/migrations-move-legacy-to-subdir` on 2026-05-03; the chain is now archived at `supabase/migrations/_legacy/timestamped/`).
 
 For any of those, drop back to the relevant section above. Section 0
 (prerequisites) lists the tools you'll need installed locally.

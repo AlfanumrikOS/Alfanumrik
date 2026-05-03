@@ -449,13 +449,17 @@ jobs:
           rm -rf supabase/migrations
           mkdir -p supabase/migrations
           cp -R "${GITHUB_WORKSPACE}/supabase/migrations/." supabase/migrations/
-          # Drop any leftover _legacy directory — `supabase db reset` will only
-          # apply the canonical timestamped files.
+          # Drop the entire _legacy directory (pre-timestamp 000-008 + the
+          # 2026-* timestamped chain moved here in chore/migrations-move-legacy-to-subdir).
+          # After Section 10 cleanup (2026-05-03), the canonical chain is the
+          # baseline alone — the legacy chain is provably broken (see
+          # docs/runbooks/schema-reproducibility-fix.md Section 10) and is
+          # retained only as a historical reference.
           rm -rf supabase/migrations/_legacy
           cp "$BASELINE_PATH" "supabase/migrations/${BASELINE_FILENAME}"
 
           MIGRATION_COUNT=$(ls supabase/migrations/*.sql | wc -l)
-          echo "Applying baseline + $((MIGRATION_COUNT - 1)) migrations to local DB."
+          echo "Applying baseline + $((MIGRATION_COUNT - 1)) post-baseline migrations to local DB."
           supabase db reset --workdir . --no-seed
           echo "Local db reset succeeded — exit 0."
 
