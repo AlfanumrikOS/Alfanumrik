@@ -35,6 +35,8 @@ on:
           - capture-and-pr
           - pre-mark-staging
           - pre-mark-prod
+          - repair-legacy-staging
+          - repair-legacy-prod
           - verify
 
 concurrency:
@@ -941,6 +943,140 @@ jobs:
             echo "| Mutated prod metadata | YES (1 row) |"
             echo "| Mutated staging metadata | NO |"
             echo "| Next step | Run \`step=verify\` to confirm zero pending migrations |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ──────────────────────────────────────────────────────────────────────
+  # PHASE 4b — repair-legacy-staging (mark all moved migrations reverted)
+  #
+  # After Section 10 cleanup (#485 moved 349 pre-baseline migrations to
+  # supabase/migrations/_legacy/timestamped/), the local repo no longer has
+  # those files at root. Supabase CLI's `db push --include-all` strict-checks
+  # local-vs-remote and fails with:
+  #   "Remote migration versions not found in local migrations directory."
+  # The CLI's documented fix is `migration repair --status reverted <list>`
+  # which marks those rows as not-applied-locally. Schema is unchanged
+  # (the SQL was already executed historically); only metadata is updated.
+  # Future `db push` then sees only baseline (pre-marked applied) + any
+  # post-baseline migrations as relevant.
+  #
+  # Idempotent: re-running marks already-reverted rows as reverted again
+  # (no-op in CLI behavior).
+  # ──────────────────────────────────────────────────────────────────────
+  repair-legacy-staging:
+    name: Repair legacy migrations as reverted (staging)
+    if: ${{ inputs.step == 'repair-legacy-staging' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Bulk repair --status reverted on every legacy timestamp
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_STAGING_DB_PASSWORD }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_STAGING_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+
+          # Extract 14-digit timestamps from _legacy/timestamped/*.sql filenames.
+          LEGACY_DIR="supabase/migrations/_legacy/timestamped"
+          if [ ! -d "$LEGACY_DIR" ]; then
+            echo "::error::$LEGACY_DIR not found — Section 10 cleanup not applied?"
+            exit 1
+          fi
+
+          TIMESTAMPS=$(find "$LEGACY_DIR" -maxdepth 1 -name '[0-9]*.sql' -printf '%f
+'             | sed -E 's/^([0-9]{14})_.*$//'             | sort -u)
+
+          COUNT=$(echo "$TIMESTAMPS" | wc -l)
+          echo "Found $COUNT legacy timestamps to mark reverted on staging."
+
+          # CLI accepts space-separated list. Batch in chunks of 50 to avoid
+          # any argv length limits.
+          echo "$TIMESTAMPS" | xargs -n 50 supabase migration repair --status reverted
+
+          # Confirm via post-list: there should be NO rows where Local is empty
+          # AND Remote has a 14-digit timestamp (those would be remote-only
+          # legacy migrations still confusing db push).
+          POST_LIST=$(supabase migration list --linked 2>&1 || true)
+          REMOTE_ONLY=$(echo "$POST_LIST" | grep -cE '^[[:space:]]*\|[[:space:]]*[0-9]{14}[[:space:]]*\|' || echo 0)
+          echo "Remote-only legacy rows after repair: $REMOTE_ONLY"
+
+          {
+            echo "## Phase: repair-legacy-staging"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Timestamps marked reverted | $COUNT |"
+            echo "| Remote-only legacy rows after repair | $REMOTE_ONLY |"
+            echo "| Schema mutated | NO (metadata only) |"
+            echo "| Next step | run \`step=repair-legacy-prod\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ──────────────────────────────────────────────────────────────────────
+  # PHASE 4c — repair-legacy-prod (same as 4b, against prod)
+  # 30s safety delay before mutation so the operator can cancel.
+  # ──────────────────────────────────────────────────────────────────────
+  repair-legacy-prod:
+    name: Repair legacy migrations as reverted (prod)
+    if: ${{ inputs.step == 'repair-legacy-prod' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: 30s cancellation window
+        run: |
+          echo "Sleeping 30s. Cancel this run now if anything looks wrong."
+          sleep 30
+
+      - name: Bulk repair --status reverted on every legacy timestamp
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+
+          LEGACY_DIR="supabase/migrations/_legacy/timestamped"
+          if [ ! -d "$LEGACY_DIR" ]; then
+            echo "::error::$LEGACY_DIR not found — Section 10 cleanup not applied?"
+            exit 1
+          fi
+
+          TIMESTAMPS=$(find "$LEGACY_DIR" -maxdepth 1 -name '[0-9]*.sql' -printf '%f
+'             | sed -E 's/^([0-9]{14})_.*$//'             | sort -u)
+
+          COUNT=$(echo "$TIMESTAMPS" | wc -l)
+          echo "Found $COUNT legacy timestamps to mark reverted on prod."
+
+          echo "$TIMESTAMPS" | xargs -n 50 supabase migration repair --status reverted
+
+          POST_LIST=$(supabase migration list --linked 2>&1 || true)
+          REMOTE_ONLY=$(echo "$POST_LIST" | grep -cE '^[[:space:]]*\|[[:space:]]*[0-9]{14}[[:space:]]*\|' || echo 0)
+          echo "Remote-only legacy rows after repair: $REMOTE_ONLY"
+
+          {
+            echo "## Phase: repair-legacy-prod"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Timestamps marked reverted | $COUNT |"
+            echo "| Remote-only legacy rows after repair | $REMOTE_ONLY |"
+            echo "| Schema mutated | NO (metadata only) |"
+            echo "| Next step | re-run \`step=verify\` and trigger deploy-production |"
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ──────────────────────────────────────────────────────────────────────
