@@ -181,7 +181,7 @@ jobs:
           sed -E 's/^CREATE EXTENSION ([^ ;]+);$/CREATE EXTENSION IF NOT EXISTS \1;/' \
             baseline.step6.sql > baseline.step7.sql
 
-          # Step 3b — ensure pgvector lives in public schema. Production has
+          # Step 3b — ensure required extensions live in public schema. Prod has
           # `vector` installed in `public` (legacy default), so the prod dump
           # references `public.vector(N)` column types and `public.vector_cosine_ops`
           # opclasses. But `supabase db dump --schema public` does NOT emit any
@@ -203,8 +203,9 @@ jobs:
           # — it does NOT attempt to move the extension).
           {
             echo "-- Injected by schema-reproducibility-fix.yml (Step 3b):"
-            echo "-- ensure pgvector lives in public schema for fresh envs."
+            echo "-- ensure required extensions live in public schema for fresh envs."
             echo "CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;"
+            echo "CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;"
             echo ""
             cat baseline.step7.sql
           } > baseline.step7b.sql
