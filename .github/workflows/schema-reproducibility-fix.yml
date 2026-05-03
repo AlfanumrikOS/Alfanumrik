@@ -252,7 +252,7 @@ jobs:
           awk 'BEGIN{blank=0} /^$/{blank++; if (blank<=2) print; next} {blank=0; print}' \
             baseline.step11.sql > baseline.step12.sql
 
-          # Step 8 — three-pass rewrite to make pg_dump output replayable.
+          # Step 8 — four-pass rewrite to make pg_dump output replayable.
           #
           # pg_dump emits objects in dependency-aware order and relies on
           # `SET check_function_bodies = false` so PL/pgSQL function bodies
@@ -264,8 +264,15 @@ jobs:
           # Either case fails on a fresh replay if the referenced object has
           # not yet been emitted.
           #
-          # The script `scripts/reorder-baseline.mjs` runs three passes that
-          # together eliminate both failure modes:
+          # A separate failure class affects schema-qualified operator-class
+          # references (`public.gin_trgm_ops`, `public.vector_cosine_ops`):
+          # production has the owning extension installed in `public`, but
+          # Supabase local preinstalls `pg_trgm` in `extensions`, so the
+          # qualified reference fails to resolve. CI run 25269714566 tripped
+          # on this exact case (see Pass 4 below).
+          #
+          # The script `scripts/reorder-baseline.mjs` runs four passes that
+          # together eliminate every failure mode we have observed:
           #
           #   Pass 1 (%ROWTYPE → RECORD): token-swap rewrite of every
           #     `<schema>.<table>%ROWTYPE` and unqualified `<table>%ROWTYPE`
@@ -285,6 +292,13 @@ jobs:
           #     Functions whose bodies don't fit the conversion shape are
           #     left as `LANGUAGE sql` (a small safety net).
           #
+          #   Pass 4 (strip `public.` from operator-class refs): rewrites
+          #     `"public"."<X>_ops"` → `"<X>_ops"` inside CREATE INDEX
+          #     `USING <method> (...)` specs. Operator classes resolve via
+          #     `search_path`; the unqualified name finds the opclass whether
+          #     the owning extension lives in `public` (prod) or `extensions`
+          #     (Supabase local). Strict 1:1 token swap; line count unchanged.
+          #
           # We do NOT bucket-reorder top-level statements; pg_dump's natural
           # --schema-only ordering is preserved outside the targeted rewrites.
           # Earlier iterations of this script bucketed every top-level
@@ -296,15 +310,15 @@ jobs:
           # The script is checked into the repo at scripts/reorder-baseline.mjs
           # and ships with self-tests (`node scripts/reorder-baseline.mjs --self-test`).
           # It is idempotent: running it on its own output is a no-op (no
-          # `%ROWTYPE` strings and no convertible `LANGUAGE sql` blocks
-          # remain after the first run).
+          # `%ROWTYPE` strings, no convertible `LANGUAGE sql` blocks, and no
+          # `"public"."*_ops"` qualifier shapes remain after the first run).
           node "${GITHUB_WORKSPACE}/scripts/reorder-baseline.mjs" \
             --input baseline.step12.sql \
             --output baseline.step13.sql
 
           # Sanity check: the rewrite has bounded line-count growth.
           #
-          # The script `scripts/reorder-baseline.mjs` runs three passes:
+          # The script `scripts/reorder-baseline.mjs` runs four passes:
           #   - Pass 1 (%ROWTYPE → RECORD): 1:1 token swap, no line change.
           #   - Pass 2 (LANGUAGE sql reorder + COMMENT relocation): permutes
           #     blocks, line count preserved.
@@ -312,14 +326,17 @@ jobs:
           #     each converted function body in BEGIN/RETURN/END;, legitimately
           #     adding ~2-3 lines per converted function. With ~36 converted
           #     functions in the prod fixture, the observed delta is ~88 lines.
+          #   - Pass 4 (strip public. on opclass refs): 1:1 token swap, no
+          #     line change.
           #
           # Earlier this assertion required a strict 1:1 line count (Pass 1
           # only). That broke after PR #481 added Pass 3. The new bounded
           # check accepts non-negative growth up to +500 lines (generous
           # upper bound; real growth tracks the count of LANGUAGE sql
-          # functions in the dump). A negative delta or one above +500
-          # signals the script ate the file or duplicated content — both
-          # cheaper to catch here than to debug via a multi-minute db push.
+          # functions in the dump — Pass 4 contributes zero growth). A
+          # negative delta or one above +500 signals the script ate the file
+          # or duplicated content — both cheaper to catch here than to debug
+          # via a multi-minute db push.
           IN_LINES=$(wc -l < baseline.step12.sql)
           OUT_LINES=$(wc -l < baseline.step13.sql)
           DELTA=$((OUT_LINES - IN_LINES))
@@ -337,6 +354,19 @@ jobs:
           if [ "$REMAINING_ROWTYPE" != "0" ]; then
             echo "::error::%ROWTYPE rewrite incomplete — $REMAINING_ROWTYPE occurrences still present in output"
             grep -nE '%ROWTYPE' baseline.step13.sql | head -10
+            exit 1
+          fi
+
+          # Hard guard: zero `"public"."*_ops"` qualified opclass references
+          # should remain. If any survived, Pass 4's regex missed a shape and
+          # the downstream replay will fail with SQLSTATE 42704 (`operator
+          # class "public.X_ops" does not exist for access method "Y"`) on
+          # any fresh Supabase local stack — exactly the CI run 25269714566
+          # failure mode. Fail here instead with a clearer error.
+          REMAINING_OPCLASS=$(grep -cE '"public"\."[A-Za-z_][A-Za-z0-9_]*_ops"' baseline.step13.sql || true)
+          if [ "$REMAINING_OPCLASS" != "0" ]; then
+            echo "::error::Pass 4 opclass-qualifier strip incomplete — $REMAINING_OPCLASS \"public\".\"*_ops\" occurrences remain"
+            grep -nE '"public"\."[A-Za-z_][A-Za-z0-9_]*_ops"' baseline.step13.sql | head -10
             exit 1
           fi
 
