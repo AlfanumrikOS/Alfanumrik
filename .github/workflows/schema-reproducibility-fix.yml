@@ -851,7 +851,7 @@ jobs:
           # Verify the row landed (re-list and check the version is present).
           POST_LIST=$(supabase migration list --linked 2>&1 || true)
           echo "$POST_LIST"
-          if ! echo "$POST_LIST" | grep -qE "^[[:space:]]*\|[[:space:]]*${BASELINE_VERSION}[[:space:]]*\|"; then
+          if ! echo "$POST_LIST" | grep -qE "^[[:space:]]*${BASELINE_VERSION}[[:space:]]*\|[[:space:]]*${BASELINE_VERSION}[[:space:]]*\|"; then
             echo "::error::Baseline row missing after migration repair — FAIL"
             exit 1
           fi
@@ -926,7 +926,7 @@ jobs:
           # Verify the row landed (re-list and check the version is present).
           POST_LIST=$(supabase migration list --linked 2>&1 || true)
           echo "$POST_LIST"
-          if ! echo "$POST_LIST" | grep -qE "^[[:space:]]*\|[[:space:]]*${BASELINE_VERSION}[[:space:]]*\|"; then
+          if ! echo "$POST_LIST" | grep -qE "^[[:space:]]*${BASELINE_VERSION}[[:space:]]*\|[[:space:]]*${BASELINE_VERSION}[[:space:]]*\|"; then
             echo "::error::Baseline row missing after migration repair — FAIL"
             exit 1
           fi
