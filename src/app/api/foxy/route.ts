@@ -1940,6 +1940,15 @@ async function handleStreamingFoxyTurn(params: {
   let lastClaudeModel = '';
   let lastGroundedFromChunks = false;
   let lastCitations: Citation[] = [];
+  // Phase 2 (structured rendering): raw `structured` field from the SSE `done`
+  // event. Captured here unvalidated; defense-in-depth validation runs inside
+  // persistOnDone() via extractValidatedStructured() so the JSONB column we are
+  // about to write cannot be poisoned by an upstream bug. Non-Foxy callers and
+  // legacy/abstain paths leave this null → persistence falls back to writing
+  // `accumulatedText` into `content` and `null` into `structured` (the existing
+  // pre-structured behavior). See REG-50 (Foxy single-retrieval) and the
+  // matching non-streaming branch around line 1700 for the contract pin.
+  let lastStructuredRaw: unknown = null;
   // Synthesize a leading `session` event so the client knows the sessionId
   // up front (Edge Function doesn't know it).
   const encoder = new TextEncoder();
@@ -1953,6 +1962,33 @@ async function handleStreamingFoxyTurn(params: {
   };
 
   const persistOnDone = async () => {
+    // ─── Boundary validation for the streaming `done.structured` payload ────
+    // Mirrors the non-streaming path (around line 1700): re-validate the
+    // upstream-supplied `structured` field at this API boundary so a malformed
+    // payload from the Edge Function NEVER lands in the JSONB column. On any
+    // failure we log `foxy.structured.invalid_payload` and fall back to the
+    // legacy plain-text persistence (content = accumulatedText, structured =
+    // null) so the student turn is still preserved.
+    //
+    // When `structured` is valid we ALSO denormalize it into `content` so the
+    // TEXT column stays human-readable — without this, content would carry the
+    // raw model-emitted JSON string (the structured-output prompt forces JSON),
+    // and on session resume (GET) legacy fallback would render escaped JSON
+    // to users. See `denormalizeFoxyResponse` in src/lib/foxy/denormalize.ts.
+    const structured = extractValidatedStructured(
+      { structured: lastStructuredRaw },
+      {
+        traceId: lastTraceId,
+        studentId: params.studentId,
+        subject: params.subject,
+        grade: params.grade,
+      },
+    );
+
+    const assistantContent = structured
+      ? denormalizeFoxyResponse(structured)
+      : accumulatedText;
+
     try {
       const now = new Date().toISOString();
       await supabaseAdmin.from('foxy_chat_messages').insert([
@@ -1969,7 +2005,11 @@ async function handleStreamingFoxyTurn(params: {
           session_id: params.resolvedSessionId,
           student_id: params.studentId,
           role: 'assistant',
-          content: accumulatedText,
+          content: assistantContent,
+          // CHECK constraint `structured_role_check` permits structured only
+          // on assistant rows; the column is nullable so legacy/fallback writes
+          // explicitly null. Migration: 20260430010000_foxy_chat_messages_add_structured.
+          structured: structured ?? null,
           sources: lastCitations.length > 0
             ? lastCitations.map((c) => ({
                 chunk_id: c.chunk_id,
@@ -2006,6 +2046,11 @@ async function handleStreamingFoxyTurn(params: {
           masteryLevel: params.cognitiveCtx.masteryLevel,
           flow: 'grounded-answer-stream',
           groundedFromChunks: lastGroundedFromChunks,
+          // Adoption telemetry parity with the non-streaming branch — `true`
+          // only when the upstream emitted a structured payload AND it passed
+          // boundary validation. Lets ops compare structured-rendering health
+          // across the streaming and blocking flows.
+          structured_present: structured !== null,
         },
       });
     } catch { /* audit log is non-critical */ }
@@ -2045,6 +2090,14 @@ async function handleStreamingFoxyTurn(params: {
           if (typeof payload?.claudeModel === 'string') lastClaudeModel = payload.claudeModel;
           if (typeof payload?.groundedFromChunks === 'boolean') {
             lastGroundedFromChunks = payload.groundedFromChunks;
+          }
+          // Capture the structured payload (FoxyResponse) emitted by the
+          // grounded-answer pipeline-stream on `done`. We store the raw value
+          // here and validate it inside persistOnDone() — keeping the parser
+          // hot-path branch-free (the schema parse is non-trivial and we don't
+          // want to run it inside a TransformStream `transform()`).
+          if (payload && typeof payload === 'object' && 'structured' in payload) {
+            lastStructuredRaw = (payload as { structured?: unknown }).structured ?? null;
           }
         } else if (eventName === 'abstain') {
           // Abstain → refund based on the same policy as the blocking path
