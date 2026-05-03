@@ -701,14 +701,18 @@ describe('Step-card structural contract — foxy_tutor_v1 prompt', () => {
   });
 
   it('mandates the trailing check question prefix arrow', () => {
-    // The last step must end with a question prefixed with `→ `.
-    expect(FOXY_TXT).toMatch(/check question on its own line, prefixed with `→ `/);
+    // The last step must end with a question prefixed with "-> ".
+    // Note: ASCII "-> " replaced the original Unicode arrow inside backticks
+    // for Deno parser compatibility (see prompts/inline.ts maintenance comment).
+    expect(FOXY_TXT).toMatch(/check question on its own line, prefixed with "-> "/);
   });
 
   it('replaces the old 150-word-per-turn cap with the per-step soft cap', () => {
     // Old cap is gone, new soft cap is in.
+    // Note: ASCII "<=" replaced the original Unicode "<=" symbol for Deno
+    // parser compatibility (see prompts/inline.ts maintenance comment).
     expect(FOXY_TXT).not.toContain('Maximum 150 words per turn');
-    expect(FOXY_TXT).toMatch(/Soft cap: ≤30 words per step, 2-4 steps max/);
+    expect(FOXY_TXT).toMatch(/Soft cap: <=30 words per step, 2-4 steps max/);
   });
 
   it('includes the math-spacing rule (numbers, operators, words)', () => {
