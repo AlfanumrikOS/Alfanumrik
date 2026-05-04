@@ -288,8 +288,8 @@ BEGIN
     END IF;
 
     INSERT INTO quiz_responses (
-      quiz_session_id, student_id, question_id, selected_option,
-      is_correct, time_spent_seconds,
+      quiz_session_id, student_id, question_id, student_answer_index,
+      is_correct, time_taken_seconds,
       question_number, question_text, question_type,
       shuffle_map
     ) VALUES (
