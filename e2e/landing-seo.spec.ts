@@ -63,12 +63,30 @@ test.describe('Meta Tags - Welcome Page', () => {
     expect(content!.length).toBeGreaterThan(50);
   });
 
-  test('has keywords meta tag', async ({ page }) => {
+  // Keywords meta tag is intentionally NOT emitted on /welcome.
+  // Google has ignored the keywords meta since 2009; emitting a 10-keyword
+  // string can look like spam without any SEO benefit. This test guards
+  // against accidental re-introduction of the obsolete tag.
+  test('does not emit obsolete keywords meta tag', async ({ page }) => {
     await page.goto('/welcome');
     const keywords = page.locator('meta[name="keywords"]');
-    await expect(keywords).toBeAttached();
-    const content = await keywords.getAttribute('content');
-    expect(content).toContain('CBSE');
+    await expect(keywords).not.toBeAttached();
+  });
+
+  // hreflang tags signal language/region availability to search engines.
+  // Added in the same Phase 1 change that removed the keywords meta.
+  test('emits hreflang link tags for en-IN, hi-IN, and x-default', async ({ page }) => {
+    await page.goto('/welcome');
+    const enIn = page.locator('link[rel="alternate"][hreflang="en-IN"]');
+    const hiIn = page.locator('link[rel="alternate"][hreflang="hi-IN"]');
+    const xDefault = page.locator('link[rel="alternate"][hreflang="x-default"]');
+    await expect(enIn).toBeAttached();
+    await expect(hiIn).toBeAttached();
+    await expect(xDefault).toBeAttached();
+    const enHref = await enIn.getAttribute('href');
+    const hiHref = await hiIn.getAttribute('href');
+    expect(enHref).toContain('alfanumrik.com/welcome');
+    expect(hiHref).toContain('lang=hi');
   });
 
   test('has twitter card meta tag', async ({ page }) => {
@@ -123,6 +141,21 @@ test.describe('Sitemap and Robots', () => {
     const body = await res.text();
     expect(body).toContain('urlset');
     expect(body).toContain('alfanumrik');
+  });
+
+  // Phase 1 dedup: the bare https://alfanumrik.com/ entry was removed
+  // because the root redirects unauthenticated visitors to /welcome.
+  // Two priority-1 entries pointing at the same destination is a
+  // duplicate-content signal. This test guards against re-introduction.
+  test('sitemap does not duplicate root and /welcome as priority 1', async ({ request }) => {
+    const res = await request.get('/sitemap.xml');
+    const body = await res.text();
+    // Match <url><loc>https://alfanumrik.com/</loc> ... </url> blocks where
+    // the loc is exactly the root (no path segment after the .com/).
+    const rootEntry = /<loc>https:\/\/alfanumrik\.com\/<\/loc>/;
+    expect(body).not.toMatch(rootEntry);
+    // /welcome must still be present.
+    expect(body).toContain('alfanumrik.com/welcome');
   });
 
   test('robots.txt is accessible', async ({ request }) => {

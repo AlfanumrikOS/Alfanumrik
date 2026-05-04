@@ -27,7 +27,7 @@ const ROLE_COPY: Record<Role, RoleCopy> = {
     devaEn: 'हर परीक्षा, तैयारी से।',
     devaHi: 'हर परीक्षा, तैयारी से।',
     lede1: {
-      en: "Alfanumrik is a CBSE-aligned learning OS for grades six through twelve. Foxy, our patient little tutor, walks beside your child through photosynthesis, quadratics and the Mughal succession — at the pace they can actually hold.",
+      en: "Alfanumrik is a CBSE-aligned learning OS for grades six through twelve. Foxy, our patient little tutor, walks beside your child through photosynthesis, quadratics and Aryabhata's place-value system — at the pace they can actually hold.",
       hi: "अल्फ़ान्यूमरिक छठी से बारहवीं तक के सीबीएसई विद्यार्थियों के लिए एक संरचित सीखने का सिस्टम है। फ़ॉक्सी — हमारा धैर्यवान छोटा शिक्षक — आपके बच्चे के साथ उसी रफ़्तार से चलता है, जो वह सच में सम्भाल सके।",
     },
     lede2: {
