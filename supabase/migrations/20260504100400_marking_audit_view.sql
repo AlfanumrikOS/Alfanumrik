@@ -51,7 +51,7 @@ WITH responses_30d AS (
          qr.quiz_session_id,
          qr.student_id,
          qr.question_id,
-         qr.selected_option,                    -- shuffled display index per v2 contract
+         qr.student_answer_index AS selected_option,                    -- shuffled display index per v2 contract
          qr.is_correct      AS recorded_is_correct,
          qs.score_percent,
          qs.completed_at

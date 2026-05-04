@@ -92,6 +92,22 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- ──────────────────────────────────────────────────────────────────────────
+-- 0b. Defensive: ADD COLUMN IF NOT EXISTS for Phase C columns
+-- ──────────────────────────────────────────────────────────────────────────
+-- Phase C migration 20260430000000 lives under _legacy/timestamped/ since
+-- the Section 10 cleanup (2026-05-03) and may not have been applied to
+-- every environment (Supabase preview, fresh staging, DR projects baseline).
+-- ADD COLUMN IF NOT EXISTS is a no-op when columns are present (post Phase C)
+-- and creates them with NULL when absent (so the subsequent backfill UPDATEs
+-- and SET NOT NULL still produce the intended end state).
+
+ALTER TABLE quiz_session_shuffles
+  ADD COLUMN IF NOT EXISTS options_version_at_serve INT;
+
+ALTER TABLE quiz_session_shuffles
+  ADD COLUMN IF NOT EXISTS integrity_hash TEXT;
+
+-- ──────────────────────────────────────────────────────────────────────────
 -- 1. Backfill options_version_at_serve where NULL → 0 (sentinel)
 -- ──────────────────────────────────────────────────────────────────────────
 -- Rationale: pre-Phase-C rows have no captured version. 0 is the agreed
