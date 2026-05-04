@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { LangProvider, LangToggle, useLang } from '@/components/landing/LangToggle';
+import Breadcrumbs from '@/components/Breadcrumbs';
 
 // SEO metadata is in layout.tsx (Server Component) for SSR indexing
 
@@ -116,6 +117,7 @@ function ProductContent() {
   return (
     <div style={{ background: 'var(--bg, #FBF8F4)', color: 'var(--text-1, #1a1a1a)', minHeight: '100vh' }}>
       <Navbar />
+      <Breadcrumbs items={[{ label: 'Home', href: '/welcome' }, { label: 'Product' }]} />
 
       {/* Hero */}
       <section style={{ textAlign: 'center', padding: '64px 16px 48px', maxWidth: 800, margin: '0 auto' }}>

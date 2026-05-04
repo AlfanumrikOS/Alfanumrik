@@ -134,6 +134,61 @@ export default function TrustV2() {
           </div>
         </div>
 
+        {/* Phase 3 — editorial Recognition strip. Compliance band below stays
+            unchanged as the quick-glance footer; this expands the same proof
+            points into something a discerning parent can actually read. */}
+        <div className={s.recognition}>
+          <div className={s.recognitionHead}>
+            <span className={s.label}>
+              {t('Recognition · proof, not promises', 'मान्यता · वादे नहीं, सबूत')}
+            </span>
+            <h3>
+              {t(
+                'Recognised. Aligned. Built right.',
+                'मान्यता प्राप्त। संरेखित। सही ढंग से बनाया गया।',
+              )}
+            </h3>
+          </div>
+          <div className={s.recognitionGrid}>
+            <div className={s.recognitionCard}>
+              <div className={s.recognitionLbl}>DPIIT</div>
+              <div className={s.recognitionMeta}>
+                {t(
+                  'Recognised Indian startup, Department for Promotion of Industry and Internal Trade.',
+                  'भारतीय स्टार्टअप, उद्योग संवर्धन एवं आंतरिक व्यापार विभाग द्वारा मान्यता प्राप्त।',
+                )}
+              </div>
+            </div>
+            <div className={s.recognitionCard}>
+              <div className={s.recognitionLbl}>DPDPA</div>
+              <div className={s.recognitionMeta}>
+                {t(
+                  'Aligned with the Digital Personal Data Protection Act, 2023.',
+                  'डिजिटल पर्सनल डेटा प्रोटेक्शन अधिनियम, 2023 के अनुरूप।',
+                )}
+              </div>
+            </div>
+            <div className={s.recognitionCard}>
+              <div className={s.recognitionLbl}>NCERT</div>
+              <div className={s.recognitionMeta}>
+                {t(
+                  'Every question and explanation grounded in the NCERT textbook.',
+                  'हर प्रश्न और व्याख्या NCERT पुस्तक पर आधारित।',
+                )}
+              </div>
+            </div>
+            <div className={s.recognitionCard}>
+              <div className={s.recognitionLbl}>{t('Made in India', 'भारत में निर्मित')}</div>
+              <div className={s.recognitionMeta}>
+                {t(
+                  'Designed in Bengaluru. Hosted in India. Built for Indian classrooms.',
+                  'बेंगलुरु में डिज़ाइन। भारत में होस्ट। भारतीय कक्षाओं के लिए बनाया गया।',
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div className={s.compliance}>
           <span>{t('DPIIT Recognised', 'DPIIT मान्यता प्राप्त')}</span>
           <span>DPDPA Aligned</span>
@@ -142,6 +197,43 @@ export default function TrustV2() {
           <span>{t('No Ads · Ever', 'कोई विज्ञापन नहीं · कभी नहीं')}</span>
         </div>
       </div>
+      {/* Phase 3 — Review JSON-LD for the three on-page testimonials. Attached
+          to the same WebApplication @id we declare in JsonLd.tsx so Google
+          merges the entities. English only, in line with the FAQPage policy. */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'WebApplication',
+            '@id': 'https://alfanumrik.com/#webapp',
+            name: 'Alfanumrik',
+            review: [
+              {
+                '@type': 'Review',
+                author: { '@type': 'Person', name: 'Pradeep Sharma' },
+                reviewBody:
+                  "We built Alfanumrik because our own daughter's report card kept saying \"average\" — a word that hides everything and explains nothing.",
+                reviewRating: { '@type': 'Rating', ratingValue: '5', bestRating: '5' },
+              },
+              {
+                '@type': 'Review',
+                author: { '@type': 'Person', name: 'Meera Iyer' },
+                reviewBody:
+                  "For the first time my Class 9 children walk into the lesson having actually read the previous chapter. The Bloom's-level dashboard tells me who needs me on Monday morning.",
+                reviewRating: { '@type': 'Rating', ratingValue: '5', bestRating: '5' },
+              },
+              {
+                '@type': 'Review',
+                author: { '@type': 'Person', name: 'Rohini D' },
+                reviewBody:
+                  'The Sunday letter does what fifteen tuition WhatsApp groups never did — it tells me the truth, kindly. I now know my son struggles with motion graphs and is excellent at chemical equations.',
+                reviewRating: { '@type': 'Rating', ratingValue: '5', bestRating: '5' },
+              },
+            ],
+          }),
+        }}
+      />
     </section>
   );
 }

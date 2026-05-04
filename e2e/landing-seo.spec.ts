@@ -10,7 +10,12 @@ import { test, expect } from '@playwright/test';
 test.describe('JSON-LD Structured Data', () => {
   test('welcome page contains FAQPage JSON-LD schema', async ({ page }) => {
     await page.goto('/welcome');
-    const jsonLd = page.locator('script[type="application/ld+json"]');
+    // /welcome emits multiple JSON-LD scripts (Organization, WebApplication,
+    // FAQPage, Review). Filter by content to grab the FAQPage one.
+    const jsonLd = page
+      .locator('script[type="application/ld+json"]')
+      .filter({ hasText: 'FAQPage' })
+      .first();
     await expect(jsonLd).toBeAttached();
 
     const content = await jsonLd.textContent();
@@ -20,10 +25,74 @@ test.describe('JSON-LD Structured Data', () => {
     expect(schema['@context']).toBe('https://schema.org');
     expect(schema['@type']).toBe('FAQPage');
     expect(schema.mainEntity).toBeInstanceOf(Array);
-    expect(schema.mainEntity.length).toBeGreaterThan(0);
-    // Each FAQ item should have Question type
+    expect(schema.mainEntity.length).toBe(10); // Phase 3 ships exactly 10 FAQs
+    // Each FAQ item should have Question type and acceptedAnswer
     expect(schema.mainEntity[0]['@type']).toBe('Question');
     expect(schema.mainEntity[0].acceptedAnswer['@type']).toBe('Answer');
+    // Markdown bold markers must be stripped from schema text
+    schema.mainEntity.forEach((q: { acceptedAnswer: { text: string } }) => {
+      expect(q.acceptedAnswer.text).not.toContain('**');
+    });
+  });
+
+  test('welcome page contains Review JSON-LD schema with 3 testimonials', async ({ page }) => {
+    await page.goto('/welcome');
+    const jsonLd = page
+      .locator('script[type="application/ld+json"]')
+      .filter({ hasText: '"review"' })
+      .first();
+    await expect(jsonLd).toBeAttached();
+
+    const content = await jsonLd.textContent();
+    const schema = JSON.parse(content!);
+    expect(schema['@type']).toBe('WebApplication');
+    expect(schema.review).toBeInstanceOf(Array);
+    expect(schema.review.length).toBe(3); // Phase 3: founder + teacher + parent
+
+    schema.review.forEach((r: { '@type': string; author: { name: string }; reviewBody: string; reviewRating: { ratingValue: string } }) => {
+      expect(r['@type']).toBe('Review');
+      expect(r.author.name).toBeTruthy();
+      expect(r.reviewBody.length).toBeGreaterThan(20);
+      expect(r.reviewRating.ratingValue).toBe('5');
+    });
+  });
+
+  test('about page contains BreadcrumbList JSON-LD with correct trail', async ({ page }) => {
+    await page.goto('/about');
+    const jsonLd = page
+      .locator('script[type="application/ld+json"]')
+      .filter({ hasText: 'BreadcrumbList' })
+      .first();
+    await expect(jsonLd).toBeAttached();
+
+    const content = await jsonLd.textContent();
+    const schema = JSON.parse(content!);
+    expect(schema['@type']).toBe('BreadcrumbList');
+    expect(schema.itemListElement).toBeInstanceOf(Array);
+    expect(schema.itemListElement.length).toBe(2); // Home -> About
+    expect(schema.itemListElement[0].name).toBe('Home');
+    expect(schema.itemListElement[0].item).toContain('/welcome');
+    expect(schema.itemListElement[1].name).toBe('About');
+    // Last crumb has no `item` URL (current page)
+    expect(schema.itemListElement[1].item).toBeUndefined();
+  });
+
+  test('for-parents page contains BreadcrumbList JSON-LD with Solutions intermediate (no link)', async ({ page }) => {
+    await page.goto('/for-parents');
+    const jsonLd = page
+      .locator('script[type="application/ld+json"]')
+      .filter({ hasText: 'BreadcrumbList' })
+      .first();
+    await expect(jsonLd).toBeAttached();
+
+    const content = await jsonLd.textContent();
+    const schema = JSON.parse(content!);
+    expect(schema.itemListElement.length).toBe(3); // Home -> Solutions -> For Parents
+    expect(schema.itemListElement[0].name).toBe('Home');
+    expect(schema.itemListElement[1].name).toBe('Solutions');
+    // Solutions intermediate has no item URL (no /solutions page exists)
+    expect(schema.itemListElement[1].item).toBeUndefined();
+    expect(schema.itemListElement[2].name).toBe('For Parents');
   });
 });
 

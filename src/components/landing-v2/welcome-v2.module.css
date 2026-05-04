@@ -2521,3 +2521,140 @@
 .missionLink:hover {
   text-decoration: underline;
 }
+
+/* ---------- FAQ section (Phase 3) ---------- */
+.faq {
+  border-top: 1px solid var(--rule);
+  padding: 56px 0;
+  background: var(--cream);
+}
+.root[data-theme='dark'] .faq {
+  background: var(--ink-deep);
+}
+.faqHead {
+  margin-bottom: 32px;
+  max-width: 720px;
+}
+.faqHead h2 {
+  font-family: var(--font-newsreader), serif;
+  font-size: clamp(28px, 4vw, 44px);
+  line-height: 1.1;
+  font-weight: 500;
+  color: var(--ink);
+  margin: 8px 0 12px;
+}
+.faqHead h2 :global(em) {
+  font-style: italic;
+  color: var(--saffron);
+}
+.faqIntro {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--ink-mute);
+}
+.faqList {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-top: 1px solid var(--rule);
+}
+.faqItem {
+  border-bottom: 1px solid var(--rule);
+  padding: 0;
+}
+.faqItem :global(summary) {
+  display: grid;
+  grid-template-columns: 40px 1fr 24px;
+  gap: 16px;
+  align-items: baseline;
+  padding: 18px 0;
+  cursor: pointer;
+  list-style: none;
+  font-family: var(--font-newsreader), serif;
+  font-size: 17px;
+  line-height: 1.4;
+  color: var(--ink);
+  font-weight: 500;
+}
+.faqItem :global(summary)::-webkit-details-marker {
+  display: none;
+}
+.faqQNum {
+  font-family: var(--font-mukta), serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--saffron);
+  letter-spacing: 0.5px;
+}
+.faqQText {
+  font-family: var(--font-newsreader), serif;
+}
+.faqQChev {
+  font-size: 20px;
+  font-weight: 300;
+  color: var(--ink-mute);
+  text-align: right;
+  transition: transform 200ms;
+}
+.faqItem[open] .faqQChev {
+  transform: rotate(45deg);
+}
+.faqA {
+  padding: 0 0 18px 56px;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--ink-soft);
+  max-width: 760px;
+}
+@media (max-width: 600px) {
+  .faqA { padding-left: 40px; }
+  .faqItem :global(summary) { grid-template-columns: 32px 1fr 20px; gap: 12px; font-size: 15px; }
+}
+
+/* ---------- Recognition strip (Phase 3, inside TrustV2) ---------- */
+.recognition {
+  margin-top: 32px;
+  padding-top: 28px;
+  border-top: 1px solid var(--rule);
+}
+.recognitionHead {
+  margin-bottom: 20px;
+}
+.recognitionHead h3 {
+  font-family: var(--font-newsreader), serif;
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--ink);
+  margin-top: 6px;
+}
+.recognitionGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+@media (min-width: 768px) {
+  .recognitionGrid { grid-template-columns: repeat(4, 1fr); }
+}
+.recognitionCard {
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 14px;
+  background: var(--cream-deep);
+}
+.root[data-theme='dark'] .recognitionCard {
+  background: rgba(255,255,255,0.03);
+}
+.recognitionLbl {
+  font-family: var(--font-mukta), serif;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--saffron);
+  letter-spacing: 0.6px;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+.recognitionMeta {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
