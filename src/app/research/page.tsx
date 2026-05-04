@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import Breadcrumbs from '@/components/Breadcrumbs';
 
 export const metadata: Metadata = {
   title: 'Research & Methodology — Alfanumrik',
@@ -169,6 +170,7 @@ export default function ResearchPage() {
   return (
     <div style={{ background: 'var(--bg, #FBF8F4)', color: 'var(--text-1, #1a1a1a)', minHeight: '100vh' }}>
       <Navbar />
+      <Breadcrumbs items={[{ label: 'Home', href: '/welcome' }, { label: 'Research' }]} />
 
       {/* Hero */}
       <section style={{ textAlign: 'center', padding: '64px 16px 48px', maxWidth: 800, margin: '0 auto' }}>
