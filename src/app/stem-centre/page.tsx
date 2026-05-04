@@ -20,6 +20,15 @@ const GuidedExperiment = dynamic(() => import('@/components/stem/GuidedExperimen
   loading: () => <div className="p-8 text-center animate-pulse text-2xl">🔬</div>,
 });
 
+// Lazy-load ExperimentCelebration — only paid by users who actually finish a lab.
+// Keeps base STEM Centre route under P10 budget.
+const ExperimentCelebration = dynamic(
+  () => import('@/components/stem/ExperimentCelebration'),
+  { ssr: false },
+);
+
+import type { ExperimentCelebrationResult } from '@/components/stem/ExperimentCelebration';
+
 /* ─── Types ─── */
 interface DbSimulation {
   id: string;
@@ -80,8 +89,12 @@ export default function STEMCentrePage() {
   const [activeLab, setActiveLab] = useState<ActiveLab | null>(null);
   const [observation, setObservation] = useState('');
   const [saving, setSaving] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const [celebrationData, setCelebrationData] = useState<{
+    result: ExperimentCelebrationResult;
+    title: string;
+    isGuided: boolean;
+  } | null>(null);
 
   const grade = student?.grade || '10';
 
@@ -92,41 +105,127 @@ export default function STEMCentrePage() {
   // subset that their plan unlocks AND that has STEM content.
   const { unlocked: allowedSubjects } = useAllowedSubjects();
 
-  const saveObservation = useCallback(async (params: {
-    type: 'simple' | 'guided';
-    simId: string;
-    experimentId?: string;
-    observationText?: string;
-    result?: ExperimentResult;
-    subject: string;
-  }) => {
-    if (!student?.id) return false;
-    setSaving(true);
-    setSaveError('');
-    const { error } = await supabase.from('experiment_observations').insert({
-      student_id: student.id,
-      simulation_id: params.simId,
-      experiment_id: params.experimentId || null,
-      observation_type: params.type,
-      observation_text: params.type === 'simple' ? params.observationText : null,
-      structured_observations: params.result?.observations || null,
-      data_entries: params.result?.dataEntries || null,
-      conclusion: params.result?.conclusion || null,
-      quiz_score: params.result?.quizScore ?? null,
-      total_questions: params.result?.totalQuestions ?? null,
-      time_spent_seconds: params.result?.timeSpent ?? 0,
-      grade,
-      subject: params.subject,
-    });
-    setSaving(false);
-    if (error) {
-      setSaveError(isHi ? 'सहेजने में त्रुटि हुई' : 'Failed to save observation');
-      return false;
-    }
-    setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 3000);
-    return true;
-  }, [student?.id, grade, isHi]);
+  /**
+   * saveObservation
+   * ───────────────────────────────────────────────────────────
+   * Calls the atomic `complete_experiment` RPC which, in a single
+   * transaction, inserts the observation row, updates the lab streak,
+   * computes coin breakdown (base + viva + first-of-day + streak)
+   * capped at 100/day, and returns a JSONB envelope used to drive
+   * the celebration overlay.
+   *
+   * Idempotency: a per-attempt `dedupe_key` (student-sim-timestamp)
+   * is sent so a retry returns the same observation without
+   * double-awarding coins. If RPC reports `idempotent: true`, the
+   * celebration is skipped — only the very first save shows it.
+   *
+   * NOTE: coin numbers come from the RPC. The component never
+   * recomputes them. P-invariant for coin parity, mirrors P1/P2
+   * for quiz XP.
+   */
+  const saveObservation = useCallback(
+    async (params: {
+      type: 'simple' | 'guided';
+      simId: string;
+      title: string;
+      experimentId?: string;
+      observationText?: string;
+      result?: ExperimentResult;
+      subject: string;
+    }) => {
+      if (!student?.id) return false;
+      setSaving(true);
+      setSaveError('');
+
+      const dedupeKey = `${student.id}-${params.simId}-${Date.now()}`;
+
+      const { data, error } = await supabase.rpc('complete_experiment', {
+        p_simulation_id: params.simId,
+        p_subject: params.subject,
+        p_grade: grade,
+        p_observation_type: params.type,
+        p_observation_text:
+          params.type === 'simple' ? params.observationText ?? null : null,
+        p_structured: params.result?.observations ?? null,
+        p_data_entries: params.result?.dataEntries ?? null,
+        p_conclusion: params.result?.conclusion ?? null,
+        p_quiz_score: params.result?.quizScore ?? null,
+        p_total_questions: params.result?.totalQuestions ?? null,
+        p_time_spent_seconds: params.result?.timeSpent ?? 0,
+        p_experiment_id: params.experimentId ?? null,
+        p_dedupe_key: dedupeKey,
+      });
+
+      setSaving(false);
+
+      if (error) {
+        setSaveError(isHi ? 'सहेजने में त्रुटि हुई' : 'Failed to save observation');
+        return false;
+      }
+
+      // RPC returns a JSONB object. Tolerate Supabase shape variance.
+      const rpc = (data ?? {}) as Record<string, unknown>;
+
+      // Idempotent retry — already recorded; skip celebration.
+      if (rpc.idempotent === true) {
+        return true;
+      }
+
+      // Tier 2 R8 — fire-and-forget claim of the +50 Daily Lab Mission bonus.
+      // The endpoint is idempotent (server checks coin_transactions.metadata.context='daily_lab')
+      // and non-fatal: a failure here must not block the celebration overlay.
+      const observationId = typeof rpc.observation_id === 'string' ? rpc.observation_id : null;
+      if (observationId) {
+        fetch('/api/student/daily-lab/claim', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ observation_id: observationId }),
+        }).catch(() => { /* non-fatal */ });
+      }
+
+      const breakdownRaw = (rpc.breakdown ?? {}) as Record<string, unknown>;
+      const streakRaw = (rpc.streak ?? {}) as Record<string, unknown>;
+      const vivaRaw = (rpc.viva ?? {}) as Record<string, unknown>;
+
+      const num = (v: unknown, d = 0): number =>
+        typeof v === 'number' && Number.isFinite(v) ? v : d;
+      const numOrNull = (v: unknown): number | null =>
+        typeof v === 'number' && Number.isFinite(v) ? v : null;
+
+      const celebrationResult: ExperimentCelebrationResult = {
+        observationId,
+        coinsAwarded: num(rpc.coins_awarded),
+        coinsUncapped: num(rpc.coins_uncapped),
+        capped: rpc.capped === true,
+        breakdown: {
+          base: num(breakdownRaw.base),
+          viva_bonus: num(breakdownRaw.viva_bonus),
+          first_today: num(breakdownRaw.first_today),
+          streak_bonus: num(breakdownRaw.streak_bonus),
+        },
+        streak: {
+          current: num(streakRaw.current),
+          longest: num(streakRaw.longest),
+          is_new_record: streakRaw.is_new_record === true,
+        },
+        coinBalance: num(rpc.coin_balance),
+        viva: {
+          score: numOrNull(vivaRaw.score),
+          max: numOrNull(vivaRaw.max),
+          perfect: vivaRaw.perfect === true,
+        },
+      };
+
+      setCelebrationData({
+        result: celebrationResult,
+        title: params.title,
+        isGuided: params.type === 'guided',
+      });
+      return true;
+    },
+    [student?.id, grade, isHi],
+  );
   const allowedCodes = useMemo(() => new Set(allowedSubjects.map(s => s.code)), [allowedSubjects]);
   const tabs = useMemo(
     () => [ALL_TAB, ...STEM_SUBJECT_SUBSET.filter(t => allowedCodes.has(t.code))],
@@ -324,14 +423,14 @@ export default function STEMCentrePage() {
                     await saveObservation({
                       type: 'guided',
                       simId,
+                      title: isHi
+                        ? experiment.titleHi || experiment.title
+                        : experiment.title,
                       experimentId: experiment.id,
                       result,
                       subject: experiment.subject,
                     });
-                    setTimeout(() => {
-                      setActiveLab(null);
-                      setObservation('');
-                    }, 2000);
+                    // Celebration overlay handles dismissal; no auto-close timer.
                   }}
                   onClose={() => { setActiveLab(null); setObservation(''); }}
                 />
@@ -388,6 +487,7 @@ export default function STEMCentrePage() {
                       const ok = await saveObservation({
                         type: 'simple',
                         simId,
+                        title: activeLab!.sim.title,
                         observationText: observation,
                         subject: subj,
                       });
@@ -400,11 +500,6 @@ export default function STEMCentrePage() {
                       ? (isHi ? 'सहेज रहे हैं...' : 'Saving...')
                       : (isHi ? '💾 अवलोकन सहेजें' : '💾 Save Observation')}
                   </button>
-                  {saveSuccess && (
-                    <p className="mt-2 text-sm text-green-600 font-medium text-center">
-                      {isHi ? '✅ अवलोकन सफलतापूर्वक सहेजा गया!' : '✅ Observation saved successfully!'}
-                    </p>
-                  )}
                   {saveError && (
                     <p className="mt-2 text-sm text-red-600 font-medium text-center">{saveError}</p>
                   )}
@@ -414,15 +509,26 @@ export default function STEMCentrePage() {
           );
         })()}
 
-        {saveSuccess && !activeLab && (
-          <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-2xl text-center">
-            <p className="text-green-700 font-semibold text-sm">
-              {isHi ? '🎉 प्रयोग सफलतापूर्वक सहेजा गया!' : '🎉 Experiment saved successfully!'}
-            </p>
-            <p className="text-green-600 text-xs mt-1">
-              {isHi ? 'आपके अवलोकन और निष्कर्ष रिकॉर्ड हो गए हैं।' : 'Your observations and conclusions have been recorded.'}
-            </p>
-          </div>
+        {/* Celebration overlay — supersedes the legacy green toast.
+            Renders only after a successful (non-idempotent) RPC return. */}
+        {celebrationData && (
+          <ExperimentCelebration
+            result={celebrationData.result}
+            experimentTitle={celebrationData.title}
+            isGuided={celebrationData.isGuided}
+            isHi={isHi}
+            onClose={() => {
+              setCelebrationData(null);
+              setActiveLab(null);
+              setObservation('');
+            }}
+            onNextLab={() => {
+              setCelebrationData(null);
+              setActiveLab(null);
+              setObservation('');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+          />
         )}
 
         {/* Loading State */}

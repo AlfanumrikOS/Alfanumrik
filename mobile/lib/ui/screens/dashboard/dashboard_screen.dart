@@ -274,7 +274,7 @@ class DashboardScreen extends ConsumerWidget {
                   // Quick actions
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                       child: Row(
                         children: [
                           Expanded(
@@ -295,6 +295,27 @@ class DashboardScreen extends ConsumerWidget {
                             ),
                           ),
                         ],
+                      ),
+                    ),
+                  ),
+
+                  // STEM Lab tile — Tier 3 R12 Phase 1 mobile parity.
+                  // Routes to a WebView wrap of /stem-centre so the full
+                  // 119-simulation library, lab streak, and coin rewards
+                  // are reachable on mobile. Bilingual via device locale
+                  // (matches the _isHindi() helper used elsewhere).
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      child: _ActionCard(
+                        emoji: '🔬',
+                        label: Localizations.localeOf(context)
+                                    .languageCode ==
+                                'hi'
+                            ? 'STEM लैब'
+                            : 'STEM Lab',
+                        color: AppColors.scienceColor,
+                        onTap: () => context.push('/stem-lab'),
                       ),
                     ),
                   ),

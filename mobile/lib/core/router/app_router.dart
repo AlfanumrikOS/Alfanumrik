@@ -11,6 +11,7 @@ import '../../ui/screens/learning/chapters_screen.dart';
 import '../../ui/screens/learning/concept_screen.dart';
 import '../../ui/screens/chat/chat_screen.dart';
 import '../../ui/screens/quiz/quiz_screen.dart';
+import '../../ui/screens/stem/stem_lab_screen.dart';
 import '../../ui/screens/subscription/plans_screen.dart';
 import '../../ui/screens/settings/settings_screen.dart';
 import '../../ui/widgets/app_shell.dart';
@@ -97,6 +98,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/plans',
         builder: (context, state) => const PlansScreen(),
+      ),
+      // STEM Lab — Tier 3 R12 Phase 1: WebView wrap of /stem-centre.
+      // Full-screen (no bottom nav) so simulations get max screen real estate.
+      GoRoute(
+        path: '/stem-lab',
+        builder: (context, state) => const StemLabScreen(),
       ),
     ],
   );

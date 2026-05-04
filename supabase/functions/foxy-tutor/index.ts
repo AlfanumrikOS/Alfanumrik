@@ -72,6 +72,8 @@ import {
 } from '../_shared/quiz-oracle-prompts.ts'
 import { parseLlmGraderResponse } from '../_shared/quiz-oracle.ts'
 import { capture as posthogCapture, identify as posthogIdentify } from '../_shared/posthog.ts'
+import { fetchRecentLabContext, type LabContextEntry } from '../_shared/recent-lab-context.ts'
+import { buildLabContextSection } from '../_shared/foxy-lab-prompt.ts'
 
 // ─── CORS ────────────────────────────────────────────────────────────────────
 const ALLOWED_ORIGINS = [
@@ -609,7 +611,35 @@ Deno.serve(async (req: Request) => {
       }))
     }
 
-    const systemPrompt = buildSystemPrompt(grade, subject, safeLanguage, safeMode, safeTopicTitle, safeChapters, safeLessonStep, ragContext)
+    let systemPrompt = buildSystemPrompt(grade, subject, safeLanguage, safeMode, safeTopicTitle, safeChapters, safeLessonStep, ragContext)
+
+    // ── R6 Tier 2: Lab-context awareness (additive — does NOT replace RAG) ──
+    // Fetch the student's recent (≤30d) STEM lab observations and append the
+    // rendered section to the END of the system prompt so it sits closer to
+    // the user's message in the model's attention. Failures are ALWAYS
+    // swallowed — Foxy must continue to work even if the lab table is down.
+    // P12: the section's "NEVER invent" guardrail (in buildLabContextSection)
+    // forbids the model from referencing labs not in the list.
+    // P13: log only the COUNT, never observation text or studentId in plain.
+    let labEntries: LabContextEntry[] = []
+    try {
+      labEntries = await fetchRecentLabContext(supabase, student_id, 5)
+      if (labEntries.length > 0) {
+        const isHi = safeLanguage === 'hi'
+        const labSection = buildLabContextSection(labEntries, isHi)
+        if (labSection) {
+          systemPrompt = `${systemPrompt}\n\n${labSection}`
+          console.log(JSON.stringify({
+            event: 'foxy.lab_context.injected',
+            count: labEntries.length,
+            language: safeLanguage,
+          }))
+        }
+      }
+    } catch (labErr) {
+      console.warn('[foxy-tutor] lab context fetch failed:', labErr instanceof Error ? labErr.message : String(labErr))
+    }
+
     const messages = [...chatHistory, { role: 'user', content: safeMessage }]
     const startTime = Date.now()
 

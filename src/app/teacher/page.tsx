@@ -467,6 +467,7 @@ export default function TeacherPage() {
           { label: tt(isHi, '📋 Assignments', '📋 असाइनमेंट'), path: '/teacher/assignments' },
           { label: tt(isHi, '👨‍🎓 Students', '👨‍🎓 छात्र'), path: '/teacher/students' },
           { label: tt(isHi, '📊 Reports', '📊 रिपोर्ट'), path: '/teacher/reports' },
+          { label: tt(isHi, '🔬 Lab Activity', '🔬 लैब गतिविधि'), path: '/teacher/lab-leaderboard' },
         ].map(({ label, path }) => (
           <button key={path} onClick={() => router.push(path)} className="py-2 px-4 bg-slate-900 border border-slate-800 rounded-lg text-[13px] text-slate-400 font-medium cursor-pointer hover:border-indigo-500 hover:text-indigo-400 transition-colors">
             {label}

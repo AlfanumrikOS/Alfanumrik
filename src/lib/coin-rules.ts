@@ -17,16 +17,25 @@
 /**
  * Foxy Coins awarded for each qualifying action.
  *
- * - quiz_complete:         Any quiz finished regardless of score
- * - first_quiz_of_day:     Bonus for the first quiz each calendar day
- * - streak_3_day:          3-day consecutive activity streak milestone
- * - streak_7_day:          7-day consecutive activity streak milestone
- * - streak_30_day:         30-day consecutive activity streak milestone
- * - revise_decaying_topic: Revisiting a topic whose retention has dropped
- * - study_task_complete:   Completing a study plan task
- * - study_plan_week:       Completing a full week of the study plan
- * - score_crosses_80:      Performance Score crosses 80 in a subject (one-time per subject)
- * - score_crosses_90:      Performance Score crosses 90 in a subject (one-time per subject)
+ * - quiz_complete:               Any quiz finished regardless of score
+ * - first_quiz_of_day:           Bonus for the first quiz each calendar day
+ * - streak_3_day:                3-day consecutive activity streak milestone
+ * - streak_7_day:                7-day consecutive activity streak milestone
+ * - streak_30_day:               30-day consecutive activity streak milestone
+ * - revise_decaying_topic:       Revisiting a topic whose retention has dropped
+ * - study_task_complete:         Completing a study plan task
+ * - study_plan_week:             Completing a full week of the study plan
+ * - score_crosses_80:            Performance Score crosses 80 in a subject (one-time per subject)
+ * - score_crosses_90:            Performance Score crosses 90 in a subject (one-time per subject)
+ * - challenge_solve:             Solving the daily Concept Chain
+ * - challenge_streak_7/30/100:   Daily-Challenge streak milestones
+ * - experiment_complete:         Bare STEM-Lab simulation finished with observation saved (60s+ on sim)
+ * - guided_experiment_complete:  Full 6-step guided experiment + viva completed
+ * - viva_perfect_bonus:          100% on the viva quiz at the end of a guided experiment
+ * - first_experiment_of_day:     Bonus for the first experiment each calendar day
+ * - experiment_subject_streak_5: Completing 5 different sims within the same subject
+ * - experiment_daily_cap:        Anti-grind ceiling on experiment-derived coins per day
+ * - lab_streak_3/7/30_day:       Lab-only streak milestones (separate from quiz streak)
  */
 export const COIN_REWARDS = {
   quiz_complete:         10,
@@ -44,6 +53,17 @@ export const COIN_REWARDS = {
   challenge_streak_7:     25,  // 7-day challenge streak milestone
   challenge_streak_30:   100,  // 30-day challenge streak milestone
   challenge_streak_100:  500,  // 100-day challenge streak milestone
+  // STEM Lab — experiment completion (Tier 1)
+  experiment_complete:         20,  // Bare sim with observation saved (60s+ on sim)
+  guided_experiment_complete:  40,  // Full 6-step guided experiment + viva
+  viva_perfect_bonus:          25,  // 100% on viva quiz at end of guided experiment
+  first_experiment_of_day:     10,  // Bonus for first experiment each calendar day
+  experiment_subject_streak_5: 50,  // Completing 5 different sims in same subject
+  experiment_daily_cap:       100,  // Max experiment coins per day (anti-grind)
+  // Lab streak — separate from quiz streak (Tier 1)
+  lab_streak_3_day:           15,
+  lab_streak_7_day:           40,
+  lab_streak_30_day:         150,
 } as const;
 
 export type CoinRewardId = keyof typeof COIN_REWARDS;

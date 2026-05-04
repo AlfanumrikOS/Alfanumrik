@@ -451,6 +451,7 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi }: { guardian: 
   const [showTips, setShowTips] = useState(false);
   const [selectedChildIdx, setSelectedChildIdx] = useState(0);
   const [perfScores, setPerfScores] = useState<PerfScoreRow[]>([]);
+  const [labStreak, setLabStreak] = useState<number | null>(null);
 
   // Derive current student from selectedChildIdx
   const children = allChildren.length > 0 ? allChildren : [initialStudent];
@@ -481,6 +482,18 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi }: { guardian: 
       }
     } catch {
       setPerfScores([]);
+    }
+
+    // Fetch STEM lab streak (RLS handles parent access via student_lab_streaks_guardian_select)
+    try {
+      const { data: streakRow } = await supabase
+        .from('student_lab_streaks')
+        .select('current_streak')
+        .eq('student_id', student.id)
+        .maybeSingle();
+      setLabStreak(streakRow ? Number(streakRow.current_streak ?? 0) : 0);
+    } catch {
+      setLabStreak(null);
     }
 
     setLoading(false);
@@ -569,6 +582,7 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi }: { guardian: 
           setLoading(true);
           setDash(null);
           setPerfScores([]);
+          setLabStreak(null);
           setSelectedChildIdx(idx);
         }}
       />
@@ -818,6 +832,18 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi }: { guardian: 
         </a>
         <a href="/parent/reports" className="flex items-center gap-1.5 px-4 py-2.5 bg-white text-orange-500 border border-orange-200 rounded-[10px] text-[13px] font-semibold no-underline">
           &#x1F4CA; {t(isHi, 'Reports', 'रिपोर्ट')}
+        </a>
+        <a
+          href="/parent/reports#labs"
+          className="flex items-center gap-1.5 min-h-[44px] px-4 py-2.5 bg-white text-orange-500 border border-orange-200 rounded-[10px] text-[13px] font-semibold no-underline"
+          aria-label={t(isHi, 'View lab activity', 'लैब गतिविधि देखें')}
+        >
+          &#x1F52C; {t(isHi, 'Lab Activity', 'लैब गतिविधि')}
+          {labStreak !== null && labStreak > 0 && (
+            <span className="ml-1 inline-flex items-center gap-0.5 bg-amber-100 text-amber-700 text-[11px] font-bold px-1.5 py-0.5 rounded">
+              &#x1F525;{labStreak}
+            </span>
+          )}
         </a>
         <a href="/parent/calendar" className="flex items-center gap-1.5 px-4 py-2.5 bg-white text-orange-500 border border-orange-200 rounded-[10px] text-[13px] font-semibold no-underline">
           &#x1F4C5; {t(isHi, 'Calendar', 'कैलेंडर')}

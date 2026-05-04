@@ -45,6 +45,35 @@ export interface ExperimentDefinition {
   conclusionPrompt: string;
   conclusionPromptHi: string;
   quizQuestions: VivaQuestion[];
+  /**
+   * CBSE-aligned topic slug used to feed viva mastery into the Cognitive
+   * Engine via `recordExperimentEvidence()`. Format: lowercase
+   * `<chapter>.<concept>` dotted slug. Each guided experiment maps to
+   * exactly one topic so a mastery delta has a single home.
+   *
+   * Topic-key catalogue (20 experiments → 20 slugs, all CBSE-aligned):
+   *   exp-ohms-law              → electricity.ohms_law
+   *   exp-photosynthesis        → life_processes.photosynthesis
+   *   exp-ph-scale              → acids_bases_salts.ph_scale
+   *   exp-linear-equations      → algebra.linear_equations_two_variables
+   *   exp-human-heart           → life_processes.circulatory_system
+   *   exp-electric-circuit-basic → electricity.simple_circuits
+   *   exp-cell-structure        → cell_biology.cell_structure
+   *   exp-light-reflection      → light.reflection
+   *   exp-magnet-field-lines    → magnetism.magnetic_field_lines
+   *   exp-fractions             → number_system.fractions
+   *   exp-angle-explorer        → geometry.angles
+   *   exp-symmetry-explorer     → geometry.symmetry
+   *   exp-newton-laws           → motion.newtons_laws
+   *   exp-pendulum              → motion.simple_pendulum
+   *   exp-bohr-model            → atomic_structure.bohr_model
+   *   exp-chemical-balancer     → chemical_reactions.balancing_equations
+   *   exp-respiration           → life_processes.respiration
+   *   exp-pythagoras            → geometry.pythagoras_theorem
+   *   exp-punnett-square        → heredity.punnett_squares
+   *   exp-quadratic-graph       → algebra.quadratic_equations
+   */
+  topicKey: string;
 }
 
 /* ─── Experiment Definitions ─── */
@@ -53,6 +82,7 @@ export const GUIDED_EXPERIMENTS: ExperimentDefinition[] = [
   /* ──────────── 1. Ohm's Law ──────────── */
   {
     id: 'exp-ohms-law',
+    topicKey: 'electricity.ohms_law',
     simulationId: 'builtin-ohms-law',
     title: "Ohm's Law: Voltage, Current & Resistance",
     titleHi: 'ओम का नियम: वोल्टेज, धारा और प्रतिरोध',
@@ -174,6 +204,7 @@ export const GUIDED_EXPERIMENTS: ExperimentDefinition[] = [
   /* ──────────── 2. Photosynthesis ──────────── */
   {
     id: 'exp-photosynthesis',
+    topicKey: 'life_processes.photosynthesis',
     simulationId: 'builtin-photosynthesis',
     title: 'Photosynthesis: Light, CO\u2082 and Glucose',
     titleHi: 'प्रकाश संश्लेषण: प्रकाश, CO\u2082 और ग्लूकोज़',
@@ -287,6 +318,7 @@ export const GUIDED_EXPERIMENTS: ExperimentDefinition[] = [
   /* ──────────── 3. Acid-Base pH Scale ──────────── */
   {
     id: 'exp-ph-scale',
+    topicKey: 'acids_bases_salts.ph_scale',
     simulationId: 'builtin-ph-scale',
     title: 'Acids, Bases & the pH Scale',
     titleHi: 'अम्ल, क्षार और pH पैमाना',
@@ -412,6 +444,7 @@ export const GUIDED_EXPERIMENTS: ExperimentDefinition[] = [
   /* ──────────── 4. Linear Equations: y = mx + c ──────────── */
   {
     id: 'exp-linear-equations',
+    topicKey: 'algebra.linear_equations_two_variables',
     simulationId: 'builtin-linear-graph',
     title: 'Linear Equations: Slope & Intercept',
     titleHi: 'रैखिक समीकरण: ढलान और अंतःखंड',
@@ -516,6 +549,7 @@ export const GUIDED_EXPERIMENTS: ExperimentDefinition[] = [
   /* ──────────── 5. Human Heart & Double Circulation ──────────── */
   {
     id: 'exp-human-heart',
+    topicKey: 'life_processes.circulatory_system',
     simulationId: 'builtin-human-heart',
     title: 'The Human Heart & Double Circulation',
     titleHi: 'मानव हृदय और दोहरा परिसंचरण',
@@ -620,6 +654,7 @@ export const GUIDED_EXPERIMENTS: ExperimentDefinition[] = [
   /* ──────────── 6. Electric Circuit Builder ──────────── */
   {
     id: 'exp-electric-circuit-basic',
+    topicKey: 'electricity.simple_circuits',
     simulationId: 'builtin-electric-circuit-basic',
     title: 'Electric Circuits: Open, Closed & Components',
     titleHi: 'विद्युत परिपथ: खुला, बंद और घटक',
@@ -693,6 +728,7 @@ export const GUIDED_EXPERIMENTS: ExperimentDefinition[] = [
   /* ──────────── 7. Cell Structure Explorer ──────────── */
   {
     id: 'exp-cell-structure',
+    topicKey: 'cell_biology.cell_structure',
     simulationId: 'builtin-cell-structure',
     title: 'Cell Structure: Plant vs Animal Cells',
     titleHi: 'कोशिका संरचना: पादप और जंतु कोशिका',
@@ -771,6 +807,7 @@ export const GUIDED_EXPERIMENTS: ExperimentDefinition[] = [
   /* ──────────── 8. Light Reflection Lab ──────────── */
   {
     id: 'exp-light-reflection',
+    topicKey: 'light.reflection',
     simulationId: 'builtin-light-reflection',
     title: 'Light Reflection: Laws & Mirror Images',
     titleHi: 'प्रकाश परावर्तन: नियम और दर्पण प्रतिबिम्ब',
@@ -836,6 +873,7 @@ export const GUIDED_EXPERIMENTS: ExperimentDefinition[] = [
   /* ──────────── 9. Magnetic Field Lines ──────────── */
   {
     id: 'exp-magnet-field-lines',
+    topicKey: 'magnetism.magnetic_field_lines',
     simulationId: 'builtin-magnet-field-lines',
     title: 'Magnets: Poles, Field Lines & Attraction',
     titleHi: 'चुम्बक: ध्रुव, क्षेत्र रेखाएँ और आकर्षण',
@@ -898,6 +936,7 @@ export const GUIDED_EXPERIMENTS: ExperimentDefinition[] = [
   /* ──────────── 10. Pizza Fraction Lab ──────────── */
   {
     id: 'exp-fractions',
+    topicKey: 'number_system.fractions',
     simulationId: 'builtin-fractions',
     title: 'Fractions: Parts of a Whole',
     titleHi: 'भिन्न: एक पूरे के भाग',
@@ -970,6 +1009,7 @@ export const GUIDED_EXPERIMENTS: ExperimentDefinition[] = [
   /* ──────────── 11. Angle Explorer ──────────── */
   {
     id: 'exp-angle-explorer',
+    topicKey: 'geometry.angles',
     simulationId: 'builtin-angle-explorer',
     title: 'Angles: Types & Measurement',
     titleHi: 'कोण: प्रकार और मापन',
@@ -1037,6 +1077,7 @@ export const GUIDED_EXPERIMENTS: ExperimentDefinition[] = [
   /* ──────────── 12. Symmetry Explorer ──────────── */
   {
     id: 'exp-symmetry-explorer',
+    topicKey: 'geometry.symmetry',
     simulationId: 'builtin-symmetry-explorer',
     title: 'Symmetry: Lines & Rotational',
     titleHi: 'सममिति: रेखा और घूर्णी',
@@ -1096,6 +1137,7 @@ export const GUIDED_EXPERIMENTS: ExperimentDefinition[] = [
   /* ──────────── 13. Newton's Laws ──────────── */
   {
     id: 'exp-newton-laws',
+    topicKey: 'motion.newtons_laws',
     simulationId: 'builtin-newton-laws',
     title: "Newton's Laws: Force & Motion",
     titleHi: 'न्यूटन के नियम: बल और गति',
@@ -1125,6 +1167,7 @@ export const GUIDED_EXPERIMENTS: ExperimentDefinition[] = [
   /* ──────────── 14. Pendulum Lab ──────────── */
   {
     id: 'exp-pendulum',
+    topicKey: 'motion.simple_pendulum',
     simulationId: 'builtin-pendulum',
     title: 'Simple Pendulum: Time Period & Length',
     titleHi: 'सरल लोलक: आवर्तकाल और लम्बाई',
@@ -1155,6 +1198,7 @@ export const GUIDED_EXPERIMENTS: ExperimentDefinition[] = [
   /* ──────────── 15. Bohr Atomic Model ──────────── */
   {
     id: 'exp-bohr-model',
+    topicKey: 'atomic_structure.bohr_model',
     simulationId: 'builtin-bohr-model',
     title: "Bohr's Atomic Model: Shells & Electrons",
     titleHi: 'बोर का परमाणु मॉडल: कोश और इलेक्ट्रॉन',
@@ -1183,6 +1227,7 @@ export const GUIDED_EXPERIMENTS: ExperimentDefinition[] = [
   /* ──────────── 16. Chemical Equation Balancer ──────────── */
   {
     id: 'exp-chemical-balancer',
+    topicKey: 'chemical_reactions.balancing_equations',
     simulationId: 'builtin-chemical-balancer',
     title: 'Chemical Equations: Balancing & Types',
     titleHi: 'रासायनिक समीकरण: संतुलन और प्रकार',
@@ -1212,6 +1257,7 @@ export const GUIDED_EXPERIMENTS: ExperimentDefinition[] = [
   /* ──────────── 17. Respiration Lab ──────────── */
   {
     id: 'exp-respiration',
+    topicKey: 'life_processes.respiration',
     simulationId: 'builtin-respiration-lab',
     title: 'Respiration: Aerobic vs Anaerobic',
     titleHi: 'श्वसन: वायवीय बनाम अवायवीय',
@@ -1240,6 +1286,7 @@ export const GUIDED_EXPERIMENTS: ExperimentDefinition[] = [
   /* ──────────── 18. Pythagoras Theorem ──────────── */
   {
     id: 'exp-pythagoras',
+    topicKey: 'geometry.pythagoras_theorem',
     simulationId: 'builtin-pythagoras',
     title: 'Pythagoras Theorem: a\u00b2 + b\u00b2 = c\u00b2',
     titleHi: 'पाइथागोरस प्रमेय: a\u00b2 + b\u00b2 = c\u00b2',
@@ -1269,6 +1316,7 @@ export const GUIDED_EXPERIMENTS: ExperimentDefinition[] = [
   /* ──────────── 19. Punnett Square ──────────── */
   {
     id: 'exp-punnett-square',
+    topicKey: 'heredity.punnett_squares',
     simulationId: 'builtin-punnett-square',
     title: 'Punnett Square: Mendelian Genetics',
     titleHi: 'पनेट वर्ग: मेंडल का आनुवंशिकी',
@@ -1297,6 +1345,7 @@ export const GUIDED_EXPERIMENTS: ExperimentDefinition[] = [
   /* ──────────── 20. Quadratic Equation Grapher ──────────── */
   {
     id: 'exp-quadratic-graph',
+    topicKey: 'algebra.quadratic_equations',
     simulationId: 'builtin-quadratic-graph',
     title: 'Quadratic Equations: Parabola & Roots',
     titleHi: 'द्विघात समीकरण: परवलय और मूल',
