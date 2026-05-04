@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { LangProvider, LangToggle, useLang } from '@/components/landing/LangToggle';
 import { PricingCards } from './PricingCards';
+import Breadcrumbs from '@/components/Breadcrumbs';
 
 // SEO metadata is in layout.tsx (Server Component) for SSR indexing
 
@@ -72,6 +73,7 @@ function PricingContent() {
           </div>
         </div>
       </nav>
+      <Breadcrumbs items={[{ label: 'Home', href: '/welcome' }, { label: 'Pricing' }]} />
 
       {/* Hero */}
       <section style={{ textAlign: 'center', padding: '64px 16px 32px', maxWidth: 800, margin: '0 auto' }}>

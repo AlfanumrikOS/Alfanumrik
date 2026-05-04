@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { LangProvider, LangToggle, useLang } from '@/components/landing/LangToggle';
+import Breadcrumbs from '@/components/Breadcrumbs';
 
 // SEO metadata is in layout.tsx (Server Component) for SSR indexing
 
@@ -55,6 +56,13 @@ function ForTeachersContent() {
           </div>
         </div>
       </nav>
+      <Breadcrumbs
+        items={[
+          { label: 'Home', href: '/welcome' },
+          { label: 'Solutions' },
+          { label: 'For Teachers' },
+        ]}
+      />
 
       {/* HERO */}
       <section className="py-16 sm:py-24 text-center">

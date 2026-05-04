@@ -10,6 +10,7 @@ import WorkbookV2 from './WorkbookV2';
 import ShowcaseV2 from './ShowcaseV2';
 import TrustV2 from './TrustV2';
 import PricingTeaserV2 from './PricingTeaserV2';
+import FAQV2 from './FAQV2';
 import FinalCtaV2 from './FinalCtaV2';
 import FooterV2 from './FooterV2';
 import s from './welcome-v2.module.css';
@@ -114,6 +115,7 @@ function ThemedShell() {
         <ShowcaseV2 />
         <TrustV2 />
         <PricingTeaserV2 />
+        <FAQV2 />
         <FinalCtaV2 />
       </main>
       <FooterV2 />

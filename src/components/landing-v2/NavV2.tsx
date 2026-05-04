@@ -396,8 +396,12 @@ export default function NavV2() {
               <span className="num">06</span>
               {t('Plans & pricing', 'योजनाएँ')}
             </Link>
-            <Link href="#cta" onClick={() => setMenuOpen(false)}>
+            <Link href="#faq" onClick={() => setMenuOpen(false)}>
               <span className="num">07</span>
+              {t('Common questions', 'सामान्य प्रश्न')}
+            </Link>
+            <Link href="#cta" onClick={() => setMenuOpen(false)}>
+              <span className="num">08</span>
               {t('Begin a session', 'शुरू कीजिये')}
             </Link>
           </nav>
