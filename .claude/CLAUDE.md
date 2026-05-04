@@ -116,7 +116,9 @@ Client code never bypasses RLS. `supabase-admin.ts` is server-only. Every new ta
 API routes use `authorizeRequest(request, 'permission.code')`. Client `usePermissions()` is UI convenience, not security.
 
 ### P10: Bundle Budget
-Shared JS < 160 kB. Pages < 260 kB. Middleware < 120 kB. Target: Indian 4G (2-5 Mbps).
+Shared JS < 175 kB (temporary; baseline 160 kB). Pages < 260 kB. Middleware < 120 kB. Target: Indian 4G (2-5 Mbps).
+
+Cap-raise rationale (2026-05-04, user-approved per PR #529): React 19 + Turbopack baseline drift pushed the 6 framework chunks measured by scripts/check-bundle-size.mjs from ~155 kB to 168.5 kB between PR #513's morning CI run and end-of-day. Architect investigation confirmed zero application code or third-party libs in the measured chunks. The script's "shared" definition is also artificially narrow — it ignores ~57 kB of layout-level chunks (Supabase auth client, etc.) so the real first-paint shared cost is ~225 kB. Two follow-ups tracked: (a) lazy-load PostHogProvider via next/dynamic; (b) rewrite measureShared() to count layout chunks. Once both land, restore the cap to 160 kB.
 
 ### P11: Payment Integrity
 Razorpay webhook signature MUST be verified before processing any payment event. Subscription status changes MUST be written atomically with the payment record. Never grant plan access without verified payment.

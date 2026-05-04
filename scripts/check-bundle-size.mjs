@@ -3,7 +3,7 @@
  * Bundle size checker — Turbopack-compatible.
  *
  * Enforces P10 budget from .claude/CLAUDE.md:
- *   - Shared JS gzip:   160 kB
+ *   - Shared JS gzip:   175 kB (temporary; see CAP_SHARED_KB note below)
  *   - Per-page gzip:    260 kB
  *   - Middleware gzip:  120 kB
  *
@@ -35,7 +35,18 @@ import { gzipSync } from 'node:zlib';
 import { join, relative, sep } from 'node:path';
 
 // ─── Caps (P10 in .claude/CLAUDE.md) ──────────────────────────────────────
-const CAP_SHARED_KB = 160;
+// CAP_SHARED_KB temporarily raised from 160 to 175 (2026-05-04, user-approved
+// per PR #529). The pre-existing 8.5 kB overshoot was diagnosed by architect
+// investigation as inherited React 19 + Turbopack framework drift — zero
+// application code or third-party libs are in the 6 chunks measured here.
+// Two follow-ups tracked:
+//   1. Lazy-load PostHogProvider via next/dynamic({ ssr: false }) (~30 LOC,
+//      ~2-3 kB savings; applies to layout chunks not measured by this script).
+//   2. Rewrite measureShared() below to count layout chunks too (current
+//      definition under-reports by ~57 kB; true shared first-paint is
+//      ~225 kB including Supabase auth client).
+// Once both follow-ups land, restore CAP_SHARED_KB to 160.
+const CAP_SHARED_KB = 175;
 const CAP_PAGE_KB = 260;
 const CAP_MIDDLEWARE_KB = 120;
 
