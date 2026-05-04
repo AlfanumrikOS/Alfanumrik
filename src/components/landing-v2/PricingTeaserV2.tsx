@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { useWelcomeV2 } from './WelcomeV2Context';
+import { track as trackEvent } from '@/lib/posthog/client';
 import s from './welcome-v2.module.css';
 
 interface Plan {
@@ -88,7 +89,7 @@ const PLANS: Plan[] = [
 ];
 
 export default function PricingTeaserV2() {
-  const { isHi, t } = useWelcomeV2();
+  const { isHi, t, role } = useWelcomeV2();
   const trackRef = useRef<HTMLDivElement | null>(null);
   const [activeIdx, setActiveIdx] = useState(1); // featured Pro plan as default
 
@@ -170,6 +171,14 @@ export default function PricingTeaserV2() {
                 <Link
                   href={plan.href}
                   className={`${s.btn} ${plan.ctaClass === 'btnPrimary' ? s.btnPrimary : s.btnGhost} ${plan.ctaClass === 'btnPrimary' ? s.btnArrow : ''}`}
+                  onClick={() =>
+                    trackEvent('landing_cta_click', {
+                      location: 'pricing_teaser',
+                      destination: plan.href,
+                      active_role: role,
+                      language: isHi ? 'hi' : 'en',
+                    })
+                  }
                 >
                   {t(plan.ctaEn, plan.ctaHi)}
                 </Link>

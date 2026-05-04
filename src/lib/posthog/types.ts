@@ -48,7 +48,15 @@ export type PostHogEventName =
   | 'foxy_session_started'        // session bootstrap (server-side analogue of client foxy_session_started)
   | 'foxy_message_sent'           // per-turn volumetric (no message text — P13)
   | 'foxy_oracle_blocked'         // an MCQ candidate failed the quiz-oracle gate
-  | 'foxy_practice_question_emitted'; // an MCQ passed the gate and shipped to client
+  | 'foxy_practice_question_emitted' // an MCQ passed the gate and shipped to client
+  // Landing-page measurement (Phase 5 of landing refresh).
+  // All client-side. Fired from src/components/landing-v2/* and src/components/Breadcrumbs.tsx.
+  | 'landing_nav_click'
+  | 'landing_solutions_dropdown_opened'
+  | 'landing_role_changed'
+  | 'landing_faq_opened'
+  | 'landing_cta_click'
+  | 'landing_breadcrumb_click';
 
 // ─── Base properties auto-attached by `capture()` ──────────────────────────
 
@@ -260,6 +268,69 @@ export interface QuizQuestionServedPayload {
   strategy?: 'review' | 'adaptive' | 'random';
 }
 
+// ─── Landing-page measurement payloads (Phase 5) ───────────────────────────
+//
+// All landing events are fired client-side. They carry the active role, the
+// destination href / label, and (for CTA) the UI language at click time.
+// PII-free by design — no email, phone, full_name, raw user IDs. The
+// EVENT_PROPERTY_PII_KEYS redactor in `src/lib/analytics.ts` provides defence
+// in depth.
+
+export interface LandingNavClickPayload {
+  /** Where in the nav: 'primary' = desktop top bar; 'mobile_pages' = burger Pages group; 'mobile_sections' = burger Sections group. */
+  source: 'primary' | 'mobile_pages' | 'mobile_sections';
+  /** The href clicked (e.g. '/pricing', '/about', '#faq'). */
+  destination: string;
+  /** The visible label of the link (e.g. 'Pricing', 'About', 'Common questions'). */
+  label: string;
+  /** Active role at click time. */
+  active_role: 'parent' | 'student' | 'teacher' | 'school';
+}
+
+export interface LandingSolutionsDropdownOpenedPayload {
+  active_role: 'parent' | 'student' | 'teacher' | 'school';
+}
+
+export interface LandingRoleChangedPayload {
+  /** Role they switched FROM. */
+  from_role: 'parent' | 'student' | 'teacher' | 'school';
+  /** Role they switched TO. */
+  to_role: 'parent' | 'student' | 'teacher' | 'school';
+  /** Which control they used: desktop strip or mobile burger. */
+  source: 'desktop_strip' | 'mobile_burger';
+}
+
+export interface LandingFaqOpenedPayload {
+  /** 1-indexed position of the FAQ in the visible list. */
+  faq_index: number;
+  /** The English question text — used for analytics-friendly grouping even when user is on Hi. */
+  question_en: string;
+  /** Active role at click time. */
+  active_role: 'parent' | 'student' | 'teacher' | 'school';
+}
+
+export interface LandingCtaClickPayload {
+  /** Where the CTA lives: 'nav' (top-bar Start free), 'hero' (per-role CTA), 'pricing_teaser', 'final_cta'. */
+  location: 'nav' | 'hero' | 'pricing_teaser' | 'final_cta';
+  /** The CTA destination href. */
+  destination: string;
+  /** Active role at click time. */
+  active_role: 'parent' | 'student' | 'teacher' | 'school';
+  /** UI language at click time. */
+  language: 'en' | 'hi';
+}
+
+export interface LandingBreadcrumbClickPayload {
+  /** The page the user is currently on (e.g. '/about', '/for-parents'). */
+  current_page: string;
+  /** The breadcrumb label clicked (e.g. 'Home', 'Solutions'). */
+  label: string;
+  /** The destination href. */
+  destination: string;
+  /** 0-indexed position of the clicked crumb (Home = 0, deepest = items.length - 1). */
+  crumb_position: number;
+}
+
 // Discriminated union of all event payloads, keyed by event name.
 export type EventPayloadByName = {
   quiz_started: QuizStartedPayload;
@@ -281,6 +352,12 @@ export type EventPayloadByName = {
   foxy_message_sent: FoxyMessageSentPayload;
   foxy_oracle_blocked: FoxyOracleBlockedPayload;
   foxy_practice_question_emitted: FoxyPracticeQuestionEmittedPayload;
+  landing_nav_click: LandingNavClickPayload;
+  landing_solutions_dropdown_opened: LandingSolutionsDropdownOpenedPayload;
+  landing_role_changed: LandingRoleChangedPayload;
+  landing_faq_opened: LandingFaqOpenedPayload;
+  landing_cta_click: LandingCtaClickPayload;
+  landing_breadcrumb_click: LandingBreadcrumbClickPayload;
 };
 
 /** Generic helper: lookup payload type by event name. */

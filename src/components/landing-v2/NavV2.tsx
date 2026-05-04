@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { useWelcomeV2, type Role } from './WelcomeV2Context';
+import { track } from '@/lib/posthog/client';
 import s from './welcome-v2.module.css';
 
 const ROLES: { id: Role; en: string; hi: string }[] = [
@@ -94,7 +95,16 @@ export default function NavV2() {
         e.key === 'ArrowRight'
           ? ROLES[(idx + 1) % ROLES.length]
           : ROLES[(idx - 1 + ROLES.length) % ROLES.length];
+      const prev = role;
       setRole(next.id);
+      if (prev !== next.id) {
+        // Phase 5 measurement: keyboard arrow nav on the desktop role strip.
+        track('landing_role_changed', {
+          from_role: prev,
+          to_role: next.id,
+          source: 'desktop_strip',
+        });
+      }
       requestAnimationFrame(() => {
         const btn = containerRef.current?.querySelector<HTMLButtonElement>(
           `button[data-role="${next.id}"]`,
@@ -134,6 +144,8 @@ export default function NavV2() {
     setSolutionsOpen((prev) => {
       const next = !prev;
       if (next) {
+        // Phase 5 measurement: fire only on open, not close.
+        track('landing_solutions_dropdown_opened', { active_role: role });
         // After opening, focus the first menu item.
         requestAnimationFrame(() => {
           const first =
@@ -161,7 +173,19 @@ export default function NavV2() {
 
           {/* Primary nav links (desktop ≥768px) — Pages, not role tabs. */}
           <div className={s.primaryNav} ref={tabsRef}>
-            <Link href="/product">{t('Product', 'उत्पाद')}</Link>
+            <Link
+              href="/product"
+              onClick={() =>
+                track('landing_nav_click', {
+                  source: 'primary',
+                  destination: '/product',
+                  label: t('Product', 'उत्पाद'),
+                  active_role: role,
+                })
+              }
+            >
+              {t('Product', 'उत्पाद')}
+            </Link>
             <div className={s.dropdownWrap}>
               <button
                 ref={solutionsBtnRef}
@@ -189,7 +213,15 @@ export default function NavV2() {
                       role="menuitem"
                       tabIndex={-1}
                       onKeyDown={(e) => onMenuItemKeyDown(e, i)}
-                      onClick={() => setSolutionsOpen(false)}
+                      onClick={() => {
+                        track('landing_nav_click', {
+                          source: 'primary',
+                          destination: sol.href,
+                          label: t(sol.en, sol.hi),
+                          active_role: role,
+                        });
+                        setSolutionsOpen(false);
+                      }}
                     >
                       <span>{t(sol.en, sol.hi)}</span>
                       {!isHi ? (
@@ -202,9 +234,45 @@ export default function NavV2() {
                 </div>
               ) : null}
             </div>
-            <Link href="/pricing">{t('Pricing', 'मूल्य')}</Link>
-            <Link href="/research">{t('Research', 'शोध')}</Link>
-            <Link href="/about">{t('About', 'हमारे बारे में')}</Link>
+            <Link
+              href="/pricing"
+              onClick={() =>
+                track('landing_nav_click', {
+                  source: 'primary',
+                  destination: '/pricing',
+                  label: t('Pricing', 'मूल्य'),
+                  active_role: role,
+                })
+              }
+            >
+              {t('Pricing', 'मूल्य')}
+            </Link>
+            <Link
+              href="/research"
+              onClick={() =>
+                track('landing_nav_click', {
+                  source: 'primary',
+                  destination: '/research',
+                  label: t('Research', 'शोध'),
+                  active_role: role,
+                })
+              }
+            >
+              {t('Research', 'शोध')}
+            </Link>
+            <Link
+              href="/about"
+              onClick={() =>
+                track('landing_nav_click', {
+                  source: 'primary',
+                  destination: '/about',
+                  label: t('About', 'हमारे बारे में'),
+                  active_role: role,
+                })
+              }
+            >
+              {t('About', 'हमारे बारे में')}
+            </Link>
           </div>
 
           <div className={s.navRight}>
@@ -229,7 +297,18 @@ export default function NavV2() {
             >
               <span aria-hidden="true">{themeIcon}</span>
             </button>
-            <Link href="/login" className={`${s.btn} ${s.btnInk} ${s.btnArrow}`}>
+            <Link
+              href="/login"
+              className={`${s.btn} ${s.btnInk} ${s.btnArrow}`}
+              onClick={() =>
+                track('landing_cta_click', {
+                  location: 'nav',
+                  destination: '/login',
+                  active_role: role,
+                  language: isHi ? 'hi' : 'en',
+                })
+              }
+            >
               <span className={s.navCtaLabel}>{t('Start free', 'मुफ्त शुरू करें')}</span>
               <span className={s.srOnly}>{t('Start free', 'मुफ्त शुरू करें')}</span>
             </Link>
@@ -293,7 +372,18 @@ export default function NavV2() {
                   data-role={r.id}
                   aria-selected={role === r.id}
                   tabIndex={role === r.id ? 0 : -1}
-                  onClick={() => setRole(r.id)}
+                  onClick={() => {
+                    const prev = role;
+                    setRole(r.id);
+                    if (prev !== r.id) {
+                      // Phase 5 measurement: explicit user-initiated role change.
+                      track('landing_role_changed', {
+                        from_role: prev,
+                        to_role: r.id,
+                        source: 'desktop_strip',
+                      });
+                    }
+                  }}
                   onKeyDown={(e) => onStripTabKeyDown(e, idx)}
                 >
                   {t(r.en, r.hi)}
@@ -349,8 +439,17 @@ export default function NavV2() {
                   aria-selected={role === r.id}
                   className={role === r.id ? 'active' : undefined}
                   onClick={() => {
+                    const prev = role;
                     setRole(r.id);
                     setMenuOpen(false);
+                    if (prev !== r.id) {
+                      // Phase 5 measurement: role switched via mobile burger.
+                      track('landing_role_changed', {
+                        from_role: prev,
+                        to_role: r.id,
+                        source: 'mobile_burger',
+                      });
+                    }
                   }}
                 >
                   {t(r.en, r.hi)}
@@ -372,77 +471,68 @@ export default function NavV2() {
           </div>
 
           <nav className={s.menuNav} aria-label={t('Sections', 'अनुभाग')}>
-            <Link href="#stats" onClick={() => setMenuOpen(false)}>
-              <span className="num">01</span>
-              {t('By the numbers', 'आँकड़ों में')}
-            </Link>
-            <Link href="#mission" onClick={() => setMenuOpen(false)}>
-              <span className="num">02</span>
-              {t('What we are building', 'हम क्या बना रहे हैं')}
-            </Link>
-            <Link href="#how" onClick={() => setMenuOpen(false)}>
-              <span className="num">03</span>
-              {t('What changes', 'क्या बदलता है')}
-            </Link>
-            <Link href="#showcase" onClick={() => setMenuOpen(false)}>
-              <span className="num">04</span>
-              {t('Inside the product', 'उत्पाद के अंदर')}
-            </Link>
-            <Link href="#trust" onClick={() => setMenuOpen(false)}>
-              <span className="num">05</span>
-              {t('Voices', 'आवाज़ें')}
-            </Link>
-            <Link href="#pricing" onClick={() => setMenuOpen(false)}>
-              <span className="num">06</span>
-              {t('Plans & pricing', 'योजनाएँ')}
-            </Link>
-            <Link href="#faq" onClick={() => setMenuOpen(false)}>
-              <span className="num">07</span>
-              {t('Common questions', 'सामान्य प्रश्न')}
-            </Link>
-            <Link href="#cta" onClick={() => setMenuOpen(false)}>
-              <span className="num">08</span>
-              {t('Begin a session', 'शुरू कीजिये')}
-            </Link>
+            {(
+              [
+                { href: '#stats', num: '01', en: 'By the numbers', hi: 'आँकड़ों में' },
+                { href: '#mission', num: '02', en: 'What we are building', hi: 'हम क्या बना रहे हैं' },
+                { href: '#how', num: '03', en: 'What changes', hi: 'क्या बदलता है' },
+                { href: '#showcase', num: '04', en: 'Inside the product', hi: 'उत्पाद के अंदर' },
+                { href: '#trust', num: '05', en: 'Voices', hi: 'आवाज़ें' },
+                { href: '#pricing', num: '06', en: 'Plans & pricing', hi: 'योजनाएँ' },
+                { href: '#faq', num: '07', en: 'Common questions', hi: 'सामान्य प्रश्न' },
+                { href: '#cta', num: '08', en: 'Begin a session', hi: 'शुरू कीजिये' },
+              ] as const
+            ).map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => {
+                  track('landing_nav_click', {
+                    source: 'mobile_sections',
+                    destination: item.href,
+                    label: t(item.en, item.hi),
+                    active_role: role,
+                  });
+                  setMenuOpen(false);
+                }}
+              >
+                <span className="num">{item.num}</span>
+                {t(item.en, item.hi)}
+              </Link>
+            ))}
           </nav>
 
           <nav className={s.menuNav} aria-label={t('Pages', 'पृष्ठ')}>
-            <Link href="/product" onClick={() => setMenuOpen(false)}>
-              <span className="num">A</span>
-              {t('Product', 'उत्पाद')}
-            </Link>
-            <Link href="/for-parents" onClick={() => setMenuOpen(false)}>
-              <span className="num">B</span>
-              {t('For Parents', 'अभिभावकों के लिए')}
-            </Link>
-            <Link href="/for-teachers" onClick={() => setMenuOpen(false)}>
-              <span className="num">C</span>
-              {t('For Teachers', 'शिक्षकों के लिए')}
-            </Link>
-            <Link href="/for-schools" onClick={() => setMenuOpen(false)}>
-              <span className="num">D</span>
-              {t('For Schools', 'विद्यालयों के लिए')}
-            </Link>
-            <Link href="/pricing" onClick={() => setMenuOpen(false)}>
-              <span className="num">E</span>
-              {t('Pricing', 'मूल्य')}
-            </Link>
-            <Link href="/research" onClick={() => setMenuOpen(false)}>
-              <span className="num">F</span>
-              {t('Research', 'शोध')}
-            </Link>
-            <Link href="/about" onClick={() => setMenuOpen(false)}>
-              <span className="num">G</span>
-              {t('About', 'हमारे बारे में')}
-            </Link>
-            <Link href="/help" onClick={() => setMenuOpen(false)}>
-              <span className="num">H</span>
-              {t('Help', 'सहायता')}
-            </Link>
-            <Link href="/contact" onClick={() => setMenuOpen(false)}>
-              <span className="num">I</span>
-              {t('Contact', 'संपर्क')}
-            </Link>
+            {(
+              [
+                { href: '/product', num: 'A', en: 'Product', hi: 'उत्पाद' },
+                { href: '/for-parents', num: 'B', en: 'For Parents', hi: 'अभिभावकों के लिए' },
+                { href: '/for-teachers', num: 'C', en: 'For Teachers', hi: 'शिक्षकों के लिए' },
+                { href: '/for-schools', num: 'D', en: 'For Schools', hi: 'विद्यालयों के लिए' },
+                { href: '/pricing', num: 'E', en: 'Pricing', hi: 'मूल्य' },
+                { href: '/research', num: 'F', en: 'Research', hi: 'शोध' },
+                { href: '/about', num: 'G', en: 'About', hi: 'हमारे बारे में' },
+                { href: '/help', num: 'H', en: 'Help', hi: 'सहायता' },
+                { href: '/contact', num: 'I', en: 'Contact', hi: 'संपर्क' },
+              ] as const
+            ).map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => {
+                  track('landing_nav_click', {
+                    source: 'mobile_pages',
+                    destination: item.href,
+                    label: t(item.en, item.hi),
+                    active_role: role,
+                  });
+                  setMenuOpen(false);
+                }}
+              >
+                <span className="num">{item.num}</span>
+                {t(item.en, item.hi)}
+              </Link>
+            ))}
           </nav>
         </div>
 

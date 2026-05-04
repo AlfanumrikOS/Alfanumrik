@@ -2,10 +2,11 @@
 
 import Link from 'next/link';
 import { useWelcomeV2 } from './WelcomeV2Context';
+import { track } from '@/lib/posthog/client';
 import s from './welcome-v2.module.css';
 
 export default function FinalCtaV2() {
-  const { isHi, t } = useWelcomeV2();
+  const { isHi, t, role } = useWelcomeV2();
 
   return (
     <section className={s.finalCta} id="cta" aria-labelledby="final-cta-title">
@@ -37,10 +38,32 @@ export default function FinalCtaV2() {
           आज की पढ़ाई थोड़ी बेहतर हो सकती है। अभी शुरू कीजिये।
         </p>
         <div className="ctaRow">
-          <Link href="/login" className={`${s.btn} ${s.btnPrimary} ${s.btnArrow}`}>
+          <Link
+            href="/login"
+            className={`${s.btn} ${s.btnPrimary} ${s.btnArrow}`}
+            onClick={() =>
+              track('landing_cta_click', {
+                location: 'final_cta',
+                destination: '/login',
+                active_role: role,
+                language: isHi ? 'hi' : 'en',
+              })
+            }
+          >
             {t('Start a free session', 'मुफ्त सत्र शुरू करें')}
           </Link>
-          <Link href="/contact" className={`${s.btn} ${s.btnCream}`}>
+          <Link
+            href="/contact"
+            className={`${s.btn} ${s.btnCream}`}
+            onClick={() =>
+              track('landing_cta_click', {
+                location: 'final_cta',
+                destination: '/contact',
+                active_role: role,
+                language: isHi ? 'hi' : 'en',
+              })
+            }
+          >
             {t('Talk to the founder', 'संस्थापक से बात करें')}
           </Link>
         </div>
