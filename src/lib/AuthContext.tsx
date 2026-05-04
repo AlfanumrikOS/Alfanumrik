@@ -17,6 +17,7 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef, ty
 import { supabase, getStudentSnapshot } from './supabase';
 import { clearAllCache } from './swr';
 import { track } from './analytics';
+import { identify as posthogIdentify, reset as posthogReset } from './posthog/client';
 import type { Student, StudentSnapshot } from './types';
 
 /* ─── Role Types ─── */
@@ -411,6 +412,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (snap) setSnapshot(snap);
   }, [student]);
 
+  // ── PostHog identify on auth + language change (Marking-Authenticity Wave 2) ──
+  // Fires on:
+  //  - SIGNED_IN / initial session load (when authUserId resolves)
+  //  - Profile load (so grade/board/plan land on the person profile)
+  //  - Language toggle (so the preferred_language person property updates live)
+  // Reset is handled in signOut() below.
+  //
+  // Allowlist enforced inside posthogIdentify() — only fields in
+  // PERSON_PROPERTY_ALLOWLIST (grade, board, plan, preferred_language,
+  // signup_date) make it onto the person profile. P13: NEVER include
+  // email, full_name, phone, parent_phone — and the wrapper drops them
+  // even if a future edit accidentally passes them.
+  useEffect(() => {
+    if (!authUserId) return;
+    try {
+      // We re-read the auth user (already cached by Supabase) to pull
+      // created_at without threading it through provider state.
+      void supabase.auth.getUser().then(({ data }) => {
+        const signupDate = data?.user?.created_at?.split('T')[0];
+        posthogIdentify(authUserId, {
+          grade: student?.grade,
+          board: student?.board ?? undefined,
+          plan: student?.subscription_plan ?? 'free',
+          preferred_language: language === 'hi' ? 'hi' : 'en',
+          signup_date: signupDate,
+        });
+      });
+    } catch {
+      // Non-fatal — analytics never breaks auth.
+    }
+  }, [authUserId, student?.grade, student?.board, student?.subscription_plan, language]);
+
   const signOut = useCallback(async () => {
     // Deregister device session
     try {
@@ -421,6 +454,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     bootstrapAttemptedRef.current = false;
     // Clear SWR cache to prevent data leakage between accounts on shared devices
     clearAllCache();
+    // Reset PostHog distinct_id so the next signin starts a fresh identified
+    // session — without this, the next user inherits the previous user's
+    // cohort attribution. See P13.
+    try { posthogReset(); } catch { /* analytics never breaks signout */ }
     setAuthUserId(null);
     setStudent(null);
     setSnapshot(null);
@@ -468,6 +505,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setRoles([]);
         setActiveRoleState('none');
         bootstrapAttemptedRef.current = false;
+        // P13: clear PostHog identity on cross-tab signout too.
+        try { posthogReset(); } catch { /* never throw from analytics */ }
       } else if (event === 'TOKEN_REFRESHED') {
         fetchUser();
       } else if (event === 'SIGNED_IN') {

@@ -30,7 +30,12 @@ import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-
 import { corsHeaders, getCorsHeaders } from '../_shared/cors.ts'
 import { retrieveChunks } from '../_shared/retrieval.ts'
 import { validateSubjectRpc } from '../_shared/subjects-validate.ts'
-import { runDeterministicChecks, type CandidateQuestion } from '../_shared/quiz-oracle.ts'
+import {
+  runDeterministicChecks,
+  type CandidateQuestion,
+  type OracleRejectResult,
+} from '../_shared/quiz-oracle.ts'
+import { capture as posthogCapture } from '../_shared/posthog.ts'
 
 // ─── In-memory rate limiter (first line of defence) ─────────────────────────
 // NOTE: This Map is per-isolate and will reset on cold starts. It provides fast
@@ -1371,6 +1376,8 @@ Deno.serve(async (req) => {
     // The DB CHECK constraints already enforce P6 on inserts, but RAG-
     // derived rows or partial-update edge cases could still slip a bad
     // shape through; this is the last line of defense before the wire.
+    // Track rejection categories so the 422 + telemetry can carry them.
+    const droppedReasons: string[] = []
     const validated = interleaved.filter((q) => {
       const candidate: CandidateQuestion = {
         question_text: typeof q?.question_text === 'string' ? q.question_text : '',
@@ -1379,14 +1386,115 @@ Deno.serve(async (req) => {
           typeof q?.correct_answer_index === 'number' ? q.correct_answer_index : -1,
         explanation: typeof q?.explanation === 'string' ? q.explanation : '',
       };
-      const fail = runDeterministicChecks(candidate);
-      return fail === null;
+      const fail: OracleRejectResult | null = runDeterministicChecks(candidate);
+      if (fail !== null) {
+        droppedReasons.push(fail.category);
+        return false;
+      }
+      return true;
     });
     const droppedByValidator = interleaved.length - validated.length;
     if (droppedByValidator > 0) {
       console.warn(
         `[quiz-generator] P6 validator dropped ${droppedByValidator} malformed question(s) before send`,
       );
+    }
+
+    // ── Phase 1.3 fix: HTTP 422 on insufficient validated questions ─────────
+    // Define a "minimum acceptable" threshold: at least half of the requested
+    // count (rounded up) and at least 1. Below that, signal the client to
+    // retry with relaxed params rather than serve a stub-quiz that doesn't
+    // satisfy the student's request. The client retries ONCE — server-side
+    // retry would loop on persistent question-bank gaps.
+    const minCount = Math.max(1, Math.ceil(count / 2))
+    if (validated.length < minCount) {
+      // PostHog: emit foxy_oracle_blocked with the routing-level category.
+      // We reuse the same event name so the super-admin oracle health panel
+      // can compute one rejection-rate metric across both surfaces.
+      posthogCapture(
+        'foxy_oracle_blocked',
+        user.id,
+        {
+          source: 'quiz-generator',
+          subject,
+          grade,
+          topic: chapterNumber != null ? `chapter:${chapterNumber}` : undefined,
+          category: 'insufficient_validated_questions',
+          reason: `dropped ${droppedByValidator}/${interleaved.length}; served ${validated.length} < min ${minCount}`,
+          dropped_count: droppedByValidator,
+          served_count: validated.length,
+          requested_count: count,
+        },
+      ).catch(() => {})
+
+      return new Response(
+        JSON.stringify({
+          error: 'insufficient_validated_questions',
+          dropped: droppedByValidator,
+          served: validated.length,
+          requested: count,
+          dropped_reasons: droppedReasons,
+        }),
+        {
+          status: 422,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
+    }
+
+    // ── PostHog: emit foxy_oracle_blocked when ANY drop happened (even if
+    //    we still served enough). Lets the dashboard distinguish "1 drop,
+    //    7 served" from "7 drops, 1 served" cases — the former is operational
+    //    noise; the latter is a content-bank quality alarm.
+    if (droppedByValidator > 0) {
+      posthogCapture(
+        'foxy_oracle_blocked',
+        user.id,
+        {
+          source: 'quiz-generator',
+          subject,
+          grade,
+          topic: chapterNumber != null ? `chapter:${chapterNumber}` : undefined,
+          category: 'p6_validator_partial_drop',
+          reason: `dropped ${droppedByValidator}/${interleaved.length}`,
+          dropped_count: droppedByValidator,
+          served_count: validated.length,
+          requested_count: count,
+        },
+      ).catch(() => {})
+    }
+
+    // ── PostHog: emit one quiz_question_served event per question shipped ──
+    // P13: only IDs and metadata go on the wire — no question text, no
+    // options, no explanations. Provenance defaults to 'question_bank' for
+    // the random/adaptive/review path; future bulk-question-gen integration
+    // will set 'generated' and Foxy inline questions set 'foxy_inline'.
+    for (const q of validated) {
+      const qid = typeof (q as { id?: unknown }).id === 'string' ? (q as { id: string }).id : null
+      if (!qid) continue
+      const sourceCol = typeof (q as { source?: unknown }).source === 'string'
+        ? (q as { source: string }).source
+        : null
+      const provenance: 'question_bank' | 'generated' | 'foxy_inline' =
+        sourceCol === 'foxy_inline'
+          ? 'foxy_inline'
+          : sourceCol && sourceCol.startsWith('gen')
+            ? 'generated'
+            : 'question_bank'
+      posthogCapture('quiz_question_served', user.id, {
+        question_id: qid,
+        subject,
+        grade,
+        topic: chapterNumber != null ? `chapter:${chapterNumber}` : undefined,
+        source: provenance,
+        bloom_level: typeof (q as { bloom_level?: unknown }).bloom_level === 'string'
+          ? (q as { bloom_level: string }).bloom_level
+          : undefined,
+        difficulty: typeof (q as { difficulty?: unknown }).difficulty === 'number'
+          ? String((q as { difficulty: number }).difficulty)
+          : undefined,
+        strategy: strategy as 'review' | 'adaptive' | 'random',
+      }).catch(() => {})
     }
 
     return new Response(
@@ -1403,6 +1511,7 @@ Deno.serve(async (req) => {
           review_topic_count: reviewTopicCount,
           review_question_ids: reviewQuestionIds,
           dropped_by_p6_validator: droppedByValidator,
+          dropped_reasons: droppedReasons,
         },
       }),
       {

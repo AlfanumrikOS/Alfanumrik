@@ -195,6 +195,25 @@ class QuizResult extends Equatable {
   /// the local `correctIndex` field on each [QuizQuestion].
   final List<QuestionReview> review;
 
+  /// Daily-XP-cap surfacing (server JSONB pass-through from
+  /// `atomic_quiz_profile_update`, migration `20260427000003_enforce_daily_xp_cap`).
+  ///
+  /// When `xpCapped == true`, the server clamped today's XP at the daily
+  /// cap (200 XP, see web `xp-rules.ts`). The UI should show a friendly
+  /// banner explaining this — see `_DailyCapBanner` in `quiz_screen.dart`.
+  /// All three fields are nullable for forward compatibility: older RPC
+  /// builds that don't return them yield `xpCapped == false`,
+  /// `effectiveXp == null` (callers should fall back to [xpEarned]).
+  final bool xpCapped;
+  final int? xpUncapped;
+  final int? effectiveXp;
+
+  /// Set to `true` by `submit_quiz_results_v2` (Phase 2.8, migration
+  /// `20260504100200_quiz_idempotency_key.sql`) when the call hit the
+  /// (student_id, idempotency_key) cache instead of running the scoring
+  /// path again. Mobile uses this to skip XP/coin re-animation on retry.
+  final bool idempotentReplay;
+
   const QuizResult({
     required this.totalQuestions,
     required this.correctAnswers,
@@ -205,6 +224,10 @@ class QuizResult extends Equatable {
     this.sessionId,
     this.flagged = false,
     this.review = const [],
+    this.xpCapped = false,
+    this.xpUncapped,
+    this.effectiveXp,
+    this.idempotentReplay = false,
   });
 
   /// Build from the JSONB map returned by submit_quiz_results RPC (v1 or v2).
@@ -232,6 +255,15 @@ class QuizResult extends Equatable {
       }
     }
 
+    // Daily-XP-cap fields. The server JSONB shape is:
+    //   { effective_xp: int, xp_capped: bool, xp_uncapped: int }
+    // when the call hit the daily cap. Older deploys omit these — keep
+    // every read defensive.
+    final xpCapped = rpc['xp_capped'] as bool? ?? false;
+    final effectiveXp = (rpc['effective_xp'] as num?)?.toInt();
+    final xpUncapped = (rpc['xp_uncapped'] as num?)?.toInt();
+    final idempotentReplay = rpc['idempotent_replay'] as bool? ?? false;
+
     return QuizResult(
       totalQuestions: (rpc['total'] as num).toInt(),
       correctAnswers: (rpc['correct'] as num).toInt(),
@@ -242,6 +274,10 @@ class QuizResult extends Equatable {
       sessionId: rpc['session_id'] as String?,
       flagged: rpc['flagged'] as bool? ?? false,
       review: review,
+      xpCapped: xpCapped,
+      xpUncapped: xpUncapped,
+      effectiveXp: effectiveXp,
+      idempotentReplay: idempotentReplay,
     );
   }
 

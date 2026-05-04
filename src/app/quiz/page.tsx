@@ -239,9 +239,16 @@ export default function QuizPage() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const qTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Results state
+  // Results state.
+  // Marking-Authenticity Wave 2: extended with optional xp_capped / xp_uncapped /
+  // idempotent_replay so QuizResults can render the cap banner + replay subtitle.
+  // These fields originate in /api/quiz/submit; older submission paths leave
+  // them undefined and the banner stays hidden (no behavior change).
   const [results, setResults] = useState<{
     total: number; correct: number; score_percent: number; xp_earned: number; session_id: string;
+    xp_capped?: boolean;
+    xp_uncapped?: number;
+    idempotent_replay?: boolean;
   } | null>(null);
 
   // Network error resilience — retry support for failed submissions

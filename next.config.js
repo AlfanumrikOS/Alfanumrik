@@ -33,6 +33,14 @@ const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   compress: true,
+  // PostHog reverse-proxy (Phase 0 of marking-authenticity remediation):
+  // recommended PostHog deployment pattern for ad-blocker resilience. Mirrors
+  // the Sentry `/monitoring` tunnel approach. The proxy is path-based, NOT a
+  // domain redirect, so cookies / referer headers are preserved.
+  // See `async rewrites()` below; project region is US (i.posthog.com).
+  // Keep `skipTrailingSlashRedirect: true` so PostHog asset URLs that include
+  // a trailing slash are not 308-rewritten before they hit the proxy.
+  skipTrailingSlashRedirect: true,
   // Tree-shake named imports from heavy libraries. Each entry gets transformed
   // from `import { x, y } from 'pkg'` into per-symbol imports so unused symbols
   // are dropped from the client bundle. P10 budget enforcement.
@@ -64,6 +72,23 @@ const nextConfig = {
   async redirects() {
     return [];
   },
+  // PostHog reverse-proxy. /ingest/static/* → PostHog static assets (JS SDK,
+  // session-recording bundle); /ingest/* → ingestion endpoints (capture,
+  // decide, identify). Path-based (not domain-based) to keep cookies +
+  // referer in-origin and to avoid CORS preflights for the ingest POST.
+  // Marking-Authenticity Phase 0 — sets up infra for Wave 2 PostHog SDK init.
+  async rewrites() {
+    return [
+      {
+        source: '/ingest/static/:path*',
+        destination: 'https://us-assets.i.posthog.com/static/:path*',
+      },
+      {
+        source: '/ingest/:path*',
+        destination: 'https://us.i.posthog.com/:path*',
+      },
+    ];
+  },
   async headers() {
     return [
       {
@@ -83,7 +108,13 @@ const nextConfig = {
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "font-src 'self' https://fonts.gstatic.com",
               "img-src 'self' data: blob: https://*.supabase.co https://lh3.googleusercontent.com",
-              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.ingest.sentry.io https://checkout.razorpay.com https://api.razorpay.com https://prod.spline.design",
+              // connect-src additions:
+              //  - PostHog (us.i.posthog.com, us-assets.i.posthog.com) for the
+              //    SDK ingestion + asset fetch path. Same-origin proxy via
+              //    /ingest/* covers the primary path; these hosts are listed
+              //    so the SDK's direct-host fallback (used when the proxy is
+              //    unreachable, e.g. dev) still works without a CSP block.
+              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.ingest.sentry.io https://checkout.razorpay.com https://api.razorpay.com https://prod.spline.design https://us.i.posthog.com https://us-assets.i.posthog.com",
               "media-src 'self' blob:",
               "worker-src 'self'",
               "frame-src https://api.razorpay.com https://checkout.razorpay.com",

@@ -184,10 +184,17 @@ class QuizRepository {
     String? topicTitle,
     int? chapterNumber,
     String? sessionId,
+    String? idempotencyKey,
   }) async {
     // ── Layer 1: v2 (server-shuffle authority) ────────────────────────────
     if (sessionId != null && sessionId.isNotEmpty) {
       try {
+        // Phase 2.8: per-attempt idempotency token. Generated once by the
+        // notifier (`QuizNotifier.startQuiz`) and reused on every retry of
+        // a single attempt — the server short-circuits replays via the
+        // partial unique index `quiz_sessions_idempotency_key_uniq` and
+        // returns `idempotent_replay: true`. See migration
+        // `20260504100200_quiz_idempotency_key.sql`.
         final dynamic v2raw = await _client.rpc(
           'submit_quiz_results_v2',
           params: {
@@ -199,6 +206,7 @@ class QuizRepository {
             'p_chapter': chapterNumber,
             'p_responses': mapResponsesForV2(responses),
             'p_time': timeTakenSeconds,
+            if (idempotencyKey != null) 'p_idempotency_key': idempotencyKey,
           },
         );
         if (v2raw is Map) {
@@ -210,8 +218,17 @@ class QuizRepository {
           );
         }
         // Fall through to v1 if shape is unexpected.
-      } catch (_) {
-        // Fall through to v1.
+      } catch (e) {
+        // Phase 1.2: server now RAISEs `session_not_started` (SQLSTATE
+        // P0001) when the snapshot row is gone. Surface this as a
+        // structured failure so the UI can show "session expired,
+        // please restart" instead of falling through to v1 (which would
+        // re-score against legacy unshuffled data — wrong).
+        final msg = e.toString();
+        if (msg.contains('session_not_started')) {
+          return ApiFailure('session_not_started: Quiz session expired.');
+        }
+        // Fall through to v1 for any other error.
       }
     }
 

@@ -87,6 +87,28 @@ export function denormalizeFoxyResponse(r: FoxyResponse): string {
         }
         break;
       }
+      case 'mcq': {
+        // MCQ blocks denormalize to a stem + lettered option list. The
+        // explanation is appended on its own line so legacy renderers can
+        // still see the full pedagogical content. Schema guarantees stem,
+        // options[4], correct_answer_index in 0..3, and explanation are
+        // present and well-formed.
+        const stem = (block.stem ?? '').trim();
+        const options = Array.isArray(block.options) ? block.options : [];
+        const correctIdx = block.correct_answer_index;
+        const explanation = (block.explanation ?? '').trim();
+        if (stem.length > 0) lines.push(stem);
+        const letters = ['A', 'B', 'C', 'D'];
+        for (let i = 0; i < options.length && i < 4; i++) {
+          const opt = (options[i] ?? '').trim();
+          if (opt.length > 0) lines.push(`${letters[i]}) ${opt}`);
+        }
+        if (typeof correctIdx === 'number' && correctIdx >= 0 && correctIdx < 4) {
+          lines.push(`Answer: ${letters[correctIdx]}`);
+        }
+        if (explanation.length > 0) lines.push(`Explanation: ${explanation}`);
+        break;
+      }
       default: {
         // Defensive: schema enum is closed, but if a future block type is
         // added we don't want to throw -- skip silently. Validation happens
