@@ -37,6 +37,7 @@ describeIntegration('syllabus status triggers', () => {
       source: 'ncert_2025',
       grade: '10', subject: 'science',  // legacy NOT NULL columns; trigger matches on grade_short/subject_code
       grade_short: '10', subject_code: 'science_trigger_test', chapter_number: 777,
+      is_active: true,  // explicit because recompute_syllabus_status filters on is_active=true
       embedding,
     });
     // Fail-fast with a diagnostic if the chunk insert itself failed — the
