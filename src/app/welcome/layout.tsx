@@ -54,6 +54,7 @@ export const metadata: Metadata = {
       'Structured learning that replaces guesswork with concept clarity. CBSE Grades 6–12 in Hindi & English. Free to start.',
     url: 'https://alfanumrik.com/welcome',
     locale: 'en_IN',
+    alternateLocale: ['hi_IN'],
     type: 'website',
     siteName: 'Alfanumrik',
   },

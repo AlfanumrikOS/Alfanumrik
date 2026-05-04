@@ -2304,3 +2304,220 @@
 @container (min-width: 520px) {
   .showCard :global(h3) { font-size: 28px; }
 }
+
+/* ============================================================
+   PHASE 2 ADDITIONS — Primary nav, Solutions dropdown, Role
+   strip relocation, Mission section. Append-only, do not edit.
+   ============================================================ */
+
+/* ---------- Primary nav links (desktop) ---------- */
+.primaryNav {
+  display: none; /* mobile: hidden, in burger */
+  align-items: center;
+  gap: 4px;
+}
+@media (min-width: 768px) {
+  .primaryNav { display: flex; }
+}
+.primaryNav :global(a),
+.primaryNav :global(button) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-mute);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 120ms, color 120ms;
+}
+.primaryNav :global(a:hover),
+.primaryNav :global(button:hover) {
+  background: var(--cream-deep);
+  color: var(--ink);
+}
+.primaryNav :global(button[aria-expanded='true']) {
+  background: var(--cream-deep);
+  color: var(--ink);
+}
+.primaryNav :global(.chev) {
+  font-size: 9px;
+  opacity: 0.6;
+  margin-top: 1px;
+}
+.root[data-theme='dark'] .primaryNav :global(a:hover),
+.root[data-theme='dark'] .primaryNav :global(button:hover) {
+  background: rgba(255,255,255,0.06);
+  color: var(--ink);
+}
+
+/* ---------- Dropdown panel (Solutions) ---------- */
+.dropdownWrap {
+  position: relative;
+  display: inline-block;
+}
+.dropdownPanel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 240px;
+  background: var(--cream);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(14,11,7,0.08);
+  padding: 6px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.root[data-theme='dark'] .dropdownPanel {
+  background: var(--ink-deep);
+  border-color: var(--rule);
+}
+.dropdownPanel :global(a) {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 12px;
+  border-radius: 6px;
+  text-decoration: none;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+.dropdownPanel :global(a:hover),
+.dropdownPanel :global(a:focus-visible) {
+  background: var(--cream-deep);
+  outline: none;
+}
+.root[data-theme='dark'] .dropdownPanel :global(a:hover),
+.root[data-theme='dark'] .dropdownPanel :global(a:focus-visible) {
+  background: rgba(255,255,255,0.06);
+}
+.dropdownPanel :global(a) :global(.deva) {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-mute);
+  margin-top: 2px;
+}
+
+/* ---------- Role strip (relocated below issue bar) ---------- */
+.roleStrip {
+  border-bottom: 1px solid var(--rule);
+  background: var(--cream);
+}
+.root[data-theme='dark'] .roleStrip {
+  background: var(--ink-deep);
+}
+.roleStripInner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+  flex-wrap: wrap;
+}
+.roleStripLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-mute);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+/* ---------- Mission section (Vision · Mission · Principles) ---------- */
+.mission {
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  background: var(--cream);
+  padding: 56px 0;
+}
+.root[data-theme='dark'] .mission {
+  background: var(--ink-deep);
+}
+.missionHead {
+  margin-bottom: 32px;
+}
+.missionHead h2 {
+  font-family: var(--font-newsreader), serif;
+  font-size: clamp(28px, 4vw, 44px);
+  line-height: 1.1;
+  font-weight: 500;
+  color: var(--ink);
+  margin-top: 8px;
+}
+.missionHead h2 :global(em) {
+  font-style: italic;
+  color: var(--saffron);
+}
+.missionGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 28px;
+}
+@media (min-width: 768px) {
+  .missionGrid { grid-template-columns: repeat(3, 1fr); gap: 36px; }
+}
+.missionCol {
+  position: relative;
+  border-top: 1px solid var(--rule);
+  padding-top: 16px;
+}
+.missionRoman {
+  font-family: var(--font-mukta), 'Mukta', serif;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--saffron);
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+.missionCol h3 {
+  font-family: var(--font-newsreader), serif;
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--ink);
+  margin-bottom: 10px;
+}
+.missionCol p {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--ink-soft);
+}
+.missionList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.missionList :global(li) {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  padding-left: 14px;
+  position: relative;
+  margin-bottom: 8px;
+}
+.missionList :global(li)::before {
+  content: '·';
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: var(--saffron);
+  font-weight: 700;
+}
+.missionFoot {
+  margin-top: 28px;
+  border-top: 1px solid var(--rule);
+  padding-top: 16px;
+}
+.missionLink {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--saffron);
+  text-decoration: none;
+}
+.missionLink:hover {
+  text-decoration: underline;
+}
