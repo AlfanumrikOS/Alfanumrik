@@ -28,15 +28,22 @@ describeIntegration('syllabus status triggers', () => {
   });
 
   it('trigger bumps chunk_count on INSERT to rag_content_chunks', async () => {
-    // Simulate a chunk insert with a realistic 1024-dim vector
-    const embedding = Array(1024).fill(0.1);
-    await supabaseAdmin.from('rag_content_chunks').insert({
+    // Build a 1024-dim vector. pgvector accepts JSON arrays via PostgREST,
+    // but supabase-js may serialize them inconsistently. Use the explicit
+    // pgvector text format `[v1,v2,...]` to remove ambiguity.
+    const embedding = `[${Array(1024).fill(0.1).join(',')}]`;
+    const { error: chunkErr } = await supabaseAdmin.from('rag_content_chunks').insert({
       chunk_text: 'Test chunk content with some length.',
       source: 'ncert_2025',
       grade: '10', subject: 'science',  // legacy NOT NULL columns; trigger matches on grade_short/subject_code
       grade_short: '10', subject_code: 'science_trigger_test', chapter_number: 777,
       embedding,
     });
+    // Fail-fast with a diagnostic if the chunk insert itself failed — the
+    // original test silently dropped the error, so a NOT NULL or vector
+    // format failure presented as the more confusing "chunk_count = 0".
+    expect(chunkErr, `chunk insert failed: ${chunkErr?.message}`).toBeNull();
+
     const { data } = await supabaseAdmin.from('cbse_syllabus').select('chunk_count').match(testRow).single();
     expect(data!.chunk_count).toBeGreaterThan(0);
   });
