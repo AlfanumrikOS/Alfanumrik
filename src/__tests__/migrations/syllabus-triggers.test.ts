@@ -31,8 +31,9 @@ describeIntegration('syllabus status triggers', () => {
     // Simulate a chunk insert with a realistic 1024-dim vector
     const embedding = Array(1024).fill(0.1);
     await supabaseAdmin.from('rag_content_chunks').insert({
-      content: 'Test chunk content with some length.',
+      chunk_text: 'Test chunk content with some length.',
       source: 'ncert_2025',
+      grade: '10', subject: 'science',  // legacy NOT NULL columns; trigger matches on grade_short/subject_code
       grade_short: '10', subject_code: 'science_trigger_test', chapter_number: 777,
       embedding,
     });
