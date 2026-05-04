@@ -5,6 +5,7 @@ import { WelcomeV2Provider, useWelcomeV2 } from './WelcomeV2Context';
 import NavV2 from './NavV2';
 import HeroV2 from './HeroV2';
 import StatsV2 from './StatsV2';
+import MissionV2 from './MissionV2';
 import WorkbookV2 from './WorkbookV2';
 import ShowcaseV2 from './ShowcaseV2';
 import TrustV2 from './TrustV2';
@@ -108,6 +109,7 @@ function ThemedShell() {
       <main>
         <HeroV2 />
         <StatsV2 />
+        <MissionV2 />
         <WorkbookV2 />
         <ShowcaseV2 />
         <TrustV2 />

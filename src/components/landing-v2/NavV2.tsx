@@ -12,10 +12,27 @@ const ROLES: { id: Role; en: string; hi: string }[] = [
   { id: 'school', en: 'School', hi: 'विद्यालय' },
 ];
 
+interface SolutionItem {
+  href: string;
+  en: string;
+  hi: string;
+  deva: string;
+}
+
+const SOLUTIONS: SolutionItem[] = [
+  { href: '/for-parents', en: 'For Parents', hi: 'अभिभावकों के लिए', deva: 'अभिभावकों के लिए' },
+  { href: '/for-teachers', en: 'For Teachers', hi: 'शिक्षकों के लिए', deva: 'शिक्षकों के लिए' },
+  { href: '/for-schools', en: 'For Schools', hi: 'विद्यालयों के लिए', deva: 'विद्यालयों के लिए' },
+];
+
 export default function NavV2() {
   const { isHi, toggleLang, theme, toggleTheme, role, setRole, t } = useWelcomeV2();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [solutionsOpen, setSolutionsOpen] = useState(false);
   const tabsRef = useRef<HTMLDivElement | null>(null);
+  const stripTabsRef = useRef<HTMLDivElement | null>(null);
+  const solutionsBtnRef = useRef<HTMLButtonElement | null>(null);
+  const solutionsPanelRef = useRef<HTMLDivElement | null>(null);
 
   // Apply theme attribute on document.body for any global third-party styles, plus the .root scope
   useEffect(() => {
@@ -37,21 +54,94 @@ export default function NavV2() {
     };
   }, [menuOpen]);
 
-  // Arrow-key navigation on the role tablist (WAI-ARIA pattern)
-  const onTabKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>, idx: number) => {
-    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
-    e.preventDefault();
-    const next =
-      e.key === 'ArrowRight'
-        ? ROLES[(idx + 1) % ROLES.length]
-        : ROLES[(idx - 1 + ROLES.length) % ROLES.length];
-    setRole(next.id);
-    // Focus the corresponding button after state updates
-    requestAnimationFrame(() => {
-      const btn = tabsRef.current?.querySelector<HTMLButtonElement>(
-        `button[data-role="${next.id}"]`,
-      );
-      btn?.focus();
+  // Close Solutions dropdown on outside click + Escape
+  useEffect(() => {
+    if (!solutionsOpen) return;
+    const onDocClick = (e: MouseEvent) => {
+      const target = e.target as Node | null;
+      if (!target) return;
+      if (
+        solutionsPanelRef.current?.contains(target) ||
+        solutionsBtnRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setSolutionsOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSolutionsOpen(false);
+        // Restore focus to the trigger button
+        requestAnimationFrame(() => solutionsBtnRef.current?.focus());
+      }
+    };
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [solutionsOpen]);
+
+  // Arrow-key navigation on a role tablist (WAI-ARIA pattern). Shared between
+  // top tablist (when present) and the relocated strip below the issue bar.
+  const makeTabKeyDown =
+    (containerRef: React.RefObject<HTMLDivElement | null>) =>
+    (e: React.KeyboardEvent<HTMLButtonElement>, idx: number) => {
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+      e.preventDefault();
+      const next =
+        e.key === 'ArrowRight'
+          ? ROLES[(idx + 1) % ROLES.length]
+          : ROLES[(idx - 1 + ROLES.length) % ROLES.length];
+      setRole(next.id);
+      requestAnimationFrame(() => {
+        const btn = containerRef.current?.querySelector<HTMLButtonElement>(
+          `button[data-role="${next.id}"]`,
+        );
+        btn?.focus();
+      });
+    };
+
+  const onStripTabKeyDown = makeTabKeyDown(stripTabsRef);
+
+  // Keyboard nav for the Solutions dropdown menu (WAI-ARIA menu pattern).
+  const onMenuItemKeyDown = (e: React.KeyboardEvent<HTMLAnchorElement>, idx: number) => {
+    const items = Array.from(
+      solutionsPanelRef.current?.querySelectorAll<HTMLAnchorElement>('a[role="menuitem"]') ?? [],
+    );
+    if (items.length === 0) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      items[(idx + 1) % items.length]?.focus();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      items[(idx - 1 + items.length) % items.length]?.focus();
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      items[0]?.focus();
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      items[items.length - 1]?.focus();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setSolutionsOpen(false);
+      requestAnimationFrame(() => solutionsBtnRef.current?.focus());
+    }
+  };
+
+  const toggleSolutions = () => {
+    setSolutionsOpen((prev) => {
+      const next = !prev;
+      if (next) {
+        // After opening, focus the first menu item.
+        requestAnimationFrame(() => {
+          const first =
+            solutionsPanelRef.current?.querySelector<HTMLAnchorElement>('a[role="menuitem"]');
+          first?.focus();
+        });
+      }
+      return next;
     });
   };
 
@@ -69,26 +159,52 @@ export default function NavV2() {
             </span>
           </Link>
 
-          <div
-            ref={tabsRef}
-            className={s.roleSwitcher}
-            role="tablist"
-            aria-label={t('Choose your view', 'अपनी भूमिका चुनें')}
-          >
-            {ROLES.map((r, idx) => (
+          {/* Primary nav links (desktop ≥768px) — Pages, not role tabs. */}
+          <div className={s.primaryNav} ref={tabsRef}>
+            <Link href="/product">{t('Product', 'उत्पाद')}</Link>
+            <div className={s.dropdownWrap}>
               <button
-                key={r.id}
-                role="tab"
+                ref={solutionsBtnRef}
                 type="button"
-                data-role={r.id}
-                aria-selected={role === r.id}
-                tabIndex={role === r.id ? 0 : -1}
-                onClick={() => setRole(r.id)}
-                onKeyDown={(e) => onTabKeyDown(e, idx)}
+                aria-haspopup="menu"
+                aria-expanded={solutionsOpen}
+                aria-controls="welcomeV2SolutionsMenu"
+                onClick={toggleSolutions}
               >
-                {t(r.en, r.hi)}
+                {t('Solutions', 'समाधान')}
+                <span className="chev" aria-hidden="true">▾</span>
               </button>
-            ))}
+              {solutionsOpen ? (
+                <div
+                  id="welcomeV2SolutionsMenu"
+                  ref={solutionsPanelRef}
+                  className={s.dropdownPanel}
+                  role="menu"
+                  aria-label={t('Solutions', 'समाधान')}
+                >
+                  {SOLUTIONS.map((sol, i) => (
+                    <Link
+                      key={sol.href}
+                      href={sol.href}
+                      role="menuitem"
+                      tabIndex={-1}
+                      onKeyDown={(e) => onMenuItemKeyDown(e, i)}
+                      onClick={() => setSolutionsOpen(false)}
+                    >
+                      <span>{t(sol.en, sol.hi)}</span>
+                      {!isHi ? (
+                        <span className="deva" lang="hi">
+                          {sol.deva}
+                        </span>
+                      ) : null}
+                    </Link>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+            <Link href="/pricing">{t('Pricing', 'मूल्य')}</Link>
+            <Link href="/research">{t('Research', 'शोध')}</Link>
+            <Link href="/about">{t('About', 'हमारे बारे में')}</Link>
           </div>
 
           <div className={s.navRight}>
@@ -149,6 +265,40 @@ export default function NavV2() {
               <span><span lang="hi">हिन्दी</span> + English</span>
               <span>{t('Built in India', 'भारत में निर्मित')}</span>
               <span>DPDPA-aligned</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Role-tabs strip (relocated below issue bar). Tablet+ visible: the
+          .roleSwitcher class itself is hidden <768px (existing rule) so on
+          mobile users still pick a role through the burger menu. */}
+      <div className={s.roleStrip}>
+        <div className={s.wrap}>
+          <div className={s.roleStripInner}>
+            <span className={s.roleStripLabel}>
+              {t('View this page as', 'इस पृष्ठ को इस रूप में देखें')}
+            </span>
+            <div
+              ref={stripTabsRef}
+              className={s.roleSwitcher}
+              role="tablist"
+              aria-label={t('Choose your view', 'अपनी भूमिका चुनें')}
+            >
+              {ROLES.map((r, idx) => (
+                <button
+                  key={r.id}
+                  role="tab"
+                  type="button"
+                  data-role={r.id}
+                  aria-selected={role === r.id}
+                  tabIndex={role === r.id ? 0 : -1}
+                  onClick={() => setRole(r.id)}
+                  onKeyDown={(e) => onStripTabKeyDown(e, idx)}
+                >
+                  {t(r.en, r.hi)}
+                </button>
+              ))}
             </div>
           </div>
         </div>
@@ -226,25 +376,68 @@ export default function NavV2() {
               <span className="num">01</span>
               {t('By the numbers', 'आँकड़ों में')}
             </Link>
-            <Link href="#how" onClick={() => setMenuOpen(false)}>
+            <Link href="#mission" onClick={() => setMenuOpen(false)}>
               <span className="num">02</span>
+              {t('What we are building', 'हम क्या बना रहे हैं')}
+            </Link>
+            <Link href="#how" onClick={() => setMenuOpen(false)}>
+              <span className="num">03</span>
               {t('What changes', 'क्या बदलता है')}
             </Link>
             <Link href="#showcase" onClick={() => setMenuOpen(false)}>
-              <span className="num">03</span>
+              <span className="num">04</span>
               {t('Inside the product', 'उत्पाद के अंदर')}
             </Link>
             <Link href="#trust" onClick={() => setMenuOpen(false)}>
-              <span className="num">04</span>
+              <span className="num">05</span>
               {t('Voices', 'आवाज़ें')}
             </Link>
             <Link href="#pricing" onClick={() => setMenuOpen(false)}>
-              <span className="num">05</span>
+              <span className="num">06</span>
               {t('Plans & pricing', 'योजनाएँ')}
             </Link>
             <Link href="#cta" onClick={() => setMenuOpen(false)}>
-              <span className="num">06</span>
+              <span className="num">07</span>
               {t('Begin a session', 'शुरू कीजिये')}
+            </Link>
+          </nav>
+
+          <nav className={s.menuNav} aria-label={t('Pages', 'पृष्ठ')}>
+            <Link href="/product" onClick={() => setMenuOpen(false)}>
+              <span className="num">A</span>
+              {t('Product', 'उत्पाद')}
+            </Link>
+            <Link href="/for-parents" onClick={() => setMenuOpen(false)}>
+              <span className="num">B</span>
+              {t('For Parents', 'अभिभावकों के लिए')}
+            </Link>
+            <Link href="/for-teachers" onClick={() => setMenuOpen(false)}>
+              <span className="num">C</span>
+              {t('For Teachers', 'शिक्षकों के लिए')}
+            </Link>
+            <Link href="/for-schools" onClick={() => setMenuOpen(false)}>
+              <span className="num">D</span>
+              {t('For Schools', 'विद्यालयों के लिए')}
+            </Link>
+            <Link href="/pricing" onClick={() => setMenuOpen(false)}>
+              <span className="num">E</span>
+              {t('Pricing', 'मूल्य')}
+            </Link>
+            <Link href="/research" onClick={() => setMenuOpen(false)}>
+              <span className="num">F</span>
+              {t('Research', 'शोध')}
+            </Link>
+            <Link href="/about" onClick={() => setMenuOpen(false)}>
+              <span className="num">G</span>
+              {t('About', 'हमारे बारे में')}
+            </Link>
+            <Link href="/help" onClick={() => setMenuOpen(false)}>
+              <span className="num">H</span>
+              {t('Help', 'सहायता')}
+            </Link>
+            <Link href="/contact" onClick={() => setMenuOpen(false)}>
+              <span className="num">I</span>
+              {t('Contact', 'संपर्क')}
             </Link>
           </nav>
         </div>
