@@ -1,0 +1,69 @@
+# Sync migrations from main → staging Supabase project.
+#
+# Why this exists:
+#   deploy-staging.yml does NOT apply migrations to the staging Supabase
+#   project — it only deploys the Vercel preview. Production migrations land
+#   on prod via deploy-production.yml's migrations job, but staging gets no
+#   equivalent. Result: staging schema drifts from prod, integration tests
+#   on PRs (which use STAGING_SUPABASE_*) fail with "column doesn't exist"
+#   or "constraint missing" errors against changes that are live on prod.
+#
+# What this does:
+#   Runs `supabase db push --linked --include-all` against the STAGING
+#   project, applying any pending migrations from `supabase/migrations/`.
+#   Idempotent — only applies what's missing in
+#   `supabase_migrations.schema_migrations`. Does NOT replace baseline,
+#   does NOT drop tables, does NOT delete data. Same pattern as the
+#   production migrations job in deploy-production.yml.
+#
+# When this runs:
+#   1. push to main: auto, when migrations directory is touched
+#   2. workflow_dispatch: manual, for ops re-runs after env-var rotation
+#
+# Safety:
+#   - Uses STAGING credentials only (separate from production)
+#   - --include-all is safe because all migrations in this repo are
+#     idempotent per CLAUDE.md product invariants
+#   - Failure does NOT block production deploy (this workflow is staging-only)
+
+name: Sync Migrations to Staging
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/**'
+  workflow_dispatch:
+
+concurrency:
+  group: sync-staging-migrations
+  cancel-in-progress: false   # never cancel a migration push mid-flight
+
+jobs:
+  push-migrations:
+    name: Apply pending migrations to staging
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Push migrations to staging Supabase
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_STAGING_DB_PASSWORD }}
+        run: |
+          supabase link --project-ref ${{ secrets.SUPABASE_STAGING_PROJECT_REF }} --password "$SUPABASE_DB_PASSWORD"
+          supabase db push --linked --include-all
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Staging Migrations Sync" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Triggered by: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "Commit: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "Status: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
