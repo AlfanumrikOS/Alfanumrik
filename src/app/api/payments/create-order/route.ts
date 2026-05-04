@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
+import { capture as posthogCapture } from '@/lib/posthog/server';
 
 export async function POST(request: NextRequest) {
   try {
@@ -87,6 +88,23 @@ export async function POST(request: NextRequest) {
     }
 
     const order = await orderRes.json();
+
+    // PostHog: payment_initiated. Distinct id is the auth user id (Supabase
+    // UUID). Server-side telemetry is acceptable per posthog/server.ts —
+    // logger redacts PII before any further egress. $insert_id keyed on
+    // order_id so accidental double-clicks dedup at PostHog ingest.
+    void posthogCapture(
+      'payment_initiated',
+      user.id,
+      {
+        amount,
+        currency: 'INR',
+        plan: plan_code,
+        billing_cycle: billing_cycle as 'monthly' | 'yearly',
+        order_id: order.id,
+      },
+      `payment_initiated:${order.id}`,
+    ).catch(() => { /* swallow — telemetry never blocks payment flow */ });
 
     return NextResponse.json({
       order_id: order.id,

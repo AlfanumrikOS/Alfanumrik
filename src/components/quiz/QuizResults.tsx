@@ -59,6 +59,22 @@ interface QuizResultsProps {
     cme_next_action?: string;
     cme_next_concept_id?: string;
     cme_reason?: string;
+    /**
+     * Marking-Authenticity Wave 2: server-reported daily XP cap status.
+     * `xp_capped === true` means the daily 200 XP cap clipped this award.
+     * `xp_uncapped` is the pre-clamp value the student would have earned.
+     * Both are produced by atomic_quiz_profile_update (migration
+     * 20260427000003_enforce_daily_xp_cap.sql) and surfaced through
+     * /api/quiz/submit. P2: NEVER hardcode XP numbers — always read from here.
+     */
+    xp_capped?: boolean;
+    xp_uncapped?: number;
+    /**
+     * True when the server detected this submission as an idempotent replay
+     * (e.g. a network retry of an already-recorded session). UI suppresses
+     * the XP-gain animation and shows a "previous result" subtitle.
+     */
+    idempotent_replay?: boolean;
   };
   questions: Question[];
   responses: Response[];
@@ -271,10 +287,16 @@ export default function QuizResults({
         ? (isHi ? 'ठीक है! रिव्यू करके फिर try करो!' : 'Keep going! Review and try again!')
         : (isHi ? 'हर विशेषज्ञ कभी शुरुआती था। चलो मिलकर सीखते हैं!' : 'Every expert was once a beginner. Let\'s review together!');
 
+  // Marking-Authenticity Wave 2: suppress XP gain animation / confetti when
+  // the server reports this submission as an idempotent replay. The XP was
+  // already awarded on the original attempt — celebrating again is misleading.
+  const isReplay = results.idempotent_replay === true;
+
   return (
     <div className="mesh-bg min-h-dvh pb-nav">
-     {/* Celebration overlay — auto-dismisses after 3s */}
-     {showCelebration && (
+     {/* Celebration overlay — auto-dismisses after 3s.
+         Skipped for idempotent replays (no new XP gained). */}
+     {showCelebration && !isReplay && (
        <CelebrationOverlay
          scorePercent={pct}
          xpEarned={results.xp_earned}
@@ -310,6 +332,48 @@ export default function QuizResults({
                 {isHi ? '📚 पढ़ना शुरू करो' : '📚 Start Learning'}
               </a>
             </div>
+          </div>
+        )}
+
+        {/* Idempotent-replay subtitle — when the server returned a cached
+            result for an already-submitted session. Bilingual per P7. */}
+        {isReplay && (
+          <div
+            className="rounded-xl px-3 py-2 text-center"
+            style={{
+              background: 'rgba(59,130,246,0.06)',
+              border: '1px solid rgba(59,130,246,0.18)',
+              color: '#3B82F6',
+            }}
+            data-testid="quiz-results-replay-banner"
+          >
+            <p className="text-xs font-semibold">
+              {isHi ? 'पिछला नतीजा दिखा रहे हैं' : 'Showing previous result'}
+            </p>
+          </div>
+        )}
+
+        {/* Daily XP cap banner — server-reported via xp_capped flag.
+            P2: numbers come from the submission response, NEVER hardcoded.
+            P7: bilingual via isHi. */}
+        {results.xp_capped === true && (
+          <div
+            className="rounded-xl bg-warm-100 border border-orange-300 text-orange-700 p-3"
+            data-testid="quiz-results-xp-cap-banner"
+          >
+            <p className="text-xs font-semibold leading-relaxed">
+              {isHi
+                ? `🎯 आज की XP सीमा पूरी हो गई! आज आपने ${results.xp_earned} XP कमाए${
+                    typeof results.xp_uncapped === 'number' && results.xp_uncapped > results.xp_earned
+                      ? ` (${results.xp_uncapped} होते)`
+                      : ''
+                  }. कल फिर मिलते हैं!`
+                : `🎯 Daily XP cap reached! You earned ${results.xp_earned} XP today${
+                    typeof results.xp_uncapped === 'number' && results.xp_uncapped > results.xp_earned
+                      ? ` (would have been ${results.xp_uncapped})`
+                      : ''
+                  }. Come back tomorrow for more!`}
+            </p>
           </div>
         )}
 

@@ -13,10 +13,10 @@ Indian K-12 EdTech platform (CBSE grades 6-12). Next.js 16 + Supabase + Razorpay
 | Backend | Next.js API routes (151 routes) + Supabase Edge Functions (29 functions) |
 | Auth | Supabase Auth (email/PKCE), session cookies via middleware |
 | Database | Supabase Postgres, RLS (440+ policies), RBAC (6 roles, 71 permissions) |
-| AI | Claude API (Haiku) via Edge Functions: foxy-tutor, ncert-solver, quiz-generator, quiz-generator-v2, cme-engine |
+| AI | Claude API (Haiku) via Edge Functions: foxy-tutor, ncert-solver, quiz-generator, cme-engine. **`quiz-generator/` is the only generator** — the historical `quiz-generator-v2/` directory was never created on disk; the constitution previously referenced a planned-but-not-shipped fork. Removed 2026-05-04 (Marking-Authenticity Wave 4). |
 | Payments | Razorpay (INR, monthly recurring + yearly one-time) |
 | Deployment | Vercel (bom1/Mumbai), GitHub Actions CI/CD (3 workflows) |
-| Testing | Vitest (2,511 tests, 84 files), Playwright E2E (16 specs). **Regression catalog: 26 entries catalogued (REG-55 added 2026-05-02 — Foxy structured rendering envelope). Aspirational target: 35. Last reconciled: 2026-05-02.** Many P-invariants have direct unit/E2E tests that aren't yet promoted into the catalog — see "Regression catalog status by invariant" below. |
+| Testing | Vitest (2,511 tests, 84 files), Playwright E2E (16 specs). **Regression catalog: 35 entries catalogued (target: 35 — TARGET REACHED). REG-56..REG-64 added 2026-05-04 (Marking-Authenticity Wave 5 — see `.claude/regression-catalog.md`).** Many P-invariants have direct unit/E2E tests that aren't yet promoted into the catalog — see "Regression catalog status by invariant" below. |
 | Monitoring | Sentry (client/server/edge), Vercel Analytics, structured logging |
 | Mobile | Flutter + Riverpod (/mobile) |
 | Offline | Service worker, localStorage cache, background sync |
@@ -43,7 +43,7 @@ Status key: **catalogued** = explicit entry in `.claude/regression-catalog.md`; 
 | P14 Review chain completeness | n/a (process invariant) | Enforced by `review-chain.sh` hook + orchestrator Gate 5 |
 | P15 Onboarding integrity | tested-only | `auth-callback-role-redirect.test.ts` and identity tests; 3-role E2E gap |
 
-Round 2 audit promotions (atomic_plan_change atomicity, daily XP cap, Sentry client PII redaction, single-retrieval contract for Foxy) shipped as REG-47, REG-48, REG-49, REG-50. Phase A/B/C quiz-authenticity work shipped as REG-51, REG-52, REG-53. AI quiz-generator validation oracle shipped as REG-54. Foxy structured rendering envelope shipped as REG-55 (2026-05-02). Total catalog: 26 entries (target: 35).
+Round 2 audit promotions (atomic_plan_change atomicity, daily XP cap, Sentry client PII redaction, single-retrieval contract for Foxy) shipped as REG-47, REG-48, REG-49, REG-50. Phase A/B/C quiz-authenticity work shipped as REG-51, REG-52, REG-53. AI quiz-generator validation oracle shipped as REG-54. Foxy structured rendering envelope shipped as REG-55 (2026-05-02). Marking-Authenticity Wave 5 shipped as REG-56..REG-64 (2026-05-04). **Total catalog: 35 entries (target: 35 — TARGET REACHED).**
 
 ## Critical File Map
 | Area | Files |
@@ -61,7 +61,8 @@ Round 2 audit promotions (atomic_plan_change atomicity, daily XP cap, Sentry cli
 | Feature flags | `src/lib/feature-flags.ts` |
 | Middleware | `src/middleware.ts` |
 | Payments | `src/lib/razorpay.ts`, `src/app/api/payments/` |
-| AI Edge Functions | `supabase/functions/foxy-tutor/` (active prod), `ncert-solver/`, `quiz-generator/`, `cme-engine/` |
+| AI Edge Functions | `supabase/functions/foxy-tutor/` (active prod), `ncert-solver/`, `quiz-generator/`, `cme-engine/`. (No `quiz-generator-v2/` — never existed on disk; constitution corrected 2026-05-04.) |
+| Marking-authenticity forensic view | `supabase/migrations/20260504100400_marking_audit_view.sql` → `public.marking_audit_last_30d` (SECURITY INVOKER, service_role-only). Surfaces every `quiz_responses` row in the last 30 days where recorded `is_correct` disagrees with the per-session `quiz_session_shuffles` snapshot, OR where the snapshot is missing (Phase 1.2 silent-zero footprint). UUIDs only, no PII. Powers the super-admin Marking Integrity dashboard (frontend follow-up) and the nightly drift canary. Runbook: `docs/runbooks/forensic-quiz-investigation.md`. |
 | Foxy Next.js Route | `src/app/api/foxy/route.ts` (new RAG+sonnet route — not yet wired to UI; will replace foxy-tutor Edge Function) |
 | Foxy moat plan | Phases 0-5 shipped via PRs #399, #401-#405. Active: NCERT-grounded RAG (Voyage rerank-2 + RRF k=60), Foxy pedagogy decision tree, IRT 2PL nightly Vercel cron `/api/cron/irt-calibrate` at `50 2 * * *` (02:50 UTC daily, pinned by REG-44 in `vercel.json:33-36`; distinct from the unrelated pg_cron `daily-cron` job at 18:30 UTC in `supabase/migrations/20260404000002_pg_cron_daily.sql`), misconception curator at `/super-admin/misconceptions`. Dormant flags: `ff_irt_question_selection` (off until calibration accumulates). |
 | IRT primitives | `src/lib/irt/fisher-info.ts` — TS twin of `select_questions_by_irt_info` SQL RPC. Tested in `src/__tests__/lib/irt/fisher-info.test.ts`. |

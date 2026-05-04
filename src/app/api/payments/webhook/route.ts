@@ -3,6 +3,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { verifyRazorpaySignature } from '@/lib/payment-verification';
 import { logOpsEvent } from '@/lib/ops-events';
 import { logger } from '@/lib/logger';
+import { capture as posthogCapture } from '@/lib/posthog/server';
 
 /**
  * Razorpay Webhook Handler — CANONICAL (per architect C3)
@@ -566,6 +567,22 @@ export async function POST(request: NextRequest) {
         resolvedVia: resolved.via,
         studentId: resolved.student_id,
       });
+      // PostHog: payment_succeeded. razorpay_event_id used as $insert_id so
+      // Razorpay's webhook retries are deduped at PostHog ingest. NEVER emit
+      // razorpay_signature (PII per redactor) — passing the safe subset only.
+      void posthogCapture(
+        'payment_succeeded',
+        resolved.student_id,
+        {
+          amount: payment.amount ?? 0,
+          currency: 'INR',
+          plan: planCode,
+          billing_cycle: (billingCycle === 'yearly' ? 'yearly' : 'monthly'),
+          razorpay_payment_id: paymentId,
+          razorpay_order_id: orderId,
+        },
+        razorpayEventId,
+      ).catch(() => { /* swallow */ });
       return NextResponse.json({ received: true });
     }
 
@@ -620,6 +637,20 @@ export async function POST(request: NextRequest) {
         resolvedVia: resolved.via,
         studentId: resolved.student_id,
       });
+      // PostHog: payment_failed. We pass error_code (a stable Razorpay enum)
+      // never error_description (free-text — may contain card details).
+      void posthogCapture(
+        'payment_failed',
+        resolved.student_id,
+        {
+          amount: payment.amount ?? 0,
+          currency: 'INR',
+          plan: planCode,
+          billing_cycle: (notes.billing_cycle === 'yearly' ? 'yearly' : 'monthly'),
+          error_code: typeof payment.error_code === 'string' ? payment.error_code : null,
+        },
+        razorpayEventId,
+      ).catch(() => { /* swallow */ });
       return NextResponse.json({ received: true });
     }
 
@@ -862,6 +893,23 @@ export async function POST(request: NextRequest) {
           studentId: resolved.student_id,
           rzSubId,
         });
+        // PostHog: subscription_activated for first-charge, subscription_renewed
+        // for recurring. razorpay_event_id used as $insert_id for retry dedup.
+        const subEventName = eventType === 'subscription.charged'
+          ? 'subscription_renewed'
+          : 'subscription_activated';
+        if (rzSubId) {
+          void posthogCapture(
+            subEventName,
+            resolved.student_id,
+            {
+              plan: planCode,
+              billing_cycle: 'monthly',
+              razorpay_subscription_id: rzSubId,
+            },
+            razorpayEventId,
+          ).catch(() => { /* swallow */ });
+        }
         return NextResponse.json({ received: true });
       }
 
@@ -936,6 +984,26 @@ export async function POST(request: NextRequest) {
             studentId: resolved.student_id,
             rzSubId,
           });
+          // PostHog: subscription_cancelled (only when actually downgraded —
+          // stale_cancel_ignored means the user already moved to a new plan).
+          if (result === 'downgraded') {
+            const reason: 'user' | 'expired' | 'completed' =
+              newStatus === 'expired' ? 'expired'
+              : newStatus === 'completed' ? 'completed'
+              : 'user';
+            void posthogCapture(
+              'subscription_cancelled',
+              resolved.student_id,
+              {
+                plan: typeof notes.plan_code === 'string'
+                  ? canonicalizePlan(notes.plan_code)
+                  : 'unknown',
+                razorpay_subscription_id: rzSubId,
+                reason,
+              },
+              razorpayEventId,
+            ).catch(() => { /* swallow */ });
+          }
           return NextResponse.json({ received: true, note: result });
         }
       }

@@ -374,6 +374,30 @@ function LearningContent() {
         );
       })()}
 
+      {/* Marking Authenticity Path Mix — Wave 4 placeholder.
+          Backend has not built a dedicated PostHog HogQL endpoint for the
+          `quiz_graded` group-by `marking_authenticity_path` aggregation in this
+          parallel wave. Frontend chose option (a) per the runbook: render a
+          placeholder linking to PostHog and to the existing oracle-health page
+          so ops still has a single discovery surface, and document option (b)
+          (`/api/super-admin/marking-path-mix/route.ts`) as a follow-up. */}
+      <div style={{ marginBottom: 24 }}>
+        <h2 style={S.h2}>Marking Authenticity Path Mix</h2>
+        <div style={{ ...S.card, borderLeft: `3px solid ${colors.warning}` }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: colors.text1, marginBottom: 4 }}>
+            Coming soon
+          </div>
+          <div style={{ fontSize: 12, color: colors.text2, lineHeight: 1.5 }}>
+            <p style={{ margin: 0, marginBottom: 6 }}>
+              <strong>Goal:</strong> 100% of <code style={{ background: colors.surface, padding: '1px 5px', borderRadius: 3 }}>quiz_graded</code> events on path <code style={{ background: colors.surface, padding: '1px 5px', borderRadius: 3 }}>oracle_v2</code>. Current mix indicates which deprecation cutovers are still pending (<code style={{ background: colors.surface, padding: '1px 5px', borderRadius: 3 }}>client_fallback</code>, <code style={{ background: colors.surface, padding: '1px 5px', borderRadius: 3 }}>foxy_freetext</code>, <code style={{ background: colors.surface, padding: '1px 5px', borderRadius: 3 }}>oracle_v1_legacy</code>).
+            </p>
+            <p style={{ margin: 0, color: colors.text3, fontSize: 11 }}>
+              Awaiting backend endpoint <code>GET /api/super-admin/marking-path-mix</code> (PostHog HogQL proxy, server-cached). Until then, query directly in PostHog. See <a href="/super-admin/oracle-health" style={{ color: colors.accent }}>Oracle Health</a> for adjacent signals.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Content Coverage Signals */}
       {analytics && (
         <div>

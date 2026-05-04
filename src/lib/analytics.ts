@@ -23,6 +23,37 @@
  */
 
 import { posthogCapture, posthogIdentify, posthogReset, hashUserIdForAnalytics, isPosthogEnabled } from './posthog-client';
+import { track as posthogTypedTrack } from './posthog/client';
+import type { PostHogEventName } from './posthog/types';
+import { redactPII } from './ops-events-redactor';
+
+/**
+ * Architect's allowlist of canonical PostHog event names. Only events that
+ * appear here are forwarded through the typed wrapper (`posthog/client.ts`).
+ * Other events still go to the legacy posthog-client.ts path so existing
+ * funnels keep working during the Marking-Authenticity migration.
+ *
+ * To migrate an event from the legacy path to the typed path:
+ *   1. Add the event name to PostHogEventName in src/lib/posthog/types.ts
+ *   2. Add it to TYPED_POSTHOG_EVENTS below
+ *   3. Update its payload shape if needed
+ */
+const TYPED_POSTHOG_EVENTS: ReadonlySet<PostHogEventName> = new Set([
+  'quiz_started',
+  'quiz_graded',
+  'quiz_anti_cheat_flagged',
+  'quiz_server_submit_passthrough',
+  'xp_awarded',
+  'daily_xp_cap_hit',
+  'payment_initiated',
+  'payment_succeeded',
+  'payment_failed',
+  'subscription_activated',
+  'subscription_renewed',
+  'subscription_cancelled',
+  'foxy_chat_turn',
+  'foxy_safety_block',
+]);
 
 type AnalyticsEvent = {
   // Learning events
@@ -102,20 +133,37 @@ export function track<K extends keyof AnalyticsEvent>(
     console.info(`[Analytics] ${event}`, properties);
   }
 
+  // P13 defense-in-depth: scrub PII from event properties BEFORE either
+  // backend sees them. The server-side ingestion has its own redactor; this
+  // ensures we don't even put PII over the wire from the browser.
+  const safeProps = (redactPII(properties as Record<string, unknown>) ?? {}) as Record<string, unknown>;
+
   // ── Vercel Analytics (custom events) ──
+  // Kept as the source-of-truth for pageview metrics surfaced in Vercel's UI.
   if (typeof window !== 'undefined' && 'va' in window) {
     try {
       // Vercel Analytics track function
       (window as Window & { va?: (cmd: string, props: Record<string, unknown>) => void }).va?.('event', {
         name: event,
-        ...properties,
+        ...safeProps,
       });
     } catch { /* analytics should never break the app */ }
   }
 
-  // ── PostHog (cohort/funnel/retention) ──
-  // No-op when the runtime flag is off or the key is missing — see posthog-client.ts.
-  posthogCapture(event, properties as Record<string, unknown>);
+  // ── PostHog (legacy hashed-id path) ──
+  // The legacy posthog-client.ts dispatches to PostHog with the SHA-256
+  // hashed distinct_id flow. Used for events not yet on the architect's
+  // typed allowlist below — keeps existing funnels intact.
+  posthogCapture(event, safeProps);
+
+  // ── PostHog (typed wrapper, Marking-Authenticity Wave 2) ──
+  // Forward to the typed wrapper iff the event name is on the architect's
+  // PostHogEventName allowlist. This is a parallel call (not a replacement)
+  // so callers don't need to know which path is active.
+  // The TS cast is safe because we just checked membership at runtime.
+  if (TYPED_POSTHOG_EVENTS.has(event as unknown as PostHogEventName)) {
+    posthogTypedTrack(event as unknown as PostHogEventName, safeProps);
+  }
 }
 
 /**

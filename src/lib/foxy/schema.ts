@@ -55,7 +55,9 @@ export const FOXY_FALLBACK_MAX_BLOCKS = 30;
  *   - exam_tip     -- CBSE exam-specific hint
  *   - definition   -- formal definition of a term
  *   - example      -- worked example
- *   - question     -- a probing question back to the student (Socratic)
+ *   - question     -- a probing question back to the student (Socratic, text-only)
+ *   - mcq          -- a 4-option multiple-choice question (auditable, gated by
+ *                     the quiz-oracle before emission so it satisfies P6)
  */
 export const FoxyBlockTypeEnum = z.enum([
   'paragraph',
@@ -66,9 +68,10 @@ export const FoxyBlockTypeEnum = z.enum([
   'definition',
   'example',
   'question',
+  'mcq',
 ]);
 
-/** Block types that require a non-empty `text` field (i.e. not math). */
+/** Block types that require a non-empty `text` field (i.e. not math, not mcq). */
 const TEXT_BEARING_TYPES = new Set([
   'paragraph',
   'step',
@@ -79,9 +82,22 @@ const TEXT_BEARING_TYPES = new Set([
   'question',
 ]);
 
+/** Bloom's taxonomy levels accepted on MCQ blocks. */
+export const FoxyBloomLevelEnum = z.enum([
+  'Remember',
+  'Understand',
+  'Apply',
+  'Analyze',
+  'Evaluate',
+  'Create',
+]);
+
+/** Difficulty enum accepted on MCQ blocks (matches `question_bank` enum). */
+export const FoxyDifficultyEnum = z.enum(['easy', 'medium', 'hard']);
+
 /**
  * Internal raw shape -- we use `z.object().superRefine` to enforce
- * cross-field rules (text vs latex coupling).
+ * cross-field rules (text vs latex coupling, mcq required fields).
  */
 const FoxyBlockBase = z.object({
   type: FoxyBlockTypeEnum,
@@ -97,10 +113,40 @@ const FoxyBlockBase = z.object({
     .string()
     .max(FOXY_MAX_LATEX_LEN, `latex exceeds ${FOXY_MAX_LATEX_LEN} chars`)
     .optional(),
+  // ── MCQ-only fields (Phase 3 marking-authenticity remediation) ────────────
+  // Present iff `type === 'mcq'`. Schema enforces this via superRefine below.
+  // The MCQ block is the auditable variant of the (text-only, Socratic)
+  // `question` block: it carries 4 options and a graded correct index so
+  // the client can render real MCQ UI and the server can later mark
+  // submissions through the snapshot/grading pipeline (P1, P4, P6).
+  stem: z
+    .string()
+    .min(10, 'mcq stem requires at least 10 chars')
+    .max(FOXY_MAX_TEXT_LEN, `stem exceeds ${FOXY_MAX_TEXT_LEN} chars`)
+    .optional(),
+  options: z
+    .array(z.string().min(1, 'option must be non-empty').max(FOXY_MAX_TEXT_LEN))
+    .length(4, 'mcq must have exactly 4 options (P6)')
+    .optional(),
+  correct_answer_index: z.number().int().min(0).max(3).optional(),
+  explanation: z
+    .string()
+    .min(10, 'mcq explanation requires at least 10 chars')
+    .max(FOXY_MAX_TEXT_LEN, `explanation exceeds ${FOXY_MAX_TEXT_LEN} chars`)
+    .optional(),
+  bloom_level: FoxyBloomLevelEnum.optional(),
+  difficulty: FoxyDifficultyEnum.optional(),
 });
 
 export const FoxyBlockSchema = FoxyBlockBase.superRefine((block, ctx) => {
-  const { type, text, latex } = block;
+  const { type, text, latex, stem, options, correct_answer_index, explanation } =
+    block;
+
+  // MCQ-only field set leaks onto non-mcq blocks would let malformed AI
+  // output silently parse. Forbid mcq-only fields anywhere except an mcq.
+  const MCQ_ONLY_FIELDS: Array<
+    'stem' | 'options' | 'correct_answer_index' | 'explanation'
+  > = ['stem', 'options', 'correct_answer_index', 'explanation'];
 
   if (type === 'math') {
     if (text !== undefined) {
@@ -127,10 +173,90 @@ export const FoxyBlockSchema = FoxyBlockBase.superRefine((block, ctx) => {
           "'latex' must not contain '$' or '$$' delimiters; consumer wraps with KaTeX",
       });
     }
+    for (const f of MCQ_ONLY_FIELDS) {
+      if (block[f] !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [f],
+          message: `blocks of type 'math' must not include '${f}'`,
+        });
+      }
+    }
     return;
   }
 
-  // Non-math types: text is required and non-empty after trim; latex forbidden.
+  if (type === 'mcq') {
+    // MCQ blocks: stem/options/correct_answer_index/explanation required.
+    // text/latex/label are not used (UI renders stem + options directly).
+    if (text !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['text'],
+        message: "blocks of type 'mcq' must not include a 'text' field; use 'stem'",
+      });
+    }
+    if (latex !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['latex'],
+        message: "blocks of type 'mcq' must not include a 'latex' field",
+      });
+    }
+    if (stem === undefined || stem.trim() === '') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['stem'],
+        message: "blocks of type 'mcq' require a non-empty 'stem'",
+      });
+    }
+    if (!Array.isArray(options) || options.length !== 4) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['options'],
+        message: "blocks of type 'mcq' require exactly 4 'options' (P6)",
+      });
+    } else {
+      // P6: distinct, non-empty options.
+      const trimmed = options.map((o) => o.trim().toLowerCase());
+      if (trimmed.some((o) => o.length === 0)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['options'],
+          message: 'mcq options must all be non-empty after trim',
+        });
+      } else if (new Set(trimmed).size !== 4) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['options'],
+          message: 'mcq options must be distinct (case-insensitive)',
+        });
+      }
+    }
+    if (
+      typeof correct_answer_index !== 'number' ||
+      !Number.isInteger(correct_answer_index) ||
+      correct_answer_index < 0 ||
+      correct_answer_index > 3
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['correct_answer_index'],
+        message:
+          "blocks of type 'mcq' require integer 'correct_answer_index' in 0..3",
+      });
+    }
+    if (explanation === undefined || explanation.trim() === '') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['explanation'],
+        message: "blocks of type 'mcq' require a non-empty 'explanation'",
+      });
+    }
+    return;
+  }
+
+  // Non-math, non-mcq types: text required; latex forbidden; mcq-only
+  // fields forbidden.
   if (TEXT_BEARING_TYPES.has(type)) {
     if (text === undefined || text.trim() === '') {
       ctx.addIssue({
@@ -145,6 +271,15 @@ export const FoxyBlockSchema = FoxyBlockBase.superRefine((block, ctx) => {
         path: ['latex'],
         message: `blocks of type '${type}' must not include a 'latex' field`,
       });
+    }
+    for (const f of MCQ_ONLY_FIELDS) {
+      if (block[f] !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [f],
+          message: `blocks of type '${type}' must not include '${f}'`,
+        });
+      }
     }
   }
 });
@@ -199,6 +334,37 @@ export type FoxyBlockType = z.infer<typeof FoxyBlockTypeEnum>;
 export type FoxyBlock = z.infer<typeof FoxyBlockSchema>;
 export type FoxyResponse = z.infer<typeof FoxyResponseSchema>;
 export type FoxySubject = z.infer<typeof FoxySubjectEnum>;
+export type FoxyBloomLevel = z.infer<typeof FoxyBloomLevelEnum>;
+export type FoxyDifficulty = z.infer<typeof FoxyDifficultyEnum>;
+
+/**
+ * Narrowed type for an MCQ block. Useful when a downstream consumer
+ * (e.g. quiz UI, oracle gate) needs the four MCQ-specific fields without
+ * threading optional-undefined chains.
+ */
+export type FoxyMcqBlock = {
+  type: 'mcq';
+  stem: string;
+  options: [string, string, string, string];
+  correct_answer_index: 0 | 1 | 2 | 3;
+  explanation: string;
+  bloom_level?: FoxyBloomLevel;
+  difficulty?: FoxyDifficulty;
+  label?: string;
+};
+
+/** Type guard: narrows a FoxyBlock to FoxyMcqBlock when it is an MCQ. */
+export function isFoxyMcqBlock(block: FoxyBlock): block is FoxyMcqBlock {
+  return (
+    block.type === 'mcq' &&
+    typeof (block as { stem?: unknown }).stem === 'string' &&
+    Array.isArray((block as { options?: unknown }).options) &&
+    ((block as { options?: unknown[] }).options ?? []).length === 4 &&
+    typeof (block as { correct_answer_index?: unknown })
+      .correct_answer_index === 'number' &&
+    typeof (block as { explanation?: unknown }).explanation === 'string'
+  );
+}
 
 // ── Subject-Aware Validation ─────────────────────────────────────────────────
 
@@ -375,6 +541,14 @@ type FoxyResponse = {
         label?: string }                          // optional caption, <= 2000 chars
     | { type: "math",
         latex: string,                            // non-empty, <= 500 chars, NO "$" delimiters
+        label?: string }
+    | { type: "mcq",                              // 4-option multiple choice (use ONLY in quiz/practice modes)
+        stem: string,                             // 10..2000 chars, the question prompt
+        options: [string, string, string, string],// EXACTLY 4 distinct non-empty options
+        correct_answer_index: 0 | 1 | 2 | 3,
+        explanation: string,                      // 10..2000 chars, why the correct answer is correct
+        bloom_level?: "Remember"|"Understand"|"Apply"|"Analyze"|"Evaluate"|"Create",
+        difficulty?: "easy"|"medium"|"hard",
         label?: string }
   >
 }

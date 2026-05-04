@@ -312,6 +312,13 @@ class _QuizInProgress extends ConsumerWidget {
   }
 }
 
+/// Lightweight Hindi-detection helper. Mobile has no app-wide language
+/// toggle yet; until one ships we honour the device locale. This matches
+/// the data-side `_hi` field convention already used elsewhere in mobile.
+bool _isHindi(BuildContext context) {
+  return Localizations.localeOf(context).languageCode == 'hi';
+}
+
 class _ResultScreen extends ConsumerWidget {
   final QuizState quiz;
 
@@ -320,13 +327,22 @@ class _ResultScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final result = quiz.result!;
+
+    // Phase 1.2: when the server raised `session_not_started`, the
+    // result is a synthetic zero-score row. Show the dedicated "session
+    // expired" recovery card instead of the regular results UI.
+    if (quiz.sessionExpired) {
+      return _SessionExpiredScreen(quiz: quiz);
+    }
+
     final isGood = result.scorePercent >= 70;
+    final isHi = _isHindi(context);
 
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
         child: Center(
-          child: Padding(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.all(32),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -384,6 +400,10 @@ class _ResultScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 24),
 
+                // Daily-XP-cap banner (above the stats row, only when the
+                // server flagged today's XP as capped).
+                if (result.xpCapped) _DailyCapBanner(result: result, isHi: isHi),
+
                 // Stats row
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -401,9 +421,13 @@ class _ResultScreen extends ConsumerWidget {
                       label: result.coinsEarned > 0
                           ? 'Coins Earned'
                           : 'XP Earned',
+                      // When the daily cap fired, prefer the server's
+                      // `effective_xp` (the clamped value the student
+                      // actually got) over the raw `xp_earned`. Falls
+                      // through to xpEarned for older deploys.
                       value: result.coinsEarned > 0
                           ? '+${result.coinsEarned}'
-                          : '+${result.xpEarned}',
+                          : '+${result.effectiveXp ?? result.xpEarned}',
                       color: AppColors.xpGold,
                     ),
                     _ResultStat(
@@ -418,6 +442,126 @@ class _ResultScreen extends ConsumerWidget {
                 ElevatedButton(
                   onPressed: () => ref.read(quizProvider.notifier).reset(),
                   child: const Text('Try Another Quiz'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Friendly bilingual banner shown when `atomic_quiz_profile_update`
+/// clamps today's XP at the daily cap (200, see web `xp-rules.ts`). The
+/// server passes through `xp_capped`, `effective_xp`, `xp_uncapped` in
+/// the RPC JSONB; this widget reads those off [QuizResult].
+///
+/// Bilingual rendering follows mobile's existing pattern (device locale
+/// → Hindi or English; no app-wide toggle yet).
+class _DailyCapBanner extends StatelessWidget {
+  final QuizResult result;
+  final bool isHi;
+
+  const _DailyCapBanner({required this.result, required this.isHi});
+
+  @override
+  Widget build(BuildContext context) {
+    // Defensive: if effectiveXp / xpUncapped are null (older RPC build),
+    // still render a useful banner using the available values.
+    final effective = result.effectiveXp ?? result.xpEarned;
+    final uncapped = result.xpUncapped ?? result.xpEarned;
+
+    final message = isHi
+        ? '🎯 आज की XP सीमा पूरी हो गई! आज आपने $effective XP कमाए ($uncapped होते). कल फिर मिलते हैं!'
+        : '🎯 Daily XP cap reached! You earned $effective XP today (would have been $uncapped). Come back tomorrow for more!';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        // Re-use existing warm/orange tokens; no new design tokens.
+        color: AppColors.warning.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.warning.withValues(alpha: 0.35)),
+      ),
+      child: Text(
+        message,
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          fontSize: 12.5,
+          color: AppColors.textPrimary,
+          height: 1.45,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+}
+
+/// Recovery screen shown when the server raised `session_not_started`
+/// (Phase 1.2, SQLSTATE P0001). The student's `quiz_session_shuffles`
+/// snapshot rows are gone, so the only useful action is "restart the
+/// quiz" — a retry would just hit the same RAISE.
+class _SessionExpiredScreen extends ConsumerWidget {
+  final QuizState quiz;
+
+  const _SessionExpiredScreen({required this.quiz});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isHi = _isHindi(context);
+
+    final title = isHi ? 'क्विज़ सत्र समाप्त' : 'Quiz Session Expired';
+    final body = isHi
+        ? 'क्विज़ सत्र समाप्त हो गया है। कृपया क्विज़ फिर से शुरू करें।'
+        : 'Quiz session expired. Please restart the quiz.';
+    final cta = isHi ? 'क्विज़ फिर से शुरू करें' : 'Restart Quiz';
+
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('⏱️', style: TextStyle(fontSize: 52)),
+                const SizedBox(height: 16),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  body,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: AppColors.textSecondary,
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 28),
+                ElevatedButton(
+                  onPressed: () {
+                    // Clear local session state and return to the quiz
+                    // setup screen (subject picker). Subject is
+                    // intentionally not auto-selected — the student may
+                    // pick a different one.
+                    ref.read(quizProvider.notifier).reset();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.warning,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: Text(cta),
                 ),
               ],
             ),

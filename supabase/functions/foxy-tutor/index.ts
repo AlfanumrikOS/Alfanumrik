@@ -60,6 +60,18 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { logOpsEvent } from '../_shared/ops-events.ts'
 import { validateSubjectRpc } from '../_shared/subjects-validate.ts'
+import {
+  validateCandidate,
+  type CandidateQuestion,
+  type LlmGradeResult,
+  type OracleResult,
+} from '../_shared/quiz-oracle.ts'
+import {
+  QUIZ_ORACLE_GRADER_SYSTEM_PROMPT,
+  buildQuizOracleGraderUserPrompt,
+} from '../_shared/quiz-oracle-prompts.ts'
+import { parseLlmGraderResponse } from '../_shared/quiz-oracle.ts'
+import { capture as posthogCapture, identify as posthogIdentify } from '../_shared/posthog.ts'
 
 // ─── CORS ────────────────────────────────────────────────────────────────────
 const ALLOWED_ORIGINS = [
@@ -162,6 +174,201 @@ const PLAN_ALIAS: Record<string, string> = {
 function normalizePlan(plan: string): string {
   const base = plan.replace(/_(monthly|yearly)$/, '')
   return PLAN_ALIAS[base] ?? base
+}
+
+// ─── MCQ extraction (Path B: regex-based parser) ────────────────────────────
+// Why Path B (parser) over Path A (Anthropic tool_use structured output):
+//   - The legacy foxy-tutor Edge Function emits markdown/text via the existing
+//     prompt and is marked DEPRECATED (see top of file). Wiring tool_use here
+//     would require restructuring the entire system prompt + response handling
+//     and risks breaking the existing UI's text rendering.
+//   - Path B is additive: we ship the same `reply` text, then opportunistically
+//     parse MCQ patterns from it. If parsing fails, the student still gets the
+//     prose answer.
+//   - The new flow at src/app/api/foxy/route.ts is where Path A (structured
+//     output via the FoxyResponseSchema MCQ block) belongs — this Edge
+//     Function is on its way out.
+//
+// Recognised MCQ pattern (case-insensitive, multiline):
+//   <stem ending with ?>
+//   A) <opt0>
+//   B) <opt1>
+//   C) <opt2>
+//   D) <opt3>
+//   Answer: <A|B|C|D>
+//   Explanation: <one or more sentences>
+//
+// The same pattern accepts dot delimiters (A. opt0) and lowercase letters.
+// Returns at most one MCQ per turn; the oracle gate is per-question and
+// running it on multiple per turn would multiply Claude grader cost.
+
+interface ParsedMcq {
+  stem: string
+  options: [string, string, string, string]
+  correct_answer_index: 0 | 1 | 2 | 3
+  explanation: string
+}
+
+const MCQ_OPTION_RE = /^[\s>*]*([A-D])[)\.\:\-]\s+(.+?)\s*$/i
+
+function parseMcqFromReply(text: string): ParsedMcq | null {
+  if (typeof text !== 'string' || text.length < 30) return null
+  const lines = text.split(/\r?\n/).map((l) => l.trim())
+
+  // Locate four consecutive option lines whose letters are A,B,C,D in order.
+  let optStartIdx = -1
+  const opts: string[] = []
+  for (let i = 0; i <= lines.length - 4; i++) {
+    const captured: string[] = []
+    let ok = true
+    for (let k = 0; k < 4; k++) {
+      const m = MCQ_OPTION_RE.exec(lines[i + k])
+      if (!m) { ok = false; break }
+      const expectedLetter = String.fromCharCode('A'.charCodeAt(0) + k)
+      if (m[1].toUpperCase() !== expectedLetter) { ok = false; break }
+      captured.push(m[2].trim())
+    }
+    if (ok) {
+      optStartIdx = i
+      opts.push(...captured)
+      break
+    }
+  }
+  if (optStartIdx < 0 || opts.length !== 4) return null
+  if (opts.some((o) => o.length === 0)) return null
+  // Distinct (case-insensitive) — required by P6.
+  const distinct = new Set(opts.map((o) => o.toLowerCase()))
+  if (distinct.size !== 4) return null
+
+  // Stem: everything before the first option line, last non-empty line.
+  let stem = ''
+  for (let i = optStartIdx - 1; i >= 0; i--) {
+    const line = lines[i]
+    if (line.length === 0) continue
+    stem = line
+    break
+  }
+  if (stem.length < 10) return null
+
+  // Answer: scan lines after the options for "Answer: X" or "Correct: X".
+  let correctIdx: 0 | 1 | 2 | 3 | null = null
+  for (let i = optStartIdx + 4; i < lines.length; i++) {
+    const m = /^(?:answer|correct(?:\s+answer)?|ans)\s*[:\-]?\s*([A-D])\b/i.exec(
+      lines[i],
+    )
+    if (m) {
+      const letter = m[1].toUpperCase()
+      correctIdx = (letter.charCodeAt(0) - 'A'.charCodeAt(0)) as 0 | 1 | 2 | 3
+      break
+    }
+  }
+  if (correctIdx === null) return null
+
+  // Explanation: longest line after the options that mentions "explanation"
+  // or, fallback, all text after the answer line collapsed to a single line.
+  let explanation = ''
+  for (let i = optStartIdx + 4; i < lines.length; i++) {
+    const m = /^(?:explanation|because|reason)\s*[:\-]?\s*(.+)$/i.exec(lines[i])
+    if (m) {
+      explanation = m[1].trim()
+      // Pull in continuation lines until blank.
+      for (let j = i + 1; j < lines.length && lines[j].length > 0; j++) {
+        explanation += ' ' + lines[j]
+      }
+      break
+    }
+  }
+  if (explanation.length < 10) {
+    // Fallback: text after the answer line, joined.
+    const tail = lines.slice(optStartIdx + 5).filter((l) => l.length > 0).join(' ')
+    if (tail.length >= 10) explanation = tail
+  }
+  if (explanation.length < 10) return null
+
+  return {
+    stem,
+    options: [opts[0], opts[1], opts[2], opts[3]] as [string, string, string, string],
+    correct_answer_index: correctIdx,
+    explanation: explanation.slice(0, 1000),
+  }
+}
+
+// ─── Oracle gate (LLM-grader cross-check) ────────────────────────────────────
+
+const ORACLE_GRADER_TIMEOUT_MS = 12_000
+
+async function callOracleGrader(input: {
+  question_text: string
+  options: string[]
+  correct_answer_index: number
+  explanation: string
+}): Promise<LlmGradeResult> {
+  const userPrompt = buildQuizOracleGraderUserPrompt(input)
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), ORACLE_GRADER_TIMEOUT_MS)
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 256,
+        temperature: 0,
+        system: QUIZ_ORACLE_GRADER_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: userPrompt }],
+      }),
+      signal: controller.signal,
+    })
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      throw new Error(`Oracle grader HTTP ${res.status}: ${body.slice(0, 200)}`)
+    }
+    const data = await res.json()
+    const text: string = data?.content?.[0]?.text || ''
+    const parsed = parseLlmGraderResponse(text)
+    if (!parsed) return { verdict: 'ambiguous', reasoning: 'unparseable grader output' }
+    return parsed
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('Oracle grader timeout (12s)')
+    }
+    throw err
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
+/**
+ * Run the parsed MCQ candidate through the quiz-oracle (deterministic + LLM
+ * grader). Returns the OracleResult unchanged so the caller can surface the
+ * rejection category in PostHog telemetry.
+ *
+ * Cost ceiling: 1 grader call per accepted MCQ (the deterministic checks
+ * are local). Foxy emits at most one MCQ per turn so worst-case cost is
+ * bounded by the per-student daily chat-limit RPC.
+ */
+async function gateMcqWithOracle(parsed: ParsedMcq): Promise<OracleResult> {
+  const candidate: CandidateQuestion = {
+    question_text: parsed.stem,
+    options: parsed.options,
+    correct_answer_index: parsed.correct_answer_index,
+    explanation: parsed.explanation,
+  }
+  return await validateCandidate(candidate, {
+    enableLlmGrader: true,
+    llmGrade: callOracleGrader,
+  })
+}
+
+// Map difficulty enum back to the integer column used by question_bank.
+function difficultyEnumToInt(d: 'easy' | 'medium' | 'hard' | undefined): number {
+  if (d === 'easy') return 1
+  if (d === 'hard') return 3
+  return 2 // default medium
 }
 
 // ─── System prompt ─────────────────────────────────────────────────────────────
@@ -267,7 +474,7 @@ Deno.serve(async (req: Request) => {
   try {
     const authResult = await verifyAndGetStudentId(req)
     if ('error' in authResult) return errorResponse(authResult.error, authResult.status, origin)
-    const { studentId: student_id } = authResult
+    const { studentId: student_id, authUserId } = authResult
 
     const body = await req.json()
     const {
@@ -335,6 +542,35 @@ Deno.serve(async (req: Request) => {
 
     const plan = normalizePlan(studentResult.data?.subscription_plan || 'free')
     const displayLimit = PLAN_LIMITS[plan] ?? PLAN_LIMITS.free   // for 429 message only
+
+    // ── PostHog identify (P13: only coarse cohorting properties) ─────────────
+    // Fire-and-forget. Helper is a no-op when POSTHOG_PROJECT_API_KEY is unset.
+    // We send the auth UUID server-side; this matches the existing client-side
+    // hashing convention since both server and client identify with the same
+    // distinctId mapped to one PostHog person profile.
+    posthogIdentify(authUserId, {
+      role: 'student',
+      grade,            // P5: string "6".."12"
+      board: studentBoard,
+      plan,
+      preferred_language: safeLanguage,
+    }).catch(() => {})
+
+    // Server-side foxy_session_started — emitted on EVERY request that
+    // creates or continues a session. Coarse signal; the client also fires
+    // a similar event from /foxy on first nav. PostHog dedups via
+    // distinctId+event+second.
+    if (!session_id) {
+      // Brand-new session — emit foxy_session_started so cohort funnels can
+      // separate first-turn vs continuation traffic.
+      posthogCapture('foxy_session_started', authUserId, {
+        session_id: null,
+        mode: safeMode,
+        subject,
+        grade,
+        topic: safeTopicTitle ?? undefined,
+      }).catch(() => {})
+    }
 
     // ── Atomic quota enforcement — DB derives real limit from subscription_plans ──
     // p_limit intentionally omitted: check_and_record_usage(v2) ignores it anyway
@@ -431,6 +667,127 @@ Deno.serve(async (req: Request) => {
       { role: 'assistant', content: reply, ts: now, meta: { xp: xpEarned, latency: latencyMs } },
     ]
 
+    // ── Inline MCQ extraction + oracle gate (Phase 3 marking-authenticity) ──
+    // Quiz/practice modes can produce an inline MCQ. We try to parse one
+    // from the prose reply (Path B). If found, we run the same oracle gate
+    // that bulk-question-gen uses; on accept we insert into question_bank
+    // (source='foxy_inline'); on reject we DROP the MCQ payload from the
+    // response (the prose reply still ships) and emit telemetry. The
+    // student NEVER sees an oracle-blocked MCQ.
+    //
+    // The structured `mcq` field on the response is additive — old clients
+    // ignore it; new clients render an MCQ widget.
+    let inlineMcq: {
+      stem: string
+      options: [string, string, string, string]
+      correct_answer_index: 0 | 1 | 2 | 3
+      explanation: string
+      bloom_level?: string
+      difficulty?: string
+      question_id?: string
+    } | null = null
+    let oracleBlocks = 0
+    if (safeMode === 'quiz' || safeMode === 'practice') {
+      const parsed = parseMcqFromReply(reply)
+      if (parsed) {
+        try {
+          const verdict = await gateMcqWithOracle(parsed)
+          if (verdict.ok) {
+            // Insert into question_bank so future submissions can be marked
+            // through the snapshot/grading pipeline. Do not block the
+            // response on the insert — fire-and-forget after we have the
+            // payload to send back. Insert SYNCHRONOUSLY here only because
+            // we need question_id on the wire; use a short-circuit timeout
+            // pattern via Promise.race if the insert proves slow in prod.
+            const inserted = await supabase
+              .from('question_bank')
+              .insert({
+                subject,
+                grade,
+                question_text: parsed.stem,
+                question_type: 'mcq',
+                options: parsed.options,
+                correct_answer_index: parsed.correct_answer_index,
+                explanation: parsed.explanation,
+                difficulty: 2, // medium default; Foxy doesn't tag difficulty inline
+                bloom_level: 'understand', // conservative default
+                source: 'foxy_inline',
+                is_active: true,
+                is_verified: false, // oracle-passed but not human-reviewed
+                content_status: 'published',
+                generation_batch: `foxy:${activeSessionId ?? student_id}`,
+              })
+              .select('id')
+              .maybeSingle()
+            const newQid: string | undefined = inserted?.data?.id ?? undefined
+            inlineMcq = {
+              stem: parsed.stem,
+              options: parsed.options,
+              correct_answer_index: parsed.correct_answer_index,
+              explanation: parsed.explanation,
+              bloom_level: 'understand',
+              difficulty: 'medium',
+              question_id: newQid,
+            }
+            if (newQid) {
+              posthogCapture('foxy_practice_question_emitted', authUserId, {
+                question_id: newQid,
+                bloom_level: 'understand',
+                difficulty: 'medium',
+                subject,
+                grade,
+                topic: safeTopicTitle ?? undefined,
+                session_id: activeSessionId,
+              }).catch(() => {})
+            }
+          } else {
+            // Oracle rejected — drop the MCQ. Student still gets the prose
+            // reply but no auditable MCQ widget. Telemetry only carries
+            // category + reason (no question text per P13 — the question
+            // is generated content but the rejection reason can carry
+            // option/text fragments, so cap it).
+            oracleBlocks = 1
+            posthogCapture('foxy_oracle_blocked', authUserId, {
+              source: 'foxy-tutor',
+              mode: safeMode,
+              subject,
+              grade,
+              topic: safeTopicTitle ?? undefined,
+              category: verdict.category,
+              reason: verdict.reason?.slice(0, 200),
+              llm_calls: verdict.llm_calls,
+            }).catch(() => {})
+            await logOpsEvent({
+              category: 'quiz.oracle_rejection',
+              source: 'foxy-tutor',
+              severity: 'info',
+              message: `Foxy inline MCQ blocked: ${verdict.category}`,
+              context: {
+                subject,
+                grade,
+                mode: safeMode,
+                category: verdict.category,
+                llm_calls: verdict.llm_calls,
+              },
+            })
+          }
+        } catch (oracleErr) {
+          // Oracle path threw — fail CLOSED (P12 spirit): drop the MCQ.
+          oracleBlocks = 1
+          console.warn('[foxy-tutor] oracle gate threw:', oracleErr instanceof Error ? oracleErr.message : String(oracleErr))
+          posthogCapture('foxy_oracle_blocked', authUserId, {
+            source: 'foxy-tutor',
+            mode: safeMode,
+            subject,
+            grade,
+            topic: safeTopicTitle ?? undefined,
+            category: 'llm_grader_unavailable',
+            reason: 'oracle gate threw',
+          }).catch(() => {})
+        }
+      }
+    }
+
     if (activeSessionId) {
       const MAX_SESSION_MESSAGES = 200
       const prevMessages = Array.isArray(sessionResult.data?.messages) ? sessionResult.data.messages : []
@@ -472,7 +829,36 @@ Deno.serve(async (req: Request) => {
       context: { subject, grade, mode: safeMode, latency_ms: latencyMs, session_id: activeSessionId },
     })
 
-    return jsonResponse({ reply, xp_earned: xpEarned, session_id: activeSessionId }, 200, {}, origin)
+    // ── PostHog: per-turn volumetric (server-side, no message text) ──────────
+    // P13: blocks_emitted is a count, not the content. oracle_blocks tags
+    // turns where the gate prevented an MCQ from reaching the student.
+    posthogCapture('foxy_message_sent', authUserId, {
+      session_id: activeSessionId,
+      mode: safeMode,
+      subject,
+      grade,
+      // Conservative count: 1 prose reply + (1 if MCQ shipped) — we don't
+      // post-parse the prose into structured blocks here. The new
+      // /api/foxy route emits structured blocks and gives a precise count.
+      blocks_emitted: 1 + (inlineMcq ? 1 : 0),
+      oracle_blocks: oracleBlocks,
+      source: 'foxy-tutor',
+      latency_ms: latencyMs,
+    }).catch(() => {})
+
+    return jsonResponse(
+      {
+        reply,
+        xp_earned: xpEarned,
+        session_id: activeSessionId,
+        // Additive structured field — old clients ignore. Present iff an
+        // oracle-passing inline MCQ was extracted from the prose reply.
+        mcq: inlineMcq,
+      },
+      200,
+      {},
+      origin,
+    )
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err)
     console.error('foxy-tutor error:', err)

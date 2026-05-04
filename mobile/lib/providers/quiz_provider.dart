@@ -1,9 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 
 import '../data/models/quiz_question.dart';
 import '../data/repositories/quiz_repository.dart';
 import 'auth_provider.dart';
 import 'dashboard_provider.dart';
+
+const _uuidGen = Uuid();
 
 final quizRepositoryProvider = Provider<QuizRepository>((ref) {
   return QuizRepository();
@@ -42,6 +45,19 @@ class QuizState {
   /// repository falls back to the legacy v1 RPC.
   final String? serverSessionId;
 
+  /// Phase 2.8 idempotency token. Generated ONCE per quiz attempt in
+  /// [QuizNotifier.startQuiz] and reused on every retry of
+  /// `submit_quiz_results_v2`. The server uses this to short-circuit
+  /// replays on transient 5xx so the same attempt never produces two
+  /// `quiz_sessions` rows or duplicate XP. See migration
+  /// `20260504100200_quiz_idempotency_key.sql`.
+  final String? idempotencyKey;
+
+  /// Set to true when the server returned `session_not_started`
+  /// (SQLSTATE P0001). The result screen swaps the generic error banner
+  /// for a "Quiz session expired — please restart" CTA.
+  final bool sessionExpired;
+
   const QuizState({
     this.questions = const [],
     this.currentIndex = 0,
@@ -55,6 +71,8 @@ class QuizState {
     this.subject,
     this.startedAt,
     this.serverSessionId,
+    this.idempotencyKey,
+    this.sessionExpired = false,
   });
 
   QuizState copyWith({
@@ -70,6 +88,8 @@ class QuizState {
     String? subject,
     DateTime? startedAt,
     String? serverSessionId,
+    String? idempotencyKey,
+    bool? sessionExpired,
   }) {
     return QuizState(
       questions: questions ?? this.questions,
@@ -85,6 +105,8 @@ class QuizState {
       subject: subject ?? this.subject,
       startedAt: startedAt ?? this.startedAt,
       serverSessionId: serverSessionId ?? this.serverSessionId,
+      idempotencyKey: idempotencyKey ?? this.idempotencyKey,
+      sessionExpired: sessionExpired ?? this.sessionExpired,
     );
   }
 
@@ -125,7 +147,17 @@ class QuizNotifier extends Notifier<QuizState> {
     final student = ref.read(studentProvider).valueOrNull;
     if (student == null) return;
 
-    state = QuizState(isLoading: true, subject: subject);
+    // Phase 2.8: generate the idempotency key ONCE per attempt. It is
+    // reused on every retry of submit_quiz_results_v2 so the server can
+    // short-circuit replays. NEVER regenerate on retry — that would
+    // defeat the whole point of the partial unique index.
+    final attemptKey = _uuidGen.v4();
+
+    state = QuizState(
+      isLoading: true,
+      subject: subject,
+      idempotencyKey: attemptKey,
+    );
 
     final repo = ref.read(quizRepositoryProvider);
     final fetchResult = await repo.getQuestions(
@@ -263,15 +295,30 @@ class QuizNotifier extends Notifier<QuizState> {
       responses: responses,
       timeTakenSeconds: timeTaken.inSeconds,
       sessionId: state.serverSessionId,
+      idempotencyKey: state.idempotencyKey,
     );
 
     result.when(
       success: (quizResult) {
         state = state.copyWith(result: quizResult, isSubmitting: false);
-        // Refresh dashboard to show updated coins/score
-        ref.read(dashboardProvider.notifier).refresh();
+        // Refresh dashboard to show updated coins/score. Skip on
+        // idempotent replay — the server already counted this attempt
+        // on the first commit and the dashboard was refreshed then;
+        // re-firing would re-animate XP gain in the UI for the same
+        // attempt, which is exactly what the replay short-circuit
+        // exists to prevent.
+        if (!quizResult.idempotentReplay) {
+          ref.read(dashboardProvider.notifier).refresh();
+        }
       },
       failure: (msg) {
+        // Phase 1.2: server RAISEs `session_not_started` (P0001) when the
+        // shuffle snapshot is missing. Surface a structured flag so the
+        // UI shows a "Quiz session expired — please restart" CTA instead
+        // of a generic banner. The repository tags the failure message
+        // with the `session_not_started:` prefix.
+        final isSessionExpired = msg.startsWith('session_not_started');
+
         // RPC failed — show a zero-score result so the student at least sees
         // the quiz ended. Do NOT compute XP/coins locally; values will be 0
         // to avoid awarding unverified rewards (P2).
@@ -286,6 +333,7 @@ class QuizNotifier extends Notifier<QuizState> {
           ),
           isSubmitting: false,
           error: msg,
+          sessionExpired: isSessionExpired,
         );
       },
     );

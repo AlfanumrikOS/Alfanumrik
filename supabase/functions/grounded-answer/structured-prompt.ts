@@ -41,6 +41,14 @@ type FoxyResponse = {
     | { type: "math",
         latex: string,                            // non-empty, <= 500 chars, NO "$" delimiters
         label?: string }
+    | { type: "mcq",                              // 4-option multiple choice (use ONLY in quiz/practice modes)
+        stem: string,                             // 10..2000 chars, the question prompt
+        options: [string, string, string, string],// EXACTLY 4 distinct non-empty options
+        correct_answer_index: 0 | 1 | 2 | 3,
+        explanation: string,                      // 10..2000 chars, why the correct answer is correct
+        bloom_level?: "Remember"|"Understand"|"Apply"|"Analyze"|"Evaluate"|"Create",
+        difficulty?: "easy"|"medium"|"hard",
+        label?: string }
   >
 }
 

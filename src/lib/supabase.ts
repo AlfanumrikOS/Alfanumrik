@@ -461,38 +461,55 @@ export async function submitQuizResults(studentId: string, subject: string, grad
     // ── Robust client-side fallback ──
     // Uses atomic RPC for XP/profile updates to prevent race conditions
     // when multiple quiz submissions happen concurrently.
+    //
+    // NOTE (Marking-Authenticity Phase 2.6): this fallback is scheduled for
+    // deprecation in Phase 2.7 — once /api/quiz/submit is the only legal
+    // path the entire client-side scoring branch can be deleted. Until then
+    // we surface effective_xp + xp_capped from the atomic RPC's JSONB return
+    // so the UI can correctly show the daily-cap state on legacy paths.
     const total = responses.length;
     const correct = responses.filter(r => r.is_correct).length;
     const scorePct = calculateScorePercent(correct, total);
-    const xpEarned = calculateQuizXP(correct, scorePct);
+    const xpEarnedUncapped = calculateQuizXP(correct, scorePct);
 
     // 1. Insert quiz session (columns must match DB schema exactly)
     const { data: session, error: sessErr } = await supabase.from('quiz_sessions').insert({
       student_id: studentId, subject, grade, total_questions: total,
       correct_answers: correct, wrong_answers: total - correct,
-      score_percent: scorePct, score: xpEarned,
+      score_percent: scorePct, score: xpEarnedUncapped,
       time_taken_seconds: time, total_answered: total,
       is_completed: true, completed_at: new Date().toISOString(),
     }).select('id').single();
     if (sessErr) console.error('Fallback: quiz_sessions insert failed:', sessErr.message);
 
-    // 2. Atomically update learning profile and student XP via RPC
-    // This avoids the read-modify-write race condition where concurrent
-    // quiz submissions could lose XP or corrupt counters.
+    // 2. Atomically update learning profile and student XP via RPC.
+    // The 6-arg overload returns JSONB:
+    //   { effective_xp, xp_capped, xp_cap_excess, today_earned, daily_cap, ... }
+    // We surface effective_xp + xp_capped + xp_uncapped so the UI can show
+    // "you would have earned X but daily cap is 200".
+    let effectiveXp = xpEarnedUncapped;
+    let xpCapped = false;
     try {
-      await supabase.rpc('atomic_quiz_profile_update', {
+      const { data: rpcData } = await supabase.rpc('atomic_quiz_profile_update', {
         p_student_id: studentId,
         p_subject: subject,
-        p_xp: xpEarned,
+        p_xp: xpEarnedUncapped,
         p_total: total,
         p_correct: correct,
         p_time_seconds: time,
       });
+      // rpcData is JSONB on the 6-arg overload. Older overloads return void —
+      // fall back to the locally-computed XP in that case.
+      if (rpcData && typeof rpcData === 'object') {
+        const r = rpcData as Record<string, unknown>;
+        if (typeof r.effective_xp === 'number') effectiveXp = r.effective_xp;
+        if (typeof r.xp_capped === 'boolean') xpCapped = r.xp_capped;
+      }
     } catch (atomicErr) {
       console.warn('atomic_quiz_profile_update failed, using non-atomic fallback:', atomicErr);
       // Last-resort fallback: upsert with ON CONFLICT if the RPC doesn't exist
       await supabase.from('student_learning_profiles').upsert({
-        student_id: studentId, subject, xp: xpEarned,
+        student_id: studentId, subject, xp: xpEarnedUncapped,
         total_sessions: 1, total_questions_asked: total,
         total_questions_answered_correctly: correct,
         total_time_minutes: Math.max(1, Math.round(time / 60)),
@@ -503,7 +520,13 @@ export async function submitQuizResults(studentId: string, subject: string, grad
 
     return {
       session_id: session?.id ?? '',
-      total, correct, score_percent: scorePct, xp_earned: xpEarned,
+      total, correct, score_percent: scorePct,
+      // Authoritative XP after daily-cap clamp (RPC's effective_xp).
+      xp_earned: effectiveXp,
+      // Surface daily-cap state so the UI can show the over-cap notice.
+      xp_capped: xpCapped,
+      // Original computed XP before clamp — UI shows "would have earned X".
+      xp_uncapped: xpEarnedUncapped,
     };
   } catch (err) {
     // Release dedup lock so a genuine retry can proceed

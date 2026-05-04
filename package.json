@@ -21,7 +21,9 @@
     "supabase:gen-types": "node scripts/gen-supabase-types.mjs",
     "supabase:check-types": "node scripts/gen-supabase-types.mjs --check",
     "eval:rag": "npx tsx scripts/rag-eval.mjs",
-    "eval:rag:check": "RAG_EVAL_THRESHOLD=0.80 npx tsx scripts/rag-eval.mjs"
+    "eval:rag:check": "RAG_EVAL_THRESHOLD=0.80 npx tsx scripts/rag-eval.mjs",
+    "forensic:quiz": "npx tsx scripts/forensic-quiz-lookup.ts",
+    "retroactive-scan": "npx tsx scripts/retroactive-oracle-scan.ts"
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.1",
@@ -43,6 +45,7 @@
     "next": "^16.2.1",
     "pdf-parse": "^2.4.5",
     "posthog-js": "^1.372.1",
+    "posthog-node": "^4.18.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^10.1.0",
