@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useWelcomeV2, type Role } from './WelcomeV2Context';
+import { track } from '@/lib/posthog/client';
 import s from './welcome-v2.module.css';
 
 interface RoleCopy {
@@ -157,6 +158,14 @@ export default function HeroV2() {
               <Link
                 href={copy.ctaHref}
                 className={`${s.btn} ${s.btnPrimary} ${s.btnArrow}`}
+                onClick={() =>
+                  track('landing_cta_click', {
+                    location: 'hero',
+                    destination: copy.ctaHref,
+                    active_role: role,
+                    language: isHi ? 'hi' : 'en',
+                  })
+                }
               >
                 {t(copy.ctaLabel.en, copy.ctaLabel.hi)}
               </Link>

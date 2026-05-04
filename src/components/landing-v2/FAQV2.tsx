@@ -1,6 +1,7 @@
 'use client';
 
 import { useWelcomeV2 } from './WelcomeV2Context';
+import { track } from '@/lib/posthog/client';
 import s from './welcome-v2.module.css';
 
 /**
@@ -95,7 +96,7 @@ const faqJsonLd = {
 };
 
 export default function FAQV2() {
-  const { isHi, t } = useWelcomeV2();
+  const { isHi, t, role } = useWelcomeV2();
 
   return (
     <section className={s.faq} id="faq" aria-labelledby="faq-title">
@@ -116,7 +117,20 @@ export default function FAQV2() {
         </div>
         <div className={s.faqList}>
           {FAQS.map((faq, i) => (
-            <details key={i} className={s.faqItem}>
+            <details
+              key={i}
+              className={s.faqItem}
+              onToggle={(e) => {
+                // Phase 5 measurement: fire only on open, not on close.
+                if ((e.target as HTMLDetailsElement).open) {
+                  track('landing_faq_opened', {
+                    faq_index: i + 1,
+                    question_en: faq.qEn,
+                    active_role: role,
+                  });
+                }
+              }}
+            >
               <summary>
                 <span className={s.faqQNum}>{String(i + 1).padStart(2, '0')}</span>
                 <span className={s.faqQText}>{isHi ? faq.qHi : faq.qEn}</span>

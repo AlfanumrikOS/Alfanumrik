@@ -109,7 +109,7 @@ These are commonly violated and cause bugs:
 
 6. **Bilingual**: All user-facing text must support Hindi/English via `AuthContext.isHi`. Technical terms (CBSE, XP, Bloom's) are not translated.
 
-7. **Bundle budget**: Shared JS < 160 kB, pages < 260 kB, middleware < 120 kB — targets Indian 4G (2-5 Mbps).
+7. **Bundle budget**: Shared JS < 175 kB (temporary; baseline 160 kB — see P10 in `.claude/CLAUDE.md` for the cap-raise rationale and follow-up tracking), pages < 260 kB, middleware < 120 kB — targets Indian 4G (2-5 Mbps).
 
 8. **Payment integrity**: Razorpay webhook signature must be verified before processing. Subscription status changes written atomically with payment records.
 
