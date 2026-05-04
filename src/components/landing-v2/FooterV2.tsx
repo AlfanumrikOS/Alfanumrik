@@ -28,8 +28,10 @@ const COLS: Col[] = [
     headHi: 'कम्पनी',
     links: [
       { label: { en: 'About', hi: 'हमारे बारे में' }, href: '/about' },
-      { label: { en: 'Founder note', hi: 'संस्थापक का नोट' }, href: '/about' },
-      { label: { en: 'Press', hi: 'प्रेस' }, href: '/about' },
+      { label: { en: 'Vision & mission', hi: 'दृष्टिकोण और मिशन' }, href: '/about#vision' },
+      { label: { en: 'Founder note', hi: 'संस्थापक का नोट' }, href: '/about#founder-note' },
+      { label: { en: 'Press', hi: 'प्रेस' }, href: '/press' },
+      { label: { en: 'Careers', hi: 'कैरियर' }, href: '/careers' },
       { label: { en: 'Contact', hi: 'सम्पर्क' }, href: '/contact' },
     ],
   },
@@ -39,7 +41,7 @@ const COLS: Col[] = [
     links: [
       { label: { en: 'Privacy', hi: 'गोपनीयता' }, href: '/privacy' },
       { label: { en: 'Terms', hi: 'शर्तें' }, href: '/terms' },
-      { label: { en: 'Refunds', hi: 'धन-वापसी' }, href: '/terms' },
+      { label: { en: 'Refunds', hi: 'धन-वापसी' }, href: '/refunds' },
       { label: { en: 'Security', hi: 'सुरक्षा' }, href: '/security' },
     ],
   },
