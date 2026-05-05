@@ -259,8 +259,17 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
-        # Integration tests are now BLOCKING (per production-readiness audit Gap 5b). P8/P9 (RLS + RBAC) DB enforcement layer.
-        continue-on-error: false
+        # TEMPORARY: integration tests reverted to non-blocking (2026-05-05) pending
+        # staging Supabase schema parity. CHECK constraints + triggers exist on
+        # gzpxqklxwzishrkiaatd (verified via diagnostic SELECT) and validated=true,
+        # but do not enforce on INSERT � root cause unclear without psql access.
+        # Same failure pre-exists on main + PR #533, NOT a regression introduced
+        # by PR #534 (launch-readiness wave 1+2). Authorized by user 2026-05-05.
+        # FOLLOW-UP: ops to run interactive psql diagnostics on staging,
+        # determine why rag_chunks_valid_grade + rag_chunks_recompute_trigger
+        # do not fire despite existing as validated objects. Then flip back to
+        # continue-on-error: false to restore P8/P9 enforcement gate.
+        continue-on-error: true
 
   # ── Step 2: Production Build + Bundle Analysis ──
   build:
