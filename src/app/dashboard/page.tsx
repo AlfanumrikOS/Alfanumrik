@@ -1,47 +1,153 @@
 'use client';
 
+/**
+ * Student Dashboard — Wave 2 launch-readiness rewrite (2026-05-05).
+ *
+ * Above-the-fold (visible without scroll, mobile 360x700):
+ *   1. Header: greeting + name + plan badge + stream chip + lang/notif/avatar
+ *   2. Primary CTA — "Start Today's Quiz" (purple gradient button)
+ *   3. Streak chip — flame + day count
+ *   4. Today's XP strip — XPDailyStatus (200 cap visible)
+ *   5. Continue learning card — last BKT topic OR zero-state subject hint
+ *
+ * Below-the-fold — five collapsed <details> accordions, lazy-loaded:
+ *   - Your progress      (perf scores, Bloom, mastery, gaps, error analysis)
+ *   - Today's focus      (focus zone, getting started, daily challenge, nudges)
+ *   - Upcoming           (board countdown, exam list, pending parent links)
+ *   - Compete            (leaderboard, weekly challenge)
+ *   - Quick actions      (shortcuts grid + scan/profile/billing)
+ *
+ * Heavy sections use next/dynamic with ssr:false so the icon, BKT, and exam
+ * date math don't inflate first paint.
+ *
+ * P7 (bilingual): every visible string branches on `isHi`.
+ * P10 (bundle): collapsed sections are dynamic imports.
+ * P14 (review chain): assessment owns scoring/XP shown inside ProgressSection.
+ */
+
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/AuthContext';
-import { supabase, getFeatureFlags, getNextTopics, generateNotifications } from '@/lib/supabase';
+import {
+  supabase,
+  getFeatureFlags,
+  getNextTopics,
+  generateNotifications,
+} from '@/lib/supabase';
 import { useDashboardData } from '@/lib/swr';
-import { Card, StatCard, ProgressBar, SectionHeader, SubjectChip, Avatar, BottomNav, MasteryRing } from '@/components/ui';
+import { Avatar, BottomNav } from '@/components/ui';
 import TrustFooter from '@/components/TrustFooter';
 import { DashboardSkeleton } from '@/components/Skeleton';
-import { calculateLevel, xpToNextLevel, getLevelName } from '@/lib/xp-config';
+import { calculateLevel } from '@/lib/xp-config';
 import { getLevelFromScore } from '@/lib/score-config';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import type { StudentLearningProfile, CurriculumTopic } from '@/lib/types';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { ReselectBanner } from '@/components/subjects/ReselectBanner';
 import { PlanBadge } from '@/components/PlanBadge';
-import QuickActions from '@/components/dashboard/QuickActions';
-import SubjectProgress from '@/components/dashboard/SubjectProgress';
-import TodaysPlan from '@/components/dashboard/TodaysPlan';
-import ProgressSnapshot from '@/components/dashboard/ProgressSnapshot';
-import ExamReadiness from '@/components/dashboard/ExamReadiness';
-import FocusDashboard from '@/components/dashboard/FocusDashboard';
-import PendingLinkApproval, { type PendingLink } from '@/components/dashboard/PendingLinkApproval';
-import ScoreHero from '@/components/score/ScoreHero';
-import ScoreCard from '@/components/score/ScoreCard';
 import CoinBalance from '@/components/coins/CoinBalance';
-import DailyChallengeCard from '@/components/challenge/DailyChallengeCard';
-import ChallengeStreakBadge from '@/components/challenge/StreakBadge';
+import AboveFoldHero from '@/components/dashboard/sections/AboveFoldHero';
+import type { PendingLink } from '@/components/dashboard/PendingLinkApproval';
 
+// ─── Lazy-loaded below-fold sections ─────────────────────────────────────
+// Each section keeps its widgets out of the first-paint bundle. Loading
+// fallback is a thin skeleton — accordion is closed by default anyway.
+const SectionFallback = () => (
+  <div
+    className="h-24 rounded-2xl animate-pulse"
+    style={{ background: 'var(--surface-2)' }}
+    aria-hidden="true"
+  />
+);
 
-const BLOOM_LABELS: Record<string, { icon: string; label: string; labelHi: string }> = {
-  remember: { icon: '📖', label: 'Remember', labelHi: 'याद' },
-  understand: { icon: '💡', label: 'Understand', labelHi: 'समझ' },
-  apply: { icon: '🔧', label: 'Apply', labelHi: 'लागू' },
-  analyze: { icon: '🔍', label: 'Analyze', labelHi: 'विश्लेषण' },
-  evaluate: { icon: '⚖️', label: 'Evaluate', labelHi: 'मूल्यांकन' },
-  create: { icon: '🚀', label: 'Create', labelHi: 'सृजन' },
-};
+const ProgressSection = dynamic(
+  () => import('@/components/dashboard/sections/ProgressSection'),
+  { ssr: false, loading: () => <SectionFallback /> },
+);
+const TodaysFocusSection = dynamic(
+  () => import('@/components/dashboard/sections/TodaysFocusSection'),
+  { ssr: false, loading: () => <SectionFallback /> },
+);
+const UpcomingSection = dynamic(
+  () => import('@/components/dashboard/sections/UpcomingSection'),
+  { ssr: false, loading: () => <SectionFallback /> },
+);
+const CompeteSection = dynamic(
+  () => import('@/components/dashboard/sections/CompeteSection'),
+  { ssr: false, loading: () => <SectionFallback /> },
+);
+const QuickActionsSection = dynamic(
+  () => import('@/components/dashboard/sections/QuickActionsSection'),
+  { ssr: false, loading: () => <SectionFallback /> },
+);
+
+// ─── Stream picker config (grades 11-12) ─────────────────────────────────
+const STREAM_OPTIONS = [
+  { key: 'science' as const, icon: '⚗️', label: 'Science', labelHi: 'विज्ञान', desc: 'Physics · Chemistry · Biology · Math', color: '#2563EB' },
+  { key: 'commerce' as const, icon: '📊', label: 'Commerce', labelHi: 'वाणिज्य', desc: 'Accountancy · Economics · Business', color: '#D97706' },
+  { key: 'humanities' as const, icon: '🌍', label: 'Humanities', labelHi: 'मानविकी', desc: 'History · Geography · Political Science', color: '#7C3AED' },
+];
+
+// ─── Accordion primitive ─────────────────────────────────────────────────
+function Accordion({
+  id,
+  title,
+  icon,
+  children,
+}: {
+  id: string;
+  title: string;
+  icon: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <details
+      className="rounded-2xl group"
+      style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
+      data-testid={`dashboard-accordion-${id}`}
+    >
+      <summary
+        className="cursor-pointer list-none flex items-center justify-between px-4 py-3.5 rounded-2xl select-none"
+        style={{ minHeight: 56 }}
+      >
+        <div className="flex items-center gap-3">
+          <span className="text-lg" aria-hidden="true">{icon}</span>
+          <span
+            className="text-sm font-bold"
+            style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}
+          >
+            {title}
+          </span>
+        </div>
+        <span
+          className="text-[var(--text-3)] text-base transition-transform group-open:rotate-180"
+          aria-hidden="true"
+        >
+          ▾
+        </span>
+      </summary>
+      <div className="px-4 pb-4">{children}</div>
+    </details>
+  );
+}
 
 export default function Dashboard() {
-  const { student, snapshot, isLoggedIn, isLoading, isHi, language, setLanguage, refreshSnapshot, activeRole } = useAuth();
+  const {
+    student,
+    snapshot,
+    isLoggedIn,
+    isLoading,
+    isHi,
+    language,
+    setLanguage,
+    refreshSnapshot,
+    activeRole,
+  } = useAuth();
   const router = useRouter();
   const { unlocked: allowedSubjects } = useAllowedSubjects();
+
+  // ─── Local state ───────────────────────────────────────────────────────
   const [profiles, setProfiles] = useState<StudentLearningProfile[]>([]);
   const [nextTopics, setNextTopics] = useState<CurriculumTopic[]>([]);
   const [dueCount, setDueCount] = useState(0);
@@ -50,30 +156,32 @@ export default function Dashboard() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
   const [showSubjectPicker, setShowSubjectPicker] = useState(false);
-  const [knowledgeGaps, setKnowledgeGaps] = useState<Array<{ id: string; topic_title?: string; severity: string; description: string; description_hi?: string }>>([]);
-  const [showGapsAlert, setShowGapsAlert] = useState(true);
+  const [knowledgeGaps, setKnowledgeGaps] = useState<
+    Array<{ id: string; topic_title?: string; severity: string; description: string; description_hi?: string }>
+  >([]);
   const [velocityTrend, setVelocityTrend] = useState<'fast' | 'steady' | 'slow' | null>(null);
-  const [bloomLevel, setBloomLevel] = useState<{ bloom_level: string; mastery: number } | null>(null);
-  const [errorBreakdown, setErrorBreakdown] = useState<{ careless: number; conceptual: number; misinterpretation: number } | null>(null);
+  const [errorBreakdown, setErrorBreakdown] = useState<{
+    careless: number;
+    conceptual: number;
+    misinterpretation: number;
+  } | null>(null);
   const [retentionScore, setRetentionScore] = useState<number | null>(null);
   const [cbseReadiness, setCbseReadiness] = useState<number | null>(null);
-  const [upcomingExams, setUpcomingExams] = useState<Array<{ id: string; exam_name: string; exam_type: string; subject: string; exam_date: string; days_left: number }>>([]);
-  const [nudges, setNudges] = useState<Array<{ id: string; nudge_type: string; message: string; message_hi?: string; priority: number }>>([]);
+  const [upcomingExams, setUpcomingExams] = useState<
+    Array<{ id: string; exam_name: string; exam_type: string; subject: string; exam_date: string; days_left: number }>
+  >([]);
+  const [nudges, setNudges] = useState<
+    Array<{ id: string; nudge_type: string; message: string; message_hi?: string; priority: number }>
+  >([]);
   const [studentRank, setStudentRank] = useState<number | null>(null);
-  const [showMore, setShowMore] = useState(false);
-  // BKT mastery: average mastery_probability per subject from concept_mastery table.
-  // This is the real adaptive mastery signal, not the XP/accuracy proxy.
+  // BKT mastery: average mastery_probability per subject from concept_mastery.
   const [bktMastery, setBktMastery] = useState<Record<string, number>>({});
   const [pendingLinks, setPendingLinks] = useState<PendingLink[]>([]);
-
   // Performance Score system state
-  const [perfScores, setPerfScores] = useState<Array<{
-    subject: string;
-    overall_score: number;
-    level_name: string;
-  }>>([]);
+  const [perfScores, setPerfScores] = useState<
+    Array<{ subject: string; overall_score: number; level_name: string }>
+  >([]);
   const [coinBalance, setCoinBalance] = useState<number>(0);
-
   // Daily challenge (Concept Chain) state
   const [challengeUnlocked, setChallengeUnlocked] = useState(false);
   const [challengeStreak, setChallengeStreak] = useState(0);
@@ -82,32 +190,48 @@ export default function Dashboard() {
   const [todaySubjectHi, setTodaySubjectHi] = useState<string | undefined>();
   const [todayTopic, setTodayTopic] = useState<string | undefined>();
   const [challengeBadges, setChallengeBadges] = useState<string[]>([]);
-
-  // Stream selector — grades 11-12 only, persisted to localStorage
+  // Stream selector — grades 11-12 only
   const [selectedStream, setSelectedStream] = useState<'science' | 'commerce' | 'humanities' | null>(null);
   const [showStreamPicker, setShowStreamPicker] = useState(false);
 
+  // ─── Auth + role-aware redirects ───────────────────────────────────────
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/login');
-    // Redirect non-student roles to their correct dashboard
     if (!isLoading && isLoggedIn && activeRole === 'teacher') router.replace('/teacher');
     if (!isLoading && isLoggedIn && activeRole === 'guardian') router.replace('/parent');
-    // Redirect students who haven't completed onboarding (grade/board not set)
-    if (!isLoading && isLoggedIn && activeRole === 'student' && student && !student.onboarding_completed) {
+    if (
+      !isLoading &&
+      isLoggedIn &&
+      activeRole === 'student' &&
+      student &&
+      !student.onboarding_completed
+    ) {
       router.replace('/onboarding');
     }
   }, [isLoading, isLoggedIn, activeRole, student, router]);
 
+  // Greeting (time-of-day, bilingual)
   useEffect(() => {
     const h = new Date().getHours();
-    setGreeting(isHi
-      ? (h < 12 ? 'शुभ प्रभात' : h < 17 ? 'नमस्ते' : 'शुभ संध्या')
-      : (h < 12 ? 'Good morning' : h < 17 ? 'Hello' : 'Good evening'));
+    setGreeting(
+      isHi
+        ? h < 12
+          ? 'शुभ प्रभात'
+          : h < 17
+            ? 'नमस्ते'
+            : 'शुभ संध्या'
+        : h < 12
+          ? 'Good morning'
+          : h < 17
+            ? 'Hello'
+            : 'Good evening',
+    );
   }, [isHi]);
 
-  // SWR: auto-caching, dedup, background revalidation, reconnect-resilient
+  // SWR: dashboard RPC payload
   const { data: dashData } = useDashboardData(student?.id);
 
+  // Static one-shot data (BKT, perf scores, coins, feature flags, next topics)
   const loadStaticData = useCallback(async () => {
     if (!student) return;
     const [feats, nextTopicsResult] = await Promise.all([
@@ -117,9 +241,7 @@ export default function Dashboard() {
     setFlags(feats);
     setNextTopics(nextTopicsResult.slice(0, 3));
 
-    // Fetch BKT mastery per subject: average mastery_probability from concept_mastery.
-    // concept_mastery has no direct subject column — join via curriculum_topics.
-    // We select topic_id, mastery_probability and join subject from curriculum_topics.
+    // BKT mastery per subject
     try {
       const { data: cmData } = await supabase
         .from('concept_mastery')
@@ -127,7 +249,6 @@ export default function Dashboard() {
         .eq('student_id', student.id)
         .gt('mastery_probability', 0);
       if (cmData && cmData.length > 0) {
-        // Group by subject code and compute average mastery_probability
         const bySubject: Record<string, number[]> = {};
         for (const row of cmData as any[]) {
           const code = row.curriculum_topics?.subjects?.code as string | undefined;
@@ -142,58 +263,61 @@ export default function Dashboard() {
         setBktMastery(avgMastery);
       }
     } catch {
-      // Non-fatal: falls back to XP-based progress bar
+      /* non-fatal */
     }
-    // Fetch Performance Scores per subject from performance_scores table
+
+    // Performance Scores
     try {
       const { data: psData } = await supabase
         .from('performance_scores')
         .select('subject, overall_score, level_name')
         .eq('student_id', student.id);
       if (psData && psData.length > 0) {
-        setPerfScores(psData.map((row: any) => ({
-          subject: row.subject as string,
-          overall_score: Number(row.overall_score) || 0,
-          level_name: (row.level_name as string) || 'Curious Cub',
-        })));
+        setPerfScores(
+          psData.map((row: any) => ({
+            subject: row.subject as string,
+            overall_score: Number(row.overall_score) || 0,
+            level_name: (row.level_name as string) || 'Curious Cub',
+          })),
+        );
       }
     } catch {
-      // Non-fatal: falls back to showing score of 0
+      /* non-fatal */
     }
 
-    // Fetch Foxy Coin balance from coin_balances table
+    // Foxy Coin balance
     try {
       const { data: cbData } = await supabase
         .from('coin_balances')
         .select('balance')
         .eq('student_id', student.id)
         .single();
-      if (cbData) {
-        setCoinBalance(Number(cbData.balance) || 0);
-      }
+      if (cbData) setCoinBalance(Number(cbData.balance) || 0);
     } catch {
-      // Non-fatal: coin balance defaults to 0
+      /* non-fatal */
     }
 
     const rawSelected = (student.selected_subjects || [student.preferred_subject].filter(Boolean)) as string[];
     setSelectedSubjects(rawSelected);
     generateNotifications(student.id).catch((err: unknown) => {
-      console.warn('[dashboard] notification generation failed:', err instanceof Error ? err.message : String(err));
+      console.warn(
+        '[dashboard] notification generation failed:',
+        err instanceof Error ? err.message : String(err),
+      );
     });
   }, [student]);
 
-  // Narrow selectedSubjects to only those the student is allowed — drops legacy
-  // grade/plan-mismatched codes once the subjects service hook has loaded.
+  // Narrow selectedSubjects to only those allowed (drops legacy codes)
   useEffect(() => {
     if (allowedSubjects.length === 0) return;
-    const allowedCodes = new Set(allowedSubjects.map(s => s.code));
-    setSelectedSubjects(prev => {
-      const next = prev.filter(code => allowedCodes.has(code));
+    const allowedCodes = new Set(allowedSubjects.map((s) => s.code));
+    setSelectedSubjects((prev) => {
+      const next = prev.filter((code) => allowedCodes.has(code));
       return next.length === prev.length ? prev : next;
     });
   }, [allowedSubjects]);
 
-  // Process dashboard RPC data when SWR returns it
+  // Process dashboard RPC data
   useEffect(() => {
     if (!dashData) return;
     const d = dashData;
@@ -201,43 +325,49 @@ export default function Dashboard() {
     setDueCount(d.due_count ?? 0);
     setUnreadCount(d.unread_count ?? 0);
     const gaps = d.knowledge_gaps ?? [];
-    setKnowledgeGaps(gaps.map((g: any) => ({
-      id: g.id,
-      topic_title: g.target_concept_name,
-      severity: (g.confidence_score ?? 0) > 0.7 ? 'critical' : 'moderate',
-      description: `Missing prerequisite: ${g.missing_prerequisite_name}`,
-      description_hi: `पूर्व ज्ञान की कमी: ${g.missing_prerequisite_name}`,
-    })));
+    setKnowledgeGaps(
+      gaps.map((g: any) => ({
+        id: g.id,
+        topic_title: g.target_concept_name,
+        severity: (g.confidence_score ?? 0) > 0.7 ? 'critical' : 'moderate',
+        description: `Missing prerequisite: ${g.missing_prerequisite_name}`,
+        description_hi: `पूर्व ज्ञान की कमी: ${g.missing_prerequisite_name}`,
+      })),
+    );
     if (d.velocity != null) {
       const v = Number(d.velocity);
       setVelocityTrend(v > 0.05 ? 'fast' : v > 0.02 ? 'steady' : 'slow');
     }
-    if (d.bloom) {
-      const level = d.bloom.current_bloom_level || 'remember';
-      setBloomLevel({ bloom_level: level, mastery: Number(d.bloom[`${level}_mastery`]) || 0 });
-    }
     if (d.cbse_readiness != null) setCbseReadiness(Math.round(d.cbse_readiness));
     const today = new Date();
-    setUpcomingExams((d.exams ?? []).map((e: any) => ({
-      ...e,
-      days_left: Math.max(0, Math.ceil((new Date(e.exam_date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24))),
-    })));
+    setUpcomingExams(
+      (d.exams ?? []).map((e: any) => ({
+        ...e,
+        days_left: Math.max(
+          0,
+          Math.ceil((new Date(e.exam_date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24)),
+        ),
+      })),
+    );
     setNudges(d.nudges ?? []);
     if (d.retention_score != null) setRetentionScore(Math.round(d.retention_score));
-    // Leaderboard rank (if RPC returns it)
     if (d.leaderboard_rank != null) setStudentRank(d.leaderboard_rank);
-    if (d.error_breakdown) setErrorBreakdown({
-      careless: d.error_breakdown.careless ?? 0,
-      conceptual: d.error_breakdown.conceptual ?? 0,
-      misinterpretation: d.error_breakdown.misinterpretation ?? 0,
-    });
+    if (d.error_breakdown)
+      setErrorBreakdown({
+        careless: d.error_breakdown.careless ?? 0,
+        conceptual: d.error_breakdown.conceptual ?? 0,
+        misinterpretation: d.error_breakdown.misinterpretation ?? 0,
+      });
   }, [dashData]);
 
   useEffect(() => {
-    if (student) { loadStaticData(); refreshSnapshot(); }
+    if (student) {
+      loadStaticData();
+      refreshSnapshot();
+    }
   }, [student?.id, loadStaticData, refreshSnapshot]);
 
-  // Fetch pending parent link requests for this student
+  // Pending parent-link approvals
   const fetchPendingLinks = useCallback(async () => {
     if (!student) return;
     try {
@@ -257,27 +387,25 @@ export default function Dashboard() {
         setPendingLinks([]);
       }
     } catch {
-      // Non-fatal: pending links are a non-critical feature
+      /* non-fatal */
     }
   }, [student]);
 
   useEffect(() => {
-    if (student) { fetchPendingLinks(); }
+    if (student) fetchPendingLinks();
   }, [student?.id, fetchPendingLinks]);
 
-  // Fetch daily challenge state for Concept Chain widget
+  // Daily challenge (Concept Chain) state
   useEffect(() => {
     if (!student) return;
     let cancelled = false;
 
     (async () => {
       try {
-        // Get today in IST
         const now = new Date();
-        const ist = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
+        const ist = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
         const today = ist.toISOString().slice(0, 10);
 
-        // Parallel: challenge, streak, attempt, unlock check
         const [challengeRes, streakRes, attemptRes] = await Promise.all([
           supabase
             .from('daily_challenges')
@@ -304,27 +432,21 @@ export default function Dashboard() {
 
         if (cancelled) return;
 
-        // Subject/topic from today's challenge
         if (challengeRes.data) {
           setTodaySubject(challengeRes.data.subject ?? undefined);
           setTodaySubjectHi(challengeRes.data.subject_hi ?? undefined);
           setTodayTopic(challengeRes.data.topic ?? undefined);
         }
-
-        // Streak
         if (streakRes.data) {
           setChallengeStreak(streakRes.data.current_streak ?? 0);
           setChallengeBadges(streakRes.data.badges ?? []);
         }
-
-        // Solved status
         if (attemptRes.data && attemptRes.data.solved) {
           setChallengeSolved(true);
           setChallengeUnlocked(true);
           return;
         }
 
-        // Unlock check: quiz session today with >= 5 questions
         const todayStart = `${today}T00:00:00+05:30`;
         const { data: quizToday } = await supabase
           .from('quiz_sessions')
@@ -340,24 +462,23 @@ export default function Dashboard() {
         if (quizToday && quizToday.length > 0) {
           setChallengeUnlocked(true);
         } else if (student.created_at) {
-          // Grace period check
           const createdDate = new Date(student.created_at);
           const daysSince = Math.floor(
-            (now.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24)
+            (now.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24),
           );
-          if (daysSince <= 3) {
-            setChallengeUnlocked(true);
-          }
+          if (daysSince <= 3) setChallengeUnlocked(true);
         }
       } catch {
-        // Non-fatal: challenge card defaults to locked/hidden
+        /* non-fatal */
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [student?.id, student?.grade, student?.created_at]);
 
-  // Stream selector: show picker on first visit for grades 11-12
+  // Stream selector for grades 11-12 (localStorage)
   useEffect(() => {
     if (!student) return;
     const g = student.grade;
@@ -370,90 +491,73 @@ export default function Dashboard() {
     }
   }, [student?.grade, student?.id]);
 
-  const STREAM_SUBJECTS: Record<string, string[]> = {
-    science: ['math', 'physics', 'chemistry', 'biology', 'english', 'computer_science'],
-    commerce: ['math', 'economics', 'accountancy', 'business_studies', 'english', 'computer_science'],
-    humanities: ['history_sr', 'geography', 'political_science', 'economics', 'english', 'hindi'],
-  };
-
-  // Show skeleton while loading, but don't block non-student roles — they'll be redirected
+  // ─── Loading & guard ───────────────────────────────────────────────────
   if (isLoading) return <DashboardSkeleton />;
   if (!student) {
-    // Non-student role (teacher/guardian) — redirect is already in flight from useEffect
-    // Show skeleton briefly while redirect completes
     if (activeRole === 'teacher' || activeRole === 'guardian') return <DashboardSkeleton />;
-    // No student profile and no other role — something's wrong, redirect to login
     router.replace('/login');
     return <DashboardSkeleton />;
   }
 
+  // ─── Derived metrics ───────────────────────────────────────────────────
   const totalXp = snapshot?.total_xp ?? profiles.reduce((a, p) => a + (p.xp ?? 0), 0);
   const streak = snapshot?.current_streak ?? Math.max(...profiles.map((p) => p.streak_days ?? 0), 0);
   const mastered = snapshot?.topics_mastered ?? 0;
-  const inProgress = snapshot?.topics_in_progress ?? 0;
-  const current = profiles.find((p) => p.subject === student.preferred_subject);
-  const currentXp = current?.xp ?? 0;
-  const currentLevel = current?.level ?? 1;
-  const meta = allowedSubjects.find((s) => s.code === student.preferred_subject);
-
-  // Compute overall Performance Score across all subjects
-  const overallPerfScore = perfScores.length > 0
-    ? Math.round(perfScores.reduce((sum, ps) => sum + ps.overall_score, 0) / perfScores.length)
-    : 0;
+  const overallPerfScore =
+    perfScores.length > 0
+      ? Math.round(perfScores.reduce((sum, ps) => sum + ps.overall_score, 0) / perfScores.length)
+      : 0;
   const overallPerfLevel = getLevelFromScore(overallPerfScore);
-
-  // Filter subjects by stream for grades 11-12
-  const streamFilteredSubjects = (() => {
-    const g = student?.grade ?? '9';
-    if ((g === '11' || g === '12') && selectedStream) {
-      return allowedSubjects.filter(s => (STREAM_SUBJECTS[selectedStream] ?? []).includes(s.code));
-    }
-    return allowedSubjects;
-  })();
+  const dismissNudge = async (nudgeId: string) => {
+    await fetch('/api/student/preferences', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'dismiss_nudge', nudge_id: nudgeId }),
+    });
+    setNudges((prev) => prev.filter((n) => n.id !== nudgeId));
+  };
 
   return (
     <div className="mesh-bg min-h-dvh pb-nav">
       {/* Stream Picker Modal — grades 11-12 first visit */}
-      {showStreamPicker && (student?.grade === '11' || student?.grade === '12') && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4"
-          style={{ background: 'rgba(0,0,0,0.5)' }}>
-          <div className="w-full max-w-sm rounded-3xl p-6 shadow-2xl"
-            style={{ background: 'var(--warm-cream, #FFF9F0)', border: '1px solid var(--border)' }}>
+      {showStreamPicker && (student.grade === '11' || student.grade === '12') && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.5)' }}
+        >
+          <div
+            className="w-full max-w-sm rounded-3xl p-6 shadow-2xl"
+            style={{ background: 'var(--warm-cream, #FFF9F0)', border: '1px solid var(--border)' }}
+          >
             <div className="text-center mb-5">
-              <div className="text-4xl mb-2">🎓</div>
+              <div className="text-4xl mb-2" aria-hidden="true">🎓</div>
               <h2 className="font-bold text-xl" style={{ color: 'var(--text-1)' }}>
                 {isHi ? 'अपनी स्ट्रीम चुनें' : 'Choose Your Stream'}
               </h2>
               <p className="text-sm mt-1" style={{ color: 'var(--text-2)' }}>
-                {isHi ? 'कक्षा ' + student.grade + ' · CBSE' : 'Class ' + student.grade + ' · CBSE'}
+                {isHi ? `कक्षा ${student.grade} · CBSE` : `Class ${student.grade} · CBSE`}
               </p>
             </div>
             <div className="space-y-3">
-              {[
-                { key: 'science', icon: '⚗️', label: 'Science', labelHi: 'विज्ञान', desc: 'Physics · Chemistry · Biology · Math', color: '#2563EB' },
-                { key: 'commerce', icon: '📊', label: 'Commerce', labelHi: 'वाणिज्य', desc: 'Accountancy · Economics · Business', color: '#D97706' },
-                { key: 'humanities', icon: '🌍', label: 'Humanities', labelHi: 'मानविकी', desc: 'History · Geography · Political Science', color: '#7C3AED' },
-              ].map(st => (
+              {STREAM_OPTIONS.map((st) => (
                 <button
                   key={st.key}
                   onClick={() => {
-                    const s = st.key as 'science' | 'commerce' | 'humanities';
-                    setSelectedStream(s);
-                    localStorage.setItem('alfanumrik_stream', s);
+                    setSelectedStream(st.key);
+                    localStorage.setItem('alfanumrik_stream', st.key);
                     setShowStreamPicker(false);
                   }}
                   className="w-full flex items-center gap-4 p-4 rounded-2xl text-left transition-all hover:scale-[1.01]"
-                  style={{
-                    background: 'var(--surface-1)',
-                    border: `2px solid ${st.color}30`,
-                  }}
+                  style={{ background: 'var(--surface-1)', border: `2px solid ${st.color}30` }}
                 >
-                  <span className="text-3xl">{st.icon}</span>
+                  <span className="text-3xl" aria-hidden="true">{st.icon}</span>
                   <div>
                     <p className="font-bold text-base" style={{ color: st.color }}>
                       {isHi ? st.labelHi : st.label}
                     </p>
-                    <p className="text-xs" style={{ color: 'var(--text-2)' }}>{st.desc}</p>
+                    <p className="text-xs" style={{ color: 'var(--text-2)' }}>
+                      {st.desc}
+                    </p>
                   </div>
                 </button>
               ))}
@@ -462,13 +566,16 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Header */}
+      {/* Header — name, plan, lang toggle, notifications, avatar */}
       <header className="page-header">
         <div className="page-header-inner flex items-center justify-between">
           <div>
             <p className="text-xs text-[var(--text-3)]">{greeting},</p>
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-lg md:text-xl font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+              <h1
+                className="text-lg md:text-xl font-bold"
+                style={{ fontFamily: 'var(--font-display)' }}
+              >
                 {student.name} 👋
               </h1>
               <PlanBadge planCode={student.subscription_plan} size="sm" />
@@ -477,15 +584,39 @@ export default function Dashboard() {
                   onClick={() => setShowStreamPicker(true)}
                   className="text-[10px] font-bold px-2 py-0.5 rounded-full"
                   style={{
-                    background: selectedStream === 'science' ? '#2563EB15' : selectedStream === 'commerce' ? '#D9770615' : '#7C3AED15',
-                    color: selectedStream === 'science' ? '#2563EB' : selectedStream === 'commerce' ? '#D97706' : '#7C3AED',
-                    border: `1px solid ${selectedStream === 'science' ? '#2563EB30' : selectedStream === 'commerce' ? '#D9770630' : '#7C3AED30'}`,
+                    background:
+                      selectedStream === 'science'
+                        ? '#2563EB15'
+                        : selectedStream === 'commerce'
+                          ? '#D9770615'
+                          : '#7C3AED15',
+                    color:
+                      selectedStream === 'science'
+                        ? '#2563EB'
+                        : selectedStream === 'commerce'
+                          ? '#D97706'
+                          : '#7C3AED',
+                    border: `1px solid ${
+                      selectedStream === 'science'
+                        ? '#2563EB30'
+                        : selectedStream === 'commerce'
+                          ? '#D9770630'
+                          : '#7C3AED30'
+                    }`,
                   }}
                 >
-                  {selectedStream === 'science' ? '⚗️' : selectedStream === 'commerce' ? '📊' : '🌍'}
-                  {' '}{isHi
-                    ? (selectedStream === 'science' ? 'विज्ञान' : selectedStream === 'commerce' ? 'वाणिज्य' : 'मानविकी')
-                    : (selectedStream === 'science' ? 'Science' : selectedStream === 'commerce' ? 'Commerce' : 'Humanities')}
+                  {selectedStream === 'science' ? '⚗️' : selectedStream === 'commerce' ? '📊' : '🌍'}{' '}
+                  {isHi
+                    ? selectedStream === 'science'
+                      ? 'विज्ञान'
+                      : selectedStream === 'commerce'
+                        ? 'वाणिज्य'
+                        : 'मानविकी'
+                    : selectedStream === 'science'
+                      ? 'Science'
+                      : selectedStream === 'commerce'
+                        ? 'Commerce'
+                        : 'Humanities'}
                 </button>
               )}
             </div>
@@ -502,8 +633,9 @@ export default function Dashboard() {
             <button
               onClick={() => router.push('/notifications')}
               className="relative p-1.5"
+              aria-label={isHi ? 'सूचनाएँ' : 'Notifications'}
             >
-              <span className="text-lg">🔔</span>
+              <span className="text-lg" aria-hidden="true">🔔</span>
               {unreadCount > 0 && (
                 <span
                   className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-white"
@@ -513,7 +645,10 @@ export default function Dashboard() {
                 </span>
               )}
             </button>
-            <button onClick={() => router.push('/profile')}>
+            <button
+              onClick={() => router.push('/profile')}
+              aria-label={isHi ? 'प्रोफ़ाइल' : 'Profile'}
+            >
               <Avatar name={student.name} />
             </button>
           </div>
@@ -521,695 +656,240 @@ export default function Dashboard() {
       </header>
 
       <main className="app-container py-4 space-y-4">
-       <SectionErrorBoundary section="Dashboard">
-
-        {/* ═══ PENDING PARENT LINK APPROVAL ═══ */}
-        {pendingLinks.length > 0 && (
-          <PendingLinkApproval
-            links={pendingLinks}
-            onApproved={fetchPendingLinks}
+        <SectionErrorBoundary section="Dashboard">
+          {/* ════════════════════════════════════════════════════════════
+              ABOVE THE FOLD — exactly 5 widgets (header counts as #1):
+                1. Header (name + plan + lang/notif/avatar) — above
+                2. Primary CTA "Start Today's Quiz"           ┐
+                3. Streak chip                                ├─ AboveFoldHero
+                4. XPDailyStatus (today's XP cap)             │
+                5. Continue learning card                     ┘
+              ════════════════════════════════════════════════════════════ */}
+          <AboveFoldHero
+            student={student}
+            streak={streak}
             isHi={isHi}
-          />
-        )}
-
-        {/* ═══ BOARD EXAM COUNTDOWN — grades 10/11/12 only ═══ */}
-        {(() => {
-          const g = (student.grade || '').replace('Grade ', '').trim();
-          const gradeNum = parseInt(g, 10);
-          if (gradeNum < 10) return null;
-
-          // Approximate board exam dates (CBSE 2027)
-          const BOARD_DATE_10_12 = new Date('2027-02-15');
-          const PREBOARD_DATE_11 = new Date('2026-12-01');
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-
-          let targetDate: Date;
-          let examLabel: string;
-          let examLabelHi: string;
-
-          if (gradeNum === 11) {
-            targetDate = PREBOARD_DATE_11;
-            examLabel = 'Pre-Board Exams';
-            examLabelHi = 'प्री-बोर्ड परीक्षा';
-          } else {
-            targetDate = BOARD_DATE_10_12;
-            examLabel = `Class ${g} Board Exams`;
-            examLabelHi = `कक्षा ${g} बोर्ड परीक्षा`;
-          }
-
-          const daysLeft = Math.max(0, Math.ceil((targetDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)));
-          const readinessPct = cbseReadiness ?? 0;
-
-          const urgencyColor = daysLeft < 60 ? '#DC2626' : daysLeft < 120 ? '#D97706' : '#16A34A';
-          const bgColor = daysLeft < 60 ? 'rgba(220,38,38,0.05)' : daysLeft < 120 ? 'rgba(217,119,6,0.05)' : 'rgba(22,163,74,0.05)';
-          const borderColor = daysLeft < 60 ? 'rgba(220,38,38,0.2)' : daysLeft < 120 ? 'rgba(217,119,6,0.2)' : 'rgba(22,163,74,0.2)';
-
-          const motivationEn = daysLeft < 60
-            ? 'Final push — every session counts now.'
-            : daysLeft < 120
-              ? 'Consistent daily practice beats last-minute cramming.'
-              : 'You have time. Build the habit now.';
-          const motivationHi = daysLeft < 60
-            ? 'अंतिम चरण — हर सेशन अब मायने रखता है।'
-            : daysLeft < 120
-              ? 'नियमित अभ्यास लास्ट-मिनट रटाई से बेहतर है।'
-              : 'समय है। अभी से आदत बनाओ।';
-
-          return (
-            <div
-              className="rounded-2xl p-4"
-              style={{ background: bgColor, border: `1.5px solid ${borderColor}` }}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-                    style={{ background: `${urgencyColor}15` }}
-                  >
-                    🎓
-                  </div>
-                  <div>
-                    <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: urgencyColor }}>
-                      {isHi ? examLabelHi : examLabel}
-                    </p>
-                    <p className="text-xl font-extrabold leading-none mt-0.5" style={{ fontFamily: 'var(--font-display)', color: urgencyColor }}>
-                      {daysLeft} {isHi ? 'दिन बाकी' : 'days left'}
-                    </p>
-                  </div>
-                </div>
-                {readinessPct > 0 && (
-                  <div className="text-right flex-shrink-0">
-                    <p className="text-lg font-extrabold" style={{ color: urgencyColor, fontFamily: 'var(--font-display)' }}>
-                      {readinessPct}%
-                    </p>
-                    <p className="text-[10px]" style={{ color: 'var(--text-3)' }}>
-                      {isHi ? 'सिलेबस कवर' : 'syllabus covered'}
-                    </p>
-                  </div>
-                )}
-              </div>
-              <p className="text-xs mt-3" style={{ color: 'var(--text-3)' }}>
-                {isHi ? motivationHi : motivationEn}
-              </p>
-            </div>
-          );
-        })()}
-
-        {/* ═══ FOCUS ZONE: 3 cards — "One Thing at a Time" ═══ */}
-        <FocusDashboard
-          studentId={student.id}
-          studentName={student.name}
-          isHi={isHi}
-          grade={(student.grade || '9').replace('Grade ', '').trim()}
-          xp={totalXp}
-          level={calculateLevel(totalXp)}
-          streak={streak}
-          preferredSubject={student.preferred_subject}
-        />
-
-        {/* ═══ CONCEPT CHAIN DAILY CHALLENGE — links to /challenge ═══ */}
-        {/* Single daily-challenge surface (Concept Chain). The legacy
-            <DailyChallenge> hero was removed 2026-05-05 (Wave 1 launch fixes)
-            because it duplicated this widget above-the-fold. Component file
-            retained at src/components/dashboard/DailyChallenge.tsx for
-            potential future reuse. */}
-        {todaySubject && (
-          <DailyChallengeCard
-            studentId={student.id}
-            grade={student.grade}
-            isHi={isHi}
-            isUnlocked={challengeUnlocked}
-            streak={challengeStreak}
-            todaySubject={todaySubject}
-            todaySubjectHi={todaySubjectHi}
-            todayTopic={todayTopic}
-            isSolved={challengeSolved}
-          />
-        )}
-
-        {/* ═══ FIRST-TIME WELCOME — always visible for new students ═══ */}
-        {totalXp === 0 && profiles.length <= 1 && (
-          <div
-            className="rounded-2xl p-5"
-            style={{
-              background: 'linear-gradient(135deg, #FFF7ED, #FEF3E2)',
-              border: '1px solid #FDBA7420',
-            }}
-          >
-            <div className="flex items-center gap-3 mb-4">
-              <span className="text-3xl">🦊</span>
-              <div>
-                <h2 className="text-base font-bold" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}>
-                  {isHi ? `स्वागत है, ${student.name}!` : `Welcome, ${student.name}!`}
-                </h2>
-                <p className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>
-                  {isHi
-                    ? 'अपना पहला अध्याय शुरू करो — बस एक टैप!'
-                    : 'Start your first lesson — just one tap!'}
-                </p>
-              </div>
-            </div>
-            {/* Single opinionated CTA — no choice paralysis */}
-            <button
-              onClick={() => router.push('/learn')}
-              className="w-full py-3.5 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.98]"
-              style={{ background: 'linear-gradient(135deg, #E8581C, #F5A623)' }}
-            >
-              📚 {isHi ? 'पढ़ना शुरू करो →' : 'Start Learning →'}
-            </button>
-            <button
-              onClick={() => router.push('/foxy')}
-              className="w-full mt-2 py-2.5 rounded-xl text-xs font-semibold transition-all active:scale-[0.98]"
-              style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}
-            >
-              🦊 {isHi ? 'या Foxy से कोई डाउट पूछो' : 'Or ask Foxy a question'}
-            </button>
-          </div>
-        )}
-
-        {/* ═══ GETTING STARTED CHECKLIST — < 5 quizzes taken ═══ */}
-        {(snapshot?.quizzes_taken ?? 0) < 5 && (snapshot?.quizzes_taken ?? 0) > 0 && (
-          <div className="rounded-2xl p-4" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-lg">🚀</span>
-              <h3 className="text-sm font-bold" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}>
-                {isHi ? 'शुरुआत करो' : 'Getting Started'}
-              </h3>
-              <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'var(--orange)', color: '#fff' }}>
-                {[
-                  (snapshot?.quizzes_taken ?? 0) >= 1,
-                  totalXp > 0 && profiles.length > 0,
-                  (snapshot?.quizzes_taken ?? 0) >= 3,
-                  (snapshot?.topics_mastered ?? 0) > 0 || (snapshot?.topics_in_progress ?? 0) > 0,
-                ].filter(Boolean).length}/4
-              </span>
-            </div>
-            <div className="space-y-2">
-              {[
-                {
-                  done: (snapshot?.quizzes_taken ?? 0) >= 1,
-                  icon: '✏️',
-                  label: isHi ? 'पहला क्विज़ दो' : 'Take your first quiz',
-                  action: () => router.push('/quiz'),
-                },
-                {
-                  done: totalXp > 0 && profiles.length > 0,
-                  icon: '🦊',
-                  label: isHi ? 'Foxy से कोई सवाल पूछो' : 'Ask Foxy a question',
-                  action: () => router.push('/foxy'),
-                },
-                {
-                  done: (snapshot?.quizzes_taken ?? 0) >= 3,
-                  icon: '📚',
-                  label: isHi ? 'कम से कम 3 क्विज़ पूरा करो' : 'Complete at least 3 quizzes',
-                  action: () => router.push('/quiz'),
-                },
-                {
-                  done: (snapshot?.topics_mastered ?? 0) > 0 || (snapshot?.topics_in_progress ?? 0) > 0,
-                  icon: '📈',
-                  label: isHi ? 'अपनी प्रगति देखो' : 'Check your progress',
-                  action: () => router.push('/progress'),
-                },
-              ].map((step, i) => (
-                <button
-                  key={i}
-                  onClick={step.action}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all active:scale-[0.98]"
-                  style={{
-                    background: step.done ? 'rgba(22,163,74,0.06)' : 'rgba(232,88,28,0.04)',
-                    border: `1px solid ${step.done ? 'rgba(22,163,74,0.15)' : 'var(--border)'}`,
-                  }}
-                >
-                  <span className="text-base flex-shrink-0">{step.done ? '✅' : step.icon}</span>
-                  <span
-                    className="text-xs font-medium flex-1"
-                    style={{
-                      color: step.done ? '#16A34A' : 'var(--text-2)',
-                      textDecoration: step.done ? 'line-through' : 'none',
-                    }}
-                  >
-                    {step.label}
-                  </span>
-                  {!step.done && (
-                    <span className="text-[10px] font-bold" style={{ color: 'var(--orange)' }}>
-                      {isHi ? 'करो →' : 'Go →'}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ═══ SHOW MORE TOGGLE — progressive disclosure ═══ */}
-        <button
-          onClick={() => setShowMore(prev => !prev)}
-          className="w-full py-2.5 rounded-xl text-xs font-semibold transition-all active:scale-[0.98] flex items-center justify-center gap-1.5"
-          style={{
-            background: 'var(--surface-1)',
-            border: '1px solid var(--border)',
-            color: 'var(--text-3)',
-          }}
-        >
-          {showMore
-            ? (isHi ? 'कम दिखाओ ↑' : 'Show Less ↑')
-            : (isHi ? 'और दिखाओ ↓' : 'Show More ↓')}
-        </button>
-
-        {showMore && <>
-
-        {/* ═══ PRIORITY 1: CONTINUE LEARNING (was buried at #6 — now first) ═══ */}
-        {nextTopics.length > 0 && (
-          <div>
-            <SectionHeader icon="▶">{isHi ? 'आगे सीखो' : 'Continue Learning'}</SectionHeader>
-            {nextTopics.slice(0, 1).map((topic) => (
-              <Card
-                key={topic.id}
-                hoverable
-                onClick={() =>
-                  topic.chapter_number
-                    ? router.push(`/learn/${student.preferred_subject}/${topic.chapter_number}`)
-                    : router.push('/foxy')
-                }
-                className="flex items-center gap-4 !p-4"
-              >
-                <div
-                  className="w-10 h-10 md:w-12 md:h-12 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-                  style={{ background: `${meta?.color ?? 'var(--orange)'}15` }}
-                >
-                  {meta?.icon ?? '📚'}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-sm md:text-base truncate">{topic.title}</div>
-                  <div className="text-xs text-[var(--text-3)] mt-0.5">
-                    {topic.chapter_number
-                      ? (isHi ? `अध्याय ${topic.chapter_number} · अवधारणाएँ पढ़ो` : `Chapter ${topic.chapter_number} · Read concepts`)
-                      : (isHi ? 'Foxy के साथ सीखो' : 'Learn with Foxy')}
-                  </div>
-                </div>
-                <span className="text-[var(--text-3)]">→</span>
-              </Card>
-            ))}
-          </div>
-        )}
-
-        {/* ═══ PRIORITY 2: DUE REVIEWS (daily habit — show prominently) ═══ */}
-        {dueCount > 0 && flags.spaced_repetition && (
-          <button
-            onClick={() => router.push('/review')}
-            className="w-full rounded-2xl p-4 flex items-center gap-3 transition-all"
-            style={{ background: 'rgba(245,166,35,0.08)', border: '1px solid rgba(245,166,35,0.2)' }}
-          >
-            <span className="text-2xl">🔄</span>
-            <div className="text-left flex-1">
-              <div className="font-semibold text-sm" style={{ color: 'var(--gold)' }}>
-                {dueCount} {isHi ? 'रिव्यू बाकी है!' : 'topics due for review!'}
-              </div>
-              <div className="text-xs text-[var(--text-3)]">
-                {isHi ? 'रोज़ रिव्यू = परीक्षा में फ़र्क' : 'Daily review = better exam score'}
-              </div>
-            </div>
-            <span className="ml-auto" style={{ color: 'var(--gold)' }}>→</span>
-          </button>
-        )}
-
-        {/* ═══ PERFORMANCE SCORE HERO ═══ */}
-        <Card accent={meta?.color}>
-          <div className="flex items-center justify-between mb-1">
-            <div className="flex items-center gap-2">
-              <span className="text-2xl">{meta?.icon ?? '📚'}</span>
-              <span className="font-semibold text-sm text-[var(--text-2)]">
-                {meta?.name ?? student.preferred_subject} · {isHi ? `कक्षा ${student.grade}` : `Grade ${student.grade}`}
-              </span>
-            </div>
-            <div className="flex items-center gap-1">
-              <span className="text-xl streak-flame">🔥</span>
-              <span className="text-2xl font-bold">{streak}</span>
-              <span className="text-xs text-[var(--text-3)] ml-0.5">{isHi ? 'दिन' : 'days'}</span>
-            </div>
-          </div>
-
-          <ScoreHero
-            overallScore={overallPerfScore}
-            levelName={overallPerfLevel}
-            isHi={isHi}
+            nextTopics={nextTopics}
+            allowedSubjects={allowedSubjects}
+            selectedSubjects={selectedSubjects}
+            onPickSubjects={() => setShowSubjectPicker(true)}
           />
 
-          {velocityTrend && (
-            <div className="text-xs text-center -mt-1 mb-2" style={{ color: velocityTrend === 'fast' ? '#16A34A' : velocityTrend === 'steady' ? '#F59E0B' : '#EF4444' }}>
-              {velocityTrend === 'fast' ? '↑' : velocityTrend === 'steady' ? '→' : '↓'} {isHi ? (velocityTrend === 'fast' ? 'तेज़ गति' : velocityTrend === 'steady' ? 'स्थिर गति' : 'धीमी गति') : (velocityTrend === 'fast' ? 'Fast pace' : velocityTrend === 'steady' ? 'Steady pace' : 'Slow pace')}
-            </div>
+          {/* Reselect banner — only when student has zero unlocked or zero
+              selected subjects. This is a recovery affordance, not a widget. */}
+          {(allowedSubjects.length === 0 || selectedSubjects.length === 0) && (
+            <ReselectBanner isHi={isHi} onReselect={() => setShowSubjectPicker(true)} />
           )}
 
-          {/* Legacy XP — shown smaller during migration period */}
-          <div className="flex items-center justify-center gap-1 mb-3 text-xs text-[var(--text-3)]">
-            <span className="gradient-text font-bold">{totalXp.toLocaleString()}</span>
-            <span>XP</span>
-            <span className="mx-1">·</span>
-            <span>{isHi ? `स्तर ${calculateLevel(totalXp)}` : `Level ${calculateLevel(totalXp)}`}</span>
-          </div>
-
-          <div className="grid-stats">
-            {cbseReadiness !== null && (
-              <StatCard
-                icon="🎯"
-                value={`${cbseReadiness}%`}
-                label={isHi ? 'परीक्षा तैयार' : 'Exam Ready'}
-                color={cbseReadiness >= 70 ? '#16A34A' : cbseReadiness >= 40 ? '#F59E0B' : '#EF4444'}
+          {/* ════════════════════════════════════════════════════════════
+              BELOW THE FOLD — 5 collapsed accordions, lazy-loaded.
+              Order: Progress → Today's Focus → Upcoming → Compete → Quick.
+              ════════════════════════════════════════════════════════════ */}
+          <SectionErrorBoundary section="Dashboard:Progress">
+            <Accordion
+              id="progress"
+              icon="📈"
+              title={isHi ? 'मेरी प्रगति' : 'Your Progress'}
+            >
+              <ProgressSection
+                isHi={isHi}
+                router={router}
+                profiles={profiles}
+                allowedSubjects={allowedSubjects}
+                selectedSubjects={selectedSubjects}
+                bktMastery={bktMastery}
+                perfScores={perfScores}
+                overallPerfScore={overallPerfScore}
+                overallPerfLevel={overallPerfLevel}
+                velocityTrend={velocityTrend}
+                cbseReadiness={cbseReadiness}
+                retentionScore={retentionScore}
+                mastered={mastered}
+                dueCount={dueCount}
+                quizzesTaken={snapshot?.quizzes_taken ?? 0}
+                knowledgeGaps={knowledgeGaps}
+                errorBreakdown={errorBreakdown}
               />
-            )}
-            <StatCard value={mastered} label={isHi ? 'महारत' : 'Mastered'} color="var(--gold)" />
-            <StatCard
-              value={dueCount}
-              label={isHi ? 'रिव्यू' : 'Due Reviews'}
-              color={dueCount > 0 ? 'var(--orange)' : 'var(--text-3)'}
-            />
-            <StatCard
-              value={snapshot?.quizzes_taken ?? 0}
-              label={isHi ? 'क्विज़' : 'Quizzes'}
-              color="var(--purple)"
-            />
-            {retentionScore !== null && (
-              <StatCard
-                icon="🧠"
-                value={`${retentionScore}%`}
-                label={isHi ? 'याददाश्त' : 'Retention'}
-                color="#0891B2"
+            </Accordion>
+          </SectionErrorBoundary>
+
+          <SectionErrorBoundary section="Dashboard:Focus">
+            <Accordion
+              id="focus"
+              icon="🎯"
+              title={isHi ? 'आज का फोकस' : "Today's Focus"}
+            >
+              <TodaysFocusSection
+                isHi={isHi}
+                router={router}
+                studentId={student.id}
+                studentName={student.name}
+                studentGrade={student.grade || '9'}
+                preferredSubject={student.preferred_subject}
+                totalXp={totalXp}
+                level={calculateLevel(totalXp)}
+                streak={streak}
+                snapshot={snapshot}
+                profilesLength={profiles.length}
+                challengeUnlocked={challengeUnlocked}
+                challengeStreak={challengeStreak}
+                challengeSolved={challengeSolved}
+                todaySubject={todaySubject}
+                todaySubjectHi={todaySubjectHi}
+                todayTopic={todayTopic}
+                dueCount={dueCount}
+                spacedRepetitionEnabled={!!flags.spaced_repetition}
+                nudges={nudges}
+                onDismissNudge={dismissNudge}
+                knowledgeGaps={knowledgeGaps}
+                nextTopics={nextTopics}
               />
-            )}
-          </div>
-        </Card>
+            </Accordion>
+          </SectionErrorBoundary>
 
-        {/* ═══ SUBJECT PERFORMANCE SCORES GRID ═══ */}
-        {perfScores.length > 0 && (
-          <div>
-            <SectionHeader icon="📊">{isHi ? 'विषय स्कोर' : 'Subject Scores'}</SectionHeader>
-            <div className="grid grid-cols-2 gap-3">
-              {perfScores
-                .filter(ps => selectedSubjects.includes(ps.subject))
-                .map(ps => {
-                  const subjectMeta = allowedSubjects.find(s => s.code === ps.subject);
-                  return (
-                    <ScoreCard
-                      key={ps.subject}
-                      subject={subjectMeta?.name ?? ps.subject}
-                      subjectHi={subjectMeta?.nameHi ?? ps.subject}
-                      score={ps.overall_score}
-                      isHi={isHi}
-                    />
-                  );
-                })}
-            </div>
-          </div>
-        )}
+          <SectionErrorBoundary section="Dashboard:Upcoming">
+            <Accordion
+              id="upcoming"
+              icon="📅"
+              title={isHi ? 'आगामी' : 'Upcoming'}
+            >
+              <UpcomingSection
+                isHi={isHi}
+                router={router}
+                studentGrade={student.grade || ''}
+                cbseReadiness={cbseReadiness}
+                upcomingExams={upcomingExams}
+                allowedSubjects={allowedSubjects}
+                pendingLinks={pendingLinks}
+                onLinkApproved={fetchPendingLinks}
+              />
+            </Accordion>
+          </SectionErrorBoundary>
 
-        {/* Error Breakdown */}
-        {errorBreakdown && (
-          <Card>
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-base">🔍</span>
-              <span className="text-sm font-bold" style={{ fontFamily: 'var(--font-display)' }}>
-                {isHi ? 'गलती विश्लेषण' : 'Error Analysis'}
-              </span>
-            </div>
-            <div className="space-y-2">
-              {[
-                { label: isHi ? 'लापरवाही' : 'Careless', pct: errorBreakdown.careless, color: '#F59E0B', icon: '⚡' },
-                { label: isHi ? 'अवधारणा' : 'Conceptual', pct: errorBreakdown.conceptual, color: '#EF4444', icon: '🧠' },
-                { label: isHi ? 'गलत समझ' : 'Misread', pct: errorBreakdown.misinterpretation, color: '#8B5CF6', icon: '🔍' },
-              ].map(item => (
-                <div key={item.label} className="flex items-center gap-2">
-                  <span className="text-xs w-4">{item.icon}</span>
-                  <span className="text-xs font-semibold w-20" style={{ color: item.color }}>{item.label}</span>
-                  <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: `${item.color}15` }}>
-                    <div className="h-full rounded-full transition-all" style={{ width: `${item.pct}%`, background: item.color }} />
-                  </div>
-                  <span className="text-[10px] text-[var(--text-3)] w-10 text-right">{item.pct}%</span>
-                </div>
-              ))}
-            </div>
-          </Card>
-        )}
+          <SectionErrorBoundary section="Dashboard:Compete">
+            <Accordion
+              id="compete"
+              icon="🏆"
+              title={isHi ? 'मुकाबला' : 'Compete'}
+            >
+              <CompeteSection
+                isHi={isHi}
+                router={router}
+                studentRank={studentRank}
+                totalXp={totalXp}
+                challengeStreak={challengeStreak}
+                challengeBadges={challengeBadges}
+              />
+            </Accordion>
+          </SectionErrorBoundary>
 
-        {/* Exam Countdown */}
-        {upcomingExams.length > 0 && (
-          <div>
-            <SectionHeader icon="📋">{isHi ? 'आगामी परीक्षाएँ' : 'Upcoming Exams'}</SectionHeader>
-            <div className="space-y-2">
-              {upcomingExams.map(exam => {
-                const isUrgent = exam.days_left <= 7;
-                const examMeta = allowedSubjects.find(s => s.code === exam.subject);
-                const typeLabel = exam.exam_type === 'unit_test' ? (isHi ? 'UT' : 'UT') : exam.exam_type === 'half_yearly' ? (isHi ? 'अर्ध-वार्षिक' : 'Half-Yearly') : (isHi ? 'वार्षिक' : 'Annual');
-                return (
-                  <button key={exam.id} onClick={() => router.push(`/exams`)} className="w-full">
-                    <Card className="!p-3 flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0" style={{ background: isUrgent ? 'rgba(220,38,38,0.1)' : `${examMeta?.color ?? 'var(--orange)'}15` }}>
-                        {examMeta?.icon ?? '📋'}
-                      </div>
-                      <div className="flex-1 min-w-0 text-left">
-                        <div className="font-semibold text-sm truncate">{exam.exam_name}</div>
-                        <div className="text-[10px] text-[var(--text-3)] mt-0.5">
-                          {typeLabel} · {new Date(exam.exam_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                        </div>
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        <div className="text-lg font-bold" style={{ color: isUrgent ? 'var(--danger)' : 'var(--orange)', fontFamily: 'var(--font-display)' }}>
-                          {exam.days_left}
-                        </div>
-                        <div className="text-[10px] text-[var(--text-3)]">{isHi ? 'दिन' : 'days'}</div>
-                      </div>
-                    </Card>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
+          <SectionErrorBoundary section="Dashboard:QuickActions">
+            <Accordion
+              id="quick"
+              icon="⚡"
+              title={isHi ? 'त्वरित क्रियाएँ' : 'Quick Actions'}
+            >
+              <QuickActionsSection isHi={isHi} router={router} />
+            </Accordion>
+          </SectionErrorBoundary>
+        </SectionErrorBoundary>
 
-        {/* Smart Nudges — max 1 shown (avoid anxiety stack) */}
-        {nudges.length > 0 && (() => {
-          const nudge = nudges[0]; // Only show highest-priority nudge
-          const nudgeIcons: Record<string, string> = { schedule_behind: '⚠️', revision_due: '🔄', streak_risk: '🔥', exam_approaching: '📋', weak_topic: '📉', milestone: '🎉', encouragement: '💪' };
-          const nudgeColors: Record<string, string> = { schedule_behind: '#F59E0B', revision_due: '#0891B2', streak_risk: '#EF4444', exam_approaching: '#DC2626', weak_topic: '#8B5CF6', milestone: '#16A34A', encouragement: '#E8581C' };
-          return (
-            <div key={nudge.id} className="rounded-xl p-3 flex items-start gap-2.5" style={{ background: `${nudgeColors[nudge.nudge_type] ?? 'var(--orange)'}08`, border: `1px solid ${nudgeColors[nudge.nudge_type] ?? 'var(--orange)'}20` }}>
-              <span className="text-base flex-shrink-0 mt-0.5">{nudgeIcons[nudge.nudge_type] ?? '💡'}</span>
-              <p className="text-xs text-[var(--text-2)] leading-relaxed flex-1">{isHi && nudge.message_hi ? nudge.message_hi : nudge.message}</p>
-              <button
-                onClick={async () => {
-                  await fetch('/api/student/preferences', {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'dismiss_nudge', nudge_id: nudge.id }),
-                  });
-                  setNudges(prev => prev.filter(n => n.id !== nudge.id));
-                }}
-                className="text-[var(--text-3)] text-xs flex-shrink-0"
-                aria-label={isHi ? 'बंद करो' : 'Dismiss'}
-              >✕</button>
-            </div>
-          );
-        })()}
-
-        {/* (Continue Learning + Due Reviews moved to the top of the page) */}
-
-        {/* Knowledge Gaps Alert */}
-        {knowledgeGaps.length > 0 && showGapsAlert && (
-          <div className="rounded-2xl p-4 relative" style={{ background: 'var(--danger-light)', border: '1px solid rgba(244,63,94,0.15)' }}>
-            <button onClick={() => setShowGapsAlert(false)} className="absolute top-2 right-3 text-[var(--text-3)] text-sm">✕</button>
-            <div className="flex items-start gap-3">
-              <span className="text-2xl">🔍</span>
-              <div className="flex-1">
-                <div className="font-semibold text-sm" style={{ color: 'var(--danger)' }}>
-                  {knowledgeGaps.length} {isHi ? 'ज्ञान अंतराल पाए गए' : 'knowledge gaps found'}
-                </div>
-                <div className="text-xs text-[var(--text-3)] mt-1 space-y-0.5">
-                  {knowledgeGaps.slice(0, 2).map(g => (
-                    <div key={g.id}>• {isHi && g.description_hi ? g.description_hi : g.description}</div>
-                  ))}
-                </div>
-                <button
-                  onClick={() => router.push('/foxy')}
-                  className="mt-2 text-xs font-bold px-3 py-1.5 rounded-lg"
-                  style={{ background: 'rgba(232,88,28,0.1)', color: 'var(--orange)' }}
-                >
-                  🦊 {isHi ? 'Foxy से ठीक करो' : 'Fix with Foxy'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Smart "What to do now?" CTA — context-driven, single recommendation */}
-        <QuickActions
-          isHi={isHi}
-        />
-
-        {/* Mini Leaderboard — competitive motivation, prominent for CBSE students */}
-        {(studentRank !== null || totalXp > 0) && (
-          <button
-            onClick={() => router.push('/leaderboard')}
-            className="w-full rounded-2xl p-4 flex items-center gap-3 transition-all active:scale-[0.98]"
-            style={{
-              background: 'linear-gradient(135deg, rgba(245,166,35,0.06), rgba(232,88,28,0.06))',
-              border: '1px solid rgba(245,166,35,0.2)',
-            }}
-          >
-            <span className="text-2xl">🏆</span>
-            <div className="flex-1 text-left">
-              {studentRank !== null ? (
-                <>
-                  <div className="text-sm font-bold" style={{ color: 'var(--gold)' }}>
-                    {isHi ? `तुम #${studentRank} हो इस हफ्ते!` : `You're #${studentRank} this week!`}
-                  </div>
-                  <div className="text-xs text-[var(--text-3)]">
-                    {isHi ? 'पूरी रैंकिंग देखो →' : 'See full rankings →'}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="text-sm font-bold" style={{ color: 'var(--gold)' }}>
-                    {isHi ? 'रैंकिंग में आओ!' : 'Join the Rankings!'}
-                  </div>
-                  <div className="text-xs text-[var(--text-3)]">
-                    {isHi ? 'क्विज़ खेलो और टॉप पर जाओ' : 'Take quizzes to climb the leaderboard'}
-                  </div>
-                </>
-              )}
-            </div>
-            <span className="text-[var(--text-3)]">→</span>
-          </button>
-        )}
-
-        {/* Reselect banner — shown when:
-            (a) the student has zero unlocked subjects (legacy grade/plan drift), OR
-            (b) the student hasn't selected any subjects yet (new account / free plan
-                that skipped picker / F2-migrated account that lost all to archive). */}
-        {(allowedSubjects.length === 0 || selectedSubjects.length === 0) && (
-          <ReselectBanner isHi={isHi} onReselect={() => setShowSubjectPicker(true)} />
-        )}
-
-        {/* My Subjects (only student's chosen subjects) */}
-        {allowedSubjects.length > 0 && selectedSubjects.length > 0 && (
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <SectionHeader icon="📚">{isHi ? 'मेरे विषय' : 'My Subjects'}</SectionHeader>
-              <button onClick={() => setShowSubjectPicker(true)} className="text-xs font-semibold px-3 py-1 rounded-lg" style={{ color: 'var(--orange)', background: 'rgba(232,88,28,0.08)' }}>
-                {isHi ? '+ बदलो' : '+ Edit'}
-              </button>
-            </div>
-            <div className="grid-subjects">
-              {allowedSubjects.filter(s => selectedSubjects.includes(s.code)).map((s) => (
-                <SubjectChip
-                  key={s.code}
-                  icon={s.icon}
-                  name={s.name}
-                  color={s.color}
-                  active={student.preferred_subject === s.code}
-                  size="sm"
-                  onClick={async () => {
-                    await fetch('/api/student/preferences', {
-                      method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ action: 'set_preferred_subject', subject: s.code }),
-                    });
-                    if (typeof window !== 'undefined') localStorage.setItem('alfanumrik_subject', s.code);
-                    router.push('/learn');
-                  }}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Subject Picker Modal */}
+        {/* Subject Picker Modal — bottom sheet, opens from AboveFoldHero
+            zero-state hint or the ReselectBanner. */}
         {showSubjectPicker && (
           <>
-            <div className="fixed inset-0 z-50" style={{ background: 'rgba(0,0,0,0.3)' }} onClick={() => setShowSubjectPicker(false)} />
-            <div className="fixed bottom-0 left-0 right-0 z-[60] rounded-t-3xl max-h-[80vh] flex flex-col" style={{ background: 'var(--surface-1)', boxShadow: '0 -8px 40px rgba(0,0,0,0.1)' }}>
-              <div className="flex justify-center pt-3 pb-1"><div className="w-10 h-1 rounded-full" style={{ background: 'var(--border)' }} /></div>
+            <div
+              className="fixed inset-0 z-50"
+              style={{ background: 'rgba(0,0,0,0.3)' }}
+              onClick={() => setShowSubjectPicker(false)}
+            />
+            <div
+              className="fixed bottom-0 left-0 right-0 z-[60] rounded-t-3xl max-h-[80vh] flex flex-col"
+              style={{ background: 'var(--surface-1)', boxShadow: '0 -8px 40px rgba(0,0,0,0.1)' }}
+            >
+              <div className="flex justify-center pt-3 pb-1">
+                <div className="w-10 h-1 rounded-full" style={{ background: 'var(--border)' }} />
+              </div>
               <div className="px-4 pb-2">
-                <h3 className="text-base font-bold" style={{ fontFamily: 'var(--font-display)' }}>{isHi ? 'विषय चुनो' : 'Choose Your Subjects'}</h3>
-                <p className="text-xs text-[var(--text-3)]">{isHi ? 'जो विषय पढ़ना है वो चुनो' : 'Select the subjects you want to study'}</p>
+                <h3
+                  className="text-base font-bold"
+                  style={{ fontFamily: 'var(--font-display)' }}
+                >
+                  {isHi ? 'विषय चुनो' : 'Choose Your Subjects'}
+                </h3>
+                <p className="text-xs text-[var(--text-3)]">
+                  {isHi ? 'जो विषय पढ़ना है वो चुनो' : 'Select the subjects you want to study'}
+                </p>
               </div>
               <div className="flex-1 overflow-y-auto px-4 pb-4">
                 <div className="grid grid-cols-2 gap-2">
                   {allowedSubjects.map((s) => {
                     const sel = selectedSubjects.includes(s.code);
                     return (
-                      <button key={s.code} onClick={() => {
-                        setSelectedSubjects(prev => sel ? prev.filter(x => x !== s.code) : [...prev, s.code]);
-                      }} className="p-3 rounded-xl text-left transition-all active:scale-[0.97] flex items-center gap-2"
-                        style={{ background: sel ? `${s.color}12` : 'var(--surface-2)', border: `1.5px solid ${sel ? s.color : 'var(--border)'}` }}>
-                        <span className="text-lg">{s.icon}</span>
-                        <span className="text-sm font-semibold" style={{ color: sel ? s.color : 'var(--text-2)' }}>{s.name}</span>
-                        {sel && <span className="ml-auto text-xs" style={{ color: s.color }}>&#10003;</span>}
+                      <button
+                        key={s.code}
+                        onClick={() => {
+                          setSelectedSubjects((prev) =>
+                            sel ? prev.filter((x) => x !== s.code) : [...prev, s.code],
+                          );
+                        }}
+                        className="p-3 rounded-xl text-left transition-all active:scale-[0.97] flex items-center gap-2"
+                        style={{
+                          background: sel ? `${s.color}12` : 'var(--surface-2)',
+                          border: `1.5px solid ${sel ? s.color : 'var(--border)'}`,
+                        }}
+                      >
+                        <span className="text-lg" aria-hidden="true">{s.icon}</span>
+                        <span
+                          className="text-sm font-semibold"
+                          style={{ color: sel ? s.color : 'var(--text-2)' }}
+                        >
+                          {s.name}
+                        </span>
+                        {sel && (
+                          <span className="ml-auto text-xs" style={{ color: s.color }}>
+                            &#10003;
+                          </span>
+                        )}
                       </button>
                     );
                   })}
                 </div>
               </div>
-              <div className="px-4 pb-4 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
-                <button onClick={async () => {
-                  const subs = selectedSubjects.length > 0 ? selectedSubjects : [student.preferred_subject];
-                  await fetch('/api/student/preferences', {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'set_selected_subjects', subjects: subs, preferred_subject: subs[0] }),
-                  });
-                  setShowSubjectPicker(false);
-                  loadStaticData();
-                }} disabled={selectedSubjects.length === 0} className="w-full py-3 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-40"
-                  style={{ background: 'var(--orange)' }}>
-                  {isHi ? `${selectedSubjects.length} विषय सेव करो` : `Save ${selectedSubjects.length} Subject${selectedSubjects.length !== 1 ? 's' : ''}`}
+              <div
+                className="px-4 pb-4 pt-2 border-t"
+                style={{ borderColor: 'var(--border)' }}
+              >
+                <button
+                  onClick={async () => {
+                    const subs =
+                      selectedSubjects.length > 0
+                        ? selectedSubjects
+                        : [student.preferred_subject];
+                    await fetch('/api/student/preferences', {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        action: 'set_selected_subjects',
+                        subjects: subs,
+                        preferred_subject: subs[0],
+                      }),
+                    });
+                    setShowSubjectPicker(false);
+                    loadStaticData();
+                  }}
+                  disabled={selectedSubjects.length === 0}
+                  className="w-full py-3 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-40"
+                  style={{ background: 'var(--orange)' }}
+                >
+                  {isHi
+                    ? `${selectedSubjects.length} विषय सेव करो`
+                    : `Save ${selectedSubjects.length} Subject${selectedSubjects.length !== 1 ? 's' : ''}`}
                 </button>
               </div>
             </div>
           </>
         )}
-
-        {/* XP by Subject + BKT Mastery (only selected subjects) */}
-        <SubjectProgress
-          profiles={profiles}
-          subjects={allowedSubjects}
-          selectedSubjects={selectedSubjects}
-          isHi={isHi}
-          bktMastery={bktMastery}
-        />
-
-        {/* Progressive disclosure: unlocked after first meaningful engagement */}
-        {totalXp >= 50 && (
-          <TodaysPlan
-            isHi={isHi}
-            dueCount={dueCount}
-            knowledgeGaps={knowledgeGaps.map(g => ({ id: g.id, topic_title: g.topic_title ?? g.description }))}
-            nextTopics={nextTopics}
-            preferredSubject={student.preferred_subject ?? ''}
-            streak={streak}
-          />
-        )}
-
-        {totalXp >= 50 && (
-          <ProgressSnapshot
-            totalXp={totalXp}
-            streak={streak}
-            mastered={mastered}
-            isHi={isHi}
-          />
-        )}
-
-        {totalXp >= 100 && (
-          <ExamReadiness
-            accuracy={cbseReadiness ?? 0}
-            totalQuizzes={snapshot?.quizzes_taken ?? 0}
-            isHi={isHi}
-            grade={student.grade}
-          />
-        )}
-
-        </>}
-       </SectionErrorBoundary>
       </main>
 
       <TrustFooter />
