@@ -21,12 +21,16 @@ env:
   # continue-on-error on the test step. Must differ from the anon
   # placeholder above or env.ts's anti-leak check will trigger.
   SUPABASE_SERVICE_ROLE_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.ci-placeholder-service-role'
-  # Bundle size limits (bytes). Matches P10 budget from CLAUDE.md.
-  # TEMP: cap raised 160→175 on 2026-05-04 per PR #529. Restore to 160 once
-  # (1) PostHogProvider is lazy-loaded via next/dynamic AND
-  # (2) scripts/check-bundle-size.mjs measureShared() counts layout chunks.
-  # Tracked in launch-readiness D5.
-  SHARED_JS_LIMIT_KB: 175
+  # Bundle size limits (kB gzipped). Matches P10 budget from CLAUDE.md.
+  # Restored 2026-05-05: cap returned to 160 kB after (1) PostHogProvider
+  # lazy-loaded via next/dynamic (PR #534, e34a7452) and (2) the local
+  # scripts/check-bundle-size.mjs measureShared() rewritten to count layout
+  # chunks (D5 follow-up). The CI bash gate below checks the LARGEST single
+  # shared chunk (currently ~91 kB gzipped), well under 160. The local
+  # script reports total honest first-paint shared (~265 kB) under its own
+  # interim 270 kB cap; reduce that cap once Supabase auth client is
+  # split out of the root layout (TODO #1 in scripts/check-bundle-size.mjs).
+  SHARED_JS_LIMIT_KB: 160
   PAGE_JS_LIMIT_KB: 260
   MIDDLEWARE_LIMIT_KB: 120
 
