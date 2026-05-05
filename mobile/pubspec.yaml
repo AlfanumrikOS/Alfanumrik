@@ -44,6 +44,12 @@ dependencies:
   url_launcher: ^6.2.2
   uuid: ^4.3.3
 
+  # WebView — STEM Lab Phase 1 mobile parity (Tier 3 R12).
+  # Wraps /stem-centre so 119 simulations + lab streak + coin rewards
+  # are reachable on mobile without porting each sim natively. Phase 2
+  # will replace the most-used sims with native Flutter widgets.
+  webview_flutter: ^4.7.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -799,6 +799,26 @@ async function manageChallengeStreaks(supabase: ReturnType<typeof createClient>)
   return atRiskStreaks.length
 }
 
+// Tier 2 R8 — log distribution of yesterday's lab completions per simulation_id
+// so ops can see which labs are popular vs ignored. No DB writes — counts only.
+// P13: only counts and simulation IDs are logged; no observation_text, no
+// student identifiers beyond aggregate counts.
+async function logDailyLabDistribution(supabase: ReturnType<typeof createClient>): Promise<number> {
+  const yesterday = new Date(Date.now() - 86_400_000).toISOString()
+  const { data, error } = await supabase
+    .from('experiment_observations')
+    .select('simulation_id')
+    .gte('created_at', yesterday)
+    .limit(5000)
+  if (error) throw new Error(`logDailyLabDistribution: ${error.message}`)
+  const rows = (data ?? []) as { simulation_id: string }[]
+  const counts = new Map<string, number>()
+  for (const row of rows) counts.set(row.simulation_id, (counts.get(row.simulation_id) ?? 0) + 1)
+  const top = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10)
+  console.log(`daily-cron: lab_distribution — total_completions=${rows.length} unique_sims=${counts.size} top10=${JSON.stringify(top)}`)
+  return rows.length
+}
+
 Deno.serve(async (req) => {
   if (req.method==='OPTIONS') return new Response('ok',{headers:corsHeaders})
   const t0=Date.now()
@@ -817,6 +837,7 @@ Deno.serve(async (req) => {
       ['performance_scores_recalculated',()=>recalculatePerformanceScores(sb)],
       ['challenges_generated',()=>generateDailyChallenges(sb)],
       ['streaks_managed',()=>manageChallengeStreaks(sb)],
+      ['lab_completions_logged',()=>logDailyLabDistribution(sb)],
     ]
     const settled=await Promise.allSettled(steps.map(([,fn])=>fn()))
     const results:Record<string,number>={};const errors:Record<string,string>={}

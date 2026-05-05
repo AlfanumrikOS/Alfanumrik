@@ -69,6 +69,8 @@ import { classifyIntent, routeIntent } from '@/lib/ai';
 import { FoxyResponseSchema, type FoxyResponse } from '@/lib/foxy/schema';
 import { denormalizeFoxyResponse } from '@/lib/foxy/denormalize';
 import { buildExpandedGoalSection } from '@/lib/goals/goal-personas';
+import { fetchRecentLabContext, type LabContextEntry } from '@/lib/foxy/recent-lab-context';
+import { buildLabContextSection } from '@/lib/foxy/foxy-lab-prompt';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -1429,19 +1431,29 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     );
   }
 
-  // 7. Load cognitive context + history + prior-session context (parallel, non-fatal on failure)
+  // 7. Load cognitive context + history + prior-session context + lab context
+  //    (parallel, non-fatal on failure)
+  //
+  // R6 Tier 2: lab context is ADDITIVE — it does NOT replace RAG retrieval
+  // (which still happens server-side in grounded-answer). Failures here
+  // MUST never block Foxy: fetchRecentLabContext is internally try/catch
+  // and returns [] on any error. We additionally wrap the Promise.all in
+  // a try/catch so a single rejection cannot poison the others.
   let cognitiveCtx: CognitiveContext = EMPTY_COGNITIVE_CONTEXT;
   let history: ChatMessage[] = [];
   let priorSessionTurns: PriorSessionTurn[] = [];
+  let labEntries: LabContextEntry[] = [];
   try {
-    const [ctx, hist, prior] = await Promise.all([
+    const [ctx, hist, prior, labs] = await Promise.all([
       loadCognitiveContext(studentId, subject, grade, chapter),
       loadHistory(resolvedSessionId),
       loadPriorSessionContext(studentId, subject, grade, resolvedSessionId, chapter),
+      fetchRecentLabContext(supabaseAdmin, studentId, 5),
     ]);
     cognitiveCtx = ctx;
     history = hist;
     priorSessionTurns = prior;
+    labEntries = labs;
   } catch (ctxErr) {
     logger.warn('foxy_context_load_failed', {
       error: ctxErr instanceof Error ? ctxErr.message : String(ctxErr),
@@ -1585,7 +1597,7 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   // Compose the safety-railed system prompt. The grounded-answer service has
   // its own template, but we pass ours as `foxy_safety_rails` so the final
   // rendered prompt includes the Next.js-side rails for defense-in-depth.
-  const foxySystemPrompt = buildSystemPrompt({
+  let foxySystemPrompt = buildSystemPrompt({
     grade,
     subject,
     chapter,
@@ -1594,6 +1606,31 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     cognitiveCtx,
     useExpandedPersona,
   });
+
+  // ── R6 Tier 2: Lab-context awareness (additive — does NOT replace RAG) ──
+  // Append the rendered lab section to the END of the system prompt so it
+  // sits closer to the user message in the model's attention. The builder
+  // returns "" when labEntries is empty, so this is a no-op for students
+  // who haven't done any recent lab work. The "NEVER invent" guardrail
+  // wording inside the section is the P12 safety contract.
+  // P13: log only the COUNT of injected entries — never the observation
+  // text or the studentId in plain.
+  if (labEntries.length > 0) {
+    const isHi = false; // legacy intent-router uses English template; the
+    // grounded-answer service localizes downstream. Keeping
+    // English here matches FOXY_SAFETY_RAILS above.
+    const labSection = buildLabContextSection(labEntries, isHi);
+    if (labSection) {
+      foxySystemPrompt = `${foxySystemPrompt}\n\n${labSection}`;
+      logger.info('foxy.lab_context.injected', {
+        // Intentionally NO studentId in this log line (P13). Subject + grade
+        // are non-PII context for ops triage.
+        count: labEntries.length,
+        subject,
+        grade,
+      });
+    }
+  }
 
   // Phase 2.2: resolve the coaching mode from explicit request + mastery.
   const coachMode = resolveCoachMode(requestedCoachMode, cognitiveCtx.masteryLevel);

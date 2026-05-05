@@ -24,6 +24,7 @@ import {
   getDisplayMasteryThreshold,
 } from '@/lib/goals/mastery-display';
 import type { GoalCode } from '@/lib/goals/goal-profile';
+import { BLOOM_CEILING } from '@/lib/score-config';
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -1472,5 +1473,172 @@ export function getMasteryDisplayBadge(
     state: classifyMasteryForDisplay(mastery, goal),
     threshold: getDisplayMasteryThreshold(goal),
     isGoalAware: true,
+  };
+}
+
+// ─── STEM Lab Experiment Evidence (Tier 2 R5) ────────────────
+//
+// Wires guided-experiment viva quiz scores into the BKT-style mastery
+// pipeline. Each viva question becomes one evidence observation
+// (correct/incorrect). The result is a parallel mastery signal — it does
+// NOT replace quiz scoring (Product Invariant P1 untouched). The quiz
+// formula `Math.round((correct / total) * 100)` continues to be the
+// authoritative score for `quiz_sessions`. This signal feeds topic
+// mastery only.
+//
+// Why a separate function instead of reusing `bktUpdate` directly?
+//   1. Hands-on lab work is stronger evidence than a single multiple-
+//      choice attempt. Students must observe, record, AND answer — not
+//      just recognize a pattern. We apply a `learnRate` boost (×1.15) to
+//      reflect this richer evidence channel.
+//   2. We need an anti-grind threshold (60s minimum, mirroring the coin
+//      RPC `complete_experiment`) so a student who clicks through five
+//      viva questions in 10 seconds gets zero mastery credit.
+//   3. We must clamp the resulting estimate by the experiment's Bloom
+//      ceiling (from `score-config.BLOOM_CEILING`) so a 'remember'-level
+//      experiment can never push topic mastery above 0.45 — preserving
+//      the founder's "depth over breadth" stance.
+//
+// SERVER WIRING (Tier 2 R5 deferred to follow-up):
+//   This function is pure. No DB write happens here. The cognitive engine
+//   has zero database calls today (verified — `grep supabase` returns 0).
+//   Persisting the result requires either:
+//     (a) a new edge function `record-experiment-mastery/` that reads
+//         the latest `experiment_observations` row and writes the delta
+//         to `student_topic_mastery` (not yet built), OR
+//     (b) the nightly daily-cron batch processor sweeps unprocessed
+//         `experiment_observations` rows and applies deltas in bulk.
+//   Current PR ships (b)'s prerequisite: the pure rule. Cron wiring
+//   tracked separately. Until then, this function is callable from any
+//   server-side handler that wants to surface "your topic mastery moved
+//   from X to Y" feedback in the celebration screen.
+//
+// Owning agent: assessment (this is a P22 learner-state rule — the rule
+// lives here; ai-engineer implements the server write path on top).
+
+export interface ExperimentEvidence {
+  studentId: string;
+  topicKey: string; // e.g. 'electricity.ohms_law' (slug from experiments.ts)
+  subject: string;
+  grade: string; // P5: STRING '6'..'12', never integer
+  bloomLevel: BloomLevel;
+  difficulty: number; // 1-5, matches ExperimentDefinition.difficulty
+  vivaScore: number; // correct viva answers (0..vivaMax)
+  vivaMax: number; // total viva questions served
+  timeSpentSeconds: number; // wall-clock time on the experiment
+}
+
+export interface ExperimentEvidenceResult {
+  masteryDelta: number; // change in mastery, -1.0 .. 1.0
+  newMasteryEstimate: number; // 0..1, clamped to BLOOM_CEILING[bloomLevel]
+  bloomCeilingHit: boolean; // true if estimate was capped by the Bloom ceiling
+  feedback: 'mastered' | 'progressing' | 'needs_work';
+}
+
+/** Anti-grind: matches the 60s minimum in `complete_experiment()` RPC. */
+const EXPERIMENT_MIN_TIME_SECONDS = 60;
+
+/** Hands-on evidence boost: viva on top of an experiment is ~15% richer than a bare quiz item. */
+const EXPERIMENT_EVIDENCE_BOOST = 1.15;
+
+/**
+ * Record viva-quiz evidence from a guided STEM-lab experiment as topic
+ * mastery, using a BKT-flavored update (one observation per viva
+ * question), boosted to reflect the richer evidence channel of a
+ * hands-on lab, and clamped by the experiment's Bloom ceiling.
+ *
+ * Behavior:
+ *   - vivaMax === 0: returns delta 0 + 'progressing' (engagement-only sims
+ *     don't move mastery, they earn coins via the RPC instead).
+ *   - timeSpentSeconds < 60: returns delta 0 + 'needs_work' (anti-grind,
+ *     mirrors the coin RPC threshold so the two systems agree).
+ *   - Otherwise: applies `vivaScore` correct + `(vivaMax - vivaScore)`
+ *     incorrect BKT updates with `pLearn` boosted by 1.15. The final
+ *     estimate is clamped to `BLOOM_CEILING[bloomLevel]`.
+ *
+ * Feedback bands:
+ *   - 'mastered'    when newMasteryEstimate >= 0.80 (or hit the ceiling
+ *                   with a perfect viva)
+ *   - 'progressing' when delta > 0 but below the mastered threshold
+ *   - 'needs_work'  when delta <= 0
+ *
+ * @param evidence       Per-attempt evidence from the viva.
+ * @param currentMastery Prior mastery estimate (0..1). Defaults to 0.5
+ *                       (flat prior) for first-time topic encounters.
+ */
+export function recordExperimentEvidence(
+  evidence: ExperimentEvidence,
+  currentMastery: number = 0.5,
+): ExperimentEvidenceResult {
+  const ceiling = BLOOM_CEILING[evidence.bloomLevel] ?? 1.0;
+  const startMastery = Math.max(0, Math.min(1, currentMastery));
+
+  // Engagement-only path: no viva served means no mastery signal. The
+  // student still earned coins via complete_experiment(); mastery just
+  // doesn't move.
+  if (evidence.vivaMax <= 0) {
+    return {
+      masteryDelta: 0,
+      newMasteryEstimate: startMastery,
+      bloomCeilingHit: startMastery >= ceiling,
+      feedback: 'progressing',
+    };
+  }
+
+  // Anti-grind: mirror the 60s threshold from the coin RPC so the two
+  // systems agree on what "real engagement" means. Below that, we award
+  // no mastery delta and surface a 'needs_work' nudge.
+  if (evidence.timeSpentSeconds < EXPERIMENT_MIN_TIME_SECONDS) {
+    return {
+      masteryDelta: 0,
+      newMasteryEstimate: startMastery,
+      bloomCeilingHit: startMastery >= ceiling,
+      feedback: 'needs_work',
+    };
+  }
+
+  // Apply per-question BKT updates. We use slightly more aggressive
+  // learn-rate (×1.15) because a hands-on observation + viva is richer
+  // evidence than a single quiz-bank MCQ attempt.
+  let params: BKTParams = {
+    pKnow: startMastery,
+    pLearn: Math.min(0.4, 0.15 * EXPERIMENT_EVIDENCE_BOOST),
+    pGuess: 0.25,
+    pSlip: 0.1,
+  };
+
+  const correctCount = Math.max(0, Math.min(evidence.vivaMax, evidence.vivaScore));
+  const incorrectCount = evidence.vivaMax - correctCount;
+
+  for (let i = 0; i < correctCount; i++) {
+    const upd = bktUpdate(params, true);
+    params = { ...upd.params, pKnow: upd.newPKnow };
+  }
+  for (let i = 0; i < incorrectCount; i++) {
+    const upd = bktUpdate(params, false);
+    params = { ...upd.params, pKnow: upd.newPKnow };
+  }
+
+  const rawEstimate = Math.max(0, Math.min(1, params.pKnow));
+  const bloomCeilingHit = rawEstimate >= ceiling;
+  const newMasteryEstimate = Math.min(rawEstimate, ceiling);
+  const masteryDelta = newMasteryEstimate - startMastery;
+
+  let feedback: 'mastered' | 'progressing' | 'needs_work';
+  // 'mastered' when we cross the high-confidence band OR when a perfect
+  // viva pinned us to the Bloom ceiling for this experiment's level.
+  if (newMasteryEstimate >= 0.8 || (bloomCeilingHit && incorrectCount === 0)) {
+    feedback = 'mastered';
+  } else if (masteryDelta > 0) {
+    feedback = 'progressing';
+  } else {
+    feedback = 'needs_work';
+  }
+
+  return {
+    masteryDelta,
+    newMasteryEstimate,
+    bloomCeilingHit,
+    feedback,
   };
 }

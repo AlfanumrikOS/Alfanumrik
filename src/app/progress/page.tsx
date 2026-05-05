@@ -772,6 +772,22 @@ export default function ProgressPage() {
                 </Card>
               </Link>
             )}
+
+            {/* === Lab Notebook link (Tier 3 R13 — print as PDF for school records) === */}
+            <Link href={`/lab-notebook/${student.id}`} className="block min-h-[44px]">
+              <Card className="!p-4 flex items-center gap-3 hover:shadow-md transition-shadow">
+                <span className="text-2xl">📓</span>
+                <div className="flex-1">
+                  <div className="text-sm font-semibold" style={{ fontFamily: 'var(--font-display)' }}>
+                    {isHi ? 'मेरी लैब नोटबुक' : 'My Lab Notebook'}
+                  </div>
+                  <div className="text-xs text-[var(--text-3)]">
+                    {isHi ? 'स्कूल रिकॉर्ड के लिए PDF प्रिंट करें' : 'Print as PDF for school records'}
+                  </div>
+                </div>
+                <span className="text-[var(--text-3)]" aria-hidden="true">&rarr;</span>
+              </Card>
+            </Link>
           </>
         )}
 

@@ -29,6 +29,7 @@ import ScoreCard from '@/components/score/ScoreCard';
 import CoinBalance from '@/components/coins/CoinBalance';
 import DailyChallengeCard from '@/components/challenge/DailyChallengeCard';
 import ChallengeStreakBadge from '@/components/challenge/StreakBadge';
+import DailyLabMission from '@/components/dashboard/DailyLabMission';
 
 
 const BLOOM_LABELS: Record<string, { icon: string; label: string; labelHi: string }> = {
@@ -75,6 +76,15 @@ export default function Dashboard() {
     level_name: string;
   }>>([]);
   const [coinBalance, setCoinBalance] = useState<number>(0);
+
+  // STEM Lab streak — fed by `student_lab_streaks` table maintained by the
+  // `complete_experiment` RPC. Null until the first fetch resolves; rendered
+  // only when the student has either an active streak or any past experiments.
+  const [labStreak, setLabStreak] = useState<{
+    current_streak: number;
+    longest_streak: number;
+    total_experiments: number;
+  } | null>(null);
 
   // Daily challenge (Concept Chain) state
   const [challengeUnlocked, setChallengeUnlocked] = useState(false);
@@ -182,6 +192,25 @@ export default function Dashboard() {
       }
     } catch {
       // Non-fatal: coin balance defaults to 0
+    }
+
+    // Fetch STEM Lab streak. RLS allows the student's own row; if none exists
+    // (never run an experiment) the row is simply absent and the card hides.
+    try {
+      const { data: lsData } = await supabase
+        .from('student_lab_streaks')
+        .select('current_streak, longest_streak, total_experiments')
+        .eq('student_id', student.id)
+        .maybeSingle();
+      if (lsData) {
+        setLabStreak({
+          current_streak: Number(lsData.current_streak) || 0,
+          longest_streak: Number(lsData.longest_streak) || 0,
+          total_experiments: Number(lsData.total_experiments) || 0,
+        });
+      }
+    } catch {
+      // Non-fatal: lab streak card simply does not render
     }
 
     const rawSelected = (student.selected_subjects || [student.preferred_subject].filter(Boolean)) as string[];
@@ -1087,6 +1116,70 @@ export default function Dashboard() {
           isHi={isHi}
           foxyHref={foxyHref}
         />
+
+        {/* ═══ DAILY LAB MISSION (Tier 2 R8) ═══
+            Deterministic per-student-per-day pick from /api/student/daily-lab.
+            Drives discovery of the long-tail simulation catalog (~119 sims,
+            only ~10 popular). The card returns null if the API errors so the
+            dashboard degrades gracefully. Self-contained — no extra dashboard
+            state needed. Bundle delta is well under the 2 kB target. */}
+        <SectionErrorBoundary section="Daily Lab Mission">
+          <DailyLabMission isHi={isHi} />
+        </SectionErrorBoundary>
+
+        {/* ═══ STEM LAB STREAK ═══
+            Small status card linking to /stem-centre. Shown only if the
+            student has at least one experiment in their history (active
+            streak OR a non-zero lifetime count). Until then we show a
+            zero-state CTA so a student who has never opened the lab still
+            gets a discoverability nudge. */}
+        {labStreak !== null && (labStreak.current_streak > 0 || labStreak.total_experiments > 0) ? (
+          <button
+            onClick={() => router.push('/stem-centre')}
+            className="w-full rounded-2xl p-4 flex items-center gap-3 transition-all active:scale-[0.98] min-h-[44px]"
+            style={{
+              background: 'linear-gradient(135deg, rgba(232,88,28,0.08), rgba(245,166,35,0.08))',
+              border: '1px solid rgba(232,88,28,0.2)',
+            }}
+            aria-label={isHi ? 'STEM लैब खोलें' : 'Open STEM Lab'}
+          >
+            <span className="text-2xl flex-shrink-0">🔬</span>
+            <div className="flex-1 text-left">
+              <div className="text-sm font-bold" style={{ color: 'var(--orange)' }}>
+                {isHi
+                  ? `लैब स्ट्रीक: ${labStreak.current_streak} दिन`
+                  : `Lab Streak: ${labStreak.current_streak} ${labStreak.current_streak === 1 ? 'day' : 'days'}`}
+              </div>
+              <div className="text-xs text-[var(--text-3)]">
+                {isHi
+                  ? `${labStreak.total_experiments} प्रयोग पूरे · सर्वाधिक ${labStreak.longest_streak} दिन`
+                  : `${labStreak.total_experiments} experiments · best ${labStreak.longest_streak}d`}
+              </div>
+            </div>
+            <span className="text-[var(--text-3)]">→</span>
+          </button>
+        ) : labStreak !== null ? (
+          <button
+            onClick={() => router.push('/stem-centre')}
+            className="w-full rounded-2xl p-4 flex items-center gap-3 transition-all active:scale-[0.98] min-h-[44px]"
+            style={{
+              background: 'rgba(232,88,28,0.06)',
+              border: '1px dashed rgba(232,88,28,0.3)',
+            }}
+            aria-label={isHi ? 'STEM लैब खोलें' : 'Open STEM Lab'}
+          >
+            <span className="text-2xl flex-shrink-0">🔬</span>
+            <div className="flex-1 text-left">
+              <div className="text-sm font-bold" style={{ color: 'var(--orange)' }}>
+                {isHi ? 'STEM लैब आज़माओ!' : 'Try a STEM lab!'}
+              </div>
+              <div className="text-xs text-[var(--text-3)]">
+                {isHi ? 'पहला प्रयोग पूरा करो और सिक्के कमाओ' : 'Complete your first experiment and earn coins'}
+              </div>
+            </div>
+            <span className="text-[var(--text-3)]">→</span>
+          </button>
+        ) : null}
 
         {/* Mini Leaderboard — competitive motivation, prominent for CBSE students */}
         {(studentRank !== null || totalXp > 0) && (

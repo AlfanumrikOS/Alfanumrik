@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { getLevelFromScore } from '@/lib/score-config';
 import { REPORT_MONTHS_COUNT } from '@/lib/constants';
 import { BottomNav } from '@/components/ui';
+import ParentLabReportWidget from '@/components/parent/ParentLabReportWidget';
 
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -1566,6 +1567,16 @@ export default function ParentReportsPage() {
                   sub={t(isHi, 'Keep it up!', 'ऐसे ही करते रहो!')}
                 />
               </div>
+            </div>
+
+            {/* ── 1a. STEM LAB ACTIVITY (Tier 2 R7) ── */}
+            <div id="labs" style={{ marginBottom: 20 }}>
+              <div style={sectionHeading}>{t(isHi, 'STEM Lab', 'STEM लैब')}</div>
+              <ParentLabReportWidget
+                studentId={student.id}
+                studentName={student.name}
+                isHi={isHi}
+              />
             </div>
 
             {/* ── 1b. PERFORMANCE SCORE TRENDS ── */}
