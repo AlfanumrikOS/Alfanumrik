@@ -4,9 +4,9 @@
 --          the canonical runner.
 --
 -- Per launch-readiness D6: Vercel cron is canonical for daily-cron because:
---   1. Visibility — Vercel exposes per-invocation logs in the dashboard.
---   2. Flag rollback — env-var driven CRON_SECRET can be rotated from Vercel.
---   3. Duplicate prevention — running both pg_cron AND Vercel cron produced
+--   1. Visibility - Vercel exposes per-invocation logs in the dashboard.
+--   2. Flag rollback - env-var driven CRON_SECRET can be rotated from Vercel.
+--   3. Duplicate prevention - running both pg_cron AND Vercel cron produced
 --      duplicate parent_digest notifications.
 --
 -- Scope: ONLY unschedules alfanumrik-daily-cron. Does NOT drop pg_cron extension
@@ -46,6 +46,6 @@ BEGIN
         RAISE NOTICE ''pg_cron unschedule no-op (job may not exist): %'', SQLERRM;
     END;
   ELSE
-    RAISE NOTICE ''pg_cron extension not installed — nothing to unschedule (safe no-op on staging/dev)'';
+    RAISE NOTICE ''pg_cron extension not installed - nothing to unschedule (safe no-op on staging/dev)'';
   END IF;
 END $$;
