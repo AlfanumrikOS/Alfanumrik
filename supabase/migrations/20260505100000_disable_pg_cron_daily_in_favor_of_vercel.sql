@@ -14,38 +14,25 @@
 --
 -- Idempotent + cron-schema-safe: Uses dynamic SQL via EXECUTE so the parser
 -- does not try to resolve cron.job at parse time. Safe on environments where
--- pg_cron is NOT installed (staging, dev, fresh DR projects). Hotfix
--- 2026-05-05 after staging sync failed with SQLSTATE 42P01 on cron.job.
+-- pg_cron is NOT installed (staging, dev, fresh DR projects).
 --
--- Verification on prod (run as service_role, only meaningful where pg_cron
--- is installed):
---   SELECT jobid, jobname, schedule, active FROM cron.job
---    WHERE jobname = ''alfanumrik-daily-cron'';
---   -- Expected: 0 rows after this migration is applied.
---
--- Rollback: re-apply 20260404000002_pg_cron_daily.sql (kept under
---           supabase/migrations/_legacy/timestamped/) to restore the schedule.
+-- Hotfix history (2026-05-05):
+--   v1: parser failed on cron.job ref when pg_cron not installed (SQLSTATE 42P01)
+--   v2: Win-1252 em-dash bytes 0x97 broke UTF-8 (SQLSTATE 22021)
+--   v3: my Python heredoc doubled all single quotes ('' instead of ') -> syntax error
+--   v4 (this): final fix - manually verified single-quote SQL string literals.
 
 DO $$
 BEGIN
-  -- Outer guard: skip everything if pg_cron extension is not installed.
-  -- pg_extension exists in every postgres so this query is always safe.
-  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = ''pg_cron'') THEN
-    -- pg_cron IS installed. Use dynamic SQL so the parser does not try to
-    -- resolve cron.job at function-create time on environments where the
-    -- cron schema does not exist (e.g. staging projects that never enabled
-    -- pg_cron). EXCEPTION block catches the case where the job itself does
-    -- not exist (cron.unschedule raises in that case).
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
     BEGIN
-      EXECUTE ''SELECT cron.unschedule(alfanumrik-daily-cron)'';
-      RAISE NOTICE ''Unscheduled pg_cron job: alfanumrik-daily-cron (Vercel cron is now canonical)'';
+      EXECUTE 'SELECT cron.unschedule(' || quote_literal('alfanumrik-daily-cron') || ')';
+      RAISE NOTICE 'Unscheduled pg_cron job: alfanumrik-daily-cron (Vercel cron is now canonical)';
     EXCEPTION
       WHEN OTHERS THEN
-        -- Job may not exist OR cron schema may have been removed since the
-        -- outer pg_extension check. Both are acceptable: idempotent no-op.
-        RAISE NOTICE ''pg_cron unschedule no-op (job may not exist): %'', SQLERRM;
+        RAISE NOTICE 'pg_cron unschedule no-op (job may not exist): %', SQLERRM;
     END;
   ELSE
-    RAISE NOTICE ''pg_cron extension not installed - nothing to unschedule (safe no-op on staging/dev)'';
+    RAISE NOTICE 'pg_cron extension not installed - nothing to unschedule (safe no-op on staging/dev)';
   END IF;
 END $$;
