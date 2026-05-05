@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 /**
  * Foxy Tutor Safety Tests — P12 (AI Safety) & RAG Fallback
@@ -301,5 +303,47 @@ describe('Foxy RAG fallback safety', () => {
   it('instructs to recommend textbook verification', () => {
     const result = buildSystemPromptNoRagSection('9', 'science', 'en', null, null);
     expect(result.prompt).toContain('verify your answer from their NCERT textbook');
+  });
+});
+
+// ─── FOXY_SAFETY_RAILS constant (D3 Step 4 — ported rules) ────────────
+// FOXY_SAFETY_RAILS is module-private in src/app/api/foxy/route.ts. We
+// assert its content by reading the file source so this regression test
+// catches accidental deletion of the ported factual-integrity and
+// RAG-only-refusal rules without needing to export the constant.
+
+describe('FOXY_SAFETY_RAILS — D3 Step 4 ported rules (P12)', () => {
+  const routeSrc = readFileSync(
+    join(process.cwd(), 'src/app/api/foxy/route.ts'),
+    'utf8',
+  );
+
+  it('includes the factual-integrity rule (legacy foxy-tutor:209)', () => {
+    expect(routeSrc).toContain('Factual integrity');
+    expect(routeSrc).toContain(
+      'Never change your answer when a student pressures you',
+    );
+    expect(routeSrc).toContain('stick with X');
+    expect(routeSrc).toContain('walk through their reasoning');
+  });
+
+  it('includes the RAG-only-refusal rule (legacy foxy-tutor:213)', () => {
+    expect(routeSrc).toContain('RAG-only refusal');
+    expect(routeSrc).toContain(
+      "I don't have a verified source for this in your textbook",
+    );
+    expect(routeSrc).toContain("which chapter you're studying");
+    expect(routeSrc).toContain("I'll look again");
+  });
+
+  it('preserves the original five safety rails (additive change)', () => {
+    expect(routeSrc).toContain('1. Scope:');
+    expect(routeSrc).toContain('2. Age appropriateness:');
+    expect(routeSrc).toContain('3. Bilingual style:');
+    expect(routeSrc).toContain('4. Honesty:');
+    expect(routeSrc).toContain('5. Grounding:');
+    // New rules are 6 and 7, slotted in after 5.
+    expect(routeSrc).toContain('6. Factual integrity:');
+    expect(routeSrc).toContain('7. RAG-only refusal:');
   });
 });
