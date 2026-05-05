@@ -263,17 +263,17 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
-        # TEMPORARY: integration tests reverted to non-blocking (2026-05-05) pending
-        # staging Supabase schema parity. CHECK constraints + triggers exist on
-        # gzpxqklxwzishrkiaatd (verified via diagnostic SELECT) and validated=true,
-        # but do not enforce on INSERT � root cause unclear without psql access.
-        # Same failure pre-exists on main + PR #533, NOT a regression introduced
-        # by PR #534 (launch-readiness wave 1+2). Authorized by user 2026-05-05.
-        # FOLLOW-UP: ops to run interactive psql diagnostics on staging,
-        # determine why rag_chunks_valid_grade + rag_chunks_recompute_trigger
-        # do not fire despite existing as validated objects. Then flip back to
-        # continue-on-error: false to restore P8/P9 enforcement gate.
-        continue-on-error: true
+        # BLOCKING gate restored (2026-05-05). Original audit Gap 5b mandated this
+        # be blocking to enforce P8 (RLS boundary) + P9 (RBAC enforcement) against
+        # the live staging schema. Was temporarily flipped to continue-on-error: true
+        # on 2026-05-05 during PR #534 launch-readiness work while we debugged a
+        # staging schema mismatch (rag_chunks_valid_grade CHECK appeared validated
+        # but did not enforce on INSERT). Restored to BLOCKING on 2026-05-05 after
+        # staging sync proven green on main (12:21 UTC) and PR #534 — Integration
+        # Tests (live DB) now pass at ~50s on both. See
+        # docs/runbooks/staging-schema-drift-resolution.md for the post-mortem and
+        # smoke test to detect the same drift in future.
+        continue-on-error: false
 
   # ── Step 2: Production Build + Bundle Analysis ──
   build:
