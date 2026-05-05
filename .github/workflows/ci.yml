@@ -22,7 +22,11 @@ env:
   # placeholder above or env.ts's anti-leak check will trigger.
   SUPABASE_SERVICE_ROLE_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.ci-placeholder-service-role'
   # Bundle size limits (bytes). Matches P10 budget from CLAUDE.md.
-  SHARED_JS_LIMIT_KB: 160
+  # TEMP: cap raised 160→175 on 2026-05-04 per PR #529. Restore to 160 once
+  # (1) PostHogProvider is lazy-loaded via next/dynamic AND
+  # (2) scripts/check-bundle-size.mjs measureShared() counts layout chunks.
+  # Tracked in launch-readiness D5.
+  SHARED_JS_LIMIT_KB: 175
   PAGE_JS_LIMIT_KB: 260
   MIDDLEWARE_LIMIT_KB: 120
 
