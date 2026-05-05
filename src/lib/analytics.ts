@@ -62,6 +62,18 @@ type AnalyticsEvent = {
   foxy_message_sent: { subject: string; mode: string; language: string };
   // F16: extended to carry grade alongside the subject/mode pair already collected.
   foxy_session_started: { subject: string; grade?: string; mode?: string };
+  // P0 chip-action fix (2026-05-04): measures which Foxy starter chips drive
+  // engagement. `intent` is the canonical action code from
+  // `src/lib/foxy/starter-intents.ts`. `text` is the EN label (NEVER the
+  // Hindi label — keeps event cardinality clean for funnels). `has_topic`
+  // tells us whether the click happened with active chapter context. P13:
+  // no student id, no name, no UUIDs — only product-shape properties.
+  foxy_starter_clicked: {
+    intent: string;
+    text: string;
+    has_topic: boolean;
+    subject: string | null;
+  };
   // F16: per-turn completion telemetry — feeds RAG/grounding success funnels.
   // Phase 0 Fix 0.5 (2026-04-27): semantics tightened.
   //   was_grounded   — true ONLY when the answer was produced from the
