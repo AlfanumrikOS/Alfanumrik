@@ -25,6 +25,7 @@
 import { createClient } from '@supabase/supabase-js';
 import * as fs from 'fs';
 import * as path from 'path';
+import { assertNoMojibake } from './mojibake';
 
 // ─── Configuration ───────────────────────────────────────────
 
@@ -391,6 +392,18 @@ async function deprecateOldContent(grade: string, subject: string): Promise<numb
 async function uploadChunks(chunks: ContentChunk[]): Promise<number> {
   let uploaded = 0;
 
+  // ─── Mojibake guardrail ──────────────────────────────────────────────────
+  // For Indic-language subjects, refuse to insert chunks whose chunk_text or
+  // chapter_title looks like Krutidev/SHUSHA garbage. The detector is
+  // conservative (no Devanagari codepoints + Krutidev punctuation), so this
+  // won't trip on English. Throws on any offender — fail fast over silently
+  // poisoning Foxy citations and chapter dropdowns.
+  const subjectLanguage = chunks[0]?.subject ?? '';
+  assertNoMojibake(
+    chunks.map(c => ({ chapter_title: c.chapterTitle, chunk_text: c.content })),
+    subjectLanguage
+  );
+
   // Batch insert in groups of 50
   for (let i = 0; i < chunks.length; i += 50) {
     const batch = chunks.slice(i, i + 50).map(chunk => ({
@@ -424,6 +437,12 @@ async function uploadChunks(chunks: ContentChunk[]): Promise<number> {
 
 async function updateCurriculumTopics(chapters: ExtractedChapter[], book: DiscoveredBook): Promise<number> {
   let updated = 0;
+
+  // Mojibake guardrail on chapter titles before upserting curriculum_topics.
+  assertNoMojibake(
+    chapters.map(c => ({ title: c.title })),
+    book.subject
+  );
 
   for (const chapter of chapters) {
     const { error } = await supabase.from('curriculum_topics').upsert({

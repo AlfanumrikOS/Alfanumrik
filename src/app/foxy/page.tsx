@@ -12,6 +12,7 @@ import { LESSON_STEPS, getLessonStepPrompt, getNextLessonStep, type LessonStep, 
 import { checkDailyUsage, clearUsageCache, type UsageResult } from '@/lib/usage';
 import { speak, isVoiceSupported } from '@/lib/voice';
 import { ConversationStarters } from '@/components/foxy/ConversationStarters';
+import type { StarterIntent } from '@/lib/foxy/starter-intents';
 import { findSimulation, InlineSimulation } from '@/components/InlineSimulation';
 import { ChatBubble, type GroundingStatus, type AbstainReason, type SuggestedAlternative } from '@/components/foxy/ChatBubble';
 import { LoadingState } from '@/components/foxy/LoadingState';
@@ -249,6 +250,10 @@ async function callFoxyTutor(params: Record<string, any> & { language?: string }
         board:     params.board     ?? null,
         sessionId: params.session_id ?? null, // map old param name to new
         mode:      params.mode      ?? 'learn',
+        // P0 chip-action fix: forward starter-chip intent (weak_areas,
+        // study_today, etc.) so the route can enrich the prompt with
+        // mastery rows. Optional — undefined when not a chip-driven turn.
+        ...(typeof params.intent === 'string' ? { intent: params.intent } : {}),
         // Claude Vision: send image directly for handwriting recognition
         ...(params.image_base64 ? {
           image_base64: params.image_base64,
@@ -940,8 +945,20 @@ export default function FoxyPage() {
     });
   }, [messages, loading]);
 
-  // Send message with usage enforcement
-  const sendMessage = useCallback(async (text: string, image?: File | null) => {
+  // Send message with usage enforcement.
+  //
+  // P0 chip-action fix (2026-05-04): `extraParams.intent` is a server-side
+  // routing hint sent by handleStarterClick when the student taps a Foxy
+  // starter chip (e.g. 'weak_areas', 'study_today'). The /api/foxy route
+  // reads it to enrich the prompt with student mastery rows. Optional —
+  // omitting it is byte-identical to the legacy call signature so the
+  // existing call sites at lines 1396, 1403, 1426, 1706, 1756, 1857, etc.
+  // remain backward compatible.
+  const sendMessage = useCallback(async (
+    text: string,
+    image?: File | null,
+    extraParams?: { intent?: string },
+  ) => {
     if (!text.trim() && !image) return;
     // Client-side length limit matching server-side MAX_MESSAGE_LENGTH
     if (text.length > 5000) {
@@ -1025,6 +1042,12 @@ export default function FoxyPage() {
       const chapCtx = selectedChapterTopics.length > 0 ? selectedChapterTopics.map((t: any) => `Ch ${t.chapter_number}: ${t.title}`).join(', ') : null;
       const chapterForSession = activeTopic?.title || (selectedChapterTopics.length === 1 ? selectedChapterTopics[0].title : null);
       const foxyParams: Record<string, any> = { message: augmentedMessage, student_id: student?.id || '', student_name: student?.name || 'Student', grade: studentGrade, subject: activeSubject, language, mode: sessionMode, topic_id: activeTopic?.id || null, topic_title: activeTopic?.title || null, chapter: chapterForSession, session_id: chatSessionId, selected_chapters: chapCtx };
+      // P0 chip-action fix: forward the starter-chip intent so the API can
+      // inject mastery context (weak_areas, study_today). Only set when
+      // present — keeps the body shape stable for existing callers.
+      if (extraParams?.intent) {
+        foxyParams.intent = extraParams.intent;
+      }
       // Pass image to Claude Vision when student uploads a photo
       if (imageBase64) {
         foxyParams.image_base64 = imageBase64;
@@ -1283,6 +1306,75 @@ export default function FoxyPage() {
     }
     setLoading(false);
   }, [student, studentGrade, activeSubject, language, sessionMode, activeTopic, chatSessionId, selectedChapters, topics, refreshConversations, nextMessageId]);
+
+  /**
+   * P0 chip-action fix (2026-05-04). Dispatches Foxy starter-chip clicks
+   * to the right destination based on the explicit `intent` payload.
+   * Previously every chip leaked its label as a literal user message and
+   * the API had to keyword-match (which silently dropped /quiz routing,
+   * leaked unconstrained "Formula sheet" prompts to Claude — P12 risk —
+   * and sent "Explain last topic" with no context). See
+   * `src/lib/foxy/starter-intents.ts` for the registry.
+   *
+   * Backward compatible: if `intent` is empty/unknown, falls through to
+   * the legacy send-text-as-message behavior.
+   */
+  const handleStarterClick = useCallback((text: string, intent: StarterIntent) => {
+    // P0.1: experiment → simulation deeplink (only if a matching sim exists
+    // for the current topic; otherwise fall through to Foxy so the student
+    // still gets an answer instead of a dead chip).
+    if (intent === 'experiment' && activeTopic) {
+      const sim = findSimulation(activeTopic.title || '');
+      if (sim) {
+        try {
+          track('simulation_opened', { simulation_id: sim.id, title: sim.title });
+        } catch { /* analytics non-critical */ }
+        router.push(`/stem-centre?lab=${sim.id}&from=foxy`);
+        return;
+      }
+      // No matching sim → fall through to Foxy.
+    }
+
+    // P0.2: quiz → /quiz route. This preserves P4 (atomic_quiz_profile_update
+    // RPC) and REG-54 (validation oracle gate). Routing through Foxy chat
+    // would bypass both. Requires an active topic so the quiz has a scope.
+    if (intent === 'quiz') {
+      if (activeTopic?.id) {
+        router.push(`/quiz?topic=${activeTopic.id}&source=foxy`);
+        return;
+      }
+      // No active topic → send a Foxy prompt asking student to pick a chapter.
+      sendMessage(
+        language === 'hi'
+          ? 'क्विज़ शुरू करने से पहले एक अध्याय चुनें।'
+          : 'Pick a chapter first, then I can quiz you on it.',
+      );
+      return;
+    }
+
+    // P0.3: formulas — guard P12 hallucination. NEVER send a bare "Formula
+    // sheet" prompt; Claude will invent formulas not in NCERT. Send a
+    // strictly-grounded prompt that forces abstention if no source is found.
+    // Long-term fix: a `formula_bank` table + dedicated route. Stopgap below.
+    if (intent === 'formulas') {
+      const scope = activeTopic?.title || SUBJECTS[activeSubject]?.name || '';
+      const constrained = language === 'hi'
+        ? `कृपया NCERT अध्याय ${scope ? `"${scope}"` : ''} में दिए गए सूत्रों की सूची बनाओ। हर सूत्र के साथ NCERT पाठ का स्रोत बताओ। यदि अध्याय में कोई सूत्र नहीं है तो स्पष्ट रूप से कहो — कोई सूत्र अपने आप मत बनाओ।`
+        : `Using ONLY the NCERT chapter content for ${scope || 'this subject'}, list the key formulas with their exact textbook source. If no formulas appear in the chapter, say so explicitly — DO NOT invent any formula.`;
+      sendMessage(constrained, null, { intent: 'formulas' });
+      return;
+    }
+
+    // P0.4 / P0.5: weak_areas + study_today — tag the request so /api/foxy
+    // can fetch topic_mastery rows server-side and inject them as context.
+    if (intent === 'weak_areas' || intent === 'study_today') {
+      sendMessage(text, null, { intent });
+      return;
+    }
+
+    // explain_last, teach, real_world, diagram → default pass-through.
+    sendMessage(text);
+  }, [activeTopic, activeSubject, language, router, sendMessage, SUBJECTS]);
 
   // Feedback: thumbs up/down
   const handleFeedback = useCallback(async (msgId: number, isUp: boolean) => {
@@ -1878,7 +1970,8 @@ export default function FoxyPage() {
                   subject={activeSubject}
                   language={language}
                   topicTitle={activeTopic?.title}
-                  onSelect={sendMessage}
+                  hasLastTopic={!!activeTopic || messages.length > 0}
+                  onSelect={handleStarterClick}
                 />
 
                 {activeTopic && (

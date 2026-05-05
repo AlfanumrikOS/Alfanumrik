@@ -24,6 +24,12 @@ if (!SUPABASE_URL || !SERVICE_KEY) {
 
 const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 
+// Re-export the mojibake guardrail so callers (ingest.ts, tests) can pull it
+// from one stable path. The detector lives in `./mojibake` so it stays a pure
+// module with no env-var requirements.
+export { isDevanagariMojibake, assertNoMojibake, INDIC_SUBJECT_LANGUAGES } from './mojibake';
+export type { IngestRowSample } from './mojibake';
+
 const EXPECTED_SUBJECTS: Record<string, string[]> = {
   '6': ['math', 'science', 'english', 'hindi', 'social_studies'],
   '7': ['math', 'science', 'english', 'hindi', 'social_studies'],

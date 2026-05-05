@@ -1319,6 +1319,18 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   // backward compatibility with mobile, ncert-solver, and any non-Foxy callers.
   // The streaming path is gated by `ff_foxy_streaming` (DB feature flag).
   const wantsStream = body.stream === true;
+  // P0 chip-action fix (2026-05-04): optional starter-chip intent. Used
+  // below to inject student mastery context into the system prompt for
+  // 'weak_areas' and 'study_today'. Unknown values are dropped silently
+  // — never trust the client to set arbitrary intents.
+  const VALID_INTENTS = new Set([
+    'teach', 'study_today', 'quiz', 'explain_last', 'formulas',
+    'weak_areas', 'experiment', 'real_world', 'diagram',
+  ]);
+  const intent: string | null =
+    typeof body.intent === 'string' && VALID_INTENTS.has(body.intent)
+      ? body.intent
+      : null;
 
   // 3. Validate inputs
   if (!message) {
@@ -1628,6 +1640,104 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         count: labEntries.length,
         subject,
         grade,
+      });
+    }
+  }
+
+  // ── P0 chip-action fix (2026-05-04): mastery context injection ──────────
+  // When the student taps "My weak areas" or "What should I study today?",
+  // the client sends `intent: 'weak_areas' | 'study_today'`. We pull a
+  // small slice of `topic_mastery` (the canonical table — the audit doc
+  // called it `student_topic_mastery`, which doesn't exist; see
+  // `src/lib/domains/assessment.ts` for the real schema) and append a
+  // grounding section to the system prompt. SAFE: every step is wrapped
+  // in try/catch; a missing table or query failure is logged but never
+  // blocks the chat. P13: only counts logged, never the topic strings.
+  if (intent === 'weak_areas' || intent === 'study_today') {
+    try {
+      const { data: masteryRows, error: masteryErr } = await supabaseAdmin
+        .from('topic_mastery')
+        .select('topic, mastery_level, total_attempts, correct_attempts')
+        .eq('student_id', studentId)
+        .eq('subject', subject)
+        .order('mastery_level', { ascending: true })
+        .limit(5);
+
+      if (masteryErr) {
+        logger.warn('foxy_intent_mastery_fetch_failed', {
+          intent,
+          subject,
+          grade,
+          error: masteryErr.message,
+        });
+      }
+
+      const rows = Array.isArray(masteryRows) ? masteryRows : [];
+      const weakRows = rows.filter((r) => (r.mastery_level ?? 0) < 0.5);
+
+      let masterySection = '';
+      if (intent === 'weak_areas') {
+        if (weakRows.length === 0) {
+          masterySection = [
+            '',
+            '── STUDENT MASTERY CONTEXT (intent=weak_areas) ──',
+            'No weak-area data is available yet for this student in this subject.',
+            'Encourage them to take 1–2 quizzes so we can identify gaps.',
+            'DO NOT invent topics they are weak in.',
+          ].join('\n');
+        } else {
+          const lines = weakRows.map((r) => {
+            const pct = Math.round((r.mastery_level ?? 0) * 100);
+            return `  • ${r.topic} — ${pct}% mastery (${r.correct_attempts ?? 0}/${r.total_attempts ?? 0} correct)`;
+          });
+          masterySection = [
+            '',
+            '── STUDENT MASTERY CONTEXT (intent=weak_areas) ──',
+            'These are the student\'s weakest topics in this subject (lowest mastery first):',
+            ...lines,
+            'Use this list to focus your answer. Pick ONE topic to start with.',
+          ].join('\n');
+        }
+      } else {
+        // study_today: lowest-mastery topic is the next-best thing to study.
+        // Future enhancement: weight by CBSE exam-weight ranking.
+        const target = rows[0];
+        if (!target) {
+          masterySection = [
+            '',
+            '── STUDENT MASTERY CONTEXT (intent=study_today) ──',
+            'No mastery data is available yet. Suggest the student start with',
+            'the first uncompleted chapter from the NCERT syllabus for this subject.',
+            'DO NOT invent a personalized recommendation.',
+          ].join('\n');
+        } else {
+          const pct = Math.round((target.mastery_level ?? 0) * 100);
+          masterySection = [
+            '',
+            '── STUDENT MASTERY CONTEXT (intent=study_today) ──',
+            `Next-best topic to study: ${target.topic} (${pct}% mastery).`,
+            'Build today\'s study plan around this topic.',
+          ].join('\n');
+        }
+      }
+
+      if (masterySection) {
+        foxySystemPrompt = `${foxySystemPrompt}\n${masterySection}`;
+        logger.info('foxy.intent_mastery.injected', {
+          // P13: counts + intent only, never the topic strings or studentId.
+          intent,
+          subject,
+          grade,
+          rowCount: rows.length,
+          weakCount: weakRows.length,
+        });
+      }
+    } catch (intentErr) {
+      // SAFE addition — never block the chat on a mastery fetch failure.
+      logger.warn('foxy_intent_mastery_unavailable', {
+        intent,
+        subject,
+        error: intentErr instanceof Error ? intentErr.message : String(intentErr),
       });
     }
   }
