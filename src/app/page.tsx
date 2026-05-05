@@ -9,6 +9,7 @@ import { useAuth } from '@/lib/AuthContext';
  * - Student → /dashboard
  * - Teacher → /teacher
  * - Parent/Guardian → /parent
+ * - Institution admin (school admin) → /school-admin
  * - Admin → /super-admin
  * - Unauthenticated → /welcome (handled by middleware, this is fallback)
  */
@@ -39,6 +40,12 @@ export default function RootPage() {
         break;
       case 'guardian':
         router.replace('/parent');
+        break;
+      case 'institution_admin':
+        // School-admin landing page (16 sub-pages live under /school-admin/*).
+        // Without this branch institution_admin users were stranded on the
+        // empty student dashboard — fixed 2026-05-05 (Wave 1 launch fixes).
+        router.replace('/school-admin');
         break;
       default:
         router.replace('/dashboard');
