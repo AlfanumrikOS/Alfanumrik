@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { XP_REWARDS } from '@/lib/xp-rules';
+import { XP_REWARDS } from '@/lib/xp-config';
 import { Card, Button, Badge, SheetModal } from '@/components/ui';
 
 /* ─── Types ──────────────────────────────────────────────── */

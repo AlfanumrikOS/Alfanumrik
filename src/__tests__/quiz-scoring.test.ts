@@ -6,7 +6,7 @@ import {
   calculateLevel,
   xpToNextLevel,
   getLevelName,
-} from '@/lib/xp-rules';
+} from '@/lib/xp-config';
 
 /**
  * Quiz Scoring Regression Tests — P1 (Score Accuracy) & P2 (XP Economy)

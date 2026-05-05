@@ -7,7 +7,7 @@ import {
   getLevelName,
   LEVEL_NAMES,
   XP_REWARDS,
-} from '@/lib/xp-rules';
+} from '@/lib/xp-config';
 
 /**
  * XP Rules Regression Tests — Product Invariant P2 (XP Economy)

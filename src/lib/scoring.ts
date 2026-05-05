@@ -8,7 +8,7 @@
  * DO NOT duplicate this logic anywhere. Import from here.
  */
 
-import { XP_RULES } from './xp-rules';
+import { XP_RULES } from './xp-config';
 
 /**
  * P1 Invariant: Score Accuracy

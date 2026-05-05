@@ -31,7 +31,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { XP_RULES } from '@/lib/xp-rules';
+import { XP_RULES } from '@/lib/xp-config';
 import { calculateScorePercent, calculateQuizXP } from '@/lib/scoring';
 
 // ─── Ledger cap arithmetic (mirrors the SQL inside atomic_quiz_profile_update) ──

@@ -6,7 +6,7 @@ import {
   xpToNextLevel,
   getLevelName,
   LEVEL_NAMES,
-} from '@/lib/xp-rules';
+} from '@/lib/xp-config';
 
 /**
  * XP Calculation Tests (P2: XP Economy)
