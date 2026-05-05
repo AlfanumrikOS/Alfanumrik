@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { StreakBadge } from '@/components/ui';
-import { calculateLevel, xpToNextLevel, getLevelName } from '@/lib/xp-rules';
+import { calculateLevel, xpToNextLevel, getLevelName } from '@/lib/xp-config';
 import { getLevelFromScore } from '@/lib/score-config';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';

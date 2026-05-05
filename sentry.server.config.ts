@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/nextjs';
 import { redactPII } from './src/lib/ops-events-redactor';
+import { sanitizeUrl } from './src/lib/sentry-client-redact';
 
 Sentry.init({
   dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
@@ -40,15 +41,48 @@ Sentry.init({
         delete h.Authorization;
         delete h.cookie;
         delete h.Cookie;
+        // Set-Cookie can leak the session cookie back through Sentry. Parity
+        // with sentry.client.config.ts. Added 2026-05-05 (D7 follow-up #4).
+        delete h['set-cookie'];
+        delete h['Set-Cookie'];
         delete h['x-api-key'];
       }
       delete event.request.cookies;
       if (event.request.data) {
         event.request.data = redactPII(event.request.data) as typeof event.request.data;
       }
+      // request.url often carries auth tokens / verification codes / email
+      // params (e.g. /auth/callback?code=…&email=…). Strip those before the
+      // event leaves the server. Parity with sentry.client.config.ts.
+      // Added 2026-05-05 (D7 follow-up #4 — Section 11 + Section 7.1 claim).
+      if (typeof event.request.url === 'string') {
+        event.request.url = sanitizeUrl(event.request.url);
+      }
       if (event.request.query_string && typeof event.request.query_string !== 'string') {
         event.request.query_string = redactPII(event.request.query_string) as typeof event.request.query_string;
       }
+    }
+
+    // Walk breadcrumbs — server-side breadcrumbs are typically sparse but
+    // can include outbound HTTP URLs (Razorpay, Anthropic) with sensitive
+    // params or fetch bodies. Mirror the client redactor's posture.
+    if (Array.isArray(event.breadcrumbs)) {
+      event.breadcrumbs = event.breadcrumbs.map((bc) => {
+        if (!bc) return bc;
+        if (bc.data) {
+          const scrubbed = redactPII(bc.data) as Record<string, unknown>;
+          for (const k of ['url', 'to', 'from']) {
+            if (typeof scrubbed[k] === 'string') {
+              scrubbed[k] = sanitizeUrl(scrubbed[k] as string);
+            }
+          }
+          bc.data = scrubbed as typeof bc.data;
+        }
+        if (typeof bc.message === 'string') {
+          bc.message = bc.message.replace(/https?:\/\/\S+/g, (m: string) => sanitizeUrl(m));
+        }
+        return bc;
+      });
     }
 
     // Walk extra + contexts for any nested PII.

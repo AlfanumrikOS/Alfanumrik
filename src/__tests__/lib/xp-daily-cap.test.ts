@@ -27,7 +27,7 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync } from 'fs';
 import { resolve } from 'path';
-import { XP_RULES } from '@/lib/xp-rules';
+import { XP_RULES } from '@/lib/xp-config';
 
 // ─────────────────────────────────────────────────────────────────────
 // 1. Parity assertion: XP_RULES.quiz_daily_cap === SQL migration literal

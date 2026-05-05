@@ -28,7 +28,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { getLevelName, LEVEL_NAMES } from '@/lib/xp-rules';
+import { getLevelName, LEVEL_NAMES } from '@/lib/xp-config';
 
 describe('xp-rules.ts branch closeout — getLevelName() fallback (line 120)', () => {
   it('returns the LHS of `||` when LEVEL_NAMES[level] is defined (covers line 120 LHS)', () => {

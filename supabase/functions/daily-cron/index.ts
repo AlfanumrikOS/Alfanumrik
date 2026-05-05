@@ -1,17 +1,36 @@
-// daily-cron v28 — adds AI daily challenge generation and challenge streak management.
-// Previous: leaderboard gate >=50->>=2 students; all P5 steps: streaks, leaderboard, parent digest,
-// task cleanup, platform health snapshot, ml retrain trigger.
+// daily-cron v29 — D6 launch hardening:
+//   (1) per-recipient idempotency_key on notifications insert (now upsert),
+//   (2) single-statement bulk streak reset (no Promise.all fan-out / no N+1).
+// Previous: v28 added AI daily challenge generation + challenge streak management;
+//          leaderboard gate >=50->>=2 students; all P5 steps: streaks, leaderboard,
+//          parent digest, task cleanup, platform health snapshot, ml retrain trigger.
 // Secret: CRON_SECRET env var OR get_cron_secret() DB RPC fallback.
+// Companion: pg_cron job 'alfanumrik-daily-cron' is disabled by migration
+//            20260505100000_disable_pg_cron_daily_in_favor_of_vercel.sql; Vercel
+//            cron at /api/cron/daily-cron (02:30 UTC) is the canonical runner.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
 
+// YYYY_MM_DD slug (UTC) used as the day component of idempotency_key.
+function todayUtcSlug(): string {
+  return new Date().toISOString().slice(0, 10).replace(/-/g, '_')
+}
+
 async function resetMissedStreaks(supabase: ReturnType<typeof createClient>): Promise<number> {
   const y = new Date(); y.setUTCDate(y.getUTCDate()-1); y.setUTCHours(0,0,0,0)
-  const { data, error } = await supabase.from('student_learning_profiles').select('student_id,subject').gt('streak_days',0).lt('last_session_at',y.toISOString())
+  // D6 fix: replace Promise.all per-row UPDATEs (N+1 against PostgREST) with a
+  // single predicate UPDATE. supabase-js applies the same WHERE the previous
+  // SELECT used (streak_days > 0 AND last_session_at < yesterday-start).
+  // At 10K+ active streaks this collapses 10K HTTP round-trips into 1.
+  const { data, error } = await supabase
+    .from('student_learning_profiles')
+    .update({ streak_days: 0, updated_at: new Date().toISOString() })
+    .gt('streak_days', 0)
+    .lt('last_session_at', y.toISOString())
+    .select('student_id')
   if (error) throw new Error(`resetMissedStreaks: ${error.message}`)
   if (!data?.length) return 0
-  await Promise.all(data.map((p: {student_id:string;subject:string}) => supabase.from('student_learning_profiles').update({streak_days:0,updated_at:new Date().toISOString()}).eq('student_id',p.student_id).eq('subject',p.subject)))
-  return new Set(data.map((p:{student_id:string})=>p.student_id)).size
+  return new Set((data as { student_id: string }[]).map(p => p.student_id)).size
 }
 
 async function recalculateLeaderboards(supabase: ReturnType<typeof createClient>): Promise<number> {
@@ -38,11 +57,16 @@ async function generateParentDigests(supabase: ReturnType<typeof createClient>):
   if (le) throw new Error(`generateParentDigests: ${le.message}`)
   if (!links?.length) return 0
   const y = new Date(); y.setUTCDate(y.getUTCDate()-1); y.setUTCHours(0,0,0,0)
+  // D6 fix: per-recipient/per-day idempotency_key gates duplicate inserts when
+  // the cron retries (Vercel retry policy or 207-partial re-run). Migration
+  // 20260505100100 adds a partial unique index on (recipient_id,type,idempotency_key).
+  const daySlug = todayUtcSlug()
   const notes: Record<string,unknown>[] = []
   for (const {guardian_id,student_id} of links as {guardian_id:string;student_id:string}[]) {
     const { data: ss } = await supabase.from('quiz_sessions').select('id,subject,score_percent,xp_earned').eq('student_id',student_id).eq('is_completed',true).gte('created_at',y.toISOString())
     const list = (ss??[]) as {subject:string;score_percent:number;xp_earned:number}[]
-    const base = {recipient_type:'guardian',recipient_id:guardian_id,is_read:false,created_at:new Date().toISOString()}
+    const idemKey = `daily_digest_${daySlug}_${guardian_id}_${student_id}`
+    const base = {recipient_type:'guardian',recipient_id:guardian_id,is_read:false,created_at:new Date().toISOString(),idempotency_key:idemKey}
     if (!list.length) { const b='Your child did not complete any quizzes yesterday.'; notes.push({...base,type:'parent_digest_no_activity',title:'No study activity yesterday',message:b,body:b,data:{quizzes:0,student_id}}) }
     else {
       const xp=list.reduce((s,q)=>s+(q.xp_earned??0),0); const sc=Math.round(list.reduce((s,q)=>s+(q.score_percent??0),0)/list.length)
@@ -50,7 +74,12 @@ async function generateParentDigests(supabase: ReturnType<typeof createClient>):
       notes.push({...base,type:'parent_digest',title:`Yesterday: ${list.length} quiz${list.length>1?'zes':''} completed`,message:b,body:b,data:{quizzes:list.length,avg_score:sc,total_xp:xp,subjects:sub,student_id}})
     }
   }
-  if (notes.length) { const {error:ie}=await supabase.from('notifications').insert(notes); if(ie) throw new Error(`generateParentDigests insert: ${ie.message}`) }
+  if (notes.length) {
+    // ignoreDuplicates: true silently no-ops on conflict (recipient_id,type,idempotency_key)
+    // — re-runs do not insert duplicate parent_digest rows.
+    const {error:ie}=await supabase.from('notifications').upsert(notes, { onConflict: 'recipient_id,type,idempotency_key', ignoreDuplicates: true })
+    if(ie) throw new Error(`generateParentDigests upsert: ${ie.message}`)
+  }
   return notes.length
 }
 
@@ -357,6 +386,9 @@ async function recalculatePerformanceScores(supabase: ReturnType<typeof createCl
     })
 
     // Check notification thresholds
+    // D6 fix: idempotency_key per student × subject × day × variant prevents
+    // duplicate score_milestone rows on cron re-run.
+    const daySlug = todayUtcSlug()
     const prevScore = prevScoresMap.get(key) ?? null
     if (prevScore !== null) {
       const rounded = Math.round(overallScore * 100) / 100
@@ -372,6 +404,7 @@ async function recalculatePerformanceScores(supabase: ReturnType<typeof createCl
           data: { subject, previous: prevScore, current: rounded, change: -drop },
           is_read: false,
           created_at: new Date().toISOString(),
+          idempotency_key: `score_drop_${daySlug}_${studentId}_${subject}`,
         })
       }
       // Crossed above 80 (achievement)
@@ -385,6 +418,7 @@ async function recalculatePerformanceScores(supabase: ReturnType<typeof createCl
           data: { subject, previous: prevScore, current: rounded, milestone: 80 },
           is_read: false,
           created_at: new Date().toISOString(),
+          idempotency_key: `score_above80_${daySlug}_${studentId}_${subject}`,
         })
       }
       // Dropped below 50 (warning)
@@ -398,6 +432,7 @@ async function recalculatePerformanceScores(supabase: ReturnType<typeof createCl
           data: { subject, previous: prevScore, current: rounded, milestone: 50 },
           is_read: false,
           created_at: new Date().toISOString(),
+          idempotency_key: `score_below50_${daySlug}_${studentId}_${subject}`,
         })
       }
     }
@@ -423,9 +458,11 @@ async function recalculatePerformanceScores(supabase: ReturnType<typeof createCl
     if (hErr) throw new Error(`recalcPerformanceScores upsert history: ${hErr.message}`)
   }
 
-  // 9. Insert notifications
+  // 9. Upsert notifications — idempotency_key prevents duplicates on re-run
   if (notifications.length) {
-    const { error: nErr } = await supabase.from('notifications').insert(notifications)
+    const { error: nErr } = await supabase
+      .from('notifications')
+      .upsert(notifications, { onConflict: 'recipient_id,type,idempotency_key', ignoreDuplicates: true })
     if (nErr) console.warn(`daily-cron: performance score notifications warning: ${nErr.message}`)
     else console.log(`daily-cron: performance_scores — ${notifications.length} notifications sent`)
   }

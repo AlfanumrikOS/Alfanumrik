@@ -637,11 +637,17 @@ export default function ProfilePage() {
               <Button fullWidth variant="ghost" onClick={handleSignOut}>
                 {isHi ? 'लॉग आउट' : 'Sign Out'}
               </Button>
+              {/* DPDP §17 right-to-erasure — routes to the dedicated
+                  /settings/account/delete page which implements the
+                  30-day cooling-off flow (backend D7.1). The legacy
+                  inline confirm modal below is kept as a defensive
+                  fallback only — it is never opened from this button. */}
               <Button
                 fullWidth
                 variant="ghost"
-                onClick={() => setShowDeleteConfirm(true)}
+                onClick={() => router.push('/settings/account/delete')}
                 style={{ color: '#DC2626' }}
+                data-testid="profile-delete-account-link"
               >
                 🗑️ {isHi ? 'खाता हटाओ' : 'Delete Account'}
               </Button>

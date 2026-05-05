@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { XP_RULES } from '@/lib/xp-rules';
+import { XP_RULES } from '@/lib/xp-config';
 import { Card, ProgressBar, Skeleton, StreakBadge } from '@/components/ui';
 
 /* ─── Types ──────────────────────────────────────────────── */

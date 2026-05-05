@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { Card, ProgressBar } from '@/components/ui';
 import XPProgressRing from '@/components/xp/XPProgressRing';
-import { calculateLevel, xpToNextLevel, getLevelName } from '@/lib/xp-rules';
+import { calculateLevel, xpToNextLevel, getLevelName } from '@/lib/xp-config';
 import type { StudentSnapshot, LearningVelocity } from '@/lib/types';
 
 /* ── Types ── */

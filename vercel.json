@@ -1,6 +1,8 @@
 {
   "framework": "nextjs",
-  "regions": ["bom1"],
+  "regions": [
+    "bom1"
+  ],
   "functions": {
     "src/app/api/cron/daily-cron/route.ts": {
       "maxDuration": 300
@@ -41,6 +43,14 @@
     {
       "path": "/api/cron/expired-subscriptions",
       "schedule": "15 */6 * * *"
+    },
+    {
+      "path": "/api/cron/account-purge",
+      "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/pre-debit-notice",
+      "schedule": "0 */6 * * *"
     }
   ],
   "cleanUrls": true,

@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/nextjs';
 import { redactPII } from './src/lib/ops-events-redactor';
+import { sanitizeUrl } from './src/lib/sentry-client-redact';
 
 Sentry.init({
   dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
@@ -38,15 +39,44 @@ Sentry.init({
         delete h.Authorization;
         delete h.cookie;
         delete h.Cookie;
+        // Set-Cookie parity with server + client configs. Added 2026-05-05
+        // (D7 follow-up #4 — Section 11 PII-redaction claim).
+        delete h['set-cookie'];
+        delete h['Set-Cookie'];
         delete h['x-api-key'];
       }
       delete event.request.cookies;
       if (event.request.data) {
         event.request.data = redactPII(event.request.data) as typeof event.request.data;
       }
+      // Strip sensitive query params from request.url. Edge runtime sees
+      // /auth/callback, /api/foxy etc. — both can carry tokens.
+      if (typeof event.request.url === 'string') {
+        event.request.url = sanitizeUrl(event.request.url);
+      }
       if (event.request.query_string && typeof event.request.query_string !== 'string') {
         event.request.query_string = redactPII(event.request.query_string) as typeof event.request.query_string;
       }
+    }
+
+    // Walk breadcrumbs (parity with server config).
+    if (Array.isArray(event.breadcrumbs)) {
+      event.breadcrumbs = event.breadcrumbs.map((bc) => {
+        if (!bc) return bc;
+        if (bc.data) {
+          const scrubbed = redactPII(bc.data) as Record<string, unknown>;
+          for (const k of ['url', 'to', 'from']) {
+            if (typeof scrubbed[k] === 'string') {
+              scrubbed[k] = sanitizeUrl(scrubbed[k] as string);
+            }
+          }
+          bc.data = scrubbed as typeof bc.data;
+        }
+        if (typeof bc.message === 'string') {
+          bc.message = bc.message.replace(/https?:\/\/\S+/g, (m: string) => sanitizeUrl(m));
+        }
+        return bc;
+      });
     }
 
     if (event.extra) event.extra = redactPII(event.extra) as typeof event.extra;

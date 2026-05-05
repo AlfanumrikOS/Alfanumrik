@@ -680,6 +680,18 @@ export const PERMISSIONS = {
   TUTOR_CREATE_WORKSHEET: 'tutor.create_worksheet',
   TUTOR_ASSIGN_WORKSHEET: 'tutor.assign_worksheet',
 
+  // ── Account self-deletion (DPDP Act 2023 Section 17) ─────
+  // Granted to: student, parent, teacher. Lets the owner initiate, cancel,
+  // or check the status of a deletion request for THEIR OWN account.
+  // Routes: /api/v1/account/delete (POST/DELETE/GET).
+  // Seed migration: 20260505120000_account_deletion_flow.sql.
+  // Architect review flag: a self-scope permission for the account owner is
+  // a regulatory floor (DPDP Section 17), not an authorization expansion.
+  // Server-side ownership checks in the route layer are the actual security
+  // boundary; this code just exists so the existing authorizeRequest pattern
+  // doesn't reject the call.
+  ACCOUNT_DELETE: 'account.delete',
+
   // ── Super-admin subject governance (Phase E) ─────────────
   // Granted to: super_admin (and admin, defensively).  Gates the 7 routes
   // under /api/super-admin/subjects/** and /api/super-admin/students/[id]/subjects.

@@ -3,13 +3,40 @@ import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
 import { cancelRazorpaySubscription } from '@/lib/razorpay';
 import { logger } from '@/lib/logger';
+import { logOpsEvent } from '@/lib/ops-events';
 import { paymentCancelSchema, validateBody } from '@/lib/validation';
 
 /**
- * Cancel Subscription Endpoint
+ * Cancel Subscription Endpoint (P11)
  *
- * Cancels auto-renew. Access continues until current period ends.
- * Optionally allows immediate cancellation.
+ * Cancels auto-renew. For end-of-cycle cancels, access continues until
+ * current_period_end. For immediate cancels, downgrades to free.
+ *
+ * P11 invariants enforced here:
+ *   1. SPLIT-BRAIN GUARD — both immediate and scheduled paths route through
+ *      the `atomic_cancel_subscription` RPC. The RPC updates both
+ *      student_subscriptions and students inside ONE transaction with a
+ *      row-level lock, so a partial-write split-brain (status=cancelled but
+ *      subscription_plan='pro') is impossible. Replaces the prior
+ *      two-statement UPDATE pair (lines ~88-103 of the original file).
+ *
+ *   2. RAZORPAY FAILURE GUARD — if Razorpay's cancel API fails (network
+ *      blip, 5xx, etc.), we DO NOT proceed with the local downgrade.
+ *      Razorpay would otherwise keep auto-charging the user while our DB
+ *      shows them as cancelled. Instead we:
+ *        a. Log the failure to subscription_events with type
+ *           'failed_razorpay_cancel' and the error payload.
+ *        b. Enqueue a retry task in task_queue (queue='razorpay_cancel_retry').
+ *        c. Return HTTP 502 so the client knows the cancellation failed
+ *           at the payment provider; subscription remains active.
+ *
+ *   3. WEBHOOK CONTENTION — the RPC takes SELECT ... FOR UPDATE on the
+ *      subscription row, serializing us against any concurrent
+ *      `subscription.cancelled` webhook (which goes through
+ *      atomic_downgrade_subscription, also using FOR UPDATE on the same row).
+ *      Idempotency: the RPC returns 'already_terminal' if the sub is
+ *      already cancelled/expired/halted, so a webhook-then-API race lands
+ *      a clean no-op instead of a double-write.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -73,73 +100,145 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'No active subscription to cancel' }, { status: 400 });
     }
 
-    // Cancel on Razorpay if recurring
+    // ── Razorpay-side cancel FIRST. If this fails, we MUST NOT downgrade
+    //    the local DB — otherwise Razorpay keeps auto-charging the user
+    //    while our DB shows them as cancelled.
     if (sub.razorpay_subscription_id) {
       try {
         await cancelRazorpaySubscription(sub.razorpay_subscription_id, !immediate);
       } catch (err) {
-        logger.error('Razorpay cancel failed', { error: err instanceof Error ? err : new Error(String(err)) });
-        // Continue with local cancellation even if Razorpay call fails
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        logger.error('Razorpay cancel failed — NOT downgrading locally', {
+          error: err instanceof Error ? err : new Error(errorMessage),
+          studentId: studentRow.id,
+          subscriptionId: sub.id,
+        });
+
+        // 1. Persist a forensic audit row so support/ops can reconcile.
+        await admin.from('subscription_events').insert({
+          student_id: studentRow.id,
+          subscription_id: sub.id,
+          event_type: 'failed_razorpay_cancel',
+          plan_code: sub.plan_code,
+          status_before: sub.status,
+          status_after: sub.status,
+          razorpay_subscription_id: sub.razorpay_subscription_id,
+          metadata: {
+            error: errorMessage,
+            immediate,
+            reason,
+            attempted_at: new Date().toISOString(),
+          },
+        });
+
+        // 2. Enqueue a retry on the existing task_queue. Cancellation is
+        //    idempotent at Razorpay's end (cancelling an already-cancelled
+        //    subscription returns the cancelled state), so retries are safe.
+        await admin.from('task_queue').insert({
+          queue_name: 'razorpay_cancel_retry',
+          payload: {
+            student_id: studentRow.id,
+            subscription_id: sub.id,
+            razorpay_subscription_id: sub.razorpay_subscription_id,
+            cancel_at_cycle_end: !immediate,
+            reason,
+            original_error: errorMessage,
+          },
+          max_attempts: 5,
+        });
+
+        // 3. Surface to ops dashboards.
+        await logOpsEvent({
+          category: 'payment',
+          severity: 'critical',
+          source: 'cancel/route.ts',
+          subjectType: 'student',
+          subjectId: studentRow.id,
+          message: 'razorpay_cancel_api_failed',
+          context: {
+            razorpay_subscription_id: sub.razorpay_subscription_id,
+            plan_code: sub.plan_code,
+            immediate,
+            error: errorMessage,
+          },
+        });
+
+        // 4. 502 Bad Gateway — the upstream payment provider failed. Do
+        //    NOT proceed with local downgrade. Subscription stays active.
+        return NextResponse.json({
+          success: false,
+          error: 'Cancellation failed at payment provider; we will retry. Your subscription remains active.',
+          status: 'razorpay_cancel_pending_retry',
+        }, { status: 502 });
       }
     }
 
-    if (immediate) {
-      // Immediate cancel: downgrade now
-      await admin
-        .from('student_subscriptions')
-        .update({
-          status: 'cancelled',
-          auto_renew: false,
-          cancelled_at: new Date().toISOString(),
-          cancel_reason: reason,
-          ended_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', sub.id);
+    // ── Atomic local cancel via RPC. Single transaction, FOR UPDATE row
+    //    lock. Returns the outcome so we can shape the response without
+    //    a second read.
+    const { data: rpcResult, error: rpcError } = await admin.rpc('atomic_cancel_subscription', {
+      p_student_id: studentRow.id,
+      p_immediate: immediate,
+      p_reason: reason,
+    });
 
-      await admin
-        .from('students')
-        .update({ subscription_plan: 'free' })
-        .eq('id', studentRow.id);
-
-      // Log event
-      await admin.from('subscription_events').insert({
-        student_id: studentRow.id,
-        subscription_id: sub.id,
-        event_type: 'cancelled_immediately',
-        plan_code: sub.plan_code,
-        status_before: sub.status,
-        status_after: 'cancelled',
-        metadata: { reason },
+    if (rpcError) {
+      logger.error('atomic_cancel_subscription RPC failed', {
+        error: new Error(rpcError.message),
+        studentId: studentRow.id,
+        subscriptionId: sub.id,
       });
 
+      // Razorpay cancel already succeeded. The DB write failed. This is a
+      // P11 reconciliation case — flag for ops, return 503 so the client
+      // can retry; the next retry will idempotently no-op at Razorpay
+      // (already cancelled) and try the DB write again.
+      await logOpsEvent({
+        category: 'payment',
+        severity: 'critical',
+        source: 'cancel/route.ts',
+        subjectType: 'student',
+        subjectId: studentRow.id,
+        message: 'cancel_db_write_failed_after_razorpay_succeeded',
+        context: {
+          razorpay_subscription_id: sub.razorpay_subscription_id,
+          plan_code: sub.plan_code,
+          immediate,
+          rpc_error: rpcError.message,
+        },
+      });
+
+      return NextResponse.json({
+        success: false,
+        error: 'Cancellation succeeded at payment provider but our records are catching up. Please refresh in a moment.',
+        status: 'reconciliation_required',
+      }, { status: 503 });
+    }
+
+    // RPC returns `[{ outcome, plan_code_before, status_before }]`
+    const outcome = Array.isArray(rpcResult) && rpcResult.length > 0
+      ? (rpcResult[0] as { outcome: string }).outcome
+      : 'unknown';
+
+    // Audit-trail event — non-blocking.
+    await admin.from('subscription_events').insert({
+      student_id: studentRow.id,
+      subscription_id: sub.id,
+      event_type: immediate ? 'cancelled_immediately' : 'cancel_scheduled',
+      plan_code: sub.plan_code,
+      status_before: sub.status,
+      status_after: immediate ? 'cancelled' : sub.status,
+      razorpay_subscription_id: sub.razorpay_subscription_id,
+      metadata: { reason, outcome, access_until: sub.current_period_end },
+    });
+
+    if (immediate) {
       return NextResponse.json({
         success: true,
         status: 'cancelled',
         message: 'Subscription cancelled. You have been downgraded to the free plan.',
       });
     }
-
-    // End-of-cycle cancel: keep access until period end
-    await admin
-      .from('student_subscriptions')
-      .update({
-        auto_renew: false,
-        cancelled_at: new Date().toISOString(),
-        cancel_reason: reason,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', sub.id);
-
-    await admin.from('subscription_events').insert({
-      student_id: studentRow.id,
-      subscription_id: sub.id,
-      event_type: 'cancel_scheduled',
-      plan_code: sub.plan_code,
-      status_before: sub.status,
-      status_after: sub.status,
-      metadata: { reason, access_until: sub.current_period_end },
-    });
 
     return NextResponse.json({
       success: true,

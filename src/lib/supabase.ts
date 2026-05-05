@@ -8,7 +8,7 @@
  */
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { XP_RULES } from './xp-rules';
+import { XP_RULES } from './xp-config';
 import { calculateScorePercent, calculateQuizXP } from './scoring';
 
 // Re-export from the canonical client module — new code uses supabase-client.ts

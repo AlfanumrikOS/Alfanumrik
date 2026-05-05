@@ -7,7 +7,7 @@ import { AuthScreen } from '@/components/auth/AuthScreen';
 import { getRoleDestination } from '@/lib/identity';
 
 export default function LoginPage() {
-  const { isLoggedIn, isLoading, activeRole } = useAuth();
+  const { isLoggedIn, isLoading, activeRole, isHi } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -55,9 +55,17 @@ export default function LoginPage() {
       {errorParam && (
         <div className="w-full max-w-sm mt-4 px-4">
           <div className="px-4 py-3 rounded-xl text-sm font-medium" style={{ background: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA' }}>
-            {errorParam === 'auth_callback_failed' ? 'Email verification failed. Please try signing up again.' :
-             errorParam === 'verification_failed' ? 'Verification link expired or invalid. Please request a new one.' :
-             'Authentication error. Please try again.'}
+            {errorParam === 'auth_callback_failed'
+              ? (isHi
+                  ? 'ईमेल सत्यापन विफल। कृपया दोबारा साइन-अप करें।'
+                  : 'Email verification failed. Please try signing up again.')
+              : errorParam === 'verification_failed'
+              ? (isHi
+                  ? 'सत्यापन लिंक की अवधि समाप्त हो गई या यह अमान्य है। कृपया नया अनुरोध करें।'
+                  : 'Verification link expired or invalid. Please request a new one.')
+              : (isHi
+                  ? 'प्रमाणीकरण त्रुटि। कृपया पुनः प्रयास करें।'
+                  : 'Authentication error. Please try again.')}
           </div>
         </div>
       )}

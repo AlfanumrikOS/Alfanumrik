@@ -20,7 +20,7 @@
 
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
-import { XP_RULES } from '@/lib/xp-rules';
+import { XP_RULES } from '@/lib/xp-config';
 
 // ── Types ───────────────────────────────────────────────────────
 

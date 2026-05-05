@@ -30,6 +30,18 @@ export default defineConfig({
           ...INTEGRATION_TEST_PATTERNS,
         ],
     globals: true,
+    // ── Test timeout (raised 2026-05-05 for CI green) ──
+    // The default 5000ms timeout was insufficient for tests that perform a
+    // dynamic `await import('@/lib/admin-auth' | '@/lib/usage' | '@/lib/quiz-engine')`
+    // under heavy parallel load. These modules transitively pull in
+    // @supabase/supabase-js + zod + the env validator, and the JSDOM SSR
+    // transform can take 4-7s under contention (full-suite total transform
+    // time was 98s across 84 files). The first dynamic import in a fresh
+    // worker hit the 5s wall on 6 tests — all of which pass in <1.5s in
+    // isolation. Raising the floor to 15s leaves headroom without masking
+    // genuine hangs.
+    testTimeout: 15000,
+    hookTimeout: 15000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json'],
@@ -98,7 +110,23 @@ export default defineConfig({
         // TODO(assessment): restore xp-rules.ts branches threshold to 90 by
         // adding tests for the daily-cap clamp, perfect-score combo, and
         // streak-bonus edge cases.
+        //
+        // D2-B (2026-05-05): xp-rules.ts is now a thin re-export shim
+        // (`export * from './xp-config'`). The XP economy live source moved
+        // to xp-config.ts. Both files share the same 90/90/90/90 floor:
+        // - xp-rules.ts: trivial — single re-export line, V8 reports 100% on
+        //   any test that touches a re-exported symbol.
+        // - xp-config.ts: the real surface area; all 234 P2 tests now import
+        //   from this file (8 test files repointed).
+        // Keeping both in the threshold map prevents regressions if a future
+        // change either reintroduces logic into the shim or detaches xp-config.
         'src/lib/xp-rules.ts': {
+          statements: 90,
+          branches: 90,
+          functions: 90,
+          lines: 90,
+        },
+        'src/lib/xp-config.ts': {
           statements: 90,
           branches: 90,
           functions: 90,

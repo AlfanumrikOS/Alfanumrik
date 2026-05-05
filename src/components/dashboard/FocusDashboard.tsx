@@ -20,7 +20,7 @@ import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import { supabase } from '@/lib/supabase';
 import { Button, ProgressBar, Skeleton } from '@/components/ui';
-import { calculateLevel, xpToNextLevel, getLevelName, XP_PER_LEVEL } from '@/lib/xp-rules';
+import { calculateLevel, xpToNextLevel, getLevelName, XP_PER_LEVEL } from '@/lib/xp-config';
 import type { CmeAction } from '@/lib/types';
 
 interface FocusDashboardProps {

@@ -7,11 +7,6 @@ import RegisterSW from '@/lib/RegisterSW';
 import JsonLd from '@/components/JsonLd';
 import LayoutDeferredChrome from '@/components/LayoutDeferredChrome';
 import DemoModeWrapper from '@/components/DemoModeWrapper';
-// Marking-Authenticity Wave 2: PostHog SDK init + App Router pageview tracker.
-// PostHogProvider is itself a Client Component ('use client'); posthog-js is
-// loaded via dynamic import() INSIDE its init() so the heavy SDK stays off the
-// shared chunk until NEXT_PUBLIC_POSTHOG_ENABLED === 'true' at runtime. P10 budget.
-import PostHogProvider from '@/components/PostHogProvider';
 
 export const metadata: Metadata = {
   title: {
@@ -93,12 +88,9 @@ export default function RootLayout({
             <DemoModeWrapper />
             <RegisterSW />
             {/* Non-critical client-only chrome (consent banner, maintenance
-                banner, offline indicator). Lazy-loaded to keep shared JS
-                under the P10 budget. */}
+                banner, offline indicator, PostHog SDK init). Lazy-loaded
+                to keep shared JS under the P10 budget. */}
             <LayoutDeferredChrome />
-            {/* PostHog browser SDK init + App Router pageview tracker.
-                No-op when NEXT_PUBLIC_POSTHOG_ENABLED is unset. */}
-            <PostHogProvider />
           </AuthProvider>
         </SchoolProvider>
       </body>

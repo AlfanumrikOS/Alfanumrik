@@ -1,0 +1,16 @@
+title = "Alfanumrik gitleaks configuration"
+
+# Extend the default gitleaks ruleset; only ADD path-based allowlists for
+# test fixtures that intentionally use PII-shaped sentinel strings to verify
+# our redactor catches them.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "PII test sentinels — intentional fake values for redactor verification"
+paths = [
+    'src/__tests__/ai-prompt-pii\.test\.ts',
+    'src/__tests__/sentry-pii-redaction\.test\.ts',
+    'src/__tests__/sentry/.*\.test\.ts',
+]

@@ -8,7 +8,7 @@ import { useDashboardData } from '@/lib/swr';
 import { Card, StatCard, ProgressBar, SectionHeader, SubjectChip, Avatar, BottomNav, MasteryRing } from '@/components/ui';
 import TrustFooter from '@/components/TrustFooter';
 import { DashboardSkeleton } from '@/components/Skeleton';
-import { calculateLevel, xpToNextLevel, getLevelName } from '@/lib/xp-rules';
+import { calculateLevel, xpToNextLevel, getLevelName } from '@/lib/xp-config';
 import { getLevelFromScore } from '@/lib/score-config';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import type { StudentLearningProfile, CurriculumTopic } from '@/lib/types';
@@ -20,16 +20,13 @@ import SubjectProgress from '@/components/dashboard/SubjectProgress';
 import TodaysPlan from '@/components/dashboard/TodaysPlan';
 import ProgressSnapshot from '@/components/dashboard/ProgressSnapshot';
 import ExamReadiness from '@/components/dashboard/ExamReadiness';
-import DailyChallenge from '@/components/dashboard/DailyChallenge';
 import FocusDashboard from '@/components/dashboard/FocusDashboard';
 import PendingLinkApproval, { type PendingLink } from '@/components/dashboard/PendingLinkApproval';
-import ReviewsDueCard from '@/components/dashboard/ReviewsDueCard';
 import ScoreHero from '@/components/score/ScoreHero';
 import ScoreCard from '@/components/score/ScoreCard';
 import CoinBalance from '@/components/coins/CoinBalance';
 import DailyChallengeCard from '@/components/challenge/DailyChallengeCard';
 import ChallengeStreakBadge from '@/components/challenge/StreakBadge';
-import DailyLabMission from '@/components/dashboard/DailyLabMission';
 
 
 const BLOOM_LABELS: Record<string, { icon: string; label: string; labelHi: string }> = {
@@ -77,15 +74,6 @@ export default function Dashboard() {
   }>>([]);
   const [coinBalance, setCoinBalance] = useState<number>(0);
 
-  // STEM Lab streak — fed by `student_lab_streaks` table maintained by the
-  // `complete_experiment` RPC. Null until the first fetch resolves; rendered
-  // only when the student has either an active streak or any past experiments.
-  const [labStreak, setLabStreak] = useState<{
-    current_streak: number;
-    longest_streak: number;
-    total_experiments: number;
-  } | null>(null);
-
   // Daily challenge (Concept Chain) state
   const [challengeUnlocked, setChallengeUnlocked] = useState(false);
   const [challengeStreak, setChallengeStreak] = useState(0);
@@ -107,13 +95,6 @@ export default function Dashboard() {
     // Redirect students who haven't completed onboarding (grade/board not set)
     if (!isLoading && isLoggedIn && activeRole === 'student' && student && !student.onboarding_completed) {
       router.replace('/onboarding');
-    }
-    // Edge case: logged in, but student profile is missing AND no other role assigned.
-    // The render-time fallback at the bottom can't call router.replace() during render
-    // (React anti-pattern: setState/router during render triggers strict-mode warnings),
-    // so we kick the redirect from here.
-    if (!isLoading && isLoggedIn && !student && activeRole !== 'teacher' && activeRole !== 'guardian') {
-      router.replace('/login');
     }
   }, [isLoading, isLoggedIn, activeRole, student, router]);
 
@@ -192,25 +173,6 @@ export default function Dashboard() {
       }
     } catch {
       // Non-fatal: coin balance defaults to 0
-    }
-
-    // Fetch STEM Lab streak. RLS allows the student's own row; if none exists
-    // (never run an experiment) the row is simply absent and the card hides.
-    try {
-      const { data: lsData } = await supabase
-        .from('student_lab_streaks')
-        .select('current_streak, longest_streak, total_experiments')
-        .eq('student_id', student.id)
-        .maybeSingle();
-      if (lsData) {
-        setLabStreak({
-          current_streak: Number(lsData.current_streak) || 0,
-          longest_streak: Number(lsData.longest_streak) || 0,
-          total_experiments: Number(lsData.total_experiments) || 0,
-        });
-      }
-    } catch {
-      // Non-fatal: lab streak card simply does not render
     }
 
     const rawSelected = (student.selected_subjects || [student.preferred_subject].filter(Boolean)) as string[];
@@ -417,10 +379,11 @@ export default function Dashboard() {
   // Show skeleton while loading, but don't block non-student roles — they'll be redirected
   if (isLoading) return <DashboardSkeleton />;
   if (!student) {
-    // Non-student role (teacher/guardian) — redirect is already in flight from useEffect.
-    // No student profile + no other role: redirect-to-login is dispatched from the
-    // useEffect at the top of this component (NOT from here — calling router.replace()
-    // during render is a React anti-pattern that breaks strict-mode).
+    // Non-student role (teacher/guardian) — redirect is already in flight from useEffect
+    // Show skeleton briefly while redirect completes
+    if (activeRole === 'teacher' || activeRole === 'guardian') return <DashboardSkeleton />;
+    // No student profile and no other role — something's wrong, redirect to login
+    router.replace('/login');
     return <DashboardSkeleton />;
   }
 
@@ -438,27 +401,6 @@ export default function Dashboard() {
     ? Math.round(perfScores.reduce((sum, ps) => sum + ps.overall_score, 0) / perfScores.length)
     : 0;
   const overallPerfLevel = getLevelFromScore(overallPerfScore);
-
-  // Phase 1.2: build the Foxy entry URL with subject + grade pre-filled so a
-  // student doesn't have to pick a subject before sending their first message.
-  // Subject choice priority: preferred_subject (validated against allowedSubjects)
-  // → first allowed subject → no subject param (falls back to legacy /foxy).
-  // The Foxy page itself re-validates subject against allowedSubjects (it has
-  // the authoritative list once loaded), so this is a best-effort hint.
-  const buildFoxyHref = (): string => {
-    const allowedCodes = new Set(allowedSubjects.map((s) => s.code));
-    let subject: string | undefined;
-    if (student.preferred_subject && allowedCodes.has(student.preferred_subject)) {
-      subject = student.preferred_subject;
-    } else if (allowedSubjects.length > 0) {
-      subject = allowedSubjects[0].code;
-    }
-    if (!subject) return '/foxy';
-    const params = new URLSearchParams({ subject, source: 'dashboard' });
-    if (student.grade) params.set('grade', String(student.grade).replace('Grade ', '').trim());
-    return `/foxy?${params.toString()}`;
-  };
-  const foxyHref = buildFoxyHref();
 
   // Filter subjects by stream for grades 11-12
   const streamFilteredSubjects = (() => {
@@ -674,12 +616,6 @@ export default function Dashboard() {
           );
         })()}
 
-        {/* ═══ SPACED-REPETITION CTA (Phase 2.D) ═══
-            High-visibility prompt that pulls the student into /review when
-            concept_mastery.next_review_date is due. Renders nothing when
-            dueCount === 0. Self-fetches via SWR and refreshes every 60s. */}
-        <ReviewsDueCard />
-
         {/* ═══ FOCUS ZONE: 3 cards — "One Thing at a Time" ═══ */}
         <FocusDashboard
           studentId={student.id}
@@ -692,18 +628,12 @@ export default function Dashboard() {
           preferredSubject={student.preferred_subject}
         />
 
-        {/* ═══ DAILY CHALLENGE — hero card, always visible above fold ═══ */}
-        {/* Challenges are time-sensitive and drive daily engagement. They must
-            be visible without the user having to tap "Show More". */}
-        <DailyChallenge
-          isHi={isHi}
-          studentName={student.name}
-          streak={streak}
-          grade={student.grade}
-          studentId={student.id}
-        />
-
         {/* ═══ CONCEPT CHAIN DAILY CHALLENGE — links to /challenge ═══ */}
+        {/* Single daily-challenge surface (Concept Chain). The legacy
+            <DailyChallenge> hero was removed 2026-05-05 (Wave 1 launch fixes)
+            because it duplicated this widget above-the-fold. Component file
+            retained at src/components/dashboard/DailyChallenge.tsx for
+            potential future reuse. */}
         {todaySubject && (
           <DailyChallengeCard
             studentId={student.id}
@@ -749,7 +679,7 @@ export default function Dashboard() {
               📚 {isHi ? 'पढ़ना शुरू करो →' : 'Start Learning →'}
             </button>
             <button
-              onClick={() => router.push(foxyHref)}
+              onClick={() => router.push('/foxy')}
               className="w-full mt-2 py-2.5 rounded-xl text-xs font-semibold transition-all active:scale-[0.98]"
               style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}
             >
@@ -787,7 +717,7 @@ export default function Dashboard() {
                   done: totalXp > 0 && profiles.length > 0,
                   icon: '🦊',
                   label: isHi ? 'Foxy से कोई सवाल पूछो' : 'Ask Foxy a question',
-                  action: () => router.push(foxyHref),
+                  action: () => router.push('/foxy'),
                 },
                 {
                   done: (snapshot?.quizzes_taken ?? 0) >= 3,
@@ -860,7 +790,7 @@ export default function Dashboard() {
                 onClick={() =>
                   topic.chapter_number
                     ? router.push(`/learn/${student.preferred_subject}/${topic.chapter_number}`)
-                    : router.push(foxyHref)
+                    : router.push('/foxy')
                 }
                 className="flex items-center gap-4 !p-4"
               >
@@ -1100,7 +1030,7 @@ export default function Dashboard() {
                   ))}
                 </div>
                 <button
-                  onClick={() => router.push(foxyHref)}
+                  onClick={() => router.push('/foxy')}
                   className="mt-2 text-xs font-bold px-3 py-1.5 rounded-lg"
                   style={{ background: 'rgba(232,88,28,0.1)', color: 'var(--orange)' }}
                 >
@@ -1114,72 +1044,7 @@ export default function Dashboard() {
         {/* Smart "What to do now?" CTA — context-driven, single recommendation */}
         <QuickActions
           isHi={isHi}
-          foxyHref={foxyHref}
         />
-
-        {/* ═══ DAILY LAB MISSION (Tier 2 R8) ═══
-            Deterministic per-student-per-day pick from /api/student/daily-lab.
-            Drives discovery of the long-tail simulation catalog (~119 sims,
-            only ~10 popular). The card returns null if the API errors so the
-            dashboard degrades gracefully. Self-contained — no extra dashboard
-            state needed. Bundle delta is well under the 2 kB target. */}
-        <SectionErrorBoundary section="Daily Lab Mission">
-          <DailyLabMission isHi={isHi} />
-        </SectionErrorBoundary>
-
-        {/* ═══ STEM LAB STREAK ═══
-            Small status card linking to /stem-centre. Shown only if the
-            student has at least one experiment in their history (active
-            streak OR a non-zero lifetime count). Until then we show a
-            zero-state CTA so a student who has never opened the lab still
-            gets a discoverability nudge. */}
-        {labStreak !== null && (labStreak.current_streak > 0 || labStreak.total_experiments > 0) ? (
-          <button
-            onClick={() => router.push('/stem-centre')}
-            className="w-full rounded-2xl p-4 flex items-center gap-3 transition-all active:scale-[0.98] min-h-[44px]"
-            style={{
-              background: 'linear-gradient(135deg, rgba(232,88,28,0.08), rgba(245,166,35,0.08))',
-              border: '1px solid rgba(232,88,28,0.2)',
-            }}
-            aria-label={isHi ? 'STEM लैब खोलें' : 'Open STEM Lab'}
-          >
-            <span className="text-2xl flex-shrink-0">🔬</span>
-            <div className="flex-1 text-left">
-              <div className="text-sm font-bold" style={{ color: 'var(--orange)' }}>
-                {isHi
-                  ? `लैब स्ट्रीक: ${labStreak.current_streak} दिन`
-                  : `Lab Streak: ${labStreak.current_streak} ${labStreak.current_streak === 1 ? 'day' : 'days'}`}
-              </div>
-              <div className="text-xs text-[var(--text-3)]">
-                {isHi
-                  ? `${labStreak.total_experiments} प्रयोग पूरे · सर्वाधिक ${labStreak.longest_streak} दिन`
-                  : `${labStreak.total_experiments} experiments · best ${labStreak.longest_streak}d`}
-              </div>
-            </div>
-            <span className="text-[var(--text-3)]">→</span>
-          </button>
-        ) : labStreak !== null ? (
-          <button
-            onClick={() => router.push('/stem-centre')}
-            className="w-full rounded-2xl p-4 flex items-center gap-3 transition-all active:scale-[0.98] min-h-[44px]"
-            style={{
-              background: 'rgba(232,88,28,0.06)',
-              border: '1px dashed rgba(232,88,28,0.3)',
-            }}
-            aria-label={isHi ? 'STEM लैब खोलें' : 'Open STEM Lab'}
-          >
-            <span className="text-2xl flex-shrink-0">🔬</span>
-            <div className="flex-1 text-left">
-              <div className="text-sm font-bold" style={{ color: 'var(--orange)' }}>
-                {isHi ? 'STEM लैब आज़माओ!' : 'Try a STEM lab!'}
-              </div>
-              <div className="text-xs text-[var(--text-3)]">
-                {isHi ? 'पहला प्रयोग पूरा करो और सिक्के कमाओ' : 'Complete your first experiment and earn coins'}
-              </div>
-            </div>
-            <span className="text-[var(--text-3)]">→</span>
-          </button>
-        ) : null}
 
         {/* Mini Leaderboard — competitive motivation, prominent for CBSE students */}
         {(studentRank !== null || totalXp > 0) && (

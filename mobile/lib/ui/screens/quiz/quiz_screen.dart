@@ -453,7 +453,7 @@ class _ResultScreen extends ConsumerWidget {
 }
 
 /// Friendly bilingual banner shown when `atomic_quiz_profile_update`
-/// clamps today's XP at the daily cap (200, see web `xp-rules.ts`). The
+/// clamps today's XP at the daily cap (200, see web `xp-config.ts`). The
 /// server passes through `xp_capped`, `effective_xp`, `xp_uncapped` in
 /// the RPC JSONB; this widget reads those off [QuizResult].
 ///
