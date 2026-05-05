@@ -7,7 +7,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { track } from '@/lib/analytics';
 import { submitQuizResults, saveCognitiveMetrics, saveQuestionResponses, supabase, updateChapterProgress, startQuizSession } from '@/lib/supabase';
 import { assembleQuiz } from '@/lib/quiz-assembler';
-import { XP_RULES } from '@/lib/xp-rules';
+import { XP_RULES } from '@/lib/xp-config';
 import { Card, Button, ProgressBar, LoadingFoxy } from '@/components/ui';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import QuizSetup from '@/components/quiz/QuizSetup';
@@ -763,14 +763,19 @@ export default function QuizPage() {
         }
 
         // ── ANTI-CHEAT: Client-side validation before submission (P3) ──
-        // 1. Minimum time: 3 seconds avg per MCQ question (bots submit instantly) — REJECT
-        // Written answers have their own time budgets and are excluded from this check
+        // 1. Minimum time: 3 seconds avg per question (bots submit instantly) — REJECT
+        // Applies to ALL response types (MCQ, SA, LA). Pure short-answer or
+        // long-answer quizzes contain zero MCQ responses, so the previous
+        // guard (mcqResponses.length > 0) silently bypassed the check on
+        // those quizzes. P3 invariant requires the check whenever any
+        // response exists, regardless of question type.
         const mcqResponses = allResponses.filter(r => r.selected_option >= 0);
-        const avgTimePerQ = mcqResponses.length > 0 ? timer / allResponses.length : (allResponses.length > 0 ? timer / allResponses.length : 0);
-        if (mcqResponses.length > 0 && avgTimePerQ < 3) {
-          console.warn(`[AntiCheat] Quiz completed too fast: ${timer}s for ${allResponses.length} questions (avg ${avgTimePerQ.toFixed(1)}s < 3s)`);
+        const totalResponses = allResponses.length;
+        const avgTimePerQ = totalResponses > 0 ? timer / totalResponses : 0;
+        if (totalResponses > 0 && avgTimePerQ < 3) {
+          console.warn(`[AntiCheat] Quiz completed too fast: ${timer}s for ${totalResponses} questions (avg ${avgTimePerQ.toFixed(1)}s < 3s)`);
           setResults({
-            total: allResponses.length,
+            total: totalResponses,
             correct: allResponses.filter(r => r.is_correct).length,
             score_percent: 0,
             xp_earned: 0,
