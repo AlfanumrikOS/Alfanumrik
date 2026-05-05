@@ -336,6 +336,34 @@ describe('FOXY_SAFETY_RAILS — D3 Step 4 ported rules (P12)', () => {
     expect(routeSrc).toContain("I'll look again");
   });
 
+  // P7 bilingual parity (launch-readiness, 2026-05-05): the RAG-only
+  // refusal MUST also exist in Hindi so a Devanagari-script question
+  // gets a Devanagari-script refusal. The model is instructed to pick
+  // the variant matching the student's language. Both variants must
+  // remain present for parity to hold.
+  it('includes the Hindi parity refusal (P7 launch-readiness)', () => {
+    // Devanagari opening — "I don't have a verified source for this in
+    // your textbook" — uses पाठ्यपुस्तक (textbook) and सत्यापित स्रोत
+    // (verified source).
+    expect(routeSrc).toContain(
+      'मेरे पास आपकी पाठ्यपुस्तक में इसके लिए सत्यापित स्रोत नहीं है',
+    );
+    // Devanagari follow-up — "tell me which chapter you're studying,
+    // I'll look again" — uses अध्याय (chapter) and फिर से देखूंगा
+    // (will look again).
+    expect(routeSrc).toContain('कौन सा अध्याय पढ़ रहे हैं');
+    expect(routeSrc).toContain('मैं फिर से देखूंगा');
+  });
+
+  it('instructs the model to pick the language variant matching the student', () => {
+    // The rule must explicitly steer the model to language-match so the
+    // Hindi refusal isn't dead text — it has to fire on Hindi questions.
+    // Use a regex that tolerates the natural newline break in the rendered
+    // prompt ("…matches\n   the language the student wrote in").
+    expect(routeSrc).toMatch(/matches\s+the language the student wrote in/);
+    expect(routeSrc).toContain('Devanagari script');
+  });
+
   it('preserves the original five safety rails (additive change)', () => {
     expect(routeSrc).toContain('1. Scope:');
     expect(routeSrc).toContain('2. Age appropriateness:');

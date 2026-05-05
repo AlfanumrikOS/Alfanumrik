@@ -39,8 +39,21 @@
  *   401 { error: 'unauthorized' }                                  — wrong cron secret
  *   5xx { error: 'send_failed' | 'audit_failed', detail }          — retry from cron
  *
- * Bilingual readiness (P7): English template only in v1; Hindi template is
- * tracked as ops follow-up D7.3.h. Subject line is bilingual already.
+ * Bilingual readiness (P7): both English AND Hindi bodies are now sent in
+ * every notice (launch-readiness, 2026-05-05 — D7.3.h closed). The cron
+ * driver (src/app/api/cron/pre-debit-notice/route.ts) does not currently
+ * pass a preferred-language hint, so the safest RBI-compliant default is
+ * "send both", English first then Hindi, separated by a divider. This
+ * preserves the regulated information for both English-speaking and
+ * Hindi-speaking customers without forcing a schema change to the cron
+ * payload. If a future request body adds `preferred_language: 'en'|'hi'`
+ * the buildEmail() helper can be tightened to render only that variant.
+ *
+ * The Hindi text below intentionally keeps the technical tokens — INR/
+ * Razorpay/Alfanumrik/Settings → Subscription — in English/Latin script
+ * because that is what the customer sees in the app UI (P7 carve-out for
+ * brand and navigation strings). Currency symbol ₹ + numeric amount and
+ * IST date strings are language-neutral.
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -94,13 +107,21 @@ function buildIdempotencyKey(subscriptionId: string, chargeDateIso: string): str
   return `pre_debit_${subscriptionId}_${day}`
 }
 
-// ─── Email template (P7: English; Hindi pending) ─────────────────────────────
+// ─── Email template (P7: bilingual — English + Hindi in every notice) ───────
 function buildEmail(req: PreDebitRequest): { subject: string; html: string; text: string } {
   const chargeDate = new Date(req.charge_date_iso)
   const dateStr = chargeDate.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' })
+  // Hindi-locale rendering of the same date for the Hindi block. Modern
+  // Deno + V8 ships full ICU so 'hi-IN' produces Devanagari month/weekday
+  // names ("सोमवार", "जनवरी" etc). This is graceful — if the runtime
+  // ever ships a stripped ICU we still get a valid date string back.
+  const dateStrHi = chargeDate.toLocaleDateString('hi-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' })
   const windowStr = '00:00 — 23:59 IST (Razorpay processing window)'
+  const windowStrHi = '00:00 — 23:59 IST (Razorpay प्रोसेसिंग विंडो)'
   const cycle = req.billing_cycle === 'yearly' ? 'yearly' : 'monthly'
+  const cycleHi = req.billing_cycle === 'yearly' ? 'वार्षिक' : 'मासिक'
   const cancelByDate = new Date(chargeDate.getTime() - 86_400_000).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' })
+  const cancelByDateHi = new Date(chargeDate.getTime() - 86_400_000).toLocaleDateString('hi-IN', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' })
 
   // Subject line is intentionally bilingual to satisfy P7 entry-point parity.
   const subject = `Reminder: ₹${req.amount_inr} auto-debit on ${dateStr} | आपके Alfanumrik subscription का auto-debit ${dateStr} को`
@@ -141,6 +162,37 @@ function buildEmail(req: PreDebitRequest): { subject: string; html: string; text
       <a href="mailto:${SUPPORT_EMAIL}" style="color:#6C5CE7;">${SUPPORT_EMAIL}</a>.
       A receipt will be emailed to you after the charge succeeds.
     </p>
+
+    <!-- ── Hindi parity block (P7 launch-readiness) ────────────────────── -->
+    <hr style="border:none;border-top:1px dashed #E5E7EB;margin:28px 0;">
+
+    <p style="margin:0 0 16px;font-size:15px;color:#111827;" lang="hi">नमस्ते,</p>
+    <p style="margin:0 0 16px;font-size:15px;color:#111827;line-height:1.7;" lang="hi">
+      यह आपकी अनिवार्य अग्रिम सूचना है: आपके Alfanumrik <strong>${req.plan_name}</strong> सब्सक्रिप्शन के लिए, आपके पंजीकृत भुगतान विधि से auto-debit किया जाएगा।
+    </p>
+
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F8F9FA;border-radius:8px;padding:18px;margin:16px 0;" lang="hi">
+      <tr><td style="font-size:13px;color:#6B7280;padding:4px 0;">राशि</td><td style="font-size:15px;color:#111827;font-weight:700;text-align:right;padding:4px 0;">₹${req.amount_inr.toLocaleString('en-IN')}</td></tr>
+      <tr><td style="font-size:13px;color:#6B7280;padding:4px 0;">कटौती की तिथि</td><td style="font-size:15px;color:#111827;font-weight:600;text-align:right;padding:4px 0;">${dateStrHi}</td></tr>
+      <tr><td style="font-size:13px;color:#6B7280;padding:4px 0;">समय अवधि</td><td style="font-size:13px;color:#111827;text-align:right;padding:4px 0;">${windowStrHi}</td></tr>
+      <tr><td style="font-size:13px;color:#6B7280;padding:4px 0;">योजना</td><td style="font-size:15px;color:#111827;text-align:right;padding:4px 0;">${req.plan_name} (${cycleHi})</td></tr>
+      <tr><td style="font-size:13px;color:#6B7280;padding:4px 0;">व्यापारी</td><td style="font-size:13px;color:#111827;text-align:right;padding:4px 0;">${MERCHANT_NAME}</td></tr>
+    </table>
+
+    <div style="background:#FEF3C7;border-left:4px solid #F59E0B;border-radius:6px;padding:14px 16px;margin:16px 0;" lang="hi">
+      <p style="margin:0;font-size:13px;color:#92400E;line-height:1.6;">
+        <strong>रद्द करना चाहते हैं?</strong> <strong>${cancelByDateHi}</strong> से पहले कभी भी
+        <a href="${SITE_URL}/billing" style="color:#92400E;text-decoration:underline;">Settings → Subscription</a> से रद्द करें।
+        इस तिथि के बाद रद्द करने पर केवल अगला बिलिंग चक्र रुकेगा, यह कटौती नहीं रुकेगी।
+      </p>
+    </div>
+
+    <p style="margin:16px 0 0;font-size:13px;color:#6B7280;line-height:1.7;" lang="hi">
+      प्रश्नों के लिए, इस ईमेल का उत्तर दें या
+      <a href="mailto:${SUPPORT_EMAIL}" style="color:#6C5CE7;">${SUPPORT_EMAIL}</a>
+      पर लिखें। कटौती सफल होने के बाद आपको रसीद ईमेल की जाएगी।
+    </p>
+    <!-- ── /Hindi parity block ──────────────────────────────────────────── -->
   </td></tr>
   <tr><td style="padding:18px 32px;background:#F8F9FA;border-top:1px solid #E5E7EB;text-align:center;">
     <p style="margin:0;font-size:11px;color:#9CA3AF;line-height:1.6;">
@@ -163,6 +215,20 @@ function buildEmail(req: PreDebitRequest): { subject: string; html: string; text
     `Cancel before ${cancelByDate} from ${SITE_URL}/billing.`,
     ``,
     `Support: ${SUPPORT_EMAIL}`,
+    ``,
+    `---`,
+    ``,
+    // ── Hindi parity block (P7 launch-readiness, 2026-05-05) ──
+    `आगामी Auto-Debit सूचना (RBI द्वारा अनिवार्य)`,
+    ``,
+    `${dateStrHi} को आपके Alfanumrik ${req.plan_name} (${cycleHi}) सब्सक्रिप्शन के लिए ₹${req.amount_inr.toLocaleString('en-IN')} का auto-debit किया जाएगा।`,
+    ``,
+    `समय अवधि: ${windowStrHi}`,
+    `व्यापारी: ${MERCHANT_NAME}`,
+    ``,
+    `रद्द करने के लिए: ${cancelByDateHi} से पहले ${SITE_URL}/billing पर जाएं (Settings → Subscription)।`,
+    ``,
+    `सहायता: ${SUPPORT_EMAIL}`,
   ].join('\n')
 
   return { subject, html, text }

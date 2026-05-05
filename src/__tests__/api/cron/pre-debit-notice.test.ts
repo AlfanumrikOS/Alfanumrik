@@ -12,6 +12,8 @@
  *   - Empty batch: returns 200 with sent=0.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 // ─── Mock state ──────────────────────────────────────────────────────────────
 type SubRow = {
@@ -312,5 +314,74 @@ describe('POST /api/cron/pre-debit-notice — DB errors', () => {
     const { POST } = await import('@/app/api/cron/pre-debit-notice/route');
     const res = await POST(buildRequest({ 'x-cron-secret': ENV_SECRET }) as never);
     expect(res.status).toBe(503);
+  });
+});
+
+// ─── P7 bilingual parity — send-pre-debit-notice Edge Function ───────────────
+// The Edge Function runs on Deno and is not directly importable into Vitest.
+// We assert P7 parity (both English and Hindi bodies present in every notice)
+// by reading the source file — same regression pattern used for
+// FOXY_SAFETY_RAILS in src/__tests__/foxy-safety.test.ts. If a future refactor
+// drops the Hindi block this test fails loudly before deploy.
+describe('send-pre-debit-notice Edge Function — P7 bilingual body (launch-readiness)', () => {
+  const edgeSrc = readFileSync(
+    join(process.cwd(), 'supabase/functions/send-pre-debit-notice/index.ts'),
+    'utf8',
+  );
+
+  it('preserves the English RBI-required fields in both HTML and text bodies', () => {
+    // English block — these are the RBI-required pieces of information.
+    expect(edgeSrc).toContain('Upcoming Auto-Debit Reminder');
+    expect(edgeSrc).toContain('RBI-mandated notice');
+    expect(edgeSrc).toContain('Charge window');
+    expect(edgeSrc).toContain('Settings → Subscription');
+    expect(edgeSrc).toContain('Manage subscription');
+  });
+
+  it('includes the Hindi parity block in the HTML body', () => {
+    // Devanagari opening + the same RBI fields in Hindi. These five
+    // strings are what makes the email legally-equivalent for a
+    // Hindi-reading customer.
+    expect(edgeSrc).toContain('नमस्ते');
+    expect(edgeSrc).toContain('यह आपकी अनिवार्य अग्रिम सूचना है');
+    expect(edgeSrc).toContain('कटौती की तिथि'); // charge date
+    expect(edgeSrc).toContain('समय अवधि');       // charge window
+    expect(edgeSrc).toContain('व्यापारी');         // merchant
+    expect(edgeSrc).toContain('रद्द करना चाहते हैं'); // want to cancel?
+    // Cancellation route MUST point at the same in-app surface as the
+    // English block — Settings → Subscription is a brand/nav string and
+    // is intentionally not translated (P7 carve-out).
+    expect(edgeSrc).toContain('Settings → Subscription');
+  });
+
+  it('includes the Hindi parity block in the plain-text body', () => {
+    // Plain-text mirror of the HTML Hindi block (some mail clients only
+    // show text/plain). Must also carry the regulated fields.
+    expect(edgeSrc).toContain('आगामी Auto-Debit सूचना');
+    expect(edgeSrc).toContain('RBI द्वारा अनिवार्य');
+    expect(edgeSrc).toContain('रद्द करने के लिए');
+    expect(edgeSrc).toContain('सहायता'); // support
+  });
+
+  it('uses Hindi-locale date rendering for the Hindi block', () => {
+    // The Hindi date strings are derived via toLocaleDateString('hi-IN', ...)
+    // so weekday + month names render in Devanagari at runtime. Locale call
+    // must remain present.
+    expect(edgeSrc).toContain("toLocaleDateString('hi-IN'");
+  });
+
+  it('uses a clear divider between English and Hindi text blocks', () => {
+    // The plain-text body separates English and Hindi with a `---` divider
+    // line so the customer (and any downstream parser) can tell where one
+    // language ends and the next begins.
+    expect(edgeSrc).toMatch(/`---`/);
+  });
+
+  it('keeps brand and currency tokens un-translated in the Hindi block (P7 carve-out)', () => {
+    // ₹ symbol + numeric INR amount + Razorpay/Alfanumrik/Settings →
+    // Subscription stay in Latin script even inside the Hindi paragraph.
+    expect(edgeSrc).toContain('Alfanumrik');
+    expect(edgeSrc).toContain('Razorpay');
+    expect(edgeSrc).toContain('Settings → Subscription');
   });
 });
