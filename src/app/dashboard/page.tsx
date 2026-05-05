@@ -1,45 +1,135 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase, getFeatureFlags, getNextTopics, generateNotifications } from '@/lib/supabase';
 import { useDashboardData } from '@/lib/swr';
-import { Card, StatCard, ProgressBar, SectionHeader, SubjectChip, Avatar, BottomNav, MasteryRing } from '@/components/ui';
+import { Card, SectionHeader, Avatar, BottomNav } from '@/components/ui';
 import TrustFooter from '@/components/TrustFooter';
 import { DashboardSkeleton } from '@/components/Skeleton';
-import { calculateLevel, xpToNextLevel, getLevelName } from '@/lib/xp-rules';
-import { getLevelFromScore } from '@/lib/score-config';
+import { calculateLevel } from '@/lib/xp-config';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import type { StudentLearningProfile, CurriculumTopic } from '@/lib/types';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { ReselectBanner } from '@/components/subjects/ReselectBanner';
 import { PlanBadge } from '@/components/PlanBadge';
-import QuickActions from '@/components/dashboard/QuickActions';
-import SubjectProgress from '@/components/dashboard/SubjectProgress';
-import TodaysPlan from '@/components/dashboard/TodaysPlan';
-import ProgressSnapshot from '@/components/dashboard/ProgressSnapshot';
-import ExamReadiness from '@/components/dashboard/ExamReadiness';
-import DailyChallenge from '@/components/dashboard/DailyChallenge';
-import FocusDashboard from '@/components/dashboard/FocusDashboard';
 import PendingLinkApproval, { type PendingLink } from '@/components/dashboard/PendingLinkApproval';
 import ReviewsDueCard from '@/components/dashboard/ReviewsDueCard';
-import ScoreHero from '@/components/score/ScoreHero';
-import ScoreCard from '@/components/score/ScoreCard';
 import CoinBalance from '@/components/coins/CoinBalance';
-import DailyChallengeCard from '@/components/challenge/DailyChallengeCard';
-import ChallengeStreakBadge from '@/components/challenge/StreakBadge';
-import DailyLabMission from '@/components/dashboard/DailyLabMission';
+import XPDailyStatus from '@/components/xp/XPDailyStatus';
 
+/* ─────────────────────────────────────────────────────────────
+ * LAZY-LOADED BELOW-FOLD SECTIONS
+ *
+ * Per the launch-readiness audit (2026-05-05): the founder-visible
+ * dashboard MUST show ≤5 widgets above the fold. Everything else is
+ * grouped into 5 collapsed `<details>` sections that lazy-load their
+ * heavy data-fetching subtrees only when the student opens the section.
+ *
+ * Why next/dynamic + ssr:false:
+ *   - Defers the bundle weight (each section is ~5–15 kB gzipped).
+ *   - Defers the data fetching (BKT/SWR/leaderboard queries don't fire
+ *     on first paint — they wait until expansion). This addresses the
+ *     audit's N+1 BKT-query concern.
+ *
+ * Each chunk has its own Skeleton fallback so opening a section feels
+ * snappy even on Indian 4G (2-5 Mbps).
+ * ──────────────────────────────────────────────────────────── */
 
-const BLOOM_LABELS: Record<string, { icon: string; label: string; labelHi: string }> = {
-  remember: { icon: '📖', label: 'Remember', labelHi: 'याद' },
-  understand: { icon: '💡', label: 'Understand', labelHi: 'समझ' },
-  apply: { icon: '🔧', label: 'Apply', labelHi: 'लागू' },
-  analyze: { icon: '🔍', label: 'Analyze', labelHi: 'विश्लेषण' },
-  evaluate: { icon: '⚖️', label: 'Evaluate', labelHi: 'मूल्यांकन' },
-  create: { icon: '🚀', label: 'Create', labelHi: 'सृजन' },
-};
+const SectionSkeleton = () => (
+  <div className="animate-pulse rounded-2xl p-4 space-y-2"
+    style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+    <div className="h-4 rounded w-1/3" style={{ background: 'var(--border)' }} />
+    <div className="h-3 rounded w-2/3" style={{ background: 'var(--border)' }} />
+    <div className="h-3 rounded w-1/2" style={{ background: 'var(--border)' }} />
+  </div>
+);
+
+const ProgressSection = dynamic(
+  () => import('@/components/dashboard/sections/ProgressSection'),
+  { ssr: false, loading: () => <SectionSkeleton /> }
+);
+const TodaysFocusSection = dynamic(
+  () => import('@/components/dashboard/sections/TodaysFocusSection'),
+  { ssr: false, loading: () => <SectionSkeleton /> }
+);
+const UpcomingSection = dynamic(
+  () => import('@/components/dashboard/sections/UpcomingSection'),
+  { ssr: false, loading: () => <SectionSkeleton /> }
+);
+const CompeteSection = dynamic(
+  () => import('@/components/dashboard/sections/CompeteSection'),
+  { ssr: false, loading: () => <SectionSkeleton /> }
+);
+const QuickActionsSection = dynamic(
+  () => import('@/components/dashboard/sections/QuickActionsSection'),
+  { ssr: false, loading: () => <SectionSkeleton /> }
+);
+
+/* ─────────────────────────────────────────────────────────────
+ * Reusable collapsible section. Closed by default for new users;
+ * remembers per-section open state in localStorage for returning
+ * users so the dashboard "feels lived in" on the second visit.
+ * Uses native <details> so it works without JS and is zero-bundle.
+ * ──────────────────────────────────────────────────────────── */
+function CollapsibleSection({
+  id,
+  icon,
+  title,
+  titleHi,
+  isHi,
+  children,
+}: {
+  id: string;
+  icon: string;
+  title: string;
+  titleHi: string;
+  isHi: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const storageKey = `dash_section_${id}`;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      setOpen(window.localStorage.getItem(storageKey) === '1');
+    } catch {
+      // localStorage may be blocked — keep default closed
+    }
+  }, [storageKey]);
+
+  return (
+    <details
+      open={open}
+      onToggle={(e) => {
+        const next = (e.currentTarget as HTMLDetailsElement).open;
+        setOpen(next);
+        try { window.localStorage.setItem(storageKey, next ? '1' : '0'); } catch { /* noop */ }
+      }}
+      className="rounded-2xl overflow-hidden"
+      style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
+    >
+      <summary
+        className="px-4 py-3 cursor-pointer select-none flex items-center gap-2 list-none"
+        style={{ minHeight: 44 }}
+      >
+        <span className="text-lg" aria-hidden>{icon}</span>
+        <span className="text-sm font-bold flex-1" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}>
+          {isHi ? titleHi : title}
+        </span>
+        <span className="text-xs" style={{ color: 'var(--text-3)' }} aria-hidden>
+          {open ? '▴' : '▾'}
+        </span>
+      </summary>
+      <div className="px-3 pb-3 pt-1 space-y-3">
+        {open && children}
+      </div>
+    </details>
+  );
+}
 
 export default function Dashboard() {
   const { student, snapshot, isLoggedIn, isLoading, isHi, language, setLanguage, refreshSnapshot, activeRole } = useAuth();
@@ -54,7 +144,6 @@ export default function Dashboard() {
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
   const [showSubjectPicker, setShowSubjectPicker] = useState(false);
   const [knowledgeGaps, setKnowledgeGaps] = useState<Array<{ id: string; topic_title?: string; severity: string; description: string; description_hi?: string }>>([]);
-  const [showGapsAlert, setShowGapsAlert] = useState(true);
   const [velocityTrend, setVelocityTrend] = useState<'fast' | 'steady' | 'slow' | null>(null);
   const [bloomLevel, setBloomLevel] = useState<{ bloom_level: string; mastery: number } | null>(null);
   const [errorBreakdown, setErrorBreakdown] = useState<{ careless: number; conceptual: number; misinterpretation: number } | null>(null);
@@ -63,7 +152,6 @@ export default function Dashboard() {
   const [upcomingExams, setUpcomingExams] = useState<Array<{ id: string; exam_name: string; exam_type: string; subject: string; exam_date: string; days_left: number }>>([]);
   const [nudges, setNudges] = useState<Array<{ id: string; nudge_type: string; message: string; message_hi?: string; priority: number }>>([]);
   const [studentRank, setStudentRank] = useState<number | null>(null);
-  const [showMore, setShowMore] = useState(false);
   // BKT mastery: average mastery_probability per subject from concept_mastery table.
   // This is the real adaptive mastery signal, not the XP/accuracy proxy.
   const [bktMastery, setBktMastery] = useState<Record<string, number>>({});
@@ -93,7 +181,6 @@ export default function Dashboard() {
   const [todaySubject, setTodaySubject] = useState<string | undefined>();
   const [todaySubjectHi, setTodaySubjectHi] = useState<string | undefined>();
   const [todayTopic, setTodayTopic] = useState<string | undefined>();
-  const [challengeBadges, setChallengeBadges] = useState<string[]>([]);
 
   // Stream selector — grades 11-12 only, persisted to localStorage
   const [selectedStream, setSelectedStream] = useState<'science' | 'commerce' | 'humanities' | null>(null);
@@ -104,6 +191,8 @@ export default function Dashboard() {
     // Redirect non-student roles to their correct dashboard
     if (!isLoading && isLoggedIn && activeRole === 'teacher') router.replace('/teacher');
     if (!isLoading && isLoggedIn && activeRole === 'guardian') router.replace('/parent');
+    // institution_admin (Wave 1) routes to their own panel
+    if (!isLoading && isLoggedIn && activeRole === 'institution_admin') router.replace('/institution-admin');
     // Redirect students who haven't completed onboarding (grade/board not set)
     if (!isLoading && isLoggedIn && activeRole === 'student' && student && !student.onboarding_completed) {
       router.replace('/onboarding');
@@ -112,7 +201,7 @@ export default function Dashboard() {
     // The render-time fallback at the bottom can't call router.replace() during render
     // (React anti-pattern: setState/router during render triggers strict-mode warnings),
     // so we kick the redirect from here.
-    if (!isLoading && isLoggedIn && !student && activeRole !== 'teacher' && activeRole !== 'guardian') {
+    if (!isLoading && isLoggedIn && !student && activeRole !== 'teacher' && activeRole !== 'guardian' && activeRole !== 'institution_admin') {
       router.replace('/login');
     }
   }, [isLoading, isLoggedIn, activeRole, student, router]);
@@ -303,7 +392,8 @@ export default function Dashboard() {
     if (student) { fetchPendingLinks(); }
   }, [student?.id, fetchPendingLinks]);
 
-  // Fetch daily challenge state for Concept Chain widget
+  // Fetch daily challenge state for Concept Chain widget (consumed by
+  // TodaysFocusSection below the fold).
   useEffect(() => {
     if (!student) return;
     let cancelled = false;
@@ -352,7 +442,6 @@ export default function Dashboard() {
         // Streak
         if (streakRes.data) {
           setChallengeStreak(streakRes.data.current_streak ?? 0);
-          setChallengeBadges(streakRes.data.badges ?? []);
         }
 
         // Solved status
@@ -417,32 +506,16 @@ export default function Dashboard() {
   // Show skeleton while loading, but don't block non-student roles — they'll be redirected
   if (isLoading) return <DashboardSkeleton />;
   if (!student) {
-    // Non-student role (teacher/guardian) — redirect is already in flight from useEffect.
-    // No student profile + no other role: redirect-to-login is dispatched from the
-    // useEffect at the top of this component (NOT from here — calling router.replace()
-    // during render is a React anti-pattern that breaks strict-mode).
+    // Non-student role (teacher/guardian/institution_admin) — redirect is already in flight from useEffect.
     return <DashboardSkeleton />;
   }
 
   const totalXp = snapshot?.total_xp ?? profiles.reduce((a, p) => a + (p.xp ?? 0), 0);
   const streak = snapshot?.current_streak ?? Math.max(...profiles.map((p) => p.streak_days ?? 0), 0);
   const mastered = snapshot?.topics_mastered ?? 0;
-  const inProgress = snapshot?.topics_in_progress ?? 0;
-  const current = profiles.find((p) => p.subject === student.preferred_subject);
-  const currentXp = current?.xp ?? 0;
-  const currentLevel = current?.level ?? 1;
-  const meta = allowedSubjects.find((s) => s.code === student.preferred_subject);
-
-  // Compute overall Performance Score across all subjects
-  const overallPerfScore = perfScores.length > 0
-    ? Math.round(perfScores.reduce((sum, ps) => sum + ps.overall_score, 0) / perfScores.length)
-    : 0;
-  const overallPerfLevel = getLevelFromScore(overallPerfScore);
 
   // Phase 1.2: build the Foxy entry URL with subject + grade pre-filled so a
   // student doesn't have to pick a subject before sending their first message.
-  // Subject choice priority: preferred_subject (validated against allowedSubjects)
-  // → first allowed subject → no subject param (falls back to legacy /foxy).
   // The Foxy page itself re-validates subject against allowedSubjects (it has
   // the authoritative list once loaded), so this is a best-effort hint.
   const buildFoxyHref = (): string => {
@@ -460,7 +533,8 @@ export default function Dashboard() {
   };
   const foxyHref = buildFoxyHref();
 
-  // Filter subjects by stream for grades 11-12
+  // Filter subjects by stream for grades 11-12 — used by SubjectProgress in
+  // the lazy-loaded ProgressSection below the fold.
   const streamFilteredSubjects = (() => {
     const g = student?.grade ?? '9';
     if ((g === '11' || g === '12') && selectedStream) {
@@ -468,6 +542,21 @@ export default function Dashboard() {
     }
     return allowedSubjects;
   })();
+
+  // Smart "Continue Learning" target. Picks last-worked-on chapter from
+  // BKT-derived nextTopics; falls back to a subject hint for zero-state.
+  const continueTopic = nextTopics[0];
+  const continueSubjectMeta = allowedSubjects.find((s) => s.code === student.preferred_subject);
+  const continueHref = continueTopic?.chapter_number
+    ? `/learn/${student.preferred_subject}/${continueTopic.chapter_number}`
+    : foxyHref;
+
+  // Primary CTA href. Smart subject pick from BKT (preferred_subject is the
+  // BKT-validated last-active subject; falls back to /quiz which then routes
+  // to subject picker). Includes ?source=dashboard for funnel attribution.
+  const startQuizHref = student.preferred_subject
+    ? `/quiz?subject=${student.preferred_subject}&grade=${String(student.grade || '9').replace('Grade ', '').trim()}&source=dashboard`
+    : '/quiz';
 
   return (
     <div className="mesh-bg min-h-dvh pb-nav">
@@ -520,33 +609,28 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Header */}
+      {/* Header — slim. Greeting/avatar/level-chip lives in the page body
+          (above-the-fold widget #1) so the CTA stays paired with it. */}
       <header className="page-header">
         <div className="page-header-inner flex items-center justify-between">
-          <div>
-            <p className="text-xs text-[var(--text-3)]">{greeting},</p>
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-lg md:text-xl font-bold" style={{ fontFamily: 'var(--font-display)' }}>
-                {student.name} 👋
-              </h1>
-              <PlanBadge planCode={student.subscription_plan} size="sm" />
-              {(student.grade === '11' || student.grade === '12') && selectedStream && (
-                <button
-                  onClick={() => setShowStreamPicker(true)}
-                  className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                  style={{
-                    background: selectedStream === 'science' ? '#2563EB15' : selectedStream === 'commerce' ? '#D9770615' : '#7C3AED15',
-                    color: selectedStream === 'science' ? '#2563EB' : selectedStream === 'commerce' ? '#D97706' : '#7C3AED',
-                    border: `1px solid ${selectedStream === 'science' ? '#2563EB30' : selectedStream === 'commerce' ? '#D9770630' : '#7C3AED30'}`,
-                  }}
-                >
-                  {selectedStream === 'science' ? '⚗️' : selectedStream === 'commerce' ? '📊' : '🌍'}
-                  {' '}{isHi
-                    ? (selectedStream === 'science' ? 'विज्ञान' : selectedStream === 'commerce' ? 'वाणिज्य' : 'मानविकी')
-                    : (selectedStream === 'science' ? 'Science' : selectedStream === 'commerce' ? 'Commerce' : 'Humanities')}
-                </button>
-              )}
-            </div>
+          <div className="flex items-center gap-2">
+            <PlanBadge planCode={student.subscription_plan} size="sm" />
+            {(student.grade === '11' || student.grade === '12') && selectedStream && (
+              <button
+                onClick={() => setShowStreamPicker(true)}
+                className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                style={{
+                  background: selectedStream === 'science' ? '#2563EB15' : selectedStream === 'commerce' ? '#D9770615' : '#7C3AED15',
+                  color: selectedStream === 'science' ? '#2563EB' : selectedStream === 'commerce' ? '#D97706' : '#7C3AED',
+                  border: `1px solid ${selectedStream === 'science' ? '#2563EB30' : selectedStream === 'commerce' ? '#D9770630' : '#7C3AED30'}`,
+                }}
+              >
+                {selectedStream === 'science' ? '⚗️' : selectedStream === 'commerce' ? '📊' : '🌍'}
+                {' '}{isHi
+                  ? (selectedStream === 'science' ? 'विज्ञान' : selectedStream === 'commerce' ? 'वाणिज्य' : 'मानविकी')
+                  : (selectedStream === 'science' ? 'Science' : selectedStream === 'commerce' ? 'Commerce' : 'Humanities')}
+              </button>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <CoinBalance balance={coinBalance} isHi={isHi} />
@@ -554,12 +638,14 @@ export default function Dashboard() {
               onClick={() => setLanguage(language === 'hi' ? 'en' : 'hi')}
               className="text-xs px-3 py-1.5 rounded-xl border transition-colors"
               style={{ borderColor: 'var(--border-mid)', color: 'var(--text-3)' }}
+              aria-label={isHi ? 'भाषा बदलो' : 'Change language'}
             >
               {language === 'hi' ? '🌐 EN' : '🇮🇳 हिं'}
             </button>
             <button
               onClick={() => router.push('/notifications')}
               className="relative p-1.5"
+              aria-label={isHi ? 'सूचनाएं' : 'Notifications'}
             >
               <span className="text-lg">🔔</span>
               {unreadCount > 0 && (
@@ -571,7 +657,7 @@ export default function Dashboard() {
                 </span>
               )}
             </button>
-            <button onClick={() => router.push('/profile')}>
+            <button onClick={() => router.push('/profile')} aria-label={isHi ? 'प्रोफ़ाइल' : 'Profile'}>
               <Avatar name={student.name} />
             </button>
           </div>
@@ -581,7 +667,9 @@ export default function Dashboard() {
       <main className="app-container py-4 space-y-4">
        <SectionErrorBoundary section="Dashboard">
 
-        {/* ═══ PENDING PARENT LINK APPROVAL ═══ */}
+        {/* ═══ PENDING PARENT LINK APPROVAL ═══
+            Compact alert. Renders nothing when there are no pending links —
+            does not eat above-the-fold real estate in the common case. */}
         {pendingLinks.length > 0 && (
           <PendingLinkApproval
             links={pendingLinks}
@@ -590,675 +678,218 @@ export default function Dashboard() {
           />
         )}
 
-        {/* ═══ BOARD EXAM COUNTDOWN — grades 10/11/12 only ═══ */}
-        {(() => {
-          const g = (student.grade || '').replace('Grade ', '').trim();
-          const gradeNum = parseInt(g, 10);
-          if (gradeNum < 10) return null;
+        {/* ═══════════════════════════════════════════════════════════
+            ABOVE-THE-FOLD WIDGETS — exactly 5, in this fixed order.
+            Audit (2026-05-05): "A new student opens this and bounces.
+            Founder will flag this on first look." Keep this section
+            ruthlessly minimal. Each widget has a single job.
+            ═══════════════════════════════════════════════════════════ */}
 
-          // Approximate board exam dates (CBSE 2027)
-          const BOARD_DATE_10_12 = new Date('2027-02-15');
-          const PREBOARD_DATE_11 = new Date('2026-12-01');
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-
-          let targetDate: Date;
-          let examLabel: string;
-          let examLabelHi: string;
-
-          if (gradeNum === 11) {
-            targetDate = PREBOARD_DATE_11;
-            examLabel = 'Pre-Board Exams';
-            examLabelHi = 'प्री-बोर्ड परीक्षा';
-          } else {
-            targetDate = BOARD_DATE_10_12;
-            examLabel = `Class ${g} Board Exams`;
-            examLabelHi = `कक्षा ${g} बोर्ड परीक्षा`;
-          }
-
-          const daysLeft = Math.max(0, Math.ceil((targetDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)));
-          const readinessPct = cbseReadiness ?? 0;
-
-          const urgencyColor = daysLeft < 60 ? '#DC2626' : daysLeft < 120 ? '#D97706' : '#16A34A';
-          const bgColor = daysLeft < 60 ? 'rgba(220,38,38,0.05)' : daysLeft < 120 ? 'rgba(217,119,6,0.05)' : 'rgba(22,163,74,0.05)';
-          const borderColor = daysLeft < 60 ? 'rgba(220,38,38,0.2)' : daysLeft < 120 ? 'rgba(217,119,6,0.2)' : 'rgba(22,163,74,0.2)';
-
-          const motivationEn = daysLeft < 60
-            ? 'Final push — every session counts now.'
-            : daysLeft < 120
-              ? 'Consistent daily practice beats last-minute cramming.'
-              : 'You have time. Build the habit now.';
-          const motivationHi = daysLeft < 60
-            ? 'अंतिम चरण — हर सेशन अब मायने रखता है।'
-            : daysLeft < 120
-              ? 'नियमित अभ्यास लास्ट-मिनट रटाई से बेहतर है।'
-              : 'समय है। अभी से आदत बनाओ।';
-
-          return (
-            <div
-              className="rounded-2xl p-4"
-              style={{ background: bgColor, border: `1.5px solid ${borderColor}` }}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-                    style={{ background: `${urgencyColor}15` }}
-                  >
-                    🎓
-                  </div>
-                  <div>
-                    <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: urgencyColor }}>
-                      {isHi ? examLabelHi : examLabel}
-                    </p>
-                    <p className="text-xl font-extrabold leading-none mt-0.5" style={{ fontFamily: 'var(--font-display)', color: urgencyColor }}>
-                      {daysLeft} {isHi ? 'दिन बाकी' : 'days left'}
-                    </p>
-                  </div>
-                </div>
-                {readinessPct > 0 && (
-                  <div className="text-right flex-shrink-0">
-                    <p className="text-lg font-extrabold" style={{ color: urgencyColor, fontFamily: 'var(--font-display)' }}>
-                      {readinessPct}%
-                    </p>
-                    <p className="text-[10px]" style={{ color: 'var(--text-3)' }}>
-                      {isHi ? 'सिलेबस कवर' : 'syllabus covered'}
-                    </p>
-                  </div>
-                )}
-              </div>
-              <p className="text-xs mt-3" style={{ color: 'var(--text-3)' }}>
-                {isHi ? motivationHi : motivationEn}
-              </p>
-            </div>
-          );
-        })()}
-
-        {/* ═══ SPACED-REPETITION CTA (Phase 2.D) ═══
-            High-visibility prompt that pulls the student into /review when
-            concept_mastery.next_review_date is due. Renders nothing when
-            dueCount === 0. Self-fetches via SWR and refreshes every 60s. */}
-        <ReviewsDueCard />
-
-        {/* ═══ FOCUS ZONE: 3 cards — "One Thing at a Time" ═══ */}
-        <FocusDashboard
-          studentId={student.id}
-          studentName={student.name}
-          isHi={isHi}
-          grade={(student.grade || '9').replace('Grade ', '').trim()}
-          xp={totalXp}
-          level={calculateLevel(totalXp)}
-          streak={streak}
-          preferredSubject={student.preferred_subject}
-        />
-
-        {/* ═══ DAILY CHALLENGE — hero card, always visible above fold ═══ */}
-        {/* Challenges are time-sensitive and drive daily engagement. They must
-            be visible without the user having to tap "Show More". */}
-        <DailyChallenge
-          isHi={isHi}
-          studentName={student.name}
-          streak={streak}
-          grade={student.grade}
-          studentId={student.id}
-        />
-
-        {/* ═══ CONCEPT CHAIN DAILY CHALLENGE — links to /challenge ═══ */}
-        {todaySubject && (
-          <DailyChallengeCard
-            studentId={student.id}
-            grade={student.grade}
-            isHi={isHi}
-            isUnlocked={challengeUnlocked}
-            streak={challengeStreak}
-            todaySubject={todaySubject}
-            todaySubjectHi={todaySubjectHi}
-            todayTopic={todayTopic}
-            isSolved={challengeSolved}
-          />
-        )}
-
-        {/* ═══ FIRST-TIME WELCOME — always visible for new students ═══ */}
-        {totalXp === 0 && profiles.length <= 1 && (
-          <div
-            className="rounded-2xl p-5"
-            style={{
-              background: 'linear-gradient(135deg, #FFF7ED, #FEF3E2)',
-              border: '1px solid #FDBA7420',
-            }}
-          >
-            <div className="flex items-center gap-3 mb-4">
-              <span className="text-3xl">🦊</span>
-              <div>
-                <h2 className="text-base font-bold" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}>
-                  {isHi ? `स्वागत है, ${student.name}!` : `Welcome, ${student.name}!`}
-                </h2>
-                <p className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>
-                  {isHi
-                    ? 'अपना पहला अध्याय शुरू करो — बस एक टैप!'
-                    : 'Start your first lesson — just one tap!'}
-                </p>
-              </div>
-            </div>
-            {/* Single opinionated CTA — no choice paralysis */}
-            <button
-              onClick={() => router.push('/learn')}
-              className="w-full py-3.5 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.98]"
-              style={{ background: 'linear-gradient(135deg, #E8581C, #F5A623)' }}
-            >
-              📚 {isHi ? 'पढ़ना शुरू करो →' : 'Start Learning →'}
-            </button>
-            <button
-              onClick={() => router.push(foxyHref)}
-              className="w-full mt-2 py-2.5 rounded-xl text-xs font-semibold transition-all active:scale-[0.98]"
-              style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}
-            >
-              🦊 {isHi ? 'या Foxy से कोई डाउट पूछो' : 'Or ask Foxy a question'}
-            </button>
+        {/* (1) GREETING — name + level chip. Stacks on mobile (360px). */}
+        <div className="flex items-center gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-xs" style={{ color: 'var(--text-3)' }}>{greeting},</p>
+            <h1 className="text-xl md:text-2xl font-bold truncate" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}>
+              {isHi ? `${student.name}, सीखने को तैयार?` : `${student.name}, ready to learn?`}
+            </h1>
           </div>
-        )}
-
-        {/* ═══ GETTING STARTED CHECKLIST — < 5 quizzes taken ═══ */}
-        {(snapshot?.quizzes_taken ?? 0) < 5 && (snapshot?.quizzes_taken ?? 0) > 0 && (
-          <div className="rounded-2xl p-4" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-lg">🚀</span>
-              <h3 className="text-sm font-bold" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}>
-                {isHi ? 'शुरुआत करो' : 'Getting Started'}
-              </h3>
-              <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'var(--orange)', color: '#fff' }}>
-                {[
-                  (snapshot?.quizzes_taken ?? 0) >= 1,
-                  totalXp > 0 && profiles.length > 0,
-                  (snapshot?.quizzes_taken ?? 0) >= 3,
-                  (snapshot?.topics_mastered ?? 0) > 0 || (snapshot?.topics_in_progress ?? 0) > 0,
-                ].filter(Boolean).length}/4
-              </span>
+          <div className="flex-shrink-0 text-right">
+            <div className="text-[10px] uppercase tracking-wider font-bold" style={{ color: 'var(--text-3)' }}>
+              {isHi ? 'स्तर' : 'Level'}
             </div>
-            <div className="space-y-2">
-              {[
-                {
-                  done: (snapshot?.quizzes_taken ?? 0) >= 1,
-                  icon: '✏️',
-                  label: isHi ? 'पहला क्विज़ दो' : 'Take your first quiz',
-                  action: () => router.push('/quiz'),
-                },
-                {
-                  done: totalXp > 0 && profiles.length > 0,
-                  icon: '🦊',
-                  label: isHi ? 'Foxy से कोई सवाल पूछो' : 'Ask Foxy a question',
-                  action: () => router.push(foxyHref),
-                },
-                {
-                  done: (snapshot?.quizzes_taken ?? 0) >= 3,
-                  icon: '📚',
-                  label: isHi ? 'कम से कम 3 क्विज़ पूरा करो' : 'Complete at least 3 quizzes',
-                  action: () => router.push('/quiz'),
-                },
-                {
-                  done: (snapshot?.topics_mastered ?? 0) > 0 || (snapshot?.topics_in_progress ?? 0) > 0,
-                  icon: '📈',
-                  label: isHi ? 'अपनी प्रगति देखो' : 'Check your progress',
-                  action: () => router.push('/progress'),
-                },
-              ].map((step, i) => (
-                <button
-                  key={i}
-                  onClick={step.action}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all active:scale-[0.98]"
-                  style={{
-                    background: step.done ? 'rgba(22,163,74,0.06)' : 'rgba(232,88,28,0.04)',
-                    border: `1px solid ${step.done ? 'rgba(22,163,74,0.15)' : 'var(--border)'}`,
-                  }}
-                >
-                  <span className="text-base flex-shrink-0">{step.done ? '✅' : step.icon}</span>
-                  <span
-                    className="text-xs font-medium flex-1"
-                    style={{
-                      color: step.done ? '#16A34A' : 'var(--text-2)',
-                      textDecoration: step.done ? 'line-through' : 'none',
-                    }}
-                  >
-                    {step.label}
-                  </span>
-                  {!step.done && (
-                    <span className="text-[10px] font-bold" style={{ color: 'var(--orange)' }}>
-                      {isHi ? 'करो →' : 'Go →'}
-                    </span>
-                  )}
-                </button>
-              ))}
+            <div className="text-lg font-extrabold" style={{ color: 'var(--orange)', fontFamily: 'var(--font-display)' }}>
+              {calculateLevel(totalXp)}
             </div>
           </div>
-        )}
+        </div>
 
-        {/* ═══ SHOW MORE TOGGLE — progressive disclosure ═══ */}
+        {/* (2) PRIMARY CTA — single big purple button. No second-tier
+            chrome here. Choice paralysis is the #1 audit complaint. */}
         <button
-          onClick={() => setShowMore(prev => !prev)}
-          className="w-full py-2.5 rounded-xl text-xs font-semibold transition-all active:scale-[0.98] flex items-center justify-center gap-1.5"
+          onClick={() => router.push(startQuizHref)}
+          className="w-full py-4 rounded-2xl text-base font-bold text-white transition-all active:scale-[0.98] shadow-lg"
           style={{
-            background: 'var(--surface-1)',
-            border: '1px solid var(--border)',
-            color: 'var(--text-3)',
+            background: 'linear-gradient(135deg, var(--purple, #7C3AED), #5B21B6)',
+            minHeight: 56,
           }}
         >
-          {showMore
-            ? (isHi ? 'कम दिखाओ ↑' : 'Show Less ↑')
-            : (isHi ? 'और दिखाओ ↓' : 'Show More ↓')}
+          {isHi ? '▶ आज का क्विज़ शुरू करो' : "▶ Start today's quiz"}
         </button>
 
-        {showMore && <>
+        {/* (3) STREAK — flame + days. One row, no card chrome. */}
+        <div className="flex items-center justify-center gap-2 py-1">
+          <span className="text-2xl streak-flame" aria-hidden>🔥</span>
+          <span className="text-2xl font-extrabold" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}>
+            {streak}
+          </span>
+          <span className="text-sm" style={{ color: 'var(--text-3)' }}>
+            {isHi
+              ? `दिन की लय`
+              : `day${streak === 1 ? '' : 's'} streak`}
+          </span>
+        </div>
 
-        {/* ═══ PRIORITY 1: CONTINUE LEARNING (was buried at #6 — now first) ═══ */}
-        {nextTopics.length > 0 && (
-          <div>
-            <SectionHeader icon="▶">{isHi ? 'आगे सीखो' : 'Continue Learning'}</SectionHeader>
-            {nextTopics.slice(0, 1).map((topic) => (
-              <Card
-                key={topic.id}
-                hoverable
-                onClick={() =>
-                  topic.chapter_number
-                    ? router.push(`/learn/${student.preferred_subject}/${topic.chapter_number}`)
-                    : router.push(foxyHref)
-                }
-                className="flex items-center gap-4 !p-4"
-              >
-                <div
-                  className="w-10 h-10 md:w-12 md:h-12 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-                  style={{ background: `${meta?.color ?? 'var(--orange)'}15` }}
-                >
-                  {meta?.icon ?? '📚'}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-sm md:text-base truncate">{topic.title}</div>
-                  <div className="text-xs text-[var(--text-3)] mt-0.5">
-                    {topic.chapter_number
-                      ? (isHi ? `अध्याय ${topic.chapter_number} · अवधारणाएँ पढ़ो` : `Chapter ${topic.chapter_number} · Read concepts`)
-                      : (isHi ? 'Foxy के साथ सीखो' : 'Learn with Foxy')}
-                  </div>
-                </div>
-                <span className="text-[var(--text-3)]">→</span>
-              </Card>
-            ))}
-          </div>
-        )}
-
-        {/* ═══ PRIORITY 2: DUE REVIEWS (daily habit — show prominently) ═══ */}
-        {dueCount > 0 && flags.spaced_repetition && (
-          <button
-            onClick={() => router.push('/review')}
-            className="w-full rounded-2xl p-4 flex items-center gap-3 transition-all"
-            style={{ background: 'rgba(245,166,35,0.08)', border: '1px solid rgba(245,166,35,0.2)' }}
-          >
-            <span className="text-2xl">🔄</span>
-            <div className="text-left flex-1">
-              <div className="font-semibold text-sm" style={{ color: 'var(--gold)' }}>
-                {dueCount} {isHi ? 'रिव्यू बाकी है!' : 'topics due for review!'}
-              </div>
-              <div className="text-xs text-[var(--text-3)]">
-                {isHi ? 'रोज़ रिव्यू = परीक्षा में फ़र्क' : 'Daily review = better exam score'}
-              </div>
-            </div>
-            <span className="ml-auto" style={{ color: 'var(--gold)' }}>→</span>
-          </button>
-        )}
-
-        {/* ═══ PERFORMANCE SCORE HERO ═══ */}
-        <Card accent={meta?.color}>
-          <div className="flex items-center justify-between mb-1">
-            <div className="flex items-center gap-2">
-              <span className="text-2xl">{meta?.icon ?? '📚'}</span>
-              <span className="font-semibold text-sm text-[var(--text-2)]">
-                {meta?.name ?? student.preferred_subject} · {isHi ? `कक्षा ${student.grade}` : `Grade ${student.grade}`}
-              </span>
-            </div>
-            <div className="flex items-center gap-1">
-              <span className="text-xl streak-flame">🔥</span>
-              <span className="text-2xl font-bold">{streak}</span>
-              <span className="text-xs text-[var(--text-3)] ml-0.5">{isHi ? 'दिन' : 'days'}</span>
-            </div>
-          </div>
-
-          <ScoreHero
-            overallScore={overallPerfScore}
-            levelName={overallPerfLevel}
-            isHi={isHi}
-          />
-
-          {velocityTrend && (
-            <div className="text-xs text-center -mt-1 mb-2" style={{ color: velocityTrend === 'fast' ? '#16A34A' : velocityTrend === 'steady' ? '#F59E0B' : '#EF4444' }}>
-              {velocityTrend === 'fast' ? '↑' : velocityTrend === 'steady' ? '→' : '↓'} {isHi ? (velocityTrend === 'fast' ? 'तेज़ गति' : velocityTrend === 'steady' ? 'स्थिर गति' : 'धीमी गति') : (velocityTrend === 'fast' ? 'Fast pace' : velocityTrend === 'steady' ? 'Steady pace' : 'Slow pace')}
-            </div>
-          )}
-
-          {/* Legacy XP — shown smaller during migration period */}
-          <div className="flex items-center justify-center gap-1 mb-3 text-xs text-[var(--text-3)]">
-            <span className="gradient-text font-bold">{totalXp.toLocaleString()}</span>
-            <span>XP</span>
-            <span className="mx-1">·</span>
-            <span>{isHi ? `स्तर ${calculateLevel(totalXp)}` : `Level ${calculateLevel(totalXp)}`}</span>
-          </div>
-
-          <div className="grid-stats">
-            {cbseReadiness !== null && (
-              <StatCard
-                icon="🎯"
-                value={`${cbseReadiness}%`}
-                label={isHi ? 'परीक्षा तैयार' : 'Exam Ready'}
-                color={cbseReadiness >= 70 ? '#16A34A' : cbseReadiness >= 40 ? '#F59E0B' : '#EF4444'}
-              />
-            )}
-            <StatCard value={mastered} label={isHi ? 'महारत' : 'Mastered'} color="var(--gold)" />
-            <StatCard
-              value={dueCount}
-              label={isHi ? 'रिव्यू' : 'Due Reviews'}
-              color={dueCount > 0 ? 'var(--orange)' : 'var(--text-3)'}
-            />
-            <StatCard
-              value={snapshot?.quizzes_taken ?? 0}
-              label={isHi ? 'क्विज़' : 'Quizzes'}
-              color="var(--purple)"
-            />
-            {retentionScore !== null && (
-              <StatCard
-                icon="🧠"
-                value={`${retentionScore}%`}
-                label={isHi ? 'याददाश्त' : 'Retention'}
-                color="#0891B2"
-              />
-            )}
-          </div>
-        </Card>
-
-        {/* ═══ SUBJECT PERFORMANCE SCORES GRID ═══ */}
-        {perfScores.length > 0 && (
-          <div>
-            <SectionHeader icon="📊">{isHi ? 'विषय स्कोर' : 'Subject Scores'}</SectionHeader>
-            <div className="grid grid-cols-2 gap-3">
-              {perfScores
-                .filter(ps => selectedSubjects.includes(ps.subject))
-                .map(ps => {
-                  const subjectMeta = allowedSubjects.find(s => s.code === ps.subject);
-                  return (
-                    <ScoreCard
-                      key={ps.subject}
-                      subject={subjectMeta?.name ?? ps.subject}
-                      subjectHi={subjectMeta?.nameHi ?? ps.subject}
-                      score={ps.overall_score}
-                      isHi={isHi}
-                    />
-                  );
-                })}
-            </div>
-          </div>
-        )}
-
-        {/* Error Breakdown */}
-        {errorBreakdown && (
-          <Card>
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-base">🔍</span>
-              <span className="text-sm font-bold" style={{ fontFamily: 'var(--font-display)' }}>
-                {isHi ? 'गलती विश्लेषण' : 'Error Analysis'}
-              </span>
-            </div>
-            <div className="space-y-2">
-              {[
-                { label: isHi ? 'लापरवाही' : 'Careless', pct: errorBreakdown.careless, color: '#F59E0B', icon: '⚡' },
-                { label: isHi ? 'अवधारणा' : 'Conceptual', pct: errorBreakdown.conceptual, color: '#EF4444', icon: '🧠' },
-                { label: isHi ? 'गलत समझ' : 'Misread', pct: errorBreakdown.misinterpretation, color: '#8B5CF6', icon: '🔍' },
-              ].map(item => (
-                <div key={item.label} className="flex items-center gap-2">
-                  <span className="text-xs w-4">{item.icon}</span>
-                  <span className="text-xs font-semibold w-20" style={{ color: item.color }}>{item.label}</span>
-                  <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: `${item.color}15` }}>
-                    <div className="h-full rounded-full transition-all" style={{ width: `${item.pct}%`, background: item.color }} />
-                  </div>
-                  <span className="text-[10px] text-[var(--text-3)] w-10 text-right">{item.pct}%</span>
-                </div>
-              ))}
-            </div>
-          </Card>
-        )}
-
-        {/* Exam Countdown */}
-        {upcomingExams.length > 0 && (
-          <div>
-            <SectionHeader icon="📋">{isHi ? 'आगामी परीक्षाएँ' : 'Upcoming Exams'}</SectionHeader>
-            <div className="space-y-2">
-              {upcomingExams.map(exam => {
-                const isUrgent = exam.days_left <= 7;
-                const examMeta = allowedSubjects.find(s => s.code === exam.subject);
-                const typeLabel = exam.exam_type === 'unit_test' ? (isHi ? 'UT' : 'UT') : exam.exam_type === 'half_yearly' ? (isHi ? 'अर्ध-वार्षिक' : 'Half-Yearly') : (isHi ? 'वार्षिक' : 'Annual');
-                return (
-                  <button key={exam.id} onClick={() => router.push(`/exams`)} className="w-full">
-                    <Card className="!p-3 flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0" style={{ background: isUrgent ? 'rgba(220,38,38,0.1)' : `${examMeta?.color ?? 'var(--orange)'}15` }}>
-                        {examMeta?.icon ?? '📋'}
-                      </div>
-                      <div className="flex-1 min-w-0 text-left">
-                        <div className="font-semibold text-sm truncate">{exam.exam_name}</div>
-                        <div className="text-[10px] text-[var(--text-3)] mt-0.5">
-                          {typeLabel} · {new Date(exam.exam_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                        </div>
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        <div className="text-lg font-bold" style={{ color: isUrgent ? 'var(--danger)' : 'var(--orange)', fontFamily: 'var(--font-display)' }}>
-                          {exam.days_left}
-                        </div>
-                        <div className="text-[10px] text-[var(--text-3)]">{isHi ? 'दिन' : 'days'}</div>
-                      </div>
-                    </Card>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Smart Nudges — max 1 shown (avoid anxiety stack) */}
-        {nudges.length > 0 && (() => {
-          const nudge = nudges[0]; // Only show highest-priority nudge
-          const nudgeIcons: Record<string, string> = { schedule_behind: '⚠️', revision_due: '🔄', streak_risk: '🔥', exam_approaching: '📋', weak_topic: '📉', milestone: '🎉', encouragement: '💪' };
-          const nudgeColors: Record<string, string> = { schedule_behind: '#F59E0B', revision_due: '#0891B2', streak_risk: '#EF4444', exam_approaching: '#DC2626', weak_topic: '#8B5CF6', milestone: '#16A34A', encouragement: '#E8581C' };
-          return (
-            <div key={nudge.id} className="rounded-xl p-3 flex items-start gap-2.5" style={{ background: `${nudgeColors[nudge.nudge_type] ?? 'var(--orange)'}08`, border: `1px solid ${nudgeColors[nudge.nudge_type] ?? 'var(--orange)'}20` }}>
-              <span className="text-base flex-shrink-0 mt-0.5">{nudgeIcons[nudge.nudge_type] ?? '💡'}</span>
-              <p className="text-xs text-[var(--text-2)] leading-relaxed flex-1">{isHi && nudge.message_hi ? nudge.message_hi : nudge.message}</p>
-              <button
-                onClick={async () => {
-                  await fetch('/api/student/preferences', {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'dismiss_nudge', nudge_id: nudge.id }),
-                  });
-                  setNudges(prev => prev.filter(n => n.id !== nudge.id));
-                }}
-                className="text-[var(--text-3)] text-xs flex-shrink-0"
-                aria-label={isHi ? 'बंद करो' : 'Dismiss'}
-              >✕</button>
-            </div>
-          );
-        })()}
-
-        {/* (Continue Learning + Due Reviews moved to the top of the page) */}
-
-        {/* Knowledge Gaps Alert */}
-        {knowledgeGaps.length > 0 && showGapsAlert && (
-          <div className="rounded-2xl p-4 relative" style={{ background: 'var(--danger-light)', border: '1px solid rgba(244,63,94,0.15)' }}>
-            <button onClick={() => setShowGapsAlert(false)} className="absolute top-2 right-3 text-[var(--text-3)] text-sm">✕</button>
-            <div className="flex items-start gap-3">
-              <span className="text-2xl">🔍</span>
-              <div className="flex-1">
-                <div className="font-semibold text-sm" style={{ color: 'var(--danger)' }}>
-                  {knowledgeGaps.length} {isHi ? 'ज्ञान अंतराल पाए गए' : 'knowledge gaps found'}
-                </div>
-                <div className="text-xs text-[var(--text-3)] mt-1 space-y-0.5">
-                  {knowledgeGaps.slice(0, 2).map(g => (
-                    <div key={g.id}>• {isHi && g.description_hi ? g.description_hi : g.description}</div>
-                  ))}
-                </div>
-                <button
-                  onClick={() => router.push(foxyHref)}
-                  className="mt-2 text-xs font-bold px-3 py-1.5 rounded-lg"
-                  style={{ background: 'rgba(232,88,28,0.1)', color: 'var(--orange)' }}
-                >
-                  🦊 {isHi ? 'Foxy से ठीक करो' : 'Fix with Foxy'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Smart "What to do now?" CTA — context-driven, single recommendation */}
-        <QuickActions
-          isHi={isHi}
-          foxyHref={foxyHref}
-        />
-
-        {/* ═══ DAILY LAB MISSION (Tier 2 R8) ═══
-            Deterministic per-student-per-day pick from /api/student/daily-lab.
-            Drives discovery of the long-tail simulation catalog (~119 sims,
-            only ~10 popular). The card returns null if the API errors so the
-            dashboard degrades gracefully. Self-contained — no extra dashboard
-            state needed. Bundle delta is well under the 2 kB target. */}
-        <SectionErrorBoundary section="Daily Lab Mission">
-          <DailyLabMission isHi={isHi} />
+        {/* (4) TODAY'S PROGRESS STRIP — XP today / 200 cap.
+            XPDailyStatus self-fetches, has its own loading skeleton, and
+            renders nothing harmful for zero-state students. */}
+        <SectionErrorBoundary section="XP Daily">
+          <XPDailyStatus studentId={student.id} streak={streak} isHi={isHi} />
         </SectionErrorBoundary>
 
-        {/* ═══ STEM LAB STREAK ═══
-            Small status card linking to /stem-centre. Shown only if the
-            student has at least one experiment in their history (active
-            streak OR a non-zero lifetime count). Until then we show a
-            zero-state CTA so a student who has never opened the lab still
-            gets a discoverability nudge. */}
-        {labStreak !== null && (labStreak.current_streak > 0 || labStreak.total_experiments > 0) ? (
-          <button
-            onClick={() => router.push('/stem-centre')}
-            className="w-full rounded-2xl p-4 flex items-center gap-3 transition-all active:scale-[0.98] min-h-[44px]"
-            style={{
-              background: 'linear-gradient(135deg, rgba(232,88,28,0.08), rgba(245,166,35,0.08))',
-              border: '1px solid rgba(232,88,28,0.2)',
-            }}
-            aria-label={isHi ? 'STEM लैब खोलें' : 'Open STEM Lab'}
+        {/* (5) CONTINUE LEARNING — last topic from BKT, OR zero-state
+            "Pick a subject to start". For zero-state grades 11-12, this
+            is also where the Stream Picker re-entry lives. */}
+        {continueTopic ? (
+          <Card
+            hoverable
+            onClick={() => router.push(continueHref)}
+            className="flex items-center gap-4 !p-4"
           >
-            <span className="text-2xl flex-shrink-0">🔬</span>
-            <div className="flex-1 text-left">
-              <div className="text-sm font-bold" style={{ color: 'var(--orange)' }}>
-                {isHi
-                  ? `लैब स्ट्रीक: ${labStreak.current_streak} दिन`
-                  : `Lab Streak: ${labStreak.current_streak} ${labStreak.current_streak === 1 ? 'day' : 'days'}`}
+            <div
+              className="w-12 h-12 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
+              style={{ background: `${continueSubjectMeta?.color ?? 'var(--orange)'}15` }}
+              aria-hidden
+            >
+              {continueSubjectMeta?.icon ?? '📚'}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[10px] uppercase tracking-wider font-bold" style={{ color: 'var(--text-3)' }}>
+                {isHi ? 'जारी रखो' : 'Continue'}
               </div>
-              <div className="text-xs text-[var(--text-3)]">
-                {isHi
-                  ? `${labStreak.total_experiments} प्रयोग पूरे · सर्वाधिक ${labStreak.longest_streak} दिन`
-                  : `${labStreak.total_experiments} experiments · best ${labStreak.longest_streak}d`}
+              <div className="font-semibold text-sm md:text-base truncate" style={{ color: 'var(--text-1)' }}>
+                {continueTopic.title}
+              </div>
+              <div className="text-xs" style={{ color: 'var(--text-3)' }}>
+                {continueTopic.chapter_number
+                  ? (isHi ? `अध्याय ${continueTopic.chapter_number}` : `Chapter ${continueTopic.chapter_number}`)
+                  : (isHi ? 'Foxy के साथ सीखो' : 'Learn with Foxy')}
               </div>
             </div>
-            <span className="text-[var(--text-3)]">→</span>
-          </button>
-        ) : labStreak !== null ? (
-          <button
-            onClick={() => router.push('/stem-centre')}
-            className="w-full rounded-2xl p-4 flex items-center gap-3 transition-all active:scale-[0.98] min-h-[44px]"
-            style={{
-              background: 'rgba(232,88,28,0.06)',
-              border: '1px dashed rgba(232,88,28,0.3)',
-            }}
-            aria-label={isHi ? 'STEM लैब खोलें' : 'Open STEM Lab'}
-          >
-            <span className="text-2xl flex-shrink-0">🔬</span>
-            <div className="flex-1 text-left">
-              <div className="text-sm font-bold" style={{ color: 'var(--orange)' }}>
-                {isHi ? 'STEM लैब आज़माओ!' : 'Try a STEM lab!'}
+            <span style={{ color: 'var(--text-3)' }} aria-hidden>→</span>
+          </Card>
+        ) : (
+          // Zero-state: prompt to pick subjects (or re-pick if drift).
+          (allowedSubjects.length === 0 || selectedSubjects.length === 0) ? (
+            <ReselectBanner isHi={isHi} onReselect={() => setShowSubjectPicker(true)} />
+          ) : (
+            <Card hoverable onClick={() => setShowSubjectPicker(true)} className="flex items-center gap-4 !p-4">
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
+                style={{ background: 'rgba(232,88,28,0.1)' }} aria-hidden>📚</div>
+              <div className="flex-1">
+                <div className="font-semibold text-sm md:text-base" style={{ color: 'var(--text-1)' }}>
+                  {isHi ? 'विषय चुनकर शुरू करो' : 'Pick a subject to start'}
+                </div>
+                <div className="text-xs" style={{ color: 'var(--text-3)' }}>
+                  {isHi ? 'अपनी पढ़ाई का सफ़र अभी शुरू करो' : 'Begin your learning journey now'}
+                </div>
               </div>
-              <div className="text-xs text-[var(--text-3)]">
-                {isHi ? 'पहला प्रयोग पूरा करो और सिक्के कमाओ' : 'Complete your first experiment and earn coins'}
-              </div>
-            </div>
-            <span className="text-[var(--text-3)]">→</span>
-          </button>
-        ) : null}
-
-        {/* Mini Leaderboard — competitive motivation, prominent for CBSE students */}
-        {(studentRank !== null || totalXp > 0) && (
-          <button
-            onClick={() => router.push('/leaderboard')}
-            className="w-full rounded-2xl p-4 flex items-center gap-3 transition-all active:scale-[0.98]"
-            style={{
-              background: 'linear-gradient(135deg, rgba(245,166,35,0.06), rgba(232,88,28,0.06))',
-              border: '1px solid rgba(245,166,35,0.2)',
-            }}
-          >
-            <span className="text-2xl">🏆</span>
-            <div className="flex-1 text-left">
-              {studentRank !== null ? (
-                <>
-                  <div className="text-sm font-bold" style={{ color: 'var(--gold)' }}>
-                    {isHi ? `तुम #${studentRank} हो इस हफ्ते!` : `You're #${studentRank} this week!`}
-                  </div>
-                  <div className="text-xs text-[var(--text-3)]">
-                    {isHi ? 'पूरी रैंकिंग देखो →' : 'See full rankings →'}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="text-sm font-bold" style={{ color: 'var(--gold)' }}>
-                    {isHi ? 'रैंकिंग में आओ!' : 'Join the Rankings!'}
-                  </div>
-                  <div className="text-xs text-[var(--text-3)]">
-                    {isHi ? 'क्विज़ खेलो और टॉप पर जाओ' : 'Take quizzes to climb the leaderboard'}
-                  </div>
-                </>
-              )}
-            </div>
-            <span className="text-[var(--text-3)]">→</span>
-          </button>
+              <span style={{ color: 'var(--text-3)' }} aria-hidden>→</span>
+            </Card>
+          )
         )}
 
-        {/* Reselect banner — shown when:
-            (a) the student has zero unlocked subjects (legacy grade/plan drift), OR
-            (b) the student hasn't selected any subjects yet (new account / free plan
-                that skipped picker / F2-migrated account that lost all to archive). */}
-        {(allowedSubjects.length === 0 || selectedSubjects.length === 0) && (
-          <ReselectBanner isHi={isHi} onReselect={() => setShowSubjectPicker(true)} />
-        )}
+        {/* ═══════════════════════════════════════════════════════════
+            BELOW-THE-FOLD — collapsed by default. Each section is
+            lazy-loaded via next/dynamic so the data fetches only fire
+            when the student opens the section. This addresses the audit's
+            N+1 BKT-query and bundle-weight concerns simultaneously.
+            ═══════════════════════════════════════════════════════════ */}
 
-        {/* My Subjects (only student's chosen subjects) */}
-        {allowedSubjects.length > 0 && selectedSubjects.length > 0 && (
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <SectionHeader icon="📚">{isHi ? 'मेरे विषय' : 'My Subjects'}</SectionHeader>
-              <button onClick={() => setShowSubjectPicker(true)} className="text-xs font-semibold px-3 py-1 rounded-lg" style={{ color: 'var(--orange)', background: 'rgba(232,88,28,0.08)' }}>
-                {isHi ? '+ बदलो' : '+ Edit'}
-              </button>
-            </div>
-            <div className="grid-subjects">
-              {allowedSubjects.filter(s => selectedSubjects.includes(s.code)).map((s) => (
-                <SubjectChip
-                  key={s.code}
-                  icon={s.icon}
-                  name={s.name}
-                  color={s.color}
-                  active={student.preferred_subject === s.code}
-                  size="sm"
-                  onClick={async () => {
-                    await fetch('/api/student/preferences', {
-                      method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ action: 'set_preferred_subject', subject: s.code }),
-                    });
-                    if (typeof window !== 'undefined') localStorage.setItem('alfanumrik_subject', s.code);
-                    router.push('/learn');
-                  }}
-                />
-              ))}
-            </div>
-          </div>
-        )}
+        {/* Spaced-repetition CTA stays above the accordions because it's
+            time-sensitive (concept_mastery.next_review_date is due NOW).
+            ReviewsDueCard renders nothing when dueCount === 0. */}
+        <ReviewsDueCard />
 
-        {/* Subject Picker Modal */}
+        <CollapsibleSection id="progress" icon="📊" title="Your progress" titleHi="आपकी प्रगति" isHi={isHi}>
+          <ProgressSection
+            isHi={isHi}
+            student={student}
+            snapshot={snapshot ?? null}
+            profiles={profiles}
+            allowedSubjects={streamFilteredSubjects}
+            selectedSubjects={selectedSubjects}
+            bktMastery={bktMastery}
+            perfScores={perfScores}
+            bloomLevel={bloomLevel}
+            errorBreakdown={errorBreakdown}
+            retentionScore={retentionScore}
+            cbseReadiness={cbseReadiness}
+            velocityTrend={velocityTrend}
+            knowledgeGaps={knowledgeGaps}
+            totalXp={totalXp}
+            mastered={mastered}
+            streak={streak}
+            dueCount={dueCount}
+            foxyHref={foxyHref}
+          />
+        </CollapsibleSection>
+
+        <CollapsibleSection id="focus" icon="🎯" title="Today's focus" titleHi="आज का फ़ोकस" isHi={isHi}>
+          <TodaysFocusSection
+            isHi={isHi}
+            student={student}
+            totalXp={totalXp}
+            streak={streak}
+            level={calculateLevel(totalXp)}
+            preferredSubject={student.preferred_subject ?? ''}
+            dueCount={dueCount}
+            knowledgeGaps={knowledgeGaps}
+            nextTopics={nextTopics}
+            nudges={nudges}
+            onDismissNudge={(id) => setNudges(prev => prev.filter(n => n.id !== id))}
+            challenge={{
+              unlocked: challengeUnlocked,
+              streak: challengeStreak,
+              solved: challengeSolved,
+              todaySubject,
+              todaySubjectHi,
+              todayTopic,
+            }}
+          />
+        </CollapsibleSection>
+
+        <CollapsibleSection id="upcoming" icon="📅" title="Upcoming" titleHi="आगामी" isHi={isHi}>
+          <UpcomingSection
+            isHi={isHi}
+            grade={student.grade}
+            cbseReadiness={cbseReadiness}
+            upcomingExams={upcomingExams}
+            allowedSubjects={allowedSubjects}
+          />
+        </CollapsibleSection>
+
+        <CollapsibleSection id="compete" icon="🏆" title="Compete" titleHi="प्रतियोगिता" isHi={isHi}>
+          <CompeteSection
+            isHi={isHi}
+            studentRank={studentRank}
+            totalXp={totalXp}
+          />
+        </CollapsibleSection>
+
+        <CollapsibleSection id="quick" icon="⚡" title="Quick actions" titleHi="त्वरित" isHi={isHi}>
+          <QuickActionsSection
+            isHi={isHi}
+            foxyHref={foxyHref}
+            labStreak={labStreak}
+            allowedSubjects={allowedSubjects}
+            selectedSubjects={selectedSubjects}
+            onOpenSubjectPicker={() => setShowSubjectPicker(true)}
+            preferredSubject={student.preferred_subject}
+            onSetPreferredSubject={async (code) => {
+              await fetch('/api/student/preferences', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'set_preferred_subject', subject: code }),
+              });
+              if (typeof window !== 'undefined') localStorage.setItem('alfanumrik_subject', code);
+              router.push('/learn');
+            }}
+          />
+        </CollapsibleSection>
+
+        {/* Subject Picker Modal — opened from above-the-fold zero-state
+            card OR from the Quick Actions section. Lives at root so it
+            overlays everything. */}
         {showSubjectPicker && (
           <>
             <div className="fixed inset-0 z-50" style={{ background: 'rgba(0,0,0,0.3)' }} onClick={() => setShowSubjectPicker(false)} />
@@ -1304,46 +935,6 @@ export default function Dashboard() {
           </>
         )}
 
-        {/* XP by Subject + BKT Mastery (only selected subjects) */}
-        <SubjectProgress
-          profiles={profiles}
-          subjects={allowedSubjects}
-          selectedSubjects={selectedSubjects}
-          isHi={isHi}
-          bktMastery={bktMastery}
-        />
-
-        {/* Progressive disclosure: unlocked after first meaningful engagement */}
-        {totalXp >= 50 && (
-          <TodaysPlan
-            isHi={isHi}
-            dueCount={dueCount}
-            knowledgeGaps={knowledgeGaps.map(g => ({ id: g.id, topic_title: g.topic_title ?? g.description }))}
-            nextTopics={nextTopics}
-            preferredSubject={student.preferred_subject ?? ''}
-            streak={streak}
-          />
-        )}
-
-        {totalXp >= 50 && (
-          <ProgressSnapshot
-            totalXp={totalXp}
-            streak={streak}
-            mastered={mastered}
-            isHi={isHi}
-          />
-        )}
-
-        {totalXp >= 100 && (
-          <ExamReadiness
-            accuracy={cbseReadiness ?? 0}
-            totalQuizzes={snapshot?.quizzes_taken ?? 0}
-            isHi={isHi}
-            grade={student.grade}
-          />
-        )}
-
-        </>}
        </SectionErrorBoundary>
       </main>
 
