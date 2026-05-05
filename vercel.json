@@ -1,4 +1,5 @@
 {
+  "$schema-comment": "D6 launch-readiness: /api/cron/daily-cron at 30 2 * * * is the CANONICAL daily-cron runner. The pg_cron job 'alfanumrik-daily-cron' (legacy 18:30 UTC schedule) is DISABLED via supabase migration 20260505100000_disable_pg_cron_daily_in_favor_of_vercel.sql to prevent duplicate parent_digest notifications. Do NOT re-enable pg_cron without first removing this Vercel entry.",
   "framework": "nextjs",
   "regions": ["bom1"],
   "functions": {
@@ -41,6 +42,14 @@
     {
       "path": "/api/cron/expired-subscriptions",
       "schedule": "15 */6 * * *"
+    },
+    {
+      "path": "/api/cron/account-purge",
+      "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/pre-debit-notice",
+      "schedule": "0 */6 * * *"
     }
   ],
   "cleanUrls": true,
