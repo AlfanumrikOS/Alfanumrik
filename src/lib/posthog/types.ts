@@ -458,10 +458,12 @@ export interface SchoolSubscriptionCancelledPayload extends SchoolBillingContext
 
 export interface SchoolSeatCapHitPayload {
   school_id: string;
-  /** Where the cap was tripped. Today: only the student-add path; later, bulk import. */
-  source: 'student_add';
+  /** Where the cap was tripped. Closed set, expand carefully. */
+  source: 'student_add' | 'invite_code_join' | 'bulk_upload';
   seats_purchased: number;
   seats_used: number;
+  /** For bulk_upload: how many rows the upload would have added beyond the cap. */
+  attempted_to_add?: number;
 }
 
 // Discriminated union of all event payloads, keyed by event name.
