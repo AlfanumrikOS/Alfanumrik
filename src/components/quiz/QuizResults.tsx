@@ -741,6 +741,52 @@ export default function QuizResults({
                 })()}
               </div>
             </Card>
+
+            {/* ── Re-read CTA (Phase 3-D deep-link) ─────────────────
+                When a student gets answers wrong, link them straight
+                into Read mode of the chapter the first wrong answer
+                came from. Read mode is gated by ff_learn_read_mode_v1
+                on the destination — flag-off lands them in practice
+                mode, which is harmless. The destination's existing
+                effect emits `learn_read_mode_opened` with
+                trigger: 'deep_link' so quiz-sourced reads are
+                attributable in PostHog.
+
+                If the wrong answers span multiple chapters, we deep-
+                link to the first one and let the Read view's "Now
+                practise" CTA bring them back. */}
+            {(() => {
+              const wrongChapters = Array.from(
+                new Set(
+                  responses
+                    .map((r, i) => (!r.is_correct ? questions[i]?.chapter_number : null))
+                    .filter((c): c is number => typeof c === 'number' && c > 0),
+                ),
+              );
+              if (wrongChapters.length === 0 || !selectedSubject) return null;
+              const firstChapter = wrongChapters[0];
+              const moreCount = wrongChapters.length - 1;
+              const href = `/learn/${encodeURIComponent(selectedSubject)}/${firstChapter}?mode=read&from=quiz`;
+              return (
+                <div className="mt-3">
+                  <Button
+                    variant="ghost"
+                    onClick={() => router.push(href)}
+                    data-testid="quiz-results-reread-chapter-cta"
+                  >
+                    📖{' '}
+                    {isHi
+                      ? `अध्याय ${firstChapter} दोबारा पढ़ें`
+                      : `Re-read Chapter ${firstChapter}`}
+                    {moreCount > 0 && (
+                      <span className="ml-2 text-[10px] text-[var(--text-3)]">
+                        {isHi ? `+${moreCount} और` : `+${moreCount} more`}
+                      </span>
+                    )}
+                  </Button>
+                </div>
+              );
+            })()}
           </div>
         )}
 
