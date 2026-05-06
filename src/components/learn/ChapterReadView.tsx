@@ -100,9 +100,19 @@ function ChapterReadViewImpl({
 
         {!loading && content && (
           <>
+            {content.fellBackFromHindi && isHi && (
+              <div
+                className="rounded-xl px-3 py-2 text-xs"
+                style={{ background: 'rgba(245,158,11,0.10)', color: '#B45309', border: '1px solid rgba(245,158,11,0.25)' }}
+                data-testid="learn-chapter-read-hindi-fallback"
+              >
+                इस अध्याय का हिंदी अनुवाद अभी तैयार हो रहा है — फिलहाल अंग्रेज़ी संस्करण पढ़ें।
+              </div>
+            )}
             <article
               className="prose prose-sm max-w-none px-1"
               data-testid="learn-chapter-read-body"
+              lang={content.language}
             >
               <ReactMarkdown
                 remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}

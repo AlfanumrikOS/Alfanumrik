@@ -17,6 +17,7 @@ export async function loadChapterContent(args: {
   subjectCode: string;
   grade: string;
   chapterNumber: number;
+  language?: 'en' | 'hi';
 }): Promise<ChapterContent | null> {
   if (
     !args.subjectCode ||
