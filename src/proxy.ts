@@ -405,6 +405,21 @@ export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const pathname = path; // alias for clarity in API checks
 
+  // ── /guardian/* → /parent/* permanent redirect ──────────────────────
+  // The codebase standardised on `/parent` as the guardian portal route
+  // prefix; `/guardian` was a documented alias that never had its own
+  // pages and would 404. Status 308 preserves the request method so any
+  // POST/PUT issued against `/guardian/*` (e.g. from old emails or
+  // Razorpay return URLs) replays cleanly against the canonical path.
+  // (Phase 2-A hardening — closes Frontend audit H9.)
+  if (pathname === '/guardian' || pathname.startsWith('/guardian/')) {
+    const target = pathname === '/guardian'
+      ? '/parent'
+      : '/parent' + pathname.slice('/guardian'.length);
+    const redirectUrl = new URL(target + request.nextUrl.search, request.url);
+    return NextResponse.redirect(redirectUrl, { status: 308 });
+  }
+
   // ── CORS: Allowed origins (not wildcard) ──
   const ALLOWED_ORIGINS = [
     'https://alfanumrik.com',
