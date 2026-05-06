@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAdmin, logAdminAudit } from '@/lib/admin-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { capture as posthogCapture } from '@/lib/posthog/server';
 
 // CSV template columns
 const REQUIRED_COLUMNS = ['name', 'grade', 'email'];
@@ -44,6 +45,56 @@ export async function POST(request: NextRequest) {
         { error: `Missing required columns: ${missingRequired.join(', ')}` },
         { status: 400 }
       );
+    }
+
+    // ── Seat-cap pre-check (Phase 3-B follow-up) ─────────────────────
+    // Bulk-upload creates auth users + students rows; the handle_new_user
+    // trigger marks them is_active=true on creation. So every accepted
+    // row consumes a seat. Refuse the WHOLE batch up-front when the
+    // school is at or above its cap — partial inserts that leave half
+    // the CSV applied are worse than rejecting cleanly.
+    //
+    // Skipped when no school_id is provided (super-admin operating on
+    // global students, not a specific school) or when the school has
+    // no school_subscriptions row.
+    const rowsToInsert = lines.length - 1;
+    if (schoolId) {
+      const { data: subscription } = await supabaseAdmin
+        .from('school_subscriptions')
+        .select('seats_purchased')
+        .eq('school_id', schoolId)
+        .maybeSingle();
+
+      if (subscription) {
+        const { count: activeStudents } = await supabaseAdmin
+          .from('students')
+          .select('id', { count: 'exact', head: true })
+          .eq('school_id', schoolId)
+          .eq('is_active', true);
+        const seatsUsed = activeStudents ?? 0;
+        const seatsPurchased = subscription.seats_purchased as number;
+
+        if (seatsUsed + rowsToInsert > seatsPurchased) {
+          await posthogCapture('school_seat_cap_hit', auth.adminId, {
+            school_id: schoolId,
+            source: 'bulk_upload',
+            seats_purchased: seatsPurchased,
+            seats_used: seatsUsed,
+            attempted_to_add: rowsToInsert,
+          });
+          return NextResponse.json(
+            {
+              success: false,
+              code: 'seat_cap_violation',
+              error: `Cannot add ${rowsToInsert} students. School has used ${seatsUsed} of ${seatsPurchased} seats. Upgrade the subscription before uploading.`,
+              seats_used: seatsUsed,
+              seats_purchased: seatsPurchased,
+              attempted_to_add: rowsToInsert,
+            },
+            { status: 422 }
+          );
+        }
+      }
     }
 
     // Create job record for tracking

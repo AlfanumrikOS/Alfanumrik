@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { capture as posthogCapture } from '@/lib/posthog/server';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
@@ -138,24 +139,49 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 7. Check seat limit for students
+    // 7. Seat-cap check for students (Phase 3-B follow-up).
+    //
+    // Match the definition used by /api/school-admin/students PATCH and
+    // /api/school-admin/subscription POST/PATCH:
+    //   seats_used = COUNT(students WHERE school_id = X AND is_active = true)
+    //
+    // Differences from the previous logic in this route:
+    //  • Counts is_active=true only (was: every student row).
+    //  • Applies to ANY school_subscriptions row, including trial schools
+    //    (was: only when status='active'; trials were silently uncapped).
+    //  • Emits school_seat_cap_hit so the funnel surfaces in PostHog.
     if (invite.role === 'student') {
       const { data: subscription } = await supabaseAdmin
         .from('school_subscriptions')
         .select('seats_purchased')
         .eq('school_id', invite.school_id)
-        .eq('status', 'active')
         .maybeSingle();
 
       if (subscription) {
-        const { count: currentStudents } = await supabaseAdmin
+        const { count: activeStudents } = await supabaseAdmin
           .from('students')
           .select('id', { count: 'exact', head: true })
-          .eq('school_id', invite.school_id);
+          .eq('school_id', invite.school_id)
+          .eq('is_active', true);
 
-        if (currentStudents !== null && currentStudents >= subscription.seats_purchased) {
+        const seatsUsed = activeStudents ?? 0;
+        const seatsPurchased = subscription.seats_purchased as number;
+
+        if (seatsUsed + 1 > seatsPurchased) {
+          await posthogCapture('school_seat_cap_hit', user.id, {
+            school_id: invite.school_id,
+            source: 'invite_code_join',
+            seats_purchased: seatsPurchased,
+            seats_used: seatsUsed,
+          });
           return NextResponse.json(
-            { success: false, error: 'This school has reached its student seat limit. Please contact the school administrator.' },
+            {
+              success: false,
+              code: 'seat_cap_violation',
+              error: `This school has used ${seatsUsed} of ${seatsPurchased} seats. Please ask the school administrator to upgrade.`,
+              seats_used: seatsUsed,
+              seats_purchased: seatsPurchased,
+            },
             { status: 403 }
           );
         }
