@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeSchoolAdmin } from '@/lib/school-admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { capture as posthogCapture } from '@/lib/posthog/server';
 
 /**
  * GET /api/school-admin/students?page=1&limit=20&grade=8&search=name
@@ -132,7 +133,7 @@ export async function PATCH(request: NextRequest) {
     // Verify student belongs to this school (tenant isolation)
     const { data: existingStudent } = await supabase
       .from('students')
-      .select('id')
+      .select('id, is_active')
       .eq('id', body.id)
       .eq('school_id', schoolId)
       .maybeSingle();
@@ -142,6 +143,48 @@ export async function PATCH(request: NextRequest) {
         { success: false, error: 'Student not found' },
         { status: 404 }
       );
+    }
+
+    // ── Seat-cap enforcement (Phase 3-B) ───────────────────────────────
+    // Activating a previously-inactive student consumes a seat. Refuse if
+    // the school is at or above its purchased cap. Reactivation of an
+    // already-active student is a no-op for seat counting; deactivation
+    // never hits the cap. Trial schools have school_subscriptions.seats_purchased
+    // defaulted to 50 (per the table CHECK), so the gate applies uniformly.
+    const isActivating = body.is_active === true && existingStudent.is_active !== true;
+    if (isActivating) {
+      const [{ count: activeCount }, { data: sub }] = await Promise.all([
+        supabase
+          .from('students')
+          .select('id', { count: 'exact', head: true })
+          .eq('school_id', schoolId)
+          .eq('is_active', true),
+        supabase
+          .from('school_subscriptions')
+          .select('seats_purchased')
+          .eq('school_id', schoolId)
+          .maybeSingle(),
+      ]);
+      const seatsUsed = activeCount ?? 0;
+      const seatsPurchased = (sub?.seats_purchased as number | undefined) ?? null;
+      if (seatsPurchased !== null && seatsUsed + 1 > seatsPurchased) {
+        await posthogCapture('school_seat_cap_hit', auth.userId!, {
+          school_id: schoolId,
+          source: 'student_add',
+          seats_purchased: seatsPurchased,
+          seats_used: seatsUsed,
+        });
+        return NextResponse.json(
+          {
+            success: false,
+            code: 'seat_cap_violation',
+            error: `Cannot activate this student. Your school has used ${seatsUsed} of ${seatsPurchased} seats. Upgrade your subscription to add more.`,
+            seats_used: seatsUsed,
+            seats_purchased: seatsPurchased,
+          },
+          { status: 422 },
+        );
+      }
     }
 
     const { data: updated, error: updateError } = await supabase
