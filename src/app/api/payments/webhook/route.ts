@@ -105,6 +105,166 @@ function canonicalizePlan(raw: string): string {
     .replace(/^premium$/, 'pro');
 }
 
+// ─── School subscription lifecycle (Phase 3-A) ──────────────────────
+//
+// Phase 2-C shipped POST/PATCH/DELETE on /api/school-admin/subscription
+// (PR #549) and the matching UI (PR #550). Both create Razorpay
+// subscriptions tagged in `notes` with `{ school_id, seats, source:
+// 'school_self_service' }`. This webhook is the lifecycle source of
+// truth: when Razorpay fires `subscription.activated` (first charge
+// success), `.charged` (renewal), `.cancelled` / `.expired` / etc., we
+// update the matching `school_subscriptions` row.
+//
+// Detection rule: `notes.school_id` is set AND a row exists for that
+// school. We never infer school-ness from billing dates or amounts
+// alone — too easy to false-positive on a student plan edge case.
+//
+// All writes are idempotent. The existing student handler is reached
+// via fall-through when this returns `null` (no school match).
+
+type SchoolEventOutcome = 'school_activated' | 'school_renewed' | 'school_cancelled' | 'school_no_op' | null;
+
+async function handleSchoolSubscriptionEvent(
+  admin: SupabaseClient,
+  args: {
+    eventType: string;
+    rzSubId: string | undefined;
+    notes: Record<string, unknown>;
+    subscriptionEntity: Record<string, unknown> | undefined;
+  },
+): Promise<SchoolEventOutcome> {
+  const schoolId = typeof args.notes.school_id === 'string' ? args.notes.school_id : undefined;
+  if (!schoolId) return null; // not a school subscription — fall through to student path
+
+  // Find the matching school_subscriptions row. We try `school_id` first
+  // (fast path) and fall back to razorpay_subscription_id in case `notes`
+  // got truncated by Razorpay (rare, but documented).
+  const { data: existing } = await admin
+    .from('school_subscriptions')
+    .select('id, school_id, plan, status, billing_cycle, razorpay_subscription_id, current_period_start, current_period_end')
+    .eq('school_id', schoolId)
+    .maybeSingle();
+
+  if (!existing) {
+    // No row to update — emit a structured warning but don't fail the
+    // webhook (Razorpay would retry forever). The school admin's POST
+    // handler always upserts a row before returning the hosted_page_url,
+    // so a missing row here means manual data drift.
+    await logOpsEvent({
+      category: 'payment',
+      severity: 'warning',
+      source: 'webhook/route.ts',
+      message: 'school_subscription_event_unmatched',
+      context: {
+        event_type: args.eventType,
+        school_id: schoolId,
+        rz_sub_id: args.rzSubId ?? null,
+      },
+    });
+    return 'school_no_op';
+  }
+
+  // Razorpay subscription dates. The entity carries epoch seconds, not ISO.
+  const startEpoch = typeof args.subscriptionEntity?.current_start === 'number' ? args.subscriptionEntity.current_start : null;
+  const endEpoch = typeof args.subscriptionEntity?.current_end === 'number' ? args.subscriptionEntity.current_end : null;
+  const periodStart = startEpoch ? new Date(startEpoch * 1000).toISOString() : null;
+  const periodEnd = endEpoch ? new Date(endEpoch * 1000).toISOString() : null;
+
+  switch (args.eventType) {
+    case 'subscription.authenticated': {
+      // First-charge mandate approved; row may not yet have the rzSubId if
+      // POST raced the webhook. Stamp it now if missing.
+      if (args.rzSubId && !existing.razorpay_subscription_id) {
+        await admin
+          .from('school_subscriptions')
+          .update({ razorpay_subscription_id: args.rzSubId, updated_at: new Date().toISOString() })
+          .eq('school_id', schoolId);
+      }
+      return 'school_no_op';
+    }
+
+    case 'subscription.activated':
+    case 'subscription.charged': {
+      const updates: Record<string, unknown> = {
+        status: 'active',
+        updated_at: new Date().toISOString(),
+      };
+      if (args.rzSubId) updates.razorpay_subscription_id = args.rzSubId;
+      if (periodStart) updates.current_period_start = periodStart;
+      if (periodEnd) updates.current_period_end = periodEnd;
+
+      const { error: updErr } = await admin
+        .from('school_subscriptions')
+        .update(updates)
+        .eq('school_id', schoolId);
+      if (updErr) {
+        await logOpsEvent({
+          category: 'payment',
+          severity: 'critical',
+          source: 'webhook/route.ts',
+          message: 'school_subscription_activation_db_failed',
+          context: {
+            event_type: args.eventType,
+            school_id: schoolId,
+            error: updErr.message,
+          },
+        });
+        // Re-throw so outer try/catch returns 500 → Razorpay retries.
+        throw new Error(`school_subscriptions update failed: ${updErr.message}`);
+      }
+      return args.eventType === 'subscription.activated' ? 'school_activated' : 'school_renewed';
+    }
+
+    case 'subscription.cancelled':
+    case 'subscription.expired':
+    case 'subscription.completed':
+    case 'subscription.halted': {
+      // For end-of-cycle cancellations, Razorpay fires `cancelled`
+      // immediately and `expired` at period end. We mirror that on our
+      // side: 'cancelled' keeps access until period_end (status stays
+      // 'active' while Razorpay still considers the school paid),
+      // 'expired'/'completed'/'halted' are the terminal events that
+      // actually flip status to non-active.
+      if (args.eventType === 'subscription.cancelled') {
+        // Don't downgrade yet — keep status 'active' until 'expired' fires.
+        // Just stamp the new period_end if Razorpay sent one.
+        if (periodEnd) {
+          await admin
+            .from('school_subscriptions')
+            .update({ current_period_end: periodEnd, updated_at: new Date().toISOString() })
+            .eq('school_id', schoolId);
+        }
+        return 'school_no_op';
+      }
+
+      const newStatus = args.eventType === 'subscription.halted' ? 'expired' : 'cancelled';
+      const { error: updErr } = await admin
+        .from('school_subscriptions')
+        .update({ status: newStatus, updated_at: new Date().toISOString() })
+        .eq('school_id', schoolId);
+      if (updErr) {
+        await logOpsEvent({
+          category: 'payment',
+          severity: 'critical',
+          source: 'webhook/route.ts',
+          message: 'school_subscription_terminal_db_failed',
+          context: {
+            event_type: args.eventType,
+            school_id: schoolId,
+            new_status: newStatus,
+            error: updErr.message,
+          },
+        });
+        throw new Error(`school_subscriptions terminal update failed: ${updErr.message}`);
+      }
+      return 'school_cancelled';
+    }
+
+    default:
+      return 'school_no_op';
+  }
+}
+
 /**
  * Phase 0g.2 kill-switch read.
  *
@@ -673,6 +833,33 @@ export async function POST(request: NextRequest) {
       const paymentEntity = event.payload?.payment?.entity;
       const rzSubId: string | undefined = subscription?.id;
       const notes = subscription?.notes ?? paymentEntity?.notes ?? {};
+
+      // ── School subscription branch (Phase 3-A) ──
+      // Detect by notes.school_id; falls through to the student handler
+      // when not a school event. Idempotent updates on school_subscriptions.
+      const schoolOutcome = await handleSchoolSubscriptionEvent(admin, {
+        eventType,
+        rzSubId,
+        notes,
+        subscriptionEntity: subscription,
+      });
+      if (schoolOutcome !== null) {
+        const ackOutcome =
+          schoolOutcome === 'school_activated' || schoolOutcome === 'school_renewed'
+            ? 'activated'
+            : schoolOutcome === 'school_cancelled'
+              ? 'downgraded'
+              : 'ack';
+        await markEvent(admin, webhookEventRowId, ackOutcome);
+        await emitWebhookTiming({
+          eventType,
+          outcome: ackOutcome,
+          latencyMs: Date.now() - startedAt,
+          resolvedVia: 'school_id',
+          rzSubId,
+        });
+        return NextResponse.json({ received: true, scope: 'school', outcome: schoolOutcome });
+      }
 
       const resolved = await resolveStudent(admin, {
         notesStudentId: notes.student_id,
