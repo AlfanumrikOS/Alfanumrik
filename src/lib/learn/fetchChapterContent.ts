@@ -65,6 +65,11 @@ export interface ChapterContent {
   sources: ChapterContentSource[];
   /** True iff `markdown` was truncated at MAX_MARKDOWN_BYTES. */
   truncated: boolean;
+  /** Language actually returned. May differ from the requested language
+   *  when fallback to English happens (Hindi student, chapter missing in hi). */
+  language: 'en' | 'hi';
+  /** True iff the requested language wasn't available and we fell back. */
+  fellBackFromHindi: boolean;
 }
 
 function normaliseSubject(subjectCode: string): string {
@@ -81,69 +86,95 @@ function normaliseGrade(grade: string): string {
   return trimmed;
 }
 
+async function queryChunks(
+  subject: string,
+  grade: string,
+  chapterNumber: number,
+  language: 'en' | 'hi',
+): Promise<{ markdown: string; sources: ChapterContentSource[]; truncated: boolean } | null> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('rag_content_chunks')
+    .select('id, chapter_title, chunk_index, page_number, chunk_text')
+    .eq('grade', grade)
+    .eq('subject', subject)
+    .eq('chapter_number', chapterNumber)
+    .eq('is_active', true)
+    .eq('language', language)
+    .order('chunk_index', { ascending: true });
+
+  if (error || !data || data.length === 0) return null;
+
+  const sources: ChapterContentSource[] = [];
+  let totalBytes = 0;
+  const parts: string[] = [];
+  let truncated = false;
+
+  for (const row of data) {
+    const text = (row.chunk_text as string) || '';
+    if (!text) continue;
+    const segmentBytes = Buffer.byteLength(text, 'utf8');
+    if (totalBytes + segmentBytes > MAX_MARKDOWN_BYTES) {
+      truncated = true;
+      break;
+    }
+    parts.push(text);
+    totalBytes += segmentBytes;
+    sources.push({
+      chunk_id: row.id as string,
+      chapter_title: (row.chapter_title as string | null) ?? null,
+      chunk_index: (row.chunk_index as number | null) ?? null,
+      page_number: (row.page_number as number | null) ?? null,
+    });
+  }
+
+  if (parts.length === 0) return null;
+  return { markdown: parts.join('\n\n'), sources, truncated };
+}
+
 /**
  * Fetch the entire ordered chapter as markdown.
  *
- * Returns null when no rows match. Callers (the chapter page) treat null as
- * "fall back to practice mode" and emit `learn_read_mode_fallback`.
+ * Language handling (Phase 3 follow-up):
+ *   - language='en' (default): English chunks only.
+ *   - language='hi': Hindi chunks if available; falls back to English with
+ *     `fellBackFromHindi: true` so the UI can show a "Hindi version coming
+ *     soon" banner without leaving the student stuck with no content.
+ *
+ * Returns null only when neither Hindi nor English chunks exist for the
+ * chapter — true content gap. Callers treat null as "fall back to practice
+ * mode" and emit `learn_read_mode_fallback`.
  */
 export async function fetchChapterContent(args: {
   subjectCode: string;
   grade: string;
   chapterNumber: number;
+  /** UI language at request time; defaults to 'en' for backward compatibility. */
+  language?: 'en' | 'hi';
 }): Promise<ChapterContent | null> {
   const subject = normaliseSubject(args.subjectCode);
   const grade = normaliseGrade(args.grade);
-  const cacheKey = `learn:chapter:${subject}:${grade}:${args.chapterNumber}`;
+  const requestedLanguage: 'en' | 'hi' = args.language ?? 'en';
+  const cacheKey = `learn:chapter:${subject}:${grade}:${args.chapterNumber}:${requestedLanguage}`;
 
   return cacheFetch(
     cacheKey,
     CACHE_TTL.STATIC,
     async () => {
-      const supabase = getSupabaseAdmin();
-      const { data, error } = await supabase
-        .from('rag_content_chunks')
-        .select(
-          'id, chapter_title, chunk_index, page_number, chunk_text',
-        )
-        .eq('grade', grade)
-        .eq('subject', subject)
-        .eq('chapter_number', args.chapterNumber)
-        .eq('is_active', true)
-        .order('chunk_index', { ascending: true });
-
-      if (error || !data || data.length === 0) return null;
-
-      const sources: ChapterContentSource[] = [];
-      let totalBytes = 0;
-      const parts: string[] = [];
-      let truncated = false;
-
-      for (const row of data) {
-        const text = (row.chunk_text as string) || '';
-        if (!text) continue;
-        const segmentBytes = Buffer.byteLength(text, 'utf8');
-        if (totalBytes + segmentBytes > MAX_MARKDOWN_BYTES) {
-          truncated = true;
-          break;
-        }
-        parts.push(text);
-        totalBytes += segmentBytes;
-        sources.push({
-          chunk_id: row.id as string,
-          chapter_title: (row.chapter_title as string | null) ?? null,
-          chunk_index: (row.chunk_index as number | null) ?? null,
-          page_number: (row.page_number as number | null) ?? null,
-        });
+      // Try the requested language first.
+      const primary = await queryChunks(subject, grade, args.chapterNumber, requestedLanguage);
+      if (primary) {
+        return { ...primary, language: requestedLanguage, fellBackFromHindi: false };
       }
-
-      if (parts.length === 0) return null;
-
-      return {
-        markdown: parts.join('\n\n'),
-        sources,
-        truncated,
-      };
+      // For Hindi requests, fall back to English so the student gets
+      // *something* readable instead of being bounced to practice mode.
+      if (requestedLanguage === 'hi') {
+        const fallback = await queryChunks(subject, grade, args.chapterNumber, 'en');
+        if (fallback) {
+          return { ...fallback, language: 'en', fellBackFromHindi: true };
+        }
+      }
+      return null;
     },
   );
 }

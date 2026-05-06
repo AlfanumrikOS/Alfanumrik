@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // Mock the supabase admin client BEFORE importing the fetcher.
+// Each query() call returns one chained builder; the test sets the next
+// `data`/`error` payload via mockOrder.mockResolvedValueOnce.
 const mockOrder = vi.fn();
 const mockEq = vi.fn(() => ({ eq: mockEq, order: mockOrder }));
 const mockSelect = vi.fn(() => ({ eq: mockEq }));
@@ -114,5 +116,59 @@ describe('fetchChapterContent', () => {
     expect(result).not.toBeNull();
     expect(result!.markdown).toBe('Real.');
     expect(result!.sources.map((s) => s.chunk_id)).toEqual(['b']);
+  });
+
+  // ── Phase 3 follow-up: language filter + Hindi→English fallback ───
+  it('returns the requested language when chunks exist (hi requested, hi available)', async () => {
+    mockOrder.mockResolvedValueOnce({
+      data: [{ id: 'a', chapter_title: 'अध्याय 1', chunk_index: 0, page_number: 1, chunk_text: 'पाठ' }],
+      error: null,
+    });
+
+    const result = await fetchChapterContent({
+      subjectCode: 'math',
+      grade: '9',
+      chapterNumber: 1,
+      language: 'hi',
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.language).toBe('hi');
+    expect(result!.fellBackFromHindi).toBe(false);
+  });
+
+  it('falls back to English when Hindi requested but unavailable', async () => {
+    // First call (hi): no rows. Second call (en): has rows.
+    mockOrder.mockResolvedValueOnce({ data: [], error: null });
+    mockOrder.mockResolvedValueOnce({
+      data: [{ id: 'a', chapter_title: 'Chapter 1', chunk_index: 0, page_number: 1, chunk_text: 'English text.' }],
+      error: null,
+    });
+
+    const result = await fetchChapterContent({
+      subjectCode: 'math',
+      grade: '9',
+      chapterNumber: 1,
+      language: 'hi',
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.language).toBe('en');
+    expect(result!.fellBackFromHindi).toBe(true);
+    expect(result!.markdown).toBe('English text.');
+  });
+
+  it('does NOT fall back to Hindi when English is requested but missing', async () => {
+    // English request finds nothing → return null. Don't try Hindi.
+    mockOrder.mockResolvedValueOnce({ data: [], error: null });
+
+    const result = await fetchChapterContent({
+      subjectCode: 'math',
+      grade: '9',
+      chapterNumber: 1,
+      language: 'en',
+    });
+
+    expect(result).toBeNull();
   });
 });

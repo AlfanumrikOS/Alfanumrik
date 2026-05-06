@@ -191,6 +191,7 @@ export default function ChapterConceptPage() {
       subjectCode: subject,
       grade: student.grade,
       chapterNumber: chapterNum,
+      language,
     })
       .then((content) => {
         if (cancelled) return;
