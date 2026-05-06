@@ -110,6 +110,34 @@ export async function cancelRazorpaySubscription(
   });
 }
 
+/**
+ * Update an existing Razorpay subscription's quantity (seats) mid-cycle.
+ *
+ * Razorpay's subscription model multiplies plan_id.amount × quantity to
+ * compute the period charge. Bumping `quantity` is the supported way to
+ * grow seats without cancelling and recreating. Schedule_change_at:
+ *   - 'now'       → next charge happens immediately at the new amount.
+ *   - 'cycle_end' → next charge at end of current billing cycle (default;
+ *                   schools keep what they paid for through the period).
+ *
+ * Plan_id changes are NOT supported on a running subscription by Razorpay;
+ * a true plan swap requires cancel + create. This helper only changes
+ * quantity. Callers wanting a plan swap must cancel and re-subscribe.
+ */
+export async function updateRazorpaySubscriptionQuantity(params: {
+  subscriptionId: string;
+  newQuantity: number;
+  scheduleChangeAt?: 'now' | 'cycle_end';
+}): Promise<RazorpaySubscription> {
+  return rzpFetch<RazorpaySubscription>(`/subscriptions/${params.subscriptionId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      quantity: params.newQuantity,
+      schedule_change_at: params.scheduleChangeAt ?? 'cycle_end',
+    }),
+  });
+}
+
 // ─── Orders (for one-time yearly payments) ──────────────────
 
 interface RazorpayOrder {

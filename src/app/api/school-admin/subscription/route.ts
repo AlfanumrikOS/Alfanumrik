@@ -7,6 +7,7 @@ import { capture } from '@/lib/posthog/server';
 import {
   createRazorpaySubscription,
   cancelRazorpaySubscription,
+  updateRazorpaySubscriptionQuantity,
 } from '@/lib/razorpay';
 
 const SELF_SERVICE_FLAG = 'ff_school_self_service_billing_v1';
@@ -321,21 +322,27 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * PATCH /api/school-admin/subscription — change plan or seats (Phase 2-C).
+ * PATCH /api/school-admin/subscription — change plan or seats (Phase 2-C +
+ * Phase 3 atomic plan-change follow-up).
  *
  * Body: { plan?: 'starter'|'pro'|'unlimited', seats?: number }
  *
- * For now this updates the local DB row only and emits the started/completed
- * events. The actual mid-cycle Razorpay plan change RPC is deferred to a
- * follow-up — the existing student-side `atomic_plan_change_rpc` migration
- * (20260427000002) needs porting to the school side. PATCH currently:
- *   - Validates seats >= active students.
- *   - Updates `seats_purchased` and/or `plan` in school_subscriptions.
- *   - Records the change in PostHog.
- *   - Does NOT call Razorpay (no proration). Operator is informed.
- *
- * This is a deliberate compromise to ship the seat-bump flow this PR; full
- * mid-cycle Razorpay plan change is its own spec.
+ * Atomicity model:
+ *   - DB writes go through `atomic_school_plan_change` RPC (migration
+ *     20260507000003). Two writes (plan + seats_purchased) inside one
+ *     transaction guarded by pg_advisory_xact_lock keyed by school_id.
+ *   - Razorpay coordination happens AFTER the RPC succeeds:
+ *       • seat-only change with the same plan → call
+ *         updateRazorpaySubscriptionQuantity (schedule_change_at='cycle_end'
+ *         so the school keeps what they paid for through the period).
+ *       • plan change → DB-only, no Razorpay call. Razorpay does not
+ *         support atomic plan_id swap on a running subscription. The
+ *         response carries `razorpay_plan_swap_note` so the school admin
+ *         is informed and can cancel + re-subscribe to take effect.
+ *   - If Razorpay call fails after a successful RPC, we log the
+ *     divergence as a critical ops event but return success to the
+ *     caller (DB is the entitlement source of truth). The webhook
+ *     reconciles on the next charge.
  */
 export async function PATCH(request: NextRequest) {
   try {
@@ -417,36 +424,38 @@ export async function PATCH(request: NextRequest) {
 
     const fromPlan = (existing.plan as string | null) ?? null;
     const fromSeats = (existing.seats_purchased as number | null) ?? null;
+    const rzpSubId = (existing.razorpay_subscription_id as string | null) ?? null;
+    const billingCycle = (existing.billing_cycle as 'monthly' | 'yearly') ?? 'monthly';
+    const isPlanSwap = newPlan !== undefined && newPlan !== fromPlan;
+    const isSeatOnly = newSeats !== undefined && !isPlanSwap;
 
     await capture('school_billing_plan_change_started', userId, {
       school_id: schoolId,
       plan: newPlan ?? fromPlan ?? 'unknown',
-      billing_cycle: (existing.billing_cycle as 'monthly' | 'yearly') ?? 'monthly',
+      billing_cycle: billingCycle,
       seats: newSeats ?? fromSeats ?? 0,
       source: 'self_service_patch',
       from_plan: fromPlan,
       from_seats: fromSeats,
     });
 
-    const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
-    if (newPlan !== undefined) updates.plan = newPlan;
-    if (newSeats !== undefined) updates.seats_purchased = newSeats;
-
-    const { error: updateErr } = await supabase
-      .from('school_subscriptions')
-      .update(updates)
-      .eq('school_id', schoolId);
-
-    if (updateErr) {
-      logger.error('school_admin_subscription_patch_failed', {
-        error: new Error(updateErr.message),
+    // ── 1. Atomic DB transaction via the school-side RPC.
+    const { error: rpcErr } = await supabase.rpc('atomic_school_plan_change', {
+      p_school_id: schoolId,
+      p_new_plan: newPlan ?? null,
+      p_new_seats: newSeats ?? null,
+      p_reason: 'self_service_patch',
+    });
+    if (rpcErr) {
+      logger.error('school_admin_atomic_plan_change_failed', {
+        error: new Error(rpcErr.message),
         route: '/api/school-admin/subscription',
         schoolId,
       });
       await capture('school_billing_plan_change_failed', userId, {
         school_id: schoolId,
         plan: newPlan ?? fromPlan ?? 'unknown',
-        billing_cycle: (existing.billing_cycle as 'monthly' | 'yearly') ?? 'monthly',
+        billing_cycle: billingCycle,
         seats: newSeats ?? fromSeats ?? 0,
         source: 'self_service_patch',
         reason: 'unknown',
@@ -457,15 +466,38 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
+    // ── 2. Razorpay coordination (only on seat-only mid-cycle change).
+    let razorpayUpdated = false;
+    let razorpayDivergenceLogged = false;
+    if (isSeatOnly && rzpSubId && newSeats !== undefined) {
+      try {
+        await updateRazorpaySubscriptionQuantity({
+          subscriptionId: rzpSubId,
+          newQuantity: newSeats,
+          scheduleChangeAt: 'cycle_end',
+        });
+        razorpayUpdated = true;
+      } catch (rzpErr) {
+        logger.error('school_admin_razorpay_quantity_update_failed', {
+          error: rzpErr instanceof Error ? rzpErr : new Error(String(rzpErr)),
+          route: '/api/school-admin/subscription',
+          schoolId,
+          rzpSubId,
+        });
+        razorpayDivergenceLogged = true;
+        // DB authoritative for entitlement; webhook reconciles on next charge.
+      }
+    }
+
     await capture('school_billing_plan_change_completed', userId, {
       school_id: schoolId,
       plan: newPlan ?? fromPlan ?? 'unknown',
-      billing_cycle: (existing.billing_cycle as 'monthly' | 'yearly') ?? 'monthly',
+      billing_cycle: billingCycle,
       seats: newSeats ?? fromSeats ?? 0,
       source: 'self_service_patch',
       from_plan: fromPlan,
       from_seats: fromSeats,
-      razorpay_subscription_id: (existing.razorpay_subscription_id as string) ?? '',
+      razorpay_subscription_id: rzpSubId ?? '',
     });
 
     return NextResponse.json({
@@ -473,8 +505,16 @@ export async function PATCH(request: NextRequest) {
       data: {
         plan: newPlan ?? fromPlan,
         seats: newSeats ?? fromSeats,
-        razorpay_proration_note:
-          'Mid-cycle plan/seat changes do not yet trigger Razorpay proration; next invoice reflects the new state.',
+        razorpay_updated: razorpayUpdated,
+        razorpay_divergence_logged: razorpayDivergenceLogged,
+        ...(isPlanSwap && {
+          razorpay_plan_swap_note:
+            'Plan changed in Alfanumrik. Razorpay does not support atomic plan swaps on a running subscription; cancel and re-subscribe to update billing on Razorpay\'s side. Next invoice reflects the new plan in our system.',
+        }),
+        ...(isSeatOnly && !razorpayUpdated && {
+          razorpay_proration_note:
+            'Seats updated in Alfanumrik; Razorpay quantity sync deferred. The next renewal charge will reflect the new seat count.',
+        }),
       },
     });
   } catch (err) {
