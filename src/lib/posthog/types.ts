@@ -68,7 +68,15 @@ export type PostHogEventName =
   | 'learn_foxy_doubt_clicked'
   | 'learn_take_quiz_clicked'
   | 'learn_read_mode_opened'
-  | 'learn_read_mode_fallback';
+  | 'learn_read_mode_fallback'
+  // School-admin self-service billing (Phase 2-C of the May 2026 upgrade).
+  // All server-side, fired from src/app/api/school-admin/subscription/route.ts.
+  // PII-free — only school_id (uuid), plan, billing_cycle, seats counts.
+  | 'school_billing_plan_change_started'
+  | 'school_billing_plan_change_completed'
+  | 'school_billing_plan_change_failed'
+  | 'school_subscription_cancelled'
+  | 'school_seat_cap_hit';
 
 // ─── Base properties auto-attached by `capture()` ──────────────────────────
 
@@ -409,6 +417,53 @@ export interface LearnReadModeFallbackPayload extends LearnChapterContextBase {
   reason: 'empty' | 'error';
 }
 
+// ─── School billing payloads (Phase 2-C) ────────────────────────────
+
+interface SchoolBillingContextBase {
+  school_id: string;        // uuid
+  plan: string;             // 'starter' | 'pro' | 'unlimited' | 'trial'
+  billing_cycle: 'monthly' | 'yearly';
+  seats: number;
+}
+
+export interface SchoolBillingPlanChangeStartedPayload extends SchoolBillingContextBase {
+  /** Where the flow started: 'self_service_post' (new sub) or 'self_service_patch' (modify). */
+  source: 'self_service_post' | 'self_service_patch';
+  /** Previous plan when this is a modification; null when it's a fresh subscription. */
+  from_plan: string | null;
+  /** Previous seats_purchased when this is a modification; null otherwise. */
+  from_seats: number | null;
+}
+
+export interface SchoolBillingPlanChangeCompletedPayload extends SchoolBillingContextBase {
+  source: 'self_service_post' | 'self_service_patch';
+  from_plan: string | null;
+  from_seats: number | null;
+  /** Razorpay subscription id created or updated. */
+  razorpay_subscription_id: string;
+}
+
+export interface SchoolBillingPlanChangeFailedPayload extends SchoolBillingContextBase {
+  source: 'self_service_post' | 'self_service_patch';
+  /** Closed-set reason; never includes free-form error text from Razorpay (PII risk). */
+  reason: 'razorpay_error' | 'seat_cap_violation' | 'invalid_plan' | 'no_existing_subscription' | 'unknown';
+}
+
+export interface SchoolSubscriptionCancelledPayload extends SchoolBillingContextBase {
+  /** Razorpay subscription id we cancelled. */
+  razorpay_subscription_id: string;
+  /** Cancellation timing — Razorpay supports immediate or end-of-cycle. */
+  cancellation_timing: 'end_of_cycle' | 'immediate';
+}
+
+export interface SchoolSeatCapHitPayload {
+  school_id: string;
+  /** Where the cap was tripped. Today: only the student-add path; later, bulk import. */
+  source: 'student_add';
+  seats_purchased: number;
+  seats_used: number;
+}
+
 // Discriminated union of all event payloads, keyed by event name.
 export type EventPayloadByName = {
   quiz_started: QuizStartedPayload;
@@ -444,6 +499,11 @@ export type EventPayloadByName = {
   learn_take_quiz_clicked: LearnTakeQuizClickedPayload;
   learn_read_mode_opened: LearnReadModeOpenedPayload;
   learn_read_mode_fallback: LearnReadModeFallbackPayload;
+  school_billing_plan_change_started: SchoolBillingPlanChangeStartedPayload;
+  school_billing_plan_change_completed: SchoolBillingPlanChangeCompletedPayload;
+  school_billing_plan_change_failed: SchoolBillingPlanChangeFailedPayload;
+  school_subscription_cancelled: SchoolSubscriptionCancelledPayload;
+  school_seat_cap_hit: SchoolSeatCapHitPayload;
 };
 
 /** Generic helper: lookup payload type by event name. */
