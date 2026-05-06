@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { supabase, getFeatureFlags } from '@/lib/supabase';
 import {
   Card,
   Button,
@@ -13,6 +13,7 @@ import {
   EmptyState,
   BottomNav,
 } from '@/components/ui';
+import ManageSubscriptionSection from './ManageSubscriptionSection';
 
 /* ─────────────────────────────────────────────────────────────
    BILINGUAL HELPER (P7)
@@ -113,6 +114,13 @@ export default function SchoolBillingPage() {
   const [loadingAdmin, setLoadingAdmin] = useState(true);
   const [loadingData, setLoadingData] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Phase 2-C UI: self-service billing flag + bearer token for the mutation
+  // calls. The flag mirrors the server-side check in
+  // /api/school-admin/subscription POST/PATCH/DELETE — both ON for the
+  // section to be useful, both OFF and the section is invisible.
+  const [selfServiceFlagOn, setSelfServiceFlagOn] = useState(false);
+  const [authToken, setAuthToken] = useState<string | null>(null);
 
   /* ── Step 1: Auth guard ── */
   const fetchAdminRecord = useCallback(async () => {
@@ -226,6 +234,36 @@ export default function SchoolBillingPage() {
       fetchBillingData(schoolInfo.school_id);
     }
   }, [schoolInfo, fetchBillingData]);
+
+  /* ── Resolve self-service billing flag + cache the auth token ── */
+  useEffect(() => {
+    if (!schoolInfo?.school_id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const flags = await getFeatureFlags({
+          role: 'school_admin',
+          institutionId: schoolInfo.school_id,
+        });
+        if (!cancelled) {
+          setSelfServiceFlagOn(Boolean(flags?.ff_school_self_service_billing_v1));
+        }
+      } catch {
+        if (!cancelled) setSelfServiceFlagOn(false);
+      }
+      try {
+        const session = await supabase.auth.getSession();
+        if (!cancelled) {
+          setAuthToken(session.data.session?.access_token ?? null);
+        }
+      } catch {
+        if (!cancelled) setAuthToken(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [schoolInfo?.school_id]);
 
   /* ── Loading states ── */
   const isPageLoading = authLoading || loadingAdmin;
@@ -351,6 +389,20 @@ export default function SchoolBillingPage() {
       {PageHeader}
 
       <main className="px-4 pt-4 pb-24 max-w-2xl mx-auto space-y-5">
+
+        {/* ── Manage Subscription (Phase 2-C, flag-gated) ── */}
+        {schoolInfo && (
+          <ManageSubscriptionSection
+            schoolId={schoolInfo.school_id}
+            seatsUsed={currentSeats.active}
+            flagOn={selfServiceFlagOn}
+            isHi={isHi}
+            authToken={authToken}
+            onChange={() => {
+              if (schoolInfo) fetchBillingData(schoolInfo.school_id);
+            }}
+          />
+        )}
 
         {/* ── Stat Cards ── */}
         <section aria-label={t(isHi, 'Billing overview', 'बिलिंग अवलोकन')}>
