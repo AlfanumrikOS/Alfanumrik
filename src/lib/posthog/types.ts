@@ -56,7 +56,19 @@ export type PostHogEventName =
   | 'landing_role_changed'
   | 'landing_faq_opened'
   | 'landing_cta_click'
-  | 'landing_breadcrumb_click';
+  | 'landing_breadcrumb_click'
+  // /learn flow (Phase 2-B of the May 2026 upgrade). All client-side,
+  // fired from src/app/learn/[subject]/[chapter]/page.tsx. Closes the
+  // telemetry gap on the entire learning loop. PII-free by design — only
+  // grade, subject_code, chapter_number, concept_idx, score_pct, is_correct.
+  | 'learn_chapter_started'
+  | 'learn_concept_advanced'
+  | 'learn_quick_check_submitted'
+  | 'learn_chapter_completed'
+  | 'learn_foxy_doubt_clicked'
+  | 'learn_take_quiz_clicked'
+  | 'learn_read_mode_opened'
+  | 'learn_read_mode_fallback';
 
 // ─── Base properties auto-attached by `capture()` ──────────────────────────
 
@@ -331,6 +343,72 @@ export interface LandingBreadcrumbClickPayload {
   crumb_position: number;
 }
 
+// ─── /learn flow payloads (Phase 2-B) ───────────────────────────────
+// All payloads are PII-free. The chapter page never carries names, emails,
+// or phone numbers; concept titles are NOT included (they're free-form
+// strings authored by content editors and could leak hints about a
+// student's curriculum if cross-referenced).
+
+interface LearnChapterContextBase {
+  subject_code: string;     // 'math', 'science', etc. — closed set per SUBJECT_META.
+  grade: string;            // '6'-'12' — closed set per CBSE.
+  chapter_number: number;   // 1-N
+  language: 'en' | 'hi';    // student's UI language at the moment of the event.
+}
+
+export interface LearnChapterStartedPayload extends LearnChapterContextBase {
+  topic_count: number;
+  question_count: number;
+}
+
+export interface LearnConceptAdvancedPayload extends LearnChapterContextBase {
+  /** 0-indexed position the student JUST moved to. */
+  concept_idx: number;
+  /** Direction the student travelled. */
+  direction: 'next' | 'previous';
+}
+
+export interface LearnQuickCheckSubmittedPayload extends LearnChapterContextBase {
+  concept_idx: number;
+  is_correct: boolean;
+}
+
+export interface LearnChapterCompletedPayload extends LearnChapterContextBase {
+  /** 0-100. May be 0 when the student completes without answering anything. */
+  score_pct: number;
+  total_answered: number;
+  correct_count: number;
+  /** True when score_pct >= 60 and the chapter_progress write fires. */
+  passed_threshold: boolean;
+}
+
+export interface LearnFoxyDoubtClickedPayload extends LearnChapterContextBase {
+  /** Where the click came from: completion-screen weak-concepts callout vs in-flow askFoxy. */
+  source: 'in_flow' | 'completion_weak_concepts';
+}
+
+export interface LearnTakeQuizClickedPayload extends LearnChapterContextBase {
+  /** Score that earned the quiz CTA — only emitted when score_pct >= 60. */
+  score_pct: number;
+}
+
+export interface LearnReadModeOpenedPayload extends LearnChapterContextBase {
+  /** Where the toggle was triggered. 'header' = explicit user action; 'deep_link' = ?mode=read on entry. */
+  trigger: 'header' | 'deep_link';
+  /** Number of paragraphs the fetcher returned. 0 means we entered Read mode but had no content. */
+  chunk_count: number;
+}
+
+/**
+ * Emitted when Read mode is requested but the fetcher returns no content
+ * (rag_content_chunks empty for this chapter). Tracks the content-coverage
+ * gap so the team can see which chapters need ingestion.
+ */
+export interface LearnReadModeFallbackPayload extends LearnChapterContextBase {
+  /** Why we fell back: 'empty' (rag_content_chunks returned 0 rows) or 'error' (query failed). */
+  reason: 'empty' | 'error';
+}
+
 // Discriminated union of all event payloads, keyed by event name.
 export type EventPayloadByName = {
   quiz_started: QuizStartedPayload;
@@ -358,6 +436,14 @@ export type EventPayloadByName = {
   landing_faq_opened: LandingFaqOpenedPayload;
   landing_cta_click: LandingCtaClickPayload;
   landing_breadcrumb_click: LandingBreadcrumbClickPayload;
+  learn_chapter_started: LearnChapterStartedPayload;
+  learn_concept_advanced: LearnConceptAdvancedPayload;
+  learn_quick_check_submitted: LearnQuickCheckSubmittedPayload;
+  learn_chapter_completed: LearnChapterCompletedPayload;
+  learn_foxy_doubt_clicked: LearnFoxyDoubtClickedPayload;
+  learn_take_quiz_clicked: LearnTakeQuizClickedPayload;
+  learn_read_mode_opened: LearnReadModeOpenedPayload;
+  learn_read_mode_fallback: LearnReadModeFallbackPayload;
 };
 
 /** Generic helper: lookup payload type by event name. */

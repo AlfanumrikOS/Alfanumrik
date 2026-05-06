@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useRouter, useParams, useSearchParams } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/AuthContext';
 import {
   getChapterTopics,
@@ -9,11 +10,22 @@ import {
   getTopicDiagrams,
   recordLearningEvent,
   updateChapterProgress,
+  getFeatureFlags,
 } from '@/lib/supabase';
 import { Card, Button, ProgressBar, BottomNav, LoadingFoxy } from '@/components/ui';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { BLOOM_CONFIG, type BloomLevel } from '@/lib/cognitive-engine';
 import type { CurriculumTopic } from '@/lib/types';
+import { track } from '@/lib/posthog/client';
+import { loadChapterContent } from './actions';
+import type { ChapterContent } from '@/lib/learn/fetchChapterContent';
+
+// Lazy-loaded so the markdown + KaTeX bundle stays out of first paint.
+// Only pulled when the student opens Read mode.
+const ChapterReadView = dynamic(
+  () => import('@/components/learn/ChapterReadView'),
+  { ssr: false, loading: () => <LoadingFoxy /> },
+);
 
 const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
 
@@ -47,6 +59,7 @@ interface ConceptState {
 export default function ChapterConceptPage() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const subject = params.subject as string;
   const chapterNum = parseInt(params.chapter as string, 10);
 
@@ -63,7 +76,30 @@ export default function ChapterConceptPage() {
   const [completedCount, setCompletedCount] = useState(0);
   const [showCompletion, setShowCompletion] = useState(false);
 
+  // ── Phase 2-B: Read mode (gated by ff_learn_read_mode_v1) ──
+  // The flag controls visibility of the Practice/Read toggle. When the page
+  // is opened with `?mode=read`, we auto-switch on first paint (deep-link
+  // pattern) but only if the flag is on.
+  const [readModeFlagOn, setReadModeFlagOn] = useState(false);
+  const [mode, setMode] = useState<'practice' | 'read'>('practice');
+  const [readContent, setReadContent] = useState<ChapterContent | null>(null);
+  const [readLoading, setReadLoading] = useState(false);
+  // Guard so we only fire `learn_chapter_started` once per page load.
+  const [chapterStartedFired, setChapterStartedFired] = useState(false);
+  const language: 'en' | 'hi' = isHi ? 'hi' : 'en';
+
   const subMeta = allSubjects.find(s => s.code === subject);
+
+  // Telemetry context shared by every learn_* event for this page.
+  const telemetryBase = useMemo(
+    () => ({
+      subject_code: subject,
+      grade: student?.grade ?? '',
+      chapter_number: chapterNum,
+      language,
+    }),
+    [subject, student?.grade, chapterNum, language],
+  );
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/login');
@@ -100,6 +136,86 @@ export default function ChapterConceptPage() {
     if (student) load();
   }, [student?.id, load]);
 
+  // Fire `learn_chapter_started` exactly once after data arrives. We need
+  // student.grade + topics + questions to be ready so the payload counts
+  // are accurate. Subsequent re-renders are no-ops because of the guard.
+  useEffect(() => {
+    if (chapterStartedFired) return;
+    if (!student || loading) return;
+    if (!telemetryBase.grade) return;
+    track('learn_chapter_started', {
+      ...telemetryBase,
+      topic_count: topics.length,
+      question_count: questions.length,
+    });
+    setChapterStartedFired(true);
+  }, [chapterStartedFired, student, loading, telemetryBase, topics.length, questions.length]);
+
+  // Read flag (ff_learn_read_mode_v1) once per session — single round-trip
+  // shared with the rest of the dashboard's flag fetch (cached in lib/swr).
+  useEffect(() => {
+    if (!student) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const flags = await getFeatureFlags({ role: 'student' });
+        if (!cancelled) setReadModeFlagOn(Boolean(flags?.ff_learn_read_mode_v1));
+      } catch {
+        // Flags fail closed — practice mode only.
+        if (!cancelled) setReadModeFlagOn(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [student?.id]);
+
+  // Deep-link: `?mode=read` auto-toggles into Read mode on first paint when
+  // the flag is on. Triggered once flag state resolves.
+  useEffect(() => {
+    if (!readModeFlagOn || mode === 'read') return;
+    if (searchParams?.get('mode') === 'read') {
+      setMode('read');
+      track('learn_read_mode_opened', {
+        ...telemetryBase,
+        trigger: 'deep_link',
+        chunk_count: 0, // updated when content loads
+      });
+    }
+  }, [readModeFlagOn, mode, searchParams, telemetryBase]);
+
+  // Fetch chapter prose lazily when the student first enters Read mode.
+  useEffect(() => {
+    if (mode !== 'read' || readContent || readLoading || !student) return;
+    let cancelled = false;
+    setReadLoading(true);
+    loadChapterContent({
+      subjectCode: subject,
+      grade: student.grade,
+      chapterNumber: chapterNum,
+    })
+      .then((content) => {
+        if (cancelled) return;
+        setReadContent(content);
+        if (!content) {
+          track('learn_read_mode_fallback', {
+            ...telemetryBase,
+            reason: 'empty',
+          });
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setReadContent(null);
+        track('learn_read_mode_fallback', {
+          ...telemetryBase,
+          reason: 'error',
+        });
+      })
+      .finally(() => {
+        if (!cancelled) setReadLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [mode, readContent, readLoading, student, subject, chapterNum, telemetryBase]);
+
   // Save current study position for "continue where you left off"
   useEffect(() => {
     if (subject && chapterNum && !loading) {
@@ -127,7 +243,14 @@ export default function ChapterConceptPage() {
         console.warn('[chapter-progress] update failed:', err instanceof Error ? err.message : String(err));
       });
     }
-  }, [showCompletion, student, conceptStates, subject, chapterNum]);
+    track('learn_chapter_completed', {
+      ...telemetryBase,
+      score_pct: pct,
+      total_answered: totalAnswered,
+      correct_count: correctCount,
+      passed_threshold: scoreGood,
+    });
+  }, [showCompletion, student, conceptStates, subject, chapterNum, telemetryBase]);
 
   const parseOptions = (opts: string | string[]): string[] => {
     if (Array.isArray(opts)) return opts;
@@ -166,24 +289,60 @@ export default function ChapterConceptPage() {
     if (!conceptStates[currentIdx]?.submitted) {
       setCompletedCount(prev => prev + 1);
     }
+    track('learn_quick_check_submitted', {
+      ...telemetryBase,
+      concept_idx: currentIdx,
+      is_correct: isCorrect,
+    });
   };
 
   const goNext = () => {
     if (currentIdx < topics.length - 1) {
-      setCurrentIdx(i => i + 1);
+      const nextIdx = currentIdx + 1;
+      setCurrentIdx(nextIdx);
+      track('learn_concept_advanced', {
+        ...telemetryBase,
+        concept_idx: nextIdx,
+        direction: 'next',
+      });
     } else {
       setShowCompletion(true);
     }
   };
 
   const goPrev = () => {
-    if (currentIdx > 0) setCurrentIdx(i => i - 1);
+    if (currentIdx > 0) {
+      const prevIdx = currentIdx - 1;
+      setCurrentIdx(prevIdx);
+      track('learn_concept_advanced', {
+        ...telemetryBase,
+        concept_idx: prevIdx,
+        direction: 'previous',
+      });
+    }
   };
 
   const askFoxy = () => {
     const topic = topics[currentIdx];
     const topicParam = topic ? encodeURIComponent(topic.title) : '';
+    track('learn_foxy_doubt_clicked', {
+      ...telemetryBase,
+      source: 'in_flow',
+    });
     router.push(`/foxy?subject=${subject}&mode=doubt&topic=${topicParam}`);
+  };
+
+  const switchToReadMode = () => {
+    setMode('read');
+    track('learn_read_mode_opened', {
+      ...telemetryBase,
+      trigger: 'header',
+      chunk_count: readContent?.sources.length ?? 0,
+    });
+  };
+
+  const switchToPracticeMode = () => {
+    setMode('practice');
   };
 
   if (isLoading || loading) return <LoadingFoxy />;
@@ -273,7 +432,13 @@ export default function ChapterConceptPage() {
                 ))}
               </div>
               <button
-                onClick={() => router.push(`/foxy?subject=${subject}&chapter=${chapterNum}&mode=doubt`)}
+                onClick={() => {
+                  track('learn_foxy_doubt_clicked', {
+                    ...telemetryBase,
+                    source: 'completion_weak_concepts',
+                  });
+                  router.push(`/foxy?subject=${subject}&chapter=${chapterNum}&mode=doubt`);
+                }}
                 className="mt-3 text-xs font-bold px-3 py-1.5 rounded-lg transition-all active:scale-95"
                 style={{ background: 'rgba(220,38,38,0.08)', color: '#DC2626', border: '1px solid rgba(220,38,38,0.2)' }}
               >
@@ -287,7 +452,13 @@ export default function ChapterConceptPage() {
               <Button
                 fullWidth
                 color={subMeta?.color}
-                onClick={() => router.push(`/quiz?subject=${subject}&chapter=${chapterNum}`)}
+                onClick={() => {
+                  track('learn_take_quiz_clicked', {
+                    ...telemetryBase,
+                    score_pct: pct,
+                  });
+                  router.push(`/quiz?subject=${subject}&chapter=${chapterNum}`);
+                }}
               >
                 ⚡ {isHi ? `अध्याय ${chapterNum} का क्विज़ दो` : `Take Chapter ${chapterNum} Quiz`}
               </Button>
@@ -375,6 +546,27 @@ export default function ChapterConceptPage() {
   const isAnswered = conceptState?.submitted ?? false;
   const isCorrect = conceptState?.isCorrect ?? false;
 
+  // ── Phase 2-B: Read mode branch ─────────────────────────────────────
+  // When the flag is on AND the student is in Read mode, render the
+  // chapter prose instead of the practice walkthrough. The toggle in the
+  // header lets them switch back. If the fetcher returned no content,
+  // ChapterReadView shows a friendly fallback and offers to switch back.
+  if (mode === 'read' && readModeFlagOn) {
+    return (
+      <ChapterReadView
+        subjectName={subMeta?.name ?? subject}
+        subjectColor={subMeta?.color}
+        subjectIcon={subMeta?.icon}
+        chapterNumber={chapterNum}
+        isHi={isHi}
+        loading={readLoading}
+        content={readContent}
+        onBack={() => router.push('/dashboard')}
+        onSwitchToPractice={switchToPracticeMode}
+      />
+    );
+  }
+
   return (
     <div className="mesh-bg min-h-dvh pb-nav flex flex-col">
       {/* Header */}
@@ -388,9 +580,23 @@ export default function ChapterConceptPage() {
                 {subMeta?.name} · {isHi ? `अध्याय ${chapterNum}` : `Chapter ${chapterNum}`}
               </span>
             </div>
-            <span className="text-xs font-medium text-[var(--text-3)]">
-              {currentIdx + 1}/{topics.length}
-            </span>
+            <div className="flex items-center gap-2">
+              {readModeFlagOn && (
+                <button
+                  type="button"
+                  onClick={switchToReadMode}
+                  className="text-[10px] font-bold px-2 py-1 rounded-full transition-all active:scale-95"
+                  style={{ background: 'rgba(124,58,237,0.10)', color: '#7C3AED', border: '1px solid rgba(124,58,237,0.2)' }}
+                  data-testid="learn-mode-read-toggle"
+                  aria-label={isHi ? 'पढ़ाई मोड पर जाएँ' : 'Switch to Read mode'}
+                >
+                  📖 {isHi ? 'पढ़ें' : 'Read'}
+                </button>
+              )}
+              <span className="text-xs font-medium text-[var(--text-3)]">
+                {currentIdx + 1}/{topics.length}
+              </span>
+            </div>
           </div>
           <ProgressBar value={progressPct} color={subMeta?.color} height={5} />
         </div>
