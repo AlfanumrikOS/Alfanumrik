@@ -9,6 +9,7 @@ const mockIsFeatureEnabled = vi.fn();
 const mockCapture = vi.fn();
 const mockCreateSub = vi.fn();
 const mockCancelSub = vi.fn();
+const mockUpdateQty = vi.fn();
 
 const supabaseChain = {
   from: vi.fn(),
@@ -26,6 +27,7 @@ vi.mock('@/lib/posthog/server', () => ({
 vi.mock('@/lib/razorpay', () => ({
   createRazorpaySubscription: (...a: unknown[]) => mockCreateSub(...a),
   cancelRazorpaySubscription: (...a: unknown[]) => mockCancelSub(...a),
+  updateRazorpaySubscriptionQuantity: (...a: unknown[]) => mockUpdateQty(...a),
 }));
 vi.mock('@/lib/supabase-admin', () => ({
   getSupabaseAdmin: () => supabaseChain,
