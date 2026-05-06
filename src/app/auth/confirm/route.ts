@@ -167,8 +167,8 @@ export async function GET(request: NextRequest) {
                   p_school_name: meta.school_name || null,
                   p_subjects_taught: null,
                   p_grades_taught: null,
-                  p_phone: null,
-                  p_link_code: null,
+                  p_phone: meta.phone || null,
+                  p_link_code: meta.link_code || null,
                 });
               } catch (bootstrapErr) {
                 console.error('[Auth Confirm] Bootstrap failed:', bootstrapErr);

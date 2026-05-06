@@ -176,6 +176,16 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
         if (instPhone.trim()) metaData.phone = instPhone.trim();
       }
 
+      // Parent / guardian: persist the optional child link_code so the
+      // server-side bootstrap (auth/callback or auth/confirm or
+      // /api/auth/bootstrap) can pass it to bootstrap_user_profile and
+      // wire the guardian to the student row immediately. Previously this
+      // was dropped on the email-confirmation path, leaving guardians
+      // with accounts but no children linked. (Phase 2-A hardening.)
+      if (roleTab === 'parent' && linkCode.trim()) {
+        metaData.link_code = linkCode.trim();
+      }
+
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: email.trim(),
         password,
