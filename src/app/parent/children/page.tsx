@@ -11,9 +11,21 @@ const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 async function api(action: string, params: Record<string, unknown> = {}) {
+  // P13: parent-portal binds caller to JWT — Authorization header is now
+  // required for every action except parent_login. Body.guardian_id is
+  // overridden server-side from the JWT-resolved guardian.
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    apikey: SB_KEY,
+  };
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+  } catch { /* no session — request will be rejected by Edge Function */ }
+
   const res = await fetch(`${SB_URL}/functions/v1/parent-portal`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', apikey: SB_KEY },
+    headers,
     body: JSON.stringify({ action, ...params }),
   });
   if (!res.ok) {

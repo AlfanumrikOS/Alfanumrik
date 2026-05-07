@@ -1066,40 +1066,48 @@ Deno.serve(async (req: Request) => {
     const body = await req.json()
     const action = String(body.action || '')
 
-    // Resolve auth user ID to prevent orphan guardian creation.
-    // Primary source: explicit auth_user_id from the client (reliable, set by AuthContext).
-    // Fallback: extract from Authorization header (may fail due to session timing).
-    // The auth_user_id is verified by checking if a guardian with that ID exists in the DB —
-    // a spoofed ID with no matching guardian row is harmless (falls through to create path).
-    let authUserId: string | null = null
+    // P13 enforcement: resolve the caller's auth_user_id from the
+    // Authorization Bearer token. The previous version trusted body.auth_user_id
+    // and treated spoofing as "harmless" — it isn't, since a spoofed
+    // auth_user_id of an EXISTING guardian causes the function to return
+    // that guardian's children's data. body.auth_user_id is now ignored.
+    //
+    // parent_login is allowed to proceed with a JWT but no existing guardian
+    // (it's the link/create flow). All other actions require a guardian
+    // row keyed by the JWT's user.id, and override body.guardian_id with
+    // the JWT-resolved value.
+    const authHeader = req.headers.get('authorization') || req.headers.get('Authorization')
+    if (!authHeader?.startsWith('Bearer ')) {
+      return errorResponse('Missing or invalid Authorization header', 401, origin)
+    }
+    const token = authHeader.slice(7)
+    const supabase = getServiceClient()
+    const { data: { user }, error: authErr } = await supabase.auth.getUser(token)
+    if (authErr || !user) {
+      return errorResponse('Invalid or expired token', 401, origin)
+    }
+    const authUserId = user.id
 
-    // 1. Explicit auth_user_id from request body (set by parent page from AuthContext)
-    const bodyAuthUserId = typeof body.auth_user_id === 'string' && body.auth_user_id.length > 0
-      ? body.auth_user_id
-      : null
-    if (bodyAuthUserId) {
-      authUserId = bodyAuthUserId
+    if (action === 'parent_login') {
+      // Linking flow: guardian row may not yet exist. handleParentLogin
+      // already takes authUserId; pass the JWT-verified value.
+      return await handleParentLogin(body, origin, authUserId)
     }
 
-    // 2. Fallback: Authorization header token extraction
-    if (!authUserId) {
-      const authHeader = req.headers.get('authorization')
-      if (authHeader?.startsWith('Bearer ')) {
-        try {
-          const { data: { user } } = await getServiceClient().auth.getUser(
-            authHeader.replace('Bearer ', '')
-          )
-          if (user) authUserId = user.id
-        } catch {
-          // No valid auth session — continue without authUserId
-        }
-      }
+    // For every other action, the caller must already be a registered
+    // guardian. Resolve the canonical guardian_id from the JWT, then
+    // override body.guardian_id so handlers see the trusted value.
+    const { data: guardian } = await supabase
+      .from('guardians')
+      .select('id')
+      .eq('auth_user_id', authUserId)
+      .single()
+    if (!guardian) {
+      return errorResponse('Caller is not a registered guardian', 403, origin)
     }
+    body.guardian_id = guardian.id
 
     switch (action) {
-      case 'parent_login':
-        return await handleParentLogin(body, origin, authUserId)
-
       case 'get_child_dashboard':
         return await handleGetChildDashboard(body, origin)
 
