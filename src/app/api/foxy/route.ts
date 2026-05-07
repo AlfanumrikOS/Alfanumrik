@@ -68,6 +68,7 @@ import { PER_PLAN_TIMEOUT_MS, SOFT_CONFIDENCE_BANNER_THRESHOLD } from '@/lib/gro
 import { classifyIntent, routeIntent } from '@/lib/ai';
 import { getAllTenantConfig } from '@/lib/tenant-config';
 import { coerceTenantType } from '@/lib/tenant-domain';
+import { buildTenantOverrideSection } from '@/lib/ai/prompts/tenant-overrides';
 import { FoxyResponseSchema, type FoxyResponse } from '@/lib/foxy/schema';
 import { denormalizeFoxyResponse } from '@/lib/foxy/denormalize';
 import { buildExpandedGoalSection } from '@/lib/goals/goal-personas';
@@ -1096,6 +1097,11 @@ You are Foxy, a friendly CBSE tutor. Safety rails you must follow:
  * `ff_goal_aware_foxy`. See `buildAcademicGoalSection` for the gated
  * substitution rule.
  */
+// `buildTenantOverrideSection` is imported from
+// `@/lib/ai/prompts/tenant-overrides` — extracted to a pure module so it's
+// testable in isolation. See that file for the personality/tone/pedagogy
+// fragment definitions.
+
 function buildSystemPrompt(params: {
   grade: string;
   subject: string;
@@ -1104,6 +1110,11 @@ function buildSystemPrompt(params: {
   academicGoal: string | null;
   cognitiveCtx: CognitiveContext;
   useExpandedPersona?: boolean;
+  // White-label tenant overrides (resolved upstream via resolveTenantAiOverrides).
+  // All optional; absent → byte-identical legacy output.
+  tenantPersonality?: 'warm_mentor' | 'rigorous_coach' | 'formal_examiner' | 'playful_buddy';
+  tenantTone?: 'formal' | 'neutral' | 'casual';
+  tenantPedagogy?: 'socratic' | 'direct_instruction' | 'worked_example';
 }): string {
   const {
     grade,
@@ -1113,13 +1124,18 @@ function buildSystemPrompt(params: {
     academicGoal,
     cognitiveCtx,
     useExpandedPersona = false,
+    tenantPersonality,
+    tenantTone,
+    tenantPedagogy,
   } = params;
   const chapterLine = chapter ? `Chapter: ${chapter}\n` : '';
+  const tenantSection = buildTenantOverrideSection({ tenantPersonality, tenantTone, tenantPedagogy });
   return [
     `You are Foxy, an AI tutor for a Class ${grade} CBSE student studying ${subject}.`,
     chapterLine ? chapterLine : null,
     `Current mode: ${mode}.`,
     FOXY_SAFETY_RAILS,
+    tenantSection || null,
     buildAcademicGoalSection(academicGoal, mode, { useExpandedPersona }),
     buildCognitivePromptSection(cognitiveCtx),
   ]
@@ -1681,6 +1697,12 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     mode,
   });
 
+  // Resolve tenant AI overrides (ai.personality / tone / pedagogy) for the
+  // school this student belongs to. Returns {} for B2C / unresolved schools
+  // / fetch failure — never throws. Same helper the legacy flow uses (#569).
+  // Cached 5 min downstream via the tenant_configs cache.
+  const tenantAi = await resolveTenantAiOverrides(studentId);
+
   // Compose the safety-railed system prompt. The grounded-answer service has
   // its own template, but we pass ours as `foxy_safety_rails` so the final
   // rendered prompt includes the Next.js-side rails for defense-in-depth.
@@ -1692,6 +1714,9 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     academicGoal,
     cognitiveCtx,
     useExpandedPersona,
+    tenantPersonality: tenantAi.tenantPersonality,
+    tenantTone: tenantAi.tenantTone,
+    tenantPedagogy: tenantAi.tenantPedagogy,
   });
 
   // ── R6 Tier 2: Lab-context awareness (additive — does NOT replace RAG) ──
