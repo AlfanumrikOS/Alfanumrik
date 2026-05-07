@@ -82,7 +82,17 @@ export type PostHogEventName =
   // only ids, payment method, amounts, optional rejection reason text.
   | 'reconciliation_submitted'
   | 'reconciliation_approved'
-  | 'reconciliation_rejected';
+  | 'reconciliation_rejected'
+  // School contracts + renewal automation (Phase 3-C of the May 2026 upgrade).
+  // Server-side from /api/super-admin/contracts routes. PII-free —
+  // only contract_id, school_id, t_minus checkpoint, and status transitions.
+  | 'contract_drafted'
+  | 'contract_signed'
+  | 'contract_renewed'
+  | 'contract_cancelled'
+  | 'contract_reminder_sent'
+  | 'contract_expired'
+  | 'contract_grace_suspended';
 
 // ─── Base properties auto-attached by `capture()` ──────────────────────────
 
@@ -499,6 +509,61 @@ export interface ReconciliationRejectedPayload {
   reason:            string;
 }
 
+// ─── Phase 3-C — School contracts + renewal automation ─────────────────────
+
+export interface ContractDraftedPayload {
+  contract_id:    string;
+  school_id:      string;
+  contract_number: string;
+  start_date:     string;  // ISO yyyy-mm-dd
+  end_date:       string;
+  billing_cycle:  'monthly' | 'quarterly' | 'annual' | 'custom';
+  seats_purchased: number;
+  value_inr:      number;
+}
+
+export interface ContractSignedPayload {
+  contract_id:        string;
+  school_id:          string;
+  contract_number:    string;
+  signed_pdf_attached: boolean;
+}
+
+export interface ContractRenewedPayload {
+  new_contract_id:      string;
+  previous_contract_id: string;
+  school_id:            string;
+  new_contract_number:  string;
+}
+
+export interface ContractCancelledPayload {
+  contract_id:    string;
+  school_id:      string;
+  prior_status:   string;  // 'draft' | 'active' | 'expiring' | 'expired'
+  reason?:        string;
+}
+
+export interface ContractReminderSentPayload {
+  contract_id:  string;
+  school_id:    string;
+  /** T-minus days at which this reminder fired. Closed set: 60, 30, 15, 7, 1. */
+  t_minus:      number;
+  /** Did the email send succeed? Useful for failure budgets in PostHog. */
+  delivered:    boolean;
+}
+
+export interface ContractExpiredPayload {
+  contract_id: string;
+  school_id:   string;
+}
+
+export interface ContractGraceSuspendedPayload {
+  contract_id:    string;
+  school_id:      string;
+  /** Days past end_date when grace expired and suspension flipped. */
+  grace_days:     number;
+}
+
 // Discriminated union of all event payloads, keyed by event name.
 export type EventPayloadByName = {
   quiz_started: QuizStartedPayload;
@@ -542,6 +607,13 @@ export type EventPayloadByName = {
   reconciliation_submitted: ReconciliationSubmittedPayload;
   reconciliation_approved: ReconciliationApprovedPayload;
   reconciliation_rejected: ReconciliationRejectedPayload;
+  contract_drafted: ContractDraftedPayload;
+  contract_signed: ContractSignedPayload;
+  contract_renewed: ContractRenewedPayload;
+  contract_cancelled: ContractCancelledPayload;
+  contract_reminder_sent: ContractReminderSentPayload;
+  contract_expired: ContractExpiredPayload;
+  contract_grace_suspended: ContractGraceSuspendedPayload;
 };
 
 /** Generic helper: lookup payload type by event name. */
