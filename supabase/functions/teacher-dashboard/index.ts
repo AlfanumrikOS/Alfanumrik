@@ -440,6 +440,43 @@ async function handleClosePoll(
   }
 }
 
+// ─── JWT Binding (P13 enforcement) ──────────────────────────
+// Resolve the authenticated caller's teacher_id from the Authorization
+// header. Body.teacher_id is IGNORED for trust purposes — handlers see
+// the JWT-derived value instead. Without this, any authenticated user
+// could pass another teacher's id and read their class data via the
+// service-role queries below (P13 cross-tenant violation).
+//
+// Returns { teacherId } on success or { errorResponse } on failure.
+async function resolveTeacherFromJwt(
+  req: Request,
+  origin: string | null,
+): Promise<{ teacherId: string } | { errorResponse: Response }> {
+  const authHeader = req.headers.get('authorization') || req.headers.get('Authorization')
+  if (!authHeader?.startsWith('Bearer ')) {
+    return { errorResponse: errorResponse('Missing or invalid Authorization header', 401, origin) }
+  }
+  const token = authHeader.slice(7)
+
+  const supabase = getServiceClient()
+  const { data: { user }, error: authErr } = await supabase.auth.getUser(token)
+  if (authErr || !user) {
+    return { errorResponse: errorResponse('Invalid or expired token', 401, origin) }
+  }
+
+  const { data: teacher } = await supabase
+    .from('teachers')
+    .select('id')
+    .eq('auth_user_id', user.id)
+    .single()
+
+  if (!teacher) {
+    return { errorResponse: errorResponse('Caller is not a teacher', 403, origin) }
+  }
+
+  return { teacherId: teacher.id }
+}
+
 // ─── Main Handler ───────────────────────────────────────────
 Deno.serve(async (req: Request) => {
   const origin = req.headers.get('origin')
@@ -456,6 +493,15 @@ Deno.serve(async (req: Request) => {
   try {
     const body = await req.json()
     const action = String(body.action || '')
+
+    // P13: bind every action to the JWT-derived teacher_id. Any teacher_id
+    // supplied in the body is overridden — we never trust it. Handlers that
+    // also accept student_id / class_id / alert_id / poll_id still need
+    // per-resource ownership checks (tracked TODO below); this fix closes
+    // the cross-teacher impersonation hole at the dispatch boundary.
+    const auth = await resolveTeacherFromJwt(req, origin)
+    if ('errorResponse' in auth) return auth.errorResponse
+    body.teacher_id = auth.teacherId
 
     switch (action) {
       case 'get_dashboard':
@@ -479,3 +525,10 @@ Deno.serve(async (req: Request) => {
     return errorResponse(msg, 500, origin)
   }
 })
+
+// TODO (follow-up): per-resource ownership checks.
+// Handlers that accept class_id, student_id, alert_id, poll_id from body
+// should verify each belongs to body.teacher_id before any service-role
+// query touches it. Without this, a teacher could still pass another
+// teacher's class_id / poll_id and operate on it. Tracked in the security
+// audit doc; deserves its own PR with tests.
