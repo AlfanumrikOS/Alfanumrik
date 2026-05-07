@@ -7,31 +7,30 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { getStudentByAuthUserId } from '@/lib/domains/identity';
 import { logger } from '@/lib/logger';
+import { validateBody } from '@/lib/validation';
 
-const ALLOWED_CATEGORIES = ['bug', 'content', 'payment', 'account', 'feature', 'other'];
+const TicketBodySchema = z.object({
+  category: z.enum(['bug', 'content', 'payment', 'account', 'feature', 'other']),
+  message: z.string().trim().min(10, 'message must be at least 10 characters').max(5000, 'message cannot exceed 5000 characters'),
+  subject: z.string().trim().max(200).optional(),
+  email: z.string().trim().email().max(254).optional(),
+});
 
 function err(message: string, status: number) {
   return NextResponse.json({ success: false, error: message }, { status });
 }
 
 export async function POST(request: NextRequest) {
-  let body: Record<string, unknown>;
-  try { body = await request.json(); } catch { return err('Invalid request body', 400); }
+  let rawBody: unknown;
+  try { rawBody = await request.json(); } catch { return err('Invalid request body', 400); }
 
-  const { category, subject, message, email } = body;
-
-  if (typeof category !== 'string' || !ALLOWED_CATEGORIES.includes(category)) {
-    return err(`category must be one of: ${ALLOWED_CATEGORIES.join(', ')}`, 400);
-  }
-  if (typeof message !== 'string' || message.trim().length < 10) {
-    return err('message must be at least 10 characters', 400);
-  }
-  if (message.trim().length > 5000) {
-    return err('message cannot exceed 5000 characters', 400);
-  }
+  const validation = validateBody(TicketBodySchema, rawBody);
+  if (!validation.success) return validation.error;
+  const { category, subject, message, email } = validation.data;
 
   // Try to resolve authenticated student (optional — guests can also submit)
   let studentId: string | null = null;
@@ -52,11 +51,9 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Validate email for guests
-  const resolvedEmail = studentEmail ?? (typeof email === 'string' ? email.trim() : 'anonymous');
-  if (resolvedEmail !== 'anonymous' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(resolvedEmail)) {
-    return err('Invalid email format', 400);
-  }
+  // Resolve email — authed student's email > body email (guest) > anonymous.
+  // The schema already validates email format when supplied; no second check needed.
+  const resolvedEmail = studentEmail ?? email ?? 'anonymous';
 
   const ua = request.headers.get('user-agent') ?? '';
 
@@ -64,8 +61,8 @@ export async function POST(request: NextRequest) {
     student_id: studentId,
     email: resolvedEmail,
     category,
-    subject: typeof subject === 'string' ? subject.trim().substring(0, 200) : category,
-    message: message.trim(),
+    subject: subject || category,
+    message,
     status: 'open',
     user_role: studentId ? 'student' : 'guest',
     user_name: studentName ?? 'Guest',
