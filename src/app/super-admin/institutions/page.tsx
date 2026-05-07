@@ -12,11 +12,23 @@ import { colors, S } from '../_components/admin-styles';
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
+type TenantType = 'school' | 'coaching' | 'corporate' | 'government';
+
 interface InstitutionRecord {
   id: string; name: string; board: string; city?: string; state?: string;
   principal_name?: string; email?: string; phone?: string; max_students?: number;
   max_teachers?: number; subscription_plan?: string; is_active?: boolean; created_at?: string;
   slug?: string; subdomain?: string;
+  // Phase B fields surfaced by /api/super-admin/institutions GET (see route.ts).
+  // tenant_type is editable from this page (super-admin owns the change);
+  // typography fields are display-only here — school admin owns them via
+  // /school-admin/branding (#563).
+  tenant_type?: TenantType;
+  font_heading?: string | null;
+  font_body?: string | null;
+  border_radius_px?: number | null;
+  custom_domain?: string | null;
+  domain_verified?: boolean | null;
   [key: string]: unknown;
 }
 
@@ -476,6 +488,34 @@ function InstitutionsContent() {
     fetchInstitutions();
   };
 
+  /* ----- change tenant_type (Phase B super-admin) -----
+     Loud, separate handler — distinct from the generic update path so the
+     audit log carries the `tenant.type_changed` action (see backend at
+     src/app/api/super-admin/institutions/route.ts). Refetches both the
+     list and the selected drawer record so the UI reflects the new state
+     without a page reload. */
+  const [changingType, setChangingType] = useState<string | null>(null);
+  const changeTenantType = async (inst: InstitutionRecord, next: TenantType) => {
+    if (inst.tenant_type === next) return;
+    setChangingType(inst.id);
+    try {
+      const res = await apiFetch('/api/super-admin/institutions', {
+        method: 'PATCH',
+        body: JSON.stringify({ id: inst.id, updates: { tenant_type: next } }),
+      });
+      if (res.ok) {
+        // Optimistic refresh of the drawer's row; full list re-fetch follows.
+        setSelected(prev => (prev && prev.id === inst.id ? { ...prev, tenant_type: next } : prev));
+        fetchInstitutions();
+      } else {
+        const d = await res.json().catch(() => null);
+        setError(d?.error || 'Failed to change tenant type');
+      }
+    } finally {
+      setChangingType(null);
+    }
+  };
+
   /* ----- provision ----- */
   const handleProvision = async (form: ProvisionForm) => {
     setProvisioning(true);
@@ -830,6 +870,35 @@ function InstitutionsContent() {
                   variant={PIPELINE_VARIANT[h?.pipeline_stage || 'lead']}
                 />
               } />
+              {/* Tenant type — editable inline. Changes go through PATCH
+                  /api/super-admin/institutions with audit-log action
+                  `tenant.type_changed`. Disabled while a request is in
+                  flight to prevent double-submission. */}
+              <InfoRow label="Tenant Type" value={
+                <select
+                  value={selected.tenant_type || 'school'}
+                  disabled={changingType === selected.id}
+                  onChange={e => changeTenantType(selected, e.target.value as TenantType)}
+                  style={{ ...S.select, fontSize: 12, padding: '4px 8px' }}
+                >
+                  <option value="school">School</option>
+                  <option value="coaching">Coaching Institute</option>
+                  <option value="corporate">Corporate</option>
+                  <option value="government">Government</option>
+                </select>
+              } />
+              {selected.custom_domain && (
+                <InfoRow label="Custom Domain" value={
+                  <span>
+                    {selected.custom_domain}
+                    {selected.domain_verified ? (
+                      <StatusBadge label="verified" variant="success" />
+                    ) : (
+                      <StatusBadge label="unverified" variant="warning" />
+                    )}
+                  </span>
+                } />
+              )}
             </div>
 
             {/* Subscription */}
