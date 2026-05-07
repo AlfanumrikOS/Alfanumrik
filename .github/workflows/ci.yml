@@ -473,6 +473,28 @@ jobs:
             echo "All bundle sizes within budget."
           fi
 
+      # Authoritative per-page first-load JS gate.
+      # The bash check above measures raw bytes and only inspects the LARGEST
+      # single shared chunk — it misses per-page violations and overstates
+      # sizes ~3x by comparing raw to a gzipped budget.
+      # check-bundle-size.mjs measures gzipped, uses HTML-scan to detect what's
+      # actually shared first-paint (catches root-layout chunks the manifest
+      # omits), and reports per-page page-only cost separately. Caps are in the
+      # script itself (CAP_SHARED_KB=270 interim, CAP_PAGE_KB=260, CAP_MIDDLEWARE_KB=120).
+      - name: First-load JS budget (authoritative, gzipped per-page)
+        run: |
+          echo "## First-Load JS Budget (gzipped, per-page)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          npm run check:bundle-size 2>&1 | tee /tmp/bundle-report.txt
+          BUNDLE_EXIT=${PIPESTATUS[0]}
+          tail -40 /tmp/bundle-report.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          if [ "$BUNDLE_EXIT" != "0" ]; then
+            echo "BLOCKED: Per-page first-load JS exceeds budget. See report above and P10 in CLAUDE.md." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
