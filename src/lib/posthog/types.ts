@@ -77,6 +77,12 @@ export type PostHogEventName =
   | 'school_billing_plan_change_failed'
   | 'school_subscription_cancelled'
   | 'school_seat_cap_hit'
+  // Offline payment reconciliation (Phase 3-B of the May 2026 upgrade).
+  // Server-side from /api/super-admin/reconciliation routes. PII-free —
+  // only ids, payment method, amounts, optional rejection reason text.
+  | 'reconciliation_submitted'
+  | 'reconciliation_approved'
+  | 'reconciliation_rejected'
   // School contracts + renewal automation (Phase 3-C of the May 2026 upgrade).
   // Server-side from /api/super-admin/contracts routes. PII-free —
   // only contract_id, school_id, t_minus checkpoint, and status transitions.
@@ -476,6 +482,33 @@ export interface SchoolSeatCapHitPayload {
   attempted_to_add?: number;
 }
 
+// ─── Phase 3-B — Offline payment reconciliation ────────────────────────────
+
+export interface ReconciliationSubmittedPayload {
+  reconciliation_id: string;
+  invoice_id:        string;
+  school_id:         string;
+  payment_method:    'po' | 'bank_transfer' | 'cheque' | 'upi_offline';
+  amount_inr:        number;
+}
+
+export interface ReconciliationApprovedPayload {
+  reconciliation_id:   string;
+  school_id:           string;
+  invoice_id:          string;
+  received_amount_inr: number;
+  /** Output of the reconcile_payment() RPC — period_old / period_new etc. */
+  rpc_result?:         unknown;
+}
+
+export interface ReconciliationRejectedPayload {
+  reconciliation_id: string;
+  school_id:         string;
+  invoice_id:        string;
+  /** Free-text reason; capped at 500 chars by the API. PII-free in practice. */
+  reason:            string;
+}
+
 // ─── Phase 3-C — School contracts + renewal automation ─────────────────────
 
 export interface ContractDraftedPayload {
@@ -571,6 +604,9 @@ export type EventPayloadByName = {
   school_billing_plan_change_failed: SchoolBillingPlanChangeFailedPayload;
   school_subscription_cancelled: SchoolSubscriptionCancelledPayload;
   school_seat_cap_hit: SchoolSeatCapHitPayload;
+  reconciliation_submitted: ReconciliationSubmittedPayload;
+  reconciliation_approved: ReconciliationApprovedPayload;
+  reconciliation_rejected: ReconciliationRejectedPayload;
   contract_drafted: ContractDraftedPayload;
   contract_signed: ContractSignedPayload;
   contract_renewed: ContractRenewedPayload;
