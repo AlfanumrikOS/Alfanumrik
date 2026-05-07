@@ -266,14 +266,62 @@ export function invalidateTenantModulesCache(schoolId: string): void {
   cacheInvalidatePrefix(`${TENANT_MODULES_CACHE_PREFIX}${schoolId}`);
 }
 
+// ─── Platform-wide module overrides (super-admin force-disable) ────────
+//
+// `platform_module_overrides` (migration 20260507120000) is keyed by
+// module_key and lets super-admin globally force-disable a module across
+// every tenant — overriding tenant_modules rows AND tenant-type defaults.
+// Sparse: most modules have no row.
+//
+// Cached separately from tenant_modules (1 cache key, not per-tenant) so
+// flipping a platform override propagates to every tenant within ~5 min.
+
+const PLATFORM_MODULE_OVERRIDES_CACHE_KEY = 'platform_module_overrides:all';
+
+interface PlatformOverrideRow {
+  module_key: string;
+  is_force_disabled: boolean;
+}
+
+async function loadPlatformOverrides(): Promise<PlatformOverrideRow[]> {
+  return cacheFetch(
+    PLATFORM_MODULE_OVERRIDES_CACHE_KEY,
+    CACHE_TTL.STATIC,
+    async () => {
+      const { data, error } = await supabaseAdmin
+        .from('platform_module_overrides')
+        .select('module_key,is_force_disabled');
+      if (error) {
+        // Fail OPEN — a query error here should not turn off every module
+        // for every tenant. Log on the caller side if visibility is needed.
+        return [] as PlatformOverrideRow[];
+      }
+      return (data ?? []) as PlatformOverrideRow[];
+    },
+  );
+}
+
+/**
+ * Invalidate the cached platform-override map. Super-admin mutations to
+ * platform_module_overrides invalidate via this so the next resolver
+ * call sees the change within milliseconds rather than the 5-min TTL.
+ */
+export function invalidatePlatformOverridesCache(): void {
+  cacheInvalidatePrefix(PLATFORM_MODULE_OVERRIDES_CACHE_KEY);
+}
+
 /**
  * Is `moduleKey` enabled for the tenant identified by `schoolId`?
  *
- *   - If `ff_tenant_module_registry_v1` is OFF:
- *       returns true unconditionally (current platform behaviour).
- *   - Otherwise:
- *       reads tenant_modules. Override row wins; missing → registry default
- *       for the tenant's type (caller passes `tenantType`).
+ * Resolution order (post-#573):
+ *   1. ff_tenant_module_registry_v1 OFF → true (current platform behaviour).
+ *      Note: when the flag is OFF, platform overrides are also bypassed —
+ *      the safe default during rollout is "everything on, no exotic gating."
+ *   2. platform_module_overrides.is_force_disabled = true → false.
+ *      Super-admin force-disable wins over any tenant-level setting or
+ *      registry default.
+ *   3. tenant_modules row exists → use its is_enabled.
+ *   4. No row → registry default for the tenant's type.
  */
 export async function isModuleEnabled(
   schoolId: string | null,
@@ -289,10 +337,17 @@ export async function isModuleEnabled(
   });
   if (!flagOn) return true;
 
+  // Step 2: platform-wide override wins.
+  const platformOverrides = await loadPlatformOverrides();
+  const platform = platformOverrides.find(p => p.module_key === moduleKey);
+  if (platform?.is_force_disabled) return false;
+
+  // Step 3: tenant override.
   const rows = await loadTenantModules(schoolId);
   const override = rows.find(r => r.module_key === moduleKey);
   if (override) return override.is_enabled;
 
+  // Step 4: tenant-type default.
   const defaults = defaultsForTenantType(tenantType);
   return defaults[moduleKey] ?? false;
 }
@@ -321,12 +376,25 @@ export async function enabledModulesFor(
     return out;
   }
 
-  const rows = await loadTenantModules(schoolId);
+  // Load platform overrides + tenant rows in parallel. Both are cached;
+  // first-load adds <50ms, hot-path is cache-served.
+  const [platformOverrides, rows] = await Promise.all([
+    loadPlatformOverrides(),
+    loadTenantModules(schoolId),
+  ]);
+  const platformDisabled = new Set(
+    platformOverrides.filter(p => p.is_force_disabled).map(p => p.module_key),
+  );
   const overrides = new Map(rows.map(r => [r.module_key, r.is_enabled]));
   const defaults = defaultsForTenantType(tenantType);
 
   const out = {} as Record<ModuleKey, boolean>;
   for (const meta of MODULE_REGISTRY) {
+    // Platform force-disable wins over tenant override + registry default.
+    if (platformDisabled.has(meta.key)) {
+      out[meta.key] = false;
+      continue;
+    }
     out[meta.key] = overrides.get(meta.key) ?? defaults[meta.key] ?? false;
   }
   return out;
