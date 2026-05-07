@@ -600,6 +600,55 @@ function InstitutionsContent() {
     }
   };
 
+  /* ----- Vercel attach (white-label routing + TLS) -----
+     Independent of the DNS-TXT verify above. The DNS-TXT proves
+     ownership; Vercel attach wires routing + auto-TLS via Let's Encrypt.
+     Both must complete (in any order) for traffic to reach the tenant. */
+  const [attachingVercel, setAttachingVercel] = useState(false);
+  const [vercelResult, setVercelResult] = useState<{
+    verified: boolean;
+    misconfigured?: boolean;
+    verification: Array<{ type: string; domain: string; value: string; reason: string }>;
+    error?: string;
+    code?: string;
+  } | null>(null);
+
+  // Reset Vercel result when drawer switches schools so stale records
+  // don't bleed across selections.
+  useEffect(() => {
+    setVercelResult(null);
+  }, [selected?.id]);
+
+  const attachVercelDomain = async (inst: InstitutionRecord, action: 'attach' | 'status') => {
+    setAttachingVercel(true);
+    setError(null);
+    try {
+      const res = await apiFetch('/api/super-admin/institutions/attach-vercel-domain', {
+        method: 'POST',
+        body: JSON.stringify({ id: inst.id, action }),
+      });
+      const j = await res.json().catch(() => null);
+      if (!res.ok || !j?.success) {
+        // Distinguish "Vercel not configured" (503) from other failures so
+        // the UI can render a sticky banner rather than a transient error.
+        setVercelResult({
+          verified: false,
+          verification: [],
+          error: j?.error || `Vercel call failed (HTTP ${res.status})`,
+          code: j?.code,
+        });
+      } else {
+        setVercelResult({
+          verified: !!j.vercel.verified,
+          misconfigured: j.vercel.misconfigured,
+          verification: Array.isArray(j.vercel.verification) ? j.vercel.verification : [],
+        });
+      }
+    } finally {
+      setAttachingVercel(false);
+    }
+  };
+
   /* ----- provision ----- */
   const handleProvision = async (form: ProvisionForm) => {
     setProvisioning(true);
@@ -1026,7 +1075,7 @@ function InstitutionsContent() {
                   }}
                 >
                   <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                    {verifyResult.verified ? '✓ Verified' : 'Not yet verified'}
+                    {verifyResult.verified ? '✓ Ownership verified' : 'Not yet verified'}
                   </div>
                   <div style={{ marginBottom: 6 }}>{verifyResult.message}</div>
                   {!verifyResult.verified && (
@@ -1039,6 +1088,82 @@ function InstitutionsContent() {
                       <div style={{ background: colors.bg, padding: 4, borderRadius: 3 }}>
                         {verifyResult.expectedToken}
                       </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Vercel attach — independent of ownership verification.
+                  Pairs with the DNS-TXT verify above. */}
+              {selected.custom_domain && (
+                <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${colors.border}` }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: colors.text2, marginBottom: 6 }}>
+                    Vercel routing + TLS
+                  </div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button
+                      onClick={() => attachVercelDomain(selected, 'attach')}
+                      disabled={attachingVercel || savingDomain || verifyingDomain}
+                      style={{ ...S.button, fontSize: 11 }}
+                    >
+                      {attachingVercel ? 'Calling Vercel…' : 'Attach to Vercel'}
+                    </button>
+                    <button
+                      onClick={() => attachVercelDomain(selected, 'status')}
+                      disabled={attachingVercel || savingDomain || verifyingDomain}
+                      style={{ ...S.button, fontSize: 11 }}
+                    >
+                      Refresh status
+                    </button>
+                  </div>
+
+                  {vercelResult && (
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: vercelResult.verified ? colors.success : colors.text2,
+                        background: vercelResult.verified ? `${colors.success}10` : colors.surface,
+                        padding: 10,
+                        borderRadius: 4,
+                        marginTop: 6,
+                      }}
+                    >
+                      {vercelResult.error ? (
+                        <div>
+                          <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                            {vercelResult.code === 'VERCEL_NOT_CONFIGURED'
+                              ? 'Vercel API not configured'
+                              : 'Vercel call failed'}
+                          </div>
+                          <div>{vercelResult.error}</div>
+                          {vercelResult.code === 'VERCEL_NOT_CONFIGURED' && (
+                            <div style={{ marginTop: 4, fontFamily: 'monospace' }}>
+                              Set VERCEL_API_TOKEN + VERCEL_PROJECT_ID env vars on the deploy.
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div>
+                          <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                            {vercelResult.verified ? '✓ Vercel verified — TLS will provision automatically' : 'Vercel attached, awaiting DNS'}
+                          </div>
+                          {vercelResult.misconfigured && (
+                            <div style={{ marginBottom: 6 }}>DNS records below need to be published.</div>
+                          )}
+                          {vercelResult.verification.length > 0 && (
+                            <div style={{ fontFamily: 'monospace', fontSize: 11 }}>
+                              <div style={{ marginBottom: 4 }}>Required DNS records:</div>
+                              {vercelResult.verification.map((rec, i) => (
+                                <div key={i} style={{ background: colors.bg, padding: 4, borderRadius: 3, marginBottom: 4 }}>
+                                  <div>{rec.type} {rec.domain}</div>
+                                  <div style={{ color: colors.text3 }}>→ {rec.value}</div>
+                                  {rec.reason && <div style={{ color: colors.text3, marginTop: 2 }}>{rec.reason}</div>}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
