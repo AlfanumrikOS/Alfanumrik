@@ -2,6 +2,7 @@ import './globals.css';
 import type { Metadata, Viewport } from 'next';
 import { AuthProvider } from '@/lib/AuthContext';
 import { SchoolProvider } from '@/lib/SchoolContext';
+import { TenantConfigProvider } from '@/lib/tenant-domain/client';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import RegisterSW from '@/lib/RegisterSW';
 import JsonLd from '@/components/JsonLd';
@@ -80,19 +81,32 @@ export default function RootLayout({
       </head>
       <body>
         <a href="#main-content" className="skip-nav">Skip to content</a>
-        <SchoolProvider>
-          <AuthProvider>
-            <ErrorBoundary>
-              <div id="main-content" className="app-shell">{children}</div>
-            </ErrorBoundary>
-            <DemoModeWrapper />
-            <RegisterSW />
-            {/* Non-critical client-only chrome (consent banner, maintenance
-                banner, offline indicator, PostHog SDK init). Lazy-loaded
-                to keep shared JS under the P10 budget. */}
-            <LayoutDeferredChrome />
-          </AuthProvider>
-        </SchoolProvider>
+        {/*
+          TenantConfigProvider — Phase B/C/D consumer (mounted outermost).
+          Fetches /api/tenant/config once on hydration; for B2C visitors the
+          endpoint returns { isTenantContext: false } and the provider is a
+          no-op (no CSS vars set, hooks return defaults). For white-label
+          tenants it sets --color-brand-{primary,secondary} and the
+          --tenant-font-{heading,body} / --tenant-radius CSS vars on <html>.
+          Sits alongside the legacy SchoolProvider — both co-exist. The
+          legacy --school-{primary,secondary} vars from SchoolProvider use
+          a different namespace, so there's no collision.
+        */}
+        <TenantConfigProvider>
+          <SchoolProvider>
+            <AuthProvider>
+              <ErrorBoundary>
+                <div id="main-content" className="app-shell">{children}</div>
+              </ErrorBoundary>
+              <DemoModeWrapper />
+              <RegisterSW />
+              {/* Non-critical client-only chrome (consent banner, maintenance
+                  banner, offline indicator, PostHog SDK init). Lazy-loaded
+                  to keep shared JS under the P10 budget. */}
+              <LayoutDeferredChrome />
+            </AuthProvider>
+          </SchoolProvider>
+        </TenantConfigProvider>
       </body>
     </html>
   );
