@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeSchoolAdmin } from '@/lib/school-admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { logSchoolAudit } from '@/lib/audit';
 import {
   MODULE_REGISTRY,
   defaultsForTenantType,
@@ -215,6 +216,20 @@ export async function PUT(request: NextRequest) {
     }
 
     invalidateTenantModulesCache(schoolId);
+
+    // Audit trail. Fire-and-forget — `logSchoolAudit` already swallows
+    // failures so a flaky audit insert never breaks the user's toggle.
+    void logSchoolAudit({
+      schoolId,
+      actorId: auth.userId ?? 'unknown',
+      action: 'module.toggled',
+      resourceType: 'module',
+      resourceId: moduleKey,
+      metadata: {
+        is_enabled: isEnabled,
+        config_keys: config && typeof config === 'object' ? Object.keys(config) : [],
+      },
+    });
 
     return NextResponse.json({ success: true, data });
   } catch (err) {

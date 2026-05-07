@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeSchoolAdmin } from '@/lib/school-admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { logSchoolAudit } from '@/lib/audit';
 import {
   CONFIG_SCHEMAS,
   CONFIG_DEFAULTS,
@@ -237,6 +238,19 @@ export async function PUT(request: NextRequest) {
     }
 
     invalidateTenantConfigCache(schoolId);
+
+    // Audit trail. Records WHICH keys changed (not their values — values may
+    // contain tenant-sensitive copy choices). Fire-and-forget.
+    void logSchoolAudit({
+      schoolId,
+      actorId: auth.userId ?? 'unknown',
+      action: 'tenant_config.updated',
+      resourceType: 'tenant_config',
+      // resourceId is the comma-joined key list — provides quick ops triage
+      // ("which key was changed?") without dumping values into the audit row.
+      resourceId: validated.map(v => v.key).join(','),
+      metadata: { keys: validated.map(v => v.key), count: validated.length },
+    });
 
     return NextResponse.json({
       success: true,
