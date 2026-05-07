@@ -28,6 +28,77 @@ function getServiceClient() {
   })
 }
 
+// ─── Per-resource ownership helpers (P13 follow-up to JWT binding) ──────
+// JWT binding alone prevents teacher A from impersonating teacher B by
+// passing B's teacher_id. But several handlers also accept class_id /
+// alert_id / poll_id from the body and operate on them with the
+// service-role client — without these checks, A could still fetch B's
+// class roster heatmap or close B's poll by passing B's class_id.
+
+/**
+ * Verify that `classId` belongs to `teacherId`, or that the synthetic
+ * `grade-<n>` pseudo-class id corresponds to a grade the teacher teaches.
+ * Used by handlers that accept a class_id from the request body.
+ */
+async function assertTeacherOwnsClass(
+  supabase: ReturnType<typeof getServiceClient>,
+  teacherId: string,
+  classId: string,
+): Promise<boolean> {
+  if (!classId) return false
+
+  // Synthetic id used when the teacher has no class assignments — must
+  // correspond to a grade in the teacher's grades_taught array.
+  if (classId.startsWith('grade-')) {
+    const grade = classId.replace('grade-', '')
+    const { data: teacher } = await supabase
+      .from('teachers')
+      .select('grades_taught')
+      .eq('id', teacherId)
+      .single()
+    if (!teacher) return false
+    const grades = Array.isArray(teacher.grades_taught)
+      ? teacher.grades_taught.map(String)
+      : teacher.grades_taught != null
+      ? [String(teacher.grades_taught)]
+      : []
+    return grades.includes(grade)
+  }
+
+  const { data: assignment } = await supabase
+    .from('teacher_class_assignments')
+    .select('class_id')
+    .eq('teacher_id', teacherId)
+    .eq('class_id', classId)
+    .limit(1)
+    .maybeSingle()
+  return !!assignment
+}
+
+/**
+ * Verify that `pollId` was created by `teacherId`. Returns true on a
+ * direct teacher_id match, false otherwise — including the case where
+ * the polls table doesn't exist or the row is absent (fail closed).
+ */
+async function assertTeacherOwnsPoll(
+  supabase: ReturnType<typeof getServiceClient>,
+  teacherId: string,
+  pollId: string,
+): Promise<boolean> {
+  if (!pollId) return false
+  try {
+    const { data: poll } = await supabase
+      .from('classroom_polls')
+      .select('teacher_id')
+      .eq('id', pollId)
+      .limit(1)
+      .maybeSingle()
+    return !!poll && poll.teacher_id === teacherId
+  } catch {
+    return false
+  }
+}
+
 // ─── get_dashboard ──────────────────────────────────────────
 async function handleGetDashboard(
   body: Record<string, unknown>,
@@ -135,9 +206,15 @@ async function handleGetHeatmap(
 ): Promise<Response> {
   const classId = String(body.class_id || '')
   const subject = body.subject ? String(body.subject) : null
+  const teacherId = String(body.teacher_id || '')
   if (!classId) return errorResponse('class_id required', 400, origin)
 
   const supabase = getServiceClient()
+
+  // P13: caller must own the class they're asking about.
+  if (!(await assertTeacherOwnsClass(supabase, teacherId, classId))) {
+    return errorResponse('Class not owned by caller', 403, origin)
+  }
 
   // Determine students in this class/grade
   const isGradeId = classId.startsWith('grade-')
@@ -228,9 +305,16 @@ async function handleGetAlerts(
   origin: string | null,
 ): Promise<Response> {
   const classId = String(body.class_id || '')
+  const teacherId = String(body.teacher_id || '')
   if (!classId) return errorResponse('class_id required', 400, origin)
 
   const supabase = getServiceClient()
+
+  // P13: caller must own the class they're asking about.
+  if (!(await assertTeacherOwnsClass(supabase, teacherId, classId))) {
+    return errorResponse('Class not owned by caller', 403, origin)
+  }
+
   const isGradeId = classId.startsWith('grade-')
   const grade = isGradeId ? classId.replace('grade-', '') : null
 
@@ -346,16 +430,21 @@ async function handleResolveAlert(
   origin: string | null,
 ): Promise<Response> {
   const alertId = String(body.alert_id || '')
+  const teacherId = String(body.teacher_id || '')
   if (!alertId) return errorResponse('alert_id required', 400, origin)
 
-  // Alerts are derived from student data, not stored separately.
-  // We can log the resolution for audit purposes.
+  // Alerts are derived from student data, not stored separately, so there's
+  // no row-level ownership to verify on alert_id itself. The audit row is
+  // tagged with the (JWT-derived) teacher_id so the audit trail records WHO
+  // resolved each alert. Without this, a malicious teacher could write
+  // resolve audit entries impersonating another teacher.
   const supabase = getServiceClient()
   try {
     await supabase.from('audit_log').insert({
       action: 'resolve_alert',
       entity_type: 'alert',
       entity_id: alertId,
+      actor_id: teacherId,
       details: { resolved_at: new Date().toISOString() },
     })
   } catch { /* audit_log may not exist */ }
@@ -378,6 +467,13 @@ async function handleLaunchPoll(
   }
 
   const supabase = getServiceClient()
+
+  // P13: caller must own the class they're launching a poll into.
+  // Without this, a teacher could create a poll under another teacher's
+  // class_id and reach that class's students.
+  if (!(await assertTeacherOwnsClass(supabase, teacherId, classId))) {
+    return errorResponse('Class not owned by caller', 403, origin)
+  }
 
   try {
     const { data, error } = await supabase
@@ -408,9 +504,16 @@ async function handleClosePoll(
   origin: string | null,
 ): Promise<Response> {
   const pollId = String(body.poll_id || '')
+  const teacherId = String(body.teacher_id || '')
   if (!pollId) return errorResponse('poll_id required', 400, origin)
 
   const supabase = getServiceClient()
+
+  // P13: caller must own the poll they're closing. Without this a teacher
+  // could close another teacher's poll and read its responses.
+  if (!(await assertTeacherOwnsPoll(supabase, teacherId, pollId))) {
+    return errorResponse('Poll not owned by caller', 403, origin)
+  }
 
   try {
     // Update poll status
