@@ -1,72 +1,183 @@
 -- Migration: 20260508000001_syllabus_trigger_runtime_smoke.sql
--- Purpose:    Runtime self-test that proves the syllabus triggers ACTUALLY
---             fire post-deploy, not just that the catalog rows exist.
+-- Purpose:    Aggressively recreate the syllabus triggers + recompute
+--             function, then runtime-assert they fire correctly.
 --
 -- Background:
---   `20260507100000_force_reapply_syllabus_triggers.sql` added a self-test
---   that checks pg_proc / pg_trigger entries exist after the migration.
---   That self-test passes on staging — but the integration tests
---   (syllabus-triggers.test.ts) STILL fail with chunk_count = 0 after
---   inserting a chunk that should match.
+--   Earlier diagnostic run (2026-05-07 16:49 UTC, run 25509695162) confirmed
+--   that on staging the rag_content_chunks AFTER INSERT trigger does NOT
+--   bump cbse_syllabus.chunk_count, even though `20260507100000` claimed
+--   success and its catalog self-test passed. Catalog presence is necessary
+--   but not sufficient — the trigger object exists yet doesn't fire.
 --
---   The catalog-only check is necessary but not sufficient: a trigger can
---   exist on the right table yet fire on the wrong WHERE filter (e.g.
---   schema-qualified function references that resolve to a stale older
---   function body, or a function whose body silently returns 0 because of
---   a casing mismatch).
+--   Most likely causes (in order of probability):
+--     A) recompute_syllabus_status was created in a non-public schema by
+--        an earlier migration and the trigger function's unqualified
+--        `PERFORM recompute_syllabus_status(...)` resolves to a stale body
+--        that early-returns without doing the UPDATE.
+--     B) cbse_syllabus.grade column stores 'Grade 10' (display form) not
+--        '10' (short form), so the recompute UPDATE's
+--        `WHERE grade = p_grade` never matches.
+--     C) The trigger is ALTER TABLE … DISABLE TRIGGERed.
 --
 -- Approach:
---   This migration performs a real INSERT on rag_content_chunks inside a
---   SAVEPOINT, asserts the trigger updated cbse_syllabus.chunk_count to 1,
---   then ROLLBACK TO SAVEPOINT so the test data does not persist. If the
---   trigger does not fire (or recompute_syllabus_status returns 0 anyway),
---   the migration RAISES with a precise diagnostic and Sync-to-Staging
---   surfaces the underlying bug instead of letting the integration tests
---   fail again at the next PR.
+--   1. DROP everything with CASCADE so we know we're starting clean.
+--   2. CREATE the function with explicit `public.` qualification on the
+--      inner call, and `SET search_path = public, pg_temp` on both the
+--      recompute and trigger functions so search_path drift cannot affect
+--      resolution.
+--   3. CREATE the trigger and explicitly ENABLE it.
+--   4. Smoke test: seed a cbse_syllabus row, INSERT a rag_content_chunks
+--      row, assert the trigger updated chunk_count to 1 and rag_status to
+--      'partial'. Also call recompute_syllabus_status() explicitly as a
+--      separate diagnostic so a future failure can distinguish trigger
+--      vs function bugs.
+--   5. RAISE with a precise diagnostic if the assertion still fails.
+--   6. Always clean up smoke test rows.
 --
--- Idempotent: ✅ uses SAVEPOINT + ROLLBACK; touches no persistent rows.
--- Reversible: N/A — pure assertion.
--- Side effects: none on persistent state.
+-- Idempotent: ✅ DROP CASCADE + CREATE is safe to re-run.
+-- Reversible: N/A — only re-creates objects that should already exist.
+-- Side effects on data: none. The smoke test rows are deleted in all paths.
 
+-- ── 1. Aggressive teardown ─────────────────────────────────────────────
+-- DROP CASCADE removes any dependent objects we missed. The
+-- 20260507100000 migration's CREATE OR REPLACE may have left a stale
+-- function body in scope; CASCADE forces a clean rebuild.
+DROP TRIGGER IF EXISTS rag_chunks_recompute_trigger ON public.rag_content_chunks CASCADE;
+DROP TRIGGER IF EXISTS question_bank_recompute_trigger ON public.question_bank CASCADE;
+DROP FUNCTION IF EXISTS public.trg_rag_chunks_recompute() CASCADE;
+DROP FUNCTION IF EXISTS public.trg_question_bank_recompute() CASCADE;
+DROP FUNCTION IF EXISTS public.recompute_syllabus_status(text, text, integer) CASCADE;
+
+-- ── 2. recompute_syllabus_status (explicit search_path) ─────────────────
+CREATE FUNCTION public.recompute_syllabus_status(
+  p_grade text,
+  p_subject_code text,
+  p_chapter_number integer
+) RETURNS void
+LANGUAGE plpgsql
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_chunks int;
+  v_questions int;
+  v_status text;
+BEGIN
+  SELECT count(*) INTO v_chunks
+    FROM public.rag_content_chunks
+    WHERE grade_short = p_grade
+      AND subject_code = p_subject_code
+      AND chapter_number = p_chapter_number
+      AND is_active = true;
+
+  SELECT count(*) INTO v_questions
+    FROM public.question_bank
+    WHERE grade = p_grade
+      AND subject = p_subject_code
+      AND chapter_number = p_chapter_number
+      AND verified_against_ncert = true
+      AND deleted_at IS NULL;
+
+  v_status := CASE
+    WHEN v_chunks = 0 THEN 'missing'
+    WHEN v_chunks < 50 OR v_questions < 40 THEN 'partial'
+    ELSE 'ready'
+  END;
+
+  UPDATE public.cbse_syllabus
+  SET chunk_count = v_chunks,
+      verified_question_count = v_questions,
+      rag_status = v_status,
+      last_verified_at = now(),
+      updated_at = now()
+  WHERE grade = p_grade
+    AND subject_code = p_subject_code
+    AND chapter_number = p_chapter_number;
+END $$;
+
+-- ── 3. Trigger functions (fully-qualified inner call) ───────────────────
+CREATE FUNCTION public.trg_rag_chunks_recompute() RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    PERFORM public.recompute_syllabus_status(OLD.grade_short, OLD.subject_code, OLD.chapter_number);
+    RETURN OLD;
+  ELSE
+    PERFORM public.recompute_syllabus_status(NEW.grade_short, NEW.subject_code, NEW.chapter_number);
+    IF TG_OP = 'UPDATE' AND (
+      OLD.grade_short IS DISTINCT FROM NEW.grade_short OR
+      OLD.subject_code IS DISTINCT FROM NEW.subject_code OR
+      OLD.chapter_number IS DISTINCT FROM NEW.chapter_number
+    ) THEN
+      PERFORM public.recompute_syllabus_status(OLD.grade_short, OLD.subject_code, OLD.chapter_number);
+    END IF;
+    RETURN NEW;
+  END IF;
+END $$;
+
+CREATE FUNCTION public.trg_question_bank_recompute() RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF TG_OP = 'UPDATE' AND
+     OLD.verified_against_ncert IS NOT DISTINCT FROM NEW.verified_against_ncert AND
+     OLD.deleted_at IS NOT DISTINCT FROM NEW.deleted_at THEN
+    RETURN NEW;
+  END IF;
+  PERFORM public.recompute_syllabus_status(NEW.grade, NEW.subject, NEW.chapter_number);
+  RETURN NEW;
+END $$;
+
+-- ── 4. Triggers (re-attach + force ENABLE) ──────────────────────────────
+CREATE TRIGGER rag_chunks_recompute_trigger
+  AFTER INSERT OR DELETE OR UPDATE ON public.rag_content_chunks
+  FOR EACH ROW EXECUTE FUNCTION public.trg_rag_chunks_recompute();
+ALTER TABLE public.rag_content_chunks ENABLE TRIGGER rag_chunks_recompute_trigger;
+
+CREATE TRIGGER question_bank_recompute_trigger
+  AFTER INSERT OR UPDATE ON public.question_bank
+  FOR EACH ROW EXECUTE FUNCTION public.trg_question_bank_recompute();
+ALTER TABLE public.question_bank ENABLE TRIGGER question_bank_recompute_trigger;
+
+-- ── 5. Runtime smoke test with diagnostic separation ────────────────────
 DO $$
 DECLARE
-  v_test_subject  text := 'syllabus_trigger_smoke';
-  v_test_chapter  int  := 999;
-  v_test_grade    text := '10';
-  v_chunks_after  int;
-  v_status_after  text;
-  v_pre_existing  int;
+  v_test_subject     text := 'syllabus_trigger_smoke';
+  v_test_chapter     int  := 999;
+  v_test_grade       text := '10';
+  v_chunks_after_trig int;
+  v_status_after_trig text;
+  v_chunks_after_rpc  int;
+  v_seed_grade        text;
+  v_seed_count        int;
 BEGIN
-  -- Defensive: clean any leftover smoke-test state from a previous failed
-  -- run (a failed RAISE leaves the DO block uncommitted, but if the
-  -- function were called outside this block manually we'd have residue).
-  DELETE FROM rag_content_chunks
+  -- Defensive cleanup
+  DELETE FROM public.rag_content_chunks
    WHERE subject_code = v_test_subject AND chapter_number = v_test_chapter;
-  DELETE FROM cbse_syllabus
+  DELETE FROM public.cbse_syllabus
    WHERE subject_code = v_test_subject AND chapter_number = v_test_chapter;
 
-  -- Seed the cbse_syllabus row that the trigger should update.
-  INSERT INTO cbse_syllabus (board, grade, subject_code, subject_display, chapter_number, chapter_title)
+  -- Seed cbse_syllabus
+  INSERT INTO public.cbse_syllabus (board, grade, subject_code, subject_display, chapter_number, chapter_title)
   VALUES ('CBSE', v_test_grade, v_test_subject, 'Smoke Test', v_test_chapter, 'Smoke Test Chapter');
 
-  -- Confirm the seed row starts with chunk_count = 0 / rag_status = 'missing'.
-  SELECT chunk_count, rag_status
-    INTO v_pre_existing, v_status_after
-    FROM cbse_syllabus
+  -- Read back the grade as stored — surface 'Grade 10' vs '10' drift.
+  SELECT grade INTO v_seed_grade
+    FROM public.cbse_syllabus
    WHERE subject_code = v_test_subject AND chapter_number = v_test_chapter;
-  IF v_pre_existing <> 0 OR v_status_after <> 'missing' THEN
-    DELETE FROM cbse_syllabus
+  IF v_seed_grade <> v_test_grade THEN
+    DELETE FROM public.cbse_syllabus
      WHERE subject_code = v_test_subject AND chapter_number = v_test_chapter;
-    RAISE EXCEPTION 'syllabus smoke seed unexpected state: chunk_count=%, rag_status=%',
-      v_pre_existing, v_status_after;
+    RAISE EXCEPTION
+      'cbse_syllabus.grade stored as % but test inserted %. The recompute UPDATE WHERE grade = p_grade will never match. This is the root cause of the trigger silent-fail. Audit cbse_syllabus.grade format vs rag_content_chunks.grade_short.',
+      quote_literal(v_seed_grade), quote_literal(v_test_grade);
   END IF;
 
-  -- Insert a single rag_content_chunks row that the trigger should match.
-  -- Using a tiny embedding works because pgvector accepts any dim that
-  -- matches the column type; staging matches whichever the schema is.
-  -- We catch the dimension mismatch case explicitly below.
+  -- Insert chunk (trigger should fire)
   BEGIN
-    INSERT INTO rag_content_chunks (
+    INSERT INTO public.rag_content_chunks (
       chunk_text, source, grade, subject,
       grade_short, subject_code, chapter_number,
       embedding
@@ -77,36 +188,58 @@ BEGIN
     );
   EXCEPTION
     WHEN OTHERS THEN
-      -- Wrong embedding dim, missing CHECK constraint match, etc. Surface
-      -- the real DB error instead of letting the rollback hide it.
-      DELETE FROM cbse_syllabus
+      DELETE FROM public.cbse_syllabus
        WHERE subject_code = v_test_subject AND chapter_number = v_test_chapter;
-      RAISE EXCEPTION 'syllabus smoke INSERT failed: % (this points at a real schema/constraint bug, not the trigger)', SQLERRM;
+      RAISE EXCEPTION 'syllabus smoke INSERT failed: % (real schema/constraint bug, not the trigger)', SQLERRM;
   END;
 
-  -- Read back: trigger must have updated cbse_syllabus.
-  SELECT chunk_count, rag_status
-    INTO v_chunks_after, v_status_after
-    FROM cbse_syllabus
+  -- Read after trigger
+  SELECT chunk_count, rag_status INTO v_chunks_after_trig, v_status_after_trig
+    FROM public.cbse_syllabus
    WHERE subject_code = v_test_subject AND chapter_number = v_test_chapter;
 
-  -- Always clean up before any RAISE so we never persist test rows.
-  DELETE FROM rag_content_chunks
-   WHERE subject_code = v_test_subject AND chapter_number = v_test_chapter;
-  DELETE FROM cbse_syllabus
+  -- Verify chunk row landed
+  SELECT count(*) INTO v_seed_count
+    FROM public.rag_content_chunks
    WHERE subject_code = v_test_subject AND chapter_number = v_test_chapter;
 
-  IF v_chunks_after <> 1 THEN
+  -- Diagnostic split: call recompute explicitly to distinguish trigger vs function
+  PERFORM public.recompute_syllabus_status(v_test_grade, v_test_subject, v_test_chapter);
+  SELECT chunk_count INTO v_chunks_after_rpc
+    FROM public.cbse_syllabus
+   WHERE subject_code = v_test_subject AND chapter_number = v_test_chapter;
+
+  -- Cleanup before any RAISE
+  DELETE FROM public.rag_content_chunks
+   WHERE subject_code = v_test_subject AND chapter_number = v_test_chapter;
+  DELETE FROM public.cbse_syllabus
+   WHERE subject_code = v_test_subject AND chapter_number = v_test_chapter;
+
+  -- Decisive diagnostic
+  IF v_seed_count <> 1 THEN
     RAISE EXCEPTION
-      'syllabus trigger smoke FAILED: rag_content_chunks INSERT did not bump cbse_syllabus.chunk_count. Got chunk_count=% rag_status=%. The rag_chunks_recompute_trigger may be missing, disabled, or the recompute_syllabus_status function may have a logic bug. See 20260507100000_force_reapply_syllabus_triggers.sql.',
-      v_chunks_after, v_status_after;
+      'syllabus smoke: rag_content_chunks INSERT did not persist a row (count=%). Constraint or RLS issue.',
+      v_seed_count;
   END IF;
 
-  IF v_status_after <> 'partial' THEN
+  IF v_chunks_after_rpc <> 1 THEN
     RAISE EXCEPTION
-      'syllabus trigger smoke FAILED: rag_status did not transition to ''partial'' for chunk_count=1. Got rag_status=%. Check recompute_syllabus_status status thresholds.',
-      v_status_after;
+      'syllabus smoke: explicit recompute_syllabus_status() ALSO returned chunk_count=%. The recompute function itself is broken — its UPDATE filter does not match cbse_syllabus rows. trigger=%, rpc=%, seed_grade=%.',
+      v_chunks_after_rpc, v_chunks_after_trig, v_chunks_after_rpc, v_seed_grade;
   END IF;
 
-  RAISE NOTICE 'syllabus trigger smoke OK: chunk_count=%, rag_status=% (cleaned up)', v_chunks_after, v_status_after;
+  IF v_chunks_after_trig <> 1 THEN
+    RAISE EXCEPTION
+      'syllabus smoke: trigger did not fire (trig_chunk_count=%) but explicit recompute() works (rpc_chunk_count=%). The recompute function is correct; the AFTER INSERT trigger is the broken object.',
+      v_chunks_after_trig, v_chunks_after_rpc;
+  END IF;
+
+  IF v_status_after_trig <> 'partial' THEN
+    RAISE EXCEPTION
+      'syllabus smoke: rag_status did not transition to ''partial'' (got %). Check recompute_syllabus_status status thresholds.',
+      v_status_after_trig;
+  END IF;
+
+  RAISE NOTICE 'syllabus trigger smoke OK: trig=%, rpc=%, status=% (cleaned up)',
+    v_chunks_after_trig, v_chunks_after_rpc, v_status_after_trig;
 END $$;
