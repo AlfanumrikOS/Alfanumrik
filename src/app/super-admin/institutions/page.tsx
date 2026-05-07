@@ -516,6 +516,90 @@ function InstitutionsContent() {
     }
   };
 
+  /* ----- custom domain (super-admin) -----
+     Two operations:
+       (a) save / clear the domain via PATCH /institutions
+       (b) verify via POST /institutions/verify-domain (DNS TXT lookup)
+
+     The save flow auto-resets domain_verified=false (handled server-side
+     in the PATCH endpoint), so the operator must Verify after every Save.
+     This is intentional — a domain change is functionally a new domain. */
+  const [domainInput, setDomainInput] = useState<string>('');
+  const [savingDomain, setSavingDomain] = useState(false);
+  const [verifyingDomain, setVerifyingDomain] = useState(false);
+  const [verifyResult, setVerifyResult] = useState<{
+    verified: boolean;
+    expectedRecord: string;
+    expectedToken: string;
+    message: string;
+  } | null>(null);
+
+  // When the drawer opens for a new school, prefill the input + clear stale
+  // verify result so old diagnostics don't bleed across selections.
+  useEffect(() => {
+    setDomainInput(selected?.custom_domain ?? '');
+    setVerifyResult(null);
+  }, [selected?.id, selected?.custom_domain]);
+
+  const saveCustomDomain = async (inst: InstitutionRecord, raw: string) => {
+    const trimmed = raw.trim().toLowerCase();
+    setSavingDomain(true);
+    setError(null);
+    setVerifyResult(null);
+    try {
+      const res = await apiFetch('/api/super-admin/institutions', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          id: inst.id,
+          updates: { custom_domain: trimmed === '' ? null : trimmed },
+        }),
+      });
+      if (res.ok) {
+        setSelected(prev =>
+          prev && prev.id === inst.id
+            ? { ...prev, custom_domain: trimmed === '' ? null : trimmed, domain_verified: false }
+            : prev,
+        );
+        fetchInstitutions();
+      } else {
+        const d = await res.json().catch(() => null);
+        setError(d?.error || 'Failed to save custom domain');
+      }
+    } finally {
+      setSavingDomain(false);
+    }
+  };
+
+  const verifyCustomDomain = async (inst: InstitutionRecord) => {
+    setVerifyingDomain(true);
+    setError(null);
+    try {
+      const res = await apiFetch('/api/super-admin/institutions/verify-domain', {
+        method: 'POST',
+        body: JSON.stringify({ id: inst.id }),
+      });
+      const j = await res.json().catch(() => null);
+      if (!res.ok || !j?.success) {
+        setError(j?.error || 'Verify failed');
+      } else {
+        setVerifyResult({
+          verified: !!j.verified,
+          expectedRecord: j.expectedRecord,
+          expectedToken: j.expectedToken,
+          message: j.message,
+        });
+        if (j.verified) {
+          setSelected(prev =>
+            prev && prev.id === inst.id ? { ...prev, domain_verified: true } : prev,
+          );
+          fetchInstitutions();
+        }
+      }
+    } finally {
+      setVerifyingDomain(false);
+    }
+  };
+
   /* ----- provision ----- */
   const handleProvision = async (form: ProvisionForm) => {
     setProvisioning(true);
@@ -887,17 +971,77 @@ function InstitutionsContent() {
                   <option value="government">Government</option>
                 </select>
               } />
+            </div>
+
+            {/* Custom Domain — white-label routing */}
+            <div style={{ ...S.card, marginBottom: 16 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: colors.text2, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+                Custom Domain
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                <input
+                  type="text"
+                  value={domainInput}
+                  onChange={e => setDomainInput(e.target.value)}
+                  placeholder="learn.dps.com (leave blank to remove)"
+                  disabled={savingDomain || verifyingDomain}
+                  style={{ ...S.input, flex: 1, fontSize: 12 }}
+                />
+                <button
+                  onClick={() => saveCustomDomain(selected, domainInput)}
+                  disabled={savingDomain || verifyingDomain || domainInput === (selected.custom_domain ?? '')}
+                  style={{ ...S.button, fontSize: 12 }}
+                >
+                  {savingDomain ? 'Saving…' : 'Save'}
+                </button>
+                <button
+                  onClick={() => verifyCustomDomain(selected)}
+                  disabled={savingDomain || verifyingDomain || !selected.custom_domain}
+                  style={{ ...S.button, fontSize: 12, background: colors.accent, color: '#fff' }}
+                >
+                  {verifyingDomain ? 'Checking…' : 'Verify'}
+                </button>
+              </div>
+
               {selected.custom_domain && (
-                <InfoRow label="Custom Domain" value={
-                  <span>
-                    {selected.custom_domain}
-                    {selected.domain_verified ? (
-                      <StatusBadge label="verified" variant="success" />
-                    ) : (
-                      <StatusBadge label="unverified" variant="warning" />
-                    )}
-                  </span>
-                } />
+                <div style={{ fontSize: 11, color: colors.text2, marginBottom: 8 }}>
+                  Status:{' '}
+                  {selected.domain_verified ? (
+                    <StatusBadge label="verified" variant="success" />
+                  ) : (
+                    <StatusBadge label="unverified" variant="warning" />
+                  )}
+                </div>
+              )}
+
+              {verifyResult && (
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: verifyResult.verified ? colors.success : colors.text2,
+                    background: verifyResult.verified ? `${colors.success}10` : colors.surface,
+                    padding: 10,
+                    borderRadius: 4,
+                    marginTop: 6,
+                  }}
+                >
+                  <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                    {verifyResult.verified ? '✓ Verified' : 'Not yet verified'}
+                  </div>
+                  <div style={{ marginBottom: 6 }}>{verifyResult.message}</div>
+                  {!verifyResult.verified && (
+                    <div style={{ fontFamily: 'monospace', fontSize: 11 }}>
+                      <div>TXT record name:</div>
+                      <div style={{ background: colors.bg, padding: 4, borderRadius: 3, marginBottom: 4 }}>
+                        {verifyResult.expectedRecord}
+                      </div>
+                      <div>TXT record value:</div>
+                      <div style={{ background: colors.bg, padding: 4, borderRadius: 3 }}>
+                        {verifyResult.expectedToken}
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
 

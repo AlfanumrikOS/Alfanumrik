@@ -98,13 +98,18 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Missing "id" or "updates".' }, { status: 400 });
     }
 
-    // ALLOWED expanded with `tenant_type` so super-admin can change a
-    // tenant's category (school → coaching, etc.). All other Phase B fields
-    // (font_heading, font_body, border_radius_px) are intentionally NOT
-    // listed here — those are owned by the school admin via
-    // /api/school-admin/branding (#563), keeping responsibilities separated.
-    const ALLOWED = ['name', 'board', 'school_type', 'address', 'city', 'state', 'pin_code', 'phone', 'email', 'website', 'principal_name', 'subscription_plan', 'max_students', 'max_teachers', 'is_active', 'tenant_type'];
+    // ALLOWED expanded with `tenant_type` (#566) and `custom_domain`
+    // (white-label routing). Phase B branding fields (font_heading,
+    // font_body, border_radius_px) stay OFF this list — those are
+    // school-admin owned via /api/school-admin/branding. domain_verified
+    // is only ever flipped via the dedicated verify-domain endpoint
+    // (server-controlled DNS check), not via this PATCH path.
+    const ALLOWED = ['name', 'board', 'school_type', 'address', 'city', 'state', 'pin_code', 'phone', 'email', 'website', 'principal_name', 'subscription_plan', 'max_students', 'max_teachers', 'is_active', 'tenant_type', 'custom_domain'];
     const VALID_TENANT_TYPES = new Set(['school', 'coaching', 'corporate', 'government']);
+    // Defense-in-depth domain shape check. Real DNS verification happens in
+    // /api/super-admin/institutions/verify-domain. Reject obvious garbage
+    // (whitespace, schemes, paths) here so we don't store it.
+    const DOMAIN_RE = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;
     const safe: Record<string, unknown> = { updated_at: new Date().toISOString() };
     for (const [k, v] of Object.entries(updates)) {
       if (!ALLOWED.includes(k)) continue;
@@ -116,6 +121,25 @@ export async function PATCH(request: NextRequest) {
           { error: "tenant_type must be one of 'school', 'coaching', 'corporate', 'government'." },
           { status: 400 }
         );
+      }
+      // custom_domain validation. Allow null (clear). When setting a new
+      // value, ALWAYS reset domain_verified=false — the new domain hasn't
+      // been DNS-verified yet, regardless of any previous verification.
+      if (k === 'custom_domain') {
+        if (v === null) {
+          safe.custom_domain = null;
+          safe.domain_verified = false;
+          continue;
+        }
+        if (typeof v !== 'string' || !DOMAIN_RE.test(v.trim().toLowerCase())) {
+          return NextResponse.json(
+            { error: 'custom_domain must be a valid domain (e.g. "learn.dps.com") or null.' },
+            { status: 400 }
+          );
+        }
+        safe.custom_domain = v.trim().toLowerCase();
+        safe.domain_verified = false;
+        continue;
       }
       safe[k] = v;
     }
@@ -137,10 +161,11 @@ export async function PATCH(request: NextRequest) {
     }
 
     // Pick the most-specific action label so audit-log triage is easy.
-    // tenant_type changes get their own action because they're load-bearing
-    // for default modules + copy + billing assumptions; ops should be able
-    // to filter on them without inspecting each row's `updates` blob.
+    // Order: most-specific first. custom_domain edits get their own label
+    // because they have follow-on TLS-provisioning concerns (operator must
+    // also configure Vercel routing for the domain to work end-to-end).
     const action =
+      'custom_domain' in updates ? 'tenant.custom_domain_changed' :
       'tenant_type' in updates ? 'tenant.type_changed' :
       safe.is_active === false ? 'school.suspended' :
       safe.is_active === true ? 'school.activated' :
