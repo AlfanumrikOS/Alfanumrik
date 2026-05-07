@@ -1,15 +1,24 @@
-// daily-cron v29 — D6 launch hardening:
-//   (1) per-recipient idempotency_key on notifications insert (now upsert),
-//   (2) single-statement bulk streak reset (no Promise.all fan-out / no N+1).
-// Previous: v28 added AI daily challenge generation + challenge streak management;
-//          leaderboard gate >=50->>=2 students; all P5 steps: streaks, leaderboard,
-//          parent digest, task cleanup, platform health snapshot, ml retrain trigger.
+// daily-cron v30 — Phase 3-C renewal automation:
+//   Added 3 contract-lifecycle steps (gated by ff_school_contracts_v1):
+//     contract_reminders_sent  — fires T-60/30/15/7/1 reminders, idempotent
+//                                 via school_contracts.reminders_sent[]
+//     contracts_expired        — flips active/expiring → expired past end_date
+//     contract_grace_audited   — emits contract_grace_suspended telemetry
+//                                 for contracts past T+14 grace; no auto-
+//                                 suspension (operator action — too high-
+//                                 blast-radius for autonomous cron)
+//   All three Promise.allSettled-isolated; failures don't break leaderboards/
+//   streaks. Each is a no-op when the flag is OFF (early return 0).
+// Previous v29: D6 launch hardening — per-recipient idempotency_key on
+//          notifications insert (now upsert), single-statement bulk streak
+//          reset (no N+1).
 // Secret: CRON_SECRET env var OR get_cron_secret() DB RPC fallback.
 // Companion: pg_cron job 'alfanumrik-daily-cron' is disabled by migration
 //            20260505100000_disable_pg_cron_daily_in_favor_of_vercel.sql; Vercel
 //            cron at /api/cron/daily-cron (02:30 UTC) is the canonical runner.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
+import { capture as posthogCapture } from '../_shared/posthog.ts'
 
 // YYYY_MM_DD slug (UTC) used as the day component of idempotency_key.
 function todayUtcSlug(): string {
@@ -856,6 +865,180 @@ async function logDailyLabDistribution(supabase: ReturnType<typeof createClient>
   return rows.length
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// Phase 3-C — Contract lifecycle automation
+// All three steps are no-ops when ff_school_contracts_v1 is OFF.
+// Failures isolated by Promise.allSettled in the main handler.
+// ──────────────────────────────────────────────────────────────────────────
+
+const CONTRACT_FLAG = 'ff_school_contracts_v1'
+const CONTRACT_REMINDER_CHECKPOINTS = [60, 30, 15, 7, 1] as const
+const CONTRACT_GRACE_DAYS = 14
+
+async function isContractFlagOn(supabase: ReturnType<typeof createClient>): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('feature_flags')
+    .select('is_enabled, rollout_percentage')
+    .eq('flag_name', CONTRACT_FLAG)
+    .maybeSingle()
+  if (error || !data) return false
+  return data.is_enabled === true && (data.rollout_percentage ?? 0) > 0
+}
+
+// T-60/30/15/7/1 reminders. Idempotent via school_contracts.reminders_sent[].
+// This step does NOT send the actual email — it marks the checkpoint as
+// "due" and emits the contract_reminder_sent telemetry event. Wiring the
+// email send (e.g. via send-auth-email pattern) is a separate follow-up so
+// the email-template change can be reviewed independently of the date-math.
+async function processContractReminders(supabase: ReturnType<typeof createClient>): Promise<number> {
+  if (!(await isContractFlagOn(supabase))) return 0
+
+  const today = new Date()
+  today.setUTCHours(0, 0, 0, 0)
+
+  let totalFired = 0
+
+  for (const tMinus of CONTRACT_REMINDER_CHECKPOINTS) {
+    const target = new Date(today)
+    target.setUTCDate(target.getUTCDate() + tMinus)
+    const targetDate = target.toISOString().slice(0, 10)
+
+    const { data, error } = await supabase
+      .from('school_contracts')
+      .select('id, school_id, contract_number, end_date, reminders_sent')
+      .in('status', ['active', 'expiring'])
+      .eq('end_date', targetDate)
+
+    if (error) {
+      console.warn(`daily-cron: contract reminders T-${tMinus} fetch warning: ${error.message}`)
+      continue
+    }
+    if (!data?.length) continue
+
+    for (const c of data as Array<{ id: string; school_id: string; contract_number: string; end_date: string; reminders_sent: number[] | null }>) {
+      const alreadySent = (c.reminders_sent ?? []).includes(tMinus)
+      if (alreadySent) continue
+
+      const newSent = [...(c.reminders_sent ?? []), tMinus]
+      const newStatus = tMinus <= 7 ? 'expiring' : undefined  // bump to expiring at T-7
+
+      const updatePayload: Record<string, unknown> = { reminders_sent: newSent }
+      if (newStatus) updatePayload.status = newStatus
+
+      const { error: uErr } = await supabase
+        .from('school_contracts')
+        .update(updatePayload)
+        .eq('id', c.id)
+        .in('status', ['active', 'expiring'])  // optimistic — refuse if status changed
+
+      if (uErr) {
+        console.warn(`daily-cron: contract reminder update failed for ${c.id} T-${tMinus}: ${uErr.message}`)
+        continue
+      }
+
+      // Telemetry. Failure here must not block the cron step.
+      try {
+        await posthogCapture('contract_reminder_sent', c.school_id, {
+          contract_id: c.id,
+          school_id: c.school_id,
+          t_minus: tMinus,
+          // delivered=false because actual email send is a separate follow-up.
+          // Once email integration lands, set true on send-success.
+          delivered: false,
+          contract_number: c.contract_number,
+        })
+      } catch (e) {
+        console.warn(`daily-cron: contract_reminder_sent telemetry failed for ${c.id}: ${e instanceof Error ? e.message : String(e)}`)
+      }
+
+      totalFired++
+    }
+  }
+
+  console.log(`daily-cron: contract reminders — ${totalFired} new checkpoints fired across [60,30,15,7,1]`)
+  return totalFired
+}
+
+// Flip active/expiring contracts whose end_date is in the past to status=expired.
+// Idempotent: predicate-only update; running multiple times a day is a no-op
+// after the first run.
+async function expireContracts(supabase: ReturnType<typeof createClient>): Promise<number> {
+  if (!(await isContractFlagOn(supabase))) return 0
+
+  const today = new Date()
+  today.setUTCHours(0, 0, 0, 0)
+  const todayDate = today.toISOString().slice(0, 10)
+
+  const { data, error } = await supabase
+    .from('school_contracts')
+    .update({ status: 'expired' })
+    .lt('end_date', todayDate)
+    .in('status', ['active', 'expiring'])
+    .select('id, school_id')
+
+  if (error) {
+    throw new Error(`expireContracts: ${error.message}`)
+  }
+  const rows = (data ?? []) as Array<{ id: string; school_id: string }>
+
+  for (const r of rows) {
+    try {
+      await posthogCapture('contract_expired', r.school_id, {
+        contract_id: r.id,
+        school_id: r.school_id,
+      })
+    } catch (e) {
+      console.warn(`daily-cron: contract_expired telemetry failed for ${r.id}: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  console.log(`daily-cron: contracts expired — ${rows.length} flipped to expired`)
+  return rows.length
+}
+
+// Audit-only step: contracts past end_date + GRACE days that are still 'expired'
+// (i.e. unrenewed) should be flagged for operator attention. We emit
+// contract_grace_suspended telemetry but DO NOT auto-suspend the school's
+// is_active flag — flipping is_active blocks all users at the school and is
+// too high-blast-radius for autonomous cron. The PostHog event is a signal
+// to ops to take manual suspension action.
+async function auditContractGracePeriods(supabase: ReturnType<typeof createClient>): Promise<number> {
+  if (!(await isContractFlagOn(supabase))) return 0
+
+  const today = new Date()
+  today.setUTCHours(0, 0, 0, 0)
+  const cutoff = new Date(today)
+  cutoff.setUTCDate(cutoff.getUTCDate() - CONTRACT_GRACE_DAYS)
+  const cutoffDate = cutoff.toISOString().slice(0, 10)
+
+  const { data, error } = await supabase
+    .from('school_contracts')
+    .select('id, school_id, end_date, status')
+    .eq('status', 'expired')
+    .lt('end_date', cutoffDate)
+
+  if (error) {
+    throw new Error(`auditContractGracePeriods: ${error.message}`)
+  }
+  const rows = (data ?? []) as Array<{ id: string; school_id: string; end_date: string }>
+
+  for (const r of rows) {
+    const ageDays = Math.floor((today.getTime() - new Date(r.end_date).getTime()) / 86_400_000)
+    try {
+      await posthogCapture('contract_grace_suspended', r.school_id, {
+        contract_id: r.id,
+        school_id: r.school_id,
+        grace_days: ageDays,
+      })
+    } catch (e) {
+      console.warn(`daily-cron: contract_grace_suspended telemetry failed for ${r.id}: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  console.log(`daily-cron: contract grace audit — ${rows.length} contracts past T+${CONTRACT_GRACE_DAYS} grace (operator action required for suspension)`)
+  return rows.length
+}
+
 Deno.serve(async (req) => {
   if (req.method==='OPTIONS') return new Response('ok',{headers:corsHeaders})
   const t0=Date.now()
@@ -875,6 +1058,9 @@ Deno.serve(async (req) => {
       ['challenges_generated',()=>generateDailyChallenges(sb)],
       ['streaks_managed',()=>manageChallengeStreaks(sb)],
       ['lab_completions_logged',()=>logDailyLabDistribution(sb)],
+      ['contract_reminders_sent',()=>processContractReminders(sb)],
+      ['contracts_expired',()=>expireContracts(sb)],
+      ['contract_grace_audited',()=>auditContractGracePeriods(sb)],
     ]
     const settled=await Promise.allSettled(steps.map(([,fn])=>fn()))
     const results:Record<string,number>={};const errors:Record<string,string>={}
