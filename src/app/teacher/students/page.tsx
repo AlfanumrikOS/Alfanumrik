@@ -15,9 +15,21 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 async function api(action: string, params: Record<string, unknown> = {}) {
+  // Build headers — always include apikey; add Bearer token when a session
+  // exists so teacher-dashboard can authenticate the caller via JWT (P13).
+  // Pattern mirrors src/app/teacher/page.tsx api() helper.
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    apikey: SUPABASE_ANON,
+  };
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+  } catch { /* no session — request will be rejected by Edge Function */ }
+
   const res = await fetch(`${SUPABASE_URL}/functions/v1/teacher-dashboard`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON },
+    headers,
     body: JSON.stringify({ action, ...params }),
   });
   if (!res.ok) {

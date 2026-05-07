@@ -17,9 +17,21 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 async function fetchDashboard(teacherId: string) {
+  // P13: teacher-dashboard now binds the caller to its JWT-derived teacher_id;
+  // body.teacher_id is ignored on the server. We still pass it for log/trace
+  // continuity but the source of truth is the Authorization header.
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    apikey: SUPABASE_ANON,
+  };
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+  } catch { /* no session — request will be rejected by Edge Function */ }
+
   const res = await fetch(`${SUPABASE_URL}/functions/v1/teacher-dashboard`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON },
+    headers,
     body: JSON.stringify({ action: 'get_dashboard', teacher_id: teacherId }),
   });
   if (!res.ok) throw new Error(`API ${res.status}`);
