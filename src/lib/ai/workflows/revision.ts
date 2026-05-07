@@ -26,6 +26,12 @@ export interface RevisionWorkflowParams {
   academicGoal?: string | null;
   studentId?: string;
   sessionId?: string;
+  // White-label tenant overrides — forwarded to buildFoxySystemPrompt.
+  // All optional; absent → byte-identical legacy behaviour. Mirrors the
+  // signatures in explain.ts (#569) + doubt-solve.ts.
+  tenantPersonality?: 'warm_mentor' | 'rigorous_coach' | 'formal_examiner' | 'playful_buddy';
+  tenantTone?: 'formal' | 'neutral' | 'casual';
+  tenantPedagogy?: 'socratic' | 'direct_instruction' | 'worked_example';
 }
 
 export async function runRevisionWorkflow(
@@ -58,6 +64,9 @@ export async function runRevisionWorkflow(
       mode: 'revise',
       ragContext: retrieval.contextText,
       academicGoal: params.academicGoal,
+      tenantPersonality: params.tenantPersonality,
+      tenantTone: params.tenantTone,
+      tenantPedagogy: params.tenantPedagogy,
     });
     const systemPrompt = basePrompt +
       '\n\n## Format Instruction\nStructure your revision summary as concise bullet points. Include key definitions, formulas, mnemonics, and frequently-tested areas. Keep it scannable for quick review before exams.';
