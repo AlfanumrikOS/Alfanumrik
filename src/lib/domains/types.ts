@@ -680,6 +680,19 @@ export interface School {
   domainVerified: boolean | null;
   billingEmail: string | null;
   isActive: boolean | null;
+  /**
+   * Tenant category. Drives default branding palettes, default-enabled modules,
+   * and copy variants downstream. Migration 20260507000004 added the column
+   * with default 'school'. Stored on schools for backward-compatibility — the
+   * abstraction lives in src/lib/tenant-domain/.
+   */
+  tenantType: 'school' | 'coaching' | 'corporate' | 'government';
+  /** CSS font-family for headings, e.g. 'Inter, system-ui, sans-serif'. null → use platform default. */
+  fontHeading: string | null;
+  /** CSS font-family for body text. null → use platform default. */
+  fontBody: string | null;
+  /** Border radius in px, 0–32. null → use platform default. */
+  borderRadiusPx: number | null;
   /** White-label settings JSON; opaque to the domain — typed as unknown to force callers to validate. */
   settings: unknown;
 }
