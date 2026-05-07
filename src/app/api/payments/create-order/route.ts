@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { capture as posthogCapture } from '@/lib/posthog/server';
+import { paymentSubscribeSchema, validateBody } from '@/lib/validation';
+
+// P11: payment endpoints are the highest-blast-radius write surface.
+// We share validateBody / paymentSubscribeSchema with the
+// payments/verify route so plan_code + billing_cycle stay constrained
+// to the same enum literals everywhere in the payment lifecycle.
 
 export async function POST(request: NextRequest) {
   try {
@@ -33,14 +39,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { plan_code, billing_cycle } = await request.json();
-
-    if (!plan_code || !['starter', 'pro', 'unlimited'].includes(plan_code)) {
-      return NextResponse.json({ error: 'Invalid plan' }, { status: 400 });
+    let rawBody: unknown;
+    try {
+      rawBody = await request.json();
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
     }
-    if (!billing_cycle || !['monthly', 'yearly'].includes(billing_cycle)) {
-      return NextResponse.json({ error: 'Invalid billing cycle' }, { status: 400 });
-    }
+    const validation = validateBody(paymentSubscribeSchema, rawBody);
+    if (!validation.success) return validation.error;
+    const { plan_code, billing_cycle } = validation.data;
 
     // Get plan from DB
     const razorpayKey = process.env.RAZORPAY_KEY_ID;
