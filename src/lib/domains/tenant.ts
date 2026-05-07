@@ -55,10 +55,26 @@ type SchoolRow = {
   domain_verified: boolean | null;
   billing_email: string | null;
   is_active: boolean | null;
+  tenant_type: string | null;
+  font_heading: string | null;
+  font_body: string | null;
+  border_radius_px: number | null;
   settings: unknown;
 };
 
-const SCHOOL_COLUMNS = 'id, name, code, slug, logo_url, primary_color, secondary_color, tagline, custom_domain, domain_verified, billing_email, is_active, settings';
+const SCHOOL_COLUMNS = 'id, name, code, slug, logo_url, primary_color, secondary_color, tagline, custom_domain, domain_verified, billing_email, is_active, tenant_type, font_heading, font_body, border_radius_px, settings';
+
+const VALID_TENANT_TYPES = new Set(['school', 'coaching', 'corporate', 'government']);
+
+function coerceTenantType(value: string | null): School['tenantType'] {
+  // The DB column has CHECK + NOT NULL DEFAULT 'school' (migration
+  // 20260507000004), so a non-null value should always be one of the
+  // four. Coercion is defence-in-depth for legacy rows snapshotted before
+  // the migration applied.
+  return value && VALID_TENANT_TYPES.has(value)
+    ? (value as School['tenantType'])
+    : 'school';
+}
 
 function mapSchool(row: SchoolRow): School {
   return {
@@ -74,6 +90,10 @@ function mapSchool(row: SchoolRow): School {
     domainVerified: row.domain_verified,
     billingEmail: row.billing_email,
     isActive: row.is_active,
+    tenantType: coerceTenantType(row.tenant_type),
+    fontHeading: row.font_heading,
+    fontBody: row.font_body,
+    borderRadiusPx: row.border_radius_px,
     settings: row.settings,
   };
 }

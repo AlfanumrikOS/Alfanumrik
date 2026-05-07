@@ -40,6 +40,13 @@ export async function GET(request: NextRequest) {
     // Preserve the existing response shape (snake_case) for clients. The
     // tenant domain returns camelCase projections; map back here so this is
     // a refactor, not a breaking change.
+    //
+    // Phase B fields (tenant_type, font_heading, font_body, border_radius_px)
+    // are added to the response so /school-admin/branding can render the
+    // typography section + a read-only "Tenant type: <type>" label.
+    // tenant_type is read-only here — changing it is a super-admin concern
+    // (alters default modules, copy, billing assumptions). The PUT handler
+    // ignores tenant_type in the body.
     const s = result.data;
     const data = {
       id: s.id,
@@ -51,6 +58,10 @@ export async function GET(request: NextRequest) {
       custom_domain: s.customDomain,
       domain_verified: s.domainVerified,
       billing_email: s.billingEmail,
+      tenant_type: s.tenantType,
+      font_heading: s.fontHeading,
+      font_body: s.fontBody,
+      border_radius_px: s.borderRadiusPx,
       settings: s.settings,
     };
 
@@ -73,10 +84,20 @@ export async function GET(request: NextRequest) {
  * Update school branding fields.
  * Permission: school.manage_branding
  *
- * Allowed fields: logo_url, primary_color, secondary_color, tagline, billing_email
- * Hex colors are validated (must be #RRGGBB or #RGB format).
+ * Allowed fields:
+ *   - logo_url, primary_color, secondary_color, tagline, billing_email
+ *   - font_heading, font_body, border_radius_px (Phase B typography)
  *
- * Body: { logo_url?: string, primary_color?: string, secondary_color?: string, tagline?: string, billing_email?: string }
+ * Hex colors are validated (must be #RRGGBB or #RGB format).
+ * Border radius must be 0–32 (matches the CHECK constraint on the column).
+ * Font fields are capped at 200 chars to keep the CSS var emit reasonable.
+ *
+ * `tenant_type` is intentionally NOT writable here — it changes defaults,
+ * copy variants, and billing assumptions. Super-admin owns it via
+ * /api/super-admin/institutions PATCH (separate work).
+ *
+ * Body: { logo_url?, primary_color?, secondary_color?, tagline?, billing_email?,
+ *         font_heading?, font_body?, border_radius_px? }
  */
 export async function PUT(request: NextRequest) {
   try {
@@ -160,6 +181,58 @@ export async function PUT(request: NextRequest) {
       }
     }
 
+    // ── Phase B: typography fields ────────────────────────────────────
+    // font_heading / font_body — string or null, max 200 chars (keeps
+    // the emitted CSS var sane and prevents abuse via huge font stacks).
+    if (body.font_heading !== undefined) {
+      const v = body.font_heading;
+      if (v !== null && typeof v !== 'string') {
+        return NextResponse.json(
+          { success: false, error: 'font_heading must be a string or null' },
+          { status: 400 }
+        );
+      }
+      if (typeof v === 'string' && v.length > 200) {
+        return NextResponse.json(
+          { success: false, error: 'font_heading must be 200 characters or less' },
+          { status: 400 }
+        );
+      }
+      updateFields.font_heading = typeof v === 'string' ? v.trim() || null : null;
+    }
+
+    if (body.font_body !== undefined) {
+      const v = body.font_body;
+      if (v !== null && typeof v !== 'string') {
+        return NextResponse.json(
+          { success: false, error: 'font_body must be a string or null' },
+          { status: 400 }
+        );
+      }
+      if (typeof v === 'string' && v.length > 200) {
+        return NextResponse.json(
+          { success: false, error: 'font_body must be 200 characters or less' },
+          { status: 400 }
+        );
+      }
+      updateFields.font_body = typeof v === 'string' ? v.trim() || null : null;
+    }
+
+    // border_radius_px — integer 0–32 (matches CHECK on column) or null.
+    if (body.border_radius_px !== undefined) {
+      const v = body.border_radius_px;
+      if (v === null) {
+        updateFields.border_radius_px = null;
+      } else if (typeof v === 'number' && Number.isFinite(v) && Number.isInteger(v) && v >= 0 && v <= 32) {
+        updateFields.border_radius_px = v;
+      } else {
+        return NextResponse.json(
+          { success: false, error: 'border_radius_px must be an integer 0–32 or null' },
+          { status: 400 }
+        );
+      }
+    }
+
     if (Object.keys(updateFields).length === 0) {
       return NextResponse.json(
         { success: false, error: 'No valid fields to update' },
@@ -171,7 +244,7 @@ export async function PUT(request: NextRequest) {
       .from('schools')
       .update(updateFields)
       .eq('id', schoolId)
-      .select('id, slug, logo_url, primary_color, secondary_color, tagline, custom_domain, domain_verified, billing_email, settings')
+      .select('id, slug, logo_url, primary_color, secondary_color, tagline, custom_domain, domain_verified, billing_email, tenant_type, font_heading, font_body, border_radius_px, settings')
       .single();
 
     if (error) {
