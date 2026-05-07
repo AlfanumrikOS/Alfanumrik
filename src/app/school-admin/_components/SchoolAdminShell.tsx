@@ -5,20 +5,45 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { useTenant } from '@/lib/tenant-context';
 import { supabase } from '@/lib/supabase';
+import type { ModuleKey } from '@/lib/modules/registry';
 
-/* ─── P7: Bilingual labels ─── */
-const NAV_ITEMS = [
+/* ─── P7: Bilingual labels ───────────────────────────────────────────
+ *
+ * `moduleKey` (optional) maps a nav entry to a module from the registry
+ * (src/lib/modules/registry.ts). When set, the entry is hidden in the
+ * sidebar if `enabledModulesFor(schoolId, tenantType)` reports that
+ * module as disabled. Items WITHOUT a moduleKey are always shown — they
+ * cover platform-core admin functions (dashboard, students, teachers,
+ * classes, branding, etc.) that are not gated by module enablement.
+ *
+ * Defensive fallback: when the /api/school-admin/modules fetch fails
+ * for any reason, we render every item — favouring availability over
+ * confusion. (Same fail-open semantics as the registry resolver.)
+ */
+type SchoolAdminNavItem = {
+  href: string;
+  label: string;
+  labelHi: string;
+  icon: string;
+  /** When set: hide this item if the module is disabled for this tenant. */
+  moduleKey?: ModuleKey;
+};
+
+const NAV_ITEMS: ReadonlyArray<SchoolAdminNavItem> = [
   { href: '/school-admin', label: 'Dashboard', labelHi: 'डैशबोर्ड', icon: '▦' },
   { href: '/school-admin/students', label: 'Students', labelHi: 'छात्र', icon: '⊕' },
   { href: '/school-admin/teachers', label: 'Teachers', labelHi: 'शिक्षक', icon: '⊛' },
   { href: '/school-admin/classes', label: 'Classes', labelHi: 'कक्षाएँ', icon: '⊞' },
   { href: '/school-admin/invite-codes', label: 'Invite Codes', labelHi: 'आमंत्रण कोड', icon: '⊡' },
-  { href: '/school-admin/announcements', label: 'Announcements', labelHi: 'घोषणाएँ', icon: '⊜' },
+  { href: '/school-admin/announcements', label: 'Announcements', labelHi: 'घोषणाएँ', icon: '⊜', moduleKey: 'communication' },
   { href: '/school-admin/parents', label: 'Parents', labelHi: 'अभिभावक', icon: '⊗' },
-  { href: '/school-admin/reports', label: 'Reports', labelHi: 'रिपोर्ट', icon: '⊘' },
-  { href: '/school-admin/content', label: 'Content', labelHi: 'सामग्री', icon: '⊠' },
-  { href: '/school-admin/exams', label: 'Exams', labelHi: 'परीक्षा', icon: '⊙' },
-  { href: '/school-admin/setup', label: 'Branding', labelHi: 'ब्रांडिंग', icon: '◎' },
+  { href: '/school-admin/reports', label: 'Reports', labelHi: 'रिपोर्ट', icon: '⊘', moduleKey: 'analytics' },
+  { href: '/school-admin/content', label: 'Content', labelHi: 'सामग्री', icon: '⊠', moduleKey: 'lms' },
+  { href: '/school-admin/exams', label: 'Exams', labelHi: 'परीक्षा', icon: '⊙', moduleKey: 'testing_engine' },
+  { href: '/school-admin/setup', label: 'Setup', labelHi: 'सेटअप', icon: '◎' },
+  { href: '/school-admin/branding', label: 'Branding', labelHi: 'ब्रांडिंग', icon: '◐' },
+  { href: '/school-admin/modules', label: 'Modules', labelHi: 'मॉड्यूल', icon: '◍' },
+  { href: '/school-admin/ai-config', label: 'AI Config', labelHi: 'AI कॉन्फ़िग', icon: '◈', moduleKey: 'ai_tutor' },
   { href: '/school-admin/enroll', label: 'Enrollment', labelHi: 'नामांकन', icon: '◉' },
 ];
 
@@ -40,6 +65,11 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
   const [schoolName, setSchoolName] = useState<string>(tenant.schoolName || '');
   const [logoUrl, setLogoUrl] = useState<string | null>(tenant.branding.logoUrl);
   const [collapsed, setCollapsed] = useState(false);
+
+  // null while loading or on fetch failure (fail-open: show all items).
+  // Otherwise a partial map of moduleKey → enabled. Only modules that
+  // resolve to `false` are filtered out of the sidebar.
+  const [moduleEnablement, setModuleEnablement] = useState<Record<string, boolean> | null>(null);
 
   const primaryColor = tenant.branding.primaryColor || '#7C3AED';
 
@@ -70,6 +100,43 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
         });
     }
   }, [authUserId, tenant.schoolName, router]);
+
+  // Fetch module enablement once per shell mount. /api/school-admin/modules
+  // requires `school.manage_modules` permission; admins without it land
+  // here (fail-open: every nav item shows) — the API would return 403 and
+  // moduleEnablement stays null. Cached 5 min server-side via the registry.
+  useEffect(() => {
+    if (!authUserId) return;
+    let cancelled = false;
+    fetch('/api/school-admin/modules', { credentials: 'same-origin' })
+      .then(r => (r.ok ? r.json() : null))
+      .then(body => {
+        if (cancelled || !body?.success) return;
+        const map: Record<string, boolean> = {};
+        for (const m of body.data?.modules ?? []) {
+          if (m && typeof m.key === 'string' && typeof m.isEnabled === 'boolean') {
+            map[m.key] = m.isEnabled;
+          }
+        }
+        setModuleEnablement(map);
+      })
+      .catch(() => {
+        // Fail-open — moduleEnablement stays null and all items render.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authUserId]);
+
+  // Apply the module filter. Items without `moduleKey` always render.
+  // Items WITH a moduleKey render only when:
+  //   (a) we haven't loaded enablement yet (null) → fail-open, or
+  //   (b) the module is enabled.
+  const visibleNavItems = NAV_ITEMS.filter(item => {
+    if (!item.moduleKey) return true;
+    if (moduleEnablement === null) return true;
+    return moduleEnablement[item.moduleKey] !== false;
+  });
 
   const t = (en: string, hi: string) => (isHi ? hi : en);
 
@@ -148,7 +215,7 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
 
         {/* Navigation items */}
         <nav style={{ flex: 1, paddingTop: 4 }}>
-          {NAV_ITEMS.map(item => {
+          {visibleNavItems.map(item => {
             const isActive = pathname === item.href ||
               (item.href !== '/school-admin' && pathname.startsWith(item.href));
             return (
