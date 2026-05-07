@@ -109,6 +109,41 @@ jobs:
             echo "No hardcoded secrets detected."
           fi
 
+      # P8 enforcement: every migration that creates a table must enable RLS in
+      # the same file. The post-edit-check.sh hook is per-table and advisory;
+      # this is a file-level CI gate that BLOCKS merge. A migration that legitimately
+      # creates only views/types/functions will not contain "CREATE TABLE" and
+      # is unaffected. _legacy/ is skipped (pre-RLS-baseline migrations).
+      - name: Migration safety — RLS-on-CREATE-TABLE
+        run: |
+          echo "## Migration Safety: RLS Coverage" >> $GITHUB_STEP_SUMMARY
+          MISSING=0
+          OFFENDERS=""
+          # Scan every .sql under supabase/migrations except _legacy/.
+          for f in $(find supabase/migrations -name '*.sql' -not -path '*/_legacy/*' 2>/dev/null | sort); do
+            # Strip SQL comments (-- and /* */) before pattern checks so commented-out
+            # CREATE TABLE in a doc block doesn't trigger a false positive.
+            STRIPPED=$(sed -E 's|--.*$||; s|/\*.*\*/||g' "$f")
+            HAS_CREATE=$(echo "$STRIPPED" | grep -ciE '\bcreate[[:space:]]+table\b' || true)
+            if [ "${HAS_CREATE:-0}" -gt 0 ]; then
+              HAS_RLS=$(echo "$STRIPPED" | grep -ciE 'enable[[:space:]]+row[[:space:]]+level[[:space:]]+security' || true)
+              if [ "${HAS_RLS:-0}" -eq 0 ]; then
+                OFFENDERS="$OFFENDERS\n  - $f"
+                MISSING=1
+              fi
+            fi
+          done
+          if [ "$MISSING" = "1" ]; then
+            echo "BLOCKED: Migrations create tables without enabling RLS:" | tee -a $GITHUB_STEP_SUMMARY
+            echo -e "$OFFENDERS" | tee -a $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Per CLAUDE.md P8: every new table must have RLS enabled and at least one policy in the same migration." >> $GITHUB_STEP_SUMMARY
+            echo "Add: ALTER TABLE <name> ENABLE ROW LEVEL SECURITY; plus appropriate policies." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          else
+            echo "| Status | All CREATE TABLE migrations enable RLS |" >> $GITHUB_STEP_SUMMARY
+          fi
+
   # ── Step 1: Type Check + Lint + Test ──
   quality:
     name: Lint, Type-check & Test
@@ -436,6 +471,28 @@ jobs:
             echo "::notice::Bundle size warnings emitted (advisory only — all P10 budget breaches now block via FAIL=1)."
           else
             echo "All bundle sizes within budget."
+          fi
+
+      # Authoritative per-page first-load JS gate.
+      # The bash check above measures raw bytes and only inspects the LARGEST
+      # single shared chunk — it misses per-page violations and overstates
+      # sizes ~3x by comparing raw to a gzipped budget.
+      # check-bundle-size.mjs measures gzipped, uses HTML-scan to detect what's
+      # actually shared first-paint (catches root-layout chunks the manifest
+      # omits), and reports per-page page-only cost separately. Caps are in the
+      # script itself (CAP_SHARED_KB=270 interim, CAP_PAGE_KB=260, CAP_MIDDLEWARE_KB=120).
+      - name: First-load JS budget (authoritative, gzipped per-page)
+        run: |
+          echo "## First-Load JS Budget (gzipped, per-page)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          npm run check:bundle-size 2>&1 | tee /tmp/bundle-report.txt
+          BUNDLE_EXIT=${PIPESTATUS[0]}
+          tail -40 /tmp/bundle-report.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          if [ "$BUNDLE_EXIT" != "0" ]; then
+            echo "BLOCKED: Per-page first-load JS exceeds budget. See report above and P10 in CLAUDE.md." >> $GITHUB_STEP_SUMMARY
+            exit 1
           fi
 
       - name: Upload build artifact

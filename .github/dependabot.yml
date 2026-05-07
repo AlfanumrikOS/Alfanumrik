@@ -1,0 +1,46 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Kolkata
+    open-pull-requests-limit: 5
+    labels: [dependencies, npm]
+    commit-message:
+      prefix: chore(deps)
+      prefix-development: chore(dev-deps)
+      include: scope
+    groups:
+      next-react:
+        patterns: [next, react, react-dom, "@next/*", eslint-config-next]
+        update-types: [minor, patch]
+      sentry:
+        patterns: ["@sentry/*"]
+      supabase:
+        patterns: ["@supabase/*"]
+      testing:
+        patterns: [vitest, "@vitest/*", "@playwright/*", playwright, jsdom, "@testing-library/*"]
+      types:
+        patterns: ["@types/*"]
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: react
+        update-types: [version-update:semver-major]
+      - dependency-name: react-dom
+        update-types: [version-update:semver-major]
+      - dependency-name: next
+        update-types: [version-update:semver-major]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Asia/Kolkata
+    labels: [dependencies, ci]
+    commit-message:
+      prefix: chore(ci)
+      include: scope
