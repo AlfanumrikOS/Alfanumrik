@@ -193,6 +193,12 @@ export async function routeIntent(
     academicGoal?: string | null;
     studentId?: string;
     sessionId?: string;
+    // White-label tenant overrides — forwarded to the explain workflow
+    // (the only intent that consumes them today; doubt/quiz/revision use
+    // separate prompt paths). Optional; absent → legacy behaviour.
+    tenantPersonality?: 'warm_mentor' | 'rigorous_coach' | 'formal_examiner' | 'playful_buddy';
+    tenantTone?: 'formal' | 'neutral' | 'casual';
+    tenantPedagogy?: 'socratic' | 'direct_instruction' | 'worked_example';
   },
 ): Promise<WorkflowResult> {
   switch (intent) {

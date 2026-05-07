@@ -27,6 +27,11 @@ export interface ExplainWorkflowParams {
   academicGoal?: string | null;
   studentId?: string;
   sessionId?: string;
+  // White-label tenant overrides — forwarded to buildFoxySystemPrompt.
+  // All optional; absent → byte-identical legacy behaviour.
+  tenantPersonality?: 'warm_mentor' | 'rigorous_coach' | 'formal_examiner' | 'playful_buddy';
+  tenantTone?: 'formal' | 'neutral' | 'casual';
+  tenantPedagogy?: 'socratic' | 'direct_instruction' | 'worked_example';
 }
 
 export async function runExplainWorkflow(
@@ -60,6 +65,9 @@ export async function runExplainWorkflow(
       mode: effectiveMode,
       ragContext: retrieval.contextText,
       academicGoal: params.academicGoal,
+      tenantPersonality: params.tenantPersonality,
+      tenantTone: params.tenantTone,
+      tenantPedagogy: params.tenantPedagogy,
     });
     trace.endStep({ mode: effectiveMode });
 
