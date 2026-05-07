@@ -48,6 +48,50 @@ DROP FUNCTION IF EXISTS public.trg_rag_chunks_recompute() CASCADE;
 DROP FUNCTION IF EXISTS public.trg_question_bank_recompute() CASCADE;
 DROP FUNCTION IF EXISTS public.recompute_syllabus_status(text, text, integer) CASCADE;
 
+-- ── 1b. Fix BEFORE INSERT subject_code override (root cause of staging
+--     drift). The legacy sync_rag_chunk_normalized_fields trigger calls
+--     `SELECT code INTO NEW.subject_code FROM subjects WHERE name = NEW.subject`
+--     unconditionally — silently OVERWRITING an explicitly-supplied
+--     subject_code with the lookup result (or NULL on miss). That broke
+--     every test that inserts with both `subject` and a unique
+--     `subject_code` for isolation: the trigger rewrites subject_code to
+--     'science' (or NULL), and the test's seeded cbse_syllabus row keyed
+--     on the original unique value never matches. Same problem for any
+--     production INSERT path that knowingly supplies both fields.
+--     Confirmed via 2026-05-07 17:01 UTC sync run (action 25510294055):
+--     trigger inventory NOTICE listed `trg_sync_rag_normalized [enabled]`
+--     as the suppressor.
+--
+--     New semantic: act as a FALLBACK, not an override. Only set
+--     subject_code when caller didn't supply one. Same for grade_short.
+--     Existing prod callers that supply BOTH a subject and a
+--     subject_code retain their explicit values (the previous
+--     "rewrite" behaviour was only ever observable when the two
+--     disagreed — i.e. in bug-or-test states, never in healthy
+--     production traffic).
+CREATE OR REPLACE FUNCTION public.sync_rag_chunk_normalized_fields() RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_lookup_code text;
+BEGIN
+  IF NEW.subject_code IS NULL OR NEW.subject_code = '' THEN
+    SELECT code INTO v_lookup_code
+    FROM public.subjects
+    WHERE name = NEW.subject
+    LIMIT 1;
+    NEW.subject_code := v_lookup_code;
+  END IF;
+
+  IF NEW.grade_short IS NULL OR NEW.grade_short = '' THEN
+    NEW.grade_short := regexp_replace(coalesce(NEW.grade, ''), '^Grade\s+', '', 'i');
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
 -- ── 2. recompute_syllabus_status (explicit search_path) ─────────────────
 CREATE FUNCTION public.recompute_syllabus_status(
   p_grade text,
