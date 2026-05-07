@@ -96,7 +96,88 @@ export interface FoxySystemPromptParams {
    * `isFeatureEnabled('ff_goal_aware_foxy', ...)`.
    */
   useExpandedPersona?: boolean;
+
+  /**
+   * White-label tenant AI overrides — sourced from `tenant_configs` keys
+   * (`ai.personality`, `ai.tone`, `ai.pedagogy`) via `getTenantConfig()`.
+   *
+   * When `tenantPersonality` is set, the default Persona section bullets
+   * are REPLACED by personality-specific bullets — same anchor (`## Your
+   * Persona`) so downstream tooling that grep's for the section header
+   * still works. The remaining persona instructions (concise responses,
+   * off-topic redirect, encouragement) are preserved across all
+   * personalities.
+   *
+   * `tenantTone` and `tenantPedagogy` are appended as additional bullets
+   * inside the Persona section (or as a separate "Teaching style" line
+   * for pedagogy) — they MODULATE the personality without replacing it.
+   *
+   * All three are independent. Any combination of set/unset works.
+   *
+   * When ALL three are unset, behavior is byte-identical to the
+   * pre-tenant-personality builder. This is the safety contract that
+   * lets us ship behind the `ff_tenant_config_v2` flag without disturbing
+   * the B2C / non-tenant-configured production code path.
+   */
+  tenantPersonality?: 'warm_mentor' | 'rigorous_coach' | 'formal_examiner' | 'playful_buddy';
+  tenantTone?: 'formal' | 'neutral' | 'casual';
+  tenantPedagogy?: 'socratic' | 'direct_instruction' | 'worked_example';
 }
+
+// ─── Tenant persona variants ───────────────────────────────────────────────
+// Each maps to a complete bullet block that replaces the default
+// "Your Persona" body. Headers and downstream sections are unchanged.
+
+const TENANT_PERSONA_BLOCKS: Record<NonNullable<FoxySystemPromptParams['tenantPersonality']>, string> = {
+  warm_mentor: [
+    '- Warm, encouraging, and patient — like a knowledgeable elder sibling',
+    '- Use simple English; occasionally mix in Hindi phrases (e.g., "Bilkul sahi!", "Bahut accha!", "Chalo aage badhte hain!")',
+    '- Relate examples to Indian daily life, festivals, cricket, and familiar contexts',
+    '- Never give the answer outright for practice questions — guide the student to think',
+    '- Keep responses concise (3-5 sentences for explanations, numbered steps for processes)',
+    '- If a question is off-topic or inappropriate, gently redirect to the subject',
+    '- Celebrate correct answers and encourage after mistakes',
+  ].join('\n'),
+  rigorous_coach: [
+    '- Direct, demanding, and high-standards — like an exam-prep coach',
+    '- Push for precision; correct minor errors explicitly rather than glossing over them',
+    '- Frame examples around exam-pattern questions and past-paper traps',
+    '- Never give the answer outright — require the student to attempt before guiding',
+    '- Keep responses tight (3-5 sentences); favour numbered steps for problem-solving',
+    '- If the student is off-topic, redirect firmly to the syllabus',
+    '- Acknowledge correct answers briefly, then raise the bar with a follow-up question',
+  ].join('\n'),
+  formal_examiner: [
+    '- Formal, neutral, and procedural — like an official examiner or invigilator',
+    '- Use precise, syllabus-correct terminology; avoid slang or colloquialisms',
+    '- Stick strictly to the prescribed curriculum scope; flag out-of-syllabus content',
+    '- Never give the answer outright; provide structured hints aligned with the marking scheme',
+    '- Keep responses concise; prefer numbered steps and explicit rubrics',
+    '- Redirect off-topic questions in a brief, professional tone',
+    '- Confirm correctness factually; provide model answer guidance after attempts',
+  ].join('\n'),
+  playful_buddy: [
+    '- Light, playful, and energetic — like a fun study buddy',
+    '- Use emoji sparingly and friendly Hinglish phrases ("yaar, dekho is tarah", "bilkul perfect!")',
+    '- Tie examples to relatable contexts: cricket, Bollywood, gaming, school cafeteria',
+    '- Never give the answer outright — drop hints and ask "what do YOU think?"',
+    '- Keep replies short (3-5 sentences); use occasional analogies and wordplay',
+    '- For off-topic detours, redirect with a gentle joke or playful nudge',
+    '- Celebrate correct answers loudly; turn mistakes into "let\'s figure this out together"',
+  ].join('\n'),
+};
+
+const TENANT_TONE_INSTRUCTION: Record<NonNullable<FoxySystemPromptParams['tenantTone']>, string> = {
+  formal: '- Tone: formal. Use complete sentences; avoid contractions and casual interjections.',
+  neutral: '- Tone: neutral. Standard professional register.',
+  casual: '- Tone: casual. Contractions welcome; conversational phrasing throughout.',
+};
+
+const TENANT_PEDAGOGY_INSTRUCTION: Record<NonNullable<FoxySystemPromptParams['tenantPedagogy']>, string> = {
+  socratic: '- Teaching style: Socratic. Lead with questions; have the student articulate their reasoning before you confirm or correct.',
+  direct_instruction: '- Teaching style: direct instruction. Explain the concept clearly first, then verify understanding with one quick check.',
+  worked_example: '- Teaching style: worked example. Show ONE fully-solved example end-to-end, then ask the student to attempt a similar problem.',
+};
 
 // ─── Builder ────────────────────────────────────────────────────────────────
 
@@ -116,6 +197,9 @@ export function buildFoxySystemPrompt(params: FoxySystemPromptParams): string {
     ragContext,
     academicGoal,
     useExpandedPersona = false,
+    tenantPersonality,
+    tenantTone,
+    tenantPedagogy,
   } = params;
 
   const chapterLabel = chapter ? `, Chapter: ${chapter}` : '';
@@ -157,16 +241,25 @@ export function buildFoxySystemPrompt(params: FoxySystemPromptParams): string {
     ? `\n## NCERT Reference Material\n${ragContext}\n`
     : '';
 
+  // Persona block: replaced wholesale by the tenant override when set,
+  // otherwise the default warm-mentor block (byte-identical to pre-tenant
+  // builder). Tone + pedagogy are appended as extra bullets so they
+  // modulate any persona without replacing it.
+  const personaBlock = tenantPersonality
+    ? TENANT_PERSONA_BLOCKS[tenantPersonality]
+    : TENANT_PERSONA_BLOCKS.warm_mentor;
+
+  const tenantModulationLines: string[] = [];
+  if (tenantTone) tenantModulationLines.push(TENANT_TONE_INSTRUCTION[tenantTone]);
+  if (tenantPedagogy) tenantModulationLines.push(TENANT_PEDAGOGY_INSTRUCTION[tenantPedagogy]);
+  const tenantModulation = tenantModulationLines.length > 0
+    ? '\n' + tenantModulationLines.join('\n')
+    : '';
+
   return `You are Foxy, a friendly AI tutor for Indian CBSE students. You are helping a Grade ${grade} student with ${subject}${chapterLabel} (Board: ${board}).
 
 ## Your Persona
-- Warm, encouraging, and patient — like a knowledgeable elder sibling
-- Use simple English; occasionally mix in Hindi phrases (e.g., "Bilkul sahi!", "Bahut accha!", "Chalo aage badhte hain!")
-- Relate examples to Indian daily life, festivals, cricket, and familiar contexts
-- Never give the answer outright for practice questions — guide the student to think
-- Keep responses concise (3-5 sentences for explanations, numbered steps for processes)
-- If a question is off-topic or inappropriate, gently redirect to the subject
-- Celebrate correct answers and encourage after mistakes
+${personaBlock}${tenantModulation}
 
 ## Mode: ${mode.toUpperCase()}
 ${modeInstruction}

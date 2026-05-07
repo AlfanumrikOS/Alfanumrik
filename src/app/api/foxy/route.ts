@@ -66,6 +66,8 @@ import { validateSubjectWrite } from '@/lib/subjects';
 import { callGroundedAnswer, callGroundedAnswerStream, type GroundedRequest, type Citation, type SuggestedAlternative, type AbstainReason } from '@/lib/ai/grounded-client';
 import { PER_PLAN_TIMEOUT_MS, SOFT_CONFIDENCE_BANNER_THRESHOLD } from '@/lib/grounding-config';
 import { classifyIntent, routeIntent } from '@/lib/ai';
+import { getAllTenantConfig } from '@/lib/tenant-config';
+import { coerceTenantType } from '@/lib/tenant-domain';
 import { FoxyResponseSchema, type FoxyResponse } from '@/lib/foxy/schema';
 import { denormalizeFoxyResponse } from '@/lib/foxy/denormalize';
 import { buildExpandedGoalSection } from '@/lib/goals/goal-personas';
@@ -1201,6 +1203,50 @@ async function refundQuota(studentId: string, feature: string): Promise<void> {
 // foxy-tutor Edge Function can be re-invoked via the mobile/Flutter code path
 // until Phase 4 deletion lands.
 
+/**
+ * Resolve the tenant AI overrides (personality / tone / pedagogy) for
+ * the school this student belongs to. Returns an empty record for B2C
+ * students, students whose school can't be resolved, or any failure
+ * along the path — never throws.
+ *
+ * Cached at the tenant_config layer (5-min TTL); plus the school_id
+ * lookup is one extra round-trip per legacy-foxy call which is on the
+ * cold path (`ff_grounded_ai_foxy` OFF). The grounded-answer primary
+ * path is unaffected by this code.
+ */
+async function resolveTenantAiOverrides(studentId: string): Promise<{
+  tenantPersonality?: 'warm_mentor' | 'rigorous_coach' | 'formal_examiner' | 'playful_buddy';
+  tenantTone?: 'formal' | 'neutral' | 'casual';
+  tenantPedagogy?: 'socratic' | 'direct_instruction' | 'worked_example';
+}> {
+  try {
+    const { data: student } = await supabaseAdmin
+      .from('students')
+      .select('school_id, schools(tenant_type)')
+      .eq('id', studentId)
+      .maybeSingle();
+
+    const schoolId = student?.school_id as string | undefined;
+    if (!schoolId) return {};
+
+    const tenantTypeRaw = (student?.schools as { tenant_type?: string } | undefined)?.tenant_type ?? null;
+    const tenantType = coerceTenantType(tenantTypeRaw);
+
+    const config = await getAllTenantConfig(schoolId, tenantType);
+    return {
+      tenantPersonality: config['ai.personality'],
+      tenantTone: config['ai.tone'],
+      tenantPedagogy: config['ai.pedagogy'],
+    };
+  } catch (err) {
+    logger.warn('resolve_tenant_ai_overrides_failed', {
+      error: err instanceof Error ? err.message : String(err),
+      studentId,
+    });
+    return {};
+  }
+}
+
 async function runLegacyFoxyFlow(params: {
   studentId: string;
   resolvedSessionId: string;
@@ -1221,7 +1267,10 @@ async function runLegacyFoxyFlow(params: {
   traceId: string;
   intent: string;
 }> {
-  const classification = await classifyIntent(params.message, params.subject, params.grade, params.mode);
+  const [classification, tenantAi] = await Promise.all([
+    classifyIntent(params.message, params.subject, params.grade, params.mode),
+    resolveTenantAiOverrides(params.studentId),
+  ]);
   const result = await routeIntent(classification.intent, params.message, {
     subject: params.subject,
     grade: params.grade,
@@ -1232,6 +1281,9 @@ async function runLegacyFoxyFlow(params: {
     academicGoal: params.academicGoal,
     studentId: params.studentId,
     sessionId: params.resolvedSessionId,
+    tenantPersonality: tenantAi.tenantPersonality,
+    tenantTone: tenantAi.tenantTone,
+    tenantPedagogy: tenantAi.tenantPedagogy,
   });
 
   const sources: RagSource[] = result.sources.map((c) => ({
