@@ -141,7 +141,33 @@ CREATE TRIGGER question_bank_recompute_trigger
   FOR EACH ROW EXECUTE FUNCTION public.trg_question_bank_recompute();
 ALTER TABLE public.question_bank ENABLE TRIGGER question_bank_recompute_trigger;
 
--- ── 5. Runtime smoke test with diagnostic separation ────────────────────
+-- ── 5a. Trigger inventory (diagnostic only — surfaces BEFORE triggers
+--    that may silently suppress INSERTs by returning NULL). ──────────────
+DO $$
+DECLARE
+  v_trig record;
+  v_lines text := '';
+BEGIN
+  FOR v_trig IN
+    SELECT tgname,
+           CASE tgenabled
+             WHEN 'O' THEN 'enabled'
+             WHEN 'D' THEN 'DISABLED'
+             WHEN 'R' THEN 'replica-only'
+             WHEN 'A' THEN 'always'
+             ELSE 'unknown' END AS state,
+           pg_get_triggerdef(oid) AS def
+      FROM pg_trigger
+     WHERE tgrelid = 'public.rag_content_chunks'::regclass
+       AND NOT tgisinternal
+     ORDER BY tgname
+  LOOP
+    v_lines := v_lines || E'\n  - ' || v_trig.tgname || ' [' || v_trig.state || ']: ' || v_trig.def;
+  END LOOP;
+  RAISE NOTICE 'rag_content_chunks triggers (post-recreation):%', v_lines;
+END $$;
+
+-- ── 5b. Runtime smoke test with diagnostic separation ───────────────────
 DO $$
 DECLARE
   v_test_subject     text := 'syllabus_trigger_smoke';
@@ -152,6 +178,7 @@ DECLARE
   v_chunks_after_rpc  int;
   v_seed_grade        text;
   v_seed_count        int;
+  v_inserted_id       uuid;
 BEGIN
   -- Defensive cleanup
   DELETE FROM public.rag_content_chunks
@@ -175,7 +202,9 @@ BEGIN
       quote_literal(v_seed_grade), quote_literal(v_test_grade);
   END IF;
 
-  -- Insert chunk (trigger should fire)
+  -- Insert chunk (trigger should fire). RETURNING id so we can detect the
+  -- "BEFORE trigger returned NULL — silently suppressed INSERT" case
+  -- where INSERT raises no error but inserts nothing.
   BEGIN
     INSERT INTO public.rag_content_chunks (
       chunk_text, source, grade, subject,
@@ -185,13 +214,24 @@ BEGIN
       'Syllabus trigger smoke test chunk.', 'ncert_2025', v_test_grade, 'science',
       v_test_grade, v_test_subject, v_test_chapter,
       ('[' || array_to_string(array_fill(0.1::float, ARRAY[1024]), ',') || ']')::vector
-    );
+    )
+    RETURNING id INTO v_inserted_id;
   EXCEPTION
     WHEN OTHERS THEN
       DELETE FROM public.cbse_syllabus
        WHERE subject_code = v_test_subject AND chapter_number = v_test_chapter;
       RAISE EXCEPTION 'syllabus smoke INSERT failed: % (real schema/constraint bug, not the trigger)', SQLERRM;
   END;
+
+  -- If RETURNING gave NULL the INSERT was silently suppressed, almost
+  -- certainly by a BEFORE INSERT trigger that RETURN NULL'd. Surface this
+  -- distinct failure mode separately from the trigger/recompute layers.
+  IF v_inserted_id IS NULL THEN
+    DELETE FROM public.cbse_syllabus
+     WHERE subject_code = v_test_subject AND chapter_number = v_test_chapter;
+    RAISE EXCEPTION
+      'syllabus smoke: INSERT returned no id — a BEFORE trigger on rag_content_chunks suppressed the row by RETURN NULL. See trigger inventory in the prior NOTICE block. The recompute trigger never fires because nothing actually got inserted. This is the root cause of integration-tests/syllabus-triggers.test.ts also showing chunk_count=0.';
+  END IF;
 
   -- Read after trigger
   SELECT chunk_count, rag_status INTO v_chunks_after_trig, v_status_after_trig
