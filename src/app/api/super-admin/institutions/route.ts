@@ -13,8 +13,12 @@ export async function GET(request: NextRequest) {
     const offset = (page - 1) * limit;
     const search = params.get('search');
 
+    // Phase B fields (tenant_type + typography) added so the super-admin
+    // institutions UI can display them and feed an upcoming edit flow.
+    // Slug + custom_domain included for parity with /api/school-config so
+    // ops can spot which schools have white-label routing wired up.
     const queryParts = [
-      'select=id,name,code,board,school_type,city,state,principal_name,email,phone,subscription_plan,is_active,max_students,max_teachers,created_at',
+      'select=id,name,code,slug,board,school_type,city,state,principal_name,email,phone,subscription_plan,is_active,max_students,max_teachers,created_at,tenant_type,font_heading,font_body,border_radius_px,custom_domain,domain_verified',
       'deleted_at=is.null',
       'order=created_at.desc',
       `offset=${offset}`,
@@ -94,10 +98,26 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Missing "id" or "updates".' }, { status: 400 });
     }
 
-    const ALLOWED = ['name', 'board', 'school_type', 'address', 'city', 'state', 'pin_code', 'phone', 'email', 'website', 'principal_name', 'subscription_plan', 'max_students', 'max_teachers', 'is_active'];
+    // ALLOWED expanded with `tenant_type` so super-admin can change a
+    // tenant's category (school → coaching, etc.). All other Phase B fields
+    // (font_heading, font_body, border_radius_px) are intentionally NOT
+    // listed here — those are owned by the school admin via
+    // /api/school-admin/branding (#563), keeping responsibilities separated.
+    const ALLOWED = ['name', 'board', 'school_type', 'address', 'city', 'state', 'pin_code', 'phone', 'email', 'website', 'principal_name', 'subscription_plan', 'max_students', 'max_teachers', 'is_active', 'tenant_type'];
+    const VALID_TENANT_TYPES = new Set(['school', 'coaching', 'corporate', 'government']);
     const safe: Record<string, unknown> = { updated_at: new Date().toISOString() };
     for (const [k, v] of Object.entries(updates)) {
-      if (ALLOWED.includes(k)) safe[k] = v;
+      if (!ALLOWED.includes(k)) continue;
+      // tenant_type is constrained at the DB layer (CHECK constraint added
+      // by migration 20260507000004), but reject early at the API for a
+      // clearer error message + to avoid emitting a vague Postgres failure.
+      if (k === 'tenant_type' && !(typeof v === 'string' && VALID_TENANT_TYPES.has(v))) {
+        return NextResponse.json(
+          { error: "tenant_type must be one of 'school', 'coaching', 'corporate', 'government'." },
+          { status: 400 }
+        );
+      }
+      safe[k] = v;
     }
 
     const res = await fetch(supabaseAdminUrl('schools', `id=eq.${encodeURIComponent(id)}`), {
@@ -116,7 +136,15 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'School not found.' }, { status: 404 });
     }
 
-    const action = safe.is_active === false ? 'school.suspended' : safe.is_active === true ? 'school.activated' : 'school.updated';
+    // Pick the most-specific action label so audit-log triage is easy.
+    // tenant_type changes get their own action because they're load-bearing
+    // for default modules + copy + billing assumptions; ops should be able
+    // to filter on them without inspecting each row's `updates` blob.
+    const action =
+      'tenant_type' in updates ? 'tenant.type_changed' :
+      safe.is_active === false ? 'school.suspended' :
+      safe.is_active === true ? 'school.activated' :
+      'school.updated';
     await logAdminAudit(auth, action, 'school', id, { updates: safe });
     return NextResponse.json({ success: true, data: updated });
   } catch (err) {
