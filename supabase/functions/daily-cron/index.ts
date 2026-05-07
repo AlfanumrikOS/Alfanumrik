@@ -1,5 +1,11 @@
-// daily-cron v30 — Phase 3-C renewal automation:
-//   Added 3 contract-lifecycle steps (gated by ff_school_contracts_v1):
+// daily-cron v31 — Phase 3-C renewal automation + email delivery:
+//   v31 (this version): wires processContractReminders to call the new
+//     send-renewal-reminder Edge Function for actual Mailgun delivery;
+//     telemetry's `delivered` field now reflects real send-success instead
+//     of always `false`. Soft-fails (no billing_email, Mailgun outage) still
+//     mark the reminder as fired in reminders_sent[] but report delivered=
+//     false in PostHog so failure-budget dashboards show the gap.
+//   v30: added 3 contract-lifecycle steps (gated by ff_school_contracts_v1):
 //     contract_reminders_sent  — fires T-60/30/15/7/1 reminders, idempotent
 //                                 via school_contracts.reminders_sent[]
 //     contracts_expired        — flips active/expiring → expired past end_date
@@ -936,15 +942,45 @@ async function processContractReminders(supabase: ReturnType<typeof createClient
         continue
       }
 
+      // Send the renewal-reminder email via the dedicated Edge Function.
+      // Soft-fail: any send error (Mailgun outage, missing billing_email,
+      // misconfigured creds) is captured into the telemetry `delivered`
+      // field but does NOT roll back the reminders_sent[] update or the
+      // outer step — once a checkpoint is "fired" we don't want to retry
+      // for that t_minus on the same contract on the next cron tick.
+      let delivered = false
+      try {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
+        const serviceKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+        if (supabaseUrl && serviceKey) {
+          const res = await fetch(`${supabaseUrl}/functions/v1/send-renewal-reminder`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${serviceKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ contract_id: c.id, t_minus: tMinus }),
+          })
+          if (res.ok) {
+            const out = await res.json().catch(() => ({}))
+            delivered = out?.delivered === true
+          } else {
+            console.warn(`daily-cron: send-renewal-reminder ${res.status} for ${c.id} T-${tMinus}`)
+          }
+        } else {
+          console.warn(`daily-cron: send-renewal-reminder skipped — missing SUPABASE_URL/SERVICE_ROLE_KEY`)
+        }
+      } catch (e) {
+        console.warn(`daily-cron: send-renewal-reminder fetch failed for ${c.id} T-${tMinus}: ${e instanceof Error ? e.message : String(e)}`)
+      }
+
       // Telemetry. Failure here must not block the cron step.
       try {
         await posthogCapture('contract_reminder_sent', c.school_id, {
           contract_id: c.id,
           school_id: c.school_id,
           t_minus: tMinus,
-          // delivered=false because actual email send is a separate follow-up.
-          // Once email integration lands, set true on send-success.
-          delivered: false,
+          delivered,
           contract_number: c.contract_number,
         })
       } catch (e) {
