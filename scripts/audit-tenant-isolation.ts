@@ -143,6 +143,101 @@ const PUBLIC_BY_DESIGN: ReadonlyArray<string> = [
   '/api/error-report',
   '/api/client-error',
   '/api/oauth',                       // OAuth callback, validated by upstream
+  '/api/schools/trial',               // B2B lead-gen signup; rate-limited by IP
+];
+
+// ─── Auto-classifiers ──────────────────────────────────────────────────
+//
+// The naive "auth + tenant scoping" heuristic massively over-reports REVIEW
+// for routes that ARE properly scoped — they just don't fit the pattern set:
+//
+//   - Cron routes (/api/cron/*) operate on the WHOLE platform under
+//     CRON_SECRET. There's no per-tenant scope to check.
+//   - Super-admin / internal-admin routes (/api/super-admin/*,
+//     /api/internal/admin/*) are PLATFORM-level by design — they fan out
+//     across all tenants, gated by an admin secret + RBAC.
+//   - Auth routes (/api/auth/*) are SESSION-level — the user's identity
+//     IS the scope; there's no school_id to filter by because the request
+//     is the user describing THEMSELVES.
+//
+// These three "intentional" buckets get re-classified as ✅ SAFE with a
+// label so reviewers can focus on the truly ambiguous routes.
+//
+// Each classifier requires BOTH the path prefix AND a confirming auth
+// signal (e.g. CRON_SECRET, requireAdminSecret, .auth.getUser()) to avoid
+// false positives if someone accidentally drops an unauthenticated route
+// under one of these prefixes.
+
+interface AutoClassifier {
+  /** Required path prefix on the route's URL. */
+  pathPrefix: string;
+  /** Human-readable bucket label, surfaced in the report. */
+  label: string;
+  /** At least ONE of these auth signals must be present in the route source
+   *  for the classifier to apply. Belt-and-braces against accidental
+   *  mis-prefixing of an unauthenticated route. */
+  requiredAuthSignal: ReadonlyArray<RegExp>;
+  /** Why this prefix is auto-classified — surfaced in the report so a
+   *  reviewer can see WHY their route was bucketed as SAFE. */
+  reason: string;
+}
+
+const AUTO_CLASSIFIERS: ReadonlyArray<AutoClassifier> = [
+  {
+    pathPrefix: '/api/cron/',
+    label: 'SYSTEM (cron)',
+    requiredAuthSignal: [/\bCRON_SECRET\b/, /\bx-cron-secret\b/, /\bverifyCronSecret\s*\(/],
+    reason: 'Cron route gated by CRON_SECRET. Operates platform-wide; no per-tenant scope expected.',
+  },
+  {
+    pathPrefix: '/api/internal/admin/',
+    label: 'PLATFORM (internal admin)',
+    requiredAuthSignal: [/\brequireAdminSecret\s*\(/, /\bx-admin-secret\b/, /\bSUPER_ADMIN_SECRET\b/],
+    reason: 'Internal admin route gated by SUPER_ADMIN_SECRET. Fans out across all tenants by design.',
+  },
+  {
+    pathPrefix: '/api/super-admin/',
+    label: 'PLATFORM (super-admin)',
+    requiredAuthSignal: [
+      /\bauthorizeAdmin\s*\(/,
+      /\brequireAdminSecret\s*\(/,
+      /\bx-admin-secret\b/,
+      /from\s+['"](?:@\/|(?:\.\.\/)+)lib\/admin-auth['"]/,
+    ],
+    reason: 'Super-admin route gated by admin session + RBAC. Operates across all tenants by design.',
+  },
+  {
+    pathPrefix: '/api/auth/',
+    label: 'SESSION (auth)',
+    requiredAuthSignal: [
+      /\bcreateSupabaseServerClient\s*\(/,
+      /\.auth\.getUser\s*\(/,
+      /\.auth\.getSession\s*\(/,
+      /\bauthorizeRequest\s*\(/,
+      /sb-[a-z-]+-auth-token/,
+    ],
+    reason: 'Auth route — the user\'s session IS the scope. Tenant scoping happens via session-derived claims, not URL params.',
+  },
+];
+
+// ─── Explicit per-route waivers ────────────────────────────────────────
+//
+// Routes whose tenant-safety has been human-verified but which the
+// heuristics don't catch — usually because the scoping happens inside
+// an imported helper or via RPC. Each entry MUST include a `reason`
+// explaining what the reviewer checked. Use sparingly — prefer to
+// extend AUTH_VIA_IMPORT or AUTO_CLASSIFIERS when a class of routes
+// shares a pattern.
+
+interface RouteWaiver {
+  routePath: string;
+  reason: string;
+}
+
+const EXPLICIT_WAIVERS: ReadonlyArray<RouteWaiver> = [
+  // Add per-route waivers here as the team triages the REVIEW queue.
+  // Format:
+  //   { routePath: '/api/foo/bar', reason: 'Scoping happens in <helper>; verified by <name> on <date>.' },
 ];
 
 // ─── Bucket types ───────────────────────────────────────────────────────
@@ -157,6 +252,10 @@ interface RouteFinding {
   hasAuth: boolean;
   hasTenantScoping: boolean;
   isPublicByDesign: boolean;
+  /** When non-null, the route was auto-classified into a sub-bucket
+   *  (e.g. "SYSTEM (cron)", "PLATFORM (super-admin)") so reviewers can
+   *  see WHY a SAFE verdict was reached. */
+  autoLabel: string | null;
   authMatches: string[];
   tenantMatches: string[];
   reason: string;
@@ -209,26 +308,62 @@ function listMatches(src: string, patterns: ReadonlyArray<RegExp>): string[] {
 
 function categorize(
   routePath: string,
+  src: string,
   hasAuth: boolean,
   hasTenantScoping: boolean,
-): { bucket: Bucket; reason: string; isPublicByDesign: boolean } {
+): { bucket: Bucket; reason: string; isPublicByDesign: boolean; autoLabel: string | null } {
   const isPublicByDesign = PUBLIC_BY_DESIGN.some(p => routePath === p || routePath.startsWith(`${p}/`));
   if (isPublicByDesign) {
     return {
       bucket: 'SAFE',
       reason: 'Public-by-design endpoint (allowlisted in audit script).',
       isPublicByDesign: true,
+      autoLabel: 'PUBLIC',
     };
   }
-  if (hasAuth && hasTenantScoping) {
-    return { bucket: 'SAFE', reason: 'Has auth + tenant scoping.', isPublicByDesign: false };
+
+  // Per-route human-verified waiver (highest precedence over heuristics).
+  const waiver = EXPLICIT_WAIVERS.find(w => w.routePath === routePath);
+  if (waiver) {
+    return {
+      bucket: 'SAFE',
+      reason: `Explicit waiver: ${waiver.reason}`,
+      isPublicByDesign: false,
+      autoLabel: 'WAIVER',
+    };
   }
+
+  if (hasAuth && hasTenantScoping) {
+    return {
+      bucket: 'SAFE',
+      reason: 'Has auth + tenant scoping.',
+      isPublicByDesign: false,
+      autoLabel: null,
+    };
+  }
+
+  // Auto-classifiers: cron / admin / auth routes that are SAFE-by-design
+  // even though they don't show a school_id filter. Each requires the path
+  // prefix AND a confirming auth signal.
+  for (const cls of AUTO_CLASSIFIERS) {
+    if (!routePath.startsWith(cls.pathPrefix)) continue;
+    const hasSignal = cls.requiredAuthSignal.some(rx => rx.test(src));
+    if (!hasSignal) continue; // prefix matched but auth signal missing → fall through (suspicious!)
+    return {
+      bucket: 'SAFE',
+      reason: cls.reason,
+      isPublicByDesign: false,
+      autoLabel: cls.label,
+    };
+  }
+
   if (hasAuth && !hasTenantScoping) {
     return {
       bucket: 'REVIEW',
       reason:
         'Has auth but no obvious tenant scoping in this file. Could be safe (RLS-trusted, single-tenant data, helper-imported scoping) — review needed.',
       isPublicByDesign: false,
+      autoLabel: null,
     };
   }
   if (!hasAuth && hasTenantScoping) {
@@ -236,12 +371,14 @@ function categorize(
       bucket: 'NO_AUTH',
       reason: 'Tenant scoping present but no auth assertion. Caller could pass any school_id.',
       isPublicByDesign: false,
+      autoLabel: null,
     };
   }
   return {
     bucket: 'NO_AUTH',
     reason: 'No auth assertion AND no tenant scoping detected.',
     isPublicByDesign: false,
+    autoLabel: null,
   };
 }
 
@@ -261,7 +398,9 @@ async function audit(): Promise<RouteFinding[]> {
     // Surface the import-derived signals alongside direct call matches so a
     // human reviewing the report can see WHY the route was deemed authed.
     const allAuthSignals = [...authMatches, ...importMatches.map(s => `import:${s}`)];
-    const { bucket, reason, isPublicByDesign } = categorize(routePath, hasAuth, hasTenantScoping);
+    const { bucket, reason, isPublicByDesign, autoLabel } = categorize(
+      routePath, src, hasAuth, hasTenantScoping,
+    );
 
     findings.push({
       routePath,
@@ -271,6 +410,7 @@ async function audit(): Promise<RouteFinding[]> {
       hasAuth,
       hasTenantScoping,
       isPublicByDesign,
+      autoLabel,
       authMatches: allAuthSignals,
       tenantMatches,
       reason,
@@ -303,8 +443,19 @@ function defaultOutPath(): string {
   return path.join(REPO_ROOT, 'docs', 'audits', `${todayISO()}-tenant-isolation.md`);
 }
 
+function summarizeSafeByLabel(findings: RouteFinding[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const f of findings) {
+    if (f.bucket !== 'SAFE') continue;
+    const k = f.autoLabel ?? 'AUTH+SCOPING';
+    out[k] = (out[k] ?? 0) + 1;
+  }
+  return out;
+}
+
 function renderMarkdown(findings: RouteFinding[]): string {
   const totals = summarize(findings);
+  const safeByLabel = summarizeSafeByLabel(findings);
   const lines: string[] = [];
   lines.push(`# Tenant Isolation Audit — ${todayISO()}`);
   lines.push('');
@@ -320,6 +471,24 @@ function renderMarkdown(findings: RouteFinding[]): string {
   lines.push('');
   lines.push(`Total routes scanned: **${findings.length}**.`);
   lines.push('');
+  // Sub-breakdown of SAFE so reviewers see what was auto-classified vs
+  // what genuinely matched the auth+scoping pattern.
+  const safeKeys = Object.keys(safeByLabel).sort();
+  if (safeKeys.length > 0) {
+    lines.push('### ✅ SAFE — breakdown');
+    lines.push('');
+    lines.push('| Sub-bucket | Count | Why auto-classified |');
+    lines.push('|---|---|---|');
+    for (const key of safeKeys) {
+      const why =
+        key === 'AUTH+SCOPING' ? 'Has auth + matching tenant-scoping pattern.' :
+        key === 'PUBLIC' ? 'On the public-by-design allowlist.' :
+        key === 'WAIVER' ? 'Explicit per-route waiver (see EXPLICIT_WAIVERS in script).' :
+        AUTO_CLASSIFIERS.find(c => c.label === key)?.reason ?? '—';
+      lines.push(`| ${key} | ${safeByLabel[key]} | ${why} |`);
+    }
+    lines.push('');
+  }
 
   // High-priority section first.
   const noAuth = findings.filter(f => f.bucket === 'NO_AUTH');
@@ -360,6 +529,20 @@ function renderMarkdown(findings: RouteFinding[]): string {
   lines.push('');
   lines.push('**Public-by-design allowlist:** ' + PUBLIC_BY_DESIGN.map(p => `\`${p}\``).join(', '));
   lines.push('');
+  lines.push('**Auto-classifiers (path-prefix + auth-signal):**');
+  lines.push('');
+  for (const cls of AUTO_CLASSIFIERS) {
+    lines.push(`- \`${cls.pathPrefix}\` → \`${cls.label}\` — ${cls.reason}`);
+  }
+  lines.push('');
+  if (EXPLICIT_WAIVERS.length > 0) {
+    lines.push('**Explicit per-route waivers:**');
+    lines.push('');
+    for (const w of EXPLICIT_WAIVERS) {
+      lines.push(`- \`${w.routePath}\` — ${w.reason}`);
+    }
+    lines.push('');
+  }
 
   return lines.join('\n');
 }
@@ -367,7 +550,8 @@ function renderMarkdown(findings: RouteFinding[]): string {
 function renderRoute(lines: string[], f: RouteFinding): void {
   const rel = path.relative(REPO_ROOT, f.filePath).replace(/\\/g, '/');
   const methods = f.methods.length > 0 ? f.methods.join('/') : '(no exports detected)';
-  lines.push(`### ${bucketIcon(f.bucket)} \`${f.routePath}\` — ${methods}`);
+  const labelSuffix = f.autoLabel ? ` _[${f.autoLabel}]_` : '';
+  lines.push(`### ${bucketIcon(f.bucket)} \`${f.routePath}\` — ${methods}${labelSuffix}`);
   lines.push('');
   lines.push(`- **File:** \`${rel}\``);
   lines.push(`- **Auth signals:** ${f.authMatches.length > 0 ? f.authMatches.map(s => `\`${s}\``).join(', ') : '_none_'}`);
@@ -393,9 +577,14 @@ async function main() {
   await fs.writeFile(outPath, md, 'utf8');
 
   const totals = summarize(findings);
+  const safeByLabel = summarizeSafeByLabel(findings);
+  const safeBreakdown = Object.keys(safeByLabel).sort()
+    .map(k => `    - ${k}: ${safeByLabel[k]}`)
+    .join('\n');
   const summary =
     `Tenant isolation audit written to ${path.relative(REPO_ROOT, outPath)}\n` +
     `  ✅ SAFE:   ${totals.SAFE}\n` +
+    (safeBreakdown ? safeBreakdown + '\n' : '') +
     `  🟡 REVIEW: ${totals.REVIEW}\n` +
     `  🔴 NO_AUTH: ${totals.NO_AUTH}\n` +
     `  Total: ${findings.length} routes scanned.`;
