@@ -434,20 +434,36 @@ async function handleResolveAlert(
   if (!alertId) return errorResponse('alert_id required', 400, origin)
 
   // Alerts are derived from student data, not stored separately, so there's
-  // no row-level ownership to verify on alert_id itself. The audit row is
-  // tagged with the (JWT-derived) teacher_id so the audit trail records WHO
-  // resolved each alert. Without this, a malicious teacher could write
-  // resolve audit entries impersonating another teacher.
+  // no row-level ownership to verify on alert_id itself. We tag the audit
+  // row with the (JWT-derived) teacher_id so the audit trail records WHO
+  // resolved each alert.
+  //
+  // Bug fix: the previous version targeted a non-existent table `audit_log`
+  // (singular) with wrong column names (`entity_type`, `entity_id`). The
+  // insert was caught by try/catch and silently never wrote anything — the
+  // audit trail for resolve_alert has been a no-op for as long as this
+  // handler has existed. Now uses the real `audit_logs` table (plural) with
+  // its actual schema: action, resource_type, resource_id, auth_user_id,
+  // details.
   const supabase = getServiceClient()
   try {
-    await supabase.from('audit_log').insert({
+    // Resolve teacher.auth_user_id so audit_logs.auth_user_id is the
+    // canonical Supabase user UUID, not the internal teachers.id.
+    const { data: t } = await supabase
+      .from('teachers')
+      .select('auth_user_id')
+      .eq('id', teacherId)
+      .maybeSingle()
+
+    await supabase.from('audit_logs').insert({
+      auth_user_id: t?.auth_user_id ?? null,
       action: 'resolve_alert',
-      entity_type: 'alert',
-      entity_id: alertId,
-      actor_id: teacherId,
-      details: { resolved_at: new Date().toISOString() },
+      resource_type: 'alert',
+      resource_id: alertId,
+      details: { teacher_id: teacherId, resolved_at: new Date().toISOString() },
+      status: 'success',
     })
-  } catch { /* audit_log may not exist */ }
+  } catch { /* never block the resolve on an audit insert failure */ }
 
   return jsonResponse({ success: true }, 200, {}, origin)
 }
