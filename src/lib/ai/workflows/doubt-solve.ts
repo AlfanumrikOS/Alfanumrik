@@ -26,6 +26,12 @@ export interface DoubtWorkflowParams {
   academicGoal?: string | null;
   studentId?: string;
   sessionId?: string;
+  // White-label tenant overrides — forwarded to buildFoxySystemPrompt.
+  // All optional; absent → byte-identical legacy behaviour. Mirrors the
+  // signatures in explain.ts (#569) + revision.ts.
+  tenantPersonality?: 'warm_mentor' | 'rigorous_coach' | 'formal_examiner' | 'playful_buddy';
+  tenantTone?: 'formal' | 'neutral' | 'casual';
+  tenantPedagogy?: 'socratic' | 'direct_instruction' | 'worked_example';
 }
 
 export async function runDoubtWorkflow(
@@ -58,6 +64,9 @@ export async function runDoubtWorkflow(
       mode: 'doubt',
       ragContext: retrieval.contextText,
       academicGoal: params.academicGoal,
+      tenantPersonality: params.tenantPersonality,
+      tenantTone: params.tenantTone,
+      tenantPedagogy: params.tenantPedagogy,
     });
     const systemPrompt = basePrompt +
       '\n\n## Additional Instruction\nThe student has a specific doubt. Give a direct, clear answer first, then explain the reasoning. Do not ask questions back unless the doubt is genuinely ambiguous.';
