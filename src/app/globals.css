@@ -51,7 +51,12 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 body {
-  font-family: var(--font-body);
+  /* White-label override chain: tenant typography → Alfanumrik default → system.
+     `--tenant-font-body` is set by TenantConfigProvider when a tenant has
+     configured it (PR #561 + #564); absent on B2C and on tenants who
+     haven't set the field, in which case the var fallback resolves to
+     `--font-body` (Plus Jakarta Sans) → sans-serif. */
+  font-family: var(--tenant-font-body, var(--font-body));
   background: var(--bg);
   color: var(--text-1);
   font-size: 16px;
@@ -60,7 +65,10 @@ body {
   overflow-x: hidden;
   min-height: 100dvh;
 }
-h1, h2, h3, h4, h5 { font-family: var(--font-display); }
+h1, h2, h3, h4, h5 {
+  /* Same override chain as body: tenant heading → display default → system. */
+  font-family: var(--tenant-font-heading, var(--font-display));
+}
 
 /* ─── Responsive Container ────────────────────────────────── */
 .app-container {
