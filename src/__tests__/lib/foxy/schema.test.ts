@@ -426,6 +426,85 @@ describe('wrapAsParagraph', () => {
     const out = wrapAsParagraph('hello', { title: 'x'.repeat(500) });
     expect(out.title.length).toBeLessThanOrEqual(120);
   });
+
+  // ── JSON-leak prevention (May 2026 prod regression) ──
+  // wrapAsParagraph used to dump raw JSON text into a paragraph block when
+  // Claude's structured output truncated mid-block. The Foxy chat bubble
+  // then rendered the literal `{"title":"…","blocks":[…` to students.
+  // These tests lock in the rescue + extraction + friendly-fallback path.
+
+  it('rescues truncated JSON instead of leaking it as paragraph text', () => {
+    const truncated =
+      '{"title":"Onion as Olfactory Indicator","subject":"science","blocks":[' +
+      '{"type":"paragraph","text":"An olfactory indicator changes smell."},' +
+      '{"type":"step","label":"Step 1","text":"Take a fresh onion bulb."},' +
+      '{"type":"step","label":"Step 2","text":"Observe';
+
+    const out = wrapAsParagraph(truncated);
+
+    for (const block of out.blocks) {
+      if (block.type === 'paragraph' && block.text) {
+        expect(block.text.startsWith('{')).toBe(false);
+        expect(block.text).not.toContain('"blocks"');
+        expect(block.text).not.toContain('"title":');
+      }
+    }
+    expect(out.blocks.length).toBeGreaterThanOrEqual(2);
+    expect(FoxyResponseSchema.safeParse(out).success).toBe(true);
+  });
+
+  it('rescues fenced ```json with truncation', () => {
+    const fenced =
+      '```json\n' +
+      '{"title":"T","subject":"science","blocks":[' +
+      '{"type":"paragraph","text":"Complete block."},' +
+      '{"type":"paragraph","text":"Truncated';
+
+    const out = wrapAsParagraph(fenced);
+    expect(out.blocks[0].text).not.toContain('```');
+    expect(out.blocks[0].text!.startsWith('{')).toBe(false);
+    expect(FoxyResponseSchema.safeParse(out).success).toBe(true);
+  });
+
+  it('falls back to extracted text fields when rescue fails', () => {
+    // Truncation cut INSIDE a string — rescueFromTruncatedJson can't recover
+    // a valid structure but text-extraction should pull human content.
+    const broken =
+      '{"title":"Q","subject":"science","blocks":[' +
+      '{"type":"paragraph","text":"First sentence here."},' +
+      '{"type":"paragraph","text":"Second sentence here."},' +
+      '{"type":"paragraph","text":"Third sentence cut off mid';
+
+    const out = wrapAsParagraph(broken);
+    for (const block of out.blocks) {
+      expect(block.text!.startsWith('{')).toBe(false);
+      expect(block.text).not.toContain('"text":');
+    }
+    const allText = out.blocks.map((b) => b.text).join(' ');
+    expect(allText).toContain('First sentence here.');
+    expect(allText).toContain('Second sentence here.');
+    expect(FoxyResponseSchema.safeParse(out).success).toBe(true);
+  });
+
+  it('emits a friendly bilingual fallback when nothing recoverable', () => {
+    const out = wrapAsParagraph('{this is not really json {{{ broken');
+    expect(out.blocks).toHaveLength(1);
+    const text = out.blocks[0].text!;
+    expect(text.startsWith('{')).toBe(false);
+    expect(text.toLowerCase()).toContain('cut off');
+    expect(text.toLowerCase()).toContain('sawal');
+    expect(FoxyResponseSchema.safeParse(out).success).toBe(true);
+  });
+
+  it('preserves caller subject hint on rescued JSON', () => {
+    const truncated =
+      '{"title":"T","subject":"general","blocks":[' +
+      '{"type":"paragraph","text":"Complete block."},' +
+      '{"type":"paragraph","text":"Truncated';
+
+    const out = wrapAsParagraph(truncated, { subject: 'science' });
+    expect(out.subject).toBe('science');
+  });
 });
 
 describe('FOXY_STRUCTURED_OUTPUT_PROMPT', () => {
