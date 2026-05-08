@@ -1125,21 +1125,85 @@ function buildAcademicGoalSection(
   return `\n## Student's Academic Goal: ${instruction}\n`;
 }
 
-// ─── Coaching-mode resolver (Phase 2.2) ──────────────────────────────────────
+// ─── Coaching-mode resolver (Phase 2.2 + B'-5 Phase 2 feedback signal) ──────
 //
 // Decides the per-turn coaching shape from the explicit request param (if any)
-// + the student's current mastery level. Default policy:
+// + the student's current mastery level + recent thumbs-feedback signal.
+// Default policy:
 //   mastery 'low'    → 'socratic'  (scaffold prerequisites)
 //   mastery 'medium' → 'socratic'  (the moat — ask, don't tell)
 //   mastery 'high'   → 'answer'    (concise answer + stretch question)
 // 'review' must be requested explicitly (used by spaced-repetition surface).
+//
+// B'-5 Phase 2 override: when the student's last 2+ socratic-mode turns
+// received a thumbs-down (consecutive), flip to 'answer' for THIS turn.
+// Reason: scaffolding is frustrating the student — give them the answer to
+// re-establish trust. The streak resets the next time they thumbs-up.
+// Explicit `requested` still wins (a deliberate /quiz-style "review" or
+// "socratic" request is not overridden by recent feedback).
+type CoachFeedbackSignal = {
+  /** Count of consecutive thumbs-down on socratic-mode turns, most recent first. */
+  recentSocraticThumbsDownStreak: number;
+};
+
+const NO_FEEDBACK_SIGNAL: CoachFeedbackSignal = {
+  recentSocraticThumbsDownStreak: 0,
+};
+
 function resolveCoachMode(
   requested: CoachMode | null,
   masteryLevel: CognitiveContext['masteryLevel'],
+  feedback: CoachFeedbackSignal = NO_FEEDBACK_SIGNAL,
 ): CoachMode {
   if (requested) return requested;
+  // B'-5 Phase 2: scaffolding is misfiring → flip to direct answer.
+  if (feedback.recentSocraticThumbsDownStreak >= 2) return 'answer';
   if (masteryLevel === 'high') return 'answer';
   return 'socratic';
+}
+
+// B'-5 Phase 2: read the last 5 feedback rows for this student joined to
+// the source message's `coach_mode_used`, walk them most-recent-first, and
+// count the consecutive socratic-mode 👎 streak. The streak breaks at the
+// first 👍, the first non-socratic mode, or a missing message row.
+//
+// Two queries instead of an embedded select to keep the typing simple and
+// avoid relying on the FK relationship being auto-detected by supabase-js.
+// Errors return the zero signal so this read can NEVER block a chat turn.
+async function fetchCoachFeedbackSignal(studentId: string): Promise<CoachFeedbackSignal> {
+  try {
+    const { data: fbRows, error: fbErr } = await supabaseAdmin
+      .from('foxy_message_feedback')
+      .select('message_id, is_up, created_at')
+      .eq('student_id', studentId)
+      .order('created_at', { ascending: false })
+      .limit(5);
+    if (fbErr || !fbRows || fbRows.length === 0) return NO_FEEDBACK_SIGNAL;
+
+    const messageIds = fbRows.map((r) => r.message_id as string);
+    const { data: msgRows, error: msgErr } = await supabaseAdmin
+      .from('foxy_chat_messages')
+      .select('id, coach_mode_used')
+      .in('id', messageIds);
+    if (msgErr || !msgRows) return NO_FEEDBACK_SIGNAL;
+
+    const modeById = new Map<string, string | null>(
+      msgRows.map((m) => [m.id as string, (m.coach_mode_used as string | null) ?? null]),
+    );
+
+    let streak = 0;
+    for (const fb of fbRows) {
+      const mode = modeById.get(fb.message_id as string) ?? null;
+      if (mode === 'socratic' && fb.is_up === false) {
+        streak += 1;
+      } else {
+        break;
+      }
+    }
+    return { recentSocraticThumbsDownStreak: streak };
+  } catch {
+    return NO_FEEDBACK_SIGNAL;
+  }
 }
 
 const COACH_MODE_INSTRUCTIONS: Record<CoachMode, string> = {
@@ -1961,8 +2025,11 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     }
   }
 
-  // Phase 2.2: resolve the coaching mode from explicit request + mastery.
-  const coachMode = resolveCoachMode(requestedCoachMode, cognitiveCtx.masteryLevel);
+  // Phase 2.2 + B'-5 Phase 2: resolve the coaching mode from explicit
+  // request + mastery + recent thumbs-feedback signal. Fetcher swallows
+  // its own errors so a feedback-table read failure can never block chat.
+  const coachFeedback = await fetchCoachFeedbackSignal(studentId);
+  const coachMode = resolveCoachMode(requestedCoachMode, cognitiveCtx.masteryLevel, coachFeedback);
 
   const groundedRequest: GroundedRequest = {
     caller: 'foxy',
@@ -2155,38 +2222,48 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     ? denormalizeFoxyResponse(structured)
     : grounded.answer;
 
-  // Persist both turns (non-fatal — response already generated)
+  // Persist both turns (non-fatal — response already generated). Capture the
+  // assistant row's id so we can return it to the client for B'-5 feedback
+  // wiring (👍/👎 needs the DB UUID, not the in-memory bubble id).
   const now = new Date().toISOString();
+  let assistantMessageId: string | null = null;
   try {
-    await supabaseAdmin.from('foxy_chat_messages').insert([
-      {
-        session_id: resolvedSessionId,
-        student_id: studentId,
-        role: 'user',
-        content: message,
-        sources: null,
-        tokens_used: null,
-        created_at: now,
-      },
-      {
-        session_id: resolvedSessionId,
-        student_id: studentId,
-        role: 'assistant',
-        content: assistantContent,
-        // CHECK constraint `structured_role_check` permits structured only on
-        // assistant rows; the column is nullable so legacy/fallback writes
-        // explicitly null. Migration: 20260430010000_foxy_chat_messages_add_structured.
-        structured: structured ?? null,
-        sources: sources.length > 0 ? sources : null,
-        tokens_used: grounded.meta.tokens_used,
-        // B'-5: persist the coach mode used for this turn so feedback rows
-        // can be correlated with the pedagogical mode (socratic/answer/review).
-        // Phase 2 read-path in resolveCoachMode reads recent feedback by
-        // coach_mode_used to decide whether to keep or flip the mode.
-        coach_mode_used: coachMode,
-        created_at: new Date(Date.now() + 1).toISOString(),
-      },
-    ]);
+    const { data: insertedRows } = await supabaseAdmin
+      .from('foxy_chat_messages')
+      .insert([
+        {
+          session_id: resolvedSessionId,
+          student_id: studentId,
+          role: 'user',
+          content: message,
+          sources: null,
+          tokens_used: null,
+          created_at: now,
+        },
+        {
+          session_id: resolvedSessionId,
+          student_id: studentId,
+          role: 'assistant',
+          content: assistantContent,
+          // CHECK constraint `structured_role_check` permits structured only on
+          // assistant rows; the column is nullable so legacy/fallback writes
+          // explicitly null. Migration: 20260430010000_foxy_chat_messages_add_structured.
+          structured: structured ?? null,
+          sources: sources.length > 0 ? sources : null,
+          tokens_used: grounded.meta.tokens_used,
+          // B'-5: persist the coach mode used for this turn so feedback rows
+          // can be correlated with the pedagogical mode (socratic/answer/review).
+          // Phase 2 read-path in resolveCoachMode reads recent feedback by
+          // coach_mode_used to decide whether to keep or flip the mode.
+          coach_mode_used: coachMode,
+          created_at: new Date(Date.now() + 1).toISOString(),
+        },
+      ])
+      .select('id, role');
+    if (insertedRows) {
+      const assistantRow = insertedRows.find((r) => r.role === 'assistant');
+      assistantMessageId = (assistantRow?.id as string | undefined) ?? null;
+    }
   } catch (saveErr) {
     console.warn('[foxy] message save failed:', saveErr instanceof Error ? saveErr.message : String(saveErr));
   }
@@ -2292,6 +2369,11 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     groundedFromChunks,
     citationsCount,
     traceId: grounded.trace_id,
+    // B'-5 Phase 2: surface the persisted assistant-message UUID so the
+    // client can call /api/foxy/feedback with it from the 👍/👎 buttons.
+    // Null when the persistence write failed; client falls back to the
+    // legacy track_ai_quality aggregate counter in that case.
+    messageId: assistantMessageId,
     ...(upgradePrompt ? { upgradePrompt } : {}),
     // Only include `structured` when the helper produced a validated payload.
     // Omitting (vs. including null) keeps the wire shape backward-compatible
@@ -2405,6 +2487,12 @@ async function handleStreamingFoxyTurn(params: {
     await refundQuota(params.studentId, 'foxy_chat');
   };
 
+  // B'-5 Phase 2: assistant-message UUID captured from the persistence
+  // INSERT and emitted to the client via a synthesized `persisted` SSE
+  // frame in flush(). Stays null when persistence fails — the client then
+  // falls back to the legacy aggregate-only feedback path.
+  let assistantMessageId: string | null = null;
+
   const persistOnDone = async () => {
     // ─── Boundary validation for the streaming `done.structured` payload ────
     // Mirrors the non-streaming path (around line 1700): re-validate the
@@ -2440,43 +2528,50 @@ async function handleStreamingFoxyTurn(params: {
 
     try {
       const now = new Date().toISOString();
-      await supabaseAdmin.from('foxy_chat_messages').insert([
-        {
-          session_id: params.resolvedSessionId,
-          student_id: params.studentId,
-          role: 'user',
-          content: params.message,
-          sources: null,
-          tokens_used: null,
-          created_at: now,
-        },
-        {
-          session_id: params.resolvedSessionId,
-          student_id: params.studentId,
-          role: 'assistant',
-          content: assistantContent,
-          // CHECK constraint `structured_role_check` permits structured only
-          // on assistant rows; the column is nullable so legacy/fallback writes
-          // explicitly null. Migration: 20260430010000_foxy_chat_messages_add_structured.
-          structured: structured ?? null,
-          sources: lastCitations.length > 0
-            ? lastCitations.map((c) => ({
-                chunk_id: c.chunk_id,
-                subject: params.subject,
-                chapter: c.chapter_title || (c.chapter_number ? `Chapter ${c.chapter_number}` : undefined),
-                page_number: c.page_number ?? undefined,
-                similarity: c.similarity,
-                content_preview: c.excerpt.slice(0, 150),
-                media_url: c.media_url,
-              }))
-            : null,
-          tokens_used: lastTokensUsed,
-          // B'-5: parity with the blocking path — record coach mode for
-          // feedback correlation.
-          coach_mode_used: params.coachMode ?? null,
-          created_at: new Date(Date.now() + 1).toISOString(),
-        },
-      ]);
+      const { data: insertedRows } = await supabaseAdmin
+        .from('foxy_chat_messages')
+        .insert([
+          {
+            session_id: params.resolvedSessionId,
+            student_id: params.studentId,
+            role: 'user',
+            content: params.message,
+            sources: null,
+            tokens_used: null,
+            created_at: now,
+          },
+          {
+            session_id: params.resolvedSessionId,
+            student_id: params.studentId,
+            role: 'assistant',
+            content: assistantContent,
+            // CHECK constraint `structured_role_check` permits structured only
+            // on assistant rows; the column is nullable so legacy/fallback writes
+            // explicitly null. Migration: 20260430010000_foxy_chat_messages_add_structured.
+            structured: structured ?? null,
+            sources: lastCitations.length > 0
+              ? lastCitations.map((c) => ({
+                  chunk_id: c.chunk_id,
+                  subject: params.subject,
+                  chapter: c.chapter_title || (c.chapter_number ? `Chapter ${c.chapter_number}` : undefined),
+                  page_number: c.page_number ?? undefined,
+                  similarity: c.similarity,
+                  content_preview: c.excerpt.slice(0, 150),
+                  media_url: c.media_url,
+                }))
+              : null,
+            tokens_used: lastTokensUsed,
+            // B'-5: parity with the blocking path — record coach mode for
+            // feedback correlation.
+            coach_mode_used: params.coachMode ?? null,
+            created_at: new Date(Date.now() + 1).toISOString(),
+          },
+        ])
+        .select('id, role');
+      if (insertedRows) {
+        const assistantRow = insertedRows.find((r) => r.role === 'assistant');
+        assistantMessageId = (assistantRow?.id as string | undefined) ?? null;
+      }
     } catch (err) {
       console.warn('[foxy] streaming message save failed:', err instanceof Error ? err.message : String(err));
     }
@@ -2568,10 +2663,27 @@ async function handleStreamingFoxyTurn(params: {
         }
       }
     },
-    async flush() {
+    async flush(controller) {
       if (doneSeen) {
-        // Persist on completion (fire-and-forget — stream already closed for client).
-        void persistOnDone();
+        // B'-5 Phase 2: AWAIT the persistence so we know the assistant-row
+        // UUID before the stream closes — then emit a synthesized `persisted`
+        // SSE frame so the client can wire 👍/👎 to that DB row.
+        // Trade-off: a small (~50-200ms) close-side latency in exchange for
+        // closing the feedback loop. The student has already seen all the
+        // text by this point; we're only delaying the connection close.
+        await persistOnDone();
+        if (assistantMessageId) {
+          try {
+            controller.enqueue(
+              encoder.encode(
+                `event: persisted\ndata: ${JSON.stringify({ messageId: assistantMessageId })}\n\n`,
+              ),
+            );
+          } catch {
+            // Controller closed (rare race) — no-op; client falls back to
+            // legacy aggregate feedback path.
+          }
+        }
       } else {
         // Stream closed without a `done` event → refund (defensive).
         await finalizeOnError();
@@ -2637,7 +2749,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   // (`structured_role_check` in migration 20260430010000).
   const { data: messages } = await supabaseAdmin
     .from('foxy_chat_messages')
-    .select('id, role, content, structured, tokens_used, created_at')
+    .select('id, role, content, structured, tokens_used, coach_mode_used, created_at')
     .eq('session_id', sessionId)
     .order('created_at', { ascending: true });
 
