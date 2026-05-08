@@ -28,6 +28,7 @@ import {
   ANON_ID_MAX_AGE_SECONDS,
   generateAnonId,
 } from '@/lib/anon-id';
+import { secureEqual } from '@/lib/secure-compare';
 /* ═══════════════════════════════════════════════════════════════
  * PROXY — Security Hardening + Auth Session Refresh
  * Next.js 16 proxy — exported as both proxy (primary) and middleware (compat alias)
@@ -850,10 +851,14 @@ export async function proxy(request: NextRequest) {
         .join('')
         .slice(0, 32);
     }
-    const cookieValid = !!(sessionCookie && expectedCookieToken && sessionCookie === expectedCookieToken);
+    // Constant-time compares for shared-secret checks — naive `===` short-
+    // circuits at the first differing byte and leaks the secret through
+    // response timing. The session cookie token is also a derived secret
+    // (sha256 prefix) so it gets the same treatment.
+    const cookieValid = !!(sessionCookie && expectedCookieToken && secureEqual(sessionCookie, expectedCookieToken));
 
-    const headerValid = !!(headerSecret && secretKey && headerSecret === secretKey);
-    const queryValid  = !!(querySecret  && secretKey && querySecret  === secretKey);
+    const headerValid = !!(headerSecret && secretKey && secureEqual(headerSecret, secretKey));
+    const queryValid  = !!(querySecret  && secretKey && secureEqual(querySecret,  secretKey));
 
     const isAuthenticated = headerValid || cookieValid || queryValid;
 
