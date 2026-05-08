@@ -13,6 +13,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders, jsonResponse, errorResponse, getCorsHeaders } from '../_shared/cors.ts'
+import { constantTimeEqual } from '../_shared/auth.ts'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -257,15 +258,21 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    // Auth check
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader) {
-      return errorResponse('Missing authorization header', 401, origin)
+    // Auth: service-role bearer ONLY — this endpoint sends regulated
+    // WhatsApp messages billed against the project Meta API budget. The
+    // documented contract is server-to-server (callers in this repo all
+    // pass `Bearer ${SERVICE_ROLE_KEY}`). Pre-fix the gate only checked
+    // the Authorization header was PRESENT, so any holder of the public
+    // anon key could spam WhatsApp through our number.
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    const provided = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/, '')
+    if (!serviceRoleKey || !constantTimeEqual(provided, serviceRoleKey)) {
+      return errorResponse('Unauthorized', 401, origin)
     }
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+      serviceRoleKey,
       { auth: { persistSession: false } },
     )
 

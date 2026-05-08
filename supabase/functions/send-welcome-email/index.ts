@@ -267,9 +267,15 @@ Deno.serve(async (req: Request) => {
     if (userError || !user) return errorResponse('Unauthorized', 401, origin)
 
     const body: WelcomeRequest = await req.json()
-    const { role, name, email, grade, board, school_name } = body
+    const { role, name, grade, board, school_name } = body
 
-    if (!role || !name || !email) return errorResponse('Missing required fields: role, name, email', 400, origin)
+    // P13: send only to the JWT user's own verified email — never trust
+    // body.email. Pre-fix any logged-in user could send a branded
+    // "welcome" email to an arbitrary address (clear phishing-amplification
+    // primitive against an Alfanumrik-trusted From: header).
+    const email = user.email
+    if (!email) return errorResponse('Authenticated user has no email', 400, origin)
+    if (!role || !name) return errorResponse('Missing required fields: role, name', 400, origin)
 
     let emailContent: { subject: string; html: string; text: string }
     switch (role) {
