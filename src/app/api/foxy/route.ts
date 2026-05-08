@@ -70,6 +70,7 @@ import { getAllTenantConfig } from '@/lib/tenant-config';
 import { coerceTenantType } from '@/lib/tenant-domain';
 import { buildTenantOverrideSection } from '@/lib/ai/prompts/tenant-overrides';
 import { FoxyResponseSchema, type FoxyResponse } from '@/lib/foxy/schema';
+import { recoverFoxyResponseFromText } from '@/lib/foxy/recover-from-text';
 import { denormalizeFoxyResponse } from '@/lib/foxy/denormalize';
 import { buildExpandedGoalSection } from '@/lib/goals/goal-personas';
 import { fetchRecentLabContext, type LabContextEntry } from '@/lib/foxy/recent-lab-context';
@@ -224,20 +225,37 @@ const EMPTY_COGNITIVE_CONTEXT: CognitiveContext = {
 // (string) is always populated so the student still sees an answer.
 function extractValidatedStructured(
   upstream: unknown,
-  ctx: { traceId: string; studentId: string; subject: string; grade: string },
+  ctx: {
+    traceId: string;
+    studentId: string;
+    subject: string;
+    grade: string;
+    /**
+     * Optional fallback text searched for an inline FoxyResponse when the
+     * upstream `structured` field is missing or invalid. In production we
+     * observed the model emitting the structured-output JSON inline in
+     * `answer` (often inside a ```json fence) instead of on a separate
+     * `structured` field — without this fallback the raw JSON leaked into
+     * the chat bubble via the markdown renderer. See PR description for
+     * the screenshot that triggered this fix.
+     */
+    fallbackText?: string;
+  },
 ): FoxyResponse | null {
   // Read defensively: until grounded-client.ts adds the field to its type,
   // TypeScript doesn't know about it. The runtime shape is what matters.
   const candidate = (upstream as { structured?: unknown } | null | undefined)
     ?.structured;
-  if (candidate === undefined || candidate === null) {
-    return null; // legacy / pre-structured upstream — not an error
-  }
-  const parsed = FoxyResponseSchema.safeParse(candidate);
-  if (!parsed.success) {
+
+  if (candidate !== undefined && candidate !== null) {
+    const parsed = FoxyResponseSchema.safeParse(candidate);
+    if (parsed.success) return parsed.data;
+
     // P12 defense-in-depth: never write malformed JSON into the JSONB column.
-    // We log the issue but continue — the legacy `response` string still
-    // populates `content`, so the student turn is preserved.
+    // We log the issue but continue — recovery from `fallbackText` below may
+    // still produce a valid payload, and even if it doesn't, the legacy
+    // `response` string still populates `content` so the student turn is
+    // preserved.
     logger.error('foxy.structured.invalid_payload', {
       traceId: ctx.traceId,
       // Intentionally NOT logging studentId at error-level (P13). Subject +
@@ -251,9 +269,27 @@ function extractValidatedStructured(
         message: i.message,
       })),
     });
-    return null;
   }
-  return parsed.data;
+
+  // Fallback: extract a FoxyResponse from inline text when the upstream
+  // `structured` field is absent/malformed. Recovers from the prod regression
+  // where the model wrote ```json {...}``` into `answer` and the structured
+  // payload was therefore missing from the upstream envelope.
+  if (ctx.fallbackText) {
+    const recovered = recoverFoxyResponseFromText(ctx.fallbackText);
+    if (recovered) {
+      logger.info('foxy.structured.recovered_from_text', {
+        traceId: ctx.traceId,
+        subject: ctx.subject,
+        grade: ctx.grade,
+        // Telemetry only — lets ops measure how often the Edge Function
+        // drops `structured` so the upstream fix can be prioritised.
+      });
+      return recovered;
+    }
+  }
+
+  return null;
 }
 
 // ─── Helper: error response ───────────────────────────────────────────────────
@@ -2022,6 +2058,9 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     studentId,
     subject,
     grade,
+    // Recover from inline fenced JSON when the upstream `structured` field
+    // is missing — keeps raw ```json {...}``` blobs out of the chat bubble.
+    fallbackText: grounded.answer,
   });
 
   // When `structured` is present, the canonical assistant text is the
@@ -2294,6 +2333,11 @@ async function handleStreamingFoxyTurn(params: {
         studentId: params.studentId,
         subject: params.subject,
         grade: params.grade,
+        // Streaming-path fallback: same recovery as the blocking branch but
+        // sourced from `accumulatedText` (the concatenated `text.delta`
+        // events). Catches the case where the streaming Edge Function emits
+        // a JSON payload in deltas without a separate `done.structured`.
+        fallbackText: accumulatedText,
       },
     );
 

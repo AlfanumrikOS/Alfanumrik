@@ -42,6 +42,8 @@ const RichContent = dynamic(
 // discriminator can run on every render without dragging KaTeX into the
 // synchronous bundle.
 import { isFoxyResponse } from '@/lib/foxy/is-foxy-response';
+import { recoverFoxyResponseFromText } from '@/lib/foxy/recover-from-text';
+import { denormalizeFoxyResponse } from '@/lib/foxy/denormalize';
 const FoxyStructuredRenderer = dynamic(
   () => import('@/components/foxy/FoxyStructuredRenderer').then((m) => ({ default: m.FoxyStructuredRenderer })),
   { ssr: false, loading: () => null },
@@ -2032,15 +2034,38 @@ export default function FoxyPage() {
               // small error boundary whose fallback is the same legacy
               // RichContent rendering — so the user always sees the answer
               // text even if the structured tree blows up at runtime.
+              //
+              // Recovery branch: historical messages saved before the
+              // server-side recover-from-text fix landed have the raw
+              // ```json {...}``` in `content` and NULL `structured`. The
+              // markdown renderer would show the raw fence to the student
+              // — which is the regression captured in the screenshot.
+              // recoverFoxyResponseFromText extracts and validates the
+              // inline payload at render time so the student sees real
+              // blocks. Returns null on any parse/validation failure, so
+              // legitimate markdown messages are unaffected.
+              const recoveredStructured =
+                msg.role === 'tutor' && !msg.structured
+                  ? recoverFoxyResponseFromText(msg.content)
+                  : null;
+              const effectiveStructured = msg.structured ?? recoveredStructured ?? undefined;
               const useStructured =
-                msg.role === 'tutor' && msg.structured && isFoxyResponse(msg.structured);
+                msg.role === 'tutor' && effectiveStructured && isFoxyResponse(effectiveStructured);
+              // When recovery fired, the underlying msg.content still holds
+              // the raw fenced JSON. Use the denormalized form for any path
+              // that consumes the assistant text directly (TTS, flashcard
+              // save, ChatBubble's rawContent math sniffer) so the student
+              // never sees / hears `{"title":...}` for these features.
+              const effectiveContent = recoveredStructured
+                ? denormalizeFoxyResponse(recoveredStructured)
+                : msg.content;
               const legacyTutorContent = (
-                <RichContent content={msg.content} subjectKey={activeSubject} />
+                <RichContent content={effectiveContent} subjectKey={activeSubject} />
               );
               const tutorContent = useStructured ? (
                 <StructuredRenderBoundary fallback={legacyTutorContent}>
                   <FoxyStructuredRenderer
-                    response={msg.structured!}
+                    response={effectiveStructured!}
                     subjectKey={activeSubject}
                   />
                 </StructuredRenderBoundary>
@@ -2063,7 +2088,7 @@ export default function FoxyPage() {
                         <div className="whitespace-pre-wrap">{msg.content}</div>
                       </div>
                     )}
-                    rawContent={msg.content}
+                    rawContent={effectiveContent}
                     timestamp={msg.timestamp}
                     studentName={student?.name}
                     xp={msg.xp}
@@ -2073,7 +2098,7 @@ export default function FoxyPage() {
                     activeSubject={activeSubject}
                     onFeedback={(isUp) => handleFeedback(msg.id, isUp)}
                     onReport={() => openReport(msg.id)}
-                    onSpeak={ttsSupported && msg.role === 'tutor' ? () => speakMessage(msg.content) : undefined}
+                    onSpeak={ttsSupported && msg.role === 'tutor' ? () => speakMessage(effectiveContent) : undefined}
                     groundingStatus={msg.groundingStatus}
                     traceId={msg.traceId}
                     abstainReason={msg.abstainReason}
@@ -2082,7 +2107,7 @@ export default function FoxyPage() {
                   {msg.role === 'tutor' && !msg.reported && (
                     <div className="flex justify-start pl-11 -mt-2 mb-3">
                       <button
-                        onClick={() => saveToFlashcard(msg.id, msg.content)}
+                        onClick={() => saveToFlashcard(msg.id, effectiveContent)}
                         disabled={savedMessageIds.has(msg.id)}
                         className="text-[10px] font-bold px-2.5 py-1 rounded-lg transition-all active:scale-95 disabled:cursor-default"
                         style={{
