@@ -231,6 +231,12 @@ export const SCHOOL_AUDIT_ACTIONS = [
   // only logger.info'd — added with the school-admin audit-logging PR.
   'content.deleted', 'enrollment.removed', 'invite_code.revoked',
   'subscription.cancelled',
+  // Roster/branding write coverage — endpoints that touched school state
+  // (classes, students, teachers, parents) without writing school_audit_log.
+  'class.created', 'class.updated',
+  'student.updated',
+  'teacher.updated',
+  'parent_message.sent',
 ] as const;
 
 export type SchoolAuditAction = (typeof SCHOOL_AUDIT_ACTIONS)[number];

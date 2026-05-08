@@ -3,6 +3,7 @@ import { authorizeSchoolAdmin } from '@/lib/school-admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { getSchoolById } from '@/lib/domains/tenant';
 import { logger } from '@/lib/logger';
+import { logSchoolAudit } from '@/lib/audit';
 
 /**
  * GET /api/school-admin/branding
@@ -257,6 +258,16 @@ export async function PUT(request: NextRequest) {
         { status: 500 }
       );
     }
+
+    void logSchoolAudit({
+      schoolId,
+      actorId: auth.userId ?? 'unknown',
+      action: 'branding.updated',
+      resourceType: 'school',
+      resourceId: schoolId,
+      metadata: { fields: Object.keys(updateFields) },
+      ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
+    });
 
     return NextResponse.json({ success: true, data });
   } catch (err) {

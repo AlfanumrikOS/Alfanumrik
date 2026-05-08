@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeSchoolAdmin } from '@/lib/school-admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { logSchoolAudit } from '@/lib/audit';
 
 // ─── GET — List parent-student links for this school ─────────────────────────
 export async function GET(request: NextRequest) {
@@ -429,6 +430,28 @@ export async function POST(request: NextRequest) {
         channel,
         note: 'Email channel is not yet available. Please use notification or whatsapp channel.',
       },
+    });
+  }
+
+  // Bulk parent messaging is a school-state-affecting action — record it.
+  // P13: target_value can be a class_id or grade string, not PII; channel
+  // and counts are operational metadata. We do NOT log message content.
+  if (auth.schoolId) {
+    void logSchoolAudit({
+      schoolId: auth.schoolId,
+      actorId: auth.userId ?? 'unknown',
+      action: 'parent_message.sent',
+      resourceType: 'guardian_broadcast',
+      resourceId: `${target}:${target_value ?? 'all'}`,
+      metadata: {
+        target,
+        target_value: target_value ?? null,
+        channel,
+        sent_count: sentCount,
+        failed_count: failedCount,
+        student_count: studentIds.length,
+      },
+      ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
     });
   }
 

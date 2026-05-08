@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logOpsEvent } from '@/lib/ops-events';
+import { logAdminAuditByUserId } from '@/lib/admin-auth';
 
 /**
  * GET /api/super-admin/grounding/verification-queue
@@ -247,6 +248,14 @@ export async function POST(request: NextRequest) {
         subjectId: id,
         context: { action, admin_user_id: auth.userId },
       });
+      void logAdminAuditByUserId(
+        auth.userId,
+        'grounding.re_verify',
+        'question_bank',
+        id,
+        { action },
+        request.headers.get('x-forwarded-for') ?? undefined,
+      );
 
       return NextResponse.json({ success: true, data: { action, id } });
     }
@@ -284,6 +293,14 @@ export async function POST(request: NextRequest) {
         subjectId: id,
         context: { action, reason, admin_user_id: auth.userId },
       });
+      void logAdminAuditByUserId(
+        auth.userId,
+        'grounding.soft_delete',
+        'question_bank',
+        id,
+        { action, reason },
+        request.headers.get('x-forwarded-for') ?? undefined,
+      );
 
       return NextResponse.json({ success: true, data: { action, id } });
     }
@@ -381,6 +398,14 @@ export async function POST(request: NextRequest) {
           admin_user_id: auth.userId,
         },
       });
+      void logAdminAuditByUserId(
+        auth.userId,
+        'grounding.enforcement_enabled',
+        'enforcement_pair',
+        `${grade}::${subject_code}`,
+        { action, grade, subject_code, verified_ratio, verified, total },
+        request.headers.get('x-forwarded-for') ?? undefined,
+      );
 
       return NextResponse.json({
         success: true,
