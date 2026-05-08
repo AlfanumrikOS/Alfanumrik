@@ -15,7 +15,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { authorizeAdmin } from '@/lib/admin-auth';
+import { authorizeAdmin, logAdminAudit } from '@/lib/admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import { isFeatureEnabled } from '@/lib/feature-flags';
@@ -163,6 +163,25 @@ export async function POST(
     school_id: prev.school_id,
     new_contract_number: inserted.contract_number,
   });
+
+  void logAdminAudit(
+    auth,
+    'contract.renew',
+    'school_contract',
+    inserted.id,
+    {
+      previous_contract_id: prevId,
+      school_id: prev.school_id,
+      new_contract_number: inserted.contract_number,
+      start_date: startDate,
+      end_date: endDate,
+      billing_cycle: cycle,
+      seats_purchased: seats,
+      value_inr: valueInr,
+      previous_transition_failed: !!prevUpdErr,
+    },
+    request.headers.get('x-forwarded-for') ?? undefined,
+  );
 
   return NextResponse.json({
     success: true,
