@@ -416,20 +416,47 @@ Deno.serve(async (req: Request) => {
     return new Response('Method not allowed', { status: 405, headers: corsH })
   }
 
-  // Auth check
+  // Auth: resolve the student_id from the JWT, not from the request body.
+  //
+  // P13 — cross-tenant data leak fix: previously this route validated the
+  // JWT but read `body.student_id` for every action, so a logged-in student
+  // could pass any other student's id and:
+  //   • fetch_questions  — read another student's seen-question history
+  //   • evaluate_answer  — bypass per-student rate limit + attribute Claude
+  //                        cost to a different account
+  //   • save_attempt     — INSERT a fake attempt row under another student
+  //                        (corrupts their NCERT progress)
+  //
+  // We now look the JWT user up in students(auth_user_id), forcibly
+  // overwrite body.student_id, and reject if the JWT user is not a student.
   const authHeader = req.headers.get('authorization') ?? ''
   if (!authHeader.startsWith('Bearer ')) {
     return errorResponse('Unauthorized', 401, origin)
   }
   const jwt = authHeader.split(' ')[1]
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-  const { error: authError } = await supabase.auth.getUser(jwt)
-  if (authError) return errorResponse('Unauthorized', 401, origin)
+  const { data: { user }, error: authError } = await supabase.auth.getUser(jwt)
+  if (authError || !user) return errorResponse('Unauthorized', 401, origin)
+
+  const { data: studentRow } = await supabase
+    .from('students')
+    .select('id')
+    .eq('auth_user_id', user.id)
+    .eq('is_active', true)
+    .maybeSingle()
+
+  if (!studentRow?.id) {
+    return errorResponse('No active student profile for this user', 403, origin)
+  }
+  const jwtStudentId = studentRow.id as string
 
   let body: Record<string, unknown>
   try {
     body = await req.json()
     body._origin = origin
+    // Ignore client-supplied student_id — bind to the JWT-resolved id so all
+    // three actions write/read against the authenticated student only.
+    body.student_id = jwtStudentId
   } catch {
     return errorResponse('Invalid JSON body', 400, origin)
   }

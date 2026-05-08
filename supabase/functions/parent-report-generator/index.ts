@@ -519,15 +519,43 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    // ── Auth: resolve parent_id from the JWT, never trust the body. ──
+    //
+    // P13: previously the endpoint used `body.parent_id` directly. Even with
+    // verifyParentStudentLink as a guard, any logged-in user (carrying just
+    // the Supabase anon key as JWT) could pass any (parent_id, student_id)
+    // pair that happens to be linked and pull a Claude-generated report
+    // containing the student's PII + learning history. We now require a
+    // user JWT and look the guardian up in guardians(auth_user_id).
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader?.startsWith('Bearer ')) {
+      return errorResponse('Unauthorized', 401, origin)
+    }
+    const supabase = getServiceClient()
+    const { data: { user }, error: authError } = await supabase.auth.getUser(
+      authHeader.slice('Bearer '.length),
+    )
+    if (authError || !user) {
+      return errorResponse('Unauthorized', 401, origin)
+    }
+    const { data: guardianRow } = await supabase
+      .from('guardians')
+      .select('id')
+      .eq('auth_user_id', user.id)
+      .maybeSingle()
+    if (!guardianRow?.id) {
+      return errorResponse('No guardian profile for this user', 403, origin)
+    }
+    const jwtParentId = guardianRow.id as string
+
     const body = await req.json()
-    const { student_id, parent_id, language = 'en' } = body
+    const { student_id, language = 'en' } = body
+    // Ignore body.parent_id — bind to JWT-resolved guardian id.
+    const parent_id = jwtParentId
 
     // ── Input validation ──
     if (!student_id || typeof student_id !== 'string') {
       return errorResponse('student_id is required', 400, origin)
-    }
-    if (!parent_id || typeof parent_id !== 'string') {
-      return errorResponse('parent_id is required', 400, origin)
     }
     const safeLanguage = ['en', 'hi'].includes(language) ? language : 'en'
 
@@ -535,8 +563,6 @@ Deno.serve(async (req: Request) => {
     if (!checkDailyRateLimit(student_id)) {
       return errorResponse('Report already generated today. Try again tomorrow.', 429, origin)
     }
-
-    const supabase = getServiceClient()
 
     // ── Verify parent-student link (P11: no unverified access) ──
     const isLinked = await verifyParentStudentLink(supabase, parent_id, student_id)

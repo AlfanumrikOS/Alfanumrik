@@ -23,6 +23,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 import { fetchRAGContext } from '../_shared/rag-retrieval.ts'
+import { constantTimeEqual } from '../_shared/auth.ts'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -69,10 +70,10 @@ function getSupabaseAdmin() {
 }
 
 function authenticateAdmin(req: Request): boolean {
-  const adminKey = Deno.env.get('ADMIN_API_KEY')
+  const adminKey = Deno.env.get('ADMIN_API_KEY') ?? ''
   if (!adminKey) return false
-  const provided = req.headers.get('x-admin-key')
-  return provided === adminKey
+  const provided = req.headers.get('x-admin-key') ?? ''
+  return constantTimeEqual(provided, adminKey)
 }
 
 // ---------------------------------------------------------------------------
