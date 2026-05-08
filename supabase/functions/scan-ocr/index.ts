@@ -137,6 +137,39 @@ serve(async (req) => {
     const body = await req.json()
     const action = body.action
 
+    // P12: enforce per-student daily quota on the cost-incurring actions
+    // (upload_and_process / retry_ocr / ask_foxy all call Claude or Google
+    // Vision). get_scans / get_scan are pure reads and skip the check.
+    // Same atomic check_and_record_usage pattern as foxy-tutor + ncert-solver.
+    const COST_INCURRING_ACTIONS = new Set(['upload_and_process', 'retry_ocr', 'ask_foxy'])
+    if (COST_INCURRING_ACTIONS.has(action)) {
+      const usageDate = new Date().toISOString().slice(0, 10)
+      const { data: usageRows, error: usageErr } = await supabase.rpc('check_and_record_usage', {
+        p_student_id: student.id,
+        p_feature: 'scan_ocr',
+        p_usage_date: usageDate,
+      })
+      if (usageErr) {
+        console.error('scan-ocr check_and_record_usage failed:', usageErr.message)
+        return new Response(
+          JSON.stringify({ error: 'Usage tracking unavailable, please try again' }),
+          { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        )
+      }
+      const usageRow = usageRows?.[0]
+      if (!usageRow?.allowed) {
+        return new Response(
+          JSON.stringify({
+            error: 'Daily scan-OCR limit reached',
+            code: 'SCAN_OCR_LIMIT',
+            used: usageRow?.used_count ?? null,
+            message: "You've used all your scan-and-solve requests for today. Come back tomorrow! 🦊",
+          }),
+          { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        )
+      }
+    }
+
     // ── UPLOAD AND PROCESS ──
     if (action === 'upload_and_process') {
       const { file_name, file_type, storage_path } = body

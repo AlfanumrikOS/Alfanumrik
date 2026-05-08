@@ -104,10 +104,21 @@ Deno.serve(async (req) => {
       return errorResponse('question, subject, and grade are required', 400, origin)
     }
 
-    // ── Subject governance (P12) ──
-    // Resolve the caller's student row and enforce subject availability via
-    // get_available_subjects. See:
-    //   docs/superpowers/specs/2026-04-15-subject-governance-design.md §6.2
+    // ── Subject governance + daily-quota enforcement (P12) ──
+    // Resolve the caller's student row, enforce subject availability via
+    // get_available_subjects, then atomically check + increment the
+    // per-student daily usage counter via check_and_record_usage. Without
+    // this counter foxy-tutor was rate-limited per plan but ncert-solver
+    // was not — a misbehaving or malicious student could rack up unlimited
+    // Claude API spend by hitting this route.
+    //
+    // The DB's get_plan_limit() falls through to plan-tier defaults
+    // (free=15, starter=50, pro=200, unlimited=999999) for any feature
+    // code it doesn't have an explicit column for. 'ncert_solver' uses
+    // that fallback today; if a different limit-per-plan is needed
+    // later, add a subscription_plans column + a CASE branch to
+    // get_plan_limit (no code change needed here).
+    let resolvedStudentId: string | null = null
     try {
       const { data: studentRow } = await supabase
         .from('students')
@@ -123,6 +134,7 @@ Deno.serve(async (req) => {
           origin,
         )
       }
+      resolvedStudentId = studentRow.id
       const check = await validateSubjectRpc(supabase, studentRow.id, subject)
       if (!check.ok) {
         return jsonResponse(
@@ -136,6 +148,33 @@ Deno.serve(async (req) => {
       return jsonResponse(
         { error: 'subject_not_allowed', reason: 'grade', subject },
         422,
+        origin,
+      )
+    }
+
+    // Atomic quota check — DB derives the real limit from subscription_plans
+    // (or get_plan_limit's fallback). p_limit intentionally omitted; the
+    // RPC ignores it in v2.
+    const usageDate = new Date().toISOString().slice(0, 10)
+    const { data: usageRows, error: usageErr } = await supabase.rpc('check_and_record_usage', {
+      p_student_id: resolvedStudentId!,
+      p_feature: 'ncert_solver',
+      p_usage_date: usageDate,
+    })
+    if (usageErr) {
+      console.error('ncert-solver check_and_record_usage failed:', usageErr.message)
+      return errorResponse('Usage tracking unavailable, please try again', 503, origin)
+    }
+    const usageRow = usageRows?.[0]
+    if (!usageRow?.allowed) {
+      return jsonResponse(
+        {
+          error: 'Daily NCERT-solver limit reached',
+          code: 'NCERT_LIMIT',
+          used: usageRow?.used_count ?? null,
+          message: "You've used all your NCERT-solver requests for today. Come back tomorrow! 🦊",
+        },
+        429,
         origin,
       )
     }

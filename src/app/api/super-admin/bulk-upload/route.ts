@@ -26,6 +26,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Please upload a CSV file' }, { status: 400 });
     }
 
+    // Size cap before file.text() — without this a 100MB CSV would be loaded
+    // entirely into memory before the 1001-row check below ever runs. 5MB is
+    // ~10x the largest realistic 1000-row student CSV (rows are ~500 bytes).
+    const MAX_CSV_SIZE_BYTES = 5 * 1024 * 1024;
+    if (file.size > MAX_CSV_SIZE_BYTES) {
+      return NextResponse.json(
+        { error: 'CSV file exceeds 5MB limit. Split into smaller batches.' },
+        { status: 413 },
+      );
+    }
+
     const text = await file.text();
     const lines = text.split('\n').filter(l => l.trim());
 
