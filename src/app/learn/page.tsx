@@ -16,14 +16,25 @@
  * hidden, which helps students understand what upgrading unlocks.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/AuthContext';
 import { getChaptersForSubject } from '@/lib/supabase';
 import { BottomNav, LoadingFoxy } from '@/components/ui';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import { getPlanConfig } from '@/lib/plans';
+import { useSubjectReadiness } from '@/lib/useSubjectReadiness';
+import { ChapterReadinessBadge } from '@/components/learn/ChapterReadinessBadge';
+
+// Phase 3 of Exam-Ready 360°. Lazy-loaded — the summary banner hides itself
+// while the API is in-flight, so deferring its bundle keeps the chapter-list
+// first paint snappy.
+const SubjectReadinessSummary = dynamic(
+  () => import('@/components/learn/SubjectReadinessSummary'),
+  { ssr: false, loading: () => null },
+);
 
 export default function LearnPage() {
   const { student, isLoggedIn, isLoading, isHi } = useAuth();
@@ -78,6 +89,19 @@ export default function LearnPage() {
   // service hook above — plan + grade + stream gating lives on the server.
   const plan = getPlanConfig(student.subscription_plan);
   const selectedMeta = allSubjects.find(s => s.code === selectedSubject);
+
+  // Phase 3 of Exam-Ready 360°: load readiness for the selected subject so
+  // we can render a per-chapter badge inline. Single API call (vs N) — the
+  // hook is keyed on subjectCode so it auto-re-fetches when the student
+  // switches subjects.
+  const { readiness: subjectReadiness } = useSubjectReadiness(selectedSubject);
+  const readinessByChapter = useMemo(() => {
+    const map = new Map<number, (typeof subjectReadiness extends null ? never : NonNullable<typeof subjectReadiness>['chapters'][number]) | undefined>();
+    for (const row of subjectReadiness?.chapters ?? []) {
+      map.set(row.chapter_number, row);
+    }
+    return map;
+  }, [subjectReadiness]);
 
   return (
     <div className="mesh-bg min-h-dvh pb-nav">
@@ -206,6 +230,17 @@ export default function LearnPage() {
                 {isHi ? 'कौन सा अध्याय पढ़ना है?' : 'Choose a chapter to study'}
               </p>
 
+              {/* Phase 3 of Exam-Ready 360°: subject-level readiness summary.
+                  Renders as a card showing how many chapters in this subject
+                  are ready / almost / building / not_yet. Hides itself while
+                  loading or when the API has nothing to show. */}
+              {selectedSubject && (
+                <SubjectReadinessSummary
+                  subjectCode={selectedSubject}
+                  subjectColor={selectedMeta?.color}
+                />
+              )}
+
               {/* ═══ CONTINUE WHERE YOU LEFT OFF ═══ */}
               {lastStudied && lastStudied.subject === selectedSubject && (
                 <button
@@ -285,8 +320,16 @@ export default function LearnPage() {
 
                         {/* Title */}
                         <div className="flex-1 min-w-0">
-                          <div className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>
-                            {ch.title}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <div className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>
+                              {ch.title}
+                            </div>
+                            {/* Phase 3 of Exam-Ready 360°: per-chapter badge.
+                                Falls back to null when the subject-readiness
+                                map hasn't loaded — never blocks the row. */}
+                            <ChapterReadinessBadge
+                              level={readinessByChapter.get(ch.chapter_number)?.level ?? null}
+                            />
                           </div>
                           <div className="text-[11px] text-[var(--text-3)] mt-0.5">
                             {isHi
