@@ -430,14 +430,49 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // ── Validate apikey header ──────────────────────────────────────────────
-    const apikey = req.headers.get('apikey')
-    if (!apikey) {
-      return new Response(JSON.stringify({ error: 'Missing apikey header' }), {
+    // ── Auth: resolve student_id from JWT, never trust the body. ────────────
+    //
+    // P13 fix: previously this route only checked that an `apikey` header
+    // was present (which is publicly the anon key) and read body.student_id
+    // directly. Any logged-in user could pass any student's id and pull
+    // that student's NEP Holistic Progress Card — full PII + cross-subject
+    // mastery + concerns. We now require a user JWT, look the auth user
+    // up in students(auth_user_id), and ignore body.student_id entirely.
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader?.startsWith('Bearer ')) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
+    // ── Service-role client for internal queries ────────────────────────────
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+      { auth: { persistSession: false } },
+    )
+    const { data: { user }, error: authErr } = await supabase.auth.getUser(
+      authHeader.slice('Bearer '.length),
+    )
+    if (authErr || !user) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+    const { data: studentRow } = await supabase
+      .from('students')
+      .select('id')
+      .eq('auth_user_id', user.id)
+      .eq('is_active', true)
+      .maybeSingle()
+    if (!studentRow?.id) {
+      return new Response(
+        JSON.stringify({ error: 'No active student profile for this user' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      )
+    }
+    const student_id = studentRow.id as string
 
     // ── Parse request body ──────────────────────────────────────────────────
     let body: RequestBody
@@ -450,41 +485,13 @@ Deno.serve(async (req) => {
       })
     }
 
-    const { action, student_id } = body
+    const { action } = body
 
     if (!action || !['generate_hpc', 'get_hpc'].includes(action)) {
       return new Response(
         JSON.stringify({ error: 'Invalid action. Must be "generate_hpc" or "get_hpc"' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       )
-    }
-
-    if (!student_id) {
-      return new Response(JSON.stringify({ error: 'student_id is required' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    // ── Service-role client for internal queries ────────────────────────────
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-      { auth: { persistSession: false } },
-    )
-
-    // ── Verify student exists ───────────────────────────────────────────────
-    const { data: studentCheck, error: checkError } = await supabase
-      .from('students')
-      .select('id')
-      .eq('id', student_id)
-      .maybeSingle()
-
-    if (checkError || !studentCheck) {
-      return new Response(JSON.stringify({ error: 'Student not found' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
     }
 
     // ── Handle actions ──────────────────────────────────────────────────────
