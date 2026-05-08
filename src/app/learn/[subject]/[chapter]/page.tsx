@@ -27,6 +27,14 @@ const ChapterReadView = dynamic(
   { ssr: false, loading: () => <LoadingFoxy /> },
 );
 
+// Phase 2 of Exam-Ready 360°. Lazy-loaded — the card hides itself while
+// the readiness API is in-flight, so deferring its bundle keeps first
+// paint snappy on slow networks (no skeleton, no LCP penalty).
+const ChapterReadinessCard = dynamic(
+  () => import('@/components/learn/ChapterReadinessCard'),
+  { ssr: false, loading: () => null },
+);
+
 const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
 
 interface Question {
@@ -604,6 +612,15 @@ export default function ChapterConceptPage() {
       </header>
 
       <main className="flex-1 app-container py-4 max-w-2xl mx-auto w-full flex flex-col gap-4">
+
+        {/* ── Exam-Ready 360° Phase 2: per-chapter readiness card ── */}
+        {/* Hides itself while loading or when API returns no usable data, so
+            it never produces a blank skeleton on first paint. */}
+        <ChapterReadinessCard
+          subjectCode={subject}
+          chapterNumber={chapterNum}
+          subjectColor={subMeta?.color}
+        />
 
         {/* Concept label */}
         <div className="flex items-center gap-2">
