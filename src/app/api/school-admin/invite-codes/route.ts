@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeSchoolAdmin } from '@/lib/school-admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { logSchoolAudit } from '@/lib/audit';
 
 /**
  * GET /api/school-admin/invite-codes
@@ -212,6 +213,15 @@ export async function DELETE(request: NextRequest) {
         { status: 500 }
       );
     }
+
+    void logSchoolAudit({
+      schoolId,
+      actorId: auth.userId ?? 'unknown',
+      action: 'invite_code.revoked',
+      resourceType: 'school_invite_code',
+      resourceId: body.id,
+      ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
+    });
 
     return NextResponse.json({ success: true, data: { id: body.id, is_active: false } });
   } catch (err) {

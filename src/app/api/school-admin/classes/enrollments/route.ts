@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeSchoolAdmin } from '@/lib/school-admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { getClassById } from '@/lib/domains/tenant';
+import { logSchoolAudit } from '@/lib/audit';
 
 // GET — list students enrolled in a class
 export async function GET(request: NextRequest) {
@@ -119,5 +120,18 @@ export async function DELETE(request: NextRequest) {
     .eq('student_id', student_id);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  if (auth.schoolId) {
+    void logSchoolAudit({
+      schoolId: auth.schoolId,
+      actorId: auth.userId ?? 'unknown',
+      action: 'enrollment.removed',
+      resourceType: 'class_enrollment',
+      resourceId: `${class_id}:${student_id}`,
+      metadata: { class_id, student_id },
+      ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
+    });
+  }
+
   return NextResponse.json({ success: true });
 }

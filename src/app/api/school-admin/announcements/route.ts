@@ -337,14 +337,16 @@ export async function DELETE(request: NextRequest) {
     );
   }
 
-  void logSchoolAudit({
-    schoolId: auth.schoolId,
-    actorId: auth.userId,
-    action: 'announcement.deleted',
-    resourceType: 'school_announcement',
-    resourceId: id,
-    ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
-  });
+  if (auth.schoolId) {
+    void logSchoolAudit({
+      schoolId: auth.schoolId,
+      actorId: auth.userId ?? 'unknown',
+      action: 'announcement.deleted',
+      resourceType: 'school_announcement',
+      resourceId: id,
+      ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
+    });
+  }
 
   return NextResponse.json({ success: true });
 }

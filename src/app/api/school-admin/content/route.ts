@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeSchoolAdmin } from '@/lib/school-admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { logSchoolAudit } from '@/lib/audit';
 
 // ── Constants ────────────────────────────────────────────────
 
@@ -608,11 +609,27 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
+    const deletedIds = (deleted || []).map((d: { id: string }) => d.id);
+    if (deletedIds.length > 0 && auth.schoolId) {
+      void logSchoolAudit({
+        schoolId: auth.schoolId,
+        actorId: auth.userId ?? 'unknown',
+        action: 'content.deleted',
+        resourceType: 'school_question',
+        resourceId: deletedIds.length === 1 ? deletedIds[0] : `${deletedIds.length}_questions`,
+        metadata: {
+          deleted_count: deletedIds.length,
+          deleted_ids: deletedIds.length <= 50 ? deletedIds : deletedIds.slice(0, 50),
+        },
+        ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
+      });
+    }
+
     return NextResponse.json({
       success: true,
       data: {
         deleted_count: deleted?.length ?? 0,
-        deleted_ids: (deleted || []).map((d: { id: string }) => d.id),
+        deleted_ids: deletedIds,
       },
     });
   } catch (err) {

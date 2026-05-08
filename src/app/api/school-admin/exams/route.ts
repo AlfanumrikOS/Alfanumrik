@@ -725,15 +725,17 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    void logSchoolAudit({
-      schoolId: auth.schoolId,
-      actorId: auth.userId,
-      action: 'exam.cancelled',
-      resourceType: 'school_exam',
-      resourceId: id,
-      metadata: { title: cancelled.title, prior_status: currentExam.status },
-      ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
-    });
+    if (auth.schoolId) {
+      void logSchoolAudit({
+        schoolId: auth.schoolId,
+        actorId: auth.userId ?? 'unknown',
+        action: 'exam.cancelled',
+        resourceType: 'school_exam',
+        resourceId: id,
+        metadata: { title: cancelled.title, prior_status: currentExam.status },
+        ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
+      });
+    }
 
     return NextResponse.json({ success: true, data: cancelled });
   } catch (err) {

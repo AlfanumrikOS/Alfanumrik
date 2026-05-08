@@ -227,6 +227,10 @@ export const SCHOOL_AUDIT_ACTIONS = [
   // White-label admin trail (added with the audit-trail PR — see
   // /api/school-admin/modules + /api/school-admin/tenant-config).
   'module.toggled', 'tenant_config.updated',
+  // Round-out coverage for school-admin DELETE handlers that previously
+  // only logger.info'd — added with the school-admin audit-logging PR.
+  'content.deleted', 'enrollment.removed', 'invite_code.revoked',
+  'subscription.cancelled',
 ] as const;
 
 export type SchoolAuditAction = (typeof SCHOOL_AUDIT_ACTIONS)[number];
