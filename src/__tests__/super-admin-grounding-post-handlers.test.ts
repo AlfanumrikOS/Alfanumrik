@@ -31,6 +31,15 @@ vi.mock('@/lib/ops-events', () => ({
   logOpsEvent: (...args: unknown[]) => mockLogOpsEvent(...args),
 }));
 
+// Stub admin-auth so logAdminAuditByUserId() doesn't fire a real fetch to
+// the placeholder Supabase URL. The fire-and-forget promise resolves
+// cleanly so vitest's worker doesn't see an unhandled rejection during
+// teardown ("Closing rpc while onUserConsoleLog was pending").
+const mockLogAdminAuditByUserId = vi.fn().mockResolvedValue(undefined);
+vi.mock('@/lib/admin-auth', () => ({
+  logAdminAuditByUserId: (...args: unknown[]) => mockLogAdminAuditByUserId(...args),
+}));
+
 /**
  * Chainable Supabase mock. The terminal resolution is controlled by
  * `setResult(...)` — each call to a terminal (.update, .upsert, .select then
