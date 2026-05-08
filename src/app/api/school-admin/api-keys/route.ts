@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeSchoolAdmin } from '@/lib/school-admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { logSchoolAudit } from '@/lib/audit';
 
 /**
  * GET /api/school-admin/api-keys — List API keys for this school
@@ -183,6 +184,20 @@ export async function POST(request: NextRequest) {
       permissions,
     });
 
+    void logSchoolAudit({
+      schoolId: auth.schoolId,
+      actorId: auth.userId,
+      action: 'api_key.generated',
+      resourceType: 'school_api_key',
+      resourceId: newKey.id,
+      metadata: {
+        key_name: name.trim(),
+        permissions,
+        expires_at: newKey.expires_at,
+      },
+      ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
+    });
+
     // Return the full key ONCE — it will never be retrievable again
     return NextResponse.json(
       {
@@ -277,6 +292,16 @@ export async function DELETE(request: NextRequest) {
       schoolId: auth.schoolId,
       keyId: id,
       keyName: updated.name,
+    });
+
+    void logSchoolAudit({
+      schoolId: auth.schoolId,
+      actorId: auth.userId,
+      action: 'api_key.revoked',
+      resourceType: 'school_api_key',
+      resourceId: id,
+      metadata: { key_name: updated.name },
+      ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
     });
 
     return NextResponse.json({

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeSchoolAdmin } from '@/lib/school-admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { logSchoolAudit } from '@/lib/audit';
 
 // ── Constants ────────────────────────────────────────────────
 
@@ -723,6 +724,16 @@ export async function DELETE(request: NextRequest) {
         { status: 500 }
       );
     }
+
+    void logSchoolAudit({
+      schoolId: auth.schoolId,
+      actorId: auth.userId,
+      action: 'exam.cancelled',
+      resourceType: 'school_exam',
+      resourceId: id,
+      metadata: { title: cancelled.title, prior_status: currentExam.status },
+      ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
+    });
 
     return NextResponse.json({ success: true, data: cancelled });
   } catch (err) {
