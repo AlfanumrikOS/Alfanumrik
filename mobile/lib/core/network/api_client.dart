@@ -102,8 +102,29 @@ class _RetryInterceptor extends Interceptor {
   }
 
   bool _shouldRetry(DioException err) {
-    return err.type == DioExceptionType.connectionTimeout ||
-        err.type == DioExceptionType.connectionError ||
-        (err.response?.statusCode != null && err.response!.statusCode! >= 500);
+    // Pre-flight failures (the request never reached the server) are safe
+    // to retry regardless of HTTP method — there's no server-side state to
+    // duplicate.
+    final preFlight = err.type == DioExceptionType.connectionTimeout ||
+        err.type == DioExceptionType.connectionError;
+    if (preFlight) return true;
+
+    // Post-flight 5xx is more dangerous: the server received the request
+    // and may have already committed state (e.g. created a payment order,
+    // recorded a quiz submission) before failing on a downstream call.
+    // Retrying a non-idempotent method on 5xx risks double-writes.
+    //
+    // Only retry methods the HTTP spec defines as idempotent / safe:
+    // GET, HEAD, OPTIONS. Mutations (POST, PUT, PATCH, DELETE) need the
+    // caller to retry consciously, with their own idempotency key if the
+    // server-side route doesn't dedupe.
+    final is5xx = err.response?.statusCode != null &&
+        err.response!.statusCode! >= 500 &&
+        err.response!.statusCode! < 600;
+    if (!is5xx) return false;
+
+    final method = err.requestOptions.method.toUpperCase();
+    const idempotentMethods = {'GET', 'HEAD', 'OPTIONS'};
+    return idempotentMethods.contains(method);
   }
 }
