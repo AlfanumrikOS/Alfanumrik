@@ -50,6 +50,12 @@ dependencies:
   # will replace the most-used sims with native Flutter widgets.
   webview_flutter: ^4.7.0
 
+  # Crash + error observability. Without this, mobile crashes go to
+  # logcat only — opaque to ops. DSN is injected at build time via
+  # --dart-define=SENTRY_DSN=... ; if unset (e.g. local dev) the SDK
+  # is initialised in disabled mode so the app still launches.
+  sentry_flutter: ^8.9.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

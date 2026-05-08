@@ -69,4 +69,27 @@ class ApiConstants {
   // Pagination
   static const int defaultPageSize = 20;
   static const int dashboardLimit = 50;
+
+  // ─── Crash + error observability ──────────────────────────────────────
+  // Inject the Sentry DSN at build time:
+  //   flutter build apk --dart-define=SENTRY_DSN=https://...@...ingest.sentry.io/...
+  // Empty string → SDK initialised in disabled mode (main.dart) so the app
+  // still launches in local/dev builds without a DSN configured.
+  static const String sentryDsn = String.fromEnvironment(
+    'SENTRY_DSN',
+    defaultValue: '',
+  );
+
+  // Build-time environment label sent with every Sentry event so we can
+  // segment dashboards by build channel. Defaults to "production" so a
+  // forgotten --dart-define still sorts releases sanely.
+  static const String sentryEnvironment = String.fromEnvironment(
+    'SENTRY_ENVIRONMENT',
+    defaultValue: 'production',
+  );
+
+  // Performance trace sample rate (0.0..1.0). 0.1 = 10% of transactions
+  // get a span tree. Safe default that keeps Sentry quota low until ops
+  // tunes per-environment.
+  static const double sentryTracesSampleRate = 0.1;
 }
