@@ -12,6 +12,7 @@
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders, getCorsHeaders } from '../_shared/cors.ts'
+import { constantTimeEqual } from '../_shared/auth.ts'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -553,6 +554,28 @@ Deno.serve(async (req) => {
   // CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
+  }
+
+  // ── Auth: cron-secret OR service-role bearer ────────────────────────────
+  // Pre-fix this function had NO auth check. Anyone with the public anon
+  // key (which is, by design, exposed to clients) could POST to drain the
+  // task_queue at will — starving legitimate cron runs and triggering
+  // BKT updates / notification batches at unauthorized cadence. Now we
+  // require either:
+  //   • x-cron-secret: <CRON_SECRET>          (matches account-purge / daily-cron)
+  //   • Authorization: Bearer <SERVICE_ROLE_KEY>  (server-to-server)
+  // Both compares are constant-time.
+  const cronSecret = Deno.env.get('CRON_SECRET') ?? ''
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+  const providedCron = req.headers.get('x-cron-secret') ?? ''
+  const providedAuth = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/, '')
+  const cronOk = cronSecret.length > 0 && constantTimeEqual(providedCron, cronSecret)
+  const serviceOk = serviceRoleKey.length > 0 && constantTimeEqual(providedAuth, serviceRoleKey)
+  if (!cronOk && !serviceOk) {
+    return new Response(
+      JSON.stringify({ error: 'Unauthorized' }),
+      { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    )
   }
 
   try {

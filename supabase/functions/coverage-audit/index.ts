@@ -18,6 +18,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/cors.ts';
+import { constantTimeEqual } from '../_shared/auth.ts';
 import { logOpsEvent } from '../_shared/ops-events.ts';
 import {
   AUTO_DISABLE_RATIO_THRESHOLD,
@@ -216,6 +217,24 @@ async function purgeOldTraces(supabase: Supabase): Promise<void> {
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
+  }
+
+  // ── Auth: cron-secret OR service-role bearer ───────────────────────────
+  // Pre-fix this nightly-cron function had no auth gate. Anyone with the
+  // public anon key could trigger an unscheduled coverage audit run —
+  // wasting Supabase function-execution budget, racing against the legit
+  // cron, and potentially writing duplicate snapshots.
+  const cronSecret = Deno.env.get('CRON_SECRET') ?? '';
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+  const providedCron = req.headers.get('x-cron-secret') ?? '';
+  const providedAuth = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/, '');
+  const cronOk = cronSecret.length > 0 && constantTimeEqual(providedCron, cronSecret);
+  const serviceOk = serviceRoleKey.length > 0 && constantTimeEqual(providedAuth, serviceRoleKey);
+  if (!cronOk && !serviceOk) {
+    return new Response(
+      JSON.stringify({ error: 'Unauthorized' }),
+      { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
   }
 
   const startedAt = Date.now();

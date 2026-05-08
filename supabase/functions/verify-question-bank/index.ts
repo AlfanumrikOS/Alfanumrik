@@ -23,6 +23,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/cors.ts';
 import { callGroundedAnswer } from '../_shared/grounded-client.ts';
+import { constantTimeEqual } from '../_shared/auth.ts';
 import { logOpsEvent } from '../_shared/ops-events.ts';
 import {
   decideBatchSize,
@@ -265,6 +266,24 @@ async function processBatch(
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
+  }
+
+  // ── Auth: cron-secret OR service-role bearer ───────────────────────────
+  // Pre-fix this verifier-cron had no auth gate. Anyone with the public
+  // anon key could trigger a verification batch run, claiming rows from
+  // the queue and burning through the Claude/Voyage budget for the
+  // grounded-answer calls inside processBatch.
+  const cronSecret = Deno.env.get('CRON_SECRET') ?? '';
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+  const providedCron = req.headers.get('x-cron-secret') ?? '';
+  const providedAuth = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/, '');
+  const cronOk = cronSecret.length > 0 && constantTimeEqual(providedCron, cronSecret);
+  const serviceOk = serviceRoleKey.length > 0 && constantTimeEqual(providedAuth, serviceRoleKey);
+  if (!cronOk && !serviceOk) {
+    return new Response(
+      JSON.stringify({ error: 'Unauthorized' }),
+      { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
   }
 
   const startedAt = Date.now();
