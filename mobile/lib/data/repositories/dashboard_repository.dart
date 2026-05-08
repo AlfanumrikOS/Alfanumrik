@@ -106,21 +106,38 @@ class DashboardRepository {
     await _cache.remove('dashboard_$studentId');
   }
 
-  // Must match web src/lib/usage.ts PLAN_LIMITS
-  // Plan codes: web uses 'starter'/'pro'/'unlimited'
-  // Mobile may receive 'starter_monthly'/'starter_yearly' etc from DB
+  // Must match web src/lib/usage.ts PLAN_LIMITS + PLAN_ALIAS.
+  // Canonical tiers: free / starter / pro / unlimited.
+  // Aliases: basic→starter, premium→pro, ultimate→unlimited.
+  // DB plan_code may include billing-cycle suffix (e.g. 'starter_monthly').
+  static String _normalizePlan(String? plan) {
+    if (plan == null || plan.isEmpty) return 'free';
+    // Strip billing-cycle suffix
+    final base = plan.replaceAll(RegExp(r'_(monthly|yearly)$'), '');
+    // Apply legacy aliases
+    switch (base) {
+      case 'basic': return 'starter';
+      case 'premium': return 'pro';
+      case 'ultimate': return 'unlimited';
+      default: return base;
+    }
+  }
+
   int _chatLimit(String? plan) {
-    if (plan == null) return 5;
-    if (plan.startsWith('starter')) return 30; // web: 30
-    if (plan.startsWith('pro')) return 100;
-    if (plan.startsWith('unlimited') || plan.startsWith('ultimate')) return 999;
-    return 5; // free
+    switch (_normalizePlan(plan)) {
+      case 'starter':   return 30;
+      case 'pro':       return 100;
+      case 'unlimited': return 999999;
+      default:          return 5; // free
+    }
   }
 
   int _quizLimit(String? plan) {
-    if (plan == null) return 5;
-    if (plan.startsWith('starter')) return 20;
-    if (plan.startsWith('pro') || plan.startsWith('unlimited') || plan.startsWith('ultimate')) return 999;
-    return 5; // free: web uses 5, not 3
+    switch (_normalizePlan(plan)) {
+      case 'starter':   return 20;
+      case 'pro':       return 999999;
+      case 'unlimited': return 999999;
+      default:          return 5; // free
+    }
   }
 }

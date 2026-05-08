@@ -25,6 +25,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
 import { capture as posthogCapture } from '../_shared/posthog.ts'
+import { constantTimeEqual } from '../_shared/auth.ts'
 
 // YYYY_MM_DD slug (UTC) used as the day component of idempotency_key.
 function todayUtcSlug(): string {
@@ -1082,7 +1083,10 @@ Deno.serve(async (req) => {
   try {
     let secret=Deno.env.get('CRON_SECRET')??null
     if(!secret){const{data,error:re}=await sb.rpc('get_cron_secret');if(re||!data){console.error('daily-cron: secret unavailable:',re?.message);return new Response(JSON.stringify({error:'Server misconfiguration'}),{status:500,headers:{...corsHeaders,'Content-Type':'application/json'}})}; secret=data as string}
-    if(req.headers.get('x-cron-secret')!==secret) return new Response(JSON.stringify({error:'Unauthorized'}),{status:401,headers:{...corsHeaders,'Content-Type':'application/json'}})
+    // Constant-time compare — naive `!==` short-circuits and leaks the secret
+    // through response timing.
+    const provided=req.headers.get('x-cron-secret')??''
+    if(!secret||!constantTimeEqual(provided,secret)) return new Response(JSON.stringify({error:'Unauthorized'}),{status:401,headers:{...corsHeaders,'Content-Type':'application/json'}})
     const steps:[string,()=>Promise<number>][]=[
       ['streaks_reset',()=>resetMissedStreaks(sb)],
       ['leaderboard_entries',()=>recalculateLeaderboards(sb)],

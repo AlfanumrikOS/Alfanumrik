@@ -12,6 +12,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
+import { secureEqual } from '@/lib/secure-compare';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -227,7 +228,9 @@ export function requireAdminSecret(request: NextRequest): NextResponse | null {
   if (!expected) {
     return NextResponse.json({ error: 'Admin not configured' }, { status: 503 });
   }
-  if (!provided || provided !== expected) {
+  // Constant-time compare — naive `!==` short-circuits at the first differing
+  // byte and leaks the secret through response timing.
+  if (!provided || !secureEqual(provided, expected)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   return null; // auth OK

@@ -38,6 +38,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders } from '../_shared/cors.ts'
+import { checkBearerToken } from '../_shared/auth.ts'
 
 // ── Config ────────────────────────────────────────────────────────────────
 
@@ -257,9 +258,10 @@ serve(async (req) => {
     return json({ error: 'misconfigured', detail: 'missing supabase env' }, 500, cors)
   }
 
-  // Service-role bearer required
-  const authz = req.headers.get('Authorization') ?? ''
-  if (!authz.startsWith('Bearer ') || authz.slice('Bearer '.length) !== SUPABASE_SERVICE_ROLE_KEY) {
+  // Service-role bearer required. Constant-time check — comparing a high-
+  // value secret with `!==` short-circuits at the first differing byte and
+  // leaks the secret through response timing.
+  if (!checkBearerToken(req.headers.get('Authorization'), SUPABASE_SERVICE_ROLE_KEY)) {
     return json({ error: 'forbidden' }, 403, cors)
   }
 

@@ -1,5 +1,6 @@
 import { buildSlackPayload } from './slack.ts';
 import { buildEmailPayload } from './email.ts';
+import { constantTimeEqual } from '../_shared/auth.ts';
 
 const MAX_BATCH = 50;
 const MAX_RETRIES = 3;
@@ -9,13 +10,16 @@ Deno.serve(async (req) => {
   // pg_cron calls via pg_net from within the same Supabase project pass
   // x-cron-source: pg_cron since ALTER DATABASE SET is not available on
   // managed Supabase to configure custom bearer tokens.
-  const auth = req.headers.get('Authorization')?.replace('Bearer ', '');
+  //
+  // Constant-time compare for both secret paths — naive `===` short-circuits
+  // at the first differing byte and leaks the secret through response timing.
+  const auth = req.headers.get('Authorization')?.replace('Bearer ', '') ?? '';
   const cronSource = req.headers.get('x-cron-source');
-  const cronSecret = Deno.env.get('CRON_SECRET');
-  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  const cronSecret = Deno.env.get('CRON_SECRET') ?? '';
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   const isAuthorized =
-    auth === serviceKey ||
-    (cronSecret && auth === cronSecret) ||
+    (serviceKey.length > 0 && constantTimeEqual(auth, serviceKey)) ||
+    (cronSecret.length > 0 && constantTimeEqual(auth, cronSecret)) ||
     cronSource === 'pg_cron';
   if (!isAuthorized) {
     return new Response('unauthorized', { status: 401 });
