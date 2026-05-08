@@ -133,7 +133,7 @@ async function fetchRecentSession(
   // choice).
   const { data: msgs } = await supabase
     .from('foxy_chat_messages')
-    .select('role, content, structured, created_at')
+    .select('id, role, content, structured, created_at')
     .eq('session_id', sessionId)
     .order('created_at', { ascending: true });
   if (!msgs || msgs.length === 0) return null;
@@ -145,6 +145,8 @@ async function fetchRecentSession(
       content: m.content,
       timestamp: m.created_at || new Date().toISOString(),
       structured: (m.structured as FoxyResponse | null | undefined) ?? undefined,
+      // B'-5 Phase 2: capture DB UUID for resumed-session 👍/👎 wiring.
+      persistedMessageId: m.role === 'assistant' && typeof m.id === 'string' ? m.id : undefined,
     })),
   };
 }
@@ -205,7 +207,7 @@ async function fetchConversationById(sessionId: string) {
   // can render historical assistant turns via FoxyStructuredRenderer.
   const { data: messages } = await supabase
     .from('foxy_chat_messages')
-    .select('role, content, structured, created_at')
+    .select('id, role, content, structured, created_at')
     .eq('session_id', sessionId)
     .order('created_at', { ascending: true });
   return {
@@ -213,6 +215,9 @@ async function fetchConversationById(sessionId: string) {
     subject: session.subject,
     chapter: session.chapter,
     messages: (messages ?? []).map((m: any) => ({
+      // B'-5 Phase 2: pass through the DB UUID so the consumer
+      // (selectConversation) can stamp persistedMessageId on assistant rows.
+      id: m.id,
       role: m.role,           // 'user' | 'assistant'
       content: m.content,
       structured: (m.structured as FoxyResponse | null | undefined) ?? undefined,
@@ -359,6 +364,10 @@ async function callFoxyTutor(params: Record<string, any> & { language?: string }
       // upstream produced one. Absent on legacy / abstain / kill-switch paths;
       // the chat page falls back to RichContent on `data.response` in that case.
       structured:             (data.structured as FoxyResponse | undefined) ?? undefined,
+      // B'-5 Phase 2: persisted assistant-row UUID so handleFeedback can call
+      // /api/foxy/feedback with it. Null/absent on persistence-write failure;
+      // the client falls back to legacy track_ai_quality in that case.
+      messageId:              typeof data.messageId === 'string' ? data.messageId : null,
     };
   } catch (err) {
     console.error('[Foxy] Network error:', err);
@@ -392,6 +401,12 @@ interface StreamingCallbacks {
   onSession?: (sessionId: string) => void;
   onMetadata?: (meta: { groundingStatus: GroundingStatus; traceId?: string; confidence?: number; citationsCount?: number }) => void;
   onText: (delta: string) => void;
+  // B'-5 Phase 2: synthesized at server side AFTER the upstream `done` once
+  // the assistant row has been persisted. Carries the DB UUID so the client
+  // can wire 👍/👎 to /api/foxy/feedback for THIS bubble. Absent when
+  // persistence fails — handleFeedback then falls back to the legacy
+  // aggregate counter.
+  onPersisted?: (info: { messageId: string }) => void;
   onDone: (info: {
     tokensUsed: number;
     latencyMs: number;
@@ -482,6 +497,11 @@ async function callFoxyTutorStream(
         // JSON-fallback path so the renderer-swap logic is identical to SSE.
         structured: (data?.structured as FoxyResponse | undefined) ?? undefined,
       });
+      // B'-5 Phase 2: parity with the SSE branch. The blocking JSON response
+      // also carries `messageId`, so fire onPersisted here too.
+      if (typeof data?.messageId === 'string' && data.messageId.length > 0) {
+        callbacks.onPersisted?.({ messageId: data.messageId });
+      }
     } catch {
       callbacks.onError?.({ reason: 'non-stream-parse-failed' });
     }
@@ -541,6 +561,13 @@ async function callFoxyTutorStream(
           // `isFoxyResponse` before trusting it.
           structured: (parsed?.structured as FoxyResponse | undefined) ?? undefined,
         });
+      } else if (eventName === 'persisted') {
+        // B'-5 Phase 2: server-synthesized after the upstream done frame, once
+        // the assistant row has been written. Carries the DB UUID for the
+        // tutor bubble — client uses it to call /api/foxy/feedback.
+        if (typeof parsed?.messageId === 'string' && parsed.messageId.length > 0) {
+          callbacks.onPersisted?.({ messageId: parsed.messageId });
+        }
       } else if (eventName === 'abstain') {
         callbacks.onAbstain?.({
           abstainReason: (parsed?.abstainReason || 'upstream_error') as AbstainReason,
@@ -589,6 +616,16 @@ interface ChatMessage {
    * Absent on legacy assistant rows, abstain responses, and user messages.
    */
   structured?: FoxyResponse;
+  /**
+   * B'-5 Phase 2: the persisted DB UUID for this assistant turn. Used by
+   * handleFeedback to call /api/foxy/feedback. Set from:
+   *   - SSE `persisted` event for fresh streaming turns
+   *   - JSON `messageId` for fresh blocking turns
+   *   - GET `messages[i].id` for historical turns on session resume
+   * Absent on user messages and on assistant rows where persistence failed —
+   * handleFeedback then falls back to the legacy aggregate counter.
+   */
+  persistedMessageId?: string;
 }
 
 const REPORT_REASONS = [
@@ -842,6 +879,10 @@ export default function FoxyPage() {
         timestamp: m.ts || m.created_at || new Date().toISOString(),
         xp: m.meta?.xp || 0,
         structured: (m.structured as FoxyResponse | undefined) ?? undefined,
+        // B'-5 Phase 2: capture the DB UUID for historical assistant turns so
+        // 👍/👎 on a resumed conversation also wires to /api/foxy/feedback.
+        // GET /api/foxy?sessionId=... returns `id` per row.
+        persistedMessageId: m.role === 'assistant' && typeof m.id === 'string' ? m.id : undefined,
       }))
     );
     setActiveTopic(null);
@@ -1128,6 +1169,15 @@ export default function FoxyPage() {
               pendingDelta += delta;
               scheduleFlush();
             },
+            onPersisted: (info) => {
+              // B'-5 Phase 2: stamp the DB UUID onto the active tutor bubble
+              // so handleFeedback can call /api/foxy/feedback against it.
+              setMessages((p: ChatMessage[]) => p.map((m) =>
+                m.id === tutorBubbleId
+                  ? { ...m, persistedMessageId: info.messageId }
+                  : m,
+              ));
+            },
             onDone: (info) => {
               streamGotDone = true;
               flushDelta(); // ensure last batch is rendered
@@ -1250,6 +1300,9 @@ export default function FoxyPage() {
         // tutor messages to FoxyStructuredRenderer; legacy/abstain messages
         // continue through RichContent.
         structured: resp.structured,
+        // B'-5 Phase 2: persisted DB UUID for the 👍/👎 wiring. Null/absent
+        // when persistence failed — handleFeedback falls back gracefully.
+        persistedMessageId: resp.messageId ?? undefined,
       }]);
       // Soft upgrade prompt when quota is near exhaustion (user's choice, not forced)
       if (resp.upgradePrompt) {
@@ -1378,9 +1431,37 @@ export default function FoxyPage() {
     sendMessage(text);
   }, [activeTopic, activeSubject, language, router, sendMessage, SUBJECTS]);
 
-  // Feedback: thumbs up/down
+  // Feedback: thumbs up/down.
+  // B'-5 Phase 2: dual-write — call the new per-message feedback endpoint
+  // (closes the loop for resolveCoachMode's mode-switch signal) AND keep the
+  // legacy aggregate counter (preserves the existing super-admin analytics
+  // dashboards that read `track_ai_quality` rows). The new endpoint is the
+  // load-bearing one; the aggregate counter is removed in a follow-up once
+  // dashboards migrate to `foxy_message_feedback`.
   const handleFeedback = useCallback(async (msgId: number, isUp: boolean) => {
-    setMessages((prev: ChatMessage[]) => prev.map((m: ChatMessage) => m.id === msgId ? { ...m, feedback: isUp ? 'up' : 'down' } : m));
+    let persistedMessageId: string | undefined;
+    setMessages((prev: ChatMessage[]) => prev.map((m: ChatMessage) => {
+      if (m.id !== msgId) return m;
+      persistedMessageId = m.persistedMessageId;
+      return { ...m, feedback: isUp ? 'up' : 'down' };
+    }));
+    if (persistedMessageId) {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const accessToken = session?.access_token ?? null;
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+        await fetch('/api/foxy/feedback', {
+          method: 'POST',
+          headers,
+          credentials: 'include',
+          body: JSON.stringify({ messageId: persistedMessageId, isUp }),
+        });
+      } catch {
+        // Non-critical: optimistic UI already updated. The aggregate counter
+        // call below still bumps so legacy analytics keep functioning.
+      }
+    }
     try { await supabase.rpc('track_ai_quality', { p_subject: activeSubject, p_is_thumbs_up: isUp }); } catch {}
   }, [activeSubject]);
 

@@ -52,12 +52,27 @@ function parseRequestedCoachMode(raw: unknown): CoachMode | null {
 }
 
 // ─── Stage B: resolveCoachMode (parity copy of route.ts) ────────────────
+//
+// B'-5 Phase 2 added a third arg: a feedback signal that captures the
+// student's recent socratic 👎 streak. When the streak reaches 2, the
+// resolver flips to 'answer' so a frustrated student gets the answer
+// directly. Default arg is the zero signal so legacy 2-arg calls stay valid.
+
+type CoachFeedbackSignal = {
+  recentSocraticThumbsDownStreak: number;
+};
+
+const NO_FEEDBACK_SIGNAL: CoachFeedbackSignal = {
+  recentSocraticThumbsDownStreak: 0,
+};
 
 function resolveCoachMode(
   requested: CoachMode | null,
   masteryLevel: MasteryLevel,
+  feedback: CoachFeedbackSignal = NO_FEEDBACK_SIGNAL,
 ): CoachMode {
   if (requested) return requested;
+  if (feedback.recentSocraticThumbsDownStreak >= 2) return 'answer';
   if (masteryLevel === 'high') return 'answer';
   return 'socratic';
 }
@@ -185,5 +200,78 @@ describe('resolveCoachMode — output is always a valid CoachMode', () => {
     for (const m of masteryLevels) {
       expect(resolveCoachMode(null, m)).not.toBe('review');
     }
+  });
+});
+
+// ─── B'-5 Phase 2: feedback-signal mode-switch ──────────────────────────
+
+describe("resolveCoachMode — B'-5 feedback-signal override", () => {
+  it('streak of 0 → mastery-driven default unchanged (low → socratic)', () => {
+    expect(
+      resolveCoachMode(null, 'low', { recentSocraticThumbsDownStreak: 0 }),
+    ).toBe('socratic');
+  });
+
+  it('streak of 1 → still socratic (one 👎 is noise; needs two to flip)', () => {
+    expect(
+      resolveCoachMode(null, 'low', { recentSocraticThumbsDownStreak: 1 }),
+    ).toBe('socratic');
+    expect(
+      resolveCoachMode(null, 'medium', { recentSocraticThumbsDownStreak: 1 }),
+    ).toBe('socratic');
+  });
+
+  it('streak of 2 at low mastery → answer (flip from default socratic)', () => {
+    expect(
+      resolveCoachMode(null, 'low', { recentSocraticThumbsDownStreak: 2 }),
+    ).toBe('answer');
+  });
+
+  it('streak of 3+ at medium mastery → answer (still flips)', () => {
+    expect(
+      resolveCoachMode(null, 'medium', { recentSocraticThumbsDownStreak: 3 }),
+    ).toBe('answer');
+    expect(
+      resolveCoachMode(null, 'medium', { recentSocraticThumbsDownStreak: 5 }),
+    ).toBe('answer');
+  });
+
+  it('streak at high mastery → answer (no behavior change; was answer anyway)', () => {
+    expect(
+      resolveCoachMode(null, 'high', { recentSocraticThumbsDownStreak: 0 }),
+    ).toBe('answer');
+    expect(
+      resolveCoachMode(null, 'high', { recentSocraticThumbsDownStreak: 5 }),
+    ).toBe('answer');
+  });
+
+  it('explicit "review" overrides feedback signal (deliberate request wins)', () => {
+    expect(
+      resolveCoachMode('review', 'low', { recentSocraticThumbsDownStreak: 5 }),
+    ).toBe('review');
+  });
+
+  it('explicit "socratic" overrides feedback signal (student/dev opted in)', () => {
+    // A spaced-repetition surface that explicitly asked for socratic should
+    // not get auto-flipped just because past turns got 👎.
+    expect(
+      resolveCoachMode('socratic', 'low', { recentSocraticThumbsDownStreak: 5 }),
+    ).toBe('socratic');
+  });
+
+  it('explicit "answer" stays "answer" regardless of streak', () => {
+    expect(
+      resolveCoachMode('answer', 'low', { recentSocraticThumbsDownStreak: 0 }),
+    ).toBe('answer');
+    expect(
+      resolveCoachMode('answer', 'low', { recentSocraticThumbsDownStreak: 4 }),
+    ).toBe('answer');
+  });
+
+  it('default (omitted) feedback arg behaves as zero streak', () => {
+    // Backward-compat invariant: 2-arg call sites must keep working.
+    expect(resolveCoachMode(null, 'low')).toBe('socratic');
+    expect(resolveCoachMode(null, 'medium')).toBe('socratic');
+    expect(resolveCoachMode(null, 'high')).toBe('answer');
   });
 });
