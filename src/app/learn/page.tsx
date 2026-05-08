@@ -83,17 +83,16 @@ export default function LearnPage() {
     }
   }, [selectedSubject, lockedSubjects]);
 
-  if (isLoading || !student) return <LoadingFoxy />;
-
-  // allSubjects / allowedSubjects / lockedSubjects now come from the subjects
-  // service hook above — plan + grade + stream gating lives on the server.
-  const plan = getPlanConfig(student.subscription_plan);
-  const selectedMeta = allSubjects.find(s => s.code === selectedSubject);
-
   // Phase 3 of Exam-Ready 360°: load readiness for the selected subject so
   // we can render a per-chapter badge inline. Single API call (vs N) — the
   // hook is keyed on subjectCode so it auto-re-fetches when the student
   // switches subjects.
+  //
+  // IMPORTANT: this hook + the useMemo below MUST stay above the early-return
+  // on `isLoading || !student` so React's hook ordering invariant holds.
+  // Moving them below the early return crashes ESLint react-hooks/rules-of-hooks
+  // and produces a hook-mismatch error in dev mode (regression caught by CI
+  // on the Phase 3 commit).
   const { readiness: subjectReadiness } = useSubjectReadiness(selectedSubject);
   const readinessByChapter = useMemo(() => {
     const map = new Map<number, (typeof subjectReadiness extends null ? never : NonNullable<typeof subjectReadiness>['chapters'][number]) | undefined>();
@@ -102,6 +101,13 @@ export default function LearnPage() {
     }
     return map;
   }, [subjectReadiness]);
+
+  if (isLoading || !student) return <LoadingFoxy />;
+
+  // allSubjects / allowedSubjects / lockedSubjects now come from the subjects
+  // service hook above — plan + grade + stream gating lives on the server.
+  const plan = getPlanConfig(student.subscription_plan);
+  const selectedMeta = allSubjects.find(s => s.code === selectedSubject);
 
   return (
     <div className="mesh-bg min-h-dvh pb-nav">
