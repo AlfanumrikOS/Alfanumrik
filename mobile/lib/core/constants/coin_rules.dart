@@ -50,6 +50,33 @@ class CoinRewards {
   static const int challengeStreak7 = 25;
   static const int challengeStreak30 = 100;
   static const int challengeStreak100 = 500;
+
+  // STEM Lab — experiment completion (Tier 1).
+  // Synced from web `src/lib/coin-rules.ts` COIN_REWARDS. The actual coin
+  // award happens server-side via the `award_coins` RPC; these constants
+  // exist for client-side display ("+20 coins!" toasts and shop UI hints).
+  /// Bare sim with observation saved (60s+ on sim).
+  static const int experimentComplete = 20;
+
+  /// Full 6-step guided experiment + viva.
+  static const int guidedExperimentComplete = 40;
+
+  /// 100% on viva quiz at end of guided experiment.
+  static const int vivaPerfectBonus = 25;
+
+  /// Bonus for first experiment each calendar day.
+  static const int firstExperimentOfDay = 10;
+
+  /// Completing 5 different sims in same subject.
+  static const int experimentSubjectStreak5 = 50;
+
+  /// Max experiment coins per day (anti-grind).
+  static const int experimentDailyCap = 100;
+
+  // Lab streak — separate from quiz streak (Tier 1).
+  static const int labStreak3Day = 15;
+  static const int labStreak7Day = 40;
+  static const int labStreak30Day = 150;
 }
 
 // ─── Foxy Coin Shop ──────────────────────────────────────
