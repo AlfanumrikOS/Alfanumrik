@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeSchoolAdmin } from '@/lib/school-admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
+import { logSchoolAudit } from '@/lib/audit';
 
 // GET — list classes for this school with enrollment counts
 export async function GET(request: NextRequest) {
@@ -96,6 +97,19 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  if (auth.schoolId) {
+    void logSchoolAudit({
+      schoolId: auth.schoolId,
+      actorId: auth.userId ?? 'unknown',
+      action: 'class.created',
+      resourceType: 'class',
+      resourceId: data.id,
+      metadata: { name, grade: String(grade), section, academic_year: data.academic_year },
+      ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
+    });
+  }
+
   return NextResponse.json({ success: true, data }, { status: 201 });
 }
 
@@ -122,5 +136,18 @@ export async function PATCH(request: NextRequest) {
     .eq('school_id', auth.schoolId);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  if (auth.schoolId) {
+    void logSchoolAudit({
+      schoolId: auth.schoolId,
+      actorId: auth.userId ?? 'unknown',
+      action: 'class.updated',
+      resourceType: 'class',
+      resourceId: id,
+      metadata: { fields: Object.keys(safe) },
+      ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
+    });
+  }
+
   return NextResponse.json({ success: true });
 }

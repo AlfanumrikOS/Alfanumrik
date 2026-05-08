@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeSchoolAdmin } from '@/lib/school-admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { logSchoolAudit } from '@/lib/audit';
 
 /**
  * GET /api/school-admin/teachers?page=1&limit=20
@@ -149,6 +150,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    void logSchoolAudit({
+      schoolId,
+      actorId: auth.userId ?? 'unknown',
+      action: 'teacher.invited',
+      resourceType: 'teacher',
+      resourceId: teacher.id,
+      metadata: { email: teacher.email, grades_taught: teacher.grades_taught },
+      ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
+    });
+
     return NextResponse.json({ success: true, data: teacher }, { status: 201 });
   } catch (err) {
     logger.error('school_admin_teachers_post_failed', {
@@ -280,6 +291,16 @@ export async function PATCH(request: NextRequest) {
         { status: 500 }
       );
     }
+
+    void logSchoolAudit({
+      schoolId,
+      actorId: auth.userId ?? 'unknown',
+      action: body.is_active === false ? 'teacher.deactivated' : 'teacher.updated',
+      resourceType: 'teacher',
+      resourceId: body.id,
+      metadata: { fields: Object.keys(updateFields) },
+      ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
+    });
 
     return NextResponse.json({ success: true, data: updated });
   } catch (err) {

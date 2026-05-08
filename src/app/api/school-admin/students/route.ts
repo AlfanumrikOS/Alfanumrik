@@ -3,6 +3,7 @@ import { authorizeSchoolAdmin } from '@/lib/school-admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import { capture as posthogCapture } from '@/lib/posthog/server';
+import { logSchoolAudit } from '@/lib/audit';
 
 /**
  * GET /api/school-admin/students?page=1&limit=20&grade=8&search=name
@@ -205,6 +206,18 @@ export async function PATCH(request: NextRequest) {
         { status: 500 }
       );
     }
+
+    // is_active=false uses the existing 'student.deactivated' action so the
+    // audit log keeps a consistent vocabulary with /students/[id] DELETE.
+    void logSchoolAudit({
+      schoolId,
+      actorId: auth.userId ?? 'unknown',
+      action: body.is_active === false ? 'student.deactivated' : 'student.updated',
+      resourceType: 'student',
+      resourceId: body.id,
+      metadata: { is_active: !!body.is_active },
+      ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
+    });
 
     return NextResponse.json({ success: true, data: updated });
   } catch (err) {
