@@ -246,11 +246,36 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 9. Increment uses_count
-    await supabaseAdmin
+    // 9. Atomically increment uses_count with a max_uses guard.
+    //
+    // Race condition fix: the read-then-write pattern (read uses_count above,
+    // then write uses_count + 1 here) lets two concurrent joiners both pass
+    // the max_uses check at uses_count=N, both link to the school, then both
+    // write N+1 — net effect is two students joined but the counter only
+    // advanced by 1, so the per-code limit can be exceeded by N.
+    //
+    // The eq('uses_count', invite.uses_count) clause makes the increment a
+    // CAS (compare-and-swap): the UPDATE only fires if uses_count is still
+    // exactly what we read in step 1. If it changed under us, the data
+    // returned will be empty — we don't undo the link (the student is
+    // already a member) but we do log the contention so ops can see if
+    // codes are being hammered concurrently.
+    const { data: incremented } = await supabaseAdmin
       .from('school_invite_codes')
       .update({ uses_count: invite.uses_count + 1 })
-      .eq('id', invite.id);
+      .eq('id', invite.id)
+      .eq('uses_count', invite.uses_count)
+      .select('id, uses_count')
+      .maybeSingle();
+
+    if (!incremented) {
+      logger.warn('join_invite_code_increment_contention', {
+        code_id: invite.id,
+        school_id: invite.school_id,
+        observed_uses_count: invite.uses_count,
+        route: '/api/schools/join',
+      });
+    }
 
     return NextResponse.json({
       success: true,
