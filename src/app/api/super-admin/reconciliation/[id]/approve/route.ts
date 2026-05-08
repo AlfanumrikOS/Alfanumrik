@@ -10,7 +10,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { authorizeAdmin } from '@/lib/admin-auth';
+import { authorizeAdmin, logAdminAudit } from '@/lib/admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import { isFeatureEnabled } from '@/lib/feature-flags';
@@ -116,6 +116,24 @@ export async function PATCH(
     received_amount_inr: row.received_amount_inr,
     rpc_result: rpcOut,
   });
+
+  // Two-person reconciliation approval is the moment money actually moves
+  // (invoice marked paid + subscription extended). Must hit admin_audit_log
+  // so compliance can prove WHO approved each offline payment, when.
+  void logAdminAudit(
+    auth,
+    'reconciliation.approve',
+    'payment_reconciliation_queue',
+    id,
+    {
+      school_id: row.school_id,
+      invoice_id: row.invoice_id,
+      received_amount_inr: row.received_amount_inr,
+      submitter_user_id: row.submitted_by_user_id,
+      rpc_result: rpcOut,
+    },
+    request.headers.get('x-forwarded-for') ?? undefined,
+  );
 
   return NextResponse.json({ success: true, data: rpcOut ?? null });
 }

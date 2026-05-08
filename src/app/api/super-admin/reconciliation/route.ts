@@ -18,7 +18,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { authorizeAdmin } from '@/lib/admin-auth';
+import { authorizeAdmin, logAdminAudit } from '@/lib/admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import { isFeatureEnabled } from '@/lib/feature-flags';
@@ -198,6 +198,23 @@ export async function POST(request: NextRequest) {
       payment_method: method as 'po' | 'bank_transfer' | 'cheque' | 'upi_offline',
       amount_inr: received,
     });
+
+    // Offline payment submission needs an audit trail beyond PostHog —
+    // financial reconciliation under the two-person rule must be queryable
+    // from admin_audit_log for compliance.
+    void logAdminAudit(
+      auth,
+      'reconciliation.submit',
+      'payment_reconciliation_queue',
+      inserted.id,
+      {
+        invoice_id: invoiceId,
+        school_id: invoice.school_id,
+        payment_method: method,
+        received_amount_inr: received,
+      },
+      request.headers.get('x-forwarded-for') ?? undefined,
+    );
 
     return NextResponse.json({ success: true, data: { id: inserted.id } });
   } catch (e) {
