@@ -53,12 +53,33 @@ function setRpcResult(r: { data: unknown; error: unknown }) {
   _rpcResult = r;
 }
 
+// B'-5 Phase 2 hardening: route does an explicit ownership check before
+// calling the RPC. Mock returns the message row for `.from('foxy_chat_messages')
+// .select(...).eq('id', X).maybeSingle()`. Tests can override with
+// `setMessageRow(...)` to drive ownership-rejection branches.
+const STUDENT_ID = '11111111-1111-1111-1111-111111111111';
+const OTHER_STUDENT_ID = '99999999-9999-9999-9999-999999999999';
+let _messageRow: { data: unknown; error: unknown } = {
+  data: { id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', student_id: STUDENT_ID, role: 'assistant' },
+  error: null,
+};
+function setMessageRow(r: { data: unknown; error: unknown }) {
+  _messageRow = r;
+}
+
 vi.mock('@/lib/supabase-admin', () => ({
   supabaseAdmin: {
     rpc: vi.fn((name: string, args: unknown) => {
       _lastRpcArgs = { name, args };
       return Promise.resolve(_rpcResult);
     }),
+    from: vi.fn(() => ({
+      select: vi.fn(() => ({
+        eq: vi.fn(() => ({
+          maybeSingle: vi.fn(() => Promise.resolve(_messageRow)),
+        })),
+      })),
+    })),
   },
 }));
 
@@ -80,6 +101,12 @@ beforeEach(async () => {
   _lastRpcArgs = null;
   _rpcResult = {
     data: [{ id: 'feedback-uuid-1', coach_mode_used: 'socratic' }],
+    error: null,
+  };
+  // Default: message exists, owned by the authorized student, role=assistant.
+  // Ownership-rejection tests override with setMessageRow(...).
+  _messageRow = {
+    data: { id: VALID_MESSAGE_ID, student_id: STUDENT_ID, role: 'assistant' },
     error: null,
   };
   const mod = await import('@/app/api/foxy/feedback/route');
@@ -189,5 +216,52 @@ describe('POST /api/foxy/feedback', () => {
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.code).toBe('RPC_ERROR');
+  });
+
+  // ── B'-5 Phase 2 hardening: route-side ownership check (P5/P13) ──────
+  it('returns 404 when the message does not exist (no row)', async () => {
+    setAuthorized();
+    setMessageRow({ data: null, error: null });
+    const res = await POST(makeReq({ messageId: VALID_MESSAGE_ID, isUp: true }));
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.code).toBe('NOT_FOUND');
+    // Critical: RPC was NEVER called because the route rejected first.
+    expect(_lastRpcArgs).toBeNull();
+  });
+
+  it('returns 404 when the message belongs to a different student (cross-tenant guard)', async () => {
+    setAuthorized();
+    setMessageRow({
+      data: { id: VALID_MESSAGE_ID, student_id: OTHER_STUDENT_ID, role: 'assistant' },
+      error: null,
+    });
+    const res = await POST(makeReq({ messageId: VALID_MESSAGE_ID, isUp: true }));
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    // Same NOT_FOUND code as "missing" — endpoint must not leak which case.
+    expect(body.code).toBe('NOT_FOUND');
+    expect(_lastRpcArgs).toBeNull();
+  });
+
+  it('returns 404 when the message is a user role (only assistant turns are feedback-eligible)', async () => {
+    setAuthorized();
+    setMessageRow({
+      data: { id: VALID_MESSAGE_ID, student_id: STUDENT_ID, role: 'user' },
+      error: null,
+    });
+    const res = await POST(makeReq({ messageId: VALID_MESSAGE_ID, isUp: true }));
+    expect(res.status).toBe(404);
+    expect(_lastRpcArgs).toBeNull();
+  });
+
+  it('returns 500 when the ownership lookup itself errors (DB outage)', async () => {
+    setAuthorized();
+    setMessageRow({ data: null, error: { message: 'simulated lookup failure' } });
+    const res = await POST(makeReq({ messageId: VALID_MESSAGE_ID, isUp: true }));
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.code).toBe('RPC_ERROR');
+    expect(_lastRpcArgs).toBeNull();
   });
 });
