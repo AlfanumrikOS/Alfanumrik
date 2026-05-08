@@ -75,9 +75,20 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
 
     if (action === 'upgrade_plan') {
-      const plan = updates.plan || 'premium';
-      // Normalise to canonical tier for student_subscriptions (strips _monthly/_yearly, maps ultimate→unlimited etc.)
-      const canonicalPlan = plan.replace(/_(monthly|yearly)$/, '').replace(/^ultimate$/, 'unlimited').replace(/^basic$/, 'starter').replace(/^premium$/, 'pro');
+      // Caller MUST specify plan — the previous default of 'premium' was a
+      // legacy code that no entitlement check recognises (split-brain risk).
+      // Constrained to canonical codes (free/starter/pro/unlimited).
+      const CANONICAL_PLANS = ['free', 'starter', 'pro', 'unlimited'] as const;
+      const plan = typeof updates.plan === 'string' ? updates.plan : '';
+      if (!CANONICAL_PLANS.includes(plan as typeof CANONICAL_PLANS[number])) {
+        return NextResponse.json(
+          { error: `plan must be one of: ${CANONICAL_PLANS.join(', ')}` },
+          { status: 400 },
+        );
+      }
+      // canonicalPlan is now identical to plan since we reject legacy aliases
+      // upstream. Keeping the variable name for the audit detail.
+      const canonicalPlan = plan;
       await Promise.all([
         supabase.from('students').update({ subscription_plan: plan }).eq('id', id),
         supabase.from('student_subscriptions').update({ plan_code: canonicalPlan, updated_at: new Date().toISOString() }).eq('student_id', id),
