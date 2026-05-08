@@ -936,7 +936,43 @@ export function buildCognitivePromptSection(ctx: CognitiveContext): string {
   }
 
   if (ctx.knowledgeGaps.length > 0) {
-    sections.push('\nKNOWLEDGE GAPS (address prerequisites before advancing):');
+    // Hard pedagogical branch (B'-2). Pre-fix this section was a soft
+    // directive — "address prerequisites before advancing" — which the model
+    // routinely interpreted as "mention the prerequisite, then teach the
+    // target anyway". The OVERRIDE block below makes it a hard branch:
+    // verify prerequisite first via ONE check question, only proceed to the
+    // target if the student demonstrates the prerequisite. This is the
+    // ladder-up pedagogy the May-2026 plan promised.
+    const primary = ctx.knowledgeGaps[0];
+    sections.push('\nPEDAGOGY OVERRIDE — KNOWLEDGE-GAP BRANCH:');
+    sections.push(
+      'The student is asking about a concept that depends on prerequisites they have NOT mastered.',
+    );
+    sections.push('Your turn MUST follow this sequence:');
+    sections.push(
+      `  1. Do NOT directly explain "${primary.target}" yet.`,
+    );
+    sections.push(
+      `  2. Open with a brief, friendly check on the prerequisite: "${primary.prerequisite}".`,
+    );
+    sections.push(
+      '     One short question, framed as "before we tackle this, can you tell me…".',
+    );
+    sections.push(
+      '  3. If the student answers correctly OR confirms they understand the prerequisite,',
+    );
+    sections.push(
+      `     proceed to teach "${primary.target}" using the standard scaffolding rules.`,
+    );
+    sections.push(
+      '  4. If they answer incorrectly or are unsure, teach the prerequisite first',
+    );
+    sections.push(
+      '     (compact 3-4 block explanation) and tell them you will come back to the',
+    );
+    sections.push('     original question on the next turn.');
+    sections.push('');
+    sections.push('All detected gaps (handle the first one this turn; surface others as a "we should also revisit…" line):');
     for (const g of ctx.knowledgeGaps) {
       sections.push(`- Missing: "${g.prerequisite}" needed for "${g.target}" (${g.gapType})`);
     }
