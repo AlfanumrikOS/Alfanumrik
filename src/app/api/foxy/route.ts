@@ -2041,6 +2041,7 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         chapter,
         mode,
         cognitiveCtx,
+        coachMode,
       });
     }
     // Streaming requested but flag off → silently fall through to blocking.
@@ -2178,6 +2179,11 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         structured: structured ?? null,
         sources: sources.length > 0 ? sources : null,
         tokens_used: grounded.meta.tokens_used,
+        // B'-5: persist the coach mode used for this turn so feedback rows
+        // can be correlated with the pedagogical mode (socratic/answer/review).
+        // Phase 2 read-path in resolveCoachMode reads recent feedback by
+        // coach_mode_used to decide whether to keep or flip the mode.
+        coach_mode_used: coachMode,
         created_at: new Date(Date.now() + 1).toISOString(),
       },
     ]);
@@ -2324,6 +2330,10 @@ async function handleStreamingFoxyTurn(params: {
   chapter: string | null;
   mode: string;
   cognitiveCtx: CognitiveContext;
+  // B'-5: pass through so the streaming-path message insert can record
+  // the coach mode used for this turn (parity with the blocking path at
+  // line ~2185). NULL is acceptable for legacy callers / tests.
+  coachMode?: CoachMode;
 }): Promise<Response> {
   const upstream = await callGroundedAnswerStream(params.groundedRequest, {
     hopTimeoutMs: params.hopTimeoutMs,
@@ -2461,6 +2471,9 @@ async function handleStreamingFoxyTurn(params: {
               }))
             : null,
           tokens_used: lastTokensUsed,
+          // B'-5: parity with the blocking path — record coach mode for
+          // feedback correlation.
+          coach_mode_used: params.coachMode ?? null,
           created_at: new Date(Date.now() + 1).toISOString(),
         },
       ]);
