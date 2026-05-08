@@ -42,6 +42,22 @@ export async function POST(request: NextRequest) {
     return err('image_url must be a Supabase Storage URL for this project', 400);
   }
 
+  // Validate URL points into THIS student's namespace within the uploads bucket.
+  // Path convention from src/app/scan/page.tsx is `${student.id}/${ts}_${file}`
+  // → full URL: .../storage/v1/object/public/uploads/<student_id>/<file>
+  // Without this, a student could log another student's URL as their own
+  // (P13 cross-tenant — the metadata row pretends ownership of someone
+  // else's image, which downstream OCR/processing would credit to the
+  // logging student).
+  const expectedPathFragment = `/uploads/${studentId}/`;
+  if (!image_url.includes(expectedPathFragment)) {
+    logger.warn('scan_upload_cross_tenant_url_blocked', {
+      studentId,
+      image_url: image_url.substring(0, 200),
+    });
+    return err("image_url must be in caller's own uploads namespace", 403);
+  }
+
   const { error } = await supabaseAdmin.from('image_uploads').insert({
     student_id: studentId,
     image_url,
