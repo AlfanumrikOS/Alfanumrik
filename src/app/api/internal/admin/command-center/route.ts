@@ -49,9 +49,21 @@ export async function GET(request: NextRequest) {
       supabase.from('payment_history').select('amount').eq('status', 'captured').gte('created_at', now.toISOString().slice(0, 10)),
       supabase.from('payment_history').select('amount').eq('status', 'captured').gte('created_at', since7d),
       supabase.from('payment_history').select('amount').eq('status', 'captured').gte('created_at', since30d),
-      // Subscriptions
-      supabase.from('students').select('id', { count: 'exact', head: true }).eq('subscription_plan', 'premium').eq('is_active', true),
-      supabase.from('students').select('id', { count: 'exact', head: true }).eq('subscription_plan', 'basic').eq('is_active', true),
+      // Subscriptions — count by canonical plan code (free/starter/pro/unlimited).
+      // Previous version counted subscription_plan='premium' / 'basic' which are
+      // legacy aliases that no current code path writes; both counts were always
+      // 0. The dashboard now surfaces real paid-tier counts: pro_students sums
+      // pro + pro_monthly + pro_yearly + the legacy 'premium' alias for any
+      // un-migrated rows; starter_students likewise covers starter variants +
+      // legacy 'basic'. Unlimited is reported under premium_students for
+      // backwards-compat with the dashboard front-end (which still keys on
+      // premium_students/basic_students).
+      supabase.from('students').select('id', { count: 'exact', head: true })
+        .in('subscription_plan', ['pro', 'pro_monthly', 'pro_yearly', 'unlimited', 'unlimited_monthly', 'unlimited_yearly', 'ultimate_monthly', 'ultimate_yearly', 'premium'])
+        .eq('is_active', true),
+      supabase.from('students').select('id', { count: 'exact', head: true })
+        .in('subscription_plan', ['starter', 'starter_monthly', 'starter_yearly', 'basic'])
+        .eq('is_active', true),
       // Support
       supabase.from('support_tickets').select('id', { count: 'exact', head: true }).eq('status', 'open'),
       supabase.from('support_tickets').select('id', { count: 'exact', head: true }).eq('status', 'pending'),

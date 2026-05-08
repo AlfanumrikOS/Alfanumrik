@@ -1,8 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { requireAdminSecret, logAdminAction } from '@/lib/admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
+import { validateBody, zPlanCode } from '@/lib/validation';
 
 export const runtime = 'nodejs';
+
+// Per-table update field allowlist with TYPE constraints. The previous version
+// accepted any value as long as the field name was on a string allowlist —
+// admin could set students.subscription_plan='banana' or grade='Kindergarten'
+// and it'd write through (only DB CHECK constraints would catch it, and only
+// for some columns). Now zod validates each field's value type as well.
+const STUDENT_UPDATE_SCHEMA = z.object({
+  is_active: z.boolean().optional(),
+  account_status: z.enum(['active', 'suspended', 'deactivated', 'pending_deletion']).optional(),
+  subscription_plan: zPlanCode.optional(),
+  grade: z.enum(['6', '7', '8', '9', '10', '11', '12']).optional(),
+  board: z.enum(['CBSE', 'ICSE', 'State Board']).optional(),
+}).strict();
+
+const TEACHER_UPDATE_SCHEMA = z.object({
+  is_active: z.boolean().optional(),
+}).strict();
+
+const GUARDIAN_UPDATE_SCHEMA = z.object({
+  is_active: z.boolean().optional(),
+}).strict();
+
+const PatchBodySchema = z.discriminatedUnion('table', [
+  z.object({ table: z.literal('students'), user_id: z.string().uuid(), updates: STUDENT_UPDATE_SCHEMA }),
+  z.object({ table: z.literal('teachers'), user_id: z.string().uuid(), updates: TEACHER_UPDATE_SCHEMA }),
+  z.object({ table: z.literal('guardians'), user_id: z.string().uuid(), updates: GUARDIAN_UPDATE_SCHEMA }),
+]);
 
 export async function GET(request: NextRequest) {
   const denied = requireAdminSecret(request);
@@ -57,31 +86,27 @@ export async function PATCH(request: NextRequest) {
   const supabase = getSupabaseAdmin();
   const ip = request.headers.get('x-forwarded-for') || '';
 
+  let rawBody: unknown;
   try {
-    const { user_id, table, updates } = await request.json();
-    if (!user_id || !table || !updates) {
-      return NextResponse.json({ error: 'Missing fields' }, { status: 400 });
-    }
+    rawBody = await request.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
+  const validation = validateBody(PatchBodySchema, rawBody);
+  if (!validation.success) return validation.error;
+  const { user_id, table, updates } = validation.data;
 
-    const ALLOWED: Record<string, string[]> = {
-      students: ['is_active', 'account_status', 'subscription_plan', 'grade', 'board'],
-      teachers: ['is_active'],
-      guardians: ['is_active'],
-    };
+  // strict() + per-field types means `updates` already contains only allowlisted,
+  // type-safe values — no need to filter again.
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json({ error: 'No valid fields' }, { status: 400 });
+  }
 
-    if (!ALLOWED[table]) return NextResponse.json({ error: 'Invalid table' }, { status: 400 });
-
-    const safe: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(updates)) {
-      if (ALLOWED[table].includes(k)) safe[k] = v;
-    }
-
-    if (Object.keys(safe).length === 0) return NextResponse.json({ error: 'No valid fields' }, { status: 400 });
-
-    const { error } = await supabase.from(table).update(safe).eq('id', user_id);
+  try {
+    const { error } = await supabase.from(table).update(updates).eq('id', user_id);
     if (error) throw error;
 
-    await logAdminAction({ action: 'update_user', entity_type: table, entity_id: user_id, details: safe, ip });
+    await logAdminAction({ action: 'update_user', entity_type: table, entity_id: user_id, details: updates, ip });
     return NextResponse.json({ success: true });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 });
