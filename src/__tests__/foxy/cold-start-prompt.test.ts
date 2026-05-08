@@ -116,8 +116,62 @@ describe('buildCognitivePromptSection cold-start branch', () => {
     };
     const out = buildCognitivePromptSection(ctx);
     expect(out).not.toContain('FIRST-INTERACTION CONTEXT');
-    expect(out).toContain('KNOWLEDGE GAPS');
+    expect(out).toContain('KNOWLEDGE-GAP BRANCH');
     expect(out).toContain('Linear equations');
+  });
+
+  // ── B'-2: hard prerequisite-first branch ──
+  // Pre-fix the knowledge-gap section was a soft directive ("address
+  // prerequisites before advancing") that the model routinely paid lip
+  // service to before teaching the target anyway. Post-fix: explicit hard
+  // sequence that verifies the prerequisite via ONE check question first.
+  describe('knowledge-gap hard branch (B\'-2)', () => {
+    it('emits a PEDAGOGY OVERRIDE with explicit numbered steps', () => {
+      const ctx: CognitiveContext = {
+        ...EMPTY_COGNITIVE_CONTEXT,
+        knowledgeGaps: [
+          { target: 'Quadratic equations', prerequisite: 'Linear equations', gapType: 'missing_prereq' },
+        ],
+      };
+      const out = buildCognitivePromptSection(ctx);
+      expect(out).toContain('PEDAGOGY OVERRIDE');
+      // Hard branch: numbered sequence so the model can't skip.
+      expect(out).toMatch(/1\. Do NOT directly explain/);
+      expect(out).toMatch(/2\. Open with a brief, friendly check/);
+      expect(out).toMatch(/3\. If the student answers correctly/);
+      expect(out).toMatch(/4\. If they answer incorrectly/);
+    });
+
+    it('quotes the specific prerequisite and target in the directive', () => {
+      const ctx: CognitiveContext = {
+        ...EMPTY_COGNITIVE_CONTEXT,
+        knowledgeGaps: [
+          { target: 'Photosynthesis', prerequisite: 'Cell structure', gapType: 'missing_prereq' },
+        ],
+      };
+      const out = buildCognitivePromptSection(ctx);
+      // Both must appear AS A QUOTED STRING in the directive (not just
+      // mentioned in the gap-list footer) so the model can ground on them.
+      expect(out).toContain('"Photosynthesis"');
+      expect(out).toContain('"Cell structure"');
+    });
+
+    it('handles multiple gaps by branching on the first and surfacing the rest', () => {
+      const ctx: CognitiveContext = {
+        ...EMPTY_COGNITIVE_CONTEXT,
+        knowledgeGaps: [
+          { target: 'Quadratic equations', prerequisite: 'Linear equations', gapType: 'missing_prereq' },
+          { target: 'Quadratic equations', prerequisite: 'Algebraic identities', gapType: 'missing_prereq' },
+        ],
+      };
+      const out = buildCognitivePromptSection(ctx);
+      // Branch on the first
+      expect(out).toContain('"Linear equations"');
+      // Mention the second in the gap list
+      expect(out).toContain('Algebraic identities');
+      // Acknowledge there are more
+      expect(out).toMatch(/we should also revisit/i);
+    });
   });
 
   it('returns the regular section even with only revisionDue populated', () => {
