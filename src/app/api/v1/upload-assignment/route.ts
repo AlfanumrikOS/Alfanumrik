@@ -72,11 +72,17 @@ export async function POST(request: Request) {
     }
 
     // Use signed URL instead of public URL to prevent unauthorized access.
-    // Signed URLs expire after 24 hours — client should refresh via the
-    // image_uploads table path column if needed.
+    //
+    // P13: tightened from 24h → 1h. Students upload assignment images that
+    // can contain handwriting + face/identity context; a 24h URL persisted
+    // in image_uploads.image_url stays usable far longer than the typical
+    // session and amplifies any downstream leak (browser history, CDN log,
+    // PostHog event, screenshot share). 1h covers the upload + immediate
+    // view path; clients that need the URL again should refresh via the
+    // storage_path column — this is the documented contract below.
     const { data: signedData, error: signedErr } = await supabaseAdmin.storage
       .from('uploads')
-      .createSignedUrl(path, 24 * 60 * 60); // 24 hour expiry
+      .createSignedUrl(path, 60 * 60); // 1 hour expiry
 
     if (signedErr || !signedData?.signedUrl) {
       return NextResponse.json(

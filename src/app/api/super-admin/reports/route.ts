@@ -71,8 +71,24 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'Invalid report type' }, { status: 400 });
     }
 
-    if (from) filter += `${filter ? '&' : ''}created_at=gte.${from}`;
-    if (to) filter += `${filter ? '&' : ''}created_at=lte.${to}`;
+    // Defense-in-depth: validate `from`/`to` as ISO-8601 dates before
+    // interpolating into the PostgREST query string. Without this, an
+    // admin could pass `from=2026-01-01&select=*,...` to override the
+    // per-type select whitelist (PostgREST honours the LAST occurrence
+    // of duplicate query params, so a sneaky second `select=` would win).
+    const ISO_DATE = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/;
+    if (from) {
+      if (!ISO_DATE.test(from)) {
+        return NextResponse.json({ error: 'from must be an ISO-8601 date' }, { status: 400 });
+      }
+      filter += `${filter ? '&' : ''}created_at=gte.${encodeURIComponent(from)}`;
+    }
+    if (to) {
+      if (!ISO_DATE.test(to)) {
+        return NextResponse.json({ error: 'to must be an ISO-8601 date' }, { status: 400 });
+      }
+      filter += `${filter ? '&' : ''}created_at=lte.${encodeURIComponent(to)}`;
+    }
 
     const data = await fetchAll(table, select, filter || undefined);
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
