@@ -178,7 +178,7 @@ interface ChatMessage {
 
 // ─── Cognitive Context Types ────────────────────────────────────────────────
 
-interface CognitiveContext {
+export interface CognitiveContext {
   weakTopics: Array<{ title: string; mastery: number; attempts: number }>;
   strongTopics: Array<{ title: string; mastery: number }>;
   knowledgeGaps: Array<{ target: string; prerequisite: string; gapType: string }>;
@@ -194,7 +194,7 @@ interface CognitiveContext {
   recentMisconceptions: Array<{ code: string; label: string; count: number; remediationText: string }>;
 }
 
-const EMPTY_COGNITIVE_CONTEXT: CognitiveContext = {
+export const EMPTY_COGNITIVE_CONTEXT: CognitiveContext = {
   weakTopics: [],
   strongTopics: [],
   knowledgeGaps: [],
@@ -857,17 +857,64 @@ function composeMisconceptionDirective(
 
 // ─── Helper: build cognitive prompt section from CME data ───────────────────
 
-function buildCognitivePromptSection(ctx: CognitiveContext): string {
-  if (
+/**
+ * Cold-start prompt section. Used when `loadCognitiveContext()` returned
+ * no signal at all — i.e., the student has no quiz history, no concept
+ * mastery rows, no knowledge gaps, no errors, no LO data, no curated
+ * misconceptions, and no CME-recommended next action.
+ *
+ * Pre-fix this branch returned '' from `buildCognitivePromptSection`, which
+ * meant brand-new signups got a generic Foxy with no calibration directive
+ * — no follow-up, no diagnostic offer, and the model was free to assume
+ * either proficiency or struggle without any signal. The result was that
+ * the *first* Foxy turn (the one that decides whether the student comes
+ * back tomorrow) was the *least* personalised turn in the student's
+ * lifecycle.
+ *
+ * Cold-start contract: answer the student's question, then ask ONE light
+ * calibration follow-up so the next turn has signal, and hint that quizzes
+ * unlock personalisation. Bilingual via Foxy's general "match the
+ * student's language" rule in FOXY_SAFETY_RAILS — we do not need to
+ * duplicate that here.
+ */
+export function buildColdStartPromptSection(): string {
+  return [
+    '=== FIRST-INTERACTION CONTEXT (no prior mastery data) ===',
+    'This is a new student. You have no quiz history, no mastery signals, no prior',
+    'session context for them yet. Adapt accordingly:',
+    '',
+    'BEHAVIOUR FOR THIS FIRST INTERACTION:',
+    '- Answer their actual question first. Match the language they wrote in.',
+    '- Use clear, standard CBSE language at grade level. Do NOT assume strong prior',
+    '  mastery and do NOT assume struggle — you have no data either way.',
+    '- Keep the answer compact (3-5 short blocks) so a new student is not overwhelmed.',
+    '- After answering, ask ONE light calibration follow-up that surfaces what they',
+    '  already know or struggle with on this topic. Frame it warmly, not as a test.',
+    '- If their question is meta (e.g. "what should I study?", "where do I start?"),',
+    '  suggest a quick 3-question diagnostic from this chapter and offer to start it.',
+    '- End with a one-line nudge to take a chapter quiz so personalisation can kick in',
+    '  from the next turn.',
+    '',
+    'AVOID on cold-start:',
+    '- Assuming the student is "PROFICIENT" or "STRUGGLING" without data.',
+    '- Long worked examples that pre-empt their actual question.',
+    '- Pushing prerequisites or knowledge gaps you have not actually verified.',
+  ].join('\n');
+}
+
+export function buildCognitivePromptSection(ctx: CognitiveContext): string {
+  const isColdStart =
     ctx.weakTopics.length === 0 &&
     ctx.strongTopics.length === 0 &&
     ctx.knowledgeGaps.length === 0 &&
     ctx.revisionDue.length === 0 &&
     ctx.recentErrors.length === 0 &&
     !ctx.nextAction &&
-    ctx.loSkills.length === 0
-  ) {
-    return '';
+    ctx.loSkills.length === 0 &&
+    ctx.recentMisconceptions.length === 0;
+
+  if (isColdStart) {
+    return buildColdStartPromptSection();
   }
 
   const sections: string[] = [];
