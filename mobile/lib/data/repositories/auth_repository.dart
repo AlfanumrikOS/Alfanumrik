@@ -39,12 +39,22 @@ class AuthRepository {
         return const ApiFailure('Registration failed. Please try again.');
       }
 
-      // Create student profile
+      // Create student profile.
+      //
+      // P5: grades are STRINGS '6' through '12' — never display strings like
+      // 'Grade 6'. The DB has a normalize_grade() helper that historically
+      // accepted 'Grade N' and converted it back, but every CHECK constraint
+      // (chk_question_bank_grade_p5, chk_curriculum_topics_grade_p5,
+      // grade_subject_map_grade_check, cbse_syllabus_grade_check) and every
+      // RPC filter expects the canonical bare digit. Mobile sign-ups that
+      // wrote 'Grade N' meant downstream queries had to round-trip through
+      // normalize_grade — and any direct `.eq('grade', '<digit>')` query
+      // would silently miss those mobile-created students.
       final studentData = {
         'auth_user_id': authRes.user!.id,
         'name': name,
         'email': email,
-        'grade': 'Grade $grade',
+        'grade': grade,
         'board': 'CBSE',
         'role': 'student',
         'plan_code': 'free',
