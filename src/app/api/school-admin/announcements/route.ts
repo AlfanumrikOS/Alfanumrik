@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeSchoolAdmin } from '@/lib/school-admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { logSchoolAudit } from '@/lib/audit';
 
 // ─── GET — List announcements for this school ────────────────────────────────
 export async function GET(request: NextRequest) {
@@ -334,6 +335,17 @@ export async function DELETE(request: NextRequest) {
       { success: false, error: error.message },
       { status: 500 }
     );
+  }
+
+  if (auth.schoolId) {
+    void logSchoolAudit({
+      schoolId: auth.schoolId,
+      actorId: auth.userId ?? 'unknown',
+      action: 'announcement.deleted',
+      resourceType: 'school_announcement',
+      resourceId: id,
+      ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
+    });
   }
 
   return NextResponse.json({ success: true });

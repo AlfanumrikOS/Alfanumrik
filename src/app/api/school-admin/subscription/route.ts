@@ -4,6 +4,7 @@ import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import { isFeatureEnabled } from '@/lib/feature-flags';
 import { capture } from '@/lib/posthog/server';
+import { logSchoolAudit } from '@/lib/audit';
 import {
   createRazorpaySubscription,
   cancelRazorpaySubscription,
@@ -591,6 +592,22 @@ export async function DELETE(request: NextRequest) {
         razorpay_subscription_id: '',
         cancellation_timing: timing,
       });
+      void logSchoolAudit({
+        schoolId,
+        actorId: userId,
+        action: 'subscription.cancelled',
+        resourceType: 'school_subscription',
+        resourceId: existing.id as string,
+        metadata: {
+          plan: existing.plan,
+          billing_cycle: existing.billing_cycle,
+          seats: existing.seats_purchased,
+          cancellation_timing: timing,
+          razorpay_subscription_id: null,
+          path: 'trial_or_never_billed',
+        },
+        ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
+      });
       return NextResponse.json({ success: true, data: { status: 'cancelled', timing } });
     }
 
@@ -630,6 +647,23 @@ export async function DELETE(request: NextRequest) {
       seats: (existing.seats_purchased as number) ?? 0,
       razorpay_subscription_id: existing.razorpay_subscription_id as string,
       cancellation_timing: timing,
+    });
+
+    void logSchoolAudit({
+      schoolId,
+      actorId: userId,
+      action: 'subscription.cancelled',
+      resourceType: 'school_subscription',
+      resourceId: existing.id as string,
+      metadata: {
+        plan: existing.plan,
+        billing_cycle: existing.billing_cycle,
+        seats: existing.seats_purchased,
+        cancellation_timing: timing,
+        razorpay_subscription_id: existing.razorpay_subscription_id,
+        new_status: newStatus,
+      },
+      ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
     });
 
     return NextResponse.json({

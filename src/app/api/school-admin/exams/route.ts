@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeSchoolAdmin } from '@/lib/school-admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { logSchoolAudit } from '@/lib/audit';
 
 // ── Constants ────────────────────────────────────────────────
 
@@ -722,6 +723,18 @@ export async function DELETE(request: NextRequest) {
         { success: false, error: 'Failed to cancel exam' },
         { status: 500 }
       );
+    }
+
+    if (auth.schoolId) {
+      void logSchoolAudit({
+        schoolId: auth.schoolId,
+        actorId: auth.userId ?? 'unknown',
+        action: 'exam.cancelled',
+        resourceType: 'school_exam',
+        resourceId: id,
+        metadata: { title: cancelled.title, prior_status: currentExam.status },
+        ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
+      });
     }
 
     return NextResponse.json({ success: true, data: cancelled });
