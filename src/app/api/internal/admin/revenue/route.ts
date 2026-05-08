@@ -31,11 +31,19 @@ export async function GET(request: NextRequest) {
         .select('subscription_plan')
         .eq('is_active', true),
 
-      // MRR: active premium subscriptions × price
+      // MRR: active paid subscriptions across canonical pro/unlimited tiers
+      // and their billing-cycle variants. The previous query only counted
+      // subscription_plan='premium' (a legacy alias no current write path
+      // produces), so premium_count was always 0 on this dashboard.
       supabase
         .from('students')
         .select('subscription_plan', { count: 'exact' })
-        .eq('subscription_plan', 'premium')
+        .in('subscription_plan', [
+          'pro', 'pro_monthly', 'pro_yearly',
+          'unlimited', 'unlimited_monthly', 'unlimited_yearly',
+          'ultimate_monthly', 'ultimate_yearly',
+          'premium', // legacy — captures any un-migrated rows
+        ])
         .eq('is_active', true),
     ]);
 
