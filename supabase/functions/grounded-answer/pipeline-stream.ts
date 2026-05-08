@@ -40,6 +40,7 @@ import { computeConfidence } from './confidence.ts';
 import { loadTemplate, resolveTemplate, hashPrompt } from './prompts/index.ts';
 import { FOXY_STRUCTURED_OUTPUT_PROMPT } from './structured-prompt.ts';
 import {
+  rescueFromTruncatedJson,
   validateFoxyResponse,
   validateSubjectRules,
   wrapAsParagraph,
@@ -453,10 +454,12 @@ export async function* runStreamingPipeline(
 
   // Step 10. Stream Claude.
   //
-  // Boost max_tokens for Foxy structured output by ~25% (mirror pipeline.ts).
-  // Without the boost, structured responses tend to truncate mid-block which
-  // forces the close-event parser to fall back to wrapAsParagraph(fullText).
-  const FOXY_STRUCTURED_TOKEN_MULTIPLIER = 1.25;
+  // Boost max_tokens for Foxy structured output. Mirrors pipeline.ts.
+  // Bumped from 1.25 → 1.6 in May 2026: the prior boost wasn't enough for
+  // multi-question turns (students routinely send 1-3 questions in one
+  // message). Truncation mid-block was the leading cause of the
+  // wrapAsParagraph fallback firing and leaking raw JSON into the chat.
+  const FOXY_STRUCTURED_TOKEN_MULTIPLIER = 1.6;
   const effectiveMaxTokens = isFoxyStructured
     ? Math.ceil(request.generation.max_tokens * FOXY_STRUCTURED_TOKEN_MULTIPLIER)
     : request.generation.max_tokens;
@@ -571,6 +574,18 @@ function parseStreamingFoxy(rawAnswer: string): FoxyResponse {
   try {
     parsed = JSON.parse(stripped);
   } catch (err) {
+    // Truncation rescue: max_tokens cuts mid-block in production. Try to
+    // recover the complete blocks emitted before the cutoff before falling
+    // back to wrapAsParagraph (which would otherwise produce a friendly
+    // truncation message — better than raw JSON, but worse than the
+    // partial answer the student actually wanted).
+    const rescued = rescueFromTruncatedJson(rawAnswer);
+    if (rescued) {
+      console.warn(
+        `foxy(stream): structured_parse_rescued reason=json_parse err=${String(err).slice(0, 120)}`,
+      );
+      return rescued;
+    }
     console.warn(
       `foxy(stream): structured_parse_failed reason=json_parse err=${String(err).slice(0, 120)}`,
     );

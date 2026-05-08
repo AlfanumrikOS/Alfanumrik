@@ -311,13 +311,171 @@ export function validateSubjectRules(parsed: FoxyResponse): SubjectCheckResult {
 // ── Safe-fallback constructor (mirrors wrapAsParagraph) ─────────────────────
 
 /**
+ * Detect whether `rawText` is a Foxy JSON payload (possibly inside a markdown
+ * fence). When true, wrapAsParagraph MUST NOT emit it as paragraph text — the
+ * student would see literal `{"title":...}` in their chat. Conservative
+ * matcher: only flags payloads that LOOK like a structured-output attempt
+ * (leading `{`/`[` after optional fence + whitespace) so it never trips on
+ * legitimate prose that mentions JSON.
+ */
+function isJsonShapedRawText(rawText: string): boolean {
+  if (typeof rawText !== 'string') return false;
+  const stripped = rawText.replace(/^[\s`]*(?:json|javascript|js)?\s*/i, '');
+  return /^[{[]/.test(stripped);
+}
+
+/**
+ * Strip markdown code fences (```json … ``` or bare ``` … ```) — single-pass,
+ * never throws. Mirrors stripCodeFence in pipeline.ts so fallback paths in
+ * structured-schema can reuse the same normalisation.
+ */
+function stripFences(s: string): string {
+  let out = s.trim();
+  if (out.startsWith('```')) {
+    out = out.replace(/^```(?:json|javascript|js)?\s*/i, '');
+    out = out.replace(/```\s*$/i, '');
+    out = out.trim();
+  }
+  return out;
+}
+
+function tryParseFoxy(s: string): FoxyResponse | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(s);
+  } catch {
+    return null;
+  }
+  const v = validateFoxyResponse(parsed);
+  return v.ok ? v.value : null;
+}
+
+/**
+ * Append unmatched closing brackets/braces to balance a truncated JSON slice.
+ * Walks the string with a tiny state machine that respects string literals
+ * and escape sequences so a `{` inside `"foo {"` is not counted as an open.
+ *
+ * Used by `rescueFromTruncatedJson` to recover whatever blocks Claude
+ * managed to emit before max_tokens cut the response.
+ */
+function closeUnbalancedJson(s: string): string {
+  let openBraces = 0;
+  let openBrackets = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (esc) {
+      esc = false;
+      continue;
+    }
+    if (ch === '\\') {
+      esc = true;
+      continue;
+    }
+    if (ch === '"') {
+      inStr = !inStr;
+      continue;
+    }
+    if (inStr) continue;
+    if (ch === '{') openBraces++;
+    else if (ch === '}') openBraces--;
+    else if (ch === '[') openBrackets++;
+    else if (ch === ']') openBrackets--;
+  }
+  let suffix = '';
+  if (openBrackets > 0) suffix += ']'.repeat(openBrackets);
+  if (openBraces > 0) suffix += '}'.repeat(openBraces);
+  return s + suffix;
+}
+
+/**
+ * Truncation rescue. Common Haiku failure mode: max_tokens cuts mid-block,
+ * leaving JSON like `{"title":"…","blocks":[{...},{...},{"type":"step",
+ * "text":"Observa` — every block before the cutoff is complete and valid,
+ * we just need to drop the trailing partial block and close the structure.
+ *
+ * Strategy: walk backward from the last `}` looking for slices whose
+ * `closeUnbalancedJson` extension parses AND validates as a FoxyResponse.
+ * Returns null if no such slice exists.
+ *
+ * P12 alignment: this NEVER lowers the validation bar. The candidate must
+ * still pass validateFoxyResponse — a partial schema-failing recovery is
+ * worse than the friendly fallback, so we bail rather than ship junk.
+ */
+export function rescueFromTruncatedJson(rawText: string): FoxyResponse | null {
+  if (typeof rawText !== 'string' || rawText.length === 0) return null;
+  const candidate = stripFences(rawText);
+  if (!candidate.startsWith('{')) return null;
+
+  // First try the candidate verbatim (covers the case where the JSON is
+  // intact but parseStreamingFoxy failed for some other reason).
+  const direct = tryParseFoxy(candidate);
+  if (direct) return direct;
+
+  // Walk backward through `}` boundaries, balancing brackets at each step.
+  // Bound the loop at 50 iterations so a pathological input cannot pin the
+  // event loop.
+  let cut = candidate.lastIndexOf('}');
+  for (let i = 0; i < 50 && cut > 0; i++) {
+    const slice = candidate.slice(0, cut + 1).replace(/,\s*$/, '');
+    const closed = closeUnbalancedJson(slice);
+    const parsed = tryParseFoxy(closed);
+    if (parsed) return parsed;
+    cut = candidate.lastIndexOf('}', cut - 1);
+  }
+  return null;
+}
+
+/**
+ * Last-resort content extraction. Pulls every `"text"` field value out of
+ * the broken JSON via regex so we can at least show the human-readable
+ * sentences Claude wrote. Used when `rescueFromTruncatedJson` couldn't
+ * recover a valid FoxyResponse (e.g. truncation cut mid-string).
+ *
+ * Returns recovered strings in document order. JSON-decodes each capture so
+ * `\n`, `\"`, etc. are unescaped properly.
+ */
+export function extractTextFieldsFromBrokenJson(rawText: string): string[] {
+  if (typeof rawText !== 'string' || rawText.length === 0) return [];
+  const result: string[] = [];
+  const re = /"text"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(rawText)) !== null) {
+    try {
+      const decoded = JSON.parse(`"${m[1]}"`);
+      if (typeof decoded === 'string' && decoded.trim().length > 0) {
+        result.push(decoded);
+      }
+    } catch {
+      // Skip malformed escape sequences silently.
+    }
+  }
+  return result;
+}
+
+/**
+ * Bilingual "I got cut off" message used when raw JSON cannot be recovered
+ * via rescue or text-field extraction. Inline EN + Hinglish so the message
+ * lands for both English-medium and Hindi-medium students until language is
+ * plumbed into this layer.
+ */
+const FOXY_TRUNCATION_FALLBACK_TEXT =
+  'Sorry — my answer got cut off. Could you re-ask, ideally one question at a time? ' +
+  'Maafi, mera jawab beech mein ruk gaya. Ek-ek karke sawal poochho na?';
+
+/**
  * Build a guaranteed-valid FoxyResponse from arbitrary raw text. Used when
  * Claude returns non-JSON, malformed JSON, or schema-failing JSON.
  *
- * Truncates to FOXY_FALLBACK_MAX_CHARS, splits on blank lines, caps blocks at
- * FOXY_FALLBACK_MAX_BLOCKS (overflow folded into final block, then truncated
- * to FOXY_MAX_TEXT_LEN). Always returns a payload that passes
- * validateFoxyResponse.
+ * **Critical contract: this function must NEVER produce a paragraph block
+ * whose text is JSON-shaped.** That was the May-2026 production regression:
+ * Haiku truncated mid-JSON, JSON.parse failed, and the prior implementation
+ * dutifully wrapped the raw `{"title":"…","blocks":[…` string into a
+ * paragraph, which the renderer faithfully displayed to students. The fix:
+ * detect JSON-shaped input and route through rescue → text extraction →
+ * friendly bilingual fallback, in that order. The legacy prose-wrapping
+ * branch only runs when the input is genuinely prose.
  */
 export function wrapAsParagraph(
   rawText: string,
@@ -326,6 +484,43 @@ export function wrapAsParagraph(
   const title = (opts.title ?? 'Foxy').slice(0, FOXY_MAX_TITLE_LEN) || 'Foxy';
   const subject: FoxySubject = opts.subject ?? 'general';
 
+  // ── JSON-shaped input: NEVER fall through to paragraph wrapping ──
+  if (isJsonShapedRawText(rawText)) {
+    // Tier 1: truncation rescue. Recovers all complete blocks before the
+    // max_tokens cutoff (the most common failure mode in production).
+    const rescued = rescueFromTruncatedJson(rawText);
+    if (rescued) {
+      // Honour the caller-supplied subject hint when the rescued payload
+      // disagrees only on subject (e.g. caller knows it's 'science' but
+      // model emitted 'general'). Skip when caller didn't pass a hint.
+      if (opts.subject && rescued.subject !== opts.subject) {
+        return { ...rescued, subject: opts.subject };
+      }
+      return rescued;
+    }
+
+    // Tier 2: regex-extract `"text"` field values when JSON is too damaged
+    // to parse. Recovers the human content even if structure is broken.
+    const extracted = extractTextFieldsFromBrokenJson(rawText);
+    if (extracted.length > 0) {
+      const blocks: FoxyBlock[] = extracted
+        .slice(0, FOXY_FALLBACK_MAX_BLOCKS)
+        .map((p) => ({
+          type: 'paragraph' as const,
+          text: p.slice(0, FOXY_MAX_TEXT_LEN),
+        }));
+      return { title, subject, blocks };
+    }
+
+    // Tier 3: friendly bilingual fallback. NEVER raw JSON.
+    return {
+      title,
+      subject,
+      blocks: [{ type: 'paragraph', text: FOXY_TRUNCATION_FALLBACK_TEXT }],
+    };
+  }
+
+  // ── Legacy prose-wrapping branch (unchanged) ──
   const safe = (typeof rawText === 'string' ? rawText : '').slice(
     0,
     FOXY_FALLBACK_MAX_CHARS,

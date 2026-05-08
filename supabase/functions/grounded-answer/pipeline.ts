@@ -42,6 +42,7 @@ import {
 } from './prompts/index.ts';
 import { FOXY_STRUCTURED_OUTPUT_PROMPT } from './structured-prompt.ts';
 import {
+  rescueFromTruncatedJson,
   validateFoxyResponse,
   validateSubjectRules,
   wrapAsParagraph,
@@ -469,6 +470,23 @@ function parseFoxyStructured(args: {
   try {
     parsed = JSON.parse(stripped);
   } catch (err) {
+    // Truncation rescue: salvage all complete blocks before max_tokens cut.
+    // When successful we report ok=true so adoption telemetry counts these
+    // as structured renders rather than fallbacks.
+    const rescued = rescueFromTruncatedJson(rawAnswer);
+    if (rescued) {
+      const preview = redactPreview(rawAnswer).slice(0, 200);
+      console.warn(
+        `foxy: structured_parse_rescued reason=json_parse preview="${preview}" err=${String(err).slice(0, 120)}`,
+      );
+      return {
+        structured: subjectHint && rescued.subject !== subjectHint
+          ? { ...rescued, subject: subjectHint }
+          : rescued,
+        ok: true,
+        warnings: ['rescued_from_truncated_json'],
+      };
+    }
     const preview = redactPreview(rawAnswer).slice(0, 200);
     console.warn(
       `foxy: structured_parse_failed reason=json_parse preview="${preview}" err=${String(err).slice(0, 120)}`,
@@ -514,13 +532,19 @@ function parseFoxyStructured(args: {
 }
 
 /**
- * For caller='foxy' we boost max_tokens by ~25% to account for the JSON
- * overhead (keys, brackets, escaping). Otherwise the structured response
- * tends to truncate mid-block and fail JSON.parse. The boost is applied at
- * the Claude call site only -- the request contract still carries the
- * caller-supplied max_tokens for telemetry.
+ * For caller='foxy' we boost max_tokens to account for the JSON overhead
+ * (keys, brackets, escaping) AND the typical multi-question student turn
+ * (1-3 questions per message in production). The original 1.25x boost was
+ * insufficient — production traces in May 2026 showed Haiku truncating
+ * mid-block on 3-question turns, which crashed JSON.parse and tripped the
+ * wrapAsParagraph fallback (the visible "raw JSON in chat bubble" bug).
+ *
+ * 1.6x covers the realistic upper bound: ~30% JSON overhead + ~30% headroom
+ * for multi-question turns. The boost is applied at the Claude call site
+ * only — the request contract still carries the caller-supplied max_tokens
+ * for telemetry, so dashboards still report the requested budget.
  */
-const FOXY_STRUCTURED_TOKEN_MULTIPLIER = 1.25;
+const FOXY_STRUCTURED_TOKEN_MULTIPLIER = 1.6;
 
 /**
  * retrieve_only citations: every chunk becomes a Citation (indexed 1..N)
