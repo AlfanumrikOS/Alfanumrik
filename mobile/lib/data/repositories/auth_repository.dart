@@ -69,7 +69,14 @@ class AuthRepository {
           .single();
 
       final student = Student.fromJson(res);
-      await _cache.put('current_student', res);
+      // P13: Hive boxes are unencrypted on disk. Cache only the fields
+      // the Student model actually reads, never the raw `students` row —
+      // that would leak phone, parent_phone, parent_name, school_name,
+      // city, state, etc. into the local cache file (readable on rooted
+      // Android, restored from device backups, accessible to malicious
+      // apps with shared user_id, etc.). Student.toJson() is already
+      // the minimal projection.
+      await _cache.put('current_student', student.toJson());
       return ApiSuccess(student);
     } on AuthException catch (e) {
       if (e.message.contains('already registered')) {
@@ -108,7 +115,14 @@ class AuthRepository {
       }
 
       final student = Student.fromJson(res);
-      await _cache.put('current_student', res);
+      // P13: Hive boxes are unencrypted on disk. Cache only the fields
+      // the Student model actually reads, never the raw `students` row —
+      // that would leak phone, parent_phone, parent_name, school_name,
+      // city, state, etc. into the local cache file (readable on rooted
+      // Android, restored from device backups, accessible to malicious
+      // apps with shared user_id, etc.). Student.toJson() is already
+      // the minimal projection.
+      await _cache.put('current_student', student.toJson());
       return ApiSuccess(student);
     } on AuthException catch (e) {
       return ApiFailure(e.message);
@@ -139,8 +153,11 @@ class AuthRepository {
         return const ApiFailure('Student profile not found.');
       }
 
-      await _cache.put('current_student', res);
-      return ApiSuccess(Student.fromJson(res));
+      final student = Student.fromJson(res);
+      // P13 — see signUp/signIn comments. Cache the model projection,
+      // not the raw DB row.
+      await _cache.put('current_student', student.toJson());
+      return ApiSuccess(student);
     } catch (e) {
       return ApiFailure('Failed to load profile: ${e.toString()}');
     }
