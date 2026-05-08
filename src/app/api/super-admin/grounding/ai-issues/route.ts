@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logOpsEvent } from '@/lib/ops-events';
+import { logAdminAuditByUserId } from '@/lib/admin-auth';
 
 /**
  * GET /api/super-admin/grounding/ai-issues
@@ -265,6 +266,14 @@ export async function POST(request: NextRequest) {
           has_notes: !!admin_notes,
         },
       });
+      void logAdminAuditByUserId(
+        auth.userId,
+        'ai_issue.resolved',
+        'ai_issue_report',
+        id,
+        { action, admin_resolution, has_notes: !!admin_notes },
+        request.headers.get('x-forwarded-for') ?? undefined,
+      );
 
       return NextResponse.json({
         success: true,

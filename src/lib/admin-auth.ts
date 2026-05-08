@@ -200,6 +200,49 @@ export async function logAdminAudit(
   }
 }
 
+/**
+ * Variant of logAdminAudit for routes gated by `authorizeRequest()` (RBAC
+ * permission check) rather than `authorizeAdmin()` (x-admin-secret gate).
+ *
+ * `authorizeRequest` returns only userId — admin name/email/level live in
+ * admin_users and can be joined at read time. This helper writes the same
+ * admin_audit_log row but skips the convenience-copy enrichment.
+ */
+export async function logAdminAuditByUserId(
+  userId: string | null,
+  action: string,
+  entityType: string,
+  entityId: string,
+  details?: Record<string, unknown>,
+  ipAddress?: string,
+) {
+  try {
+    const { url, key } = getSupabaseConfig();
+    if (!url || !key) return;
+    await fetch(`${url}/rest/v1/admin_audit_log`, {
+      method: 'POST',
+      headers: { 'apikey': key, 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+      body: JSON.stringify({
+        admin_id: userId,
+        action,
+        entity_type: entityType,
+        entity_id: entityId,
+        details: details ?? {},
+        ip_address: ipAddress || null,
+      }),
+    });
+  } catch (e) {
+    logger.error('admin_audit_log_failed', {
+      error: e instanceof Error ? e : new Error(String(e)),
+      route: 'admin-auth',
+      action,
+      entityType,
+      entityId,
+      adminId: userId,
+    });
+  }
+}
+
 export function supabaseAdminHeaders(prefer: string = 'count=exact') {
   const { key } = getSupabaseConfig();
   if (!key) throw new Error('Service role key not configured');

@@ -15,6 +15,7 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logOpsEvent } from '@/lib/ops-events';
 import { logger } from '@/lib/logger';
 import { validateCuratePayload } from '@/lib/super-admin/misconception-validation';
+import { logAdminAuditByUserId } from '@/lib/admin-auth';
 
 export const runtime = 'nodejs';
 
@@ -174,6 +175,19 @@ export async function POST(request: NextRequest) {
       curator_id: auth.userId,
     },
   }).catch(() => {});
+
+  void logAdminAuditByUserId(
+    auth.userId,
+    'misconception.curated',
+    'question_misconception',
+    inserted!.id,
+    {
+      question_id: validated.question_id,
+      distractor_index: validated.distractor_index,
+      misconception_code: validated.misconception_code,
+    },
+    request.headers.get('x-forwarded-for') ?? undefined,
+  );
 
   return NextResponse.json({ id: inserted!.id, ok: true }, { status: 201 });
 }
