@@ -11,14 +11,20 @@
  * Response:
  *   { success: true, data: { feedbackId: uuid, coachModeUsed: string|null } }
  *
- * Auth: `progress.view_own` permission (student-scoped). The underlying
- * RPC `record_message_feedback` re-checks ownership via auth.uid() so a
- * forged messageId belonging to another student returns an empty
- * resultset rather than silently writing.
+ * Auth: `progress.view_own` + requireStudentId. The route is the trust
+ * boundary: it fetches the message row server-side, compares
+ * `m.student_id` to the caller's `auth.studentId`, and rejects on mismatch
+ * BEFORE invoking the RPC. The RPC's own `auth.uid()` guard does NOT fire
+ * in this flow because we call it via supabaseAdmin (service-role JWT,
+ * `auth.uid()` is NULL inside the function) — so the route MUST do this
+ * check. NOT_FOUND is returned for both "message doesn't exist" and
+ * "message owned by another student" so the response can't be used to
+ * probe other students' message UUIDs.
  *
- * Phase 2: client wiring in /foxy/page.tsx will call this from the 👍/👎
- * buttons; resolveCoachMode will read recent feedback to switch mode for
- * students whose recent socratic turns get mostly 👎.
+ * Phase 2 (Phase 2 client wiring landed in #632): /foxy/page.tsx 👍/👎
+ * buttons call this with the persisted DB UUID; resolveCoachMode reads
+ * recent feedback to switch mode for students whose recent socratic turns
+ * get mostly 👎.
  */
 
 import { NextResponse } from 'next/server';
@@ -29,8 +35,19 @@ import { isValidUUID } from '@/lib/sanitize';
 
 export async function POST(request: Request) {
   try {
-    const auth = await authorizeRequest(request, 'progress.view_own');
+    const auth = await authorizeRequest(request, 'progress.view_own', {
+      requireStudentId: true,
+    });
     if (!auth.authorized) return auth.errorResponse!;
+    const callerStudentId = auth.studentId;
+    if (!callerStudentId) {
+      // Defensive: requireStudentId means RBAC should have rejected if absent.
+      // Returning 403 here keeps the contract explicit if the guard ever drifts.
+      return NextResponse.json(
+        { success: false, error: 'Forbidden', code: 'FORBIDDEN' },
+        { status: 403 },
+      );
+    }
 
     const body = (await request.json().catch(() => null)) as
       | { messageId?: unknown; isUp?: unknown; reason?: unknown }
@@ -73,6 +90,38 @@ export async function POST(request: Request) {
       if (trimmed.length > 0) {
         reason = trimmed.slice(0, 500);
       }
+    }
+
+    // ── Ownership check (P5/P13 trust boundary) ──────────────────────────
+    // The RPC's auth.uid() guard does NOT fire here because we invoke it via
+    // supabaseAdmin (service-role JWT). So the route must verify the caller
+    // owns the message before writing. We collapse "not found" and "wrong
+    // owner" to the same NOT_FOUND response so the endpoint can't be used
+    // to probe other students' message UUIDs.
+    const { data: msgRow, error: msgErr } = await supabaseAdmin
+      .from('foxy_chat_messages')
+      .select('id, student_id, role')
+      .eq('id', messageId)
+      .maybeSingle();
+    if (msgErr) {
+      logger.error('foxy.feedback: ownership lookup failed', {
+        error: msgErr.message,
+        messageId,
+      });
+      return NextResponse.json(
+        { success: false, error: 'Failed to record feedback', code: 'RPC_ERROR' },
+        { status: 500 },
+      );
+    }
+    if (
+      !msgRow ||
+      (msgRow.student_id as string) !== callerStudentId ||
+      (msgRow.role as string) !== 'assistant'
+    ) {
+      return NextResponse.json(
+        { success: false, error: 'Message not found or not eligible for feedback', code: 'NOT_FOUND' },
+        { status: 404 },
+      );
     }
 
     const { data, error } = await supabaseAdmin.rpc('record_message_feedback', {
