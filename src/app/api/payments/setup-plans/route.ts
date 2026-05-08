@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { createRazorpayPlan } from '@/lib/razorpay';
 import { logger } from '@/lib/logger';
+import { secureEqual } from '@/lib/secure-compare';
 
 /**
  * Setup Razorpay Plans — Admin only
@@ -17,8 +18,11 @@ export async function POST(request: NextRequest) {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const adminSecret = request.headers.get('x-admin-secret');
 
-    // Simple admin auth — only callable with the service role key as header
-    if (!adminSecret || adminSecret !== serviceKey) {
+    // Simple admin auth — only callable with the service role key as header.
+    // Constant-time compare — naive `!==` short-circuits at the first
+    // differing byte and leaks the service role key through response timing
+    // (same fix as PR #610 admin-secret + cron-secret gates).
+    if (!adminSecret || !serviceKey || !secureEqual(adminSecret, serviceKey)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
