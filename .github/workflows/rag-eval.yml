@@ -30,7 +30,7 @@ jobs:
     # Advisory until 5 consecutive runs at >=95% pass rate. Then flip to false.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-node@v6
         with:
