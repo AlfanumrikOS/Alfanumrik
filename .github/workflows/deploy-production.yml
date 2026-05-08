@@ -29,7 +29,7 @@ jobs:
     name: Lint, Type-check & Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-node@v6
         with:
@@ -57,7 +57,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: quality
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 10
 
@@ -139,7 +139,7 @@ jobs:
     needs: [quality, pre-deploy-checklist]
     environment: production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: supabase/setup-cli@v2
         with:
@@ -170,7 +170,7 @@ jobs:
       deploy-url: ${{ steps.deploy.outputs.deploy_url }}
       app-version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-node@v6
         with:
@@ -360,7 +360,7 @@ jobs:
     needs: [quality, pre-deploy-checklist, migrations]
     environment: production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 2
 
@@ -480,7 +480,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Create GitHub release tag
         uses: actions/github-script@v7
