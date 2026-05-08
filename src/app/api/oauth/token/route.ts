@@ -21,6 +21,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { createHash, randomBytes } from 'crypto';
 import { logger } from '@/lib/logger';
+import { secureEqual } from '@/lib/secure-compare';
 
 // OAuth2 error response per RFC 6749 Section 5.2
 function tokenError(
@@ -97,9 +98,13 @@ async function validateClient(
     return { valid: false, error: 'Application is not approved' };
   }
 
-  // Compare SHA-256 hash of provided secret against stored hash
+  // Compare SHA-256 hash of provided secret against stored hash. Constant-time
+  // compare — even though both sides are hashed (and reversing the hash via
+  // timing is impractical), naive `!==` short-circuits at the first differing
+  // byte and is bad practice for any secret-derived comparison.
   const providedHash = sha256(clientSecret);
-  if (providedHash !== app.client_secret_hash) {
+  const storedHash = typeof app.client_secret_hash === 'string' ? app.client_secret_hash : '';
+  if (!secureEqual(providedHash, storedHash)) {
     return { valid: false, error: 'Invalid client_secret' };
   }
 
