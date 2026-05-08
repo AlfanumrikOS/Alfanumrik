@@ -10,7 +10,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { authorizeAdmin } from '@/lib/admin-auth';
+import { authorizeAdmin, logAdminAudit } from '@/lib/admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import { isFeatureEnabled } from '@/lib/feature-flags';
@@ -182,6 +182,26 @@ export async function POST(request: NextRequest) {
       seats_purchased: seats,
       value_inr: valueInr,
     });
+
+    // B2B contracts are legal documents — every create/sign/cancel/renew
+    // must hit admin_audit_log so we have a defensible operator trail
+    // beyond PostHog analytics. Fire-and-forget; never block the response.
+    void logAdminAudit(
+      auth,
+      'contract.create',
+      'school_contract',
+      inserted.id,
+      {
+        school_id: schoolId,
+        contract_number: inserted.contract_number,
+        start_date: startDate,
+        end_date: endDate,
+        billing_cycle: cycle,
+        seats_purchased: seats,
+        value_inr: valueInr,
+      },
+      request.headers.get('x-forwarded-for') ?? undefined,
+    );
 
     return NextResponse.json({
       success: true,

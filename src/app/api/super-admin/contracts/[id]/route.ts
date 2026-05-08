@@ -15,7 +15,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { authorizeAdmin } from '@/lib/admin-auth';
+import { authorizeAdmin, logAdminAudit } from '@/lib/admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import { isFeatureEnabled } from '@/lib/feature-flags';
@@ -141,6 +141,20 @@ export async function PATCH(
       signed_pdf_attached: Boolean(pdfUrl),
     });
 
+    void logAdminAudit(
+      auth,
+      'contract.sign',
+      'school_contract',
+      id,
+      {
+        school_id: row.school_id,
+        contract_number: row.contract_number,
+        pdf_url: pdfUrl,
+        signed_by_school_user_id: signedBySchoolUserId,
+      },
+      request.headers.get('x-forwarded-for') ?? undefined,
+    );
+
     return NextResponse.json({ success: true, data: { id, status: 'active' } });
   }
 
@@ -166,6 +180,20 @@ export async function PATCH(
     prior_status: row.status,
     reason: reason ?? undefined,
   });
+
+  void logAdminAudit(
+    auth,
+    'contract.cancel',
+    'school_contract',
+    id,
+    {
+      school_id: row.school_id,
+      contract_number: row.contract_number,
+      prior_status: row.status,
+      reason,
+    },
+    request.headers.get('x-forwarded-for') ?? undefined,
+  );
 
   return NextResponse.json({ success: true, data: { id, status: 'cancelled' } });
 }
