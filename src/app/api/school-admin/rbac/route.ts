@@ -124,19 +124,26 @@ export async function POST(request: NextRequest) {
 
     // ── Grant Elevation ───────────────────────────────────────
     if (action === 'grant_elevation') {
-      const { userId, elevatedRoleId, reason, durationHours } = body;
-      if (!userId || !elevatedRoleId || !reason || !durationHours) {
+      // Body field is intentionally destructured to a different name —
+      // the outer `userId` (school admin / granter) must not be shadowed.
+      // Pre-fix this code shadowed userId, causing validateDelegation,
+      // grantElevation.grantedBy, and logAudit's actor to all point at
+      // the TARGET user instead of the granter — breaking the compliance
+      // trail and letting authority be checked against the wrong user.
+      const { userId: targetUserId, elevatedRoleId, reason, durationHours } = body;
+      if (!targetUserId || !elevatedRoleId || !reason || !durationHours) {
         return NextResponse.json(
           { success: false, error: 'userId, elevatedRoleId, reason, and durationHours are required' },
           { status: 400 },
         );
       }
 
-      // Validate delegation authority
+      // Validate delegation authority — granter is the school admin, not target.
       const validation = await validateDelegation({
         granterId: userId,
         action: 'elevate',
         schoolId: schoolId,
+        targetUserId,
         targetRoleId: elevatedRoleId,
         durationHours,
         reason,
@@ -155,7 +162,7 @@ export async function POST(request: NextRequest) {
           schoolId: schoolId,
           requestedBy: userId,
           action: 'elevate',
-          targetUserId: userId,
+          targetUserId,
           targetRoleId: elevatedRoleId,
           payload: { reason, durationHours },
         });
@@ -175,7 +182,7 @@ export async function POST(request: NextRequest) {
 
       // Grant elevation directly
       const result = await grantElevation({
-        userId,
+        userId: targetUserId,
         elevatedRoleId,
         grantedBy: userId,
         reason,
@@ -191,7 +198,7 @@ export async function POST(request: NextRequest) {
         action: 'grant_elevation',
         resourceType: 'role_elevation',
         resourceId: result.elevationId || '',
-        details: { userId, roleId: elevatedRoleId, schoolId: schoolId },
+        details: { targetUserId, roleId: elevatedRoleId, schoolId: schoolId },
         status: 'success',
       });
 
