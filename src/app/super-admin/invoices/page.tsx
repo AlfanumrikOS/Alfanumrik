@@ -2,10 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
-import StatCard from '../_components/StatCard';
-import StatusBadge from '../_components/StatusBadge';
-import DataTable, { Column } from '../_components/DataTable';
-import { colors, S } from '../_components/admin-styles';
+import { StatCard, StatusBadge, DataTable, type Column } from '@/components/admin-ui';
 
 /* ─────────────────────────────────────────────────────────────
    TYPES
@@ -30,6 +27,21 @@ interface School {
   id: string;
   name: string;
 }
+
+// Hex literal palette (matches deprecated admin-styles.ts colors).
+const C = {
+  bg: '#FFFFFF',
+  text1: '#111827',
+  text2: '#6B7280',
+  text3: '#9CA3AF',
+  border: '#E5E7EB',
+  accent: '#2563EB',
+  success: '#16A34A',
+  successLight: '#F0FDF4',
+  danger: '#DC2626',
+  dangerLight: '#FEF2F2',
+  warning: '#D97706',
+};
 
 /* ─────────────────────────────────────────────────────────────
    STATUS VARIANT HELPER
@@ -172,18 +184,22 @@ function InvoicesContent() {
     ? invoices.filter(i => i.school_name.toLowerCase().includes(searchSchool.trim().toLowerCase()))
     : invoices;
 
+  const filterBtnBase = 'rounded-md border border-surface-3 bg-surface-1 px-3.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-surface-2';
+  const filterBtnActive = 'rounded-md border border-foreground bg-foreground px-3.5 py-1.5 text-xs font-medium text-surface-1';
+  const actionBtnBase = 'rounded-md border bg-transparent px-2.5 py-1 text-xs font-medium hover:bg-surface-2';
+
   /* ── Table columns ── */
   const columns: Column<Invoice>[] = [
     {
       key: 'school_name',
       label: 'School',
-      render: (row) => <strong style={{ color: colors.text1 }}>{row.school_name}</strong>,
+      render: (row) => <strong className="text-foreground">{row.school_name}</strong>,
     },
     {
       key: 'period_start',
       label: 'Period',
       render: (row) => (
-        <span style={{ fontSize: 12, color: colors.text2 }}>
+        <span className="text-xs text-muted-foreground">
           {formatPeriod(row.period_start, row.period_end)}
         </span>
       ),
@@ -197,7 +213,7 @@ function InvoicesContent() {
       key: 'amount_inr',
       label: 'Amount',
       render: (row) => (
-        <span style={{ fontWeight: 600, color: colors.text1 }}>
+        <span className="font-semibold text-foreground">
           {Number(row.amount_inr).toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 })}
         </span>
       ),
@@ -211,7 +227,7 @@ function InvoicesContent() {
       key: 'created_at',
       label: 'Created',
       render: (row) => (
-        <span style={{ fontSize: 12, color: colors.text2 }}>
+        <span className="text-xs text-muted-foreground">
           {new Date(row.created_at).toLocaleDateString()}
         </span>
       ),
@@ -221,12 +237,13 @@ function InvoicesContent() {
       label: 'Actions',
       sortable: false,
       render: (row) => (
-        <div style={{ display: 'flex', gap: 4 }} onClick={e => e.stopPropagation()}>
+        <div className="flex gap-1" onClick={e => e.stopPropagation()}>
           {row.status === 'generated' && (
             <button
               onClick={() => updateStatus(row.id, 'sent')}
               disabled={actionLoading === row.id}
-              style={{ ...S.actionBtn, color: colors.accent, borderColor: colors.accent }}
+              className={`${actionBtnBase} border-info text-info`}
+              style={{ borderColor: C.accent, color: C.accent }}
             >
               {actionLoading === row.id ? '...' : 'Mark Sent'}
             </button>
@@ -235,7 +252,7 @@ function InvoicesContent() {
             <button
               onClick={() => updateStatus(row.id, 'paid')}
               disabled={actionLoading === row.id}
-              style={{ ...S.actionBtn, color: colors.success, borderColor: colors.success }}
+              className={`${actionBtnBase} border-success text-success`}
             >
               {actionLoading === row.id ? '...' : 'Mark Paid'}
             </button>
@@ -244,7 +261,7 @@ function InvoicesContent() {
             <button
               onClick={() => updateStatus(row.id, 'overdue')}
               disabled={actionLoading === row.id}
-              style={{ ...S.actionBtn, color: colors.danger, borderColor: colors.danger }}
+              className={`${actionBtnBase} border-danger text-danger`}
             >
               {actionLoading === row.id ? '...' : 'Mark Overdue'}
             </button>
@@ -254,7 +271,7 @@ function InvoicesContent() {
               href={row.pdf_url}
               target="_blank"
               rel="noopener noreferrer"
-              style={{ ...S.actionBtn, textDecoration: 'none', color: colors.text2 }}
+              className={`${actionBtnBase} border-surface-3 text-muted-foreground no-underline`}
             >
               PDF
             </a>
@@ -267,40 +284,40 @@ function InvoicesContent() {
   return (
     <div>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+      <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 style={S.h1}>Invoice Management</h1>
-          <p style={{ fontSize: 13, color: colors.text3, margin: 0 }}>Generate, track, and manage school invoices</p>
+          <h1 className="text-xl font-bold tracking-tight text-foreground">Invoice Management</h1>
+          <p className="m-0 text-[13px] text-muted-foreground">Generate, track, and manage school invoices</p>
         </div>
         <button
           onClick={() => { setShowModal(true); fetchSchools(); }}
-          style={S.primaryBtn}
+          className="rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-surface-1 hover:opacity-90"
         >
           + Generate Invoice
         </button>
       </div>
 
       {/* Stat Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
-        <StatCard label="Total Invoices" value={totalInvoices} accentColor={colors.accent} />
-        <StatCard label="Pending" value={pending} accentColor={colors.warning} />
-        <StatCard label="Paid This Month" value={paidThisMonth} accentColor={colors.success} />
+      <div className="mb-6 grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
+        <StatCard label="Total Invoices" value={totalInvoices} accentColor={C.accent} />
+        <StatCard label="Pending" value={pending} accentColor={C.warning} />
+        <StatCard label="Paid This Month" value={paidThisMonth} accentColor={C.success} />
         <StatCard
           label="Total Revenue"
           value={`${totalRevenue.toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 })}`}
-          accentColor={colors.success}
+          accentColor={C.success}
           icon="₹"
         />
       </div>
 
       {/* Filter bar */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{ display: 'flex', gap: 6 }}>
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="flex gap-1.5">
           {['', 'generated', 'sent', 'paid', 'overdue'].map(s => (
             <button
               key={s}
               onClick={() => { setFilterStatus(s); setPage(1); }}
-              style={{ ...S.filterBtn, ...(filterStatus === s ? S.filterActive : {}) }}
+              className={filterStatus === s ? filterBtnActive : filterBtnBase}
             >
               {s || 'All'}
             </button>
@@ -310,7 +327,7 @@ function InvoicesContent() {
           value={searchSchool}
           onChange={e => setSearchSchool(e.target.value)}
           placeholder="Search school..."
-          style={{ ...S.searchInput, marginLeft: 'auto' }}
+          className="ml-auto w-56 rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
         />
       </div>
 
@@ -324,43 +341,37 @@ function InvoicesContent() {
       />
 
       {/* Pagination */}
-      <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'center', alignItems: 'center' }}>
-        <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} style={S.pageBtn}>Prev</button>
-        <span style={{ fontSize: 12, color: colors.text3, padding: '6px 12px' }}>
+      <div className="mt-3.5 flex items-center justify-center gap-2">
+        <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className={filterBtnBase}>Prev</button>
+        <span className="px-3 py-1.5 text-xs text-muted-foreground">
           Page {page} of {Math.max(1, Math.ceil(total / 25))}
         </span>
-        <button disabled={invoices.length < 25} onClick={() => setPage(p => p + 1)} style={S.pageBtn}>Next</button>
+        <button disabled={invoices.length < 25} onClick={() => setPage(p => p + 1)} className={filterBtnBase}>Next</button>
       </div>
 
       {/* Generate Invoice Modal */}
       {showModal && (
         <div
-          style={{
-            position: 'fixed', inset: 0, zIndex: 1000,
-            background: 'rgba(0,0,0,0.4)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
+          className="fixed inset-0 z-[1000] flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.4)' }}
           onClick={() => { setShowModal(false); setGenMsg(null); }}
         >
           <div
-            style={{
-              background: colors.bg, borderRadius: 12, padding: 28, width: 420, maxWidth: '90vw',
-              border: `1px solid ${colors.border}`,
-              boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
-            }}
+            className="w-[420px] max-w-[90vw] rounded-xl border border-surface-3 bg-surface-1 p-7"
+            style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}
             onClick={e => e.stopPropagation()}
           >
-            <h2 style={{ ...S.h1, marginBottom: 16 }}>Generate Invoice</h2>
+            <h2 className="mb-4 text-xl font-bold tracking-tight text-foreground">Generate Invoice</h2>
 
             {/* School selector */}
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 11, color: colors.text3, fontWeight: 600, display: 'block', marginBottom: 4 }}>
+            <div className="mb-3.5">
+              <label className="mb-1 block text-[11px] font-semibold text-muted-foreground">
                 School
               </label>
               <select
                 value={genSchoolId}
                 onChange={e => setGenSchoolId(e.target.value)}
-                style={{ ...S.select, width: '100%' }}
+                className="w-full cursor-pointer rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm"
               >
                 <option value="">Select a school...</option>
                 {schools.map(s => (
@@ -370,55 +381,58 @@ function InvoicesContent() {
             </div>
 
             {/* Period start */}
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 11, color: colors.text3, fontWeight: 600, display: 'block', marginBottom: 4 }}>
+            <div className="mb-3.5">
+              <label className="mb-1 block text-[11px] font-semibold text-muted-foreground">
                 Period Start
               </label>
               <input
                 type="date"
                 value={genPeriodStart}
                 onChange={e => setGenPeriodStart(e.target.value)}
-                style={{ ...S.searchInput, width: '100%' }}
+                className="w-full rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
 
             {/* Period end */}
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 11, color: colors.text3, fontWeight: 600, display: 'block', marginBottom: 4 }}>
+            <div className="mb-3.5">
+              <label className="mb-1 block text-[11px] font-semibold text-muted-foreground">
                 Period End
               </label>
               <input
                 type="date"
                 value={genPeriodEnd}
                 onChange={e => setGenPeriodEnd(e.target.value)}
-                style={{ ...S.searchInput, width: '100%' }}
+                className="w-full rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
 
             {/* Message */}
             {genMsg && (
-              <div style={{
-                marginBottom: 14, padding: '8px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600,
-                background: genMsg.ok ? colors.successLight : colors.dangerLight,
-                color: genMsg.ok ? colors.success : colors.danger,
-                border: `1px solid ${genMsg.ok ? colors.success : colors.danger}30`,
-              }}>
+              <div
+                className="mb-3.5 rounded-md px-3 py-2 text-xs font-semibold"
+                style={{
+                  background: genMsg.ok ? C.successLight : C.dangerLight,
+                  color: genMsg.ok ? C.success : C.danger,
+                  border: `1px solid ${genMsg.ok ? C.success : C.danger}30`,
+                }}
+              >
                 {genMsg.ok ? '+ ' : '! '}{genMsg.text}
               </div>
             )}
 
             {/* Actions */}
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <div className="flex justify-end gap-2">
               <button
                 onClick={() => { setShowModal(false); setGenMsg(null); }}
-                style={S.secondaryBtn}
+                className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2"
               >
                 Cancel
               </button>
               <button
                 onClick={handleGenerate}
                 disabled={genLoading}
-                style={{ ...S.primaryBtn, opacity: genLoading ? 0.6 : 1 }}
+                className="rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-surface-1 hover:opacity-90"
+                style={{ opacity: genLoading ? 0.6 : 1 }}
               >
                 {genLoading ? 'Generating...' : 'Generate'}
               </button>

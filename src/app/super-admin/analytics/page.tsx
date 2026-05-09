@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
 import { StatCard } from '@/components/admin-ui';
 import { BarChart, type ChartSeries } from '@/components/admin-ui/charts';
-import { colors, S } from '../_components/admin-styles';
 
 interface StatsData {
   totals: { students: number };
@@ -33,6 +32,16 @@ interface V2Data {
   }[];
 }
 
+// Hex literal palette (matches deprecated admin-styles.ts colors).
+const C = {
+  text1: '#111827',
+  text2: '#6B7280',
+  text3: '#9CA3AF',
+  accent: '#2563EB',
+  success: '#16A34A',
+  warning: '#D97706',
+};
+
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const days = Math.floor(diff / 86400000);
@@ -42,10 +51,10 @@ function timeAgo(dateStr: string): string {
 }
 
 function planColor(plan: string): string {
-  if (plan === 'unlimited') return colors.warning;
+  if (plan === 'unlimited') return C.warning;
   if (plan === 'pro') return '#7C3AED';
-  if (plan === 'starter') return colors.accent;
-  return colors.text3;
+  if (plan === 'starter') return C.accent;
+  return C.text3;
 }
 
 function AnalyticsContent() {
@@ -68,7 +77,7 @@ function AnalyticsContent() {
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   if (loading && !v2) {
-    return <div style={{ color: colors.text3, padding: 40, textAlign: 'center' }}>Loading analytics...</div>;
+    return <div className="p-10 text-center text-muted-foreground">Loading analytics...</div>;
   }
 
   const features = [
@@ -78,38 +87,41 @@ function AnalyticsContent() {
     { label: 'Study Plans', icon: '📋', key: 'study_plans' as const },
   ];
 
+  const thCls = 'border-b-2 border-surface-3 bg-surface-2 px-3.5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground';
+  const tdCls = 'border-b border-surface-2 px-3.5 py-2.5 text-[13px] text-foreground';
+
   return (
     <div>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+      <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 style={S.h1}>Analytics Dashboard</h1>
-          <p style={{ fontSize: 13, color: colors.text3, margin: 0 }}>
+          <h1 className="text-xl font-bold tracking-tight text-foreground">Analytics Dashboard</h1>
+          <p className="m-0 text-[13px] text-muted-foreground">
             Student activity, feature usage, signups, and subscriptions
           </p>
         </div>
-        <button onClick={fetchAll} style={S.secondaryBtn}>&#8635; Refresh</button>
+        <button onClick={fetchAll} className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2">&#8635; Refresh</button>
       </div>
 
       {/* Row 1: KPI Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 24 }}>
+      <div className="mb-6 grid grid-cols-4 gap-3">
         <StatCard
           label="Total Students"
           value={stats?.totals?.students ?? 0}
           icon="👥"
-          accentColor={colors.accent}
+          accentColor={C.accent}
         />
         <StatCard
           label="Active Today"
           value={v2?.active_today ?? 0}
           icon="🟢"
-          accentColor={colors.success}
+          accentColor={C.success}
         />
         <StatCard
           label="Active This Week"
           value={v2?.active_week ?? 0}
           icon="📅"
-          accentColor={colors.warning}
+          accentColor={C.warning}
         />
         <StatCard
           label="Total Foxy Sessions"
@@ -121,9 +133,9 @@ function AnalyticsContent() {
 
       {/* Row 2: Grade Engagement Bar Chart */}
       {v2 && v2.grade_distribution.length > 0 && (
-        <div style={{ marginBottom: 24 }}>
-          <h2 style={S.h2}>Student Engagement by Grade (Last 7 Days)</h2>
-          <div style={S.card}>
+        <div className="mb-6">
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Student Engagement by Grade (Last 7 Days)</h2>
+          <div className="rounded-lg border border-surface-3 bg-surface-1 p-4">
             {(() => {
               const series: ChartSeries[] = [
                 {
@@ -142,16 +154,16 @@ function AnalyticsContent() {
 
       {/* Row 3: Feature Usage Table */}
       {v2 && (
-        <div style={{ marginBottom: 24 }}>
-          <h2 style={S.h2}>Feature Usage</h2>
-          <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden' }}>
-            <table style={S.table}>
+        <div className="mb-6">
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Feature Usage</h2>
+          <div className="overflow-hidden rounded-lg border border-surface-3">
+            <table className="w-full border-collapse text-[13px]">
               <thead>
                 <tr>
-                  <th style={S.th}>Feature</th>
-                  <th style={{ ...S.th, textAlign: 'right' as const }}>Today</th>
-                  <th style={{ ...S.th, textAlign: 'right' as const }}>This Week</th>
-                  <th style={{ ...S.th, textAlign: 'right' as const }}>All Time</th>
+                  <th className={thCls}>Feature</th>
+                  <th className={`${thCls} text-right`}>Today</th>
+                  <th className={`${thCls} text-right`}>This Week</th>
+                  <th className={`${thCls} text-right`}>All Time</th>
                 </tr>
               </thead>
               <tbody>
@@ -159,17 +171,17 @@ function AnalyticsContent() {
                   const usage = v2.feature_usage[f.key];
                   return (
                     <tr key={f.key}>
-                      <td style={S.td}>
-                        <span style={{ marginRight: 8 }}>{f.icon}</span>
+                      <td className={tdCls}>
+                        <span className="mr-2">{f.icon}</span>
                         <strong>{f.label}</strong>
                       </td>
-                      <td style={{ ...S.td, textAlign: 'right' as const, fontWeight: 600 }}>
+                      <td className={`${tdCls} text-right font-semibold`}>
                         {(usage?.today ?? 0).toLocaleString()}
                       </td>
-                      <td style={{ ...S.td, textAlign: 'right' as const }}>
+                      <td className={`${tdCls} text-right`}>
                         {(usage?.week ?? 0).toLocaleString()}
                       </td>
-                      <td style={{ ...S.td, textAlign: 'right' as const, color: colors.text2 }}>
+                      <td className={`${tdCls} text-right text-muted-foreground`}>
                         {(usage?.total ?? 0).toLocaleString()}
                       </td>
                     </tr>
@@ -183,45 +195,41 @@ function AnalyticsContent() {
 
       {/* Row 4: Recent Signups */}
       {v2 && v2.recent_signups.length > 0 && (
-        <div style={{ marginBottom: 24 }}>
-          <h2 style={S.h2}>Recent Signups (Last 10)</h2>
-          <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden' }}>
-            <table style={S.table}>
+        <div className="mb-6">
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Recent Signups (Last 10)</h2>
+          <div className="overflow-hidden rounded-lg border border-surface-3">
+            <table className="w-full border-collapse text-[13px]">
               <thead>
                 <tr>
-                  <th style={S.th}>Name</th>
-                  <th style={S.th}>Grade</th>
-                  <th style={S.th}>Board</th>
-                  <th style={S.th}>Signed Up</th>
-                  <th style={S.th}>Plan</th>
-                  <th style={{ ...S.th, textAlign: 'right' as const }}>Quizzes</th>
-                  <th style={{ ...S.th, textAlign: 'right' as const }}>Foxy</th>
+                  <th className={thCls}>Name</th>
+                  <th className={thCls}>Grade</th>
+                  <th className={thCls}>Board</th>
+                  <th className={thCls}>Signed Up</th>
+                  <th className={thCls}>Plan</th>
+                  <th className={`${thCls} text-right`}>Quizzes</th>
+                  <th className={`${thCls} text-right`}>Foxy</th>
                 </tr>
               </thead>
               <tbody>
                 {v2.recent_signups.map(s => (
                   <tr key={s.id}>
-                    <td style={S.td}><strong>{s.name || 'Unknown'}</strong></td>
-                    <td style={S.td}>{s.grade || '—'}</td>
-                    <td style={S.td}>{s.board || '—'}</td>
-                    <td style={{ ...S.td, color: colors.text2 }}>{timeAgo(s.created_at)}</td>
-                    <td style={S.td}>
-                      <span style={{
-                        display: 'inline-block',
-                        padding: '2px 8px',
-                        borderRadius: 4,
-                        fontSize: 11,
-                        fontWeight: 700,
-                        textTransform: 'uppercase' as const,
-                        letterSpacing: 0.5,
-                        color: planColor(s.subscription_plan || 'free'),
-                        border: `1px solid ${planColor(s.subscription_plan || 'free')}`,
-                      }}>
+                    <td className={tdCls}><strong>{s.name || 'Unknown'}</strong></td>
+                    <td className={tdCls}>{s.grade || '—'}</td>
+                    <td className={tdCls}>{s.board || '—'}</td>
+                    <td className={`${tdCls} text-muted-foreground`}>{timeAgo(s.created_at)}</td>
+                    <td className={tdCls}>
+                      <span
+                        className="inline-block rounded px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide"
+                        style={{
+                          color: planColor(s.subscription_plan || 'free'),
+                          border: `1px solid ${planColor(s.subscription_plan || 'free')}`,
+                        }}
+                      >
                         {s.subscription_plan || 'free'}
                       </span>
                     </td>
-                    <td style={{ ...S.td, textAlign: 'right' as const }}>{s.quiz_count}</td>
-                    <td style={{ ...S.td, textAlign: 'right' as const }}>{s.foxy_count}</td>
+                    <td className={`${tdCls} text-right`}>{s.quiz_count}</td>
+                    <td className={`${tdCls} text-right`}>{s.foxy_count}</td>
                   </tr>
                 ))}
               </tbody>
@@ -232,33 +240,33 @@ function AnalyticsContent() {
 
       {/* Row 5: Top Active Students */}
       {v2 && v2.top_active.length > 0 && (
-        <div style={{ marginBottom: 24 }}>
-          <h2 style={S.h2}>Top Active Students (Last 7 Days)</h2>
-          <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden' }}>
-            <table style={S.table}>
+        <div className="mb-6">
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Top Active Students (Last 7 Days)</h2>
+          <div className="overflow-hidden rounded-lg border border-surface-3">
+            <table className="w-full border-collapse text-[13px]">
               <thead>
                 <tr>
-                  <th style={S.th}>Rank</th>
-                  <th style={S.th}>Name</th>
-                  <th style={S.th}>Grade</th>
-                  <th style={{ ...S.th, textAlign: 'right' as const }}>Foxy Sessions</th>
-                  <th style={{ ...S.th, textAlign: 'right' as const }}>Quizzes</th>
-                  <th style={{ ...S.th, textAlign: 'right' as const }}>Total</th>
+                  <th className={thCls}>Rank</th>
+                  <th className={thCls}>Name</th>
+                  <th className={thCls}>Grade</th>
+                  <th className={`${thCls} text-right`}>Foxy Sessions</th>
+                  <th className={`${thCls} text-right`}>Quizzes</th>
+                  <th className={`${thCls} text-right`}>Total</th>
                 </tr>
               </thead>
               <tbody>
                 {v2.top_active.map((s, i) => (
                   <tr key={s.id}>
-                    <td style={S.td}>
-                      <span style={{ fontWeight: 700, color: i < 3 ? colors.warning : colors.text2 }}>
+                    <td className={tdCls}>
+                      <span className={`font-bold ${i < 3 ? 'text-warning' : 'text-muted-foreground'}`}>
                         #{i + 1}
                       </span>
                     </td>
-                    <td style={S.td}><strong>{s.name}</strong></td>
-                    <td style={S.td}>{s.grade}</td>
-                    <td style={{ ...S.td, textAlign: 'right' as const }}>{s.foxy_sessions}</td>
-                    <td style={{ ...S.td, textAlign: 'right' as const }}>{s.quiz_sessions}</td>
-                    <td style={{ ...S.td, textAlign: 'right' as const, fontWeight: 700, color: colors.text1 }}>
+                    <td className={tdCls}><strong>{s.name}</strong></td>
+                    <td className={tdCls}>{s.grade}</td>
+                    <td className={`${tdCls} text-right`}>{s.foxy_sessions}</td>
+                    <td className={`${tdCls} text-right`}>{s.quiz_sessions}</td>
+                    <td className={`${tdCls} text-right font-bold text-foreground`}>
                       {s.foxy_sessions + s.quiz_sessions}
                     </td>
                   </tr>
@@ -271,20 +279,20 @@ function AnalyticsContent() {
 
       {/* Row 6: Subscription Distribution */}
       {v2 && (
-        <div style={{ marginBottom: 24 }}>
-          <h2 style={S.h2}>Subscription Distribution</h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+        <div className="mb-6">
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Subscription Distribution</h2>
+          <div className="grid grid-cols-4 gap-3">
             <StatCard
               label="Free"
               value={v2.subscription_distribution?.free ?? 0}
               icon="○"
-              accentColor={colors.text3}
+              accentColor={C.text3}
             />
             <StatCard
               label="Starter"
               value={v2.subscription_distribution?.starter ?? 0}
               icon="◈"
-              accentColor={colors.accent}
+              accentColor={C.accent}
             />
             <StatCard
               label="Pro"
@@ -296,7 +304,7 @@ function AnalyticsContent() {
               label="Unlimited"
               value={v2.subscription_distribution?.unlimited ?? 0}
               icon="★"
-              accentColor={colors.warning}
+              accentColor={C.warning}
             />
           </div>
         </div>
