@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import AdminShell, { useAdmin } from './_components/AdminShell';
-import { colors, S } from './_components/admin-styles';
 import {
   SystemStatusBar,
   QuickOperations,
@@ -88,7 +87,7 @@ function ControlRoom() {
   };
 
   if (loading && !stats) {
-    return <div style={{ color: colors.text3, padding: 40, textAlign: 'center' }}>Loading control room...</div>;
+    return <div style={{ color: '#9CA3AF', padding: 40, textAlign: 'center' }}>Loading control room...</div>;
   }
 
   return (
@@ -96,12 +95,12 @@ function ControlRoom() {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div>
-          <h1 style={{ ...S.h1, fontSize: 18 }}>Control Room</h1>
-          <p style={{ fontSize: 12, color: colors.text3, margin: 0 }}>Platform operations, system status, and quick interventions</p>
+          <h1 className="font-bold text-foreground" style={{ fontSize: 18 }}>Control Room</h1>
+          <p style={{ fontSize: 12, color: '#9CA3AF', margin: 0 }}>Platform operations, system status, and quick interventions</p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {deployInfo && <code style={{ fontSize: 11, color: colors.text3, background: colors.surface, padding: '4px 8px', borderRadius: 4 }}>v{deployInfo.app_version}</code>}
-          <button onClick={fetchAll} style={S.secondaryBtn}>Refresh All</button>
+          {deployInfo && <code style={{ fontSize: 11, color: '#9CA3AF', background: '#F9FAFB', padding: '4px 8px', borderRadius: 4 }}>v{deployInfo.app_version}</code>}
+          <button onClick={fetchAll} className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2">Refresh All</button>
         </div>
       </div>
 

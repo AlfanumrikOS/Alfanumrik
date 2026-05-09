@@ -2,11 +2,13 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
-import StatCard from '../_components/StatCard';
-import StatusBadge from '../_components/StatusBadge';
-import DataTable, { Column } from '../_components/DataTable';
-import DetailDrawer from '../_components/DetailDrawer';
-import { colors, S } from '../_components/admin-styles';
+import {
+  StatCard,
+  StatusBadge,
+  DataTable,
+  DetailDrawer,
+  type Column,
+} from '@/components/admin-ui';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -162,10 +164,10 @@ const AGENTS = ['architect', 'frontend', 'backend', 'assessment', 'ai-engineer',
 const ISSUE_STATUSES = ['open', 'investigating', 'recommendation_pending', 'in_progress', 'resolved', 'wont_fix'] as const;
 
 const SEVERITY_COLORS: Record<string, string> = {
-  critical: colors.danger,
-  high: colors.warning,
-  medium: colors.accent,
-  low: colors.text3,
+  critical: '#DC2626',
+  high: '#D97706',
+  medium: '#2563EB',
+  low: '#9CA3AF',
 };
 
 const MODES = [
@@ -617,7 +619,7 @@ function CommandCenterContent() {
     {
       key: 'staging_url', label: 'Staging URL',
       render: (r) => r.staging_url ? (
-        <a href={r.staging_url} target="_blank" rel="noopener noreferrer" style={{ color: colors.accent, textDecoration: 'none', fontSize: 12 }}>
+        <a href={r.staging_url} target="_blank" rel="noopener noreferrer" style={{ color: '#2563EB', textDecoration: 'none', fontSize: 12 }}>
           View
         </a>
       ) : '\u2014',
@@ -627,7 +629,12 @@ function CommandCenterContent() {
       render: (r) => {
         const busy = pipelineActionLoading[r.id];
         const btnStyle = (disabled: boolean): React.CSSProperties => ({
-          ...S.secondaryBtn,
+          borderRadius: 6,
+          border: '1px solid #E5E7EB',
+          background: '#FFFFFF',
+          color: '#111827',
+          fontWeight: 500,
+          cursor: 'pointer',
           fontSize: 11,
           padding: '4px 10px',
           opacity: disabled ? 0.5 : 1,
@@ -646,12 +653,12 @@ function CommandCenterContent() {
               </button>
             )}
             {r.status === 'approved' && (
-              <button style={{ ...btnStyle(!!busy), background: colors.success, color: '#fff', borderColor: colors.success }} onClick={() => handleDeploy(r.id)}>
+              <button style={{ ...btnStyle(!!busy), background: '#16A34A', color: '#fff', borderColor: '#16A34A' }} onClick={() => handleDeploy(r.id)}>
                 {busy === 'deploy' ? 'Deploying...' : 'Deploy'}
               </button>
             )}
             {r.status === 'deployed' && (
-              <button style={{ ...btnStyle(!!busy), background: colors.danger, color: '#fff', borderColor: colors.danger }} onClick={() => handleRollback(r.id)}>
+              <button style={{ ...btnStyle(!!busy), background: '#DC2626', color: '#fff', borderColor: '#DC2626' }} onClick={() => handleRollback(r.id)}>
                 {busy === 'rollback' ? 'Rolling back...' : 'Rollback'}
               </button>
             )}
@@ -667,7 +674,7 @@ function CommandCenterContent() {
     if (!dashboard) return null;
     const sev = dashboard.issues_by_severity;
     const total = (Object.values(sev) as number[]).reduce((a: number, b: number) => a + b, 0);
-    if (total === 0) return <div style={{ color: colors.text3, fontSize: 13 }}>No issues detected</div>;
+    if (total === 0) return <div style={{ color: '#9CA3AF', fontSize: 13 }}>No issues detected</div>;
     const order = ['critical', 'high', 'medium', 'low'];
     return (
       <div>
@@ -694,7 +701,7 @@ function CommandCenterContent() {
         </div>
         <div style={{ display: 'flex', gap: 16 }}>
           {order.map(level => (
-            <div key={level} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: colors.text2 }}>
+            <div key={level} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#6B7280' }}>
               <span style={{ width: 8, height: 8, borderRadius: '50%', background: SEVERITY_COLORS[level], display: 'inline-block' }} />
               {level}: {sev[level] || 0}
             </div>
@@ -716,11 +723,11 @@ function CommandCenterContent() {
           const pct = (val / maxVal) * 100;
           return (
             <div key={level} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 80, fontSize: 12, color: colors.text2, textAlign: 'right' }}>{level}</div>
-              <div style={{ flex: 1, height: 20, background: colors.surface, borderRadius: 4, overflow: 'hidden' }}>
-                <div style={{ width: `${pct}%`, height: '100%', background: colors.accent, borderRadius: 4, minWidth: val > 0 ? 4 : 0 }} />
+              <div style={{ width: 80, fontSize: 12, color: '#6B7280', textAlign: 'right' }}>{level}</div>
+              <div style={{ flex: 1, height: 20, background: '#F9FAFB', borderRadius: 4, overflow: 'hidden' }}>
+                <div style={{ width: `${pct}%`, height: '100%', background: '#2563EB', borderRadius: 4, minWidth: val > 0 ? 4 : 0 }} />
               </div>
-              <div style={{ width: 40, fontSize: 12, color: colors.text1, fontWeight: 600 }}>{val}</div>
+              <div style={{ width: 40, fontSize: 12, color: '#111827', fontWeight: 600 }}>{val}</div>
             </div>
           );
         })}
@@ -735,18 +742,18 @@ function CommandCenterContent() {
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div>
-            <label style={{ fontSize: 11, color: colors.text2, fontWeight: 600, display: 'block', marginBottom: 4 }}>Title</label>
+            <label style={{ fontSize: 11, color: '#6B7280', fontWeight: 600, display: 'block', marginBottom: 4 }}>Title</label>
             <input
-              style={{ ...S.searchInput, width: '100%' }}
+              className="w-full rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               value={createForm.title}
               onChange={e => setCreateForm(f => ({ ...f, title: e.target.value }))}
               placeholder="Issue title"
             />
           </div>
           <div>
-            <label style={{ fontSize: 11, color: colors.text2, fontWeight: 600, display: 'block', marginBottom: 4 }}>Description</label>
+            <label style={{ fontSize: 11, color: '#6B7280', fontWeight: 600, display: 'block', marginBottom: 4 }}>Description</label>
             <textarea
-              style={{ ...S.searchInput, width: '100%', minHeight: 100, resize: 'vertical' as const }}
+              className="w-full rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" style={{ minHeight: 100, resize: 'vertical' as const }}
               value={createForm.description}
               onChange={e => setCreateForm(f => ({ ...f, description: e.target.value }))}
               placeholder="Describe the issue..."
@@ -754,9 +761,9 @@ function CommandCenterContent() {
           </div>
           <div style={{ display: 'flex', gap: 12 }}>
             <div style={{ flex: 1 }}>
-              <label style={{ fontSize: 11, color: colors.text2, fontWeight: 600, display: 'block', marginBottom: 4 }}>Category</label>
+              <label style={{ fontSize: 11, color: '#6B7280', fontWeight: 600, display: 'block', marginBottom: 4 }}>Category</label>
               <select
-                style={{ ...S.select, width: '100%' }}
+                className="w-full rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm cursor-pointer"
                 value={createForm.category}
                 onChange={e => setCreateForm(f => ({ ...f, category: e.target.value }))}
               >
@@ -764,9 +771,9 @@ function CommandCenterContent() {
               </select>
             </div>
             <div style={{ flex: 1 }}>
-              <label style={{ fontSize: 11, color: colors.text2, fontWeight: 600, display: 'block', marginBottom: 4 }}>Severity</label>
+              <label style={{ fontSize: 11, color: '#6B7280', fontWeight: 600, display: 'block', marginBottom: 4 }}>Severity</label>
               <select
-                style={{ ...S.select, width: '100%' }}
+                className="w-full rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm cursor-pointer"
                 value={createForm.severity}
                 onChange={e => setCreateForm(f => ({ ...f, severity: e.target.value }))}
               >
@@ -775,9 +782,9 @@ function CommandCenterContent() {
             </div>
           </div>
           <div>
-            <label style={{ fontSize: 11, color: colors.text2, fontWeight: 600, display: 'block', marginBottom: 4 }}>Assigned Agent (optional)</label>
+            <label style={{ fontSize: 11, color: '#6B7280', fontWeight: 600, display: 'block', marginBottom: 4 }}>Assigned Agent (optional)</label>
             <select
-              style={{ ...S.select, width: '100%' }}
+              className="w-full rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm cursor-pointer"
               value={createForm.assigned_agent}
               onChange={e => setCreateForm(f => ({ ...f, assigned_agent: e.target.value }))}
             >
@@ -786,7 +793,7 @@ function CommandCenterContent() {
             </select>
           </div>
           <div style={{ marginTop: 8 }}>
-            <button style={S.primaryBtn} onClick={handleCreateIssue}>Create Issue</button>
+            <button className="rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-surface-1 hover:opacity-90" onClick={handleCreateIssue}>Create Issue</button>
           </div>
         </div>
       );
@@ -795,8 +802,8 @@ function CommandCenterContent() {
     if (drawerContent === 'issue-detail' && selectedIssue) {
       const issue = selectedIssue;
       const fieldStyle: React.CSSProperties = { marginBottom: 14 };
-      const labelStyle: React.CSSProperties = { fontSize: 11, color: colors.text3, fontWeight: 600, marginBottom: 3, textTransform: 'uppercase', letterSpacing: 0.8 };
-      const valStyle: React.CSSProperties = { fontSize: 13, color: colors.text1 };
+      const labelStyle: React.CSSProperties = { fontSize: 11, color: '#9CA3AF', fontWeight: 600, marginBottom: 3, textTransform: 'uppercase', letterSpacing: 0.8 };
+      const valStyle: React.CSSProperties = { fontSize: 13, color: '#111827' };
       return (
         <div>
           <div style={fieldStyle}>
@@ -839,13 +846,13 @@ function CommandCenterContent() {
               <div style={valStyle}>{issue.resolution_notes}</div>
             </div>
           )}
-          <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 14, marginTop: 14 }}>
+          <div style={{ borderTop: `1px solid ${'#E5E7EB'}`, paddingTop: 14, marginTop: 14 }}>
             <div style={labelStyle}>Change Status</div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
               {ISSUE_STATUSES.filter(s => s !== issue.status).map(s => (
                 <button
                   key={s}
-                  style={S.secondaryBtn}
+                  className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2"
                   onClick={() => handleUpdateIssueStatus(issue.id, s)}
                 >
                   {s.replace(/_/g, ' ')}
@@ -860,8 +867,8 @@ function CommandCenterContent() {
     if (drawerContent === 'rec-detail' && selectedRec) {
       const rec = selectedRec;
       const fieldStyle: React.CSSProperties = { marginBottom: 14 };
-      const labelStyle: React.CSSProperties = { fontSize: 11, color: colors.text3, fontWeight: 600, marginBottom: 3, textTransform: 'uppercase', letterSpacing: 0.8 };
-      const valStyle: React.CSSProperties = { fontSize: 13, color: colors.text1 };
+      const labelStyle: React.CSSProperties = { fontSize: 11, color: '#9CA3AF', fontWeight: 600, marginBottom: 3, textTransform: 'uppercase', letterSpacing: 0.8 };
+      const valStyle: React.CSSProperties = { fontSize: 13, color: '#111827' };
       return (
         <div>
           <div style={fieldStyle}>
@@ -899,15 +906,15 @@ function CommandCenterContent() {
             </div>
           </div>
           {rec.status === 'proposed' && (
-            <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 14, marginTop: 14, display: 'flex', gap: 10 }}>
+            <div style={{ borderTop: `1px solid ${'#E5E7EB'}`, paddingTop: 14, marginTop: 14, display: 'flex', gap: 10 }}>
               <button
-                style={{ ...S.primaryBtn, background: colors.success }}
+                className="rounded-md px-4 py-2 text-sm font-semibold text-surface-1 hover:opacity-90" style={{ background: '#16A34A' }}
                 onClick={() => handleRecAction(rec.id, 'approved')}
               >
                 Approve
               </button>
               <button
-                style={S.dangerBtn}
+                className="rounded-md border border-danger bg-danger/10 px-4 py-2 text-sm font-semibold text-danger hover:bg-danger/20"
                 onClick={() => handleRecAction(rec.id, 'rejected')}
               >
                 Reject
@@ -921,8 +928,8 @@ function CommandCenterContent() {
     if (drawerContent === 'exec-detail' && selectedExec) {
       const exec = selectedExec;
       const fieldStyle: React.CSSProperties = { marginBottom: 14 };
-      const labelStyle: React.CSSProperties = { fontSize: 11, color: colors.text3, fontWeight: 600, marginBottom: 3, textTransform: 'uppercase', letterSpacing: 0.8 };
-      const valStyle: React.CSSProperties = { fontSize: 13, color: colors.text1 };
+      const labelStyle: React.CSSProperties = { fontSize: 11, color: '#9CA3AF', fontWeight: 600, marginBottom: 3, textTransform: 'uppercase', letterSpacing: 0.8 };
+      const valStyle: React.CSSProperties = { fontSize: 13, color: '#111827' };
       const qa = exec.test_results;
       return (
         <div>
@@ -951,27 +958,27 @@ function CommandCenterContent() {
           {exec.staging_url && (
             <div style={fieldStyle}>
               <div style={labelStyle}>Staging URL</div>
-              <a href={exec.staging_url} target="_blank" rel="noopener noreferrer" style={{ color: colors.accent, fontSize: 13 }}>
+              <a href={exec.staging_url} target="_blank" rel="noopener noreferrer" style={{ color: '#2563EB', fontSize: 13 }}>
                 {exec.staging_url}
               </a>
             </div>
           )}
           {qa && (
-            <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 14, marginTop: 14 }}>
+            <div style={{ borderTop: `1px solid ${'#E5E7EB'}`, paddingTop: 14, marginTop: 14 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
                 <span style={labelStyle}>QA Gate Results</span>
                 <StatusBadge label={qa.passed ? 'PASSED' : 'FAILED'} variant={qa.passed ? 'success' : 'danger'} />
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {(qa.checks || []).map((check, idx) => (
-                  <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: colors.surface, borderRadius: 6 }}>
-                    <span style={{ fontSize: 13, color: colors.text1, fontWeight: 600 }}>{check.name}</span>
+                  <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: '#F9FAFB', borderRadius: 6 }}>
+                    <span style={{ fontSize: 13, color: '#111827', fontWeight: 600 }}>{check.name}</span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       {check.tests_passed !== undefined && check.tests_total !== undefined && (
-                        <span style={{ fontSize: 11, color: colors.text2 }}>{check.tests_passed}/{check.tests_total} passed</span>
+                        <span style={{ fontSize: 11, color: '#6B7280' }}>{check.tests_passed}/{check.tests_total} passed</span>
                       )}
                       {check.duration_ms !== undefined && (
-                        <span style={{ fontSize: 11, color: colors.text3 }}>{(check.duration_ms / 1000).toFixed(1)}s</span>
+                        <span style={{ fontSize: 11, color: '#9CA3AF' }}>{(check.duration_ms / 1000).toFixed(1)}s</span>
                       )}
                       <StatusBadge label={check.passed ? 'PASS' : 'FAIL'} variant={check.passed ? 'success' : 'danger'} />
                     </div>
@@ -980,21 +987,21 @@ function CommandCenterContent() {
               </div>
             </div>
           )}
-          <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 14, marginTop: 14, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ borderTop: `1px solid ${'#E5E7EB'}`, paddingTop: 14, marginTop: 14, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {exec.status === 'pending' && (
               <>
-                <button style={S.secondaryBtn} disabled={!!pipelineActionLoading[exec.id]} onClick={() => { handleStage(exec.id); setDrawerOpen(false); }}>Stage</button>
-                <button style={S.secondaryBtn} disabled={!!pipelineActionLoading[exec.id]} onClick={() => { handleQAGate(exec.id); setDrawerOpen(false); }}>Run QA Gate</button>
+                <button className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2" disabled={!!pipelineActionLoading[exec.id]} onClick={() => { handleStage(exec.id); setDrawerOpen(false); }}>Stage</button>
+                <button className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2" disabled={!!pipelineActionLoading[exec.id]} onClick={() => { handleQAGate(exec.id); setDrawerOpen(false); }}>Run QA Gate</button>
               </>
             )}
             {exec.status === 'staging' && (
-              <button style={S.secondaryBtn} disabled={!!pipelineActionLoading[exec.id]} onClick={() => { handleQAGate(exec.id); setDrawerOpen(false); }}>Run QA Gate</button>
+              <button className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2" disabled={!!pipelineActionLoading[exec.id]} onClick={() => { handleQAGate(exec.id); setDrawerOpen(false); }}>Run QA Gate</button>
             )}
             {exec.status === 'approved' && (
-              <button style={{ ...S.primaryBtn, background: colors.success }} disabled={!!pipelineActionLoading[exec.id]} onClick={() => { handleDeploy(exec.id); setDrawerOpen(false); }}>Deploy</button>
+              <button className="rounded-md px-4 py-2 text-sm font-semibold text-surface-1 hover:opacity-90" style={{ background: '#16A34A' }} disabled={!!pipelineActionLoading[exec.id]} onClick={() => { handleDeploy(exec.id); setDrawerOpen(false); }}>Deploy</button>
             )}
             {exec.status === 'deployed' && (
-              <button style={S.dangerBtn} disabled={!!pipelineActionLoading[exec.id]} onClick={() => { handleRollback(exec.id); setDrawerOpen(false); }}>Rollback</button>
+              <button className="rounded-md border border-danger bg-danger/10 px-4 py-2 text-sm font-semibold text-danger hover:bg-danger/20" disabled={!!pipelineActionLoading[exec.id]} onClick={() => { handleRollback(exec.id); setDrawerOpen(false); }}>Rollback</button>
             )}
           </div>
         </div>
@@ -1007,11 +1014,11 @@ function CommandCenterContent() {
   /* ---- Loading / Error ---- */
 
   if (loading) {
-    return <div style={{ textAlign: 'center', padding: 60, color: colors.text3, fontSize: 14 }}>Loading...</div>;
+    return <div style={{ textAlign: 'center', padding: 60, color: '#9CA3AF', fontSize: 14 }}>Loading...</div>;
   }
 
   if (error) {
-    return <div style={{ textAlign: 'center', padding: 60, color: colors.danger, fontSize: 14 }}>{error}</div>;
+    return <div style={{ textAlign: 'center', padding: 60, color: '#DC2626', fontSize: 14 }}>{error}</div>;
   }
 
   /* ---- Main render ---- */
@@ -1021,10 +1028,10 @@ function CommandCenterContent() {
       {/* Header */}
       <div style={{ marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <h1 style={S.h1}>Command Center</h1>
+          <h1 className="text-xl font-bold text-foreground">Command Center</h1>
           <StatusBadge label={mode === 'suggest' ? 'Suggest' : mode === 'observe' ? 'Observe' : 'Controlled Act'} variant={mode === 'observe' ? 'neutral' : mode === 'suggest' ? 'info' : 'warning'} />
         </div>
-        <div style={S.subtitle}>Product improvement monitoring &amp; automation</div>
+        <div className="text-sm text-muted-foreground">Product improvement monitoring &amp; automation</div>
       </div>
 
       {/* Tab bar */}
@@ -1032,10 +1039,7 @@ function CommandCenterContent() {
         {TABS.map(t => (
           <button
             key={t}
-            style={{
-              ...S.filterBtn,
-              ...(tab === t ? S.filterActive : {}),
-            }}
+            className={`rounded-md border px-3.5 py-1.5 text-xs font-medium ${tab === t ? 'border-foreground bg-foreground text-surface-1' : 'border-surface-3 bg-surface-1 text-muted-foreground hover:bg-surface-2'}`}
             onClick={() => setTab(t)}
           >
             {t}
@@ -1047,19 +1051,19 @@ function CommandCenterContent() {
       {tab === 'Overview' && dashboard && (
         <div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 24 }}>
-            <StatCard label="Open Issues" value={dashboard.health?.total_open_issues || 0} icon={'\u2298'} accentColor={colors.danger} />
-            <StatCard label="Pending Recommendations" value={dashboard.recommendations_by_status?.proposed || 0} icon={'\u25C8'} accentColor={colors.warning} />
-            <StatCard label="In Pipeline" value={Object.entries(dashboard.executions_by_status || {}).filter(([k]) => ['pending','staging','testing','approved'].includes(k)).reduce((s, [,v]) => s + (v as number), 0)} icon={'\u229E'} accentColor={colors.accent} />
-            <StatCard label="Resolved This Week" value={dashboard.issues_by_status?.resolved || 0} icon={'\u2295'} accentColor={colors.success} />
+            <StatCard label="Open Issues" value={dashboard.health?.total_open_issues || 0} icon={'\u2298'} accentColor={'#DC2626'} />
+            <StatCard label="Pending Recommendations" value={dashboard.recommendations_by_status?.proposed || 0} icon={'\u25C8'} accentColor={'#D97706'} />
+            <StatCard label="In Pipeline" value={Object.entries(dashboard.executions_by_status || {}).filter(([k]) => ['pending','staging','testing','approved'].includes(k)).reduce((s, [,v]) => s + (v as number), 0)} icon={'\u229E'} accentColor={'#2563EB'} />
+            <StatCard label="Resolved This Week" value={dashboard.issues_by_status?.resolved || 0} icon={'\u2295'} accentColor={'#16A34A'} />
           </div>
 
-          <div style={{ ...S.card, marginBottom: 24 }}>
-            <h2 style={S.h2}>Issues by Severity</h2>
+          <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ marginBottom: 24 }}>
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Issues by Severity</h2>
             {renderSeverityBar()}
           </div>
 
           <div>
-            <h2 style={S.h2}>Recent Issues</h2>
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Recent Issues</h2>
             <DataTable
               columns={recentIssueColumns}
               data={(dashboard.recent_issues || []).slice(0, 5)}
@@ -1075,20 +1079,20 @@ function CommandCenterContent() {
       {tab === 'Issues' && (
         <div>
           <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-            <select style={S.select} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+            <select className="rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm cursor-pointer" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
               <option value="">All Statuses</option>
               {ISSUE_STATUSES.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
             </select>
-            <select style={S.select} value={filterCategory} onChange={e => setFilterCategory(e.target.value)}>
+            <select className="rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm cursor-pointer" value={filterCategory} onChange={e => setFilterCategory(e.target.value)}>
               <option value="">All Categories</option>
               {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
-            <select style={S.select} value={filterSeverity} onChange={e => setFilterSeverity(e.target.value)}>
+            <select className="rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm cursor-pointer" value={filterSeverity} onChange={e => setFilterSeverity(e.target.value)}>
               <option value="">All Severities</option>
               {SEVERITIES.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
             <div style={{ flex: 1 }} />
-            <button style={S.primaryBtn} onClick={openCreateIssue}>Create Issue</button>
+            <button className="rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-surface-1 hover:opacity-90" onClick={openCreateIssue}>Create Issue</button>
           </div>
           <DataTable
             columns={issueColumns}
@@ -1132,18 +1136,18 @@ function CommandCenterContent() {
       {/* ============ Learning Tab ============ */}
       {tab === 'Learning' && (
         <div>
-          {learningLoading && <div style={{ textAlign: 'center', padding: 40, color: colors.text3, fontSize: 14 }}>Loading...</div>}
+          {learningLoading && <div style={{ textAlign: 'center', padding: 40, color: '#9CA3AF', fontSize: 14 }}>Loading...</div>}
           {!learningLoading && learning && (
             <>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 24 }}>
-                <StatCard label="Overall Quiz Accuracy" value={`${learning.overall_quiz_accuracy}%`} icon={'\u2298'} accentColor={colors.accent} />
-                <StatCard label="Content Coverage" value={`${learning.content_coverage}%`} icon={'\u25C8'} accentColor={colors.success} />
-                <StatCard label="Topics with Gaps" value={learning.topics_with_gaps} icon={'\u229E'} accentColor={colors.warning} />
-                <StatCard label="Bloom\'s Levels Covered" value={learning.blooms_levels_covered} icon={'\u2295'} accentColor={colors.accent} />
+                <StatCard label="Overall Quiz Accuracy" value={`${learning.overall_quiz_accuracy}%`} icon={'\u2298'} accentColor={'#2563EB'} />
+                <StatCard label="Content Coverage" value={`${learning.content_coverage}%`} icon={'\u25C8'} accentColor={'#16A34A'} />
+                <StatCard label="Topics with Gaps" value={learning.topics_with_gaps} icon={'\u229E'} accentColor={'#D97706'} />
+                <StatCard label="Bloom\'s Levels Covered" value={learning.blooms_levels_covered} icon={'\u2295'} accentColor={'#2563EB'} />
               </div>
 
-              <div style={{ ...S.card, marginBottom: 24 }}>
-                <h2 style={S.h2}>Quiz Accuracy by Subject</h2>
+              <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ marginBottom: 24 }}>
+                <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Quiz Accuracy by Subject</h2>
                 <DataTable
                   columns={[
                     { key: 'subject', label: 'Subject' },
@@ -1156,8 +1160,8 @@ function CommandCenterContent() {
                 />
               </div>
 
-              <div style={{ ...S.card, marginBottom: 24 }}>
-                <h2 style={S.h2}>Content Gaps</h2>
+              <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ marginBottom: 24 }}>
+                <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Content Gaps</h2>
                 <DataTable
                   columns={[
                     { key: 'subject', label: 'Subject' },
@@ -1170,17 +1174,17 @@ function CommandCenterContent() {
                 />
               </div>
 
-              <div style={{ ...S.card }}>
-                <h2 style={S.h2}>Bloom&apos;s Distribution</h2>
+              <div className="rounded-lg border border-surface-3 bg-surface-1 p-4">
+                <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Bloom&apos;s Distribution</h2>
                 {renderBloomsBar()}
               </div>
 
               {/* Monitor Results Section */}
-              <div style={{ ...S.card, marginTop: 24 }}>
+              <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ marginTop: 24 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                  <h2 style={{ ...S.h2, marginBottom: 0 }}>Learning Monitors</h2>
+                  <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground" style={{ marginBottom: 0 }}>Learning Monitors</h2>
                   <button
-                    style={{ ...S.primaryBtn, opacity: monitorsLoading ? 0.5 : 1 }}
+                    className="rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-surface-1 hover:opacity-90" style={{ opacity: monitorsLoading ? 0.5 : 1 }}
                     disabled={monitorsLoading}
                     onClick={handleRunMonitors}
                   >
@@ -1190,14 +1194,14 @@ function CommandCenterContent() {
                 {monitorResults.length > 0 ? (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
                     {monitorResults.map((m, idx) => (
-                      <div key={idx} style={{ ...S.card, background: colors.surface }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: colors.text1, marginBottom: 8 }}>{m.name}</div>
+                      <div key={idx} className="rounded-lg border border-surface-3 p-4" style={{ background: '#F9FAFB' }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#111827', marginBottom: 8 }}>{m.name}</div>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                          <span style={{ fontSize: 12, color: colors.text2 }}>
-                            Value: <strong style={{ color: colors.text1 }}>{m.value.toFixed(1)}%</strong>
+                          <span style={{ fontSize: 12, color: '#6B7280' }}>
+                            Value: <strong style={{ color: '#111827' }}>{m.value.toFixed(1)}%</strong>
                           </span>
-                          <span style={{ fontSize: 12, color: colors.text2 }}>
-                            Threshold: <strong style={{ color: colors.text1 }}>{m.threshold.toFixed(1)}%</strong>
+                          <span style={{ fontSize: 12, color: '#6B7280' }}>
+                            Threshold: <strong style={{ color: '#111827' }}>{m.threshold.toFixed(1)}%</strong>
                           </span>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -1205,7 +1209,7 @@ function CommandCenterContent() {
                           <span style={{
                             fontSize: 11,
                             fontWeight: 600,
-                            color: m.trend === 'improving' ? colors.success : m.trend === 'degrading' ? colors.danger : colors.text3,
+                            color: m.trend === 'improving' ? '#16A34A' : m.trend === 'degrading' ? '#DC2626' : '#9CA3AF',
                           }}>
                             {m.trend === 'improving' ? '\u2191' : m.trend === 'degrading' ? '\u2193' : '\u2192'} {m.trend}
                           </span>
@@ -1214,7 +1218,7 @@ function CommandCenterContent() {
                     ))}
                   </div>
                 ) : (
-                  <div style={{ textAlign: 'center', padding: 20, color: colors.text3, fontSize: 13 }}>
+                  <div style={{ textAlign: 'center', padding: 20, color: '#9CA3AF', fontSize: 13 }}>
                     Click &quot;Run Monitors&quot; to check learning quality thresholds
                   </div>
                 )}
@@ -1222,7 +1226,7 @@ function CommandCenterContent() {
             </>
           )}
           {!learningLoading && !learning && (
-            <div style={{ textAlign: 'center', padding: 40, color: colors.text3, fontSize: 14 }}>
+            <div style={{ textAlign: 'center', padding: 40, color: '#9CA3AF', fontSize: 14 }}>
               Learning quality data unavailable
             </div>
           )}
@@ -1232,8 +1236,8 @@ function CommandCenterContent() {
       {/* ============ Settings Tab ============ */}
       {tab === 'Settings' && (
         <div>
-          <div style={{ ...S.card, marginBottom: 24 }}>
-            <h2 style={S.h2}>Operating Mode</h2>
+          <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ marginBottom: 24 }}>
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Operating Mode</h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
               {MODES.map(m => {
                 const selected = mode === m.key;
@@ -1242,11 +1246,13 @@ function CommandCenterContent() {
                     key={m.key}
                     onClick={() => !modeLoading && handleModeChange(m.key)}
                     style={{
-                      ...S.card,
+                      padding: 16,
+                      borderRadius: 8,
+                      border: '1px solid #E5E7EB',
                       cursor: modeLoading ? 'wait' : 'pointer',
-                      borderColor: selected ? colors.text1 : colors.border,
+                      borderColor: selected ? '#111827' : '#E5E7EB',
                       borderWidth: selected ? 2 : 1,
-                      background: selected ? colors.surface : colors.bg,
+                      background: selected ? '#F9FAFB' : '#FFFFFF',
                       opacity: modeLoading && !selected ? 0.5 : 1,
                     }}
                   >
@@ -1254,33 +1260,33 @@ function CommandCenterContent() {
                       <div
                         style={{
                           width: 16, height: 16, borderRadius: '50%',
-                          border: `2px solid ${selected ? colors.text1 : colors.border}`,
+                          border: `2px solid ${selected ? '#111827' : '#E5E7EB'}`,
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                         }}
                       >
-                        {selected && <div style={{ width: 8, height: 8, borderRadius: '50%', background: colors.text1 }} />}
+                        {selected && <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#111827' }} />}
                       </div>
-                      <span style={{ fontSize: 14, fontWeight: 700, color: colors.text1 }}>{m.label}</span>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>{m.label}</span>
                       {m.key === 'suggest' && (
-                        <span style={{ fontSize: 10, fontWeight: 600, color: colors.accent, background: colors.accentLight, padding: '1px 6px', borderRadius: 4 }}>
+                        <span style={{ fontSize: 10, fontWeight: 600, color: '#2563EB', background: '#EFF6FF', padding: '1px 6px', borderRadius: 4 }}>
                           DEFAULT
                         </span>
                       )}
                     </div>
-                    <div style={{ fontSize: 12, color: colors.text2, lineHeight: 1.4 }}>{m.description}</div>
+                    <div style={{ fontSize: 12, color: '#6B7280', lineHeight: 1.4 }}>{m.description}</div>
                   </div>
                 );
               })}
             </div>
           </div>
 
-          <div style={S.card}>
-            <h2 style={S.h2}>Detection Thresholds</h2>
+          <div className="rounded-lg border border-surface-3 bg-surface-1 p-4">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Detection Thresholds</h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
               {THRESHOLDS.map(t => (
-                <div key={t.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: colors.surface, borderRadius: 6 }}>
-                  <span style={{ fontSize: 13, color: colors.text2 }}>{t.label}</span>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: colors.text1 }}>{t.value}</span>
+                <div key={t.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: '#F9FAFB', borderRadius: 6 }}>
+                  <span style={{ fontSize: 13, color: '#6B7280' }}>{t.label}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#111827' }}>{t.value}</span>
                 </div>
               ))}
             </div>
