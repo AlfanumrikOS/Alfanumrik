@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { useTenant } from '@/lib/tenant-context';
 import { supabase } from '@/lib/supabase';
+import DashboardSidebar, { type SidebarNavItem } from '@/components/admin-ui/DashboardSidebar';
 import type { ModuleKey } from '@/lib/modules/registry';
 
 /* ─── P7: Bilingual labels ───────────────────────────────────────────
@@ -48,14 +49,17 @@ const NAV_ITEMS: ReadonlyArray<SchoolAdminNavItem> = [
 ];
 
 /**
- * School Admin Shell — branded sidebar layout
+ * School Admin Shell — branded sidebar layout (Plan 0 Task 8).
  *
- * Uses the tenant context from SchoolThemeProvider for:
- * - School logo in sidebar header
- * - School colors for active nav highlight
- * - "Powered by Alfanumrik" footer for B2B
+ * Composes the shared `<DashboardSidebar>` primitive from
+ * `@/components/admin-ui` and supplies tenant-driven branding:
+ * - School logo / initial-letter tile
+ * - School primary color for active nav highlight
+ * - "Powered by Alfanumrik" footer for B2B tenants
  *
- * Falls back to DB lookup if tenant context is null (direct URL access).
+ * Falls back to a DB lookup if tenant context is null (e.g. direct URL
+ * access before SchoolThemeProvider hydrates). Module-gated nav items
+ * fail-open when /api/school-admin/modules errors or returns 403.
  */
 export default function SchoolAdminShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -64,7 +68,6 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
   const tenant = useTenant();
   const [schoolName, setSchoolName] = useState<string>(tenant.schoolName || '');
   const [logoUrl, setLogoUrl] = useState<string | null>(tenant.branding.logoUrl);
-  const [collapsed, setCollapsed] = useState(false);
 
   // null while loading or on fetch failure (fail-open: show all items).
   // Otherwise a partial map of moduleKey → enabled. Only modules that
@@ -128,138 +131,29 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
     };
   }, [authUserId]);
 
-  // Apply the module filter. Items without `moduleKey` always render.
-  // Items WITH a moduleKey render only when:
-  //   (a) we haven't loaded enablement yet (null) → fail-open, or
-  //   (b) the module is enabled.
-  const visibleNavItems = NAV_ITEMS.filter(item => {
-    if (!item.moduleKey) return true;
-    if (moduleEnablement === null) return true;
-    return moduleEnablement[item.moduleKey] !== false;
-  });
-
-  const t = (en: string, hi: string) => (isHi ? hi : en);
-
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#fafafa' }}>
-      {/* ── Sidebar ── */}
-      <aside
-        style={{
-          width: collapsed ? 56 : 220,
-          background: '#fff',
-          borderRight: '1px solid #e5e7eb',
-          padding: '16px 0',
-          display: 'flex',
-          flexDirection: 'column',
-          transition: 'width 0.2s ease',
-          overflow: 'hidden',
-          flexShrink: 0,
-        }}
-      >
-        {/* School branding header */}
-        <div style={{ padding: '0 12px 16px', borderBottom: '1px solid #e5e7eb', minHeight: 48 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {logoUrl ? (
-              <img
-                src={logoUrl}
-                alt={schoolName}
-                style={{ height: 28, width: 28, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }}
-              />
-            ) : (
-              <div
-                style={{
-                  height: 28,
-                  width: 28,
-                  borderRadius: 6,
-                  background: primaryColor,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#fff',
-                  fontSize: 14,
-                  fontWeight: 700,
-                  flexShrink: 0,
-                }}
-              >
-                {(schoolName || 'S')[0]}
-              </div>
-            )}
-            {!collapsed && (
-              <div style={{ overflow: 'hidden' }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#111', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
-                  {schoolName || t('School Admin', 'स्कूल प्रशासन')}
-                </div>
-                <div style={{ fontSize: 10, color: '#888' }}>
-                  {t('School Administration', 'स्कूल प्रशासन')}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Collapse toggle */}
-        <button
-          onClick={() => setCollapsed(c => !c)}
-          style={{
-            padding: '6px 12px',
-            fontSize: 11,
-            color: '#888',
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            textAlign: 'left',
-          }}
-        >
-          {collapsed ? '→' : '←'}
-        </button>
-
-        {/* Navigation items */}
-        <nav style={{ flex: 1, paddingTop: 4 }}>
-          {visibleNavItems.map(item => {
-            const isActive = pathname === item.href ||
-              (item.href !== '/school-admin' && pathname.startsWith(item.href));
-            return (
-              <a
-                key={item.href}
-                href={item.href}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: collapsed ? '10px 16px' : '10px 12px',
-                  fontSize: 13,
-                  fontWeight: isActive ? 600 : 400,
-                  color: isActive ? primaryColor : '#555',
-                  background: isActive ? `${primaryColor}10` : 'transparent',
-                  borderLeft: isActive ? `3px solid ${primaryColor}` : '3px solid transparent',
-                  textDecoration: 'none',
-                  whiteSpace: 'nowrap',
-                  transition: 'background 0.15s',
-                }}
-                title={isHi ? item.labelHi : item.label}
-              >
-                <span style={{ fontSize: 15, flexShrink: 0 }}>{item.icon}</span>
-                {!collapsed && <span>{isHi ? item.labelHi : item.label}</span>}
+    <div className="flex min-h-screen bg-surface-2">
+      <DashboardSidebar
+        brandTitle={schoolName || (isHi ? 'स्कूल प्रशासन' : 'School Admin')}
+        brandSubtitle={isHi ? 'स्कूल प्रशासन' : 'School Administration'}
+        logoUrl={logoUrl}
+        primaryColor={primaryColor}
+        items={NAV_ITEMS as unknown as SidebarNavItem[]}
+        currentPath={pathname || ''}
+        isHi={isHi}
+        moduleEnablement={moduleEnablement}
+        footer={
+          (tenant.branding.showPoweredBy || tenant.schoolId) ? (
+            <div>
+              Powered by{' '}
+              <a href="https://alfanumrik.com" className="text-primary no-underline">
+                Alfanumrik
               </a>
-            );
-          })}
-        </nav>
-
-        {/* Powered by footer */}
-        {(tenant.branding.showPoweredBy || tenant.schoolId) && !collapsed && (
-          <div style={{ padding: '12px', fontSize: 10, color: '#aaa', borderTop: '1px solid #e5e7eb' }}>
-            Powered by{' '}
-            <a href="https://alfanumrik.com" style={{ color: '#7C3AED', textDecoration: 'none' }}>
-              Alfanumrik
-            </a>
-          </div>
-        )}
-      </aside>
-
-      {/* ── Main content ── */}
-      <main style={{ flex: 1, padding: 24, maxWidth: 1200, overflow: 'auto' }}>
-        {children}
-      </main>
+            </div>
+          ) : null
+        }
+      />
+      <main className="flex-1 max-w-screen-xl overflow-auto p-6">{children}</main>
     </div>
   );
 }
