@@ -19,6 +19,13 @@ const QuizResults = dynamic(() => import('@/components/quiz/QuizResults'), {
   ssr: false,
   loading: () => <LoadingFoxy />,
 });
+// Lazy-load MisconceptionExplainer — only mounted on wrong MCQ; the API
+// gates on ff_distractor_micro_explainer_v1 server-side (returns null body
+// when off, so the component renders nothing).
+const MisconceptionExplainer = dynamic(() => import('@/components/quiz/MisconceptionExplainer'), {
+  ssr: false,
+  loading: () => null,
+});
 import {
   createFeedbackState, onCorrectAnswer, onWrongAnswer, onSessionComplete,
   getNearCompletionNudge, playFeedbackSound,
@@ -1320,6 +1327,17 @@ export default function QuizPage() {
                       : (isHi && q.explanation_hi ? q.explanation_hi : q.explanation || (isHi ? 'कोई व्याख्या उपलब्ध नहीं' : 'No explanation available'))}
                   </p>
                 </div>
+              )}
+
+              {/* Pedagogy v2 — Wave 1: distractor micro-explainer.
+                  Mounts only on wrong MCQ (legacy path; v2 path defers feedback
+                  to results screen). API is gated by ff_distractor_micro_explainer_v1
+                  and renders nothing when no curated remediation exists. */}
+              {isAnswered && !isV2Question && !isCorrect && q.id && selectedOption !== null && (
+                <MisconceptionExplainer
+                  questionId={q.id}
+                  distractorIndex={selectedOption}
+                />
               )}
 
               {/* Reflection Prompt — shown in cognitive and practice modes */}
