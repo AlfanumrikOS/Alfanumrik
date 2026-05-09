@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback, createContext, useContext } from 'react';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { colors } from './admin-styles';
+import DashboardSidebar, { type SidebarNavItem } from '@/components/admin-ui/DashboardSidebar';
+import { useAuth } from '@/lib/AuthContext';
 
 interface AdminSession {
   accessToken: string;
@@ -19,41 +20,45 @@ export function useAdmin() {
   return ctx;
 }
 
-const NAV_ITEMS: { href: string; label: string; icon: string }[] = [
-  { href: '/super-admin', label: 'Overview', icon: '▦' },
-  { href: '/super-admin/analytics', label: 'Analytics', icon: '◍' },
-  { href: '/super-admin/users', label: 'Users & Roles', icon: '⊕' },
-  { href: '/super-admin/rbac', label: 'RBAC', icon: '⛊' },
-  { href: '/super-admin/oauth-apps', label: 'OAuth Apps', icon: '⊚' },
-  { href: '/super-admin/subscriptions', label: 'Subscriptions', icon: '◈' },
-  { href: '/super-admin/learning', label: 'Learning Intel', icon: '◉' },
-  { href: '/super-admin/diagnostics', label: 'Diagnostics', icon: '⊘' },
-  { href: '/super-admin/marking-integrity', label: 'Marking Integrity', icon: '⛉' },
-  { href: '/super-admin/oracle-health', label: 'Oracle Health', icon: '◐' },
-  { href: '/super-admin/observability', label: 'Observability', icon: '◎' },
-  { href: '/super-admin/workbench', label: 'Data Workbench', icon: '⊞' },
-  { href: '/super-admin/flags', label: 'Feature Flags', icon: '⊡' },
-  { href: '/super-admin/institutions', label: 'Institutions', icon: '⊟' },
-  { href: '/super-admin/invoices', label: 'Invoices', icon: '⊓' },
-  { href: '/super-admin/analytics-b2b', label: 'B2B Analytics', icon: '⊿' },
-  { href: '/super-admin/sla', label: 'SLA Monitor', icon: '⊗' },
-  { href: '/super-admin/alerts', label: 'Alerts', icon: '⊚' },
-  { href: '/super-admin/cms', label: 'CMS', icon: '⊠' },
-  { href: '/super-admin/reports', label: 'Reports', icon: '⊏' },
-  { href: '/super-admin/logs', label: 'Audit Logs', icon: '⊙' },
-  { href: '/super-admin/support', label: 'Support Center', icon: '⊛' },
-  { href: '/super-admin/bulk-actions', label: 'Bulk Actions', icon: '⊞' },
-  { href: '/super-admin/demo', label: 'Demo Accounts', icon: '⊜' },
+const NAV_ITEMS: SidebarNavItem[] = [
+  { href: '/super-admin', label: 'Overview', labelHi: 'अवलोकन', icon: '▦' },
+  { href: '/super-admin/analytics', label: 'Analytics', labelHi: 'विश्लेषण', icon: '◍' },
+  { href: '/super-admin/users', label: 'Users & Roles', labelHi: 'उपयोगकर्ता और भूमिकाएँ', icon: '⊕' },
+  { href: '/super-admin/rbac', label: 'RBAC', labelHi: 'RBAC', icon: '⛊' },
+  { href: '/super-admin/oauth-apps', label: 'OAuth Apps', labelHi: 'OAuth ऐप्स', icon: '⊚' },
+  { href: '/super-admin/subscriptions', label: 'Subscriptions', labelHi: 'सदस्यता', icon: '◈' },
+  { href: '/super-admin/learning', label: 'Learning Intel', labelHi: 'लर्निंग इंटेल', icon: '◉' },
+  { href: '/super-admin/diagnostics', label: 'Diagnostics', labelHi: 'डायग्नोस्टिक्स', icon: '⊘' },
+  { href: '/super-admin/marking-integrity', label: 'Marking Integrity', labelHi: 'अंकन सत्यनिष्ठा', icon: '⛉' },
+  { href: '/super-admin/oracle-health', label: 'Oracle Health', labelHi: 'ओरेकल स्वास्थ्य', icon: '◐' },
+  { href: '/super-admin/observability', label: 'Observability', labelHi: 'अवलोकनीयता', icon: '◎' },
+  { href: '/super-admin/workbench', label: 'Data Workbench', labelHi: 'डेटा वर्कबेंच', icon: '⊞' },
+  { href: '/super-admin/flags', label: 'Feature Flags', labelHi: 'फ़ीचर फ़्लैग्स', icon: '⊡' },
+  { href: '/super-admin/institutions', label: 'Institutions', labelHi: 'संस्थान', icon: '⊟' },
+  { href: '/super-admin/invoices', label: 'Invoices', labelHi: 'चालान', icon: '⊓' },
+  { href: '/super-admin/analytics-b2b', label: 'B2B Analytics', labelHi: 'B2B विश्लेषण', icon: '⊿' },
+  { href: '/super-admin/sla', label: 'SLA Monitor', labelHi: 'SLA मॉनिटर', icon: '⊗' },
+  { href: '/super-admin/alerts', label: 'Alerts', labelHi: 'अलर्ट', icon: '⊚' },
+  { href: '/super-admin/cms', label: 'CMS', labelHi: 'CMS', icon: '⊠' },
+  { href: '/super-admin/reports', label: 'Reports', labelHi: 'रिपोर्ट', icon: '⊏' },
+  { href: '/super-admin/logs', label: 'Audit Logs', labelHi: 'ऑडिट लॉग', icon: '⊙' },
+  { href: '/super-admin/support', label: 'Support Center', labelHi: 'सहायता केंद्र', icon: '⊛' },
+  { href: '/super-admin/bulk-actions', label: 'Bulk Actions', labelHi: 'बल्क क्रियाएँ', icon: '⊞' },
+  { href: '/super-admin/demo', label: 'Demo Accounts', labelHi: 'डेमो खाते', icon: '⊜' },
 ];
 
 export default function AdminShell({ children }: { children: React.ReactNode }) {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [adminName, setAdminName] = useState('');
-  const [collapsed, setCollapsed] = useState(false);
   const [currentPath, setCurrentPath] = useState('');
   const [supabase] = useState(() =>
     createClient(process.env.NEXT_PUBLIC_SUPABASE_URL || '', process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '')
   );
+  // useAuth() returns the default context (isHi: false) when no AuthProvider is
+  // mounted — super-admin routes have their own /super-admin/login flow and may
+  // not be wrapped in AuthProvider. Bilingual rendering activates only when
+  // AuthContext is present.
+  const { isHi } = useAuth();
 
   useEffect(() => {
     setCurrentPath(window.location.pathname);
@@ -117,109 +122,39 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
 
   if (!accessToken) {
     return (
-      <div style={{
-        minHeight: '100vh', background: colors.bg, display: 'flex',
-        alignItems: 'center', justifyContent: 'center', colorScheme: 'light',
-      }}>
-        <div style={{ color: colors.text3, fontSize: 14 }}>Loading session...</div>
+      <div className="flex min-h-screen items-center justify-center bg-surface-1">
+        <div className="text-sm text-muted-foreground">
+          {isHi ? 'सत्र लोड हो रहा है...' : 'Loading session...'}
+        </div>
       </div>
     );
   }
 
-  const sidebarWidth = collapsed ? 56 : 200;
-
   return (
     <AdminCtx.Provider value={{ accessToken, adminName, supabase, headers, apiFetch }}>
-      <div style={{ display: 'flex', minHeight: '100vh', background: colors.bg, colorScheme: 'light' }}>
-        {/* Sidebar */}
-        <aside style={{
-          width: sidebarWidth, flexShrink: 0,
-          borderRight: `1px solid ${colors.border}`,
-          background: colors.bg,
-          display: 'flex', flexDirection: 'column',
-          transition: 'width 0.2s',
-          position: 'fixed', top: 0, bottom: 0, left: 0, zIndex: 100,
-          overflowY: 'auto',
-        }}>
-          {/* Logo */}
-          <div style={{
-            padding: collapsed ? '16px 8px' : '16px 16px',
-            borderBottom: `1px solid ${colors.border}`,
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          }}>
-            {!collapsed && (
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 800, color: colors.text1, letterSpacing: 0.5 }}>ALFANUMRIK</div>
-                <div style={{ fontSize: 10, color: colors.text3, letterSpacing: 2, textTransform: 'uppercase', marginTop: 1 }}>Super Admin</div>
-              </div>
-            )}
-            <button
-              onClick={() => setCollapsed(!collapsed)}
-              style={{
-                background: 'none', border: `1px solid ${colors.border}`, borderRadius: 4,
-                padding: '3px 6px', cursor: 'pointer', color: colors.text3, fontSize: 12,
-              }}
-              title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            >
-              {collapsed ? '▸' : '◂'}
-            </button>
-          </div>
-
-          {/* Nav */}
-          <nav style={{ flex: 1, padding: '8px 0' }}>
-            {NAV_ITEMS.map(item => {
-              const isActive = currentPath === item.href || (item.href !== '/super-admin' && currentPath.startsWith(item.href));
-              return (
-                <a
-                  key={item.href}
-                  href={item.href}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 10,
-                    padding: collapsed ? '9px 0' : '9px 16px',
-                    justifyContent: collapsed ? 'center' : 'flex-start',
-                    fontSize: 13, fontWeight: isActive ? 600 : 400,
-                    color: isActive ? colors.text1 : colors.text2,
-                    background: isActive ? colors.surface : 'transparent',
-                    borderRight: isActive ? `2px solid ${colors.text1}` : '2px solid transparent',
-                    textDecoration: 'none',
-                    transition: 'background 0.1s',
-                  }}
-                  title={collapsed ? item.label : undefined}
-                  onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = colors.surfaceHover; }}
-                  onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
-                >
-                  <span style={{ fontSize: 14, width: 20, textAlign: 'center', flexShrink: 0 }}>{item.icon}</span>
-                  {!collapsed && <span>{item.label}</span>}
-                </a>
-              );
-            })}
-          </nav>
-
-          {/* Footer */}
-          <div style={{ padding: collapsed ? '12px 4px' : '12px 16px', borderTop: `1px solid ${colors.border}` }}>
-            {!collapsed && adminName && (
-              <div style={{ fontSize: 11, color: colors.text3, marginBottom: 8, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {adminName}
-              </div>
-            )}
-            <button
-              onClick={async () => { await supabase.auth.signOut(); window.location.href = '/super-admin/login'; }}
-              style={{
-                width: '100%', padding: '6px 0', borderRadius: 5,
-                border: `1px solid ${colors.border}`, background: colors.bg,
-                color: colors.text2, fontSize: 11, cursor: 'pointer', fontWeight: 500,
-              }}
-            >
-              {collapsed ? '→' : 'Logout'}
-            </button>
-          </div>
-        </aside>
-
-        {/* Main content */}
-        <main style={{ flex: 1, marginLeft: sidebarWidth, transition: 'margin-left 0.2s' }}>
-          <div style={{ padding: '24px 28px', maxWidth: 1480 }}>
-            {children}
-          </div>
+      <div className="flex min-h-screen bg-surface-1">
+        <DashboardSidebar
+          brandTitle="ALFANUMRIK"
+          brandSubtitle={isHi ? 'सुपर एडमिन' : 'Super Admin'}
+          items={NAV_ITEMS}
+          currentPath={currentPath}
+          isHi={isHi}
+          footer={
+            <div>
+              {adminName && (
+                <div className="mb-2 truncate text-[11px] text-muted-foreground">{adminName}</div>
+              )}
+              <button
+                onClick={async () => { await supabase.auth.signOut(); window.location.href = '/super-admin/login'; }}
+                className="w-full rounded-md border border-surface-3 bg-surface-1 py-1.5 text-[11px] font-medium text-muted-foreground hover:bg-surface-2"
+              >
+                {isHi ? 'लॉगआउट' : 'Logout'}
+              </button>
+            </div>
+          }
+        />
+        <main className="flex-1">
+          <div className="max-w-screen-2xl p-6">{children}</div>
         </main>
       </div>
     </AdminCtx.Provider>
